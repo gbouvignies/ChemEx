@@ -1,0 +1,9 @@
+#!/bin/csh
+echo
+echo "               \033[42m# Comment lines in file (>5)\033[0m"
+echo
+grep "#" -rc chemex_pkg/* | egrep -v '\.(pyc|pdf|dat|fit|swo)' | awk '{split($1,a,":");if (a[2]>5) printf("%70s    \033[31m %d \033[0m\n",a[1],a[2])}' | sort -nk3
+echo
+echo "               \033[42mTODO list\033[0m"
+echo
+grep "TODO" -rn chemex_pkg/* | egrep -v '\.(pyc|pdf|dat|fit|swo)'  | awk '{split($0,a,":");printf("%70s @ \033[34mline %4d\033[0m: \033[32m%s\033[0m\n",a[1],a[2],a[4])}' 

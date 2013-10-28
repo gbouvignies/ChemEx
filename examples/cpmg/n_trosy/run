@@ -1,0 +1,9 @@
+rm -fr output
+echo Global Test
+chemex_fit.py -e experiments/*.cfg -p parameters/params_n15.cfg -o output/Global
+echo Exclusion Test
+chemex_fit.py -e experiments/*.cfg -p parameters/params_n15.cfg -r 32N-HN -o output/No32
+echo Inclusion Test
+chemex_fit.py -e experiments/*.cfg -p parameters/params_n15.cfg +r 32N-HN -o output/Just32
+echo Method Test
+chemex_fit.py -e experiments/*.cfg -p parameters/params_n15.cfg -m methods/method_n15.cfg -o output/Method

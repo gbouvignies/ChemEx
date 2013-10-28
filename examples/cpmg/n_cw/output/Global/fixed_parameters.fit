@@ -1,0 +1,110 @@
+cs 10N 25.0  1.21209e+02 fixed
+cs 11N 25.0  1.26118e+02 fixed
+cs 12N 25.0  1.23979e+02 fixed
+cs 13N 25.0  1.26079e+02 fixed
+cs 14N 25.0  1.14154e+02 fixed
+cs 15N 25.0  1.19849e+02 fixed
+cs 16N 25.0  1.14173e+02 fixed
+cs 17N 25.0  1.18778e+02 fixed
+cs 18N 25.0  1.22871e+02 fixed
+cs 30N 25.0  1.25204e+02 fixed
+cs 31N 25.0  1.26388e+02 fixed
+cs 32N 25.0  1.24468e+02 fixed
+cs 33N 25.0  1.18762e+02 fixed
+cs 34N 25.0  1.14897e+02 fixed
+cs 35N 25.0  1.17392e+02 fixed
+cs 36N 25.0  1.23038e+02 fixed
+cs 37N 25.0  1.21618e+02 fixed
+cs 49N 25.0  1.20480e+02 fixed
+cs 52N 25.0  1.21828e+02 fixed
+cs 53N 25.0  1.15366e+02 fixed
+cs 8N 25.0  1.13882e+02 fixed
+cs 9N 25.0  1.18322e+02 fixed
+dr_Nxy 10N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 10N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 11N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 11N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 12N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 12N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 13N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 13N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 14N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 14N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 15N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 15N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 16N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 16N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 17N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 17N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 18N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 18N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 30N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 30N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 31N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 31N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 32N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 32N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 33N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 33N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 34N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 34N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 35N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 35N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 36N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 36N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 37N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 37N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 49N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 49N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 52N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 52N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 53N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 53N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 8N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 8N 800.0 25.0  0.00000e+00 fixed
+dr_Nxy 9N 500.0 25.0  0.00000e+00 fixed
+dr_Nxy 9N 800.0 25.0  0.00000e+00 fixed
+r_Nz 10N 500.0 25.0  1.80000e+00 fixed
+r_Nz 10N 800.0 25.0  1.80000e+00 fixed
+r_Nz 11N 500.0 25.0  1.80700e+00 fixed
+r_Nz 11N 800.0 25.0  1.80700e+00 fixed
+r_Nz 12N 500.0 25.0  1.78500e+00 fixed
+r_Nz 12N 800.0 25.0  1.78500e+00 fixed
+r_Nz 13N 500.0 25.0  1.75000e+00 fixed
+r_Nz 13N 800.0 25.0  1.75000e+00 fixed
+r_Nz 14N 500.0 25.0  1.48500e+00 fixed
+r_Nz 14N 800.0 25.0  1.48500e+00 fixed
+r_Nz 15N 500.0 25.0  1.83600e+00 fixed
+r_Nz 15N 800.0 25.0  1.83600e+00 fixed
+r_Nz 16N 500.0 25.0  1.81300e+00 fixed
+r_Nz 16N 800.0 25.0  1.81300e+00 fixed
+r_Nz 17N 500.0 25.0  1.78200e+00 fixed
+r_Nz 17N 800.0 25.0  1.78200e+00 fixed
+r_Nz 18N 500.0 25.0  1.89500e+00 fixed
+r_Nz 18N 800.0 25.0  1.89500e+00 fixed
+r_Nz 30N 500.0 25.0  1.79400e+00 fixed
+r_Nz 30N 800.0 25.0  1.79400e+00 fixed
+r_Nz 31N 500.0 25.0  1.75100e+00 fixed
+r_Nz 31N 800.0 25.0  1.75100e+00 fixed
+r_Nz 32N 500.0 25.0  1.51600e+00 fixed
+r_Nz 32N 800.0 25.0  1.51600e+00 fixed
+r_Nz 33N 500.0 25.0  1.97900e+00 fixed
+r_Nz 33N 800.0 25.0  1.97900e+00 fixed
+r_Nz 34N 500.0 25.0  1.80500e+00 fixed
+r_Nz 34N 800.0 25.0  1.80500e+00 fixed
+r_Nz 35N 500.0 25.0  1.87600e+00 fixed
+r_Nz 35N 800.0 25.0  1.87600e+00 fixed
+r_Nz 36N 500.0 25.0  1.68300e+00 fixed
+r_Nz 36N 800.0 25.0  1.68300e+00 fixed
+r_Nz 37N 500.0 25.0  1.79800e+00 fixed
+r_Nz 37N 800.0 25.0  1.79800e+00 fixed
+r_Nz 49N 500.0 25.0  1.97600e+00 fixed
+r_Nz 49N 800.0 25.0  1.97600e+00 fixed
+r_Nz 52N 500.0 25.0  1.79900e+00 fixed
+r_Nz 52N 800.0 25.0  1.79900e+00 fixed
+r_Nz 53N 500.0 25.0  1.96900e+00 fixed
+r_Nz 53N 800.0 25.0  1.96900e+00 fixed
+r_Nz 8N 500.0 25.0  1.75800e+00 fixed
+r_Nz 8N 800.0 25.0  1.75800e+00 fixed
+r_Nz 9N 500.0 25.0  1.65100e+00 fixed
+r_Nz 9N 800.0 25.0  1.65100e+00 fixed

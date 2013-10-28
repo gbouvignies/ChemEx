@@ -1,0 +1,2 @@
+rm -fr output
+chemex_fit.py -e experiments/*.cfg -p parameters/params_n15.cfg -o output/ -m methods/method_n15.cfg
