@@ -341,15 +341,6 @@ examples/cest/n_iph_3st/experiments/cest_n15_500ms_26Hz.cfg
 examples/cest/n_iph_3st/input/n15_cs.txt
 examples/cest/n_iph_3st/input/n15_dw.txt
 examples/cest/n_iph_3st/methods/method_n15.cfg
-examples/cest/n_iph_3st/output/just_50/50N-HN/chi2.fit
-examples/cest/n_iph_3st/output/just_50/50N-HN/fixed_parameters.fit
-examples/cest/n_iph_3st/output/just_50/50N-HN/n_iph_3st_cest_13Hz_500ms_499MHz_1C.dat
-examples/cest/n_iph_3st/output/just_50/50N-HN/n_iph_3st_cest_13Hz_500ms_499MHz_1C.fit
-examples/cest/n_iph_3st/output/just_50/50N-HN/n_iph_3st_cest_13Hz_500ms_499MHz_1C.pdf
-examples/cest/n_iph_3st/output/just_50/50N-HN/n_iph_3st_cest_26Hz_500ms_499MHz_1C.dat
-examples/cest/n_iph_3st/output/just_50/50N-HN/n_iph_3st_cest_26Hz_500ms_499MHz_1C.fit
-examples/cest/n_iph_3st/output/just_50/50N-HN/n_iph_3st_cest_26Hz_500ms_499MHz_1C.pdf
-examples/cest/n_iph_3st/output/just_50/50N-HN/parameters.fit
 examples/cest/n_iph_3st/parameters/params_n15.cfg
 examples/cpmg/ch3_mq/run
 examples/cpmg/ch3_mq/data/600/I125CD1-I125QD1.out
@@ -510,12 +501,6 @@ examples/cpmg/n_cw/input/n15_dw.txt
 examples/cpmg/n_cw/input/n15_rNz_500.txt
 examples/cpmg/n_cw/input/n15_rNz_800.txt
 examples/cpmg/n_cw/methods/method_n15.cfg
-examples/cpmg/n_cw/output/Just32/32n-hn/N15_CW_CPMG_@_500_MHz_-_25oC.dat
-examples/cpmg/n_cw/output/Just32/32n-hn/N15_CW_CPMG_@_500_MHz_-_25oC.pdf
-examples/cpmg/n_cw/output/Just32/32n-hn/N15_CW_CPMG_@_800_MHz_-_25oC.dat
-examples/cpmg/n_cw/output/Just32/32n-hn/N15_CW_CPMG_@_800_MHz_-_25oC.pdf
-examples/cpmg/n_cw/output/Just32/32n-hn/chi2.fit
-examples/cpmg/n_cw/output/Just32/32n-hn/parameters.fit
 examples/cpmg/n_cw/parameters/params_n15.cfg
 examples/cpmg/n_fast/run
 examples/cpmg/n_fast/data/n_cpmg_500/100N-HN.out
@@ -1228,4 +1213,5 @@ examples/cpmg/n_trosy_atrosy_cw_rdc/input/n15_dw.txt
 examples/cpmg/n_trosy_atrosy_cw_rdc/input/r2HzNz.txt
 examples/cpmg/n_trosy_atrosy_cw_rdc/input/rNz.txt
 examples/cpmg/n_trosy_atrosy_cw_rdc/methods/method_n15.cfg
+examples/cpmg/n_trosy_atrosy_cw_rdc/output/17N-HN/fitting-method.cfg
 examples/cpmg/n_trosy_atrosy_cw_rdc/parameters/params_n15.cfg

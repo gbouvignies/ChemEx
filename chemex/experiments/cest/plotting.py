@@ -201,7 +201,7 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
                 ax2.set_xlim(xmin, xmax)
                 ax1.set_xlim(xmin, xmax)
-                ax1.set_title('{:s}'.format(resonance_id))
+                ax1.set_title('{:s}'.format(resonance_id.upper()))
                 ax1.set_ylabel('Residual')
 
                 fig.tight_layout()

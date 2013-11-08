@@ -125,7 +125,7 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
             ax.set_xlabel(r'$\mathregular{\nu_{CPMG}}$' + ' (Hz)')
             ax.set_ylabel(r'$\mathregular{R_{2,eff} \; (s^{-1})}$')
 
-            ax.set_title('{:s}'.format(resonance_id))
+            ax.set_title('{:s}'.format(resonance_id.upper()))
 
             pdf.savefig()
 
