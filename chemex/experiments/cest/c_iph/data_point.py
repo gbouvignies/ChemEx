@@ -23,33 +23,54 @@ TWO_PI = 2.0 * pi
 PAR_DICT = {
 
     # experimental requirements (used in __init__ and check_parameters)
-    'par_conv'  :((str  , ('resonance_id',)),
-
-                  (float, ('h_larmor_frq',
-                           'temperature',
-                           'carrier',
-                           'time_t1',
-                           'B1_frq',
-                           'B1_offset',
-                           'B1_inh',)),
-
-                  (int  , ('B1_inh_res',))),
-
-    # Some stuff to get a nice help output
-    'exp' : ('resonance_id', 'h_larmor_frq', 'temperature', 'carrier',
-             'time_t1', 'B1_frq', 'B1_offset', 'B1_inh', 'B1_inh_res'),
-
-    'fit' : ('pb', 'kex', 'dw', 'I0', 'r_Cxy', 'dr_Cxy', 'r_Cz'),
-
-    'fix' : ('cs',),
+    'par_conv': (
+        (str, (
+            'resonance_id',
+        )),
+        (float, (
+            'h_larmor_frq',
+            'temperature',
+            'carrier',
+            'time_t1',
+            'b1_frq',
+            'b1_offset',
+            'b1_inh',
+        )),
+        (int, (
+            'b1_inh_res',
+        ))
+    ),
+    'exp': (
+        'resonance_id',
+        'h_larmor_frq',
+        'temperature',
+        'carrier',
+        'time_t1',
+        'b1_frq',
+        'b1_offset',
+        'b1_inh',
+        'b1_inh_res'
+    ),
+    'fit': (
+        'pb',
+        'kex',
+        'dw',
+        'i0',
+        'r_cxy',
+        'dr_cxy',
+        'r_cz'
+    ),
+    'fix': (
+        'cs',
+    ),
 
 }
+
 
 class DataPoint(BaseDataPoint):
     """Intensity measured during a cpmg pulse train of frequency frq"""
 
     def __init__(self, val, err, par):
-
         BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
 
         self.par['ppm_to_rads'] = TWO_PI * self.par['h_larmor_frq'] * RATIO_C
@@ -65,27 +86,31 @@ class DataPoint(BaseDataPoint):
 
         self.par['_id'] = tuple((temperature, nucleus_name, h_larmor_frq))
 
-        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)  # @UndefinedVariable
+        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)
         self.calc_observable = make_calc_observable(*args)
 
         self.short_long_par_names = (
-            ('pb'    , ('pb', temperature)),
-            ('kex'   , ('kex', temperature)),
-            ('dw'    , ('dw', nucleus_name)),
-            ('cs'    , ('cs', nucleus_name, temperature)),
-            ('I0'    , ('I0', resonance_id, experiment_name)),
-            ('r_Cxy' , ('r_Cxy', nucleus_name, h_larmor_frq, temperature)),
-            ('dr_Cxy', ('dr_Cxy', nucleus_name, h_larmor_frq, temperature)),
-            ('r_Cz'  , ('r_Cz', nucleus_name, h_larmor_frq, temperature)),
+            ('pb', ('pb', temperature)),
+            ('kex', ('kex', temperature)),
+            ('dw', ('dw', nucleus_name)),
+            ('cs', ('cs', nucleus_name, temperature)),
+            ('i0', ('i0', resonance_id, experiment_name)),
+            ('r_cxy', ('r_cxy', nucleus_name, h_larmor_frq, temperature)),
+            ('dr_cxy', ('dr_cxy', nucleus_name, h_larmor_frq, temperature)),
+            ('r_cz', ('r_cz', nucleus_name, h_larmor_frq, temperature)),
         )
 
-        self.fitting_parameter_names.update(long_name
-                                            for short_name, long_name in self.short_long_par_names
-                                            if short_name in PAR_DICT['fit'])
+        self.fitting_parameter_names.update(
+            long_name
+            for short_name, long_name in self.short_long_par_names
+            if short_name in PAR_DICT['fit']
+        )
 
-        self.fixed_parameter_names.update(long_name
-                                          for short_name, long_name in self.short_long_par_names
-                                          if short_name in PAR_DICT['fix'])
+        self.fixed_parameter_names.update(
+            long_name
+            for short_name, long_name in self.short_long_par_names
+            if short_name in PAR_DICT['fix']
+        )
 
 
     def __repr__(self):
@@ -95,8 +120,8 @@ class DataPoint(BaseDataPoint):
         output.append('{resonance_id:10s}'.format(**self.par))
         output.append('{h_larmor_frq:6.1f}'.format(**self.par))
         output.append('{time_t1:6.1e}'.format(**self.par))
-        output.append('{B1_offset:9.3e}'.format(**self.par))
-        output.append('{B1_frq:6.1e}'.format(**self.par))
+        output.append('{b1_offset:9.3e}'.format(**self.par))
+        output.append('{b1_frq:6.1e}'.format(**self.par))
         output.append('{temperature:4.1f}'.format(**self.par))
         output.append('{:8.5f}'.format(self.val))
         output.append('{:8.5f}'.format(self.err))
@@ -106,10 +131,10 @@ class DataPoint(BaseDataPoint):
 
         return ' '.join(output)
 
-    def update_B1_offset(self, B1_offset):
-        """Update B1_offset value"""
+    def update_b1_offset(self, b1_offset):
+        """Update b1_offset value"""
 
-        self.par['B1_offset'] = B1_offset
-        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)  # @UndefinedVariable
+        self.par['b1_offset'] = b1_offset
+        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)
         self.calc_observable = make_calc_observable(*args)
 

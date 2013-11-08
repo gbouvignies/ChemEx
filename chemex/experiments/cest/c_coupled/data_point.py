@@ -22,58 +22,160 @@ TWO_PI = 2.0 * pi
 
 # first dictionary version
 PAR_DICT = {
-
-    # experimental requirements (used in __init__ and check_parameters)
-    'par_conv'  :((str  , ('resonance_id',)),
-
-                  (float, ('h_larmor_frq',
-                           'temperature',
-                           'carrier',
-                           'time_t1',
-                           'B1_frq',
-                           'B1_offset',
-                           'B1_inh',)),
-
-                  (int  , ('B1_inh_res',))),
-
-    # Some stuff to get a nice help output
-    'exp' : ('resonance_id', 'h_larmor_frq', 'temperature', 'carrier',
-             'time_t1', 'B1_frq', 'B1_offset', 'B1_inh', 'B1_inh_res'),
-
-    'fit' : ('pb', 'kex', 'dw', 'I0', 'r_Cxy', 'dr_Cxy', 'r_Cz'),
-
-    'fix' : ('cs',),
+    'par_conv': (
+        (str, (
+            'resonance_id',
+        )),
+        (float, (
+            'h_larmor_frq',
+            'temperature',
+            'carrier',
+            'time_t1',
+            'b1_frq',
+            'b1_offset',
+            'b1_inh',
+        )),
+        (int, (
+            'b1_inh_res',
+        ))
+    ),
+    'exp': (
+        'resonance_id',
+        'h_larmor_frq',
+        'temperature',
+        'carrier',
+        'time_t1',
+        'b1_frq',
+        'b1_offset',
+        'b1_inh',
+        'b1_inh_res',
+    ),
+    'fit': (
+        'pb',
+        'kex',
+        'dw',
+        'i0',
+        'r_cxy',
+        'dr_cxy',
+        'r_cz'
+    ),
+    'fix': (
+        'cs',
+    ),
 
 }
 
 # This is the dictionary that contains scalar coupling values affecting each nucleus
-J_COUPLINGS = {'A':{'CA':(52.0, 35.0,), 'CB':(35.0,), },
-               'C':{'CA':(52.0, 35.0,), 'CB':(35.0,), },
-               'D':{'CA':(52.0, 35.0,), 'CB':(35.0, 51.0,), },
-               'E':{'CA':(52.0, 35.0,), 'CB':(35.0, 35.0,), 'CG':(35.0, 51.0,), },
-               'F':{'CA':(52.0, 35.0,), 'CB':(35.0, 51.0,), },
-               'G':{'CA':(52.0,), },
-               'H':{'CA':(52.0, 35.0,), 'CB':(35.0, 51.0,), 'CG':(51.0, 72.0,), 'CD2':(72.0,), 'CE1':(), },
-               'I':{'CA':(52.0, 35.0,), 'CB':(35.0, 35.0, 35.0,), 'CG1':(35.0, 35.0,), 'CG2':(35.0,), 'CD1':(35.0,), },
-               'K':{'CA':(52.0, 35.0,), 'CB':(35.0, 35.0,), 'CG':(35.0, 35.0,), 'CD':(35.0, 35.0,), 'CE':(35.0,), },
-               'L':{'CA':(52.0, 35.0,), 'CB':(35.0, 35.0,), 'CG':(35.0, 35.0, 35.0,), 'CD1':(35.0,), 'CD2':(35.0,), },
-               'M':{'CA':(52.0, 35.0,), 'CB':(35.0, 35.0,), 'CG':(35.0,), 'CE':(), },
-               'N':{'CA':(52.0, 35.0,), 'CB':(35.0, 51.0,), },
-               'P':{'CA':(52.0, 35.0,), 'CB':(35.0, 35.0,), 'CG':(35.0, 35.0,), 'CD':(35.0,), },
-               'Q':{'CA':(52.0, 35.0,), 'CB':(35.0, 35.0,), 'CG':(35.0, 51.0,), },
-               'R':{'CA':(52.0, 35.0,), 'CB':(35.0, 35.0,), 'CG':(35.0, 35.0,), 'CD':(35.0,), },
-               'S':{'CA':(52.0, 35.0,), 'CB':(35.0,), },
-               'T':{'CA':(52.0, 35.0,), 'CB':(35.0, 35.0,), 'CG2':(35.0,), },
-               'V':{'CA':(52.0, 35.0,), 'CB':(35.0, 35.0, 35.0,) , 'CG1':(35.0,), 'CG2':(35.0,), },
-               'W':{'CA':(52.0, 35.0,), 'CB':(35.0, 51.0,), },
-               'Y':{'CA':(52.0, 35.0,), 'CB':(35.0, 51.0,), }, }
+J_COUPLINGS = {
+    'a': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0,),
+    },
+    'c': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0,),
+    },
+    'd': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 51.0,),
+    },
+    'e': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 35.0,),
+        'cg': (35.0, 51.0,),
+    },
+    'f': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 51.0,),
+    },
+    'g': {
+        'ca': (52.0,),
+    },
+    'h': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 51.0,),
+        'cg': (51.0, 72.0,),
+        'cd2': (72.0,),
+        'ce1': (),
+    },
+    'i': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 35.0, 35.0,),
+        'cg1': (35.0, 35.0,),
+        'cg2': (35.0,),
+        'cd1': (35.0,),
+    },
+    'k': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 35.0,),
+        'cg': (35.0, 35.0,),
+        'cd': (35.0, 35.0,),
+        'ce': (35.0,),
+    },
+    'l': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 35.0,),
+        'cg': (35.0, 35.0, 35.0,),
+        'cd1': (35.0,),
+        'cd2': (35.0,),
+    },
+    'm': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 35.0,),
+        'cg': (35.0,),
+        'ce': (),
+    },
+    'n': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 51.0,),
+    },
+    'p': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 35.0,),
+        'cg': (35.0, 35.0,),
+        'cd': (35.0,),
+    },
+    'q': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 35.0,),
+        'cg': (35.0, 51.0,),
+    },
+    'r': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 35.0,),
+        'cg': (35.0, 35.0,),
+        'cd': (35.0,),
+    },
+    's': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0,),
+    },
+    't': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 35.0,),
+        'cg2': (35.0,),
+    },
+    'v': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 35.0, 35.0,),
+        'cg1': (35.0,),
+        'cg2': (35.0,),
+    },
+    'w': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 51.0,),
+    },
+    'y': {
+        'ca': (52.0, 35.0,),
+        'cb': (35.0, 51.0,),
+    },
+}
 
 
 class DataPoint(BaseDataPoint):
     """Intensity measured during a cpmg pulse train of frequency frq"""
 
     def __init__(self, val, err, par):
-
         BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
 
         self.par['ppm_to_rads'] = TWO_PI * self.par['h_larmor_frq'] * RATIO_C
@@ -89,34 +191,37 @@ class DataPoint(BaseDataPoint):
         index, residue_type, nucleus_type = assignment[0]
         nucleus_name = residue_type + str(index) + nucleus_type
 
-        couplings = J_COUPLINGS[residue_type.upper()][nucleus_type.upper()]
+        couplings = J_COUPLINGS[residue_type][nucleus_type]
         self.par['multiplet'] = calc_multiplet(couplings)
 
         self.par['_id'] = tuple((temperature, nucleus_name, h_larmor_frq))
 
-        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)  # @UndefinedVariable
+        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)
         self.calc_observable = make_calc_observable(*args)
 
         self.short_long_par_names = (
-            ('pb'    , ('pb', temperature)),
-            ('kex'   , ('kex', temperature)),
-            ('dw'    , ('dw', nucleus_name)),
-            ('cs'    , ('cs', nucleus_name, temperature)),
-            ('I0'    , ('I0', resonance_id, experiment_name)),
-            ('r_Cxy' , ('r_Cxy', nucleus_name, h_larmor_frq, temperature)),
-            ('dr_Cxy', ('dr_Cxy', nucleus_name, h_larmor_frq, temperature)),
-            ('r_Cz'  , ('r_Cz', nucleus_name, h_larmor_frq, temperature)),
+            ('pb', ('pb', temperature)),
+            ('kex', ('kex', temperature)),
+            ('dw', ('dw', nucleus_name)),
+            ('cs', ('cs', nucleus_name, temperature)),
+            ('i0', ('i0', resonance_id, experiment_name)),
+            ('r_cxy', ('r_cxy', nucleus_name, h_larmor_frq, temperature)),
+            ('dr_cxy', ('dr_cxy', nucleus_name, h_larmor_frq, temperature)),
+            ('r_cz', ('r_cz', nucleus_name, h_larmor_frq, temperature)),
 
         )
 
-        self.fitting_parameter_names.update(long_name
-                                            for short_name, long_name in self.short_long_par_names
-                                            if short_name in PAR_DICT['fit'])
+        self.fitting_parameter_names.update(
+            long_name
+            for short_name, long_name in self.short_long_par_names
+            if short_name in PAR_DICT['fit']
+        )
 
-        self.fixed_parameter_names.update(long_name
-                                          for short_name, long_name in self.short_long_par_names
-                                          if short_name in PAR_DICT['fix'])
-
+        self.fixed_parameter_names.update(
+            long_name
+            for short_name, long_name in self.short_long_par_names
+            if short_name in PAR_DICT['fix']
+        )
 
     def __repr__(self):
         """Print the data point"""
@@ -125,8 +230,8 @@ class DataPoint(BaseDataPoint):
         output.append('{resonance_id:10s}'.format(**self.par))
         output.append('{h_larmor_frq:6.1f}'.format(**self.par))
         output.append('{time_t1:6.1e}'.format(**self.par))
-        output.append('{B1_offset:9.3e}'.format(**self.par))
-        output.append('{B1_frq:6.1e}'.format(**self.par))
+        output.append('{b1_offset:9.3e}'.format(**self.par))
+        output.append('{b1_frq:6.1e}'.format(**self.par))
         output.append('{temperature:4.1f}'.format(**self.par))
         output.append('{:8.5f}'.format(self.val))
         output.append('{:8.5f}'.format(self.err))
@@ -136,10 +241,10 @@ class DataPoint(BaseDataPoint):
 
         return ' '.join(output)
 
-    def update_B1_offset(self, B1_offset):
-        """Update B1_offset value"""
+    def update_b1_offset(self, b1_offset):
+        """update b1_offset value"""
 
-        self.par['B1_offset'] = B1_offset
-        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)  # @UndefinedVariable
+        self.par['b1_offset'] = b1_offset
+        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)
         self.calc_observable = make_calc_observable(*args)
 

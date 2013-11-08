@@ -13,7 +13,7 @@ Description: Quick install (using Mercurial)
         su -c 'yum install hg -y'
         
         
-        1) Go to a directory where you want to put the source code, 
+        1) Go to a directory where you want to put the source code,
         then execute these few commands:
         
         hg clone https://code.google.com/p/chemex/
@@ -39,8 +39,8 @@ Description: Quick install (using Mercurial)
         hg update
         
         The chemex code will only be updated (such that it can be run from any
-        directory) once you do a reinstall. This must be done in the chemex/src 
-        directory. An INSTALL file (for Linux) is provided to run the simple 
+        directory) once you do a reinstall. This must be done in the chemex/src
+        directory. An INSTALL file (for Linux) is provided to run the simple
         command (but may be expanded to run tests in the future).
         
         python setup.py install --user
@@ -50,8 +50,8 @@ Description: Quick install (using Mercurial)
         Configuring Authentication
         --------------------------
         LINUX: Once you have the clone and are added to the chemex committers, go
-        anywhere in the 'chemex' directory. This is where the hg commands should be 
-        executed. Open the hidden file .hg/hgrc in this directory and add your 
+        anywhere in the 'chemex' directory. This is where the hg commands should be
+        executed. Open the hidden file .hg/hgrc in this directory and add your
         authentication credentials below.
         
         WINDOWS 7: Open TurtoiseHg -> Synchronize (new option in the right-click
@@ -80,7 +80,7 @@ Description: Quick install (using Mercurial)
         Using Mercurial (command line)
         ------------------------------
         Aside from the first command to get the code, other commands will be
-        executed from within the chemex directory (ie. chemex, chemex/src, 
+        executed from within the chemex directory (ie. chemex, chemex/src,
         chemex/src/examples, etc.). Tutorials can be found here as well:
         
         http://mercurial.selenic.com/guide/
@@ -132,5 +132,4 @@ Description: Quick install (using Mercurial)
         
         Commit changes as you edit code, then return to the Synchronize menu at a later
         point to Push the updates.
-        
 Platform: UNKNOWN

@@ -85,7 +85,6 @@ class BaseDataPoint(object):
 # Functions
 
 def get_par(par_name, par, par_indexes, par_fixed=list()):
-
     if par_name in par_indexes:
         return par[par_indexes[par_name]]
     else:

@@ -22,7 +22,6 @@ except (KeyboardInterrupt):
 
 
 def main():
-
     writing.print_logo()
 
     args = parsing.arg_parse()
@@ -30,6 +29,10 @@ def main():
     # Don't allow simultaneous include and exclude flags
     if args.res_incl and args.res_excl:
         exit('\nCan not simultaneously include and exclude residues!\n')
+    elif args.res_incl:
+        args.res_incl = [res.lower() for res in args.res_incl]
+    elif args.res_excl:
+        args.res_excl = [res.lower() for res in args.res_excl]
 
     # Reads and stores the datasets
     data = list()
@@ -45,7 +48,7 @@ def main():
     # Residue Selection
     if args.res_incl:
         if len(args.res_incl) == 1:
-            output_dir = "/".join([output_dir, args.res_incl[0]])
+            output_dir = "/".join([output_dir, args.res_incl[0].upper()])
 
     if not data:
         exit("\nNo Data to fit!\n")
@@ -70,12 +73,11 @@ def main():
         fitting.run_fit(args.method, par, par_indexes, par_fixed, data)
 
     # Write outputs
-    print('')
-    print('Reduced chi2: {:.3e}'.format(reduced_chi2))
-    print(' -- writing good results')
+    print("")
+    print("Reduced chi2: {:.3e}".format(reduced_chi2))
+    print(" -- writing results")
     write_chi2(par, par_indexes, par_fixed, data, output_dir=output_dir)
-    writing.write_par(par, par_err, par_indexes, output_dir=output_dir)
-    writing.write_fixed_par(par_fixed, output_dir=output_dir)
+    writing.write_par(par, par_err, par_indexes, par_fixed, output_dir=output_dir)
     writing.write_dat(data, output_dir=output_dir)
 
     if not args.noplot:

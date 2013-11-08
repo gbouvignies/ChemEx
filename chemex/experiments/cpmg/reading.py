@@ -12,10 +12,10 @@ import os
 # Specialized libraries
 import numpy as np
 
-import chemex.tools as tools
+from chemex import tools
+
 
 def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None):
-
     # Reads the path to get the intensities
     exp_data_dir = tools.normalize_path(working_dir, cfg.get('path', 'exp_data_dir'))
 
@@ -25,9 +25,11 @@ def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None)
 
     for resonance_id, filename in cfg.items('data'):
 
-        included = ((res_incl is not None and resonance_id in res_incl) or
-                    (res_excl is not None and resonance_id not in res_excl) or
-                    (res_incl is None and res_excl is None))
+        included = (
+            (res_incl is not None and resonance_id in res_incl) or
+            (res_excl is not None and resonance_id not in res_excl) or
+            (res_incl is None and res_excl is None)
+        )
 
         if not included:
             continue
@@ -37,7 +39,6 @@ def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None)
         parameters['experiment_name'] = experiment_name
         parameters['resonance_id'] = resonance_id
 
-        # Get the r2 values from the fuda files containing intensities
         abs_path_filename = os.path.join(exp_data_dir, filename)
         data_points += read_a_cpmg_profile(abs_path_filename, parameters)
 
@@ -49,8 +50,8 @@ def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None)
 
     return data_points
 
-def name_experiment(global_parameters=dict()):
 
+def name_experiment(global_parameters=dict()):
     if 'experiment_name' in global_parameters:
         name = global_parameters['experiment_name'].strip().replace(' ', '_')
     else:
@@ -61,6 +62,7 @@ def name_experiment(global_parameters=dict()):
         name = '{:s}_{:.0f}MHz_{:.0f}C'.format(exp_type, h_larmor_frq, temperature)
 
     return name
+
 
 def read_a_cpmg_profile(filename, parameters):
     '''Reads in the fuda file and spit out the intensities'''
@@ -80,7 +82,6 @@ def read_a_cpmg_profile(filename, parameters):
     parameters['intensity_ref'] = intensity_ref
 
     for ncyc, intensity_val, intensity_err in data:
-
         parameters['ncyc'] = int(ncyc)
 
         # Calculate r2 uncertainty from intensity uncertainty
@@ -93,6 +94,7 @@ def read_a_cpmg_profile(filename, parameters):
         data_points.append(data_point.DataPoint(intensity_val, intensity_err, parameters))
 
     return data_points
+
 
 def estimate_uncertainty_from_duplicates(data):
     '''Estimates uncertainty using duplicate measurements'''
@@ -107,6 +109,7 @@ def estimate_uncertainty_from_duplicates(data):
                      if len(duplicates) > 1]
 
     return np.mean(intensity_std) if intensity_std else 0.0
+
 
 def adjust_min_int_uncertainty(data_int):
     '''
@@ -128,9 +131,9 @@ def adjust_min_int_uncertainty(data_int):
 
     return new_data_int
 
+
 def norm_int(data_int):
     '''Normalize intensities relative to the intensity of the reference plane'''
-
 
     new_data_int = list()
 

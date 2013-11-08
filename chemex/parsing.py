@@ -30,13 +30,18 @@ def generate_experiment_subparser(prog, subparser, exp_pkg):
         Special experiment-specific class for the parser arguments. Prints the
         nicely formatted help
         """
+
         def __call__(self, parser, namespace, values, option_string=None):
 
             try:
-                exp = __import__('.'.join(['chemex', 'experiments',
-                    exp_pkg, values, 'exp_help']), fromlist=['exp_help'])
-                dtp = __import__('.'.join(['chemex', 'experiments',
-                    exp_pkg, values, 'data_point']), fromlist=['data_point'])
+                exp = __import__(
+                    '.'.join(['chemex', 'experiments', exp_pkg, values, 'exp_help']),
+                    fromlist=['exp_help'],
+                )
+                dtp = __import__(
+                    '.'.join(['chemex', 'experiments', exp_pkg, values, 'data_point']),
+                    fromlist=['data_point'],
+                )
 
             except ImportError:
                 sys.stderr.write(
@@ -54,8 +59,9 @@ def generate_experiment_subparser(prog, subparser, exp_pkg):
             format_experiment_help(parse_line, description, reference, parameters)
 
             sys.exit(0)
-        # ## end __call__
-    # ## end HelpAction
+            # ## end __call__
+
+            # ## end HelpAction
 
     exp_class = __import__(
         ".".join(["chemex", "experiments", exp_pkg]),
@@ -95,45 +101,38 @@ def format_experiment_help(pline='unknown experiment',
                            desc='unknown experiment',
                            ref={'journal': '', 'year': 1900, 'volume': 0, 'pages': ''},
                            par={'spec': [], 'float': [], 'fix': []}):
+    headline1 = "Spectrometer parameters"
+    headline2 = "Fitted parameters"
+    headline3 = "Fixed parameters"
 
-    sys.stdout.write("""
-    ---------------------------------------------
-    {:s}
-    ---------------------------------------------
+    print(pline)
+    print("=" * len(pline))
+    print("")
+    print(desc)
+    print("")
 
-    {:s}
-
-    {:s} ({:d}) v.{:d}, p.{:s}
-
-    Spectrometer parameters
-    -----------------------
-    """.format(pline, desc, ref['journal'], ref['year'],
-                                        ref['volume'], ref['pages']))
-
+    print(headline1)
+    print("-" * len(headline1))
     for p in par['exp']:
-        sys.stdout.write('    {:s}\n'.format(p))
+        print("  * {:s}".format(p))
+    print("")
 
-    sys.stdout.write("""
-    Fitted parameters
-    -----------------\n""")
-
+    print(headline2)
+    print("-" * len(headline2))
     for p in par['fit']:
-        sys.stdout.write('    {:s}\n'.format(p))
+        print("  * {:s}".format(p))
+    print("")
 
-    if len(par['fix']):
-        sys.stdout.write("""
-    Fixed parameters
-    ----------------\n""")
+    print(headline3 + " (by default)")
+    print("-" * len(headline3))
+    for p in par['fix']:
+        print("  * {:s}".format(p))
+    print("")
 
-        for p in par['fix']:
-            sys.stdout.write('    {:s}\n'.format(p))
-
-    sys.stdout.write("\n")
 # ## end format_experiment_help
 
 ########################## THE REAL PARSER IS HERE ##########################
 def arg_parse():
-
     with_info = set(['-i', '--info']) & set(sys.argv)
 
     ######## PARSER TO GET HELP ########
@@ -172,7 +171,7 @@ def arg_parse():
     ######## PARSER TO RUN THE CALCULATION ########
     # Parses the command line
     parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
-     description="""
+                                     description="""
      ChemEx is an analysis program for chemical exchange detected by NMR. It
      is designed to take almost any kind of NMR data to aid the analysis, but
      the principle techniques are CPMG relaxation dispersion and Chemical

@@ -9,8 +9,8 @@ Created on Mar 10, 2012
 import os.path
 import sys
 
-def main():
 
+def main():
     all_examples = set()
     for exp_type in os.listdir('./'):
         if os.path.isdir(exp_type):
@@ -43,7 +43,6 @@ def main():
             errors += 1
             error_list.add(example + " : " + sys.exc_info()[1])
             pass
-
 
     if errors:
         print "\n\nSome experiments had errors:\n\n{:s}".format("\n".join(error_list))

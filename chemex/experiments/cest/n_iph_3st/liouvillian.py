@@ -12,11 +12,10 @@ from chemex.bases.three_states.iph import R_IXY, DR_IXY_AB, DR_IXY_AC, R_IZ, CS,
     DW_AB, DW_AC, KAB, KBA, KAC, KCA, KBC, KCB, W1X
 
 
-def compute_base_liouvillians(B1_offset=0.0, B1_frq=0.0, B1_inh=0.0, B1_inh_res=5):
+def compute_base_liouvillians(b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_inh_res=5):
+    w1, w1_inh, w1_offset = 2.0 * pi * asarray([b1_frq, b1_inh, b1_offset])
 
-    w1, w1_inh, w1_offset = 2.0 * pi * asarray([B1_frq, B1_inh, B1_offset])
-
-    w1s = linspace(-2.0, 2.0, B1_inh_res) * w1_inh + w1
+    w1s = linspace(-2.0, 2.0, b1_inh_res) * w1_inh + w1
     weights = norm.pdf(w1s, w1, w1_inh)
 
     liouvillians = [-w1_offset * CS + w1 * W1X
@@ -25,11 +24,11 @@ def compute_base_liouvillians(B1_offset=0.0, B1_frq=0.0, B1_inh=0.0, B1_inh_res=
     return liouvillians, weights
 
 
-def compute_liouvillian_free_precession(pb=0.0, pc=0.0, kex_ab=0.0,
-                                        kex_bc=0.0, kex_ac=0.0, dw_ab=0.0,
-                                        dw_ac=0.0, r_Nz=1.5, r_Nxy=5.0,
-                                        dr_Nxy_ab=0.0, dr_Nxy_ac=0.0,
-                                        cs_offset=0.0):
+def compute_free_liouvillian(pb=0.0, pc=0.0, kex_ab=0.0,
+                             kex_bc=0.0, kex_ac=0.0, dw_ab=0.0,
+                             dw_ac=0.0, r_nz=1.5, r_nxy=5.0,
+                             dr_nxy_ab=0.0, dr_nxy_ac=0.0,
+                             cs_offset=0.0):
     """
     Compute the exchange matrix (Liouvillian)
 
@@ -57,11 +56,11 @@ def compute_liouvillian_free_precession(pb=0.0, pc=0.0, kex_ab=0.0,
         Chemical shift difference between states A and B in rad/s.
     dw_ac : float
         Chemical shift difference between states A and C in rad/s.
-    r_Nz : float
+    r_nz : float
         Longitudinal relaxation rate of state {a,b} in /s.
-    r_Nxy : float
+    r_nxy : float
         Transverse relaxation rate of state a in /s.
-    dr_Nxy : float
+    dr_nxy : float
         Transverse relaxation rate difference between states a and b in /s.
     cs_offset : float
         Offset from the carrier in rad/s.
@@ -85,24 +84,24 @@ def compute_liouvillian_free_precession(pb=0.0, pc=0.0, kex_ab=0.0,
     kac = kex_ac * pc / (pa + pc)
     kca = kex_ac * pa / (pa + pc)
 
-    L = R_IXY * r_Nxy
-    L += DR_IXY_AB * dr_Nxy_ab
-    L += CS * cs_offset
-    L += DR_IXY_AC * dr_Nxy_ac
-    L += R_IZ * r_Nz
-    L += DW_AB * dw_ab
-    L += DW_AC * dw_ac
-    L += KAB * kab
-    L += KBA * kba
-    L += KBC * kbc
-    L += KCB * kcb
-    L += KAC * kac
-    L += KCA * kca
+    l_free = R_IXY * r_nxy
+    l_free += DR_IXY_AB * dr_nxy_ab
+    l_free += CS * cs_offset
+    l_free += DR_IXY_AC * dr_nxy_ac
+    l_free += R_IZ * r_nz
+    l_free += DW_AB * dw_ab
+    l_free += DW_AC * dw_ac
+    l_free += KAB * kab
+    l_free += KBA * kba
+    l_free += KBC * kbc
+    l_free += KCB * kcb
+    l_free += KAC * kac
+    l_free += KCA * kca
 
-    return L
+    return l_free
 
 
-def compute_Nz_eq(pb, pc):
+def compute_nz_eq(pb, pc):
     """
     Returns the equilibrium magnetization vector.
 
@@ -122,15 +121,15 @@ def compute_Nz_eq(pb, pc):
 
     """
 
-    Ieq = zeros((9, 1))
-    Ieq[2, 0] += (1.0 - pb - pc)
-    Ieq[5, 0] += pb
-    Ieq[8, 0] += pc
+    mag_eq = zeros((9, 1))
+    mag_eq[2, 0] += (1.0 - pb - pc)
+    mag_eq[5, 0] += pb
+    mag_eq[8, 0] += pc
 
-    return Ieq
+    return mag_eq
 
 
-def get_Nz(I):
+def get_nz(I):
     """
     Returns the amount of magnetization along z.
 
@@ -141,13 +140,13 @@ def get_Nz(I):
 
     Returns
     -------
-    Ia, Ib, Ic : float
+    magz_a, magz_b, magz_c : float
         Amount of magnetization in state A, B and C along z.
 
     """
 
-    Ia = I[2, 0]
-    Ib = I[5, 0]
-    Ic = I[8, 0]
+    magz_a = I[2, 0]
+    magz_b = I[5, 0]
+    magz_c = I[8, 0]
 
-    return Ia, Ib, Ic
+    return magz_a, magz_b, magz_c

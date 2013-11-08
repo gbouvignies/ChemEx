@@ -19,6 +19,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 # Constants
 linewidth = 1.5
 
+
 def plot_data(data, par, par_names, par_fixed, output_dir='./'):
     '''Plot dispersion profiles and write a pdf file'''
 
@@ -84,7 +85,6 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
                 stderr.flush()
 
                 if ncyc > 0:
-
                     cal_nus.append(ncyc / time_t2)
                     stdout.flush()
                     stderr.flush()
@@ -92,7 +92,6 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
                     cal_r2s.append(-sc.log(int_cal / int_ref) / time_t2)
                     stdout.flush()
                     stderr.flush()
-
 
             fig = plt.figure(linewidth=linewidth)
             ax = fig.add_subplot(111)

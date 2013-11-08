@@ -15,15 +15,16 @@ from chemex.caching import lru_cache
 # Constants
 SIGN = array([1.0, -1.0])
 
+
 @lru_cache()
-def correct_chemical_shift(pb=0.0, kex=0.0, dw=0.0, r_Ixy=0.0, dr_Ixy=0.0):
+def correct_chemical_shift(pb=0.0, kex=0.0, dw=0.0, r_ixy=0.0, dr_ixy=0.0):
     """Corrects major and minor peak positions in presence of exchange."""
 
     kab = kex * pb
     kba = kex - kab
 
-    k2ab = r_Ixy + kab
-    k2ba = r_Ixy + dr_Ixy - 1j * dw + kba
+    k2ab = r_ixy + kab
+    k2ba = r_ixy + dr_ixy - 1j * dw + kba
 
     k2ex = k2ab + k2ba
     fac = ((k2ab - k2ba) ** 2 + 4.0 * kab * kba) ** 0.5
@@ -36,29 +37,29 @@ def correct_chemical_shift(pb=0.0, kex=0.0, dw=0.0, r_Ixy=0.0, dr_Ixy=0.0):
     return nu1, nu2
 
 
-def correct_intensities(Ia=1.0, Ib=0.0, pb=0.0, kex=0.0, dw=0.0, r_Ixy=0.0, dr_Ixy=0.0):
+def correct_intensities(magz_a=1.0, magz_b=0.0, pb=0.0, kex=0.0, dw=0.0, r_ixy=0.0, dr_ixy=0.0):
     """Corrects major and minor peak intensities in presence of exchange."""
 
     kab = kex * pb
     kba = kex - kab
 
-    k2ab = r_Ixy + kab
-    k2ba = r_Ixy + dr_Ixy - 1j * dw + kba
+    k2ab = r_ixy + kab
+    k2ba = r_ixy + dr_ixy - 1j * dw + kba
 
     k2ex = k2ab + k2ba
     fac = ((k2ab - k2ba) ** 2 + 4.0 * kab * kba) ** 0.5
 
     nu1, nu2 = 0.5 * (-k2ex + SIGN * fac)
 
-    Ia_c = +((kab - nu2 - k2ab) * Ia + (kba + nu1 + k2ab) * Ib) / (nu1 - nu2)
-    Ib_c = -((kab - nu1 - k2ab) * Ia + (kba + nu2 + k2ab) * Ib) / (nu1 - nu2)
+    magz_a_c = +((kab - nu2 - k2ab) * magz_a + (kba + nu1 + k2ab) * magz_b) / (nu1 - nu2)
+    magz_b_c = -((kab - nu1 - k2ab) * magz_a + (kba + nu2 + k2ab) * magz_b) / (nu1 - nu2)
 
-    Ia_c, Ib_c = (Ib_c, Ia_c) if abs(nu1.imag) > abs(nu2.imag) else (Ia_c, Ib_c)
+    magz_a_c, magz_b_c = (magz_b_c, magz_a_c) if abs(nu1.imag) > abs(nu2.imag) else (magz_a_c, magz_b_c)
 
-    signa = 1.0 if abs(np.angle(Ia_c)) <= 0.5 * pi else -1.0
-    signb = 1.0 if abs(np.angle(Ib_c)) <= 0.5 * pi else -1.0
+    signa = 1.0 if abs(np.angle(magz_a_c)) <= 0.5 * pi else -1.0
+    signb = 1.0 if abs(np.angle(magz_b_c)) <= 0.5 * pi else -1.0
 
-    return signa * abs(Ia_c), signb * abs(Ib_c)
+    return signa * abs(magz_a_c), signb * abs(magz_b_c)
 
 
 def calc_peak_intensity(pb=0.0, kex=0.0, dw=0.0, intensities=list()):
@@ -67,14 +68,13 @@ def calc_peak_intensity(pb=0.0, kex=0.0, dw=0.0, intensities=list()):
     of chemical exchange.
     """
 
-    Ia, Ib = intensities
-    Ia, Ib = correct_intensities(Ia=Ia, Ib=Ib, pb=pb, kex=kex, dw=dw, r_Ixy=0.0)
+    magz_a, magz_b = intensities
+    magz_a, magz_b = correct_intensities(magz_a=magz_a, magz_b=magz_b, pb=pb, kex=kex, dw=dw, r_ixy=0.0)
 
-    return Ia
+    return magz_a
 
 
 def get_par(par_name, par, par_indexes, par_fixed=list()):
-
     if par_name in par_indexes:
         return par[par_indexes[par_name]]
     else:
@@ -82,7 +82,6 @@ def get_par(par_name, par, par_indexes, par_fixed=list()):
 
 
 def calc_multiplet(couplings=None, mult=None):
-
     if mult is None:
         mult = [0.0]
 

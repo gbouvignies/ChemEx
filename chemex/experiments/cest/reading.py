@@ -4,8 +4,6 @@ Created on Mar 30, 2011
 @author: guillaume
 """
 
-__updated__ = "2013-10-17"
-
 # Standard libraries
 import os
 
@@ -16,11 +14,10 @@ import scipy.linalg as la
 import scipy.signal as si
 import scipy.interpolate as ip
 
-import chemex.tools as tools
+from chemex import tools
 
 
 def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None):
-
     # Reads the path to get the intensities
     exp_data_dir = tools.normalize_path(working_dir, cfg.get('path', 'exp_data_dir'))
 
@@ -56,7 +53,6 @@ def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None)
 
 
 def name_experiment(global_parameters=dict()):
-
     if 'experiment_name' in global_parameters:
         name = global_parameters['experiment_name'].strip().replace(' ', '_')
 
@@ -65,36 +61,37 @@ def name_experiment(global_parameters=dict()):
         h_larmor_frq = float(global_parameters['h_larmor_frq'])
         temperature = float(global_parameters['temperature'])
 
-        if 'B1_frq' in global_parameters:
-            B1_frq = float(global_parameters['B1_frq'])
+        if 'b1_frq' in global_parameters:
+            b1_frq = float(global_parameters['b1_frq'])
 
         time_t1 = float(global_parameters['time_t1'])
 
-        name = '{:s}_{:.0f}Hz_{:.0f}ms_{:.0f}MHz_{:.0f}C'.format(exp_type, B1_frq, time_t1 * 1e3, h_larmor_frq, temperature)
+        name = '{:s}_{:.0f}Hz_{:.0f}ms_{:.0f}MHz_{:.0f}C'.format(exp_type, b1_frq, time_t1 * 1e3, h_larmor_frq,
+                                                                 temperature)
 
     return name
+
 
 def read_a_cest_profile(filename, parameters):
     """Reads in the fuda file and spit out the intensities"""
 
-    data = sc.loadtxt(filename, dtype=[('B1_offset', '<f8'), ('intensity', '<f8'), ('intensity_err', '<f8')])
+    data = sc.loadtxt(filename, dtype=[('b1_offset', '<f8'), ('intensity', '<f8'), ('intensity_err', '<f8')])
 
     uncertainty = estimate_uncertainty(data)
-#    data = find_subset(data)
+    #    data = find_subset(data)
 
     data_points = []
 
     intensity_ref = 1.0
 
-    for B1_offset, intensity_val, intensity_err in data:
-        if abs(B1_offset) >= 10000.0:
+    for b1_offset, intensity_val, intensity_err in data:
+        if abs(b1_offset) >= 10000.0:
             intensity_ref = intensity_val
 
     parameters['intensity_ref'] = intensity_ref
 
-    for B1_offset, intensity_val, intensity_err in data:
-
-        parameters['B1_offset'] = B1_offset
+    for b1_offset, intensity_val, intensity_err in data:
+        parameters['b1_offset'] = b1_offset
 
         intensity_err = uncertainty
 
@@ -111,7 +108,7 @@ def estimate_uncertainty(data):
     """Estimates uncertainty using the baseline"""
 
     data.sort()
-    int_list = sc.asarray([it for of, it , _er in data if abs(of) < 10000.0])
+    int_list = sc.asarray([it for of, it, _er in data if abs(of) < 10000.0])
 
     return estimate_noise(int_list)
 
@@ -160,7 +157,6 @@ def adjust_min_int_uncertainty(data_int):
 def norm_int(data_int):
     """Normalize intensities relative to the intensity of the reference plane"""
 
-
     new_data_int = list()
 
     for data_point in data_int:
@@ -173,7 +169,6 @@ def norm_int(data_int):
 
 
 def estimate_noise(x):
-
     n = len(x)
 
     fda = [[1, -1],

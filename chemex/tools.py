@@ -45,8 +45,7 @@ def include_selection(data, selection):
     for a_data_point in data:
 
         if ('resonance_id' in a_data_point.par and
-            a_data_point.par['resonance_id'] in selection):
-
+                    a_data_point.par['resonance_id'] in selection):
             new_data.append(a_data_point)
 
     return new_data
@@ -62,8 +61,7 @@ def exclude_selection(data, selection):
     for a_data_point in data:
 
         if ('resonance_id' in a_data_point.par and
-            a_data_point.par['resonance_id'] not in selection):
-
+                    a_data_point.par['resonance_id'] not in selection):
             new_data.append(a_data_point)
 
     if new_data == data:

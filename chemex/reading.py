@@ -9,14 +9,8 @@ import os
 import sys
 import ConfigParser
 
-from sys import exc_info
-from glob import glob
-
-# Specific libraries
 import scipy as sc
-
-# Local packages
-import chemex.tools as tools
+from chemex import tools
 
 
 def create_par_list_to_fit(par_filename, data):
@@ -88,14 +82,14 @@ def read_par(input_file, par, par_indexes, par_fixed):
 
     # Parse the config file
     parameters_cfg = ConfigParser.SafeConfigParser()
-    parameters_cfg.optionxform = str
 
     try:
         parameters_cfg.read(input_file)
     except ConfigParser.MissingSectionHeaderError:
         exit('You are missing a section heading (default?) in {:s}\n'.format(input_file))
     except ConfigParser.ParsingError:
-        exit('Having trouble reading your parameter file, have you forgotten \'=\' signs?\n{:s}'.format(exc_info()[1]))
+        exit('Having trouble reading your parameter file, have you forgotten \'=\' signs?\n{:s}'.format(
+            sys.exc_info()[1]))
 
     # Container for the default values
     starting_parameters = list()
@@ -126,7 +120,7 @@ def read_par(input_file, par, par_indexes, par_fixed):
     # Local parameters_cfg
     for section in parameters_cfg.sections():
 
-        par_name = [token.strip() for token in section.split(',')]
+        par_name = [token.lower().strip() for token in section.split(',')]
 
         if par_name[0] not in short_long_par_names:
             print(' ! [{:s}] does not match any of your data (possibly ignored above).'.format(section))
@@ -154,7 +148,7 @@ def read_par(input_file, par, par_indexes, par_fixed):
                     starting_parameters.extend(parameters)
 
                     num_items += len(parameters)
-                    for  a_par_name, _value in parameters:
+                    for a_par_name, _ in parameters:
                         if set(a_par_name) <= short_long_par_names[par_name[0]]:
                             num_updates += 1
 
@@ -196,7 +190,7 @@ def read_par(input_file, par, par_indexes, par_fixed):
         if par[index] is None:
             par_none.add(par_name_str[0])
         elif (par[index] < 0.0 and
-              par_name_str[0].startswith('r_')):
+                  par_name_str[0].startswith('r_')):
             par_ngtv.add(','.join(par_name_str))
 
     # Check that fixed parameters_cfg are all initialized
@@ -205,7 +199,7 @@ def read_par(input_file, par, par_indexes, par_fixed):
         if par_fixed[par_name] is None:
             par_none.add(par_name_str[0])
         elif (par_fixed[par_name] < 0.0 and
-              par_name_str[0].startswith('r_')):
+                  par_name_str[0].startswith('r_')):
             par_ngtv.add(','.join(par_name_str))
 
     if len(par_ngtv):
@@ -243,12 +237,11 @@ def read_parameter_file(filename, par_name):
     parameters = []
 
     for line in raw_data:
-        assignment = tools.parse_assignment(line[0])
+        assignment = tools.parse_assignment(line[0].lower())
 
         if len(assignment) == len(line) - 1:
 
             for i, (index, residue_type, nucleus_type) in enumerate(assignment):
-
                 nucleus_name = residue_type + str(index) + nucleus_type
                 full_par_name = par_name + [nucleus_name]
                 parameters.append((full_par_name, line[i + 1]))
@@ -258,7 +251,6 @@ def read_parameter_file(filename, par_name):
             full_par_name = list(par_name)
 
             for index, residue_type, nucleus_type in assignment:
-
                 nucleus_name = residue_type + str(index) + nucleus_type
                 full_par_name += [nucleus_name]
 
@@ -267,7 +259,8 @@ def read_parameter_file(filename, par_name):
         else:
 
             error_message = '\n'.join(['Problem reading the parameter file \'{}\'.'.format(filename),
-                                       'The number of columns does not match to the number of nuclei contained in the assignment:'])
+                                       'The number of columns does not match to the number of nuclei contained in the '
+                                       'assignment:'])
             exit(error_message)
 
     return parameters

@@ -19,7 +19,6 @@ def read_cfg_file(input_file, res_incl=None, res_excl=None):
 
     # Parse the config file
     cfg = ConfigParser.ConfigParser()
-    cfg.optionxform = str
     cfg.read(input_file)
 
     try:
@@ -55,8 +54,11 @@ def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None)
     exp_type = global_parameters['experiment_type']
 
     path = os.path.dirname(__file__)
-    pkgs = [modname for _, modname, ispkg in pkgutil.iter_modules([path])
-            if ispkg and modname in exp_type]
+    pkgs = [
+        modname
+        for _, modname, ispkg in pkgutil.iter_modules([path])
+        if ispkg and modname in exp_type
+    ]
 
     try:
         pkg = max(pkgs)

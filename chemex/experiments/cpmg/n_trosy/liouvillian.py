@@ -19,10 +19,9 @@ from chemex.bases.two_states.iph_aph import (R_IXY, R_2SZIXY, DR_XY,
 
 # Functions
 
-def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0, r_Nxy=5.0, dr_Nxy=0.0,
-                         r_Nz=1.5, r_2HzNz=5.0, etaxy=0.0, etaz=0.0,
-                         j_HN=-93.0, dj_HN=0.0, cs_offset=0.0, w1=0.0):
-
+def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0, r_nxy=5.0, dr_nxy=0.0,
+                         r_nz=1.5, r_2hznz=5.0, etaxy=0.0, etaz=0.0,
+                         j_hn=-93.0, dj_hn=0.0, cs_offset=0.0, w1=0.0):
     '''
     Compute the exchange matrix (Liouvillian)
 
@@ -42,21 +41,21 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0, r_Nxy=5.0, dr_Nxy=0.0,
         Exchange rate between state A and B in /s.
     dw : float
         Chemical shift difference between states A and B in rad/s.
-    r_Nz : float
+    r_nz : float
         Longitudinal relaxation rate of state {a,b} in /s.
-    r_Nxy : float
+    r_nxy : float
         Transverse relaxation rate of state a in /s.
-    dr_Nxy : float
+    dr_nxy : float
         Transverse relaxation rate difference between states a and b in /s.
-    r_2HzNz : float
+    r_2hznz : float
         2-spin order longitudinal relaxation rate in /s.
     etaxy : float
         Transverse cross-correlated relaxation rate in /s.
     etaz : float
         Longitudinal cross-correlated relaxation rate in /s.
-    j_HN : float
+    j_hn : float
         Scalar coupling between N and HN in Hz.
-    dj_HN : float
+    dj_hn : float
         Scalar coupling difference between states a and b in Hz.
     cs_offset : float
         Offset from the carrier in rad/s.
@@ -72,17 +71,17 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0, r_Nxy=5.0, dr_Nxy=0.0,
     kab = kex * pb
     kba = kex - kab
 
-    r_2HzNxy = r_Nxy + r_2HzNz - r_Nz
+    r_2HzNxy = r_nxy + r_2hznz - r_nz
 
-    l_free = R_IXY * r_Nxy
+    l_free = R_IXY * r_nxy
     l_free += R_2SZIXY * r_2HzNxy
-    l_free += DR_XY * dr_Nxy
-    l_free += R_IZ * r_Nz
-    l_free += R_2SZIZ * r_2HzNz
+    l_free += DR_XY * dr_nxy
+    l_free += R_IZ * r_nz
+    l_free += R_2SZIZ * r_2hznz
     l_free += CS * cs_offset
     l_free += DW * dw
-    l_free += J * pi * j_HN
-    l_free += DJ * pi * dj_HN
+    l_free += J * pi * j_hn
+    l_free += DJ * pi * dj_hn
     l_free += ETAXY * etaxy
     l_free += ETAZ * etaz
     l_free += KAB * kab
@@ -94,23 +93,21 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0, r_Nxy=5.0, dr_Nxy=0.0,
 
 
 def compute_2HzNz_eq(pb):
+    mag_eq = zeros((12, 1))
+    mag_eq[5, 0] += (1.0 - pb)
+    mag_eq[11, 0] += pb
 
-    Ieq = zeros((12, 1))
-    Ieq[5, 0] += (1.0 - pb)
-    Ieq[11, 0] += pb
-
-    return Ieq
+    return mag_eq
 
 
 def get_Trz(I):
+    magz_a = I[5, 0] - I[2, 0]
+    magz_b = I[11, 0] - I[8, 0]
 
-    Ia = I[5, 0] - I[2, 0]
-    Ib = I[11, 0] - I[8, 0]
-
-    return Ia, Ib
+    return magz_a, magz_b
 
 
-def compute_nh_etaz(r_Nz, ppm_to_rads):
+def compute_nh_etaz(r_nz, ppm_to_rads):
     # TODO: replace with appropriate code for HN(dip)/H(csa) calculation
     '''
     THIS IS NOT PRESENTLY IMPLEMENTED.
@@ -144,7 +141,7 @@ def compute_nh_etaz(r_Nz, ppm_to_rads):
     dd2 = dd ** 2
     ccdd = cc * dd
 
-    jwn = r_Nz / (cc2 + 0.75 * dd2)
+    jwn = r_nz / (cc2 + 0.75 * dd2)
 
     etaz = sqrt3 * geo_factor * ccdd * jwn
 

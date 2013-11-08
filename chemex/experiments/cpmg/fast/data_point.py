@@ -18,14 +18,14 @@ from .back_calculation import make_calc_observable
 PAR_DICT = {
     # experimental requirements (used in __init__ and check_parameters)
     'par_conv': (
-        (str  , ('resonance_id',)),
+        (str, ('resonance_id',)),
         (float, ('h_larmor_frq', 'temperature', 'carrier', 'time_t2',)),
-        (int  , ('ncyc',))
+        (int, ('ncyc',))
     ),
     # Some stuff to get a nice help output
     'exp': ('resonance_id', 'h_larmor_frq', 'temperature', 'time_t2', 'ncyc',),
-    'fit': ('pb', 'kex', 'dw', 'I0', 'r_Ixy',),
-    'fix': ('dr_Ixy',),
+    'fit': ('pb', 'kex', 'dw', 'i0', 'r_ixy',),
+    'fix': ('dr_ixy',),
 }
 
 
@@ -50,32 +50,32 @@ class DataPoint(BaseDataPoint):
             )
         except KeyError:
             exit("Unknown nucleus type \"{}\" for peak \"{}\" in experiment \"{}\""
-                .format(nucleus_type, resonance_id, experiment_name)
+            .format(nucleus_type, resonance_id, experiment_name)
             )
 
         self.par['_id'] = ((temperature, nucleus_name, h_larmor_frq),)
 
-        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)  # @UndefinedVariable
+        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)
         self.calc_observable = make_calc_observable(*args)
 
         self.kwargs_default = {'ncyc': self.par['ncyc']}
 
         self.short_long_par_names = (
-            ('I0'      , ('I0', resonance_id, experiment_name)),
-            ('pb'      , ('pb', temperature)),
-            ('kex'     , ('kex', temperature)),
-            ('dw'      , ('dw', nucleus_name)),
-            ('r_Ixy'   , ('r_Ixy', nucleus_name, h_larmor_frq, temperature)),
-            ('dr_Ixy'  , ('dr_Ixy', nucleus_name, h_larmor_frq, temperature)),
+            ('i0', ('i0', resonance_id, experiment_name)),
+            ('pb', ('pb', temperature)),
+            ('kex', ('kex', temperature)),
+            ('dw', ('dw', nucleus_name)),
+            ('r_ixy', ('r_ixy', nucleus_name, h_larmor_frq, temperature)),
+            ('dr_ixy', ('dr_ixy', nucleus_name, h_larmor_frq, temperature)),
         )
 
         self.fitting_parameter_names.update(long_name
-            for short_name, long_name in self.short_long_par_names
-            if short_name in PAR_DICT['fit'])
+                                            for short_name, long_name in self.short_long_par_names
+                                            if short_name in PAR_DICT['fit'])
 
         self.fixed_parameter_names.update(long_name
-            for short_name, long_name in self.short_long_par_names
-            if short_name in PAR_DICT['fix'])
+                                          for short_name, long_name in self.short_long_par_names
+                                          if short_name in PAR_DICT['fix'])
 
 
     def __repr__(self):

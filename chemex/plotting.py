@@ -4,6 +4,7 @@ Created on Oct 11, 2013
 @author: guillaume
 """
 
+
 def plot_data(data, par, par_names, par_fixed, output_dir='./'):
     """ Plot all data types """
 

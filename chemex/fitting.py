@@ -19,12 +19,10 @@ from chemex.experiments.misc import get_par
 
 
 def run_fit(fit_filename, par, par_indexes, par_fixed, data):
-
     # fit_par_file
     fit_par_file = ConfigParser.SafeConfigParser()
 
     if fit_filename:
-        fit_par_file.optionxform = str
         fit_par_file.read(fit_filename)
 
     else:
@@ -50,7 +48,8 @@ def run_fit(fit_filename, par, par_indexes, par_fixed, data):
                 sys.stdout.flush()
 
                 c_data, c_par, c_par_indexes = independent_cluster
-                c_par, c_par_err, _c_reduced_chi2 = local_minimization(c_par, c_par_indexes, par_fixed, c_data, verbose=False)
+                c_par, c_par_err, _c_reduced_chi2 = local_minimization(c_par, c_par_indexes, par_fixed, c_data,
+                                                                       verbose=False)
 
                 for par_name in c_par_indexes:
                     par[par_indexes[par_name]] = c_par[c_par_indexes[par_name]]
@@ -72,7 +71,6 @@ def local_minimization(par, par_indexes, par_fixed, data, verbose=True):
 
     if verbose:
         print('\nMinimization:\n')
-
 
     func = make_calc_residuals(verbose=verbose)
     args = (par_indexes, par_fixed, data)
@@ -141,14 +139,12 @@ def fix_par(items, par, par_indexes, par_fixed):
     updated_par_fixed = dict()
 
     for index, par_name in enumerate(fitted_pars):
-
         updated_par_indexes[par_name] = index
         updated_par.append(get_par(par_name, par, par_indexes, par_fixed))
 
     updated_par = sc.array(updated_par)
 
     for par_name in fixed_pars:
-
         updated_par_fixed[par_name] = get_par(par_name, par, par_indexes, par_fixed)
 
     return updated_par, updated_par_indexes, updated_par_fixed
@@ -164,10 +160,10 @@ def find_independent_clusters(data, par, par_indexes, par_fixed):
     fixed_par_set = set(par_fixed)
 
     data = [([data_point],
-                 (data_point.get_fitting_parameter_names()
-                  | data_point.get_fixed_parameter_names())
-                 - fixed_par_set)
-                for data_point in data]
+             (data_point.get_fitting_parameter_names()
+              | data_point.get_fixed_parameter_names())
+             - fixed_par_set)
+            for data_point in data]
 
     clusters = []
 

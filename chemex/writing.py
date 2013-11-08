@@ -4,7 +4,6 @@ Created on Mar 31, 2011
 @author: guillaume
 """
 
-# Imports
 import os
 import sys
 
@@ -48,7 +47,7 @@ def write_dat(data, output_dir='./'):
                 f.write(''.join([str(data_point), '\n']))
 
 
-def write_par(par, par_err, par_indexes, output_dir='./'):
+def write_par(par, par_err, par_indexes, par_fixed, output_dir='./'):
     """Write fitted parameters int a file"""
 
     if not par_indexes:
@@ -56,25 +55,19 @@ def write_par(par, par_err, par_indexes, output_dir='./'):
 
     filename = os.path.join(output_dir, 'parameters.fit')
 
-    with open(filename, 'w') as f:
-        for param_name, index in sorted(par_indexes.iteritems()):
-            f.write(' '.join(str(a) for a in param_name))
-            f.write(' {: .5e} {: .5e}\n'.format(par[index], par_err[index]))
-
-
-def write_fixed_par(par_fixed, output_dir='./'):
-    """Write fitted parameters int a file"""
-
-    if not par_fixed:
-        return None
-
-    filename = os.path.join(output_dir, 'fixed_parameters.fit')
+    par_names = set(par_indexes) | set(par_fixed)
 
     with open(filename, 'w') as f:
-        for param_name, val in sorted(par_fixed.iteritems()):
-            if val is None: continue
-            f.write(' '.join(str(a) for a in param_name))
-            f.write(' {: .5e} fixed\n'.format(val))
+        for par_name in sorted(par_names):
+
+            if par_name in par_indexes:
+                index = par_indexes[par_name]
+                f.write(' '.join(str(a).upper() for a in par_name))
+                f.write(' {: .5e} {: .5e}\n'.format(par[index], par_err[index]))
+
+            elif par_name in par_fixed:
+                f.write(' '.join(str(a).upper() for a in par_name))
+                f.write(' {: .5e} fixed\n'.format(par_fixed[par_name]))
 
 
 def dump_parameters(par, par_indexes, par_fixed, data):
@@ -92,13 +85,12 @@ def dump_parameters(par, par_indexes, par_fixed, data):
 
     sys.stderr.write("\n -- Writing current state to {:s}. Please wait ...".format(dump))
     try:
-        write_par(par, par, par_indexes, output_dir=dump)
-        write_fixed_par(par_fixed, output_dir=dump)
+        write_par(par, par, par_indexes, par_fixed, output_dir=dump)
         write_dat(data, output_dir=dump)
         plot_data(data, par, par_indexes, par_fixed, output_dir=dump)
     except (TypeError, ValueError):
         sys.stderr.write("\n -- Save state cancelled. Not all data could not be plotted")
-#    except (KeyboardInterrupt, SystemExit):
+    #    except (KeyboardInterrupt, SystemExit):
     except (KeyboardInterrupt, SystemExit):
         exit("\n -- Dump has received a kill signal. Stopping immediately.\n")
 

@@ -23,8 +23,8 @@ try:
 except (KeyboardInterrupt):
     exit("\n -- ChemEx killed before it could begin\n")
 
-def main():
 
+def main():
     writing.print_logo()
 
     args = parsing.arg_parse()
@@ -101,7 +101,6 @@ def main():
                 plotting.plot_data(data_mc, par_mc, par_indexes_mc, par_fixed_mc, output_dir=output_dir_)
             except (KeyboardInterrupt):
                 print('\n -- plotting cancelled')
-
 
 
 if __name__ == '__main__':

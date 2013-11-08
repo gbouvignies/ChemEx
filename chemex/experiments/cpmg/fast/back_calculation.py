@@ -15,19 +15,17 @@ from .liouvillian import compute_Iy_eq, compute_liouvillians, get_Iy
 
 # Local Modules
 @lru_cache()
-def make_calc_observable(pw=0.0, time_t2=0.0, ppm_to_rads=1.0, _id=None):
+def make_calc_observable(time_t2=0.0, ppm_to_rads=1.0, _id=None):
     """
     Factory to make "calc_observable" function to calculate the intensity in presence
     of exchange after a CEST block.
 
     Parameters
     ----------
-    pw : float
-        Pulse width for a 90 degree pulse.
-    time_T2 : float
-        Time of the CPMG block.
+    time_t2 : float
+        Time of the CPMG block
     ncyc : integer
-        Number of cycles, t-180-2t-180-t.
+        Number of cycles, [t-180-2t-180-t]*n
     id : tuple
         Some type of identification for caching optimization
 
@@ -39,16 +37,13 @@ def make_calc_observable(pw=0.0, time_t2=0.0, ppm_to_rads=1.0, _id=None):
     """
 
     @lru_cache(100)
-    def _calc_observable(pb=0.0, kex=0.0, dw=0.0, r_Ixy=5.0, dr_Ixy=0.0, ncyc=0):
+    def _calc_observable(pb=0.0, kex=0.0, dw=0.0, r_ixy=5.0, dr_ixy=0.0, ncyc=0):
         '''
         Calculate the intensity in presence of exchange during a cpmg-type pulse train.
-                _______________________________________________________________________
-        1H :   |  /   /   /   /   /   /   /   /   CW   /   /   /   /   /   /   /   /   |
-        15N:    Nx { tauc  2Ny  tauc }*ncyc 2Nx { tauc  2Ny  tauc }*ncyc -Nx time_equil
 
         Parameters
         ----------
-        I0 : float
+        i0 : float
             Initial intensity.
         pb : float
             Fractional population of state B,
@@ -57,9 +52,9 @@ def make_calc_observable(pw=0.0, time_t2=0.0, ppm_to_rads=1.0, _id=None):
             Exchange rate between state A and B in /s.
         dw : float
             Chemical shift difference between states A and B in rad/s.
-        r_Ixy : float
+        r_ixy : float
             Transverse relaxation rate of state a in /s.
-        dr_Ixy : float
+        dr_ixy : float
             Transverse relaxation rate difference between states a and b in /s.
 
         Returns
@@ -71,33 +66,33 @@ def make_calc_observable(pw=0.0, time_t2=0.0, ppm_to_rads=1.0, _id=None):
 
         dw *= ppm_to_rads
 
-        Ieq = compute_Iy_eq(pb)
+        mag_eq = compute_Iy_eq(pb)
 
         if ncyc == 0:
 
-            I = Ieq
+            I = mag_eq
 
         else:
 
             l_free = compute_liouvillians(pb=pb, kex=kex, dw=dw,
-                                          r_Ixy=r_Ixy, dr_Ixy=dr_Ixy)
+                                          r_ixy=r_ixy, dr_ixy=dr_ixy)
 
             t_cp = time_t2 / (4.0 * ncyc)
             p_free = expm(l_free * t_cp)
 
-            I = matrix_power(p_free.dot(P_180Y).dot(p_free), 2 * ncyc).dot(Ieq)
+            I = matrix_power(p_free.dot(P_180Y).dot(p_free), 2 * ncyc).dot(mag_eq)
 
-        Ia, _Ib = get_Iy(I)
+        magy_a, _ = get_Iy(I)
 
-        return Ia
+        return magy_a
 
-    def calc_observable(I0=0.0, **kwargs):
+    def calc_observable(i0=0.0, **kwargs):
         """
         Calculate the intensity in presence of exchange after a CEST block.
 
         Parameters
         ----------
-        I0 : float
+        i0 : float
             Initial intensity.
 
         Returns
@@ -107,6 +102,6 @@ def make_calc_observable(pw=0.0, time_t2=0.0, ppm_to_rads=1.0, _id=None):
 
         """
 
-        return I0 * _calc_observable(**kwargs)
+        return i0 * _calc_observable(**kwargs)
 
     return calc_observable

@@ -10,7 +10,7 @@ from chemex.bases.two_states.fast import R_IXY, DR_IXY, DW, KAB, KBA
 
 
 def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0,
-                         r_Ixy=5.0, dr_Ixy=0.0):
+                         r_ixy=5.0, dr_ixy=0.0):
     """
     Compute the exchange matrix (Liouvillian)
 
@@ -29,11 +29,11 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0,
         Exchange rate between state A and B in /s.
     dw : float
         Chemical shift difference between states A and B in rad/s.
-    r_Nz : float
+    r_nz : float
         Longitudinal relaxation rate of state {a,b} in /s.
-    r_Nxy : float
+    r_nxy : float
         Transverse relaxation rate of state a in /s.
-    dr_Nxy : float
+    dr_nxy : float
         Transverse relaxation rate difference between states a and b in /s.
     cs_offset : float
         Offset from the carrier in rad/s.
@@ -49,8 +49,8 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0,
     kab = kex * pb
     kba = kex - kab
 
-    l_free = R_IXY * r_Ixy
-    l_free += DR_IXY * dr_Ixy
+    l_free = R_IXY * r_ixy
+    l_free += DR_IXY * dr_ixy
     l_free += DW * dw
     l_free += KAB * kab
     l_free += KBA * kba
@@ -75,11 +75,11 @@ def compute_Iy_eq(pb):
 
     """
 
-    Ieq = zeros((4, 1))
-    Ieq[1, 0] += (1.0 - pb)
-    Ieq[3, 0] += pb
+    mag_eq = zeros((4, 1))
+    mag_eq[1, 0] += (1.0 - pb)
+    mag_eq[3, 0] += pb
 
-    return Ieq
+    return mag_eq
 
 
 def get_Iy(I):
@@ -93,13 +93,13 @@ def get_Iy(I):
 
     Returns
     -------
-    Ia, Ib : float
+    magy_a, magy_b : float
         Amount of magnetization in state a and b along z.
 
     """
 
-    Ia = I[1, 0]
-    Ib = I[3, 0]
+    magy_a = I[1, 0]
+    magy_b = I[3, 0]
 
-    return Ia, Ib
+    return magy_a, magy_b
 

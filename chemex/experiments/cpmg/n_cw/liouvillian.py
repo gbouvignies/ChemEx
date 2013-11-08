@@ -14,7 +14,7 @@ from chemex.bases.two_states.iph import (R_IXY, DR_IXY, R_IZ,
 
 
 def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0,
-                         r_Nz=1.5, r_Nxy=5.0, dr_Nxy=0.0,
+                         r_nz=1.5, r_nxy=5.0, dr_nxy=0.0,
                          cs_offset=0.0, w1=0.0):
     """
     Compute the exchange matrix (Liouvillian)
@@ -34,11 +34,11 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0,
         Exchange rate between state A and B in /s.
     dw : float
         Chemical shift difference between states A and B in rad/s.
-    r_Nz : float
+    r_nz : float
         Longitudinal relaxation rate of state {a,b} in /s.
-    r_Nxy : float
+    r_nxy : float
         Transverse relaxation rate of state a in /s.
-    dr_Nxy : float
+    dr_nxy : float
         Transverse relaxation rate difference between states a and b in /s.
     cs_offset : float
         Offset from the carrier in rad/s.
@@ -54,9 +54,9 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0,
     kab = kex * pb
     kba = kex - kab
 
-    l_free = R_IXY * r_Nxy
-    l_free += DR_IXY * dr_Nxy
-    l_free += R_IZ * r_Nz
+    l_free = R_IXY * r_nxy
+    l_free += DR_IXY * dr_nxy
+    l_free += R_IZ * r_nz
     l_free += CS * cs_offset
     l_free += DW * dw
     l_free += KAB * kab
@@ -67,7 +67,7 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0,
     return l_free, l_w1x, l_w1y
 
 
-def compute_Nz_eq(pb):
+def compute_nz_eq(pb):
     """
     Returns the equilibrium magnetization vector.
 
@@ -84,14 +84,14 @@ def compute_Nz_eq(pb):
 
     """
 
-    Ieq = zeros((6, 1))
-    Ieq[2, 0] += (1.0 - pb)
-    Ieq[5, 0] += pb
+    mag_eq = zeros((6, 1))
+    mag_eq[2, 0] += (1.0 - pb)
+    mag_eq[5, 0] += pb
 
-    return Ieq
+    return mag_eq
 
 
-def get_Nz(I):
+def get_nz(I):
     """
     Returns the amount of magnetization along z.
 
@@ -102,13 +102,13 @@ def get_Nz(I):
 
     Returns
     -------
-    Ia, Ib : float
+    magz_a, magz_b : float
         Amount of magnetization in state a and b along z.
 
     """
 
-    Ia = I[2, 0]
-    Ib = I[5, 0]
+    magz_a = I[2, 0]
+    magz_b = I[5, 0]
 
-    return Ia, Ib
+    return magz_a, magz_b
 

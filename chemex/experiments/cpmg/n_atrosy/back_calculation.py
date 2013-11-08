@@ -43,16 +43,16 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
     """
 
     @lru_cache(1)
-    def make_propagators(pb=0.0, kex=0.0, dw=0.0, r_Nxy=5.0, dr_Nxy=0.0,
-                         r_Nz=1.5, r_2HzNz=0.0, etaxy=0.0, etaz=0.0,
-                         j_HN=0.0, dj_HN=0.0, cs_offset=0.0):
+    def make_propagators(pb=0.0, kex=0.0, dw=0.0, r_nxy=5.0, dr_nxy=0.0,
+                         r_nz=1.5, r_2hznz=0.0, etaxy=0.0, etaz=0.0,
+                         j_hn=0.0, dj_hn=0.0, cs_offset=0.0):
 
         w1 = 2.0 * pi / (4.0 * pw)
         l_free, l_w1x, l_w1y = compute_liouvillians(pb=pb, kex=kex, dw=dw,
-                                                    r_Nxy=r_Nxy, dr_Nxy=dr_Nxy,
-                                                    r_Nz=r_Nz, r_2HzNz=r_2HzNz,
+                                                    r_nxy=r_nxy, dr_nxy=dr_nxy,
+                                                    r_nz=r_nz, r_2hznz=r_2hznz,
                                                     etaxy=etaxy, etaz=etaz,
-                                                    j_HN=j_HN, dj_HN=dj_HN,
+                                                    j_hn=j_hn, dj_hn=dj_hn,
                                                     cs_offset=cs_offset, w1=w1)
 
         p_equil = expm(l_free * time_equil)
@@ -73,8 +73,8 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
         return l_free, ps
 
     @lru_cache(100)
-    def _calc_observable(pb=0.0, kex=0.0, dw=0.0, r_Nxy=5.0, dr_Nxy=0.0, r_Nz=1.5,
-                         r_2HzNz=0.0, etaxy=0.0, etaz=0.0, j_HN=0.0, dj_HN=0.0,
+    def _calc_observable(pb=0.0, kex=0.0, dw=0.0, r_nxy=5.0, dr_nxy=0.0, r_nz=1.5,
+                         r_2hznz=0.0, etaxy=0.0, etaz=0.0, j_hn=0.0, dj_hn=0.0,
                          cs=0.0, ncyc=0):
         '''
         Calculate the intensity in presence of exchange during a cpmg-type pulse train.
@@ -84,7 +84,7 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
 
         Parameters
         ----------
-        I0 : float
+        i0 : float
             Initial intensity.
         pb : float
             Fractional population of state B,
@@ -93,11 +93,11 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
             Exchange rate between state A and B in /s.
         dw : float
             Chemical shift difference between states A and B in rad/s.
-        r_Nz : float
+        r_nz : float
             Longitudinal relaxation rate of state {a,b} in /s.
-        r_Nxy : float
+        r_nxy : float
             Transverse relaxation rate of state a in /s.
-        dr_Nxy : float
+        dr_nxy : float
             Transverse relaxation rate difference between states a and b in /s.
         cs_offset : float
             Offset from the carrier in rad/s.
@@ -109,25 +109,24 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
         '''
 
         dw *= ppm_to_rads
-        cs_offset = (cs - carrier) * ppm_to_rads - pi * j_HN
+        cs_offset = (cs - carrier) * ppm_to_rads - pi * j_hn
 
+        etaz_calc = compute_nh_etaz(r_nz, ppm_to_rads) * 0.0
 
-        etaz_calc = compute_nh_etaz(r_Nz, ppm_to_rads) * 0.0
-
-        l_free, ps = make_propagators(pb=pb, kex=kex, dw=dw, r_Nxy=r_Nxy, dr_Nxy=dr_Nxy,
-                                      r_Nz=r_Nz, r_2HzNz=r_2HzNz, etaxy=etaxy, etaz=etaz_calc,
-                                      j_HN=j_HN, dj_HN=dj_HN, cs_offset=cs_offset)
+        l_free, ps = make_propagators(pb=pb, kex=kex, dw=dw, r_nxy=r_nxy, dr_nxy=dr_nxy,
+                                      r_nz=r_nz, r_2hznz=r_2hznz, etaxy=etaxy, etaz=etaz_calc,
+                                      j_hn=j_hn, dj_hn=dj_hn, cs_offset=cs_offset)
 
         (p_equil, p_neg, p_90px, p_90py, p_90mx,
          p_90my, p_180px, p_180py, p_element) = ps
 
-        Ieq = compute_2HzNz_eq(pb)
+        mag_eq = compute_2HzNz_eq(pb)
 
         if ncyc == 0:
 
             # The +/- phase cycling of the first 90 and the receiver is taken care
             # by setting the thermal equilibrium to 0
-            I = -reduce(dot, [p_equil, p_90py, p_element, p_90px, Ieq])
+            I = -reduce(dot, [p_equil, p_90py, p_element, p_90px, mag_eq])
 
         else:
 
@@ -139,19 +138,19 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
                                   p_90mx.dot(p_element).dot(p_90my))
 
             I = -reduce(dot, [p_equil, p_90py, p_neg, p_cpx, p_neg, p_element_pc,
-                              p_neg, p_cpy, p_neg, p_90px, Ieq])
+                              p_neg, p_cpy, p_neg, p_90px, mag_eq])
 
-        Ia, _Ib = get_ATrz(I)
+        magz_a, _magz_b = get_ATrz(I)
 
-        return Ia
+        return magz_a
 
-    def calc_observable(I0=0.0, **kwargs):
+    def calc_observable(i0=0.0, **kwargs):
         """
         Calculate the intensity in presence of exchange after a CEST block.
 
         Parameters
         ----------
-        I0 : float
+        i0 : float
             Initial intensity.
 
         Returns
@@ -161,7 +160,7 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
 
         """
 
-        return I0 * _calc_observable(**kwargs)
+        return i0 * _calc_observable(**kwargs)
 
     return calc_observable
 
