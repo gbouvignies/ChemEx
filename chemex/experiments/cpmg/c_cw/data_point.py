@@ -1,8 +1,8 @@
-'''
+"""
 Created on Aug 5, 2011
 
 @author: guillaume
-'''
+"""
 
 from inspect import getargspec
 from scipy import pi
@@ -20,30 +20,50 @@ RATIO_N = gamma_ratio['C']
 PAR_DICT = {
 
     # experimental requirements (used in __init__ and check_parameters)
-    'par_conv': ((str, ('resonance_id',)),
-
-                 (float, ('h_larmor_frq',
-                          'temperature',
-                          'carrier',
-                          'time_t2',
-                          'pw',
-                          'time_equil')),
-
-                 (int, ('ncyc',))),
-
-    # Some stuff to get a nice help output
-    'exp': ('resonance_id', 'h_larmor_frq', 'temperature', 'carrier',
-            'time_t2', 'time_equil', 'pw', 'ncyc'),
-
-    'fit': ('pb', 'kex', 'dw', 'i0', 'r_nxy'),
-
-    'fix': ('r_nz', 'dr_nxy', 'cs'),
+    'par_conv': (
+        (str, (
+            'resonance_id',
+        )),
+        (float, (
+            'h_larmor_frq',
+            'temperature',
+            'carrier',
+            'time_t2',
+            'pw',
+            'time_equil',
+        )),
+        (int, (
+            'ncyc',
+        ))
+    ),
+    'exp': (
+        'resonance_id',
+        'h_larmor_frq',
+        'temperature',
+        'carrier',
+        'time_t2',
+        'time_equil',
+        'pw',
+        'ncyc',
+    ),
+    'fit': (
+        'pb',
+        'kex',
+        'dw',
+        'i0',
+        'r_nxy',
+    ),
+    'fix': (
+        'r_nz',
+        'dr_nxy',
+        'cs',
+    ),
 
 }
 
 
 class DataPoint(BaseDataPoint):
-    '''Intensity measured during a cpmg pulse train of frequency frq'''
+    """Intensity measured during a cpmg pulse train of frequency frq"""
 
     def __init__(self, val, err, par):
         BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
@@ -66,14 +86,16 @@ class DataPoint(BaseDataPoint):
 
         self.kwargs_default = {'ncyc': self.par['ncyc']}
 
-        self.short_long_par_names = (('i0', ('i0', resonance_id, experiment_name)),
-                                     ('pb', ('pb', temperature)),
-                                     ('kex', ('kex', temperature)),
-                                     ('dw', ('dw', nucleus_name)),
-                                     ('cs', ('cs', nucleus_name, temperature)),
-                                     ('r_nxy', ('r_nxy', nucleus_name, h_larmor_frq, temperature)),
-                                     ('dr_nxy', ('dr_nxy', nucleus_name, h_larmor_frq, temperature)),
-                                     ('r_nz', ('r_nz', nucleus_name, h_larmor_frq, temperature)),)
+        self.short_long_par_names = (
+            ('i0', ('i0', resonance_id, experiment_name)),
+            ('pb', ('pb', temperature)),
+            ('kex', ('kex', temperature)),
+            ('dw', ('dw', nucleus_name)),
+            ('cs', ('cs', nucleus_name, temperature)),
+            ('r_nxy', ('r_nxy', nucleus_name, h_larmor_frq, temperature)),
+            ('dr_nxy', ('dr_nxy', nucleus_name, h_larmor_frq, temperature)),
+            ('r_nz', ('r_nz', nucleus_name, h_larmor_frq, temperature)),
+        )
 
         self.fitting_parameter_names.update(
             long_name
@@ -88,7 +110,7 @@ class DataPoint(BaseDataPoint):
         )
 
     def __repr__(self):
-        '''Print the data point'''
+        """Print the data point"""
 
         output = list()
         output.append('{resonance_id:6s}'.format(**self.par))

@@ -1,8 +1,8 @@
-'''
+"""
 Created on Sep 1, 2011
 
 @author: guillaume
-'''
+"""
 
 from scipy import zeros
 

@@ -1,135 +1,162 @@
-'''
+"""
 Created on Apr 1, 2011
 
 @author: guillaume
-'''
+"""
 
-# Standard Libraries
 import os
-import re
-from sys import stdout, stderr
 
-# Specialized Libraries
 import scipy as sc
 import scipy.stats as stats
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from matplotlib.backends.backend_pdf import PdfPages
+from chemex.tools import parse_assignment
 
 # Constants
-linewidth = 1.5
+linewidth = 1.0
+
+
+def set_lim(values, scale):
+    """Provides a range that contains all the value and adds a margin."""
+
+    v_min, v_max = min(values), max(values)
+    margin = (v_max - v_min) * scale
+    v_min, v_max = v_min - margin, v_max + margin
+
+    return v_min, v_max
+
+
+def group_data(dataset):
+    """Groups the data resonance specifically"""
+
+    grouped_dataset = dict()
+
+    for a_data in dataset:
+        resonance_id = a_data.par['resonance_id']
+
+        assignment = parse_assignment(resonance_id)
+        index = assignment[0][0]
+
+        grouped_dataset.setdefault((index, resonance_id), []).append(a_data)
+
+    return grouped_dataset
+
+
+def make_val_for_plot(residue_dataset, par, par_names, par_fixed):
+    """Creates the arrays that will be used to plot one profile"""
+
+    mag_ref = sc.mean([point.val for point in residue_dataset if point.par['ncyc'] == 0])
+
+    values = []
+
+    for point in residue_dataset:
+
+        ncyc = point.par['ncyc']
+
+        if ncyc:
+            time_t2 = point.par['time_t2']
+            mag_exp = point.val
+            mag_err = point.err
+
+            frq = ncyc / time_t2
+
+            r2_exp = -sc.log(point.val / mag_ref) / time_t2
+
+            mag_dist = sc.random.normal(mag_exp, mag_err, 1000.0)
+            r2_dist = -sc.log(mag_dist / mag_ref) / time_t2
+            r2_err_down = abs(stats.scoreatpercentile(r2_dist, 15.9) - r2_exp)
+            r2_err_up = abs(stats.scoreatpercentile(r2_dist, 84.1) - r2_exp)
+
+            point.calc_val(par, par_names, par_fixed)
+            r2_cal = -sc.log(point.cal / mag_ref) / time_t2
+
+            values.append((frq, r2_exp, r2_err_down, r2_err_up, r2_cal))
+
+    xe, ye, ede, eue, yc = zip(*sorted(values))
+
+    return xe, ye, ede, eue, yc
 
 
 def plot_data(data, par, par_names, par_fixed, output_dir='./'):
-    '''Plot dispersion profiles and write a pdf file'''
+    """Plot dispersion profiles and write a multi-page pdf file"""
 
     datasets = dict()
 
     for data_point in data:
-        if 'cpmg' in data_point.par['experiment_type']:
-            experiment_name = data_point.par['experiment_name']
-            datasets.setdefault(experiment_name, list()).append(data_point)
+        experiment_name = data_point.par['experiment_name']
+        datasets.setdefault(experiment_name, list()).append(data_point)
 
     for experiment_name, dataset in datasets.iteritems():
+
+        ###### Matplotlib ######
 
         filename = ''.join([experiment_name, '.pdf'])
         filename = os.path.join(output_dir, filename)
 
-        exp_ints = dict()
-        cal_ints = dict()
+        print("     * {}".format(filename))
 
-        for a_data_point in dataset:
-            resonance_id = a_data_point.par['resonance_id']
-            ncyc = a_data_point.par['ncyc']
-            time_t2 = a_data_point.par['time_t2']
+        ########################
 
-            a_data_point.calc_val(par, par_names, par_fixed)
-
-            exp_ints.setdefault(resonance_id, list()).append((ncyc, time_t2, a_data_point.val, a_data_point.err))
-            cal_ints.setdefault(resonance_id, list()).append((ncyc, time_t2, a_data_point.cal))
-
-        exp_r2s = dict()
+        grouped_dataset = group_data(dataset)
 
         pdf = PdfPages(filename)
 
-        index_id = [(int(re.findall(r'\d+', resonance_id)[0]), resonance_id)
-                    for resonance_id, ints in exp_ints.iteritems()]
+        for (_index, resonance_id), residue_dataset in sorted(grouped_dataset.iteritems()):
+            out = make_val_for_plot(residue_dataset, par, par_names, par_fixed)
+            xe, ye, ede, eue, yc = out
 
-        for _, resonance_id in sorted(index_id):
+            ###### Matplotlib ######
 
-            ints = exp_ints[resonance_id]
-            ints.sort()
-            int_ref = ints[0][2]
-
-            exp_nus, exp_r2s, down_r2s, up_r2s = [], [], [], []
-
-            for ncyc, time_t2, int_val, int_err in sorted(ints):
-                if ncyc > 0:
-                    r2_val = -sc.log(int_val / int_ref) / time_t2
-
-                    int_val_dist = sc.random.normal(int_val, int_err, 1000.0)
-                    r2_val_dist = -sc.log(int_val_dist / int_ref) / time_t2
-
-                    r2_err_down = abs(stats.scoreatpercentile(r2_val_dist, 15.9) - r2_val)
-                    r2_err_up = abs(stats.scoreatpercentile(r2_val_dist, 84.1) - r2_val)
-
-                    exp_nus.append(ncyc / time_t2)
-                    exp_r2s.append(r2_val)
-                    down_r2s.append(r2_err_down)
-                    up_r2s.append(r2_err_up)
-
-            cal_nus, cal_r2s = [], []
-
-            for ncyc, time_t2, int_cal in sorted(cal_ints[resonance_id]):
-                stdout.flush()
-                stderr.flush()
-
-                if ncyc > 0:
-                    cal_nus.append(ncyc / time_t2)
-                    stdout.flush()
-                    stderr.flush()
-
-                    cal_r2s.append(-sc.log(int_cal / int_ref) / time_t2)
-                    stdout.flush()
-                    stderr.flush()
-
-            fig = plt.figure(linewidth=linewidth)
+            fig = plt.figure(1, linewidth=linewidth, figsize=(6, 4.5))
             ax = fig.add_subplot(111)
 
-            ax.plot(cal_nus, cal_r2s, '-', color='0.5', linewidth=linewidth)
+            ########################
 
-            ax.errorbar(exp_nus, exp_r2s, [down_r2s, up_r2s],
-                        fmt='ro',
-                        linewidth=linewidth,
-                        markerfacecolor='w',
-                        markeredgewidth=linewidth,
-                        markeredgecolor='r',
-                        barsabove=False)
+            ax.plot(
+                xe, yc, '-',
+                color='0.5',
+                linewidth=linewidth
+            )
 
-            ax.tick_params(length=2, top=False, right=False)
+            ax.errorbar(
+                xe, ye, ede, eue, 'ro',
+                linewidth=linewidth,
+                markersize=5.0,
+                markerfacecolor='w',
+                markeredgewidth=linewidth,
+                markeredgecolor='r'
+            )
 
-            xmin, xmax = min(cal_nus), max(cal_nus)
-            xmargin = (xmax - xmin) * 0.05
-            ax.set_xlim(max([0, xmin - xmargin]), xmax + xmargin)
+            upper_vals = list(sc.array(ye) + sc.array(eue))
+            lower_vals = list(sc.array(ye) - sc.array(ede))
+            all_vals = upper_vals + lower_vals + list(yc)
 
-            ymin = min([min(sc.array(exp_r2s) - sc.array(down_r2s)), min(cal_r2s)])
-            ymax = max([max(sc.array(exp_r2s) + sc.array(up_r2s)), max(cal_r2s)])
-            ymargin = (ymax - ymin) * 0.05
-            ax.set_ylim(ymin - ymargin, ymax + ymargin)
+            xmin, xmax = set_lim(xe, 0.05)
+            ymin, ymax = set_lim(all_vals, 0.05)
 
-            ax.xaxis.set_major_locator(MaxNLocator(5))
+            ax.set_xlim(xmin, xmax)
+            ax.set_ylim(ymin, ymax)
+
+            ax.tick_params(length=3, top=True, right=False, labelsize=10)
+
+            ax.xaxis.set_major_locator(MaxNLocator(6))
             ax.yaxis.set_major_locator(MaxNLocator(6))
 
-            ax.set_xlim([0.0, ax.get_xlim()[1]])
-
             ax.set_xlabel(r'$\mathregular{\nu_{CPMG}}$' + ' (Hz)')
-            ax.set_ylabel(r'$\mathregular{R_{2,eff} \; (s^{-1})}$')
+            ax.set_ylabel(r'$\mathregular{R_{2,eff}}$ ($\mathregular{s^{-1}}$)')
 
             ax.set_title('{:s}'.format(resonance_id.upper()))
 
+            fig.tight_layout()
+
+            ########################
+
             pdf.savefig()
+            plt.close()
+
+            ########################
 
         pdf.close()
-        plt.close()
 
     return

@@ -118,3 +118,12 @@ def parse_group_name(g):
         return int(s.group()), g[:s.start()]
     return g, None
 
+
+def make_dir(path=None):
+    """Make the directory if needed"""
+
+    if not os.path.exists(path):
+        try:
+            os.makedirs(path)
+        except OSError:
+            exit("\nOSError: You can not use that directory!\n")

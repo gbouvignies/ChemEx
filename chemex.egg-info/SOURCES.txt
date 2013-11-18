@@ -493,14 +493,18 @@ examples/cpmg/n_cw/data/n_cw_cpmg_800/7N-HN.out
 examples/cpmg/n_cw/data/n_cw_cpmg_800/8N-HN.out
 examples/cpmg/n_cw/data/n_cw_cpmg_800/9N-HN.out
 examples/cpmg/n_cw/experiments/n15_cw_500.cfg
-examples/cpmg/n_cw/experiments/n15_cw_500.cfg~
 examples/cpmg/n_cw/experiments/n15_cw_800.cfg
-examples/cpmg/n_cw/experiments/n15_cw_800.cfg~
 examples/cpmg/n_cw/input/n15_cs.txt
 examples/cpmg/n_cw/input/n15_dw.txt
 examples/cpmg/n_cw/input/n15_rNz_500.txt
 examples/cpmg/n_cw/input/n15_rNz_800.txt
 examples/cpmg/n_cw/methods/method_n15.cfg
+examples/cpmg/n_cw/output/Just32/32N-HN/N15_CW_CPMG_@_500_MHz_-_25oC.dat
+examples/cpmg/n_cw/output/Just32/32N-HN/N15_CW_CPMG_@_800_MHz_-_25oC.dat
+examples/cpmg/n_cw/output/Just32/32N-HN/chi2.fit
+examples/cpmg/n_cw/output/Just32/32N-HN/parameters.fit
+examples/cpmg/n_cw/output/Just32/32N-HN/plots/N15_CW_CPMG_@_500_MHz_-_25oC.pdf
+examples/cpmg/n_cw/output/Just32/32N-HN/plots/N15_CW_CPMG_@_800_MHz_-_25oC.pdf
 examples/cpmg/n_cw/parameters/params_n15.cfg
 examples/cpmg/n_fast/run
 examples/cpmg/n_fast/data/n_cpmg_500/100N-HN.out
@@ -1213,5 +1217,4 @@ examples/cpmg/n_trosy_atrosy_cw_rdc/input/n15_dw.txt
 examples/cpmg/n_trosy_atrosy_cw_rdc/input/r2HzNz.txt
 examples/cpmg/n_trosy_atrosy_cw_rdc/input/rNz.txt
 examples/cpmg/n_trosy_atrosy_cw_rdc/methods/method_n15.cfg
-examples/cpmg/n_trosy_atrosy_cw_rdc/output/17N-HN/fitting-method.cfg
 examples/cpmg/n_trosy_atrosy_cw_rdc/parameters/params_n15.cfg

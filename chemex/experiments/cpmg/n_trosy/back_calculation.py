@@ -1,8 +1,8 @@
-'''
+"""
 Created on Aug 15, 2011
 
 @author: guillaume
-'''
+"""
 
 # Python Modules
 from scipy import pi, dot
@@ -76,7 +76,7 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
     def _calc_observable(pb=0.0, kex=0.0, dw=0.0, r_nxy=5.0, dr_nxy=0.0, r_nz=1.5,
                          r_2hznz=0.0, etaxy=0.0, etaz=0.0, j_hn=0.0, dj_hn=0.0,
                          cs=0.0, ncyc=0):
-        '''
+        """
         Calculate the intensity in presence of exchange during a cpmg-type pulse train.
                 _______________________________________________________________________
         1H :   |  /   /   /   /   /   /   /   /   CW   /   /   /   /   /   /   /   /   |
@@ -106,7 +106,7 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
         out : float
             Intensity after the CPMG block
 
-        '''
+        """
 
         dw *= ppm_to_rads
         cs_offset = (cs - carrier) * ppm_to_rads + pi * j_hn

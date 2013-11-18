@@ -4,10 +4,8 @@ Created on Apr 1, 2011
 @author: guillaume
 """
 
-# Import
 import os
 
-# Specialized Libraries
 from scipy import linspace, asarray, median, pi
 
 import matplotlib.pyplot as plt
@@ -18,24 +16,30 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 from chemex.tools import parse_assignment
 
+
 # Constants
 linewidth = 1.0
 
 
 def sigma_estimator(x):
     """ Estimates standard deviation using median to exclude outliers. Up to 50% can be bad """
+
     return median([median(abs(xi - asarray(x))) for xi in x]) * 1.1926
 
 
-def set_lim(x, scale):
-    xmin, xmax = min(x), max(x)
-    xmargin = (xmax - xmin) * scale
-    xmin, xmax = xmin - xmargin, xmax + xmargin
+def set_lim(values, scale):
+    """Provides a range that contains all the value and adds a margin."""
 
-    return xmin, xmax
+    v_min, v_max = min(values), max(values)
+    margin = (v_max - v_min) * scale
+    v_min, v_max = v_min - margin, v_max + margin
+
+    return v_min, v_max
 
 
 def group_data(dataset):
+    """Groups the data resonance specifically"""
+
     grouped_dataset = dict()
 
     for a_data in dataset:
@@ -53,6 +57,8 @@ def group_data(dataset):
 
 
 def make_val_for_plot(residue_dataset, par, par_names, par_fixed, fileout):
+    """Creates the arrays that will be used to plot one profile"""
+
     values = []
 
     for point in residue_dataset:
@@ -89,14 +95,13 @@ def make_val_for_plot(residue_dataset, par, par_names, par_fixed, fileout):
 
 
 def plot_data(data, par, par_names, par_fixed, output_dir='./'):
-    """Plot dispersion profiles and write a pdf file"""
+    """Plot cest profiles and write a pdf file"""
 
     datasets = dict()
 
     for data_point in data:
-        if 'cest' in data_point.par['experiment_type']:
-            experiment_name = data_point.par['experiment_name']
-            datasets.setdefault(experiment_name, []).append(data_point)
+        experiment_name = data_point.par['experiment_name']
+        datasets.setdefault(experiment_name, []).append(data_point)
 
     for experiment_name, dataset in datasets.iteritems():
 
@@ -106,6 +111,8 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
         filename_calc = ''.join([experiment_name, '.fit'])
         filename_calc = os.path.join(output_dir, filename_calc)
+
+        print("     * {}/.fit".format(filename))
 
         ########################
 

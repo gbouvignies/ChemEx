@@ -1,8 +1,8 @@
-'''
+"""
 Created on Aug 5, 2011
 
 @author: guillaume
-'''
+"""
 
 from inspect import getargspec
 from scipy import pi
@@ -30,7 +30,7 @@ PAR_DICT = {
 
 
 class DataPoint(BaseDataPoint):
-    '''Intensity measured during a cpmg pulse train of frequency frq'''
+    """Intensity measured during a cpmg pulse train of frequency frq"""
 
     def __init__(self, val, err, par):
 
@@ -79,7 +79,7 @@ class DataPoint(BaseDataPoint):
 
 
     def __repr__(self):
-        '''Print the data point'''
+        """Print the data point"""
 
         output = list()
         output.append('{resonance_id:6s}'.format(**self.par))
