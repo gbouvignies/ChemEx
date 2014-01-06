@@ -5,12 +5,10 @@ Created on Sep 1, 2011
 """
 
 # Imports
-from scipy import (zeros,
-                   asarray)
+from scipy import zeros, asarray
 
-from chemex.bases.two_states.iph import (R_IXY, DR_IXY, R_IZ,
-                                         CS, DW, KAB, KBA, W1X,
-                                         W1Y)
+from chemex.bases.two_states.iph import \
+    R_IXY, DR_IXY, R_IZ, CS, DW, KAB, KBA, W1X, W1Y
 
 
 def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0,

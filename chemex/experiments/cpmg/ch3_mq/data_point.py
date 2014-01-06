@@ -1,8 +1,9 @@
-"""
-Created on Aug 5, 2011
+'''
+Created on Feb 23, 2012
 
-@author: guillaume
-"""
+@author: Mike Latham
+@author: Guillaume Bouvignies
+'''
 
 from inspect import getargspec
 from scipy import pi
@@ -13,37 +14,37 @@ from chemex.constants import gamma_ratio
 from .back_calculation import make_calc_observable
 from ..plotting import plot_data
 
-# Constants
+#Constants
 TWO_PI = 2.0 * pi
-RATIO_N = gamma_ratio['N']
+RATIO = gamma_ratio['C']
 
 PAR_DICT = {
     'par_conv': (
-        (str, ('resonance_id',)),
-        (float, ('h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'pw', 'taub', 'time_equil')),
+        (str, ('resonance_id', 'smallflg')),
+        (float, ('h_larmor_frq', 'temperature', 'carrier_h', 'carrier_c', 'time_t2')),
         (int, ('ncyc',))
     ),
     'exp': (
-        'resonance_id', 'h_larmor_frq', 'temperature', 'carrier',
-        'time_t2', 'time_equil', 'pw', 'taub', 'ncyc',
+        'resonance_id', 'smallflg', 'h_larmor_frq', 'temperature',
+        'carrier_c', 'carrier_h', 'time_t2', 'ncyc'
     ),
     'fit': (
-        'pb', 'pc', 'kex_ab', 'kex_bc', 'dw_ab', 'dw_ac', 'i0', 'r_nxy'
+        'pb', 'kex', 'dwC', 'dwH', 'I0', 'r_MQ'
     ),
     'fix': (
-        'kex_ac', 'r_nz', 'dr_nxy_ab', 'dr_nxy_ac', 'r_2hznz',
-        'etaxy', 'etaz', 'cs', 'j_hn', 'dj_hn_ab', 'dj_hn_ac',
+        'csC', 'csH'
     ),
 }
 
 
 class DataPoint(BaseDataPoint):
-    """Intensity measured during a cpmg pulse train of frequency frq"""
+    '''Intensity measured during a cpmg pulse train of frequency frq'''
 
     def __init__(self, val, err, par):
         BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
 
-        self.par['ppm_to_rads'] = TWO_PI * self.par['h_larmor_frq'] * RATIO_N
+        self.par['ppm_to_rads_h'] = TWO_PI * self.par['h_larmor_frq']
+        self.par['ppm_to_rads_c'] = TWO_PI * self.par['h_larmor_frq'] * RATIO
 
         temperature = self.par['temperature']
         resonance_id = self.par['resonance_id']
@@ -69,24 +70,13 @@ class DataPoint(BaseDataPoint):
 
         self.short_long_par_names = (
             ('pb', ('pb', temperature)),
-            ('pc', ('pc', temperature)),
-            ('kex_ab', ('kex_ab', temperature)),
-            ('kex_bc', ('kex_bc', temperature)),
-            ('kex_ac', ('kex_ac', temperature)),
-            ('dw_ab', ('dw_ab', nucleus_name_1)),
-            ('dw_ac', ('dw_ac', nucleus_name_1)),
-            ('cs', ('cs', nucleus_name_1, temperature)),
+            ('kex', ('kex', temperature)),
+            ('csC', ('cs', nucleus_name_1, temperature)),
+            ('csH', ('cs', nucleus_name_2, temperature)),
+            ('dwc', ('dw', nucleus_name_1, temperature)),
+            ('dwh', ('dw', nucleus_name_2, temperature)),
             ('i0', ('i0', resonance_id, experiment_name)),
-            ('r_nxy', ('r_nxy', nucleus_name_1, h_larmor_frq, temperature)),
-            ('dr_nxy_ab', ('dr_nxy_ab', nucleus_name_1, h_larmor_frq, temperature)),
-            ('dr_nxy_ac', ('dr_nxy_ac', nucleus_name_1, h_larmor_frq, temperature)),
-            ('r_nz', ('r_nz', nucleus_name_1, h_larmor_frq, temperature)),
-            ('r_2hznz', ('r_2hznz', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
-            ('etaxy', ('etaxy', nucleus_name_1, h_larmor_frq, temperature)),
-            ('etaz', ('etaz', nucleus_name_1, h_larmor_frq, temperature)),
-            ('j_hn', ('j_hn', nucleus_name_1, nucleus_name_2, temperature)),
-            ('dj_hn_ab', ('dj_hn_ab', nucleus_name_1, nucleus_name_2, temperature)),
-            ('dj_hn_ac', ('dj_hn_ac', nucleus_name_1, nucleus_name_2, temperature)),
+            ('r_mq', ('r_mq', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
         )
 
         self.fitting_parameter_names.update(
@@ -101,20 +91,22 @@ class DataPoint(BaseDataPoint):
             if short_name in PAR_DICT['fix']
         )
 
+
     def __repr__(self):
-        """Print the data point"""
+        '''Print the data point'''
 
         output = list()
-        output.append('{resonance_id:6s}'.format(**self.par))
+        output.append('{resonance_id1:6s}'.format(**self.par))
+        output.append('{resonance_id2:6s}'.format(**self.par))
         output.append('{h_larmor_frq:6.1f}'.format(**self.par))
         output.append('{time_t2:6.1e}'.format(**self.par))
         output.append('{ncyc:4d}'.format(**self.par))
         output.append('{temperature:4.1f}'.format(**self.par))
-        output.append('{:8.5f}'.format(self.val))
-        output.append('{:8.5f}'.format(self.err))
+        output.append('{smallflg:3s}'.format(**self.par))
+        output.append('{:10.5f}'.format(self.val))
+        output.append('{:10.5f}'.format(self.err))
 
         if self.cal:
-            output.append('{:8.3f}'.format(self.cal))
+            output.append('{:10.5f}'.format(self.cal))
 
         return ' '.join(output)
-
