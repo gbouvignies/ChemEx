@@ -6,10 +6,10 @@ Created on Feb 22, 2012
 '''
 
 from scipy import mat, zeros
-from chemex.bases.two_states.mq import R_MQ, DR_MQ, DWI, DWS, KAB, KBA
+from chemex.bases.two_states.mq import R_2HXYCXY, DR_2HXYCXY, DWI, DWS, KAB, KBA
 
 
-def compute_liouvillian(pb=0.0, kex=0.0, dwc=0.0, dwh=0.0, r_mq=10.0, dr_mq=0.0):
+def compute_liouvillian(pb=0.0, kex=0.0, dwc=0.0, dwh=0.0, r_2hxycxy=10.0, dr_2hxycxy=0.0):
     '''
     Compute the exchange matrix (Liouvillian).
 
@@ -28,9 +28,9 @@ def compute_liouvillian(pb=0.0, kex=0.0, dwc=0.0, dwh=0.0, r_mq=10.0, dr_mq=0.0)
         Carbon chemical shift difference between states A and B in rad/s
     dwh : float
         Proton chemical shift difference between states A and B in rad/s
-    r_mq : float
+    r_2hxycxy : float
         Multiple quantum relaxation rate in /s
-    dr_mq : float
+    dr_2hxycxy : float
         Multiple quantum relaxation rate difference between A and B in /s
 
     Returns
@@ -44,8 +44,8 @@ def compute_liouvillian(pb=0.0, kex=0.0, dwc=0.0, dwh=0.0, r_mq=10.0, dr_mq=0.0)
     kab = kex * pb
     kba = kex * (1.0 - pb)
 
-    l_free = R_MQ * r_mq
-    l_free += DR_MQ * dr_mq
+    l_free = R_2HXYCXY * r_2hxycxy
+    l_free += DR_2HXYCXY * dr_2hxycxy
     l_free += DWI * dwh
     l_free += DWS * dwc
     l_free += KAB * kab

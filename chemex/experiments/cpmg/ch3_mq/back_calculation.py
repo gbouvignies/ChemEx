@@ -56,7 +56,7 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads_h=1.0, ppm_to_rads_c=1.0, smal
         make_propagators = lru_cache(1)(compute_liouvillian)
 
         @lru_cache(100)
-        def _calc_observable(pb=0.0, kex=0.0, dwh=0.0, dwc=0.0, r_mq=5.0, dr_mq=0.0, ncyc=0):
+        def _calc_observable(pb=0.0, kex=0.0, dwh=0.0, dwc=0.0, r_2hxycxy=5.0, dr_2hxycxy=0.0, ncyc=0):
             """
             Calculate the intensity in presence of exchange during a cpmg-type pulse
             train. Based on the sequence "hmqc_CH3_exchange_bigprotein_600_lek_v2.c".
@@ -79,9 +79,9 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads_h=1.0, ppm_to_rads_c=1.0, smal
                 Proton chemical shift difference between states A and B in ppm
             dwc : float
                 Carbon chemical shift difference between states A and B in ppm
-            r_mq : float
+            r_2hxycxy : float
                 Multiple quantum relaxation rate in /s
-            dr_mq : float
+            dr_2hxycxy : float
                 Multiple quantum relaxation rate difference between a and b in /s
             smallflg: string ['y', 'n']
                Flag to include small_protein_flg block in fitting
@@ -97,7 +97,7 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads_h=1.0, ppm_to_rads_c=1.0, smal
             dwc *= ppm_to_rads_c
 
             l_free = make_propagators(
-                pb=pb, kex=kex, dwh=dwh, dwc=dwc, r_mq=r_mq, dr_mq=dr_mq,
+                pb=pb, kex=kex, dwh=dwh, dwc=dwc, r_2hxycxy=r_2hxycxy, dr_2hxycxy=dr_2hxycxy,
             )
 
             mag_eq = compute_2hxcy_eq(pb)
@@ -120,10 +120,10 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads_h=1.0, ppm_to_rads_c=1.0, smal
     else:
 
         @lru_cache(1)
-        def make_propagators(pb=0.0, kex=0.0, dwh=0.0, dwc=0.0, r_mq=5.0, dr_mq=0.0):
+        def make_propagators(pb=0.0, kex=0.0, dwh=0.0, dwc=0.0, r_2hxycxy=5.0, dr_2hxycxy=0.0):
 
             l_free = compute_liouvillian(
-                pb=pb, kex=kex, dwh=dwh, dwc=dwc, r_mq=r_mq, dr_mq=dr_mq,
+                pb=pb, kex=kex, dwh=dwh, dwc=dwc, r_2hxycxy=r_2hxycxy, dr_2hxycxy=dr_2hxycxy,
             )
 
             p_zeta = expm(l_free * 1.0 / (8.0 * 125.3))
@@ -131,7 +131,7 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads_h=1.0, ppm_to_rads_c=1.0, smal
             return l_free, p_zeta
 
         @lru_cache(100)
-        def _calc_observable(pb=0.0, kex=0.0, dwh=0.0, dwc=0.0, r_mq=5.0, dr_mq=0.0, ncyc=0):
+        def _calc_observable(pb=0.0, kex=0.0, dwh=0.0, dwc=0.0, r_2hxycxy=5.0, dr_2hxycxy=0.0, ncyc=0):
             """
             Calculate the intensity in presence of exchange during a cpmg-type pulse
             train. Based on the sequence "hmqc_CH3_exchange_bigprotein_600_lek_v2.c".
@@ -154,9 +154,9 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads_h=1.0, ppm_to_rads_c=1.0, smal
                 Proton chemical shift difference between states A and B in ppm
             dwc : float
                 Carbon chemical shift difference between states A and B in ppm
-            r_mq : float
+            r_2hxycxy : float
                 Multiple quantum relaxation rate in /s
-            dr_mq : float
+            dr_2hxycxy : float
                 Multiple quantum relaxation rate difference between a and b in /s
             smallflg: string ['y', 'n']
                Flag to include small_protein_flg block in fitting
@@ -172,7 +172,7 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads_h=1.0, ppm_to_rads_c=1.0, smal
             dwc *= ppm_to_rads_c
 
             l_free, p_zeta = make_propagators(
-                pb=pb, kex=kex, dwh=dwh, dwc=dwc, r_mq=r_mq, dr_mq=dr_mq,
+                pb=pb, kex=kex, dwh=dwh, dwc=dwc, r_2hxycxy=r_2hxycxy, dr_2hxycxy=dr_2hxycxy,
             )
 
             mag_eq = compute_2hxcy_eq(pb)

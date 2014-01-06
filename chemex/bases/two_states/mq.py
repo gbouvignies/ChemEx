@@ -16,7 +16,7 @@ __B, _AB = (
 )
 
 # Auto-relaxation rates
-R_MQ, DR_MQ = (
+R_2HXYCXY, DR_2HXYCXY = (
     kron(_AB, -eye(4)),
     kron(__B, -eye(4)),
 )
@@ -24,8 +24,8 @@ R_MQ, DR_MQ = (
 _CS = [[+0.0, -1.0],
        [+1.0, +0.0]]
 
-DWI = kron(__B, kron(eye(2), _CS))
-DWS = kron(__B, kron(_CS, eye(2)))
+DWI = kron(__B, kron(_CS, eye(2)))
+DWS = kron(__B, kron(eye(2), _CS))
 
 # Exchange rates
 KAB = kron([[-1.0, 0.0],

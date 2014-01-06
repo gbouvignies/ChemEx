@@ -21,18 +21,17 @@ RATIO = gamma_ratio['C']
 PAR_DICT = {
     'par_conv': (
         (str, ('resonance_id', 'smallflg')),
-        (float, ('h_larmor_frq', 'temperature', 'carrier_h', 'carrier_c', 'time_t2')),
+        (float, ('h_larmor_frq', 'temperature', 'time_t2')),
         (int, ('ncyc',))
     ),
     'exp': (
-        'resonance_id', 'smallflg', 'h_larmor_frq', 'temperature',
-        'carrier_c', 'carrier_h', 'time_t2', 'ncyc'
+        'resonance_id', 'smallflg', 'h_larmor_frq', 'temperature', 'time_t2', 'ncyc'
     ),
     'fit': (
-        'pb', 'kex', 'dwC', 'dwH', 'I0', 'r_MQ'
+        'i0', 'pb', 'kex', 'dwc', 'dwh', 'r_2hxycxy'
     ),
     'fix': (
-        'csC', 'csH'
+        'dr_2hxycxy',
     ),
 }
 
@@ -74,8 +73,8 @@ class DataPoint(BaseDataPoint):
             ('dwc', ('dw', nucleus_name_1, temperature)),
             ('dwh', ('dw', nucleus_name_2, temperature)),
             ('i0', ('i0', resonance_id, experiment_name)),
-            ('r_mq', ('r_mq', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
-            ('dr_mq', ('dr_mq', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
+            ('r_2hxycxy', ('r_2hxycxy', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
+            ('dr_2hxycxy', ('dr_2hxycxy', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
         )
 
         self.fitting_parameter_names.update(
@@ -95,8 +94,7 @@ class DataPoint(BaseDataPoint):
         '''Print the data point'''
 
         output = list()
-        output.append('{resonance_id1:6s}'.format(**self.par))
-        output.append('{resonance_id2:6s}'.format(**self.par))
+        output.append('{resonance_id:6s}'.format(**self.par))
         output.append('{h_larmor_frq:6.1f}'.format(**self.par))
         output.append('{time_t2:6.1e}'.format(**self.par))
         output.append('{ncyc:4d}'.format(**self.par))

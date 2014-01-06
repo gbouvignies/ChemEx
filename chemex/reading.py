@@ -137,7 +137,7 @@ def read_par(input_file, par, par_indexes, par_fixed):
 
         for key, val in parameters_cfg.items(section):
 
-            if key >= 'file':
+            if 'file' in key:
 
                 filenames = val.strip('\n ').split('\n')
 

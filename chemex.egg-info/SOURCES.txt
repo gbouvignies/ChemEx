@@ -26,6 +26,7 @@ chemex/bases/two_states/__init__.py
 chemex/bases/two_states/fast.py
 chemex/bases/two_states/iph.py
 chemex/bases/two_states/iph_aph.py
+chemex/bases/two_states/mq.py
 chemex/experiments/__init__.py
 chemex/experiments/base_data_point.py
 chemex/experiments/misc.py
@@ -68,6 +69,11 @@ chemex/experiments/cpmg/c_cw/back_calculation.py
 chemex/experiments/cpmg/c_cw/data_point.py
 chemex/experiments/cpmg/c_cw/exp_help.py
 chemex/experiments/cpmg/c_cw/liouvillian.py
+chemex/experiments/cpmg/ch3_mq/__init__.py
+chemex/experiments/cpmg/ch3_mq/back_calculation.py
+chemex/experiments/cpmg/ch3_mq/data_point.py
+chemex/experiments/cpmg/ch3_mq/exp_help.py
+chemex/experiments/cpmg/ch3_mq/liouvillian.py
 chemex/experiments/cpmg/fast/__init__.py
 chemex/experiments/cpmg/fast/back_calculation.py
 chemex/experiments/cpmg/fast/data_point.py
