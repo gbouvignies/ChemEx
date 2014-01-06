@@ -71,12 +71,11 @@ class DataPoint(BaseDataPoint):
         self.short_long_par_names = (
             ('pb', ('pb', temperature)),
             ('kex', ('kex', temperature)),
-            ('csC', ('cs', nucleus_name_1, temperature)),
-            ('csH', ('cs', nucleus_name_2, temperature)),
             ('dwc', ('dw', nucleus_name_1, temperature)),
             ('dwh', ('dw', nucleus_name_2, temperature)),
             ('i0', ('i0', resonance_id, experiment_name)),
             ('r_mq', ('r_mq', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
+            ('dr_mq', ('dr_mq', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
         )
 
         self.fitting_parameter_names.update(

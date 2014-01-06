@@ -28,24 +28,23 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0,
     Parameters
     ----------
     pb : float
-        Fractional population of state B.
-        0.0 for 0%, 1.0 for 100%.
+        Fractional population of state b
     kex : float
-        Exchange rate between state A and B in /s.
+        Exchange rate between state a and b in /s
     dw : float
-        Chemical shift difference between states A and B in rad/s.
+        Chemical shift difference between states a and b in rad/s
     r_cz : float
-        Longitudinal relaxation rate of state {a,b} in /s.
+        Longitudinal relaxation rate of state {a,b} in /s
     r_cxy : float
-        Transverse relaxation rate of state a in /s.
+        Transverse relaxation rate of state a in /s
     dr_cxy : float
-        Transverse relaxation rate difference between states a and b in /s.
+        Transverse relaxation rate difference between states a and b in /s
     cs_offset : float
-        Offset from the carrier in rad/s.
+        Offset from the carrier in rad/s
 
     Returns
     -------
-    out: numpy.matrix
+    out : numpy.ndarray
         Liouvillian describing free precession of one
         isolated spin in presence of two-site exchange.
 
