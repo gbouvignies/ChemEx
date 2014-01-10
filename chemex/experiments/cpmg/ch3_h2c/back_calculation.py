@@ -84,8 +84,8 @@ def make_calc_observable(pw=0.0, time_t2=0.0, ppm_to_rads=1.0, carrier=0.0, taub
         return l_free, ps
 
     @lru_cache(100)
-    def _calc_observable(pb=0.0, kex=0.0, dw=0.0, r_nxy=5.0, dr_nxy=0.0, r_nz=1.5,
-                         r_2hznz=0.0, etaxy=0.0, etaz=0.0, j_hn=0.0, cs=0.0, ncyc=0):
+    def _calc_observable(pb=0.0, kex=0.0, dw=0.0, r_cxy=5.0, dr_cxy=0.0, r_cz=1.5,
+                         r_2hzcz=0.0, etaxy=0.0, etaz=0.0, j_hc=0.0, cs=0.0, ncyc=0):
         """
         Calculate the intensity in presence of exchange during a cpmg-type pulse train.
                 _______________________________________________________________________
@@ -128,13 +128,13 @@ def make_calc_observable(pw=0.0, time_t2=0.0, ppm_to_rads=1.0, carrier=0.0, taub
             pb=pb,
             kex=kex,
             dw=dw,
-            r_cxy=r_nxy,
-            dr_cxy=dr_nxy,
-            r_cz=r_nz,
-            r_2hzcz=r_2hznz,
+            r_cxy=r_cxy,
+            dr_cxy=dr_cxy,
+            r_cz=r_cz,
+            r_2hzcz=r_2hzcz,
             etaxy=etaxy,
             etaz=etaz,
-            j_hc=j_hn,
+            j_hc=j_hc,
             cs_offset=cs_offset
         )
 

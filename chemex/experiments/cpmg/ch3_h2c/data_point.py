@@ -25,7 +25,7 @@ PAR_DICT = {
     ),
     'exp': ('resonance_id', 'h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'pw', 'taub', 'ncyc'),
     'fit': ('pb', 'kex', 'dw', 'i0', 'r_cxy'),
-    'fix': ('r_cz', 'dr_cxy', 'r_2hzcz', 'etaxy', 'etaz', 'cs', 'j_hn'),
+    'fix': ('r_cz', 'dr_cxy', 'r_2hzcz', 'etaxy', 'etaz', 'cs', 'j_hc'),
 }
 
 
@@ -61,14 +61,13 @@ class DataPoint(BaseDataPoint):
             ('dw', ('dw', nucleus_name_1)),
             ('cs', ('cs', nucleus_name_1, temperature)),
             ('i0', ('i0', resonance_id, experiment_name)),
-            ('r_cxy', ('r_nxy', nucleus_name_1, h_larmor_frq, temperature)),
-            ('dr_cxy', ('dr_nxy', nucleus_name_1, h_larmor_frq, temperature)),
-            ('r_cz', ('r_nz', nucleus_name_1, h_larmor_frq, temperature)),
-            ('r_2hznz', ('r_2hznz', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
+            ('r_cxy', ('r_cxy', nucleus_name_1, h_larmor_frq, temperature)),
+            ('dr_cxy', ('dr_cxy', nucleus_name_1, h_larmor_frq, temperature)),
+            ('r_cz', ('r_cz', nucleus_name_1, h_larmor_frq, temperature)),
+            ('r_2hzcz', ('r_2hzcz', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
             ('etaxy', ('etaxy', nucleus_name_1, h_larmor_frq, temperature)),
             ('etaz', ('etaz', nucleus_name_1, h_larmor_frq, temperature)),
-            ('j_hn', ('j_hn', nucleus_name_1, nucleus_name_2, temperature)),
-            ('dj_hn', ('dj_hn', nucleus_name_1, nucleus_name_2, temperature)),
+            ('j_hc', ('j_hc', nucleus_name_1, nucleus_name_2, temperature)),
         )
 
         self.fitting_parameter_names.update(

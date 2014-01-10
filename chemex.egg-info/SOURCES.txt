@@ -69,6 +69,11 @@ chemex/experiments/cpmg/c_cw/back_calculation.py
 chemex/experiments/cpmg/c_cw/data_point.py
 chemex/experiments/cpmg/c_cw/exp_help.py
 chemex/experiments/cpmg/c_cw/liouvillian.py
+chemex/experiments/cpmg/ch3_h2c/__init__.py
+chemex/experiments/cpmg/ch3_h2c/back_calculation.py
+chemex/experiments/cpmg/ch3_h2c/data_point.py
+chemex/experiments/cpmg/ch3_h2c/exp_help.py
+chemex/experiments/cpmg/ch3_h2c/liouvillian.py
 chemex/experiments/cpmg/ch3_mq/__init__.py
 chemex/experiments/cpmg/ch3_mq/back_calculation.py
 chemex/experiments/cpmg/ch3_mq/data_point.py

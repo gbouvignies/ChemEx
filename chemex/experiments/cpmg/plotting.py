@@ -9,12 +9,13 @@ import os
 import scipy as sc
 import scipy.stats as stats
 import matplotlib.pyplot as plt
+
 from matplotlib.ticker import MaxNLocator
 from matplotlib.backends.backend_pdf import PdfPages
 from chemex.tools import parse_assignment
 
 # Constants
-linewidth = 1.0
+LINNEWIDTH = 1.0
 
 
 def set_lim(values, scale):
@@ -108,7 +109,7 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
             ###### Matplotlib ######
 
-            fig = plt.figure(1, linewidth=linewidth, figsize=(6, 4.5))
+            fig = plt.figure(1, linewidth=LINNEWIDTH, figsize=(6, 4.5))
             ax = fig.add_subplot(111)
 
             ########################
@@ -116,15 +117,15 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
             ax.plot(
                 xe, yc, '-',
                 color='0.5',
-                linewidth=linewidth
+                linewidth=LINNEWIDTH
             )
 
             ax.errorbar(
-                xe, ye, ede, eue, 'ro',
-                linewidth=linewidth,
+                xe, ye, yerr=[ede, eue], fmt='ro',
+                linewidth=LINNEWIDTH,
                 markersize=5.0,
                 markerfacecolor='w',
-                markeredgewidth=linewidth,
+                markeredgewidth=LINNEWIDTH,
                 markeredgecolor='r'
             )
 
