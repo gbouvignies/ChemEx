@@ -70,7 +70,7 @@ def make_calc_observable(pw=0.0, time_t2=0.0, ppm_to_rads=1.0, carrier=0.0, taub
         )
 
         p_neg = expm(l_free * -2.0 * pw / pi)
-        p_taub = expm(l_free * (taub - 2.0 * pw - 2.0 * pw / pi))
+        p_taub = expm(l_free * taub)
         p_90px = expm((l_free + l_w1x) * pw)
         p_90py = expm((l_free + l_w1y) * pw)
         p_90mx = expm((l_free - l_w1x) * pw)
