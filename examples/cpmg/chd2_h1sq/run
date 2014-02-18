@@ -1,0 +1,2 @@
+rm -fr output
+chemex_fit.py -e experiments/chd2_h1sq_*.cfg -p parameters/params_chd2_h1sq.cfg -m methods/method_chd2.cfg -o output

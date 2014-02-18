@@ -1,0 +1,2 @@
+rm -fr output
+./bin/chemex_fit.py -e experiments/* -p parameters/* -m methods/* -o output
