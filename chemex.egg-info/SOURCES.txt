@@ -398,14 +398,6 @@ examples/cpmg/ch3_mq/output/plots/ch3_mq_cpmg_600MHz_18C.pdf
 examples/cpmg/ch3_mq/output/plots/ch3_mq_cpmg_800MHz_18C.pdf
 examples/cpmg/ch3_mq/parameters/params_ch3_mq.cfg
 examples/cpmg/chd2_h1sq/run
-examples/cpmg/chd2_h1sq/chemex_dump.0/CHD2_H1_SQ_CPMG_@_600_MHz_18oC.dat
-examples/cpmg/chd2_h1sq/chemex_dump.0/CHD2_H1_SQ_CPM_@_800_MHz-18oC.dat
-examples/cpmg/chd2_h1sq/chemex_dump.0/CHD2_H1_SQ_CPM_@_800_MHz-18oC.pdf
-examples/cpmg/chd2_h1sq/chemex_dump.0/parameters.fit
-examples/cpmg/chd2_h1sq/chemex_dump.1/CHD2_H1_SQ_CPMG_@_600_MHz_18oC.dat
-examples/cpmg/chd2_h1sq/chemex_dump.1/CHD2_H1_SQ_CPM_@_800_MHz-18oC.dat
-examples/cpmg/chd2_h1sq/chemex_dump.1/CHD2_H1_SQ_CPM_@_800_MHz-18oC.pdf
-examples/cpmg/chd2_h1sq/chemex_dump.1/parameters.fit
 examples/cpmg/chd2_h1sq/data/600/I100CD1-I100QD1.out
 examples/cpmg/chd2_h1sq/data/600/I27CD1-I27QD1.out
 examples/cpmg/chd2_h1sq/data/600/L69CD1-L69QD1.out
@@ -420,7 +412,6 @@ examples/cpmg/chd2_h1sq/input/13C_R1_18C_600.tab
 examples/cpmg/chd2_h1sq/input/h1_cs.txt
 examples/cpmg/chd2_h1sq/input/temp.txt
 examples/cpmg/chd2_h1sq/methods/method_chd2.cfg
-examples/cpmg/chd2_h1sq/output/.parameters.fit.swp
 examples/cpmg/chd2_h1sq/output/CHD2_H1_SQ_CPMG_@_600_MHz_18oC.dat
 examples/cpmg/chd2_h1sq/output/CHD2_H1_SQ_CPM_@_800_MHz-18oC.dat
 examples/cpmg/chd2_h1sq/output/chi2.fit
