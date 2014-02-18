@@ -8,8 +8,8 @@ Created on Mar 30, 2011
 import os
 import sys
 import ConfigParser
-
 import scipy as sc
+
 from chemex import tools
 
 
@@ -231,6 +231,12 @@ def read_parameter_file(filename, par_name):
 
     try:
         raw_data = sc.genfromtxt(filename, dtype=None, comments='Assignment')
+
+        # Hack to solve the problem of 0d-array when 'filename' is a single line file
+        if raw_data.ndim == 0:
+            raw_data = sc.array([raw_data, ])
+            #
+
     except IOError:
         sys.stderr.write('The file \'{}\' is empty or does not exist!\n'.format(filename))
 
