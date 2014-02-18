@@ -12,8 +12,7 @@ description = \
     ''' Measures methyl proton chemical exchange recorded on site-specifically
         13CHD2-labeled proteins in a highly deuterated background.  
         Magnetization is initally anti-phase and is read out as anti-phase
-        prior to 13C evolution.  Because of the P-element only even ncyc should
-        be recorded.  The calculation uses a 13x13 basis set:
+        prior to 13C evolution. The calculation uses a 13x13 basis set:
 
         [ E/2, Hx(a), Hy(a), Hz(a), 2HxCz(a), 2HyCz(a), 2HzCz(a),
                Hx(b), Hy(b), Hz(b), 2HxCz(b), 2HyCz(b), 2HzCz(b)]
