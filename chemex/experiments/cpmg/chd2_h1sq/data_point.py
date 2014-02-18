@@ -13,6 +13,7 @@ from .back_calculation import make_calc_observable
 from ..plotting import plot_data
 
 
+
 # Constants
 TWO_PI = 2.0 * pi
 
@@ -59,15 +60,15 @@ class DataPoint(BaseDataPoint):
         self.short_long_par_names = (
             ('pb', ('pb', temperature)),
             ('kex', ('kex', temperature)),
-            ('dw', ('dw', nucleus_name_1)),
-            ('cs', ('cs', nucleus_name_1, temperature)),
+            ('dw', ('dw', nucleus_name_2)),
+            ('cs', ('cs', nucleus_name_2, temperature)),
             ('i0', ('i0', resonance_id, experiment_name)),
-            ('r_hxy', ('r_hxy', nucleus_name_1, h_larmor_frq, temperature)),
-            ('dr_hxy', ('dr_hxy', nucleus_name_1, h_larmor_frq, temperature)),
+            ('r_hxy', ('r_hxy', nucleus_name_2, h_larmor_frq, temperature)),
+            ('dr_hxy', ('dr_hxy', nucleus_name_2, h_larmor_frq, temperature)),
             ('r_cz', ('r_cz', nucleus_name_1, h_larmor_frq, temperature)),
             ('r_2hzcz', ('r_2hzcz', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
-            ('etaxy', ('etaxy', nucleus_name_1, h_larmor_frq, temperature)),
-            ('etaz', ('etaz', nucleus_name_1, h_larmor_frq, temperature)),
+            ('etaxy', ('etaxy', nucleus_name_2, h_larmor_frq, temperature)),
+            ('etaz', ('etaz', nucleus_name_2, h_larmor_frq, temperature)),
             ('j_hc', ('j_hc', nucleus_name_1, nucleus_name_2, temperature)),
         )
 

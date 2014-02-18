@@ -558,9 +558,7 @@ examples/cpmg/n_cw/data/n_cw_cpmg_800/7N-HN.out
 examples/cpmg/n_cw/data/n_cw_cpmg_800/8N-HN.out
 examples/cpmg/n_cw/data/n_cw_cpmg_800/9N-HN.out
 examples/cpmg/n_cw/experiments/n15_cw_500.cfg
-examples/cpmg/n_cw/experiments/n15_cw_500.cfg~
 examples/cpmg/n_cw/experiments/n15_cw_800.cfg
-examples/cpmg/n_cw/experiments/n15_cw_800.cfg~
 examples/cpmg/n_cw/input/n15_cs.txt
 examples/cpmg/n_cw/input/n15_dw.txt
 examples/cpmg/n_cw/input/n15_rNz_500.txt
