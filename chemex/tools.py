@@ -44,8 +44,7 @@ def include_selection(data, selection):
 
     for a_data_point in data:
 
-        if ('resonance_id' in a_data_point.par and
-                    a_data_point.par['resonance_id'] in selection):
+        if ('resonance_id' in a_data_point.par and a_data_point.par['resonance_id'] in selection):
             new_data.append(a_data_point)
 
     return new_data
@@ -60,8 +59,7 @@ def exclude_selection(data, selection):
 
     for a_data_point in data:
 
-        if ('resonance_id' in a_data_point.par and
-                    a_data_point.par['resonance_id'] not in selection):
+        if ('resonance_id' in a_data_point.par and a_data_point.par['resonance_id'] not in selection):
             new_data.append(a_data_point)
 
     if new_data == data:
@@ -118,3 +116,12 @@ def parse_group_name(g):
         return int(s.group()), g[:s.start()]
     return g, None
 
+
+def make_dir(path=None):
+    """Make the directory if needed"""
+
+    if not os.path.exists(path):
+        try:
+            os.makedirs(path)
+        except OSError:
+            exit("\nOSError: You can not use that directory!\n")

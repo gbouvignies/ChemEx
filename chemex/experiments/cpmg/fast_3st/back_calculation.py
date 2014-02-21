@@ -39,7 +39,7 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads=1.0, _id=None):
     @lru_cache(100)
     def _calc_observable(pb=0.0, pc=0.0, kex_ab=0.0, kex_bc=0.0, kex_ac=0.0,
                          dw_ab=0.0, dw_ac=0.0, r_ixy=5.0, dr_ixy_ab=0.0, dr_ixy_ac=0.0, ncyc=0):
-        '''
+        """
         Calculate the intensity in presence of exchange during a cpmg-type pulse train.
 
         Parameters
@@ -76,7 +76,7 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads=1.0, _id=None):
         out : float
             Intensity after the CPMG block
 
-        '''
+        """
 
         dw_ab *= ppm_to_rads
         dw_ac *= ppm_to_rads

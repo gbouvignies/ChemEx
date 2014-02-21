@@ -1,8 +1,8 @@
-'''
+"""
 Created on Aug 26, 2011
 
 @author: guillaume
-'''
+"""
 
 
 # Imports
@@ -22,7 +22,7 @@ from chemex.bases.two_states.iph_aph import (R_IXY, R_2SZIXY, DR_XY,
 def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0, r_nxy=5.0, dr_nxy=0.0,
                          r_nz=1.5, r_2hznz=5.0, etaxy=0.0, etaz=0.0,
                          j_hn=-93.0, dj_hn=0.0, cs_offset=0.0, w1=0.0):
-    '''
+    """
     Compute the exchange matrix (Liouvillian)
 
     The function assumes a 2-site (A <-> B) exchanging system.
@@ -66,7 +66,7 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0, r_nxy=5.0, dr_nxy=0.0,
         Liouvillian describing free precession of one
         isolated spin in presence of two-site exchange.
 
-    '''
+    """
 
     kab = kex * pb
     kba = kex - kab
@@ -109,7 +109,7 @@ def get_ATrz(I):
 
 def compute_nh_etaz(r_nz, ppm_to_rads):
     # TODO: replace with appropriate code for HN(dip)/H(csa) calculation
-    '''
+    """
     THIS IS NOT PRESENTLY IMPLEMENTED.
     X-CORRELATION RATES ARE ZERO UNLESS EXPLICITLY SPECIFIED
 
@@ -127,7 +127,7 @@ def compute_nh_etaz(r_nz, ppm_to_rads):
     Returns:
         etaxy, etaz
         float, float
-    '''
+    """
 
     delta_csa_nh = -166.0  # ppm
     r_nh = 1.04e-10  # meters

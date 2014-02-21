@@ -65,7 +65,7 @@ def name_experiment(global_parameters=dict()):
 
 
 def read_a_cpmg_profile(filename, parameters):
-    '''Reads in the fuda file and spit out the intensities'''
+    """Reads in the fuda file and spit out the intensities"""
 
     data = np.loadtxt(filename, dtype=[('ncyc', '<f8'), ('intensity', '<f8'), ('intensity_err', '<f8')])
 
@@ -97,7 +97,7 @@ def read_a_cpmg_profile(filename, parameters):
 
 
 def estimate_uncertainty_from_duplicates(data):
-    '''Estimates uncertainty using duplicate measurements'''
+    """Estimates uncertainty using duplicate measurements"""
 
     intensity_dict = dict()
 
@@ -112,11 +112,11 @@ def estimate_uncertainty_from_duplicates(data):
 
 
 def adjust_min_int_uncertainty(data_int):
-    '''
+    """
     Adjusts the uncertainty of data points to the maximum of
     either the present uncertainty or the median of all the uncertainties
 
-    '''
+    """
 
     int_err_list = list()
 
@@ -133,7 +133,7 @@ def adjust_min_int_uncertainty(data_int):
 
 
 def norm_int(data_int):
-    '''Normalize intensities relative to the intensity of the reference plane'''
+    """Normalize intensities relative to the intensity of the reference plane"""
 
     new_data_int = list()
 

@@ -1,8 +1,8 @@
-'''
+"""
 Created on Aug 5, 2011
 
 @author: guillaume
-'''
+"""
 
 from inspect import getargspec
 from scipy import pi
@@ -10,7 +10,6 @@ from scipy import pi
 from chemex.constants import gamma_ratio
 from chemex.experiments.base_data_point import BaseDataPoint
 from chemex.tools import parse_assignment
-
 from ..plotting import plot_data
 from .back_calculation import make_calc_observable
 
@@ -30,7 +29,7 @@ PAR_DICT = {
 
 
 class DataPoint(BaseDataPoint):
-    '''Intensity measured during a cpmg pulse train of frequency frq'''
+    """Intensity measured during a cpmg pulse train of frequency frq"""
 
     def __init__(self, val, err, par):
 
@@ -46,7 +45,7 @@ class DataPoint(BaseDataPoint):
 
         try:
             self.par['ppm_to_rads'] = (
-                2.0 * pi * self.par['h_larmor_frq'] * gamma_ratio[nucleus_type[0]]
+                2.0 * pi * self.par['h_larmor_frq'] * gamma_ratio[nucleus_type[0].upper()]
             )
         except KeyError:
             exit(
@@ -92,7 +91,7 @@ class DataPoint(BaseDataPoint):
 
 
     def __repr__(self):
-        '''Print the data point'''
+        """Print the data point"""
 
         output = list()
         output.append('{resonance_id:6s}'.format(**self.par))

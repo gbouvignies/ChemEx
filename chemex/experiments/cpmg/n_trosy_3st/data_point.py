@@ -4,12 +4,9 @@ Created on Aug 5, 2011
 @author: guillaume
 """
 
-
-# Standard imports
 from inspect import getargspec
 from scipy import pi
 
-# Local imports
 from chemex.tools import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint
 from chemex.constants import gamma_ratio
@@ -41,7 +38,7 @@ PAR_DICT = {
 
 
 class DataPoint(BaseDataPoint):
-    '''Intensity measured during a cpmg pulse train of frequency frq'''
+    """Intensity measured during a cpmg pulse train of frequency frq"""
 
     def __init__(self, val, err, par):
         BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
@@ -105,7 +102,7 @@ class DataPoint(BaseDataPoint):
         )
 
     def __repr__(self):
-        '''Print the data point'''
+        """Print the data point"""
 
         output = list()
         output.append('{resonance_id:6s}'.format(**self.par))

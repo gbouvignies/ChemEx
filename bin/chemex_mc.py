@@ -13,13 +13,9 @@ from shutil import copyfile
 
 from chemex.chi2 import write_chi2, calc_chi2
 
-
-# Local Libraries
 try:
     from chemex import fitting, writing, parsing, reading, plotting
     from chemex.experiments.reading import read_cfg_file as read_cfg_file_data
-
-
 except (KeyboardInterrupt):
     exit("\n -- ChemEx killed before it could begin\n")
 

@@ -5,16 +5,13 @@ Created on Mar 31, 2011
 @author: guillaume
 """
 
-# Import
 import os
-from shutil import copyfile
-
-from chemex.chi2 import write_chi2
+import shutil
 
 
 # Local Libraries
 try:
-    from chemex import fitting, plotting, writing, parsing, reading
+    from chemex import fitting, plotting, writing, parsing, reading, tools
     from chemex.experiments.reading import read_cfg_file as read_cfg_file_data
 
 except (KeyboardInterrupt):
@@ -22,6 +19,8 @@ except (KeyboardInterrupt):
 
 
 def main():
+    """All the magic"""
+
     writing.print_logo()
 
     args = parsing.arg_parse()
@@ -34,36 +33,15 @@ def main():
     elif args.res_excl:
         args.res_excl = [res.lower() for res in args.res_excl]
 
-    # Reads and stores the datasets
+    # Read experimental data
     data = list()
 
-    # Read experimental data
     if args.experiments:
         for filename in args.experiments:
             data.extend(read_cfg_file_data(filename, args.res_incl, args.res_excl))
 
-    # Custom output directory
-    output_dir = args.out_dir if args.out_dir else './'
-
-    # Residue Selection
-    if args.res_incl:
-        if len(args.res_incl) == 1:
-            output_dir = "/".join([output_dir, args.res_incl[0].upper()])
-
     if not data:
         exit("\nNo Data to fit!\n")
-
-    # Make the output directory if you need to
-    if output_dir != './':
-        if not os.path.exists(output_dir):
-            try:
-                os.makedirs(output_dir)
-            except OSError:
-                exit("\nOSError: You can not use that directory!\n")
-
-    # Copy the method to the output directory, as a backup
-    if args.method:
-        copyfile(args.method, output_dir + "/fitting-method.cfg")
 
     # Create the lists of both fitting and fixed parameters
     par, par_indexes, par_fixed = reading.create_par_list_to_fit(args.parameters, data)
@@ -75,18 +53,36 @@ def main():
     # Write outputs
     print("")
     print("Reduced chi2: {:.3e}".format(reduced_chi2))
-    print(" -- writing results")
-    write_chi2(par, par_indexes, par_fixed, data, output_dir=output_dir)
+
+    # Custom output directory
+    output_dir = args.out_dir if args.out_dir else './output'
+    if args.res_incl:
+        if len(args.res_incl) == 1:
+            output_dir = os.path.join(output_dir, args.res_incl[0].upper())
+
+    tools.make_dir(output_dir)
+
+    print("")
+    print(" - Writing results:")
+    if args.method:
+        shutil.copyfile(args.method, os.path.join(output_dir, 'fitting-method.cfg'))
+
+    writing.write_chi2(par, par_indexes, par_fixed, data, output_dir=output_dir)
     writing.write_par(par, par_err, par_indexes, par_fixed, output_dir=output_dir)
     writing.write_dat(data, output_dir=output_dir)
 
     if not args.noplot:
 
-        print(' -- plotting data')
+        print("")
+        print(" - Plotting data:")
+
+        output_dir_plot = os.path.join(output_dir, 'plots')
+        tools.make_dir(output_dir_plot)
+
         try:
-            plotting.plot_data(data, par, par_indexes, par_fixed, output_dir=output_dir)
+            plotting.plot_data(data, par, par_indexes, par_fixed, output_dir=output_dir_plot)
         except (KeyboardInterrupt):
-            print('\n -- plotting cancelled')
+            print(" - Plotting cancelled")
 
 
 if __name__ == '__main__':

@@ -1,8 +1,8 @@
-'''
+"""
 Created on Aug 26, 2011
 
 @author: guillaume
-'''
+"""
 
 
 # Imports
@@ -19,7 +19,7 @@ def compute_liouvillians(
         dw_ab=0.0, dw_ac=0.0, r_nxy=5.0, dr_nxy_ab=0.0, dr_nxy_ac=0.0,
         r_nz=1.5, r_2hznz=5.0, etaxy=0.0, etaz=0.0, j_hn=-93.0,
         dj_hn_ab=0.0, dj_hn_ac=0.0, cs_offset=0.0, w1=0.0):
-    '''
+    """
     Compute the exchange matrix (Liouvillian)
 
     The function assumes a 3-site (A <-> B) exchanging system.
@@ -76,7 +76,7 @@ def compute_liouvillians(
         Liouvillian describing free precession of one
         isolated spin in presence of two-site exchange.
 
-    '''
+    """
 
     pa = 1.0 - pb - pc
 
