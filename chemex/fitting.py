@@ -6,6 +6,7 @@ Created on Mar 31, 2011
 
 # Standard Libraries
 import sys
+import os.path
 import ConfigParser
 
 # Specialized Libraries
@@ -23,7 +24,18 @@ def run_fit(fit_filename, par, par_indexes, par_fixed, data):
     fit_par_file = ConfigParser.SafeConfigParser()
 
     if fit_filename:
-        fit_par_file.read(fit_filename)
+
+        if os.path.isfile(fit_filename):
+            try:
+                fit_par_file.read(fit_filename)
+            except ConfigParser.MissingSectionHeaderError:
+                exit('You are missing a section heading (default?) in {:s}\n'.format(fit_filename))
+            except ConfigParser.ParsingError:
+                exit('Having trouble reading your parameter file, have you forgotten \'=\' signs?\n{:s}'
+                     .format(sys.exc_info()[1]))
+        else:
+            exit("The file \'{}\' is empty or does not exist!\n".format(fit_filename))
+
 
     else:
         fit_par_file.add_section('Standard Calculation')

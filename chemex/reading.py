@@ -6,6 +6,7 @@ Created on Mar 30, 2011
 
 # Standard Libraries
 import os
+import os.path
 import sys
 import ConfigParser
 import scipy as sc
@@ -77,19 +78,22 @@ def read_par(input_file, par, par_indexes, par_fixed):
     # Get the directory of the input file
     working_dir = os.path.dirname(input_file)
 
-    print('Checking parameters_cfg in {:s} ...\n'.format(input_file))
+    print('Checking default parameters in {:s} ...\n'.format(input_file))
     concern = False
 
     # Parse the config file
     parameters_cfg = ConfigParser.SafeConfigParser()
 
-    try:
-        parameters_cfg.read(input_file)
-    except ConfigParser.MissingSectionHeaderError:
-        exit('You are missing a section heading (default?) in {:s}\n'.format(input_file))
-    except ConfigParser.ParsingError:
-        exit('Having trouble reading your parameter file, have you forgotten \'=\' signs?\n{:s}'.format(
-            sys.exc_info()[1]))
+    if os.path.isfile(input_file):
+        try:
+            parameters_cfg.read(input_file)
+        except ConfigParser.MissingSectionHeaderError:
+            exit('You are missing a section heading (default?) in {:s}\n'.format(input_file))
+        except ConfigParser.ParsingError:
+            exit('Having trouble reading your parameter file, have you forgotten \'=\' signs?\n{:s}'.format(
+                sys.exc_info()[1]))
+    else:
+        exit("The file \'{}\' is empty or does not exist!\n".format(input_file))
 
     # Container for the default values
     starting_parameters = list()
@@ -230,15 +234,14 @@ def read_parameter_file(filename, par_name):
     """
 
     try:
-        raw_data = sc.genfromtxt(filename, dtype=None, comments='Assignment')
-
-        # Hack to solve the problem of 0d-array when 'filename' is a single line file
-        if raw_data.ndim == 0:
-            raw_data = sc.array([raw_data, ])
-            #
-
+        raw_data = sc.genfromtxt(filename, dtype=None)
     except IOError:
         sys.stderr.write('The file \'{}\' is empty or does not exist!\n'.format(filename))
+
+    # Hack to solve the problem of 0d-array when 'filename' is a single line file
+    if raw_data.ndim == 0:
+        raw_data = sc.array([raw_data, ])
+    #
 
     parameters = []
 
