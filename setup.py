@@ -1,16 +1,21 @@
 #!/usr/bin/env python
 
+import sys
+
 import ez_setup
+import chemex
+
+
+if sys.version_info[0] == 2 and sys.version_info[1] < 7:
+    print "Sorry, Python < 2.7 is not supported"
+    exit()
 
 ez_setup.use_setuptools()
 
 from setuptools import setup, find_packages
 
-import chemex
-
 scripts = [
     'bin/chemex_fit.py',
-    'bin/chemex_mc.py',
 ]
 
 setup(
@@ -23,4 +28,9 @@ setup(
     author_email='gbouvignies@gmail.com',
     packages=find_packages(),
     scripts=scripts,
+    install_requires=[
+        'numpy',
+        'scipy',
+        'matplotlib'
+    ],
 )
