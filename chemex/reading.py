@@ -9,6 +9,7 @@ import os
 import os.path
 import sys
 import ConfigParser
+
 import scipy as sc
 
 from chemex import tools
@@ -236,7 +237,7 @@ def read_parameter_file(filename, par_name):
     try:
         raw_data = sc.genfromtxt(filename, dtype=None)
     except IOError:
-        sys.stderr.write('The file \'{}\' is empty or does not exist!\n'.format(filename))
+        exit('The file \'{}\' is empty or does not exist!\n'.format(filename))
 
     # Hack to solve the problem of 0d-array when 'filename' is a single line file
     if raw_data.ndim == 0:
@@ -246,6 +247,10 @@ def read_parameter_file(filename, par_name):
     parameters = []
 
     for line in raw_data:
+
+        if line[0] in ['Assignment', '?-?']:
+            continue
+
         assignment = tools.parse_assignment(line[0].lower())
 
         if len(assignment) == len(line) - 1:

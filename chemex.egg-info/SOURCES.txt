@@ -17,6 +17,7 @@ chemex/writing.py
 chemex.egg-info/PKG-INFO
 chemex.egg-info/SOURCES.txt
 chemex.egg-info/dependency_links.txt
+chemex.egg-info/requires.txt
 chemex.egg-info/top_level.txt
 chemex/bases/__init__.py
 chemex/bases/three_states/__init__.py
@@ -689,6 +690,12 @@ examples/cpmg/n_fast/input/n15_dw.txt
 examples/cpmg/n_fast/input/n15_rNz_500.txt
 examples/cpmg/n_fast/input/n15_rNz_800.txt
 examples/cpmg/n_fast/methods/method_n15.cfg
+examples/cpmg/n_fast/output/global/N15_CPMG_@_500_MHz_-_25oC.dat
+examples/cpmg/n_fast/output/global/N15_CPMG_@_800_MHz_-_25oC.dat
+examples/cpmg/n_fast/output/global/chi2.fit
+examples/cpmg/n_fast/output/global/parameters.fit
+examples/cpmg/n_fast/output/global/plots/N15_CPMG_@_500_MHz_-_25oC.pdf
+examples/cpmg/n_fast/output/global/plots/N15_CPMG_@_800_MHz_-_25oC.pdf
 examples/cpmg/n_fast/parameters/params_n15.cfg
 examples/cpmg/n_trosy/run
 examples/cpmg/n_trosy/data/n15_trosy_500/100N-HN.out
