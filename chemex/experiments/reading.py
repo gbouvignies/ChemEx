@@ -6,6 +6,7 @@ Created on Mar 30, 2011
 
 # Standard libraries
 import os
+import os.path
 import sys
 import pkgutil
 import ConfigParser
@@ -19,7 +20,17 @@ def read_cfg_file(input_file, res_incl=None, res_excl=None):
 
     # Parse the config file
     cfg = ConfigParser.ConfigParser()
-    cfg.read(input_file)
+
+    if os.path.isfile(input_file):
+        try:
+            cfg.read(input_file)
+        except ConfigParser.MissingSectionHeaderError:
+            exit('You are missing a section heading (default?) in {:s}\n'.format(input_file))
+        except ConfigParser.ParsingError:
+            exit('Having trouble reading your parameter file, have you forgotten \'=\' signs?\n{:s}'
+                 .format(sys.exc_info()[1]))
+    else:
+        exit("The file \'{}\' is empty or does not exist!\n".format(input_file))
 
     try:
         # Reads experimental and estimated parameters shared by all residues
@@ -30,6 +41,7 @@ def read_cfg_file(input_file, res_incl=None, res_excl=None):
 
     except ConfigParser.NoSectionError:
         exit("\nIn {:s}, {:s}!\n".format(input_file, sys.exc_info()[1]))
+
     except (KeyboardInterrupt):
         exit("\n -- ChemEx killed while reading experiment and data files\n")
 

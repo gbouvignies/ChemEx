@@ -1,8 +1,8 @@
-'''
+"""
 Created on Aug 15, 2011
 
 @author: guillaume
-'''
+"""
 
 from numpy.linalg import matrix_power
 from scipy.linalg import expm
@@ -38,7 +38,7 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads=1.0, _id=None):
 
     @lru_cache(100)
     def _calc_observable(pb=0.0, kex=0.0, dw=0.0, r_ixy=5.0, dr_ixy=0.0, ncyc=0):
-        '''
+        """
         Calculate the intensity in presence of exchange during a cpmg-type pulse train.
 
         Parameters
@@ -62,7 +62,7 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads=1.0, _id=None):
         out : float
             Intensity after the CPMG block
 
-        '''
+        """
 
         dw *= ppm_to_rads
 

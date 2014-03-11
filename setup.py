@@ -23,9 +23,4 @@ setup(
     author_email='gbouvignies@gmail.com',
     packages=find_packages(),
     scripts=scripts,
-    install_requires=[
-        "numpy >= 1.6.0",
-        "scipy >= 0.9.0",
-        "matplotlib >= 1.0.0",
-    ],
 )
