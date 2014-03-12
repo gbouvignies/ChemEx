@@ -39,8 +39,7 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
     """
 
     @lru_cache(1)
-    def make_propagators(pb=0.0, kex=0.0, dw=0.0, r_cxy=5.0, dr_cxy=0.0,
-                         r_cz=1.5, cs_offset=0.0, pw=0.0, time_t2=0.0, time_equil=0.0):
+    def make_propagators(pb=0.0, kex=0.0, dw=0.0, r_cxy=5.0, dr_cxy=0.0, r_cz=1.5, cs_offset=0.0):
 
         w1 = 2.0 * pi / (4.0 * pw)
         l_free, l_w1x, l_w1y = compute_liouvillians(pb=pb, kex=kex, dw=dw,
@@ -97,9 +96,7 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
         dw *= ppm_to_rads
         cs_offset = (cs - carrier) * ppm_to_rads
 
-        l_free, ps = make_propagators(pb=pb, kex=kex, dw=dw, r_cxy=r_cxy, dr_cxy=dr_cxy,
-                                      r_cz=r_cz, cs_offset=cs_offset, pw=pw, time_t2=time_t2,
-                                      time_equil=time_equil)
+        l_free, ps = make_propagators(pb=pb, kex=kex, dw=dw, r_cxy=r_cxy, dr_cxy=dr_cxy, r_cz=r_cz, cs_offset=cs_offset)
 
         p_equil, p_neg, p_90px, p_90mx, p_180pmx, p_180py = ps
 
@@ -108,7 +105,7 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
         if ncyc == 0:
             # The +/- phase cycling of the first 90 and the receiver is taken care
             # by setting the thermal equilibrium to 0
-            I = reduce(dot, [p_equil, p_90px, p_180pmx, p_90px, mag_eq])
+            mag = reduce(dot, [p_equil, p_90px, p_180pmx, p_90px, mag_eq])
 
         else:
 
@@ -116,9 +113,9 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
             p_free = expm(l_free * t_cp)
             p_cp = matrix_power(p_free.dot(p_180py).dot(p_free), ncyc)
 
-            I = reduce(dot, [p_equil, p_90px, p_neg, p_cp, p_180pmx, p_cp, p_neg, p_90px, mag_eq])
+            mag = reduce(dot, [p_equil, p_90px, p_neg, p_cp, p_180pmx, p_cp, p_neg, p_90px, mag_eq])
 
-        magz_a, _ = get_cz(I)
+        magz_a, _ = get_cz(mag)
 
         return magz_a
 

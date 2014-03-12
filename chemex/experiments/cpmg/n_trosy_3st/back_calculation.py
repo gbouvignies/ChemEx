@@ -11,7 +11,7 @@ from numpy.linalg import matrix_power
 
 # Local Modules
 from chemex.caching import lru_cache
-from .liouvillian import compute_2HzNz_eq, get_Trz, compute_liouvillians
+from .liouvillian import compute_2hznz_eq, get_trz, compute_liouvillians
 from chemex.bases.three_states.iph_aph import P180_S
 
 
@@ -123,13 +123,13 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0,
         (p_equil, p_neg, p_90px, p_90py, p_90mx,
          p_90my, p_180px, p_180py, p_element) = ps
 
-        mag_eq = compute_2HzNz_eq(pb, pc)
+        mag_eq = compute_2hznz_eq(pb, pc)
 
         if ncyc == 0:
 
             # The +/- phase cycling of the first 90 and the receiver is taken care
             # by setting the thermal equilibrium to 0
-            I = -reduce(dot, [p_equil, p_90py, p_element, p_90px, mag_eq])
+            mag = -reduce(dot, [p_equil, p_90py, p_element, p_90px, mag_eq])
 
         else:
 
@@ -140,10 +140,10 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0,
             p_element_pc = 0.5 * (p_90px.dot(p_element).dot(p_90py) +
                                   p_90mx.dot(p_element).dot(p_90my))
 
-            I = -reduce(dot, [p_equil, p_90py, p_neg, p_cpx, p_neg, p_element_pc,
-                              p_neg, p_cpy, p_neg, p_90px, mag_eq])
+            mag = -reduce(dot,
+                          [p_equil, p_90py, p_neg, p_cpx, p_neg, p_element_pc, p_neg, p_cpy, p_neg, p_90px, mag_eq])
 
-        magz_a, _, _ = get_Trz(I)
+        magz_a, _, _ = get_trz(mag)
 
         return magz_a
 

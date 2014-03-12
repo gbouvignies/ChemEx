@@ -52,7 +52,10 @@ def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None)
     return data_points
 
 
-def name_experiment(global_parameters=dict()):
+def name_experiment(global_parameters=None):
+    if not global_parameters:
+        global_parameters = dict()
+
     if 'experiment_name' in global_parameters:
         name = global_parameters['experiment_name'].strip().replace(' ', '_')
 
@@ -60,9 +63,7 @@ def name_experiment(global_parameters=dict()):
         exp_type = global_parameters['experiment_type']
         h_larmor_frq = float(global_parameters['h_larmor_frq'])
         temperature = float(global_parameters['temperature'])
-
-        if 'b1_frq' in global_parameters:
-            b1_frq = float(global_parameters['b1_frq'])
+        b1_frq = float(global_parameters['b1_frq'])
 
         time_t1 = float(global_parameters['time_t1'])
 
@@ -177,7 +178,7 @@ def estimate_noise(x):
            [1, -4, 6, -4, 1],
            [1, -5, 10, -10, 5, -1],
            [1, -6, 15, -20, 15, -6, 1]]
-    fda = [a_fda / la.norm(a_fda) for a_fda in fda]
+    fda = [sc.array(a_fda) / la.norm(a_fda) for a_fda in fda]
 
     perc = sc.array([0.05] + list(sc.arange(0.1, 0.40, 0.025)))
     z = st.norm.ppf(1.0 - perc)

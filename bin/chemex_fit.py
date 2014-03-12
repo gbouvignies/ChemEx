@@ -8,13 +8,12 @@ Created on Mar 31, 2011
 import os
 import shutil
 
-
 # Local Libraries
 try:
     from chemex import fitting, plotting, writing, parsing, reading, tools
     from chemex.experiments.reading import read_cfg_file as read_cfg_file_data
 
-except (KeyboardInterrupt):
+except KeyboardInterrupt:
     exit("\n -- ChemEx killed before it could begin\n")
 
 
@@ -81,7 +80,7 @@ def main():
 
         try:
             plotting.plot_data(data, par, par_indexes, par_fixed, output_dir=output_dir_plot)
-        except (KeyboardInterrupt):
+        except KeyboardInterrupt:
             print(" - Plotting cancelled")
 
 

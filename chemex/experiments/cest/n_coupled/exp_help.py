@@ -18,8 +18,9 @@ description = \
         The calculation is designed specifically to analyze the experiment
         found in the reference."""
 
-reference = {'journal': 'In preparation',
-             'year': 2013,
-             'volume': 0,
-             'pages': ''
+reference = {
+    'journal': 'In preparation',
+    'year': 2013,
+    'volume': 0,
+    'pages': ''
 }

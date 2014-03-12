@@ -146,7 +146,7 @@ def make_calc_observable(pw=0.0, time_t2=0.0, ppm_to_rads=1.0, carrier=0.0, taub
 
             # The +/- phase cycling of the first 90 and the receiver is taken care
             # by setting the thermal equilibrium to 0
-            I = -reduce(dot, [p_90py, p_element, p_90px, mag_eq])
+            mag = -reduce(dot, [p_90py, p_element, p_90px, mag_eq])
 
         else:
 
@@ -155,9 +155,9 @@ def make_calc_observable(pw=0.0, time_t2=0.0, ppm_to_rads=1.0, carrier=0.0, taub
             p_cpx = matrix_power(p_free.dot(p_180px).dot(p_free), ncyc)
             p_cpy = matrix_power(p_free.dot(p_180py).dot(p_free), ncyc)
 
-            I = -reduce(dot, [p_90py, p_neg, p_cpx, p_element, p_cpy, p_neg, p_90px, mag_eq])
+            mag = -reduce(dot, [p_90py, p_neg, p_cpx, p_element, p_cpy, p_neg, p_90px, mag_eq])
 
-        magz_a, _magz_b = get_cz(I)
+        magz_a, _magz_b = get_cz(mag)
 
         return magz_a
 

@@ -51,9 +51,13 @@ def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None)
     return data_points
 
 
-def name_experiment(global_parameters=dict()):
+def name_experiment(global_parameters=None):
+    if not global_parameters:
+        global_parameters = dict()
+
     if 'experiment_name' in global_parameters:
         name = global_parameters['experiment_name'].strip().replace(' ', '_')
+
     else:
         exp_type = global_parameters['experiment_type']
         h_larmor_frq = float(global_parameters['h_larmor_frq'])

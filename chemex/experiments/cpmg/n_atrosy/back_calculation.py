@@ -11,9 +11,9 @@ from numpy.linalg import matrix_power
 
 # Local Modules
 from chemex.caching import lru_cache
-from .liouvillian import (compute_2HzNz_eq,
+from .liouvillian import (compute_2hznz_eq,
                           compute_liouvillians,
-                          get_ATrz, compute_nh_etaz)
+                          get_atrz)
 from chemex.bases.two_states.iph_aph import P180_S
 
 
@@ -111,22 +111,20 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
         dw *= ppm_to_rads
         cs_offset = (cs - carrier) * ppm_to_rads - pi * j_hn
 
-        etaz_calc = compute_nh_etaz(r_nz, ppm_to_rads) * 0.0
-
         l_free, ps = make_propagators(pb=pb, kex=kex, dw=dw, r_nxy=r_nxy, dr_nxy=dr_nxy,
-                                      r_nz=r_nz, r_2hznz=r_2hznz, etaxy=etaxy, etaz=etaz_calc,
+                                      r_nz=r_nz, r_2hznz=r_2hznz, etaxy=etaxy, etaz=etaz,
                                       j_hn=j_hn, dj_hn=dj_hn, cs_offset=cs_offset)
 
         (p_equil, p_neg, p_90px, p_90py, p_90mx,
          p_90my, p_180px, p_180py, p_element) = ps
 
-        mag_eq = compute_2HzNz_eq(pb)
+        mag_eq = compute_2hznz_eq(pb)
 
         if ncyc == 0:
 
             # The +/- phase cycling of the first 90 and the receiver is taken care
             # by setting the thermal equilibrium to 0
-            I = -reduce(dot, [p_equil, p_90py, p_element, p_90px, mag_eq])
+            mag = -reduce(dot, [p_equil, p_90py, p_element, p_90px, mag_eq])
 
         else:
 
@@ -137,10 +135,10 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
             p_element_pc = 0.5 * (p_90px.dot(p_element).dot(p_90py) +
                                   p_90mx.dot(p_element).dot(p_90my))
 
-            I = -reduce(dot, [p_equil, p_90py, p_neg, p_cpx, p_neg, p_element_pc,
-                              p_neg, p_cpy, p_neg, p_90px, mag_eq])
+            mag = -reduce(dot,
+                          [p_equil, p_90py, p_neg, p_cpx, p_neg, p_element_pc, p_neg, p_cpy, p_neg, p_90px, mag_eq])
 
-        magz_a, _magz_b = get_ATrz(I)
+        magz_a, _magz_b = get_atrz(mag)
 
         return magz_a
 

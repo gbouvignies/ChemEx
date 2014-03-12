@@ -10,7 +10,7 @@ import os
 import re
 
 
-class autodict(dict):
+class AutoDict(dict):
     """
     Implementation of perl's autovivification feature.
     """
@@ -44,7 +44,7 @@ def include_selection(data, selection):
 
     for a_data_point in data:
 
-        if ('resonance_id' in a_data_point.par and a_data_point.par['resonance_id'] in selection):
+        if 'resonance_id' in a_data_point.par and a_data_point.par['resonance_id'] in selection:
             new_data.append(a_data_point)
 
     return new_data
@@ -59,7 +59,7 @@ def exclude_selection(data, selection):
 
     for a_data_point in data:
 
-        if ('resonance_id' in a_data_point.par and a_data_point.par['resonance_id'] not in selection):
+        if 'resonance_id' in a_data_point.par and a_data_point.par['resonance_id'] not in selection:
             new_data.append(a_data_point)
 
     if new_data == data:
@@ -81,7 +81,7 @@ def parse_assignment(assignment):
     last_group = None
     for s in res:
         ga = split_group_atom(s)
-        if ga == None:
+        if ga is None:
             if last_group:
                 ga = (last_group, s)
             else:
@@ -102,11 +102,11 @@ def split_group_atom(group_atom):
         first_digit = s.start()
         s = re.search('[hHcCnNqQmM]', group_atom[first_digit:])
         if s:
-            HCNQM_offset = s.start()
-            d = first_digit + HCNQM_offset
-            return (group_atom[:d], group_atom[d:])
+            hcnqm_offset = s.start()
+            d = first_digit + hcnqm_offset
+            return group_atom[:d], group_atom[d:]
     if group_atom == '?':
-        return ('', '')
+        return '', ''
     return None
 
 

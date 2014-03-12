@@ -34,14 +34,17 @@ def generate_experiment_subparser(prog, subparser, exp_pkg):
         def __call__(self, parser, namespace, values, option_string=None):
 
             try:
-                exp = __import__(
-                    '.'.join(['chemex', 'experiments', exp_pkg, values, 'exp_help']),
-                    fromlist=['exp_help'],
-                )
-                dtp = __import__(
-                    '.'.join(['chemex', 'experiments', exp_pkg, values, 'data_point']),
-                    fromlist=['data_point'],
-                )
+
+                exp = __import__('.'.join(['chemex', 'experiments', exp_pkg, values, 'exp_help']),
+                                 fromlist=['exp_help'], )
+
+                dtp = __import__('.'.join(['chemex', 'experiments', exp_pkg, values, 'data_point']),
+                                 fromlist=['data_point'], )
+
+                parse_line = exp.parse_line
+                description = exp.description
+                reference = exp.reference
+                parameters = dtp.PAR_DICT
 
             except ImportError:
                 sys.stderr.write(
@@ -50,11 +53,6 @@ def generate_experiment_subparser(prog, subparser, exp_pkg):
                 )
                 parser.print_help()
                 exit(1)
-
-            parse_line = exp.parse_line
-            description = exp.description
-            reference = exp.reference
-            parameters = dtp.PAR_DICT
 
             format_experiment_help(parse_line, description, reference, parameters)
 
@@ -94,13 +92,14 @@ def generate_experiment_subparser(prog, subparser, exp_pkg):
 
     return exp_parser
 
+
 # ## end generate_experiment_subparser
 
 
-def format_experiment_help(pline='unknown experiment',
-                           desc='unknown experiment',
-                           ref={'journal': '', 'year': 1900, 'volume': 0, 'pages': ''},
-                           par={'spec': [], 'float': [], 'fix': []}):
+def format_experiment_help(pline='unknown experiment', desc='unknown experiment', ref=None, par=None):
+    if not par:
+        par = {'spec': [], 'float': [], 'fix': []}
+
     headline1 = "Spectrometer parameters"
     headline2 = "Fitted parameters"
     headline3 = "Fixed parameters"
@@ -129,11 +128,13 @@ def format_experiment_help(pline='unknown experiment',
         print("  * {:s}".format(p))
     print("")
 
+
 # ## end format_experiment_help
+
 
 ########################## THE REAL PARSER IS HERE ##########################
 def arg_parse():
-    with_info = set(['-i', '--info']) & set(sys.argv)
+    with_info = {'-i', '--info'} & set(sys.argv)
 
     ######## PARSER TO GET HELP ########
     if with_info:

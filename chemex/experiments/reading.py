@@ -15,6 +15,8 @@ import ConfigParser
 def read_cfg_file(input_file, res_incl=None, res_excl=None):
     """Read the r2 data file containing the experimental parameters and the location of the fuda files"""
 
+    data = None
+
     # Get the directory of the input file
     working_dir = os.path.dirname(input_file)
 
@@ -42,7 +44,7 @@ def read_cfg_file(input_file, res_incl=None, res_excl=None):
     except ConfigParser.NoSectionError:
         exit("\nIn {:s}, {:s}!\n".format(input_file, sys.exc_info()[1]))
 
-    except (KeyboardInterrupt):
+    except KeyboardInterrupt:
         exit("\n -- ChemEx killed while reading experiment and data files\n")
 
     return data

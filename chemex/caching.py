@@ -16,6 +16,7 @@ class _HashedSeq(list):
     __slots__ = 'hashvalue'
 
     def __init__(self, tup, hash=hash):
+        super(_HashedSeq, self).__init__()
         self[:] = tup
         self.hashvalue = hash(tup)
 
@@ -25,9 +26,9 @@ class _HashedSeq(list):
 
 def _make_key(args, kwds, typed,
               kwd_mark=(object(),),
-              fasttypes=set([int, str, frozenset, type(None)]),
+              fasttypes={int, str, frozenset, type(None)},
               sorted=sorted, tuple=tuple, type=type, len=len):
-    'Make a cache key from optionally typed positional and keyword arguments'
+    """Make a cache key from optionally typed positional and keyword arguments"""
     key = args
     if kwds:
         sorted_items = sorted(kwds.items())

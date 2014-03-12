@@ -112,7 +112,6 @@ class DataPoint(BaseDataPoint):
             if short_name in PAR_DICT['fix']
         )
 
-
     def __repr__(self):
         """Print the data point"""
 

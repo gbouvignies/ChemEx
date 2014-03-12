@@ -90,13 +90,13 @@ def compute_cz_eq(pb):
     return mag_eq
 
 
-def get_cz(I):
+def get_cz(mag):
     """
     Returns the amount of magnetization along z.
 
     Parameters
     ----------
-    I : ndarray
+    mag : ndarray
         Magnetization vector.
 
     Returns
@@ -106,8 +106,8 @@ def get_cz(I):
 
     """
 
-    magz_a = I[2, 0]
-    magz_b = I[5, 0]
+    magz_a = mag[2, 0]
+    magz_b = mag[5, 0]
 
     return magz_a, magz_b
 

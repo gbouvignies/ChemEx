@@ -1,9 +1,9 @@
-'''
+"""
 Created on Feb 23, 2012
 
 @author: Mike Latham
 @author: Guillaume Bouvignies
-'''
+"""
 
 from scipy import dot, diag
 from scipy.linalg import expm
@@ -15,6 +15,7 @@ from .liouvillian import \
     compute_2hxcy_eq, \
     get_2hxcy, \
     compute_liouvillian
+
 
 RATIO = gamma_ratio['C']
 
@@ -192,7 +193,6 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads_h=1.0, ppm_to_rads_c=1.0, smal
             magz_a, _ = get_2hxcy(mag)
 
             return magz_a
-
 
     def calc_observable(i0=0.0, **kwargs):
         """

@@ -89,14 +89,14 @@ def compute_liouvillians(
     kac = kex_ac * pc / (pa + pc)
     kca = kex_ac * pa / (pa + pc)
 
-    r_2HzNxy = r_nxy + r_2hznz - r_nz
+    r_2hznxy = r_nxy + r_2hznz - r_nz
 
     l_free = R_IXY * r_nxy
     l_free += DR_IXY_AB * dr_nxy_ab
     l_free += DR_IXY_AC * dr_nxy_ac
     l_free += R_2SZIZ * r_2hznz
     l_free += R_IZ * r_nz
-    l_free += R_2SZIXY * r_2HzNxy
+    l_free += R_2SZIXY * r_2hznxy
     l_free += CS * cs_offset
     l_free += DW_AB * dw_ab
     l_free += DW_AC * dw_ac
@@ -117,7 +117,7 @@ def compute_liouvillians(
     return l_free, l_w1x, l_w1y
 
 
-def compute_2HzNz_eq(pb, pc):
+def compute_2hznz_eq(pb, pc):
     mag_eq = zeros((18, 1))
     mag_eq[5, 0] += (1.0 - pb - pc)
     mag_eq[11, 0] += pb
@@ -126,7 +126,7 @@ def compute_2HzNz_eq(pb, pc):
     return mag_eq
 
 
-def get_Trz(I):
+def get_trz(I):
     magz_a = I[5, 0] - I[2, 0]
     magz_b = I[11, 0] - I[8, 0]
     magz_c = I[17, 0] - I[14, 0]

@@ -36,7 +36,6 @@ def run_fit(fit_filename, par, par_indexes, par_fixed, data):
         else:
             exit("The file \'{}\' is empty or does not exist!\n".format(fit_filename))
 
-
     else:
         fit_par_file.add_section('Standard Calculation')
 
@@ -95,7 +94,6 @@ def local_minimization(par, par_indexes, par_fixed, data, verbose=True):
                           maxfev=100000,
                           epsfcn=1e-10,
                           factor=0.1)
-        par, pcov, _infodict, errmsg, ier = out
 
     except TypeError:
         sys.stderr.write(' -- Error encountered during minimization:\n')
@@ -103,6 +101,8 @@ def local_minimization(par, par_indexes, par_fixed, data, verbose=True):
         sys.stderr.write(' -- Check that all parameters are correctly initialized.\n')
         dump_parameters(par, par_indexes, par_fixed, data)
         exit()
+
+    par, pcov, _infodict, errmsg, ier = out
 
     if ier not in [1, 2, 3, 4]:
         print(''.join(('Optimal parameters not found: ', errmsg)))
@@ -116,7 +116,6 @@ def local_minimization(par, par_indexes, par_fixed, data, verbose=True):
         par_err = sc.sqrt(sc.diag(pcov))
 
     else:
-        pcov = sc.inf
         par_err = par
 
     return par, par_err, reduced_chi2
@@ -199,7 +198,7 @@ def find_independent_clusters(data, par, par_indexes, par_fixed):
             if not merged:
                 clusters.append(data_point)
 
-    except (KeyboardInterrupt):
+    except KeyboardInterrupt:
         exit("\n -- ChemEx killed while clustering\n")
 
     final_clusters = list()

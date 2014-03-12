@@ -18,8 +18,9 @@ description = \
         calculated. The calculation is designed specifically to analyze the experiment
         found in the reference."""
 
-reference = {'journal': 'Journal of the American Chemical Society',
-             'year': 2008,
-             'volume': 130,
-             'pages': '2667-2675'
+reference = {
+    'journal': 'Journal of the American Chemical Society',
+    'year': 2008,
+    'volume': 130,
+    'pages': '2667-2675'
 }

@@ -81,7 +81,7 @@ def compute_liouvillians(pb=0.0, pc=0.0, kex_ab=0.0, kex_bc=0.0, kex_ac=0.0, dw_
     return l_free
 
 
-def compute_Iy_eq(pb, pc):
+def compute_iy_eq(pb, pc):
     """
     Returns the equilibrium magnetization vector.
 
@@ -109,13 +109,13 @@ def compute_Iy_eq(pb, pc):
     return mag_eq
 
 
-def get_Iy(I):
+def get_iy(mag):
     """
     Returns the amount of magnetization along y.
 
     Parameters
     ----------
-    I : ndarray
+    mag : ndarray
         Magnetization vector.
 
     Returns
@@ -125,9 +125,9 @@ def get_Iy(I):
 
     """
 
-    magy_a = I[1, 0]
-    magy_b = I[3, 0]
-    magy_c = I[5, 0]
+    magy_a = mag[1, 0]
+    magy_b = mag[3, 0]
+    magy_c = mag[5, 0]
 
     return magy_a, magy_b, magy_c
 

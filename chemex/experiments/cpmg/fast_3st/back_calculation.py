@@ -9,8 +9,8 @@ from scipy.linalg import expm
 
 from chemex.bases.three_states.fast import P_180Y
 from chemex.caching import lru_cache
+from .liouvillian import compute_iy_eq, compute_liouvillians, get_iy
 
-from .liouvillian import compute_Iy_eq, compute_liouvillians, get_Iy
 
 
 # Local Modules
@@ -81,11 +81,11 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads=1.0, _id=None):
         dw_ab *= ppm_to_rads
         dw_ac *= ppm_to_rads
 
-        mag_eq = compute_Iy_eq(pb, pc)
+        mag_eq = compute_iy_eq(pb, pc)
 
         if ncyc == 0:
 
-            I = mag_eq
+            mag = mag_eq
 
         else:
 
@@ -96,9 +96,9 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads=1.0, _id=None):
             t_cp = time_t2 / (4.0 * ncyc)
             p_free = expm(l_free * t_cp)
 
-            I = matrix_power(p_free.dot(P_180Y).dot(p_free), 2 * ncyc).dot(mag_eq)
+            mag = matrix_power(p_free.dot(P_180Y).dot(p_free), 2 * ncyc).dot(mag_eq)
 
-        magy_a, _, _ = get_Iy(I)
+        magy_a, _, _ = get_iy(mag)
 
         return magy_a
 

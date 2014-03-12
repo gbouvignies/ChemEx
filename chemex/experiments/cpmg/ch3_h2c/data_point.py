@@ -5,6 +5,7 @@ Created on Jan 9, 2014
 """
 
 from inspect import getargspec
+
 from scipy import pi
 
 from chemex.tools import parse_assignment
@@ -12,6 +13,7 @@ from chemex.experiments.base_data_point import BaseDataPoint
 from chemex.constants import gamma_ratio
 from .back_calculation import make_calc_observable
 from ..plotting import plot_data
+
 
 # Constants
 TWO_PI = 2.0 * pi
@@ -81,7 +83,6 @@ class DataPoint(BaseDataPoint):
             for short_name, long_name in self.short_long_par_names
             if short_name in PAR_DICT['fix']
         )
-
 
     def __repr__(self):
         """Print the data point"""

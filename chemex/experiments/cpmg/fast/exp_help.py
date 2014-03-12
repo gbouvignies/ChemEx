@@ -19,8 +19,9 @@ description = \
         Off resonance effects are taken into account. The calculation is designed
         specifically to analyze the experiment found in the reference."""
 
-reference = {'journal': 'Journal of Physical Chemistry B',
-             'year': 2008,
-             'volume': 112,
-             'pages': '5898-5904'
+reference = {
+    'journal': 'Journal of Physical Chemistry B',
+    'year': 2008,
+    'volume': 112,
+    'pages': '5898-5904'
 }

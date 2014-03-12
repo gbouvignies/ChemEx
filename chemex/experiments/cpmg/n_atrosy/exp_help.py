@@ -1,3 +1,4 @@
+# coding=utf-8
 """
 Created on Oct 10, 2013
 
@@ -18,8 +19,9 @@ description = \
         Off resonance effects are taken into account. The calculation is designed
         specifically to analyze the experiment found in the reference."""
 
-reference = {'journal': 'Journal',
-             'year': 2007,
-             'volume': 0,
-             'pages': '1-10'
+reference = {
+    'journal': 'Journal',
+    'year': 2007,
+    'volume': 0,
+    'pages': '1-10'
 }

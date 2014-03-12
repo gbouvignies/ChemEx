@@ -20,12 +20,15 @@ def create_par_list_to_fit(par_filename, data):
     Create and set the list of parameters to fit.
     """
 
+    par = []
+    par_indexes = {}
+    par_fixed = {}
+
     try:
         par, par_indexes, par_fixed = create_fitting_parameters_array(data)
-        data = trim_datasets_using_par(data, par_indexes)
         par, par_fixed = read_par(par_filename, par, par_indexes, par_fixed)
 
-    except (KeyboardInterrupt):
+    except KeyboardInterrupt:
         exit(' -- ChemEx killed while reading and checking parameters files\n')
 
     return par, par_indexes, par_fixed
@@ -53,22 +56,6 @@ def create_fitting_parameters_array(data):
     par_fixed = dict((par_name, default_val) for index, par_name in enumerate(parameters_to_fix))
 
     return par, par_indexes, par_fixed
-
-
-def trim_datasets_using_par(data, par_indexes):
-    """
-    Removes all the data points needing more fitting parameters than available.
-    """
-
-    parameters_to_fit = set(par_indexes.keys())
-
-    trimmed_data = list()
-
-    for data_point in data:
-        if data_point.get_fitting_parameter_names() <= parameters_to_fit:
-            trimmed_data.append(data_point)
-
-    return trimmed_data
 
 
 def read_par(input_file, par, par_indexes, par_fixed):
@@ -194,8 +181,7 @@ def read_par(input_file, par, par_indexes, par_fixed):
         par_name_str = [str(_) for _ in par_name]
         if par[index] is None:
             par_none.add(par_name_str[0])
-        elif (par[index] < 0.0 and
-                  par_name_str[0].startswith('r_')):
+        elif par[index] < 0.0 and par_name_str[0].startswith('r_'):
             par_ngtv.add(','.join(par_name_str))
 
     # Check that fixed parameters_cfg are all initialized
@@ -203,8 +189,7 @@ def read_par(input_file, par, par_indexes, par_fixed):
         par_name_str = [str(_) for _ in par_name]
         if par_fixed[par_name] is None:
             par_none.add(par_name_str[0])
-        elif (par_fixed[par_name] < 0.0 and
-                  par_name_str[0].startswith('r_')):
+        elif par_fixed[par_name] < 0.0 and par_name_str[0].startswith('r_'):
             par_ngtv.add(','.join(par_name_str))
 
     if len(par_ngtv):
