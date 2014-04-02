@@ -11,7 +11,7 @@ import os
 import random
 from shutil import copyfile
 
-from chemex.chi2 import write_chi2, calc_chi2
+from chemex.chi2 import calc_chi2
 
 try:
     from chemex import fitting, writing, parsing, reading, plotting
@@ -66,7 +66,7 @@ def main():
 
     calc_chi2(par, par_indexes, par_fixed, data)
 
-    for _ in range(25):
+    for _ in range(1000):
 
         output_dir_ = os.path.join(output_dir, '{:03d}'.format(_))
 
@@ -85,9 +85,9 @@ def main():
             fitting.run_fit(args.method, par, par_indexes, par_fixed, data_mc)
 
         # Write outputs
-        write_chi2(par_mc, par_indexes_mc, par_fixed_mc, data_mc, output_dir=output_dir_)
-        writing.write_par(par_mc, par_err_mc, par_indexes_mc, output_dir=output_dir_)
-        writing.write_fixed_par(par_fixed_mc, output_dir=output_dir_)
+        writing.write_chi2(par_mc, par_indexes_mc, par_fixed_mc, data_mc, output_dir=output_dir_)
+        writing.write_par(par_mc, par_err_mc, par_indexes_mc, par_fixed_mc, output_dir=output_dir_)
+        #writing.write_fixed_par(par_fixed_mc, output_dir=output_dir_)
         writing.write_dat(data_mc, output_dir=output_dir_)
 
         if not args.noplot:
