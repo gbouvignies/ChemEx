@@ -70,7 +70,6 @@ def main():
     par, par_indexes, par_fixed = reading.create_par_list_to_fit(args.parameters, data)
 
     data_bs = make_bootstrap_dataset(data)
-    print(len(data), len(data_bs))
 
     # Fit the data to the model
     par, par_err, par_indexes, par_fixed, reduced_chi2 = \
