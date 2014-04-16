@@ -16,6 +16,8 @@ from setuptools import setup, find_packages
 
 scripts = [
     'bin/chemex_fit.py',
+    'bin/chemex_mc.py',
+    'bin/chemex_bootstrap.py',
 ]
 
 setup(
@@ -31,6 +33,6 @@ setup(
     install_requires=[
         'numpy',
         'scipy',
-        'matplotlib'
+        'matplotlib>=1.1'
     ],
 )

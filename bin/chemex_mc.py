@@ -5,13 +5,11 @@ Created on Mar 31, 2011
 @author: guillaume
 """
 
-# Import
-from copy import deepcopy
 import os
 import random
-from shutil import copyfile
 
-from chemex.chi2 import calc_chi2
+from shutil import copyfile
+from copy import deepcopy
 
 try:
     from chemex import fitting, plotting, writing, parsing, reading, tools
@@ -50,16 +48,7 @@ def main():
             output_dir = os.path.join(output_dir, args.res_incl[0].upper())
 
     tools.make_dir(output_dir)
-    '''
-    # Make the output directory if you need to
-    if output_dir != './':
-        if not os.path.exists(output_dir):
-            try:
-                os.makedirs(output_dir)
-            except OSError:
-                exit("\nOSError: You can not use that directory!\n")
 
-    '''
     # Copy the method to the output directory, as a backup
     method_file = None
     if args.method:
@@ -78,14 +67,7 @@ def main():
         output_dir_ = os.path.join(output_dir, '{:03d}'.format(_))
 
         tools.make_dir(output_dir_)
-        '''
-        if not os.path.exists(output_dir_):
-            try:
-                os.makedirs(output_dir_)
-            except OSError:
-                exit("\nOSError: You can not use that directory!\n")
 
-        '''
         data_mc = deepcopy(data)
 
         for data_pt in data_mc:
@@ -97,14 +79,16 @@ def main():
         # Write outputs
         writing.write_chi2(par_mc, par_indexes_mc, par_fixed_mc, data_mc, output_dir=output_dir_)
         writing.write_par(par_mc, par_err_mc, par_indexes_mc, par_fixed_mc, output_dir=output_dir_)
-        #writing.write_fixed_par(par_fixed_mc, output_dir=output_dir_)
         writing.write_dat(data_mc, output_dir=output_dir_)
 
         if not args.noplot:
 
+            output_dir_plot = os.path.join(output_dir_, 'plots')
+            tools.make_dir(output_dir_plot)
+
             print(' -- plotting data')
             try:
-                plotting.plot_data(data_mc, par_mc, par_indexes_mc, par_fixed_mc, output_dir=output_dir_)
+                plotting.plot_data(data_mc, par_mc, par_indexes_mc, par_fixed_mc, output_dir=output_dir_plot)
             except (KeyboardInterrupt):
                 print('\n -- plotting cancelled')
 

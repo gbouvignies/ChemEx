@@ -82,6 +82,9 @@ def read_a_cest_profile(filename, parameters):
 
     data_points = []
 
+    exp_type = parameters['experiment_type'].replace('_cest', '')
+    data_point = __import__(exp_type + '.data_point', globals(), locals(), ['DataPoint'], -1)
+
     intensity_ref = 1.0
 
     for b1_offset, intensity_val, intensity_err in data:
@@ -89,15 +92,15 @@ def read_a_cest_profile(filename, parameters):
             intensity_ref = intensity_val
 
     parameters['intensity_ref'] = intensity_ref
+    parameters['profile_id'] = filename
 
     for b1_offset, intensity_val, intensity_err in data:
         parameters['b1_offset'] = b1_offset
 
+        # Used to keep reference points out of the bootstrapping
+        parameters['reference'] = abs(b1_offset) >= 10000.0
+
         intensity_err = uncertainty
-
-        exp_type = parameters['experiment_type'].replace('_cest', '')
-
-        data_point = __import__(exp_type + '.data_point', globals(), locals(), ['DataPoint'], -1)
 
         data_points.append(data_point.DataPoint(intensity_val, intensity_err, parameters))
 
@@ -111,31 +114,6 @@ def estimate_uncertainty(data):
     int_list = sc.asarray([it for of, it, _er in data if abs(of) < 10000.0])
 
     return estimate_noise(int_list)
-
-
-# def estimate_uncertainty(data):
-#     """Estimates uncertainty using the baseline"""
-#
-#     data.sort()
-#     off_list = sc.asarray([of for of, _it , _er in data if abs(of) < 10000.0])
-#     int_list = sc.asarray([it for of, it , _er in data if abs(of) < 10000.0])
-#
-#     std_list = list()
-#
-#     N = 5
-#
-#     for i in range(len(int_list) - N):
-#
-#         x = sc.array(off_list[i:i + N])
-#         y = sc.array(int_list[i:i + N])
-#
-#         n = 2
-#
-#         par = sc.polyfit(x, y, n)
-#         y_calc = sum([p * (x ** (n - i)) for i, p in enumerate(par)])
-#         std_list.append(sc.std(y - y_calc, ddof=n + 1))
-#
-#     return sc.median(std_list)
 
 
 def adjust_min_int_uncertainty(data_int):
