@@ -5,13 +5,13 @@ Created on Apr 1, 2011
 """
 
 import os
-
 import scipy as sc
 import scipy.stats as stats
-import matplotlib.pyplot as plt
 
+import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from matplotlib.backends.backend_pdf import PdfPages
+
 from chemex.tools import parse_assignment
 
 # Constants
@@ -44,7 +44,7 @@ def group_data(dataset):
     return grouped_dataset
 
 
-def make_val_for_plot(residue_dataset, par, par_names, par_fixed):
+def make_val_for_plot(residue_dataset, par, par_names, par_fixed, filename_out):
     """Creates the arrays that will be used to plot one profile"""
 
     mag_ref = sc.mean([point.val for point in residue_dataset if point.par['ncyc'] == 0])
@@ -74,6 +74,13 @@ def make_val_for_plot(residue_dataset, par, par_names, par_fixed):
 
             values.append((frq, r2_exp, r2_err_down, r2_err_up, r2_cal))
 
+    for a_xe, a_ye, a_ede, a_eue, a_yc in sorted(values):
+        filename_out.write(
+            "{:10s} {:8.3f} {:8.3f} {:8.3f} {:8.3f} {:8.3f}\n".format(
+                residue_dataset[0].par['resonance_id'].upper(), a_xe, a_ye, a_ede, a_eue, a_yc
+            )
+        )
+
     xe, ye, ede, eue, yc = zip(*sorted(values))
 
     return xe, ye, ede, eue, yc
@@ -95,6 +102,9 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
         filename = ''.join([experiment_name, '.pdf'])
         filename = os.path.join(output_dir, filename)
 
+        filename_calc = ''.join([experiment_name, '.fit'])
+        filename_calc = os.path.join(output_dir, filename_calc)
+
         print("     * {}".format(filename))
 
         ########################
@@ -103,60 +113,62 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
         pdf = PdfPages(filename)
 
-        for (_index, resonance_id), residue_dataset in sorted(grouped_dataset.iteritems()):
-            out = make_val_for_plot(residue_dataset, par, par_names, par_fixed)
-            xe, ye, ede, eue, yc = out
+        with open(filename_calc, 'w') as f:
 
-            ###### Matplotlib ######
+            for (_index, resonance_id), residue_dataset in sorted(grouped_dataset.iteritems()):
+                out = make_val_for_plot(residue_dataset, par, par_names, par_fixed, f)
+                xe, ye, ede, eue, yc = out
 
-            fig = plt.figure(1, linewidth=LINNEWIDTH, figsize=(6, 4.5))
-            ax = fig.add_subplot(111)
+                ###### Matplotlib ######
 
-            ########################
+                fig = plt.figure(1, linewidth=LINNEWIDTH, figsize=(6, 4.5))
+                ax = fig.add_subplot(111)
 
-            ax.plot(
-                xe, yc, '-',
-                color='0.5',
-                linewidth=LINNEWIDTH
-            )
+                ########################
 
-            ax.errorbar(
-                xe, ye, yerr=[ede, eue], fmt='ro',
-                linewidth=LINNEWIDTH,
-                markersize=5.0,
-                markerfacecolor='w',
-                markeredgewidth=LINNEWIDTH,
-                markeredgecolor='r'
-            )
+                ax.plot(
+                    xe, yc, '-',
+                    color='0.5',
+                    linewidth=LINNEWIDTH
+                )
 
-            upper_vals = list(sc.array(ye) + sc.array(eue))
-            lower_vals = list(sc.array(ye) - sc.array(ede))
-            all_vals = upper_vals + lower_vals + list(yc)
+                ax.errorbar(
+                    xe, ye, yerr=[ede, eue], fmt='ro',
+                    linewidth=LINNEWIDTH,
+                    markersize=5.0,
+                    markerfacecolor='w',
+                    markeredgewidth=LINNEWIDTH,
+                    markeredgecolor='r'
+                )
 
-            xmin, xmax = set_lim(xe, 0.05)
-            ymin, ymax = set_lim(all_vals, 0.05)
+                upper_vals = list(sc.array(ye) + sc.array(eue))
+                lower_vals = list(sc.array(ye) - sc.array(ede))
+                all_vals = upper_vals + lower_vals + list(yc)
 
-            ax.set_xlim(xmin, xmax)
-            ax.set_ylim(ymin, ymax)
+                xmin, xmax = set_lim(xe, 0.05)
+                ymin, ymax = set_lim(all_vals, 0.05)
 
-            ax.tick_params(length=3, top=True, right=False, labelsize=10)
+                ax.set_xlim(xmin, xmax)
+                ax.set_ylim(ymin, ymax)
 
-            ax.xaxis.set_major_locator(MaxNLocator(6))
-            ax.yaxis.set_major_locator(MaxNLocator(6))
+                ax.tick_params(length=3, top=True, right=False, labelsize=10)
 
-            ax.set_xlabel(r'$\mathregular{\nu_{CPMG}}$' + ' (Hz)')
-            ax.set_ylabel(r'$\mathregular{R_{2,eff}}$ ($\mathregular{s^{-1}}$)')
+                ax.xaxis.set_major_locator(MaxNLocator(6))
+                ax.yaxis.set_major_locator(MaxNLocator(6))
 
-            ax.set_title('{:s}'.format(resonance_id.upper()))
+                ax.set_xlabel(r'$\mathregular{\nu_{CPMG}}$' + ' (Hz)')
+                ax.set_ylabel(r'$\mathregular{R_{2,eff}}$ ($\mathregular{s^{-1}}$)')
 
-            fig.tight_layout()
+                ax.set_title('{:s}'.format(resonance_id.upper()))
 
-            ########################
+                fig.tight_layout()
 
-            pdf.savefig()
-            plt.close()
+                ########################
 
-            ########################
+                pdf.savefig()
+                plt.close()
+
+                ########################
 
         pdf.close()
 

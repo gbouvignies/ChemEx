@@ -77,23 +77,26 @@ def read_a_cpmg_profile(filename, parameters):
 
     data_points = list()
 
+    exp_type = parameters['experiment_type'].replace('_cpmg', '')
+    data_point = __import__(exp_type + '.data_point', globals(), locals(), ['DataPoint'], -1)
+
     intensity_ref = 1.0
 
     for ncyc, intensity_val, intensity_err in data:
         if ncyc == 0.0:
             intensity_ref = intensity_val
 
+    parameters['profile_id'] = filename
     parameters['intensity_ref'] = intensity_ref
 
     for ncyc, intensity_val, intensity_err in data:
         parameters['ncyc'] = int(ncyc)
 
+        # Used to keep reference points out of the bootstrapping
+        parameters['reference'] = int(ncyc) == 0
+
         # Calculate r2 uncertainty from intensity uncertainty
         intensity_err = max([uncertainty_from_duplicates, intensity_err])
-
-        exp_type = parameters['experiment_type'].replace('_cpmg', '')
-
-        data_point = __import__(exp_type + '.data_point', globals(), locals(), ['DataPoint'], -1)
 
         data_points.append(data_point.DataPoint(intensity_val, intensity_err, parameters))
 
