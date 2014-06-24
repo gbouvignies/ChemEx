@@ -70,8 +70,8 @@ class DataPoint(BaseDataPoint):
         self.short_long_par_names = (
             ('pb', ('pb', temperature)),
             ('kex', ('kex', temperature)),
-            ('dwc', ('dw', nucleus_name_1, temperature)),
-            ('dwh', ('dw', nucleus_name_2, temperature)),
+            ('dwc', ('dw', nucleus_name_1)),
+            ('dwh', ('dw', nucleus_name_2)),
             ('i0', ('i0', resonance_id, experiment_name)),
             ('r_2hxycxy', ('r_2hxycxy', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
             ('dr_2hxycxy', ('dr_2hxycxy', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
