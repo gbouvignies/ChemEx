@@ -6,11 +6,8 @@ Created on Mar 30, 2011
 
 __updated__ = "2013-10-17"
 
-# Standard libraries
 import os
-
-# Specialized libraries
-import numpy as np
+import scipy as sc
 
 from chemex import tools
 
@@ -67,7 +64,7 @@ def name_experiment(global_parameters=dict()):
 def read_a_cpmg_profile(filename, parameters):
     """Reads in the fuda file and spit out the intensities"""
 
-    data = np.loadtxt(filename, dtype=[('ncyc', '<f8'), ('intensity', '<f8'), ('intensity_err', '<f8')])
+    data = sc.loadtxt(filename, dtype=[('ncyc', '<f8'), ('intensity', '<f8'), ('intensity_err', '<f8')])
 
     uncertainty_from_duplicates = estimate_uncertainty_from_duplicates(data)
 
@@ -107,11 +104,11 @@ def estimate_uncertainty_from_duplicates(data):
     for ncyc, intensity_val, _ in data:
         intensity_dict.setdefault(ncyc, list()).append(intensity_val)
 
-    intensity_std = [np.std(duplicates)
+    intensity_std = [sc.std(duplicates)
                      for duplicates in intensity_dict.itervalues()
                      if len(duplicates) > 1]
 
-    return np.mean(intensity_std) if intensity_std else 0.0
+    return sc.mean(intensity_std) if intensity_std else 0.0
 
 
 def adjust_min_int_uncertainty(data_int):
@@ -129,7 +126,7 @@ def adjust_min_int_uncertainty(data_int):
     new_data_int = list()
 
     for data_point in data_int:
-        data_point.err = max([data_point.err, np.median(int_err_list)])
+        data_point.err = max([data_point.err, sc.median(int_err_list)])
         new_data_int.append(data_point)
 
     return new_data_int

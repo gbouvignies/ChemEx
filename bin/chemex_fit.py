@@ -29,9 +29,9 @@ def main():
     if args.res_incl and args.res_excl:
         exit('\nCan not simultaneously include and exclude residues!\n')
     elif args.res_incl:
-        args.res_incl = [res.lower() for res in args.res_incl]
+        args.res_incl = [res.upper() for res in args.res_incl]
     elif args.res_excl:
-        args.res_excl = [res.lower() for res in args.res_excl]
+        args.res_excl = [res.upper() for res in args.res_excl]
 
     # Read experimental data
     data = list()
@@ -44,7 +44,8 @@ def main():
         exit("\nNo Data to fit!\n")
 
     # Create the lists of both fitting and fixed parameters
-    par, par_indexes, par_fixed = reading.create_par_list_to_fit(args.parameters, data)
+    par, par_indexes, par_fixed, data = reading.create_par_list_to_fit(args.parameters, data)
+    print(par_indexes.keys())
 
     # Fit the data to the model
     par, par_err, par_indexes, par_fixed, reduced_chi2 = \

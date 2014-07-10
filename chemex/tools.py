@@ -76,7 +76,7 @@ def parse_assignment(assignment):
     A '?' component is translated to ('', '')
     """
 
-    res = assignment.split('-')
+    res = assignment.lower().split('-')
     assignment = []
     last_group = None
     for s in res:

@@ -84,19 +84,21 @@ def compute_free_liouvillian(pb=0.0, pc=0.0, kex_ab=0.0,
     kac = kex_ac * pc / (pa + pc)
     kca = kex_ac * pa / (pa + pc)
 
-    l_free = R_IXY * r_nxy
-    l_free += DR_IXY_AB * dr_nxy_ab
-    l_free += CS * cs_offset
-    l_free += DR_IXY_AC * dr_nxy_ac
-    l_free += R_IZ * r_nz
-    l_free += DW_AB * dw_ab
-    l_free += DW_AC * dw_ac
-    l_free += KAB * kab
-    l_free += KBA * kba
-    l_free += KBC * kbc
-    l_free += KCB * kcb
-    l_free += KAC * kac
-    l_free += KCA * kca
+    l_free = (
+        R_IXY * r_nxy +
+        DR_IXY_AB * dr_nxy_ab +
+        DR_IXY_AC * dr_nxy_ac +
+        R_IZ * r_nz +
+        CS * cs_offset +
+        DW_AB * dw_ab +
+        DW_AC * dw_ac +
+        KAB * kab +
+        KBA * kba +
+        KBC * kbc +
+        KCB * kcb +
+        KAC * kac +
+        KCA * kca
+    )
 
     return l_free
 
