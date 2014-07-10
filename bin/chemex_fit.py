@@ -45,7 +45,6 @@ def main():
 
     # Create the lists of both fitting and fixed parameters
     par, par_indexes, par_fixed, data = reading.create_par_list_to_fit(args.parameters, data)
-    print(par_indexes.keys())
 
     # Fit the data to the model
     par, par_err, par_indexes, par_fixed, reduced_chi2 = \
