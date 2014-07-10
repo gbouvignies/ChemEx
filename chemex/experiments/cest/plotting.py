@@ -8,6 +8,9 @@ import os
 
 from scipy import linspace, asarray, median, pi
 
+import matplotlib as mpl
+mpl.use('Agg')
+
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gsp
 
