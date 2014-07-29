@@ -62,10 +62,11 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
         p_90mx = expm((l_free - l_w1x) * pw)
         p_90my = expm((l_free - l_w1y) * pw)
         p_180px = matrix_power(p_90px, 2)
+        p_180mx = matrix_power(p_90mx, 2)
         p_180py = matrix_power(p_90py, 2)
 
         ps = (p_equil, p_neg, p_90px, p_90py, p_90mx, p_90my,
-              p_180px, p_180py)
+              p_180px, p_180mx, p_180py)
 
         return l_free, ps
 
@@ -115,7 +116,7 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
                                       j_hn=j_hn, dj_hn=dj_hn, cs_offset=cs_offset)
 
         (p_equil, p_neg, p_90px, p_90py, p_90mx,
-         p_90my, p_180px, p_180py) = ps
+         p_90my, p_180px, p_180mx, p_180py) = ps
 
         mag_eq = compute_2HzNz_eq(pb)
 
@@ -123,7 +124,7 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
 
             # The +/- phase cycling of the first 90 and the receiver is taken care
             # by setting the thermal equilibrium to 0
-            I = reduce(dot, [p_equil, p_90px, p_180px, p_90px, mag_eq])
+            I = reduce(dot, [p_equil, p_90px, 0.5*(p_180px + p_180mx), p_90px, mag_eq])
 
         else:
 
@@ -131,8 +132,9 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
             p_free = expm(l_free * t_cp)
             p_cpy = matrix_power(p_free.dot(p_180py).dot(p_free), ncyc)
 
-            I = reduce(dot, [p_equil, p_90px, p_neg, p_cpy, p_neg, p_180px,
-                              p_neg, p_cpy, p_neg, p_90px, mag_eq])
+            I = reduce(dot, [p_equil, p_90px, p_neg, p_cpy, p_neg, 
+                              0.5*(p_180px + p_180mx), p_neg, p_cpy,
+                              p_neg, p_90px, mag_eq])
 
         magz_a, _magz_b = get_2HzNz(I)
 
