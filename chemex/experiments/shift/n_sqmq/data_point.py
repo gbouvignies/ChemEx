@@ -41,7 +41,6 @@ class DataPoint(BaseDataPoint):
 
         temperature = self.par['temperature']
         resonance_id = self.par['resonance_id']
-        index, residue_type, nucleus_type = parse_assignment(resonance_id)[0]
 
         assignment = parse_assignment(resonance_id)
         index_1, residue_type_1, nucleus_type_1 = assignment[0]

@@ -124,7 +124,7 @@ def read_par(input_file, par, par_indexes, par_fixed):
     # Local parameters_cfg
     for section in parameters_cfg.sections():
 
-        par_name = [token.strip() for token in section.split(',')]
+        par_name = [token.strip().lower() for token in section.split(',')]
 
         if par_name[0] not in short_long_par_names:
             print(' ! [{:s}] does not match any of your data (possibly ignored above).'.format(section))

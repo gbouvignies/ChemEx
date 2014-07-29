@@ -1,19 +1,10 @@
-'''
-Created on Aug 15, 2011
-
-@author: guillaume
-'''
-
 from chemex.caching import lru_cache
 from chemex.experiments.misc import correct_chemical_shift
 
 
 @lru_cache()
 def calc_observable(pb=0.0, kex=0.0, dw_h=0.0, dw_n=0.0, ppm_to_rads_h=1.0, ppm_to_rads_n=1.0):
-    '''
-
-    Returns: float
-    '''
+    ''' Returns: float '''
 
     dw_h *= ppm_to_rads_h
     dw_n *= ppm_to_rads_n
@@ -22,7 +13,7 @@ def calc_observable(pb=0.0, kex=0.0, dw_h=0.0, dw_n=0.0, ppm_to_rads_h=1.0, ppm_
     shift_mq = 0.5 * (correct_chemical_shift(pb, kex, dw_n + dw_h)[0] +
                       correct_chemical_shift(pb, kex, dw_n - dw_h)[0])
 
-    return (shift_mq - shift_sq) / ppm_to_rads_n * 1e3
+    return (shift_sq - shift_mq) / ppm_to_rads_n * 1e3
 
 
 

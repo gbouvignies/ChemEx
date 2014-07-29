@@ -13,8 +13,7 @@ from numpy.linalg import matrix_power
 from chemex.caching import lru_cache
 from .liouvillian import (compute_2HzNz_eq,
                           compute_liouvillians,
-                          get_2HzNz, compute_nh_etaz)
-from chemex.bases.two_states.iph_aph import P180_S
+                          get_2HzNz, )
 
 
 @lru_cache()
@@ -107,12 +106,10 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0, c
         """
 
         dw *= ppm_to_rads
-        cs_offset = (cs - carrier) * ppm_to_rads + pi * j_hn
-
-        etaz_calc = compute_nh_etaz(r_nz, ppm_to_rads) * 0.0
+        cs_offset = (cs - carrier) * ppm_to_rads
 
         l_free, ps = make_propagators(pb=pb, kex=kex, dw=dw, r_hxy=r_hxy, dr_hxy=dr_hxy,
-                                      r_nz=r_nz, r_2hznz=r_2hznz, etaxy=etaxy, etaz=etaz_calc,
+                                      r_nz=r_nz, r_2hznz=r_2hznz, etaxy=etaxy, etaz=etaz,
                                       j_hn=j_hn, dj_hn=dj_hn, cs_offset=cs_offset)
 
         (p_equil, p_neg, p_90px, p_90py, p_90mx,
