@@ -8,10 +8,8 @@ Created on June 26, 2014
 # Imports
 from scipy import (zeros,
                    asarray,
-                   pi, cos, sqrt)
-from scipy.constants import hbar, mu_0
+                   pi)
 
-from chemex.constants import gamma
 from chemex.bases.two_states.iph_aph import (R_IXY, R_2SZIXY, DR_XY,
                                              R_IZ, R_2SZIZ, CS, DW,
                                              J, DJ, ETAXY, ETAZ,
@@ -71,7 +69,7 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0, r_hxy=5.0, dr_hxy=0.0,
     kab = kex * pb
     kba = kex - kab
 
-    r_2hxynz = r_hxy + r_nz
+    r_2hxynz = r_hxy - r_nz
     r_hz = r_2hznz - r_nz
 
     l_free = R_IXY * r_hxy
@@ -107,44 +105,4 @@ def get_2HzNz(I):
 
     return magz_a, magz_b
 
-
-def compute_nh_etaz(r_nz, ppm_to_rads):
-    # TODO: replace with appropriate code for HN(dip)/H(csa) calculation
-    """
-    THIS IS NOT PRESENTLY IMPLEMENTED.
-    X-CORRELATION RATES ARE ZERO UNLESS EXPLICITLY SPECIFIED
-
-    Approximates etaxy and etaz (NH-dipolar/N-csa cross-correlated relaxation
-    rates) using inphase and longitudinal rates.
-
-    Arguments:
-    r_Hxy        -- transverse relaxationrate of N15 nucleus in /s,
-                    r_Hxy = 5.0 (default)
-    r_Hz         -- longitudinal relaxation rate of N15 nucleus in /s,
-                    r_Hz = 1.5 (default)
-    ppm_to_rads  -- unit conversion factor for desired nucleus & field
-
-
-    Returns:
-        etaxy, etaz
-        float, float
-    """
-
-    delta_csa_nh = -166.0  # ppm
-    r_nh = 1.04e-10  # meters
-    sqrt3 = sqrt(3.0)
-    geo_factor = 0.5 * (3.0 * cos(19.6 / 180.0 * pi) ** 2 - 1.0)
-
-    cc = delta_csa_nh * ppm_to_rads / sqrt3
-    dd = -mu_0 * hbar * gamma['H'] * gamma['N'] / (4.0 * pi * r_nh ** 3)
-
-    cc2 = cc ** 2
-    dd2 = dd ** 2
-    ccdd = cc * dd
-
-    jwn = r_nz / (cc2 + 0.75 * dd2)
-
-    etaz = sqrt3 * geo_factor * ccdd * jwn
-
-    return etaz
 

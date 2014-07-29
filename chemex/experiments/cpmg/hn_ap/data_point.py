@@ -21,24 +21,13 @@ TWO_PI = 2.0 * pi
 RATIO_H = gamma_ratio['H']
 
 PAR_DICT = {
-
-    # experimental requirements (used in __init__ and check_parameters)
-    'par_conv': ((str, ('resonance_id',)),
-
-                 (float, ('h_larmor_frq',
-                          'temperature',
-                          'carrier',
-                          'time_t2',
-                          'pw', 'time_equil')),
-
-                 (int, ('ncyc',))),
-
-    # Some stuff to get a nice help output
-    'exp': ('resonance_id', 'h_larmor_frq', 'temperature', 'carrier',
-            'time_t2', 'time_equil', 'pw', 'ncyc'),
-
+    'par_conv': (
+        (str, ('resonance_id',)),
+        (float, ('h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'pw', 'time_equil')),
+        (int, ('ncyc',))
+    ),
+    'exp': ('resonance_id', 'h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'time_equil', 'pw', 'ncyc'),
     'fit': ('pb', 'kex', 'dw', 'i0', 'r_hxy'),
-
     'fix': ('r_nz', 'dr_hxy', 'r_2hznz', 'etaxy', 'etaz', 'cs', 'j_hn', 'dj_hn'),
 
 }
@@ -70,21 +59,21 @@ class DataPoint(BaseDataPoint):
 
         self.kwargs_default = {'ncyc': self.par['ncyc']}
 
-        self.short_long_par_names = (('pb', ('pb', temperature)),
-                                     ('kex', ('kex', temperature)),
-                                     ('dw', ('dw', nucleus_name_2)),
-                                     ('cs', ('cs', nucleus_name_2, temperature)),
-                                     ('i0', ('i0', resonance_id, experiment_name)),
-                                     ('r_hxy', ('r_hxy', nucleus_name_2, h_larmor_frq, temperature)),
-                                     ('dr_hxy', ('dr_hxy', nucleus_name_2, h_larmor_frq, temperature)),
-                                     ('r_nz', ('r_nz', nucleus_name_1, h_larmor_frq, temperature)),
-                                     (
-                                         'r_2hznz',
-                                         ('r_2hznz', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
-                                     ('etaxy', ('etaxy', nucleus_name_1, h_larmor_frq, temperature)),
-                                     ('etaz', ('etaz', nucleus_name_1, h_larmor_frq, temperature)),
-                                     ('j_hn', ('j_hn', nucleus_name_1, nucleus_name_2, temperature)),
-                                     ('dj_hn', ('dj_hn', nucleus_name_1, nucleus_name_2, temperature)),)
+        self.short_long_par_names = (
+            ('pb', ('pb', temperature)),
+            ('kex', ('kex', temperature)),
+            ('dw', ('dw', nucleus_name_2)),
+            ('cs', ('cs', nucleus_name_2, temperature)),
+            ('i0', ('i0', resonance_id, experiment_name)),
+            ('r_hxy', ('r_hxy', nucleus_name_2, h_larmor_frq, temperature)),
+            ('dr_hxy', ('dr_hxy', nucleus_name_2, h_larmor_frq, temperature)),
+            ('r_nz', ('r_nz', nucleus_name_1, h_larmor_frq, temperature)),
+            ('r_2hznz', ('r_2hznz', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
+            ('etaxy', ('etaxy', nucleus_name_1, h_larmor_frq, temperature)),
+            ('etaz', ('etaz', nucleus_name_1, h_larmor_frq, temperature)),
+            ('j_hn', ('j_hn', nucleus_name_1, nucleus_name_2, temperature)),
+            ('dj_hn', ('dj_hn', nucleus_name_1, nucleus_name_2, temperature)),
+        )
 
         self.fitting_parameter_names.update(long_name
                                             for short_name, long_name in self.short_long_par_names
