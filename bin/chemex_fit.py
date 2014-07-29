@@ -29,9 +29,9 @@ def main():
     if args.res_incl and args.res_excl:
         exit('\nCan not simultaneously include and exclude residues!\n')
     elif args.res_incl:
-        args.res_incl = [res.upper() for res in args.res_incl]
+        args.res_incl = [res.lower() for res in args.res_incl]
     elif args.res_excl:
-        args.res_excl = [res.upper() for res in args.res_excl]
+        args.res_excl = [res.lower() for res in args.res_excl]
 
     # Read experimental data
     data = list()
