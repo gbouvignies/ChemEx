@@ -12,6 +12,7 @@ Navigate to the chemex directory and run:
 
 Quick update
 ------------
+
 To get the latest code using git:
 
 	git pull
@@ -30,4 +31,3 @@ You should have installed on your system:
 
 Newer versions of the above should be fine, as will be some older versions. However, Python
 2.6 or earlier will not work. Please report any compatability issues that you run into.
-
