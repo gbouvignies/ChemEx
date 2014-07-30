@@ -36,8 +36,7 @@ def run_fit(fit_filename, par, par_indexes, par_fixed, data):
         else:
             exit("The file \'{}\' is empty or does not exist!\n".format(fit_filename))
 
-
-    else:
+    if not fit_par_file.sections():
         fit_par_file.add_section('Standard Calculation')
 
     for section in fit_par_file.sections():
