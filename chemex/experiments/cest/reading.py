@@ -67,7 +67,7 @@ def name_experiment(global_parameters=dict()):
         time_t1 = float(global_parameters['time_t1'])
 
         name = '{:s}_{:.0f}Hz_{:.0f}ms_{:.0f}MHz_{:.0f}C'.format(exp_type, b1_frq, time_t1 * 1e3, h_larmor_frq,
-                                                                 temperature)
+                                                                 temperature).lower()
 
     return name
 
