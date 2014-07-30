@@ -58,7 +58,7 @@ def read_experimental_paramaters(cfg):
     experimental_paramaters['experiment_type'] = cfg.get('experiment', 'type')
 
     if cfg.has_option('experiment', 'name'):
-        experimental_paramaters['experiment_name'] = cfg.get('experiment', 'name')
+        experimental_paramaters['experiment_name'] = cfg.get('experiment', 'name').lower()
 
     return experimental_paramaters
 

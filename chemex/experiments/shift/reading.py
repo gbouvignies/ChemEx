@@ -46,7 +46,7 @@ def name_experiment(global_parameters=None):
         h_larmor_frq = float(global_parameters['h_larmor_frq'])
         temperature = float(global_parameters['temperature'])
 
-        name = '{:s}_{:.0f}MHz_{:.0f}C'.format(exp_type, h_larmor_frq, temperature)
+        name = '{:s}_{:.0f}MHz_{:.0f}C'.format(exp_type, h_larmor_frq, temperature).lower()
 
     return name
 
