@@ -8,6 +8,9 @@ import os
 import scipy as sc
 import scipy.stats as stats
 
+import matplotlib as mpl
+mpl.use('Agg')
+
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from matplotlib.backends.backend_pdf import PdfPages

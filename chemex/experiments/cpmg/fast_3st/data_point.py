@@ -16,13 +16,11 @@ from .back_calculation import make_calc_observable
 
 
 PAR_DICT = {
-    # experimental requirements (used in __init__ and check_parameters)
     'par_conv': (
         (str, ('resonance_id',)),
         (float, ('h_larmor_frq', 'temperature', 'carrier', 'time_t2',)),
         (int, ('ncyc',))
     ),
-    # Some stuff to get a nice help output
     'exp': ('resonance_id', 'h_larmor_frq', 'temperature', 'time_t2', 'ncyc',),
     'fit': ('pb', 'pc', 'kex_ab', 'kex_bc', 'kex_ac', 'dw_ab', 'dw_ac', 'i0', 'r_ixy',),
     'fix': ('dr_ixy_ab', 'dr_ixy_ac',),
@@ -50,8 +48,8 @@ class DataPoint(BaseDataPoint):
             )
         except KeyError:
             exit(
-                "Unknown nucleus type \"{}\" for peak \"{}\" in experiment \"{}\""
-                .format(nucleus_type, resonance_id, experiment_name)
+                "Unknown nucleus type \"{}\" for peak \"{}\" in experiment \"{}\"".format(nucleus_type, resonance_id,
+                                                                                          experiment_name)
             )
 
         self.par['_id'] = ((temperature, nucleus_name, h_larmor_frq),)

@@ -1,10 +1,6 @@
-"""
-Created on Mar 30, 2011
-
-@author: guillaume
+""" Reads the "experiment" files.
 """
 
-# Standard libraries
 import os
 import os.path
 import sys
@@ -13,7 +9,7 @@ import ConfigParser
 
 
 def read_cfg_file(input_file, res_incl=None, res_excl=None):
-    """Read the r2 data file containing the experimental parameters and the location of the fuda files"""
+    """Reads the "experiment" file containing the experimental parameters and the location of the data files"""
 
     data = None
 
@@ -36,10 +32,10 @@ def read_cfg_file(input_file, res_incl=None, res_excl=None):
 
     try:
         # Reads experimental and estimated parameters shared by all residues
-        global_parameters = read_global_paramaters(cfg)
+        experimental_parameters = read_experimental_paramaters(cfg)
 
         # Reads experimental measurements
-        data = read_data(cfg, working_dir, global_parameters, res_incl, res_excl)
+        data = read_data(cfg, working_dir, experimental_parameters, res_incl, res_excl)
 
     except ConfigParser.NoSectionError:
         exit("\nIn {:s}, {:s}!\n".format(input_file, sys.exc_info()[1]))
@@ -50,16 +46,23 @@ def read_cfg_file(input_file, res_incl=None, res_excl=None):
     return data
 
 
-def read_global_paramaters(cfg):
+def read_experimental_paramaters(cfg):
     """Reads experimental and estimated parameters shared by all residues"""
 
-    global_paramaters = dict(cfg.items('global_parameters'))
-    global_paramaters['experiment_type'] = cfg.get('experiment', 'type')
+    # This for legacy ("experimental_parameters" was previously called "global_parameters")
+    if cfg.has_section('experimental_parameters'):
+        experimental_paramaters = dict(cfg.items('experimental_parameters'))
+    elif cfg.has_section('global_parameters'):
+        experimental_paramaters = dict(cfg.items('global_parameters'))
+    else:
+        experimental_paramaters = dict()
+
+    experimental_paramaters['experiment_type'] = cfg.get('experiment', 'type')
 
     if cfg.has_option('experiment', 'name'):
-        global_paramaters['experiment_name'] = cfg.get('experiment', 'name')
+        experimental_paramaters['experiment_name'] = cfg.get('experiment', 'name').lower()
 
-    return global_paramaters
+    return experimental_paramaters
 
 
 def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None):

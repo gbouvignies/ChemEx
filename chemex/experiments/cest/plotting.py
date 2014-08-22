@@ -8,6 +8,9 @@ import os
 
 from scipy import linspace, asarray, median, pi
 
+import matplotlib as mpl
+mpl.use('Agg')
+
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gsp
 
@@ -152,7 +155,7 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
                     markeredgecolor='r'
                 )
 
-                ymin, ymax = set_lim(ye, 0.05)
+                ymin, ymax = set_lim(ye+yf, 0.05)
                 ax2.set_ylim(ymin, ymax)
                 ax2.tick_params(length=3, top=True, right=False, labelsize=10)
                 ax2.xaxis.set_major_locator(MaxNLocator(9))

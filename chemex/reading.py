@@ -9,7 +9,6 @@ import os
 import os.path
 import sys
 import ConfigParser
-
 import scipy as sc
 
 from chemex import tools
@@ -31,7 +30,7 @@ def create_par_list_to_fit(par_filename, data):
     except KeyboardInterrupt:
         exit(' -- ChemEx killed while reading and checking parameters files\n')
 
-    return par, par_indexes, par_fixed
+    return par, par_indexes, par_fixed, data
 
 
 def create_fitting_parameters_array(data):
@@ -87,7 +86,7 @@ def read_par(input_file, par, par_indexes, par_fixed):
     starting_parameters = list()
 
     # this assumes that the first key of each long key is the real parameter name
-    #   ... can this be untrue?
+    # ... can this be untrue?
     long_par_names = set(par_indexes) | set(par_fixed)
     short_long_par_names = {}
 
@@ -112,7 +111,7 @@ def read_par(input_file, par, par_indexes, par_fixed):
     # Local parameters_cfg
     for section in parameters_cfg.sections():
 
-        par_name = [token.lower().strip() for token in section.split(',')]
+        par_name = [token.strip().lower() for token in section.split(',')]
 
         if par_name[0] not in short_long_par_names:
             print(' ! [{:s}] does not match any of your data (possibly ignored above).'.format(section))
@@ -236,7 +235,7 @@ def read_parameter_file(filename, par_name):
         if line[0] in ['Assignment', '?-?']:
             continue
 
-        assignment = tools.parse_assignment(line[0].lower())
+        assignment = tools.parse_assignment(line[0])
 
         if len(assignment) == len(line) - 1:
 

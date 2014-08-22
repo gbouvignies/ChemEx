@@ -1,12 +1,11 @@
-"""
+'''
 Created on Feb 23, 2012
 
 @author: Mike Latham
 @author: Guillaume Bouvignies
-"""
+'''
 
 from inspect import getargspec
-
 from scipy import pi
 
 from chemex.tools import parse_assignment
@@ -16,30 +15,24 @@ from .back_calculation import make_calc_observable
 from ..plotting import plot_data
 
 
-#Constants
+# Constants
 TWO_PI = 2.0 * pi
 RATIO = gamma_ratio['C']
 
 PAR_DICT = {
     'par_conv': (
-        (str, ('resonance_id', 'smallflg')),
-        (float, ('h_larmor_frq', 'temperature', 'time_t2')),
+        (str, ('resonance_id', 'smallflg',)),
+        (float, ('h_larmor_frq', 'temperature', 'time_t2',)),
         (int, ('ncyc',))
     ),
-    'exp': (
-        'resonance_id', 'smallflg', 'h_larmor_frq', 'temperature', 'time_t2', 'ncyc'
-    ),
-    'fit': (
-        'i0', 'pb', 'kex', 'dwc', 'dwh', 'r_2hxycxy'
-    ),
-    'fix': (
-        'dr_2hxycxy',
-    ),
+    'exp': ('resonance_id', 'smallflg', 'h_larmor_frq', 'temperature', 'time_t2', 'ncyc',),
+    'fit': ('i0', 'pb', 'kex', 'dwc', 'dwh', 'r_2hxycxy',),
+    'fix': ('dr_2hxycxy',),
 }
 
 
 class DataPoint(BaseDataPoint):
-    """Intensity measured during a cpmg pulse train of frequency frq"""
+    '''Intensity measured during a cpmg pulse train of frequency frq'''
 
     def __init__(self, val, err, par):
         BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
@@ -72,8 +65,8 @@ class DataPoint(BaseDataPoint):
         self.short_long_par_names = (
             ('pb', ('pb', temperature)),
             ('kex', ('kex', temperature)),
-            ('dwc', ('dw', nucleus_name_1, temperature)),
-            ('dwh', ('dw', nucleus_name_2, temperature)),
+            ('dwc', ('dw', nucleus_name_1)),
+            ('dwh', ('dw', nucleus_name_2)),
             ('i0', ('i0', resonance_id, experiment_name)),
             ('r_2hxycxy', ('r_2hxycxy', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
             ('dr_2hxycxy', ('dr_2hxycxy', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
@@ -91,8 +84,9 @@ class DataPoint(BaseDataPoint):
             if short_name in PAR_DICT['fix']
         )
 
+
     def __repr__(self):
-        """Print the data point"""
+        '''Print the data point'''
 
         output = list()
         output.append('{resonance_id:6s}'.format(**self.par))
