@@ -1,16 +1,9 @@
-"""
-Created on Jun 8, 2011
-
-@author: guillaume
-"""
-
-# # {{{ http://code.activestate.com/recipes/577969-simplified-highly-optimized-lru-cache/ (r6)
+# # {{{ http://code.activestate.com/recipes/578078-py26-and-py30-backport-of-python-33s-lru-cache/
 from collections import namedtuple
 from functools import update_wrapper
 from threading import RLock
 
 _CacheInfo = namedtuple("CacheInfo", ["hits", "misses", "maxsize", "currsize"])
-
 
 class _HashedSeq(list):
     __slots__ = 'hashvalue'
@@ -22,10 +15,9 @@ class _HashedSeq(list):
     def __hash__(self):
         return self.hashvalue
 
-
 def _make_key(args, kwds, typed,
               kwd_mark=(object(),),
-              fasttypes=set([int, str, frozenset, type(None)]),
+              fasttypes={int, str, frozenset, type(None)},
               sorted=sorted, tuple=tuple, type=type, len=len):
     'Make a cache key from optionally typed positional and keyword arguments'
     key = args
@@ -43,7 +35,7 @@ def _make_key(args, kwds, typed,
     return _HashedSeq(key)
 
 
-def lru_cache(maxsize=10000, typed=False):
+def lru_cache(maxsize=100, typed=False):
     """Least-recently-used cache decorator.
 
     If *maxsize* is set to None, the LRU features are disabled and the cache
@@ -173,4 +165,4 @@ def lru_cache(maxsize=10000, typed=False):
 
     return decorating_function
 
-# # end of http://code.activestate.com/recipes/577969-simplified-highly-optimized-lru-cache/ }}}
+# # end of http://code.activestate.com/recipes/578078-py26-and-py30-backport-of-python-33s-lru-cache/ }}}
