@@ -11,13 +11,13 @@ from math import pi
 # Local imports
 from chemex.tools import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint
-from chemex.constants import gamma_ratio
+from chemex.constants import xi_ratio
 from chemex.experiments.misc import calc_multiplet
 from .back_calculation import make_calc_observable
 from ..plotting import plot_data
 
 # Constants
-RATIO_N = gamma_ratio['N']
+RATIO_N = xi_ratio['N']
 TWO_PI = 2.0 * pi
 
 # first dictionary version

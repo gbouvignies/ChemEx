@@ -7,7 +7,7 @@ Created on Aug 5, 2011
 from inspect import getargspec
 from scipy import pi
 
-from chemex.constants import gamma_ratio
+from chemex.constants import xi_ratio
 from chemex.experiments.base_data_point import BaseDataPoint
 from chemex.tools import parse_assignment
 from ..plotting import plot_data
@@ -45,11 +45,11 @@ class DataPoint(BaseDataPoint):
 
         try:
             self.par['ppm_to_rads'] = (
-                2.0 * pi * self.par['h_larmor_frq'] * gamma_ratio[nucleus_type[0].upper()]
+                2.0 * pi * self.par['h_larmor_frq'] * xi_ratio[nucleus_type[0].upper()]
             )
         except KeyError:
             exit("Unknown nucleus type \"{}\" for peak \"{}\" in experiment \"{}\""
-            .format(nucleus_type, resonance_id, experiment_name)
+                 .format(nucleus_type, resonance_id, experiment_name)
             )
 
         self.par['_id'] = ((temperature, nucleus_name, h_larmor_frq),)

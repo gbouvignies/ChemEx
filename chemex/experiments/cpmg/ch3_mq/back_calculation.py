@@ -10,13 +10,14 @@ from scipy.linalg import expm
 from numpy.linalg import matrix_power
 
 from chemex.caching import lru_cache
-from chemex.constants import gamma_ratio
+from chemex.constants import xi_ratio
 from .liouvillian import \
     compute_2hxcy_eq, \
     get_2hxcy, \
     compute_liouvillian
 
-RATIO = gamma_ratio['C']
+
+RATIO = xi_ratio['C']
 
 # Constants
 # Calculate the pulses
