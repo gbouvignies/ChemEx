@@ -81,6 +81,16 @@ class BaseDataPoint(object):
 
         return self.fixed_parameter_names
 
+    def filter(self, par, par_indexes, par_fixed=None):
+        """
+        Evaluate some criteria to know whether the point
+        should be considered in the calculation or not.
+
+        Returns 'True' if the point should NOT be considered.
+        """
+
+        return False
+
 
 # Functions
 

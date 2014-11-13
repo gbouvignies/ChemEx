@@ -46,6 +46,9 @@ def main():
     # Create the lists of both fitting and fixed parameters
     par, par_indexes, par_fixed, data = reading.create_par_list_to_fit(args.parameters, data)
 
+    # Filter data
+    data = [data_pt for data_pt in data if not data_pt.filter(par, par_indexes, par_fixed)]
+
     # Fit the data to the model
     par, par_err, par_indexes, par_fixed, reduced_chi2 = \
         fitting.run_fit(args.method, par, par_indexes, par_fixed, data)
