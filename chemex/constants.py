@@ -23,7 +23,7 @@ gamma_in_MHz_T = dict((key, val / (2.0 * pi) * 1.0e-06) for key, val in gamma.it
 # IUPAC values for bio NMR: Markley et al, Pure & Appl. Chem., (1998) 70, p117
 xi_ratio = {
     'H': 100.0000000e-02,
-    'N': -10.1329118e-02,
+    'N': 10.1329118e-02,
     'C': 25.1449530e-02,
     'F': 40.4808636e-02,
 }

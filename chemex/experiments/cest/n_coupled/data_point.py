@@ -55,7 +55,6 @@ class DataPoint(BaseDataPoint):
     def __init__(self, val, err, par):
         BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
 
-        self.par['b1_offset'] *= -1.0
         self.par['ppm_to_rads'] = TWO_PI * self.par['h_larmor_frq'] * RATIO_N
         self.par['multiplet'] = calc_multiplet(J_COUPLINGS)
 

@@ -72,11 +72,9 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, carrier=0.0, pp
 
         """
 
-        if abs(b1_offset) >= 10000.0:
+        magz_a = (1.0 - pb)
 
-            return (1.0 - pb)
-
-        else:
+        if abs(b1_offset) < 10000.0:
 
             dw *= ppm_to_rads
 
@@ -97,9 +95,9 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, carrier=0.0, pp
 
             r1 = -sc.sort(sc.absolute(eigvals(liouvillian)))[0]
 
-            magz_a = (1.0 - pb) * sc.exp(r1 * time_t1) * wg ** 2 / (wg ** 2 + w1 ** 2)
+            magz_a *= sc.exp(r1 * time_t1) * wg ** 2 / (wg ** 2 + w1 ** 2)
 
-            return magz_a
+        return magz_a
 
     def calc_observable(i0=0.0, **kwargs):
         """

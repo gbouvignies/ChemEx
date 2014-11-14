@@ -9,6 +9,7 @@ from ..plotting import plot_data
 
 
 
+
 # Constants
 RATIO_N = xi_ratio['N']
 TWO_PI = 2.0 * pi
@@ -28,7 +29,6 @@ class DataPoint(BaseDataPoint):
     def __init__(self, val, err, par):
         BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
 
-        self.par['b1_offset'] *= -1.0
         self.par['ppm_to_rads'] = TWO_PI * self.par['h_larmor_frq'] * RATIO_N
 
         temperature = self.par['temperature']
