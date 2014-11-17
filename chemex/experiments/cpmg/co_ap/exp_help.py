@@ -23,6 +23,7 @@ description = \
 
         CO_CPMG_SCFilter_x00_dfh1
 
+        And can be run with or without sidechain CO inversion via the Inv_CO flag.
         For uniformly 13C-labeled proteins.
     '''
 

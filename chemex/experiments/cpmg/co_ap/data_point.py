@@ -20,11 +20,11 @@ RATIO_C = xi_ratio['C']
 
 PAR_DICT = {
     'par_conv': (
-        (str, ('resonance_id',)),
-        (float, ('h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'pwco90', 'time_equil')),
+        (str, ('resonance_id','sidechain_flg',)),
+        (float, ('h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'pwco90', 'time_equil', 'taucc')),
         (int, ('ncyc',))
     ),
-    'exp': ('resonance_id', 'h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'time_equil', 'pwco90', 'ncyc'),
+    'exp': ('resonance_id', 'sidechain_flg', 'h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'time_equil', 'taucc', 'pwco90', 'ncyc'),
     'fit': ('pb', 'kex', 'dw', 'i0', 'r_coxy'),
     'fix': ('r_nz', 'dr_coxy', 'r_2coznz', 'etaxy', 'etaz', 'cs', 'j_nco', 'dj_nco'),
 
@@ -94,6 +94,7 @@ class DataPoint(BaseDataPoint):
         output.append('{time_t2:6.1e}'.format(**self.par))
         output.append('{ncyc:4d}'.format(**self.par))
         output.append('{temperature:4.1f}'.format(**self.par))
+        output.append('{sidechain_flg:3s}'.format(**self.par))
         output.append('{:8.5f}'.format(self.val))
         output.append('{:8.5f}'.format(self.err))
 
