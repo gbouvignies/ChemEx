@@ -5,7 +5,7 @@ Created on Nov 12, 2014
 """
 
 from scipy import pi, dot, diag
-from scipy.linalg import expm
+from scipy.linalg import expm2 as expm
 from numpy.linalg import matrix_power
 
 from chemex.caching import lru_cache

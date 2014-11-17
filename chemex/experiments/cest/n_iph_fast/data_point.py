@@ -9,7 +9,6 @@ from ..plotting import plot_data
 
 
 
-
 # Constants
 RATIO_N = xi_ratio['N']
 TWO_PI = 2.0 * pi
@@ -105,5 +104,5 @@ class DataPoint(BaseDataPoint):
         cs = par_val['cs']
         cs_offset_hz = (cs - self.par['carrier']) * self.par['ppm_to_rads'] / (2.0 * pi) - self.par['b1_offset']
 
-        return abs(cs_offset_hz) < filter_range
+        return abs(cs_offset_hz) < filter_range * 0.5
 
