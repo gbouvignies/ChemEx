@@ -4,10 +4,7 @@ Created on Mar 30, 2011
 @author: guillaume
 """
 
-# Standard libraries
 import os
-
-# Specialized libraries
 import scipy as sc
 import scipy.stats as st
 import scipy.linalg as la
@@ -78,7 +75,7 @@ def read_a_cest_profile(filename, parameters):
     data = sc.loadtxt(filename, dtype=[('b1_offset', '<f8'), ('intensity', '<f8'), ('intensity_err', '<f8')])
 
     uncertainty = estimate_uncertainty(data)
-    #    data = find_subset(data)
+    # data = find_subset(data)
 
     data_points = []
 

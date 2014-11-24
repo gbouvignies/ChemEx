@@ -8,6 +8,7 @@ import os
 from scipy import linspace, asarray, median, pi
 
 import matplotlib as mpl
+
 mpl.use('Agg')
 
 import matplotlib.pyplot as plt
@@ -116,7 +117,7 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
         filename_calc = ''.join([experiment_name, '.fit'])
         filename_calc = os.path.join(output_dir, filename_calc)
 
-        print("     * {}/.fit".format(filename))
+        print("     * {} [.fit]".format(filename))
 
         ########################
 

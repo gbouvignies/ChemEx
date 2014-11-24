@@ -10,6 +10,7 @@ from ..plotting import plot_data
 
 
 
+
 # Constants
 RATIO_N = xi_ratio['N']
 TWO_PI = 2.0 * pi
@@ -75,15 +76,12 @@ class DataPoint(BaseDataPoint):
         """Print the data point"""
 
         output = list()
-        output.append(
-            '{resonance_id:10s}'
-            '{h_larmor_frq:6.1f}'
-            '{time_t1:6.1e}'
-            '{b1_offset:9.3e}'
-            '{b1_frq:6.1e}'
-            '{temperature:4.1f}'
-            .format(**self.par)
-        )
+        output.append('{resonance_id:10s}'.format(**self.par))
+        output.append('{h_larmor_frq:6.1f}'.format(**self.par))
+        output.append('{time_t1:6.1e}'.format(**self.par))
+        output.append('{b1_offset:9.3e}'.format(**self.par))
+        output.append('{b1_frq:6.1e}'.format(**self.par))
+        output.append('{temperature:4.1f}'.format(**self.par))
         output.append('{:8.5f}'.format(self.val))
         output.append('{:8.5f}'.format(self.err))
 
