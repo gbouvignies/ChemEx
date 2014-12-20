@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import sys
 
 import ez_setup
@@ -25,7 +23,7 @@ setup(
     version=chemex.__version__,
     description='Program to fit chemical exchange induced shift and relaxation data.',
     long_description=open('README.md').read(),
-    license='GPLv3',
+    license='BSD 3-Clause',
     author='Guillaume Bouvignies',
     author_email='gbouvignies@gmail.com',
     packages=find_packages(),
