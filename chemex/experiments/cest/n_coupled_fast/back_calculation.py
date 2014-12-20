@@ -1,5 +1,7 @@
+import operator
+
 import scipy as sc
-from scipy.linalg import eigvals
+from scipy.linalg import eig, norm
 
 from chemex.experiments.misc import correct_chemical_shift
 from chemex.caching import lru_cache
@@ -75,7 +77,7 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, carrier=0.0, pp
 
         if abs(b1_offset) >= 10000.0:
 
-            magz_a = (1.0 - pb)
+            magz_a = 1.0 - pb
 
         else:
 
@@ -91,9 +93,13 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, carrier=0.0, pp
                 liouvillian = compute_liouvillian(pb=pb, kex=kex, dw=dw, r_nxy=r_nxy, dr_nxy=dr_nxy, r_nz=r_nz,
                                                   cs_offset=(wg + j), w1=w1)
 
-                r1 = -sc.sort(sc.absolute(eigvals(liouvillian)))[0]
+                eval, evec = eig(liouvillian)
 
-                magz_a += weight * (1.0 - pb) * sc.exp(r1 * time_t1) * (wg + j) ** 2 / ((wg + j) ** 2 + w1 ** 2)
+                index, r1 = max(enumerate(-sc.absolute(eval)), key=operator.itemgetter(1))
+
+                magz_a += weight * sc.exp(r1 * time_t1) * evec[2, index].real ** 2
+
+            magz_a *= 1.0 - pb
 
         return magz_a
 
