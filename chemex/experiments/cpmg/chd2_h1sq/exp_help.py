@@ -1,8 +1,8 @@
-'''
-Created on Feb 12, 2014 
+"""
+Created on Feb 12, 2014
 
 @author: mike latham
-'''
+"""
 
 # local import
 
@@ -23,8 +23,9 @@ description = \
         CHD2_H_SQ_exchange_hsqc_lek_*00_enhanced
     '''
 
-reference = {'journal': 'Journal of the American Chemical Society',
-             'year': 2010,
-             'volume': 132,
-             'pages': '10992-10995'
+reference = {
+    'journal': 'Journal of the American Chemical Society',
+    'year': 2010,
+    'volume': 132,
+    'pages': '10992-10995'
 }

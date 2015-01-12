@@ -90,8 +90,8 @@ def compute_2hzcz_eq(pb):
     return mag_eq
 
 
-def get_2hzcz(I):
-    magz_a = I[5, 0]
-    magz_b = I[11, 0]
+def get_2hzcz(mag):
+    magz_a = mag[5, 0]
+    magz_b = mag[11, 0]
 
     return magz_a, magz_b

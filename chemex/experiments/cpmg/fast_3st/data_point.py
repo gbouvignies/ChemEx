@@ -5,6 +5,7 @@ Created on Aug 5, 2011
 """
 
 from inspect import getargspec
+
 from scipy import pi
 
 from chemex.constants import xi_ratio

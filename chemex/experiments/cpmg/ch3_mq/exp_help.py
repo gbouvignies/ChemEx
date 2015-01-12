@@ -1,11 +1,11 @@
-'''
+"""
 Created on Feb 29, 2012
 Edited on March 12, 2012
 
 @author: Alex Hansen
 @author: Mike Latham
 @author: Guillaume Bouvignies
-'''
+"""
 
 # local import
 
@@ -26,8 +26,9 @@ description = \
         Lewis Kay experiment: hmqc_CH3_exchange_bigprotein_*00_lek_v2
     '''
 
-reference = {'journal': 'Journal of the American Chemical Society',
-             'year': 2004,
-             'volume': 126,
-             'pages': '3964-3973'
+reference = {
+    'journal': 'Journal of the American Chemical Society',
+    'year': 2004,
+    'volume': 126,
+    'pages': '3964-3973'
 }

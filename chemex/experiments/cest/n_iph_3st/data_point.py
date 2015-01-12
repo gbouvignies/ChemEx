@@ -93,7 +93,6 @@ class DataPoint(BaseDataPoint):
                                           for short_name, long_name in self.short_long_par_names
                                           if short_name in PAR_DICT['fix'])
 
-
     def __repr__(self):
         """Print the data point"""
 

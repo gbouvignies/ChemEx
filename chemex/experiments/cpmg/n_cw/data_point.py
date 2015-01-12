@@ -6,7 +6,9 @@ Created on Aug 5, 2011
 
 # Standard imports
 from inspect import getargspec
+
 from scipy import pi
+
 
 # Local imports
 from chemex.tools import parse_assignment
@@ -83,7 +85,6 @@ class DataPoint(BaseDataPoint):
         self.fixed_parameter_names.update(long_name
                                           for short_name, long_name in self.short_long_par_names
                                           if short_name in PAR_DICT['fix'])
-
 
     def __repr__(self):
         """Print the data point"""

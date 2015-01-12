@@ -16,8 +16,9 @@ description = \
         The calculation is designed specifically to analyze the experiment
         found in the reference."""
 
-reference = {'journal': 'J Biomol NMR',
-             'year': 2012,
-             'volume': 53,
-             'pages': '303-10'
+reference = {
+    'journal': 'J Biomol NMR',
+    'year': 2012,
+    'volume': 53,
+    'pages': '303-10'
 }

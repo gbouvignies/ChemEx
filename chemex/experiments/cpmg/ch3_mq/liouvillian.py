@@ -1,16 +1,17 @@
-'''
+"""
 Created on Feb 22, 2012
 
 @author: Mike Latham
 @author: Guillaume Bouvignies
-'''
+"""
 
 from scipy import mat, zeros
+
 from chemex.bases.two_states.mq import R_2HXYCXY, DR_2HXYCXY, DWI, DWS, KAB, KBA
 
 
 def compute_liouvillian(pb=0.0, kex=0.0, dwc=0.0, dwh=0.0, r_2hxycxy=10.0, dr_2hxycxy=0.0):
-    '''
+    """
     Compute the exchange matrix (Liouvillian).
 
     The function assumes a 2-site (A <-> B) exchanging system.
@@ -39,7 +40,7 @@ def compute_liouvillian(pb=0.0, kex=0.0, dwc=0.0, dwh=0.0, r_2hxycxy=10.0, dr_2h
         Liouvillian describing free precession of one
         isolated spin in presence of two-site exchange.
 
-    '''
+    """
 
     kab = kex * pb
     kba = kex * (1.0 - pb)

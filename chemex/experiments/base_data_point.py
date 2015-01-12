@@ -24,7 +24,6 @@ class BaseDataPoint(object):
 
         self.check_parameters(par_conv)
 
-
     def __repr__(self):
         """Prints the data point"""
 

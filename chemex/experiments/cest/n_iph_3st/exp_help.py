@@ -17,8 +17,9 @@ description = """
     in the reference.
 """
 
-reference = {'journal': 'J Am Chem Soc',
-             'year': 2012,
-             'volume': 134,
-             'pages': '8148-61'
+reference = {
+    'journal': 'J Am Chem Soc',
+    'year': 2012,
+    'volume': 134,
+    'pages': '8148-61'
 }

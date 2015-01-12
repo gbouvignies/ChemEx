@@ -1,3 +1,4 @@
+# coding=utf-8
 """
 Created on Oct 10, 2013
 
@@ -27,8 +28,9 @@ specifically to analyze the experiment found in the reference."""
 
 description = "\n".join([fill(_description1), _description2, fill(_description3)])
 
-reference = {'journal': 'Journal',
-             'year': 2007,
-             'volume': 0,
-             'pages': '1-10'
+reference = {
+    'journal': 'Journal',
+    'year': 2007,
+    'volume': 0,
+    'pages': '1-10'
 }

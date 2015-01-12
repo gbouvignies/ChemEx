@@ -17,7 +17,6 @@ from chemex.bases.two_states.iph_aph import (R_IXY, R_2SZIXY, DR_XY,
                                              J, DJ, ETAXY, ETAZ,
                                              KAB, KBA, W1X, W1Y)
 
-# Functions
 
 def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0, r_nxy=5.0, dr_nxy=0.0,
                          r_nz=1.5, r_2hznz=5.0, etaxy=0.0, etaz=0.0,
@@ -71,10 +70,10 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0, r_nxy=5.0, dr_nxy=0.0,
     kab = kex * pb
     kba = kex - kab
 
-    r_2HzNxy = r_nxy + r_2hznz - r_nz
+    r_2hznxy = r_nxy + r_2hznz - r_nz
 
     l_free = R_IXY * r_nxy
-    l_free += R_2SZIXY * r_2HzNxy
+    l_free += R_2SZIXY * r_2hznxy
     l_free += DR_XY * dr_nxy
     l_free += R_IZ * r_nz
     l_free += R_2SZIZ * r_2hznz
@@ -92,7 +91,7 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0, r_nxy=5.0, dr_nxy=0.0,
     return l_free, l_w1x, l_w1y
 
 
-def compute_2HzNz_eq(pb):
+def compute_2hznz_eq(pb):
     mag_eq = zeros((12, 1))
     mag_eq[5, 0] += (1.0 - pb)
     mag_eq[11, 0] += pb
@@ -100,9 +99,9 @@ def compute_2HzNz_eq(pb):
     return mag_eq
 
 
-def get_ATrz(I):
-    magz_a = I[5, 0] + I[2, 0]
-    magz_b = I[11, 0] + I[8, 0]
+def get_atrz(mag):
+    magz_a = mag[5, 0] + mag[2, 0]
+    magz_b = mag[11, 0] + mag[8, 0]
 
     return magz_a, magz_b
 

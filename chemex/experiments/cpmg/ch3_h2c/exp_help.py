@@ -1,8 +1,8 @@
-'''
+"""
 Created on Mar 14, 2012
 
 @author: Mike Latham
-'''
+"""
 
 # local import
 

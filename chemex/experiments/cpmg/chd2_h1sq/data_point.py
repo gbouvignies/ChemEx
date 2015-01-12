@@ -5,6 +5,7 @@ Created on Feb 13, 2014
 """
 
 from inspect import getargspec
+
 from scipy import pi
 
 from chemex.tools import parse_assignment
@@ -13,8 +14,6 @@ from .back_calculation import make_calc_observable
 from ..plotting import plot_data
 
 
-
-# Constants
 TWO_PI = 2.0 * pi
 
 PAR_DICT = {
@@ -83,7 +82,6 @@ class DataPoint(BaseDataPoint):
             for short_name, long_name in self.short_long_par_names
             if short_name in PAR_DICT['fix']
         )
-
 
     def __repr__(self):
         """Print the data point"""
