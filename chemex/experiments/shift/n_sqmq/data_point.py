@@ -9,14 +9,14 @@ from scipy import pi
 from chemex.tools import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint
 from back_calculation import calc_observable
-from chemex.constants import gamma_ratio
+from chemex.constants import xi_ratio
 from ..plotting import plot_data
 
 
 
 # Constants
 TWO_PI = 2.0 * pi
-RATIO = gamma_ratio['N']
+RATIO = xi_ratio['N']
 
 PAR_DICT = {
     'par_conv': (

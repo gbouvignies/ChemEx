@@ -9,13 +9,13 @@ from scipy import pi
 
 from chemex.tools import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint
-from chemex.constants import gamma_ratio
+from chemex.constants import xi_ratio
 from .back_calculation import make_calc_observable
 from ..plotting import plot_data
 
-# Constants
+
 TWO_PI = 2.0 * pi
-RATIO_N = gamma_ratio['C']
+RATIO_C = xi_ratio['C']
 
 PAR_DICT = {
 
@@ -51,11 +51,11 @@ PAR_DICT = {
         'kex',
         'dw',
         'i0',
-        'r_nxy',
+        'r_cxy',
     ),
     'fix': (
-        'r_nz',
-        'dr_nxy',
+        'r_cz',
+        'dr_cxy',
         'cs',
     ),
 
@@ -68,7 +68,7 @@ class DataPoint(BaseDataPoint):
     def __init__(self, val, err, par):
         BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
 
-        self.par['ppm_to_rads'] = TWO_PI * self.par['h_larmor_frq'] * RATIO_N
+        self.par['ppm_to_rads'] = TWO_PI * self.par['h_larmor_frq'] * RATIO_C
 
         temperature = self.par['temperature']
         resonance_id = self.par['resonance_id']
@@ -92,9 +92,9 @@ class DataPoint(BaseDataPoint):
             ('kex', ('kex', temperature)),
             ('dw', ('dw', nucleus_name)),
             ('cs', ('cs', nucleus_name, temperature)),
-            ('r_nxy', ('r_nxy', nucleus_name, h_larmor_frq, temperature)),
-            ('dr_nxy', ('dr_nxy', nucleus_name, h_larmor_frq, temperature)),
-            ('r_nz', ('r_nz', nucleus_name, h_larmor_frq, temperature)),
+            ('r_cxy', ('r_cxy', nucleus_name, h_larmor_frq, temperature)),
+            ('dr_cxy', ('dr_cxy', nucleus_name, h_larmor_frq, temperature)),
+            ('r_cz', ('r_cz', nucleus_name, h_larmor_frq, temperature)),
         )
 
         self.fitting_parameter_names.update(

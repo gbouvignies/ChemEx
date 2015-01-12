@@ -4,24 +4,22 @@ Created on Mar 31, 2011
 @author: guillaume
 """
 
-# Standard Libraries
 import sys
 import os.path
 import ConfigParser
-
-# Specialized Libraries
 import scipy as sc
 import scipy.optimize as opt
 
-# Local Libraries
-from chemex.chi2 import make_calc_residuals, calc_reduced_chi2
+from chemex import tools
+from chemex.chi2 import make_calc_residuals, calc_chi2, calc_reduced_chi2
 from chemex.writing import dump_parameters
 from chemex.experiments.misc import get_par
 
 
 def run_fit(fit_filename, par, par_indexes, par_fixed, data):
-    # fit_par_file
     fit_par_file = ConfigParser.SafeConfigParser()
+
+    tools.header1("Fit")
 
     if fit_filename:
 
@@ -29,59 +27,73 @@ def run_fit(fit_filename, par, par_indexes, par_fixed, data):
             try:
                 fit_par_file.read(fit_filename)
             except ConfigParser.MissingSectionHeaderError:
-                exit('You are missing a section heading (default?) in {:s}\n'.format(fit_filename))
+                exit(
+                    'You are missing a section heading (default?) in {'
+                    ':s}\n'.format(
+                        fit_filename))
             except ConfigParser.ParsingError:
-                exit('Having trouble reading your parameter file, have you forgotten \'=\' signs?\n{:s}'
-                     .format(sys.exc_info()[1]))
+                exit(
+                    'Having trouble reading your parameter file, have you '
+                    'forgotten \'=\' signs?\n{:s}'
+                    .format(sys.exc_info()[1]))
         else:
-            exit("The file \'{}\' is empty or does not exist!\n".format(fit_filename))
+            exit("The file \'{}\' is empty or does not exist!\n".format(
+                fit_filename))
 
     if not fit_par_file.sections():
         fit_par_file.add_section('Standard Calculation')
 
     for section in fit_par_file.sections():
 
-        print(''.join(['\n', section, ' ...']))
+        tools.header2(section)
 
         items = fit_par_file.items(section)
-        par, par_indexes, par_fixed = fix_par(items, par, par_indexes, par_fixed)
+        par, par_indexes, par_fixed = fix_par(items, par, par_indexes,
+                                              par_fixed)
 
-        independent_clusters = find_independent_clusters(data, par, par_indexes, par_fixed)
+        independent_clusters = find_independent_clusters(data, par,
+                                                         par_indexes,
+                                                         par_fixed)
         independent_clusters_no = len(independent_clusters)
 
         if independent_clusters_no > 1:
 
             par_err = list(par)
 
-            for i, independent_cluster in enumerate(independent_clusters):
+            for i, independent_cluster in enumerate(independent_clusters, 1):
 
-                sys.stdout.write('\r    Fit cluster ({}/{})'.format(i + 1, independent_clusters_no))
-                sys.stdout.flush()
+                print('\nChi2 / Reduced Chi2 (cluster {}/{}):'.format(i,
+                                                                      independent_clusters_no))
 
                 c_data, c_par, c_par_indexes = independent_cluster
-                c_par, c_par_err, _c_reduced_chi2 = local_minimization(c_par, c_par_indexes, par_fixed, c_data,
-                                                                       verbose=False)
+                c_par, c_par_err, _c_reduced_chi2 = local_minimization(c_par,
+                                                                       c_par_indexes,
+                                                                       par_fixed,
+                                                                       c_data,
+                                                                       verbose=True)
 
                 for par_name in c_par_indexes:
                     par[par_indexes[par_name]] = c_par[c_par_indexes[par_name]]
-                    par_err[par_indexes[par_name]] = c_par_err[c_par_indexes[par_name]]
-
-            reduced_chi2 = calc_reduced_chi2(par, par_indexes, par_fixed, data)
-            print('    Reduced chi2: {:.2e}'.format(reduced_chi2))
+                    par_err[par_indexes[par_name]] = c_par_err[
+                        c_par_indexes[par_name]]
 
         else:
-            par, par_err, reduced_chi2 = local_minimization(par, par_indexes, par_fixed, data)
+            print("\nChi2 / Reduced Chi2:")
+            par, par_err, reduced_chi2 = local_minimization(par, par_indexes,
+                                                            par_fixed, data)
 
-    return par, par_err, par_indexes, par_fixed, reduced_chi2
+        print("\nFinal Chi2        : {:.3e}".format(
+            calc_chi2(par, par_indexes, par_fixed, data)))
+        print("Final Reduced Chi2: {:.3e}".format(
+            calc_reduced_chi2(par, par_indexes, par_fixed, data)))
+
+    return par, par_err
 
 
 def local_minimization(par, par_indexes, par_fixed, data, verbose=True):
     """
     Minimize the residuals using the Levenberg-Marquard algorithm.
     """
-
-    if verbose:
-        print('\nMinimization:\n')
 
     func = make_calc_residuals(verbose=verbose)
     args = (par_indexes, par_fixed, data)
@@ -99,7 +111,8 @@ def local_minimization(par, par_indexes, par_fixed, data, verbose=True):
     except TypeError:
         sys.stderr.write(' -- Error encountered during minimization:\n')
         sys.stderr.write(' ----> {:s}\n'.format(sys.exc_info()[1]))
-        sys.stderr.write(' -- Check that all parameters are correctly initialized.\n')
+        sys.stderr.write(
+            ' -- Check that all parameters are correctly initialized.\n')
         dump_parameters(par, par_indexes, par_fixed, data)
         exit()
 
@@ -115,7 +128,6 @@ def local_minimization(par, par_indexes, par_fixed, data, verbose=True):
         par_err = sc.sqrt(sc.diag(pcov))
 
     else:
-        pcov = sc.inf
         par_err = par
 
     return par, par_err, reduced_chi2
@@ -156,7 +168,8 @@ def fix_par(items, par, par_indexes, par_fixed):
     updated_par = sc.array(updated_par)
 
     for par_name in fixed_pars:
-        updated_par_fixed[par_name] = get_par(par_name, par, par_indexes, par_fixed)
+        updated_par_fixed[par_name] = get_par(par_name, par, par_indexes,
+                                              par_fixed)
 
     return updated_par, updated_par_indexes, updated_par_fixed
 
@@ -165,7 +178,8 @@ def find_independent_clusters(data, par, par_indexes, par_fixed):
     """
     Finds clusters of data points that depend on independent sets of variables.
     For example, if the population of the minor state and the exchange rate are
-    set to 'fix', chances are that the fit can be decomposed residue-specifically.
+    set to 'fix', chances are that the fit can be decomposed
+    residue-specifically.
     """
 
     fixed_par_set = set(par_fixed)
@@ -205,8 +219,10 @@ def find_independent_clusters(data, par, par_indexes, par_fixed):
 
     for cluster in clusters:
         cluster_data, cluster_par_names = cluster
-        cluster_par = list(par[par_indexes[par_name]] for par_name in cluster_par_names)
-        cluster_par_indexes = dict((par_name, i) for i, par_name in enumerate(cluster_par_names))
+        cluster_par = list(
+            par[par_indexes[par_name]] for par_name in cluster_par_names)
+        cluster_par_indexes = dict(
+            (par_name, i) for i, par_name in enumerate(cluster_par_names))
         final_clusters.append((cluster_data, cluster_par, cluster_par_indexes))
 
     return final_clusters

@@ -5,10 +5,11 @@ Created on Apr 1, 2011
 """
 
 import os
-
 from scipy import linspace, asarray, median, pi
 
 import matplotlib as mpl
+
+
 mpl.use('Agg')
 
 import matplotlib.pyplot as plt
@@ -25,7 +26,8 @@ linewidth = 1.0
 
 
 def sigma_estimator(x):
-    """ Estimates standard deviation using median to exclude outliers. Up to 50% can be bad """
+    """ Estimates standard deviation using median to exclude outliers. Up to
+    50% can be bad """
 
     return median([median(abs(xi - asarray(x))) for xi in x]) * 1.1926
 
@@ -54,7 +56,8 @@ def group_data(dataset):
         index = assignment[0][0]
 
         if abs(b1_offset) < 10000.0:
-            grouped_dataset.setdefault((index, resonance_id), []).append(a_data)
+            grouped_dataset.setdefault((index, resonance_id), []).append(
+                a_data)
 
     return grouped_dataset
 
@@ -69,9 +72,10 @@ def make_val_for_plot(residue_dataset, par, par_names, par_fixed, fileout):
 
         b1_offset = point.par['b1_offset']
         ppm_to_rads = point.par['ppm_to_rads']
-        b1_offset_ppm = (2.0 * pi * b1_offset) / ppm_to_rads
+        carrier_ppm = point.par['carrier']
+        b1_ppm = (2.0 * pi * b1_offset) / ppm_to_rads + carrier_ppm
 
-        values.append((b1_offset, b1_offset_ppm, point.val, point.err, point.cal))
+        values.append((b1_offset, b1_ppm, point.val, point.err, point.cal))
 
     of, xe, ye, ee, yc = zip(*sorted(values))
 
@@ -83,12 +87,13 @@ def make_val_for_plot(residue_dataset, par, par_names, par_fixed, fileout):
 
     for b1_offset in linspace(of_min, of_max, 500):
         ppm_to_rads = a_point.par['ppm_to_rads']
-        b1_offset_ppm = (2.0 * pi * b1_offset) / ppm_to_rads
+        carrier_ppm = a_point.par['carrier']
+        b1_ppm = (2.0 * pi * b1_offset) / ppm_to_rads + carrier_ppm
 
         a_point.update_b1_offset(b1_offset)
         a_point.calc_val(par, par_names, par_fixed)
 
-        values.append((b1_offset, b1_offset_ppm, a_point.cal))
+        values.append((b1_offset, b1_ppm, a_point.cal))
 
         fileout.write(''.join([str(a_point), '\n']))
 
@@ -108,14 +113,14 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
     for experiment_name, dataset in datasets.iteritems():
 
-        ###### Matplotlib ######
+        # ##### Matplotlib ######
         filename = ''.join([experiment_name, '.pdf'])
         filename = os.path.join(output_dir, filename)
 
         filename_calc = ''.join([experiment_name, '.fit'])
         filename_calc = os.path.join(output_dir, filename_calc)
 
-        print("     * {}/.fit".format(filename))
+        print("  * {} [.fit]".format(filename))
 
         ########################
 
@@ -125,8 +130,10 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
         with open(filename_calc, 'w') as f:
 
-            for (_index, resonance_id), residue_dataset in sorted(grouped_dataset.iteritems()):
-                out = make_val_for_plot(residue_dataset, par, par_names, par_fixed, f)
+            for (_index, resonance_id), residue_dataset in sorted(
+                    grouped_dataset.iteritems()):
+                out = make_val_for_plot(residue_dataset, par, par_names,
+                                        par_fixed, f)
                 xe, ye, ee, yc, xf, yf = out
 
                 ###### Matplotlib ######
@@ -155,13 +162,13 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
                     markeredgecolor='r'
                 )
 
-                ymin, ymax = set_lim(ye+yf, 0.05)
+                ymin, ymax = set_lim(ye + yf, 0.05)
                 ax2.set_ylim(ymin, ymax)
                 ax2.tick_params(length=3, top=True, right=False, labelsize=10)
                 ax2.xaxis.set_major_locator(MaxNLocator(9))
                 ax2.yaxis.set_major_locator(MaxNLocator(6))
                 ax2.invert_xaxis()
-                ax2.set_xlabel(r'$\mathregular{B_1}$' + ' offset (ppm)')
+                ax2.set_xlabel(r'$\mathregular{B_1}$' + ' position (ppm)')
                 ax2.set_ylabel(r'$\mathregular{I/I_0}$')
 
                 ########################
@@ -205,12 +212,15 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
                 ax1.yaxis.set_major_locator(MaxNLocator(4))
                 ax1.xaxis.set_major_formatter(NullFormatter())
                 ax1.tick_params(length=3, top=False, right=False, labelsize=10)
-                ax1.invert_xaxis()
 
                 ########################
 
-                ax2.set_xlim(xmin, xmax)
                 ax1.set_xlim(xmin, xmax)
+                ax2.set_xlim(xmin, xmax)
+
+                ax1.invert_xaxis()
+                ax2.invert_xaxis()
+
                 ax1.set_title('{:s}'.format(resonance_id.upper()))
                 ax1.set_ylabel('Residual')
 

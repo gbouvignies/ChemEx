@@ -1,18 +1,11 @@
-"""
-Created on Sep 1, 2011
-
-@author: guillaume
-"""
-
-# Imports
 import collections
-
 import numpy as np
 from scipy import array, pi
 
 from chemex.caching import lru_cache
+from chemex.tools import header1, header2
 
-# Constants
+
 SIGN = array([1.0, -1.0])
 
 
@@ -37,7 +30,8 @@ def correct_chemical_shift(pb=0.0, kex=0.0, dw=0.0, r_ixy=0.0, dr_ixy=0.0):
     return nu1, nu2
 
 
-def correct_intensities(magz_a=1.0, magz_b=0.0, pb=0.0, kex=0.0, dw=0.0, r_ixy=0.0, dr_ixy=0.0):
+def correct_intensities(magz_a=1.0, magz_b=0.0, pb=0.0, kex=0.0, dw=0.0,
+                        r_ixy=0.0, dr_ixy=0.0):
     """Corrects major and minor peak intensities in presence of exchange."""
 
     kab = kex * pb
@@ -51,10 +45,13 @@ def correct_intensities(magz_a=1.0, magz_b=0.0, pb=0.0, kex=0.0, dw=0.0, r_ixy=0
 
     nu1, nu2 = 0.5 * (-k2ex + SIGN * fac)
 
-    magz_a_c = +((kab - nu2 - k2ab) * magz_a + (kba + nu1 + k2ab) * magz_b) / (nu1 - nu2)
-    magz_b_c = -((kab - nu1 - k2ab) * magz_a + (kba + nu2 + k2ab) * magz_b) / (nu1 - nu2)
+    magz_a_c = +((kab - nu2 - k2ab) * magz_a + (kba + nu1 + k2ab) * magz_b) / (
+    nu1 - nu2)
+    magz_b_c = -((kab - nu1 - k2ab) * magz_a + (kba + nu2 + k2ab) * magz_b) / (
+    nu1 - nu2)
 
-    magz_a_c, magz_b_c = (magz_b_c, magz_a_c) if abs(nu1.imag) > abs(nu2.imag) else (magz_a_c, magz_b_c)
+    magz_a_c, magz_b_c = (magz_b_c, magz_a_c) if abs(nu1.imag) > abs(
+        nu2.imag) else (magz_a_c, magz_b_c)
 
     signa = 1.0 if abs(np.angle(magz_a_c)) <= 0.5 * pi else -1.0
     signb = 1.0 if abs(np.angle(magz_b_c)) <= 0.5 * pi else -1.0
@@ -69,7 +66,8 @@ def calc_peak_intensity(pb=0.0, kex=0.0, dw=0.0, intensities=list()):
     """
 
     magz_a, magz_b = intensities
-    magz_a, magz_b = correct_intensities(magz_a=magz_a, magz_b=magz_b, pb=pb, kex=kex, dw=dw, r_ixy=0.0)
+    magz_a, magz_b = correct_intensities(magz_a=magz_a, magz_b=magz_b, pb=pb,
+                                         kex=kex, dw=dw, r_ixy=0.0)
 
     return magz_a
 
@@ -98,6 +96,52 @@ def calc_multiplet(couplings=None, mult=None):
         counter = collections.Counter(mult)
         nb_component = sum(counter.values())
 
-        return tuple((val, count / float(nb_component)) for val, count in sorted(counter.items()))
+        return tuple((val, count / float(nb_component)) for val, count in
+                     sorted(counter.items()))
 
 
+def format_experiment_help(type_experiment, name_experiment):
+    import textwrap
+
+    headline1 = "Experimental parameters"
+    headline2 = "Fitted parameters (by default)"
+    headline3 = "Fixed parameters (by default)"
+
+    subtype_experiment = name_experiment.replace(
+        ''.join(['_', type_experiment]), '')
+
+    exp_help = __import__(
+        '.'.join(['chemex', 'experiments', type_experiment, subtype_experiment,
+                  'exp_help']),
+        fromlist=['exp_help'],
+    )
+
+    data_point = __import__(
+        '.'.join(['chemex', 'experiments', type_experiment, subtype_experiment,
+                  'data_point']),
+        fromlist=['data_point'],
+    )
+
+    parse_line = exp_help.parse_line
+    description = textwrap.dedent(exp_help.description)
+    parameters = data_point.PAR_DICT
+
+    header1(parse_line)
+    print("")
+    print(description)
+    print("")
+
+    header2(headline1)
+    for p in parameters['exp']:
+        print("  * {:s}".format(p))
+    print("")
+
+    header2(headline2)
+    for p in parameters['fit']:
+        print("  * {:s}".format(p))
+    print("")
+
+    header2(headline3)
+    for p in parameters['fix']:
+        print("  * {:s}".format(p))
+    print("")

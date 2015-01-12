@@ -4,19 +4,17 @@ Created on Aug 15, 2011
 @author: guillaume
 """
 
-# Python Modules
 import scipy as sc
-from scipy.linalg import expm
+from scipy.linalg import expm2 as expm
 
-# Local Modules
 from chemex.experiments.misc import correct_chemical_shift
 from chemex.caching import lru_cache
 from .liouvillian import compute_nz_eq, compute_base_liouvillians, compute_free_liouvillian, get_nz
 
 
 @lru_cache()
-def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_inh_res=5,
-                         carrier=0.0, ppm_to_rads=0.0, _id=None):
+def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_inh_res=5, carrier=0.0, ppm_to_rads=0.0,
+                         _id=None):
     """
     Factory to make "calc_observable" function to calculate the intensity in presence
     of exchange after a CEST block.

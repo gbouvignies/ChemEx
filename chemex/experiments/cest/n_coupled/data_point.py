@@ -4,28 +4,26 @@ Created on Aug 5, 2011
 @author: guillaume
 """
 
-# Standard imports
 from inspect import getargspec
 from math import pi
 
-# Local imports
 from chemex.tools import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint
-from chemex.constants import gamma_ratio
+from chemex.constants import xi_ratio
 from chemex.experiments.misc import calc_multiplet
 from .back_calculation import make_calc_observable
 from ..plotting import plot_data
 
+
+
+
 # Constants
-RATIO_N = gamma_ratio['N']
+RATIO_N = xi_ratio['N']
 TWO_PI = 2.0 * pi
 
 # first dictionary version
 PAR_DICT = {
-
-    # experimental requirements (used in __init__ and check_parameters)
     'par_conv': ((str, ('resonance_id',)),
-
                  (float, ('h_larmor_frq',
                           'temperature',
                           'carrier',
@@ -33,17 +31,11 @@ PAR_DICT = {
                           'b1_frq',
                           'b1_offset',
                           'b1_inh',)),
-
                  (int, ('b1_inh_res',))),
-
-    # Some stuff to get a nice help output
     'exp': ('resonance_id', 'h_larmor_frq', 'temperature', 'carrier',
             'time_t1', 'b1_frq', 'b1_offset', 'b1_inh', 'b1_inh_res'),
-
     'fit': ('pb', 'kex', 'dw', 'i0', 'r_nxy', 'dr_nxy', 'r_nz'),
-
     'fix': ('cs',),
-
 }
 
 J_COUPLINGS = (7.7, 10.7, 14.4)
@@ -55,7 +47,6 @@ class DataPoint(BaseDataPoint):
     def __init__(self, val, err, par):
         BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
 
-        self.par['b1_offset'] *= -1.0
         self.par['ppm_to_rads'] = TWO_PI * self.par['h_larmor_frq'] * RATIO_N
         self.par['multiplet'] = calc_multiplet(J_COUPLINGS)
 
@@ -86,13 +77,17 @@ class DataPoint(BaseDataPoint):
             ('r_nz', ('r_nz', nucleus_name, h_larmor_frq, temperature)),
         )
 
-        self.fitting_parameter_names.update(long_name
-                                            for short_name, long_name in self.short_long_par_names
-                                            if short_name in PAR_DICT['fit'])
+        self.fitting_parameter_names.update(
+            long_name
+            for short_name, long_name in self.short_long_par_names
+            if short_name in PAR_DICT['fit']
+        )
 
-        self.fixed_parameter_names.update(long_name
-                                          for short_name, long_name in self.short_long_par_names
-                                          if short_name in PAR_DICT['fix'])
+        self.fixed_parameter_names.update(
+            long_name
+            for short_name, long_name in self.short_long_par_names
+            if short_name in PAR_DICT['fix']
+        )
 
     def __repr__(self):
         """Print the data point"""
