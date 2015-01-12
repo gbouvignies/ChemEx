@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from matplotlib.backends.backend_pdf import PdfPages
 
-from chemex.tools import parse_assignment
+from chemex.parsing import parse_assignment
 
 # Constants
 LINNEWIDTH = 1.0
@@ -114,7 +114,7 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
         print("  * {}".format(filename))
 
-        ########################
+        # #######################
 
         grouped_dataset = group_data(dataset)
 

@@ -9,7 +9,7 @@ from scipy import pi
 
 from chemex.constants import xi_ratio
 from chemex.experiments.base_data_point import BaseDataPoint
-from chemex.tools import parse_assignment
+from chemex.parsing import parse_assignment
 from ..plotting import plot_data
 from .back_calculation import make_calc_observable
 
@@ -33,7 +33,8 @@ class DataPoint(BaseDataPoint):
 
     def __init__(self, val, err, par):
 
-        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
+        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'],
+                               plot_data)
 
         temperature = self.par['temperature']
         resonance_id = self.par['resonance_id']
@@ -45,16 +46,20 @@ class DataPoint(BaseDataPoint):
 
         try:
             self.par['ppm_to_rads'] = (
-                2.0 * pi * self.par['h_larmor_frq'] * xi_ratio[nucleus_type[0].upper()]
+                2.0 * pi * self.par['h_larmor_frq'] * xi_ratio[
+                    nucleus_type[0].upper()]
             )
         except KeyError:
-            exit("Unknown nucleus type \"{}\" for peak \"{}\" in experiment \"{}\""
-                 .format(nucleus_type, resonance_id, experiment_name)
+            exit(
+                "Unknown nucleus type \"{}\" for peak \"{}\" in experiment "
+                "\"{}\""
+                .format(nucleus_type, resonance_id, experiment_name)
             )
 
         self.par['_id'] = ((temperature, nucleus_name, h_larmor_frq),)
 
-        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)
+        args = (self.par[arg] for arg in
+                getargspec(make_calc_observable.__wrapped__).args)
         self.calc_observable = make_calc_observable(*args)
 
         self.kwargs_default = {'ncyc': self.par['ncyc']}
@@ -69,11 +74,13 @@ class DataPoint(BaseDataPoint):
         )
 
         self.fitting_parameter_names.update(long_name
-                                            for short_name, long_name in self.short_long_par_names
+                                            for short_name, long_name in
+                                            self.short_long_par_names
                                             if short_name in PAR_DICT['fit'])
 
         self.fixed_parameter_names.update(long_name
-                                          for short_name, long_name in self.short_long_par_names
+                                          for short_name, long_name in
+                                          self.short_long_par_names
                                           if short_name in PAR_DICT['fix'])
 
 

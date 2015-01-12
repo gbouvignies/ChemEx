@@ -6,7 +6,7 @@ Created on Aug 5, 2011
 
 from scipy import pi
 
-from chemex.tools import parse_assignment
+from chemex.parsing import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint
 from back_calculation import calc_observable
 from chemex.constants import xi_ratio
@@ -24,7 +24,8 @@ PAR_DICT = {
         (float, ('h_larmor_frq_1', 'h_larmor_frq_2', 'temperature',)),
         (int, ())
     ),
-    'exp': ('resonance_id', 'h_larmor_frq_1', 'h_larmor_frq_2', 'temperature',),
+    'exp': (
+    'resonance_id', 'h_larmor_frq_1', 'h_larmor_frq_2', 'temperature',),
     'fit': (),
     'fix': ('pb', 'kex', 'dw_n',),
 }
@@ -34,10 +35,13 @@ class DataPoint(BaseDataPoint):
     '''Intensity measured during a cpmg pulse train of frequency frq'''
 
     def __init__(self, val, err, par):
-        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
+        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'],
+                               plot_data)
 
-        self.par['ppm_to_rads_n_1'] = TWO_PI * self.par['h_larmor_frq_1'] * RATIO
-        self.par['ppm_to_rads_n_2'] = TWO_PI * self.par['h_larmor_frq_2'] * RATIO
+        self.par['ppm_to_rads_n_1'] = TWO_PI * self.par[
+            'h_larmor_frq_1'] * RATIO
+        self.par['ppm_to_rads_n_2'] = TWO_PI * self.par[
+            'h_larmor_frq_2'] * RATIO
 
         temperature = self.par['temperature']
         resonance_id = self.par['resonance_id']

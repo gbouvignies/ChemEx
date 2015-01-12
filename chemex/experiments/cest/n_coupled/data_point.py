@@ -7,7 +7,7 @@ Created on Aug 5, 2011
 from inspect import getargspec
 from math import pi
 
-from chemex.tools import parse_assignment
+from chemex.parsing import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint
 from chemex.constants import xi_ratio
 from chemex.experiments.misc import calc_multiplet
@@ -45,7 +45,8 @@ class DataPoint(BaseDataPoint):
     """Intensity measured during a cpmg pulse train of frequency frq"""
 
     def __init__(self, val, err, par):
-        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
+        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'],
+                               plot_data)
 
         self.par['ppm_to_rads'] = TWO_PI * self.par['h_larmor_frq'] * RATIO_N
         self.par['multiplet'] = calc_multiplet(J_COUPLINGS)
@@ -63,7 +64,8 @@ class DataPoint(BaseDataPoint):
 
         self.par['_id'] = tuple((temperature, nucleus_name, h_larmor_frq))
 
-        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)
+        args = (self.par[arg] for arg in
+                getargspec(make_calc_observable.__wrapped__).args)
         self.calc_observable = make_calc_observable(*args)
 
         self.short_long_par_names = (
@@ -111,6 +113,7 @@ class DataPoint(BaseDataPoint):
         """Update b1_offset value"""
 
         self.par['b1_offset'] = b1_offset
-        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)
+        args = (self.par[arg] for arg in
+                getargspec(make_calc_observable.__wrapped__).args)
         self.calc_observable = make_calc_observable(*args)
 

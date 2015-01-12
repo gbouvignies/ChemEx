@@ -10,7 +10,7 @@ import sys
 import ConfigParser
 import scipy as sc
 
-from chemex import tools
+from chemex import tools, parsing
 
 
 def create_par_list_to_fit(par_filename, data):
@@ -286,7 +286,7 @@ def read_parameter_file(filename, par_name):
         if line[0] in ['Assignment', '?-?']:
             continue
 
-        assignment = tools.parse_assignment(line[0])
+        assignment = parsing.parse_assignment(line[0])
 
         if len(assignment) == len(line) - 1:
 

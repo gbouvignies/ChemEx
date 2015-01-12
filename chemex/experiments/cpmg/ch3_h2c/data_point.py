@@ -8,7 +8,7 @@ from inspect import getargspec
 
 from scipy import pi
 
-from chemex.tools import parse_assignment
+from chemex.parsing import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint
 from chemex.constants import xi_ratio
 from .back_calculation import make_calc_observable
@@ -22,10 +22,13 @@ RATIO_C = xi_ratio['C']
 PAR_DICT = {
     'par_conv': (
         (str, ('resonance_id',)),
-        (float, ('h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'pw', 'taub')),
+        (float,
+         ('h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'pw', 'taub')),
         (int, ('ncyc',)),
     ),
-    'exp': ('resonance_id', 'h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'pw', 'taub', 'ncyc'),
+    'exp': (
+    'resonance_id', 'h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'pw',
+    'taub', 'ncyc'),
     'fit': ('pb', 'kex', 'dw', 'i0', 'r_cxy'),
     'fix': ('r_cz', 'dr_cxy', 'r_2hzcz', 'etaxy', 'etaz', 'cs', 'j_hc'),
 }
@@ -35,7 +38,8 @@ class DataPoint(BaseDataPoint):
     """Intensity measured during a cpmg pulse train of frequency frq"""
 
     def __init__(self, val, err, par):
-        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
+        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'],
+                               plot_data)
 
         self.par['ppm_to_rads'] = TWO_PI * self.par['h_larmor_frq'] * RATIO_C
 
@@ -52,7 +56,8 @@ class DataPoint(BaseDataPoint):
 
         self.par['_id'] = tuple((temperature, nucleus_name_1, h_larmor_frq))
 
-        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)
+        args = (self.par[arg] for arg in
+                getargspec(make_calc_observable.__wrapped__).args)
         self.calc_observable = make_calc_observable(*args)
 
         self.kwargs_default = {'ncyc': self.par['ncyc']}
@@ -66,7 +71,9 @@ class DataPoint(BaseDataPoint):
             ('r_cxy', ('r_cxy', nucleus_name_1, h_larmor_frq, temperature)),
             ('dr_cxy', ('dr_cxy', nucleus_name_1, h_larmor_frq, temperature)),
             ('r_cz', ('r_cz', nucleus_name_1, h_larmor_frq, temperature)),
-            ('r_2hzcz', ('r_2hzcz', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
+            ('r_2hzcz', (
+            'r_2hzcz', nucleus_name_1, nucleus_name_2, h_larmor_frq,
+            temperature)),
             ('etaxy', ('etaxy', nucleus_name_1, h_larmor_frq, temperature)),
             ('etaz', ('etaz', nucleus_name_1, h_larmor_frq, temperature)),
             ('j_hc', ('j_hc', nucleus_name_1, nucleus_name_2, temperature)),

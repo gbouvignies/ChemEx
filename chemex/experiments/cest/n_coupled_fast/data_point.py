@@ -1,7 +1,7 @@
 from inspect import getargspec
 from math import pi
 
-from chemex.tools import parse_assignment
+from chemex.parsing import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint, get_par
 from chemex.constants import xi_ratio
 from .back_calculation import make_calc_observable
@@ -16,9 +16,13 @@ RATIO_N = xi_ratio['N']
 TWO_PI = 2.0 * pi
 PAR_DICT = {
     'par_conv': ((str, ('resonance_id',)),
-                 (float, ('h_larmor_frq', 'temperature', 'carrier', 'time_t1', 'b1_frq', 'b1_offset',)),
+                 (float, (
+                 'h_larmor_frq', 'temperature', 'carrier', 'time_t1', 'b1_frq',
+                 'b1_offset',)),
                  (int, ())),
-    'exp': ('resonance_id', 'h_larmor_frq', 'temperature', 'carrier', 'time_t1', 'b1_frq', 'b1_offset',),
+    'exp': (
+    'resonance_id', 'h_larmor_frq', 'temperature', 'carrier', 'time_t1',
+    'b1_frq', 'b1_offset',),
     'fit': ('pb', 'kex', 'dw', 'i0', 'r_nxy', 'dr_nxy', 'r_nz'),
     'fix': ('cs',),
 }
@@ -30,7 +34,8 @@ class DataPoint(BaseDataPoint):
     """Intensity measured during a cpmg pulse train of frequency frq"""
 
     def __init__(self, val, err, par):
-        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
+        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'],
+                               plot_data)
 
         self.par['ppm_to_rads'] = TWO_PI * self.par['h_larmor_frq'] * RATIO_N
         self.par['multiplet'] = calc_multiplet(J_COUPLINGS)
@@ -46,7 +51,8 @@ class DataPoint(BaseDataPoint):
 
         self.par['_id'] = tuple((temperature, nucleus_name, h_larmor_frq))
 
-        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)
+        args = (self.par[arg] for arg in
+                getargspec(make_calc_observable.__wrapped__).args)
         self.calc_observable = make_calc_observable(*args)
 
         self.short_long_par_names = (
@@ -94,17 +100,20 @@ class DataPoint(BaseDataPoint):
         """Update b1_offset value"""
 
         self.par['b1_offset'] = b1_offset
-        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)
+        args = (self.par[arg] for arg in
+                getargspec(make_calc_observable.__wrapped__).args)
         self.calc_observable = make_calc_observable(*args)
 
     def filter(self, par, par_indexes, par_fixed=None):
         filter_range = float(self.par.get('on_resonance_filter', 0.0))
 
-        par_val = dict((short_name, get_par(long_name, par, par_indexes, par_fixed))
-                       for short_name, long_name in self.short_long_par_names)
+        par_val = dict(
+            (short_name, get_par(long_name, par, par_indexes, par_fixed))
+            for short_name, long_name in self.short_long_par_names)
 
         cs = par_val['cs']
-        cs_offset_hz = (cs - self.par['carrier']) * self.par['ppm_to_rads'] / (2.0 * pi) - self.par['b1_offset']
+        cs_offset_hz = (cs - self.par['carrier']) * self.par['ppm_to_rads'] / (
+        2.0 * pi) - self.par['b1_offset']
 
         return abs(cs_offset_hz) < filter_range * 0.5
 

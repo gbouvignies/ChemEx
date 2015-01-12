@@ -9,7 +9,7 @@ from inspect import getargspec
 from math import pi
 
 # Local imports
-from chemex.tools import parse_assignment
+from chemex.parsing import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint
 from chemex.constants import xi_ratio
 from .back_calculation import make_calc_observable

@@ -10,7 +10,7 @@ from scipy import pi
 
 from chemex.constants import xi_ratio
 from chemex.experiments.base_data_point import BaseDataPoint
-from chemex.tools import parse_assignment
+from chemex.parsing import parse_assignment
 from ..plotting import plot_data
 from .back_calculation import make_calc_observable
 
@@ -22,7 +22,8 @@ PAR_DICT = {
         (int, ('ncyc',))
     ),
     'exp': ('resonance_id', 'h_larmor_frq', 'temperature', 'time_t2', 'ncyc',),
-    'fit': ('pb', 'pc', 'kex_ab', 'kex_bc', 'kex_ac', 'dw_ab', 'dw_ac', 'i0', 'r_ixy',),
+    'fit': ('pb', 'pc', 'kex_ab', 'kex_bc', 'kex_ac', 'dw_ab', 'dw_ac', 'i0',
+            'r_ixy',),
     'fix': ('dr_ixy_ab', 'dr_ixy_ac',),
 }
 
@@ -32,7 +33,8 @@ class DataPoint(BaseDataPoint):
 
     def __init__(self, val, err, par):
 
-        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
+        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'],
+                               plot_data)
 
         temperature = self.par['temperature']
         resonance_id = self.par['resonance_id']
@@ -44,12 +46,15 @@ class DataPoint(BaseDataPoint):
 
         try:
             self.par['ppm_to_rads'] = (
-                2.0 * pi * self.par['h_larmor_frq'] * xi_ratio[nucleus_type[0].upper()]
+                2.0 * pi * self.par['h_larmor_frq'] * xi_ratio[
+                    nucleus_type[0].upper()]
             )
         except KeyError:
             exit(
-                "Unknown nucleus type \"{}\" for peak \"{}\" in experiment \"{}\"".format(nucleus_type, resonance_id,
-                                                                                          experiment_name)
+                "Unknown nucleus type \"{}\" for peak \"{}\" in experiment "
+                "\"{}\"".format(
+                    nucleus_type, resonance_id,
+                    experiment_name)
             )
 
         self.par['_id'] = ((temperature, nucleus_name, h_larmor_frq),)
@@ -72,8 +77,10 @@ class DataPoint(BaseDataPoint):
             ('dw_ab', ('dw_ab', nucleus_name)),
             ('dw_ac', ('dw_ac', nucleus_name)),
             ('r_ixy', ('r_ixy', nucleus_name, h_larmor_frq, temperature)),
-            ('dr_ixy_ab', ('dr_ixy_ab', nucleus_name, h_larmor_frq, temperature)),
-            ('dr_ixy_ac', ('dr_ixy_ac', nucleus_name, h_larmor_frq, temperature)),
+            ('dr_ixy_ab',
+             ('dr_ixy_ab', nucleus_name, h_larmor_frq, temperature)),
+            ('dr_ixy_ac',
+             ('dr_ixy_ac', nucleus_name, h_larmor_frq, temperature)),
         )
 
         self.fitting_parameter_names.update(

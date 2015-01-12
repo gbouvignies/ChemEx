@@ -8,7 +8,7 @@ Created on Feb 23, 2012
 from inspect import getargspec
 from scipy import pi
 
-from chemex.tools import parse_assignment
+from chemex.parsing import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint
 from chemex.constants import xi_ratio
 from .back_calculation import make_calc_observable
@@ -26,7 +26,9 @@ PAR_DICT = {
         (float, ('h_larmor_frq', 'temperature', 'time_t2',)),
         (int, ('ncyc',))
     ),
-    'exp': ('resonance_id', 'smallflg', 'h_larmor_frq', 'temperature', 'time_t2', 'ncyc',),
+    'exp': (
+    'resonance_id', 'smallflg', 'h_larmor_frq', 'temperature', 'time_t2',
+    'ncyc',),
     'fit': ('i0', 'pb', 'kex', 'dwc', 'dwh', 'r_2hxycxy',),
     'fix': ('dr_2hxycxy',),
 }
@@ -36,7 +38,8 @@ class DataPoint(BaseDataPoint):
     '''Intensity measured during a cpmg pulse train of frequency frq'''
 
     def __init__(self, val, err, par):
-        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
+        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'],
+                               plot_data)
 
         self.par['ppm_to_rads_h'] = TWO_PI * self.par['h_larmor_frq']
         self.par['ppm_to_rads_c'] = TWO_PI * self.par['h_larmor_frq'] * RATIO
@@ -69,8 +72,12 @@ class DataPoint(BaseDataPoint):
             ('dwc', ('dw', nucleus_name_1)),
             ('dwh', ('dw', nucleus_name_2)),
             ('i0', ('i0', resonance_id, experiment_name)),
-            ('r_2hxycxy', ('r_2hxycxy', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
-            ('dr_2hxycxy', ('dr_2hxycxy', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
+            ('r_2hxycxy', (
+            'r_2hxycxy', nucleus_name_1, nucleus_name_2, h_larmor_frq,
+            temperature)),
+            ('dr_2hxycxy', (
+            'dr_2hxycxy', nucleus_name_1, nucleus_name_2, h_larmor_frq,
+            temperature)),
         )
 
         self.fitting_parameter_names.update(
