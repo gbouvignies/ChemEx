@@ -1,13 +1,13 @@
 rm -fr output
 
 echo "Global Test"
-chemex_fit.py -e experiments/cest_n15*.cfg -p parameters/params_n15.cfg -o output/global
+chemex fit -e experiments/cest_n15*.cfg -p parameters/params_n15.cfg -o output/global
 
 echo "Exclusion Test"
-chemex_fit.py -e experiments/cest_n15*.cfg -p parameters/params_n15.cfg -r 50N-HN -o output/no_50
+chemex fit -e experiments/cest_n15*.cfg -p parameters/params_n15.cfg -r 50N-HN -o output/no_50
 
 echo "Inclusion Test"
-chemex_fit.py -e experiments/cest_n15*.cfg -p parameters/params_n15.cfg +r 50N-HN -o output/just_50
+chemex fit -e experiments/cest_n15*.cfg -p parameters/params_n15.cfg +r 50N-HN -o output/just_50
 
 echo "Method Test"
-chemex_fit.py -e experiments/cest_n15*.cfg -p parameters/params_n15.cfg -m methods/method_n15.cfg -o output/method
+chemex fit -e experiments/cest_n15*.cfg -p parameters/params_n15.cfg -m methods/method_n15.cfg -o output/method

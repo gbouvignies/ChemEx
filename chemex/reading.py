@@ -4,7 +4,6 @@ Created on Mar 30, 2011
 @author: guillaume
 """
 
-# Standard Libraries
 import os
 import os.path
 import sys
@@ -20,9 +19,20 @@ def create_par_list_to_fit(par_filename, data):
     """
 
     try:
+        # Create parameters needed to fit the data
         par, par_indexes, par_fixed = create_fitting_parameters_array(data)
+
+        # Trim data
         data = trim_datasets_using_par(data, par_indexes)
+        data = trim_datasets_using_par(data, par_indexes)
+
+        # Set the parameters to their default value as defined in the 'par'
+        # file
         par, par_fixed = read_par(par_filename, par, par_indexes, par_fixed)
+
+        # Filter Data
+        data = [data_pt for data_pt in data if
+                not data_pt.filter(par, par_indexes, par_fixed)]
 
     except (KeyboardInterrupt):
         exit(' -- ChemEx killed while reading and checking parameters files\n')
@@ -45,11 +55,13 @@ def create_fitting_parameters_array(data):
         parameters_to_fix.update(data_point.get_fixed_parameter_names())
 
     par = sc.zeros(len(parameters_to_fit))
-    par_indexes = dict((par_name, index) for index, par_name in enumerate(parameters_to_fit))
+    par_indexes = dict(
+        (par_name, index) for index, par_name in enumerate(parameters_to_fit))
 
     default_val = None
     parameters_to_fix = parameters_to_fix - parameters_to_fit
-    par_fixed = dict((par_name, default_val) for index, par_name in enumerate(parameters_to_fix))
+    par_fixed = dict((par_name, default_val) for index, par_name in
+                     enumerate(parameters_to_fix))
 
     return par, par_indexes, par_fixed
 
@@ -78,7 +90,7 @@ def read_par(input_file, par, par_indexes, par_fixed):
     # Get the directory of the input file
     working_dir = os.path.dirname(input_file)
 
-    print('Checking default parameters in {:s} ...\n'.format(input_file))
+    print("\n[{:s}]".format(input_file))
     concern = False
 
     # Parse the config file
@@ -88,17 +100,24 @@ def read_par(input_file, par, par_indexes, par_fixed):
         try:
             parameters_cfg.read(input_file)
         except ConfigParser.MissingSectionHeaderError:
-            exit('You are missing a section heading (default?) in {:s}\n'.format(input_file))
+            exit(
+                'You are missing a section heading (default?) in {'
+                ':s}\n'.format(
+                    input_file))
         except ConfigParser.ParsingError:
-            exit('Having trouble reading your parameter file, have you forgotten \'=\' signs?\n{:s}'.format(
-                sys.exc_info()[1]))
+            exit(
+                'Having trouble reading your parameter file, have you '
+                'forgotten \'=\' signs?\n{:s}'.format(
+                    sys.exc_info()[1]))
     else:
-        exit("The file \'{}\' is empty or does not exist!\n".format(input_file))
+        exit(
+            "The file \'{}\' is empty or does not exist!\n".format(input_file))
 
     # Container for the default values
     starting_parameters = list()
 
-    # this assumes that the first key of each long key is the real parameter name
+    # this assumes that the first key of each long key is the real parameter
+    #  name
     # ... can this be untrue?
     long_par_names = set(par_indexes) | set(par_fixed)
     short_long_par_names = {}
@@ -109,12 +128,18 @@ def read_par(input_file, par, par_indexes, par_fixed):
 
     # Default parameters_cfg
     if 'default' not in parameters_cfg.sections():
-        exit('Section \'default\' must be present in {:s} (formerly \'global\')\n'.format(input_file))
+        exit(
+            'Section \'default\' must be present in {:s} (formerly '
+            '\'global\')\n'.format(
+                input_file))
 
     for par_name, val in parameters_cfg.items('default'):
         par_set = set([token.strip() for token in par_name.split(',')])
         if len(par_set & set(short_long_par_names)) != 1:
-            print(' ! {:s} is not an appropriate default or may be unnecessary. Ignoring entry.'.format(str(par_name)))
+            print(
+            ' ! {:s} is not an appropriate default or may be unnecessary. '
+            'Ignoring entry.'.format(
+                str(par_name)))
             concern = True
         else:
             starting_parameters.append((par_set, val))
@@ -127,12 +152,18 @@ def read_par(input_file, par, par_indexes, par_fixed):
         par_name = [token.strip().lower() for token in section.split(',')]
 
         if par_name[0] not in short_long_par_names:
-            print(' ! [{:s}] does not match any of your data (possibly ignored above).'.format(section))
+            print(
+            ' ! [{:s}] does not match any of your data (possibly ignored '
+            'above).'.format(
+                section))
             concern = True
             continue
 
         elif not set(par_name) <= short_long_par_names[par_name[0]]:
-            print(' ! [{:s}] does not match any of your data. No parameters_cfg will be updated.'.format(section))
+            print(
+            ' ! [{:s}] does not match any of your data. No parameters_cfg '
+            'will be updated.'.format(
+                section))
             concern = True
             continue
 
@@ -153,7 +184,8 @@ def read_par(input_file, par, par_indexes, par_fixed):
 
                     num_items += len(parameters)
                     for a_par_name, _ in parameters:
-                        if set(a_par_name) <= short_long_par_names[par_name[0]]:
+                        if set(a_par_name) <= short_long_par_names[
+                            par_name[0]]:
                             num_updates += 1
 
             else:
@@ -162,16 +194,20 @@ def read_par(input_file, par, par_indexes, par_fixed):
                 starting_parameters.append((full_par_name, val))
 
                 num_items += 1
-                if set(full_par_name) <= short_long_par_names[full_par_name[0]]:
+                if set(full_par_name) <= short_long_par_names[
+                    full_par_name[0]]:
                     num_updates += 1
 
         if not num_updates and num_items:
-            print(' ! No parameters updated in section [{:s}]!'.format(section))
+            print(
+            ' ! No parameters updated in section [{:s}]!'.format(section))
             print('   - Check that your names match your data files')
             concern = True
 
         elif num_updates <= num_items:
-            print(' * {:d} out of {:d} parameters updated in section [{:s}]'.format(num_updates, num_items, section))
+            print(
+            '  * {:d} out of {:d} parameters updated in section [{:s}]'.format(
+                num_updates, num_items, section))
 
     # Set parameters_cfg values to the default
     for par_name_1, val in starting_parameters:
@@ -205,18 +241,18 @@ def read_par(input_file, par, par_indexes, par_fixed):
             par_ngtv.add(','.join(par_name_str))
 
     if len(par_ngtv):
-        print(' ! Rates should not be negative!\n    {:s}'.format('\n    '.join(sorted(par_ngtv))))
+        print(' ! Rates should not be negative!\n    {:s}'.format(
+            '\n    '.join(sorted(par_ngtv))))
         concern = True
 
     if len(par_none):
-        exit(' -- Some parameters_cfg must be set!\n    {:s}'.format(', '.join(sorted(par_none))))
+        exit(' -- Some parameters_cfg must be set!\n    {:s}'.format(
+            ', '.join(sorted(par_none))))
 
     if concern:
         print('\n ! There are problems that require your attention')
     else:
-        print(' * No major concerns found!')
-
-    print('\nContinuing to minimization...')
+        print('  * No major concerns found!')
 
     return par, par_fixed
 
@@ -228,7 +264,8 @@ def read_parameter_file(filename, par_name):
 
     For example:
     To set G23N to 105.0 and G23H to 8.0: G23N-H  105.0 8.0
-    To set (G23N, G23H) [parameter depending on multiple nuclei] to 1.0: G23N-H  1.0
+    To set (G23N, G23H) [parameter depending on multiple nuclei] to 1.0:
+    G23N-H  1.0
     """
 
     try:
@@ -236,7 +273,8 @@ def read_parameter_file(filename, par_name):
     except IOError:
         exit('The file \'{}\' is empty or does not exist!\n'.format(filename))
 
-    # Hack to solve the problem of 0d-array when 'filename' is a single line file
+    # Hack to solve the problem of 0d-array when 'filename' is a single line
+    #  file
     if raw_data.ndim == 0:
         raw_data = sc.array([raw_data, ])
     #
@@ -252,7 +290,8 @@ def read_parameter_file(filename, par_name):
 
         if len(assignment) == len(line) - 1:
 
-            for i, (index, residue_type, nucleus_type) in enumerate(assignment):
+            for i, (index, residue_type, nucleus_type) in enumerate(
+                    assignment):
                 nucleus_name = residue_type + str(index) + nucleus_type
                 full_par_name = par_name + [nucleus_name]
                 parameters.append((full_par_name, line[i + 1]))
@@ -269,9 +308,10 @@ def read_parameter_file(filename, par_name):
 
         else:
 
-            error_message = '\n'.join(['Problem reading the parameter file \'{}\'.'.format(filename),
-                                       'The number of columns does not match to the number of nuclei contained in the '
-                                       'assignment:'])
+            error_message = '\n'.join(
+                ['Problem reading the parameter file \'{}\'.'.format(filename),
+                 'The number of columns does not match to the number of nuclei contained in the '
+                 'assignment:'])
             exit(error_message)
 
     return parameters

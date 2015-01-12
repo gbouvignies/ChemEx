@@ -1,2 +1,2 @@
 rm -fr output
-chemex_fit.py -e experiments/h1_ap_*.cfg -p parameters/params_h1.cfg -m methods/method_h1.cfg -o output
+chemex fit -e experiments/h1_ap_*.cfg -p parameters/params_h1.cfg -m methods/method_h1.cfg -o output

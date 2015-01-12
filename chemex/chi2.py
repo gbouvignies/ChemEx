@@ -18,8 +18,9 @@ def make_calc_residuals(verbose=True, threshold=1e-3):
         """
 
         try:
-            residuals = [a_data_point.calc_residual(par, par_indexes, par_fixed)
-                         for a_data_point in data]
+            residuals = [
+                a_data_point.calc_residual(par, par_indexes, par_fixed)
+                for a_data_point in data]
 
         except KeyboardInterrupt:
             sys.stderr.write("\n -- Keyboard Interrupt: calculation stopped")
@@ -30,8 +31,15 @@ def make_calc_residuals(verbose=True, threshold=1e-3):
 
             chi2 = sum(sc.asarray(residuals) ** 2)
 
-            if (calc_residuals.old_chi2 - chi2) / calc_residuals.old_chi2 > threshold:
-                sys.stdout.write('Chi2: {:8.2e}\n'.format(chi2))
+            if (
+                calc_residuals.old_chi2 - chi2) / calc_residuals.old_chi2 > \
+                    threshold:
+                sys.stdout.write('  * {:.3e} / {:.3e}\n'.format(chi2,
+                                                                calc_reduced_chi2(
+                                                                    par,
+                                                                    par_indexes,
+                                                                    par_fixed,
+                                                                    data)))
                 sys.stdout.flush()
                 calc_residuals.old_chi2 = chi2
 

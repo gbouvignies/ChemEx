@@ -9,6 +9,7 @@ from scipy import linspace, asarray, median, pi
 
 import matplotlib as mpl
 
+
 mpl.use('Agg')
 
 import matplotlib.pyplot as plt
@@ -25,7 +26,8 @@ linewidth = 1.0
 
 
 def sigma_estimator(x):
-    """ Estimates standard deviation using median to exclude outliers. Up to 50% can be bad """
+    """ Estimates standard deviation using median to exclude outliers. Up to
+    50% can be bad """
 
     return median([median(abs(xi - asarray(x))) for xi in x]) * 1.1926
 
@@ -54,7 +56,8 @@ def group_data(dataset):
         index = assignment[0][0]
 
         if abs(b1_offset) < 10000.0:
-            grouped_dataset.setdefault((index, resonance_id), []).append(a_data)
+            grouped_dataset.setdefault((index, resonance_id), []).append(
+                a_data)
 
     return grouped_dataset
 
@@ -110,14 +113,14 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
     for experiment_name, dataset in datasets.iteritems():
 
-        ###### Matplotlib ######
+        # ##### Matplotlib ######
         filename = ''.join([experiment_name, '.pdf'])
         filename = os.path.join(output_dir, filename)
 
         filename_calc = ''.join([experiment_name, '.fit'])
         filename_calc = os.path.join(output_dir, filename_calc)
 
-        print("     * {} [.fit]".format(filename))
+        print("  * {} [.fit]".format(filename))
 
         ########################
 
@@ -127,8 +130,10 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
         with open(filename_calc, 'w') as f:
 
-            for (_index, resonance_id), residue_dataset in sorted(grouped_dataset.iteritems()):
-                out = make_val_for_plot(residue_dataset, par, par_names, par_fixed, f)
+            for (_index, resonance_id), residue_dataset in sorted(
+                    grouped_dataset.iteritems()):
+                out = make_val_for_plot(residue_dataset, par, par_names,
+                                        par_fixed, f)
                 xe, ye, ee, yc, xf, yf = out
 
                 ###### Matplotlib ######
@@ -157,7 +162,7 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
                     markeredgecolor='r'
                 )
 
-                ymin, ymax = set_lim(ye+yf, 0.05)
+                ymin, ymax = set_lim(ye + yf, 0.05)
                 ax2.set_ylim(ymin, ymax)
                 ax2.tick_params(length=3, top=True, right=False, labelsize=10)
                 ax2.xaxis.set_major_locator(MaxNLocator(9))

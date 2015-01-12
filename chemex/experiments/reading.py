@@ -8,8 +8,9 @@ import pkgutil
 import ConfigParser
 
 
-def read_cfg_file(input_file, res_incl=None, res_excl=None):
-    """Reads the "experiment" file containing the experimental parameters and the location of the data files"""
+def read_file_exp(input_file, res_incl=None, res_excl=None):
+    """Reads the "experiment" file containing the experimental parameters
+    and the location of the data files"""
 
     # Get the directory of the input file
     working_dir = os.path.dirname(input_file)
@@ -21,19 +22,25 @@ def read_cfg_file(input_file, res_incl=None, res_excl=None):
         try:
             cfg.read(input_file)
         except ConfigParser.MissingSectionHeaderError:
-            exit('You are missing a section heading (default?) in {:s}\n'.format(input_file))
+            exit(
+                'You are missing a section heading (default?) in {'
+                ':s}\n'.format(
+                    input_file))
         except ConfigParser.ParsingError:
-            exit('Having trouble reading your parameter file, have you forgotten \'=\' signs?\n{:s}'
-                 .format(sys.exc_info()[1]))
+            exit(
+                'Having trouble reading your parameter file, have you '
+                'forgotten \'=\' signs?\n{:s}'
+                .format(sys.exc_info()[1]))
     else:
-        exit("The file \'{}\' is empty or does not exist!\n".format(input_file))
+        exit(
+            "The file \'{}\' is empty or does not exist!\n".format(input_file))
 
     try:
         # Reads experimental and estimated parameters shared by all residues
-        experimental_parameters = read_experimental_paramaters(cfg)
+        exp_par = get_exp_par(cfg)
 
         # Reads experimental measurements
-        data = read_data(cfg, working_dir, experimental_parameters, res_incl, res_excl)
+        data = get_data(cfg, working_dir, exp_par, res_incl, res_excl)
 
     except ConfigParser.NoSectionError:
         exit("\nIn {:s}, {:s}!\n".format(input_file, sys.exc_info()[1]))
@@ -44,26 +51,27 @@ def read_cfg_file(input_file, res_incl=None, res_excl=None):
     return data
 
 
-def read_experimental_paramaters(cfg):
+def get_exp_par(cfg):
     """Reads experimental and estimated parameters shared by all residues"""
 
-    # This for legacy ("experimental_parameters" was previously called "global_parameters")
     if cfg.has_section('experimental_parameters'):
-        experimental_paramaters = dict(cfg.items('experimental_parameters'))
+        experimental_parameters = dict(cfg.items('experimental_parameters'))
     elif cfg.has_section('global_parameters'):
-        experimental_paramaters = dict(cfg.items('global_parameters'))
+        experimental_parameters = dict(cfg.items('global_parameters'))
     else:
-        experimental_paramaters = dict()
+        experimental_parameters = dict()
 
-    experimental_paramaters['experiment_type'] = cfg.get('experiment', 'type')
+    experimental_parameters['experiment_type'] = cfg.get('experiment', 'type')
 
     if cfg.has_option('experiment', 'name'):
-        experimental_paramaters['experiment_name'] = cfg.get('experiment', 'name').lower()
+        experimental_parameters['experiment_name'] = cfg.get('experiment',
+                                                             'name').lower()
 
-    return experimental_paramaters
+    return experimental_parameters
 
 
-def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None):
+def get_data(cfg, working_dir, global_parameters, res_incl=None,
+             res_excl=None):
     """Reads experimental measurements"""
 
     exp_type = global_parameters['experiment_type']
@@ -82,8 +90,10 @@ def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None)
              "\nDid you forget _cpmg, _cest, etc?"
              "\n".format(global_parameters['experiment_type']))
 
-    reading = __import__(pkg + '.reading', globals(), locals(), ['read_data'], -1)
+    reading = __import__(pkg + '.reading', globals(), locals(), ['get_data'],
+                         -1)
 
-    data = reading.read_data(cfg, working_dir, global_parameters, res_incl, res_excl)
+    data = reading.read_data(cfg, working_dir, global_parameters, res_incl,
+                             res_excl)
 
     return data

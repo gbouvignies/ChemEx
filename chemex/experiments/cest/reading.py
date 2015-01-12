@@ -14,9 +14,11 @@ import scipy.interpolate as ip
 from chemex import tools
 
 
-def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None):
+def read_data(cfg, working_dir, global_parameters, res_incl=None,
+              res_excl=None):
     # Reads the path to get the intensities
-    exp_data_dir = tools.normalize_path(working_dir, cfg.get('path', 'exp_data_dir'))
+    exp_data_dir = tools.normalize_path(working_dir,
+                                        cfg.get('path', 'exp_data_dir'))
 
     data_points = list()
 
@@ -63,7 +65,10 @@ def name_experiment(global_parameters=dict()):
 
         time_t1 = float(global_parameters['time_t1'])
 
-        name = '{:s}_{:.0f}Hz_{:.0f}ms_{:.0f}MHz_{:.0f}C'.format(exp_type, b1_frq, time_t1 * 1e3, h_larmor_frq,
+        name = '{:s}_{:.0f}Hz_{:.0f}ms_{:.0f}MHz_{:.0f}C'.format(exp_type,
+                                                                 b1_frq,
+                                                                 time_t1 * 1e3,
+                                                                 h_larmor_frq,
                                                                  temperature).lower()
 
     return name
@@ -72,15 +77,17 @@ def name_experiment(global_parameters=dict()):
 def read_a_cest_profile(filename, parameters):
     """Reads in the fuda file and spit out the intensities"""
 
-    data = sc.loadtxt(filename, dtype=[('b1_offset', '<f8'), ('intensity', '<f8'), ('intensity_err', '<f8')])
+    data = sc.loadtxt(filename,
+                      dtype=[('b1_offset', '<f8'), ('intensity', '<f8'),
+                             ('intensity_err', '<f8')])
 
     uncertainty = estimate_uncertainty(data)
-    # data = find_subset(data)
 
     data_points = []
 
     exp_type = parameters['experiment_type'].replace('_cest', '')
-    data_point = __import__(exp_type + '.data_point', globals(), locals(), ['DataPoint'], -1)
+    data_point = __import__(exp_type + '.data_point', globals(), locals(),
+                            ['DataPoint'], -1)
 
     intensity_ref = 1.0
 
@@ -99,7 +106,8 @@ def read_a_cest_profile(filename, parameters):
 
         intensity_err = uncertainty
 
-        data_points.append(data_point.DataPoint(intensity_val, intensity_err, parameters))
+        data_points.append(
+            data_point.DataPoint(intensity_val, intensity_err, parameters))
 
     return data_points
 
@@ -130,7 +138,8 @@ def adjust_min_int_uncertainty(data_int):
 
 
 def norm_int(data_int):
-    """Normalize intensities relative to the intensity of the reference plane"""
+    """Normalize intensities relative to the intensity of the reference
+    plane"""
 
     new_data_int = list()
 

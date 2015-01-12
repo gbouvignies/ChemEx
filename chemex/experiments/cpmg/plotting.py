@@ -9,6 +9,7 @@ import scipy as sc
 import scipy.stats as stats
 
 import matplotlib as mpl
+
 mpl.use('Agg')
 
 import matplotlib.pyplot as plt
@@ -47,10 +48,12 @@ def group_data(dataset):
     return grouped_dataset
 
 
-def make_val_for_plot(residue_dataset, par, par_names, par_fixed, filename_out):
+def make_val_for_plot(residue_dataset, par, par_names, par_fixed,
+                      filename_out):
     """Creates the arrays that will be used to plot one profile"""
 
-    mag_ref = sc.mean([point.val for point in residue_dataset if point.par['ncyc'] == 0])
+    mag_ref = sc.mean(
+        [point.val for point in residue_dataset if point.par['ncyc'] == 0])
 
     values = []
 
@@ -80,7 +83,8 @@ def make_val_for_plot(residue_dataset, par, par_names, par_fixed, filename_out):
     for a_xe, a_ye, a_ede, a_eue, a_yc in sorted(values):
         filename_out.write(
             "{:10s} {:8.3f} {:8.3f} {:8.3f} {:8.3f} {:8.3f}\n".format(
-                residue_dataset[0].par['resonance_id'].upper(), a_xe, a_ye, a_ede, a_eue, a_yc
+                residue_dataset[0].par['resonance_id'].upper(), a_xe, a_ye,
+                a_ede, a_eue, a_yc
             )
         )
 
@@ -100,7 +104,7 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
     for experiment_name, dataset in datasets.iteritems():
 
-        ###### Matplotlib ######
+        # ##### Matplotlib ######
 
         filename = ''.join([experiment_name, '.pdf'])
         filename = os.path.join(output_dir, filename)
@@ -108,7 +112,7 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
         filename_calc = ''.join([experiment_name, '.fit'])
         filename_calc = os.path.join(output_dir, filename_calc)
 
-        print("     * {}".format(filename))
+        print("  * {}".format(filename))
 
         ########################
 
@@ -118,8 +122,10 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
         with open(filename_calc, 'w') as f:
 
-            for (_index, resonance_id), residue_dataset in sorted(grouped_dataset.iteritems()):
-                out = make_val_for_plot(residue_dataset, par, par_names, par_fixed, f)
+            for (_index, resonance_id), residue_dataset in sorted(
+                    grouped_dataset.iteritems()):
+                out = make_val_for_plot(residue_dataset, par, par_names,
+                                        par_fixed, f)
                 xe, ye, ede, eue, yc = out
 
                 ###### Matplotlib ######
@@ -160,7 +166,8 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
                 ax.yaxis.set_major_locator(MaxNLocator(6))
 
                 ax.set_xlabel(r'$\mathregular{\nu_{CPMG}}$' + ' (Hz)')
-                ax.set_ylabel(r'$\mathregular{R_{2,eff}}$ ($\mathregular{s^{-1}}$)')
+                ax.set_ylabel(
+                    r'$\mathregular{R_{2,eff}}$ ($\mathregular{s^{-1}}$)')
 
                 ax.set_title('{:s}'.format(resonance_id.upper()))
 
