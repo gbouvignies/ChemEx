@@ -7,7 +7,7 @@ Created on Nov 11, 2014
 from inspect import getargspec
 from scipy import pi
 
-from chemex.tools import parse_assignment
+from chemex.parsing import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint
 from chemex.constants import xi_ratio
 from chemex.experiments.cpmg.co_ap.back_calculation import make_calc_observable
@@ -20,13 +20,17 @@ RATIO_C = xi_ratio['C']
 
 PAR_DICT = {
     'par_conv': (
-        (str, ('resonance_id','sidechain_flg',)),
-        (float, ('h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'pwco90', 'time_equil', 'taucc')),
+        (str, ('resonance_id', 'sidechain_flg',)),
+        (float, ('h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'pwco90',
+                 'time_equil', 'taucc')),
         (int, ('ncyc',))
     ),
-    'exp': ('resonance_id', 'sidechain_flg', 'h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'time_equil', 'taucc', 'pwco90', 'ncyc'),
+    'exp': (
+    'resonance_id', 'sidechain_flg', 'h_larmor_frq', 'temperature', 'carrier',
+    'time_t2', 'time_equil', 'taucc', 'pwco90', 'ncyc'),
     'fit': ('pb', 'kex', 'dw', 'i0', 'r_coxy'),
-    'fix': ('r_nz', 'dr_coxy', 'r_2coznz', 'etaxy', 'etaz', 'cs', 'j_nco', 'dj_nco'),
+    'fix': (
+    'r_nz', 'dr_coxy', 'r_2coznz', 'etaxy', 'etaz', 'cs', 'j_nco', 'dj_nco'),
 
 }
 
@@ -35,7 +39,8 @@ class DataPoint(BaseDataPoint):
     """Intensity measured during a cpmg pulse train of frequency frq"""
 
     def __init__(self, val, err, par):
-        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
+        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'],
+                               plot_data)
 
         self.par['ppm_to_rads'] = TWO_PI * self.par['h_larmor_frq'] * RATIO_C
 
@@ -52,7 +57,8 @@ class DataPoint(BaseDataPoint):
 
         self.par['_id'] = tuple((temperature, nucleus_name_1, h_larmor_frq))
 
-        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)
+        args = (self.par[arg] for arg in
+                getargspec(make_calc_observable.__wrapped__).args)
         self.calc_observable = make_calc_observable(*args)
 
         self.kwargs_default = {'ncyc': self.par['ncyc']}
@@ -64,13 +70,17 @@ class DataPoint(BaseDataPoint):
             ('cs', ('cs', nucleus_name_1, temperature)),
             ('i0', ('i0', resonance_id, experiment_name)),
             ('r_coxy', ('r_coxy', nucleus_name_1, h_larmor_frq, temperature)),
-            ('dr_coxy', ('dr_coxy', nucleus_name_1, h_larmor_frq, temperature)),
+            (
+            'dr_coxy', ('dr_coxy', nucleus_name_1, h_larmor_frq, temperature)),
             ('r_nz', ('r_nz', nucleus_name_2, h_larmor_frq, temperature)),
-            ('r_2coznz', ('r_2coznz', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
+            ('r_2coznz', (
+            'r_2coznz', nucleus_name_1, nucleus_name_2, h_larmor_frq,
+            temperature)),
             ('etaxy', ('etaxy', nucleus_name_1, h_larmor_frq, temperature)),
             ('etaz', ('etaz', nucleus_name_1, h_larmor_frq, temperature)),
             ('j_nco', ('j_nco', nucleus_name_1, nucleus_name_2, temperature)),
-            ('dj_nco', ('dj_nco', nucleus_name_1, nucleus_name_2, temperature)),
+            (
+            'dj_nco', ('dj_nco', nucleus_name_1, nucleus_name_2, temperature)),
         )
 
         self.fitting_parameter_names.update(

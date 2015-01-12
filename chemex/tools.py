@@ -4,10 +4,8 @@ Created on 2012-02-21
 @author: guillaume
 """
 
-# Standar Libraies
 import sys
 import os
-import re
 
 
 class autodict(dict):
@@ -69,54 +67,6 @@ def exclude_selection(data, selection):
         exit(1)
 
     return new_data
-
-
-def parse_assignment(assignment):
-    """
-    Parse assignment of form g1a1-g2a2 to get ((g1, a1), (g2, a2))
-    Or g1a1-a2 to get ((g1, a1), (g1, a2))
-    A '?' component is translated to ('', '')
-    """
-
-    res = assignment.lower().split('-')
-    assignment = []
-    last_group = None
-    for s in res:
-        ga = split_group_atom(s)
-        if ga == None:
-            if last_group:
-                ga = (last_group, s)
-            else:
-                return None
-        assignment.append((parse_group_name(ga[0]) + ga[1:]))
-        last_group = ga[0]
-
-    return tuple(assignment)
-
-
-def split_group_atom(group_atom):
-    """
-    Skip to first digit, then skip to first H|C|N to find start of atom name.
-    """
-
-    s = re.search('[0-9]', group_atom)
-    if s:
-        first_digit = s.start()
-        s = re.search('[hHcCnNqQmM]', group_atom[first_digit:])
-        if s:
-            HCNQM_offset = s.start()
-            d = first_digit + HCNQM_offset
-            return (group_atom[:d], group_atom[d:])
-    if group_atom == '?':
-        return ('', '')
-    return None
-
-
-def parse_group_name(g):
-    s = re.search('[0-9]+', g)
-    if s:
-        return int(s.group()), g[:s.start()]
-    return g, None
 
 
 def make_dir(path=None):

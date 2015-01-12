@@ -7,7 +7,7 @@ Created on Aug 5, 2011
 from inspect import getargspec
 from scipy import pi
 
-from chemex.tools import parse_assignment
+from chemex.parsing import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint
 from chemex.constants import xi_ratio
 from .back_calculation import make_calc_observable
@@ -66,7 +66,8 @@ class DataPoint(BaseDataPoint):
     """Intensity measured during a cpmg pulse train of frequency frq"""
 
     def __init__(self, val, err, par):
-        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
+        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'],
+                               plot_data)
 
         self.par['ppm_to_rads'] = TWO_PI * self.par['h_larmor_frq'] * RATIO_C
 
@@ -81,7 +82,8 @@ class DataPoint(BaseDataPoint):
 
         self.par['_id'] = tuple((temperature, nucleus_name, h_larmor_frq))
 
-        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)
+        args = (self.par[arg] for arg in
+                getargspec(make_calc_observable.__wrapped__).args)
         self.calc_observable = make_calc_observable(*args)
 
         self.kwargs_default = {'ncyc': self.par['ncyc']}

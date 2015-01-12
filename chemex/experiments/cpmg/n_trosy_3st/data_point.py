@@ -7,7 +7,7 @@ Created on Aug 5, 2011
 from inspect import getargspec
 from scipy import pi
 
-from chemex.tools import parse_assignment
+from chemex.parsing import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint
 from chemex.constants import xi_ratio
 from .back_calculation import make_calc_observable
@@ -21,7 +21,9 @@ RATIO_N = xi_ratio['N']
 PAR_DICT = {
     'par_conv': (
         (str, ('resonance_id',)),
-        (float, ('h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'pw', 'taub', 'time_equil')),
+        (float, (
+        'h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'pw', 'taub',
+        'time_equil')),
         (int, ('ncyc',))
     ),
     'exp': (
@@ -42,7 +44,8 @@ class DataPoint(BaseDataPoint):
     """Intensity measured during a cpmg pulse train of frequency frq"""
 
     def __init__(self, val, err, par):
-        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
+        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'],
+                               plot_data)
 
         self.par['ppm_to_rads'] = TWO_PI * self.par['h_larmor_frq'] * RATIO_N
 
@@ -79,15 +82,21 @@ class DataPoint(BaseDataPoint):
             ('cs', ('cs', nucleus_name_1, temperature)),
             ('i0', ('i0', resonance_id, experiment_name)),
             ('r_nxy', ('r_nxy', nucleus_name_1, h_larmor_frq, temperature)),
-            ('dr_nxy_ab', ('dr_nxy_ab', nucleus_name_1, h_larmor_frq, temperature)),
-            ('dr_nxy_ac', ('dr_nxy_ac', nucleus_name_1, h_larmor_frq, temperature)),
+            ('dr_nxy_ab',
+             ('dr_nxy_ab', nucleus_name_1, h_larmor_frq, temperature)),
+            ('dr_nxy_ac',
+             ('dr_nxy_ac', nucleus_name_1, h_larmor_frq, temperature)),
             ('r_nz', ('r_nz', nucleus_name_1, h_larmor_frq, temperature)),
-            ('r_2hznz', ('r_2hznz', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
+            ('r_2hznz', (
+            'r_2hznz', nucleus_name_1, nucleus_name_2, h_larmor_frq,
+            temperature)),
             ('etaxy', ('etaxy', nucleus_name_1, h_larmor_frq, temperature)),
             ('etaz', ('etaz', nucleus_name_1, h_larmor_frq, temperature)),
             ('j_hn', ('j_hn', nucleus_name_1, nucleus_name_2, temperature)),
-            ('dj_hn_ab', ('dj_hn_ab', nucleus_name_1, nucleus_name_2, temperature)),
-            ('dj_hn_ac', ('dj_hn_ac', nucleus_name_1, nucleus_name_2, temperature)),
+            ('dj_hn_ab',
+             ('dj_hn_ab', nucleus_name_1, nucleus_name_2, temperature)),
+            ('dj_hn_ac',
+             ('dj_hn_ac', nucleus_name_1, nucleus_name_2, temperature)),
         )
 
         self.fitting_parameter_names.update(

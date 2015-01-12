@@ -6,7 +6,7 @@ Created on Aug 5, 2011
 
 from scipy import pi
 
-from chemex.tools import parse_assignment
+from chemex.parsing import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint
 from back_calculation import calc_observable
 from chemex.constants import xi_ratio
@@ -34,7 +34,8 @@ class DataPoint(BaseDataPoint):
     '''Intensity measured during a cpmg pulse train of frequency frq'''
 
     def __init__(self, val, err, par):
-        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
+        BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'],
+                               plot_data)
 
         self.par['ppm_to_rads_h'] = TWO_PI * self.par['h_larmor_frq']
         self.par['ppm_to_rads_n'] = TWO_PI * self.par['h_larmor_frq'] * RATIO
