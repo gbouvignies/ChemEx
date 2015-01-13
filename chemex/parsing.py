@@ -4,6 +4,7 @@ import sys
 import re
 
 import chemex.experiments
+import chemex.version
 
 
 class MyParser(argparse.ArgumentParser):
@@ -22,7 +23,7 @@ def arg_parse():
         "the principle techniques are CPMG relaxation dispersion and Chemical "
         "Exchange Saturation Transfer.")
 
-    parser = MyParser(description=description)
+    parser = MyParser(description=description, prog='chemex', version='ChemEx version {}'.format(chemex.version.__version__) )
 
     subparsers = parser.add_subparsers(dest='commands', )
 
