@@ -134,8 +134,8 @@ def plot_results(par, par_indexes, par_fixed, data, output_dir):
 
 def fit_write_plot(args, par, par_indexes, par_fixed, data, output_dir):
     # Fit the data to the model
-    par_fit, par_err = fitting.run_fit(args.method, par, par_indexes,
-                                       par_fixed, data)
+    par_fit, par_err, par_indexes, par_fixed = \
+        fitting.run_fit(args.method, par, par_indexes, par_fixed, data)
 
     tools.make_dir(output_dir)
 
@@ -146,7 +146,7 @@ def fit_write_plot(args, par, par_indexes, par_fixed, data, output_dir):
     if not args.noplot:
         plot_results(par_fit, par_indexes, par_fixed, data, output_dir)
 
-    return par_fit, par_err
+    return par_fit, par_err, par_indexes, par_fixed
 
 
 def main():
@@ -177,8 +177,9 @@ def main():
                 output_dir = os.path.join(output_dir, args.res_incl[0].upper())
 
         if not args.bs:
-            par, par_err = fit_write_plot(args, par, par_indexes, par_fixed,
-                                          data, output_dir)
+            par, par_err, par_indexes, par_fixed = \
+                fit_write_plot(args, par, par_indexes, par_fixed, data,
+                               output_dir)
 
         if args.bs or args.mc:
 

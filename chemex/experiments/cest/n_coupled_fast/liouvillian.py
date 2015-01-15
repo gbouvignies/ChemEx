@@ -1,13 +1,16 @@
-from chemex.bases.two_states.iph import R_IXY, DR_IXY, R_IZ, CS, DW, KAB, KBA, W1X
+from chemex.bases.two_states.iph import R_IXY, DR_IXY, R_IZ, CS, DW, KAB, \
+    KBA, W1X
 
 
-def compute_liouvillian(pb=0.0, kex=0.0, dw=0.0, r_nz=1.5, r_nxy=5.0, dr_nxy=0.0, cs_offset=0.0, w1=0.0):
+def compute_liouvillian(pb=0.0, kex=0.0, dw=0.0, r_nz=1.5, r_nxy=5.0,
+                        dr_nxy=0.0, cs_offset=0.0, w1=0.0):
     """
     Compute the exchange matrix (Liouvillian)
 
     The function assumes a 2-site (A <-> B) exchanging system.
     The matrix is written in 6x6 cartesian basis, that is {Nx, Ny, Nz}{a,b}.
-    Here the thermal equilibrium is assumed to be 0. This is justified because of
+    Here the thermal equilibrium is assumed to be 0. This is justified
+    because of
     the +/- phase cycling of the first 90 degree pulse at the beginning of the
     cpmg block.
 

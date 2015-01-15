@@ -1,22 +1,22 @@
-"""
-Created on May 1, 2013
-
-@author: guillaume
-"""
-
 from itertools import product
-
 from scipy import pi, zeros, linspace, asarray
 from scipy.stats import norm
 
-from chemex.bases.two_states.iph import R_IXY, DR_IXY, R_IZ, CS, DW, KAB, KBA, W1X
+from chemex.bases.two_states.iph import R_IXY, DR_IXY, R_IZ, CS, DW, KAB, \
+    KBA, W1X
 
 
-def compute_base_liouvillians(b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_inh_res=5, multiplet=None):
+def compute_base_liouvillians(b1_offset=0.0, b1_frq=0.0, b1_inh=0.0,
+                              b1_inh_res=5, multiplet=None):
+    # Convert Hz to rad/s
     w1, w1_inh, w1_offset = 2.0 * pi * asarray([b1_frq, b1_inh, b1_offset])
 
+    # Sample 2 sigmas of the normal distribution
     w1s = linspace(-2.0, 2.0, b1_inh_res) * w1_inh + w1
+
+    # Calculate the weight according to a normal distribution
     weights1 = norm.pdf(w1s, w1, w1_inh)
+    weights1 /= weights1.sum()
 
     liouvillians = [(j - w1_offset) * CS + w1 * W1X
                     for w1, (j, _) in product(w1s, multiplet)]
@@ -27,15 +27,15 @@ def compute_base_liouvillians(b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_inh_res=
     return liouvillians, weights
 
 
-def compute_free_liouvillian(pb=0.0, kex=0.0, dw=0.0,
-                             r_nz=1.5, r_nxy=5.0, dr_nxy=0.0,
-                             cs_offset=0.0):
+def compute_free_liouvillian(pb=0.0, kex=0.0, dw=0.0, r_nz=1.5, r_nxy=5.0,
+                             dr_nxy=0.0, cs_offset=0.0):
     """
     Compute the exchange matrix (Liouvillian)
 
     The function assumes a 2-site (A <-> B) exchanging system.
     The matrix is written in 6x6 cartesian basis, that is {Nx, Ny, Nz}{a,b}.
-    Here the thermal equilibrium is assumed to be 0. This is justified because of
+    Here the thermal equilibrium is assumed to be 0. This is justified
+    because of
     the +/- phase cycling of the first 90 degree pulse at the beginning of the
     cpmg block.
 

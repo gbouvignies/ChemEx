@@ -17,13 +17,16 @@ class MyParser(argparse.ArgumentParser):
 def arg_parse():
     description = (
         "ChemEx is an analysis program for chemical exchange detected by "
-        "NMR. It "
-        "is designed to take almost any kind of NMR data to aid the "
-        "analysis, but "
-        "the principle techniques are CPMG relaxation dispersion and Chemical "
-        "Exchange Saturation Transfer.")
+        "NMR. It is designed to take almost any kind of NMR data to aid the "
+        "analysis, but the principle techniques are CPMG relaxation "
+        "dispersion and Chemical Exchange Saturation Transfer."
+    )
 
-    parser = MyParser(description=description, prog='chemex', version='ChemEx version {}'.format(chemex.version.__version__) )
+    parser = MyParser(
+        description=description,
+        prog='chemex',
+        version='ChemEx version {}'.format(chemex.version.__version__)
+    )
 
     subparsers = parser.add_subparsers(dest='commands', )
 
@@ -42,7 +45,8 @@ def arg_parse():
 
         type_help = __import__(
             '.'.join(['chemex', 'experiments', type, 'exp_help']),
-            fromlist=['exp_help'])
+            fromlist=['exp_help']
+        )
 
         parser_info_exp = subparsers_info.add_parser(
             type,
@@ -51,11 +55,13 @@ def arg_parse():
         )
 
         subparsers_info_type = parser_info_exp.add_subparsers(
-            dest='experiments', )
+            dest='experiments',
+        )
 
         path_experiments = __import__(
             '.'.join(['chemex', 'experiments', type]),
-            fromlist=[type]).__path__
+            fromlist=[type],
+        ).__path__
 
         experiments = [name for _, name, ispkg in
                        pkgutil.iter_modules(path_experiments) if ispkg]

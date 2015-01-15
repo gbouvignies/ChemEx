@@ -1,23 +1,19 @@
-"""
-Created on Aug 15, 2011
-
-@author: guillaume
-"""
-
 import scipy as sc
 from scipy.linalg import expm2 as expm
 
 from chemex.experiments.misc import correct_chemical_shift
 from chemex.caching import lru_cache
-from .liouvillian import compute_nz_eq, compute_base_liouvillians, compute_free_liouvillian, get_nz
+from .liouvillian import compute_nz_eq, compute_base_liouvillians, \
+    compute_free_liouvillian, get_nz
 
 
 @lru_cache()
-def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_inh_res=5,
-                         carrier=0.0, ppm_to_rads=0.0, multiplet=None, _id=None):
+def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_inh=0.0,
+                         b1_inh_res=5, carrier=0.0, ppm_to_rads=0.0,
+                         multiplet=None, _id=None):
     """
-    Factory to make "calc_observable" function to calculate the intensity in presence
-    of exchange after a CEST block.
+    Factory to make "calc_observable" function to calculate the intensity in
+    presence of exchange after a CEST block.
 
     Parameters
     ----------
@@ -45,12 +41,20 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_
 
     """
 
-    base_liouvillians, weights = compute_base_liouvillians(b1_offset, b1_frq, b1_inh, b1_inh_res, multiplet)
+    base_liouvillians, weights = compute_base_liouvillians(
+        b1_offset=b1_offset,
+        b1_frq=b1_frq,
+        b1_inh=b1_inh,
+        b1_inh_res=b1_inh_res,
+        multiplet=multiplet
+    )
 
     @lru_cache(5)
-    def _calc_observable(pb=0.0, kex=0.0, dw=0.0, r_nz=1.5, r_nxy=0.0, dr_nxy=0.0, cs=0.0):
+    def _calc_observable(pb=0.0, kex=0.0, dw=0.0, r_nz=1.5, r_nxy=0.0,
+                         dr_nxy=0.0, cs=0.0):
         """
-        Calculate the intensity in presence of exchange after a CEST block assuming
+        Calculate the intensity in presence of exchange after a CEST block
+        assuming
         initial intensity of 1.0.
 
         Parameters
@@ -85,23 +89,41 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_
         else:
 
             dw *= ppm_to_rads
+
             mag_eq = compute_nz_eq(pb)
-            exchange_induced_shift, _ = correct_chemical_shift(pb=pb, kex=kex, dw=dw,
-                                                               r_ixy=r_nxy, dr_ixy=dr_nxy)
+
+            exchange_induced_shift, _ = correct_chemical_shift(
+                pb=pb,
+                kex=kex,
+                dw=dw,
+                r_ixy=r_nxy,
+                dr_ixy=dr_nxy
+            )
+
             wg = (cs - carrier) * ppm_to_rads - exchange_induced_shift
 
-            liouvillians = base_liouvillians + compute_free_liouvillian(pb=pb, kex=kex, dw=dw,
-                                                                        r_nxy=r_nxy, dr_nxy=dr_nxy,
-                                                                        r_nz=r_nz, cs_offset=wg)
+            liouvillians = (
+                base_liouvillians +
+                compute_free_liouvillian(
+                    pb=pb,
+                    kex=kex,
+                    dw=dw,
+                    r_nxy=r_nxy,
+                    dr_nxy=dr_nxy,
+                    r_nz=r_nz,
+                    cs_offset=wg
+                )
+            )
 
             propagator = sc.zeros_like(liouvillians[0])
+
             for liouvillian, weight in zip(liouvillians, weights):
                 propagator += weight * expm(liouvillian * time_t1)
-            propagator /= sum(weights)
 
-            magz_a, _ = get_nz(sc.dot(propagator, mag_eq))
+            magz_a, _ = get_nz(propagator.dot(mag_eq))
 
             return magz_a
+
 
     def calc_observable(i0=0.0, **kwargs):
         """
