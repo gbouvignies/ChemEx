@@ -1,9 +1,3 @@
-"""
-Created on Aug 5, 2011
-
-@author: guillaume
-"""
-
 from inspect import getargspec
 from math import pi
 
@@ -16,12 +10,10 @@ from ..plotting import plot_data
 
 
 
-
 # Constants
 RATIO_N = xi_ratio['N']
 TWO_PI = 2.0 * pi
-
-# first dictionary version
+J_COUPLINGS = (7.7, 10.7, 14.4)
 PAR_DICT = {
     'par_conv': ((str, ('resonance_id',)),
                  (float, ('h_larmor_frq',
@@ -37,8 +29,6 @@ PAR_DICT = {
     'fit': ('pb', 'kex', 'dw', 'i0', 'r_nxy', 'dr_nxy', 'r_nz'),
     'fix': ('cs',),
 }
-
-J_COUPLINGS = (7.7, 10.7, 14.4)
 
 
 class DataPoint(BaseDataPoint):
@@ -66,6 +56,7 @@ class DataPoint(BaseDataPoint):
 
         args = (self.par[arg] for arg in
                 getargspec(make_calc_observable.__wrapped__).args)
+
         self.calc_observable = make_calc_observable(*args)
 
         self.short_long_par_names = (

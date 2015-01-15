@@ -1,16 +1,19 @@
-import operator
-
 import scipy as sc
-from scipy.linalg import eig, norm
+from scipy.linalg import eig, inv
 
 from chemex.experiments.misc import correct_chemical_shift
 from chemex.caching import lru_cache
 from .liouvillian import compute_liouvillian
 
 
+dot = sc.dot
+diag = sc.diag
+exp = sc.exp
+
+
 @lru_cache()
-def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, carrier=0.0, ppm_to_rads=0.0, multiplet=None,
-                         _id=None):
+def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, carrier=0.0,
+                         ppm_to_rads=0.0, multiplet=None, _id=None):
     """
     Factory to make "calc_observable" function to calculate the intensity in presence
     of exchange after a CEST block.
@@ -44,8 +47,10 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, carrier=0.0, pp
     w1 = b1_frq * 2.0 * sc.pi
     w1_offset = b1_offset * 2.0 * sc.pi
 
+
     @lru_cache(5)
-    def _calc_observable(pb=0.0, kex=0.0, dw=0.0, r_nz=1.5, r_nxy=0.0, dr_nxy=0.0, cs=0.0):
+    def _calc_observable(pb=0.0, kex=0.0, dw=0.0, r_nz=1.5, r_nxy=0.0,
+                         dr_nxy=0.0, cs=0.0):
         """
         Calculate the intensity in presence of exchange after a CEST block assuming
         initial intensity of 1.0.
@@ -83,25 +88,53 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, carrier=0.0, pp
 
             dw *= ppm_to_rads
 
-            exchange_induced_shift, _ = correct_chemical_shift(pb=pb, kex=kex, dw=dw, r_ixy=r_nxy, dr_ixy=dr_nxy)
+            exchange_induced_shift, _ = correct_chemical_shift(
+                pb=pb,
+                kex=kex,
+                dw=dw,
+                r_ixy=r_nxy,
+                dr_ixy=dr_nxy
+            )
 
-            wg = (cs - carrier) * ppm_to_rads - exchange_induced_shift - w1_offset
+            wg = (
+                (cs - carrier) * ppm_to_rads -
+                exchange_induced_shift -
+                w1_offset
+            )
 
+            magz_eq = sc.asarray([[1 - pb], [pb]])
             magz_a = 0.0
 
             for j, weight in multiplet:
-                liouvillian = compute_liouvillian(pb=pb, kex=kex, dw=dw, r_nxy=r_nxy, dr_nxy=dr_nxy, r_nz=r_nz,
-                                                  cs_offset=(wg + j), w1=w1)
+                liouvillian = compute_liouvillian(
+                    pb=pb,
+                    kex=kex,
+                    dw=dw,
+                    r_nxy=r_nxy,
+                    dr_nxy=dr_nxy,
+                    r_nz=r_nz,
+                    cs_offset=(wg + j),
+                    w1=w1
+                )
 
-                eval, evec = eig(liouvillian)
+                s, vr = eig(liouvillian)
+                vri = inv(vr)
 
-                index, r1 = max(enumerate(-sc.absolute(eval)), key=operator.itemgetter(1))
+                sl1 = [2, 5]
+                sl2 = [i for i, w in enumerate(s.imag) if abs(w) < 1.0e-6]
+                sl3 = [2]
 
-                magz_a += weight * sc.exp(r1 * time_t1) * evec[2, index].real ** 2
+                vri = vri[sc.ix_(sl2, sl1)].real
+                t = diag(exp(s[sl2].real * time_t1))
+                vr = vr[sc.ix_(sl3, sl2)].real
 
-            magz_a *= 1.0 - pb
+                magz_a += (
+                    weight *
+                    dot(dot(dot(vr, t), vri), magz_eq)[0, 0]
+                )
 
         return magz_a
+
 
     def calc_observable(i0=0.0, **kwargs):
         """
@@ -122,3 +155,5 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, carrier=0.0, pp
         return i0 * _calc_observable(**kwargs)
 
     return calc_observable
+
+

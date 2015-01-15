@@ -1,9 +1,14 @@
 import scipy as sc
-from scipy.linalg import eigvals
+from scipy.linalg import eig, inv
 
 from chemex.experiments.misc import correct_chemical_shift
 from chemex.caching import lru_cache
 from .liouvillian import compute_liouvillian
+
+
+dot = sc.dot
+diag = sc.diag
+exp = sc.exp
 
 
 @lru_cache()
@@ -72,30 +77,52 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, carrier=0.0, pp
 
         """
 
-        magz_a = (1.0 - pb)
+        if abs(b1_offset) >= 10000.0:
 
-        if abs(b1_offset) < 10000.0:
+            magz_a = (1.0 - pb)
+
+        else:
 
             dw *= ppm_to_rads
 
-            exchange_induced_shift, _ = correct_chemical_shift(pb=pb, kex=kex, dw=dw, r_ixy=r_nxy, dr_ixy=dr_nxy)
+            exchange_induced_shift, _ = correct_chemical_shift(
+                pb=pb,
+                kex=kex,
+                dw=dw,
+                r_ixy=r_nxy,
+                dr_ixy=dr_nxy
+            )
 
-            wg = (cs - carrier) * ppm_to_rads - exchange_induced_shift - w1_offset
+            wg = (
+                (cs - carrier) * ppm_to_rads -
+                exchange_induced_shift -
+                w1_offset
+            )
 
-            liouvillian = compute_liouvillian(pb=pb, kex=kex, dw=dw, r_nxy=r_nxy, dr_nxy=dr_nxy, r_nz=r_nz,
-                                              cs_offset=wg, w1=w1)
+            liouvillian = compute_liouvillian(
+                pb=pb,
+                kex=kex,
+                dw=dw,
+                r_nxy=r_nxy,
+                dr_nxy=dr_nxy,
+                r_nz=r_nz,
+                cs_offset=wg,
+                w1=w1
+            )
 
-            # eval, evec = eig(liouvillian)
-            #
-            # index, r1 = max(enumerate(-sc.absolute(eval)), key=operator.itemgetter(1))
-            # coeff = max(sc.absolute(evec[2:6:3, index])) ** 2
-            #
-            #
-            # magz_a = (1.0 - pb) * sc.exp(r1 * time_t1) * coeff
+            s, vr = eig(liouvillian)
+            vri = inv(vr)
 
-            r1 = -sc.sort(sc.absolute(eigvals(liouvillian)))[0]
+            sl1 = [2, 5]
+            sl2 = [i for i, w in enumerate(s.imag) if abs(w) < 1.0e-6]
+            sl3 = [2]
 
-            magz_a *= sc.exp(r1 * time_t1) * wg ** 2 / (wg ** 2 + w1 ** 2)
+            vri = vri[sc.ix_(sl2, sl1)].real
+            t = diag(exp(s[sl2].real * time_t1))
+            vr = vr[sc.ix_(sl3, sl2)].real
+            magz_eq = sc.asarray([[1 - pb], [pb]])
+
+            magz_a = dot(dot(dot(vr, t), vri), magz_eq)[0, 0]
 
         return magz_a
 

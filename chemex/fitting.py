@@ -1,9 +1,3 @@
-"""
-Created on Mar 31, 2011
-
-@author: guillaume
-"""
-
 import sys
 import os.path
 import ConfigParser
@@ -62,15 +56,17 @@ def run_fit(fit_filename, par, par_indexes, par_fixed, data):
 
             for i, independent_cluster in enumerate(independent_clusters, 1):
 
-                print('\nChi2 / Reduced Chi2 (cluster {}/{}):'.format(i,
-                                                                      independent_clusters_no))
+                print('\nChi2 / Reduced Chi2 (cluster {}/{}):'
+                      .format(i, independent_clusters_no))
 
                 c_data, c_par, c_par_indexes = independent_cluster
-                c_par, c_par_err, _c_reduced_chi2 = local_minimization(c_par,
-                                                                       c_par_indexes,
-                                                                       par_fixed,
-                                                                       c_data,
-                                                                       verbose=True)
+                c_par, c_par_err, _c_reduced_chi2 = local_minimization(
+                    c_par,
+                    c_par_indexes,
+                    par_fixed,
+                    c_data,
+                    verbose=True
+                )
 
                 for par_name in c_par_indexes:
                     par[par_indexes[par_name]] = c_par[c_par_indexes[par_name]]
@@ -87,7 +83,7 @@ def run_fit(fit_filename, par, par_indexes, par_fixed, data):
         print("Final Reduced Chi2: {:.3e}".format(
             calc_reduced_chi2(par, par_indexes, par_fixed, data)))
 
-    return par, par_err
+    return par, par_err, par_indexes, par_fixed
 
 
 def local_minimization(par, par_indexes, par_fixed, data, verbose=True):
