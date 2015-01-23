@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import collections
 import numpy as np
 from scipy import array, pi
@@ -126,10 +128,20 @@ def format_experiment_help(type_experiment, name_experiment):
     description = textwrap.dedent(exp_help.description)
     parameters = data_point.PAR_DICT
 
+    try:
+        reference = exp_help.reference
+    except StandardError:
+        reference = None
+
     header1(parse_line)
     print("")
     print(description)
     print("")
+
+    if reference:
+        print("*{journal:s} ({year:d}) v.{volume:d}, p.{pages:s}*"
+              .format(**reference))
+        print("")
 
     header2(headline1)
     for p in parameters['exp']:

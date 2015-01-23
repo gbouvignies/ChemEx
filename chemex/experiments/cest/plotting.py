@@ -111,7 +111,7 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
         experiment_name = data_point.par['experiment_name']
         datasets.setdefault(experiment_name, []).append(data_point)
 
-    for experiment_name, dataset in datasets.iteritems():
+    for experiment_name, dataset in datasets.items():
 
         # ##### Matplotlib ######
         filename = ''.join([experiment_name, '.pdf'])
@@ -131,7 +131,7 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
         with open(filename_calc, 'w') as f:
 
             for (_index, resonance_id), residue_dataset in sorted(
-                    grouped_dataset.iteritems()):
+                    grouped_dataset.items()):
                 out = make_val_for_plot(residue_dataset, par, par_names,
                                         par_fixed, f)
                 xe, ye, ee, yc, xf, yf = out

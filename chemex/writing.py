@@ -21,7 +21,7 @@ def write_dat(data, output_dir='./'):
         experiment_name = data_point.par['experiment_name']
         datasets.setdefault(experiment_name, list()).append(data_point)
 
-    for experiment_name, data in datasets.iteritems():
+    for experiment_name, data in datasets.items():
 
         filename = ''.join([experiment_name, '.dat'])
         filename = os.path.join(output_dir, filename)

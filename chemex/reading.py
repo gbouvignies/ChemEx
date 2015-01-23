@@ -212,7 +212,7 @@ def read_par(input_file, par, par_indexes, par_fixed):
     # Set parameters_cfg values to the default
     for par_name_1, val in starting_parameters:
 
-        for par_name_2, index in par_indexes.iteritems():
+        for par_name_2, index in par_indexes.items():
             par_name_2_str = [str(_) for _ in par_name_2]
             if set(par_name_1) <= set(par_name_2_str):
                 par[index] = float(val)
@@ -225,7 +225,7 @@ def read_par(input_file, par, par_indexes, par_fixed):
     # Check that fitting parameters_cfg are all initialized
     par_none = set()
     par_ngtv = set()
-    for par_name, index in par_indexes.iteritems():
+    for par_name, index in par_indexes.items():
         par_name_str = [str(_) for _ in par_name]
         if par[index] is None:
             par_none.add(par_name_str[0])

@@ -51,7 +51,7 @@ def make_bootstrap_dataset(data):
 
     bootstrap_data = []
 
-    for profile_id, profile in profiles.iteritems():
+    for profile_id, profile in profiles.items():
 
         if profile_id in reference_points:
             bootstrap_data.extend(

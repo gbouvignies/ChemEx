@@ -14,7 +14,7 @@ and is calculated using the 6x6, single spin matrix:
 [ Nx(a), Ny(a), Nz(a), Nx(b), Ny(b), Nz(b) ]
 
 The calculation is designed specifically to analyze the experiment found in
-the reference."""
+the reference:"""
 
 reference = {
     'journal': 'J Am Chem Soc',
