@@ -8,7 +8,6 @@ In a clean directory run:
 Navigate to the chemex directory and run:
 
 	python setup.py install --user
-        
 
 Quick update
 ------------
@@ -30,4 +29,4 @@ You should have installed on your system:
   * [MatPlotLib 1.1.x](http://matplotlib.org/users/installing.html)
 
 Newer versions of the above should be fine, as will be some older versions. However, Python
-2.6 or earlier will not work. Please report any compatability issues that you run into.
+2.6 or earlier will not work. Please report any compatibility issues that you run into.
