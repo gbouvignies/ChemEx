@@ -1,9 +1,3 @@
-'''
-Created on Aug 5, 2011
-
-@author: guillaume
-'''
-
 from scipy import pi
 
 from chemex.parsing import parse_assignment
@@ -13,8 +7,6 @@ from chemex.constants import xi_ratio
 from ..plotting import plot_data
 
 
-
-# Constants
 TWO_PI = 2.0 * pi
 RATIO = xi_ratio['N']
 

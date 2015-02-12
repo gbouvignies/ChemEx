@@ -1,20 +1,12 @@
-'''
-Created on Aug 5, 2011
-
-@author: guillaume
-'''
-
 from scipy import pi
 
-from chemex.parsing import parse_assignment
-from chemex.experiments.base_data_point import BaseDataPoint
-from back_calculation import calc_observable
-from chemex.constants import xi_ratio
+from ....parsing import parse_assignment
+from ....experiments.base_data_point import BaseDataPoint
+from ....constants import xi_ratio
+from .back_calculation import calc_observable
 from ..plotting import plot_data
 
 
-
-# Constants
 TWO_PI = 2.0 * pi
 RATIO = xi_ratio['N']
 
@@ -24,8 +16,7 @@ PAR_DICT = {
         (float, ('h_larmor_frq_1', 'h_larmor_frq_2', 'temperature',)),
         (int, ())
     ),
-    'exp': (
-    'resonance_id', 'h_larmor_frq_1', 'h_larmor_frq_2', 'temperature',),
+    'exp': ('resonance_id', 'h_larmor_frq_1', 'h_larmor_frq_2', 'temperature',),
     'fit': (),
     'fix': ('pb', 'kex', 'dw_n',),
 }
@@ -80,7 +71,8 @@ class DataPoint(BaseDataPoint):
 
         output = list()
         output.append('{resonance_id:6s}'.format(**self.par))
-        output.append('{h_larmor_frq:6.1f}'.format(**self.par))
+        output.append('{h_larmor_frq_1:6.1f}'.format(**self.par))
+        output.append('{h_larmor_frq_2:6.1f}'.format(**self.par))
         output.append('{temperature:4.1f}'.format(**self.par))
         output.append('{:10.5f}'.format(self.val))
         output.append('{:10.5f}'.format(self.err))

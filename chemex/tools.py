@@ -1,9 +1,3 @@
-"""
-Created on 2012-02-21
-
-@author: guillaume
-"""
-
 import sys
 import os
 
@@ -38,13 +32,10 @@ def include_selection(data, selection):
     Makes a new dataset including points whose resonance_id is in selection.
     """
 
-    new_data = list()
-
-    for a_data_point in data:
-
-        if ('resonance_id' in a_data_point.par and a_data_point.par[
-            'resonance_id'] in selection):
-            new_data.append(a_data_point)
+    new_data = [
+        a_data_point for a_data_point in data
+        if a_data_point.par.get('resonance_id', None) in selection
+    ]
 
     return new_data
 
@@ -54,13 +45,10 @@ def exclude_selection(data, selection):
     Makes a new dataset excluding points whose resonance_id is in selection.
     """
 
-    new_data = list()
-
-    for a_data_point in data:
-
-        if ('resonance_id' in a_data_point.par and a_data_point.par[
-            'resonance_id'] not in selection):
-            new_data.append(a_data_point)
+    new_data = [
+        a_data_point for a_data_point in data
+        if a_data_point.par.get('resonance_id', None) not in selection
+    ]
 
     if new_data == data:
         sys.stdout.write("\n No Data removed! Aborting ...\n")

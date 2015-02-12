@@ -4,17 +4,16 @@ Created on June 26, 2014
 @author: Mike Latham
 """
 
-
-# Standard imports
 from inspect import getargspec
+
 from scipy import pi
 
-# Local imports
-from chemex.parsing import parse_assignment
-from chemex.experiments.base_data_point import BaseDataPoint
-from chemex.constants import xi_ratio
+from ....parsing import parse_assignment
+from ....experiments.base_data_point import BaseDataPoint
+from ....constants import xi_ratio
 from .back_calculation import make_calc_observable
 from ..plotting import plot_data
+
 
 # Constants
 TWO_PI = 2.0 * pi
@@ -29,7 +28,6 @@ PAR_DICT = {
     'exp': ('resonance_id', 'h_larmor_frq', 'temperature', 'carrier', 'time_t2', 'time_equil', 'pw', 'ncyc'),
     'fit': ('pb', 'kex', 'dw', 'i0', 'r_hxy'),
     'fix': ('r_nz', 'dr_hxy', 'r_2hznz', 'etaxy', 'etaz', 'cs', 'j_hn', 'dj_hn'),
-
 }
 
 
@@ -51,6 +49,7 @@ class DataPoint(BaseDataPoint):
         index_2, residue_type_2, nucleus_type_2 = assignment[1]
         nucleus_name_1 = residue_type_1 + str(index_1) + nucleus_type_1
         nucleus_name_2 = residue_type_2 + str(index_2) + nucleus_type_2
+        pair_name = '-'.join(sorted([nucleus_name_1, nucleus_name_2]))
 
         self.par['_id'] = tuple((temperature, nucleus_name_2, h_larmor_frq))
 
@@ -68,20 +67,24 @@ class DataPoint(BaseDataPoint):
             ('r_hxy', ('r_hxy', nucleus_name_2, h_larmor_frq, temperature)),
             ('dr_hxy', ('dr_hxy', nucleus_name_2, h_larmor_frq, temperature)),
             ('r_nz', ('r_nz', nucleus_name_1, h_larmor_frq, temperature)),
-            ('r_2hznz', ('r_2hznz', nucleus_name_1, nucleus_name_2, h_larmor_frq, temperature)),
+            ('r_2hznz', ('r_2hznz', pair_name, h_larmor_frq, temperature)),
             ('etaxy', ('etaxy', nucleus_name_1, h_larmor_frq, temperature)),
             ('etaz', ('etaz', nucleus_name_1, h_larmor_frq, temperature)),
-            ('j_hn', ('j_hn', nucleus_name_1, nucleus_name_2, temperature)),
-            ('dj_hn', ('dj_hn', nucleus_name_1, nucleus_name_2, temperature)),
+            ('j_hn', ('j_hn', pair_name, temperature)),
+            ('dj_hn', ('dj_hn', pair_name, temperature)),
         )
 
-        self.fitting_parameter_names.update(long_name
-                                            for short_name, long_name in self.short_long_par_names
-                                            if short_name in PAR_DICT['fit'])
+        self.fitting_parameter_names.update(
+            long_name
+            for short_name, long_name in self.short_long_par_names
+            if short_name in PAR_DICT['fit']
+        )
 
-        self.fixed_parameter_names.update(long_name
-                                          for short_name, long_name in self.short_long_par_names
-                                          if short_name in PAR_DICT['fix'])
+        self.fixed_parameter_names.update(
+            long_name
+            for short_name, long_name in self.short_long_par_names
+            if short_name in PAR_DICT['fix']
+        )
 
     def __repr__(self):
         """Print the data point"""
