@@ -7,14 +7,16 @@ Created on Mar 30, 2011
 __updated__ = "2013-10-17"
 
 import os
+
 import scipy as sc
 
-from chemex import tools
+from chemex import utils
 
 
 def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None):
     # Reads the path to get the intensities
-    exp_data_dir = tools.normalize_path(working_dir, cfg.get('path', 'exp_data_dir'))
+    exp_data_dir = utils.normalize_path(working_dir,
+                                        cfg.get('path', 'exp_data_dir'))
 
     data_points = list()
 

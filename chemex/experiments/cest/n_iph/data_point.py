@@ -8,13 +8,13 @@ from .back_calculation import make_calc_observable
 from ..plotting import plot_data
 
 
-# Constants
 RATIO_N = xi_ratio['N']
 TWO_PI = 2.0 * pi
 PAR_DICT = {
     'par_conv': (
         (str, ('resonance_id',)),
-        (float, ('h_larmor_frq', 'temperature', 'carrier', 'time_t1', 'b1_frq', 'b1_offset', 'b1_inh',)),
+        (float, ('h_larmor_frq', 'temperature', 'carrier', 'time_t1', 'b1_frq',
+                 'b1_offset', 'b1_inh',)),
         (int, ('b1_inh_res',))
     ),
     'exp': (
@@ -42,7 +42,6 @@ PAR_DICT = {
 
 
 class DataPoint(BaseDataPoint):
-    """Intensity measured during a cpmg pulse train of frequency frq"""
 
     def __init__(self, val, err, par):
         BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'], plot_data)
@@ -56,11 +55,15 @@ class DataPoint(BaseDataPoint):
 
         assignment = parse_assignment(resonance_id)
         index, residue_type, nucleus_type = assignment[0]
-        nucleus_name = residue_type + str(index) + nucleus_type
+        nucleus_name = ''.join([residue_type, str(index), nucleus_type])
 
         self.par['_id'] = tuple((temperature, nucleus_name, h_larmor_frq))
 
-        args = (self.par[arg] for arg in getargspec(make_calc_observable.__wrapped__).args)
+        args = (
+            self.par[arg]
+            for arg in getargspec(make_calc_observable.__wrapped__).args
+        )
+
         self.calc_observable = make_calc_observable(*args)
 
         self.short_long_par_names = (

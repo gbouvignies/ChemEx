@@ -6,7 +6,7 @@ import numpy as np
 from scipy import array, pi
 
 from chemex.caching import lru_cache
-from chemex.tools import header1, header2
+from chemex.utils import header1, header2
 
 
 SIGN = array([1.0, -1.0])

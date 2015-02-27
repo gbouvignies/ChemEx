@@ -1,16 +1,10 @@
-"""
-Created on Mar 31, 2011
-
-@author: guillaume
-"""
-
 import os
 import sys
 
 import scipy as sc
 import scipy.stats as st
 
-from chemex.plotting import plot_data
+from chemex.experiments import plotting
 
 
 def write_dat(data, output_dir='./'):
@@ -27,9 +21,9 @@ def write_dat(data, output_dir='./'):
         filename = ''.join([experiment_name, '.dat'])
         filename = os.path.join(output_dir, filename)
 
-        with open(filename, 'w') as f:
+        print("  * {}".format(filename))
 
-            print("  * {}".format(filename))
+        with open(filename, 'w') as f:
 
             for data_point in data:
                 f.write(''.join([str(data_point), '\n']))
@@ -41,6 +35,8 @@ def write_par(par, par_err, par_indexes, par_fixed, output_dir='./'):
     from ConfigParser import SafeConfigParser, DuplicateSectionError
 
     filename = os.path.join(output_dir, 'parameters.fit')
+
+    print("  * {}".format(filename))
 
     par_names = set(par_indexes) | set(par_fixed)
 
@@ -143,7 +139,8 @@ def dump_parameters(par, par_indexes, par_fixed, data):
     try:
         write_par(par, par, par_indexes, par_fixed, output_dir=dump)
         write_dat(data, output_dir=dump)
-        plot_data(data, par, par_indexes, par_fixed, output_dir=dump)
+        plotting.plot_data(data, par, par_indexes, par_fixed, output_dir=dump)
+
     except (TypeError, ValueError):
         sys.stderr.write(
             "\n - Save state cancelled. Not all data could not be plotted")

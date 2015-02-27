@@ -1,12 +1,11 @@
+import ConfigParser
 import os
 import os.path
 import sys
-from ConfigParser import SafeConfigParser, MissingSectionHeaderError, \
-    ParsingError
 
-import scipy as sc
+import scipy as sp
 
-from . import tools, parsing
+from chemex import parsing
 
 
 def create_par_list_to_fit(par_filename, data):
@@ -49,7 +48,7 @@ def create_fitting_parameters_array(data):
         parameters_to_fit.update(data_point.get_fitting_parameter_names())
         parameters_to_fix.update(data_point.get_fixed_parameter_names())
 
-    par = sc.zeros(len(parameters_to_fit))
+    par = sp.zeros(len(parameters_to_fit))
 
     par_indexes = dict(
         (par_name, index) for index, par_name in enumerate(parameters_to_fit))
@@ -87,25 +86,22 @@ def read_par(input_file, par, par_indexes, par_fixed):
     Read the file containing the initial guess for the fitting parameters.
     """
 
-    # Get the directory of the input file
-    working_dir = os.path.dirname(input_file)
-
     print("\n[{:s}]".format(input_file))
     concern = False
 
     # Parse the config file
-    parameters_cfg = SafeConfigParser()
+    parameters_cfg = ConfigParser.SafeConfigParser()
 
     if os.path.isfile(input_file):
 
         try:
             parameters_cfg.read(input_file)
 
-        except MissingSectionHeaderError:
+        except ConfigParser.MissingSectionHeaderError:
             exit("You are missing a section heading (default?) in {:s}\n"
                  .format(input_file))
 
-        except ParsingError:
+        except ConfigParser.ParsingError:
             exit("Having trouble reading your parameter file, have you "
                  "forgotten '=' signs?\n{:s}".format(sys.exc_info()[1]))
 
@@ -182,8 +178,11 @@ def read_par(input_file, par, par_indexes, par_fixed):
 
                 for filename in file_names:
 
-                    full_filename = tools.normalize_path(working_dir, filename)
-                    parameters = read_parameter_file(full_filename, par_name)
+                    if not os.path.isabs(filename):
+                        filename = os.path.join(os.path.dirname(input_file),
+                                                filename)
+
+                    parameters = read_parameter_file(filename, par_name)
                     starting_parameters.extend(parameters)
 
                     num_items += len(parameters)
@@ -282,14 +281,14 @@ def read_parameter_file(filename, par_name):
     """
 
     try:
-        raw_data = sc.genfromtxt(filename, dtype=None)
+        raw_data = sp.genfromtxt(filename, dtype=None)
     except IOError:
         exit('The file \'{}\' is empty or does not exist!\n'.format(filename))
 
     # Hack to solve the problem of 0d-array when 'filename' is a single line
     # file
     if raw_data.ndim == 0:
-        raw_data = sc.array([raw_data, ])
+        raw_data = sp.array([raw_data, ])
 
     parameters = []
 
@@ -314,7 +313,7 @@ def read_parameter_file(filename, par_name):
         elif len(line) == 2:
 
             for index, residue_type, nucleus_type in assignment:
-                nucleus_name = residue_type + str(index) + nucleus_type
+                nucleus_name = ''.join([residue_type, str(index), nucleus_type])
 
                 full_par_name = par_name + [nucleus_name]
 

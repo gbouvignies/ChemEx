@@ -29,17 +29,17 @@ class DataPoint(BaseDataPoint):
         BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'],
                                plot_data)
 
-        self.par['ppm_to_rads_n_1'] = TWO_PI * self.par[
-            'h_larmor_frq_1'] * RATIO
-        self.par['ppm_to_rads_n_2'] = TWO_PI * self.par[
-            'h_larmor_frq_2'] * RATIO
+        self.par['ppm_to_rads_n_1'] = \
+            TWO_PI * self.par['h_larmor_frq_1'] * RATIO
+        self.par['ppm_to_rads_n_2'] = \
+            TWO_PI * self.par['h_larmor_frq_2'] * RATIO
 
         temperature = self.par['temperature']
         resonance_id = self.par['resonance_id']
 
         assignment = parse_assignment(resonance_id)
         index, residue_type, nucleus_type = assignment[0]
-        nucleus_name = residue_type + str(index) + nucleus_type
+        nucleus_name = ''.join([residue_type, str(index), nucleus_type])
 
         self.calc_observable = calc_observable
 

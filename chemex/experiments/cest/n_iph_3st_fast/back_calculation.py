@@ -1,14 +1,20 @@
-import scipy as sc
-from scipy.linalg import expm2 as expm
+import scipy as sp
+from scipy.linalg import eig, inv
 
 from ....caching import lru_cache
-from .liouvillian import compute_nz_eq, compute_base_liouvillians, \
-    compute_free_liouvillian, get_nz
+from .liouvillian import compute_liouvillian
+
+
+PI = sp.pi
+dot = sp.dot
+diag = sp.diag
+exp = sp.exp
+ix_ = sp.ix_
 
 
 @lru_cache()
-def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_inh=0.0,
-                         b1_inh_res=5, carrier=0.0, ppm_to_rads=0.0, _id=None):
+def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, carrier=0.0,
+                         ppm_to_rads=0.0, _id=None):
     """
     Factory to make "calc_observable" function to calculate the intensity in presence
     of exchange after a CEST block.
@@ -39,12 +45,13 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_inh=0.0,
 
     """
 
-    base_liouvillians, weights = \
-        compute_base_liouvillians(b1_offset, b1_frq, b1_inh, b1_inh_res)
+    w1 = b1_frq * 2.0 * PI
+    w1_offset = b1_offset * 2.0 * PI
 
     @lru_cache(5)
     def _calc_observable(pb=0.0, pc=0.0, kex_ab=0.0, kex_bc=0.0, kex_ac=0.0,
-                         dw_ab=0.0, dw_ac=0.0, r_nz=1.5, r_nxy=0.0, dr_nxy_ab=0.0, dr_nxy_ac=0.0, cs=0.0):
+                         dw_ab=0.0, dw_ac=0.0, r_nz=1.5, r_nxy=0.0,
+                         dr_nxy_ab=0.0, dr_nxy_ac=0.0, cs=0.0):
         """
         Calculate the intensity in presence of exchange after a CEST block.
 
@@ -86,43 +93,52 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_inh=0.0,
 
         if abs(b1_offset) >= 10000.0:
 
-            return 1.0 - pb - pc
+            magz_a = 1.0 - pb - pc
 
         else:
 
             dw_ab *= ppm_to_rads
             dw_ac *= ppm_to_rads
 
-            mag_eq = compute_nz_eq(pb, pc)
-
             exchange_induced_shift = 0.0  # TODO
-            wg = (cs - carrier) * ppm_to_rads - exchange_induced_shift
 
-            liouvillians = \
-                base_liouvillians + \
-                compute_free_liouvillian(
-                    pb=pb,
-                    pc=pc,
-                    kex_ab=kex_ab,
-                    kex_bc=kex_bc,
-                    kex_ac=kex_ac,
-                    dw_ab=dw_ab,
-                    dw_ac=dw_ac,
-                    r_nxy=r_nxy,
-                    r_nz=r_nz,
-                    dr_nxy_ab=dr_nxy_ab,
-                    dr_nxy_ac=dr_nxy_ac,
-                    cs_offset=wg
+            wg = (
+                (cs - carrier) * ppm_to_rads -
+                exchange_induced_shift -
+                w1_offset
             )
 
-            propagator = sc.zeros_like(liouvillians[0])
-            for liouvillian, weight in zip(liouvillians, weights):
-                propagator += weight * expm(liouvillian * time_t1)
-            propagator /= sum(weights)
+            liouvillian = compute_liouvillian(
+                pb=pb,
+                pc=pc,
+                kex_ab=kex_ab,
+                kex_bc=kex_bc,
+                kex_ac=kex_ac,
+                dw_ab=dw_ab,
+                dw_ac=dw_ac,
+                r_nxy=r_nxy,
+                r_nz=r_nz,
+                dr_nxy_ab=dr_nxy_ab,
+                dr_nxy_ac=dr_nxy_ac,
+                cs_offset=wg,
+                w1=w1
+            )
 
-            magz_a, _, _ = get_nz(sc.dot(propagator, mag_eq))
+            s, vr = eig(liouvillian)
+            vri = inv(vr)
 
-            return magz_a
+            sl1 = [2, 5, 8]  # za, zb, zc
+            sl2 = [i for i, w in enumerate(s.imag) if abs(w) < 1.0e-6]
+            sl3 = [2]  # za
+
+            vri = vri[ix_(sl2, sl1)].real
+            t = diag(exp(s[sl2].real * time_t1))
+            vr = vr[ix_(sl3, sl2)].real
+            magz_eq = sp.asarray([[1 - pb - pc], [pb], [pc]])
+
+            magz_a = dot(dot(dot(vr, t), vri), magz_eq)[0, 0]
+
+        return magz_a
 
     def calc_observable(i0=0.0, **kwargs):
         """

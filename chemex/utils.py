@@ -1,24 +1,15 @@
-import contextlib
 import os
 import sys
 
 
-@contextlib.contextmanager
-def suppress(*exceptions):
-    try:
-        yield
-    except exceptions:
-        pass
-
-
 def make_dir(path=None):
-    """Make the directory if needed"""
+    """Ensure existence of the directory"""
 
-    if not os.path.exists(path):
-        try:
-            os.makedirs(path)
-        except OSError:
-            exit("\nOSError: You can not use that directory!\n")
+    try:
+        os.makedirs(path)
+    except OSError:
+        if not os.path.isdir(path):
+            raise
 
 
 class autodict(dict):

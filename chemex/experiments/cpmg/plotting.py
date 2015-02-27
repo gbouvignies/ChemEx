@@ -1,26 +1,16 @@
-"""
-Created on Apr 1, 2011
-
-@author: guillaume
-"""
-
 import os
-import scipy as sc
-import scipy.stats as stats
 
-import matplotlib as mpl
-
-
-mpl.use('Agg')
-
+import scipy as sp
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from matplotlib.backends.backend_pdf import PdfPages
 
 from chemex.parsing import parse_assignment
 
-# Constants
-LINNEWIDTH = 1.0
+
+dark_gray = '0.13'
+red500 = '#F44336'
+red200 = '#EF9A9A'
 
 
 def set_lim(values, scale):
@@ -33,65 +23,72 @@ def set_lim(values, scale):
     return v_min, v_max
 
 
-def group_data(dataset):
+def group_data(data):
     """Groups the data resonance specifically"""
 
-    grouped_dataset = dict()
+    data_grouped = dict()
 
-    for a_data in dataset:
-        resonance_id = a_data.par['resonance_id']
+    for data_pt in data:
+        resonance_id = data_pt.par['resonance_id']
 
         assignment = parse_assignment(resonance_id)
-        index = assignment[0][0]
+        index = int(assignment[0][0])
 
-        grouped_dataset.setdefault((index, resonance_id), []).append(a_data)
+        data_grouped.setdefault((index, resonance_id), []).append(data_pt)
 
-    return grouped_dataset
+    return data_grouped
 
 
-def make_val_for_plot(residue_dataset, par, par_names, par_fixed,
-                      filename_out):
-    """Creates the arrays that will be used to plot one profile"""
+def compute_profiles(data_grouped):
+    profiles = {}
+    r2_min = +1e16
+    r2_max = -1e16
 
-    mag_ref = sc.mean(
-        [point.val for point in residue_dataset if point.par['ncyc'] == 0])
+    for (index, resonance_id), profile in data_grouped.items():
 
-    values = []
+        mag_ref = sp.mean(
+            [data_pt.val for data_pt in profile if data_pt.par['ncyc'] == 0]
+        )
 
-    for point in residue_dataset:
+        r2_profile = []
 
-        ncyc = point.par['ncyc']
+        for data_pt in profile:
 
-        if ncyc:
-            time_t2 = point.par['time_t2']
-            mag_exp = point.val
-            mag_err = point.err
+            ncyc = data_pt.par['ncyc']
+            time_t2 = data_pt.par['time_t2']
 
             frq = ncyc / time_t2
 
-            r2_exp = -sc.log(point.val / mag_ref) / time_t2
+            if frq:
+                mag_cal = data_pt.cal
+                mag_exp = data_pt.val
+                mag_err = data_pt.err
+                mag_ens = sp.random.normal(mag_exp, mag_err, 10000)
 
-            mag_dist = sc.random.normal(mag_exp, mag_err, 1000.0)
-            r2_dist = -sc.log(mag_dist / mag_ref) / time_t2
-            r2_err_down = abs(stats.scoreatpercentile(r2_dist, 15.9) - r2_exp)
-            r2_err_up = abs(stats.scoreatpercentile(r2_dist, 84.1) - r2_exp)
+                r2_cal = -sp.log(mag_cal / mag_ref) / time_t2
+                r2_exp = -sp.log(mag_exp / mag_ref) / time_t2
+                r2_ens = -sp.log(mag_ens / mag_ref) / time_t2
+                r2_err = abs(sp.percentile(r2_ens, [15.9, 84.1]) - r2_exp)
+                r2_erd, r2_eru = r2_err
 
-            point.calc_val(par, par_names, par_fixed)
-            r2_cal = -sc.log(point.cal / mag_ref) / time_t2
+                r2_profile.append([frq, r2_cal, r2_exp, r2_erd, r2_eru])
 
-            values.append((frq, r2_exp, r2_err_down, r2_err_up, r2_cal))
+                r2_min = min(r2_min, r2_cal, r2_exp - r2_erd)
+                r2_max = max(r2_max, r2_cal, r2_exp + r2_eru)
 
-    for a_xe, a_ye, a_ede, a_eue, a_yc in sorted(values):
-        filename_out.write(
+        r2_profile = zip(*sorted(r2_profile))
+        profiles.setdefault((index, resonance_id), []).append(r2_profile)
+
+    return profiles, r2_min, r2_max
+
+
+def write_profile(id, r2_profile, file_txt):
+    for frq, r2_cal, r2_exp, r2_erd, r2_eru in zip(*(r2_profile[0])):
+        file_txt.write(
             "{:10s} {:8.3f} {:8.3f} {:8.3f} {:8.3f} {:8.3f}\n".format(
-                residue_dataset[0].par['resonance_id'].upper(), a_xe, a_ye,
-                a_ede, a_eue, a_yc
+                id.upper(), frq, r2_cal, r2_exp, r2_erd, r2_eru
             )
         )
-
-    xe, ye, ede, eue, yc = zip(*sorted(values))
-
-    return xe, ye, ede, eue, yc
 
 
 def plot_data(data, par, par_names, par_fixed, output_dir='./'):
@@ -107,80 +104,74 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
         # ##### Matplotlib ######
 
-        filename = ''.join([experiment_name, '.pdf'])
-        filename = os.path.join(output_dir, filename)
+        name_pdf = ''.join([experiment_name, '.pdf'])
+        name_pdf = os.path.join(output_dir, name_pdf)
 
-        filename_calc = ''.join([experiment_name, '.fit'])
-        filename_calc = os.path.join(output_dir, filename_calc)
+        name_txt = ''.join([experiment_name, '.fit'])
+        name_txt = os.path.join(output_dir, name_txt)
 
-        print("  * {}".format(filename))
+        print("  * {} [.fit]".format(name_pdf))
 
         # #######################
 
-        grouped_dataset = group_data(dataset)
+        data_grouped = group_data(dataset)
+        profiles, r2_min, r2_max = compute_profiles(data_grouped)
+        ymin, ymax = set_lim([r2_min, r2_max], 0.10)
 
-        pdf = PdfPages(filename)
+        with PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt:
 
-        with open(filename_calc, 'w') as f:
-
-            for (_index, resonance_id), residue_dataset in sorted(
-                    grouped_dataset.items()):
-                out = make_val_for_plot(residue_dataset, par, par_names,
-                                        par_fixed, f)
-                xe, ye, ede, eue, yc = out
+            for (_index, id), profile in sorted(profiles.items()):
+                write_profile(id, profile, file_txt)
 
                 ###### Matplotlib ######
 
-                fig = plt.figure(1, linewidth=LINNEWIDTH, figsize=(6, 4.5))
+                fig = plt.figure(1, frameon=True)
                 ax = fig.add_subplot(111)
+
+                ax.axhline(0, color='black', alpha=0.87)
 
                 ########################
 
+                frq, r2_cal, r2_exp, r2_erd, r2_eru = profile[0]
+
                 ax.plot(
-                    xe, yc, '-',
-                    color='0.5',
-                    linewidth=LINNEWIDTH
+                    frq,
+                    r2_cal,
+                    linestyle='-',
+                    color=red200,
+                    zorder=2,
                 )
 
                 ax.errorbar(
-                    xe, ye, yerr=[ede, eue], fmt='ro',
-                    linewidth=LINNEWIDTH,
-                    markersize=5.0,
-                    markerfacecolor='w',
-                    markeredgewidth=LINNEWIDTH,
-                    markeredgecolor='r'
+                    frq,
+                    r2_exp,
+                    yerr=[r2_erd, r2_eru],
+                    fmt='o',
+                    color=red500,
+                    zorder=3,
                 )
 
-                upper_vals = list(sc.array(ye) + sc.array(eue))
-                lower_vals = list(sc.array(ye) - sc.array(ede))
-                all_vals = upper_vals + lower_vals + list(yc)
-
-                xmin, xmax = set_lim(xe, 0.05)
-                ymin, ymax = set_lim(all_vals, 0.05)
+                xmin, xmax = set_lim(frq, 0.10)
 
                 ax.set_xlim(xmin, xmax)
                 ax.set_ylim(ymin, ymax)
 
-                ax.tick_params(length=3, top=True, right=False, labelsize=10)
-
                 ax.xaxis.set_major_locator(MaxNLocator(6))
                 ax.yaxis.set_major_locator(MaxNLocator(6))
 
-                ax.set_xlabel(r'$\mathregular{\nu_{CPMG}}$' + ' (Hz)')
+                ax.set_xlabel(r'$\mathregular{\nu_{CPMG} \ (Hz)}$')
                 ax.set_ylabel(
-                    r'$\mathregular{R_{2,eff}}$ ($\mathregular{s^{-1}}$)')
+                    r'$\mathregular{R_{2,eff} \ (s^{-1})}$')
 
-                ax.set_title('{:s}'.format(resonance_id.upper()))
+                ax.set_title('{:s}'.format(id.upper()))
 
                 fig.tight_layout()
 
                 ########################
 
-                pdf.savefig()
+                file_pdf.savefig()
                 plt.close()
 
                 ########################
-
-        pdf.close()
 
     return

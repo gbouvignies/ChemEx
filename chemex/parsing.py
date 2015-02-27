@@ -1,7 +1,7 @@
 import argparse
 import pkgutil
-import sys
 import re
+import sys
 
 import chemex.experiments
 import chemex.version

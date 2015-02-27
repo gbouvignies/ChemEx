@@ -1,34 +1,26 @@
-"""
-Created on May 1, 2013
-
-@author: guillaume
-"""
-
-# Imports
 from scipy import pi, zeros, linspace, asarray
 from scipy.stats import norm
 
-from chemex.bases.three_states.iph import R_IXY, DR_IXY_AB, DR_IXY_AC, R_IZ, CS, \
-    DW_AB, DW_AC, KAB, KBA, KAC, KCA, KBC, KCB, W1X
+from chemex.bases.three_states.iph import R_IXY, DR_IXY_AB, DR_IXY_AC, R_IZ, \
+    CS, DW_AB, DW_AC, KAB, KBA, KAC, KCA, KBC, KCB, W1X
 
 
-def compute_base_liouvillians(b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_inh_res=5):
+def compute_base_liouvillians(b1_offset=0.0, b1_frq=0.0, b1_inh=0.0,
+                              b1_inh_res=5):
+
     w1, w1_inh, w1_offset = 2.0 * pi * asarray([b1_frq, b1_inh, b1_offset])
 
     w1s = linspace(-2.0, 2.0, b1_inh_res) * w1_inh + w1
     weights = norm.pdf(w1s, w1, w1_inh)
 
-    liouvillians = [-w1_offset * CS + w1 * W1X
-                    for w1 in w1s]
+    liouvillians = [-w1_offset * CS + w1 * W1X for w1 in w1s]
 
     return liouvillians, weights
 
 
-def compute_free_liouvillian(pb=0.0, pc=0.0, kex_ab=0.0,
-                             kex_bc=0.0, kex_ac=0.0, dw_ab=0.0,
-                             dw_ac=0.0, r_nz=1.5, r_nxy=5.0,
-                             dr_nxy_ab=0.0, dr_nxy_ac=0.0,
-                             cs_offset=0.0):
+def compute_free_liouvillian(pb=0.0, pc=0.0, kex_ab=0.0, kex_bc=0.0, kex_ac=0.0,
+                             dw_ab=0.0, dw_ac=0.0, r_nz=1.5, r_nxy=5.0,
+                             dr_nxy_ab=0.0, dr_nxy_ac=0.0, cs_offset=0.0):
     """
     Compute the exchange matrix (Liouvillian)
 

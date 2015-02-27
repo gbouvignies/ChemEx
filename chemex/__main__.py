@@ -6,7 +6,7 @@ import random
 from copy import deepcopy
 from math import log10
 
-from . import fitting, writing, parsing, reading, tools
+from . import fitting, writing, parsing, reading, utils
 from .experiments.reading import read_file_exp
 from .experiments.misc import format_experiment_help
 
@@ -75,7 +75,7 @@ def read_data(args):
     """Reads the files containing the experimental data point location and
     setup"""
 
-    tools.header1("Reading Experimental Data")
+    utils.header1("Reading Experimental Data")
 
     data = list()
 
@@ -96,7 +96,7 @@ def write_results(par, par_err, par_indexes, par_fixed, data, method,
     """Writes the the chi2 of the fit, fitted parameters and the
     back-calculated points"""
 
-    tools.header1("Writing Results")
+    utils.header1("Writing Results")
 
     print("\nFile(s):")
 
@@ -115,12 +115,12 @@ def plot_results(par, par_indexes, par_fixed, data, output_dir):
 
     from chemex import plotting
 
-    tools.header1("Plotting Data")
+    utils.header1("Plotting Data")
 
     print("\nFile(s):")
 
     output_dir_plot = os.path.join(output_dir, 'plots')
-    tools.make_dir(output_dir_plot)
+    utils.make_dir(output_dir_plot)
 
     try:
         plotting.plot_data(data, par, par_indexes, par_fixed,
@@ -134,7 +134,7 @@ def fit_write_plot(args, par, par_indexes, par_fixed, data, output_dir):
     par_fit, par_err, par_indexes, par_fixed = \
         fitting.run_fit(args.method, par, par_indexes, par_fixed, data)
 
-    tools.make_dir(output_dir)
+    utils.make_dir(output_dir)
 
     write_results(
         par_fit,
@@ -170,7 +170,7 @@ def main():
         data = read_data(args)
 
         # Create the lists of both fitting and fixed parameters
-        tools.header1("Reading Default Parameters")
+        utils.header1("Reading Default Parameters")
         par, par_indexes, par_fixed, data = \
             reading.create_par_list_to_fit(args.parameters, data)
 
