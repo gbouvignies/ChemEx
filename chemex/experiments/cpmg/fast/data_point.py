@@ -5,6 +5,7 @@ Created on Aug 5, 2011
 """
 
 from inspect import getargspec
+
 from scipy import pi
 
 from chemex.constants import xi_ratio
@@ -42,7 +43,7 @@ class DataPoint(BaseDataPoint):
         experiment_name = self.par['experiment_name']
 
         index, residue_type, nucleus_type = parse_assignment(resonance_id)[0]
-        nucleus_name = residue_type + str(index) + nucleus_type
+        nucleus_name = ''.join([residue_type, str(index), nucleus_type])
 
         try:
             self.par['ppm_to_rads'] = (

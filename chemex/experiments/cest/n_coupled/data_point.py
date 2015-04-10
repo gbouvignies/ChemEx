@@ -10,6 +10,7 @@ from ..plotting import plot_data
 
 
 
+
 # Constants
 RATIO_N = xi_ratio['N']
 TWO_PI = 2.0 * pi
@@ -50,7 +51,7 @@ class DataPoint(BaseDataPoint):
 
         assignment = parse_assignment(resonance_id)
         index, residue_type, nucleus_type = assignment[0]
-        nucleus_name = residue_type + str(index) + nucleus_type
+        nucleus_name = ''.join([residue_type, str(index), nucleus_type])
 
         self.par['_id'] = tuple((temperature, nucleus_name, h_larmor_frq))
 

@@ -5,6 +5,7 @@ from threading import RLock
 
 _CacheInfo = namedtuple("CacheInfo", ["hits", "misses", "maxsize", "currsize"])
 
+
 class _HashedSeq(list):
     __slots__ = 'hashvalue'
 
@@ -15,6 +16,7 @@ class _HashedSeq(list):
 
     def __hash__(self):
         return self.hashvalue
+
 
 def _make_key(args, kwds, typed,
               kwd_mark=(object(),),
@@ -57,7 +59,7 @@ def lru_cache(maxsize=100, typed=False):
     """
 
     # Users should only access the lru_cache through its public API:
-    #       cache_info, cache_clear, and f.__wrapped__
+    # cache_info, cache_clear, and f.__wrapped__
     # The internals of the lru_cache are encapsulated for thread safety and
     # to allow the implementation to change (including a possible C version).
 
@@ -88,7 +90,8 @@ def lru_cache(maxsize=100, typed=False):
             def wrapper(*args, **kwds):
                 # simple caching without ordering or size limit
                 key = make_key(args, kwds, typed)
-                result = cache_get(key, root)  # root used here as a unique not-found sentinel
+                result = cache_get(key,
+                                   root)  # root used here as a unique not-found sentinel
                 if result is not root:
                     stats[HITS] += 1
                     return result
@@ -149,7 +152,8 @@ def lru_cache(maxsize=100, typed=False):
         def cache_info():
             """Report cache statistics"""
             with lock:
-                return _CacheInfo(stats[HITS], stats[MISSES], maxsize, len(cache))
+                return _CacheInfo(stats[HITS], stats[MISSES], maxsize,
+                                  len(cache))
 
         def cache_clear():
             """Clear the cache and cache statistics"""

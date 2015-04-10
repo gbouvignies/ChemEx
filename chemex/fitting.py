@@ -1,19 +1,26 @@
-import sys
+from __future__ import print_function
+
+import itertools
 import os.path
 import ConfigParser
-import scipy as sc
+import sys
+
+import scipy as sp
 import scipy.optimize as opt
 
-from chemex import tools
-from chemex.chi2 import make_calc_residuals, calc_chi2, calc_reduced_chi2
-from chemex.writing import dump_parameters
-from chemex.experiments.misc import get_par
+from chemex import utils
+from chemex import chi2
+from chemex import writing
+from chemex.experiments import misc
+
+
+product = itertools.product
 
 
 def run_fit(fit_filename, par, par_indexes, par_fixed, data):
     fit_par_file = ConfigParser.SafeConfigParser()
 
-    tools.header1("Fit")
+    utils.header1("Fit")
 
     if fit_filename:
 
@@ -39,7 +46,7 @@ def run_fit(fit_filename, par, par_indexes, par_fixed, data):
 
     for section in fit_par_file.sections():
 
-        tools.header2(section)
+        utils.header2(section)
 
         items = fit_par_file.items(section)
         par, par_indexes, par_fixed = fix_par(items, par, par_indexes,
@@ -50,9 +57,9 @@ def run_fit(fit_filename, par, par_indexes, par_fixed, data):
                                                          par_fixed)
         independent_clusters_no = len(independent_clusters)
 
-        if independent_clusters_no > 1:
+        par_err = list(par)
 
-            par_err = list(par)
+        if independent_clusters_no > 1:
 
             for i, independent_cluster in enumerate(independent_clusters, 1):
 
@@ -69,9 +76,9 @@ def run_fit(fit_filename, par, par_indexes, par_fixed, data):
                 )
 
                 for par_name in c_par_indexes:
-                    par[par_indexes[par_name]] = c_par[c_par_indexes[par_name]]
-                    par_err[par_indexes[par_name]] = c_par_err[
-                        c_par_indexes[par_name]]
+                    index = par_indexes[par_name]
+                    par[index] = c_par[c_par_indexes[par_name]]
+                    par_err[index] = c_par_err[c_par_indexes[par_name]]
 
         else:
             print("\nChi2 / Reduced Chi2:")
@@ -79,9 +86,9 @@ def run_fit(fit_filename, par, par_indexes, par_fixed, data):
                                                             par_fixed, data)
 
         print("\nFinal Chi2        : {:.3e}".format(
-            calc_chi2(par, par_indexes, par_fixed, data)))
+            chi2.calc_chi2(par, par_indexes, par_fixed, data)))
         print("Final Reduced Chi2: {:.3e}".format(
-            calc_reduced_chi2(par, par_indexes, par_fixed, data)))
+            chi2.calc_reduced_chi2(par, par_indexes, par_fixed, data)))
 
     return par, par_err, par_indexes, par_fixed
 
@@ -91,7 +98,7 @@ def local_minimization(par, par_indexes, par_fixed, data, verbose=True):
     Minimize the residuals using the Levenberg-Marquard algorithm.
     """
 
-    func = make_calc_residuals(verbose=verbose)
+    func = chi2.make_calc_residuals(verbose=verbose)
     args = (par_indexes, par_fixed, data)
 
     try:
@@ -102,26 +109,27 @@ def local_minimization(par, par_indexes, par_fixed, data, verbose=True):
                           maxfev=100000,
                           epsfcn=1e-10,
                           factor=0.1)
-        par, pcov, _infodict, errmsg, ier = out
 
     except TypeError:
         sys.stderr.write(' -- Error encountered during minimization:\n')
         sys.stderr.write(' ----> {:s}\n'.format(sys.exc_info()[1]))
         sys.stderr.write(
             ' -- Check that all parameters are correctly initialized.\n')
-        dump_parameters(par, par_indexes, par_fixed, data)
+        writing.dump_parameters(par, par_indexes, par_fixed, data)
         exit()
+
+    par, pcov, _infodict, errmsg, ier = out
 
     if ier not in [1, 2, 3, 4]:
         print(''.join(('Optimal parameters not found: ', errmsg)))
 
     data_nb, par_nb = len(data), len(par)
 
-    reduced_chi2 = calc_reduced_chi2(par, par_indexes, par_fixed, data)
+    reduced_chi2 = chi2.calc_reduced_chi2(par, par_indexes, par_fixed, data)
 
     if (data_nb > par_nb) and pcov is not None:
         pcov = pcov * reduced_chi2
-        par_err = sc.sqrt(sc.diag(pcov))
+        par_err = sp.sqrt(sp.diag(pcov))
 
     else:
         par_err = par
@@ -135,39 +143,54 @@ def fix_par(items, par, par_indexes, par_fixed):
     """
 
     fitted_pars = set(par_indexes)
-    fixed_pars = set(par_fixed)
+    params_fix = set(par_fixed)
 
-    options = {'fit': (fixed_pars, fitted_pars),
-               'fix': (fitted_pars, fixed_pars)}
+    options = {
+        'fit': (params_fix, fitted_pars),
+        'fix': (fitted_pars, params_fix)
+    }
 
-    for par_name_1, state in items:
+    for param_1, state in items:
 
-        par_name_1_str = par_name_1.replace(' ', '').split(',')
-        departure_pool, arrival_pool = options[state]
+        param_1_str = param_1.replace(' ', '').split(',')
+        pool_start, pool_end = options[state]
 
-        for par_name_2 in list(departure_pool):
+        for param_2 in list(pool_start):
 
-            par_name_2_str = [str(_) for _ in par_name_2]
+            param_2_str = [str(_) for _ in param_2]
 
-            if set(par_name_1_str) <= set(par_name_2_str):
-                departure_pool.remove(par_name_2)
-                arrival_pool.add(par_name_2)
+            if set(param_1_str) <= set(param_2_str):
+                pool_start.remove(param_2)
+                pool_end.add(param_2)
 
-    updated_par_indexes = dict()
-    updated_par = list()
-    updated_par_fixed = dict()
+    par_indexes_updated = dict()
+    par_updated = list()
+    par_fixed_updated = dict()
 
     for index, par_name in enumerate(fitted_pars):
-        updated_par_indexes[par_name] = index
-        updated_par.append(get_par(par_name, par, par_indexes, par_fixed))
+        par_indexes_updated[par_name] = index
+        par_updated.append(misc.get_par(par_name, par, par_indexes, par_fixed))
 
-    updated_par = sc.array(updated_par)
+    par_updated = sp.array(par_updated)
 
-    for par_name in fixed_pars:
-        updated_par_fixed[par_name] = get_par(par_name, par, par_indexes,
-                                              par_fixed)
+    for par_name in params_fix:
+        par_fixed_updated[par_name] = misc.get_par(par_name, par, par_indexes,
+                                                   par_fixed)
 
-    return updated_par, updated_par_indexes, updated_par_fixed
+    return par_updated, par_indexes_updated, par_fixed_updated
+
+
+def get_params_fit(data_pt, params_fix):
+    """Returns the fitted parameters a specific data point depends on."""
+
+    data_pt_params = (
+        (
+            data_pt.get_fitting_parameter_names() |
+            data_pt.get_fixed_parameter_names()
+        ) - params_fix
+    )
+
+    return data_pt_params
 
 
 def find_independent_clusters(data, par, par_indexes, par_fixed):
@@ -178,47 +201,36 @@ def find_independent_clusters(data, par, par_indexes, par_fixed):
     residue-specifically.
     """
 
-    fixed_par_set = set(par_fixed)
-
-    data = [([data_point],
-             (data_point.get_fitting_parameter_names()
-              | data_point.get_fixed_parameter_names())
-             - fixed_par_set)
-            for data_point in data]
+    params_fix = set(par_fixed)
 
     clusters = []
 
-    try:
+    for data_pt in data:
 
-        for data_point in data:
+        params_pt = get_params_fit(data_pt, params_fix)
 
-            merged = False
+        for data_cluster, params_cluster in clusters:
 
-            for cluster in clusters:
+            if params_pt & params_cluster:
+                data_cluster.append(data_pt)
+                params_cluster.update(params_pt)
+                break
 
-                par_name_point = data_point[1]
-                par_name_cluster = cluster[1]
+        else:
+            clusters.append(([data_pt], params_pt))
 
-                if par_name_point & par_name_cluster:
-                    cluster[0].extend(data_point[0])
-                    cluster[1].update(data_point[1])
-                    merged = True
-                    break
+    clusters_final = list()
 
-            if not merged:
-                clusters.append(data_point)
+    for data_cluster, params_cluster in clusters:
 
-    except (KeyboardInterrupt):
-        exit("\n -- ChemEx killed while clustering\n")
+        par_cluster = []
+        par_indexes_cluster = {}
 
-    final_clusters = list()
+        for index, param in enumerate(params_cluster):
+            par_cluster.append(par[par_indexes[param]])
+            par_indexes_cluster[param] = index
 
-    for cluster in clusters:
-        cluster_data, cluster_par_names = cluster
-        cluster_par = list(
-            par[par_indexes[par_name]] for par_name in cluster_par_names)
-        cluster_par_indexes = dict(
-            (par_name, i) for i, par_name in enumerate(cluster_par_names))
-        final_clusters.append((cluster_data, cluster_par, cluster_par_indexes))
+        clusters_final.append((data_cluster, par_cluster, par_indexes_cluster))
 
-    return final_clusters
+    return clusters_final
+

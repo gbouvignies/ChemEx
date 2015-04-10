@@ -1,24 +1,22 @@
-"""
-Created on Mar 30, 2011
-
-@author: guillaume
-"""
-
 import os
+
 import scipy as sc
 import scipy.stats as st
 import scipy.linalg as la
 import scipy.signal as si
 import scipy.interpolate as ip
 
-from chemex import tools
+from chemex import utils
 
 
 def read_data(cfg, working_dir, global_parameters, res_incl=None,
               res_excl=None):
+
     # Reads the path to get the intensities
-    exp_data_dir = tools.normalize_path(working_dir,
-                                        cfg.get('path', 'exp_data_dir'))
+    exp_data_dir = utils.normalize_path(
+        working_dir,
+        cfg.get('path', 'exp_data_dir')
+    )
 
     data_points = list()
 
@@ -26,9 +24,11 @@ def read_data(cfg, working_dir, global_parameters, res_incl=None,
 
     for resonance_id, filename in cfg.items('data'):
 
-        included = ((res_incl is not None and resonance_id in res_incl) or
-                    (res_excl is not None and resonance_id not in res_excl) or
-                    (res_incl is None and res_excl is None))
+        included = (
+            (res_incl is not None and resonance_id in res_incl) or
+            (res_excl is not None and resonance_id not in res_excl) or
+            (res_incl is None and res_excl is None)
+        )
 
         if not included:
             continue
@@ -66,11 +66,13 @@ def name_experiment(global_parameters=None):
 
         time_t1 = float(global_parameters['time_t1'])
 
-        name = '{:s}_{:.0f}Hz_{:.0f}ms_{:.0f}MHz_{:.0f}C'.format(exp_type,
-                                                                 b1_frq,
-                                                                 time_t1 * 1e3,
-                                                                 h_larmor_frq,
-                                                                 temperature).lower()
+        name = '{:s}_{:.0f}Hz_{:.0f}ms_{:.0f}MHz_{:.0f}C'.format(
+            exp_type,
+            b1_frq,
+            time_t1 * 1e3,
+            h_larmor_frq,
+            temperature
+        ).lower()
 
     return name
 
@@ -78,9 +80,9 @@ def name_experiment(global_parameters=None):
 def read_a_cest_profile(filename, parameters):
     """Reads in the fuda file and spit out the intensities"""
 
-    data = sc.loadtxt(filename,
-                      dtype=[('b1_offset', '<f8'), ('intensity', '<f8'),
-                             ('intensity_err', '<f8')])
+    data = sc.loadtxt(filename, dtype=[('b1_offset', '<f8'),
+                                       ('intensity', '<f8'),
+                                       ('intensity_err', '<f8')])
 
     uncertainty = estimate_uncertainty(data)
 
@@ -108,7 +110,8 @@ def read_a_cest_profile(filename, parameters):
         intensity_err = uncertainty
 
         data_points.append(
-            data_point.DataPoint(intensity_val, intensity_err, parameters))
+            data_point.DataPoint(intensity_val, intensity_err, parameters)
+        )
 
     return data_points
 
@@ -189,7 +192,7 @@ def estimate_noise(x):
                 try:
                     val = (f(1.0 - a_perc) - f(a_perc)) / (2.0 * a_z)
                     q.append(val)
-                except:
+                except ValueError:
                     pass
 
             sigma_est.append(sc.median(q))

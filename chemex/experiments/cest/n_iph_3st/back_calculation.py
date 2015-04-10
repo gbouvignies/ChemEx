@@ -1,19 +1,14 @@
-"""
-Created on Aug 15, 2011
-
-@author: guillaume
-"""
-
 import scipy as sc
-from scipy.linalg import expm
+from scipy.linalg import expm2 as expm
 
-from chemex.caching import lru_cache
-from .liouvillian import compute_nz_eq, compute_base_liouvillians, compute_free_liouvillian, get_nz
+from ....caching import lru_cache
+from .liouvillian import compute_nz_eq, compute_base_liouvillians, \
+    compute_free_liouvillian, get_nz
 
 
 @lru_cache()
-def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_inh_res=5,
-                         carrier=0.0, ppm_to_rads=0.0, _id=None):
+def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_inh=0.0,
+                         b1_inh_res=5, carrier=0.0, ppm_to_rads=0.0, _id=None):
     """
     Factory to make "calc_observable" function to calculate the intensity in presence
     of exchange after a CEST block.
@@ -44,7 +39,8 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_
 
     """
 
-    base_liouvillians, weights = compute_base_liouvillians(b1_offset, b1_frq, b1_inh, b1_inh_res)
+    base_liouvillians, weights = \
+        compute_base_liouvillians(b1_offset, b1_frq, b1_inh, b1_inh_res)
 
     @lru_cache(5)
     def _calc_observable(pb=0.0, pc=0.0, kex_ab=0.0, kex_bc=0.0, kex_ac=0.0,
@@ -57,7 +53,7 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_
         pb : float
             Fractional population of state B,
             0.0 for 0%, 1.0 for 100%
-        pb : float
+        pc : float
             Fractional population of state C,
             0.0 for 0%, 1.0 for 100%
         kex_ab : float
@@ -102,10 +98,21 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_
             exchange_induced_shift = 0.0  # TODO
             wg = (cs - carrier) * ppm_to_rads - exchange_induced_shift
 
-            liouvillians = base_liouvillians + compute_free_liouvillian(
-                pb=pb, pc=pc, kex_ab=kex_ab, kex_bc=kex_bc, kex_ac=kex_ac,
-                dw_ab=dw_ab, dw_ac=dw_ac, r_nxy=r_nxy, r_nz=r_nz, dr_nxy_ab=dr_nxy_ab,
-                dr_nxy_ac=dr_nxy_ac, cs_offset=wg
+            liouvillians = \
+                base_liouvillians + \
+                compute_free_liouvillian(
+                    pb=pb,
+                    pc=pc,
+                    kex_ab=kex_ab,
+                    kex_bc=kex_bc,
+                    kex_ac=kex_ac,
+                    dw_ab=dw_ab,
+                    dw_ac=dw_ac,
+                    r_nxy=r_nxy,
+                    r_nz=r_nz,
+                    dr_nxy_ab=dr_nxy_ab,
+                    dr_nxy_ac=dr_nxy_ac,
+                    cs_offset=wg
             )
 
             propagator = sc.zeros_like(liouvillians[0])

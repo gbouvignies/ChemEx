@@ -1,7 +1,7 @@
 import argparse
 import pkgutil
-import sys
 import re
+import sys
 
 import chemex.experiments
 import chemex.version
@@ -177,7 +177,7 @@ def arg_parse():
 
 
 # Functions to parse Sparky-like assignment
-# Code has been adapted from Sparky code
+# Functions have been adapted from Sparky source code
 
 def parse_assignment(assignment):
     """
@@ -191,7 +191,7 @@ def parse_assignment(assignment):
     last_group = None
     for s in res:
         ga = split_group_atom(s)
-        if ga == None:
+        if ga is None:
             if last_group:
                 ga = (last_group, s)
             else:
@@ -212,11 +212,11 @@ def split_group_atom(group_atom):
         first_digit = s.start()
         s = re.search('[hHcCnNqQmM]', group_atom[first_digit:])
         if s:
-            HCNQM_offset = s.start()
-            d = first_digit + HCNQM_offset
-            return (group_atom[:d], group_atom[d:])
+            hcnqm_offset = s.start()
+            d = first_digit + hcnqm_offset
+            return group_atom[:d], group_atom[d:]
     if group_atom == '?':
-        return ('', '')
+        return '', ''
     return None
 
 
@@ -227,3 +227,23 @@ def parse_group_name(g):
     return g, None
 
 
+# ----------------------------------------------------------------------------
+# If an assignment along an axis has the same group as the previous axis
+# then the group name is not shown.
+#
+def assignment_name(resonances):
+    assignment = ''
+    last_group = None
+    for resonance in resonances:
+        if resonance:
+            number, symbol, atom_name = resonance
+            group = ''.join([symbol, str(number)])
+            name = ''.join([group, atom_name])
+            if group == last_group:
+                assignment += atom_name + '-'
+            else:
+                assignment += name + '-'
+            last_group = group
+        else:
+            assignment += '?-'
+    return assignment[:-1]

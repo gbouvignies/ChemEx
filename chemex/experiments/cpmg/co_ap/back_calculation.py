@@ -9,7 +9,7 @@ from scipy.linalg import expm2 as expm
 from numpy.linalg import matrix_power
 
 from chemex.caching import lru_cache
-from .liouvillian import compute_2COzNz_eq, compute_liouvillians, get_2COzNz
+from .liouvillian import compute_2coznz_eq, compute_liouvillians, get_2coznz
 
 
 P180X = diag(4 * [+1.0, -1.0, +1.0])
@@ -112,7 +112,7 @@ def make_calc_observable(pwco90=0.0, time_t2=0.0, time_equil=0.0, taucc=0.0, ppm
 
         p_equil, p_taucc, p_neg, p_90py, p_90my, p_180px, p_180py, p_180my = ps
 
-        mag_eq = compute_2COzNz_eq(pb)
+        mag_eq = compute_2coznz_eq(pb)
 
         if sidechain_flg == 'N':
             p_flip = 0.5 * (p_180py + p_180my)
@@ -125,7 +125,8 @@ def make_calc_observable(pwco90=0.0, time_t2=0.0, time_equil=0.0, taucc=0.0, ppm
             # The +/- phase cycling of the first 90 and the receiver is taken care
             # by setting the thermal equilibrium to 0
             #I = reduce(dot, [p_equil, p_90py, 0.5 * (p_180py + p_180my), p_90py, p_equil, mag_eq])
-            I = reduce(dot, [p_equil, p_90py, p_flip, p_90py, p_equil, mag_eq])
+            mag = reduce(dot,
+                         [p_equil, p_90py, p_flip, p_90py, p_equil, mag_eq])
 
         else:
 
@@ -133,11 +134,11 @@ def make_calc_observable(pwco90=0.0, time_t2=0.0, time_equil=0.0, taucc=0.0, ppm
             p_free = expm(l_free * t_cp)
             p_cpx = matrix_power(p_free.dot(p_180px).dot(p_free), ncyc)
 
-            I = reduce(dot, [p_equil, p_90py, p_neg, p_cpx, p_neg,
+            mag = reduce(dot, [p_equil, p_90py, p_neg, p_cpx, p_neg,
                              p_flip, p_neg, p_cpx, p_neg, p_90py,
                              p_equil, mag_eq])
 
-        magz_a, _magz_b = get_2COzNz(I)
+        magz_a, _magz_b = get_2coznz(mag)
 
         return magz_a
 

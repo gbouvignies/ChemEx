@@ -1,9 +1,3 @@
-'''
-Created on Aug 5, 2011
-
-@author: guillaume
-'''
-
 from scipy import pi
 
 from chemex.parsing import parse_assignment
@@ -13,8 +7,6 @@ from chemex.constants import xi_ratio
 from ..plotting import plot_data
 
 
-
-# Constants
 TWO_PI = 2.0 * pi
 RATIO = xi_ratio['N']
 
@@ -31,7 +23,7 @@ PAR_DICT = {
 
 
 class DataPoint(BaseDataPoint):
-    '''Intensity measured during a cpmg pulse train of frequency frq'''
+    """Intensity measured during a cpmg pulse train of frequency frq"""
 
     def __init__(self, val, err, par):
         BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'],
@@ -76,7 +68,7 @@ class DataPoint(BaseDataPoint):
         )
 
     def __repr__(self):
-        '''Print the data point'''
+        """Print the data point"""
 
         output = list()
         output.append('{resonance_id:6s}'.format(**self.par))

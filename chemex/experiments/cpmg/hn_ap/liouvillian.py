@@ -91,7 +91,7 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0, r_hxy=5.0, dr_hxy=0.0,
     return l_free, l_w1x, l_w1y
 
 
-def compute_2HzNz_eq(pb):
+def compute_2hznz_eq(pb):
     mag_eq = zeros((12, 1))
     mag_eq[5, 0] += (1.0 - pb)
     mag_eq[11, 0] += pb
@@ -99,9 +99,9 @@ def compute_2HzNz_eq(pb):
     return mag_eq
 
 
-def get_2HzNz(I):
-    magz_a = I[5, 0]
-    magz_b = I[11, 0]
+def get_2hznz(mag):
+    magz_a = mag[5, 0]
+    magz_b = mag[11, 0]
 
     return magz_a, magz_b
 

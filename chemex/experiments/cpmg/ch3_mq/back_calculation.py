@@ -1,9 +1,9 @@
-'''
+"""
 Created on Feb 23, 2012
 
 @author: Mike Latham
 @author: Guillaume Bouvignies
-'''
+"""
 
 from scipy import dot, diag
 from scipy.linalg import expm

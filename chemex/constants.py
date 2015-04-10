@@ -17,7 +17,8 @@ gamma = {
 }
 
 # Define the gyromagnetic ratios in MHz/T
-gamma_in_MHz_T = dict((key, val / (2.0 * pi) * 1.0e-06) for key, val in gamma.iteritems())
+gamma_in_MHz_T = dict(
+    (key, val / (2.0 * pi) * 1.0e-06) for key, val in gamma.items())
 
 # Define nuclide frequency ratios wrt proton
 # IUPAC values for bio NMR: Markley et al, Pure & Appl. Chem., (1998) 70, p117

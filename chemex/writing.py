@@ -1,15 +1,10 @@
-"""
-Created on Mar 31, 2011
-
-@author: guillaume
-"""
-
 import os
 import sys
+
 import scipy as sc
 import scipy.stats as st
 
-from chemex.plotting import plot_data
+from chemex.experiments import plotting
 
 
 def write_dat(data, output_dir='./'):
@@ -21,14 +16,14 @@ def write_dat(data, output_dir='./'):
         experiment_name = data_point.par['experiment_name']
         datasets.setdefault(experiment_name, list()).append(data_point)
 
-    for experiment_name, data in datasets.iteritems():
+    for experiment_name, data in datasets.items():
 
         filename = ''.join([experiment_name, '.dat'])
         filename = os.path.join(output_dir, filename)
 
-        with open(filename, 'w') as f:
+        print("  * {}".format(filename))
 
-            print("  * {}".format(filename))
+        with open(filename, 'w') as f:
 
             for data_point in data:
                 f.write(''.join([str(data_point), '\n']))
@@ -37,29 +32,57 @@ def write_dat(data, output_dir='./'):
 def write_par(par, par_err, par_indexes, par_fixed, output_dir='./'):
     """Write fitted parameters int a file"""
 
-    if not par_indexes:
-        return None
+    from ConfigParser import SafeConfigParser, DuplicateSectionError
 
     filename = os.path.join(output_dir, 'parameters.fit')
 
+    print("  * {}".format(filename))
+
     par_names = set(par_indexes) | set(par_fixed)
 
+    par_name_global = set(['KEX', 'KEX_AB', 'KEX_BC', 'KEX_AC', 'PB', 'PC'])
+
+    par_dict = {}
+
+    for name in par_names:
+
+        if name in par_indexes:
+
+            index = par_indexes[name]
+            val = par[index]
+            err = par_err[index]
+            par_dict[name] = '{: .5e} {: .5e}'.format(val, err)
+
+        else:
+
+            val = par_fixed[name]
+            par_dict[name] = '{: .5e} fixed'.format(val)
+
+    cfg = SafeConfigParser()
+    cfg.optionxform = str
+
+    for name, val in sorted(par_dict.items()):
+
+        name_list = list(name)
+
+        if name_list[0].upper() in par_name_global:
+            name_str = ', '.join([str(_).upper() for _ in name_list])
+            section = 'global'
+
+        else:
+            name_str = str(name_list.pop(1)).upper()
+            section = ', '.join([str(_).upper() for _ in name_list])
+
+        try:
+            cfg.add_section(section)
+
+        except DuplicateSectionError:
+            pass
+
+        cfg.set(section, name_str, val)
+
     with open(filename, 'w') as f:
-
-        print("  * {}".format(filename))
-
-        for par_name in sorted(par_names):
-
-            if par_name in par_indexes:
-                index = par_indexes[par_name]
-                f.write(' '.join(str(a).upper() for a in par_name))
-                f.write(
-                    ' {: .5e} {: .5e}\n'.format(par[index], par_err[index]))
-
-            elif par_name in par_fixed:
-                f.write(' '.join(str(a).upper() for a in par_name))
-                f.write(' {: .5e} fixed\n'.format(par_fixed[par_name]))
-
+        cfg.write(f)
 
 def write_chi2(par, par_indexes, par_fixed, data, output_dir='./'):
     """
@@ -116,7 +139,8 @@ def dump_parameters(par, par_indexes, par_fixed, data):
     try:
         write_par(par, par, par_indexes, par_fixed, output_dir=dump)
         write_dat(data, output_dir=dump)
-        plot_data(data, par, par_indexes, par_fixed, output_dir=dump)
+        plotting.plot_data(data, par, par_indexes, par_fixed, output_dir=dump)
+
     except (TypeError, ValueError):
         sys.stderr.write(
             "\n - Save state cancelled. Not all data could not be plotted")

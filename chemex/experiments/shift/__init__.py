@@ -3,7 +3,8 @@ from os import listdir
 __all__ = [pkg for pkg in listdir(__path__[0]) if "." not in pkg]
 
 try:
-    for pkg in __all__:  __import__(".".join([__name__, pkg]))
+    for pkg in __all__:
+        __import__(".".join([__name__, pkg]))
     del pkg, listdir
 
 except ImportError:

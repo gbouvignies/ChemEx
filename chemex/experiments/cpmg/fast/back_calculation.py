@@ -1,24 +1,16 @@
-"""
-Created on Aug 15, 2011
-
-@author: guillaume
-"""
-
 from numpy.linalg import matrix_power
 from scipy.linalg import expm
 
-from chemex.bases.two_states.fast import P_180Y
-from chemex.caching import lru_cache
+from ....bases.two_states.fast import P_180Y
+from ....caching import lru_cache
 from .liouvillian import compute_iy_eq, compute_liouvillians, get_iy
 
 
-
-# Local Modules
 @lru_cache()
 def make_calc_observable(time_t2=0.0, ppm_to_rads=1.0, _id=None):
     """
-    Factory to make "calc_observable" function to calculate the intensity in presence
-    of exchange after a CEST block.
+    Factory to make "calc_observable" function to calculate the intensity in
+    presence of exchange after a CPMG block.
 
     Parameters
     ----------
@@ -37,9 +29,11 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads=1.0, _id=None):
     """
 
     @lru_cache(100)
-    def _calc_observable(pb=0.0, kex=0.0, dw=0.0, r_ixy=5.0, dr_ixy=0.0, ncyc=0):
+    def _calc_observable(pb=0.0, kex=0.0, dw=0.0, r_ixy=5.0, dr_ixy=0.0,
+                         ncyc=0):
         """
-        Calculate the intensity in presence of exchange during a cpmg-type pulse train.
+        Calculate the intensity in presence of exchange during a cpmg-type pulse
+        train.
 
         Parameters
         ----------
@@ -74,13 +68,23 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads=1.0, _id=None):
 
         else:
 
-            l_free = compute_liouvillians(pb=pb, kex=kex, dw=dw,
-                                          r_ixy=r_ixy, dr_ixy=dr_ixy)
+            l_free = compute_liouvillians(
+                pb=pb,
+                kex=kex,
+                dw=dw,
+                r_ixy=r_ixy,
+                dr_ixy=dr_ixy
+            )
 
             t_cp = time_t2 / (4.0 * ncyc)
             p_free = expm(l_free * t_cp)
 
-            mag = matrix_power(p_free.dot(P_180Y).dot(p_free), 2 * ncyc).dot(mag_eq)
+            mag = matrix_power(
+                p_free
+                .dot(P_180Y)
+                .dot(p_free),
+                2 * ncyc
+            ).dot(mag_eq)
 
         magy_a, _ = get_iy(mag)
 
@@ -88,7 +92,7 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads=1.0, _id=None):
 
     def calc_observable(i0=0.0, **kwargs):
         """
-        Calculate the intensity in presence of exchange after a CEST block.
+        Calculate the intensity in presence of exchange after a CPMG block.
 
         Parameters
         ----------

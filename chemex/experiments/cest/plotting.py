@@ -1,35 +1,24 @@
-"""
-Created on Apr 1, 2011
-
-@author: guillaume
-"""
-
 import os
-from scipy import linspace, asarray, median, pi
 
-import matplotlib as mpl
-
-
-mpl.use('Agg')
-
+import scipy as sp
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gsp
-
 from matplotlib.ticker import MaxNLocator, NullFormatter
 from matplotlib.backends.backend_pdf import PdfPages
 
 from chemex.parsing import parse_assignment
 
 
-# Constants
-linewidth = 1.0
+dark_gray = '0.13'
+red500 = '#F44336'
+red200 = '#EF9A9A'
 
 
 def sigma_estimator(x):
     """ Estimates standard deviation using median to exclude outliers. Up to
     50% can be bad """
 
-    return median([median(abs(xi - asarray(x))) for xi in x]) * 1.1926
+    return sp.median([sp.median(abs(xi - sp.asarray(x))) for xi in x]) * 1.1926
 
 
 def set_lim(values, scale):
@@ -45,61 +34,84 @@ def set_lim(values, scale):
 def group_data(dataset):
     """Groups the data resonance specifically"""
 
-    grouped_dataset = dict()
+    data_grouped = dict()
 
-    for a_data in dataset:
+    for data_pt in dataset:
+        id_ = data_pt.par['resonance_id']
 
-        b1_offset = a_data.par['b1_offset']
-        resonance_id = a_data.par['resonance_id']
+        assignment = parse_assignment(id_)
+        index = int(assignment[0][0])
 
-        assignment = parse_assignment(resonance_id)
-        index = assignment[0][0]
+        data_grouped.setdefault((index, id_), []).append(data_pt)
 
-        if abs(b1_offset) < 10000.0:
-            grouped_dataset.setdefault((index, resonance_id), []).append(
-                a_data)
-
-    return grouped_dataset
+    return data_grouped
 
 
-def make_val_for_plot(residue_dataset, par, par_names, par_fixed, fileout):
+def compute_profiles(data_grouped, par, par_names, par_fixed):
     """Creates the arrays that will be used to plot one profile"""
 
-    values = []
+    profiles = {}
 
-    for point in residue_dataset:
-        point.calc_val(par, par_names, par_fixed)
+    for (index, resonance_id), profile in data_grouped.items():
 
-        b1_offset = point.par['b1_offset']
-        ppm_to_rads = point.par['ppm_to_rads']
-        carrier_ppm = point.par['carrier']
-        b1_ppm = (2.0 * pi * b1_offset) / ppm_to_rads + carrier_ppm
+        profile_exp = []
+        b1_offset_min = +1e16
+        b1_offset_max = -1e16
 
-        values.append((b1_offset, b1_ppm, point.val, point.err, point.cal))
+        for data_pt in profile:
 
-    of, xe, ye, ee, yc = zip(*sorted(values))
+            b1_offset = data_pt.par['b1_offset']
+            ppm_to_rads = data_pt.par['ppm_to_rads']
+            carrier_ppm = data_pt.par['carrier']
 
-    a_point = residue_dataset[0]
+            if abs(b1_offset) < 1e4:
+                b1_ppm = (2.0 * sp.pi * b1_offset) / ppm_to_rads + carrier_ppm
 
-    values = []
+                mag_cal = data_pt.cal
+                mag_exp = data_pt.val
+                mag_err = data_pt.err
 
-    of_min, of_max = set_lim(of, 0.02)
+                profile_exp.append([b1_ppm, mag_cal, mag_exp, mag_err])
 
-    for b1_offset in linspace(of_min, of_max, 500):
-        ppm_to_rads = a_point.par['ppm_to_rads']
-        carrier_ppm = a_point.par['carrier']
-        b1_ppm = (2.0 * pi * b1_offset) / ppm_to_rads + carrier_ppm
+                b1_offset_min = min(b1_offset_min, b1_offset)
+                b1_offset_max = max(b1_offset_max, b1_offset)
 
-        a_point.update_b1_offset(b1_offset)
-        a_point.calc_val(par, par_names, par_fixed)
+        b1_ppm_exp, mag_cal, mag_exp, mag_err = zip(*sorted(profile_exp))
 
-        values.append((b1_offset, b1_ppm, a_point.cal))
+        profile_cal = []
 
-        fileout.write(''.join([str(a_point), '\n']))
+        b1_offset_min, b1_offset_max = set_lim(
+            [b1_offset_min, b1_offset_max], 0.02
+        )
 
-    of, xf, yf = zip(*sorted(values))
+        data_pt = profile[0]
 
-    return xe, ye, ee, yc, xf, yf
+        for b1_offset in sp.linspace(b1_offset_min, b1_offset_max, 500):
+            ppm_to_rads = data_pt.par['ppm_to_rads']
+            carrier_ppm = data_pt.par['carrier']
+            b1_ppm = (2.0 * sp.pi * b1_offset) / ppm_to_rads + carrier_ppm
+
+            data_pt.update_b1_offset(b1_offset)
+            data_pt.calc_val(par, par_names, par_fixed)
+
+            profile_cal.append([b1_ppm, data_pt.cal])
+
+        b1_ppm_fit, mag_fit = zip(*sorted(profile_cal))
+
+        profiles.setdefault((index, resonance_id), []).append(
+            [b1_ppm_exp, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit]
+        )
+
+    return profiles
+
+
+def write_profile(resonance_id, b1_ppm_fit, mag_fit, file_txt):
+    for b1_ppm_cal, mag_cal in zip(b1_ppm_fit, mag_fit):
+        file_txt.write(
+            "{:10s} {:8.3f} {:8.3f}\n".format(
+                resonance_id.upper(), b1_ppm_cal, mag_cal
+            )
+        )
 
 
 def plot_data(data, par, par_names, par_fixed, output_dir='./'):
@@ -111,127 +123,139 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
         experiment_name = data_point.par['experiment_name']
         datasets.setdefault(experiment_name, []).append(data_point)
 
-    for experiment_name, dataset in datasets.iteritems():
+    for experiment_name, dataset in datasets.items():
 
         # ##### Matplotlib ######
-        filename = ''.join([experiment_name, '.pdf'])
-        filename = os.path.join(output_dir, filename)
+        name_pdf = ''.join([experiment_name, '.pdf'])
+        name_pdf = os.path.join(output_dir, name_pdf)
 
-        filename_calc = ''.join([experiment_name, '.fit'])
-        filename_calc = os.path.join(output_dir, filename_calc)
+        name_txt = ''.join([experiment_name, '.fit'])
+        name_txt = os.path.join(output_dir, name_txt)
 
-        print("  * {} [.fit]".format(filename))
+        print("  * {} [.fit]".format(name_pdf))
 
         # #######################
 
-        grouped_dataset = group_data(dataset)
+        data_grouped = group_data(dataset)
 
-        pdf = PdfPages(filename)
+        profiles = compute_profiles(
+            data_grouped, par, par_names, par_fixed
+        )
 
-        with open(filename_calc, 'w') as f:
+        with PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt:
 
-            for (_index, resonance_id), residue_dataset in sorted(
-                    grouped_dataset.iteritems()):
-                out = make_val_for_plot(residue_dataset, par, par_names,
-                                        par_fixed, f)
-                xe, ye, ee, yc, xf, yf = out
+            for (_index, resonance_id), profile in sorted(profiles.items()):
+                b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit = \
+                profile[0]
+
+                write_profile(resonance_id, b1_ppm_fit, mag_fit, file_txt)
 
                 ###### Matplotlib ######
 
-                fig = plt.figure(1, linewidth=linewidth, figsize=(6, 6))
+                # fig = plt.figure(1)
+                fig = plt.figure(1)
 
                 gs = gsp.GridSpec(2, 1, height_ratios=[1, 4])
 
                 ax1 = plt.subplot(gs[0])
                 ax2 = plt.subplot(gs[1])
 
+                ax1.axhline(0, color='black', alpha=0.87)
+                ax2.axhline(0, color='black', alpha=0.87)
+
                 ########################
 
-                ax2.plot(
-                    xf, yf, '-',
-                    color='0.5',
-                    linewidth=linewidth
+                ax2.plot(b1_ppm_fit,
+                         mag_fit,
+                         linestyle='-',
+                         color=red200,
                 )
 
                 ax2.plot(
-                    xe, ye, 'ro',
-                    linewidth=linewidth,
-                    markersize=5.0,
-                    markerfacecolor='w',
-                    markeredgewidth=linewidth,
-                    markeredgecolor='r'
+                    b1_ppm,
+                    mag_exp,
+                    'o',
+                    color=red500,
                 )
 
-                ymin, ymax = set_lim(ye + yf, 0.05)
+                xmin, xmax = set_lim(b1_ppm_fit, 0.05)
+                mags = list(mag_exp) + list(mag_fit)
+                ymin, ymax = set_lim(mags, 0.10)
+
+                ax2.set_xlim(xmin, xmax)
                 ax2.set_ylim(ymin, ymax)
-                ax2.tick_params(length=3, top=True, right=False, labelsize=10)
-                ax2.xaxis.set_major_locator(MaxNLocator(9))
-                ax2.yaxis.set_major_locator(MaxNLocator(6))
+
                 ax2.invert_xaxis()
-                ax2.set_xlabel(r'$\mathregular{B_1}$' + ' position (ppm)')
+
+                ax2.xaxis.set_major_locator(MaxNLocator(9))
+                # ax2.yaxis.set_major_locator(MaxNLocator(6))
+
+                ax2.set_xlabel(r'$\mathregular{B_1 \ position \ (ppm)}$')
                 ax2.set_ylabel(r'$\mathregular{I/I_0}$')
 
                 ########################
 
-                deltas = asarray(ye) - asarray(yc)
+                deltas = sp.asarray(mag_exp) - sp.asarray(mag_cal)
+                max_val = max(sp.absolute(set_lim(deltas, 0.1))) + max(mag_err)
+                power10 = int(sp.log10(max_val))
+                deltas /= 10 ** power10
+                mag_err = sp.array(mag_err) / 10 ** power10
                 sigma = sigma_estimator(deltas)
-
-                xmin, xmax = set_lim(xf, 0.05)
-
-                rmin, rmax = set_lim(deltas, 0.1)
-                rmin = min([-4 * sigma, rmin - max(ee)])
-                rmax = max([+4 * sigma, rmax + max(ee)])
-
-                ax1.plot([xmin, xmax], [0.0, 0.0], 'k-', linewidth=linewidth)
 
                 ax1.fill(
                     (xmin, xmin, xmax, xmax),
-                    2.0 * sigma * asarray([-1.0, 1.0, 1.0, -1.0]),
-                    fc='#EEEEEE', ec='none'
+                    1.0 * sigma * sp.asarray([-1.0, 1.0, 1.0, -1.0]),
+                    fc='black',
+                    alpha=0.12,
+                    ec='none'
                 )
 
                 ax1.fill(
                     (xmin, xmin, xmax, xmax),
-                    1.0 * sigma * asarray([-1.0, 1.0, 1.0, -1.0]),
-                    fc='#CCCCCC', ec='none'
+                    2.0 * sigma * sp.asarray([-1.0, 1.0, 1.0, -1.0]),
+                    fc='black',
+                    alpha=0.12,
+                    ec='none'
                 )
 
                 ax1.errorbar(
-                    xe, deltas, ee,
-                    fmt='ro',
-                    linewidth=linewidth,
-                    markersize=5.0,
-                    markerfacecolor='w',
-                    markeredgewidth=linewidth,
-                    markeredgecolor='r',
-                    capsize=2.5
+                    b1_ppm,
+                    deltas,
+                    mag_err,
+                    fmt='o',
+                    color=red500,
                 )
 
-                ax1.set_ylim(rmin, rmax)
-                ax1.xaxis.set_major_locator(MaxNLocator(9))
-                ax1.yaxis.set_major_locator(MaxNLocator(4))
-                ax1.xaxis.set_major_formatter(NullFormatter())
-                ax1.tick_params(length=3, top=False, right=False, labelsize=10)
-
-                ########################
+                rmin, rmax = set_lim(deltas, 0.1)
+                rmin = min([-3 * sigma, rmin - max(mag_err)])
+                rmax = max([+3 * sigma, rmax + max(mag_err)])
 
                 ax1.set_xlim(xmin, xmax)
-                ax2.set_xlim(xmin, xmax)
+                ax1.set_ylim(rmin, rmax)
 
                 ax1.invert_xaxis()
-                ax2.invert_xaxis()
+
+                ax1.xaxis.set_major_locator(MaxNLocator(9))
+                ax1.yaxis.set_major_locator(MaxNLocator(5))
+
+                ax1.xaxis.set_major_formatter(NullFormatter())
 
                 ax1.set_title('{:s}'.format(resonance_id.upper()))
-                ax1.set_ylabel('Residual')
+                ax1.set_ylabel(r''.join([
+                    r'$\mathregular{Resid. \ x10^{',
+                    r'{:d}'.format(power10),
+                    r'}}$'
+                ]))
+
+                ########################
 
                 fig.tight_layout()
 
                 ########################
 
-                pdf.savefig()
+                file_pdf.savefig()
                 plt.close()
 
                 ########################
 
-        pdf.close()
     return

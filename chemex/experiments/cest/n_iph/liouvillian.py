@@ -1,16 +1,12 @@
-"""
-Created on May 1, 2013
-
-@author: guillaume
-"""
-
 from scipy import pi, zeros, linspace, asarray
 from scipy.stats import norm
 
-from chemex.bases.two_states.iph import R_IXY, DR_IXY, R_IZ, CS, DW, KAB, KBA, W1X
+from chemex.bases.two_states.iph import R_IXY, DR_IXY, R_IZ, CS, DW, KAB, KBA, \
+    W1X
 
 
-def compute_base_liouvillians(b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_inh_res=5):
+def compute_base_liouvillians(b1_offset=0.0, b1_frq=0.0, b1_inh=0.0,
+                              b1_inh_res=5):
     w1, w1_inh, w1_offset = 2.0 * pi * asarray([b1_frq, b1_inh, b1_offset])
 
     w1s = linspace(-2.0, 2.0, b1_inh_res) * w1_inh + w1
@@ -21,7 +17,8 @@ def compute_base_liouvillians(b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_inh_res=
     return liouvillians, weights
 
 
-def compute_free_liouvillian(pb=0.0, kex=0.0, dw=0.0, r_nz=1.5, r_nxy=5.0, dr_nxy=0.0, cs_offset=0.0):
+def compute_free_liouvillian(pb=0.0, kex=0.0, dw=0.0, r_nz=1.5, r_nxy=5.0,
+                             dr_nxy=0.0, cs_offset=0.0):
     """
     Compute the exchange matrix (Liouvillian)
 

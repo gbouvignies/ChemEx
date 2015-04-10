@@ -1,10 +1,3 @@
-"""
-Created on 2013-10-03
-
-@author: guillaume
-"""
-
-# Imports
 from scipy import eye, kron, diag
 
 
