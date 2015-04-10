@@ -2,7 +2,7 @@ import scipy as sp
 import scipy.linalg as sl
 
 import chemex.caching as caching
-from chemex.experiments.misc import correct_chemical_shift
+from chemex.experiments.utils import correct_chemical_shift
 from chemex.constants import scalar_couplings
 from .liouvillian import compute_liouvillian
 

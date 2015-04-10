@@ -1,5 +1,6 @@
 import os
 import sys
+import math
 
 
 def make_dir(path=None):
@@ -56,6 +57,10 @@ def exclude_selection(data, selection):
         exit(1)
 
     return new_data
+
+
+def get_digit_number(integer):
+    return int(math.log10(integer)) + 1
 
 
 def header1(string):

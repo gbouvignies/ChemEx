@@ -1,10 +1,14 @@
 import scipy as sc
 from scipy.linalg import eig, inv
 
-from chemex.experiments.misc import correct_chemical_shift
-from chemex.caching import lru_cache
+from chemex.experiments.utils import correct_chemical_shift
 from .liouvillian import compute_liouvillian
 
+
+try:
+    from functools import lru_cache
+except ImportError:
+    from chemex.backports.functools_lru_cache import lru_cache
 
 dot = sc.dot
 diag = sc.diag

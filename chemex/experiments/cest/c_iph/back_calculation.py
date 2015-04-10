@@ -9,7 +9,7 @@ import scipy as sc
 from scipy.linalg import expm
 
 # Local Modules
-from chemex.experiments.misc import correct_chemical_shift
+from chemex.experiments.utils import correct_chemical_shift
 from chemex.caching import lru_cache
 from .liouvillian import (compute_cz_eq,
                           compute_base_liouvillians,

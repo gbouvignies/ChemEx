@@ -3,16 +3,19 @@
 import os
 import shutil
 import random
-from copy import deepcopy
-from math import log10
+import copy
 
-from . import fitting, writing, parsing, reading, utils
-from .experiments.reading import read_file_exp
-from .experiments.misc import format_experiment_help
+from chemex import fitting
+from chemex import writing
+from chemex import parsing
+from chemex import reading
+from chemex import utils
+from chemex.experiments import reading as reading_exp
+from chemex.experiments import utils as utils_exp
 
 
 def print_logo():
-    """ Prints ChemEx logo"""
+    """Prints ChemEx logo"""
 
     from .version import __version__
 
@@ -27,10 +30,10 @@ def print_logo():
         "*                                               *\n"
         "*   Analysis of NMR Chemical Exchange data      *\n"
         "*                                               *\n"
-        "*   Version: {:<10s}                        *\n"
+        "*   Version: {:<15s}                    *\n"
         "*                                               *\n"
         "* * * * * * * * * * * * * * * * * * * * * * * * *\n"
-        "\n".format(__version__)
+        .format(__version__)
     )
 
 
@@ -63,7 +66,7 @@ def make_bootstrap_dataset(data):
 def make_montecarlo_dataset(data):
     """Creates a new dataset to run a Monte-Carlo simulation"""
 
-    data_mc = deepcopy(data)
+    data_mc = copy.deepcopy(data)
 
     for data_pt in data_mc:
         data_pt.val = random.gauss(data_pt.cal, data_pt.err)
@@ -83,7 +86,11 @@ def read_data(args):
         print("\nFile(s):")
         for index, filename in enumerate(args.experiments, 1):
             print("  {}. {}".format(index, filename))
-            data.extend(read_file_exp(filename, args.res_incl, args.res_excl))
+            data.extend(
+                reading_exp.read_file_exp(
+                    filename, args.res_incl, args.res_excl
+                )
+            )
 
     if not data:
         exit("\nNo Data to fit!\n")
@@ -162,7 +169,7 @@ def main():
 
     if args.commands == 'info':
 
-        format_experiment_help(args.types, args.experiments)
+        utils_exp.format_experiment_help(args.types, args.experiments)
 
     elif args.commands == 'fit':
 
@@ -193,9 +200,14 @@ def main():
 
         if args.bs or args.mc:
 
-            n = int(args.bs) if args.bs else int(args.mc)
-            formatter_output_dir = \
-                ''.join(['{:0', str(int(log10(n)) + 1), 'd}'])
+            if args.bs:
+                n = int(args.bs)
+            else:
+                n = int(args.mc)
+
+            formatter_output_dir = ''.join(
+                ['{:0', utils.get_digit_number(n), 'd}']
+            )
 
             for index in range(1, n + 1):
 

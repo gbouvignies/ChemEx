@@ -1,6 +1,6 @@
 
 from chemex.caching import lru_cache
-from chemex.experiments.misc import correct_chemical_shift
+from chemex.experiments.utils import correct_chemical_shift
 
 
 @lru_cache()

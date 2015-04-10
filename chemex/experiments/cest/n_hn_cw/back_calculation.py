@@ -2,7 +2,7 @@ from scipy import linspace, pi
 from scipy.stats import norm
 
 import chemex.caching as caching
-from chemex.experiments.misc import correct_chemical_shift
+from chemex.experiments.utils import correct_chemical_shift
 from chemex.constants import scalar_couplings
 from liouvillian import set_nz, \
     compute_liouvillian_free_precession, \

@@ -1,18 +1,15 @@
 from __future__ import print_function
-
 import collections
 
 import numpy as np
 from scipy import array, pi
 
-from chemex.caching import lru_cache
-from chemex.utils import header1, header2
+from chemex import utils
 
 
 SIGN = array([1.0, -1.0])
 
 
-@lru_cache()
 def correct_chemical_shift(pb=0.0, kex=0.0, dw=0.0, r_ixy=0.0, dr_ixy=0.0):
     """Corrects major and minor peak positions in presence of exchange."""
 
@@ -158,7 +155,7 @@ def format_experiment_help(type_experiment, name_experiment):
     except StandardError:
         reference = None
 
-    header1(parse_line)
+    utils.header1(parse_line)
     print("")
     print(description)
     print("")
@@ -168,17 +165,17 @@ def format_experiment_help(type_experiment, name_experiment):
               .format(**reference))
         print("")
 
-    header2(headline1)
+    utils.header2(headline1)
     for p in parameters['exp']:
         print("  * {:s}".format(p))
     print("")
 
-    header2(headline2)
+    utils.header2(headline2)
     for p in parameters['fit']:
         print("  * {:s}".format(p))
     print("")
 
-    header2(headline3)
+    utils.header2(headline3)
     for p in parameters['fix']:
         print("  * {:s}".format(p))
     print("")

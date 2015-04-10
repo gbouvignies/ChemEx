@@ -11,7 +11,7 @@ import scipy.optimize as opt
 from chemex import utils
 from chemex import chi2
 from chemex import writing
-from chemex.experiments import misc
+from chemex.experiments import utils as utils_exp
 
 
 product = itertools.product
@@ -169,13 +169,16 @@ def fix_par(items, par, par_indexes, par_fixed):
 
     for index, par_name in enumerate(fitted_pars):
         par_indexes_updated[par_name] = index
-        par_updated.append(misc.get_par(par_name, par, par_indexes, par_fixed))
+        par_updated.append(
+            utils_exp.get_par(par_name, par, par_indexes, par_fixed)
+        )
 
     par_updated = sp.array(par_updated)
 
     for par_name in params_fix:
-        par_fixed_updated[par_name] = misc.get_par(par_name, par, par_indexes,
-                                                   par_fixed)
+        par_fixed_updated[par_name] = utils_exp.get_par(
+            par_name, par, par_indexes, par_fixed
+        )
 
     return par_updated, par_indexes_updated, par_fixed_updated
 

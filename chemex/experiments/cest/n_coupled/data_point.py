@@ -4,9 +4,10 @@ from math import pi
 from chemex.parsing import parse_assignment
 from chemex.experiments.base_data_point import BaseDataPoint
 from chemex.constants import xi_ratio
-from chemex.experiments.misc import calc_multiplet
+from chemex.experiments.utils import calc_multiplet
 from .back_calculation import make_calc_observable
 from ..plotting import plot_data
+
 
 
 

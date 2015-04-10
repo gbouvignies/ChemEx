@@ -1,7 +1,7 @@
 import scipy as sc
 from scipy.linalg import expm2 as expm
 
-from chemex.experiments.misc import correct_chemical_shift
+from chemex.experiments.utils import correct_chemical_shift
 from chemex.caching import lru_cache
 from .liouvillian import compute_nz_eq, compute_base_liouvillians, \
     compute_free_liouvillian, get_nz
