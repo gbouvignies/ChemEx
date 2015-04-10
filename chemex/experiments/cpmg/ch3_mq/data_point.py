@@ -1,11 +1,12 @@
-'''
+"""
 Created on Feb 23, 2012
 
 @author: Mike Latham
 @author: Guillaume Bouvignies
-'''
+"""
 
 from inspect import getargspec
+
 from scipy import pi
 
 from chemex.parsing import parse_assignment
@@ -13,6 +14,7 @@ from chemex.experiments.base_data_point import BaseDataPoint
 from chemex.constants import xi_ratio
 from .back_calculation import make_calc_observable
 from ..plotting import plot_data
+
 
 
 
@@ -35,7 +37,7 @@ PAR_DICT = {
 
 
 class DataPoint(BaseDataPoint):
-    '''Intensity measured during a cpmg pulse train of frequency frq'''
+    """Intensity measured during a cpmg pulse train of frequency frq"""
 
     def __init__(self, val, err, par):
         BaseDataPoint.__init__(self, val, err, par, PAR_DICT['par_conv'],
@@ -94,7 +96,7 @@ class DataPoint(BaseDataPoint):
 
 
     def __repr__(self):
-        '''Print the data point'''
+        """Print the data point"""
 
         output = list()
         output.append('{resonance_id:6s}'.format(**self.par))

@@ -13,23 +13,19 @@ def create_par_list_to_fit(par_filename, data):
     Create and set the list of parameters to fit.
     """
 
-    try:
-        # Create parameters needed to fit the data
-        par, par_indexes, par_fixed = create_fitting_parameters_array(data)
+    # Create parameters needed to fit the data
+    par, par_indexes, par_fixed = create_fitting_parameters_array(data)
 
-        # Trim data
-        data = trim_datasets_using_par(data, par_indexes)
+    # Trim data
+    data = trim_datasets_using_par(data, par_indexes)
 
-        # Set the parameters to their default value as defined in the 'par'
-        # file
-        par, par_fixed = read_par(par_filename, par, par_indexes, par_fixed)
+    # Set the parameters to their default value as defined in the 'par'
+    # file
+    par, par_fixed = read_par(par_filename, par, par_indexes, par_fixed)
 
-        # Filter Data
-        data = [data_pt for data_pt in data if
-                not data_pt.filter(par, par_indexes, par_fixed)]
-
-    except KeyboardInterrupt:
-        exit(' -- ChemEx killed while reading and checking parameters files\n')
+    # Filter Data
+    data = [data_pt for data_pt in data if
+            not data_pt.filter(par, par_indexes, par_fixed)]
 
     return par, par_indexes, par_fixed, data
 

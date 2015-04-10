@@ -85,7 +85,7 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0, r_coxy=5.0, dr_coxy=0.0, r_nz=
     return l_free, l_w1x, l_w1y
 
 
-def compute_2COzNz_eq(pb):
+def compute_2coznz_eq(pb):
     mag_eq = zeros((12, 1))
     mag_eq[5, 0] += (1.0 - pb)
     mag_eq[11, 0] += pb
@@ -93,9 +93,9 @@ def compute_2COzNz_eq(pb):
     return mag_eq
 
 
-def get_2COzNz(I):
-    magz_a = I[5, 0]
-    magz_b = I[11, 0]
+def get_2coznz(mag):
+    magz_a = mag[5, 0]
+    magz_b = mag[11, 0]
 
     return magz_a, magz_b
 

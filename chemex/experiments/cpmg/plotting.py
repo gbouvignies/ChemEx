@@ -82,11 +82,11 @@ def compute_profiles(data_grouped):
     return profiles, r2_min, r2_max
 
 
-def write_profile(id, r2_profile, file_txt):
+def write_profile(id_, r2_profile, file_txt):
     for frq, r2_cal, r2_exp, r2_erd, r2_eru in zip(*(r2_profile[0])):
         file_txt.write(
             "{:10s} {:8.3f} {:8.3f} {:8.3f} {:8.3f} {:8.3f}\n".format(
-                id.upper(), frq, r2_cal, r2_exp, r2_erd, r2_eru
+                id_.upper(), frq, r2_cal, r2_exp, r2_erd, r2_eru
             )
         )
 
@@ -120,8 +120,8 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
         with PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt:
 
-            for (_index, id), profile in sorted(profiles.items()):
-                write_profile(id, profile, file_txt)
+            for (_index, id_), profile in sorted(profiles.items()):
+                write_profile(id_, profile, file_txt)
 
                 ###### Matplotlib ######
 
@@ -163,7 +163,7 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
                 ax.set_ylabel(
                     r'$\mathregular{R_{2,eff} \ (s^{-1})}$')
 
-                ax.set_title('{:s}'.format(id.upper()))
+                ax.set_title('{:s}'.format(id_.upper()))
 
                 fig.tight_layout()
 

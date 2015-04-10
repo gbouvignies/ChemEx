@@ -29,7 +29,7 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_frq_h=0.0,
                          dr_nxy=None, r_nz=1.5, r_2hznz=None, r_2hxynxy=0.0,
                          r_hxy=10.0, r_hz=1.0, etaxy=0.0, etaz=0.0, j_hn=JHN,
                          cs_n=0.0, cs_h=0.0):
-        '''
+        """
         Calculate the intensity in presence of exchange during a cpmg-type pulse train.
 
         Keyword arguments:
@@ -57,7 +57,7 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_frq_h=0.0,
                    0 ms (default)
 
         Returns: float
-        '''
+        """
 
         wg_h = (cs_h - carrier_h) * ppm_to_rads_h
         wg_n = (cs_n - carrier) * ppm_to_rads

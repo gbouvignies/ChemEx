@@ -1,8 +1,8 @@
-'''
+"""
 Created on Mar 30, 2011
 
 @author: guillaume
-'''
+"""
 
 import os
 
@@ -12,7 +12,7 @@ from chemex import utils
 
 
 def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None):
-    '''Read the shifts'''
+    """Read the shifts"""
 
     # Reads the path to get the shifts
     exp_data_dir = utils.normalize_path(working_dir,

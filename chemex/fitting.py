@@ -57,9 +57,9 @@ def run_fit(fit_filename, par, par_indexes, par_fixed, data):
                                                          par_fixed)
         independent_clusters_no = len(independent_clusters)
 
-        if independent_clusters_no > 1:
+        par_err = list(par)
 
-            par_err = list(par)
+        if independent_clusters_no > 1:
 
             for i, independent_cluster in enumerate(independent_clusters, 1):
 
@@ -76,9 +76,9 @@ def run_fit(fit_filename, par, par_indexes, par_fixed, data):
                 )
 
                 for par_name in c_par_indexes:
-                    par[par_indexes[par_name]] = c_par[c_par_indexes[par_name]]
-                    par_err[par_indexes[par_name]] = c_par_err[
-                        c_par_indexes[par_name]]
+                    index = par_indexes[par_name]
+                    par[index] = c_par[c_par_indexes[par_name]]
+                    par_err[index] = c_par_err[c_par_indexes[par_name]]
 
         else:
             print("\nChi2 / Reduced Chi2:")
@@ -109,7 +109,6 @@ def local_minimization(par, par_indexes, par_fixed, data, verbose=True):
                           maxfev=100000,
                           epsfcn=1e-10,
                           factor=0.1)
-        par, pcov, _infodict, errmsg, ier = out
 
     except TypeError:
         sys.stderr.write(' -- Error encountered during minimization:\n')
@@ -118,6 +117,8 @@ def local_minimization(par, par_indexes, par_fixed, data, verbose=True):
             ' -- Check that all parameters are correctly initialized.\n')
         writing.dump_parameters(par, par_indexes, par_fixed, data)
         exit()
+
+    par, pcov, _infodict, errmsg, ier = out
 
     if ier not in [1, 2, 3, 4]:
         print(''.join(('Optimal parameters not found: ', errmsg)))

@@ -1,8 +1,8 @@
-'''
+"""
 Created on Feb 29, 2012
 
 @author: G
-'''
+"""
 
 parse_line = "HSQC-HSQC shifts at two different fields"
 

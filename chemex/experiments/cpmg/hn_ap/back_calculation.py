@@ -9,9 +9,9 @@ from scipy.linalg import expm
 from numpy.linalg import matrix_power
 
 from ....caching import lru_cache
-from .liouvillian import (compute_2HzNz_eq,
+from .liouvillian import (compute_2hznz_eq,
                           compute_liouvillians,
-                          get_2HzNz, )
+                          get_2hznz, )
 
 
 @lru_cache()
@@ -134,7 +134,7 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0,
         (p_equil, p_neg, p_90px, p_90py, p_90mx, p_90my, p_180px, p_180mx,
          p_180py) = ps
 
-        mag_eq = compute_2HzNz_eq(pb)
+        mag_eq = compute_2hznz_eq(pb)
 
         if ncyc == 0:
 
@@ -177,7 +177,7 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0,
                 ]
             )
 
-        magz_a, _magz_b = get_2HzNz(mag)
+        magz_a, _magz_b = get_2hznz(mag)
 
         return magz_a
 

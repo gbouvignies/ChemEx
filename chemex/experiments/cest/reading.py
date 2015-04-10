@@ -192,7 +192,7 @@ def estimate_noise(x):
                 try:
                     val = (f(1.0 - a_perc) - f(a_perc)) / (2.0 * a_z)
                     q.append(val)
-                except:
+                except ValueError:
                     pass
 
             sigma_est.append(sc.median(q))

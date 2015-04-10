@@ -18,9 +18,8 @@ from chemex.bases.three_states.iph_aph import P180_S
 @lru_cache()
 def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0,
                          carrier=0.0, taub=2.68e-3, _id=None):
-    """
-    Factory to make "calc_observable" function to calculate the intensity in presence
-    of exchange after a CEST block.
+    """Factory to make "calc_observable" function to calculate the intensity in
+    presence of exchange after a CEST block.
 
     Parameters
     ----------
@@ -42,9 +41,10 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0,
 
     @lru_cache(1)
     def make_propagators(pb=0.0, pc=0.0, kex_ab=0.0, kex_bc=0.0, kex_ac=0.0,
-                         dw_ab=0.0, dw_ac=0.0, r_nxy=5.0, dr_nxy_ab=0.0, dr_nxy_ac=0.0,
-                         r_nz=1.5, r_2hznz=5.0, etaxy=0.0, etaz=0.0, j_hn=-93.0,
-                         dj_hn_ab=0.0, dj_hn_ac=0.0, cs_offset=0.0):
+                         dw_ab=0.0, dw_ac=0.0, r_nxy=5.0, dr_nxy_ab=0.0,
+                         dr_nxy_ac=0.0, r_nz=1.5, r_2hznz=5.0, etaxy=0.0,
+                         etaz=0.0, j_hn=-93.0, dj_hn_ab=0.0, dj_hn_ac=0.0,
+                         cs_offset=0.0):
 
         w1 = 2.0 * pi / (4.0 * pw)
         l_free, l_w1x, l_w1y = compute_liouvillians(
@@ -65,15 +65,18 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0,
         p_180px = matrix_power(p_90px, 2)
         p_180py = matrix_power(p_90py, 2)
 
-        p_element = reduce(dot, [P180_S, p_taub, p_90py, p_90px, P180_S, p_90px, p_90py, p_taub])
+        p_element = reduce(dot, [P180_S, p_taub, p_90py, p_90px, P180_S, p_90px,
+                                 p_90py, p_taub])
 
-        ps = (p_equil, p_neg, p_90px, p_90py, p_90mx, p_90my, p_180px, p_180py, p_element)
+        ps = (p_equil, p_neg, p_90px, p_90py, p_90mx, p_90my, p_180px, p_180py,
+              p_element)
 
         return l_free, ps
 
     @lru_cache(100)
     def _calc_observable(pb=0.0, pc=0.0, kex_ab=0.0, kex_bc=0.0, kex_ac=0.0,
-                         dw_ab=0.0, dw_ac=0.0, r_nxy=5.0, dr_nxy_ab=0.0, dr_nxy_ac=0.0,
+                         dw_ab=0.0, dw_ac=0.0, r_nxy=5.0, dr_nxy_ab=0.0,
+                         dr_nxy_ac=0.0,
                          r_nz=1.5, r_2hznz=5.0, etaxy=0.0, etaz=0.0, j_hn=-93.0,
                          dj_hn_ab=0.0, dj_hn_ac=0.0, cs=0.0, ncyc=0):
         """
@@ -141,7 +144,8 @@ def make_calc_observable(pw=0.0, time_t2=0.0, time_equil=0.0, ppm_to_rads=1.0,
                                   p_90mx.dot(p_element).dot(p_90my))
 
             mag = -reduce(dot,
-                          [p_equil, p_90py, p_neg, p_cpx, p_neg, p_element_pc, p_neg, p_cpy, p_neg, p_90px, mag_eq])
+                          [p_equil, p_90py, p_neg, p_cpx, p_neg, p_element_pc,
+                           p_neg, p_cpy, p_neg, p_90px, mag_eq])
 
         magz_a, _, _ = get_trz(mag)
 

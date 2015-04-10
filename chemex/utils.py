@@ -12,7 +12,7 @@ def make_dir(path=None):
             raise
 
 
-class autodict(dict):
+class AutoDict(dict):
     """Implementation of perl's autovivification feature."""
 
     def __getitem__(self, item):

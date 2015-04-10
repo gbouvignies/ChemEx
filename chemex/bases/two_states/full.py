@@ -114,5 +114,5 @@ W1Y_N[15:30, 15:30] += W1Y_N[0:15, 0:15]
 
 #
 # Some cleaning
-del (TMP1)
-del (TMP2)
+del TMP1
+del TMP2
