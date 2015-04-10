@@ -97,6 +97,8 @@ def get_par(par_name, par, par_indexes, par_fixed=list()):
 
 
 def calc_multiplet(couplings=None, multiplet=None):
+    couplings = list(couplings)
+
     if multiplet is None:
         multiplet = [0.0]
 

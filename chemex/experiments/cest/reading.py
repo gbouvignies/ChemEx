@@ -107,7 +107,7 @@ def read_a_cest_profile(filename, parameters):
         # Used to keep reference points out of the bootstrapping
         parameters['reference'] = abs(b1_offset) >= 10000.0
 
-        # intensity_err = uncertainty
+        intensity_err = uncertainty
 
         data_points.append(
             data_point.DataPoint(intensity_val, intensity_err, parameters)

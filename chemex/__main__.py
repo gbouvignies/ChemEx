@@ -27,7 +27,7 @@ def print_logo():
         "*                                               *\n"
         "*   Analysis of NMR Chemical Exchange data      *\n"
         "*                                               *\n"
-        "*   Version: {:<6s}                             *\n"
+        "*   Version: {:<10s}                        *\n"
         "*                                               *\n"
         "* * * * * * * * * * * * * * * * * * * * * * * * *\n"
         "\n".format(__version__)

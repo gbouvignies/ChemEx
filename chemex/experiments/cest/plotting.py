@@ -51,8 +51,6 @@ def compute_profiles(data_grouped, par, par_names, par_fixed):
     """Creates the arrays that will be used to plot one profile"""
 
     profiles = {}
-    # mag_min = +1e16
-    # mag_max = -1e16
 
     for (index, resonance_id), profile in data_grouped.items():
 
@@ -74,9 +72,6 @@ def compute_profiles(data_grouped, par, par_names, par_fixed):
                 mag_err = data_pt.err
 
                 profile_exp.append([b1_ppm, mag_cal, mag_exp, mag_err])
-
-                # mag_min = min(mag_min, mag_cal, mag_exp - mag_err)
-                # mag_max = max(mag_max, mag_cal, mag_exp + mag_err)
 
                 b1_offset_min = min(b1_offset_min, b1_offset)
                 b1_offset_max = max(b1_offset_max, b1_offset)
@@ -157,6 +152,7 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
                 ###### Matplotlib ######
 
+                # fig = plt.figure(1)
                 fig = plt.figure(1)
 
                 gs = gsp.GridSpec(2, 1, height_ratios=[1, 4])
@@ -200,7 +196,8 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
                 ########################
 
                 deltas = sp.asarray(mag_exp) - sp.asarray(mag_cal)
-                power10 = int(sp.log10(max(deltas) - min(deltas)) - 0.5)
+                max_val = max(sp.absolute(set_lim(deltas, 0.1))) + max(mag_err)
+                power10 = int(sp.log10(max_val))
                 deltas /= 10 ** power10
                 mag_err = sp.array(mag_err) / 10 ** power10
                 sigma = sigma_estimator(deltas)
@@ -230,8 +227,8 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
                 )
 
                 rmin, rmax = set_lim(deltas, 0.1)
-                rmin = min([-5 * sigma, rmin - max(mag_err)])
-                rmax = max([+5 * sigma, rmax + max(mag_err)])
+                rmin = min([-3 * sigma, rmin - max(mag_err)])
+                rmax = max([+3 * sigma, rmax + max(mag_err)])
 
                 ax1.set_xlim(xmin, xmax)
                 ax1.set_ylim(rmin, rmax)

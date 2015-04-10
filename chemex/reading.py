@@ -300,23 +300,14 @@ def read_parameter_file(filename, par_name):
         assignment = parsing.parse_assignment(line[0])
 
         if len(assignment) == len(line) - 1:
-
             for index, an_assignment in enumerate(assignment, 1):
-                residue_index, residue_type, nucleus_type = an_assignment
-
-                nucleus_name = residue_type + str(residue_index) + nucleus_type
-
-                full_par_name = par_name + [nucleus_name]
-
+                name = parsing.assignment_name([an_assignment])
+                full_par_name = par_name + [name]
                 parameters.append((full_par_name, line[index]))
 
         elif len(line) == 2:
-
-            for index, residue_type, nucleus_type in assignment:
-                nucleus_name = ''.join([residue_type, str(index), nucleus_type])
-
-                full_par_name = par_name + [nucleus_name]
-
+            name = parsing.assignment_name(assignment)
+            full_par_name = par_name + [name]
             parameters.append((full_par_name, line[1]))
 
         else:

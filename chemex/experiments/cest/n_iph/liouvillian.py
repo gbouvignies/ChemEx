@@ -1,9 +1,3 @@
-"""
-Created on May 1, 2013
-
-@author: guillaume
-"""
-
 from scipy import pi, zeros, linspace, asarray
 from scipy.stats import norm
 

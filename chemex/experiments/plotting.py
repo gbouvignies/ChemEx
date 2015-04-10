@@ -62,6 +62,7 @@ mpl.rcParams.update(base_context)
 mpl.rcParams.update(style_dict)
 mpl.use('Agg')
 
+
 def plot_data(data, par, par_names, par_fixed, output_dir='./'):
     """ Plot all data types """
 
