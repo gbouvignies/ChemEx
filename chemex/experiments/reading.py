@@ -1,7 +1,8 @@
 """Reads the "experiment" files."""
 
-import pkgutil
 import ConfigParser
+import importlib
+import pkgutil
 import os
 import os.path
 import sys
@@ -82,19 +83,15 @@ def get_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None):
         if ispkg and modname in exp_type
     ]
 
-    if pkgs:
+    try:
         pkg = max(pkgs)
-    else:
+    except ValueError:
         exit("\nUnknown data type {:s}"
              "\nDid you forget _cpmg, _cest, etc?"
              "\n".format(global_parameters['experiment_type']))
 
-    reading = __import__(
-        '.'.join([pkg, 'reading']),
-        globals(),
-        locals(),
-        ['get_data'],
-        -1
+    reading = importlib.import_module(
+        '.'.join(['chemex.experiments', pkg, 'reading'])
     )
 
     data = reading.read_data(cfg, working_dir, global_parameters, res_incl,

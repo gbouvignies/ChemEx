@@ -7,8 +7,8 @@ Created on Sep 1, 2011
 # Imports
 from scipy import zeros, asarray
 
-from chemex.bases.two_states.iph import \
-    R_IXY, DR_IXY, R_IZ, CS, DW, KAB, KBA, W1X, W1Y
+from chemex.bases.two_states.single_spin import \
+    R_IXY, DR_IXY, R_IZ, W, DW, KAB, KBA, W1X, W1Y
 
 
 def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0,
@@ -55,7 +55,7 @@ def compute_liouvillians(pb=0.0, kex=0.0, dw=0.0,
     l_free = R_IXY * r_nxy
     l_free += DR_IXY * dr_nxy
     l_free += R_IZ * r_nz
-    l_free += CS * cs_offset
+    l_free += W * cs_offset
     l_free += DW * dw
     l_free += KAB * kab
     l_free += KBA * kba

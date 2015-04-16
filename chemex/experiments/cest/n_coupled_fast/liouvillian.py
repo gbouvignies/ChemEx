@@ -1,4 +1,4 @@
-from chemex.bases.two_states.iph import R_IXY, DR_IXY, R_IZ, CS, DW, KAB, \
+from chemex.bases.two_states.single_spin import R_IXY, DR_IXY, R_IZ, W, DW, KAB, \
     KBA, W1X
 
 
@@ -47,7 +47,7 @@ def compute_liouvillian(pb=0.0, kex=0.0, dw=0.0, r_nz=1.5, r_nxy=5.0,
         R_IXY * r_nxy +
         DR_IXY * dr_nxy +
         R_IZ * r_nz +
-        CS * cs_offset +
+        W * cs_offset +
         DW * dw +
         w1 * W1X +
         KAB * kab +

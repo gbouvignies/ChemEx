@@ -3,7 +3,7 @@ from math import pi
 
 from ....parsing import parse_assignment
 from ....constants import xi_ratio
-from ...base_data_point import BaseDataPoint
+from ...abc_profile import BaseDataPoint
 from ..plotting import plot_data
 from .back_calculation import make_calc_observable
 

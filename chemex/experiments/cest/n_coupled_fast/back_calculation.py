@@ -1,7 +1,7 @@
 import scipy as sc
 from scipy.linalg import eig, inv
 
-from chemex.experiments.utils import correct_chemical_shift
+from chemex.experiments.utils import calculate_shift_ex_2st
 from chemex.caching import lru_cache
 from .liouvillian import compute_liouvillian
 
@@ -88,7 +88,7 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, carrier=0.0,
 
             dw *= ppm_to_rads
 
-            exchange_induced_shift, _ = correct_chemical_shift(
+            exchange_induced_shift, _ = calculate_shift_ex_2st(
                 pb=pb,
                 kex=kex,
                 dw=dw,

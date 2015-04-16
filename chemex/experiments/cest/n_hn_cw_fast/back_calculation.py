@@ -2,7 +2,7 @@ import scipy as sp
 import scipy.linalg as sl
 
 import chemex.caching as caching
-from chemex.experiments.utils import correct_chemical_shift
+from chemex.experiments.utils import calculate_shift_ex_2st
 from chemex.constants import scalar_couplings
 from .liouvillian import compute_liouvillian
 
@@ -70,7 +70,7 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_frq_h=0.0,
 
         else:
 
-            exchange_induced_shift_n, _ = correct_chemical_shift(
+            exchange_induced_shift_n, _ = calculate_shift_ex_2st(
                 pb=pb,
                 kex=kex,
                 dw=dw_n_rads,

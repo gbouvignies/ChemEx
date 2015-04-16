@@ -1,8 +1,9 @@
 from itertools import product
+
 from scipy import pi, zeros, linspace, asarray
 from scipy.stats import norm
 
-from chemex.bases.two_states.iph import R_IXY, DR_IXY, R_IZ, CS, DW, KAB, \
+from chemex.bases.two_states.single_spin import R_IXY, DR_IXY, R_IZ, W, DW, KAB, \
     KBA, W1X
 
 
@@ -18,7 +19,7 @@ def compute_base_liouvillians(b1_offset=0.0, b1_frq=0.0, b1_inh=0.0,
     weights1 = norm.pdf(w1s, w1, w1_inh)
     weights1 /= weights1.sum()
 
-    liouvillians = [(j - w1_offset) * CS + w1 * W1X
+    liouvillians = [(j - w1_offset) * W + w1 * W1X
                     for w1, (j, _) in product(w1s, multiplet)]
 
     weights = [weight1 * weight2
@@ -71,7 +72,7 @@ def compute_free_liouvillian(pb=0.0, kex=0.0, dw=0.0, r_nz=1.5, r_nxy=5.0,
     l_free = R_IXY * r_nxy
     l_free += DR_IXY * dr_nxy
     l_free += R_IZ * r_nz
-    l_free += CS * cs_offset
+    l_free += W * cs_offset
     l_free += DW * dw
     l_free += KAB * kab
     l_free += KBA * kba

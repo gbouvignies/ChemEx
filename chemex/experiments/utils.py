@@ -10,7 +10,7 @@ from chemex import utils
 SIGN = array([1.0, -1.0])
 
 
-def correct_chemical_shift(pb=0.0, kex=0.0, dw=0.0, r_ixy=0.0, dr_ixy=0.0):
+def calculate_shift_ex_2st(pb=0.0, kex=0.0, dw=0.0, r_ixy=0.0, dr_ixy=0.0):
     """Corrects major and minor peak positions in presence of exchange."""
 
     kab = kex * pb

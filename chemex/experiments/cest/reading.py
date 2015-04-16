@@ -1,10 +1,11 @@
+import importlib
 import os
 
-import scipy as sc
-import scipy.stats as st
+import scipy as sp
+import scipy.interpolate as ip
 import scipy.linalg as la
 import scipy.signal as si
-import scipy.interpolate as ip
+import scipy.stats as st
 
 from chemex import utils
 
@@ -38,7 +39,6 @@ def read_data(cfg, working_dir, global_parameters, res_incl=None,
         parameters['experiment_name'] = experiment_name
         parameters['resonance_id'] = resonance_id
 
-        # Get the r2 values from the fuda files containing intensities
         abs_path_filename = os.path.join(exp_data_dir, filename)
         data_points += read_a_cest_profile(abs_path_filename, parameters)
 
@@ -80,7 +80,7 @@ def name_experiment(global_parameters=None):
 def read_a_cest_profile(filename, parameters):
     """Reads in the fuda file and spit out the intensities"""
 
-    data = sc.loadtxt(filename, dtype=[('b1_offset', '<f8'),
+    data = sp.loadtxt(filename, dtype=[('b1_offset', '<f8'),
                                        ('intensity', '<f8'),
                                        ('intensity_err', '<f8')])
 
@@ -89,8 +89,10 @@ def read_a_cest_profile(filename, parameters):
     data_points = []
 
     exp_type = parameters['experiment_type'].replace('_cest', '')
-    data_point = __import__(exp_type + '.data_point', globals(), locals(),
-                            ['DataPoint'], -1)
+
+    data_point = importlib.import_module(
+        '.'.join(['chemex.experiments.cest', exp_type, 'profile'])
+    )
 
     intensity_ref = 1.0
 
@@ -120,7 +122,7 @@ def estimate_uncertainty(data):
     """Estimates uncertainty using the baseline"""
 
     data.sort()
-    int_list = sc.asarray([it for of, it, _er in data if abs(of) < 10000.0])
+    int_list = sp.asarray([it for of, it, _er in data if abs(of) < 10000.0])
 
     return estimate_noise(int_list)
 
@@ -130,7 +132,7 @@ def adjust_min_int_uncertainty(data_int):
     either the present uncertainty or the median of all the uncertainties
     """
 
-    int_err = sc.median([data_point.err for data_point in data_int])
+    int_err = sp.median([data_point.err for data_point in data_int])
 
     new_data_int = list()
 
@@ -165,9 +167,9 @@ def estimate_noise(x):
            [1, -4, 6, -4, 1],
            [1, -5, 10, -10, 5, -1],
            [1, -6, 15, -20, 15, -6, 1]]
-    fda = [sc.array(a_fda) / la.norm(a_fda) for a_fda in fda]
+    fda = [sp.array(a_fda) / la.norm(a_fda) for a_fda in fda]
 
-    perc = sc.array([0.05] + list(sc.arange(0.1, 0.40, 0.025)))
+    perc = sp.array([0.05] + list(sp.arange(0.1, 0.40, 0.025)))
     z = st.norm.ppf(1.0 - perc)
 
     sigma_est = []
@@ -181,7 +183,7 @@ def estimate_noise(x):
 
             noisedata.sort()
 
-            p = 0.5 + sc.arange(1, ntrim + 1)
+            p = 0.5 + sp.arange(1, ntrim + 1)
             p /= ntrim + 0.5
 
             q = []
@@ -195,10 +197,10 @@ def estimate_noise(x):
                 except ValueError:
                     pass
 
-            sigma_est.append(sc.median(q))
+            sigma_est.append(sp.median(q))
 
-    noisevar = sc.median(sigma_est) ** 2
+    noisevar = sp.median(sigma_est) ** 2
     noisevar /= (1.0 + 15.0 * (n + 1.225) ** -1.245)
 
-    return sc.sqrt(noisevar)
+    return sp.sqrt(noisevar)
 

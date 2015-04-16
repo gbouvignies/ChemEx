@@ -7,7 +7,7 @@ Created on Aug 15, 2011
 import scipy as sc
 from scipy.linalg import expm2 as expm
 
-from chemex.experiments.utils import correct_chemical_shift
+from chemex.experiments.utils import calculate_shift_ex_2st
 from chemex.caching import lru_cache
 from .liouvillian import compute_nz_eq, compute_base_liouvillians, compute_free_liouvillian, get_nz
 
@@ -86,7 +86,8 @@ def make_calc_observable(time_t1=0.0, b1_offset=0.0, b1_frq=0.0, b1_inh=0.0, b1_
 
             dw *= ppm_to_rads
             mag_eq = compute_nz_eq(pb)
-            exchange_induced_shift, _ = correct_chemical_shift(pb=pb, kex=kex, dw=dw,
+            exchange_induced_shift, _ = calculate_shift_ex_2st(pb=pb, kex=kex,
+                                                               dw=dw,
                                                                r_ixy=r_nxy, dr_ixy=dr_nxy)
             wg = (cs - carrier) * ppm_to_rads - exchange_induced_shift
 
