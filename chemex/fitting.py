@@ -44,14 +44,20 @@ def run_fit(fit_filename, params, data):
                 func = chi2.make_calc_residuals(verbose=True)
                 args = (c_data, )
 
-                out = lf.minimize(func, c_params, args=args)
+                lf.minimize(func, c_params, args=args)
 
                 for name, param in c_params.items():
                     params[name] = param
 
+            print("\nFinalizing...")
+
         else:
             print("\nChi2 / Reduced Chi2:")
-            out = lf.minimize(func, c_params, args=args)
+
+        func = chi2.make_calc_residuals(verbose=True)
+        args = (data, )
+
+        out = lf.minimize(func, params, args=args)
 
         print("\nFinal Chi2        : {:.3e}".format(out.chisqr))
         print("Final Reduced Chi2: {:.3e}".format(out.redchi))
