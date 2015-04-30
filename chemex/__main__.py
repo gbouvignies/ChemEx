@@ -8,7 +8,7 @@ import copy
 from chemex import fitting
 from chemex import writing
 from chemex import parsing
-from chemex import reading
+from chemex import parameters
 from chemex import utils
 from chemex.experiments import reading as reading_exp
 from chemex.experiments import utils as utils_exp
@@ -179,7 +179,7 @@ def main():
         # Create the lists of both fitting and fixed parameters
         utils.header1("Reading Default Parameters")
         par, par_indexes, par_fixed, data = \
-            reading.create_par_list_to_fit(args.parameters, data)
+            parameters.create_parameters_from_data(args.parameters, data)
 
         # Custom output directory
         output_dir = args.out_dir if args.out_dir else './output'

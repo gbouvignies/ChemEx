@@ -19,7 +19,8 @@ description = ('Program to fit chemical exchange induced shift and '
 install_requires = [
     'numpy',
     'scipy',
-    'matplotlib>=1.3.1',
+    'matplotlib',
+    'lmfit',
 ]
 
 entry_points = {

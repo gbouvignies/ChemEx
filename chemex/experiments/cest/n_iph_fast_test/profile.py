@@ -4,9 +4,9 @@ import lmfit as lf
 
 from chemex import constants
 from chemex import parsing
+from chemex import caching
 from chemex.experiments import abc_profile
 from chemex.experiments import utils
-from chemex.caching import lru_cache
 from chemex.bases.two_states import single_spin
 from ..plotting import plot_data
 
@@ -47,7 +47,7 @@ class Profile(abc_profile.ABCProfile):
 
         self.ppm_to_rads = self.h_larmor_frq * RATIO_N * TWO_PI
 
-        self.calc_profile = lru_cache(maxsize=5)(self.calc_profile)
+        self.calc_profile = caching.lru_cache(maxsize=5)(self.calc_profile)
         self.plot_data = plot_data
 
         self.assignment = parsing.parse_assignment(self.resonance_id)
@@ -103,8 +103,7 @@ class Profile(abc_profile.ABCProfile):
 
         return parameters
 
-    def calculate_profile(self, pb=0.0, kex=0.0, dw=0.0, r_nz=1.5, r_nxy=0.0,
-                          dr_nxy=0.0, cs=0.0):
+    def calculate_profile(self, pb=0.0, kex=0.0, dw=0.0, r_nz=1.5, r_nxy=0.0, dr_nxy=0.0, cs=0.0):
         """Calculate the intensity in presence of exchange after a CEST block
         assuming initial intensity of 1.0.
 
