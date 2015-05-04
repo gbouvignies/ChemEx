@@ -47,43 +47,51 @@ class Profile(abc_profile.ABCProfile):
 
         self.ppm_to_rads = self.h_larmor_frq * RATIO_N * TWO_PI
 
-        self.calc_profile = caching.lru_cache(maxsize=5)(self.calc_profile)
+        self.calculate_profile = caching.lru_cache(maxsize=5)(self.calculate_profile)
         self.plot_data = plot_data
 
         self.assignment = parsing.parse_assignment(self.resonance_id)
         self.nucleus_name = parsing.assignment_name(self.assignment[:1])
 
+        temperature_str = str(self.temperature).replace('.', '_p_')
+        h_larmor_frq_str = str(self.h_larmor_frq).replace('.', '_p_')
+
         self.map_names = {
             'pb': '__'.join([
                 'pb',
-                str(self.temperature),
+                temperature_str,
             ]),
             'kex': '__'.join([
                 'kex',
-                str(self.temperature),
+                temperature_str,
             ]),
             'cs': '__'.join([
                 'cs',
                 self.nucleus_name,
-                str(self.temperature),
+                temperature_str,
+            ]),
+            'dw': '__'.join([
+                'dw',
+                self.nucleus_name,
+                temperature_str,
             ]),
             'r_nxy': '__'.join([
                 'r_nxy',
                 self.nucleus_name,
-                str(self.h_larmor_frq),
-                str(self.temperature),
+                h_larmor_frq_str,
+                temperature_str,
             ]),
             'dr_nxy': '__'.join([
                 'dr_nxy',
                 self.nucleus_name,
-                str(self.h_larmor_frq),
-                str(self.temperature),
+                h_larmor_frq_str,
+                temperature_str,
             ]),
             'r_nz': '__'.join([
                 'r_nz',
                 self.nucleus_name,
-                str(self.h_larmor_frq),
-                str(self.temperature),
+                h_larmor_frq_str,
+                temperature_str,
             ])
         }
 
@@ -96,7 +104,8 @@ class Profile(abc_profile.ABCProfile):
             (self.map_names['pb'], 0.05, True, 0.0, 1.0, None),
             (self.map_names['kex'], 100.0, True, 0.0, None, None),
             (self.map_names['cs'], 0.0, False, None, None, None),
-            (self.map_names['r_nxy'], 10.0, True, 0.0, 1.0, None),
+            (self.map_names['dw'], 0.0, True, None, None, None),
+            (self.map_names['r_nxy'], 10.0, True, 0.0, None, None),
             (self.map_names['dr_nxy'], 0.0, True, None, None, None),
             (self.map_names['r_nz'], 1.0, True, 0.0, None, None),
         )
@@ -177,7 +186,7 @@ class Profile(abc_profile.ABCProfile):
                 vri = inv(vr)
 
                 sl1 = [2, 5]
-                sl2 = [i for i, w in enumerate(s.imag) if abs(w) < 1.0e-6]
+                sl2 = [i for i, w in enumerate(s.imag) if abs(w) < w1]
                 sl3 = [2]
 
                 vri = vri[sp.ix_(sl2, sl1)].real
@@ -190,22 +199,6 @@ class Profile(abc_profile.ABCProfile):
 
         return sp.asarray(magz_a_list)
 
-    def back_calculate(self, parameters=None, scaling=True):
-
-        kwargs = {
-            short_name: parameters[long_name].value
-            for short_name, long_name in self.map_names.items()
-        }
-
-        values = self.calc_profile(**kwargs)
-
-        if scaling:
-            values *= self.calculate_scale(values)
-
-        self.cal = values
-
-        return values
-
     def calculate_scale(self, cal):
 
         scale = (
@@ -213,16 +206,34 @@ class Profile(abc_profile.ABCProfile):
             sum((cal / self.err) ** 2)
         )
 
-        self.scale = scale
-
         return scale
 
-    def calculate_residuals(self, parameters=None):
+    def back_calculate(self, params=None, b1_offsets=None):
+
+        kwargs = {
+            short_name: params[long_name].value
+            for short_name, long_name in self.map_names.items()
+        }
+
+        values = self.calculate_profile(**kwargs)
+        scale = self.calculate_scale(values)
+
+        self.cal = values * scale
+
+        if b1_offsets is not None:
+            b1_orig = self.b1_offsets[:]
+            self.b1_offsets = b1_offsets[:]
+            values = self.calculate_profile.__wrapped__(**kwargs)
+            self.b1_offsets = b1_orig
+
+        return values * scale
+
+    def calculate_residuals(self, params=None):
         """Calculates the residual between the experimental and
         back-calculated values.
         """
 
-        values = self.back_calculate(parameters)
+        values = self.back_calculate(params)
 
         return (self.val - values) / self.err
 
@@ -264,7 +275,7 @@ class Profile(abc_profile.ABCProfile):
             )
 
             if cal is not None:
-                line += "{:15.8e}".format(cal * self.scale)
+                line += "{:15.8e}".format(cal)
 
             output.append(line)
 

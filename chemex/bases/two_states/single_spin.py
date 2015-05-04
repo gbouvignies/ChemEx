@@ -36,7 +36,7 @@ KAB = sp.kron([[-1.0, 0.0],
                [+1.0, 0.0]], sp.eye(3))
 
 KBA = sp.kron([[0.0, +1.0],
-                  [0.0, -1.0]], sp.eye(3))
+               [0.0, -1.0]], sp.eye(3))
 
 # B1 field along x
 W1X = sp.kron(sp.eye(2), [[+0.0, +0.0, +0.0],

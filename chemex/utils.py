@@ -17,6 +17,9 @@ def make_dir(path=None):
 def read_cfg_file(filename):
     """Parse config files with ConfigParser"""
 
+    if filename is None:
+        filename = ''
+
     # Parse the config file
     config = ConfigParser.SafeConfigParser()
 

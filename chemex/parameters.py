@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import os.path
 
 import lmfit as lf
@@ -23,19 +25,16 @@ def create_params(data):
 
 
 def set_params_from_config_file(params, config_filename):
-    """
-    Read the file containing the initial guess for the fitting parameters.
-    """
+    """Read the file containing the initial guess for the fitting parameters."""
 
     print("\n[{:s}]".format(config_filename))
 
-    # Parse the config file
     config = utils.read_cfg_file(config_filename)
 
     for section in config.sections():
 
         if section in ['default', 'global']:
-            prefix = ''
+            prefix = None
         else:
             prefix = section
 
@@ -60,10 +59,11 @@ def set_params_from_config_file(params, config_filename):
 
                 value = value.split()[0]
 
-                full_key = ','.join([prefix, key])
-                set_params(params, full_key, value)
+                if prefix is not None:
+                    key = ','.join([prefix, key])
 
-    return params
+                set_params(params, key, value)
+
 
 
 def set_param_values_from_file(filename, parameters, prefix=None):
@@ -88,7 +88,7 @@ def set_param_values_from_file(filename, parameters, prefix=None):
 
     # Hack to solve the problem of 0d-array when 'filename' is a single line
     # file
-    if data.ndim <= 2:
+    if data.ndim < 1:
         data = data.reshape(1, -1)
 
     for line in data:
@@ -132,11 +132,11 @@ def set_param_status(params, items):
 
 
 def set_params(parameters, key, value=None, vary=None):
-    key_split = set([_.strip().lower() for _ in key.split(',')])
+    key_split = set([_.lower() for _ in key.split(',')])
 
     for name in parameters:
 
-        name_split = set([_.strip().lower() for _ in name.split('__')])
+        name_split = set([_.lower().replace('_p_', '.') for _ in name.split('__')])
 
         if key_split.issubset(name_split):
 

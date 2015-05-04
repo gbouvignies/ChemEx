@@ -12,9 +12,9 @@ def write_dat(data, output_dir='./'):
 
     datasets = dict()
 
-    for data_point in data:
-        experiment_name = data_point.par['experiment_name']
-        datasets.setdefault(experiment_name, list()).append(data_point)
+    for profile in data:
+        experiment_name = profile.experiment_name
+        datasets.setdefault(experiment_name, list()).append(profile)
 
     for experiment_name, data in datasets.items():
 
@@ -25,11 +25,11 @@ def write_dat(data, output_dir='./'):
 
         with open(filename, 'w') as f:
 
-            for data_point in data:
-                f.write(''.join([str(data_point), '\n']))
+            for profile in data:
+                f.write(profile.print_profile())
 
 
-def write_par(par, par_err, par_indexes, par_fixed, output_dir='./'):
+def write_par(params, output_dir='./'):
     """Write fitted parameters int a file"""
 
     from ConfigParser import SafeConfigParser, DuplicateSectionError
@@ -38,24 +38,18 @@ def write_par(par, par_err, par_indexes, par_fixed, output_dir='./'):
 
     print("  * {}".format(filename))
 
-    par_names = set(par_indexes) | set(par_fixed)
-
     par_name_global = set(['KEX', 'KEX_AB', 'KEX_BC', 'KEX_AC', 'PB', 'PC'])
 
     par_dict = {}
 
-    for name in par_names:
+    for name in params:
 
-        if name in par_indexes:
+        val = params[name].value
+        err = params[name].stderr
 
-            index = par_indexes[name]
-            val = par[index]
-            err = par_err[index]
+        if params[name].vary and err is not None:
             par_dict[name] = '{: .5e} {: .5e}'.format(val, err)
-
         else:
-
-            val = par_fixed[name]
             par_dict[name] = '{: .5e} fixed'.format(val)
 
     cfg = SafeConfigParser()
@@ -63,7 +57,7 @@ def write_par(par, par_err, par_indexes, par_fixed, output_dir='./'):
 
     for name, val in sorted(par_dict.items()):
 
-        name_list = list(name)
+        name_list = name.replace('_p_', '.').split('__')
 
         if name_list[0].upper() in par_name_global:
             name_str = ', '.join([str(_).upper() for _ in name_list])
@@ -84,17 +78,20 @@ def write_par(par, par_err, par_indexes, par_fixed, output_dir='./'):
     with open(filename, 'w') as f:
         cfg.write(f)
 
-def write_chi2(par, par_indexes, par_fixed, data, output_dir='./'):
+
+def write_chi2(params, data, output_dir='./'):
     """
     Write reduced chi2
     """
 
-    data_nb = len(data)
-    par_nb = len(par)
+    data_nb = sum(len(profile.val) for profile in data)
+    par_nb = len(params)
 
-    residuals = sc.asarray(
-        [data_point.calc_residual(par, par_indexes, par_fixed)
-         for data_point in data])
+    residuals = sc.asarray([
+        residual
+        for profile in data
+        for residual in profile.calculate_residuals(params)
+    ])
 
     _ks_value, ks_p_value = st.kstest(residuals, 'norm')
 
@@ -121,7 +118,7 @@ def write_chi2(par, par_indexes, par_fixed, data, output_dir='./'):
         )
 
 
-def dump_parameters(par, par_indexes, par_fixed, data):
+def dump_parameters(params, data):
     """ The program has failed. Dump parameters to chemex_dump """
 
     i = 0
@@ -135,11 +132,12 @@ def dump_parameters(par, par_indexes, par_fixed, data):
         exit("\nOSError: Cannot create the dump. Ending now.\n")
 
     sys.stderr.write(
-        "\n - Writing current state to {:s}. Please wait ...".format(dump))
+        "\n - Writing current state to {:s}. Please wait ...\n".format(dump))
+
     try:
-        write_par(par, par, par_indexes, par_fixed, output_dir=dump)
+        write_par(params, output_dir=dump)
         write_dat(data, output_dir=dump)
-        plotting.plot_data(data, par, par_indexes, par_fixed, output_dir=dump)
+        plotting.plot_data(data, params, output_dir=dump)
 
     except (TypeError, ValueError):
         sys.stderr.write(

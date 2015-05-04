@@ -98,8 +98,7 @@ def read_data(args):
     return data
 
 
-def write_results(par, par_err, par_indexes, par_fixed, data, method,
-                  output_dir):
+def write_results(params, data, method, output_dir):
     """Writes the the chi2 of the fit, fitted parameters and the
     back-calculated points"""
 
@@ -110,17 +109,15 @@ def write_results(par, par_err, par_indexes, par_fixed, data, method,
     if method:
         shutil.copyfile(method, os.path.join(output_dir, 'fitting-method.cfg'))
 
-    writing.write_chi2(par, par_indexes, par_fixed, data,
-                       output_dir=output_dir)
-    writing.write_par(par, par_err, par_indexes, par_fixed,
-                      output_dir=output_dir)
+    writing.write_chi2(params, data, output_dir=output_dir)
+    writing.write_par(params, output_dir=output_dir)
     writing.write_dat(data, output_dir=output_dir)
 
 
-def plot_results(par, par_indexes, par_fixed, data, output_dir):
+def plot_results(params, data, output_dir):
     """Plots the the experimental and fitted points"""
 
-    from chemex import plotting
+    from chemex.experiments import plotting
 
     utils.header1("Plotting Data")
 
@@ -130,24 +127,18 @@ def plot_results(par, par_indexes, par_fixed, data, output_dir):
     utils.make_dir(output_dir_plot)
 
     try:
-        plotting.plot_data(data, par, par_indexes, par_fixed,
-                           output_dir=output_dir_plot)
+        plotting.plot_data(data, params, output_dir=output_dir_plot)
     except KeyboardInterrupt:
         print(" - Plotting cancelled")
 
 
-def fit_write_plot(args, par, par_indexes, par_fixed, data, output_dir):
-    # Fit the data to the model
-    par_fit, par_err, par_indexes, par_fixed = \
-        fitting.run_fit(args.method, par, par_indexes, par_fixed, data)
+def fit_write_plot(args, params, data, output_dir):
+    params = fitting.run_fit(args.method, params, data)
 
     utils.make_dir(output_dir)
 
     write_results(
-        par_fit,
-        par_err,
-        par_indexes,
-        par_fixed,
+        params,
         data,
         args.method,
         output_dir
@@ -155,9 +146,9 @@ def fit_write_plot(args, par, par_indexes, par_fixed, data, output_dir):
 
     # Plot results
     if not args.noplot:
-        plot_results(par_fit, par_indexes, par_fixed, data, output_dir)
+        plot_results(params, data, output_dir)
 
-    return par_fit, par_err, par_indexes, par_fixed
+    return params
 
 
 def main():
@@ -178,8 +169,8 @@ def main():
 
         # Create the lists of both fitting and fixed parameters
         utils.header1("Reading Default Parameters")
-        par, par_indexes, par_fixed, data = \
-            parameters.create_parameters_from_data(args.parameters, data)
+        params = parameters.create_params(data)
+        parameters.set_params_from_config_file(params, args.parameters)
 
         # Custom output directory
         output_dir = args.out_dir if args.out_dir else './output'
@@ -188,12 +179,9 @@ def main():
                 output_dir = os.path.join(output_dir, args.res_incl[0].upper())
 
         if not args.bs:
-            par, par_err, par_indexes, par_fixed = \
-                fit_write_plot(
+            params = fit_write_plot(
                     args,
-                    par,
-                    par_indexes,
-                    par_fixed,
+                params,
                     data,
                     output_dir
                 )
@@ -221,9 +209,7 @@ def main():
 
                 fit_write_plot(
                     args,
-                    par,
-                    par_indexes,
-                    par_fixed,
+                    params,
                     data_index,
                     output_dir_
                 )

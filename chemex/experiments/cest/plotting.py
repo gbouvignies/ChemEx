@@ -9,14 +9,17 @@ from matplotlib.backends.backend_pdf import PdfPages
 from chemex.parsing import parse_assignment
 
 
+# colors
 dark_gray = '0.13'
 red500 = '#F44336'
 red200 = '#EF9A9A'
 
+TWO_PI = 2.0 * sp.pi
+
 
 def sigma_estimator(x):
-    """ Estimates standard deviation using median to exclude outliers. Up to
-    50% can be bad """
+    """Estimates standard deviation using median to exclude outliers. Up to
+    50% can be bad."""
 
     return sp.median([sp.median(abs(xi - sp.asarray(x))) for xi in x]) * 1.1926
 
@@ -36,67 +39,35 @@ def group_data(dataset):
 
     data_grouped = dict()
 
-    for data_pt in dataset:
-        id_ = data_pt.par['resonance_id']
+    for profile in dataset:
+        id_ = profile.resonance_id
 
         assignment = parse_assignment(id_)
         index = int(assignment[0][0])
 
-        data_grouped.setdefault((index, id_), []).append(data_pt)
+        data_grouped[(index, id_)] = profile
 
     return data_grouped
 
 
-def compute_profiles(data_grouped, par, par_names, par_fixed):
+def compute_profiles(data_grouped, params):
     """Creates the arrays that will be used to plot one profile"""
 
     profiles = {}
 
     for (index, resonance_id), profile in data_grouped.items():
+        mask = profile.b1_offsets > -10000.0
 
-        profile_exp = []
-        b1_offset_min = +1e16
-        b1_offset_max = -1e16
+        b1_ppm_exp = profile.b1_offsets_to_ppm()[mask]
+        mag_cal = profile.back_calculate(params)[mask]
+        mag_exp = profile.val[mask]
+        mag_err = profile.err[mask]
 
-        for data_pt in profile:
+        b1_offsets_min, b1_offsets_max = set_lim(profile.b1_offsets[mask], 0.02)
+        b1_offsets = sp.linspace(b1_offsets_min, b1_offsets_max, 500)
 
-            b1_offset = data_pt.par['b1_offset']
-            ppm_to_rads = data_pt.par['ppm_to_rads']
-            carrier_ppm = data_pt.par['carrier']
-
-            if abs(b1_offset) < 1e4:
-                b1_ppm = (2.0 * sp.pi * b1_offset) / ppm_to_rads + carrier_ppm
-
-                mag_cal = data_pt.cal
-                mag_exp = data_pt.val
-                mag_err = data_pt.err
-
-                profile_exp.append([b1_ppm, mag_cal, mag_exp, mag_err])
-
-                b1_offset_min = min(b1_offset_min, b1_offset)
-                b1_offset_max = max(b1_offset_max, b1_offset)
-
-        b1_ppm_exp, mag_cal, mag_exp, mag_err = zip(*sorted(profile_exp))
-
-        profile_cal = []
-
-        b1_offset_min, b1_offset_max = set_lim(
-            [b1_offset_min, b1_offset_max], 0.02
-        )
-
-        data_pt = profile[0]
-
-        for b1_offset in sp.linspace(b1_offset_min, b1_offset_max, 500):
-            ppm_to_rads = data_pt.par['ppm_to_rads']
-            carrier_ppm = data_pt.par['carrier']
-            b1_ppm = (2.0 * sp.pi * b1_offset) / ppm_to_rads + carrier_ppm
-
-            data_pt.update_b1_offset(b1_offset)
-            data_pt.calc_val(par, par_names, par_fixed)
-
-            profile_cal.append([b1_ppm, data_pt.cal])
-
-        b1_ppm_fit, mag_fit = zip(*sorted(profile_cal))
+        b1_ppm_fit = profile.b1_offsets_to_ppm(b1_offsets)
+        mag_fit = profile.back_calculate(params, b1_offsets)
 
         profiles.setdefault((index, resonance_id), []).append(
             [b1_ppm_exp, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit]
@@ -114,13 +85,13 @@ def write_profile(resonance_id, b1_ppm_fit, mag_fit, file_txt):
         )
 
 
-def plot_data(data, par, par_names, par_fixed, output_dir='./'):
+def plot_data(data, params, output_dir='./'):
     """Plot cest profiles and write a pdf file"""
 
     datasets = dict()
 
     for data_point in data:
-        experiment_name = data_point.par['experiment_name']
+        experiment_name = data_point.experiment_name
         datasets.setdefault(experiment_name, []).append(data_point)
 
     for experiment_name, dataset in datasets.items():
@@ -138,21 +109,17 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
         data_grouped = group_data(dataset)
 
-        profiles = compute_profiles(
-            data_grouped, par, par_names, par_fixed
-        )
+        profiles = compute_profiles(data_grouped, params)
 
         with PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt:
 
             for (_index, resonance_id), profile in sorted(profiles.items()):
-                b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit = \
-                profile[0]
+                b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit = profile[0]
 
                 write_profile(resonance_id, b1_ppm_fit, mag_fit, file_txt)
 
                 ###### Matplotlib ######
 
-                # fig = plt.figure(1)
                 fig = plt.figure(1)
 
                 gs = gsp.GridSpec(2, 1, height_ratios=[1, 4])
@@ -165,10 +132,11 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
                 ########################
 
-                ax2.plot(b1_ppm_fit,
-                         mag_fit,
-                         linestyle='-',
-                         color=red200,
+                ax2.plot(
+                    b1_ppm_fit,
+                    mag_fit,
+                    linestyle='-',
+                    color=red200,
                 )
 
                 ax2.plot(
@@ -224,6 +192,7 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
                     mag_err,
                     fmt='o',
                     color=red500,
+                    zorder=100,
                 )
 
                 rmin, rmax = set_lim(deltas, 0.1)

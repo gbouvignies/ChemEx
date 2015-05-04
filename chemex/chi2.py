@@ -1,8 +1,6 @@
 import sys
 
-import scipy as sc
-
-from chemex import writing
+import scipy as sp
 
 
 def make_calc_residuals(verbose=True, threshold=1e-3):
@@ -10,19 +8,17 @@ def make_calc_residuals(verbose=True, threshold=1e-3):
         """Calculate the residuals for all values knowing the parameters par"""
 
         try:
-            residuals = [
-                a_data_point.calc_residual(params)
-                for a_data_point in data
-            ]
-
+            residuals = sp.array([
+                residual
+                for profile in data
+                for residual in profile.calculate_residuals(params)
+            ])
         except KeyboardInterrupt:
-            sys.stderr.write("\n -- Keyboard Interrupt: calculation stopped")
-            writing.dump_parameters(params, data)
-            sys.exit()
+            raise
 
         if verbose:
 
-            chi2 = sum(sc.asarray(residuals) ** 2)
+            chi2 = sum(residuals ** 2)
 
             if (calc_residuals.old_chi2 - chi2) / calc_residuals.old_chi2 > threshold:
                 sys.stdout.write(
@@ -44,14 +40,16 @@ def calc_chi2(params, data):
     Calculate the residuals for all values knowing the parameters par
     """
 
-    chi2 = sum(data_point.calc_residual(params) ** 2
-               for data_point in data)
+    chi2 = sum(
+        point
+        for profile in data
+        for point in profile.calculate_residuals(params) ** 2
+    )
 
     return chi2
 
 
 def calc_reduced_chi2(params, data):
-    data_nb = len(data)
-    par_nb = len(params)
-
+    data_nb = sum(len(profile.val) for profile in data)
+    par_nb = len([param for param in params.values() if param.vary])
     return calc_chi2(params, data) / (data_nb - par_nb)

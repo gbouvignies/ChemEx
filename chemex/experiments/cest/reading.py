@@ -46,7 +46,7 @@ def read_data(cfg, working_dir, global_parameters, res_incl=None,
     # data_points = adjust_min_int_uncertainty(data_points)
 
     # Normalize intensities
-    data_points = norm_int(data_points)
+    # data_points = norm_int(data_points)
 
     return data_points
 
@@ -80,9 +80,9 @@ def name_experiment(global_parameters=None):
 def read_a_cest_profile(filename, parameters):
     """Reads in the fuda file and spit out the intensities"""
 
-    data = sp.loadtxt(filename, dtype=[('b1_offset', '<f8'),
-                                       ('intensity', '<f8'),
-                                       ('intensity_err', '<f8')])
+    data = sp.loadtxt(filename, dtype=[('b1_offsets', '<f8'),
+                                       ('intensities', '<f8'),
+                                       ('intensities_err', '<f8')])
 
     uncertainty = estimate_uncertainty(data)
 
@@ -103,17 +103,16 @@ def read_a_cest_profile(filename, parameters):
     parameters['intensity_ref'] = intensity_ref
     parameters['profile_id'] = filename
 
-    for b1_offset, intensity_val, intensity_err in data:
-        parameters['b1_offset'] = b1_offset
+    parameters['b1_offsets'] = data['b1_offsets']
+    parameters['reference'] = data['b1_offsets'] <= -10000.0
 
-        # Used to keep reference points out of the bootstrapping
-        parameters['reference'] = abs(b1_offset) >= 10000.0
-
-        intensity_err = uncertainty
-
-        profiles.append(
-            profile.Profile(intensity_val, intensity_err, parameters)
+    profiles.append(
+        profile.Profile(
+            data['intensities'] / intensity_ref,
+            data['intensities_err'] / abs(intensity_ref),
+            parameters
         )
+    )
 
     return profiles
 
