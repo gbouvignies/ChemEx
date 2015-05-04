@@ -86,11 +86,11 @@ def read_a_cest_profile(filename, parameters):
 
     uncertainty = estimate_uncertainty(data)
 
-    data_points = []
+    profiles = []
 
     exp_type = parameters['experiment_type'].replace('_cest', '')
 
-    data_point = importlib.import_module(
+    profile = importlib.import_module(
         '.'.join(['chemex.experiments.cest', exp_type, 'profile'])
     )
 
@@ -111,11 +111,11 @@ def read_a_cest_profile(filename, parameters):
 
         intensity_err = uncertainty
 
-        data_points.append(
-            data_point.DataPoint(intensity_val, intensity_err, parameters)
+        profiles.append(
+            profile.Profile(intensity_val, intensity_err, parameters)
         )
 
-    return data_points
+    return profiles
 
 
 def estimate_uncertainty(data):

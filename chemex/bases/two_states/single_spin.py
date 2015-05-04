@@ -35,7 +35,7 @@ W, DW = (
 KAB = sp.kron([[-1.0, 0.0],
                [+1.0, 0.0]], sp.eye(3))
 
-KBA = sp.sp.kron([[0.0, +1.0],
+KBA = sp.kron([[0.0, +1.0],
                   [0.0, -1.0]], sp.eye(3))
 
 # B1 field along x
