@@ -1,10 +1,11 @@
+import importlib
 import argparse
 import pkgutil
 import re
 import sys
 
-import chemex.experiments
-import chemex.version
+from chemex import experiments as exp
+from chemex import version
 
 
 class MyParser(argparse.ArgumentParser):
@@ -25,7 +26,7 @@ def arg_parse():
     parser = MyParser(
         description=description,
         prog='chemex',
-        version='ChemEx version {}'.format(chemex.version.__version__)
+        version='ChemEx version {}'.format(version.__version__)
     )
 
     subparsers = parser.add_subparsers(dest='commands', )
@@ -38,18 +39,20 @@ def arg_parse():
     )
 
     subparsers_info = parser_info.add_subparsers(dest='types')
-    types = [name for _, name, ispkg in
-             pkgutil.iter_modules(chemex.experiments.__path__) if ispkg]
+    exp_types = [
+        name
+        for _, name, ispkg in pkgutil.iter_modules(exp.__path__)
+        if ispkg
+    ]
 
-    for type in types:
+    for exp_type in exp_types:
 
-        type_help = __import__(
-            '.'.join(['chemex', 'experiments', type, 'exp_help']),
-            fromlist=['exp_help']
+        type_help = importlib.import_module(
+            '.'.join(['chemex.experiments', exp_type, 'exp_help']),
         )
 
         parser_info_exp = subparsers_info.add_parser(
-            type,
+            exp_type,
             help=type_help.parse_line,
             description="Enter an experiment to obtain more info about it.",
         )
@@ -58,23 +61,23 @@ def arg_parse():
             dest='experiments',
         )
 
-        path_experiments = __import__(
-            '.'.join(['chemex', 'experiments', type]),
-            fromlist=[type],
+        path_experiments = importlib.import_module(
+            '.'.join(['chemex.experiments', exp_type]),
         ).__path__
 
-        experiments = [name for _, name, ispkg in
-                       pkgutil.iter_modules(path_experiments) if ispkg]
+        experiments = [
+            name
+            for _, name, ispkg in pkgutil.iter_modules(path_experiments)
+            if ispkg
+        ]
 
         for experiment in experiments:
-            experiment_help = __import__(
-                '.'.join(
-                    ['chemex', 'experiments', type, experiment, 'exp_help']),
-                fromlist=['exp_help']
+            experiment_help = importlib.import_module(
+                '.'.join(['chemex.experiments', exp_type, experiment, 'exp_help']),
             )
 
             subparsers_info_type.add_parser(
-                '_'.join([experiment, type]),
+                '_'.join([experiment, exp_type]),
                 help=experiment_help.parse_line,
                 add_help=False,
             )

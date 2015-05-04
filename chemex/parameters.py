@@ -57,6 +57,7 @@ def set_params_from_config_file(params, config_filename):
 
                 # Just take the first value in case the file contain a value and
                 # an uncertainty
+
                 value = value.split()[0]
 
                 full_key = ','.join([prefix, key])

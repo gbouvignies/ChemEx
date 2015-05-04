@@ -33,25 +33,19 @@ def run_fit(fit_filename, params, data):
         independent_clusters = find_independent_clusters(data, params)
         independent_clusters_no = len(independent_clusters)
 
-        if independent_clusters_no > 1:
+        for index, independent_cluster in enumerate(independent_clusters, 1):
 
-            for index, independent_cluster in enumerate(independent_clusters, 1):
+            print("\nChi2 / Reduced Chi2 (cluster {}/{}):".format(index, independent_clusters_no))
 
-                print('\nChi2 / Reduced Chi2 (cluster {}/{}):'.format(index, independent_clusters_no))
+            c_data, c_params = independent_cluster
 
-                c_data, c_params = independent_cluster
+            func = chi2.make_calc_residuals(verbose=True)
+            args = (c_data, )
 
-                func = chi2.make_calc_residuals(verbose=True)
-                args = (c_data, )
-
-                out = lf.minimize(func, c_params, args=args)
-
-                for name, param in c_params.items():
-                    params[name] = param
-
-        else:
-            print("\nChi2 / Reduced Chi2:")
             out = lf.minimize(func, c_params, args=args)
+
+            for name, param in c_params.items():
+                params[name] = param
 
         print("\nFinal Chi2        : {:.3e}".format(out.chisqr))
         print("Final Reduced Chi2: {:.3e}".format(out.redchi))

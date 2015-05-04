@@ -1,13 +1,6 @@
-"""
-Created on Aug 5, 2011
-
-@author: guillaume
-"""
-
-from math import pi
-
 # Define the gyromagnetic ratios in rad/s/T
 # IUPAC values: Harris et al, Concepts in Magn. Reson., (2002) 14, p326
+
 gamma = {
     'H': 26.7522128e+07,
     'N': -2.71261804e+07,
@@ -16,12 +9,9 @@ gamma = {
     'P': 10.8394e+07
 }
 
-# Define the gyromagnetic ratios in MHz/T
-gamma_in_MHz_T = dict(
-    (key, val / (2.0 * pi) * 1.0e-06) for key, val in gamma.items())
-
 # Define nuclide frequency ratios wrt proton
 # IUPAC values for bio NMR: Markley et al, Pure & Appl. Chem., (1998) 70, p117
+
 xi_ratio = {
     'H': 100.0000000e-02,
     'N': 10.1329118e-02,
