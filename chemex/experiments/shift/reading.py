@@ -8,14 +8,14 @@ import os
 
 import scipy as sc
 
-from chemex import utils
+from chemex import util
 
 
 def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None):
     """Read the shifts"""
 
     # Reads the path to get the shifts
-    exp_data_dir = utils.normalize_path(working_dir,
+    exp_data_dir = util.normalize_path(working_dir,
                                         cfg.get('path', 'exp_data_dir'))
 
     data_points = list()

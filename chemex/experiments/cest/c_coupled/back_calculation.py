@@ -7,7 +7,7 @@ Created on Aug 15, 2011
 import scipy as sc
 from scipy.linalg import expm
 
-from chemex.experiments.utils import calculate_shift_ex_2st
+from chemex.experiments.util import calculate_shift_ex_2st
 from chemex.caching import lru_cache
 from .liouvillian import compute_cz_eq, compute_base_liouvillians, compute_free_liouvillian, get_cz
 

@@ -1,70 +1,78 @@
 import importlib
 import os
 
-import scipy as sp
-import scipy.interpolate as ip
-import scipy.linalg as la
-import scipy.signal as si
-import scipy.stats as st
+import numpy as np
 
-from chemex import utils
+from chemex.experiments.cest import util
 
 
-def read_data(cfg, working_dir, global_parameters, res_incl=None,
-              res_excl=None):
+def read_profiles(path, profile_filenames, experiment_details, res_incl=None,
+                  res_excl=None):
+    experiment_type = experiment_details['type']
+    experiment_details['experiment_name'] = name_experiment(experiment_details)
 
-    # Reads the path to get the intensities
-    exp_data_dir = utils.normalize_path(
-        working_dir,
-        cfg.get('path', 'exp_data_dir')
+    experiment_module = importlib.import_module(
+        '.'.join(['chemex.experiments', experiment_type])
     )
 
-    data_points = list()
+    Profile = getattr(experiment_module, 'Profile')
 
-    experiment_name = name_experiment(global_parameters)
+    dtype = [
+        ('b1_offsets', '<f8'),
+        ('intensities', '<f8'),
+        ('intensities_err', '<f8')
+    ]
 
-    for resonance_id, filename in cfg.items('data'):
+    profiles = []
 
-        included = (
-            (res_incl is not None and resonance_id in res_incl) or
-            (res_excl is not None and resonance_id not in res_excl) or
-            (res_incl is None and res_excl is None)
-        )
+    for profile_name, filename in profile_filenames.items():
+        full_path = os.path.join(path, filename)
+        measurements = np.loadtxt(full_path, dtype=dtype)
+        profile = Profile(profile_name, measurements, experiment_details)
+        profiles.append(profile)
 
-        if not included:
-            continue
+    error = experiment_details.get('error', 'file')
 
-        parameters = dict(global_parameters)
+    if error == 'automatic':
+        error_value = np.median([
+                                    util.estimate_noise(profile.val[profile.b1_offsets >= -10000.0])
+                                    for profile in profiles
+                                    ])
 
-        parameters['experiment_name'] = experiment_name
-        parameters['resonance_id'] = resonance_id
+        for profile in profiles:
+            profile.err = np.zeros_like(profile.err) + error_value
 
-        abs_path_filename = os.path.join(exp_data_dir, filename)
-        data_points += read_a_cest_profile(abs_path_filename, parameters)
+    if res_incl is not None:
+        profiles = [
+            profile
+            for profile in profiles
+            if profile.profile_name in res_incl
+            ]
+    elif res_excl is not None:
+        profiles = [
+            profile
+            for profile in profiles
+            if profile.profile_name not in res_excl
+            ]
 
-    # Adjust the minimal uncertainty
-    # data_points = adjust_min_int_uncertainty(data_points)
+    ndata = sum(len(profile.val) for profile in profiles)
 
-    # Normalize intensities
-    # data_points = norm_int(data_points)
-
-    return data_points
+    return profiles, ndata
 
 
-def name_experiment(global_parameters=None):
-    if not global_parameters:
-        global_parameters = dict()
+def name_experiment(experiment_details=None):
+    if not experiment_details:
+        experiment_details = dict()
 
-    if 'experiment_name' in global_parameters:
-        name = global_parameters['experiment_name'].strip().replace(' ', '_')
+    if 'experiment_name' in experiment_details:
+        name = experiment_details['experiment_name'].strip().replace(' ', '_')
 
     else:
-        exp_type = global_parameters['experiment_type']
-        h_larmor_frq = float(global_parameters['h_larmor_frq'])
-        temperature = float(global_parameters['temperature'])
-        b1_frq = float(global_parameters['b1_frq'])
-
-        time_t1 = float(global_parameters['time_t1'])
+        exp_type = experiment_details['type'].replace('.', '_')
+        h_larmor_frq = float(experiment_details['h_larmor_frq'])
+        temperature = float(experiment_details['temperature'])
+        b1_frq = float(experiment_details['b1_frq'])
+        time_t1 = float(experiment_details['time_t1'])
 
         name = '{:s}_{:.0f}Hz_{:.0f}ms_{:.0f}MHz_{:.0f}C'.format(
             exp_type,
@@ -75,131 +83,4 @@ def name_experiment(global_parameters=None):
         ).lower()
 
     return name
-
-
-def read_a_cest_profile(filename, parameters):
-    """Reads in the fuda file and spit out the intensities"""
-
-    data = sp.loadtxt(filename, dtype=[('b1_offsets', '<f8'),
-                                       ('intensities', '<f8'),
-                                       ('intensities_err', '<f8')])
-
-    uncertainty = estimate_uncertainty(data)
-
-    profiles = []
-
-    exp_type = parameters['experiment_type'].replace('_cest', '')
-
-    profile = importlib.import_module(
-        '.'.join(['chemex.experiments.cest', exp_type, 'profile'])
-    )
-
-    intensity_ref = 1.0
-
-    for b1_offset, intensity_val, intensity_err in data:
-        if abs(b1_offset) >= 10000.0:
-            intensity_ref = intensity_val
-
-    parameters['intensity_ref'] = intensity_ref
-    parameters['profile_id'] = filename
-
-    parameters['b1_offsets'] = data['b1_offsets']
-    parameters['reference'] = data['b1_offsets'] <= -10000.0
-
-    profiles.append(
-        profile.Profile(
-            data['intensities'] / intensity_ref,
-            data['intensities_err'] / abs(intensity_ref),
-            parameters
-        )
-    )
-
-    return profiles
-
-
-def estimate_uncertainty(data):
-    """Estimates uncertainty using the baseline"""
-
-    data.sort()
-    int_list = sp.asarray([it for of, it, _er in data if abs(of) < 10000.0])
-
-    return estimate_noise(int_list)
-
-
-def adjust_min_int_uncertainty(data_int):
-    """Adjusts the uncertainty of data points to the maximum of
-    either the present uncertainty or the median of all the uncertainties
-    """
-
-    int_err = sp.median([data_point.err for data_point in data_int])
-
-    new_data_int = list()
-
-    for data_point in data_int:
-        data_point.err = int_err
-        new_data_int.append(data_point)
-
-    return new_data_int
-
-
-def norm_int(data_int):
-    """Normalize intensities relative to the intensity of the reference
-    plane"""
-
-    new_data_int = list()
-
-    for data_point in data_int:
-        data_point.val /= data_point.par['intensity_ref']
-        data_point.err /= data_point.par['intensity_ref']
-        data_point.err = abs(data_point.err)
-        new_data_int.append(data_point)
-
-    return new_data_int
-
-
-def estimate_noise(x):
-    n = len(x)
-
-    fda = [[1, -1],
-           [1, -2, 1],
-           [1, -3, 3, -1],
-           [1, -4, 6, -4, 1],
-           [1, -5, 10, -10, 5, -1],
-           [1, -6, 15, -20, 15, -6, 1]]
-    fda = [sp.array(a_fda) / la.norm(a_fda) for a_fda in fda]
-
-    perc = sp.array([0.05] + list(sp.arange(0.1, 0.40, 0.025)))
-    z = st.norm.ppf(1.0 - perc)
-
-    sigma_est = []
-
-    for fdai in fda:
-
-        noisedata = si.convolve(x, fdai, mode='valid')
-        ntrim = len(noisedata)
-
-        if ntrim >= 2:
-
-            noisedata.sort()
-
-            p = 0.5 + sp.arange(1, ntrim + 1)
-            p /= ntrim + 0.5
-
-            q = []
-
-            f = ip.interp1d(p, noisedata, 'linear')
-
-            for a_perc, a_z in zip(perc, z):
-                try:
-                    val = (f(1.0 - a_perc) - f(a_perc)) / (2.0 * a_z)
-                    q.append(val)
-                except ValueError:
-                    pass
-
-            sigma_est.append(sp.median(q))
-
-    noisevar = sp.median(sigma_est) ** 2
-    noisevar /= (1.0 + 15.0 * (n + 1.225) ** -1.245)
-
-    return sp.sqrt(noisevar)
 

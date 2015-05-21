@@ -21,6 +21,7 @@ install_requires = [
     'scipy',
     'matplotlib',
     'lmfit',
+    'backports.functools_lru_cache'
 ]
 
 entry_points = {

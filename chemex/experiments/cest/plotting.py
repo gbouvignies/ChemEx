@@ -1,12 +1,12 @@
 import os
 
-import scipy as sp
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gsp
 from matplotlib.ticker import MaxNLocator, NullFormatter
 from matplotlib.backends.backend_pdf import PdfPages
 
-from chemex.parsing import parse_assignment
+from chemex.experiments import sputil
 
 
 # colors
@@ -14,14 +14,14 @@ dark_gray = '0.13'
 red500 = '#F44336'
 red200 = '#EF9A9A'
 
-TWO_PI = 2.0 * sp.pi
+TWO_PI = 2.0 * np.pi
 
 
 def sigma_estimator(x):
     """Estimates standard deviation using median to exclude outliers. Up to
     50% can be bad."""
 
-    return sp.median([sp.median(abs(xi - sp.asarray(x))) for xi in x]) * 1.1926
+    return np.median([np.median(abs(xi - np.asarray(x))) for xi in x]) * 1.1926
 
 
 def set_lim(values, scale):
@@ -40,12 +40,12 @@ def group_data(dataset):
     data_grouped = dict()
 
     for profile in dataset:
-        id_ = profile.resonance_id
+        name = profile.profile_name
 
-        assignment = parse_assignment(id_)
-        index = int(assignment[0][0])
+        peak = sputil.Peak(name)
+        index = tuple(resonance.group.number for resonance in peak.resonances)
 
-        data_grouped[(index, id_)] = profile
+        data_grouped[(index, name)] = profile
 
     return data_grouped
 
@@ -55,32 +55,35 @@ def compute_profiles(data_grouped, params):
 
     profiles = {}
 
-    for (index, resonance_id), profile in data_grouped.items():
+    for (index, name), profile in data_grouped.items():
         mask = profile.b1_offsets > -10000.0
+        mask_ref = np.logical_not(mask)
+
+        val_ref = np.mean(profile.val[mask_ref])
 
         b1_ppm_exp = profile.b1_offsets_to_ppm()[mask]
-        mag_cal = profile.back_calculate(params)[mask]
-        mag_exp = profile.val[mask]
-        mag_err = profile.err[mask]
+        mag_cal = profile.calculate_profile(params)[mask] / val_ref
+        mag_exp = profile.val[mask] / val_ref
+        mag_err = profile.err[mask] / np.absolute(val_ref)
 
         b1_offsets_min, b1_offsets_max = set_lim(profile.b1_offsets[mask], 0.02)
-        b1_offsets = sp.linspace(b1_offsets_min, b1_offsets_max, 500)
+        b1_offsets = np.linspace(b1_offsets_min, b1_offsets_max, 500)
 
         b1_ppm_fit = profile.b1_offsets_to_ppm(b1_offsets)
-        mag_fit = profile.back_calculate(params, b1_offsets)
+        mag_fit = profile.calculate_profile(params, b1_offsets) / val_ref
 
-        profiles.setdefault((index, resonance_id), []).append(
+        profiles.setdefault((index, name), []).append(
             [b1_ppm_exp, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit]
         )
 
     return profiles
 
 
-def write_profile(resonance_id, b1_ppm_fit, mag_fit, file_txt):
+def write_profile(name, b1_ppm_fit, mag_fit, file_txt):
     for b1_ppm_cal, mag_cal in zip(b1_ppm_fit, mag_fit):
         file_txt.write(
             "{:10s} {:8.3f} {:8.3f}\n".format(
-                resonance_id.upper(), b1_ppm_cal, mag_cal
+                name.upper(), b1_ppm_cal, mag_cal
             )
         )
 
@@ -113,10 +116,10 @@ def plot_data(data, params, output_dir='./'):
 
         with PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt:
 
-            for (_index, resonance_id), profile in sorted(profiles.items()):
+            for (_index, name), profile in sorted(profiles.items()):
                 b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit = profile[0]
 
-                write_profile(resonance_id, b1_ppm_fit, mag_fit, file_txt)
+                write_profile(name, b1_ppm_fit, mag_fit, file_txt)
 
                 ###### Matplotlib ######
 
@@ -163,16 +166,16 @@ def plot_data(data, params, output_dir='./'):
 
                 ########################
 
-                deltas = sp.asarray(mag_exp) - sp.asarray(mag_cal)
-                max_val = max(sp.absolute(set_lim(deltas, 0.1))) + max(mag_err)
-                power10 = int(sp.log10(max_val))
+                deltas = np.asarray(mag_exp) - np.asarray(mag_cal)
+                max_val = max(np.absolute(set_lim(deltas, 0.1))) + max(mag_err)
+                power10 = int(np.log10(max_val))
                 deltas /= 10 ** power10
-                mag_err = sp.array(mag_err) / 10 ** power10
+                mag_err = np.array(mag_err) / 10 ** power10
                 sigma = sigma_estimator(deltas)
 
                 ax1.fill(
                     (xmin, xmin, xmax, xmax),
-                    1.0 * sigma * sp.asarray([-1.0, 1.0, 1.0, -1.0]),
+                    1.0 * sigma * np.asarray([-1.0, 1.0, 1.0, -1.0]),
                     fc='black',
                     alpha=0.12,
                     ec='none'
@@ -180,7 +183,7 @@ def plot_data(data, params, output_dir='./'):
 
                 ax1.fill(
                     (xmin, xmin, xmax, xmax),
-                    2.0 * sigma * sp.asarray([-1.0, 1.0, 1.0, -1.0]),
+                    2.0 * sigma * np.asarray([-1.0, 1.0, 1.0, -1.0]),
                     fc='black',
                     alpha=0.12,
                     ec='none'
@@ -209,7 +212,7 @@ def plot_data(data, params, output_dir='./'):
 
                 ax1.xaxis.set_major_formatter(NullFormatter())
 
-                ax1.set_title('{:s}'.format(resonance_id.upper()))
+                ax1.set_title('{:s}'.format(name.upper()))
                 ax1.set_ylabel(r''.join([
                     r'$\mathregular{Resid. \ x10^{',
                     r'{:d}'.format(power10),
@@ -218,7 +221,7 @@ def plot_data(data, params, output_dir='./'):
 
                 ########################
 
-                fig.tight_layout()
+                fig.set_tight_layout(True)
 
                 ########################
 

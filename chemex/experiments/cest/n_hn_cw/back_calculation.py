@@ -2,13 +2,12 @@ from scipy import linspace, pi
 from scipy.stats import norm
 
 import chemex.caching as caching
-from chemex.experiments.utils import calculate_shift_ex_2st
+from chemex.experiments.util import calculate_shift_ex_2st
 from chemex.constants import scalar_couplings
 from liouvillian import set_nz, \
     compute_liouvillian_free_precession, \
     make_pulse_nh, \
     get_nz
-
 
 TWO_PI = 2.0 * pi
 

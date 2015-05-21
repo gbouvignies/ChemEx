@@ -1,17 +1,17 @@
 from __future__ import print_function
 
+import os
 import os.path
 
 import lmfit as lf
 import scipy as sp
 
-from chemex import parsing
-from chemex import utils
+from chemex import util
+from chemex.experiments import sputil
 
 
 def create_params(data):
-    """
-    Creates the array of parameters that will be used for the fitting
+    """Creates the array of parameters that will be used for the fitting
     along with the dictionary that associate the name and the index of each
     parameter in the array.
     """
@@ -25,11 +25,12 @@ def create_params(data):
 
 
 def set_params_from_config_file(params, config_filename):
-    """Read the file containing the initial guess for the fitting parameters."""
+    """Read the file containing the initial guess for the fitting parameters.
+    """
 
     print("\n[{:s}]".format(config_filename))
 
-    config = utils.read_cfg_file(config_filename)
+    config = util.read_cfg_file(config_filename)
 
     for section in config.sections():
 
@@ -45,12 +46,14 @@ def set_params_from_config_file(params, config_filename):
                 filenames = value.split()
 
                 for filename in filenames:
-                    filename = utils.normalize_path(
+                    filename = util.normalize_path(
                         os.path.dirname(config_filename),
                         filename
                     )
 
-                    set_param_values_from_file(filename, params, prefix=prefix)
+                    set_param_values_from_file(
+                        filename, params, prefix=prefix
+                    )
 
             else:
 
@@ -63,7 +66,6 @@ def set_params_from_config_file(params, config_filename):
                     key = ','.join([prefix, key])
 
                 set_params(params, key, value)
-
 
 
 def set_param_values_from_file(filename, parameters, prefix=None):
@@ -97,19 +99,19 @@ def set_param_values_from_file(filename, parameters, prefix=None):
         if line[0] in ['Assignment']:
             continue
 
-        assignments = parsing.parse_assignment(line[0])
+        peak = sputil.Peak(line[0])
 
-        if len(assignments) == len(line) - 1:
+        if len(peak.resonances) == len(line) - 1:
 
-            for index, assignment in enumerate(assignments, 1):
-                subname = parsing.assignment_name([assignment])
+            for index, resonance in enumerate(peak.resonances, 1):
+                subname = resonance.name
                 full_name = ','.join([prefix, subname])
                 set_params(parameters, full_name, value=line[index])
 
         elif len(line) == 2:
-            subname = parsing.assignment_name(assignments)
+            subname = sputil.format_assignment(peak.resonances)
             full_name = ','.join([prefix, subname])
-            parameters.append((full_name, line[1]))
+            set_params(parameters, full_name, value=line[1])
 
         else:
 
@@ -145,6 +147,58 @@ def set_params(parameters, key, value=None, vary=None):
 
             if vary is not None:
                 parameters[name].set(vary=vary)
+
+
+def write_par(params, output_dir='./'):
+    """Write fitted parameters int a file"""
+
+    from ConfigParser import SafeConfigParser, DuplicateSectionError
+
+    filename = os.path.join(output_dir, 'parameters.fit')
+
+    print("  * {}".format(filename))
+
+    par_name_global = set(['KEX', 'KEX_AB', 'KEX_BC', 'KEX_AC', 'PB', 'PC'])
+
+    par_dict = {}
+
+    for name in params:
+
+        val = params[name].value
+        err = params[name].stderr
+
+        if not params[name].vary:
+            par_dict[name] = '{: .5e} fixed'.format(val)
+        elif err is not None:
+            par_dict[name] = '{: .5e} +/- {:.5e}'.format(val, err)
+        else:
+            par_dict[name] = '{: .5e}   ; Error not calculated'.format(val)
+
+    cfg = SafeConfigParser()
+    cfg.optionxform = str
+
+    for name, val in sorted(par_dict.items()):
+
+        name_list = name.replace('_p_', '.').split('__')
+
+        if name_list[0].upper() in par_name_global:
+            name_str = ', '.join([str(_).upper() for _ in name_list])
+            section = 'global'
+
+        else:
+            name_str = str(name_list.pop(1)).upper()
+            section = ', '.join([str(_).upper() for _ in name_list])
+
+        try:
+            cfg.add_section(section)
+
+        except DuplicateSectionError:
+            pass
+
+        cfg.set(section, name_str, val)
+
+    with open(filename, 'w') as f:
+        cfg.write(f)
 
 
 def main():

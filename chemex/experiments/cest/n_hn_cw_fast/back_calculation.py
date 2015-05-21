@@ -2,10 +2,9 @@ import scipy as sp
 import scipy.linalg as sl
 
 import chemex.caching as caching
-from chemex.experiments.utils import calculate_shift_ex_2st
+from chemex.experiments.util import calculate_shift_ex_2st
 from chemex.constants import scalar_couplings
 from .liouvillian import compute_liouvillian
-
 
 inv = sl.inv
 eig = sl.eig

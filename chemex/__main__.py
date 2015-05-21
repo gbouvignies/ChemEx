@@ -1,23 +1,20 @@
 #!/usr/bin/env python
 
-import os
-import shutil
-import random
 import copy
+import os
+import random
+import shutil
+import sys
 
-from chemex import fitting
-from chemex import writing
-from chemex import parsing
-from chemex import parameters
-from chemex import utils
-from chemex.experiments import reading as reading_exp
-from chemex.experiments import utils as utils_exp
+from chemex import fitting, parsing, parameters, util
+from chemex.experiments import datasets, util as utils_exp
+from chemex.parameters import write_par
 
 
 def print_logo():
     """Prints ChemEx logo"""
 
-    from .version import __version__
+    from chemex import version
 
     print(
         "\n"
@@ -33,7 +30,7 @@ def print_logo():
         "*   Version: {:<15s}                    *\n"
         "*                                               *\n"
         "* * * * * * * * * * * * * * * * * * * * * * * * *\n"
-        .format(__version__)
+            .format(version.__version__)
     )
 
 
@@ -78,22 +75,20 @@ def read_data(args):
     """Reads the files containing the experimental data point location and
     setup"""
 
-    utils.header1("Reading Experimental Data")
+    util.header1("Reading Experimental Data")
 
-    data = list()
+    data = datasets.DataSet()
 
     if args.experiments:
         print("\nFile(s):")
         for index, filename in enumerate(args.experiments, 1):
             print("  {}. {}".format(index, filename))
-            data.extend(
-                reading_exp.read_file_exp(
-                    filename, args.res_incl, args.res_excl
-                )
+            data.add_dataset_from_file(
+                filename, args.res_incl, args.res_excl
             )
 
     if not data:
-        exit("\nNo Data to fit!\n")
+        sys.exit("\nNo Data to fit!\n")
 
     return data
 
@@ -102,16 +97,16 @@ def write_results(params, data, method, output_dir):
     """Writes the the chi2 of the fit, fitted parameters and the
     back-calculated points"""
 
-    utils.header1("Writing Results")
+    util.header1("Writing Results")
 
     print("\nFile(s):")
 
     if method:
         shutil.copyfile(method, os.path.join(output_dir, 'fitting-method.cfg'))
 
-    writing.write_chi2(params, data, output_dir=output_dir)
-    writing.write_par(params, output_dir=output_dir)
-    writing.write_dat(data, output_dir=output_dir)
+    data.write_chi2_to(params, path=output_dir)
+    write_par(params, output_dir=output_dir)
+    data.write_to(output_dir=output_dir)
 
 
 def plot_results(params, data, output_dir):
@@ -119,12 +114,12 @@ def plot_results(params, data, output_dir):
 
     from chemex.experiments import plotting
 
-    utils.header1("Plotting Data")
+    util.header1("Plotting Data")
 
     print("\nFile(s):")
 
     output_dir_plot = os.path.join(output_dir, 'plots')
-    utils.make_dir(output_dir_plot)
+    util.make_dir(output_dir_plot)
 
     try:
         plotting.plot_data(data, params, output_dir=output_dir_plot)
@@ -135,7 +130,7 @@ def plot_results(params, data, output_dir):
 def fit_write_plot(args, params, data, output_dir):
     params = fitting.run_fit(args.method, params, data)
 
-    utils.make_dir(output_dir)
+    util.make_dir(output_dir)
 
     write_results(
         params,
@@ -168,7 +163,7 @@ def main():
         data = read_data(args)
 
         # Create the lists of both fitting and fixed parameters
-        utils.header1("Reading Default Parameters")
+        util.header1("Reading Default Parameters")
         params = parameters.create_params(data)
         parameters.set_params_from_config_file(params, args.parameters)
 
@@ -176,15 +171,17 @@ def main():
         output_dir = args.out_dir if args.out_dir else './output'
         if args.res_incl:
             if len(args.res_incl) == 1:
-                output_dir = os.path.join(output_dir, args.res_incl[0].upper())
+                output_dir = os.path.join(
+                    output_dir, args.res_incl.pop().upper()
+                )
 
         if not args.bs:
             params = fit_write_plot(
-                    args,
+                args,
                 params,
-                    data,
-                    output_dir
-                )
+                data,
+                output_dir
+            )
 
         if args.bs or args.mc:
 
@@ -194,7 +191,7 @@ def main():
                 n = int(args.mc)
 
             formatter_output_dir = ''.join(
-                ['{:0', utils.get_digit_number(n), 'd}']
+                ['{:0', util.get_digit_number(n), 'd}']
             )
 
             for index in range(1, n + 1):

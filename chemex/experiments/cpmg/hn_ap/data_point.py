@@ -9,7 +9,7 @@ from inspect import getargspec
 from scipy import pi
 
 from ....parsing import parse_assignment
-from ....experiments.abc_profile import BaseDataPoint
+from ....experiments.base_profile import BaseDataPoint
 from ....constants import xi_ratio
 from .back_calculation import make_calc_observable
 from ..plotting import plot_data

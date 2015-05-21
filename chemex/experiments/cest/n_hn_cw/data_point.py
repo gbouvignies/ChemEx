@@ -2,11 +2,10 @@ from inspect import getargspec
 from math import pi
 
 from chemex import parsing
-from chemex.experiments.abc_profile import BaseDataPoint
+from chemex.experiments.base_profile import BaseDataPoint
 from chemex.constants import xi_ratio
 from .back_calculation import make_calc_observable
 from ..plotting import plot_data
-
 
 TWO_PI = 2.0 * pi
 RATIO_N = xi_ratio['N']

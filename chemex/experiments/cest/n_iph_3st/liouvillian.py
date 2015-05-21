@@ -1,8 +1,8 @@
 from scipy import pi, zeros, linspace, asarray
 from scipy.stats import norm
 
-from chemex.bases.three_states.iph import R_IXY, DR_IXY_AB, DR_IXY_AC, R_IZ, \
-    CS, DW_AB, DW_AC, KAB, KBA, KAC, KCA, KBC, KCB, W1X
+from chemex.bases.three_states.single_spin import R_IXY, DR_IXY_AB, DR_IXY_AC, R_IZ, \
+    W, DW_AB, DW_AC, KAB, KBA, KAC, KCA, KBC, KCB, W1X
 
 
 def compute_base_liouvillians(b1_offset=0.0, b1_frq=0.0, b1_inh=0.0,
@@ -13,7 +13,7 @@ def compute_base_liouvillians(b1_offset=0.0, b1_frq=0.0, b1_inh=0.0,
     w1s = linspace(-2.0, 2.0, b1_inh_res) * w1_inh + w1
     weights = norm.pdf(w1s, w1, w1_inh)
 
-    liouvillians = [-w1_offset * CS + w1 * W1X for w1 in w1s]
+    liouvillians = [-w1_offset * W + w1 * W1X for w1 in w1s]
 
     return liouvillians, weights
 
@@ -81,7 +81,7 @@ def compute_free_liouvillian(pb=0.0, pc=0.0, kex_ab=0.0, kex_bc=0.0, kex_ac=0.0,
         DR_IXY_AB * dr_nxy_ab +
         DR_IXY_AC * dr_nxy_ac +
         R_IZ * r_nz +
-        CS * cs_offset +
+        W * cs_offset +
         DW_AB * dw_ab +
         DW_AC * dw_ac +
         KAB * kab +

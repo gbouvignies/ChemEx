@@ -1,7 +1,7 @@
 from scipy import pi
 
 from chemex.parsing import parse_assignment
-from chemex.experiments.abc_profile import BaseDataPoint
+from chemex.experiments.base_profile import BaseDataPoint
 from back_calculation import calc_observable
 from chemex.constants import xi_ratio
 from ..plotting import plot_data

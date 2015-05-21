@@ -9,7 +9,7 @@ from inspect import getargspec
 from scipy import pi
 
 from chemex.constants import xi_ratio
-from chemex.experiments.abc_profile import BaseDataPoint
+from chemex.experiments.base_profile import BaseDataPoint
 from chemex.parsing import parse_assignment
 from ..plotting import plot_data
 from .back_calculation import make_calc_observable

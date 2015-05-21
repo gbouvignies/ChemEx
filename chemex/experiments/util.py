@@ -1,13 +1,13 @@
 from __future__ import print_function
+
+import importlib
 import collections
 
 import numpy as np
-from scipy import array, pi
 
-from chemex import utils
+from chemex import util
 
-
-SIGN = array([1.0, -1.0])
+SIGN = np.array([1.0, -1.0])
 
 
 def calculate_shift_ex_2st(pb=0.0, kex=0.0, dw=0.0, r_ixy=0.0, dr_ixy=0.0):
@@ -55,14 +55,20 @@ def correct_intensities(magz_a=1.0, magz_b=0.0, pb=0.0, kex=0.0, dw=0.0,
         (kba + nu2 + k2ab) * magz_b
     ) / (nu1 - nu2)
 
-    magz_a_c, magz_b_c = (magz_b_c, magz_a_c) \
-        if abs(nu1.imag) > abs(nu2.imag) \
-        else (magz_a_c, magz_b_c)
+    if abs(nu1.imag) > abs(nu2.imag):
+        magz_a_c, magz_b_c = magz_b_c, magz_a_c
 
-    signa = 1.0 if abs(np.angle(magz_a_c)) <= 0.5 * pi else -1.0
-    signb = 1.0 if abs(np.angle(magz_b_c)) <= 0.5 * pi else -1.0
+    if abs(np.angle(magz_a_c)) <= 0.5 * np.pi:
+        magz_a_c = +abs(magz_a_c)
+    else:
+        magz_a_c = -abs(magz_a_c)
 
-    return signa * abs(magz_a_c), signb * abs(magz_b_c)
+    if abs(np.angle(magz_b_c)) <= 0.5 * np.pi:
+        magz_b_c = +abs(magz_b_c)
+    else:
+        magz_b_c = -abs(magz_b_c)
+
+    return magz_a_c, magz_b_c
 
 
 def calc_peak_intensity(pb=0.0, kex=0.0, dw=0.0, intensities=None):
@@ -125,7 +131,6 @@ def calc_multiplet(couplings=None, multiplet=None):
 
 
 def format_experiment_help(type_experiment, name_experiment):
-    import textwrap
 
     headline1 = "Experimental parameters"
     headline2 = "Fitted parameters (by default)"
@@ -134,48 +139,28 @@ def format_experiment_help(type_experiment, name_experiment):
     subtype_experiment = name_experiment.replace(
         ''.join(['_', type_experiment]), '')
 
-    exp_help = __import__(
-        '.'.join(['chemex', 'experiments', type_experiment, subtype_experiment,
-                  'exp_help']),
-        fromlist=['exp_help'],
+    module_exp = importlib.import_module(
+        '.'.join(['chemex.experiments', type_experiment, subtype_experiment])
     )
 
-    data_point = __import__(
-        '.'.join(['chemex', 'experiments', type_experiment, subtype_experiment,
-                  'data_point']),
-        fromlist=['data_point'],
-    )
+    title = module_exp.__doc__.split('\n')[0]
+    description = '\n'.join(module_exp.__doc__.split('\n')[1:]).strip('\n')
 
-    parse_line = exp_help.parse_line
-    description = textwrap.dedent(exp_help.description)
-    parameters = data_point.PAR_DICT
-
-    try:
-        reference = exp_help.reference
-    except StandardError:
-        reference = None
-
-    utils.header1(parse_line)
+    util.header1(title)
     print("")
     print(description)
     print("")
 
-    if reference:
-        print("*{journal:s} ({year:d}) v.{volume:d}, p.{pages:s}*"
-              .format(**reference))
-        print("")
+    util.header2(headline1)
+    for name in module_exp.attributes_exp:
+        print("  * {:s}".format(name))
 
-    utils.header2(headline1)
-    for p in parameters['exp']:
-        print("  * {:s}".format(p))
-    print("")
+    util.header2(headline2)
+    for name, settings in module_exp.params_exp.items():
+        if settings['vary']:
+            print("  * {:s}".format(name))
 
-    utils.header2(headline2)
-    for p in parameters['fit']:
-        print("  * {:s}".format(p))
-    print("")
-
-    utils.header2(headline3)
-    for p in parameters['fix']:
-        print("  * {:s}".format(p))
-    print("")
+    util.header2(headline3)
+    for name, settings in module_exp.params_exp.items():
+        if not settings['vary']:
+            print("  * {:s}".format(name))

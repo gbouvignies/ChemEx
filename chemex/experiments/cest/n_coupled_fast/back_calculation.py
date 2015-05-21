@@ -1,10 +1,9 @@
 import scipy as sc
 from scipy.linalg import eig, inv
 
-from chemex.experiments.utils import calculate_shift_ex_2st
+from chemex.experiments.util import calculate_shift_ex_2st
 from chemex.caching import lru_cache
 from .liouvillian import compute_liouvillian
-
 
 dot = sc.dot
 diag = sc.diag

@@ -3,10 +3,9 @@ from math import pi
 
 from ....parsing import parse_assignment
 from ....constants import xi_ratio
-from ...abc_profile import BaseDataPoint
+from ...base_profile import BaseDataPoint
 from ..plotting import plot_data
 from .back_calculation import make_calc_observable
-
 
 RATIO_N = xi_ratio['N']
 TWO_PI = 2.0 * pi

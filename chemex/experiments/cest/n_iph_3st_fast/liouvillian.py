@@ -1,4 +1,4 @@
-from ....bases.three_states.iph import R_IXY, DR_IXY_AB, DR_IXY_AC, R_IZ, CS, \
+from ....bases.three_states.single_spin import R_IXY, DR_IXY_AB, DR_IXY_AC, R_IZ, W, \
     DW_AB, DW_AC, KAB, KBA, KAC, KCA, KBC, KCB, W1X
 
 
@@ -65,7 +65,7 @@ def compute_liouvillian(pb=0.0, pc=0.0, kex_ab=0.0, kex_bc=0.0, kex_ac=0.0,
         DR_IXY_AB * dr_nxy_ab +
         DR_IXY_AC * dr_nxy_ac +
         R_IZ * r_nz +
-        CS * cs_offset +
+        W * cs_offset +
         DW_AB * dw_ab +
         DW_AC * dw_ac +
         w1 * W1X +

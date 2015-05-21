@@ -1,10 +1,9 @@
 import importlib
 import argparse
 import pkgutil
-import re
 import sys
 
-from chemex import experiments as exp
+from chemex import experiments
 from chemex import version
 
 
@@ -16,6 +15,7 @@ class MyParser(argparse.ArgumentParser):
 
 
 def arg_parse():
+
     description = (
         "ChemEx is an analysis program for chemical exchange detected by "
         "NMR. It is designed to take almost any kind of NMR data to aid the "
@@ -31,7 +31,6 @@ def arg_parse():
 
     subparsers = parser.add_subparsers(dest='commands', )
 
-    # Parser Info
     parser_info = subparsers.add_parser(
         "info",
         help="Shows classes of experiments that can be fit",
@@ -39,48 +38,48 @@ def arg_parse():
     )
 
     subparsers_info = parser_info.add_subparsers(dest='types')
+
     exp_types = [
         name
-        for _, name, ispkg in pkgutil.iter_modules(exp.__path__)
+        for _, name, ispkg in pkgutil.iter_modules(experiments.__path__)
         if ispkg
     ]
 
     for exp_type in exp_types:
 
-        type_help = importlib.import_module(
-            '.'.join(['chemex.experiments', exp_type, 'exp_help']),
-        )
+        package_name_type = '.'.join([experiments.__name__, exp_type])
 
-        parser_info_exp = subparsers_info.add_parser(
+        package_type = importlib.import_module(package_name_type)
+
+        description_type = package_type.__doc__.split('\n')[0]
+
+        parser_info_type = subparsers_info.add_parser(
             exp_type,
-            help=type_help.parse_line,
+            help=description_type,
             description="Enter an experiment to obtain more info about it.",
         )
 
-        subparsers_info_type = parser_info_exp.add_subparsers(
+        subparsers_info_type = parser_info_type.add_subparsers(
             dest='experiments',
         )
 
-        path_experiments = importlib.import_module(
-            '.'.join(['chemex.experiments', exp_type]),
-        ).__path__
-
-        experiments = [
+        exps = [
             name
-            for _, name, ispkg in pkgutil.iter_modules(path_experiments)
-            if ispkg
+            for _, name, ispkg in pkgutil.iter_modules(package_type.__path__)
         ]
 
-        for experiment in experiments:
-            experiment_help = importlib.import_module(
-                '.'.join(['chemex.experiments', exp_type, experiment, 'exp_help']),
-            )
+        for exp in exps:
 
-            subparsers_info_type.add_parser(
-                '_'.join([experiment, exp_type]),
-                help=experiment_help.parse_line,
-                add_help=False,
-            )
+            package_name_exp = '.'.join([package_name_type, exp])
+
+            package_exp = importlib.import_module(package_name_exp)
+
+            if hasattr(package_exp, 'Profile'):
+                subparsers_info_type.add_parser(
+                    exp,
+                    help=package_exp.__doc__.split('\n')[0],
+                    add_help=False,
+                )
 
     # Parser fit
     parser_fit = subparsers.add_parser(
@@ -172,81 +171,8 @@ def arg_parse():
 
     if args.commands == 'fit':
         if args.res_incl:
-            args.res_incl = [res.lower() for res in args.res_incl]
+            args.res_incl = set([res.lower() for res in args.res_incl])
         if args.res_excl:
-            args.res_excl = [res.lower() for res in args.res_excl]
+            args.res_excl = set([res.lower() for res in args.res_excl])
 
     return args
-
-
-# Functions to parse Sparky-like assignment
-# Functions have been adapted from Sparky source code
-
-def parse_assignment(assignment):
-    """
-    Parse assignment of form g1a1-g2a2 to get ((g1, a1), (g2, a2))
-    Or g1a1-a2 to get ((g1, a1), (g1, a2))
-    A '?' component is translated to ('', '')
-    """
-
-    res = assignment.lower().split('-')
-    assignment = []
-    last_group = None
-    for s in res:
-        ga = split_group_atom(s)
-        if ga is None:
-            if last_group:
-                ga = (last_group, s)
-            else:
-                return None
-        assignment.append((parse_group_name(ga[0]) + ga[1:]))
-        last_group = ga[0]
-
-    return tuple(assignment)
-
-
-def split_group_atom(group_atom):
-    """
-    Skip to first digit, then skip to first H|C|N to find start of atom name.
-    """
-
-    s = re.search('[0-9]', group_atom)
-    if s:
-        first_digit = s.start()
-        s = re.search('[hHcCnNqQmM]', group_atom[first_digit:])
-        if s:
-            hcnqm_offset = s.start()
-            d = first_digit + hcnqm_offset
-            return group_atom[:d], group_atom[d:]
-    if group_atom == '?':
-        return '', ''
-    return None
-
-
-def parse_group_name(g):
-    s = re.search('[0-9]+', g)
-    if s:
-        return int(s.group()), g[:s.start()]
-    return g, None
-
-
-# ----------------------------------------------------------------------------
-# If an assignment along an axis has the same group as the previous axis
-# then the group name is not shown.
-#
-def assignment_name(resonances):
-    assignment = ''
-    last_group = None
-    for resonance in resonances:
-        if resonance:
-            number, symbol, atom_name = resonance
-            group = ''.join([symbol, str(number)])
-            name = ''.join([group, atom_name])
-            if group == last_group:
-                assignment += atom_name + '-'
-            else:
-                assignment += name + '-'
-            last_group = group
-        else:
-            assignment += '?-'
-    return assignment[:-1]

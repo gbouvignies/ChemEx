@@ -1,6 +1,5 @@
 import matplotlib as mpl
 
-
 dark_gray = '0.13'
 
 base_context = {
@@ -27,7 +26,6 @@ base_context = {
     'ytick.major.pad': 7,
 }
 
-# Common parameters
 style_dict = {
     'text.color': dark_gray,
 
@@ -50,7 +48,6 @@ style_dict = {
     'axes.axisbelow': True,
     'axes.hold': True,
 
-
     'lines.solid_capstyle': 'round',
 
     'font.family': ['sans-serif'],
@@ -60,7 +57,6 @@ style_dict = {
 
 mpl.rcParams.update(base_context)
 mpl.rcParams.update(style_dict)
-mpl.use('Agg')
 
 
 def plot_data(data, params, output_dir='./'):

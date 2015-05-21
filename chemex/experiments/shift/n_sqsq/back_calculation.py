@@ -1,6 +1,6 @@
 
 from chemex.caching import lru_cache
-from chemex.experiments.utils import calculate_shift_ex_2st
+from chemex.experiments.util import calculate_shift_ex_2st
 
 
 @lru_cache()
