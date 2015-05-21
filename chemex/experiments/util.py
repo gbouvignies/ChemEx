@@ -7,7 +7,7 @@ import numpy as np
 
 from chemex import util
 
-SIGN = np.array([1.0, -1.0])
+sign = np.array([1.0, -1.0])
 
 
 def calculate_shift_ex_2st(pb=0.0, kex=0.0, dw=0.0, r_ixy=0.0, dr_ixy=0.0):
@@ -22,7 +22,7 @@ def calculate_shift_ex_2st(pb=0.0, kex=0.0, dw=0.0, r_ixy=0.0, dr_ixy=0.0):
     k2ex = k2ab + k2ba
     fac = ((k2ab - k2ba) ** 2 + 4.0 * kab * kba) ** 0.5
 
-    nu1, nu2 = (0.5 * (-k2ex + SIGN * fac)).imag
+    nu1, nu2 = (0.5 * (-k2ex + sign * fac)).imag
 
     if abs(nu1) > abs(nu2):
         nu1, nu2 = nu2, nu1
@@ -43,7 +43,7 @@ def correct_intensities(magz_a=1.0, magz_b=0.0, pb=0.0, kex=0.0, dw=0.0,
     k2ex = k2ab + k2ba
     fac = ((k2ab - k2ba) ** 2 + 4.0 * kab * kba) ** 0.5
 
-    nu1, nu2 = 0.5 * (-k2ex + SIGN * fac)
+    nu1, nu2 = 0.5 * (-k2ex + sign * fac)
 
     magz_a_c = +(
         (kab - nu2 - k2ab) * magz_a +
@@ -112,7 +112,7 @@ def calc_multiplet(couplings=None, multiplet=None):
         j = couplings.pop()
 
         multiplet_updated = [
-            frq + sign * j * pi
+            frq + sign * j * np.pi
             for frq in multiplet
             for sign in (1.0, -1.0)
         ]

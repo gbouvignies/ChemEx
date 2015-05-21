@@ -33,11 +33,10 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None,
 
     error = experiment_details.get('error', 'file')
 
-    if error == 'automatic':
-        error_value = np.median([
-                                    util.estimate_noise(profile.val[profile.b1_offsets >= -10000.0])
-                                    for profile in profiles
-                                    ])
+    if error == 'auto':
+        error_value = np.median(
+            [util.estimate_noise(profile.val[profile.b1_offsets >= -10000.0])
+             for profile in profiles])
 
         for profile in profiles:
             profile.err = np.zeros_like(profile.err) + error_value
@@ -83,4 +82,3 @@ def name_experiment(experiment_details=None):
         ).lower()
 
     return name
-

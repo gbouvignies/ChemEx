@@ -152,7 +152,7 @@ def set_params(parameters, key, value=None, vary=None):
 def write_par(params, output_dir='./'):
     """Write fitted parameters int a file"""
 
-    from ConfigParser import SafeConfigParser, DuplicateSectionError
+    from ConfigParser import SafeConfigParser
 
     filename = os.path.join(output_dir, 'parameters.fit')
 
@@ -162,40 +162,48 @@ def write_par(params, output_dir='./'):
 
     par_dict = {}
 
-    for name in params:
+    for name, param in params.items():
 
-        val = params[name].value
-        err = params[name].stderr
-
-        if not params[name].vary:
-            par_dict[name] = '{: .5e} fixed'.format(val)
-        elif err is not None:
-            par_dict[name] = '{: .5e} +/- {:.5e}'.format(val, err)
+        if not param.vary:
+            val_print = '{: .5e} fixed'.format(param.value)
+        elif param.stderr is not None:
+            val_print = '{: .5e} +/- {:.5e}'.format(param.value, param.stderr)
         else:
-            par_dict[name] = '{: .5e}   ; Error not calculated'.format(val)
-
-    cfg = SafeConfigParser()
-    cfg.optionxform = str
-
-    for name, val in sorted(par_dict.items()):
+            val_print = '{: .5e}   ; Error not calculated'.format(param.value)
 
         name_list = name.replace('_p_', '.').split('__')
 
         if name_list[0].upper() in par_name_global:
-            name_str = ', '.join([str(_).upper() for _ in name_list])
+
+            # This is a non-residue-specific parameter
+
+            name_print = ', '.join([str(_).upper() for _ in name_list])
             section = 'global'
 
         else:
-            name_str = str(name_list.pop(1)).upper()
+
+            # This is a residue-specific parameter. Resonance name is
+            # supposed to be second in the `name_list` list
+
+            name_print = sputil.Peak(name_list.pop(1))
             section = ', '.join([str(_).upper() for _ in name_list])
 
-        try:
-            cfg.add_section(section)
+        par_dict.setdefault(section, {})[name_print] = val_print
 
-        except DuplicateSectionError:
-            pass
+    cfg = SafeConfigParser()
+    cfg.optionxform = str
 
-        cfg.set(section, name_str, val)
+    section_global = par_dict.pop('global', None)
+
+    if section_global is not None:
+        cfg.add_section('global')
+        for name, val in sorted(section_global.items()):
+            cfg.set('global', name, val)
+
+    for section, name_vals in sorted(par_dict.items()):
+        cfg.add_section(section)
+        for name, val in sorted(name_vals.items()):
+            cfg.set(section, str(name), val)
 
     with open(filename, 'w') as f:
         cfg.write(f)

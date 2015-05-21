@@ -1,6 +1,7 @@
 import re
 
 nuclei_dict = {
+    'Q': '1H',
     'H': '1H',
     'N': '15N',
     'C': '13C',
@@ -11,8 +12,32 @@ class Peak(object):
     def __init__(self, assignment):
         self.assignment = assignment
         self.resonances = [
-            Resonance(name) for name in split_assignment(self.assignment)
-            ]
+            Resonance(name) for name in split_assignment(self.assignment)]
+
+    def __repr__(self):
+        return format_assignment(self.resonances).upper()
+
+    def __cmp__(self, other):
+
+        if isinstance(other, basestring):
+            other = Peak(other)
+
+        self_tuple = tuple(
+            (resonance.atom.name, resonance.group.number)
+            for resonance in self.resonances
+        )
+
+        other_tuple = tuple(
+            (resonance.atom.name, resonance.group.number)
+            for resonance in other.resonances
+        )
+
+        if self_tuple > other_tuple:
+            return 1
+        elif self_tuple < other_tuple:
+            return -1
+        else:
+            return 0
 
 
 class Resonance(object):
