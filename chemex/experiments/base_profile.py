@@ -17,7 +17,7 @@ class BaseProfile(object):
         pass
 
     @abc.abstractmethod
-    def make_default_parameters(self, parameters=None):
+    def create_default_parameters(self):
         pass
 
     @abc.abstractmethod
@@ -25,10 +25,13 @@ class BaseProfile(object):
         pass
 
 
-def check_par(parameters=None, name=None, func=None):
+def check_par(parameters=None, name=None, convert=None, default=None):
     """Sets experimental parameter and converts it to the right type."""
 
     value = None
+
+    if name not in parameters and default is not None:
+        parameters[name] = default
 
     try:
         value = parameters[name]
@@ -38,14 +41,13 @@ def check_par(parameters=None, name=None, func=None):
                 .format(name)
         )
 
-    if func is not None:
+    if convert is not None:
         try:
-            value = func(value)
+            value = convert(value)
         except ValueError:
             exit(
                 "Experimental parameter of wrong type detected. Please make"
-                " sure that {:s} is a {:s}".format(name, func)
+                " sure that {:s} is a {:s}".format(name, convert)
             )
 
     return value
-

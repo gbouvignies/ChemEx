@@ -1,3 +1,5 @@
+import collections
+
 import numpy as np
 from scipy import interpolate, linalg, signal, stats
 
@@ -50,3 +52,23 @@ def estimate_noise(x):
     noisevar /= (1.0 + 15.0 * (n + 1.225) ** -1.245)
 
     return np.sqrt(noisevar)
+
+
+def calc_multiplet(couplings=None, multiplet=None):
+    couplings = list(couplings)
+
+    if multiplet is None:
+        multiplet = [0.0]
+
+    if couplings:
+        j = couplings.pop()
+        multiplet_updated = [frq + sign * j * np.pi for frq in multiplet for sign in (1.0, -1.0)]
+
+        return calc_multiplet(couplings, multiplet_updated)
+
+    else:
+        counter = collections.Counter(multiplet)
+        nb_component = sum(counter.values())
+        multiplet = tuple((val, count / float(nb_component)) for val, count in sorted(counter.items()))
+
+        return multiplet

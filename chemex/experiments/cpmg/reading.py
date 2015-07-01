@@ -6,22 +6,14 @@ import numpy as np
 from chemex.experiments.cpmg import util
 
 
-def read_profiles(path, profile_filenames, experiment_details, res_incl=None,
-                  res_excl=None):
+def read_profiles(path, profile_filenames, experiment_details, res_incl=None, res_excl=None):
     experiment_type = experiment_details['type']
     experiment_details['experiment_name'] = name_experiment(experiment_details)
-
-    experiment_module = importlib.import_module(
-        '.'.join(['chemex.experiments', experiment_type])
-    )
+    experiment_module = importlib.import_module('.'.join(['chemex.experiments', experiment_type]))
 
     Profile = getattr(experiment_module, 'Profile')
 
-    dtype = [
-        ('ncycs', '<f8'),
-        ('intensities', '<f8'),
-        ('intensities_err', '<f8')
-    ]
+    dtype = [('ncycs', '<f8'), ('intensities', '<f8'), ('intensities_err', '<f8')]
 
     profiles = []
 
@@ -37,20 +29,18 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None,
         error_value = np.mean([util.estimate_noise(profile) for profile in profiles])
 
         for profile in profiles:
-            profile.err = np.zeros_like(profile.err) + error_value
+            profile.err[:] = error_value
 
     if res_incl is not None:
         profiles = [
             profile
             for profile in profiles
-            if profile.profile_name in res_incl
-            ]
+            if profile.profile_name in res_incl]
     elif res_excl is not None:
         profiles = [
             profile
             for profile in profiles
-            if profile.profile_name not in res_excl
-            ]
+            if profile.profile_name not in res_excl]
 
     ndata = sum(len(profile.val) for profile in profiles)
 

@@ -6,14 +6,10 @@ import numpy as np
 from chemex.experiments.cest import util
 
 
-def read_profiles(path, profile_filenames, experiment_details, res_incl=None,
-                  res_excl=None):
+def read_profiles(path, profile_filenames, experiment_details, res_incl=None, res_excl=None):
     experiment_type = experiment_details['type']
     experiment_details['experiment_name'] = name_experiment(experiment_details)
-
-    experiment_module = importlib.import_module(
-        '.'.join(['chemex.experiments', experiment_type])
-    )
+    experiment_module = importlib.import_module('.'.join(['chemex.experiments', experiment_type]))
 
     Profile = getattr(experiment_module, 'Profile')
 
@@ -34,11 +30,9 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None,
     error = experiment_details.get('error', 'file')
 
     if error == 'auto':
-        error_value = np.median(
-            [util.estimate_noise(profile.val[profile.b1_offsets >= -10000.0])
-             for profile in profiles])
 
         for profile in profiles:
+            error_value = util.estimate_noise(profile.val[profile.b1_offsets >= -10000.0])
             profile.err = np.zeros_like(profile.err) + error_value
 
     if res_incl is not None:
@@ -63,8 +57,8 @@ def name_experiment(experiment_details=None):
     if not experiment_details:
         experiment_details = dict()
 
-    if 'experiment_name' in experiment_details:
-        name = experiment_details['experiment_name'].strip().replace(' ', '_')
+    if 'name' in experiment_details:
+        name = experiment_details['name'].strip().replace(' ', '_')
 
     else:
         exp_type = experiment_details['type'].replace('.', '_')

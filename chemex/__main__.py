@@ -6,13 +6,13 @@ import random
 import shutil
 import sys
 
-from chemex import fitting, parsing, parameters, util
-from chemex.experiments import datasets, util as utils_exp
+from chemex import fitting, parameters, parsing, util, datasets
 from chemex.parameters import write_par
+import chemex.parsing
 
 
 def print_logo():
-    """Prints ChemEx logo"""
+    """Prints chemex logo"""
 
     from chemex import version
 
@@ -80,7 +80,7 @@ def read_data(args):
     data = datasets.DataSet()
 
     if args.experiments:
-        print("\nFile(s):")
+        print("File(s):")
         for index, filename in enumerate(args.experiments, 1):
             print("  {}. {}".format(index, filename))
             data.add_dataset_from_file(
@@ -106,7 +106,7 @@ def write_results(params, data, method, output_dir):
 
     data.write_chi2_to(params, path=output_dir)
     write_par(params, output_dir=output_dir)
-    data.write_to(output_dir=output_dir)
+    data.write_to(params, output_dir=output_dir)
 
 
 def plot_results(params, data, output_dir):
@@ -155,7 +155,7 @@ def main():
 
     if args.commands == 'info':
 
-        utils_exp.format_experiment_help(args.types, args.experiments)
+        chemex.parsing.format_experiment_help(args.types, args.experiments)
 
     elif args.commands == 'fit':
 
@@ -166,6 +166,10 @@ def main():
         util.header1("Reading Default Parameters")
         params = parameters.create_params(data)
         parameters.set_params_from_config_file(params, args.parameters)
+
+        # Filter points out if necessary
+        for profile in data:
+            profile.filter_points(params)
 
         # Custom output directory
         output_dir = args.out_dir if args.out_dir else './output'

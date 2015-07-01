@@ -71,6 +71,3 @@ def plot_data(data, params, output_dir='./'):
         plot(dataset, params, output_dir)
 
     return
-
-
-

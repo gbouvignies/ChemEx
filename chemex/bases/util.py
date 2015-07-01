@@ -1,0 +1,83 @@
+import numpy as np
+from scipy import linalg
+
+exp = np.exp
+dot = np.dot
+diag = np.diag
+
+sign = np.array([1.0, -1.0])
+
+
+def compute_propagators_from_time_series(liouvillian, times):
+    s, vr = linalg.eig(liouvillian)
+    vri = linalg.inv(vr)
+
+    propagators = {
+        t: dot(dot(vr, diag(exp(s * t))), vri).real
+        for t in set(times) if abs(t) != np.inf}
+
+    return propagators
+
+
+def calculate_shift_ex_2st(pb=0.0, kex_ab=0.0, domega_i_ab=0.0, lambda_i_a=0.0, lambda_i_b=0.0):
+    """Corrects major and minor peak positions in presence of exchange."""
+
+    pa = 1.0 - pb
+    kab, kba = kex_ab * np.asarray([pb, pa])
+
+    k2ab = lambda_i_a + kab
+    k2ba = lambda_i_b + kba - 1j * domega_i_ab
+
+    k2ex = k2ab + k2ba
+    fac = ((k2ab - k2ba) ** 2 + 4.0 * kab * kba) ** 0.5
+
+    nu1 = (0.5 * (-k2ex + fac)).imag
+    nu2 = (0.5 * (-k2ex - fac)).imag
+
+    condition = abs(nu1) < abs(nu2)
+
+    nu1_ = np.where(condition, nu1, nu2)
+    nu2_ = np.where(condition, nu2, nu1)
+
+    return nu1_, nu2_
+
+
+def correct_intensities(magz_a=1.0, magz_b=0.0, pb=0.0, kex=0.0, dw=0.0,
+                        r_ixy=0.0, dr_ixy=0.0):
+    """Corrects major and minor peak intensities in presence of exchange."""
+
+    kab = kex * pb
+    kba = kex - kab
+
+    k2ab = r_ixy + kab
+    k2ba = r_ixy + dr_ixy - 1j * dw + kba
+
+    k2ex = k2ab + k2ba
+    fac = ((k2ab - k2ba) ** 2 + 4.0 * kab * kba) ** 0.5
+
+    nu1, nu2 = 0.5 * (-k2ex + sign * fac)
+
+    magz_a_c = +(
+        (kab - nu2 - k2ab) * magz_a +
+        (kba + nu1 + k2ab) * magz_b
+    ) / (nu1 - nu2)
+
+    magz_b_c = -(
+        (kab - nu1 - k2ab) * magz_a +
+        (kba + nu2 + k2ab) * magz_b
+    ) / (nu1 - nu2)
+
+    if abs(nu1.imag) > abs(nu2.imag):
+        magz_a_c, magz_b_c = magz_b_c, magz_a_c
+
+    if abs(np.angle(magz_a_c)) <= 0.5 * np.pi:
+        magz_a_c = +abs(magz_a_c)
+    else:
+        magz_a_c = -abs(magz_a_c)
+
+    if abs(np.angle(magz_b_c)) <= 0.5 * np.pi:
+        magz_b_c = +abs(magz_b_c)
+    else:
+        magz_b_c = -abs(magz_b_c)
+
+    return magz_a_c, magz_b_c

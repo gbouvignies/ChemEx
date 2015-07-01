@@ -6,9 +6,7 @@ import sys
 
 import lmfit
 
-from chemex import parameters
-from chemex import util
-from chemex.experiments import datasets
+from chemex import parameters, util, datasets
 
 product = itertools.product
 
@@ -48,16 +46,13 @@ def run_fit(fit_filename, params, data):
             try:
                 minimizer.leastsq()
             except KeyboardInterrupt:
-                sys.stderr.write("\n -- Keyboard Interrupt: minimization "
-                                 "stopped\n")
+                sys.stderr.write("\n -- Keyboard Interrupt: minimization stopped\n")
 
             for name, param in c_params.items():
                 params[name] = param
 
-        print("\nFinal Chi2        : {:.3e}"
-              .format(data.calculate_chisq(params)))
-        print("Final Reduced Chi2: {:.3e}"
-              .format(data.calculate_redchi(params)))
+        print("\nFinal Chi2        : {:.3e}".format(data.calculate_chisq(params)))
+        print("Final Reduced Chi2: {:.3e}".format(data.calculate_redchi(params)))
 
     return params
 
@@ -85,8 +80,8 @@ def find_independent_clusters(data, params):
         for data_cluster, params_cluster in clusters:
 
             params_cluster_fit = set([
-                name for name, param in params_cluster.items() if param.vary
-            ])
+                                         name for name, param in params_cluster.items() if param.vary
+                                         ])
 
             if params_profile_fit.intersection(params_cluster_fit):
                 data_cluster.append(profile)
@@ -99,4 +94,3 @@ def find_independent_clusters(data, params):
             clusters.append((data_cluster, params_cluster))
 
     return clusters
-

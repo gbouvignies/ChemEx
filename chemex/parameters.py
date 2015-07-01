@@ -2,73 +2,220 @@ from __future__ import print_function
 
 import os
 import os.path
+import re
 
-import lmfit as lf
-import scipy as sp
+import lmfit
 
-from chemex import util
-from chemex.experiments import sputil
+from chemex import util, peaks
+
+name_markers = {
+    'name': "__n_{}_n__",
+    'nuclei': "__r_{}_r__",
+    'temperature': "__t_{}_t__",
+    'h_larmor_frq': "__b_{}_b__",
+}
+
+friendly_markers = {
+    'name': "{}",
+    'temperature': "{} C",
+    'h_larmor_frq': "{} MHz",
+}
+
+re_qualifiers = re.compile(
+    '''
+        (^\s*(?P<name>\w+)) |
+        (?P<nuclei>(\D?\d+[abd-gi-mopr-z]*)?[hncq][a-z]*) |
+        ((?P<temperature>[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?)\s*C) |
+        ((?P<h_larmor_frq>[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?)\s*MHz)
+    ''',
+    re.IGNORECASE | re.VERBOSE
+)
+
+re_par_name = re.compile(
+    '''
+        (__n_(?P<name>.+)_n__)?
+        (__r_(?P<nuclei>.+)_r__)?
+        (__t_(?P<temperature>.+)_t__)?
+        (__b_(?P<h_larmor_frq>.+)_b__)?
+    ''',
+    re.IGNORECASE | re.VERBOSE
+)
+
+
+class MakeTranslate(object):
+    def __init__(self, *args, **kwds):
+        self.dictionary = dict(*args, **kwds)
+        self.rx = self.make_rx()
+
+    def make_rx(self):
+        return re.compile('|'.join(map(re.escape, self.dictionary)), re.IGNORECASE)
+
+    def one_xlat(self, match):
+        return self.dictionary[match.group(0)]
+
+    def __call__(self, text):
+        return self.rx.sub(self.one_xlat, text)
+
+
+expand = MakeTranslate({
+    '-': '__minus__',
+    '+': '__plus__',
+    '.': '__point__',
+})
+
+compress = MakeTranslate({
+    '__minus__': '-',
+    '__plus__': '+',
+    '__point__': '.',
+})
+
+
+class ParameterName(object):
+    def __init__(self, name=None, nuclei=None, temperature=None, h_larmor_frq=None):
+        self.name = name.lower()
+        self.temperature = temperature
+        self.h_larmor_frq = h_larmor_frq
+
+        if nuclei is not None:
+            self.nuclei = peaks.Peak(nuclei).assignment
+        else:
+            self.nuclei = None
+
+    @classmethod
+    def from_full_name(cls, full_name=None):
+        if full_name is None:
+            full_name = ''
+        full_name = compress(full_name)
+        match = re.match(re_par_name, full_name)
+        qualifiers = {}
+        if match is not None:
+            qualifiers.update(match.groupdict())
+        return cls(**qualifiers)
+
+    @classmethod
+    def from_section(cls, section=None):
+        if section is None:
+            section = ''
+        qualifiers = {
+            match_key: match_value
+            for match in re_qualifiers.finditer(section)
+            for match_key, match_value in match.groupdict().items()
+            if match_value is not None}
+        return cls(**qualifiers)
+
+    def update_nuclei(self, nuclei):
+        if nuclei is not None:
+            self.nuclei = peaks.Peak(nuclei).assignment
+
+    def to_full_name(self):
+
+        name_components = []
+
+        for name in ('name', 'nuclei', 'temperature', 'h_larmor_frq'):
+            attr = getattr(self, name)
+            if attr is not None:
+                name_components.append(name_markers[name].format(attr))
+
+        full_name = ''.join(name_components)
+
+        full_name = expand(full_name)
+
+        return full_name
+
+    def to_section_name(self):
+
+        name_components = []
+
+        for name in ('name', 'temperature', 'h_larmor_frq'):
+            attr = getattr(self, name)
+            if attr is not None:
+                name_components.append(friendly_markers[name].format(attr.upper()))
+
+        section_name = ', '.join(name_components)
+
+        return section_name
+
+    def to_re(self):
+
+        re_components = [name_markers['name'].format(expand(self.name))]
+        if self.nuclei is not None:
+            group_name = peaks.Peak(self.nuclei).resonances[0]['group']
+            if not group_name:
+                all_res = '.+'
+            else:
+                all_res = ''
+            re_components.append(name_markers['nuclei'].format(''.join([all_res, expand(self.nuclei)])))
+        else:
+            re_components.append('.*')
+        if self.temperature is not None:
+            re_components.append(name_markers['temperature'].format(expand(self.temperature)))
+        elif re_components[-1] != '.*':
+            re_components.append('.*')
+        if self.h_larmor_frq is not None:
+            re_components.append(name_markers['h_larmor_frq'].format(expand(self.h_larmor_frq)))
+        elif re_components[-1] != '.*':
+            re_components.append('.*')
+
+        re_to_match = re.compile(''.join(re_components))
+
+        return re_to_match
 
 
 def create_params(data):
-    """Creates the array of parameters that will be used for the fitting
+    """
+    Creates the array of parameters that will be used for the fitting
     along with the dictionary that associate the name and the index of each
     parameter in the array.
     """
 
-    params = lf.Parameters()
+    params = lmfit.Parameters()
 
     for profile in data:
-        params.update(profile.make_default_parameters())
+        for name, param in profile.create_default_parameters().items():
+            if name not in params or not params[name].vary:
+                params.update({name: param})
 
     return params
 
 
 def set_params_from_config_file(params, config_filename):
-    """Read the file containing the initial guess for the fitting parameters.
+    """
+    Read the file containing the initial guess for the fitting parameters.
     """
 
     print("\n[{:s}]".format(config_filename))
 
     config = util.read_cfg_file(config_filename)
 
+    pairs = []
+
     for section in config.sections():
 
-        if section in ['default', 'global']:
-            prefix = None
+        if section == 'global':
+            for key, value in config.items(section):
+                name = ParameterName.from_section(key)
+                re_to_match = name.to_re()
+                value_ = float(value.split()[0])
+                pairs.append((re_to_match, value_))
+
         else:
-            prefix = section
+            name = ParameterName.from_section(section)
+            for key, value in config.items(section):
+                if 'file' in key:
+                    for filename in value.split():
+                        filename_ = util.normalize_path(os.path.dirname(config_filename), filename)
+                        pairs.extend(get_pairs_from_file(filename_, name))
+                else:
+                    name.update_nuclei(key)
+                    re_to_match = name.to_re()
+                    value = float(value.split()[0])
+                    pairs.append((re_to_match, value))
 
-        for key, value in config.items(section):
-
-            if 'file' in key:
-
-                filenames = value.split()
-
-                for filename in filenames:
-                    filename = util.normalize_path(
-                        os.path.dirname(config_filename),
-                        filename
-                    )
-
-                    set_param_values_from_file(
-                        filename, params, prefix=prefix
-                    )
-
-            else:
-
-                # Just take the first value in case the file contain a value and
-                # an uncertainty
-
-                value = value.split()[0]
-
-                if prefix is not None:
-                    key = ','.join([prefix, key])
-
-                set_params(params, key, value)
+    for re_to_match, value in pairs:
+        set_params(params, re_to_match, value=value)
 
 
-def set_param_values_from_file(filename, parameters, prefix=None):
+def get_pairs_from_file(filename, name):
     """Reads a file containing values associated with a nucleus name.
     The file should be formatted like sparky peak lists.
 
@@ -79,49 +226,28 @@ def set_param_values_from_file(filename, parameters, prefix=None):
           G23N-H  -93.0
     """
 
-    if prefix is None:
-        prefix = ''
+    pairs = []
 
-    try:
-        data = sp.genfromtxt(filename, dtype=None)
-    except IOError:
-        print('The file \'{}\' is empty or does not exist!'
-              .format(filename))
-
-    # Hack to solve the problem of 0d-array when 'filename' is a single line
-    # file
-    if data.ndim < 1:
-        data = data.reshape(1, -1)
-
-    for line in data:
-
-        # Don't take into account sparky peak file header
-        if line[0] in ['Assignment']:
-            continue
-
-        peak = sputil.Peak(line[0])
-
-        if len(peak.resonances) == len(line) - 1:
-
-            for index, resonance in enumerate(peak.resonances, 1):
-                subname = resonance.name
-                full_name = ','.join([prefix, subname])
-                set_params(parameters, full_name, value=line[index])
-
-        elif len(line) == 2:
-            subname = sputil.format_assignment(peak.resonances)
-            full_name = ','.join([prefix, subname])
-            set_params(parameters, full_name, value=line[1])
-
-        else:
-
-            error_message = '\n'.join(
-                ["Problem reading the parameter file '{}'.".format(filename),
-                 "The number of columns does not match to the number of nuclei"
-                 " contained in the assignment:"])
-            exit(error_message)
-
-    return parameters
+    with open(filename) as f:
+        for line in f:
+            if 'Assignment' in line:
+                continue
+            line = remove_comments(line, '#;')
+            elements = line.split()
+            if len(elements) > 1:
+                peak = peaks.Peak(elements[0])
+                n_resonances = len(peak.resonances)
+                n_cols = len(elements[1:])
+                if n_cols == n_resonances:
+                    for resonance, value in zip(peak.resonances, elements[1:]):
+                        name.update_nuclei(resonance['name'])
+                        re_to_match = name.to_re()
+                        pairs.append((re_to_match, float(value)))
+                else:
+                    name.update_nuclei(peak.assignment)
+                    re_to_match = name.to_re()
+                    pairs.append((re_to_match, float(elements[1])))
+    return pairs
 
 
 def set_param_status(params, items):
@@ -130,23 +256,17 @@ def set_param_status(params, items):
     vary = {'fix': False, 'fit': True}
 
     for key, status in items:
-        set_params(params, key, vary=vary[status])
+        re_to_match = ParameterName.from_section(key).to_re()
+        set_params(params, re_to_match, vary=vary[status])
 
 
-def set_params(parameters, key, value=None, vary=None):
-    key_split = set([_.lower() for _ in key.split(',')])
-
-    for name in parameters:
-
-        name_split = set([_.lower().replace('_p_', '.') for _ in name.split('__')])
-
-        if key_split.issubset(name_split):
-
+def set_params(params, re_to_match, value=None, vary=None):
+    for name, param in params.items():
+        if re_to_match.match(name):
             if value is not None:
-                parameters[name].set(value=float(value))
-
+                param.set(value=value)
             if vary is not None:
-                parameters[name].set(vary=vary)
+                param.set(vary=vary)
 
 
 def write_par(params, output_dir='./'):
@@ -158,8 +278,6 @@ def write_par(params, output_dir='./'):
 
     print("  * {}".format(filename))
 
-    par_name_global = set(['KEX', 'KEX_AB', 'KEX_BC', 'KEX_AC', 'PB', 'PC'])
-
     par_dict = {}
 
     for name, param in params.items():
@@ -169,44 +287,49 @@ def write_par(params, output_dir='./'):
         elif param.stderr is not None:
             val_print = '{: .5e} +/- {:.5e}'.format(param.value, param.stderr)
         else:
-            val_print = '{: .5e}   ; Error not calculated'.format(param.value)
+            val_print = '{: .5e}  ; Error not calculated'.format(param.value)
 
-        name_list = name.replace('_p_', '.').split('__')
+        par_name = ParameterName.from_full_name(name)
 
-        if name_list[0].upper() in par_name_global:
+        if par_name.nuclei is None:
 
             # This is a non-residue-specific parameter
 
-            name_print = ', '.join([str(_).upper() for _ in name_list])
-            section = 'global'
+            name_print = par_name.to_section_name()
+            section = 'GLOBAL'
 
         else:
 
-            # This is a residue-specific parameter. Resonance name is
-            # supposed to be second in the `name_list` list
+            # This is a residue-specific parameter
 
-            name_print = sputil.Peak(name_list.pop(1))
-            section = ', '.join([str(_).upper() for _ in name_list])
+            name_print = peaks.Peak(par_name.nuclei)
+            section = par_name.to_section_name()
 
         par_dict.setdefault(section, {})[name_print] = val_print
 
     cfg = SafeConfigParser()
     cfg.optionxform = str
 
-    section_global = par_dict.pop('global', None)
+    section_global = par_dict.pop('GLOBAL', None)
 
     if section_global is not None:
-        cfg.add_section('global')
+        cfg.add_section('GLOBAL')
         for name, val in sorted(section_global.items()):
-            cfg.set('global', name, val)
+            cfg.set('GLOBAL', name, val)
 
     for section, name_vals in sorted(par_dict.items()):
         cfg.add_section(section)
-        for name, val in sorted(name_vals.items()):
-            cfg.set(section, str(name), val)
+        for peak, val in sorted(name_vals.items()):
+            cfg.set(section, peak.assignment.upper(), val)
 
     with open(filename, 'w') as f:
         cfg.write(f)
+
+
+def remove_comments(line, sep):
+    for s in sep:
+        line = line.split(s)[0]
+    return line.strip()
 
 
 def main():

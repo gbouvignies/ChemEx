@@ -5,5 +5,5 @@ Created on Mar 4, 2012 (stub)
 """
 
 
-def plot_data(data, par, par_names, par_fixed, output_dir='./'):
+def plot_data(data, params, output_dir='./'):
     """Plot correlation and write a pdf file [STUB]"""

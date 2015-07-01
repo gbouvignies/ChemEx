@@ -1,27 +1,27 @@
 import numpy as np
 
+factor = {
+    2: np.sqrt(np.pi / 2.0),
+    3: 2.0 / np.sqrt(np.pi),
+    4: 0.5 * np.sqrt(3.0 * np.pi / 2.0),
+}
 
 def estimate_noise(profile):
-    print(profile.ncycs)
-    print(profile.val)
-    print(profile.err)
+
     intensity_dict = {}
 
     for ncyc, intensity in zip(profile.ncycs, profile.val):
         intensity_dict.setdefault(ncyc, []).append(intensity)
 
-    std_list = [
-        np.std(duplicates, ddof=1)
-        for duplicates in intensity_dict.values()
-        if len(duplicates) > 1]
-
-    print(std_list)
+    std_list = []
+    for duplicates in intensity_dict.values():
+        n_duplicates = len(duplicates)
+        if n_duplicates > 1:
+            std_list.append(np.std(duplicates, ddof=1) * factor[n_duplicates])
 
     if std_list:
         error = np.mean(std_list)
     else:
         error = np.mean(profile.err)
-
-    print(error)
 
     return error

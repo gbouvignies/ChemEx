@@ -1,12 +1,11 @@
 import os
 
-import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
+import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.ticker import MaxNLocator
 
-from chemex.experiments import sputil
-
+from chemex import peaks
 
 dark_gray = '0.13'
 red500 = '#F44336'
@@ -30,11 +29,8 @@ def group_data(dataset):
 
     for profile in dataset:
         resonance_id = profile.profile_name
-
-        peak = sputil.Peak(resonance_id)
-        index = tuple(resonance.group.number for resonance in peak.resonances)
-
-        data_grouped[(index, resonance_id)] = profile
+        peak = peaks.Peak(resonance_id)
+        data_grouped[peak] = profile
 
     return data_grouped
 
@@ -46,7 +42,7 @@ def compute_profiles(data_grouped, params):
     r2_min = +1e16
     r2_max = -1e16
 
-    for (index, name), profile in data_grouped.items():
+    for peak, profile in data_grouped.items():
         mask = profile.ncycs != 0
         mask_ref = np.logical_not(mask)
 
@@ -71,7 +67,7 @@ def compute_profiles(data_grouped, params):
 
         r2_erd, r2_eru = abs(np.percentile(r2_ens, [15.9, 84.1], axis=0) - r2_exp)
 
-        profiles[(index, name)] = nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru
+        profiles[peak] = nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru
 
         r2_min = min(r2_min, min(r2_cal), min(r2_exp - r2_erd))
         r2_max = max(r2_max, max(r2_cal), max(r2_exp + r2_eru))
@@ -117,9 +113,9 @@ def plot_data(data, params, output_dir='./'):
 
         with PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt:
 
-            for (_index, name), profile in sorted(profiles.items()):
-                nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru = profile
-                write_profile(name, profile, file_txt)
+            for peak in sorted(profiles):
+                nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru = profiles[peak]
+                write_profile(peak.assignment, profiles[peak], file_txt)
 
                 ###### Matplotlib ######
 
@@ -158,9 +154,9 @@ def plot_data(data, params, output_dir='./'):
                 ax.set_xlabel(r'$\mathregular{\nu_{CPMG} \ (Hz)}$')
                 ax.set_ylabel(r'$\mathregular{R_{2,eff} \ (s^{-1})}$')
 
-                ax.set_title('{:s}'.format(name.upper()))
+                ax.set_title('{:s}'.format(peak.assignment.upper()))
 
-                fig.tight_layout()
+                fig.set_tight_layout(tight=True)
 
                 ########################
 

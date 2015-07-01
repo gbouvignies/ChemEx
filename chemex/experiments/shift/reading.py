@@ -1,81 +1,80 @@
-"""
-Created on Mar 30, 2011
-
-@author: guillaume
-"""
-
+import importlib
 import os
 
-import scipy as sc
-
-from chemex import util
+import numpy as np
 
 
-def read_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None):
-    """Read the shifts"""
+def read_profiles(path, profile_filenames, experiment_details, res_incl=None, res_excl=None):
+    experiment_type = experiment_details['type']
+    experiment_details['experiment_name'] = name_experiment(experiment_details)
+    experiment_module = importlib.import_module('.'.join(['chemex.experiments', experiment_type]))
 
-    # Reads the path to get the shifts
-    exp_data_dir = util.normalize_path(working_dir,
-                                        cfg.get('path', 'exp_data_dir'))
+    Profile = getattr(experiment_module, 'Profile')
 
-    data_points = list()
+    dtype = [('names', '|S20'), ('shifts', '<f8'), ('shifts_err', '<f8')]
 
-    experiment_name = name_experiment(global_parameters)
+    profiles = []
 
-    for key, val in cfg.items('data'):
+    filename = profile_filenames.get('file', '')
+    full_path = os.path.join(path, filename)
+    measurements = np.loadtxt(full_path, dtype=dtype)
 
-        if 'file' not in key:
-            continue
+    for measurement in measurements:
+        profile_name = measurement['names']
+        profile = Profile(profile_name, measurement, experiment_details)
+        profiles.append(profile)
 
-        parameters = dict(global_parameters)
+    if res_incl is not None:
+        profiles = [
+            profile
+            for profile in profiles
+            if profile.profile_name in res_incl]
 
-        parameters['experiment_name'] = experiment_name
+    elif res_excl is not None:
+        profiles = [
+            profile
+            for profile in profiles
+            if profile.profile_name not in res_excl]
 
-        abs_path_filename = os.path.join(exp_data_dir, val)
-        data_points += read_a_shift_file(abs_path_filename, parameters, res_incl, res_excl)
+    ndata = sum(len(profile.val) for profile in profiles)
 
-    return data_points
+    return profiles, ndata
 
 
-def name_experiment(global_parameters=None):
-    if global_parameters is None:
-        global_parameters = dict()
+def name_experiment(experiment_details=None):
+    if not experiment_details:
+        experiment_details = dict()
 
-    if 'experiment_name' in global_parameters:
-        name = global_parameters['experiment_name'].strip().replace(' ', '_')
+    if 'experiment_name' in experiment_details:
+        name = experiment_details['experiment_name'].strip().replace(' ', '_')
+
     else:
-        exp_type = global_parameters['experiment_type']
-        h_larmor_frq = float(global_parameters['h_larmor_frq'])
-        temperature = float(global_parameters['temperature'])
+        exp_type = experiment_details['type'].replace('.', '_')
+        h_larmor_frq = float(experiment_details['h_larmor_frq'])
+        temperature = float(experiment_details['temperature'])
+        time_t2 = float(experiment_details['time_t2'])
 
-        name = '{:s}_{:.0f}MHz_{:.0f}C'.format(exp_type, h_larmor_frq, temperature).lower()
+        name = '{:s}_{:.0f}ms_{:.0f}MHz_{:.0f}C'.format(
+            exp_type,
+            time_t2 * 1e3,
+            h_larmor_frq,
+            temperature
+        ).lower()
 
     return name
 
 
-def read_a_shift_file(filename, parameters, res_incl=None, res_excl=None):
-    """Reads in the fuda file and spit out the intensities"""
+def name_experiment(experiment_details=None):
+    if not experiment_details:
+        experiment_details = dict()
 
-    data = sc.loadtxt(filename, dtype=[('resonance_id', 'S10'), ('shift_ppb', 'f8'), ('shift_ppb_err', 'f8')])
+    if 'experiment_name' in experiment_details:
+        name = experiment_details['experiment_name'].strip().replace(' ', '_')
+    else:
+        exp_type = experiment_details['type'].replace('.', '_')
+        h_larmor_frq = float(experiment_details['h_larmor_frq'])
+        temperature = float(experiment_details['temperature'])
 
-    data_points = list()
+        name = '{:s}_{:.0f}MHz_{:.0f}C'.format(exp_type, h_larmor_frq, temperature).lower()
 
-    exp_type = parameters['experiment_type'].replace('_shift', '')
-    data_point = __import__(exp_type + '.data_point', globals(), locals(), ['DataPoint'], -1)
-
-    for resonance_id, shift_ppb, shift_ppb_err in data:
-
-        included = (
-            (res_incl is not None and resonance_id in res_incl) or
-            (res_excl is not None and resonance_id not in res_excl) or
-            (res_incl is None and res_excl is None)
-        )
-
-        if not included:
-            continue
-
-        parameters['resonance_id'] = resonance_id
-
-        data_points.append(data_point.DataPoint(shift_ppb, shift_ppb_err, parameters))
-
-    return data_points
+    return name

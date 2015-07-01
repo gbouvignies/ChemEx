@@ -1,13 +1,12 @@
 import os
 
-import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib.gridspec as gsp
-from matplotlib.ticker import MaxNLocator, NullFormatter
+import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.ticker import MaxNLocator, NullFormatter
 
-from chemex.experiments import sputil
-
+from chemex import peaks
 
 # colors
 dark_gray = '0.13'
@@ -41,11 +40,8 @@ def group_data(dataset):
 
     for profile in dataset:
         name = profile.profile_name
-
-        peak = sputil.Peak(name)
-        index = tuple(resonance.group.number for resonance in peak.resonances)
-
-        data_grouped[(index, name)] = profile
+        peak = peaks.Peak(name)
+        data_grouped[peak] = profile
 
     return data_grouped
 
@@ -55,7 +51,7 @@ def compute_profiles(data_grouped, params):
 
     profiles = {}
 
-    for (index, name), profile in data_grouped.items():
+    for peak, profile in data_grouped.items():
         mask = profile.b1_offsets > -10000.0
         mask_ref = np.logical_not(mask)
 
@@ -72,9 +68,7 @@ def compute_profiles(data_grouped, params):
         b1_ppm_fit = profile.b1_offsets_to_ppm(b1_offsets)
         mag_fit = profile.calculate_profile(params, b1_offsets) / val_ref
 
-        profiles.setdefault((index, name), []).append(
-            [b1_ppm_exp, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit]
-        )
+        profiles[peak] = b1_ppm_exp, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit
 
     return profiles
 
@@ -116,10 +110,10 @@ def plot_data(data, params, output_dir='./'):
 
         with PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt:
 
-            for (_index, name), profile in sorted(profiles.items()):
-                b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit = profile[0]
+            for peak in sorted(profiles):
+                b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit = profiles[peak]
 
-                write_profile(name, b1_ppm_fit, mag_fit, file_txt)
+                write_profile(peak.assignment, b1_ppm_fit, mag_fit, file_txt)
 
                 ###### Matplotlib ######
 
@@ -212,7 +206,7 @@ def plot_data(data, params, output_dir='./'):
 
                 ax1.xaxis.set_major_formatter(NullFormatter())
 
-                ax1.set_title('{:s}'.format(name.upper()))
+                ax1.set_title('{:s}'.format(peak.assignment.upper()))
                 ax1.set_ylabel(r''.join([
                     r'$\mathregular{Resid. \ x10^{',
                     r'{:d}'.format(power10),
