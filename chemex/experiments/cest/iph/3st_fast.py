@@ -69,7 +69,7 @@ class Profile(base_profile.BaseProfile):
 
         self.ppm_to_rads = (
             self.h_larmor_frq * two_pi *
-            constants.xi_ratio[self.resonance['nucleus']]
+            constants.xi_ratio[self.resonance['atom']]
         )
 
         kwargs1 = {'temperature': self.temperature}

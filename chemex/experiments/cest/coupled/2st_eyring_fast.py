@@ -1,6 +1,6 @@
-"""Pure In-phase CEST (2-state, fast)
+"""Pure in-phase CEST in uniformly C13-labeled samples (2-state, fast)
 
-Analyzes chemical exchange in the presence of 1H composite decoupling
+Analyzes 15N chemical exchange in the presence of 1H composite decoupling
 during the CEST block. This keeps the spin system purely in-phase throughout,
 and is calculated using the 6x6, single spin matrix:
 
@@ -9,20 +9,22 @@ and is calculated using the 6x6, single spin matrix:
 Notes
 -----
 The calculation is designed specifically to analyze the experiment found in
-the reference:
+the references:
 
 J Am Chem Soc (2012), 134, 8148-61
-
+Angew Chem (2013), 52, 4156-9
+JMB (2014), 426, 763-74
 """
 
 import lmfit
 import numpy as np
-from scipy import linalg
+from scipy import linalg, constants as constants_sp
 
 from chemex import constants, parameters, peaks
 from chemex.bases import iph_2st, util
 from chemex.experiments import base_profile
 from chemex.experiments.cest import plotting
+import chemex.experiments.cest.util
 
 try:
     from functools import lru_cache
@@ -35,6 +37,9 @@ check_par = base_profile.check_par
 ParameterName = parameters.ParameterName
 
 two_pi = 2.0 * np.pi
+h_planck = constants_sp.h
+kb = constants_sp.k
+r_gas = constants_sp.R
 
 attributes_exp = {
     'h_larmor_frq': float,
@@ -73,18 +78,23 @@ class Profile(base_profile.BaseProfile):
             constants.xi_ratio[self.resonance['atom']]
         )
 
-        kwargs1 = {'temperature': self.temperature}
-        kwargs2 = {'temperature': self.temperature, 'nuclei': self.resonance['name']}
-        kwargs3 = {'temperature': self.temperature, 'nuclei': self.resonance['name'], 'h_larmor_frq': self.h_larmor_frq}
+        self.multiplet = chemex.experiments.cest.util.calc_multiplet(
+            constants.j_xc_couplings[self.resonance['symbol']][self.resonance['nucleus']]
+        )
+
+        kwargs1 = {'temperature': self.temperature, 'nuclei': self.resonance['name']}
+        kwargs2 = {'temperature': self.temperature, 'nuclei': self.resonance['name'], 'h_larmor_frq': self.h_larmor_frq}
 
         self.map_names = {
-            'pb': ParameterName('pb', **kwargs1).to_full_name(),
-            'kex_ab': ParameterName('kex_ab', **kwargs1).to_full_name(),
-            'cs_i_a': ParameterName('cs_a', **kwargs2).to_full_name(),
-            'dw_i_ab': ParameterName('dw_ab', **kwargs2).to_full_name(),
-            'lambda_i_a': ParameterName('lambda_a', **kwargs3).to_full_name(),
-            'dlambda_i_ab': ParameterName('dlambda_ab', **kwargs3).to_full_name(),
-            'rho_i_a': ParameterName('rho_a', **kwargs3).to_full_name(),
+            'dh_b': ParameterName('dh_b').to_full_name(),
+            'ds_b': ParameterName('ds_b').to_full_name(),
+            'dh_ab': ParameterName('dh_ab').to_full_name(),
+            'ds_ab': ParameterName('ds_ab').to_full_name(),
+            'cs_i_a': ParameterName('cs_a', **kwargs1).to_full_name(),
+            'dw_i_ab': ParameterName('dw_ab', **kwargs1).to_full_name(),
+            'lambda_i_a': ParameterName('lambda_a', **kwargs2).to_full_name(),
+            'dlambda_i_ab': ParameterName('dlambda_ab', **kwargs2).to_full_name(),
+            'rho_i_a': ParameterName('rho_a', **kwargs2).to_full_name(),
         }
 
     def create_default_parameters(self):
@@ -93,8 +103,10 @@ class Profile(base_profile.BaseProfile):
 
         parameters.add_many(
             # Name, Value, Vary, Min, Max, Expr
-            (self.map_names['pb'], 0.05, True, 0.0, 1.0, None),
-            (self.map_names['kex_ab'], 200.0, True, 0.0, None, None),
+            (self.map_names['dh_b'], 6000.0, True, None, None, None),
+            (self.map_names['ds_b'], 0.0, False, None, None, None),
+            (self.map_names['dh_ab'], 60000.0, True, None, None, None),
+            (self.map_names['ds_ab'], 0.0, False, None, None, None),
             (self.map_names['cs_i_a'], 0.0, False, None, None, None),
             (self.map_names['dw_i_ab'], 0.0, True, None, None, None),
             (self.map_names['lambda_i_a'], 10.0, True, 0.0, None, None),
@@ -104,31 +116,39 @@ class Profile(base_profile.BaseProfile):
 
         return parameters
 
-    def _calculate_profile(self, pb, kex_ab, dw_i_ab, rho_i_a, lambda_i_a, dlambda_i_ab, cs_i_a):
+    def _calculate_profile(self, dh_b, ds_b, dh_ab, ds_ab, dw_i_ab, rho_i_a, lambda_i_a, dlambda_i_ab, cs_i_a):
         """Calculate the intensity in presence of exchange after a CEST block.
 
         Parameters
         ----------
         pb : float
             Fractional population of state B.
-        kex_ab : float
-            Exchange rates between states A and B in /s.
-        dw_i_ab : float
+        kex : float
+            Exchange rate between state A and B in /s.
+        dw : float
             Chemical shift difference between states A and B in rad/s.
-        rho_i_a : float
-            Longitudinal relaxation rate of states A in /s.
-        lambda_i_a : float
+        r_nz : float
+            Longitudinal relaxation rate of states A and B in /s.
+        r_nxy : float
             Transverse relaxation rate of state A in /s.
-        dlambda_i_ab : float
+        dr_nxy : float
             Transverse relaxation rate difference between states A and B in /s.
-        cs_i_a : float
-            Resonance position of state A in ppm.
+        cs : float
+            Resonance position in ppm.
 
         Returns
         -------
         out : float
             Intensity after the CEST block
         """
+
+        t_kelvin = self.temperature + 273.15
+        dg_b = dh_b - t_kelvin * ds_b
+        dg_ab = dh_ab - t_kelvin * ds_ab
+        dg = np.asarray([dg_ab, dg_ab - dg_b])
+        kab, kba = kb * t_kelvin / h_planck * np.exp(-dg / (r_gas * t_kelvin))
+        kex_ab = kab + kba
+        pb = kab / kex_ab
 
         omega_i_a_array = (cs_i_a - self.carrier) * self.ppm_to_rads - two_pi * self.b1_offsets
         domega_i_ab = dw_i_ab * self.ppm_to_rads
@@ -159,31 +179,30 @@ class Profile(base_profile.BaseProfile):
 
             else:
 
-                liouvillian = compute_liouvillian(
-                    pb=pb,
-                    kex_ab=kex_ab,
-                    lambda_i_a=lambda_i_a,
-                    rho_i_a=rho_i_a,
-                    omega_i_a=omega_i_a,
-                    lambda_i_b=lambda_i_a + dlambda_i_ab,
-                    rho_i_b=rho_i_a,
-                    omega_i_b=omega_i_a + domega_i_ab,
-                    omega1x_i=omega1x_i
-                )
+                magz_a = 0.0
 
-                s, vr = linalg.eig(liouvillian)
-                vri = linalg.inv(vr)
+                for j, weight in self.multiplet:
+                    liouvillian = compute_liouvillian(
+                        pb=pb,
+                        kex_ab=kex_ab,
+                        lambda_i_a=lambda_i_a, rho_i_a=rho_i_a, omega_i_a=omega_i_a + j,
+                        lambda_i_b=lambda_i_b, rho_i_b=rho_i_a, omega_i_b=omega_i_a + domega_i_ab + j,
+                        omega1x_i=omega1x_i
+                    )
 
-                sl1 = [2, 5]
-                sl2 = [i for i, omega_i_a_array in enumerate(s.imag) if abs(omega_i_a_array) < 0.9 * omega1x_i]
-                sl3 = [2]
+                    s, vr = linalg.eig(liouvillian)
+                    vri = linalg.inv(vr)
 
-                vri = vri[np.ix_(sl2, sl1)]
-                t = np.diag(np.exp(s[sl2] * self.time_t1))
-                vr = vr[np.ix_(sl3, sl2)]
+                    sl1 = [2, 5]
+                    sl2 = [i for i, omega_i_a_array in enumerate(s.imag) if abs(omega_i_a_array) < 0.9 * omega1x_i]
+                    sl3 = [2]
 
-                magz_a = np.dot(np.dot(np.dot(vr, t), vri), magz_eq)[0, 0]
-                magz_a = magz_a.real
+                    vri = vri[np.ix_(sl2, sl1)]
+                    t = np.diag(np.exp(s[sl2] * self.time_t1))
+                    vr = vr[np.ix_(sl3, sl2)]
+
+                    magz_a_ = np.dot(np.dot(np.dot(vr, t), vri), magz_eq)[0, 0]
+                    magz_a += weight * magz_a_.real
 
             profile.append(magz_a)
 

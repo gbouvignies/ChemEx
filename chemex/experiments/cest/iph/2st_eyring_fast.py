@@ -73,7 +73,7 @@ class Profile(base_profile.BaseProfile):
 
         self.ppm_to_rads = (
             self.h_larmor_frq * two_pi *
-            constants.xi_ratio[self.resonance['nucleus']]
+            constants.xi_ratio[self.resonance['atom']]
         )
 
         kwargs1 = {'temperature': self.temperature, 'nuclei': self.resonance['name']}
@@ -97,9 +97,9 @@ class Profile(base_profile.BaseProfile):
 
         parameters.add_many(
             # Name, Value, Vary, Min, Max, Expr
-            (self.map_names['dh_b'], 5000.0, True, None, None, None),
+            (self.map_names['dh_b'], 6000.0, True, None, None, None),
             (self.map_names['ds_b'], 0.0, False, None, None, None),
-            (self.map_names['dh_ab'], 20000.0, True, None, None, None),
+            (self.map_names['dh_ab'], 60000.0, True, None, None, None),
             (self.map_names['ds_ab'], 0.0, False, None, None, None),
             (self.map_names['cs_i_a'], 0.0, False, None, None, None),
             (self.map_names['dw_i_ab'], 0.0, True, None, None, None),
@@ -136,10 +136,11 @@ class Profile(base_profile.BaseProfile):
             Intensity after the CEST block
         """
 
-        dg_b = dh_b - self.temperature * ds_b
-        dg_ab = dh_ab - self.temperature * ds_ab
+        t_kelvin = self.temperature + 273.15
+        dg_b = dh_b - t_kelvin * ds_b
+        dg_ab = dh_ab - t_kelvin * ds_ab
         dg = np.asarray([dg_ab, dg_ab - dg_b])
-        kab, kba = kb * self.temperature / h_planck * np.exp(-dg / (r_gas * self.temperature))
+        kab, kba = kb * t_kelvin / h_planck * np.exp(-dg / (r_gas * t_kelvin))
         kex_ab = kab + kba
         pb = kab / kex_ab
 

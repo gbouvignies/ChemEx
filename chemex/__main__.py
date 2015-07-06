@@ -2,9 +2,10 @@
 
 import copy
 import os
-import random
 import shutil
 import sys
+
+import numpy as np
 
 from chemex import fitting, parameters, parsing, util, datasets
 from chemex.parameters import write_par
@@ -41,14 +42,14 @@ def make_bootstrap_dataset(data):
 
     profiles = {}
 
-    for data_point in data:
+    for profile in data:
         # The reference attribute is added to the profile id to separate the
         # reference points from the rest and make sure they are always present
         # in the bootstrapped sample
-        reference = data_point.par.get('reference', False)
-        profile_id = (data_point.par['profile_id'], reference)
+        reference = profile.par.get('reference', False)
+        profile_id = (profile.par['profile_id'], reference)
 
-        profiles.setdefault(profile_id, []).append(data_point)
+        profiles.setdefault(profile_id, []).append(profile)
 
     data_bs = []
 
@@ -60,13 +61,13 @@ def make_bootstrap_dataset(data):
     return data_bs
 
 
-def make_montecarlo_dataset(data):
+def make_montecarlo_dataset(data, params):
     """Creates a new dataset to run a Monte-Carlo simulation"""
 
     data_mc = copy.deepcopy(data)
 
-    for data_pt in data_mc:
-        data_pt.val = random.gauss(data_pt.cal, data_pt.err)
+    for profile in data_mc:
+        profile.val = profile.calculate_profile(params) + np.random.randn(len(profile.val)) * profile.err
 
     return data_mc
 
@@ -195,7 +196,7 @@ def main():
                 n = int(args.mc)
 
             formatter_output_dir = ''.join(
-                ['{:0', util.get_digit_number(n), 'd}']
+                ['{:0', str(util.get_digit_number(n)), 'd}']
             )
 
             for index in range(1, n + 1):
@@ -203,14 +204,16 @@ def main():
                 if args.bs:
                     data_index = make_bootstrap_dataset(data)
                 else:
-                    data_index = make_montecarlo_dataset(data)
+                    data_index = make_montecarlo_dataset(data, params)
 
                 output_dir_ = \
                     os.path.join(output_dir, formatter_output_dir.format(index))
 
+                params_mc = params.copy()
+
                 fit_write_plot(
                     args,
-                    params,
+                    params_mc,
                     data_index,
                     output_dir_
                 )

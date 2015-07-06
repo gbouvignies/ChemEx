@@ -191,7 +191,7 @@ def set_params_from_config_file(params, config_filename):
 
     for section in config.sections():
 
-        if section == 'global':
+        if section.lower() == 'global':
             for key, value in config.items(section):
                 name = ParameterName.from_section(key)
                 re_to_match = name.to_re()
