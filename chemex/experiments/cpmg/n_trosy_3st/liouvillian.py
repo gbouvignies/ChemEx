@@ -126,10 +126,10 @@ def compute_2hznz_eq(pb, pc):
     return mag_eq
 
 
-def get_trz(I):
-    magz_a = I[5, 0] - I[2, 0]
-    magz_b = I[11, 0] - I[8, 0]
-    magz_c = I[17, 0] - I[14, 0]
+def get_trz(mag):
+    magz_a = mag[5, 0] - mag[2, 0]
+    magz_b = mag[11, 0] - mag[8, 0]
+    magz_c = mag[17, 0] - mag[14, 0]
 
     return magz_a, magz_b, magz_c
 

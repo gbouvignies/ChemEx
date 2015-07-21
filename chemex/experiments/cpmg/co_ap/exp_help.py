@@ -1,8 +1,8 @@
-'''
+"""
 Created on Nov 11, 2014
 
 @author: Mike Latham
-'''
+"""
 
 parse_line = "13CO - Pure Anti-phase Carbonyl 13C CPMG"
 

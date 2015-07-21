@@ -68,11 +68,13 @@ def correct_intensities(magz_a=1.0, magz_b=0.0, pb=0.0, kex=0.0, dw=0.0,
     return signa * abs(magz_a_c), signb * abs(magz_b_c)
 
 
-def calc_peak_intensity(pb=0.0, kex=0.0, dw=0.0, intensities=list()):
+def calc_peak_intensity(pb=0.0, kex=0.0, dw=0.0, intensities=None):
+    """Calculates the intensity of the volume of the peak in presence of
+    chemical exchange.
     """
-    Calculates the intensity of the volume of the peak in presence
-    of chemical exchange.
-    """
+
+    if intensities is None:
+        return None
 
     magz_a, magz_b = intensities
     magz_a, magz_b = correct_intensities(

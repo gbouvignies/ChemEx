@@ -201,7 +201,7 @@ def main():
 
                 if args.bs:
                     data_index = make_bootstrap_dataset(data)
-                elif args.mc:
+                else:
                     data_index = make_montecarlo_dataset(data)
 
                 output_dir_ = \

@@ -82,9 +82,9 @@ def get_data(cfg, working_dir, global_parameters, res_incl=None, res_excl=None):
         if ispkg and modname in exp_type
     ]
 
-    try:
+    if pkgs:
         pkg = max(pkgs)
-    except:
+    else:
         exit("\nUnknown data type {:s}"
              "\nDid you forget _cpmg, _cest, etc?"
              "\n".format(global_parameters['experiment_type']))

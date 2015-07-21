@@ -1,8 +1,8 @@
-'''
+"""
 Created on Feb 29, 2012
 
 @author: Alex Hansen
-'''
+"""
 
 parse_line = "HMQC-HSQC shifts"
 

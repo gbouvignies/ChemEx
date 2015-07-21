@@ -1,8 +1,8 @@
-'''
+"""
 Created on June 26, 2014
 
 @author: Mike Latham
-'''
+"""
 
 parse_line = "1H - Pure Anti-phase Proton CPMG"
 

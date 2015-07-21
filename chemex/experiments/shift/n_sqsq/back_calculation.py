@@ -6,7 +6,7 @@ from chemex.experiments.misc import correct_chemical_shift
 @lru_cache()
 def calc_observable(pb=0.0, kex=0.0, dw_n=0.0, ppm_to_rads_n_1=1.0,
                     ppm_to_rads_n_2=1.0):
-    '''Returns: float'''
+    """Returns: float"""
 
     dw_n_1 = dw_n * ppm_to_rads_n_1
     dw_n_2 = dw_n * ppm_to_rads_n_2

@@ -37,12 +37,12 @@ def group_data(dataset):
     data_grouped = dict()
 
     for data_pt in dataset:
-        id = data_pt.par['resonance_id']
+        id_ = data_pt.par['resonance_id']
 
-        assignment = parse_assignment(id)
+        assignment = parse_assignment(id_)
         index = int(assignment[0][0])
 
-        data_grouped.setdefault((index, id), []).append(data_pt)
+        data_grouped.setdefault((index, id_), []).append(data_pt)
 
     return data_grouped
 
