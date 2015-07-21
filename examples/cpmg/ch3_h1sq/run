@@ -1,0 +1,2 @@
+rm -fr output
+chemex fit -e experiments/ch3_h1sq_*.cfg -p parameters/params_ch3_h1sq.cfg -m methods/method_ch3.cfg -o output
