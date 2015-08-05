@@ -119,8 +119,6 @@ def plot_data(data, params, output_dir='./'):
 
                 ###### Matplotlib ######
 
-                fig = plt.figure(1)
-
                 gs = gsp.GridSpec(2, 1, height_ratios=[1, 4])
 
                 ax1 = plt.subplot(gs[0])
@@ -162,7 +160,7 @@ def plot_data(data, params, output_dir='./'):
                 ax2.xaxis.set_major_locator(MaxNLocator(9))
                 # ax2.yaxis.set_major_locator(MaxNLocator(6))
 
-                ax1.xaxis.grid(False)
+                ax2.xaxis.grid(False)
 
                 ax2.set_xlabel(r'$\mathregular{B_1 \ position \ (ppm)}$')
                 ax2.set_ylabel(r'$\mathregular{I/I_0}$')
