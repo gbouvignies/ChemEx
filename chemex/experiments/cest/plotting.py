@@ -126,6 +126,11 @@ def plot_data(data, params, output_dir='./'):
                 ax1 = plt.subplot(gs[0])
                 ax2 = plt.subplot(gs[1])
 
+                ax1.axvline(cs, color='0.88', linestyle='-', linewidth=0.5)
+                ax1.axvline(cs + dw, color='0.88', linestyle='-', linewidth=0.5)
+                ax2.axvline(cs, color='0.88', linestyle='-', linewidth=0.5)
+                ax2.axvline(cs + dw, color='0.88', linestyle='-', linewidth=0.5)
+
                 ax1.axhline(0, color=dark_gray, linewidth=0.5)
                 ax2.axhline(0, color=dark_gray, linewidth=0.5)
 
@@ -145,9 +150,6 @@ def plot_data(data, params, output_dir='./'):
                     color=red500,
                 )
 
-                ax2.axvline(cs, color=red200, linestyle='-', linewidth=1.0)
-                ax2.axvline(cs + dw, color=red200, linestyle='--', linewidth=1.0)
-
                 xmin, xmax = set_lim(b1_ppm_fit, 0.05)
                 mags = list(mag_exp) + list(mag_fit)
                 ymin, ymax = set_lim(mags, 0.10)
@@ -159,6 +161,8 @@ def plot_data(data, params, output_dir='./'):
 
                 ax2.xaxis.set_major_locator(MaxNLocator(9))
                 # ax2.yaxis.set_major_locator(MaxNLocator(6))
+
+                ax1.xaxis.grid(False)
 
                 ax2.set_xlabel(r'$\mathregular{B_1 \ position \ (ppm)}$')
                 ax2.set_ylabel(r'$\mathregular{I/I_0}$')
@@ -207,6 +211,7 @@ def plot_data(data, params, output_dir='./'):
 
                 ax1.xaxis.set_major_formatter(NullFormatter())
 
+                ax1.xaxis.grid(False)
                 ax1.yaxis.grid(False)
 
                 ax1.ticklabel_format(style='sci', scilimits=(0, 0), axis='y')
