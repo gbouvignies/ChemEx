@@ -209,7 +209,7 @@ def main():
                 output_dir_ = \
                     os.path.join(output_dir, formatter_output_dir.format(index))
 
-                params_mc = params.copy()
+                params_mc = copy.deepcopy(params)
 
                 fit_write_plot(
                     args,

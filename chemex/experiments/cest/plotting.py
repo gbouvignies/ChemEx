@@ -15,7 +15,6 @@ red200 = '#EF9A9A'
 
 TWO_PI = 2.0 * np.pi
 
-
 def sigma_estimator(x):
     """Estimates standard deviation using median to exclude outliers. Up to
     50% can be bad."""
@@ -68,7 +67,10 @@ def compute_profiles(data_grouped, params):
         b1_ppm_fit = profile.b1_offsets_to_ppm(b1_offsets)
         mag_fit = profile.calculate_profile(params, b1_offsets) / val_ref
 
-        profiles[peak] = b1_ppm_exp, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit
+        cs = params[profile.map_names['cs_i_a']].value
+        dw = params[profile.map_names['dw_i_ab']].value
+
+        profiles[peak] = b1_ppm_exp, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit, cs, dw
 
     return profiles
 
@@ -111,7 +113,7 @@ def plot_data(data, params, output_dir='./'):
         with PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt:
 
             for peak in sorted(profiles):
-                b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit = profiles[peak]
+                b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit, cs, dw = profiles[peak]
 
                 write_profile(peak.assignment, b1_ppm_fit, mag_fit, file_txt)
 
@@ -124,8 +126,8 @@ def plot_data(data, params, output_dir='./'):
                 ax1 = plt.subplot(gs[0])
                 ax2 = plt.subplot(gs[1])
 
-                ax1.axhline(0, color='black', alpha=0.87)
-                ax2.axhline(0, color='black', alpha=0.87)
+                ax1.axhline(0, color=dark_gray, linewidth=0.5)
+                ax2.axhline(0, color=dark_gray, linewidth=0.5)
 
                 ########################
 
@@ -142,6 +144,9 @@ def plot_data(data, params, output_dir='./'):
                     'o',
                     color=red500,
                 )
+
+                ax2.axvline(cs, color=red200, linestyle='-', linewidth=1.0)
+                ax2.axvline(cs + dw, color=red200, linestyle='--', linewidth=1.0)
 
                 xmin, xmax = set_lim(b1_ppm_fit, 0.05)
                 mags = list(mag_exp) + list(mag_fit)
@@ -161,10 +166,6 @@ def plot_data(data, params, output_dir='./'):
                 ########################
 
                 deltas = np.asarray(mag_exp) - np.asarray(mag_cal)
-                max_val = max(np.absolute(set_lim(deltas, 0.1))) + max(mag_err)
-                power10 = int(np.log10(max_val))
-                deltas /= 10 ** power10
-                mag_err = np.array(mag_err) / 10 ** power10
                 sigma = sigma_estimator(deltas)
 
                 ax1.fill(
@@ -202,20 +203,22 @@ def plot_data(data, params, output_dir='./'):
                 ax1.invert_xaxis()
 
                 ax1.xaxis.set_major_locator(MaxNLocator(9))
-                ax1.yaxis.set_major_locator(MaxNLocator(5))
+                ax1.yaxis.set_major_locator(MaxNLocator(4))
 
                 ax1.xaxis.set_major_formatter(NullFormatter())
 
+                ax1.yaxis.grid(False)
+
+                ax1.ticklabel_format(style='sci', scilimits=(0, 0), axis='y')
+
                 ax1.set_title('{:s}'.format(peak.assignment.upper()))
-                ax1.set_ylabel(r''.join([
-                    r'$\mathregular{Resid. \ x10^{',
-                    r'{:d}'.format(power10),
-                    r'}}$'
-                ]))
+                ax1.set_ylabel('Residuals')
 
                 ########################
 
-                fig.set_tight_layout(True)
+                for ax in (ax1, ax2):
+                    ax.yaxis.set_ticks_position('left')
+                    ax.xaxis.set_ticks_position('bottom')
 
                 ########################
 

@@ -145,7 +145,7 @@ class Profile(base_profile.BaseProfile):
             lambda_i_b=lambda_i_b
         )
 
-        omega_i_a_array -= shift_ex
+        # omega_i_a_array -= shift_ex
 
         magz_eq = np.array([[1 - pb], [pb]])
 

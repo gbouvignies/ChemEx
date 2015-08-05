@@ -122,7 +122,7 @@ def plot_data(data, params, output_dir='./'):
                 fig = plt.figure(1, frameon=True)
                 ax = fig.add_subplot(111)
 
-                ax.axhline(0, color='black', alpha=0.87)
+                # ax.axhline(0, color='black', alpha=0.87)
 
                 ########################]
 
@@ -156,7 +156,8 @@ def plot_data(data, params, output_dir='./'):
 
                 ax.set_title('{:s}'.format(peak.assignment.upper()))
 
-                fig.set_tight_layout(tight=True)
+                ax.yaxis.set_ticks_position('left')
+                ax.xaxis.set_ticks_position('bottom')
 
                 ########################
 

@@ -9,7 +9,6 @@ import os.path
 import sys
 
 import numpy as np
-
 from scipy import stats
 
 from chemex import util
@@ -172,7 +171,7 @@ class DataSet(object):
             reading = importlib.import_module('.'.join(['chemex.experiments', experiment_class, 'reading']))
 
         except ImportError:
-            sys.exit("The experiment '{}', refered in '{}' is not implemented.".format(experiment_type, filename))
+            sys.exit("The experiment '{}', referred in '{}' is not implemented.".format(experiment_type, filename))
 
         data, ndata = reading.read_profiles(path, profile_filenames, experiment_details, res_incl, res_excl)
 

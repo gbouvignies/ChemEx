@@ -24,7 +24,7 @@ friendly_markers = {
 re_qualifiers = re.compile(
     '''
         (^\s*(?P<name>\w+)) |
-        (?P<nuclei>(\D?\d+[abd-gi-mopr-z]*)?[hncq][a-z]*) |
+        (?P<nuclei>(\D?\d+[abd-gi-mopr-z]*)?[hncq][a-z0-9]*) |
         ((?P<temperature>[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?)\s*C) |
         ((?P<h_larmor_frq>[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?)\s*MHz)
     ''',
