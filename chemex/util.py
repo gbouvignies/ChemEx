@@ -19,21 +19,22 @@ def read_cfg_file(filename):
 
     # Parse the config file
     config = ConfigParser.SafeConfigParser()
+    config.optionxform = str
 
     if filename:
         try:
-            config.read(filename)
+            out = config.read(filename)
 
         except ConfigParser.MissingSectionHeaderError:
-            exit("You are missing a section heading in {:s}\n"
+            exit("\nERROR: You are missing a section heading in {:s}\n"
                  .format(filename))
 
         except ConfigParser.ParsingError:
-            exit("Having trouble reading your parameter file, have you "
+            exit("\nERROR: Having trouble reading your parameter file, have you "
                  "forgotten '=' signs?\n{:s}".format(sys.exc_info()[1]))
 
-        if not config:
-            exit("The file \'{}\' is empty or does not exist!\n".format(filename))
+        if not out:
+            exit("\nERROR: The file \'{}\' is empty or does not exist!\n".format(filename))
 
     return config
 
@@ -89,8 +90,8 @@ def get_digit_number(integer):
 
 
 def header1(string):
-    print("\n".join(["", "", string, "=" * len(string)]))
+    print("\n".join(["", "", string, "=" * len(string), ""]))
 
 
 def header2(string):
-    print("\n".join(["", string, "-" * len(string)]))
+    print("\n".join(["", string, "-" * len(string), ""]))

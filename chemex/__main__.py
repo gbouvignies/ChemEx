@@ -81,12 +81,10 @@ def read_data(args):
     data = datasets.DataSet()
 
     if args.experiments:
-        print("File(s):")
-        for index, filename in enumerate(args.experiments, 1):
-            print("  {}. {}".format(index, filename))
-            data.add_dataset_from_file(
-                filename, args.res_incl, args.res_excl
-            )
+        print("{:<45s} {:<25s} {:<25s}".format("File Name", "Experiment", "Profiles"))
+        print("{:<45s} {:<25s} {:<25s}".format("---------", "----------", "--------"))
+        for filename in args.experiments:
+            data.add_dataset_from_file(filename, args.res_incl, args.res_excl)
 
     if not data:
         sys.exit("\nNo Data to fit!\n")

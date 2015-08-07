@@ -1,4 +1,4 @@
-from __future__ import division
+from __future__ import division, print_function
 
 import ConfigParser
 import copy
@@ -133,6 +133,8 @@ class DataSet(object):
 
     def add_dataset_from_file(self, filename, res_incl=None, res_excl=None):
 
+        print("{:<45s} ".format(filename), end='')
+
         # Get the directory of the input file
         working_dir = os.path.dirname(filename)
 
@@ -177,5 +179,7 @@ class DataSet(object):
 
         self.data.extend(data)
         self.ndata += ndata
+
+        print("{:<25s} {:<25d}".format(experiment_type, len(data)))
 
         return data

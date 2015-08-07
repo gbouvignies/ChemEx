@@ -3,6 +3,7 @@ from __future__ import print_function
 import os
 import os.path
 import re
+import copy
 
 import lmfit
 
@@ -183,22 +184,26 @@ def set_params_from_config_file(params, config_filename):
     Read the file containing the initial guess for the fitting parameters.
     """
 
-    print("\n[{:s}]".format(config_filename))
+    print("File Name: {:s}".format(config_filename), end='\n\n')
 
     config = util.read_cfg_file(config_filename)
 
-    pairs = []
+    print("{:<45s} {:<30s}".format("Section", "Matches"))
+    print("{:<45s} {:<30s}".format("-------", "-------"))
 
     for section in config.sections():
 
         if section.lower() == 'global':
+            print("{:<45s}".format("[global]"))
             for key, value in config.items(section):
                 name = ParameterName.from_section(key)
-                re_to_match = name.to_re()
                 value_ = float(value.split()[0])
-                pairs.append((re_to_match, value_))
+                matches = set_params(params, name, value=value_)
+
+                print("    {:<41s} {:<30d}".format(key, len(matches)))
 
         else:
+            pairs = []
             name = ParameterName.from_section(section)
             for key, value in config.items(section):
                 if 'file' in key:
@@ -207,12 +212,15 @@ def set_params_from_config_file(params, config_filename):
                         pairs.extend(get_pairs_from_file(filename_, name))
                 else:
                     name.update_nuclei(key)
-                    re_to_match = name.to_re()
                     value = float(value.split()[0])
-                    pairs.append((re_to_match, value))
+                    pairs.append((name, value))
 
-    for re_to_match, value in pairs:
-        set_params(params, re_to_match, value=value)
+            total_matches = set()
+            for name, value in pairs:
+                matches = set_params(params, name, value=value)
+                total_matches.update(matches)
+
+            print("{:<45s} {:<30d}".format("[{}]".format(section), len(total_matches)))
 
 
 def get_pairs_from_file(filename, name):
@@ -241,12 +249,10 @@ def get_pairs_from_file(filename, name):
                 if n_cols == n_resonances:
                     for resonance, value in zip(peak.resonances, elements[1:]):
                         name.update_nuclei(resonance['name'])
-                        re_to_match = name.to_re()
-                        pairs.append((re_to_match, float(value)))
+                        pairs.append((copy.deepcopy(name), float(value)))
                 else:
                     name.update_nuclei(peak.assignment)
-                    re_to_match = name.to_re()
-                    pairs.append((re_to_match, float(elements[1])))
+                    pairs.append((copy.deepcopy(name), float(elements[1])))
     return pairs
 
 
@@ -256,17 +262,22 @@ def set_param_status(params, items):
     vary = {'fix': False, 'fit': True}
 
     for key, status in items:
-        re_to_match = ParameterName.from_section(key).to_re()
-        set_params(params, re_to_match, vary=vary[status])
+        name = ParameterName.from_section(key)
+        set_params(params, name, vary=vary[status])
 
 
-def set_params(params, re_to_match, value=None, vary=None):
-    for name, param in params.items():
-        if re_to_match.match(name):
+def set_params(params, name, value=None, vary=None):
+    matches = set()
+    re_to_match = name.to_re()
+    for name_, param in params.items():
+        if re_to_match.match(name_):
             if value is not None:
                 param.set(value=value)
             if vary is not None:
                 param.set(vary=vary)
+            matches.add(name_)
+
+    return matches
 
 
 def write_par(params, output_dir='./'):
