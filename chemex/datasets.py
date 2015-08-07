@@ -9,6 +9,7 @@ import os.path
 import sys
 
 import numpy as np
+
 from scipy import stats
 
 from chemex import util
