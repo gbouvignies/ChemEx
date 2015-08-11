@@ -200,7 +200,7 @@ def set_params_from_config_file(params, config_filename):
                 value_ = float(value.split()[0])
                 matches = set_params(params, name, value=value_)
 
-                print("    {:<41s} {:<30d}".format(key, len(matches)))
+                print("  {:<43s} {:<30d}".format("({})".format(key), len(matches)))
 
         else:
             pairs = []
