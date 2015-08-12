@@ -1,10 +1,10 @@
 from __future__ import print_function
 
+import copy
+
 import os
 import os.path
 import re
-import copy
-
 import lmfit
 
 from chemex import util, peaks
@@ -26,9 +26,28 @@ re_qualifiers = re.compile(
     '''
         (^\s*(?P<name>\w+)) |
         (?P<nuclei>(\D?\d+[abd-gi-mopr-z]*)?[hncq][a-z0-9]*) |
-        ((?P<temperature>[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?)\s*C) |
-        ((?P<h_larmor_frq>[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?)\s*MHz)
-    ''',
+        ((?P<temperature>{0})\s*C) |
+        ((?P<h_larmor_frq>{0})\s*MHz)
+    '''.format('[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?'),
+    re.IGNORECASE | re.VERBOSE
+)
+
+re_value = re.compile(
+    '''
+        ^\s*
+        (?P<value>{0})
+    '''.format('[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?'),
+    re.IGNORECASE | re.VERBOSE
+)
+
+re_value_min_max = re.compile(
+    '''
+        ^\s*
+        (?P<min>({0}|{1}))\s*<\s*
+        (?P<value>{0})\s*<\s*
+        (?P<max>({0}|{1}))
+        \s*$
+    '''.format('[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?', '[-+]?inf'),
     re.IGNORECASE | re.VERBOSE
 )
 
@@ -97,11 +116,7 @@ class ParameterName(object):
     def from_section(cls, section=None):
         if section is None:
             section = ''
-        qualifiers = {
-            match_key: match_value
-            for match in re_qualifiers.finditer(section)
-            for match_key, match_value in match.groupdict().items()
-            if match_value is not None}
+        qualifiers = re_to_dict(re_qualifiers, section)
         return cls(**qualifiers)
 
     def update_nuclei(self, nuclei):
@@ -193,12 +208,14 @@ def set_params_from_config_file(params, config_filename):
 
     for section in config.sections():
 
-        if section.lower() == 'global':
-            print("{:<45s}".format("[global]"))
+        if section.lower() in ('global', 'default'):
+            print("{:<45s}".format("[{}]".format(section)))
             for key, value in config.items(section):
                 name = ParameterName.from_section(key)
-                value_ = float(value.split()[0])
-                matches = set_params(params, name, value=value_)
+                default = re_to_dict(re_value, value)
+                default.update(re_to_dict(re_value_min_max, value))
+                default = {key: float(val) for key, val in default.items()}
+                matches = set_params(params, name, **default)
 
                 print("  {:<43s} {:<30d}".format("({})".format(key), len(matches)))
 
@@ -210,14 +227,16 @@ def set_params_from_config_file(params, config_filename):
                     for filename in value.split():
                         filename_ = util.normalize_path(os.path.dirname(config_filename), filename)
                         pairs.extend(get_pairs_from_file(filename_, name))
-                else:
+                elif peaks.re_peak_name.match(key):
                     name.update_nuclei(key)
-                    value = float(value.split()[0])
-                    pairs.append((name, value))
+                    pairs.append((copy.deepcopy(name), value))
 
             total_matches = set()
             for name, value in pairs:
-                matches = set_params(params, name, value=value)
+                default = re_to_dict(re_value, value)
+                default.update(re_to_dict(re_value_min_max, value))
+                default = {key: float(val) for key, val in default.items()}
+                matches = set_params(params, name, **default)
                 total_matches.update(matches)
 
             print("{:<45s} {:<30d}".format("[{}]".format(section), len(total_matches)))
@@ -241,6 +260,7 @@ def get_pairs_from_file(filename, name):
             if 'Assignment' in line:
                 continue
             line = remove_comments(line, '#;')
+            line = re.sub('\s*\<\s*', '<', line)
             elements = line.split()
             if len(elements) > 1:
                 peak = peaks.Peak(elements[0])
@@ -249,10 +269,10 @@ def get_pairs_from_file(filename, name):
                 if n_cols == n_resonances:
                     for resonance, value in zip(peak.resonances, elements[1:]):
                         name.update_nuclei(resonance['name'])
-                        pairs.append((copy.deepcopy(name), float(value)))
+                        pairs.append((copy.deepcopy(name), value))
                 else:
                     name.update_nuclei(peak.assignment)
-                    pairs.append((copy.deepcopy(name), float(elements[1])))
+                    pairs.append((copy.deepcopy(name), elements[1]))
     return pairs
 
 
@@ -266,16 +286,14 @@ def set_param_status(params, items):
         set_params(params, name, vary=vary[status])
 
 
-def set_params(params, name, value=None, vary=None):
+def set_params(params, name, value=None, vary=None, min=None, max=None):
     matches = set()
     re_to_match = name.to_re()
     for name_, param in params.items():
         if re_to_match.match(name_):
-            if value is not None:
-                param.set(value=value)
-            if vary is not None:
-                param.set(vary=vary)
-            matches.add(name_)
+            param.set(value=value, vary=vary, min=min, max=max)
+            if (value, vary, min, max) is not (None, None, None, None):
+                matches.add(name_)
 
     return matches
 
@@ -341,6 +359,15 @@ def remove_comments(line, sep):
     for s in sep:
         line = line.split(s)[0]
     return line.strip()
+
+
+def re_to_dict(re_to_match, text):
+    return {
+        match_key: match_value
+        for match in re_to_match.finditer(text)
+        for match_key, match_value in match.groupdict().items()
+        if match_value is not None
+        }
 
 
 def main():

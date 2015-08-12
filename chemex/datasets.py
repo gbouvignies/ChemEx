@@ -4,12 +4,11 @@ import ConfigParser
 import copy
 import importlib
 import operator
-import os
-import os.path
 import sys
 
+import os
+import os.path
 import numpy as np
-
 from scipy import stats
 
 from chemex import util
@@ -150,10 +149,12 @@ class DataSet(object):
             experiment_class = experiment_type.split('.')[0]
 
             # Reads experimental parameters
-            experiment_details.update(config.items('experimental_parameters'))
+            experiment_details.update(
+                {key.lower(): val for key, val in config.items('experimental_parameters')}
+            )
 
             # Reads profile information (name, filename)
-            profile_filenames = dict(config.items('data'))
+            profile_filenames = {key.lower(): val for key, val in config.items('data')}
 
         except ConfigParser.NoSectionError as e:
             sys.exit("    Reading aborted: {}".format(e))
@@ -163,7 +164,9 @@ class DataSet(object):
 
         try:
             # Reads additional parameters
-            experiment_details.update(config.items('extra_parameters'))
+            experiment_details.update(
+                {key.lower(): val for key, val in config.items('extra_parameters')}
+            )
 
         except ConfigParser.NoSectionError:
             pass

@@ -1,5 +1,4 @@
 import os
-
 import matplotlib.gridspec as gsp
 import matplotlib.pyplot as plt
 import numpy as np
@@ -124,10 +123,10 @@ def plot_data(data, params, output_dir='./'):
                 ax1 = plt.subplot(gs[0])
                 ax2 = plt.subplot(gs[1])
 
-                ax1.axvline(cs, color='0.88', linestyle='-', linewidth=0.5)
-                ax1.axvline(cs + dw, color='0.88', linestyle='-', linewidth=0.5)
-                ax2.axvline(cs, color='0.88', linestyle='-', linewidth=0.5)
-                ax2.axvline(cs + dw, color='0.88', linestyle='-', linewidth=0.5)
+                ax1.axvline(cs, color='0.88', linestyle='-', linewidth=1.0, zorder=-100)
+                ax2.axvline(cs, color='0.88', linestyle='-', linewidth=1.0, zorder=-100)
+                ax1.axvline(cs + dw, color='0.88', linestyle='-', linewidth=1.0, zorder=-100)
+                ax2.axvline(cs + dw, color='0.88', linestyle='-', linewidth=1.0, zorder=-100)
 
                 ax1.axhline(0, color=dark_gray, linewidth=0.5)
                 ax2.axhline(0, color=dark_gray, linewidth=0.5)

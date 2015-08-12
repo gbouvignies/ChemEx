@@ -1,4 +1,5 @@
 import functools
+
 import re
 
 re_peak_name = re.compile(
@@ -13,7 +14,7 @@ re_peak_name = re.compile(
             (?P<atom>[hncq])             # nucleus type
             [a-z0-9]*                    # nucleus name - nucleus type
         )
-        (\s*$)?
+        # (\s*$)?
     ''',
     re.IGNORECASE | re.VERBOSE
 )

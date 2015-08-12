@@ -174,14 +174,9 @@ class Profile(base_profile.BaseProfile):
             else:
 
                 liouvillian = compute_liouvillian(
-                    pb=pb,
-                    kex_ab=kex_ab,
-                    lambda_i_a=lambda_i_a,
-                    rho_i_a=rho_i_a,
-                    omega_i_a=omega_i_a,
-                    lambda_i_b=lambda_i_b,
-                    rho_i_b=rho_i_a,
-                    omega_i_b=omega_i_a + domega_i_ab,
+                    pb=pb, kex_ab=kex_ab,
+                    lambda_i_a=lambda_i_a, rho_i_a=rho_i_a, omega_i_a=omega_i_a,
+                    lambda_i_b=lambda_i_b, rho_i_b=rho_i_a, omega_i_b=omega_i_a + domega_i_ab,
                     omega1x_i=omega1x_i
                 )
 
