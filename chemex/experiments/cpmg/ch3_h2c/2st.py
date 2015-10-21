@@ -18,8 +18,10 @@ HtoC_CH3_exchange_*00_lek_ILV
 Journal of Biomolecular NMR (2007) 38, 79-88
 
 """
+from __future__ import absolute_import
 
 import functools
+from functools import reduce
 
 import lmfit
 import numpy as np
@@ -29,11 +31,12 @@ from chemex import constants, parameters, peaks
 from chemex.bases import iph_aph_2st, util as bases_util
 from chemex.experiments import base_profile
 from chemex.experiments.cpmg import plotting
+from six.moves import zip
 
 try:
     from functools import lru_cache
 except ImportError:
-    from backports.functools_lru_cache import lru_cache
+    from chemex.lru_cache import lru_cache
 
 reduce = functools.reduce
 dot = np.dot
@@ -286,7 +289,7 @@ class Profile(base_profile.BaseProfile):
         else:
             values = self.val
 
-        iter_vals = zip(self.ncycs, self.val, self.err, values)
+        iter_vals = list(zip(self.ncycs, self.val, self.err, values))
 
         for ncyc, val, err, cal in iter_vals:
 

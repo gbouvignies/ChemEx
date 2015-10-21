@@ -1,7 +1,9 @@
-import ConfigParser
+from __future__ import absolute_import
+from __future__ import print_function
 import sys
-
 import os
+
+import six.moves.configparser
 
 
 def make_dir(path=None):
@@ -18,18 +20,21 @@ def read_cfg_file(filename):
     """Parse config files with ConfigParser"""
 
     # Parse the config file
-    config = ConfigParser.SafeConfigParser()
+    try:
+        config = six.moves.configparser.ConfigParser(inline_comment_prefixes=('#', ';'))
+    except TypeError:
+        config = six.moves.configparser.ConfigParser()
     config.optionxform = str
 
     if filename:
         try:
             out = config.read(filename)
 
-        except ConfigParser.MissingSectionHeaderError:
+        except six.moves.configparser.MissingSectionHeaderError:
             exit("\nERROR: You are missing a section heading in {:s}\n"
                  .format(filename))
 
-        except ConfigParser.ParsingError:
+        except six.moves.configparser.ParsingError:
             exit("\nERROR: Having trouble reading your parameter file, have you "
                  "forgotten '=' signs?\n{:s}".format(sys.exc_info()[1]))
 
@@ -65,7 +70,7 @@ def include_selection(data, selection):
     new_data = [
         a_data_point for a_data_point in data
         if a_data_point.par.get('resonance_id', None) in selection
-    ]
+        ]
 
     return new_data
 
@@ -76,7 +81,7 @@ def exclude_selection(data, selection):
     new_data = [
         a_data_point for a_data_point in data
         if a_data_point.par.get('resonance_id', None) not in selection
-    ]
+        ]
 
     if new_data == data:
         sys.stdout.write("\n No Data removed! Aborting ...\n")
@@ -86,8 +91,8 @@ def exclude_selection(data, selection):
 
 
 def header1(string):
-    print("\n".join(["", "", string, "=" * len(string), ""]))
+    print(("\n".join(["", "", string, "=" * len(string), ""])))
 
 
 def header2(string):
-    print("\n".join(["", string, "-" * len(string), ""]))
+    print(("\n".join(["", string, "-" * len(string), ""])))

@@ -2,11 +2,11 @@ from ez_setup import use_setuptools
 
 use_setuptools()
 
-import sys
+# import sys
 
-if sys.version_info[0] == 2 and sys.version_info[1] < 7:
-    print "Sorry, Python < 2.7 is not supported"
-    exit()
+# if sys.version_info[0] == 2 and sys.version_info[1] < 7:
+#     print "Sorry, Python < 2.7 is not supported"
+#     exit()
 
 from setuptools import setup, find_packages
 
@@ -21,7 +21,6 @@ install_requires = [
     'scipy',
     'matplotlib',
     'lmfit',
-    'backports.functools_lru_cache'
 ]
 
 entry_points = {

@@ -1,9 +1,11 @@
 from __future__ import print_function
+from __future__ import absolute_import
 
 import copy
 import itertools
 import sys
 
+import numpy as np
 import lmfit
 
 from chemex import parameters, util, datasets
@@ -30,28 +32,33 @@ def run_fit(fit_filename, params, data):
         independent_clusters = find_independent_clusters(data, params)
         independent_clusters_no = len(independent_clusters)
 
-        for index, independent_cluster in enumerate(independent_clusters, 1):
+        for c_name, c_data, c_params in independent_clusters:
 
-            print(
-                "\nChi2 / Reduced Chi2 (cluster {}/{}):"
-                    .format(index, independent_clusters_no)
-            )
-
-            c_data, c_params = independent_cluster
+            if independent_clusters_no > 1:
+                print("[{}]".format(c_name))
+            print("Chi2 / Reduced Chi2:")
 
             func = c_data.calculate_residuals
-
             minimizer = lmfit.Minimizer(func, c_params)
 
             try:
-                minimizer.leastsq()
+                result = minimizer.minimize()
+                for param in result.params.values():
+                    param.value = np.float64(param.value)
             except KeyboardInterrupt:
+                result = minimizer.result
                 sys.stderr.write("\n -- Keyboard Interrupt: minimization stopped\n")
 
-            for name, param in c_params.items():
+            print(lmfit.fit_report(result.params))
+            ci = lmfit.conf_interval(minimizer, result)
+            lmfit.printfuncs.report_ci(ci)
+
+            for name, param in result.params.items():
                 params[name] = param
 
-        print("\nFinal Chi2        : {:.3e}".format(data.calculate_chisq(params)))
+            print('')
+
+        print("Final Chi2        : {:.3e}".format(data.calculate_chisq(params)))
         print("Final Reduced Chi2: {:.3e}".format(data.calculate_redchi(params)))
 
     return params
@@ -59,38 +66,53 @@ def run_fit(fit_filename, params, data):
 
 def find_independent_clusters(data, params):
     """
-    Finds clusters of data points that depend on independent sets of variables.
+    Finds clusters of data points that depend on disjoint sets of variables.
     For example, if the population of the minor state and the exchange rate are
-    set to 'fix', chances are that the fit can be decomposed
-    residue-specifically.
+    set to 'fix', chances are that the fit can be decomposed residue-specifically.
     """
 
     clusters = []
 
     for profile in data:
 
-        params_profile_all = lmfit.Parameters(
-            (name, params[name]) for name in profile.map_names.values()
-        )
+        params_profile = lmfit.Parameters()
+        names_vary_profile = []
 
-        params_profile_fit = set([
-                                     name for name, param in params_profile_all.items() if param.vary
-                                     ])
+        for param in params.values():
+            if param.expr is None:
+                name = param.name
+                if name in profile.map_names.values():
+                    params_profile[name] = param
+                    if param.vary:
+                        names_vary_profile.append(name)
 
-        for data_cluster, params_cluster in clusters:
+        for param in params.values():
+            if param.expr is not None:
+                name = param.name
+                if name in profile.map_names.values():
+                    params_profile[name] = param
 
-            params_cluster_fit = set([
-                                         name for name, param in params_cluster.items() if param.vary
-                                         ])
+        for name_cluster, data_cluster, params_cluster in clusters:
 
-            if params_profile_fit.intersection(params_cluster_fit):
+            names_vary_shared = [name for name, param in params_cluster.items() if
+                                 param.vary and name in names_vary_profile]
+
+            if names_vary_shared:
                 data_cluster.append(profile)
-                params_cluster.update(params_profile_all)
+                params_cluster.update(params_profile)
+                for name in names_vary_shared:
+                    name_cluster = name_cluster.intersection(parameters.ParameterName.from_full_name(name))
                 break
 
         else:
             data_cluster = datasets.DataSet(profile)
-            params_cluster = copy.deepcopy(params_profile_all)
-            clusters.append((data_cluster, params_cluster))
+            params_cluster = copy.deepcopy(params_profile)
 
-    return clusters
+            name_cluster = parameters.ParameterName.from_full_name(names_vary_profile[0])
+
+            for name in names_vary_profile:
+                name_cluster = name_cluster.intersection(parameters.ParameterName.from_full_name(name))
+
+            clusters.append((name_cluster, data_cluster, params_cluster))
+
+    return sorted(clusters)

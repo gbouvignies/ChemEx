@@ -15,6 +15,7 @@ J Am Chem Soc (2012), 134, 8148-61
 Angew Chem (2013), 52, 4156-9
 JMB (2014), 426, 763-74
 """
+from __future__ import absolute_import
 
 import lmfit
 import numpy as np
@@ -25,11 +26,12 @@ from chemex.bases import iph_2st, util
 from chemex.experiments import base_profile
 from chemex.experiments.cest import plotting
 import chemex.experiments.cest.util
+from six.moves import zip
 
 try:
     from functools import lru_cache
 except ImportError:
-    from backports.functools_lru_cache import lru_cache
+    from chemex.lru_cache import lru_cache
 
 calculate_shift_2st = util.calculate_shift_ex_2st
 compute_liouvillian = iph_2st.compute_liouvillian
@@ -264,7 +266,7 @@ class Profile(base_profile.BaseProfile):
         else:
             values = self.val
 
-        iter_vals = zip(self.b1_offsets, self.val, self.err, values)
+        iter_vals = list(zip(self.b1_offsets, self.val, self.err, values))
 
         for b1_offset, val, err, cal in iter_vals:
 

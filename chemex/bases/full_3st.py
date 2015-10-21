@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 # Operator basis:
 # {Ix, Iy, Iz, Sx, Sy, Sz,
 #  2IxSz, 2IySz, 2IzSx, 2IzSy,

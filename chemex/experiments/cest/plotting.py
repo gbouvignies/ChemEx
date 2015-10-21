@@ -1,4 +1,7 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import os
+
 import matplotlib.gridspec as gsp
 import matplotlib.pyplot as plt
 import numpy as np
@@ -6,6 +9,8 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import MaxNLocator, NullFormatter
 
 from chemex import peaks
+from six.moves import zip
+
 
 # colors
 dark_gray = '0.13'
@@ -101,7 +106,7 @@ def plot_data(data, params, output_dir='./'):
         name_txt = ''.join([experiment_name, '.fit'])
         name_txt = os.path.join(output_dir, name_txt)
 
-        print("  * {} [.fit]".format(name_pdf))
+        print(("  * {} [.fit]".format(name_pdf)))
 
         # #######################
 

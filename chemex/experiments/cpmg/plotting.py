@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 
 import matplotlib.pyplot as plt
@@ -6,6 +8,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import MaxNLocator
 
 from chemex import peaks
+from six.moves import zip
 
 dark_gray = '0.13'
 red500 = '#F44336'
@@ -56,7 +59,7 @@ def compute_profiles(data_grouped, params):
 
         # Sort values according to increasing nu_cpmg values
 
-        sorted_items = zip(*sorted(zip(nu_cpmg, mag_cal, mag_exp, mag_err)))
+        sorted_items = list(zip(*sorted(zip(nu_cpmg, mag_cal, mag_exp, mag_err))))
         nu_cpmg, mag_cal, mag_exp, mag_err = sorted_items
 
         mag_ens = mag_exp + mag_err * np.random.randn(1000, len(mag_exp))
@@ -103,7 +106,7 @@ def plot_data(data, params, output_dir='./'):
         name_txt = ''.join([experiment_name, '.fit'])
         name_txt = os.path.join(output_dir, name_txt)
 
-        print("  * {} [.fit]".format(name_pdf))
+        print(("  * {} [.fit]".format(name_pdf)))
 
         # #######################
 

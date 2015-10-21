@@ -1,9 +1,10 @@
+from __future__ import absolute_import
 import abc
 
+import six
 
-class BaseProfile(object):
-    __metaclass__ = abc.ABCMeta
 
+class BaseProfile(six.with_metaclass(abc.ABCMeta, object)):
     @abc.abstractmethod
     def print_profile(self):
         pass

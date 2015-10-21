@@ -15,6 +15,7 @@ J Am Chem Soc (2012), 134, 8148-61
 Angew Chem (2013), 52, 4156-9
 JMB (2014), 426, 763-74
 """
+from __future__ import absolute_import
 
 import lmfit
 import numpy as np
@@ -25,11 +26,12 @@ from chemex.bases import iph_2st, util
 from chemex.experiments import base_profile
 from chemex.experiments.cest import plotting
 import chemex.experiments.cest.util
+from six.moves import zip
 
 try:
     from functools import lru_cache
 except ImportError:
-    from backports.functools_lru_cache import lru_cache
+    from chemex.lru_cache import lru_cache
 
 calculate_shift_2st = util.calculate_shift_ex_2st
 compute_liouvillian = iph_2st.compute_liouvillian
@@ -84,20 +86,38 @@ class Profile(base_profile.BaseProfile):
 
         kwargs1 = {'temperature': self.temperature, 'nuclei': self.resonance['name']}
         kwargs2 = {'temperature': self.temperature, 'nuclei': self.resonance['name'], 'h_larmor_frq': self.h_larmor_frq}
+        kwargs3 = {'temperature': self.temperature}
 
         self.map_names = {
             'dh_b': ParameterName('dh_b').to_full_name(),
             'ds_b': ParameterName('ds_b').to_full_name(),
             'dh_ab': ParameterName('dh_ab').to_full_name(),
             'ds_ab': ParameterName('ds_ab').to_full_name(),
-            'cs_i_a': ParameterName('cs_a', **kwargs1).to_full_name(),
+            'pb': ParameterName('pb', **kwargs3).to_full_name(),
+            'kex_ab': ParameterName('kex_ab', **kwargs3).to_full_name(),
             'dw_i_ab': ParameterName('dw_ab', **kwargs1).to_full_name(),
+            'cs_i_a': ParameterName('cs_a', **kwargs1).to_full_name(),
+            'cs_i_b': ParameterName('cs_b', **kwargs1).to_full_name(),
             'lambda_i_a': ParameterName('lambda_a', **kwargs2).to_full_name(),
-            'dlambda_i_ab': ParameterName('dlambda_ab', **kwargs2).to_full_name(),
+            'lambda_i_b': ParameterName('lambda_b', **kwargs2).to_full_name(),
             'rho_i_a': ParameterName('rho_a', **kwargs2).to_full_name(),
+            'rho_i_b': ParameterName('rho_b', **kwargs2).to_full_name(),
         }
 
     def create_default_parameters(self):
+
+        t_kelvin = self.temperature + 273.15
+        kbt_h = kb * t_kelvin / h_planck
+        rt = r_gas * t_kelvin
+        pb = '1.0 / (1.0 + exp(({0} - {1:12f} * {2}) / {3:12f}))'.format(
+            self.map_names['dh_b'], t_kelvin, self.map_names['ds_b'], rt
+        )
+        kex = '{0:12f} * exp(-({1} - {2:12f} * {3}) / {4:12f}) * (1.0 + exp(({5} - {2:12f} * {6}) / {4:12f}))'.format(
+            kbt_h, self.map_names['dh_ab'], t_kelvin, self.map_names['ds_ab'], rt, self.map_names['dh_b'],
+            self.map_names['ds_b']
+        )
+        cs_i_b = '{} + {}'.format(self.map_names['cs_i_a'], self.map_names['dw_i_ab'])
+        rho_i_b = self.map_names['rho_i_a']
 
         parameters = lmfit.Parameters()
 
@@ -107,16 +127,20 @@ class Profile(base_profile.BaseProfile):
             (self.map_names['ds_b'], 0.0, False, None, None, None),
             (self.map_names['dh_ab'], 60000.0, True, None, None, None),
             (self.map_names['ds_ab'], 0.0, False, None, None, None),
-            (self.map_names['cs_i_a'], 0.0, False, None, None, None),
+            (self.map_names['pb'], 0.05, True, 0.0, 1.0, pb),
+            (self.map_names['kex_ab'], 200.0, True, 0.0, None, kex),
             (self.map_names['dw_i_ab'], 0.0, True, None, None, None),
+            (self.map_names['cs_i_a'], 0.0, False, None, None, None),
+            (self.map_names['cs_i_b'], 0.0, False, None, None, cs_i_b),
             (self.map_names['lambda_i_a'], 10.0, True, 0.0, None, None),
-            (self.map_names['dlambda_i_ab'], 0.0, True, None, None, None),
+            (self.map_names['lambda_i_b'], 10.0, True, 0.0, None, None),
             (self.map_names['rho_i_a'], 1.0, True, 0.0, None, None),
+            (self.map_names['rho_i_b'], 1.0, True, 0.0, None, rho_i_b),
         )
 
         return parameters
 
-    def _calculate_profile(self, dh_b, ds_b, dh_ab, ds_ab, dw_i_ab, rho_i_a, lambda_i_a, dlambda_i_ab, cs_i_a):
+    def _calculate_profile(self, pb, kex_ab, cs_i_a, dw_i_ab, rho_i_a, rho_i_b, lambda_i_a, lambda_i_b, **kwargs):
         """Calculate the intensity in presence of exchange after a CEST block.
 
         Parameters
@@ -142,30 +166,9 @@ class Profile(base_profile.BaseProfile):
             Intensity after the CEST block
         """
 
-        t_kelvin = self.temperature + 273.15
-        dg_b = dh_b - t_kelvin * ds_b
-        dg_ab = dh_ab - t_kelvin * ds_ab
-        dg = np.asarray([dg_ab, dg_ab - dg_b])
-        kab, kba = kb * t_kelvin / h_planck * np.exp(-dg / (r_gas * t_kelvin))
-        kex_ab = kab + kba
-        pb = kab / kex_ab
-
         omega_i_a_array = (cs_i_a - self.carrier) * self.ppm_to_rads - two_pi * self.b1_offsets
         domega_i_ab = dw_i_ab * self.ppm_to_rads
         omega1x_i = two_pi * self.b1_frq
-        lambda_i_b = lambda_i_a + dlambda_i_ab
-
-        # Correct chemical shift against exchange induced shift
-
-        shift_ex, _ = calculate_shift_2st(
-            pb=pb,
-            kex_ab=kex_ab,
-            domega_i_ab=domega_i_ab,
-            lambda_i_a=lambda_i_a,
-            lambda_i_b=lambda_i_b
-        )
-
-        omega_i_a_array -= shift_ex
 
         magz_eq = np.array([[1 - pb], [pb]])
 
@@ -186,7 +189,7 @@ class Profile(base_profile.BaseProfile):
                         pb=pb,
                         kex_ab=kex_ab,
                         lambda_i_a=lambda_i_a, rho_i_a=rho_i_a, omega_i_a=omega_i_a + j,
-                        lambda_i_b=lambda_i_b, rho_i_b=rho_i_a, omega_i_b=omega_i_a + domega_i_ab + j,
+                        lambda_i_b=lambda_i_b, rho_i_b=rho_i_b, omega_i_b=omega_i_a + domega_i_ab + j,
                         omega1x_i=omega1x_i
                     )
 
@@ -278,7 +281,7 @@ class Profile(base_profile.BaseProfile):
         else:
             values = self.val
 
-        iter_vals = zip(self.b1_offsets, self.val, self.err, values)
+        iter_vals = list(zip(self.b1_offsets, self.val, self.err, values))
 
         for b1_offset, val, err, cal in iter_vals:
 

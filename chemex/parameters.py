@@ -1,12 +1,16 @@
 from __future__ import print_function
+from __future__ import absolute_import
 
 import copy
-
 import os
 import os.path
 import re
+
+import numpy as np
 import lmfit
 
+from six.moves import map
+from six.moves import zip
 from chemex import util, peaks
 
 name_markers = {
@@ -18,6 +22,7 @@ name_markers = {
 
 friendly_markers = {
     'name': "{}",
+    'nuclei': "{}",
     'temperature': "{} C",
     'h_larmor_frq': "{} MHz",
 }
@@ -32,21 +37,13 @@ re_qualifiers = re.compile(
     re.IGNORECASE | re.VERBOSE
 )
 
-re_value = re.compile(
-    '''
-        ^\s*
-        (?P<value>{0})
-    '''.format('[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?'),
-    re.IGNORECASE | re.VERBOSE
-)
-
+# Regular expression to pick values of the form: 8.3 [2.0, 10.0]
 re_value_min_max = re.compile(
     '''
         ^\s*
-        (?P<min>({0}|{1}))\s*<\s*
-        (?P<value>{0})\s*<\s*
-        (?P<max>({0}|{1}))
-        \s*$
+        (?P<value>{0})?\s*
+        (\[\s*(?P<min>({0}|{1}))\s*,\s*(?P<max>({0}|{1}))\s*\]\s*)?
+        $
     '''.format('[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?', '[-+]?inf'),
     re.IGNORECASE | re.VERBOSE
 )
@@ -92,9 +89,12 @@ compress = MakeTranslate({
 
 class ParameterName(object):
     def __init__(self, name=None, nuclei=None, temperature=None, h_larmor_frq=None):
-        self.name = name.lower()
+        self.name = name
         self.temperature = temperature
         self.h_larmor_frq = h_larmor_frq
+
+        if self.name is not None:
+            self.name = self.name.lower()
 
         if nuclei is not None:
             self.nuclei = peaks.Peak(nuclei).assignment
@@ -119,9 +119,22 @@ class ParameterName(object):
         qualifiers = re_to_dict(re_qualifiers, section)
         return cls(**qualifiers)
 
-    def update_nuclei(self, nuclei):
+    def update(self, other):
+        if isinstance(other, ParameterName):
+            if other.name is not None:
+                self.name = other.name
+            if other.nuclei is not None:
+                self.nuclei = other.nuclei
+            if other.temperature is not None:
+                self.temperature = other.temperature
+            if other.h_larmor_frq is not None:
+                self.h_larmor_frq = other.h_larmor_frq
+        return self
+
+    def update_nuclei(self, nuclei=None):
         if nuclei is not None:
             self.nuclei = peaks.Peak(nuclei).assignment
+        return self
 
     def to_full_name(self):
 
@@ -176,6 +189,46 @@ class ParameterName(object):
 
         return re_to_match
 
+    def __repr__(self):
+        name_components = []
+
+        for name in ('name', 'nuclei', 'temperature', 'h_larmor_frq'):
+            attr = getattr(self, name)
+            if attr is not None:
+                name_components.append(friendly_markers[name].format(attr.upper()))
+
+        nice_name = ', '.join(name_components)
+
+        return nice_name
+
+    def __lt__(self, other):
+
+        tuple_self = (
+            self.name,
+            peaks.Peak(self.nuclei),
+            float(self.temperature) if self.temperature else self.temperature,
+            float(self.h_larmor_frq) if self.h_larmor_frq else self.h_larmor_frq
+        )
+        tuple_other = (
+            other.name,
+            peaks.Peak(other.nuclei),
+            float(other.temperature) if other.temperature else other.temperature,
+            float(other.h_larmor_frq) if other.h_larmor_frq else other.h_larmor_frq
+        )
+        return tuple_self < tuple_other
+
+    def intersection(self, other):
+        name = nuclei = temperature = h_larmor_frq = None
+        if self.name == other.name:
+            name = self.name
+        if self.nuclei == other.nuclei:
+            nuclei = self.nuclei
+        if self.temperature == other.temperature:
+            temperature = self.temperature
+        if self.h_larmor_frq == other.h_larmor_frq:
+            h_larmor_frq = self.h_larmor_frq
+        return ParameterName(name=name, nuclei=nuclei, temperature=temperature, h_larmor_frq=h_larmor_frq)
+
 
 def create_params(data):
     """
@@ -212,9 +265,8 @@ def set_params_from_config_file(params, config_filename):
             print("{:<45s}".format("[{}]".format(section)))
             for key, value in config.items(section):
                 name = ParameterName.from_section(key)
-                default = re_to_dict(re_value, value)
-                default.update(re_to_dict(re_value_min_max, value))
-                default = {key: float(val) for key, val in default.items()}
+                default = re_to_dict(re_value_min_max, value)
+                default = {key: np.float64(val) for key, val in default.items()}
                 matches = set_params(params, name, **default)
 
                 print("  {:<43s} {:<30d}".format("({})".format(key), len(matches)))
@@ -233,9 +285,8 @@ def set_params_from_config_file(params, config_filename):
 
             total_matches = set()
             for name, value in pairs:
-                default = re_to_dict(re_value, value)
-                default.update(re_to_dict(re_value_min_max, value))
-                default = {key: float(val) for key, val in default.items()}
+                default = re_to_dict(re_value_min_max, value)
+                default = {key: np.float64(val) for key, val in default.items()}
                 matches = set_params(params, name, **default)
                 total_matches.update(matches)
 
@@ -260,7 +311,8 @@ def get_pairs_from_file(filename, name):
             if 'Assignment' in line:
                 continue
             line = remove_comments(line, '#;')
-            line = re.sub('\s*\<\s*', '<', line)
+            line = re.sub('\s*\[\s*', '[', line)
+            line = re.sub('\s*\]\s*', ']', line)
             elements = line.split()
             if len(elements) > 1:
                 peak = peaks.Peak(elements[0])
@@ -283,16 +335,25 @@ def set_param_status(params, items):
 
     for key, status in items:
         name = ParameterName.from_section(key)
-        set_params(params, name, vary=vary[status])
+        if status in vary:
+            set_params(params, name, vary=vary[status])
+        else:
+            name_other = ParameterName.from_section(status)
+            set_params(params, name, name_other=name_other)
 
 
-def set_params(params, name, value=None, vary=None, min=None, max=None):
+def set_params(params, name, value=None, vary=None, min=None, max=None, name_other=None):
     matches = set()
     re_to_match = name.to_re()
     for name_, param in params.items():
         if re_to_match.match(name_):
-            param.set(value=value, vary=vary, min=min, max=max)
-            if (value, vary, min, max) is not (None, None, None, None):
+            expr = None
+            if name_other is not None:
+                name_updated = ParameterName.from_full_name(name_).update(name_other).to_full_name()
+                if name_updated != name_ and name_updated in params:
+                    expr = name_updated
+            if (value, vary, min, max, expr) is not (None, None, None, None, None):
+                param.set(value=value, vary=vary, min=min, max=max, expr=expr)
                 matches.add(name_)
 
     return matches
@@ -301,7 +362,7 @@ def set_params(params, name, value=None, vary=None, min=None, max=None):
 def write_par(params, output_dir='./'):
     """Write fitted parameters int a file"""
 
-    from ConfigParser import SafeConfigParser
+    from six.moves.configparser import ConfigParser
 
     filename = os.path.join(output_dir, 'parameters.fit')
 
@@ -311,12 +372,14 @@ def write_par(params, output_dir='./'):
 
     for name, param in params.items():
 
-        if not param.vary:
-            val_print = '{: .5e} fixed'.format(param.value)
-        elif param.stderr is not None:
-            val_print = '{: .5e} +/- {:.5e}'.format(param.value, param.stderr)
+        if not param.vary and param.expr is None:
+            val_print = '{: .5e} ; fixed'.format(param.value)
+        elif param.stderr is None:
+            val_print = '{: .5e}  ; error not calculated'.format(param.value)
+        elif param.expr:
+            val_print = '{: .5e} +/- {:.5e} ; constrained'.format(param.value, param.stderr)
         else:
-            val_print = '{: .5e}  ; Error not calculated'.format(param.value)
+            val_print = '{: .5e} +/- {:.5e}'.format(param.value, param.stderr)
 
         par_name = ParameterName.from_full_name(name)
 
@@ -324,7 +387,7 @@ def write_par(params, output_dir='./'):
 
             # This is a non-residue-specific parameter
 
-            name_print = par_name.to_section_name()
+            name_print = par_name
             section = 'GLOBAL'
 
         else:
@@ -334,21 +397,21 @@ def write_par(params, output_dir='./'):
             name_print = peaks.Peak(par_name.nuclei)
             section = par_name.to_section_name()
 
-        par_dict.setdefault(section, {})[name_print] = val_print
+        par_dict.setdefault(section, []).append((name_print, val_print))
 
-    cfg = SafeConfigParser()
+    cfg = ConfigParser()
     cfg.optionxform = str
 
     section_global = par_dict.pop('GLOBAL', None)
 
     if section_global is not None:
         cfg.add_section('GLOBAL')
-        for name, val in sorted(section_global.items()):
-            cfg.set('GLOBAL', name, val)
+        for name, val in sorted(section_global):
+            cfg.set('GLOBAL', str(name), val)
 
     for section, name_vals in sorted(par_dict.items()):
         cfg.add_section(section)
-        for peak, val in sorted(name_vals.items()):
+        for peak, val in sorted(name_vals):
             cfg.set(section, peak.assignment.upper(), val)
 
     with open(filename, 'w') as f:

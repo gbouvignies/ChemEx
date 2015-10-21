@@ -1,6 +1,8 @@
+from __future__ import absolute_import
 import functools
 
 import re
+
 
 re_peak_name = re.compile(
     '''
@@ -22,7 +24,10 @@ re_peak_name = re.compile(
 
 @functools.total_ordering
 class Peak(object):
-    def __init__(self, assignment):
+    def __init__(self, assignment=None):
+        if assignment is None:
+            assignment = ''
+
         self.resonances = get_resonances(assignment.upper())
         self.assignment = get_assignment(self.resonances)
 
@@ -32,8 +37,11 @@ class Peak(object):
     def __eq__(self, other):
         return self.assignment == other.assignment
 
+    def __hash__(self):
+        return hash(self.assignment)
+
     def __lt__(self, other):
-        if isinstance(other, basestring):
+        if isinstance(other, str):
             other = Peak(other)
 
         self_tuple = tuple((resonance['nucleus'], int(resonance['number'])) for resonance in self.resonances)

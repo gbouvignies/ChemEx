@@ -14,6 +14,7 @@ the reference:
 J Am Chem Soc (2012), 134, 8148-61
 
 """
+from __future__ import absolute_import
 
 import lmfit
 import numpy as np
@@ -23,11 +24,12 @@ from chemex import constants, parameters, peaks
 from chemex.bases import iph_2st, util
 from chemex.experiments import base_profile
 from chemex.experiments.cest import plotting
+from six.moves import zip
 
 try:
     from functools import lru_cache
 except ImportError:
-    from backports.functools_lru_cache import lru_cache
+    from chemex.lru_cache import lru_cache
 
 calculate_shift_2st = util.calculate_shift_ex_2st
 compute_liouvillian = iph_2st.compute_liouvillian
@@ -81,13 +83,18 @@ class Profile(base_profile.BaseProfile):
             'pb': ParameterName('pb', **kwargs1).to_full_name(),
             'kex_ab': ParameterName('kex_ab', **kwargs1).to_full_name(),
             'cs_i_a': ParameterName('cs_a', **kwargs2).to_full_name(),
+            'cs_i_b': ParameterName('cs_b', **kwargs2).to_full_name(),
             'dw_i_ab': ParameterName('dw_ab', **kwargs2).to_full_name(),
             'lambda_i_a': ParameterName('lambda_a', **kwargs3).to_full_name(),
-            'dlambda_i_ab': ParameterName('dlambda_ab', **kwargs3).to_full_name(),
+            'lambda_i_b': ParameterName('lambda_b', **kwargs3).to_full_name(),
             'rho_i_a': ParameterName('rho_a', **kwargs3).to_full_name(),
+            'rho_i_b': ParameterName('rho_b', **kwargs3).to_full_name(),
         }
 
     def create_default_parameters(self):
+
+        cs_i_b = '{} + {}'.format(self.map_names['cs_i_a'], self.map_names['dw_i_ab'])
+        rho_i_b = self.map_names['rho_i_a']
 
         parameters = lmfit.Parameters()
 
@@ -95,16 +102,23 @@ class Profile(base_profile.BaseProfile):
             # Name, Value, Vary, Min, Max, Expr
             (self.map_names['pb'], 0.05, True, 0.0, 1.0, None),
             (self.map_names['kex_ab'], 200.0, True, 0.0, None, None),
-            (self.map_names['cs_i_a'], 0.0, False, None, None, None),
             (self.map_names['dw_i_ab'], 0.0, True, None, None, None),
+            (self.map_names['cs_i_a'], 0.0, False, None, None, None),
+            (self.map_names['cs_i_b'], 0.0, True, None, None, cs_i_b),
             (self.map_names['lambda_i_a'], 10.0, True, 0.0, None, None),
-            (self.map_names['dlambda_i_ab'], 0.0, True, None, None, None),
+            (self.map_names['lambda_i_b'], 10.0, True, 0.0, None, None),
             (self.map_names['rho_i_a'], 1.0, True, 0.0, None, None),
+            (self.map_names['rho_i_b'], 1.0, True, 0.0, None, rho_i_b),
         )
 
         return parameters
 
-    def _calculate_profile(self, pb, kex_ab, dw_i_ab, rho_i_a, lambda_i_a, dlambda_i_ab, cs_i_a):
+    def _calculate_profile(self,
+                           pb,
+                           kex_ab,
+                           cs_i_a, rho_i_a, lambda_i_a,
+                           cs_i_b, rho_i_b, lambda_i_b,
+                           **kwargs):
         """Calculate the intensity in presence of exchange after a CEST block.
 
         Parameters
@@ -130,21 +144,8 @@ class Profile(base_profile.BaseProfile):
             Intensity after the CEST block
         """
 
-        omega_i_a_array = (cs_i_a - self.carrier) * self.ppm_to_rads - two_pi * self.b1_offsets
-        domega_i_ab = dw_i_ab * self.ppm_to_rads
-        lambda_i_b = lambda_i_a + dlambda_i_ab
-
-        # Correct chemical shift against exchange induced shift
-
-        shift_ex, _ = calculate_shift_2st(
-            pb=pb,
-            kex_ab=kex_ab,
-            domega_i_ab=domega_i_ab,
-            lambda_i_a=lambda_i_a,
-            lambda_i_b=lambda_i_b
-        )
-
-        # omega_i_a_array -= shift_ex
+        omega_i_a, omega_i_b = (np.array([cs_i_a, cs_i_b]) - self.carrier) * self.ppm_to_rads
+        omega1x_i = two_pi * self.b1_frq
 
         pa = 1.0 - pb
         magz_eq = np.array([[0.0, 0.0, pa,
@@ -152,7 +153,7 @@ class Profile(base_profile.BaseProfile):
 
         profile = []
 
-        for b1_offset, omega_i_a in zip(self.b1_offsets, omega_i_a_array):
+        for b1_offset in self.b1_offsets:
 
             if b1_offset <= -1.0e+04:
 
@@ -163,8 +164,8 @@ class Profile(base_profile.BaseProfile):
                 kwargs = {
                     'pb': pb,
                     'kex_ab': kex_ab,
-                    'lambda_i_a': lambda_i_a, 'rho_i_a': rho_i_a, 'omega_i_a': omega_i_a,
-                    'lambda_i_b': lambda_i_b, 'rho_i_b': rho_i_a, 'omega_i_b': omega_i_a + domega_i_ab,
+                    'lambda_i_a': lambda_i_a, 'rho_i_a': rho_i_a, 'omega_i_a': omega_i_a - two_pi * b1_offset,
+                    'lambda_i_b': lambda_i_b, 'rho_i_b': rho_i_b, 'omega_i_b': omega_i_b - two_pi * b1_offset,
                 }
 
                 propagator = np.average(
@@ -250,7 +251,7 @@ class Profile(base_profile.BaseProfile):
         else:
             values = self.val
 
-        iter_vals = zip(self.b1_offsets, self.val, self.err, values)
+        iter_vals = list(zip(self.b1_offsets, self.val, self.err, values))
 
         for b1_offset, val, err, cal in iter_vals:
 

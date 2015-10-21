@@ -16,8 +16,10 @@ specifically to analyze the experiment found in the reference:
 Proc Natl Acad Sci USA (2007) 104, 18473-7
 
 """
+from __future__ import absolute_import
 
 import functools
+from functools import reduce
 
 import lmfit
 import numpy as np
@@ -27,11 +29,12 @@ from chemex import constants, parameters, peaks
 from chemex.bases import iph_aph_2st, util as bases_util
 from chemex.experiments import base_profile
 from chemex.experiments.cpmg import plotting
+from six.moves import zip
 
 try:
     from functools import lru_cache
 except ImportError:
-    from backports.functools_lru_cache import lru_cache
+    from chemex.lru_cache import lru_cache
 
 reduce = functools.reduce
 dot = np.dot
@@ -296,7 +299,7 @@ class Profile(base_profile.BaseProfile):
         else:
             values = self.val
 
-        iter_vals = zip(self.ncycs, self.val, self.err, values)
+        iter_vals = list(zip(self.ncycs, self.val, self.err, values))
 
         for ncyc, val, err, cal in iter_vals:
 

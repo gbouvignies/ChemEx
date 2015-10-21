@@ -1,6 +1,7 @@
 """HMQC-HSQC shifts
 
 """
+from __future__ import absolute_import
 
 import lmfit
 import numpy as np
@@ -9,11 +10,12 @@ from chemex import constants, parameters, peaks
 from chemex.bases import util
 from chemex.experiments import base_profile
 from chemex.experiments.shift import plotting
+from six.moves import zip
 
 try:
     from functools import lru_cache
 except ImportError:
-    from backports.functools_lru_cache import lru_cache
+    from chemex.lru_cache import lru_cache
 
 check_par = base_profile.check_par
 ParameterName = parameters.ParameterName

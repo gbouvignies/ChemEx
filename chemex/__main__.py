@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+from __future__ import print_function
 #!/usr/bin/env python
 
 import copy
@@ -10,6 +12,7 @@ import numpy as np
 from chemex import fitting, parameters, parsing, util, datasets
 from chemex.parameters import write_par
 import chemex.parsing
+from six.moves import range
 
 
 def print_logo():
@@ -17,7 +20,7 @@ def print_logo():
 
     from chemex import version
 
-    print(
+    print((
         "\n"
         "* * * * * * * * * * * * * * * * * * * * * * * * *\n"
         "*      ________                   ______        *\n"
@@ -32,7 +35,7 @@ def print_logo():
         "*                                               *\n"
         "* * * * * * * * * * * * * * * * * * * * * * * * *\n"
             .format(version.__version__)
-    )
+    ))
 
 
 def make_bootstrap_dataset(data):
@@ -55,7 +58,7 @@ def make_bootstrap_dataset(data):
 
     for profile in profiles.values():
         data_bs.extend(
-            [choice(profile) for _ in xrange(len(profile))]
+            [choice(profile) for _ in range(len(profile))]
         )
 
     return data_bs
@@ -81,8 +84,8 @@ def read_data(args):
     data = datasets.DataSet()
 
     if args.experiments:
-        print("{:<45s} {:<25s} {:<25s}".format("File Name", "Experiment", "Profiles"))
-        print("{:<45s} {:<25s} {:<25s}".format("---------", "----------", "--------"))
+        print(("{:<45s} {:<25s} {:<25s}".format("File Name", "Experiment", "Profiles")))
+        print(("{:<45s} {:<25s} {:<25s}".format("---------", "----------", "--------")))
         for filename in args.experiments:
             data.add_dataset_from_file(filename, args.res_incl, args.res_excl)
 

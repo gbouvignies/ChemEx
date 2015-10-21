@@ -1,16 +1,17 @@
 from __future__ import division, print_function
+from __future__ import absolute_import
 
-import ConfigParser
 import copy
 import importlib
 import operator
 import sys
-
 import os
 import os.path
+
 import numpy as np
 from scipy import stats
 
+import six.moves.configparser
 from chemex import util
 from chemex.experiments import base_profile
 
@@ -156,7 +157,7 @@ class DataSet(object):
             # Reads profile information (name, filename)
             profile_filenames = {key.lower(): val for key, val in config.items('data')}
 
-        except ConfigParser.NoSectionError as e:
+        except six.moves.configparser.NoSectionError as e:
             sys.exit("    Reading aborted: {}".format(e))
 
         except KeyError as e:
@@ -168,7 +169,7 @@ class DataSet(object):
                 {key.lower(): val for key, val in config.items('extra_parameters')}
             )
 
-        except ConfigParser.NoSectionError:
+        except six.moves.configparser.NoSectionError:
             pass
 
         path = util.normalize_path(working_dir, experiment_details.get('path', './'))

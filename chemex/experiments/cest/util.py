@@ -1,7 +1,10 @@
+from __future__ import absolute_import
 import collections
 
 import numpy as np
 from scipy import interpolate, linalg, signal, stats
+
+from six.moves import zip
 
 
 def estimate_noise(x):

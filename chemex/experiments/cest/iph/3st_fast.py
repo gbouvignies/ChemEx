@@ -14,6 +14,7 @@ the reference:
 J Am Chem Soc (2012), 134, 8148-61
 
 """
+from __future__ import absolute_import
 
 import lmfit
 import numpy as np
@@ -23,11 +24,12 @@ from chemex import constants, parameters, peaks
 from chemex.bases import iph_3st
 from chemex.experiments import base_profile
 from chemex.experiments.cest import plotting
+from six.moves import zip
 
 try:
     from functools import lru_cache
 except ImportError:
-    from backports.functools_lru_cache import lru_cache
+    from chemex.lru_cache import lru_cache
 
 compute_liouvillian = iph_3st.compute_liouvillian
 check_par = base_profile.check_par
@@ -83,15 +85,24 @@ class Profile(base_profile.BaseProfile):
             'kex_bc': ParameterName('kex_bc', **kwargs1).to_full_name(),
             'kex_ac': ParameterName('kex_ac', **kwargs1).to_full_name(),
             'cs_i_a': ParameterName('cs_a', **kwargs2).to_full_name(),
+            'cs_i_b': ParameterName('cs_b', **kwargs2).to_full_name(),
+            'cs_i_c': ParameterName('cs_c', **kwargs2).to_full_name(),
             'dw_i_ab': ParameterName('dw_ab', **kwargs2).to_full_name(),
             'dw_i_ac': ParameterName('dw_ac', **kwargs2).to_full_name(),
             'lambda_i_a': ParameterName('lambda_a', **kwargs3).to_full_name(),
-            'dlambda_i_ab': ParameterName('dlambda_ab', **kwargs3).to_full_name(),
-            'dlambda_i_ac': ParameterName('dlambda_ac', **kwargs3).to_full_name(),
+            'lambda_i_b': ParameterName('lambda_b', **kwargs3).to_full_name(),
+            'lambda_i_c': ParameterName('lambda_c', **kwargs3).to_full_name(),
             'rho_i_a': ParameterName('rho_a', **kwargs3).to_full_name(),
+            'rho_i_b': ParameterName('rho_b', **kwargs3).to_full_name(),
+            'rho_i_c': ParameterName('rho_c', **kwargs3).to_full_name(),
         }
 
     def create_default_parameters(self):
+
+        lambda_i_b = lambda_i_c = self.map_names['lambda_i_a']
+        rho_i_b = rho_i_c = self.map_names['rho_i_a']
+        cs_i_b = '{} + {}'.format(self.map_names['cs_i_a'], self.map_names['dw_i_ab'])
+        cs_i_c = '{} + {}'.format(self.map_names['cs_i_a'], self.map_names['dw_i_ac'])
 
         parameters = lmfit.Parameters()
 
@@ -102,19 +113,23 @@ class Profile(base_profile.BaseProfile):
             (self.map_names['kex_ab'], 200.0, True, 0.0, None, None),
             (self.map_names['kex_bc'], 200.0, True, 0.0, None, None),
             (self.map_names['kex_ac'], 0.0, False, 0.0, None, None),
-            (self.map_names['cs_i_a'], 0.0, False, None, None, None),
             (self.map_names['dw_i_ab'], 0.0, True, None, None, None),
             (self.map_names['dw_i_ac'], 0.0, True, None, None, None),
+            (self.map_names['cs_i_a'], 0.0, False, None, None, None),
+            (self.map_names['cs_i_b'], 0.0, False, None, None, cs_i_b),
+            (self.map_names['cs_i_c'], 0.0, False, None, None, cs_i_c),
             (self.map_names['lambda_i_a'], 10.0, True, 0.0, None, None),
-            (self.map_names['dlambda_i_ab'], 0.0, False, None, None, None),
-            (self.map_names['dlambda_i_ac'], 0.0, False, None, None, None),
+            (self.map_names['lambda_i_b'], 10.0, False, 0.0, None, lambda_i_b),
+            (self.map_names['lambda_i_c'], 10.0, False, 0.0, None, lambda_i_c),
             (self.map_names['rho_i_a'], 1.0, True, 0.0, None, None),
+            (self.map_names['rho_i_b'], 1.0, False, 0.0, None, rho_i_b),
+            (self.map_names['rho_i_c'], 1.0, False, 0.0, None, rho_i_c),
         )
 
         return parameters
 
-    def _calculate_profile(self, pb, pc, kex_ab, kex_bc, kex_ac, dw_i_ab, dw_i_ac, rho_i_a, lambda_i_a, dlambda_i_ab,
-                           dlambda_i_ac, cs_i_a):
+    def _calculate_profile(self, pb, pc, kex_ab, kex_bc, kex_ac, cs_i_a, dw_i_ab, dw_i_ac, rho_i_a, rho_i_b, rho_i_c,
+                           lambda_i_a, lambda_i_b, lambda_i_c, **kwargs):
         """Calculate the intensity in presence of exchange after a CEST block.
 
         Parameters
@@ -145,9 +160,6 @@ class Profile(base_profile.BaseProfile):
         domega_i_ac = dw_i_ac * self.ppm_to_rads
         omega1x_i = two_pi * self.b1_frq
 
-        # Correct chemical shift against exchange induced shift
-        # TODO: exchange induced shift for 3-state exchange
-
         magz_eq = np.array([[1 - pb - pc], [pb], [pc]])
 
         profile = []
@@ -164,8 +176,8 @@ class Profile(base_profile.BaseProfile):
                     pb=pb, pc=pc,
                     kex_ab=kex_ab, kex_bc=kex_bc, kex_ac=kex_ac,
                     lambda_i_a=lambda_i_a, rho_i_a=rho_i_a, omega_i_a=omega_i_a,
-                    lambda_i_b=lambda_i_a + dlambda_i_ab, rho_i_b=rho_i_a, omega_i_b=omega_i_a + domega_i_ab,
-                    lambda_i_c=lambda_i_a + dlambda_i_ac, rho_i_c=rho_i_a, omega_i_c=omega_i_a + domega_i_ac,
+                    lambda_i_b=lambda_i_b, rho_i_b=rho_i_b, omega_i_b=omega_i_a + domega_i_ab,
+                    lambda_i_c=lambda_i_c, rho_i_c=rho_i_c, omega_i_c=omega_i_a + domega_i_ac,
                     omega1x_i=omega1x_i
                 )
 
@@ -257,7 +269,7 @@ class Profile(base_profile.BaseProfile):
         else:
             values = self.val
 
-        iter_vals = zip(self.b1_offsets, self.val, self.err, values)
+        iter_vals = list(zip(self.b1_offsets, self.val, self.err, values))
 
         for b1_offset, val, err, cal in iter_vals:
 

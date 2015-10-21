@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import matplotlib as mpl
 
 dark_gray = '0.13'

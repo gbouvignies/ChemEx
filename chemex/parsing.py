@@ -1,9 +1,11 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import argparse
 import importlib
 import pkgutil
 import sys
 
-from chemex import experiments, version, util
+from chemex import experiments, util
 
 
 class MyParser(argparse.ArgumentParser):
@@ -24,7 +26,7 @@ def arg_parse():
     parser = MyParser(
         description=description,
         prog='chemex',
-        version='chemex version {}'.format(version.__version__)
+        # version='chemex version {}'.format(version.__version__)
     )
 
     subparsers = parser.add_subparsers(dest='commands', )
@@ -193,14 +195,14 @@ def format_experiment_help(type_experiment, name_experiment):
 
     util.header2(headline1)
     for name in module_exp.attributes_exp:
-        print("  * {:s}".format(name))
+        print(("  * {:s}".format(name)))
 
     util.header2(headline2)
     for name, settings in module_exp.params_exp.items():
         if settings['vary']:
-            print("  * {:s}".format(name))
+            print(("  * {:s}".format(name)))
 
     util.header2(headline3)
     for name, settings in module_exp.params_exp.items():
         if not settings['vary']:
-            print("  * {:s}".format(name))
+            print(("  * {:s}".format(name)))
