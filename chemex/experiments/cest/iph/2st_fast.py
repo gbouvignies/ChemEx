@@ -14,11 +14,12 @@ the reference:
 J Am Chem Soc (2012), 134, 8148-61
 
 """
+
 from __future__ import absolute_import
 
 import lmfit
 import numpy as np
-from scipy import linalg
+from scipy import linalg, constants as constants_sp
 
 from chemex import constants, parameters, peaks
 from chemex.bases import iph_2st, util
@@ -37,6 +38,9 @@ check_par = base_profile.check_par
 ParameterName = parameters.ParameterName
 
 two_pi = 2.0 * np.pi
+h_planck = constants_sp.h
+kb = constants_sp.k
+r_gas = constants_sp.R
 
 attributes_exp = {
     'h_larmor_frq': float,
@@ -64,6 +68,10 @@ class Profile(base_profile.BaseProfile):
 
         self.experiment_name = check_par(exp_details, 'experiment_name')
         self.on_resonance_filter = check_par(exp_details, 'on_resonance_filter', convert=float, default=0.0)
+        self.model = check_par(exp_details, 'model', default='pb_kex')
+        if self.model not in {'pb_kex', 'eyring'}:
+            print('Warning: The \'error\' option should be either \'pb_kex\' or \'eyring\'. Set to \'pb_kex\'')
+            self.model = exp_details['model'] = 'pb_kex'
 
         self._calculate_profile = lru_cache(5)(self._calculate_profile)
         self.plot_data = plotting.plot_data
@@ -92,14 +100,22 @@ class Profile(base_profile.BaseProfile):
             'rho_i_b': ParameterName('rho_b', **kwargs3).to_full_name(),
         }
 
+        if self.model == 'eyring':
+            self.map_names.update({
+                'dh_b': ParameterName('dh_b').to_full_name(),
+                'ds_b': ParameterName('ds_b').to_full_name(),
+                'dh_ab': ParameterName('dh_ab').to_full_name(),
+                'ds_ab': ParameterName('ds_ab').to_full_name(),
+            })
+
     def create_default_parameters(self):
 
-        cs_i_b = '{} + {}'.format(self.map_names['cs_i_a'], self.map_names['dw_i_ab'])
+        cs_i_b = '{cs_i_a} + {dw_i_ab}'.format(**self.map_names)
         rho_i_b = self.map_names['rho_i_a']
 
-        parameters = lmfit.Parameters()
+        params = lmfit.Parameters()
 
-        parameters.add_many(
+        params.add_many(
             # Name, Value, Vary, Min, Max, Expr
             (self.map_names['pb'], 0.05, True, 0.0, 1.0, None),
             (self.map_names['kex_ab'], 200.0, True, 0.0, None, None),
@@ -112,7 +128,32 @@ class Profile(base_profile.BaseProfile):
             (self.map_names['rho_i_b'], 1.0, True, 0.0, None, rho_i_b),
         )
 
-        return parameters
+        if self.model == 'eyring':
+            t_kelvin = self.temperature + 273.15
+            kbt_h = kb * t_kelvin / h_planck
+            rt = r_gas * t_kelvin
+            kex = (
+                '{kbt_h} * '
+                'exp(-({dh_ab} - {t_kelvin} * {ds_ab}) / {rt}) * '
+                '(1.0 + exp(({dh_b} - {t_kelvin} * {ds_b}) / {rt}))'
+                    .format(kbt_h=kbt_h, t_kelvin=t_kelvin, rt=rt, **self.map_names)
+            )
+            pb = (
+                '1.0 / (1.0 + exp(({dh_b} - {t_kelvin} * {ds_b}) / {rt}))'
+                    .format(t_kelvin=t_kelvin, rt=rt, **self.map_names)
+            )
+
+            params.add_many(
+                # Name, Value, Vary, Min, Max, Expr
+                (self.map_names['dh_b'], 6000.0, True, None, None, None),
+                (self.map_names['ds_b'], 0.0, False, None, None, None),
+                (self.map_names['dh_ab'], 60000.0, True, None, None, None),
+                (self.map_names['ds_ab'], 0.0, False, None, None, None),
+                (self.map_names['pb'], 0.05, True, 0.0, 1.0, pb),
+                (self.map_names['kex_ab'], 200.0, True, 0.0, None, kex),
+            )
+
+        return params
 
     def _calculate_profile(self,
                            pb,

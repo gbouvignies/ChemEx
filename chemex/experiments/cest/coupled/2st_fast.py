@@ -19,7 +19,7 @@ from __future__ import absolute_import
 
 import lmfit
 import numpy as np
-from scipy import linalg
+from scipy import linalg, constants as constants_sp
 
 from chemex import constants, parameters, peaks
 from chemex.bases import iph_2st, util
@@ -39,6 +39,9 @@ check_par = base_profile.check_par
 ParameterName = parameters.ParameterName
 
 two_pi = 2.0 * np.pi
+h_planck = constants_sp.h
+kb = constants_sp.k
+r_gas = constants_sp.R
 
 attributes_exp = {
     'h_larmor_frq': float,
@@ -65,6 +68,10 @@ class Profile(base_profile.BaseProfile):
 
         self.experiment_name = check_par(exp_details, 'experiment_name')
         self.on_resonance_filter = check_par(exp_details, 'on_resonance_filter', convert=float, default=0.0)
+        self.model = check_par(exp_details, 'model', default='pb_kex')
+        if self.model not in {'pb_kex', 'eyring'}:
+            print('Warning: The \'error\' option should be either \'pb_kex\' or \'eyring\'. Set to \'pb_kex\'')
+            self.model = exp_details['model'] = 'pb_kex'
 
         self._calculate_profile = lru_cache(5)(self._calculate_profile)
         self.plot_data = plotting.plot_data
@@ -89,30 +96,75 @@ class Profile(base_profile.BaseProfile):
             'pb': ParameterName('pb', **kwargs1).to_full_name(),
             'kex_ab': ParameterName('kex_ab', **kwargs1).to_full_name(),
             'cs_i_a': ParameterName('cs_a', **kwargs2).to_full_name(),
+            'cs_i_b': ParameterName('cs_b', **kwargs2).to_full_name(),
             'dw_i_ab': ParameterName('dw_ab', **kwargs2).to_full_name(),
             'lambda_i_a': ParameterName('lambda_a', **kwargs3).to_full_name(),
-            'dlambda_i_ab': ParameterName('dlambda_ab', **kwargs3).to_full_name(),
+            'lambda_i_b': ParameterName('lambda_b', **kwargs3).to_full_name(),
             'rho_i_a': ParameterName('rho_a', **kwargs3).to_full_name(),
+            'rho_i_b': ParameterName('rho_b', **kwargs3).to_full_name(),
         }
+
+        if self.model == 'eyring':
+            self.map_names.update({
+                'dh_b': ParameterName('dh_b').to_full_name(),
+                'ds_b': ParameterName('ds_b').to_full_name(),
+                'dh_ab': ParameterName('dh_ab').to_full_name(),
+                'ds_ab': ParameterName('ds_ab').to_full_name(),
+            })
 
     def create_default_parameters(self):
 
-        parameters = lmfit.Parameters()
+        cs_i_b = '{cs_i_a} + {dw_i_ab}'.format(**self.map_names)
+        rho_i_b = self.map_names['rho_i_a']
 
-        parameters.add_many(
+        params = lmfit.Parameters()
+
+        params.add_many(
             # Name, Value, Vary, Min, Max, Expr
             (self.map_names['pb'], 0.05, True, 0.0, 1.0, None),
             (self.map_names['kex_ab'], 200.0, True, 0.0, None, None),
-            (self.map_names['cs_i_a'], 0.0, False, None, None, None),
             (self.map_names['dw_i_ab'], 0.0, True, None, None, None),
+            (self.map_names['cs_i_a'], 0.0, False, None, None, None),
+            (self.map_names['cs_i_b'], 0.0, True, None, None, cs_i_b),
             (self.map_names['lambda_i_a'], 10.0, True, 0.0, None, None),
-            (self.map_names['dlambda_i_ab'], 0.0, True, None, None, None),
+            (self.map_names['lambda_i_b'], 10.0, True, 0.0, None, None),
             (self.map_names['rho_i_a'], 1.0, True, 0.0, None, None),
+            (self.map_names['rho_i_b'], 1.0, True, 0.0, None, rho_i_b),
         )
 
-        return parameters
+        if self.model == 'eyring':
+            t_kelvin = self.temperature + 273.15
+            kbt_h = kb * t_kelvin / h_planck
+            rt = r_gas * t_kelvin
+            kex = (
+                '{kbt_h} * '
+                'exp(-({dh_ab} - {t_kelvin} * {ds_ab}) / {rt}) * '
+                '(1.0 + exp(({dh_b} - {t_kelvin} * {ds_b}) / {rt}))'
+                    .format(kbt_h=kbt_h, t_kelvin=t_kelvin, rt=rt, **self.map_names)
+            )
+            pb = (
+                '1.0 / (1.0 + exp(({dh_b} - {t_kelvin} * {ds_b}) / {rt}))'
+                    .format(t_kelvin=t_kelvin, rt=rt, **self.map_names)
+            )
 
-    def _calculate_profile(self, pb, kex_ab, dw_i_ab, rho_i_a, lambda_i_a, dlambda_i_ab, cs_i_a):
+            params.add_many(
+                # Name, Value, Vary, Min, Max, Expr
+                (self.map_names['dh_b'], 6000.0, True, None, None, None),
+                (self.map_names['ds_b'], 0.0, False, None, None, None),
+                (self.map_names['dh_ab'], 60000.0, True, None, None, None),
+                (self.map_names['ds_ab'], 0.0, False, None, None, None),
+                (self.map_names['pb'], 0.05, True, 0.0, 1.0, pb),
+                (self.map_names['kex_ab'], 200.0, True, 0.0, None, kex),
+            )
+
+        return params
+
+    def _calculate_profile(self,
+                           pb,
+                           kex_ab,
+                           cs_i_a, rho_i_a, lambda_i_a,
+                           cs_i_b, rho_i_b, lambda_i_b,
+                           **kwargs):
         """Calculate the intensity in presence of exchange after a CEST block.
 
         Parameters
@@ -138,28 +190,14 @@ class Profile(base_profile.BaseProfile):
             Intensity after the CEST block
         """
 
-        omega_i_a_array = (cs_i_a - self.carrier) * self.ppm_to_rads - two_pi * self.b1_offsets
-        domega_i_ab = dw_i_ab * self.ppm_to_rads
+        omega_i_a, omega_i_b = (np.array([cs_i_a, cs_i_b]) - self.carrier) * self.ppm_to_rads
         omega1x_i = two_pi * self.b1_frq
-        lambda_i_b = lambda_i_a + dlambda_i_ab
-
-        # Correct chemical shift against exchange induced shift
-
-        shift_ex, _ = calculate_shift_2st(
-            pb=pb,
-            kex_ab=kex_ab,
-            domega_i_ab=domega_i_ab,
-            lambda_i_a=lambda_i_a,
-            lambda_i_b=lambda_i_b
-        )
-
-        omega_i_a_array -= shift_ex
 
         magz_eq = np.array([[1 - pb], [pb]])
 
         profile = []
 
-        for b1_offset, omega_i_a in zip(self.b1_offsets, omega_i_a_array):
+        for b1_offset in self.b1_offsets:
 
             if b1_offset <= -1.0e+04:
 
@@ -173,9 +211,9 @@ class Profile(base_profile.BaseProfile):
                     liouvillian = compute_liouvillian(
                         pb=pb,
                         kex_ab=kex_ab,
-                        lambda_i_a=lambda_i_a, rho_i_a=rho_i_a, omega_i_a=omega_i_a + j,
-                        lambda_i_b=lambda_i_b, rho_i_b=rho_i_a, omega_i_b=omega_i_a + domega_i_ab + j,
-                        omega1x_i=omega1x_i
+                        lambda_i_a=lambda_i_a, rho_i_a=rho_i_a, omega_i_a=omega_i_a - two_pi * b1_offset + j,
+                        lambda_i_b=lambda_i_b, rho_i_b=rho_i_b, omega_i_b=omega_i_b - two_pi * b1_offset + j,
+                        omega1x_i=omega1x_i,
                     )
 
                     s, vr = linalg.eig(liouvillian)

@@ -1,7 +1,7 @@
 from __future__ import absolute_import
 import importlib
-import os
 
+import os
 import numpy as np
 
 from chemex.experiments.cest import util
@@ -29,6 +29,9 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
         profiles.append(profile)
 
     error = experiment_details.get('error', 'file')
+    if error not in {'file', 'auto'}:
+        print('Warning: The \'error\' option should either be \'file\' or \'auto\'. Set to \'file\'')
+        error = 'file'
 
     if error == 'auto':
 
@@ -37,17 +40,9 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
             profile.err = np.zeros_like(profile.err) + error_value
 
     if res_incl is not None:
-        profiles = [
-            profile
-            for profile in profiles
-            if profile.profile_name in res_incl
-            ]
+        profiles = [profile for profile in profiles if profile.profile_name in res_incl]
     elif res_excl is not None:
-        profiles = [
-            profile
-            for profile in profiles
-            if profile.profile_name not in res_excl
-            ]
+        profiles = [profile for profile in profiles if profile.profile_name not in res_excl]
 
     ndata = sum(len(profile.val) for profile in profiles)
 
@@ -55,7 +50,7 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
 
 
 def name_experiment(experiment_details=None):
-    if not experiment_details:
+    if experiment_details is None:
         experiment_details = dict()
 
     if 'name' in experiment_details:

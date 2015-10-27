@@ -56,7 +56,7 @@ mat_kba = ref.mat_kba[0:30, 0:30]
 
 
 def compute_liouvillian(
-        pb, kex_ab,
+        pb=0.0, kex_ab=0.0,
         lambda_i_a=0.0, rho_i_a=0.0, rhoa_i_a=0.0, eta_i_a=0.0, delta_i_a=0.0, omega_i_a=0.0,
         lambda_i_b=0.0, rho_i_b=0.0, rhoa_i_b=0.0, eta_i_b=0.0, delta_i_b=0.0, omega_i_b=0.0,
         lambda_s_a=0.0, rho_s_a=0.0, rhoa_s_a=0.0, eta_s_a=0.0, delta_s_a=0.0, omega_s_a=0.0,

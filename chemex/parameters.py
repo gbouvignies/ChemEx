@@ -2,10 +2,10 @@ from __future__ import print_function
 from __future__ import absolute_import
 
 import copy
+
 import os
 import os.path
 import re
-
 import numpy as np
 import lmfit
 
@@ -240,9 +240,16 @@ def create_params(data):
     params = lmfit.Parameters()
 
     for profile in data:
+        params_with_expr = []
+        params_without_expr = []
         for name, param in profile.create_default_parameters().items():
             if name not in params or not params[name].vary:
-                params.update({name: param})
+                if param.expr:
+                    params_with_expr.append(param)
+                else:
+                    params_without_expr.append(param)
+        params.update({param.name: param for param in params_without_expr})
+        params.update({param.name: param for param in params_with_expr})
 
     return params
 

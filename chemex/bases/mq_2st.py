@@ -39,7 +39,7 @@ p_180y_s = np.diag([-1.0, 1.0, -1.0, 1.0,
 
 
 def compute_liouvillian(
-        pb, kex_ab,
+        pb=0.0, kex_ab=0.0,
         omega_i_a=0.0, omega_s_a=0.0,
         omega_i_b=0.0, omega_s_b=0.0,
         lambda_mq_a=0.0, mu_mq_a=0.0,

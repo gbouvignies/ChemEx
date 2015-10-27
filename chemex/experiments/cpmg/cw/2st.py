@@ -22,6 +22,7 @@ from functools import reduce
 
 import lmfit
 import numpy as np
+
 from scipy import linalg
 
 from chemex import constants, parameters, peaks
@@ -94,7 +95,8 @@ class Profile(base_profile.BaseProfile):
             'cs_i_a': ParameterName('cs_a', **kwargs2).to_full_name(),
             'dw_i_ab': ParameterName('dw_ab', **kwargs2).to_full_name(),
             'lambda_i_a': ParameterName('lambda_a', **kwargs3).to_full_name(),
-            'dlambda_i_ab': ParameterName('dlambda_ab', **kwargs3).to_full_name(),
+            # 'dlambda_i_ab': ParameterName('dlambda_ab', **kwargs3).to_full_name(),
+            'dlambda_i_ab': ParameterName('dlambda_ab', **kwargs2).to_full_name(),
             'rho_i_a': ParameterName('rho_a', **kwargs3).to_full_name(),
         }
 

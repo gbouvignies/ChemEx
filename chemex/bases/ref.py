@@ -220,7 +220,7 @@ mat_kdc = np.kron([[+0.0, +0.0, +0.0, +0.0],
                    [+0.0, +0.0, +0.0, -1.0]], np.eye(15))
 
 def compute_liouvillian(
-        pb, pc, pd, kex_ab, kex_ac, kex_ad, kex_bc, kex_bd, kex_cd,
+        pb=0.0, pc=0.0, pd=0.0, kex_ab=0.0, kex_ac=0.0, kex_ad=0.0, kex_bc=0.0, kex_bd=0.0, kex_cd=0.0,
         lambda_i_a=0.0, rho_i_a=0.0, rhoa_i_a=0.0, eta_i_a=0.0, delta_i_a=0.0, omega_i_a=0.0,
         lambda_i_b=0.0, rho_i_b=0.0, rhoa_i_b=0.0, eta_i_b=0.0, delta_i_b=0.0, omega_i_b=0.0,
         lambda_i_c=0.0, rho_i_c=0.0, rhoa_i_c=0.0, eta_i_c=0.0, delta_i_c=0.0, omega_i_c=0.0,

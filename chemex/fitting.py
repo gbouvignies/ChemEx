@@ -49,10 +49,6 @@ def run_fit(fit_filename, params, data):
                 result = minimizer.result
                 sys.stderr.write("\n -- Keyboard Interrupt: minimization stopped\n")
 
-            print(lmfit.fit_report(result.params))
-            ci = lmfit.conf_interval(minimizer, result)
-            lmfit.printfuncs.report_ci(ci)
-
             for name, param in result.params.items():
                 params[name] = param
 

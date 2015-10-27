@@ -114,8 +114,7 @@ class Profile(base_profile.BaseProfile):
         return parameters
 
     def _calculate_profile(self,
-                           pb,
-                           kex_ab,
+                           pb, kex_ab,
                            cs_i_a, rho_i_a, lambda_i_a,
                            cs_i_b, rho_i_b, lambda_i_b,
                            **kwargs):
@@ -145,7 +144,6 @@ class Profile(base_profile.BaseProfile):
         """
 
         omega_i_a, omega_i_b = (np.array([cs_i_a, cs_i_b]) - self.carrier) * self.ppm_to_rads
-        omega1x_i = two_pi * self.b1_frq
 
         pa = 1.0 - pb
         magz_eq = np.array([[0.0, 0.0, pa,
