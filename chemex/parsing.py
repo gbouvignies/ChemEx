@@ -1,11 +1,12 @@
 from __future__ import absolute_import
 from __future__ import print_function
+
 import argparse
 import importlib
 import pkgutil
 import sys
 
-from chemex import experiments, util
+from chemex import experiments, util, version
 
 
 class MyParser(argparse.ArgumentParser):
@@ -17,7 +18,7 @@ class MyParser(argparse.ArgumentParser):
 
 def arg_parse():
     description = (
-        "chemex is an analysis program for chemical exchange detected by "
+        "ChemEx is an analysis program for chemical exchange detected by "
         "NMR. It is designed to take almost any kind of NMR data to aid the "
         "analysis, but the principle techniques are CPMG relaxation "
         "dispersion and Chemical Exchange Saturation Transfer."
@@ -26,8 +27,9 @@ def arg_parse():
     parser = MyParser(
         description=description,
         prog='chemex',
-        # version='chemex version {}'.format(version.__version__)
     )
+
+    parser.add_argument('--version', action='version', version='%(prog)s {}'.format(version.__version__))
 
     subparsers = parser.add_subparsers(dest='commands', )
 
@@ -65,13 +67,11 @@ def arg_parse():
 
         for exp in exps:
 
-            name_exp = exp.replace(exp_type + '.', '')
-
             package_exp = importlib.import_module(exp)
 
             if hasattr(package_exp, 'Profile'):
                 subparsers_info_type.add_parser(
-                    name_exp,
+                    exp,
                     help=package_exp.__doc__.split('\n')[0],
                     add_help=False,
                 )
@@ -116,13 +116,6 @@ def arg_parse():
     )
 
     parser_fit.add_argument(
-        '-i',
-        '--info',
-        action='store_true',
-        help='List of experiments'
-    )
-
-    parser_fit.add_argument(
         '--noplot',
         action='store_true',
         help='No plots of the fits'
@@ -164,7 +157,21 @@ def arg_parse():
 
     args = parser.parse_args()
 
-    if args.commands == 'fit':
+    print(args)
+
+    if args.commands == 'info':
+
+        if args.types is None:
+
+            parser_info.print_help()
+            exit()
+
+        elif args.experiments is None:
+
+            parser_info_type.print_help()
+            exit()
+
+    elif args.commands == 'fit':
         if args.res_incl:
             args.res_incl = set([res.lower() for res in args.res_incl])
         if args.res_excl:
@@ -173,7 +180,7 @@ def arg_parse():
     return args
 
 
-def format_experiment_help(type_experiment, name_experiment):
+def format_experiment_help(type_experiment=None, name_experiment=None):
     headline1 = "Experimental parameters"
     headline2 = "Fitted parameters (by default)"
     headline3 = "Fixed parameters (by default)"

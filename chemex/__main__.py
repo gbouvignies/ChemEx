@@ -156,8 +156,8 @@ def main():
     args = parsing.arg_parse()
 
     if args.commands == 'info':
-
         chemex.parsing.format_experiment_help(args.types, args.experiments)
+
 
     elif args.commands == 'fit':
 
