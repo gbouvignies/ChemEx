@@ -1,43 +1,67 @@
-from ez_setup import use_setuptools
+# -*- coding: utf-8 -*-
 
-use_setuptools()
 
-# import sys
+"""setup.py: setuptools control."""
 
-# if sys.version_info[0] == 2 and sys.version_info[1] < 7:
-#     print "Sorry, Python < 2.7 is not supported"
-#     exit()
+import re
 
 from setuptools import setup, find_packages
 
-with open('chemex/version.py') as f:
-    exec (f.read())  # read and set the variable __version__
+version = re.search(
+    '^__version__\s*=\s*["|\'](.*)["|\']',
+    open('chemex/version.py').read(),
+    re.M
+).group(1)
 
-description = ('Program to fit chemical exchange induced shift and '
-               'relaxation data.')
+with open("README.md", "rb") as f:
+    long_description = f.read().decode("utf-8")
 
-install_requires = [
-    'numpy',
-    'scipy',
-    'matplotlib',
-    'lmfit',
-]
-
-entry_points = {
-    'console_scripts': [
-        'chemex = chemex.__main__:main',
-    ]
-}
 
 setup(
     name='chemex',
-    version=__version__,
-    description=description,
-    long_description=open('README.md').read(),
-    license='BSD 3-Clause',
+
+    version=version,
+
+    description='Program to fit chemical exchange induced shift and relaxation data',
+    long_description=long_description,
+
     author='Guillaume Bouvignies',
     author_email='gbouvignies@gmail.com',
+
+    url='https://github.com/gbouvignies/chemex',
+
+    license='3-Clause BSD',
+
+    classifiers=[
+        # How mature is this project? Common values are
+        #   3 - Alpha
+        #   4 - Beta
+        #   5 - Production/Stable
+        'Development Status :: 3 - Alpha',
+
+        'Intended Audience :: Science/Research',
+        'Topic :: Software Development :: Build Tools',
+
+        'License :: OSI Approved :: BSD License',
+
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.5',
+    ],
+
+    keywords='nmr protein dynamics chemical exchange cpmg cest relaxation data fitting',
+
     packages=find_packages(),
-    install_requires=install_requires,
-    entry_points=entry_points
+
+    install_requires=[
+        'numpy',
+        'scipy',
+        'matplotlib',
+        'lmfit',
+    ],
+
+    entry_points={
+        'console_scripts': [
+            'chemex = chemex.chemex:main',
+        ],
+    },
 )

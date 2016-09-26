@@ -1,14 +1,10 @@
-from __future__ import absolute_import
-from __future__ import print_function
 import os
 
 import matplotlib.pyplot as plt
 import numpy as np
+from chemex import peaks
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import MaxNLocator
-
-from chemex import peaks
-from six.moves import zip
 
 dark_gray = '0.13'
 red500 = '#F44336'

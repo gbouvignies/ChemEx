@@ -1,2 +1,0 @@
-rm -fr output
-chemex fit -e experiments/h1_ap_*.cfg -p parameters/params_h1.cfg -m methods/method_h1.cfg -o output

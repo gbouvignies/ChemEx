@@ -1,14 +1,9 @@
-from __future__ import print_function
-from __future__ import absolute_import
-
-import copy
 import itertools
 import sys
 
-import numpy as np
 import lmfit
-
-from chemex import parameters, util, datasets
+import numpy as np
+from chemex import datasets, parameters, util
 
 product = itertools.product
 
@@ -72,21 +67,15 @@ def find_independent_clusters(data, params):
     for profile in data:
 
         params_profile = lmfit.Parameters()
+        for name, param in profile.default_params.items():
+            params_profile[name] = lmfit.Parameter(name)
+
         names_vary_profile = []
 
-        for param in params.values():
-            if param.expr is None:
-                name = param.name
-                if name in profile.map_names.values():
-                    params_profile[name] = param
-                    if param.vary:
-                        names_vary_profile.append(name)
-
-        for param in params.values():
-            if param.expr is not None:
-                name = param.name
-                if name in profile.map_names.values():
-                    params_profile[name] = param
+        for name in profile.default_params:
+            params_profile[name] = params[name]
+            if params[name].vary and not params[name].expr:
+                names_vary_profile.append(name)
 
         for name_cluster, data_cluster, params_cluster in clusters:
 
@@ -95,14 +84,18 @@ def find_independent_clusters(data, params):
 
             if names_vary_shared:
                 data_cluster.append(profile)
+                for name in params_profile:
+                    if name not in params_cluster:
+                        params_cluster[name] = lmfit.Parameter(name)
                 params_cluster.update(params_profile)
                 for name in names_vary_shared:
                     name_cluster = name_cluster.intersection(parameters.ParameterName.from_full_name(name))
                 break
 
         else:
+
             data_cluster = datasets.DataSet(profile)
-            params_cluster = copy.deepcopy(params_profile)
+            params_cluster = params_profile
 
             name_cluster = parameters.ParameterName.from_full_name(names_vary_profile[0])
 

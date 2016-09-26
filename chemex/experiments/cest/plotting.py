@@ -1,16 +1,11 @@
-from __future__ import absolute_import
-from __future__ import print_function
 import os
 
 import matplotlib.gridspec as gsp
 import matplotlib.pyplot as plt
 import numpy as np
+from chemex import peaks
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import MaxNLocator, NullFormatter
-
-from chemex import peaks
-from six.moves import zip
-
 
 # colors
 dark_gray = '0.13'
@@ -69,7 +64,7 @@ def compute_profiles(data_grouped, params):
         b1_offsets = np.linspace(b1_offsets_min, b1_offsets_max, 500)
 
         b1_ppm_fit = profile.b1_offsets_to_ppm(b1_offsets)
-        mag_fit = profile.calculate_profile(params, b1_offsets) / val_ref
+        mag_fit = profile.calculate_synthetic_profile(params, b1_offsets) / val_ref
 
         cs = params[profile.map_names['cs_i_a']].value
         dw = params[profile.map_names['dw_i_ab']].value
@@ -79,11 +74,20 @@ def compute_profiles(data_grouped, params):
     return profiles
 
 
-def write_profile(name, b1_ppm_fit, mag_fit, file_txt):
+def write_profile_fit(name, b1_ppm_fit, mag_fit, file_txt):
     for b1_ppm_cal, mag_cal in zip(b1_ppm_fit, mag_fit):
         file_txt.write(
             "{:10s} {:8.3f} {:8.3f}\n".format(
                 name.upper(), b1_ppm_cal, mag_cal
+            )
+        )
+
+
+def write_profile_exp(name, b1_ppm, mag_exp, mag_err, mag_cal, file_txt):
+    for b1_ppm_, mag_exp_, mag_err_, mag_cal_ in zip(b1_ppm, mag_exp, mag_err, mag_cal):
+        file_txt.write(
+            "{:10s} {:8.3f} {:8.3f} {:8.3f} {:8.3f}\n".format(
+                name.upper(), b1_ppm_, mag_exp_, mag_err_, mag_cal_
             )
         )
 
@@ -106,6 +110,9 @@ def plot_data(data, params, output_dir='./'):
         name_txt = ''.join([experiment_name, '.fit'])
         name_txt = os.path.join(output_dir, name_txt)
 
+        name_exp = ''.join([experiment_name, '.exp'])
+        name_exp = os.path.join(output_dir, name_exp)
+
         print(("  * {} [.fit]".format(name_pdf)))
 
         # #######################
@@ -114,12 +121,13 @@ def plot_data(data, params, output_dir='./'):
 
         profiles = compute_profiles(data_grouped, params)
 
-        with PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt:
+        with PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt, open(name_exp, 'w') as file_exp:
 
             for peak in sorted(profiles):
                 b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit, cs, dw = profiles[peak]
 
-                write_profile(peak.assignment, b1_ppm_fit, mag_fit, file_txt)
+                write_profile_fit(peak.assignment, b1_ppm_fit, mag_fit, file_txt)
+                write_profile_exp(peak.assignment, b1_ppm, mag_exp, mag_err, mag_cal, file_exp)
 
                 ###### Matplotlib ######
 

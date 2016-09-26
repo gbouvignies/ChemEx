@@ -1,26 +1,16 @@
 """HMQC-HSQC shifts
 
 """
-from __future__ import absolute_import
+
+import copy
+from functools import lru_cache
 
 import lmfit
 import numpy as np
-
 from chemex import constants, parameters, peaks
 from chemex.bases import util
 from chemex.experiments import base_profile
 from chemex.experiments.shift import plotting
-from six.moves import zip
-
-try:
-    from functools import lru_cache
-except ImportError:
-    from chemex.lru_cache import lru_cache
-
-check_par = base_profile.check_par
-ParameterName = parameters.ParameterName
-
-two_pi = 2.0 * np.pi
 
 attributes_exp = {
     'h_larmor_frq': float,
@@ -35,30 +25,32 @@ class Profile(base_profile.BaseProfile):
         self.val = np.array([measurements['shifts']])
         self.err = np.array([measurements['shifts_err']])
 
-        self.h_larmor_frq = check_par(exp_details, 'h_larmor_frq', float)
-        self.temperature = check_par(exp_details, 'temperature', float)
+        self.h_larmor_frq = base_profile.check_par(exp_details, 'h_larmor_frq', float)
+        self.temperature = base_profile.check_par(exp_details, 'temperature', float)
 
-        self.experiment_name = check_par(exp_details, 'experiment_name')
+        self.experiment_name = base_profile.check_par(exp_details, 'name')
 
-        self._calculate_profile = lru_cache(5)(self._calculate_profile)
+        self._calculate_profile_cached = lru_cache(5)(self._calculate_profile)
         self.plot_data = plotting.plot_data
 
         self.peak = peaks.Peak(self.profile_name)
         self.resonance_i, self.resonance_s = self.peak.resonances
 
-        self.ppm_to_rads_i = (self.h_larmor_frq * two_pi * constants.xi_ratio[self.resonance_i['atom']])
-        self.ppm_to_rads_s = (self.h_larmor_frq * two_pi * constants.xi_ratio[self.resonance_s['atom']])
+        self.ppm_i = (self.h_larmor_frq * 2.0 * np.pi * constants.xi_ratio[self.resonance_i['atom']])
+        self.ppm_s = (self.h_larmor_frq * 2.0 * np.pi * constants.xi_ratio[self.resonance_s['atom']])
 
         kwargs1 = {'temperature': self.temperature}
         kwargs2 = {'temperature': self.temperature, 'nuclei': self.resonance_i['name']}
         kwargs3 = {'temperature': self.temperature, 'nuclei': self.resonance_s['name']}
 
         self.map_names = {
-            'pb': ParameterName('pb', **kwargs1).to_full_name(),
-            'kex_ab': ParameterName('kex_ab', **kwargs1).to_full_name(),
-            'dw_i_ab': ParameterName('dw_ab', **kwargs2).to_full_name(),
-            'dw_s_ab': ParameterName('dw_ab', **kwargs3).to_full_name(),
+            'pb': parameters.ParameterName('pb', **kwargs1).to_full_name(),
+            'kex_ab': parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
+            'dw_i_ab': parameters.ParameterName('dw_ab', **kwargs2).to_full_name(),
+            'dw_s_ab': parameters.ParameterName('dw_ab', **kwargs3).to_full_name(),
         }
+
+        self.default_params = self.create_default_parameters()
 
     def create_default_parameters(self):
 
@@ -96,29 +88,20 @@ class Profile(base_profile.BaseProfile):
             Intensity after the CEST block
         """
 
-        domega_i_ab = dw_i_ab * self.ppm_to_rads_i
-        domega_s_ab = dw_s_ab * self.ppm_to_rads_s
+        domega_i_ab = dw_i_ab * self.ppm_i
+        domega_s_ab = dw_s_ab * self.ppm_s
 
         shift_sq = util.calculate_shift_ex_2st(pb, kex_ab, domega_i_ab)[0]
         shift_mq = 0.5 * (util.calculate_shift_ex_2st(pb, kex_ab, domega_i_ab + domega_s_ab)[0] +
                           util.calculate_shift_ex_2st(pb, kex_ab, domega_i_ab - domega_s_ab)[0])
 
-        return np.asarray([(shift_sq - shift_mq) / self.ppm_to_rads_i])
+        return np.asarray([(shift_sq - shift_mq) / self.ppm_i])
 
     def calculate_profile(self, params=None, **kwargs):
         kwargs_profile = {short_name: params[long_name].value for short_name, long_name in self.map_names.items()}
-        values = self._calculate_profile(**kwargs_profile)
+        values = self._calculate_profile_cached(**kwargs_profile)
 
         return values
-
-    def calculate_residuals(self, params):
-        """Calculates the residual between the experimental and
-        back-calculated values.
-        """
-
-        values = self.calculate_profile(params)
-
-        return (self.val - values) / self.err
 
     def filter_points(self, params=None):
         """Evaluate some criteria to know whether the point should be considered
@@ -158,3 +141,20 @@ class Profile(base_profile.BaseProfile):
         output.append("")
 
         return "\n".join(output).upper()
+
+    def make_bs_profile(self):
+
+        indexes = np.array(range(len(self.val)))
+
+        bs_indexes = []
+        bs_indexes.extend(np.random.choice(indexes, len(indexes)))
+
+        bs_indexes = sorted(bs_indexes)
+
+        profile = copy.deepcopy(self)
+        profile.val = profile.val[bs_indexes]
+        profile.err = profile.err[bs_indexes]
+
+        profile._calculate_profile_cached = lru_cache(5)(profile.calculate_unscaled_profile)
+
+        return profile

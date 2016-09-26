@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+
 import numpy as np
 from scipy import linalg
 
@@ -14,20 +14,20 @@ def compute_propagators_from_time_series(liouvillian, times):
     vri = linalg.inv(vr)
 
     propagators = {
-        t: dot(dot(vr, diag(exp(s * t))), vri).real
+        t: np.dot(np.dot(vr, diag(exp(s * t))), vri).real
         for t in set(times) if abs(t) != np.inf}
 
     return propagators
 
 
-def calculate_shift_ex_2st(pb=0.0, kex_ab=0.0, domega_i_ab=0.0, lambda_i_a=0.0, lambda_i_b=0.0):
+def calculate_shift_ex_2st(pb=0.0, kex_ab=0.0, domega_i_ab=0.0, r2_i_a=0.0, r2_i_b=0.0):
     """Corrects major and minor peak positions in presence of exchange."""
 
     pa = 1.0 - pb
     kab, kba = kex_ab * np.asarray([pb, pa])
 
-    k2ab = lambda_i_a + kab
-    k2ba = lambda_i_b + kba - 1j * domega_i_ab
+    k2ab = r2_i_a + kab
+    k2ba = r2_i_b + kba - 1j * domega_i_ab
 
     k2ex = k2ab + k2ba
     fac = ((k2ab - k2ba) ** 2 + 4.0 * kab * kba) ** 0.5
@@ -44,14 +44,14 @@ def calculate_shift_ex_2st(pb=0.0, kex_ab=0.0, domega_i_ab=0.0, lambda_i_a=0.0, 
 
 
 def correct_intensities(magz_a=1.0, magz_b=0.0, pb=0.0, kex=0.0, dw=0.0,
-                        r_ixy=0.0, dr_ixy=0.0):
+                        r2_i=0.0, dr2_i=0.0):
     """Corrects major and minor peak intensities in presence of exchange."""
 
     kab = kex * pb
     kba = kex - kab
 
-    k2ab = r_ixy + kab
-    k2ba = r_ixy + dr_ixy - 1j * dw + kba
+    k2ab = r2_i + kab
+    k2ba = r2_i + dr2_i - 1j * dw + kba
 
     k2ex = k2ab + k2ba
     fac = ((k2ab - k2ba) ** 2 + 4.0 * kab * kba) ** 0.5

@@ -1,0 +1,4 @@
+numpy=1.10
+scipy=0.17
+matplotlib=1.5
+lmfit=0.9.2

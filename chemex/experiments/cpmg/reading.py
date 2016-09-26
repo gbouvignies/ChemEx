@@ -1,16 +1,18 @@
-from __future__ import absolute_import
 import importlib
 import os
 
 import numpy as np
-
 from chemex.experiments.cpmg import util
 
 
 def read_profiles(path, profile_filenames, experiment_details, res_incl=None, res_excl=None):
-    experiment_type = experiment_details['type']
-    experiment_details['experiment_name'] = name_experiment(experiment_details)
-    experiment_module = importlib.import_module('.'.join(['chemex.experiments', experiment_type]))
+    experiment_type = experiment_details['type'].split('.')
+    experiment_details['name'] = name_experiment(experiment_details)
+    experiment_module = importlib.import_module(
+        '.'.join(['chemex.experiments',
+                  experiment_type[0],
+                  'profiles',
+                  experiment_type[1]]))
 
     Profile = getattr(experiment_module, 'Profile')
 
@@ -52,8 +54,8 @@ def name_experiment(experiment_details=None):
     if not experiment_details:
         experiment_details = dict()
 
-    if 'experiment_name' in experiment_details:
-        name = experiment_details['experiment_name'].strip().replace(' ', '_')
+    if 'name' in experiment_details:
+        name = experiment_details['name'].strip().replace(' ', '_')
 
     else:
         exp_type = experiment_details['type'].replace('.', '_')

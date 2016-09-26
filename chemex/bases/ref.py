@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+
 import numpy as np
 
 pi = np.pi
@@ -16,61 +16,61 @@ mat_c = np.diag([0.0, 0.0, 1.0, 0.0])
 mat_d = np.diag([0.0, 0.0, 0.0, 1.0])
 mat_all = np.eye(4)
 
-mat_lambda_i = np.zeros((15, 15))
-mat_lambda_i[[0, 1], [0, 1]] = -1.0
-mat_lambda_i_a = np.kron(mat_a, mat_lambda_i)
-mat_lambda_i_b = np.kron(mat_b, mat_lambda_i)
-mat_lambda_i_c = np.kron(mat_c, mat_lambda_i)
-mat_lambda_i_d = np.kron(mat_d, mat_lambda_i)
+mat_r2_i = np.zeros((15, 15))
+mat_r2_i[[0, 1], [0, 1]] = -1.0
+mat_r2_i_a = np.kron(mat_a, mat_r2_i)
+mat_r2_i_b = np.kron(mat_b, mat_r2_i)
+mat_r2_i_c = np.kron(mat_c, mat_r2_i)
+mat_r2_i_d = np.kron(mat_d, mat_r2_i)
 
-mat_rho_i = np.zeros((15, 15))
-mat_rho_i[2, 2] = -1.0
-mat_rho_i_a = np.kron(mat_a, mat_rho_i)
-mat_rho_i_b = np.kron(mat_b, mat_rho_i)
-mat_rho_i_c = np.kron(mat_c, mat_rho_i)
-mat_rho_i_d = np.kron(mat_d, mat_rho_i)
+mat_r1_i = np.zeros((15, 15))
+mat_r1_i[2, 2] = -1.0
+mat_r1_i_a = np.kron(mat_a, mat_r1_i)
+mat_r1_i_b = np.kron(mat_b, mat_r1_i)
+mat_r1_i_c = np.kron(mat_c, mat_r1_i)
+mat_r1_i_d = np.kron(mat_d, mat_r1_i)
 
-mat_lambda_s = np.zeros((15, 15))
-mat_lambda_s[[3, 4], [3, 4]] = -1.0
-mat_lambda_s_a = np.kron(mat_a, mat_lambda_s)
-mat_lambda_s_b = np.kron(mat_b, mat_lambda_s)
-mat_lambda_s_c = np.kron(mat_c, mat_lambda_s)
-mat_lambda_s_d = np.kron(mat_d, mat_lambda_s)
+mat_r2_s = np.zeros((15, 15))
+mat_r2_s[[3, 4], [3, 4]] = -1.0
+mat_r2_s_a = np.kron(mat_a, mat_r2_s)
+mat_r2_s_b = np.kron(mat_b, mat_r2_s)
+mat_r2_s_c = np.kron(mat_c, mat_r2_s)
+mat_r2_s_d = np.kron(mat_d, mat_r2_s)
 
-mat_rho_s = np.zeros((15, 15))
-mat_rho_s[5, 5] = -1.0
-mat_rho_s_a = np.kron(mat_a, mat_rho_s)
-mat_rho_s_b = np.kron(mat_b, mat_rho_s)
-mat_rho_s_c = np.kron(mat_c, mat_rho_s)
-mat_rho_s_d = np.kron(mat_d, mat_rho_s)
+mat_r1_s = np.zeros((15, 15))
+mat_r1_s[5, 5] = -1.0
+mat_r1_s_a = np.kron(mat_a, mat_r1_s)
+mat_r1_s_b = np.kron(mat_b, mat_r1_s)
+mat_r1_s_c = np.kron(mat_c, mat_r1_s)
+mat_r1_s_d = np.kron(mat_d, mat_r1_s)
 
-mat_rhoa_i = np.zeros((15, 15))
-mat_rhoa_i[[6, 7], [6, 7]] = -1.0
-mat_rhoa_i_a = np.kron(mat_a, mat_rhoa_i)
-mat_rhoa_i_b = np.kron(mat_b, mat_rhoa_i)
-mat_rhoa_i_c = np.kron(mat_c, mat_rhoa_i)
-mat_rhoa_i_d = np.kron(mat_d, mat_rhoa_i)
+mat_r2a_i = np.zeros((15, 15))
+mat_r2a_i[[6, 7], [6, 7]] = -1.0
+mat_r2a_i_a = np.kron(mat_a, mat_r2a_i)
+mat_r2a_i_b = np.kron(mat_b, mat_r2a_i)
+mat_r2a_i_c = np.kron(mat_c, mat_r2a_i)
+mat_r2a_i_d = np.kron(mat_d, mat_r2a_i)
 
-mat_rhoa_s = np.zeros((15, 15))
-mat_rhoa_s[[8, 9], [8, 9]] = -1.0
-mat_rhoa_s_a = np.kron(mat_a, mat_rhoa_s)
-mat_rhoa_s_b = np.kron(mat_b, mat_rhoa_s)
-mat_rhoa_s_c = np.kron(mat_c, mat_rhoa_s)
-mat_rhoa_s_d = np.kron(mat_d, mat_rhoa_s)
+mat_r2a_s = np.zeros((15, 15))
+mat_r2a_s[[8, 9], [8, 9]] = -1.0
+mat_r2a_s_a = np.kron(mat_a, mat_r2a_s)
+mat_r2a_s_b = np.kron(mat_b, mat_r2a_s)
+mat_r2a_s_c = np.kron(mat_c, mat_r2a_s)
+mat_r2a_s_d = np.kron(mat_d, mat_r2a_s)
 
-mat_lambda_mq = np.zeros((15, 15))
-mat_lambda_mq[[10, 11, 12, 13], [10, 11, 12, 13]] = -1.0
-mat_lambda_mq_a = np.kron(mat_a, mat_lambda_mq)
-mat_lambda_mq_b = np.kron(mat_b, mat_lambda_mq)
-mat_lambda_mq_c = np.kron(mat_c, mat_lambda_mq)
-mat_lambda_mq_d = np.kron(mat_d, mat_lambda_mq)
+mat_r2_mq = np.zeros((15, 15))
+mat_r2_mq[[10, 11, 12, 13], [10, 11, 12, 13]] = -1.0
+mat_r2_mq_a = np.kron(mat_a, mat_r2_mq)
+mat_r2_mq_b = np.kron(mat_b, mat_r2_mq)
+mat_r2_mq_c = np.kron(mat_c, mat_r2_mq)
+mat_r2_mq_d = np.kron(mat_d, mat_r2_mq)
 
-mat_rho_is = np.zeros((15, 15))
-mat_rho_is[14, 14] = -1.0
-mat_rho_is_a = np.kron(mat_a, mat_rho_is)
-mat_rho_is_b = np.kron(mat_b, mat_rho_is)
-mat_rho_is_c = np.kron(mat_c, mat_rho_is)
-mat_rho_is_d = np.kron(mat_d, mat_rho_is)
+mat_r1a = np.zeros((15, 15))
+mat_r1a[14, 14] = -1.0
+mat_r1a_a = np.kron(mat_a, mat_r1a)
+mat_r1a_b = np.kron(mat_b, mat_r1a)
+mat_r1a_c = np.kron(mat_c, mat_r1a)
+mat_r1a_d = np.kron(mat_d, mat_r1a)
 
 mat_omega_i = np.zeros((15, 15))
 mat_omega_i[[1, 7, 12, 13], [0, 6, 10, 11]] = +1.0
@@ -96,33 +96,33 @@ mat_j_b = np.kron(mat_b, mat_j)
 mat_j_c = np.kron(mat_c, mat_j)
 mat_j_d = np.kron(mat_d, mat_j)
 
-mat_eta_i = np.zeros((15, 15))
-mat_eta_i[[6, 7, 0, 1], [0, 1, 6, 7]] = -1.0
-mat_eta_i_a = np.kron(mat_a, mat_eta_i)
-mat_eta_i_b = np.kron(mat_b, mat_eta_i)
-mat_eta_i_c = np.kron(mat_c, mat_eta_i)
-mat_eta_i_d = np.kron(mat_d, mat_eta_i)
+mat_etaxy_i = np.zeros((15, 15))
+mat_etaxy_i[[6, 7, 0, 1], [0, 1, 6, 7]] = -1.0
+mat_etaxy_i_a = np.kron(mat_a, mat_etaxy_i)
+mat_etaxy_i_b = np.kron(mat_b, mat_etaxy_i)
+mat_etaxy_i_c = np.kron(mat_c, mat_etaxy_i)
+mat_etaxy_i_d = np.kron(mat_d, mat_etaxy_i)
 
-mat_eta_s = np.zeros((15, 15))
-mat_eta_s[[8, 9, 3, 4], [3, 4, 8, 9]] = -1.0
-mat_eta_s_a = np.kron(mat_a, mat_eta_s)
-mat_eta_s_b = np.kron(mat_b, mat_eta_s)
-mat_eta_s_c = np.kron(mat_c, mat_eta_s)
-mat_eta_s_d = np.kron(mat_d, mat_eta_s)
+mat_etaxy_s = np.zeros((15, 15))
+mat_etaxy_s[[8, 9, 3, 4], [3, 4, 8, 9]] = -1.0
+mat_etaxy_s_a = np.kron(mat_a, mat_etaxy_s)
+mat_etaxy_s_b = np.kron(mat_b, mat_etaxy_s)
+mat_etaxy_s_c = np.kron(mat_c, mat_etaxy_s)
+mat_etaxy_s_d = np.kron(mat_d, mat_etaxy_s)
 
-mat_delta_i = np.zeros((15, 15))
-mat_delta_i[[14, 2], [2, 14]] = -1.0
-mat_delta_i_a = np.kron(mat_a, mat_delta_i)
-mat_delta_i_b = np.kron(mat_b, mat_delta_i)
-mat_delta_i_c = np.kron(mat_c, mat_delta_i)
-mat_delta_i_d = np.kron(mat_d, mat_delta_i)
+mat_etaz_i = np.zeros((15, 15))
+mat_etaz_i[[14, 2], [2, 14]] = -1.0
+mat_etaz_i_a = np.kron(mat_a, mat_etaz_i)
+mat_etaz_i_b = np.kron(mat_b, mat_etaz_i)
+mat_etaz_i_c = np.kron(mat_c, mat_etaz_i)
+mat_etaz_i_d = np.kron(mat_d, mat_etaz_i)
 
-mat_delta_s = np.zeros((15, 15))
-mat_delta_s[[14, 5], [5, 14]] = -1.0
-mat_delta_s_a = np.kron(mat_a, mat_delta_s)
-mat_delta_s_b = np.kron(mat_b, mat_delta_s)
-mat_delta_s_c = np.kron(mat_c, mat_delta_s)
-mat_delta_s_d = np.kron(mat_d, mat_delta_s)
+mat_etaz_s = np.zeros((15, 15))
+mat_etaz_s[[14, 5], [5, 14]] = -1.0
+mat_etaz_s_a = np.kron(mat_a, mat_etaz_s)
+mat_etaz_s_b = np.kron(mat_b, mat_etaz_s)
+mat_etaz_s_c = np.kron(mat_c, mat_etaz_s)
+mat_etaz_s_d = np.kron(mat_d, mat_etaz_s)
 
 mat_sigma = np.zeros((15, 15))
 mat_sigma[[5, 0], [0, 5]] = -1.0
@@ -221,88 +221,89 @@ mat_kdc = np.kron([[+0.0, +0.0, +0.0, +0.0],
 
 def compute_liouvillian(
         pb=0.0, pc=0.0, pd=0.0, kex_ab=0.0, kex_ac=0.0, kex_ad=0.0, kex_bc=0.0, kex_bd=0.0, kex_cd=0.0,
-        lambda_i_a=0.0, rho_i_a=0.0, rhoa_i_a=0.0, eta_i_a=0.0, delta_i_a=0.0, omega_i_a=0.0,
-        lambda_i_b=0.0, rho_i_b=0.0, rhoa_i_b=0.0, eta_i_b=0.0, delta_i_b=0.0, omega_i_b=0.0,
-        lambda_i_c=0.0, rho_i_c=0.0, rhoa_i_c=0.0, eta_i_c=0.0, delta_i_c=0.0, omega_i_c=0.0,
-        lambda_i_d=0.0, rho_i_d=0.0, rhoa_i_d=0.0, eta_i_d=0.0, delta_i_d=0.0, omega_i_d=0.0,
-        lambda_s_a=0.0, rho_s_a=0.0, rhoa_s_a=0.0, eta_s_a=0.0, delta_s_a=0.0, omega_s_a=0.0,
-        lambda_s_b=0.0, rho_s_b=0.0, rhoa_s_b=0.0, eta_s_b=0.0, delta_s_b=0.0, omega_s_b=0.0,
-        lambda_s_c=0.0, rho_s_c=0.0, rhoa_s_c=0.0, eta_s_c=0.0, delta_s_c=0.0, omega_s_c=0.0,
-        lambda_s_d=0.0, rho_s_d=0.0, rhoa_s_d=0.0, eta_s_d=0.0, delta_s_d=0.0, omega_s_d=0.0,
-        lambda_mq_a=0.0, rho_is_a=0.0, mu_mq_a=0.0, sigma_a=0.0, j_a=0.0,
-        lambda_mq_b=0.0, rho_is_b=0.0, mu_mq_b=0.0, sigma_b=0.0, j_b=0.0,
-        lambda_mq_c=0.0, rho_is_c=0.0, mu_mq_c=0.0, sigma_c=0.0, j_c=0.0,
-        lambda_mq_d=0.0, rho_is_d=0.0, mu_mq_d=0.0, sigma_d=0.0, j_d=0.0,
+        r2_i_a=0.0, r1_i_a=0.0, r2a_i_a=0.0, etaxy_i_a=0.0, etaz_i_a=0.0, omega_i_a=0.0,
+        r2_i_b=0.0, r1_i_b=0.0, r2a_i_b=0.0, etaxy_i_b=0.0, etaz_i_b=0.0, omega_i_b=0.0,
+        r2_i_c=0.0, r1_i_c=0.0, r2a_i_c=0.0, etaxy_i_c=0.0, etaz_i_c=0.0, omega_i_c=0.0,
+        r2_i_d=0.0, r1_i_d=0.0, r2a_i_d=0.0, etaxy_i_d=0.0, etaz_i_d=0.0, omega_i_d=0.0,
+        r2_s_a=0.0, r1_s_a=0.0, r2a_s_a=0.0, etaxy_s_a=0.0, etaz_s_a=0.0, omega_s_a=0.0,
+        r2_s_b=0.0, r1_s_b=0.0, r2a_s_b=0.0, etaxy_s_b=0.0, etaz_s_b=0.0, omega_s_b=0.0,
+        r2_s_c=0.0, r1_s_c=0.0, r2a_s_c=0.0, etaxy_s_c=0.0, etaz_s_c=0.0, omega_s_c=0.0,
+        r2_s_d=0.0, r1_s_d=0.0, r2a_s_d=0.0, etaxy_s_d=0.0, etaz_s_d=0.0, omega_s_d=0.0,
+        r2_mq_a=0.0, r1a_a=0.0, mu_mq_a=0.0, sigma_a=0.0, j_a=0.0,
+        r2_mq_b=0.0, r1a_b=0.0, mu_mq_b=0.0, sigma_b=0.0, j_b=0.0,
+        r2_mq_c=0.0, r1a_c=0.0, mu_mq_c=0.0, sigma_c=0.0, j_c=0.0,
+        r2_mq_d=0.0, r1a_d=0.0, mu_mq_d=0.0, sigma_d=0.0, j_d=0.0,
         omega1x_i=0.0, omega1y_i=0.0, omega1x_s=0.0, omega1y_s=0.0):
     """TODO: make docstringx
     """
 
     pa = 1.0 - pb - pc - pd
 
-    kex_ab_ = kex_ab / (pa + pb)
-    kex_ac_ = kex_ac / (pa + pc)
-    kex_ad_ = kex_ad / (pa + pd)
-    kex_bc_ = kex_bc / (pb + pc)
-    kex_bd_ = kex_bd / (pb + pd)
-    kex_cd_ = kex_cd / (pc + pd)
+    kab = kba = kac = kca = kad = kda = kbc = kcb = kbd = kdb = kcd = kdc = 0.0
 
-    kab, kba = kex_ab_ * np.asarray([pb, pa])
-    kac, kca = kex_ac_ * np.asarray([pc, pa])
-    kad, kda = kex_ad_ * np.asarray([pd, pa])
-    kbc, kcb = kex_bc_ * np.asarray([pc, pb])
-    kbd, kdb = kex_bd_ * np.asarray([pd, pb])
-    kcd, kdc = kex_cd_ * np.asarray([pd, pc])
+    if pa + pb:
+        kab, kba = kex_ab / (pa + pb) * np.asarray([pb, pa])
+    if pa + pc:
+        kac, kca = kex_ac / (pa + pc) * np.asarray([pc, pa])
+    if pa + pd:
+        kad, kda = kex_ad / (pa + pd) * np.asarray([pd, pa])
+    if pb + pc:
+        kbc, kcb = kex_bc / (pb + pc) * np.asarray([pc, pb])
+    if pb + pd:
+        kbd, kdb = kex_bd / (pb + pd) * np.asarray([pd, pb])
+    if pc + pd:
+        kcd, kdc = kex_cd / (pc + pd) * np.asarray([pd, pc])
 
     liouvillian = (
-        mat_lambda_i_a * lambda_i_a +
-        mat_lambda_i_b * lambda_i_b +
-        mat_lambda_i_c * lambda_i_c +
-        mat_lambda_i_d * lambda_i_d +
+        mat_r2_i_a * r2_i_a +
+        mat_r2_i_b * r2_i_b +
+        mat_r2_i_c * r2_i_c +
+        mat_r2_i_d * r2_i_d +
 
-        mat_lambda_s_a * lambda_s_a +
-        mat_lambda_s_b * lambda_s_b +
-        mat_lambda_s_c * lambda_s_c +
-        mat_lambda_s_d * lambda_s_d +
+        mat_r2_s_a * r2_s_a +
+        mat_r2_s_b * r2_s_b +
+        mat_r2_s_c * r2_s_c +
+        mat_r2_s_d * r2_s_d +
 
-        mat_rho_i_a * rho_i_a +
-        mat_rho_i_b * rho_i_b +
-        mat_rho_i_c * rho_i_c +
-        mat_rho_i_d * rho_i_d +
+        mat_r1_i_a * r1_i_a +
+        mat_r1_i_b * r1_i_b +
+        mat_r1_i_c * r1_i_c +
+        mat_r1_i_d * r1_i_d +
 
-        mat_rho_s_a * rho_s_a +
-        mat_rho_s_b * rho_s_b +
-        mat_rho_s_c * rho_s_c +
-        mat_rho_s_d * rho_s_d +
+        mat_r1_s_a * r1_s_a +
+        mat_r1_s_b * r1_s_b +
+        mat_r1_s_c * r1_s_c +
+        mat_r1_s_d * r1_s_d +
 
-        mat_rhoa_i_a * rhoa_i_a +
-        mat_rhoa_i_b * rhoa_i_b +
-        mat_rhoa_i_c * rhoa_i_c +
-        mat_rhoa_i_d * rhoa_i_d +
+        mat_r2a_i_a * r2a_i_a +
+        mat_r2a_i_b * r2a_i_b +
+        mat_r2a_i_c * r2a_i_c +
+        mat_r2a_i_d * r2a_i_d +
 
-        mat_rhoa_s_a * rhoa_s_a +
-        mat_rhoa_s_b * rhoa_s_b +
-        mat_rhoa_s_c * rhoa_s_c +
-        mat_rhoa_s_d * rhoa_s_d +
+        mat_r2a_s_a * r2a_s_a +
+        mat_r2a_s_b * r2a_s_b +
+        mat_r2a_s_c * r2a_s_c +
+        mat_r2a_s_d * r2a_s_d +
 
-        mat_eta_i_a * eta_i_a +
-        mat_eta_i_b * eta_i_b +
-        mat_eta_i_c * eta_i_c +
-        mat_eta_i_d * eta_i_d +
+        mat_etaxy_i_a * etaxy_i_a +
+        mat_etaxy_i_b * etaxy_i_b +
+        mat_etaxy_i_c * etaxy_i_c +
+        mat_etaxy_i_d * etaxy_i_d +
 
-        mat_eta_s_a * eta_s_a +
-        mat_eta_s_b * eta_s_b +
-        mat_eta_s_c * eta_s_c +
-        mat_eta_s_d * eta_s_d +
+        mat_etaxy_s_a * etaxy_s_a +
+        mat_etaxy_s_b * etaxy_s_b +
+        mat_etaxy_s_c * etaxy_s_c +
+        mat_etaxy_s_d * etaxy_s_d +
 
-        mat_delta_i_a * delta_i_a +
-        mat_delta_i_b * delta_i_b +
-        mat_delta_i_c * delta_i_c +
-        mat_delta_i_d * delta_i_d +
+        mat_etaz_i_a * etaz_i_a +
+        mat_etaz_i_b * etaz_i_b +
+        mat_etaz_i_c * etaz_i_c +
+        mat_etaz_i_d * etaz_i_d +
 
-        mat_delta_s_a * delta_s_a +
-        mat_delta_s_b * delta_s_b +
-        mat_delta_s_c * delta_s_c +
-        mat_delta_s_d * delta_s_d +
+        mat_etaz_s_a * etaz_s_a +
+        mat_etaz_s_b * etaz_s_b +
+        mat_etaz_s_c * etaz_s_c +
+        mat_etaz_s_d * etaz_s_d +
 
         mat_omega_i_a * omega_i_a +
         mat_omega_i_b * omega_i_b +
@@ -314,15 +315,15 @@ def compute_liouvillian(
         mat_omega_s_c * omega_s_c +
         mat_omega_s_d * omega_s_d +
 
-        mat_rho_is_a * rho_is_a +
-        mat_rho_is_b * rho_is_b +
-        mat_rho_is_c * rho_is_c +
-        mat_rho_is_d * rho_is_d +
+        mat_r1a_a * r1a_a +
+        mat_r1a_b * r1a_b +
+        mat_r1a_c * r1a_c +
+        mat_r1a_d * r1a_d +
 
-        mat_lambda_mq_a * lambda_mq_a +
-        mat_lambda_mq_b * lambda_mq_b +
-        mat_lambda_mq_c * lambda_mq_c +
-        mat_lambda_mq_d * lambda_mq_d +
+        mat_r2_mq_a * r2_mq_a +
+        mat_r2_mq_b * r2_mq_b +
+        mat_r2_mq_c * r2_mq_c +
+        mat_r2_mq_d * r2_mq_d +
 
         mat_mu_mq_a * mu_mq_a +
         mat_mu_mq_b * mu_mq_b +

@@ -1,38 +1,39 @@
-from __future__ import print_function
-from __future__ import absolute_import
-
+import configparser
 import copy
-
 import os
 import os.path
 import re
-import numpy as np
-import lmfit
 
-from six.moves import map
-from six.moves import zip
-from chemex import util, peaks
+import lmfit
+import numpy as np
+from chemex import peaks, util
 
 name_markers = {
     'name': "__n_{}_n__",
     'nuclei': "__r_{}_r__",
     'temperature': "__t_{}_t__",
     'h_larmor_frq': "__b_{}_b__",
+    'p_total': "__p_{}_p__",
+    'l_total': "__l_{}_l__",
 }
 
 friendly_markers = {
     'name': "{}",
-    'nuclei': "{}",
-    'temperature': "{} C",
-    'h_larmor_frq': "{} MHz",
+    'nuclei': "NUC->{}",
+    'temperature': "T->{:.1f} C",
+    'h_larmor_frq': "B0->{:.1f} MHz",
+    'p_total': "[P]->{:e} M",
+    'l_total': "[L]->{:e} M",
 }
 
 re_qualifiers = re.compile(
     '''
         (^\s*(?P<name>\w+)) |
-        (?P<nuclei>(\D?\d+[abd-gi-mopr-z]*)?[hncq][a-z0-9]*) |
-        ((?P<temperature>{0})\s*C) |
-        ((?P<h_larmor_frq>{0})\s*MHz)
+        (T\s*->s*(?P<temperature>{0})) |
+        (B0\s*->\s*(?P<h_larmor_frq>{0})) |
+        (\[P\]\s*->\s*(?P<p_total>{0})) |
+        (\[L\]\s*->\s*(?P<l_total>{0})) |
+        (NUC\s*->\s*(?P<nuclei>([hncq])[a-z0-9]*)) |
     '''.format('[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?'),
     re.IGNORECASE | re.VERBOSE
 )
@@ -43,7 +44,7 @@ re_value_min_max = re.compile(
         ^\s*
         (?P<value>{0})?\s*
         (\[\s*(?P<min>({0}|{1}))\s*,\s*(?P<max>({0}|{1}))\s*\]\s*)?
-        $
+        .*$
     '''.format('[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?', '[-+]?inf'),
     re.IGNORECASE | re.VERBOSE
 )
@@ -54,6 +55,8 @@ re_par_name = re.compile(
         (__r_(?P<nuclei>.+)_r__)?
         (__t_(?P<temperature>.+)_t__)?
         (__b_(?P<h_larmor_frq>.+)_b__)?
+        (__p_(?P<p_total>.+)_p__)?
+        (__l_(?P<l_total>.+)_l__)?
     ''',
     re.IGNORECASE | re.VERBOSE
 )
@@ -88,18 +91,27 @@ compress = MakeTranslate({
 
 
 class ParameterName(object):
-    def __init__(self, name=None, nuclei=None, temperature=None, h_larmor_frq=None):
-        self.name = name
-        self.temperature = temperature
-        self.h_larmor_frq = h_larmor_frq
+    def __init__(self, name=None, nuclei=None, temperature=None, h_larmor_frq=None, p_total=None, l_total=None):
 
-        if self.name is not None:
-            self.name = self.name.lower()
+        self.name = self.nuclei = self.temperature = self.h_larmor_frq = self.p_total = self.l_total = None
+
+        if name is not None:
+            self.name = name.lower()
 
         if nuclei is not None:
             self.nuclei = peaks.Peak(nuclei).assignment
-        else:
-            self.nuclei = None
+
+        if temperature is not None:
+            self.temperature = round(float(temperature), 1)
+
+        if h_larmor_frq is not None:
+            self.h_larmor_frq = round(float(h_larmor_frq), 1)
+
+        if p_total is not None:
+            self.p_total = float(p_total)
+
+        if l_total is not None:
+            self.l_total = float(l_total)
 
     @classmethod
     def from_full_name(cls, full_name=None):
@@ -129,6 +141,10 @@ class ParameterName(object):
                 self.temperature = other.temperature
             if other.h_larmor_frq is not None:
                 self.h_larmor_frq = other.h_larmor_frq
+            if other.p_total is not None:
+                self.p_total = other.p_total
+            if other.l_total is not None:
+                self.l_total = other.l_total
         return self
 
     def update_nuclei(self, nuclei=None):
@@ -140,33 +156,37 @@ class ParameterName(object):
 
         name_components = []
 
-        for name in ('name', 'nuclei', 'temperature', 'h_larmor_frq'):
+        for name in ('name', 'nuclei', 'temperature', 'h_larmor_frq', 'p_total', 'l_total'):
             attr = getattr(self, name)
             if attr is not None:
                 name_components.append(name_markers[name].format(attr))
 
-        full_name = ''.join(name_components)
-
-        full_name = expand(full_name)
+        full_name = expand(''.join(name_components))
 
         return full_name
 
-    def to_section_name(self):
+    def to_section_name(self, nuclei=False):
 
         name_components = []
 
-        for name in ('name', 'temperature', 'h_larmor_frq'):
+        if nuclei:
+            attributes = ('name', 'nuclei', 'temperature', 'h_larmor_frq', 'p_total', 'l_total')
+        else:
+            attributes = ('name', 'temperature', 'h_larmor_frq', 'p_total', 'l_total')
+
+        for name in attributes:
             attr = getattr(self, name)
             if attr is not None:
-                name_components.append(friendly_markers[name].format(attr.upper()))
+                name_components.append(friendly_markers[name].format(attr))
 
-        section_name = ', '.join(name_components)
+        section_name = ', '.join(name_components).upper()
 
         return section_name
 
     def to_re(self):
 
         re_components = [name_markers['name'].format(expand(self.name))]
+
         if self.nuclei is not None:
             group_name = peaks.Peak(self.nuclei).resonances[0]['group']
             if not group_name:
@@ -176,58 +196,68 @@ class ParameterName(object):
             re_components.append(name_markers['nuclei'].format(''.join([all_res, expand(self.nuclei)])))
         else:
             re_components.append('.*')
+
         if self.temperature is not None:
-            re_components.append(name_markers['temperature'].format(expand(self.temperature)))
-        elif re_components[-1] != '.*':
-            re_components.append('.*')
-        if self.h_larmor_frq is not None:
-            re_components.append(name_markers['h_larmor_frq'].format(expand(self.h_larmor_frq)))
+            re_components.append(name_markers['temperature'].format(expand(str(self.temperature))))
         elif re_components[-1] != '.*':
             re_components.append('.*')
 
-        re_to_match = re.compile(''.join(re_components))
+        if self.h_larmor_frq is not None:
+            re_components.append(name_markers['h_larmor_frq'].format(expand(str(self.h_larmor_frq))))
+        elif re_components[-1] != '.*':
+            re_components.append('.*')
+
+        if self.p_total is not None:
+            re_components.append(name_markers['p_total'].format(expand(str(self.p_total))))
+        elif re_components[-1] != '.*':
+            re_components.append('.*')
+
+        if self.l_total is not None:
+            re_components.append(name_markers['l_total'].format(expand(str(self.l_total))))
+        elif re_components[-1] != '.*':
+            re_components.append('.*')
+
+        re_to_match = re.compile(''.join(re_components), re.IGNORECASE)
 
         return re_to_match
 
     def __repr__(self):
-        name_components = []
 
-        for name in ('name', 'nuclei', 'temperature', 'h_larmor_frq'):
-            attr = getattr(self, name)
-            if attr is not None:
-                name_components.append(friendly_markers[name].format(attr.upper()))
-
-        nice_name = ', '.join(name_components)
-
-        return nice_name
+        return self.to_section_name(nuclei=True)
 
     def __lt__(self, other):
 
-        tuple_self = (
-            self.name,
-            peaks.Peak(self.nuclei),
-            float(self.temperature) if self.temperature else self.temperature,
-            float(self.h_larmor_frq) if self.h_larmor_frq else self.h_larmor_frq
-        )
-        tuple_other = (
-            other.name,
-            peaks.Peak(other.nuclei),
-            float(other.temperature) if other.temperature else other.temperature,
-            float(other.h_larmor_frq) if other.h_larmor_frq else other.h_larmor_frq
-        )
+        tuple_self = (self.name, self.nuclei, self.temperature, self.h_larmor_frq, self.p_total, self.l_total)
+        tuple_other = (other.name, other.nuclei, other.temperature, other.h_larmor_frq, other.p_total, other.l_total)
+
         return tuple_self < tuple_other
 
     def intersection(self, other):
-        name = nuclei = temperature = h_larmor_frq = None
+
+        name = temperature = h_larmor_frq = p_total = l_total = None
+
         if self.name == other.name:
             name = self.name
-        if self.nuclei == other.nuclei:
-            nuclei = self.nuclei
+
+        nuclei = peaks.Peak(self.nuclei).intersection(peaks.Peak(other.nuclei)).assignment
+
+        if not nuclei:
+            nuclei = None
+
         if self.temperature == other.temperature:
             temperature = self.temperature
+
         if self.h_larmor_frq == other.h_larmor_frq:
             h_larmor_frq = self.h_larmor_frq
-        return ParameterName(name=name, nuclei=nuclei, temperature=temperature, h_larmor_frq=h_larmor_frq)
+
+        if self.p_total == other.p_total:
+            p_total = self.p_total
+
+        if self.l_total == other.l_total:
+            l_total = self.l_total
+
+        return ParameterName(name=name, nuclei=nuclei, temperature=temperature, h_larmor_frq=h_larmor_frq,
+                             p_total=p_total, l_total=l_total)
 
 
 def create_params(data):
@@ -240,16 +270,12 @@ def create_params(data):
     params = lmfit.Parameters()
 
     for profile in data:
-        params_with_expr = []
-        params_without_expr = []
-        for name, param in profile.create_default_parameters().items():
-            if name not in params or not params[name].vary:
-                if param.expr:
-                    params_with_expr.append(param)
-                else:
-                    params_without_expr.append(param)
-        params.update({param.name: param for param in params_without_expr})
-        params.update({param.name: param for param in params_with_expr})
+        for name, param in profile.default_params.items():
+            params[name] = lmfit.Parameter(name)
+
+    for profile in data:
+        for name, param in profile.default_params.items():
+            params[name] = param
 
     return params
 
@@ -269,7 +295,9 @@ def set_params_from_config_file(params, config_filename):
     for section in config.sections():
 
         if section.lower() in ('global', 'default'):
+
             print("{:<45s}".format("[{}]".format(section)))
+
             for key, value in config.items(section):
                 name = ParameterName.from_section(key)
                 default = re_to_dict(re_value_min_max, value)
@@ -279,18 +307,24 @@ def set_params_from_config_file(params, config_filename):
                 print("  {:<43s} {:<30d}".format("({})".format(key), len(matches)))
 
         else:
-            pairs = []
+
             name = ParameterName.from_section(section)
+
+            pairs = []
+
             for key, value in config.items(section):
+
                 if 'file' in key:
                     for filename in value.split():
                         filename_ = util.normalize_path(os.path.dirname(config_filename), filename)
                         pairs.extend(get_pairs_from_file(filename_, name))
+
                 elif peaks.re_peak_name.match(key):
                     name.update_nuclei(key)
                     pairs.append((copy.deepcopy(name), value))
 
             total_matches = set()
+
             for name, value in pairs:
                 default = re_to_dict(re_value_min_max, value)
                 default = {key: np.float64(val) for key, val in default.items()}
@@ -314,21 +348,28 @@ def get_pairs_from_file(filename, name):
     pairs = []
 
     with open(filename) as f:
+
         for line in f:
+
             if 'Assignment' in line:
                 continue
+
             line = remove_comments(line, '#;')
             line = re.sub('\s*\[\s*', '[', line)
             line = re.sub('\s*\]\s*', ']', line)
             elements = line.split()
+
             if len(elements) > 1:
+
                 peak = peaks.Peak(elements[0])
                 n_resonances = len(peak.resonances)
                 n_cols = len(elements[1:])
+
                 if n_cols == n_resonances:
                     for resonance, value in zip(peak.resonances, elements[1:]):
                         name.update_nuclei(resonance['name'])
                         pairs.append((copy.deepcopy(name), value))
+
                 else:
                     name.update_nuclei(peak.assignment)
                     pairs.append((copy.deepcopy(name), elements[1]))
@@ -345,23 +386,48 @@ def set_param_status(params, items):
         if status in vary:
             set_params(params, name, vary=vary[status])
         else:
-            name_other = ParameterName.from_section(status)
-            set_params(params, name, name_other=name_other)
+            name_short_expr = ParameterName.from_section(status)
+            set_param_expr(params, name, name_short_expr=name_short_expr)
 
 
-def set_params(params, name, value=None, vary=None, min=None, max=None, name_other=None):
+def set_param_expr(params, name_short, name_short_expr=None):
     matches = set()
-    re_to_match = name.to_re()
-    for name_, param in params.items():
-        if re_to_match.match(name_):
+    name_short_re = name_short.to_re()
+
+    for name, param in params.items():
+
+        if name_short_re.match(name):
+
             expr = None
-            if name_other is not None:
-                name_updated = ParameterName.from_full_name(name_).update(name_other).to_full_name()
-                if name_updated != name_ and name_updated in params:
-                    expr = name_updated
-            if (value, vary, min, max, expr) is not (None, None, None, None, None):
-                param.set(value=value, vary=vary, min=min, max=max, expr=expr)
-                matches.add(name_)
+
+            if name_short_expr == '':
+                expr = name_short_expr
+
+            elif name_short_expr is not None:
+                name_expr = ParameterName.from_full_name(name).update(name_short_expr).to_full_name()
+                if name_expr != name and name_expr in params:
+                    param.set(expr=name_expr)
+
+            if expr is not None:
+                matches.add(name)
+
+    return matches
+
+
+def set_params(params, name_short, value=None, vary=None, min=None, max=None):
+    matches = set()
+    name_short_re = name_short.to_re()
+
+    for name, param in params.items():
+
+        if name_short_re.match(name):
+
+            if not param.expr or vary is not None:
+                min = param.min if min is None else min
+                max = param.max if max is None else max
+                param.set(value=value, vary=vary, min=min, max=max)
+
+            matches.add(name)
 
     return matches
 
@@ -369,7 +435,6 @@ def set_params(params, name, value=None, vary=None, min=None, max=None, name_oth
 def write_par(params, output_dir='./'):
     """Write fitted parameters int a file"""
 
-    from six.moves.configparser import ConfigParser
 
     filename = os.path.join(output_dir, 'parameters.fit')
 
@@ -406,7 +471,7 @@ def write_par(params, output_dir='./'):
 
         par_dict.setdefault(section, []).append((name_print, val_print))
 
-    cfg = ConfigParser()
+    cfg = configparser.ConfigParser()
     cfg.optionxform = str
 
     section_global = par_dict.pop('GLOBAL', None)

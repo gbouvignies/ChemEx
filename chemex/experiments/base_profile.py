@@ -1,48 +1,42 @@
-from __future__ import absolute_import
+
 import abc
 
-import six
 
-
-class BaseProfile(six.with_metaclass(abc.ABCMeta, object)):
+class BaseProfile(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def print_profile(self):
         pass
 
     @abc.abstractmethod
-    def calculate_profile(self, parameters, *args, **kwargs):
+    def calculate_profile(self, params):
         pass
 
-    @abc.abstractmethod
-    def calculate_residuals(self, parameters):
-        pass
-
-    @abc.abstractmethod
     def create_default_parameters(self):
         pass
 
     @abc.abstractmethod
-    def filter_points(self, parameters=None):
+    def filter_points(self, params=None):
         pass
 
+    def calculate_residuals(self, params):
+        """Calculates the residual between the experimental and
+        back-calculated values.
+        """
 
-def check_par(parameters=None, name=None, convert=None, default=None):
+        values = self.calculate_profile(params)
+
+        return (self.val - values) / self.err
+
+
+def check_par(parameters=None, name=None, convert=None, default=None, required=True):
     """Sets experimental parameter and converts it to the right type."""
 
-    value = None
+    value = parameters.get(name, default)
 
-    if name not in parameters and default is not None:
-        parameters[name] = default
+    if required and value is None:
+        exit("Missing experimental parameter detected. Please set: {:s}".format(name))
 
-    try:
-        value = parameters[name]
-    except KeyError:
-        exit(
-            "Missing experimental parameter detected. Please set: {:s}"
-                .format(name)
-        )
-
-    if convert is not None:
+    if convert is not None and value is not None:
         try:
             value = convert(value)
         except ValueError:

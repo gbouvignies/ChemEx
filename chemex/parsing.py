@@ -1,6 +1,3 @@
-from __future__ import absolute_import
-from __future__ import print_function
-
 import argparse
 import importlib
 import pkgutil
@@ -40,6 +37,7 @@ def arg_parse():
     )
 
     subparsers_info = parser_info.add_subparsers(dest='types')
+    subparsers_info.required = True
 
     exp_types = [
         name
@@ -58,6 +56,7 @@ def arg_parse():
             description="Enter an experiment to obtain more info about it.",
         )
         subparsers_info_type = parser_info_type.add_subparsers(dest='experiments')
+        subparsers_info_type.required = True
 
         exps = [
             name
@@ -67,11 +66,13 @@ def arg_parse():
 
         for exp in exps:
 
+            name_exp = exp.replace('chemex.experiments.', '')
+
             package_exp = importlib.import_module(exp)
 
             if hasattr(package_exp, 'Profile'):
                 subparsers_info_type.add_parser(
-                    exp,
+                    name_exp,
                     help=package_exp.__doc__.split('\n')[0],
                     add_help=False,
                 )
@@ -90,6 +91,14 @@ def arg_parse():
         nargs='+',
         required=True,
         help='Input files containing experimental setup and data location'
+    )
+
+    parser_fit.add_argument(
+        '-d',
+        dest='model',
+        metavar='MODEL',
+        default='2st.pb_kex',
+        help='Exchange model used to fit the data'
     )
 
     parser_fit.add_argument(
@@ -157,21 +166,7 @@ def arg_parse():
 
     args = parser.parse_args()
 
-    print(args)
-
-    if args.commands == 'info':
-
-        if args.types is None:
-
-            parser_info.print_help()
-            exit()
-
-        elif args.experiments is None:
-
-            parser_info_type.print_help()
-            exit()
-
-    elif args.commands == 'fit':
+    if args.commands == 'fit':
         if args.res_incl:
             args.res_incl = set([res.lower() for res in args.res_incl])
         if args.res_excl:
@@ -180,17 +175,12 @@ def arg_parse():
     return args
 
 
-def format_experiment_help(type_experiment=None, name_experiment=None):
+def format_experiment_help(name_experiment=None):
     headline1 = "Experimental parameters"
     headline2 = "Fitted parameters (by default)"
     headline3 = "Fixed parameters (by default)"
 
-    subtype_experiment = name_experiment.replace(
-        ''.join(['_', type_experiment]), '')
-
-    module_exp = importlib.import_module(
-        '.'.join(['chemex.experiments', type_experiment, subtype_experiment])
-    )
+    module_exp = importlib.import_module('.'.join(['chemex.experiments', name_experiment]))
 
     title = module_exp.__doc__.split('\n')[0]
     description = '\n'.join(module_exp.__doc__.split('\n')[1:]).strip('\n')

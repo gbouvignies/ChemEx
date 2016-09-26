@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+
+
 # Define the gyromagnetic ratios in rad/s/T
 # IUPAC values: Harris et al, Concepts in Magn. Reson., (2002) 14, p326
 
@@ -22,7 +25,7 @@ xi_ratio = {
 
 # Residue-specific scalar coupling values with neighbouring carbons (in Hz)
 
-j_xc_couplings = {
+j_couplings = {
     'a': {
         'n': (7.7, 10.7, 14.4),
         'c': (52.0, 14.4,),
@@ -147,6 +150,7 @@ j_xc_couplings = {
     },
     'v': {
         'n': (7.7, 10.7, 14.4),
+        'c': (52.0, 14.4,),
         'ca': (52.0, 35.0,),
         'cb': (35.0, 35.0, 35.0,),
         'cg1': (35.0,),

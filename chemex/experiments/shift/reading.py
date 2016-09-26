@@ -1,4 +1,3 @@
-from __future__ import absolute_import
 import importlib
 import os
 
@@ -7,7 +6,7 @@ import numpy as np
 
 def read_profiles(path, profile_filenames, experiment_details, res_incl=None, res_excl=None):
     experiment_type = experiment_details['type']
-    experiment_details['experiment_name'] = name_experiment(experiment_details)
+    experiment_details['name'] = name_experiment(experiment_details)
     experiment_module = importlib.import_module('.'.join(['chemex.experiments', experiment_type]))
 
     Profile = getattr(experiment_module, 'Profile')
@@ -21,7 +20,7 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
     measurements = np.loadtxt(full_path, dtype=dtype)
 
     for measurement in measurements:
-        profile_name = measurement['names']
+        profile_name = measurement['names'].decode('utf8')
         profile = Profile(profile_name, measurement, experiment_details)
         profiles.append(profile)
 
@@ -46,31 +45,8 @@ def name_experiment(experiment_details=None):
     if not experiment_details:
         experiment_details = dict()
 
-    if 'experiment_name' in experiment_details:
-        name = experiment_details['experiment_name'].strip().replace(' ', '_')
-
-    else:
-        exp_type = experiment_details['type'].replace('.', '_')
-        h_larmor_frq = float(experiment_details['h_larmor_frq'])
-        temperature = float(experiment_details['temperature'])
-        time_t2 = float(experiment_details['time_t2'])
-
-        name = '{:s}_{:.0f}ms_{:.0f}MHz_{:.0f}C'.format(
-            exp_type,
-            time_t2 * 1e3,
-            h_larmor_frq,
-            temperature
-        ).lower()
-
-    return name
-
-
-def name_experiment(experiment_details=None):
-    if not experiment_details:
-        experiment_details = dict()
-
-    if 'experiment_name' in experiment_details:
-        name = experiment_details['experiment_name'].strip().replace(' ', '_')
+    if 'name' in experiment_details:
+        name = experiment_details['name'].strip().replace(' ', '_')
     else:
         exp_type = experiment_details['type'].replace('.', '_')
         h_larmor_frq = float(experiment_details['h_larmor_frq'])
