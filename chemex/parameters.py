@@ -20,10 +20,10 @@ name_markers = {
 friendly_markers = {
     'name': "{}",
     'nuclei': "NUC->{}",
-    'temperature': "T->{:.1f} C",
-    'h_larmor_frq': "B0->{:.1f} MHz",
-    'p_total': "[P]->{:e} M",
-    'l_total': "[L]->{:e} M",
+    'temperature': "T->{:.1f}C",
+    'h_larmor_frq': "B0->{:.1f}MHz",
+    'p_total': "[P]->{:e}M",
+    'l_total': "[L]->{:e}M",
 }
 
 re_qualifiers = re.compile(
@@ -190,7 +190,7 @@ class ParameterName(object):
         if self.nuclei is not None:
             group_name = peaks.Peak(self.nuclei).resonances[0]['group']
             if not group_name:
-                all_res = '.+'
+                all_res = '\D?[0-9]+[abd-gi-mopr-z]*'
             else:
                 all_res = ''
             re_components.append(name_markers['nuclei'].format(''.join([all_res, expand(self.nuclei)])))

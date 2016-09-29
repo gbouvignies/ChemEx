@@ -1,14 +1,19 @@
 import os
 
-import matplotlib.pyplot as plt
 import numpy as np
 from chemex import peaks
-from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.ticker import MaxNLocator
+from chemex.experiments import plotting
+from matplotlib import gridspec as gsp
+from matplotlib import pyplot as plt
+from matplotlib import ticker
+from matplotlib.backends import backend_pdf
 
-dark_gray = '0.13'
-red500 = '#F44336'
-red200 = '#EF9A9A'
+
+def sigma_estimator(x):
+    """Estimates standard deviation using median to exclude outliers. Up to
+    50% can be bad."""
+
+    return np.median([np.median(abs(xi - np.asarray(x))) for xi in x]) * 1.1926
 
 
 def set_lim(values, scale):
@@ -110,7 +115,7 @@ def plot_data(data, params, output_dir='./'):
         profiles, r2_min, r2_max = compute_profiles(data_grouped, params)
         ymin, ymax = set_lim([r2_min, r2_max], 0.10)
 
-        with PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt:
+        with backend_pdf.PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt:
 
             for peak in sorted(profiles):
                 nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru = profiles[peak]
@@ -118,45 +123,87 @@ def plot_data(data, params, output_dir='./'):
 
                 ###### Matplotlib ######
 
-                fig = plt.figure(1, frameon=True)
-                ax = fig.add_subplot(111)
+                gs = gsp.GridSpec(2, 1, height_ratios=[1, 4])
 
-                # ax.axhline(0, color='black', alpha=0.87)
+                ax1 = plt.subplot(gs[0])
+                ax2 = plt.subplot(gs[1])
 
-                ########################]
+                ax1.axhline(0, color=plotting.palette['Black']['Text'], linewidth=0.5)
+                ax2.axhline(0, color=plotting.palette['Black']['Text'], linewidth=0.5)
 
-                ax.plot(
+                ########################
+
+                ax2.plot(
                     nu_cpmg,
                     r2_cal,
                     linestyle='-',
-                    color=red200,
+                    color=plotting.palette['Grey']['700'],
                     zorder=2,
                 )
 
-                ax.errorbar(
+                ax2.errorbar(
                     nu_cpmg,
                     r2_exp,
                     yerr=(r2_erd, r2_eru),
                     fmt='o',
-                    color=red500,
+                    markeredgecolor=plotting.palette['Red']['500'],
+                    ecolor=plotting.palette['Red']['500'],
+                    markerfacecolor='None',
                     zorder=3,
                 )
 
                 xmin, xmax = set_lim(nu_cpmg, 0.10)
 
-                ax.set_xlim(xmin, xmax)
-                ax.set_ylim(ymin, ymax)
+                ax2.set_xlim(xmin, xmax)
+                ax2.set_ylim(ymin, ymax)
 
-                ax.xaxis.set_major_locator(MaxNLocator(6))
-                ax.yaxis.set_major_locator(MaxNLocator(6))
+                ax2.xaxis.set_major_locator(ticker.MaxNLocator(6))
+                ax2.yaxis.set_major_locator(ticker.MaxNLocator(6))
 
-                ax.set_xlabel(r'$\mathregular{\nu_{CPMG} \ (Hz)}$')
-                ax.set_ylabel(r'$\mathregular{R_{2,eff} \ (s^{-1})}$')
+                ax2.set_xlabel(r'$\nu_{CPMG} \ (Hz)$')
+                ax2.set_ylabel(r'$R_{2,eff} \ (s^{-1})$')
 
-                ax.set_title('{:s}'.format(peak.assignment.upper()))
+                ax1.set_title('{:s}'.format(peak.assignment.upper()))
 
-                ax.yaxis.set_ticks_position('left')
-                ax.xaxis.set_ticks_position('bottom')
+                ax2.yaxis.set_ticks_position('left')
+                ax2.xaxis.set_ticks_position('bottom')
+
+                ########################
+
+                deltas = np.asarray(r2_exp) - np.asarray(r2_cal)
+
+                ax1.errorbar(
+                    nu_cpmg,
+                    deltas,
+                    yerr=(r2_erd, r2_eru),
+                    fmt='o',
+                    markeredgecolor=plotting.palette['Red']['500'],
+                    ecolor=plotting.palette['Red']['500'],
+                    markerfacecolor='None',
+                    zorder=100,
+                )
+
+                rmin, _rmax = set_lim(deltas - r2_erd, 0.2)
+                _rmin, rmax = set_lim(deltas + r2_eru, 0.2)
+
+                ax1.set_xlim(xmin, xmax)
+                ax1.set_ylim(rmin, rmax)
+
+                ax1.xaxis.set_major_locator(ticker.MaxNLocator(6))
+                ax1.yaxis.set_major_locator(ticker.MaxNLocator(4))
+
+                ax1.xaxis.set_major_formatter(ticker.NullFormatter())
+
+                ax1.ticklabel_format(style='sci', scilimits=(0, 0), axis='y')
+
+                ax1.set_title('{:s}'.format(peak.assignment.upper()))
+                ax1.set_ylabel('Residual ' + r'$(s^{-1})$')
+
+                ########################
+
+                for ax in (ax1, ax2):
+                    ax.yaxis.set_ticks_position('left')
+                    ax.xaxis.set_ticks_position('bottom')
 
                 ########################
 
