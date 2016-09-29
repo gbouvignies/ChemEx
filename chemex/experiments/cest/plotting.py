@@ -1,18 +1,12 @@
 import os
 
-import matplotlib.gridspec as gsp
-import matplotlib.pyplot as plt
 import numpy as np
 from chemex import peaks
-from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.ticker import MaxNLocator, NullFormatter
-
-# colors
-dark_gray = '0.13'
-red500 = '#F44336'
-red200 = '#EF9A9A'
-
-TWO_PI = 2.0 * np.pi
+from chemex.experiments import plotting
+from matplotlib import gridspec as gsp
+from matplotlib import pyplot as plt
+from matplotlib import ticker
+from matplotlib.backends import backend_pdf
 
 def sigma_estimator(x):
     """Estimates standard deviation using median to exclude outliers. Up to
@@ -121,7 +115,8 @@ def plot_data(data, params, output_dir='./'):
 
         profiles = compute_profiles(data_grouped, params)
 
-        with PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt, open(name_exp, 'w') as file_exp:
+        with backend_pdf.PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt, open(name_exp,
+                                                                                               'w') as file_exp:
 
             for peak in sorted(profiles):
                 b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit, cs, dw = profiles[peak]
@@ -136,13 +131,15 @@ def plot_data(data, params, output_dir='./'):
                 ax1 = plt.subplot(gs[0])
                 ax2 = plt.subplot(gs[1])
 
-                ax1.axvline(cs, color='0.88', linestyle='-', linewidth=1.0, zorder=-100)
-                ax2.axvline(cs, color='0.88', linestyle='-', linewidth=1.0, zorder=-100)
-                ax1.axvline(cs + dw, color='0.88', linestyle='-', linewidth=1.0, zorder=-100)
-                ax2.axvline(cs + dw, color='0.88', linestyle='-', linewidth=1.0, zorder=-100)
+                ax1.axvline(cs, color=plotting.palette['Black']['Dividers'], linestyle='-', linewidth=1.0, zorder=-100)
+                ax2.axvline(cs, color=plotting.palette['Black']['Dividers'], linestyle='-', linewidth=1.0, zorder=-100)
+                ax1.axvline(cs + dw, color=plotting.palette['Black']['Dividers'], linestyle='-', linewidth=1.0,
+                            zorder=-100)
+                ax2.axvline(cs + dw, color=plotting.palette['Black']['Dividers'], linestyle='-', linewidth=1.0,
+                            zorder=-100)
 
-                ax1.axhline(0, color=dark_gray, linewidth=0.5)
-                ax2.axhline(0, color=dark_gray, linewidth=0.5)
+                ax1.axhline(0, color=plotting.palette['Black']['Text'], linewidth=0.5)
+                ax2.axhline(0, color=plotting.palette['Black']['Text'], linewidth=0.5)
 
                 ########################
 
@@ -150,14 +147,19 @@ def plot_data(data, params, output_dir='./'):
                     b1_ppm_fit,
                     mag_fit,
                     linestyle='-',
-                    color=red200,
+                    color=plotting.palette['Grey']['700'],
+                    zorder=2,
                 )
 
-                ax2.plot(
+                ax2.errorbar(
                     b1_ppm,
                     mag_exp,
-                    'o',
-                    color=red500,
+                    mag_err,
+                    fmt='o',
+                    markeredgecolor=plotting.palette['Red']['500'],
+                    ecolor=plotting.palette['Red']['500'],
+                    markerfacecolor='None',
+                    zorder=3,
                 )
 
                 xmin, xmax = set_lim(b1_ppm_fit, 0.05)
@@ -169,8 +171,8 @@ def plot_data(data, params, output_dir='./'):
 
                 ax2.invert_xaxis()
 
-                ax2.xaxis.set_major_locator(MaxNLocator(9))
-                # ax2.yaxis.set_major_locator(MaxNLocator(6))
+                ax2.xaxis.set_major_locator(ticker.MaxNLocator(9))
+                # ax2.yaxis.set_major_locator(ticker.MaxNLocator(6))
 
                 ax2.xaxis.grid(False)
 
@@ -185,16 +187,14 @@ def plot_data(data, params, output_dir='./'):
                 ax1.fill(
                     (xmin, xmin, xmax, xmax),
                     1.0 * sigma * np.asarray([-1.0, 1.0, 1.0, -1.0]),
-                    fc='black',
-                    alpha=0.12,
+                    fc=plotting.palette['Black']['Dividers'],
                     ec='none'
                 )
 
                 ax1.fill(
                     (xmin, xmin, xmax, xmax),
                     2.0 * sigma * np.asarray([-1.0, 1.0, 1.0, -1.0]),
-                    fc='black',
-                    alpha=0.12,
+                    fc=plotting.palette['Black']['Dividers'],
                     ec='none'
                 )
 
@@ -203,7 +203,9 @@ def plot_data(data, params, output_dir='./'):
                     deltas,
                     mag_err,
                     fmt='o',
-                    color=red500,
+                    markeredgecolor=plotting.palette['Red']['500'],
+                    ecolor=plotting.palette['Red']['500'],
+                    markerfacecolor='None',
                     zorder=100,
                 )
 
@@ -216,10 +218,10 @@ def plot_data(data, params, output_dir='./'):
 
                 ax1.invert_xaxis()
 
-                ax1.xaxis.set_major_locator(MaxNLocator(9))
-                ax1.yaxis.set_major_locator(MaxNLocator(4))
+                ax1.xaxis.set_major_locator(ticker.MaxNLocator(9))
+                ax1.yaxis.set_major_locator(ticker.MaxNLocator(4))
 
-                ax1.xaxis.set_major_formatter(NullFormatter())
+                ax1.xaxis.set_major_formatter(ticker.NullFormatter())
 
                 ax1.xaxis.grid(False)
                 ax1.yaxis.grid(False)
@@ -227,7 +229,7 @@ def plot_data(data, params, output_dir='./'):
                 ax1.ticklabel_format(style='sci', scilimits=(0, 0), axis='y')
 
                 ax1.set_title('{:s}'.format(peak.assignment.upper()))
-                ax1.set_ylabel('Residuals')
+                ax1.set_ylabel('Residual')
 
                 ########################
 

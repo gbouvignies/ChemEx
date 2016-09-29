@@ -27,6 +27,9 @@ def read_cfg_file(filename):
         try:
             out = config.read(filename)
 
+            if not out:
+                exit("\nERROR: The file \'{}\' is empty or does not exist!\n".format(filename))
+
         except configparser.MissingSectionHeaderError:
             exit("\nERROR: You are missing a section heading in {:s}\n"
                  .format(filename))
@@ -34,9 +37,6 @@ def read_cfg_file(filename):
         except configparser.ParsingError:
             exit("\nERROR: Having trouble reading your parameter file, have you "
                  "forgotten '=' signs?\n{:s}".format(sys.exc_info()[1]))
-
-        if not out:
-            exit("\nERROR: The file \'{}\' is empty or does not exist!\n".format(filename))
 
     return config
 
@@ -46,6 +46,8 @@ def normalize_path(working_dir, filename):
 
     if not os.path.isabs(filename):
         path = os.path.join(working_dir, filename)
+    else:
+        path = filename
 
     return path
 

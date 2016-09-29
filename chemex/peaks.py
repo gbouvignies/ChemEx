@@ -46,14 +46,20 @@ class Peak(object):
         return self_tuple < other_tuple
 
     def intersection(self, other):
-        resonances_new = []
-        for resonance_self in self.resonances:
-            for resonance_other in other.resonances:
-                if resonance_self['name'] == resonance_other['name']:
-                    resonances_new.append(resonance_self['name'])
-                elif resonance_self['group'] == resonance_other['group']:
-                    resonances_new.append(resonance_self['group'])
-        assignment_new = '-'.join(sorted(set(resonances_new)))
+
+        assignments = {self.assignment, other.assignment}
+        names = {resonance['name'] for resonance in self.resonances + other.resonances}
+        groups = {resonance['group'] for resonance in self.resonances + other.resonances}
+
+        if len(assignments) == 1:
+            assignment_new = assignments.pop()
+        elif len(names) == 1:
+            assignment_new = names.pop()
+        elif len(groups) == 1:
+            assignment_new = groups.pop()
+        else:
+            assignment_new = ''
+
         return Peak(assignment_new)
 
 

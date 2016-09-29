@@ -1,0 +1,10 @@
+name: chemex
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python>=3.5
+  - numpy
+  - scipy
+  - matplotlib
+  - lmfit

@@ -1,11 +1,7 @@
-import itertools
 import sys
 
 import lmfit
-import numpy as np
 from chemex import datasets, parameters, util
-
-product = itertools.product
 
 
 def run_fit(fit_filename, params, data):
@@ -31,15 +27,18 @@ def run_fit(fit_filename, params, data):
 
             if independent_clusters_no > 1:
                 print("[{}]".format(c_name))
+
             print("Chi2 / Reduced Chi2:")
 
             func = c_data.calculate_residuals
             minimizer = lmfit.Minimizer(func, c_params)
 
             try:
-                result = minimizer.minimize()
-                for param in result.params.values():
-                    param.value = np.float64(param.value)
+                result = minimizer.minimize(params=c_params)
+
+                # for param in result.params.values():
+                #     param.value = np.float64(param.value)
+
             except KeyboardInterrupt:
                 result = minimizer.result
                 sys.stderr.write("\n -- Keyboard Interrupt: minimization stopped\n")

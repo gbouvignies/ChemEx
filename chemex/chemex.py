@@ -90,6 +90,7 @@ def write_results(params, data, method, output_dir):
 
     data.write_chi2_to(params, path=output_dir)
     parameters.write_par(params, output_dir=output_dir)
+    parameters.write_constraints(params, output_dir=output_dir)
     data.write_to(params, output_dir=output_dir)
 
 

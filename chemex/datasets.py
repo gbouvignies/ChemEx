@@ -85,6 +85,9 @@ class DataSet(object):
         chisq = self.calculate_chisq(params)
         nvarys = len([param for param in params.values() if param.vary])
 
+        # This is to take into acccount the scaling that is applied to each profile
+        # nvarys += len(self.data)
+
         return chisq / (self.ndata - nvarys)
 
     def write_to(self, params=None, output_dir='./'):

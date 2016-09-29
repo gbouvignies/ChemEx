@@ -1,3 +1,4 @@
+import ast
 import configparser
 import copy
 import os
@@ -7,33 +8,34 @@ import re
 import lmfit
 import numpy as np
 from chemex import peaks, util
+from lmfit import astutils
 
 name_markers = {
-    'name': "__n_{}_n__",
-    'nuclei': "__r_{}_r__",
-    'temperature': "__t_{}_t__",
+    'name'        : "__n_{}_n__",
+    'nuclei'      : "__r_{}_r__",
+    'temperature' : "__t_{}_t__",
     'h_larmor_frq': "__b_{}_b__",
-    'p_total': "__p_{}_p__",
-    'l_total': "__l_{}_l__",
+    'p_total'     : "__p_{}_p__",
+    'l_total'     : "__l_{}_l__",
 }
 
 friendly_markers = {
-    'name': "{}",
-    'nuclei': "NUC->{}",
-    'temperature': "T->{:.1f} C",
-    'h_larmor_frq': "B0->{:.1f} MHz",
-    'p_total': "[P]->{:e} M",
-    'l_total': "[L]->{:e} M",
+    'name'        : "{}",
+    'nuclei'      : "NUC->{}",
+    'temperature' : "T->{:.1f}C",
+    'h_larmor_frq': "B0->{:.1f}MHz",
+    'p_total'     : "[P]->{:e}M",
+    'l_total'     : "[L]->{:e}M",
 }
 
 re_qualifiers = re.compile(
     '''
         (^\s*(?P<name>\w+)) |
+        (NUC\s*->\s*(?P<nuclei>(\w|-)+)) |
         (T\s*->s*(?P<temperature>{0})) |
         (B0\s*->\s*(?P<h_larmor_frq>{0})) |
         (\[P\]\s*->\s*(?P<p_total>{0})) |
         (\[L\]\s*->\s*(?P<l_total>{0})) |
-        (NUC\s*->\s*(?P<nuclei>([hncq])[a-z0-9]*)) |
     '''.format('[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?'),
     re.IGNORECASE | re.VERBOSE
 )
@@ -51,13 +53,13 @@ re_value_min_max = re.compile(
 
 re_par_name = re.compile(
     '''
-        (__n_(?P<name>.+)_n__)?
-        (__r_(?P<nuclei>.+)_r__)?
-        (__t_(?P<temperature>.+)_t__)?
-        (__b_(?P<h_larmor_frq>.+)_b__)?
-        (__p_(?P<p_total>.+)_p__)?
-        (__l_(?P<l_total>.+)_l__)?
-    ''',
+        (__n_(?P<name>\w+)_n__)?
+        (__r_(?P<nuclei>(\w|-)+)_r__)?
+        (__t_(?P<temperature>{0})_t__)?
+        (__b_(?P<h_larmor_frq>{0})_b__)?
+        (__p_(?P<p_total>{0})_p__)?
+        (__l_(?P<l_total>{0})_l__)?
+    '''.format('[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?'),
     re.IGNORECASE | re.VERBOSE
 )
 
@@ -85,7 +87,7 @@ expand = MakeTranslate({
 
 compress = MakeTranslate({
     '__minus__': '-',
-    '__plus__': '+',
+    '__plus__' : '+',
     '__point__': '.',
 })
 
@@ -117,11 +119,14 @@ class ParameterName(object):
     def from_full_name(cls, full_name=None):
         if full_name is None:
             full_name = ''
+
         full_name = compress(full_name)
+
         match = re.match(re_par_name, full_name)
         qualifiers = {}
         if match is not None:
             qualifiers.update(match.groupdict())
+
         return cls(**qualifiers)
 
     @classmethod
@@ -190,7 +195,7 @@ class ParameterName(object):
         if self.nuclei is not None:
             group_name = peaks.Peak(self.nuclei).resonances[0]['group']
             if not group_name:
-                all_res = '.+'
+                all_res = '\D?[0-9]+[abd-gi-mopr-z]*'
             else:
                 all_res = ''
             re_components.append(name_markers['nuclei'].format(''.join([all_res, expand(self.nuclei)])))
@@ -227,8 +232,23 @@ class ParameterName(object):
 
     def __lt__(self, other):
 
-        tuple_self = (self.name, self.nuclei, self.temperature, self.h_larmor_frq, self.p_total, self.l_total)
-        tuple_other = (other.name, other.nuclei, other.temperature, other.h_larmor_frq, other.p_total, other.l_total)
+        tuple_self = (
+            self.name,
+            self.temperature,
+            self.h_larmor_frq,
+            self.p_total,
+            self.l_total,
+            peaks.Peak(self.nuclei)
+        )
+
+        tuple_other = (
+            other.name,
+            other.temperature,
+            other.h_larmor_frq,
+            other.p_total,
+            other.l_total,
+            peaks.Peak(other.nuclei)
+        )
 
         return tuple_self < tuple_other
 
@@ -406,7 +426,9 @@ def set_param_expr(params, name_short, name_short_expr=None):
             elif name_short_expr is not None:
                 name_expr = ParameterName.from_full_name(name).update(name_short_expr).to_full_name()
                 if name_expr != name and name_expr in params:
-                    param.set(expr=name_expr)
+                    min = param.min
+                    max = param.max
+                    param.set(expr=name_expr, min=min, max=max)
 
             if expr is not None:
                 matches.add(name)
@@ -434,7 +456,6 @@ def set_params(params, name_short, value=None, vary=None, min=None, max=None):
 
 def write_par(params, output_dir='./'):
     """Write fitted parameters int a file"""
-
 
     filename = os.path.join(output_dir, 'parameters.fit')
 
@@ -488,6 +509,31 @@ def write_par(params, output_dir='./'):
 
     with open(filename, 'w') as f:
         cfg.write(f)
+
+
+def write_constraints(params, output_dir='./'):
+    """Write fitted parameters int a file"""
+
+    filename = os.path.join(output_dir, 'constraints.fit')
+
+    print("  * {}".format(filename))
+
+    param_dict = dict()
+
+    for name, param in params.items():
+        if param.expr:
+            name_formatted = '[{}]'.format(ParameterName.from_full_name(name).to_section_name(nuclei=True))
+            expr_formatted = param.expr
+            for name_dep in astutils.get_ast_names(ast.parse(param.expr)):
+                expr_formatted = expr_formatted.replace(
+                    name_dep,
+                    '[{}]'.format(ParameterName.from_full_name(name_dep).to_section_name(nuclei=True))
+                )
+            param_dict[ParameterName.from_full_name(name)] = '{} = {}\n'.format(name_formatted, expr_formatted)
+
+    with open(filename, 'w') as f:
+        for name, constraint in sorted(param_dict.items()):
+            f.write(constraint)
 
 
 def remove_comments(line, sep):
