@@ -66,11 +66,12 @@ def arg_parse():
 
         for exp in exps:
 
-            name_exp = exp.replace('chemex.experiments.', '')
-
             package_exp = importlib.import_module(exp)
 
             if hasattr(package_exp, 'Profile'):
+                name_exp = exp.replace('chemex.experiments.' + name_exp_type +
+                                       '.', '').replace('profiles.', '')
+
                 subparsers_info_type.add_parser(
                     name_exp,
                     help=package_exp.__doc__.split('\n')[0],
@@ -175,12 +176,18 @@ def arg_parse():
     return args
 
 
-def format_experiment_help(name_experiment=None):
+def format_experiment_help(exp_type, exp_name):
     headline1 = "Experimental parameters"
     headline2 = "Fitted parameters (by default)"
     headline3 = "Fixed parameters (by default)"
 
-    module_exp = importlib.import_module('.'.join(['chemex.experiments', name_experiment]))
+    if exp_type in ['cest', 'cpmg']:
+        module_exp = importlib.import_module('.'.join(['chemex.experiments',
+                                                       exp_type, 'profiles',
+                                                       exp_name]))
+    else:
+        module_exp = importlib.import_module('.'.join(['chemex.experiments',
+                                                       exp_type, exp_name]))
 
     title = module_exp.__doc__.split('\n')[0]
     description = '\n'.join(module_exp.__doc__.split('\n')[1:]).strip('\n')
