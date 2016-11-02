@@ -15,7 +15,7 @@ from chemex import datasets, fitting, parameters, parsing, util
 def print_logo():
     """Prints chemex logo"""
 
-    from chemex import version
+    from chemex import __version__
 
     print((
         "\n"
@@ -28,10 +28,10 @@ def print_logo():
         "*                                               *\n"
         "*   Analysis of NMR Chemical Exchange data      *\n"
         "*                                               *\n"
-        "*   Version: {:<15s}                    *\n"
+        "*   Version: {:<34s} *\n"
         "*                                               *\n"
         "* * * * * * * * * * * * * * * * * * * * * * * * *\n"
-            .format(version.__version__)
+        .format(__version__)
     ))
 
 

@@ -8,12 +8,7 @@ use_setuptools()
 import re
 
 from setuptools import setup, find_packages
-
-version = re.search(
-    '^__version__\s*=\s*["|\'](.*)["|\']',
-    open('chemex/version.py').read(),
-    re.M
-).group(1)
+import versioneer
 
 with open("README.md", "rb") as f:
     long_description = f.read().decode("utf-8")
@@ -22,7 +17,8 @@ with open("README.md", "rb") as f:
 setup(
     name='chemex',
 
-    version=version,
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
 
     description='Program to fit chemical exchange induced shift and relaxation data',
     long_description=long_description,

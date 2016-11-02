@@ -3,3 +3,5 @@ include README.md LICENSE.txt MANIFEST.in environment.yml
 exclude *.pyc core.* *~ *.pdf
 exclude chemex/experiments/cest/profiles/test.py
 include ez_setup.py
+include versioneer.py
+include chemex/_version.py
