@@ -3,7 +3,7 @@ import importlib
 import pkgutil
 import sys
 
-from chemex import __version__, experiments, util
+from chemex import experiments, util, __version__
 
 
 class MyParser(argparse.ArgumentParser):
