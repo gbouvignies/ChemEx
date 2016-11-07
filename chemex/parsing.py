@@ -3,7 +3,7 @@ import importlib
 import pkgutil
 import sys
 
-from chemex import experiments, util, version
+from chemex import __version__, experiments, util
 
 
 class MyParser(argparse.ArgumentParser):
@@ -26,7 +26,7 @@ def arg_parse():
         prog='chemex',
     )
 
-    parser.add_argument('--version', action='version', version='%(prog)s {}'.format(version.__version__))
+    parser.add_argument('--version', action='version', version='%(prog)s {}'.format(__version__))
 
     subparsers = parser.add_subparsers(dest='commands', )
 
