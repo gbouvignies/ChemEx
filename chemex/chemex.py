@@ -31,7 +31,7 @@ def print_logo():
         "*   Version: {:<34s} *\n"
         "*                                               *\n"
         "* * * * * * * * * * * * * * * * * * * * * * * * *\n"
-            .format(__version__)
+        .format(__version__)
     ))
 
 
