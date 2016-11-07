@@ -31,7 +31,7 @@ def print_logo():
         "*   Version: {:<15s}                    *\n"
         "*                                               *\n"
         "* * * * * * * * * * * * * * * * * * * * * * * * *\n"
-            .format(version.__version__)
+        .format(version.__version__)
     ))
 
 
@@ -139,8 +139,7 @@ def main():
     args = parsing.arg_parse()
 
     if args.commands == 'info':
-        parsing.format_experiment_help(args.experiments)
-
+        parsing.format_experiment_help(args.types, args.experiments)
 
     elif args.commands == 'fit':
 
