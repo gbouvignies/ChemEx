@@ -188,7 +188,7 @@ def make_calc_observable(time_t2=0.0, ppm_to_rads_h=1.0, ppm_to_rads_c=1.0, smal
                 p_free = expm(l_free * t_cp)
                 p_cpy = matrix_power(p_free.dot(P180_CY).dot(p_free), ncyc)
 
-                mag = reduce(dot, [p_zeta, P180_HX, P180_CX, p_zeta, p_cpy, P180_HX, p_cpy, mag_eq])
+                mag = reduce(dot, [p_cpy, P180_HX, p_cpy, p_zeta, P180_HX, P180_CX, p_zeta, mag_eq])
 
             magz_a, _ = get_2hxcy(mag)
 
