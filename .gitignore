@@ -196,3 +196,6 @@ setuptools*
 
 ### Spyder ###
 .spyproject
+
+### Test ###
+test_*/
