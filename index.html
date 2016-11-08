@@ -20,29 +20,41 @@
 
     <section class="main-content">
       <h3>
-<a id="welcome-to-github-pages" class="anchor" href="#welcome-to-github-pages" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Welcome to GitHub Pages.</h3>
+<a id="quick-install" class="anchor" href="#quick-install" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Quick install</h3>
 
-<p>This automatic page generator is the easiest way to create beautiful pages for all of your projects. Author your page content here <a href="https://guides.github.com/features/mastering-markdown/">using GitHub Flavored Markdown</a>, select a template crafted by a designer, and publish. After your page is generated, you can check out the new <code>gh-pages</code> branch locally. If you’re using GitHub Desktop, simply sync your repository and you’ll see the new branch.</p>
+<p>In a clean directory run:</p>
 
-<h3>
-<a id="designer-templates" class="anchor" href="#designer-templates" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Designer Templates</h3>
+<pre><code>git clone https://github.com/gbouvignies/chemex
+</code></pre>
 
-<p>We’ve crafted some handsome templates for you to use. Go ahead and click 'Continue to layouts' to browse through them. You can easily go back to edit your page before publishing. After publishing your page, you can revisit the page generator and switch to another theme. Your Page content will be preserved.</p>
+<p>Navigate to the chemex directory and run:</p>
 
-<h3>
-<a id="creating-pages-manually" class="anchor" href="#creating-pages-manually" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Creating pages manually</h3>
-
-<p>If you prefer to not use the automatic generator, push a branch named <code>gh-pages</code> to your repository to create a page manually. In addition to supporting regular HTML content, GitHub Pages support Jekyll, a simple, blog aware static site generator. Jekyll makes it easy to create site-wide headers and footers without having to copy them across every page. It also offers intelligent blog support and other advanced templating features.</p>
+<pre><code>python setup.py install --user
+</code></pre>
 
 <h3>
-<a id="authors-and-contributors" class="anchor" href="#authors-and-contributors" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Authors and Contributors</h3>
+<a id="quick-update" class="anchor" href="#quick-update" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Quick update</h3>
 
-<p>You can @mention a GitHub username to generate a link to their profile. The resulting <code>&lt;a&gt;</code> element will link to the contributor’s GitHub Profile. For example: In 2007, Chris Wanstrath (<a href="https://github.com/defunkt" class="user-mention">@defunkt</a>), PJ Hyett (<a href="https://github.com/pjhyett" class="user-mention">@pjhyett</a>), and Tom Preston-Werner (<a href="https://github.com/mojombo" class="user-mention">@mojombo</a>) founded GitHub.</p>
+<p>To get the latest code using git:</p>
+
+<pre><code>git pull
+</code></pre>
+
+<p>Then simply re-run the install command above.</p>
 
 <h3>
-<a id="support-or-contact" class="anchor" href="#support-or-contact" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Support or Contact</h3>
+<a id="prerequisites" class="anchor" href="#prerequisites" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Prerequisites</h3>
 
-<p>Having trouble with Pages? Check out our <a href="https://help.github.com/pages">documentation</a> or <a href="https://github.com/contact">contact support</a> and we’ll help you sort it out.</p>
+<p>You should have installed on your system:</p>
+
+<ul>
+<li><a href="https://www.python.org/download/releases/2.7/">Python 2.7.x</a></li>
+<li><a href="http://www.scipy.org/install.html">SciPy 0.11.x</a></li>
+<li><a href="http://matplotlib.org/users/installing.html">MatPlotLib 1.1.x</a></li>
+</ul>
+
+<p>Newer versions of the above should be fine, as will be some older versions. However, Python
+2.6 or earlier will not work. Please report any compatibility issues that you run into.</p>
 
       <footer class="site-footer">
         <span class="site-footer-owner"><a href="https://github.com/gbouvignies/chemex">ChemEx</a> is maintained by <a href="https://github.com/gbouvignies">gbouvignies</a>.</span>
