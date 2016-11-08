@@ -1,14 +1,6 @@
-# -*- coding: utf-8 -*-
-
-
-"""setup.py: setuptools control."""
-from ez_setup import use_setuptools
-use_setuptools()
-
-use_setuptools()
-
 from setuptools import setup, find_packages
 import versioneer
+
 
 with open("README.md", "rb") as f:
     long_description = f.read().decode("utf-8")
