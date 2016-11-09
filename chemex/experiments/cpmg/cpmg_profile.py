@@ -1,3 +1,5 @@
+"""The cpmg_profile module contains the code for handling CPMG profiles."""
+
 import copy
 from functools import lru_cache
 
@@ -9,6 +11,8 @@ from chemex.experiments.cpmg import plotting
 
 
 class CPMGProfile(base_profile.BaseProfile):
+    """CPMGProfile class."""
+
     def __init__(self, profile_name, measurements, exp_details):
 
         self.profile_name = profile_name
@@ -54,10 +58,11 @@ class CPMGProfile(base_profile.BaseProfile):
         self.map_names = {}
 
     def calculate_unscaled_profile(self, *args, **kwargs):
+        """Calculate the unscaled CPMG profile."""
         pass
 
     def calculate_scale(self, cal):
-
+        """Calculate the scaling factor."""
         scale = (
             sum(cal * self.val / self.err ** 2) /
             sum((cal / self.err) ** 2)
@@ -66,7 +71,7 @@ class CPMGProfile(base_profile.BaseProfile):
         return scale
 
     def calculate_profile(self, params):
-
+        """Calculate the CMPG profile."""
         kwargs = {
             short_name: params[long_name].value
             for short_name, long_name in self.map_names.items()
@@ -78,7 +83,7 @@ class CPMGProfile(base_profile.BaseProfile):
         return values * scale
 
     def ncycs_to_nu_cpmgs(self, ncycs=None):
-
+        """Calculate the pulsing frequency, v(CPMG), from ncyc values."""
         if ncycs is None:
             ncycs = np.array([ncyc if ncyc >= 0 else 0.5 for ncyc in self.ncycs])
 
@@ -87,15 +92,12 @@ class CPMGProfile(base_profile.BaseProfile):
     def filter_points(self, params=None):
         """Evaluate some criteria to know whether the point should be considered
         in the calculation or not.
-
-        Returns 'True' if the point should NOT be considered.
         """
 
         return False
 
     def print_profile(self, params=None):
-        """Print the data point"""
-
+        """Print the CPMG profile."""
         output = []
 
         if params is not None:
@@ -133,7 +135,7 @@ class CPMGProfile(base_profile.BaseProfile):
         return "\n".join(output).upper()
 
     def make_bs_profile(self):
-
+        """Make a CPMG profile for boostrap analysis."""
         indexes = np.array(range(len(self.val)))
         pool1 = indexes[self.reference]
         pool2 = indexes[np.logical_not(self.reference)]

@@ -16,7 +16,6 @@ found in the reference and can be run with either small_protein_flag='y' or 'n'.
 Lewis Kay experiment: hmqc_CH3_exchange_bigprotein_*00_lek_v2
 
 Journal of the American Chemical Society (2004), 126, 3964-73
-
 """
 
 import functools
@@ -29,6 +28,8 @@ from chemex.experiments.cpmg import cpmg_profile
 
 
 class Profile(cpmg_profile.CPMGProfile):
+    """TODO: class docstring."""
+
     def __init__(self, profile_name, measurements, exp_details):
 
         super().__init__(profile_name, measurements, exp_details)
@@ -79,7 +80,6 @@ class Profile(cpmg_profile.CPMGProfile):
         out : float
             Intensity after the CEST block
         """
-
         omega_i_a, omega_i_b, omega_i_c, omega_i_d = np.array(
             [kwargs.get(key, 0.0) for key in ('cs_i_a', 'cs_i_b', 'cs_i_c', 'cs_i_d')]
         ) * self.ppm_i

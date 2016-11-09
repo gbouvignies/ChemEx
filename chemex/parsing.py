@@ -1,3 +1,6 @@
+"""The parsing module contains the code for the parsing of command-line
+arguments."""
+
 import argparse
 import importlib
 import pkgutil
@@ -7,6 +10,8 @@ from chemex import experiments, util, __version__
 
 
 class MyParser(argparse.ArgumentParser):
+    """Subclass of ArgumentParser to override the error method."""
+
     def error(self, message):
         sys.stderr.write('error: {}\n'.format(message))
         self.print_help()
@@ -14,6 +19,7 @@ class MyParser(argparse.ArgumentParser):
 
 
 def arg_parse():
+    """Parse the command-line arguments."""
     description = (
         "ChemEx is an analysis program for chemical exchange detected by "
         "NMR. It is designed to take almost any kind of NMR data to aid the "
@@ -30,6 +36,7 @@ def arg_parse():
 
     subparsers = parser.add_subparsers(dest='commands', )
 
+    # parser for the positional argument "info"
     parser_info = subparsers.add_parser(
         "info",
         help="Shows classes of experiments that can be fit",
@@ -78,7 +85,7 @@ def arg_parse():
                     add_help=False,
                 )
 
-    # Parser fit
+    # parser for the positional argument "fit"
     parser_fit = subparsers.add_parser(
         "fit",
         help="Starts a fit",
@@ -122,7 +129,7 @@ def arg_parse():
         dest='out_dir',
         metavar='DIR',
         default='./output',
-        help='Directory for output'
+        help='Directory for output files'
     )
 
     parser_fit.add_argument(
@@ -155,14 +162,14 @@ def arg_parse():
         '--mc',
         metavar='N',
         type=int,
-        help='Run N Monte-Carlo simulation'
+        help='Run N Monte-Carlo simulations'
     )
 
     group_simulation.add_argument(
         '--bs',
         metavar='N',
         type=int,
-        help='Run N Bootstrap simulation'
+        help='Run N Bootstrap simulations'
     )
 
     args = parser.parse_args()
@@ -177,6 +184,7 @@ def arg_parse():
 
 
 def format_experiment_help(exp_type, exp_name):
+    """Show experiment information."""
     headline1 = "Experimental parameters"
     headline2 = "Fitted parameters (by default)"
     headline3 = "Fixed parameters (by default)"

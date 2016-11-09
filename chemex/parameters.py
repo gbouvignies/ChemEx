@@ -1,3 +1,7 @@
+"""The parameters module contains the code for handling of the experimental and
+fitting parameters.
+"""
+
 import ast
 import configparser
 import copy
@@ -41,7 +45,7 @@ re_qualifiers = re.compile(
     re.IGNORECASE | re.VERBOSE
 )
 
-# Regular expression to pick values of the form: 8.3 [2.0, 10.0]
+# Regular expression to pick values of the form: intial value [min, max]
 re_value_min_max = re.compile(
     '''
         ^\s*
@@ -66,14 +70,18 @@ re_par_name = re.compile(
 
 
 class MakeTranslate(object):
+    """MakeTranslate class for translating parameter names."""
+
     def __init__(self, *args, **kwds):
         self.dictionary = dict(*args, **kwds)
         self.rx = self.make_rx()
 
     def make_rx(self):
+        """TODO: method docstring."""
         return re.compile('|'.join(map(re.escape, self.dictionary)), re.IGNORECASE)
 
     def one_xlat(self, match):
+        """TODO: method docstring."""
         return self.dictionary[match.group(0)]
 
     def __call__(self, text):
@@ -94,6 +102,8 @@ compress = MakeTranslate({
 
 
 class ParameterName(object):
+    """ParameterName class."""
+
     def __init__(self, name=None, nuclei=None, temperature=None, h_larmor_frq=None, p_total=None, l_total=None):
 
         self.name = self.nuclei = self.temperature = self.h_larmor_frq = self.p_total = self.l_total = None
@@ -118,6 +128,7 @@ class ParameterName(object):
 
     @classmethod
     def from_full_name(cls, full_name=None):
+        """TODO: method docstring."""
         if full_name is None:
             full_name = ''
 
@@ -132,12 +143,14 @@ class ParameterName(object):
 
     @classmethod
     def from_section(cls, section=None):
+        """TODO: method docstring."""
         if section is None:
             section = ''
         qualifiers = re_to_dict(re_qualifiers, section)
         return cls(**qualifiers)
 
     def update(self, other):
+        """TODO: method docstring."""
         if isinstance(other, ParameterName):
             if other.name is not None:
                 self.name = other.name
@@ -154,12 +167,13 @@ class ParameterName(object):
         return self
 
     def update_nuclei(self, nuclei=None):
+        """TODO: method docstring."""
         if nuclei is not None:
             self.nuclei = peaks.Peak(nuclei).assignment
         return self
 
     def to_full_name(self):
-
+        """TODO: method docstring."""
         name_components = []
 
         for name in ('name', 'nuclei', 'temperature', 'h_larmor_frq', 'p_total', 'l_total'):
@@ -172,7 +186,7 @@ class ParameterName(object):
         return full_name
 
     def to_section_name(self, nuclei=False):
-
+        """TODO: method docstring."""
         name_components = []
 
         if nuclei:
@@ -190,7 +204,7 @@ class ParameterName(object):
         return section_name
 
     def to_re(self):
-
+        """TODO: method docstring."""
         re_components = [name_markers['name'].format(expand(self.name))]
 
         if self.nuclei is not None:
@@ -254,7 +268,7 @@ class ParameterName(object):
         return tuple_self < tuple_other
 
     def intersection(self, other):
-
+        """TODO: method docstring."""
         name = temperature = h_larmor_frq = p_total = l_total = None
 
         if self.name == other.name:
@@ -282,12 +296,7 @@ class ParameterName(object):
 
 
 def create_params(data):
-    """
-    Creates the array of parameters that will be used for the fitting
-    along with the dictionary that associate the name and the index of each
-    parameter in the array.
-    """
-
+    """Create the array of fitting parameters."""
     params = lmfit.Parameters()
 
     for profile in data:
@@ -302,10 +311,7 @@ def create_params(data):
 
 
 def set_params_from_config_file(params, config_filename):
-    """
-    Read the file containing the initial guess for the fitting parameters.
-    """
-
+    """Read the parameter file and set initial values and optional bounds."""
     print("File Name: {:s}".format(config_filename), end='\n\n')
 
     config = util.read_cfg_file(config_filename)
@@ -356,16 +362,15 @@ def set_params_from_config_file(params, config_filename):
 
 
 def get_pairs_from_file(filename, name):
-    """Reads a file containing values associated with a nucleus name.
-    The file should be formatted like sparky peak lists.
+    """Read residue specific values for fitting parameters from a file.
 
-    For example:
+    The file should be formatted like a Sparky peak list.
+    Examples:
       * To set G23N to 105.0 and G23H to 8.0:
           G23N-H  105.0  8.0
-      * To set a parameter depending on multiple nuclei, eg. G23N and G23H, to 1.0:
+      * To set a parameter depending on multiple nuclei (e.g., G23N and G23H):
           G23N-H  -93.0
     """
-
     pairs = []
 
     with open(filename) as f:
@@ -398,7 +403,7 @@ def get_pairs_from_file(filename, name):
 
 
 def set_param_status(params, items):
-    """Fix (or not) fit variables according to what set in the protocol file"""
+    """Fix (or not) fitting parameters according to the method file."""
 
     vary = {'fix': False, 'fit': True}
 
@@ -412,6 +417,9 @@ def set_param_status(params, items):
 
 
 def set_param_expr(params, name_short, name_short_expr=None):
+    """Set an optional parameter expression, used to constrain its value during
+    the fit.
+    """
     matches = set()
     name_short_re = name_short.to_re()
 
@@ -438,6 +446,7 @@ def set_param_expr(params, name_short, name_short_expr=None):
 
 
 def set_params(params, name_short, value=None, vary=None, min=None, max=None):
+    """Set the initial value and (optional) boundaries for parameters."""
     matches = set()
     name_short_re = name_short.to_re()
 
@@ -456,8 +465,7 @@ def set_params(params, name_short, value=None, vary=None, min=None, max=None):
 
 
 def write_par(params, output_dir='./'):
-    """Write fitted parameters int a file"""
-
+    """Write the fitting parameters and their uncertainties to a file."""
     filename = os.path.join(output_dir, 'parameters.fit')
 
     print("  * {}".format(filename))
@@ -478,16 +486,12 @@ def write_par(params, output_dir='./'):
         par_name = ParameterName.from_full_name(name)
 
         if par_name.nuclei is None:
-
-            # This is a non-residue-specific parameter
-
+            # global parameter
             name_print = par_name
             section = 'GLOBAL'
 
         else:
-
-            # This is a residue-specific parameter
-
+            # residue-specific parameter
             name_print = peaks.Peak(par_name.nuclei)
             section = par_name.to_section_name()
 
@@ -513,8 +517,7 @@ def write_par(params, output_dir='./'):
 
 
 def write_constraints(params, output_dir='./'):
-    """Write fitted parameters int a file"""
-
+    """Write the (optional) parameter expression constraints to a file."""
     filename = os.path.join(output_dir, 'constraints.fit')
 
     print("  * {}".format(filename))
@@ -538,12 +541,14 @@ def write_constraints(params, output_dir='./'):
 
 
 def remove_comments(line, sep):
+    """Remove (optional) comments."""
     for s in sep:
         line = line.split(s)[0]
     return line.strip()
 
 
 def re_to_dict(re_to_match, text):
+    """TODO: function docstring."""
     return {
         match_key: match_value
         for match in re_to_match.finditer(text)
@@ -553,6 +558,7 @@ def re_to_dict(re_to_match, text):
 
 
 def main():
+    """TODO: function docstring."""
     pass
 
 

@@ -1,3 +1,5 @@
+"""The cest_profile module contains the code for handling CEST profiles."""
+
 import copy
 from functools import lru_cache
 
@@ -10,6 +12,8 @@ from chemex.experiments.cest import plotting
 
 
 class CESTProfile(base_profile.BaseProfile):
+    """CESTProfile class."""
+
     def __init__(self, profile_name, measurements, exp_details):
 
         self.profile_name = profile_name
@@ -56,10 +60,11 @@ class CESTProfile(base_profile.BaseProfile):
         self.map_names = {}
 
     def calculate_unscaled_profile(self, *args, **kwargs):
+        """Calculate the unscaled CEST profile."""
         pass
 
     def calculate_scale(self, cal):
-
+        """Calculate the scaling factor."""
         scale = (
             sum(cal * self.val / self.err ** 2) /
             sum((cal / self.err) ** 2)
@@ -68,7 +73,7 @@ class CESTProfile(base_profile.BaseProfile):
         return scale
 
     def calculate_profile(self, params):
-
+        """Calculate the CEST profile."""
         kwargs = {
             short_name: params[long_name].value
             for short_name, long_name in self.map_names.items()
@@ -80,7 +85,7 @@ class CESTProfile(base_profile.BaseProfile):
         return values * scale
 
     def calculate_synthetic_profile(self, params=None, b1_offsets=None):
-
+        """Calculate a synthetic CEST profile."""
         kwargs = {
             short_name: params[long_name].value
             for short_name, long_name in self.map_names.items()
@@ -99,7 +104,7 @@ class CESTProfile(base_profile.BaseProfile):
         return values * scale
 
     def b1_offsets_to_ppm(self, b1_offsets=None):
-
+        """Convert B1 offset from Hz to ppm."""
         if b1_offsets is None:
             b1_offsets = self.b1_offsets
 
@@ -108,10 +113,7 @@ class CESTProfile(base_profile.BaseProfile):
     def filter_points(self, params=None):
         """Evaluate some criteria to know whether the point should be considered
         in the calculation or not.
-
-        Returns 'True' if the point should NOT be considered.
         """
-
         cs = params[self.map_names['cs_i_a']].value
         nu_offsets = ((cs - self.carrier) * self.ppm_i / (2.0 * np.pi) - self.b1_offsets)
 
@@ -123,8 +125,7 @@ class CESTProfile(base_profile.BaseProfile):
         self.reference = self.reference[mask]
 
     def print_profile(self, params=None):
-        """Print the data point"""
-
+        """Print the CEST profile."""
         output = []
 
         if params is not None:
@@ -162,7 +163,7 @@ class CESTProfile(base_profile.BaseProfile):
         return "\n".join(output).upper()
 
     def make_bs_profile(self):
-
+        """Make a CEST profile for boostrap analysis."""
         indexes = np.array(range(len(self.val)))
         pool1 = indexes[self.reference]
         pool2 = indexes[np.logical_not(self.reference)]

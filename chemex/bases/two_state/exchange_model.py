@@ -1,10 +1,13 @@
+"""TODO: module docstring."""
+
+from chemex import parameters
 from scipy import constants as cst
 
 from chemex import parameters
 
 
 def update_params(params=None, map_names=None, model=None, temperature=None, p_total=None, l_total=None):
-    """
+    """TODO: function dosctring
 
     :param params:
     :param map_names:
@@ -14,7 +17,6 @@ def update_params(params=None, map_names=None, model=None, temperature=None, p_t
     :param l_total:
     :return:
     """
-
     if model not in {'2st.pb_kex', '2st.eyring', '2st.kab_kd', '2st.kon_koff'}:
         print(
             'Warning: The \'model\' option should be either \'2st.pb_kex\' or \'2st.eyring\' or \'2st.kab_kd\' or \'2st.kon_koff\'. Set to \'2st.pb_kex\'')

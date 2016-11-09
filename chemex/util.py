@@ -1,11 +1,12 @@
+"""The util module cotains a variety of utility code."""
+
 import configparser
 import os
 import sys
 
 
 def make_dir(path=None):
-    """Ensure existence of the directory"""
-
+    """Ensure existence of the directory."""
     try:
         os.makedirs(path)
     except OSError:
@@ -14,9 +15,7 @@ def make_dir(path=None):
 
 
 def read_cfg_file(filename):
-    """Parse config files with ConfigParser"""
-
-    # Parse the config file
+    """Read and parse the experiment configuration file with configparser."""
     try:
         config = configparser.ConfigParser(inline_comment_prefixes=('#', ';'))
     except TypeError:
@@ -42,8 +41,7 @@ def read_cfg_file(filename):
 
 
 def normalize_path(working_dir, filename):
-    """Normalizes the path of a file name relative to a specific directory."""
-
+    """Normalize the path of a filename relative to a specific directory."""
     if not os.path.isabs(filename):
         path = os.path.join(working_dir, filename)
     else:
@@ -53,8 +51,7 @@ def normalize_path(working_dir, filename):
 
 
 def include_selection(data, selection):
-    """Makes a new dataset including points whose 'id' is in selection."""
-
+    """Make a new dataset including points whose 'id' is in the selection."""
     new_data = [
         a_data_point for a_data_point in data
         if a_data_point.par.get('resonance_id', None) in selection
@@ -64,23 +61,24 @@ def include_selection(data, selection):
 
 
 def exclude_selection(data, selection):
-    """Makes a new dataset excluding points whose id is in selection."""
-
+    """Make a new dataset excluding points whose 'id' is in the selection."""
     new_data = [
         a_data_point for a_data_point in data
         if a_data_point.par.get('resonance_id', None) not in selection
         ]
 
     if new_data == data:
-        sys.stdout.write("\n No Data removed! Aborting ...\n")
+        sys.stdout.write("\n No data removed! Aborting ...\n")
         exit(1)
 
     return new_data
 
 
 def header1(string):
+    """Print a formatted heading."""
     print(("\n".join(["", "", string, "=" * len(string), ""])))
 
 
 def header2(string):
+    """Print a formatted subheading."""
     print(("\n".join(["", string, "-" * len(string), ""])))

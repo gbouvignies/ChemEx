@@ -1,3 +1,5 @@
+"""Read the experimental CEST data."""
+
 import importlib
 import os
 
@@ -7,6 +9,7 @@ from chemex.experiments.cest import util
 
 
 def read_profiles(path, profile_filenames, experiment_details, res_incl=None, res_excl=None):
+    """Read the CEST profiles."""
     experiment_type = experiment_details['type'].split('.')
     experiment_details['name'] = name_experiment(experiment_details)
     experiment_module = importlib.import_module(
@@ -53,6 +56,7 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
 
 
 def name_experiment(experiment_details=None):
+    """Generate a unique name for the experiment."""
     if experiment_details is None:
         experiment_details = dict()
 

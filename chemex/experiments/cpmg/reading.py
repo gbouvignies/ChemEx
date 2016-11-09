@@ -1,3 +1,5 @@
+"""Read the experimental CPMG data."""
+
 import importlib
 import os
 
@@ -7,6 +9,7 @@ from chemex.experiments.cpmg import util
 
 
 def read_profiles(path, profile_filenames, experiment_details, res_incl=None, res_excl=None):
+    """Read the CPMG profiles."""
     experiment_type = experiment_details['type'].split('.')
     experiment_details['name'] = name_experiment(experiment_details)
     experiment_module = importlib.import_module(
@@ -52,6 +55,7 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
 
 
 def name_experiment(experiment_details=None):
+    """Generate a unique name for the experiment."""
     if not experiment_details:
         experiment_details = dict()
 

@@ -1,3 +1,5 @@
+"""TODO: module docstring."""
+
 import lmfit
 import numpy as np
 
@@ -35,9 +37,7 @@ def compute_liouvillian(
         r2_i_b=0.0, omega_i_b=0.0,
         **kwargs
 ):
-    """TODO: make docstring
-    """
-
+    """TODO: function docstring."""
     pa = 1.0 - pb
 
     kab, kba = kex_ab * np.array([pb, pa])
@@ -57,10 +57,12 @@ def compute_liouvillian(
 
 
 def compute_equilibrium_x(pb=0.0, **kwargs):
+    """TODO: function docstring."""
     return np.array([[1.0 - pb, 0.0, pb, 0.0]]).T
 
 
 def create_default_params(model=None, temperature=None, nuclei=None, h_larmor_frq=None, p_total=None, l_total=None):
+    """TODO: function docstring."""
     kwargs1 = {'temperature': temperature, 'p_total': p_total, 'l_total': l_total}
     kwargs2 = {'temperature': temperature, 'nuclei': nuclei}
     kwargs3 = {'temperature': temperature, 'nuclei': nuclei, 'h_larmor_frq': h_larmor_frq}

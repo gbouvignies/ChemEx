@@ -1,3 +1,6 @@
+"""The plotting module contains experiment-independent settings and
+functions."""
+
 import matplotlib as mpl
 
 dark_gray = '0.13'
@@ -408,8 +411,7 @@ mpl.rcParams.update(style_dict)
 
 
 def plot_data(data, params, output_dir='./'):
-    """ Plot all data types """
-
+    """Plot all data types."""
     subsets = dict()
 
     for profile in data:

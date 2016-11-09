@@ -1,3 +1,5 @@
+"""Plot the CPMG profiles."""
+
 import os
 
 import numpy as np
@@ -13,13 +15,11 @@ from chemex.experiments import plotting
 def sigma_estimator(x):
     """Estimates standard deviation using median to exclude outliers. Up to
     50% can be bad."""
-
     return np.median([np.median(abs(xi - np.asarray(x))) for xi in x]) * 1.1926
 
 
 def set_lim(values, scale):
-    """Provides a range that contains all the value and adds a margin."""
-
+    """Provide a range that contains all the value and adds a margin."""
     v_min, v_max = min(values), max(values)
     margin = (v_max - v_min) * scale
     v_min, v_max = v_min - margin, v_max + margin
@@ -28,8 +28,7 @@ def set_lim(values, scale):
 
 
 def group_data(dataset):
-    """Groups the data resonance specifically"""
-
+    """Group the data resonance specifically."""
     data_grouped = dict()
 
     for profile in dataset:
@@ -41,8 +40,7 @@ def group_data(dataset):
 
 
 def compute_profiles(data_grouped, params):
-    """Creates the arrays that will be used to plot one profile"""
-
+    """Compute the CPMG profiles used for plotting."""
     profiles = {}
     r2_min = +1e16
     r2_max = -1e16
@@ -59,8 +57,7 @@ def compute_profiles(data_grouped, params):
         mag_exp = profile.val[mask]
         mag_err = profile.err[mask]
 
-        # Sort values according to increasing nu_cpmg values
-
+        # sort values according to increasing nu_cpmg values
         sorted_items = list(zip(*sorted(zip(nu_cpmg, mag_cal, mag_exp, mag_err))))
         nu_cpmg, mag_cal, mag_exp, mag_err = sorted_items
 
@@ -81,6 +78,7 @@ def compute_profiles(data_grouped, params):
 
 
 def write_profile(name, profile, file_txt):
+    """Write the experimental and fitted CPMG profile."""
     for nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru in sorted(zip(*profile)):
         file_txt.write(
             "{:10s} {:8.3f} {:8.3f} {:8.3f} {:8.3f} {:8.3f}\n".format(
@@ -90,8 +88,12 @@ def write_profile(name, profile, file_txt):
 
 
 def plot_data(data, params, output_dir='./'):
-    """Plot dispersion profiles and write a multi-page pdf file"""
+    """Write experimental and fitted data to a file and plot the CPMG
+    profiles.
 
+    - *.fit: contains the experimental and fitted data
+    - *.pdf: contains the plot of experimental and fitted data
+    """
     datasets = dict()
 
     for data_point in data:
@@ -99,9 +101,6 @@ def plot_data(data, params, output_dir='./'):
         datasets.setdefault(experiment_name, []).append(data_point)
 
     for experiment_name, dataset in datasets.items():
-
-        # ##### Matplotlib ######
-
         name_pdf = ''.join([experiment_name, '.pdf'])
         name_pdf = os.path.join(output_dir, name_pdf)
 
@@ -109,8 +108,6 @@ def plot_data(data, params, output_dir='./'):
         name_txt = os.path.join(output_dir, name_txt)
 
         print(("  * {} [.fit]".format(name_pdf)))
-
-        # #######################
 
         data_grouped = group_data(dataset)
         profiles, r2_min, r2_max = compute_profiles(data_grouped, params)
@@ -123,7 +120,6 @@ def plot_data(data, params, output_dir='./'):
                 write_profile(peak.assignment, profiles[peak], file_txt)
 
                 ###### Matplotlib ######
-
                 gs = gsp.GridSpec(2, 1, height_ratios=[1, 4])
 
                 ax1 = plt.subplot(gs[0])

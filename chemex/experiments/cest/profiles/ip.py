@@ -1,8 +1,8 @@
 """Pure In-phase CEST
 
-Analyzes chemical exchange in the presence of 1H composite decoupling
-during the CEST block. This keeps the spin system purely in-phase throughout,
-and is calculated using the 6x6, single spin matrix:
+Analyzes chemical exchange in the presence of 1H composite decoupling during
+the CEST block. This keeps the spin system purely in-phase throughout, and is
+calculated using the 6x6, single spin matrix:
 
 [ Ix(a), Iy(a), Iz(a), Ix(b), Iy(b), Iz(b) ]
 
@@ -11,8 +11,7 @@ Notes
 The calculation is designed specifically to analyze the experiment found in
 the reference:
 
-J Am Chem Soc (2012), 134, 8148-61
-
+J Am Chem Soc (2012), 134, 8148-8161
 """
 
 import numpy as np
@@ -22,6 +21,8 @@ from chemex.experiments.cest import cest_profile
 
 
 class Profile(cest_profile.CESTProfile):
+    """Profile for pure in-phase CEST."""
+
     def __init__(self, profile_name, measurements, exp_details):
 
         super().__init__(profile_name, measurements, exp_details)
@@ -50,9 +51,9 @@ class Profile(cest_profile.CESTProfile):
                     self.default_params[long_names].set(expr=self.map_names['r2_i_a'])
 
     def calculate_unscaled_profile(self, **kwargs):
-        """Calculate the intensity in presence of exchange after a CEST block.
+        """Calculate the CEST profile in the presence of exchange.
 
-        Parameters
+        TODO: Parameters
         ----------
         pb : float
             Fractional population of state B.
@@ -74,7 +75,6 @@ class Profile(cest_profile.CESTProfile):
         out : float
             Intensity after the CEST block
         """
-
         cs_i = np.array([kwargs.get(key, 0.0) for key in ('cs_i_a', 'cs_i_b', 'cs_i_c', 'cs_i_d')])
         omega_i_cars = (cs_i - self.carrier) * self.ppm_i
 

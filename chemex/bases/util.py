@@ -1,3 +1,5 @@
+"""TODO: module docstring."""
+
 import numpy as np
 from scipy import linalg
 
@@ -9,6 +11,7 @@ sign = np.array([1.0, -1.0])
 
 
 def compute_propagators_from_time_series(liouvillian, times):
+    """TODO: function docstring."""
     s, vr = linalg.eig(liouvillian)
     vri = linalg.inv(vr)
 
@@ -20,8 +23,7 @@ def compute_propagators_from_time_series(liouvillian, times):
 
 
 def calculate_shift_ex_2st(pb=0.0, kex_ab=0.0, domega_i_ab=0.0, r2_i_a=0.0, r2_i_b=0.0):
-    """Corrects major and minor peak positions in presence of exchange."""
-
+    """Correct major and minor peak positions in presence of exchange."""
     pa = 1.0 - pb
     kab, kba = kex_ab * np.asarray([pb, pa])
 
@@ -44,8 +46,7 @@ def calculate_shift_ex_2st(pb=0.0, kex_ab=0.0, domega_i_ab=0.0, r2_i_a=0.0, r2_i
 
 def correct_intensities(magz_a=1.0, magz_b=0.0, pb=0.0, kex=0.0, dw=0.0,
                         r2_i=0.0, dr2_i=0.0):
-    """Corrects major and minor peak intensities in presence of exchange."""
-
+    """Correct major and minor peak intensities in presence of exchange."""
     kab = kex * pb
     kba = kex - kab
 

@@ -1,4 +1,4 @@
-"""chemex.chemex: provides entry point main()."""
+"""The chemex module provides the entry point for the chemex script."""
 
 import copy
 import os
@@ -11,8 +11,7 @@ from chemex import datasets, fitting, parameters, parsing, util
 
 
 def print_logo():
-    """Prints chemex logo"""
-
+    """Print the ChemEx logo."""
     from chemex import __version__
 
     print((
@@ -34,8 +33,7 @@ def print_logo():
 
 
 def make_bootstrap_dataset(data):
-    """Creates a new dataset to run a bootstrap simulation"""
-
+    """Create a new dataset to run a bootstrap simulation."""
     data_bs = datasets.DataSet()
 
     for profile in data:
@@ -45,8 +43,7 @@ def make_bootstrap_dataset(data):
 
 
 def make_montecarlo_dataset(data, params):
-    """Creates a new dataset to run a Monte-Carlo simulation"""
-
+    """Create a new dataset to run a Monte-Carlo simulation."""
     data_mc = copy.deepcopy(data)
 
     for profile in data_mc:
@@ -56,9 +53,7 @@ def make_montecarlo_dataset(data, params):
 
 
 def read_data(args):
-    """Reads the files containing the experimental data point location and
-    setup"""
-
+    """Read experimental setup and data."""
     util.header1("Reading Experimental Data")
 
     data = datasets.DataSet()
@@ -76,9 +71,14 @@ def read_data(args):
 
 
 def write_results(params, data, method, output_dir):
-    """Writes the the chi2 of the fit, fitted parameters and the
-    back-calculated points"""
+    """Write the results of the fit to output files.
 
+    The files below are created and contain the following information:
+      - parameters.fit: fitting parameters and their uncertainties
+      - contstraints.fit: expression used for constraining parameters
+      - *.dat: experimental and fitted data
+      - chi2.fit: statistics for the fit
+    """
     util.header1("Writing Results")
 
     print("\nFile(s):")
@@ -93,8 +93,7 @@ def write_results(params, data, method, output_dir):
 
 
 def plot_results(params, data, output_dir):
-    """Plots the the experimental and fitted points"""
-
+    """Plot the experimental and fitted data."""
     from chemex.experiments import plotting
 
     util.header1("Plotting Data")
@@ -111,6 +110,7 @@ def plot_results(params, data, output_dir):
 
 
 def fit_write_plot(args, params, data, output_dir):
+    """Perform the fit, write the output files and plot the results."""
     params = fitting.run_fit(args.method, params, data)
 
     util.make_dir(output_dir)
@@ -122,7 +122,6 @@ def fit_write_plot(args, params, data, output_dir):
         output_dir
     )
 
-    # Plot results
     if not args.noplot:
         plot_results(params, data, output_dir)
 
@@ -130,8 +129,7 @@ def fit_write_plot(args, params, data, output_dir):
 
 
 def main():
-    """All the magic"""
-
+    """Do all the magic."""
     print_logo()
 
     args = parsing.arg_parse()
@@ -141,19 +139,19 @@ def main():
 
     elif args.commands == 'fit':
 
-        # Read experimental points
+        # Read experimental setup and data
         data = read_data(args)
 
-        # Create the lists of both fitting and fixed parameters
+        # Create and update initial values of fitting/fixed parameters
         util.header1("Reading Default Parameters")
         params = parameters.create_params(data)
         parameters.set_params_from_config_file(params, args.parameters)
 
-        # Filter points out if necessary
+        # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
         for profile in data:
             profile.filter_points(params)
 
-        # Custom output directory
+        # Customize the output directory
         output_dir = args.out_dir if args.out_dir else './Output'
         if args.res_incl:
             if len(args.res_incl) == 1:

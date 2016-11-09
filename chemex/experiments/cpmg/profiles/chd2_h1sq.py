@@ -16,7 +16,6 @@ explicitly for analyzing the Lewis Kay pulse sequence:
 CHD2_H_SQ_exchange_hsqc_lek_*00_enhanced
 
 Journal of the American Chemical Society (2010) 132, 10992-5
-
 """
 
 import functools
@@ -31,6 +30,8 @@ from chemex.experiments.cpmg import cpmg_profile
 
 
 class Profile(cpmg_profile.CPMGProfile):
+    """TODO: class docstring."""
+
     def __init__(self, profile_name, measurements, exp_details):
 
         super().__init__(profile_name, measurements, exp_details)
@@ -98,27 +99,26 @@ class Profile(cpmg_profile.CPMGProfile):
 
         Parameters
         ----------
-        pb 
+        pb
             Fractional population of state B.
-        kex_ab, kex_bc, kex_ac 
+        kex_ab, kex_bc, kex_ac
             Exchange rates between states A and Bin /s.
-        dw_i_ab 
+        dw_i_ab
             Chemical shift difference between states A and B in rad/s.
-        r1_i_a 
+        r1_i_a
             Longitudinal relaxation rate of states A in /s.
-        r2_i_a 
+        r2_i_a
             Transverse relaxation rate of state A in /s.
-        dr2_i_ab 
+        dr2_i_ab
             Transverse relaxation rate difference between states A and B in /s.
-        cs_i_a 
+        cs_i_a
             Resonance position of state A in ppm.
 
         Returns
         -------
-        out 
+        out
             Intensity after the CEST block
         """
-
         cs_i = np.array([kwargs.get(key, 0.0) for key in ('cs_i_a', 'cs_i_b', 'cs_i_c', 'cs_i_d')])
         omega_i_a, omega_i_b, omega_i_c, omega_i_d = (cs_i - self.carrier) * self.ppm_i
 

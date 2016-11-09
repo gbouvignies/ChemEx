@@ -1,3 +1,7 @@
+"""The peaks module contains the code for handling peak assignments and
+resonances.
+"""
+
 import functools
 import re
 
@@ -20,6 +24,8 @@ re_peak_name = re.compile(
 
 @functools.total_ordering
 class Peak(object):
+    """Peak class."""
+
     def __init__(self, assignment=None):
         if assignment is None:
             assignment = ''
@@ -46,7 +52,7 @@ class Peak(object):
         return self_tuple < other_tuple
 
     def intersection(self, other):
-
+        """TODO: method docstring."""
         assignments = {self.assignment, other.assignment}
         names = {resonance['name'] for resonance in self.resonances + other.resonances}
         groups = {resonance['group'] for resonance in self.resonances + other.resonances}
@@ -64,6 +70,7 @@ class Peak(object):
 
 
 def get_resonances(assignment):
+    """Get resonances from an assignment."""
     resonances = []
     last_resonance = None
 
@@ -88,6 +95,7 @@ def get_resonances(assignment):
 
 
 def get_assignment(resonances):
+    """Get assignment from resonances."""
     parts = []
     last_group = None
 

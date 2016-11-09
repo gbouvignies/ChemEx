@@ -1,4 +1,4 @@
-"""15N - N-H TROSY CPMG (2-state)
+"""15N - N-H TROSY CPMG (2-state).
 
 Analyzes 15N constant-time TROSY CPMG relaxation dispersion experiments for
 measurement of ΔD NH in protein systems undergoing millisecond-time-scale
@@ -14,7 +14,6 @@ Off resonance effects are taken into account. The calculation is designed
 specifically to analyze the experiment found in the reference:
 
 Proc Natl Acad Sci USA (2007) 104, 18473-7
-
 """
 
 import functools
@@ -27,6 +26,8 @@ from scipy import linalg
 
 
 class Profile(cpmg_profile.CPMGProfile):
+    """TODO: class docstring."""
+
     def __init__(self, profile_name, measurements, exp_details):
 
         super().__init__(profile_name, measurements, exp_details)
@@ -97,7 +98,6 @@ class Profile(cpmg_profile.CPMGProfile):
         out : float
             Intensity after the CEST block
         """
-
         cs_i = np.array([kwargs.get(key, 0.0) for key in ('cs_i_a', 'cs_i_b', 'cs_i_c', 'cs_i_d')])
         omega_i_a, omega_i_b, omega_i_c, omega_i_d = (cs_i - self.carrier) * self.ppm_i
 

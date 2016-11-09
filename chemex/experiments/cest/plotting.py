@@ -1,3 +1,5 @@
+"""Plot the CEST profiles."""
+
 import os
 
 import numpy as np
@@ -12,14 +14,13 @@ from chemex.experiments import plotting
 
 def sigma_estimator(x):
     """Estimates standard deviation using median to exclude outliers. Up to
-    50% can be bad."""
-
+    50% can be bad.
+    """
     return np.median([np.median(abs(xi - np.asarray(x))) for xi in x]) * 1.1926
 
 
 def set_lim(values, scale):
-    """Provides a range that contains all the value and adds a margin."""
-
+    """Provide a range that contains all the value and adds a margin."""
     v_min, v_max = min(values), max(values)
     margin = (v_max - v_min) * scale
     v_min, v_max = v_min - margin, v_max + margin
@@ -28,8 +29,7 @@ def set_lim(values, scale):
 
 
 def group_data(dataset):
-    """Groups the data resonance specifically"""
-
+    """Group the data resonance specifically."""
     data_grouped = dict()
 
     for profile in dataset:
@@ -41,8 +41,7 @@ def group_data(dataset):
 
 
 def compute_profiles(data_grouped, params):
-    """Creates the arrays that will be used to plot one profile"""
-
+    """Compute the CEST profiles used for plotting."""
     profiles = {}
 
     for peak, profile in data_grouped.items():
@@ -71,6 +70,7 @@ def compute_profiles(data_grouped, params):
 
 
 def write_profile_fit(name, b1_ppm_fit, mag_fit, file_txt):
+    """Write the fitted CEST profile."""
     for b1_ppm_cal, mag_cal in zip(b1_ppm_fit, mag_fit):
         file_txt.write(
             "{:10s} {:8.3f} {:8.3f}\n".format(
@@ -80,6 +80,7 @@ def write_profile_fit(name, b1_ppm_fit, mag_fit, file_txt):
 
 
 def write_profile_exp(name, b1_ppm, mag_exp, mag_err, mag_cal, file_txt):
+    """Write the experimental CEST profile."""
     for b1_ppm_, mag_exp_, mag_err_, mag_cal_ in zip(b1_ppm, mag_exp, mag_err, mag_cal):
         file_txt.write(
             "{:10s} {:8.3f} {:8.3f} {:8.3f} {:8.3f}\n".format(
@@ -89,8 +90,13 @@ def write_profile_exp(name, b1_ppm, mag_exp, mag_err, mag_cal, file_txt):
 
 
 def plot_data(data, params, output_dir='./'):
-    """Plot cest profiles and write a pdf file"""
+    """Write experimental and fitted data to a file and plot the CEST
+    profiles.
 
+    - *.exp: contains the experimental data
+    - *.fit: contains the fitted data
+    - *.pdf: contains the plot of experimental and fitted data
+    """
     datasets = dict()
 
     for data_point in data:
@@ -98,8 +104,6 @@ def plot_data(data, params, output_dir='./'):
         datasets.setdefault(experiment_name, []).append(data_point)
 
     for experiment_name, dataset in datasets.items():
-
-        # ##### Matplotlib ######
         name_pdf = ''.join([experiment_name, '.pdf'])
         name_pdf = os.path.join(output_dir, name_pdf)
 
@@ -110,8 +114,6 @@ def plot_data(data, params, output_dir='./'):
         name_exp = os.path.join(output_dir, name_exp)
 
         print(("  * {} [.fit]".format(name_pdf)))
-
-        # #######################
 
         data_grouped = group_data(dataset)
 
@@ -127,7 +129,6 @@ def plot_data(data, params, output_dir='./'):
                 write_profile_exp(peak.assignment, b1_ppm, mag_exp, mag_err, mag_cal, file_exp)
 
                 ###### Matplotlib ######
-
                 gs = gsp.GridSpec(2, 1, height_ratios=[1, 4])
 
                 ax1 = plt.subplot(gs[0])
