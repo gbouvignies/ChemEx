@@ -22,11 +22,12 @@ Journal of the American Chemical Society (2010) 132, 10992-5
 import functools
 
 import numpy as np
+from scipy import linalg
+
 from chemex import parameters
 from chemex.bases import util
 from chemex.experiments import base_profile
 from chemex.experiments.cpmg import cpmg_profile
-from scipy import linalg
 
 
 class Profile(cpmg_profile.CPMGProfile):
@@ -56,7 +57,7 @@ class Profile(cpmg_profile.CPMGProfile):
             l_total=self.l_total,
         )
 
-        kwargs = {'temperature': self.temperature, 'nuclei': self.resonance_s['name'],
+        kwargs = {'temperature' : self.temperature, 'nuclei': self.resonance_s['name'],
                   'h_larmor_frq': self.h_larmor_frq}
 
         self.map_names['r1_s_a'] = parameters.ParameterName('r1_a', **kwargs).to_full_name()

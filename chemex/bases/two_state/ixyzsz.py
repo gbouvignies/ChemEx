@@ -124,28 +124,28 @@ def create_default_params(model=None, temperature=None, nuclei=None, h_larmor_fr
     kwargs5 = {'temperature': temperature, 'nuclei': nuclei.assignment, 'h_larmor_frq': h_larmor_frq}
 
     map_names = {
-        'pb': parameters.ParameterName('pb', **kwargs1).to_full_name(),
-        'kex_ab': parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
+        'pb'       : parameters.ParameterName('pb', **kwargs1).to_full_name(),
+        'kex_ab'   : parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
 
-        'dw_i_ab': parameters.ParameterName('dw_ab', **kwargs2).to_full_name(),
+        'dw_i_ab'  : parameters.ParameterName('dw_ab', **kwargs2).to_full_name(),
 
-        'cs_i_a': parameters.ParameterName('cs_a', **kwargs2).to_full_name(),
-        'r2_i_a': parameters.ParameterName('r2_a', **kwargs3).to_full_name(),
-        'r2a_i_a': parameters.ParameterName('r2a_a', **kwargs3).to_full_name(),
-        'r1_i_a': parameters.ParameterName('r1_a', **kwargs3).to_full_name(),
-        'r1a_a': parameters.ParameterName('r1a_a', **kwargs5).to_full_name(),
+        'cs_i_a'   : parameters.ParameterName('cs_a', **kwargs2).to_full_name(),
+        'r2_i_a'   : parameters.ParameterName('r2_a', **kwargs3).to_full_name(),
+        'r2a_i_a'  : parameters.ParameterName('r2a_a', **kwargs3).to_full_name(),
+        'r1_i_a'   : parameters.ParameterName('r1_a', **kwargs3).to_full_name(),
+        'r1a_a'    : parameters.ParameterName('r1a_a', **kwargs5).to_full_name(),
         'etaxy_i_a': parameters.ParameterName('etaxy_a', **kwargs3).to_full_name(),
-        'etaz_i_a': parameters.ParameterName('etaz_a', **kwargs3).to_full_name(),
-        'j_a': parameters.ParameterName('j_a', **kwargs4).to_full_name(),
+        'etaz_i_a' : parameters.ParameterName('etaz_a', **kwargs3).to_full_name(),
+        'j_a'      : parameters.ParameterName('j_a', **kwargs4).to_full_name(),
 
-        'cs_i_b': parameters.ParameterName('cs_b', **kwargs2).to_full_name(),
-        'r2_i_b': parameters.ParameterName('r2_b', **kwargs3).to_full_name(),
-        'r2a_i_b': parameters.ParameterName('r2a_b', **kwargs3).to_full_name(),
-        'r1_i_b': parameters.ParameterName('r1_b', **kwargs3).to_full_name(),
-        'r1a_b': parameters.ParameterName('r1a_b', **kwargs5).to_full_name(),
+        'cs_i_b'   : parameters.ParameterName('cs_b', **kwargs2).to_full_name(),
+        'r2_i_b'   : parameters.ParameterName('r2_b', **kwargs3).to_full_name(),
+        'r2a_i_b'  : parameters.ParameterName('r2a_b', **kwargs3).to_full_name(),
+        'r1_i_b'   : parameters.ParameterName('r1_b', **kwargs3).to_full_name(),
+        'r1a_b'    : parameters.ParameterName('r1a_b', **kwargs5).to_full_name(),
         'etaxy_i_b': parameters.ParameterName('etaxy_b', **kwargs3).to_full_name(),
-        'etaz_i_b': parameters.ParameterName('etaz_b', **kwargs3).to_full_name(),
-        'j_b': parameters.ParameterName('j_b', **kwargs4).to_full_name(),
+        'etaz_i_b' : parameters.ParameterName('etaz_b', **kwargs3).to_full_name(),
+        'j_b'      : parameters.ParameterName('j_b', **kwargs4).to_full_name(),
     }
 
     cs_i_b = '{cs_i_a} + {dw_i_ab}'.format(**map_names)

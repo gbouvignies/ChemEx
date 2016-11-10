@@ -2,6 +2,7 @@ import copy
 from functools import lru_cache
 
 import numpy as np
+
 from chemex import constants, peaks
 from chemex.experiments import base_profile
 from chemex.experiments.cpmg import plotting

@@ -16,8 +16,9 @@ J Am Chem Soc (2012), 134, 8148-61
 """
 
 import numpy as np
-from chemex.experiments.cest import cest_profile
 from scipy import linalg
+
+from chemex.experiments.cest import cest_profile
 
 
 class Profile(cest_profile.CESTProfile):

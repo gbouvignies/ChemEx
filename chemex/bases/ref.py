@@ -1,8 +1,6 @@
-
 import numpy as np
 
 pi = np.pi
-
 
 # Operator basis:
 # {Ix, Iy, Iz, Sx, Sy, Sz,
@@ -218,6 +216,7 @@ mat_kdc = np.kron([[+0.0, +0.0, +0.0, +0.0],
                    [+0.0, +0.0, +0.0, +0.0],
                    [+0.0, +0.0, +0.0, +1.0],
                    [+0.0, +0.0, +0.0, -1.0]], np.eye(15))
+
 
 def compute_liouvillian(
         pb=0.0, pc=0.0, pd=0.0, kex_ab=0.0, kex_ac=0.0, kex_ad=0.0, kex_bc=0.0, kex_bd=0.0, kex_cd=0.0,

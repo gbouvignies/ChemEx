@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """13CO - Pure Anti-phase Carbonyl 13C CPMG (2-state)
 
 Analyzes carbonyl chemical exchange that is maintained as anti-phase
@@ -26,11 +24,12 @@ Journal of Biomolecular NMR (2008) 42, 35-47
 import functools
 
 import numpy as np
+from scipy import linalg
+
 from chemex import parameters
 from chemex.bases import util
 from chemex.experiments import base_profile
 from chemex.experiments.cpmg import cpmg_profile
-from scipy import linalg
 
 
 class Profile(cpmg_profile.CPMGProfile):
@@ -64,7 +63,7 @@ class Profile(cpmg_profile.CPMGProfile):
             l_total=self.l_total,
         )
 
-        kwargs = {'temperature': self.temperature, 'nuclei': self.resonance_s['name'],
+        kwargs = {'temperature' : self.temperature, 'nuclei': self.resonance_s['name'],
                   'h_larmor_frq': self.h_larmor_frq}
 
         self.map_names['r1_s_a'] = parameters.ParameterName('r1_a', **kwargs).to_full_name()

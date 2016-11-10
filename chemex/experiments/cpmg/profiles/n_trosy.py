@@ -18,10 +18,11 @@ Proc Natl Acad Sci USA (2007) 104, 18473-7
 import functools
 
 import numpy as np
+from scipy import linalg
+
 from chemex.bases import util
 from chemex.experiments import base_profile
 from chemex.experiments.cpmg import cpmg_profile
-from scipy import linalg
 
 
 class Profile(cpmg_profile.CPMGProfile):

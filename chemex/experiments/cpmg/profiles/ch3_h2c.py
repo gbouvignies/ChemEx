@@ -20,10 +20,11 @@ Journal of Biomolecular NMR (2007) 38, 79-88
 import functools
 
 import numpy as np
+from scipy import linalg
+
 from chemex.bases import util
 from chemex.experiments import base_profile
 from chemex.experiments.cpmg import cpmg_profile
-from scipy import linalg
 
 
 class Profile(cpmg_profile.CPMGProfile):

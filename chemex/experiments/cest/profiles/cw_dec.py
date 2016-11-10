@@ -16,9 +16,10 @@ J Phys Chem B (2012), 116, 14311-7
 """
 
 import numpy as np
+from scipy import linalg
+
 from chemex.experiments import base_profile
 from chemex.experiments.cest import cest_profile
-from scipy import linalg
 
 
 class Profile(cest_profile.CESTProfile):

@@ -1,10 +1,8 @@
 from setuptools import setup, find_packages
 import versioneer
 
-
 with open("README.md", "rb") as f:
     long_description = f.read().decode("utf-8")
-
 
 setup(
     name='chemex',

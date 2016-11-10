@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 """chemex.chemex: provides entry point main()."""
 
 import copy
@@ -9,6 +6,7 @@ import shutil
 import sys
 
 import numpy as np
+
 from chemex import datasets, fitting, parameters, parsing, util
 
 
@@ -31,7 +29,7 @@ def print_logo():
         "*   Version: {:<34s} *\n"
         "*                                               *\n"
         "* * * * * * * * * * * * * * * * * * * * * * * * *\n"
-        .format(__version__)
+            .format(__version__)
     ))
 
 

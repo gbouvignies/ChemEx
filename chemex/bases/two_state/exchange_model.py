@@ -1,5 +1,6 @@
-from chemex import parameters
 from scipy import constants as cst
+
+from chemex import parameters
 
 
 def update_params(params=None, map_names=None, model=None, temperature=None, p_total=None, l_total=None):
@@ -26,8 +27,8 @@ def update_params(params=None, map_names=None, model=None, temperature=None, p_t
     elif model == '2st.eyring':
 
         map_names.update({
-            'dh_b': parameters.ParameterName('dh_b').to_full_name(),
-            'ds_b': parameters.ParameterName('ds_b').to_full_name(),
+            'dh_b' : parameters.ParameterName('dh_b').to_full_name(),
+            'ds_b' : parameters.ParameterName('ds_b').to_full_name(),
             'dh_ab': parameters.ParameterName('dh_ab').to_full_name(),
             'ds_ab': parameters.ParameterName('ds_ab').to_full_name(),
         })
@@ -58,8 +59,8 @@ def update_params(params=None, map_names=None, model=None, temperature=None, p_t
         kwargs2 = {'temperature': temperature, 'p_total': p_total, 'l_total': l_total}
 
         map_names.update({
-            'kab': parameters.ParameterName('kab', **kwargs1).to_full_name(),
-            'kd_ab': parameters.ParameterName('kd_ab', **kwargs1).to_full_name(),
+            'kab'   : parameters.ParameterName('kab', **kwargs1).to_full_name(),
+            'kd_ab' : parameters.ParameterName('kd_ab', **kwargs1).to_full_name(),
             'l_free': parameters.ParameterName('l_free', **kwargs2).to_full_name(),
         })
 
@@ -87,9 +88,9 @@ def update_params(params=None, map_names=None, model=None, temperature=None, p_t
         kwargs2 = {'temperature': temperature, 'p_total': p_total, 'l_total': l_total}
 
         map_names.update({
-            'kon': parameters.ParameterName('kon', **kwargs1).to_full_name(),
-            'koff': parameters.ParameterName('koff', **kwargs1).to_full_name(),
-            'kd': parameters.ParameterName('kd', **kwargs1).to_full_name(),
+            'kon'   : parameters.ParameterName('kon', **kwargs1).to_full_name(),
+            'koff'  : parameters.ParameterName('koff', **kwargs1).to_full_name(),
+            'kd'    : parameters.ParameterName('kd', **kwargs1).to_full_name(),
             'l_free': parameters.ParameterName('l_free', **kwargs2).to_full_name(),
         })
 

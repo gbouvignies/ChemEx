@@ -70,8 +70,8 @@ def create_default_params(model=None, temperature=None, nuclei=None, h_larmor_fr
     kwargs3 = {'temperature': temperature, 'nuclei': nuclei, 'h_larmor_frq': h_larmor_frq}
 
     map_names = {
-        'pb': parameters.ParameterName('pb', **kwargs1).to_full_name(),
-        'pc': parameters.ParameterName('pc', **kwargs1).to_full_name(),
+        'pb'    : parameters.ParameterName('pb', **kwargs1).to_full_name(),
+        'pc'    : parameters.ParameterName('pc', **kwargs1).to_full_name(),
         'kex_ab': parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
         'kex_ac': parameters.ParameterName('kex_ac', **kwargs1).to_full_name(),
         'kex_bc': parameters.ParameterName('kex_bc', **kwargs1).to_full_name(),

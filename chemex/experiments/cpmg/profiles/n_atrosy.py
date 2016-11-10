@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """15N - N-H TROSY CPMG (2-state)
 
 Analyzes 15N constant-time TROSY CPMG relaxation dispersion experiments for

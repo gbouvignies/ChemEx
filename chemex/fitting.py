@@ -1,6 +1,7 @@
 import sys
 
 import lmfit
+
 from chemex import datasets, parameters, util
 
 

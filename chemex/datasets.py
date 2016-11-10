@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 import configparser
 import copy
 import importlib
@@ -10,9 +7,10 @@ import os.path
 import sys
 
 import numpy as np
+from scipy import stats
+
 from chemex import util
 from chemex.experiments import base_profile
-from scipy import stats
 
 
 class DataSet(object):

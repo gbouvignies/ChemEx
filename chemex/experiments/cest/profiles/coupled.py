@@ -17,9 +17,10 @@ JMB (2014), 426, 763-74
 """
 
 import numpy as np
+from scipy import linalg
+
 from chemex import constants
 from chemex.experiments.cest import cest_profile, util
-from scipy import linalg
 
 
 class Profile(cest_profile.CESTProfile):

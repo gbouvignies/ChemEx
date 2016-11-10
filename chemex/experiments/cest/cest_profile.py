@@ -2,10 +2,11 @@ import copy
 from functools import lru_cache
 
 import numpy as np
+from scipy import stats
+
 from chemex import constants, peaks
 from chemex.experiments import base_profile
 from chemex.experiments.cest import plotting
-from scipy import stats
 
 
 class CESTProfile(base_profile.BaseProfile):

@@ -7,6 +7,7 @@ from functools import lru_cache
 
 import lmfit
 import numpy as np
+
 from chemex import constants, parameters, peaks
 from chemex.bases import util
 from chemex.experiments import base_profile
@@ -14,7 +15,7 @@ from chemex.experiments.shift import plotting
 
 attributes_exp = {
     'h_larmor_frq': float,
-    'temperature': float,
+    'temperature' : float,
 }
 
 
@@ -44,8 +45,8 @@ class Profile(base_profile.BaseProfile):
         kwargs3 = {'temperature': self.temperature, 'nuclei': self.resonance_s['name']}
 
         self.map_names = {
-            'pb': parameters.ParameterName('pb', **kwargs1).to_full_name(),
-            'kex_ab': parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
+            'pb'     : parameters.ParameterName('pb', **kwargs1).to_full_name(),
+            'kex_ab' : parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
             'dw_i_ab': parameters.ParameterName('dw_ab', **kwargs2).to_full_name(),
             'dw_s_ab': parameters.ParameterName('dw_ab', **kwargs3).to_full_name(),
         }

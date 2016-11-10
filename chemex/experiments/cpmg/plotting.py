@@ -1,12 +1,13 @@
 import os
 
 import numpy as np
-from chemex import peaks
-from chemex.experiments import plotting
 from matplotlib import gridspec as gsp
 from matplotlib import pyplot as plt
 from matplotlib import ticker
 from matplotlib.backends import backend_pdf
+
+from chemex import peaks
+from chemex.experiments import plotting
 
 
 def sigma_estimator(x):

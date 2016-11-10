@@ -91,20 +91,20 @@ def create_default_params(model=None, temperature=None, nuclei=None, h_larmor_fr
     kwargs4 = {'temperature': temperature, 'nuclei': nuclei.assignment, 'h_larmor_frq': h_larmor_frq}
 
     map_names = {
-        'pb': parameters.ParameterName('pb', **kwargs1).to_full_name(),
-        'kex_ab': parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
+        'pb'     : parameters.ParameterName('pb', **kwargs1).to_full_name(),
+        'kex_ab' : parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
 
         'dw_i_ab': parameters.ParameterName('dw_ab', **kwargs2).to_full_name(),
 
         'dw_s_ab': parameters.ParameterName('dw_ab', **kwargs3).to_full_name(),
 
-        'cs_i_a': parameters.ParameterName('cs_a', **kwargs2).to_full_name(),
-        'cs_s_a': parameters.ParameterName('cs_a', **kwargs3).to_full_name(),
+        'cs_i_a' : parameters.ParameterName('cs_a', **kwargs2).to_full_name(),
+        'cs_s_a' : parameters.ParameterName('cs_a', **kwargs3).to_full_name(),
         'r2_mq_a': parameters.ParameterName('r2_mq_a', **kwargs4).to_full_name(),
         'mu_mq_a': parameters.ParameterName('mu_mq_a', **kwargs4).to_full_name(),
 
-        'cs_i_b': parameters.ParameterName('cs_b', **kwargs2).to_full_name(),
-        'cs_s_b': parameters.ParameterName('cs_b', **kwargs3).to_full_name(),
+        'cs_i_b' : parameters.ParameterName('cs_b', **kwargs2).to_full_name(),
+        'cs_s_b' : parameters.ParameterName('cs_b', **kwargs3).to_full_name(),
         'r2_mq_b': parameters.ParameterName('r2_mq_b', **kwargs4).to_full_name(),
         'mu_mq_b': parameters.ParameterName('mu_mq_b', **kwargs4).to_full_name(),
     }

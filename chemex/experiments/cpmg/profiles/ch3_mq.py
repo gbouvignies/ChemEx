@@ -22,6 +22,7 @@ Journal of the American Chemical Society (2004), 126, 3964-73
 import functools
 
 import numpy as np
+
 from chemex.bases import util
 from chemex.experiments import base_profile
 from chemex.experiments.cpmg import cpmg_profile

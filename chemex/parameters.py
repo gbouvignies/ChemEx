@@ -7,8 +7,9 @@ import re
 
 import lmfit
 import numpy as np
-from chemex import peaks, util
 from lmfit import astutils
+
+from chemex import peaks, util
 
 name_markers = {
     'name'        : "__n_{}_n__",

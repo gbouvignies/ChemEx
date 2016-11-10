@@ -64,7 +64,6 @@ class Peak(object):
 
 
 def get_resonances(assignment):
-
     resonances = []
     last_resonance = None
 
