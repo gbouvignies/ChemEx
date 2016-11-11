@@ -69,8 +69,8 @@ def read_data(args):
         for filename in args.experiments:
             data.add_dataset_from_file(filename, args.model, args.res_incl, args.res_excl)
 
-    if not data:
-        sys.exit("\nNo Data to fit!\n")
+    if not data.data:
+        sys.exit("\nNo data to fit!\n")
 
     return data
 
