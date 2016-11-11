@@ -8,7 +8,7 @@ from chemex import experiments, util, __version__
 
 class MyParser(argparse.ArgumentParser):
     def error(self, message):
-        sys.stderr.write('error: %s\n' % message)
+        sys.stderr.write('error: {}\n'.format(message))
         self.print_help()
         sys.exit(2)
 
