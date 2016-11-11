@@ -185,6 +185,7 @@ def arg_parse():
 
 def format_experiment_help(exp_type, exp_name):
     """Show experiment information."""
+    # TODO: fix show experiment information for positional argument "info"
     headline1 = "Experimental parameters"
     headline2 = "Fitted parameters (by default)"
     headline3 = "Fixed parameters (by default)"

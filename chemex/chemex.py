@@ -34,6 +34,7 @@ def print_logo():
 
 def make_bootstrap_dataset(data):
     """Create a new dataset to run a bootstrap simulation."""
+    # TODO: fix bootstrap error estimation, issue with copy.deepcoopy()
     data_bs = datasets.DataSet()
 
     for profile in data:
@@ -44,6 +45,7 @@ def make_bootstrap_dataset(data):
 
 def make_montecarlo_dataset(data, params):
     """Create a new dataset to run a Monte-Carlo simulation."""
+    # TODO: fix Monte-Carlo error estimation, issue with copy.deepcoopy()
     data_mc = copy.deepcopy(data)
 
     for profile in data_mc:
@@ -86,6 +88,7 @@ def write_results(params, data, method, output_dir):
     if method:
         shutil.copyfile(method, os.path.join(output_dir, 'fitting-method.cfg'))
 
+    # FIXME: change function name to "write_statistics_to" ?
     data.write_chi2_to(params, path=output_dir)
     parameters.write_par(params, output_dir=output_dir)
     parameters.write_constraints(params, output_dir=output_dir)
