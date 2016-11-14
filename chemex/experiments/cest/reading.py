@@ -29,6 +29,8 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
     profiles = []
 
     for profile_name, filename in profile_filenames.items():
+        if (res_incl and profile_name not in res_incl) or (res_excl and profile_name in res_excl):
+            continue
         full_path = os.path.join(path, filename)
         measurements = np.loadtxt(full_path, dtype=dtype)
         profile = Profile(profile_name, measurements, experiment_details)
@@ -44,11 +46,6 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
         for profile in profiles:
             error_value = util.estimate_noise(profile.val[profile.b1_offsets >= -10000.0])
             profile.err = np.zeros_like(profile.err) + error_value
-
-    if res_incl is not None:
-        profiles = [profile for profile in profiles if profile.profile_name in res_incl]
-    elif res_excl is not None:
-        profiles = [profile for profile in profiles if profile.profile_name not in res_excl]
 
     ndata = sum(len(profile.val) for profile in profiles)
 
