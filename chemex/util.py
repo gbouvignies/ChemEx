@@ -16,10 +16,7 @@ def make_dir(path=None):
 
 def read_cfg_file(filename):
     """Read and parse the experiment configuration file with configparser."""
-    try:
-        config = configparser.ConfigParser(inline_comment_prefixes=('#', ';'))
-    except TypeError:
-        config = configparser.ConfigParser()
+    config = configparser.ConfigParser(inline_comment_prefixes=('#', ';'))
     config.optionxform = str
 
     if filename:
