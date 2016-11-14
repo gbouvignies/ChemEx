@@ -33,6 +33,7 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
             continue
         full_path = os.path.join(path, filename)
         measurements = np.loadtxt(full_path, dtype=dtype)
+        measurements.sort(order='b1_offsets')
         profile = Profile(profile_name, measurements, experiment_details)
         profiles.append(profile)
 
