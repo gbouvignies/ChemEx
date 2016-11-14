@@ -173,15 +173,15 @@ def main():
         if args.bs or args.mc:
 
             if args.bs:
-                n = int(args.bs)
+                nmb = args.bs
             else:
-                n = int(args.mc)
+                nmb = args.mc
 
             formatter_output_dir = ''.join(
-                ['{:0', str(int(np.log10(n)) + 1), 'd}']
+                ['{:0', str(int(np.log10(nmb)) + 1), 'd}']
             )
 
-            for index in range(1, n + 1):
+            for index in range(1, nmb + 1):
 
                 if args.bs:
                     data_index = make_bootstrap_dataset(data)
