@@ -111,7 +111,7 @@ class DataSet(object):
                 for profile in sorted(data, key=operator.attrgetter('peak')):
                     f.write(profile.print_profile(params=params))
 
-    def write_chi2_to(self, params, path='./'):
+    def write_statistics_to(self, params, path='./'):
         """Write fitting statistics to a file."""
         residuals = self.calculate_residuals(params, verbose=False)
         chisq = sum(residuals ** 2)
@@ -121,7 +121,7 @@ class DataSet(object):
         ks_value, ks_p_value = stats.kstest(residuals, 'norm')
         chi2_p_value = 1.0 - stats.chi2.cdf(chisq, nfree)
 
-        filename = os.path.join(path, 'chi2.fit')
+        filename = os.path.join(path, 'statistics.fit')
 
         with open(filename, 'w') as f:
             print("  * {}".format(filename))

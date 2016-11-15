@@ -88,11 +88,10 @@ def write_results(params, data, method, output_dir):
     if method:
         shutil.copyfile(method, os.path.join(output_dir, 'fitting-method.cfg'))
 
-    # FIXME: change function name to "write_statistics_to" ?
-    data.write_chi2_to(params, path=output_dir)
     parameters.write_par(params, output_dir=output_dir)
     parameters.write_constraints(params, output_dir=output_dir)
     data.write_to(params, output_dir=output_dir)
+    data.write_statistics_to(params, path=output_dir)
 
 
 def plot_results(params, data, output_dir):
