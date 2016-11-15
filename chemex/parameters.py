@@ -10,8 +10,8 @@ import os.path
 import re
 
 import lmfit
-import numpy as np
 from lmfit import astutils
+import numpy as np
 
 from chemex import peaks, util
 

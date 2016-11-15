@@ -2,11 +2,11 @@
 
 import os
 
-import numpy as np
 from matplotlib import gridspec as gsp
 from matplotlib import pyplot as plt
 from matplotlib import ticker
 from matplotlib.backends import backend_pdf
+import numpy as np
 
 from chemex import peaks
 from chemex.experiments import plotting

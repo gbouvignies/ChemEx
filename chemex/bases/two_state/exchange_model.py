@@ -1,6 +1,5 @@
 """TODO: module docstring."""
 
-from chemex import parameters
 from scipy import constants as cst
 
 from chemex import parameters
