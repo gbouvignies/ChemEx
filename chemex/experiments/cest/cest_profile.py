@@ -31,17 +31,17 @@ class CESTProfile(base_profile.BaseProfile):
         self.b1_frq = base_profile.check_par(exp_details, 'b1_frq', float)
         self.time_t1 = base_profile.check_par(exp_details, 'time_t1', float)
         self.b1_inh = base_profile.check_par(exp_details, 'b1_inh', float, np.inf)
-        b1_inh_res = base_profile.check_par(exp_details, 'b1_inh_res', int, 11)
+        self.b1_inh_res = base_profile.check_par(exp_details, 'b1_inh_res', int, 11)
         self.p_total = base_profile.check_par(exp_details, 'p_total', float, required=False)
         self.l_total = base_profile.check_par(exp_details, 'l_total', float, required=False)
         self.model = base_profile.check_par(exp_details, 'model', default='2st.pb_kex')
 
-        if b1_inh_res == 1 or self.b1_inh == np.inf:
+        if self.b1_inh_res == 1 or self.b1_inh == np.inf:
             self.omega1s = 2.0 * np.pi * np.array([self.b1_frq])
         else:
-            self.omega1s = 2.0 * np.pi * (np.linspace(-2.0, 2.0, b1_inh_res) * self.b1_inh + self.b1_frq)
+            self.omega1s = 2.0 * np.pi * (np.linspace(-2.0, 2.0, self.b1_inh_res) * self.b1_inh + self.b1_frq)
 
-        self.b1_weights = stats.norm.pdf(np.linspace(-2.0, 2.0, b1_inh_res))
+        self.b1_weights = stats.norm.pdf(np.linspace(-2.0, 2.0, self.b1_inh_res))
         self.b1_weights /= sum(self.b1_weights)
 
         self.experiment_name = base_profile.check_par(exp_details, 'name')
