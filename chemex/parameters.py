@@ -555,12 +555,3 @@ def re_to_dict(re_to_match, text):
         for match_key, match_value in match.groupdict().items()
         if match_value is not None
         }
-
-
-def main():
-    """TODO: function docstring."""
-    pass
-
-
-if __name__ == '__main__':
-    main()
