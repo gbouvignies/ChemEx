@@ -1,3 +1,5 @@
+"""Read the experimental CEST data."""
+
 import importlib
 import os
 
@@ -7,6 +9,7 @@ from chemex.experiments.cest import util
 
 
 def read_profiles(path, profile_filenames, experiment_details, res_incl=None, res_excl=None):
+    """Read the CEST profiles."""
     experiment_type = experiment_details['type'].split('.')
     experiment_details['name'] = name_experiment(experiment_details)
     experiment_module = importlib.import_module(
@@ -26,8 +29,11 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
     profiles = []
 
     for profile_name, filename in profile_filenames.items():
+        if (res_incl and profile_name not in res_incl) or (res_excl and profile_name in res_excl):
+            continue
         full_path = os.path.join(path, filename)
         measurements = np.loadtxt(full_path, dtype=dtype)
+        measurements.sort(order='b1_offsets')
         profile = Profile(profile_name, measurements, experiment_details)
         profiles.append(profile)
 
@@ -39,13 +45,9 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
     if error == 'auto':
 
         for profile in profiles:
-            error_value = util.estimate_noise(profile.val[profile.b1_offsets >= -10000.0])
+            excl_reference = np.logical_not(profile.reference)
+            error_value = util.estimate_noise(profile.val[excl_reference])
             profile.err = np.zeros_like(profile.err) + error_value
-
-    if res_incl is not None:
-        profiles = [profile for profile in profiles if profile.profile_name in res_incl]
-    elif res_excl is not None:
-        profiles = [profile for profile in profiles if profile.profile_name not in res_excl]
 
     ndata = sum(len(profile.val) for profile in profiles)
 
@@ -53,6 +55,7 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
 
 
 def name_experiment(experiment_details=None):
+    """Generate a unique name for the experiment."""
     if experiment_details is None:
         experiment_details = dict()
 

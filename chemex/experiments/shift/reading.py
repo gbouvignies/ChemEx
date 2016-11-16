@@ -1,3 +1,5 @@
+"""TODO: module docstring."""
+
 import importlib
 import os
 
@@ -5,6 +7,7 @@ import numpy as np
 
 
 def read_profiles(path, profile_filenames, experiment_details, res_incl=None, res_excl=None):
+    """TODO: function docstring."""
     experiment_type = experiment_details['type']
     experiment_details['name'] = name_experiment(experiment_details)
     experiment_module = importlib.import_module('.'.join(['chemex.experiments', experiment_type]))
@@ -42,6 +45,7 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
 
 
 def name_experiment(experiment_details=None):
+    """TODO: function docstring."""
     if not experiment_details:
         experiment_details = dict()
 

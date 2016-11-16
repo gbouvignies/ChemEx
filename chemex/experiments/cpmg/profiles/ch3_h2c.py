@@ -14,7 +14,6 @@ explicitly for analyzing the Lewis Kay pulse sequence:
 HtoC_CH3_exchange_*00_lek_ILV
 
 Journal of Biomolecular NMR (2007) 38, 79-88
-
 """
 
 import functools
@@ -28,6 +27,8 @@ from chemex.experiments.cpmg import cpmg_profile
 
 
 class Profile(cpmg_profile.CPMGProfile):
+    """TODO: class docstring."""
+
     def __init__(self, profile_name, measurements, exp_details):
 
         super().__init__(profile_name, measurements, exp_details)

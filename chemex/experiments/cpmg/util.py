@@ -1,8 +1,11 @@
+"""Utility functions for CPMG experiments."""
+
 import numpy as np
 from scipy import math
 
 
 def correction(n):
+    """Calculate correction factor for noise estimate."""
     k = n // 2
 
     if n == 2 * k:
@@ -20,6 +23,7 @@ def correction(n):
 
 
 def estimate_noise(profile):
+    """Estimate the uncertainty in CPMG data points (i.e., R2eff)."""
     intensity_dict = {}
 
     for ncyc, intensity in zip(profile.ncycs, profile.val):

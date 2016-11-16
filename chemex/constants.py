@@ -1,6 +1,9 @@
+"""The constants module defines the gyromagnetic ratios and scalar coupling
+constants.
+"""
+
 # Define the gyromagnetic ratios in rad/s/T
 # IUPAC values: Harris et al, Concepts in Magn. Reson., (2002) 14, p326
-
 gamma = {
     'h': 26.7522128e+07,
     'n': -2.71261804e+07,
@@ -11,7 +14,6 @@ gamma = {
 
 # Define nuclide frequency ratios wrt proton
 # IUPAC values for bio NMR: Markley et al, Pure & Appl. Chem., (1998) 70, p117
-
 xi_ratio = {
     'h': 100.0000000e-02,
     'q': 100.0000000e-02,
@@ -21,7 +23,6 @@ xi_ratio = {
 }
 
 # Residue-specific scalar coupling values with neighbouring carbons (in Hz)
-
 j_couplings = {
     'a': {
         'n' : (7.7, 10.7, 14.4),

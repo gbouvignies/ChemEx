@@ -1,3 +1,5 @@
+"""The fitting module contains the code for fitting the experimental data."""
+
 import sys
 
 import lmfit
@@ -6,6 +8,7 @@ from chemex import datasets, parameters, util
 
 
 def run_fit(fit_filename, params, data):
+    """Perform the the fit."""
     util.header1("Fit")
 
     fit_config = util.read_cfg_file(fit_filename)
@@ -37,9 +40,6 @@ def run_fit(fit_filename, params, data):
             try:
                 result = minimizer.minimize(params=c_params)
 
-                # for param in result.params.values():
-                #     param.value = np.float64(param.value)
-
             except KeyboardInterrupt:
                 result = minimizer.result
                 sys.stderr.write("\n -- Keyboard Interrupt: minimization stopped\n")
@@ -56,12 +56,12 @@ def run_fit(fit_filename, params, data):
 
 
 def find_independent_clusters(data, params):
-    """
-    Finds clusters of data points that depend on disjoint sets of variables.
-    For example, if the population of the minor state and the exchange rate are
-    set to 'fix', chances are that the fit can be decomposed residue-specifically.
-    """
+    """Find clusters of datapoints that depend on disjoint sets of variables.
 
+    For example, if the population of the minor state and the exchange rate are
+    set to 'fix', chances are that the fit can be decomposed
+    residue-specifically.
+    """
     clusters = []
 
     for profile in data:

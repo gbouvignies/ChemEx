@@ -1,3 +1,5 @@
+"""The dataset module contains the code for handling the experimental data."""
+
 import configparser
 import copy
 import importlib
@@ -14,8 +16,9 @@ from chemex.experiments import base_profile
 
 
 class DataSet(object):
-    def __init__(self, other=None):
+    """DataSet class for handling experimental data."""
 
+    def __init__(self, other=None):
         self.data = []
         self.ndata = 0
         self.chisq_ref = 1e32
@@ -47,13 +50,14 @@ class DataSet(object):
         return self
 
     def append(self, profile):
+        """Append data to an exisiting dataset."""
         if not isinstance(profile, base_profile.BaseProfile):
             raise TypeError
         self.data.append(profile)
         self.ndata += len(profile.val)
 
     def calculate_residuals(self, params, verbose=True, threshold=1e-3):
-
+        """Calculate the residuals."""
         residuals = np.concatenate([profile.calculate_residuals(params) for profile in self.data])
 
         if verbose:
@@ -73,13 +77,13 @@ class DataSet(object):
         return residuals
 
     def calculate_chisq(self, params):
-
+        """Calculate the chi-square."""
         residuals = self.calculate_residuals(params, verbose=False)
 
         return sum(residuals ** 2)
 
     def calculate_redchi(self, params):
-
+        """Calculate the redcuded chi-square."""
         chisq = self.calculate_chisq(params)
         nvarys = len([param for param in params.values() if param.vary])
 
@@ -89,8 +93,7 @@ class DataSet(object):
         return chisq / (self.ndata - nvarys)
 
     def write_to(self, params=None, output_dir='./'):
-        """Write dispersion profiles into a file"""
-
+        """Write experimental and fitted profiles to a file."""
         datasets = dict()
 
         for profile in self.data:
@@ -108,10 +111,8 @@ class DataSet(object):
                 for profile in sorted(data, key=operator.attrgetter('peak')):
                     f.write(profile.print_profile(params=params))
 
-    def write_chi2_to(self, params, path='./'):
-        """Write reduced chi2
-        """
-
+    def write_statistics_to(self, params, path='./'):
+        """Write fitting statistics to a file."""
         residuals = self.calculate_residuals(params, verbose=False)
         chisq = sum(residuals ** 2)
         nvarys = len([param for param in params.values() if param.vary])
@@ -120,7 +121,7 @@ class DataSet(object):
         ks_value, ks_p_value = stats.kstest(residuals, 'norm')
         chi2_p_value = 1.0 - stats.chi2.cdf(chisq, nfree)
 
-        filename = os.path.join(path, 'chi2.fit')
+        filename = os.path.join(path, 'statistics.fit')
 
         with open(filename, 'w') as f:
             print("  * {}".format(filename))
@@ -133,28 +134,28 @@ class DataSet(object):
             f.write("ks_p-value    = {: .5e} # Kolmogorov-Smirnov test for goodness of fit\n".format(ks_p_value))
 
     def add_dataset_from_file(self, filename, model=None, res_incl=None, res_excl=None):
-
+        """Add data from a file to the dataset."""
         print("{:<45s} ".format(filename), end='')
 
         # Get the directory of the input file
         working_dir = os.path.dirname(filename)
 
-        # Parse the config file
+        # Parse the experiment configuration file
         config = util.read_cfg_file(filename)
 
         try:
 
-            # Reads experiment information
+            # Read the experiment information
             experiment_details = dict(config.items('experiment'))
             experiment_type = experiment_details['type']
             experiment_class = experiment_type.split('.')[0]
 
-            # Reads experimental parameters
+            # Read the experimental parameters
             experiment_details.update(
                 {key.lower(): val for key, val in config.items('experimental_parameters')}
             )
 
-            # Reads profile information (name, filename)
+            # Read the profile information (name, filename)
             profile_filenames = {key.lower(): val for key, val in config.items('data')}
 
             experiment_details['model'] = model
@@ -166,7 +167,7 @@ class DataSet(object):
             sys.exit("\nIn the section 'experiment' of {}, '{}' must be provided!".format(filename, e))
 
         try:
-            # Reads additional parameters
+            # Read (optional) additional parameters
             experiment_details.update(
                 {key.lower(): val for key, val in config.items('extra_parameters')}
             )

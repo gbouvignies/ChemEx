@@ -1,18 +1,16 @@
 """15N CEST with CW decoupling
 
-Analyzes chemical exchange in the presence of 1H CW decoupling
-during the CEST block. Magnetization evolution is calculated using the 30*30
-two-spin matrix:
+Analyzes chemical exchange in the presence of 1H CW decoupling during the CEST
+block. Magnetization evolution is calculated using the 30*30 two-spin matrix:
 
 [ I{xyz}, S{xyz}, 2I{xyz}S{xyz} ]{a, b, ...}
 
 Notes
 -----
-The calculation is designed specifically to analyze the experiment found in
-the reference:
+The calculation is designed specifically to analyze the experiment found in the
+reference:
 
 J Phys Chem B (2012), 116, 14311-7
-
 """
 
 import numpy as np
@@ -23,6 +21,8 @@ from chemex.experiments.cest import cest_profile
 
 
 class Profile(cest_profile.CESTProfile):
+    """TODO: class docstring."""
+
     def __init__(self, profile_name, measurements, exp_details):
 
         super().__init__(profile_name, measurements, exp_details)
@@ -97,7 +97,6 @@ class Profile(cest_profile.CESTProfile):
         out : float
             Intensity after the CEST block
         """
-
         cs_i = np.array([kwargs.get(key, 0.0) for key in ('cs_i_a', 'cs_i_b', 'cs_i_c', 'cs_i_d')])
         omega_i_cars = (cs_i - self.carrier) * self.ppm_i
 

@@ -1,9 +1,5 @@
-"""
-Created on Mar 4, 2012 (stub)
-
-@author: Alex Hansen
-"""
+"""TODO: module docstring."""
 
 
 def plot_data(data, params, output_dir='./'):
-    """Plot correlation and write a pdf file [STUB]"""
+    """Plot correlation and write a pdf file [STUB]."""

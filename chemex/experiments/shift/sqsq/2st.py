@@ -1,6 +1,4 @@
-"""HMQC-HSQC shifts
-
-"""
+"""HMQC-HSQC shifts"""
 
 import copy
 from functools import lru_cache
@@ -21,6 +19,8 @@ attributes_exp = {
 
 
 class Profile(base_profile.BaseProfile):
+    """TODO: class docstring."""
+
     def __init__(self, profile_name, measurements, exp_details):
 
         self.profile_name = profile_name
@@ -54,7 +54,7 @@ class Profile(base_profile.BaseProfile):
         self.default_params = self.create_default_parameters()
 
     def create_default_parameters(self):
-
+        """TODO: method docstring."""
         parameters = lmfit.Parameters()
 
         parameters.add_many(
@@ -87,7 +87,6 @@ class Profile(base_profile.BaseProfile):
         out : float
             Intensity after the CEST block
         """
-
         domega_i_ab_1 = dw_i_ab * self.ppm_1
         domega_i_ab_2 = dw_i_ab * self.ppm_2
 
@@ -97,6 +96,7 @@ class Profile(base_profile.BaseProfile):
         return np.asarray([shift_sq_2 - shift_sq_1])
 
     def calculate_profile(self, params=None, **kwargs):
+        """TODO: method docstring."""
         kwargs_profile = {short_name: params[long_name].value for short_name, long_name in self.map_names.items()}
         values = self._calculate_profile_cached(**kwargs_profile)
 
@@ -108,12 +108,10 @@ class Profile(base_profile.BaseProfile):
 
         Returns 'True' if the point should NOT be considered.
         """
-
         return False
 
     def print_profile(self, params=None):
-        """Print the data point"""
-
+        """Print the data point."""
         output = []
 
         if params is not None:
@@ -143,7 +141,7 @@ class Profile(base_profile.BaseProfile):
         return "\n".join(output).upper()
 
     def make_bs_profile(self):
-
+        """TODO: method docstring."""
         indexes = np.array(range(len(self.val)))
 
         bs_indexes = []

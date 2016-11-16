@@ -1,3 +1,5 @@
+"""TODO: module docstring."""
+
 import numpy as np
 
 pi = np.pi
@@ -233,9 +235,7 @@ def compute_liouvillian(
         r2_mq_c=0.0, r1a_c=0.0, mu_mq_c=0.0, sigma_c=0.0, j_c=0.0,
         r2_mq_d=0.0, r1a_d=0.0, mu_mq_d=0.0, sigma_d=0.0, j_d=0.0,
         omega1x_i=0.0, omega1y_i=0.0, omega1x_s=0.0, omega1y_s=0.0):
-    """TODO: make docstringx
-    """
-
+    """TODO: function docstring."""
     pa = 1.0 - pb - pc - pd
 
     kab = kba = kac = kca = kad = kda = kbc = kcb = kbd = kdb = kcd = kdc = 0.0

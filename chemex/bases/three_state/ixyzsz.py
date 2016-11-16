@@ -1,3 +1,5 @@
+"""TODO: module docstring."""
+
 import lmfit
 import numpy as np
 
@@ -78,9 +80,7 @@ def compute_liouvillian(
         omega1x_i=0.0, omega1y_i=0.0,
         **kwargs
 ):
-    """TODO: make docstringx
-    """
-
+    """TODO: function docstring."""
     pa = 1.0 - pb - pc
 
     kab = kba = kbc = kcb = kac = kca = 0.0
@@ -140,18 +140,21 @@ def compute_liouvillian(
 
 
 def compute_equilibrium_2izsz(pb=0.0, pc=0.0, **kwargs):
+    """TODO: function docstring."""
     mag0 = np.zeros((18, 1))
     mag0[index_2izsz] = [[1.0 - pb - pc], [pb], [pc]]
     return mag0
 
 
 def compute_2izsz_a(pb=0.0, pc=0.0, **kwargs):
+    """TODO: function docstring."""
     mag0 = np.zeros((18, 1))
     mag0[index_2izsz] = [[1.0 - pb - pc], [0.0], [0.0]]
     return mag0
 
 
 def create_default_params(model=None, temperature=None, nuclei=None, h_larmor_frq=None, p_total=None, l_total=None):
+    """TODO: function docstring."""
     resonance_i, resonance_s = nuclei.resonances
     kwargs1 = {'temperature': temperature, 'p_total': p_total, 'l_total': l_total}
     kwargs2 = {'temperature': temperature, 'nuclei': resonance_i['name']}

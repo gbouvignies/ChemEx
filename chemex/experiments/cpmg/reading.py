@@ -1,3 +1,5 @@
+"""Read the experimental CPMG data."""
+
 import importlib
 import os
 
@@ -7,6 +9,7 @@ from chemex.experiments.cpmg import util
 
 
 def read_profiles(path, profile_filenames, experiment_details, res_incl=None, res_excl=None):
+    """Read the CPMG profiles."""
     experiment_type = experiment_details['type'].split('.')
     experiment_details['name'] = name_experiment(experiment_details)
     experiment_module = importlib.import_module(
@@ -22,6 +25,8 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
     profiles = []
 
     for profile_name, filename in profile_filenames.items():
+        if (res_incl and profile_name not in res_incl) or (res_excl and profile_name in res_excl):
+            continue
         full_path = os.path.join(path, filename)
         measurements = np.loadtxt(full_path, dtype=dtype)
         profile = Profile(profile_name, measurements, experiment_details)
@@ -35,23 +40,13 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
         for profile in profiles:
             profile.err[:] = error_value
 
-    if res_incl is not None:
-        profiles = [
-            profile
-            for profile in profiles
-            if profile.profile_name in res_incl]
-    elif res_excl is not None:
-        profiles = [
-            profile
-            for profile in profiles
-            if profile.profile_name not in res_excl]
-
     ndata = sum(len(profile.val) for profile in profiles)
 
     return profiles, ndata
 
 
 def name_experiment(experiment_details=None):
+    """Generate a unique name for the experiment."""
     if not experiment_details:
         experiment_details = dict()
 

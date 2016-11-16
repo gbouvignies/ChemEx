@@ -1,11 +1,10 @@
 """Pure anti-phase CEST
 
-Analyzes chemical exchange during the CEST block. This is calculated using the 12x12, single spin matrix:
+Analyzes chemical exchange during the CEST block. This is calculated using the
+12x12, single spin matrix:
 
 [ Ix(a), Iy(a), Iz(a), IxSz(a), IySz(a), IzSz(a),
   Ix(b), Iy(b), Iz(b), IxSz(b), IySz(b), IzSz(b) ]
-
-
 """
 
 import numpy as np
@@ -16,6 +15,8 @@ from chemex.experiments.cest import cest_profile
 
 
 class Profile(cest_profile.CESTProfile):
+    """TODO: class docstring."""
+
     def __init__(self, profile_name, measurements, exp_details):
 
         super().__init__(profile_name, measurements, exp_details)
@@ -99,7 +100,6 @@ class Profile(cest_profile.CESTProfile):
         out : float
             Intensity after the CEST block
         """
-
         cs_i = np.array([kwargs.get(key, 0.0) for key in ('cs_i_a', 'cs_i_b', 'cs_i_c', 'cs_i_d')])
         omega_i_cars = (cs_i - self.carrier) * self.ppm_i
 
