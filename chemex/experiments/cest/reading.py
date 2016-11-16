@@ -45,7 +45,8 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
     if error == 'auto':
 
         for profile in profiles:
-            error_value = util.estimate_noise(profile.val[profile.b1_offsets >= -10000.0])
+            excl_reference = np.logical_not(profile.reference)
+            error_value = util.estimate_noise(profile.val[excl_reference])
             profile.err = np.zeros_like(profile.err) + error_value
 
     ndata = sum(len(profile.val) for profile in profiles)
