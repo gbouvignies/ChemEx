@@ -35,8 +35,8 @@ class BaseProfile(metaclass=abc.ABCMeta):
 
 
 def check_par(parameters=None, name=None, convert=None, default=None, required=True):
-    """Check for experimental parameters and converts them to their
-    appropriate type.
+    """Check for experimental parameters and convert them to their appropriate
+    type.
     """
     value = parameters.get(name, default)
 
@@ -47,9 +47,7 @@ def check_par(parameters=None, name=None, convert=None, default=None, required=T
         try:
             value = convert(value)
         except ValueError:
-            exit(
-                "Experimental parameter of wrong type detected. Please make"
-                " sure that {:s} is a {:s}".format(name, convert)
-            )
+            exit("Experimental parameter of wrong type detected. Please make"
+                 " sure that {:s} is a {:s}".format(name, convert))
 
     return value

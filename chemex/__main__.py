@@ -1,4 +1,4 @@
-"""TODO: chemex.__main__: executed when the chemex directory is called as script."""
+"""chemex.__main__: executed when the chemex directory is called as script."""
 
 import chemex
 

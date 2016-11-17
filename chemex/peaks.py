@@ -5,21 +5,18 @@ resonances.
 import functools
 import re
 
-re_peak_name = re.compile(
-    '''
+re_peak_name = re.compile('''
         (^\s*|\-)
         (                                # group name
             (?P<symbol>\D?)              # one letter amino acid (optional)
             0*(?P<number>[0-9]+)         # residue number
             (?P<suffix>[abd-gi-mopr-z]*) # suffix (optional)
         )?
-        (?P<nucleus>                     # nucleus name (for example: CA, HG, ...)
+        (?P<nucleus>                     # nucleus name (e.g., CA, HG, ...)
             (?P<atom>[hncq])             # nucleus type
             [a-z0-9]*                    # nucleus name - nucleus type
         )?
-    ''',
-    re.IGNORECASE | re.VERBOSE
-)
+    ''', re.IGNORECASE | re.VERBOSE)
 
 
 @functools.total_ordering
@@ -46,8 +43,10 @@ class Peak(object):
         if isinstance(other, str):
             other = Peak(other)
 
-        self_tuple = tuple((resonance['nucleus'], int(resonance['number'])) for resonance in self.resonances)
-        other_tuple = tuple((resonance['nucleus'], int(resonance['number'])) for resonance in other.resonances)
+        self_tuple = tuple((resonance['nucleus'], int(resonance['number']))
+                           for resonance in self.resonances)
+        other_tuple = tuple((resonance['nucleus'], int(resonance['number']))
+                            for resonance in other.resonances)
 
         return self_tuple < other_tuple
 
@@ -75,7 +74,6 @@ def get_resonances(assignment):
     last_resonance = None
 
     for match in re.finditer(re_peak_name, assignment.lower()):
-
         resonance = match.groupdict()
 
         for key, value in resonance.items():

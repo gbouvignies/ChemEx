@@ -25,12 +25,11 @@ index_iz = [0, 1, 2]
 index_iz_a = [0]
 
 
+# yapf: disable
 def compute_liouvillian(
         pb=0.0, pc=0.0, kex_ab=0.0, kex_bc=0.0, kex_ac=0.0,
-        r1_i_a=0.0,
-        r1_i_b=0.0,
-        r1_i_c=0.0, ):
-    """TODO: function docstring."""
+        r1_i_a=0.0, r1_i_b=0.0, r1_i_c=0.0):
+    """Compute the Liouvillian."""
     pa = 1.0 - pb - pc
 
     kab = kba = kbc = kcb = kac = kca = 0.0
@@ -57,23 +56,30 @@ def compute_liouvillian(
     )
 
     return liouvillian
+# yapf: enable
 
 
 def compute_equilibrium_iz(pb=0.0, pc=0.0, **kwargs):
-    """TODO: function docstring."""
+    """Compute the equilibrium magnetization."""
     mag0 = np.zeros((3, 1))
     mag0[index_iz] = [[1.0 - pb - pc], [pb], [pc]]
+
     return mag0
 
 
-def create_default_params(model=None, temperature=None, nuclei=None, h_larmor_frq=None, p_total=None, l_total=None):
-    """TODO: function docstring."""
+def create_default_params(model=None,
+                          temperature=None,
+                          nuclei=None,
+                          h_larmor_frq=None,
+                          p_total=None,
+                          l_total=None):
+    """Create the default experimental and fitting parameters."""
     kwargs1 = {'temperature': temperature, 'p_total': p_total, 'l_total': l_total}
     kwargs3 = {'temperature': temperature, 'nuclei': nuclei, 'h_larmor_frq': h_larmor_frq}
 
     map_names = {
-        'pb'    : parameters.ParameterName('pb', **kwargs1).to_full_name(),
-        'pc'    : parameters.ParameterName('pc', **kwargs1).to_full_name(),
+        'pb': parameters.ParameterName('pb', **kwargs1).to_full_name(),
+        'pc': parameters.ParameterName('pc', **kwargs1).to_full_name(),
         'kex_ab': parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
         'kex_ac': parameters.ParameterName('kex_ac', **kwargs1).to_full_name(),
         'kex_bc': parameters.ParameterName('kex_bc', **kwargs1).to_full_name(),
@@ -93,12 +99,11 @@ def create_default_params(model=None, temperature=None, nuclei=None, h_larmor_fr
         (map_names['kex_ab'], 200.0, True, 0.0, None, None),
         (map_names['kex_ac'], 0.0, False, 0.0, None, None),
         (map_names['kex_bc'], 200.0, True, 0.0, None, None),
-
         (map_names['r1_i_a'], 1.0, True, 0.0, None, None),
         (map_names['r1_i_b'], 1.0, None, 0.0, None, r1_i_b),
-        (map_names['r1_i_c'], 1.0, None, 0.0, None, r1_i_c),
-    )
+        (map_names['r1_i_c'], 1.0, None, 0.0, None, r1_i_c), )
 
-    map_names, params = exchange_model.update_params(params, map_names, model, temperature, p_total, l_total)
+    map_names, params = exchange_model.update_params(params, map_names, model, temperature, p_total,
+                                                     l_total)
 
     return map_names, params

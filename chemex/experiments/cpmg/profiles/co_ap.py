@@ -36,7 +36,6 @@ class Profile(cpmg_profile.CPMGProfile):
     """TODO: class docstring."""
 
     def __init__(self, profile_name, measurements, exp_details):
-
         super().__init__(profile_name, measurements, exp_details)
 
         self.carrier = base_profile.check_par(exp_details, 'carrier', float)
@@ -44,7 +43,8 @@ class Profile(cpmg_profile.CPMGProfile):
         self.sidechain_flg = base_profile.check_par(exp_details, 'sidechain_flg', str).lower()
         self.taucc = base_profile.check_par(exp_details, 'taucc', float, default=9.09e-3)
 
-        self.tau_cp_list = np.array([self.time_t2 / (4.0 * ncyc) if ncyc > 0 else 0.0 for ncyc in self.ncycs])
+        self.tau_cp_list = np.array(
+            [self.time_t2 / (4.0 * ncyc) if ncyc > 0 else 0.0 for ncyc in self.ncycs])
         self.t_neg = -2.0 * self.pw / np.pi
         self.time_series = [self.t_neg, self.taucc, self.time_equil]
         self.time_series.extend(self.tau_cp_list)
@@ -62,11 +62,13 @@ class Profile(cpmg_profile.CPMGProfile):
             temperature=self.temperature,
             h_larmor_frq=self.h_larmor_frq,
             p_total=self.p_total,
-            l_total=self.l_total,
-        )
+            l_total=self.l_total, )
 
-        kwargs = {'temperature' : self.temperature, 'nuclei': self.resonance_s['name'],
-                  'h_larmor_frq': self.h_larmor_frq}
+        kwargs = {
+            'temperature': self.temperature,
+            'nuclei': self.resonance_s['name'],
+            'h_larmor_frq': self.h_larmor_frq
+        }
 
         self.map_names['r1_s_a'] = parameters.ParameterName('r1_a', **kwargs).to_full_name()
         self.map_names['r1_s_b'] = parameters.ParameterName('r1_b', **kwargs).to_full_name()
@@ -84,8 +86,7 @@ class Profile(cpmg_profile.CPMGProfile):
             (self.map_names['r1_i_a'], 0.0, None, 0.0, None, r1_i_a),
             (self.map_names['r1_i_b'], 0.0, None, 0.0, None, r1_i_b),
             (self.map_names['r2a_i_a'], 0.0, None, 0.0, None, r2a_i_a),
-            (self.map_names['r2a_i_b'], 0.0, None, 0.0, None, r2a_i_b),
-        )
+            (self.map_names['r2a_i_b'], 0.0, None, 0.0, None, r2a_i_b), )
 
         if '3st' in self.model:
             self.map_names['r1_s_c'] = parameters.ParameterName('r1_c', **kwargs).to_full_name()
@@ -98,8 +99,7 @@ class Profile(cpmg_profile.CPMGProfile):
                 # Name, Value, Vary, Min, Max, Expr
                 (self.map_names['r1_s_c'], 1.5, None, 0.0, None, r1_s_c),
                 (self.map_names['r1_i_c'], 0.0, None, 0.0, None, r1_i_c),
-                (self.map_names['r2a_i_c'], 0.0, None, 0.0, None, r2a_i_c),
-            )
+                (self.map_names['r2a_i_c'], 0.0, None, 0.0, None, r2a_i_c), )
 
     def calculate_unscaled_profile(self, **kwargs):
         """Calculate the intensity in presence of exchange after a CEST block.
@@ -130,15 +130,16 @@ class Profile(cpmg_profile.CPMGProfile):
         omega_i_a, omega_i_b, omega_i_c, omega_i_d = (cs_i - self.carrier) * self.ppm_i
 
         # Liouvillians
-
         l_free = self.base.compute_liouvillian(
-            omega_i_a=omega_i_a, omega_i_b=omega_i_b, omega_i_c=omega_i_c, omega_i_d=omega_i_d, **kwargs
-        )
+            omega_i_a=omega_i_a,
+            omega_i_b=omega_i_b,
+            omega_i_c=omega_i_c,
+            omega_i_d=omega_i_d,
+            **kwargs)
         l_pw1y = l_free + self.base.compute_liouvillian(omega1y_i=+self.omega1_i)
         l_mw1y = l_free + self.base.compute_liouvillian(omega1y_i=-self.omega1_i)
 
         # Propagators
-
         p_90py = linalg.expm(l_pw1y * self.pw)
         p_90my = linalg.expm(l_mw1y * self.pw)
         p_180py = np.linalg.matrix_power(p_90py, 2)
@@ -152,11 +153,9 @@ class Profile(cpmg_profile.CPMGProfile):
         p_equil = p_free_list[self.time_equil]
 
         # 2CzNz
-
         mag0 = self.base.compute_equilibrium_2izsz(**kwargs)
 
         # Simulate the CPMG block as function of ncyc
-
         profile = []
 
         if self.sidechain_flg == 'y':
@@ -165,17 +164,15 @@ class Profile(cpmg_profile.CPMGProfile):
             p_flip = functools.reduce(np.dot, [p_90my, p_taucc, p_180pmy, p_taucc, p_90py])
 
         for ncyc, tau_cp in zip(self.ncycs, self.tau_cp_list):
-
             if ncyc == 0:
                 mag = functools.reduce(np.dot, [p_equil, p_90py, p_flip, p_90py, mag0])
 
             else:
                 p_free = p_free_list[tau_cp]
                 p_cpx = np.linalg.matrix_power(p_free.dot(p_180x_perfect).dot(p_free), int(ncyc))
-                mag = functools.reduce(
-                    np.dot,
-                    [p_equil, p_90py, p_neg, p_cpx, p_neg, p_flip, p_neg, p_cpx, p_neg, p_90py, mag0]
-                )
+                mag = functools.reduce(np.dot, [
+                    p_equil, p_90py, p_neg, p_cpx, p_neg, p_flip, p_neg, p_cpx, p_neg, p_90py, mag0
+                ])
 
             profile.append(np.float64(mag[self.base.index_2izsz_a]))
 

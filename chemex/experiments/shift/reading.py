@@ -28,16 +28,10 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
         profiles.append(profile)
 
     if res_incl is not None:
-        profiles = [
-            profile
-            for profile in profiles
-            if profile.profile_name in res_incl]
+        profiles = [profile for profile in profiles if profile.profile_name in res_incl]
 
     elif res_excl is not None:
-        profiles = [
-            profile
-            for profile in profiles
-            if profile.profile_name not in res_excl]
+        profiles = [profile for profile in profiles if profile.profile_name not in res_excl]
 
     ndata = sum(len(profile.val) for profile in profiles)
 

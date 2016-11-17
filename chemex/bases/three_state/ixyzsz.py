@@ -1,4 +1,8 @@
-"""TODO: module docstring."""
+"""TODO: module docstring.
+
+# Operator basis:
+# {Ix, Iy, Iz, 2IxSz, 2IySz, 2IzSz}{a, b, c}
+"""
 
 import lmfit
 import numpy as np
@@ -7,13 +11,10 @@ from chemex import parameters
 from chemex.bases import ref
 from chemex.bases.three_state import exchange_model
 
-# Operator basis:
-# {Ix, Iy, Iz, 2IxSz, 2IySz, 2IzSz}{a, b, c}
-
+# yapf: disable
 indexes = [0, 1, 2, 6, 7, 14,
            15, 16, 17, 21, 22, 29,
            30, 31, 32, 36, 37, 44]
-
 mesh = np.ix_(indexes, indexes)
 
 mat_r2_i_a = ref.mat_r2_i_a[mesh]
@@ -78,9 +79,8 @@ def compute_liouvillian(
         r1a_b=0.0, j_b=0.0,
         r1a_c=0.0, j_c=0.0,
         omega1x_i=0.0, omega1y_i=0.0,
-        **kwargs
-):
-    """TODO: function docstring."""
+        **kwargs):
+    """Compute the Liouvillian."""
     pa = 1.0 - pb - pc
 
     kab = kba = kbc = kcb = kac = kca = 0.0
@@ -137,67 +137,79 @@ def compute_liouvillian(
     )
 
     return liouvillian
+# yapf: enable
 
 
 def compute_equilibrium_2izsz(pb=0.0, pc=0.0, **kwargs):
-    """TODO: function docstring."""
+    """Compute the equilibrium magnetization."""
     mag0 = np.zeros((18, 1))
     mag0[index_2izsz] = [[1.0 - pb - pc], [pb], [pc]]
+
     return mag0
 
 
 def compute_2izsz_a(pb=0.0, pc=0.0, **kwargs):
-    """TODO: function docstring."""
+    """Compute the equilibrium magnetization for anti-TROSY."""
     mag0 = np.zeros((18, 1))
     mag0[index_2izsz] = [[1.0 - pb - pc], [0.0], [0.0]]
+
     return mag0
 
 
-def create_default_params(model=None, temperature=None, nuclei=None, h_larmor_frq=None, p_total=None, l_total=None):
-    """TODO: function docstring."""
+def create_default_params(model=None,
+                          temperature=None,
+                          nuclei=None,
+                          h_larmor_frq=None,
+                          p_total=None,
+                          l_total=None):
+    """Create the default experimental and fitting parameters."""
     resonance_i, resonance_s = nuclei.resonances
     kwargs1 = {'temperature': temperature, 'p_total': p_total, 'l_total': l_total}
     kwargs2 = {'temperature': temperature, 'nuclei': resonance_i['name']}
-    kwargs3 = {'temperature': temperature, 'nuclei': resonance_i['name'], 'h_larmor_frq': h_larmor_frq}
+    kwargs3 = {
+        'temperature': temperature,
+        'nuclei': resonance_i['name'],
+        'h_larmor_frq': h_larmor_frq
+    }
     kwargs4 = {'temperature': temperature, 'nuclei': nuclei.assignment}
-    kwargs5 = {'temperature': temperature, 'nuclei': nuclei.assignment, 'h_larmor_frq': h_larmor_frq}
+    kwargs5 = {
+        'temperature': temperature,
+        'nuclei': nuclei.assignment,
+        'h_larmor_frq': h_larmor_frq
+    }
 
     map_names = {
-        'pb'       : parameters.ParameterName('pb', **kwargs1).to_full_name(),
-        'pc'       : parameters.ParameterName('pc', **kwargs1).to_full_name(),
-        'kex_ab'   : parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
-        'kex_bc'   : parameters.ParameterName('kex_bc', **kwargs1).to_full_name(),
-        'kex_ac'   : parameters.ParameterName('kex_ac', **kwargs1).to_full_name(),
-
-        'dw_i_ab'  : parameters.ParameterName('dw_ab', **kwargs2).to_full_name(),
-        'dw_i_ac'  : parameters.ParameterName('dw_ac', **kwargs2).to_full_name(),
-
-        'cs_i_a'   : parameters.ParameterName('cs_a', **kwargs2).to_full_name(),
-        'r2_i_a'   : parameters.ParameterName('r2_a', **kwargs3).to_full_name(),
-        'r2a_i_a'  : parameters.ParameterName('r2a_a', **kwargs3).to_full_name(),
-        'r1_i_a'   : parameters.ParameterName('r1_a', **kwargs3).to_full_name(),
-        'r1a_a'    : parameters.ParameterName('r1a_a', **kwargs5).to_full_name(),
+        'pb': parameters.ParameterName('pb', **kwargs1).to_full_name(),
+        'pc': parameters.ParameterName('pc', **kwargs1).to_full_name(),
+        'kex_ab': parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
+        'kex_bc': parameters.ParameterName('kex_bc', **kwargs1).to_full_name(),
+        'kex_ac': parameters.ParameterName('kex_ac', **kwargs1).to_full_name(),
+        'dw_i_ab': parameters.ParameterName('dw_ab', **kwargs2).to_full_name(),
+        'dw_i_ac': parameters.ParameterName('dw_ac', **kwargs2).to_full_name(),
+        'cs_i_a': parameters.ParameterName('cs_a', **kwargs2).to_full_name(),
+        'r2_i_a': parameters.ParameterName('r2_a', **kwargs3).to_full_name(),
+        'r2a_i_a': parameters.ParameterName('r2a_a', **kwargs3).to_full_name(),
+        'r1_i_a': parameters.ParameterName('r1_a', **kwargs3).to_full_name(),
+        'r1a_a': parameters.ParameterName('r1a_a', **kwargs5).to_full_name(),
         'etaxy_i_a': parameters.ParameterName('etaxy_a', **kwargs3).to_full_name(),
-        'etaz_i_a' : parameters.ParameterName('etaz_a', **kwargs3).to_full_name(),
-        'j_a'      : parameters.ParameterName('j_a', **kwargs4).to_full_name(),
-
-        'cs_i_b'   : parameters.ParameterName('cs_b', **kwargs2).to_full_name(),
-        'r2_i_b'   : parameters.ParameterName('r2_b', **kwargs3).to_full_name(),
-        'r2a_i_b'  : parameters.ParameterName('r2a_b', **kwargs3).to_full_name(),
-        'r1_i_b'   : parameters.ParameterName('r1_b', **kwargs3).to_full_name(),
-        'r1a_b'    : parameters.ParameterName('r1a_b', **kwargs5).to_full_name(),
+        'etaz_i_a': parameters.ParameterName('etaz_a', **kwargs3).to_full_name(),
+        'j_a': parameters.ParameterName('j_a', **kwargs4).to_full_name(),
+        'cs_i_b': parameters.ParameterName('cs_b', **kwargs2).to_full_name(),
+        'r2_i_b': parameters.ParameterName('r2_b', **kwargs3).to_full_name(),
+        'r2a_i_b': parameters.ParameterName('r2a_b', **kwargs3).to_full_name(),
+        'r1_i_b': parameters.ParameterName('r1_b', **kwargs3).to_full_name(),
+        'r1a_b': parameters.ParameterName('r1a_b', **kwargs5).to_full_name(),
         'etaxy_i_b': parameters.ParameterName('etaxy_b', **kwargs3).to_full_name(),
-        'etaz_i_b' : parameters.ParameterName('etaz_b', **kwargs3).to_full_name(),
-        'j_b'      : parameters.ParameterName('j_b', **kwargs4).to_full_name(),
-
-        'cs_i_c'   : parameters.ParameterName('cs_c', **kwargs2).to_full_name(),
-        'r2_i_c'   : parameters.ParameterName('r2_c', **kwargs3).to_full_name(),
-        'r2a_i_c'  : parameters.ParameterName('r2a_c', **kwargs3).to_full_name(),
-        'r1_i_c'   : parameters.ParameterName('r1_c', **kwargs3).to_full_name(),
-        'r1a_c'    : parameters.ParameterName('r1a_c', **kwargs5).to_full_name(),
+        'etaz_i_b': parameters.ParameterName('etaz_b', **kwargs3).to_full_name(),
+        'j_b': parameters.ParameterName('j_b', **kwargs4).to_full_name(),
+        'cs_i_c': parameters.ParameterName('cs_c', **kwargs2).to_full_name(),
+        'r2_i_c': parameters.ParameterName('r2_c', **kwargs3).to_full_name(),
+        'r2a_i_c': parameters.ParameterName('r2a_c', **kwargs3).to_full_name(),
+        'r1_i_c': parameters.ParameterName('r1_c', **kwargs3).to_full_name(),
+        'r1a_c': parameters.ParameterName('r1a_c', **kwargs5).to_full_name(),
         'etaxy_i_c': parameters.ParameterName('etaxy_c', **kwargs3).to_full_name(),
-        'etaz_i_c' : parameters.ParameterName('etaz_c', **kwargs3).to_full_name(),
-        'j_c'      : parameters.ParameterName('j_c', **kwargs4).to_full_name(),
+        'etaz_i_c': parameters.ParameterName('etaz_c', **kwargs3).to_full_name(),
+        'j_c': parameters.ParameterName('j_c', **kwargs4).to_full_name(),
     }
 
     cs_i_b = '{cs_i_a} + {dw_i_ab}'.format(**map_names)
@@ -219,10 +231,8 @@ def create_default_params(model=None, temperature=None, nuclei=None, h_larmor_fr
         (map_names['kex_ab'], 200.0, True, 0.0, None, None),
         (map_names['kex_bc'], 200.0, True, 0.0, None, None),
         (map_names['kex_ac'], 0.0, False, 0.0, None, None),
-
         (map_names['dw_i_ab'], 0.0, True, None, None, None),
         (map_names['dw_i_ac'], 0.0, True, None, None, None),
-
         (map_names['cs_i_a'], 0.0, False, None, None, None),
         (map_names['r1_i_a'], 1.5, False, 0.0, None, None),
         (map_names['r2_i_a'], 10.0, True, 0.0, None, None),
@@ -231,7 +241,6 @@ def create_default_params(model=None, temperature=None, nuclei=None, h_larmor_fr
         (map_names['etaz_i_a'], 0.0, False, None, None, None),
         (map_names['j_a'], 135.0, False, None, None, None),
         (map_names['r2a_i_a'], 3.0, False, 0.0, None, None),
-
         (map_names['cs_i_b'], 0.0, None, None, None, cs_i_b),
         (map_names['r1_i_b'], 1.5, None, 0.0, None, r1_i_b),
         (map_names['r2_i_b'], 10.0, None, 0.0, None, r2_i_b),
@@ -240,7 +249,6 @@ def create_default_params(model=None, temperature=None, nuclei=None, h_larmor_fr
         (map_names['etaz_i_b'], 0.0, None, None, None, etaz_i_b),
         (map_names['j_b'], 135.0, None, None, None, j_b),
         (map_names['r2a_i_b'], 3.0, None, 0.0, None, r2a_i_b),
-
         (map_names['cs_i_c'], 0.0, None, None, None, cs_i_c),
         (map_names['r1_i_c'], 1.5, None, 0.0, None, r1_i_c),
         (map_names['r2_i_c'], 10.0, None, 0.0, None, r2_i_c),
@@ -248,9 +256,9 @@ def create_default_params(model=None, temperature=None, nuclei=None, h_larmor_fr
         (map_names['etaxy_i_c'], 0.0, None, None, None, etaxy_i_c),
         (map_names['etaz_i_c'], 0.0, None, None, None, etaz_i_c),
         (map_names['j_c'], 135.0, None, None, None, j_c),
-        (map_names['r2a_i_c'], 3.0, None, 0.0, None, r2a_i_c),
-    )
+        (map_names['r2a_i_c'], 3.0, None, 0.0, None, r2a_i_c), )
 
-    map_names, params = exchange_model.update_params(params, map_names, model, temperature, p_total, l_total)
+    map_names, params = exchange_model.update_params(params, map_names, model, temperature, p_total,
+                                                     l_total)
 
     return map_names, params

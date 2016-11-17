@@ -27,12 +27,10 @@ class Profile(cest_profile.CESTProfile):
     """TODO: class docstring."""
 
     def __init__(self, profile_name, measurements, exp_details):
-
         super().__init__(profile_name, measurements, exp_details)
 
-        self.multiplet = util.calc_multiplet(
-            constants.j_couplings[self.resonance_i['symbol']][self.resonance_i['nucleus']]
-        )
+        self.multiplet = util.calc_multiplet(constants.j_couplings[self.resonance_i['symbol']][
+            self.resonance_i['nucleus']])
 
         if '3st' in self.model:
             from chemex.bases.three_state import ixyz
@@ -41,7 +39,8 @@ class Profile(cest_profile.CESTProfile):
             from chemex.bases.two_state import ixyz
             self.base = ixyz
 
-        self.liouvillians_b1 = np.array([self.base.compute_liouvillian(omega1x_i=omega1) for omega1 in self.omega1s])
+        self.liouvillians_b1 = np.array(
+            [self.base.compute_liouvillian(omega1x_i=omega1) for omega1 in self.omega1s])
 
         self.map_names, self.default_params = self.base.create_default_params(
             model=self.model,
@@ -49,8 +48,7 @@ class Profile(cest_profile.CESTProfile):
             temperature=self.temperature,
             h_larmor_frq=self.h_larmor_frq,
             p_total=self.p_total,
-            l_total=self.l_total,
-        )
+            l_total=self.l_total, )
 
     def calculate_unscaled_profile(self, **kwargs):
         """Calculate the intensity in presence of exchange after a CEST block.
@@ -89,39 +87,37 @@ class Profile(cest_profile.CESTProfile):
         profile = []
 
         for index, b1_offset in enumerate(self.b1_offsets):
-
             if self.reference[index]:
-
                 magz_a = mag0[end]
 
             else:
-
                 magz_a = 0.0
 
                 for j, weight in self.multiplet:
-
                     omega_i_a, omega_i_b, omega_i_c, omega_i_d = omega_i_cars - 2.0 * np.pi * b1_offset + j
 
                     louvillian_nob1 = self.base.compute_liouvillian(
-                        omega_i_a=omega_i_a, omega_i_b=omega_i_b, omega_i_c=omega_i_c, omega_i_d=omega_i_d, **kwargs
-                    )
+                        omega_i_a=omega_i_a,
+                        omega_i_b=omega_i_b,
+                        omega_i_c=omega_i_c,
+                        omega_i_d=omega_i_d,
+                        **kwargs)
 
                     liouvillians = self.liouvillians_b1 + louvillian_nob1
 
                     if self.b1_inh == np.inf:
-
                         s, vr = linalg.eig(liouvillians[0])
                         vri = linalg.inv(vr)
 
                         sl = [i for i, omega_i_eig in enumerate(s.imag) if abs(omega_i_eig) < 0.1]
 
-                        propagator = (vr[np.ix_(end, sl)]
-                                      .dot(np.diag(np.exp(s[sl] * self.time_t1)))
-                                      .dot(vri[np.ix_(sl, start)]))
+                        propagator = (vr[np.ix_(end, sl)].dot(
+                            np.diag(np.exp(s[sl] * self.time_t1))).dot(vri[np.ix_(sl, start)]))
 
                     else:
-
-                        propagators = [linalg.expm(liouvillian * self.time_t1) for liouvillian in liouvillians]
+                        propagators = [
+                            linalg.expm(liouvillian * self.time_t1) for liouvillian in liouvillians
+                        ]
                         propagator = np.average(propagators, weights=self.b1_weights, axis=0)[mesh]
 
                     magz_a += weight * propagator.dot(mag0[start]).real

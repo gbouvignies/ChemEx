@@ -17,7 +17,6 @@ def run_fit(fit_filename, params, data):
         fit_config.add_section('Standard Calculation')
 
     for section in fit_config.sections():
-
         util.header2(section)
 
         items = fit_config.items(section)
@@ -28,7 +27,6 @@ def run_fit(fit_filename, params, data):
         independent_clusters_no = len(independent_clusters)
 
         for c_name, c_data, c_params in independent_clusters:
-
             if independent_clusters_no > 1:
                 print("[{}]".format(c_name))
 
@@ -58,14 +56,13 @@ def run_fit(fit_filename, params, data):
 def find_independent_clusters(data, params):
     """Find clusters of datapoints that depend on disjoint sets of variables.
 
-    For example, if the population of the minor state and the exchange rate are
-    set to 'fix', chances are that the fit can be decomposed
+    For example, if the population of the minor state and the exchange rate
+    are set to 'fix', chances are that the fit can be decomposed
     residue-specifically.
     """
     clusters = []
 
     for profile in data:
-
         params_profile = lmfit.Parameters()
         for name, param in profile.default_params.items():
             params_profile[name] = lmfit.Parameter(name)
@@ -78,9 +75,10 @@ def find_independent_clusters(data, params):
                 names_vary_profile.append(name)
 
         for name_cluster, data_cluster, params_cluster in clusters:
-
-            names_vary_shared = [name for name, param in params_cluster.items() if
-                                 param.vary and name in names_vary_profile]
+            names_vary_shared = [
+                name for name, param in params_cluster.items()
+                if param.vary and name in names_vary_profile
+            ]
 
             if names_vary_shared:
                 data_cluster.append(profile)
@@ -89,18 +87,19 @@ def find_independent_clusters(data, params):
                         params_cluster[name] = lmfit.Parameter(name)
                 params_cluster.update(params_profile)
                 for name in names_vary_shared:
-                    name_cluster = name_cluster.intersection(parameters.ParameterName.from_full_name(name))
+                    name_cluster = name_cluster.intersection(
+                        parameters.ParameterName.from_full_name(name))
                 break
 
         else:
-
             data_cluster = datasets.DataSet(profile)
             params_cluster = params_profile
 
             name_cluster = parameters.ParameterName.from_full_name(names_vary_profile[0])
 
             for name in names_vary_profile:
-                name_cluster = name_cluster.intersection(parameters.ParameterName.from_full_name(name))
+                name_cluster = name_cluster.intersection(
+                    parameters.ParameterName.from_full_name(name))
 
             clusters.append((name_cluster, data_cluster, params_cluster))
 

@@ -28,7 +28,6 @@ class Profile(cpmg_profile.CPMGProfile):
     """TODO: class docstring."""
 
     def __init__(self, profile_name, measurements, exp_details):
-
         super().__init__(profile_name, measurements, exp_details)
 
         self.carrier = base_profile.check_par(exp_details, 'carrier', float)
@@ -52,8 +51,7 @@ class Profile(cpmg_profile.CPMGProfile):
             temperature=self.temperature,
             h_larmor_frq=self.h_larmor_frq,
             p_total=self.p_total,
-            l_total=self.l_total,
-        )
+            l_total=self.l_total, )
 
         r2a_i_a = '{r2_i_a} + {r1a_a} - {r1_i_a}'.format(**self.map_names)
         r2a_i_b = '{r2_i_b} + {r1a_b} - {r1_i_b}'.format(**self.map_names)
@@ -61,16 +59,14 @@ class Profile(cpmg_profile.CPMGProfile):
         self.default_params.add_many(
             # Name, Value, Vary, Min, Max, Expr
             (self.map_names['r2a_i_a'], 0.0, None, 0.0, None, r2a_i_a),
-            (self.map_names['r2a_i_b'], 0.0, None, 0.0, None, r2a_i_b),
-        )
+            (self.map_names['r2a_i_b'], 0.0, None, 0.0, None, r2a_i_b), )
 
         if '3st' in self.model:
             r2a_i_c = '{r2_i_c} + {r1a_c} - {r1_i_c}'.format(**self.map_names)
 
             self.default_params.add_many(
                 # Name, Value, Vary, Min, Max, Expr
-                (self.map_names['r2a_i_c'], 0.0, None, 0.0, None, r2a_i_c),
-            )
+                (self.map_names['r2a_i_c'], 0.0, None, 0.0, None, r2a_i_c), )
 
     def calculate_unscaled_profile(self, **kwargs):
         """Calculate the intensity in presence of exchange after a CEST block.
@@ -101,17 +97,18 @@ class Profile(cpmg_profile.CPMGProfile):
         omega_i_a, omega_i_b, omega_i_c, omega_i_d = (cs_i - self.carrier) * self.ppm_i
 
         # Liouvillians
-
         l_free = self.base.compute_liouvillian(
-            omega_i_a=omega_i_a, omega_i_b=omega_i_b, omega_i_c=omega_i_c, omega_i_d=omega_i_d, **kwargs
-        )
+            omega_i_a=omega_i_a,
+            omega_i_b=omega_i_b,
+            omega_i_c=omega_i_c,
+            omega_i_d=omega_i_d,
+            **kwargs)
         l_pw1x = l_free + self.base.compute_liouvillian(omega1x_i=+self.omega1_i)
         l_pw1y = l_free + self.base.compute_liouvillian(omega1y_i=+self.omega1_i)
         l_mw1x = l_free + self.base.compute_liouvillian(omega1x_i=-self.omega1_i)
         l_mw1y = l_free + self.base.compute_liouvillian(omega1y_i=-self.omega1_i)
 
         # Propagators
-
         p_90px = linalg.expm(l_pw1x * self.pw)
         p_90py = linalg.expm(l_pw1y * self.pw)
         p_90mx = linalg.expm(l_mw1x * self.pw)
@@ -127,34 +124,27 @@ class Profile(cpmg_profile.CPMGProfile):
         p_taub = p_free_list[self.taub]
 
         p_element = functools.reduce(
-            np.dot,
-            [p_180x_s, p_taub, p_90py, p_90px, p_180x_s, p_90px, p_90py, p_taub]
-        )
+            np.dot, [p_180x_s, p_taub, p_90py, p_90px, p_180x_s, p_90px, p_90py, p_taub])
         p_element_pc = 0.5 * (p_90px.dot(p_element).dot(p_90py) + p_90mx.dot(p_element).dot(p_90my))
 
         # 2HzNz
-
         mag0 = self.base.compute_equilibrium_2izsz(**kwargs)
 
         # Simulate the CPMG block as function of ncyc
-
         profile = []
 
         for ncyc, tau_cp in zip(self.ncycs, self.tau_cp_list):
-
             if ncyc == 0.0:
-
                 mag = functools.reduce(np.dot, [p_equil, p_90py, p_element, p_90px, mag0])
 
             else:
-
                 p_free = p_free_list[tau_cp]
                 p_cpx = np.linalg.matrix_power(p_free.dot(p_180px).dot(p_free), int(ncyc))
                 p_cpy = np.linalg.matrix_power(p_free.dot(p_180py).dot(p_free), int(ncyc))
-                mag = functools.reduce(
-                    np.dot,
-                    [p_equil, p_90py, p_neg, p_cpx, p_neg, p_element_pc, p_neg, p_cpy, p_neg, p_90px, mag0]
-                )
+                mag = functools.reduce(np.dot, [
+                    p_equil, p_90py, p_neg, p_cpx, p_neg, p_element_pc, p_neg, p_cpy, p_neg, p_90px,
+                    mag0
+                ])
 
             # Trosy (A)
             profile.append(mag[5, 0] - mag[2, 0])

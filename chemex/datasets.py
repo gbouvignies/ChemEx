@@ -61,8 +61,7 @@ class DataSet(object):
         residuals = np.concatenate([profile.calculate_residuals(params) for profile in self.data])
 
         if verbose:
-
-            chisq = sum(residuals ** 2)
+            chisq = sum(residuals**2)
 
             change = (chisq - self.chisq_ref) / self.chisq_ref
 
@@ -80,15 +79,12 @@ class DataSet(object):
         """Calculate the chi-square."""
         residuals = self.calculate_residuals(params, verbose=False)
 
-        return sum(residuals ** 2)
+        return sum(residuals**2)
 
     def calculate_redchi(self, params):
         """Calculate the redcuded chi-square."""
         chisq = self.calculate_chisq(params)
         nvarys = len([param for param in params.values() if param.vary])
-
-        # This is to take into acccount the scaling that is applied to each profile
-        # nvarys += len(self.data)
 
         return chisq / (self.ndata - nvarys)
 
@@ -101,7 +97,6 @@ class DataSet(object):
             datasets.setdefault(experiment_name, list()).append(profile)
 
         for experiment_name, data in datasets.items():
-
             filename = ''.join([experiment_name, '.dat'])
             filename = os.path.join(output_dir, filename)
 
@@ -114,7 +109,7 @@ class DataSet(object):
     def write_statistics_to(self, params, path='./'):
         """Write fitting statistics to a file."""
         residuals = self.calculate_residuals(params, verbose=False)
-        chisq = sum(residuals ** 2)
+        chisq = sum(residuals**2)
         nvarys = len([param for param in params.values() if param.vary])
         nfree = self.ndata - nvarys
         redchi = chisq / nfree
@@ -131,7 +126,7 @@ class DataSet(object):
             f.write("chisq         = {: .5e}\n".format(chisq))
             f.write("redchi        = {: .5e}\n".format(redchi))
             f.write("chisq_p-value = {: .5e} # Chi-squared test\n".format(chi2_p_value))
-            f.write("ks_p-value    = {: .5e} # Kolmogorov-Smirnov test for goodness of fit\n".format(ks_p_value))
+            f.write("ks_p-value    = {: .5e} # Kolmogorov-Smirnov test\n".format(ks_p_value))
 
     def add_dataset_from_file(self, filename, model=None, res_incl=None, res_excl=None):
         """Add data from a file to the dataset."""
@@ -144,7 +139,6 @@ class DataSet(object):
         config = util.read_cfg_file(filename)
 
         try:
-
             # Read the experiment information
             experiment_details = dict(config.items('experiment'))
             experiment_type = experiment_details['type']
@@ -152,8 +146,8 @@ class DataSet(object):
 
             # Read the experimental parameters
             experiment_details.update(
-                {key.lower(): val for key, val in config.items('experimental_parameters')}
-            )
+                {key.lower(): val
+                 for key, val in config.items('experimental_parameters')})
 
             # Read the profile information (name, filename)
             profile_filenames = {key.lower(): val for key, val in config.items('data')}
@@ -164,13 +158,14 @@ class DataSet(object):
             sys.exit("    Reading aborted: {}".format(e))
 
         except KeyError as e:
-            sys.exit("\nIn the section 'experiment' of {}, '{}' must be provided!".format(filename, e))
+            sys.exit("\nIn the section 'experiment' of {}, '{}' must be provided!".format(filename,
+                                                                                          e))
 
         try:
             # Read (optional) additional parameters
             experiment_details.update(
-                {key.lower(): val for key, val in config.items('extra_parameters')}
-            )
+                {key.lower(): val
+                 for key, val in config.items('extra_parameters')})
 
         except configparser.NoSectionError:
             pass
@@ -178,12 +173,15 @@ class DataSet(object):
         path = util.normalize_path(working_dir, experiment_details.get('path', './'))
 
         try:
-            reading = importlib.import_module('.'.join(['chemex.experiments', experiment_class, 'reading']))
+            reading = importlib.import_module('.'.join(
+                ['chemex.experiments', experiment_class, 'reading']))
 
         except ImportError:
-            sys.exit("The experiment '{}', referred in '{}' is not implemented.".format(experiment_type, filename))
+            sys.exit("The experiment '{}', referred in '{}' is not implemented.".format(
+                experiment_type, filename))
 
-        data, ndata = reading.read_profiles(path, profile_filenames, experiment_details, res_incl, res_excl)
+        data, ndata = reading.read_profiles(path, profile_filenames, experiment_details, res_incl,
+                                            res_excl)
 
         self.data.extend(data)
         self.ndata += ndata

@@ -9,15 +9,11 @@ def correction(n):
     k = n // 2
 
     if n == 2 * k:
-        factor = (
-            math.sqrt(math.pi * (2 * k - 1) / 2.0) *
-            math.factorial(2 * k - 2) / ((2 ** (2 * k - 2)) * (math.factorial(k - 1) ** 2))
-        )
+        factor = (math.sqrt(math.pi * (2 * k - 1) / 2.0) * math.factorial(2 * k - 2) / (
+            (2**(2 * k - 2)) * (math.factorial(k - 1)**2)))
     else:
-        factor = (
-            math.sqrt(k / math.pi) *
-            (2 ** (2 * k - 1)) * (math.factorial(k - 1) ** 2) / math.factorial(2 * k - 1)
-        )
+        factor = (math.sqrt(k / math.pi) * (2**(2 * k - 1)) * (math.factorial(k - 1)**2) /
+                  math.factorial(2 * k - 1))
 
     return factor
 

@@ -1,4 +1,4 @@
-"""TODO: module docstring."""
+"""Utility functions for bases."""
 
 import numpy as np
 from scipy import linalg
@@ -17,7 +17,8 @@ def compute_propagators_from_time_series(liouvillian, times):
 
     propagators = {
         t: np.dot(np.dot(vr, diag(exp(s * t))), vri).real
-        for t in set(times) if abs(t) != np.inf}
+        for t in set(times) if abs(t) != np.inf
+    }
 
     return propagators
 
@@ -31,7 +32,7 @@ def calculate_shift_ex_2st(pb=0.0, kex_ab=0.0, domega_i_ab=0.0, r2_i_a=0.0, r2_i
     k2ba = r2_i_b + kba - 1j * domega_i_ab
 
     k2ex = k2ab + k2ba
-    fac = ((k2ab - k2ba) ** 2 + 4.0 * kab * kba) ** 0.5
+    fac = ((k2ab - k2ba)**2 + 4.0 * kab * kba)**0.5
 
     nu1 = (0.5 * (-k2ex + fac)).imag
     nu2 = (0.5 * (-k2ex - fac)).imag
@@ -44,8 +45,7 @@ def calculate_shift_ex_2st(pb=0.0, kex_ab=0.0, domega_i_ab=0.0, r2_i_a=0.0, r2_i
     return nu1_, nu2_
 
 
-def correct_intensities(magz_a=1.0, magz_b=0.0, pb=0.0, kex=0.0, dw=0.0,
-                        r2_i=0.0, dr2_i=0.0):
+def correct_intensities(magz_a=1.0, magz_b=0.0, pb=0.0, kex=0.0, dw=0.0, r2_i=0.0, dr2_i=0.0):
     """Correct major and minor peak intensities in presence of exchange."""
     kab = kex * pb
     kba = kex - kab
@@ -54,19 +54,13 @@ def correct_intensities(magz_a=1.0, magz_b=0.0, pb=0.0, kex=0.0, dw=0.0,
     k2ba = r2_i + dr2_i - 1j * dw + kba
 
     k2ex = k2ab + k2ba
-    fac = ((k2ab - k2ba) ** 2 + 4.0 * kab * kba) ** 0.5
+    fac = ((k2ab - k2ba)**2 + 4.0 * kab * kba)**0.5
 
     nu1, nu2 = 0.5 * (-k2ex + sign * fac)
 
-    magz_a_c = +(
-        (kab - nu2 - k2ab) * magz_a +
-        (kba + nu1 + k2ab) * magz_b
-    ) / (nu1 - nu2)
+    magz_a_c = +((kab - nu2 - k2ab) * magz_a + (kba + nu1 + k2ab) * magz_b) / (nu1 - nu2)
 
-    magz_b_c = -(
-        (kab - nu1 - k2ab) * magz_a +
-        (kba + nu2 + k2ab) * magz_b
-    ) / (nu1 - nu2)
+    magz_b_c = -((kab - nu1 - k2ab) * magz_a + (kba + nu2 + k2ab) * magz_b) / (nu1 - nu2)
 
     if abs(nu1.imag) > abs(nu2.imag):
         magz_a_c, magz_b_c = magz_b_c, magz_a_c
