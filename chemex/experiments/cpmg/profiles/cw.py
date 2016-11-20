@@ -1,4 +1,4 @@
-"""Pure in-phase CPMG
+"""Pure in-phase CPMG.
 
 Analyzes chemical exchange in the presence of high power 1H CW decoupling during
 the CPMG block. This keeps the spin system purely in-phase throughout, and is
@@ -14,6 +14,7 @@ The calculation is designed specifically to analyze the experiment found in the
 reference:
 
 Journal of Physical Chemistry B (2008), 112, 5898-5904
+
 """
 
 import functools
@@ -30,7 +31,6 @@ class Profile(cpmg_profile.CPMGProfile):
     """TODO: class docstring."""
 
     def __init__(self, profile_name, measurements, exp_details):
-
         super().__init__(profile_name, measurements, exp_details)
 
         self.carrier = base_profile.check_par(exp_details, 'carrier', float)
@@ -53,8 +53,7 @@ class Profile(cpmg_profile.CPMGProfile):
             temperature=self.temperature,
             h_larmor_frq=self.h_larmor_frq,
             p_total=self.p_total,
-            l_total=self.l_total,
-        )
+            l_total=self.l_total, )
 
         self.default_params[self.map_names['r1_i_a']].set(vary=False)
 
@@ -86,21 +85,23 @@ class Profile(cpmg_profile.CPMGProfile):
         -------
         out : float
             Intensity after the CEST block
+
         """
         cs_i = np.array([kwargs.get(key, 0.0) for key in ('cs_i_a', 'cs_i_b', 'cs_i_c', 'cs_i_d')])
         omega_i_a, omega_i_b, omega_i_c, omega_i_d = (cs_i - self.carrier) * self.ppm_i
 
         # Calculation of the different liouvillians
-
         l_free = self.base.compute_liouvillian(
-            omega_i_a=omega_i_a, omega_i_b=omega_i_b, omega_i_c=omega_i_c, omega_i_d=omega_i_d, **kwargs
-        )
+            omega_i_a=omega_i_a,
+            omega_i_b=omega_i_b,
+            omega_i_c=omega_i_c,
+            omega_i_d=omega_i_d,
+            **kwargs)
         l_pw1x = l_free + self.base.compute_liouvillian(omega1x_i=+self.omega1_i)
         l_pw1y = l_free + self.base.compute_liouvillian(omega1y_i=+self.omega1_i)
         l_mw1x = l_free + self.base.compute_liouvillian(omega1x_i=-self.omega1_i)
 
         # Calculation of all the needed propagators
-
         p_90px = linalg.expm(l_pw1x * self.pw)
         p_180px = np.linalg.matrix_power(p_90px, 2)
         p_180py = linalg.expm(l_pw1y * 2.0 * self.pw)
@@ -113,30 +114,25 @@ class Profile(cpmg_profile.CPMGProfile):
         p_neg = p_free_list[self.t_neg]
 
         # Simulate the CPMG block as function of ncyc
-
         mag0 = self.base.compute_equilibrium(**kwargs)
 
         profile = []
 
         for ncyc, tau_cp in zip(self.ncycs, self.tau_cp_list):
-
             if ncyc == 0:
-
                 mag = functools.reduce(np.dot, [p_equil, p_90px, p_180pmx, p_90px, mag0])
 
             elif ncyc == -1:
-
                 p_free = p_free_list[tau_cp]
                 mag = functools.reduce(
                     np.dot,
-                    [p_equil, p_90px, p_neg, p_free, p_180pmx, p_free, p_neg, p_90px, mag0]
-                )
+                    [p_equil, p_90px, p_neg, p_free, p_180pmx, p_free, p_neg, p_90px, mag0])
 
             else:
-
                 p_free = p_free_list[tau_cp]
                 p_cp = np.linalg.matrix_power(np.dot(np.dot(p_free, p_180py), p_free), int(ncyc))
-                mag = functools.reduce(np.dot, [p_equil, p_90px, p_neg, p_cp, p_180pmx, p_cp, p_neg, p_90px, mag0])
+                mag = functools.reduce(
+                    np.dot, [p_equil, p_90px, p_neg, p_cp, p_180pmx, p_cp, p_neg, p_90px, mag0])
 
             profile.append(np.float64(mag[self.base.index_iz_a]))
 

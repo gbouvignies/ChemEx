@@ -1,4 +1,4 @@
-"""The util module cotains a variety of utility code."""
+"""The util module contains a variety of utility functions."""
 
 import configparser
 import os
@@ -27,12 +27,11 @@ def read_cfg_file(filename):
                 exit("\nERROR: The file \'{}\' is empty or does not exist!\n".format(filename))
 
         except configparser.MissingSectionHeaderError:
-            exit("\nERROR: You are missing a section heading in {:s}\n"
-                 .format(filename))
+            exit("\nERROR: You are missing a section heading in {:s}\n".format(filename))
 
         except configparser.ParsingError:
-            exit("\nERROR: Having trouble reading your parameter file, have you "
-                 "forgotten '=' signs?\n{:s}".format(sys.exc_info()[1]))
+            exit("\nERROR: Having trouble reading your parameter file, did you"
+                 " forget '=' signs?\n{:s}".format(sys.exc_info()[1]))
 
     return config
 
@@ -52,7 +51,7 @@ def include_selection(data, selection):
     new_data = [
         a_data_point for a_data_point in data
         if a_data_point.par.get('resonance_id', None) in selection
-        ]
+    ]
 
     return new_data
 
@@ -62,7 +61,7 @@ def exclude_selection(data, selection):
     new_data = [
         a_data_point for a_data_point in data
         if a_data_point.par.get('resonance_id', None) not in selection
-        ]
+    ]
 
     if new_data == data:
         sys.stdout.write("\n No data removed! Aborting ...\n")

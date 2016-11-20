@@ -12,11 +12,8 @@ def read_profiles(path, profile_filenames, experiment_details, res_incl=None, re
     """Read the CPMG profiles."""
     experiment_type = experiment_details['type'].split('.')
     experiment_details['name'] = name_experiment(experiment_details)
-    experiment_module = importlib.import_module(
-        '.'.join(['chemex.experiments',
-                  experiment_type[0],
-                  'profiles',
-                  experiment_type[1]]))
+    experiment_module = importlib.import_module('.'.join(
+        ['chemex.experiments', experiment_type[0], 'profiles', experiment_type[1]]))
 
     Profile = getattr(experiment_module, 'Profile')
 
@@ -59,11 +56,7 @@ def name_experiment(experiment_details=None):
         temperature = float(experiment_details['temperature'])
         time_t2 = float(experiment_details['time_t2'])
 
-        name = '{:s}_{:.0f}ms_{:.0f}MHz_{:.0f}C'.format(
-            exp_type,
-            time_t2 * 1e3,
-            h_larmor_frq,
-            temperature
-        ).lower()
+        name = '{:s}_{:.0f}ms_{:.0f}MHz_{:.0f}C'.format(exp_type, time_t2 * 1e3, h_larmor_frq,
+                                                        temperature).lower()
 
     return name

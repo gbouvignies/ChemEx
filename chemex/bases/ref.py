@@ -1,14 +1,9 @@
-"""TODO: module docstring."""
+"""The ref module conatains the reference matrices and code for calculating the
+Liouvillian."""
 
 import numpy as np
 
 pi = np.pi
-
-# Operator basis:
-# {Ix, Iy, Iz, Sx, Sy, Sz,
-#  2IxSz, 2IySz, 2IzSx, 2IzSy,
-#  2IxSx, 2IxSy, 2IySx, 2IySy,
-#  2IzSz}
 
 mat_a = np.diag([1.0, 0.0, 0.0, 0.0])
 mat_b = np.diag([0.0, 1.0, 0.0, 0.0])
@@ -159,6 +154,7 @@ mat_omega1y_s[[3, 10, 12, 8], [5, 6, 7, 14]] = +1.0
 mat_omega1y_s[[5, 6, 7, 14], [3, 10, 12, 8]] = -1.0
 mat_omega1y_s = np.kron(mat_all, mat_omega1y_s)
 
+# yapf: disable
 mat_kab = np.kron([[-1.0, +0.0, +0.0, +0.0],
                    [+1.0, +0.0, +0.0, +0.0],
                    [+0.0, +0.0, +0.0, +0.0],
@@ -221,7 +217,8 @@ mat_kdc = np.kron([[+0.0, +0.0, +0.0, +0.0],
 
 
 def compute_liouvillian(
-        pb=0.0, pc=0.0, pd=0.0, kex_ab=0.0, kex_ac=0.0, kex_ad=0.0, kex_bc=0.0, kex_bd=0.0, kex_cd=0.0,
+        pb=0.0, pc=0.0, pd=0.0, kex_ab=0.0,
+        kex_ac=0.0, kex_ad=0.0, kex_bc=0.0, kex_bd=0.0, kex_cd=0.0,
         r2_i_a=0.0, r1_i_a=0.0, r2a_i_a=0.0, etaxy_i_a=0.0, etaz_i_a=0.0, omega_i_a=0.0,
         r2_i_b=0.0, r1_i_b=0.0, r2a_i_b=0.0, etaxy_i_b=0.0, etaz_i_b=0.0, omega_i_b=0.0,
         r2_i_c=0.0, r1_i_c=0.0, r2a_i_c=0.0, etaxy_i_c=0.0, etaz_i_c=0.0, omega_i_c=0.0,
@@ -235,7 +232,7 @@ def compute_liouvillian(
         r2_mq_c=0.0, r1a_c=0.0, mu_mq_c=0.0, sigma_c=0.0, j_c=0.0,
         r2_mq_d=0.0, r1a_d=0.0, mu_mq_d=0.0, sigma_d=0.0, j_d=0.0,
         omega1x_i=0.0, omega1y_i=0.0, omega1x_s=0.0, omega1y_s=0.0):
-    """TODO: function docstring."""
+    """Compute the liouvillian."""
     pa = 1.0 - pb - pc - pd
 
     kab = kba = kac = kca = kad = kda = kbc = kcb = kbd = kdb = kcd = kdc = 0.0

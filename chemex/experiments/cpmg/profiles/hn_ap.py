@@ -35,7 +35,6 @@ class Profile(cpmg_profile.CPMGProfile):
     """TODO: class docstring."""
 
     def __init__(self, profile_name, measurements, exp_details):
-
         super().__init__(profile_name, measurements, exp_details)
 
         self.carrier = base_profile.check_par(exp_details, 'carrier', float)
@@ -58,11 +57,13 @@ class Profile(cpmg_profile.CPMGProfile):
             temperature=self.temperature,
             h_larmor_frq=self.h_larmor_frq,
             p_total=self.p_total,
-            l_total=self.l_total,
-        )
+            l_total=self.l_total, )
 
-        kwargs = {'temperature' : self.temperature, 'nuclei': self.resonance_s['name'],
-                  'h_larmor_frq': self.h_larmor_frq}
+        kwargs = {
+            'temperature': self.temperature,
+            'nuclei': self.resonance_s['name'],
+            'h_larmor_frq': self.h_larmor_frq
+        }
 
         self.map_names['r1_s_a'] = parameters.ParameterName('r1_a', **kwargs).to_full_name()
         self.map_names['r1_s_b'] = parameters.ParameterName('r1_b', **kwargs).to_full_name()
@@ -80,8 +81,7 @@ class Profile(cpmg_profile.CPMGProfile):
             (self.map_names['r1_i_a'], 0.0, None, 0.0, None, r1_i_a),
             (self.map_names['r1_i_b'], 0.0, None, 0.0, None, r1_i_b),
             (self.map_names['r2a_i_a'], 0.0, None, 0.0, None, r2a_i_a),
-            (self.map_names['r2a_i_b'], 0.0, None, 0.0, None, r2a_i_b),
-        )
+            (self.map_names['r2a_i_b'], 0.0, None, 0.0, None, r2a_i_b), )
 
         if '3st' in self.model:
             self.map_names['r1_s_c'] = parameters.ParameterName('r1_c', **kwargs).to_full_name()
@@ -94,8 +94,7 @@ class Profile(cpmg_profile.CPMGProfile):
                 # Name, Value, Vary, Min, Max, Expr
                 (self.map_names['r1_s_c'], 1.5, None, 0.0, None, r1_s_c),
                 (self.map_names['r1_i_c'], 0.0, None, 0.0, None, r1_i_c),
-                (self.map_names['r2a_i_c'], 0.0, None, 0.0, None, r2a_i_c),
-            )
+                (self.map_names['r2a_i_c'], 0.0, None, 0.0, None, r2a_i_c), )
 
     def calculate_unscaled_profile(self, **kwargs):
         """Calculate the intensity in presence of exchange after a CEST block.
@@ -121,23 +120,23 @@ class Profile(cpmg_profile.CPMGProfile):
         -------
         out
             Intensity after the CEST block
+
         """
         cs_i = np.array([kwargs.get(key, 0.0) for key in ('cs_i_a', 'cs_i_b', 'cs_i_c', 'cs_i_d')])
         omega_i_a, omega_i_b, omega_i_c, omega_i_d = (cs_i - self.carrier) * self.ppm_i
 
         # Liouvillians
-
-        # Calculation of the different liouvillians
-
         l_free = self.base.compute_liouvillian(
-            omega_i_a=omega_i_a, omega_i_b=omega_i_b, omega_i_c=omega_i_c, omega_i_d=omega_i_d, **kwargs
-        )
+            omega_i_a=omega_i_a,
+            omega_i_b=omega_i_b,
+            omega_i_c=omega_i_c,
+            omega_i_d=omega_i_d,
+            **kwargs)
         l_pw1x = l_free + self.base.compute_liouvillian(omega1x_i=+self.omega1_i)
         l_pw1y = l_free + self.base.compute_liouvillian(omega1y_i=+self.omega1_i)
         l_mw1x = l_free + self.base.compute_liouvillian(omega1x_i=-self.omega1_i)
 
         # Propagators
-
         p_90px = linalg.expm(l_pw1x * self.pw)
         p_180px = np.linalg.matrix_power(p_90px, 2)
         p_180py = linalg.expm(l_pw1y * 2.0 * self.pw)
@@ -150,24 +149,20 @@ class Profile(cpmg_profile.CPMGProfile):
         p_neg = p_free_list[self.t_neg]
 
         # 2HzNz
-
         mag0 = self.base.compute_2izsz_a(**kwargs)
 
         # Simulate the CPMG block as function of ncyc
-
         profile = []
 
         for ncyc, tau_cp in zip(self.ncycs, self.tau_cp_list):
-
             if ncyc == 0:
-
                 mag = functools.reduce(np.dot, [p_equil, p_90px, p_180pmx, p_90px, mag0])
 
             else:
-
                 p_free = p_free_list[tau_cp]
                 p_cpy = np.linalg.matrix_power(p_free.dot(p_180py).dot(p_free), int(ncyc))
-                mag = functools.reduce(np.dot, [p_equil, p_90px, p_neg, p_cpy, p_180pmx, p_cpy, p_neg, p_90px, mag0])
+                mag = functools.reduce(
+                    np.dot, [p_equil, p_90px, p_neg, p_cpy, p_180pmx, p_cpy, p_neg, p_90px, mag0])
 
             profile.append(np.float64(mag[self.base.index_2izsz_a]))
 

@@ -15,7 +15,6 @@ class CESTProfile(base_profile.BaseProfile):
     """CESTProfile class."""
 
     def __init__(self, profile_name, measurements, exp_details):
-
         self.profile_name = profile_name
         self.b1_offsets = measurements['b1_offsets']
         self.val = measurements['intensities']
@@ -23,7 +22,8 @@ class CESTProfile(base_profile.BaseProfile):
 
         self.reference = (self.b1_offsets <= -1.0e+04)
 
-        self.on_resonance_filter = base_profile.check_par(exp_details, 'on_resonance_filter', float, default=0.0)
+        self.on_resonance_filter = base_profile.check_par(
+            exp_details, 'on_resonance_filter', float, default=0.0)
 
         self.h_larmor_frq = base_profile.check_par(exp_details, 'h_larmor_frq', float)
         self.temperature = base_profile.check_par(exp_details, 'temperature', float)
@@ -39,7 +39,8 @@ class CESTProfile(base_profile.BaseProfile):
         if self.b1_inh_res == 1 or self.b1_inh == np.inf:
             self.omega1s = 2.0 * np.pi * np.array([self.b1_frq])
         else:
-            self.omega1s = 2.0 * np.pi * (np.linspace(-2.0, 2.0, self.b1_inh_res) * self.b1_inh + self.b1_frq)
+            self.omega1s = 2.0 * np.pi * (
+                np.linspace(-2.0, 2.0, self.b1_inh_res) * self.b1_inh + self.b1_frq)
 
         self.b1_weights = stats.norm.pdf(np.linspace(-2.0, 2.0, self.b1_inh_res))
         self.b1_weights /= sum(self.b1_weights)
@@ -53,7 +54,8 @@ class CESTProfile(base_profile.BaseProfile):
         self.ppm_i = 2.0 * np.pi * self.h_larmor_frq * constants.xi_ratio[self.resonance_i['atom']]
         if len(self.peak.resonances) > 1:
             self.resonance_s = self.peak.resonances[1]
-            self.ppm_s = 2.0 * np.pi * self.h_larmor_frq * constants.xi_ratio[self.resonance_s['atom']]
+            self.ppm_s = 2.0 * np.pi * self.h_larmor_frq * constants.xi_ratio[self.resonance_s[
+                'atom']]
 
         self.calculate_unscaled_profile_cached = lru_cache(5)(self.calculate_unscaled_profile)
 
@@ -65,10 +67,7 @@ class CESTProfile(base_profile.BaseProfile):
 
     def calculate_scale(self, cal):
         """Calculate the scaling factor."""
-        scale = (
-            sum(cal * self.val / self.err ** 2) /
-            sum((cal / self.err) ** 2)
-        )
+        scale = (sum(cal * self.val / self.err**2) / sum((cal / self.err)**2))
 
         return scale
 
@@ -77,7 +76,7 @@ class CESTProfile(base_profile.BaseProfile):
         kwargs = {
             short_name: params[long_name].value
             for short_name, long_name in self.map_names.items()
-            }
+        }
 
         values = self.calculate_unscaled_profile_cached(**kwargs)
         scale = self.calculate_scale(values)
@@ -89,7 +88,7 @@ class CESTProfile(base_profile.BaseProfile):
         kwargs = {
             short_name: params[long_name].value
             for short_name, long_name in self.map_names.items()
-            }
+        }
 
         values = self.calculate_unscaled_profile_cached(**kwargs)
         scale = self.calculate_scale(values)
@@ -111,9 +110,8 @@ class CESTProfile(base_profile.BaseProfile):
         return 2.0 * np.pi * b1_offsets / self.ppm_i + self.carrier
 
     def filter_points(self, params=None):
-        """Evaluate some criteria to know whether the point should be considered
-        in the calculation or not.
-        """
+        """Evaluate some criteria to know whether or not the point should be
+        considered in the calculation."""
         cs = params[self.map_names['cs_i_a']].value
         nu_offsets = ((cs - self.carrier) * self.ppm_i / (2.0 * np.pi) - self.b1_offsets)
 
@@ -136,19 +134,11 @@ class CESTProfile(base_profile.BaseProfile):
         iter_vals = list(zip(self.b1_offsets, self.val, self.err, values))
 
         output.append("[{}]".format(self.profile_name))
-        output.append("# {:>12s}   {:>17s} {:>17s} {:>17s}"
-                      .format("offset (Hz)", "intensity (exp)", "uncertainty", "intensity (calc)"))
+        output.append("# {:>12s}   {:>17s} {:>17s} {:>17s}".format(
+            "offset (Hz)", "intensity (exp)", "uncertainty", "intensity (calc)"))
 
         for b1_offset, val, err, cal in iter_vals:
-
-            line = (
-                "  "
-                "{0:12.2f} "
-                "= "
-                "{1:17.8e} "
-                "{2:17.8e} "
-                    .format(b1_offset, val, err)
-            )
+            line = ("  {0:12.2f} = {1:17.8e} {2:17.8e}".format(b1_offset, val, err))
 
             if params is not None:
                 line += "{:17.8e}".format(cal)

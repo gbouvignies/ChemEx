@@ -1,3 +1,4 @@
+
 # This file helps to compute a version number in source trees obtained from
 # git-archive tarball (such as those provided by githubs download-from-tag
 # feature). Distribution tarballs (built by setup.py sdist) and build
@@ -57,14 +58,12 @@ HANDLERS = {}
 
 def register_vcs_handler(vcs, method):  # decorator
     """Decorator to mark a method as the handler for a particular VCS."""
-
     def decorate(f):
         """Store f in HANDLERS[vcs][method]."""
         if vcs not in HANDLERS:
             HANDLERS[vcs] = {}
         HANDLERS[vcs][method] = f
         return f
-
     return decorate
 
 
@@ -108,18 +107,20 @@ def run_command(commands, args, cwd=None, verbose=False, hide_stderr=False,
 def versions_from_parentdir(parentdir_prefix, root, verbose):
     """Try to determine the version from the parent directory name.
 
-    Source tarballs conventionally unpack into a directory that includes both
-    the project name and a version string. We will also support searching up
-    two directory levels for an appropriately named parent directory
+    Source tarballs conventionally unpack into a directory that includes
+    both the project name and a version string. We will also support
+    searching up two directory levels for an appropriately named parent
+    directory
+
     """
     rootdirs = []
 
     for i in range(3):
         dirname = os.path.basename(root)
         if dirname.startswith(parentdir_prefix):
-            return {"version"        : dirname[len(parentdir_prefix):],
+            return {"version": dirname[len(parentdir_prefix):],
                     "full-revisionid": None,
-                    "dirty"          : False, "error": None, "date": None}
+                    "dirty": False, "error": None, "date": None}
         else:
             rootdirs.append(root)
             root = os.path.dirname(root)  # up a level
@@ -202,16 +203,16 @@ def git_versions_from_keywords(keywords, tag_prefix, verbose):
             r = ref[len(tag_prefix):]
             if verbose:
                 print("picking %s" % r)
-            return {"version"        : r,
+            return {"version": r,
                     "full-revisionid": keywords["full"].strip(),
-                    "dirty"          : False, "error": None,
-                    "date"           : date}
+                    "dirty": False, "error": None,
+                    "date": date}
     # no suitable tags, so version is "0+unknown", but full hex is still there
     if verbose:
         print("no suitable tags, using unknown + full revision id")
-    return {"version"        : "0+unknown",
+    return {"version": "0+unknown",
             "full-revisionid": keywords["full"].strip(),
-            "dirty"          : False, "error": "no suitable tags", "date": None}
+            "dirty": False, "error": "no suitable tags", "date": None}
 
 
 @register_vcs_handler("git", "pieces_from_vcs")
@@ -221,6 +222,7 @@ def git_pieces_from_vcs(tag_prefix, root, verbose, run_command=run_command):
     This only gets called if the git-archive 'subst' keywords were *not*
     expanded, and _version.py hasn't already been rewritten with a short
     version string, meaning we're inside a checked out source tree.
+
     """
     GITS = ["git"]
     if sys.platform == "win32":
@@ -321,6 +323,7 @@ def render_pep440(pieces):
 
     Exceptions:
     1: no tags. git_describe was just HEX. 0+untagged.DISTANCE.gHEX[.dirty]
+
     """
     if pieces["closest-tag"]:
         rendered = pieces["closest-tag"]
@@ -341,8 +344,8 @@ def render_pep440(pieces):
 def render_pep440_pre(pieces):
     """TAG[.post.devDISTANCE] -- No -dirty.
 
-    Exceptions:
-    1: no tags. 0.post.devDISTANCE
+    Exceptions: 1: no tags. 0.post.devDISTANCE
+
     """
     if pieces["closest-tag"]:
         rendered = pieces["closest-tag"]
@@ -363,6 +366,7 @@ def render_pep440_post(pieces):
 
     Exceptions:
     1: no tags. 0.postDISTANCE[.dev0]
+
     """
     if pieces["closest-tag"]:
         rendered = pieces["closest-tag"]
@@ -388,6 +392,7 @@ def render_pep440_old(pieces):
 
     Eexceptions:
     1: no tags. 0.postDISTANCE[.dev0]
+
     """
     if pieces["closest-tag"]:
         rendered = pieces["closest-tag"]
@@ -410,6 +415,7 @@ def render_git_describe(pieces):
 
     Exceptions:
     1: no tags. HEX[-dirty]  (note: no 'g' prefix)
+
     """
     if pieces["closest-tag"]:
         rendered = pieces["closest-tag"]
@@ -431,6 +437,7 @@ def render_git_describe_long(pieces):
 
     Exceptions:
     1: no tags. HEX[-dirty]  (note: no 'g' prefix)
+
     """
     if pieces["closest-tag"]:
         rendered = pieces["closest-tag"]
@@ -446,11 +453,11 @@ def render_git_describe_long(pieces):
 def render(pieces, style):
     """Render the given version pieces into the requested style."""
     if pieces["error"]:
-        return {"version"        : "unknown",
+        return {"version": "unknown",
                 "full-revisionid": pieces.get("long"),
-                "dirty"          : None,
-                "error"          : pieces["error"],
-                "date"           : None}
+                "dirty": None,
+                "error": pieces["error"],
+                "date": None}
 
     if not style or style == "default":
         style = "pep440"  # the default
@@ -471,8 +478,8 @@ def render(pieces, style):
         raise ValueError("unknown style '%s'" % style)
 
     return {"version": rendered, "full-revisionid": pieces["long"],
-            "dirty"  : pieces["dirty"], "error": None,
-            "date"   : pieces.get("date")}
+            "dirty": pieces["dirty"], "error": None,
+            "date": pieces.get("date")}
 
 
 def get_versions():
@@ -500,9 +507,9 @@ def get_versions():
             root = os.path.dirname(root)
     except NameError:
         return {"version": "0+unknown", "full-revisionid": None,
-                "dirty"  : None,
-                "error"  : "unable to find root of source tree",
-                "date"   : None}
+                "dirty": None,
+                "error": "unable to find root of source tree",
+                "date": None}
 
     try:
         pieces = git_pieces_from_vcs(cfg.tag_prefix, root, verbose)
@@ -517,5 +524,5 @@ def get_versions():
         pass
 
     return {"version": "0+unknown", "full-revisionid": None,
-            "dirty"  : None,
-            "error"  : "unable to compute version", "date": None}
+            "dirty": None,
+            "error": "unable to compute version", "date": None}

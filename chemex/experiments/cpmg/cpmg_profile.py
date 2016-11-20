@@ -14,7 +14,6 @@ class CPMGProfile(base_profile.BaseProfile):
     """CPMGProfile class."""
 
     def __init__(self, profile_name, measurements, exp_details):
-
         self.profile_name = profile_name
         self.ncycs = measurements['ncycs']
         self.val = measurements['intensities']
@@ -32,12 +31,10 @@ class CPMGProfile(base_profile.BaseProfile):
         self.experiment_name = base_profile.check_par(exp_details, 'name')
         self.model = base_profile.check_par(exp_details, 'model', default='2st.pb_kex')
 
-        self.tau_cp_list = np.array(
-            [self.time_t2 / (4.0 * ncyc) - self.pw if ncyc > 0 else
-             self.time_t2 / 2.0 if ncyc else
-             0.0
-             for ncyc in self.ncycs]
-        )
+        self.tau_cp_list = np.array([
+            self.time_t2 / (4.0 * ncyc) - self.pw if ncyc > 0 else self.time_t2 / 2.0
+            if ncyc else 0.0 for ncyc in self.ncycs
+        ])
 
         self.plot_data = plotting.plot_data
 
@@ -46,7 +43,8 @@ class CPMGProfile(base_profile.BaseProfile):
         self.ppm_i = 2.0 * np.pi * self.h_larmor_frq * constants.xi_ratio[self.resonance_i['atom']]
         if len(self.peak.resonances) > 1:
             self.resonance_s = self.peak.resonances[1]
-            self.ppm_s = 2.0 * np.pi * self.h_larmor_frq * constants.xi_ratio[self.resonance_s['atom']]
+            self.ppm_s = 2.0 * np.pi * self.h_larmor_frq * constants.xi_ratio[self.resonance_s[
+                'atom']]
 
         if self.pw > 0.0:
             self.omega1_i = 2.0 * np.pi / (4.0 * self.pw)
@@ -63,10 +61,7 @@ class CPMGProfile(base_profile.BaseProfile):
 
     def calculate_scale(self, cal):
         """Calculate the scaling factor."""
-        scale = (
-            sum(cal * self.val / self.err ** 2) /
-            sum((cal / self.err) ** 2)
-        )
+        scale = (sum(cal * self.val / self.err**2) / sum((cal / self.err)**2))
 
         return scale
 
@@ -75,7 +70,7 @@ class CPMGProfile(base_profile.BaseProfile):
         kwargs = {
             short_name: params[long_name].value
             for short_name, long_name in self.map_names.items()
-            }
+        }
 
         values = self.calculate_unscaled_profile_cached(**kwargs)
         scale = self.calculate_scale(values)
@@ -90,10 +85,8 @@ class CPMGProfile(base_profile.BaseProfile):
         return ncycs / self.time_t2
 
     def filter_points(self, params=None):
-        """Evaluate some criteria to know whether the point should be considered
-        in the calculation or not.
-        """
-
+        """Evaluate some criteria to know whether the point should be
+        considered in the calculation or not."""
         return False
 
     def print_profile(self, params=None):
@@ -108,19 +101,11 @@ class CPMGProfile(base_profile.BaseProfile):
         iter_vals = list(zip(self.ncycs, self.val, self.err, values))
 
         output.append("[{}]".format(self.profile_name))
-        output.append("# {:>5s}   {:>17s} {:>17s} {:>17s}"
-                      .format("ncyc", "intensity (exp)", "uncertainty", "intensity (calc)"))
+        output.append("# {:>5s}   {:>17s} {:>17s} {:>17s}".format(
+            "ncyc", "intensity (exp)", "uncertainty", "intensity (calc)"))
 
         for ncyc, val, err, cal in iter_vals:
-
-            line = (
-                "  "
-                "{0:5.0f} "
-                "= "
-                "{1:17.8e} "
-                "{2:17.8e} "
-                    .format(ncyc, val, err)
-            )
+            line = ("  {0:5.0f} = {1:17.8e} {2:17.8e}".format(ncyc, val, err))
 
             if params is not None:
                 line += "{:17.8e}".format(cal)

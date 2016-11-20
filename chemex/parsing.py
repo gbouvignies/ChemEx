@@ -20,19 +20,17 @@ class MyParser(argparse.ArgumentParser):
 
 def arg_parse():
     """Parse the command-line arguments."""
-    description = (
-        "ChemEx is an analysis program for chemical exchange detected by "
-        "NMR. It is designed to take almost any kind of NMR data to aid the "
-        "analysis, but the principle techniques are CPMG relaxation "
-        "dispersion and Chemical Exchange Saturation Transfer."
-    )
+    description = ("ChemEx is an analysis program for chemical exchange detected by "
+                   "NMR. It is designed to take almost any kind of NMR data to aid the "
+                   "analysis, but the principle techniques are CPMG relaxation "
+                   "dispersion and Chemical Exchange Saturation Transfer.")
 
     parser = MyParser(
         description=description,
-        prog='chemex',
-    )
+        prog='chemex', )
 
-    parser.add_argument('--version', action='version', version='%(prog)s {}'.format(__version__))
+    parser.add_argument(
+        '--version', action='version', version='{} {}'.format(parser.prog, __version__))
 
     subparsers = parser.add_subparsers(dest='commands', )
 
@@ -40,8 +38,7 @@ def arg_parse():
     parser_info = subparsers.add_parser(
         "info",
         help="Shows classes of experiments that can be fit",
-        description="Enter a class of experiments.",
-    )
+        description="Enter a class of experiments.", )
 
     subparsers_info = parser_info.add_subparsers(dest='types')
     subparsers_info.required = True
@@ -50,47 +47,39 @@ def arg_parse():
         name
         for _, name, ispkg in pkgutil.iter_modules(experiments.__path__, experiments.__name__ + '.')
         if ispkg
-        ]
+    ]
 
     for exp_type in exp_types:
-
         name_exp_type = exp_type.replace('chemex.experiments.', '')
 
         package_exp_type = importlib.import_module(exp_type)
         parser_info_type = subparsers_info.add_parser(
             name_exp_type,
             help=package_exp_type.__doc__.split('\n')[0],
-            description="Enter an experiment to obtain more info about it.",
-        )
+            description="Enter an experiment to obtain more info about it.", )
         subparsers_info_type = parser_info_type.add_subparsers(dest='experiments')
         subparsers_info_type.required = True
 
         exps = [
             name
-            for _, name, ispkg in pkgutil.walk_packages(package_exp_type.__path__, package_exp_type.__name__ + '.')
-            if not ispkg
-            ]
+            for _, name, ispkg in pkgutil.walk_packages(
+                package_exp_type.__path__, package_exp_type.__name__ + '.') if not ispkg
+        ]
 
         for exp in exps:
-
             package_exp = importlib.import_module(exp)
 
             if hasattr(package_exp, 'Profile'):
-                name_exp = exp.replace('chemex.experiments.' + name_exp_type +
-                                       '.', '').replace('profiles.', '')
+                name_exp = exp.replace('chemex.experiments.' + name_exp_type + '.', '').replace(
+                    'profiles.', '')
 
                 subparsers_info_type.add_parser(
                     name_exp,
                     help=package_exp.__doc__.split('\n')[0],
-                    add_help=False,
-                )
+                    add_help=False, )
 
     # parser for the positional argument "fit"
-    parser_fit = subparsers.add_parser(
-        "fit",
-        help="Starts a fit",
-        prefix_chars='+-'
-    )
+    parser_fit = subparsers.add_parser("fit", help="Starts a fit", prefix_chars='+-')
 
     parser_fit.add_argument(
         '-e',
@@ -98,79 +87,44 @@ def arg_parse():
         metavar='FILE',
         nargs='+',
         required=True,
-        help='Input files containing experimental setup and data location'
-    )
+        help='Input files containing experimental setup and data location')
 
     parser_fit.add_argument(
         '-d',
         dest='model',
         metavar='MODEL',
         default='2st.pb_kex',
-        help='Exchange model used to fit the data'
-    )
+        help='Exchange model used to fit the data')
 
     parser_fit.add_argument(
         '-p',
         dest='parameters',
         metavar='FILE',
         required=True,
-        help='Input file containing the fitting parameters'
-    )
+        help='Input file containing the fitting parameters')
 
     parser_fit.add_argument(
-        '-m',
-        dest='method',
-        metavar='FILE',
-        help='Input file containing the fitting method'
-    )
+        '-m', dest='method', metavar='FILE', help='Input file containing the fitting method')
 
     parser_fit.add_argument(
-        '-o',
-        dest='out_dir',
-        metavar='DIR',
-        default='./output',
-        help='Directory for output files'
-    )
+        '-o', dest='out_dir', metavar='DIR', default='./output', help='Directory for output files')
 
-    parser_fit.add_argument(
-        '--noplot',
-        action='store_true',
-        help='No plots of the fits'
-    )
+    parser_fit.add_argument('--noplot', action='store_true', help='No plots of the fits')
 
     group_residue_selec = parser_fit.add_mutually_exclusive_group()
 
     group_residue_selec.add_argument(
-        '+r',
-        dest='res_incl',
-        metavar='ID',
-        nargs='+',
-        help='residue(s) to include in the fit'
-    )
+        '+r', dest='res_incl', metavar='ID', nargs='+', help='residue(s) to include in the fit')
 
     group_residue_selec.add_argument(
-        '-r',
-        dest='res_excl',
-        metavar='ID',
-        nargs='+',
-        help='residue(s) to exclude from the fit'
-    )
+        '-r', dest='res_excl', metavar='ID', nargs='+', help='residue(s) to exclude from the fit')
 
     group_simulation = parser_fit.add_mutually_exclusive_group()
 
     group_simulation.add_argument(
-        '--mc',
-        metavar='N',
-        type=int,
-        help='Run N Monte-Carlo simulations'
-    )
+        '--mc', metavar='N', type=int, help='Run N Monte-Carlo simulations')
 
-    group_simulation.add_argument(
-        '--bs',
-        metavar='N',
-        type=int,
-        help='Run N Bootstrap simulations'
-    )
+    group_simulation.add_argument('--bs', metavar='N', type=int, help='Run N Bootstrap simulations')
 
     args = parser.parse_args()
 
@@ -191,12 +145,10 @@ def format_experiment_help(exp_type, exp_name):
     headline3 = "Fixed parameters (by default)"
 
     if exp_type in ['cest', 'cpmg']:
-        module_exp = importlib.import_module('.'.join(['chemex.experiments',
-                                                       exp_type, 'profiles',
-                                                       exp_name]))
+        module_exp = importlib.import_module('.'.join(
+            ['chemex.experiments', exp_type, 'profiles', exp_name]))
     else:
-        module_exp = importlib.import_module('.'.join(['chemex.experiments',
-                                                       exp_type, exp_name]))
+        module_exp = importlib.import_module('.'.join(['chemex.experiments', exp_type, exp_name]))
 
     title = module_exp.__doc__.split('\n')[0]
     description = '\n'.join(module_exp.__doc__.split('\n')[1:]).strip('\n')

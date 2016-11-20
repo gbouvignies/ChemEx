@@ -13,8 +13,11 @@ from chemex.experiments import plotting
 
 
 def sigma_estimator(x):
-    """Estimates standard deviation using median to exclude outliers. Up to
-    50% can be bad."""
+    """Estimates standard deviation using median to exclude outliers.
+
+    Up to 50% can be bad.
+
+    """
     return np.median([np.median(abs(xi - np.asarray(x))) for xi in x]) * 1.1926
 
 
@@ -80,19 +83,16 @@ def compute_profiles(data_grouped, params):
 def write_profile(name, profile, file_txt):
     """Write the experimental and fitted CPMG profile."""
     for nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru in sorted(zip(*profile)):
-        file_txt.write(
-            "{:10s} {:8.3f} {:8.3f} {:8.3f} {:8.3f} {:8.3f}\n".format(
-                name.upper(), nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru
-            )
-        )
+        file_txt.write("{:10s} {:8.3f} {:8.3f} {:8.3f} {:8.3f} {:8.3f}\n".format(name.upper(
+        ), nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru))
 
 
 def plot_data(data, params, output_dir='./'):
-    """Write experimental and fitted data to a file and plot the CPMG
-    profiles.
+    """Write experimental and fitted data to a file and plot the CPMG profiles.
 
     - *.fit: contains the experimental and fitted data
     - *.pdf: contains the plot of experimental and fitted data
+
     """
     datasets = dict()
 
@@ -119,7 +119,7 @@ def plot_data(data, params, output_dir='./'):
                 nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru = profiles[peak]
                 write_profile(peak.assignment, profiles[peak], file_txt)
 
-                ###### Matplotlib ######
+                # Matplotlib #
                 gs = gsp.GridSpec(2, 1, height_ratios=[1, 4])
 
                 ax1 = plt.subplot(gs[0])
@@ -135,8 +135,7 @@ def plot_data(data, params, output_dir='./'):
                     r2_cal,
                     linestyle='-',
                     color=plotting.palette['Grey']['700'],
-                    zorder=2,
-                )
+                    zorder=2, )
 
                 ax2.errorbar(
                     nu_cpmg,
@@ -146,8 +145,7 @@ def plot_data(data, params, output_dir='./'):
                     markeredgecolor=plotting.palette['Red']['500'],
                     ecolor=plotting.palette['Red']['500'],
                     markerfacecolor='None',
-                    zorder=3,
-                )
+                    zorder=3, )
 
                 xmin, xmax = set_lim(nu_cpmg, 0.10)
 
@@ -177,8 +175,7 @@ def plot_data(data, params, output_dir='./'):
                     markeredgecolor=plotting.palette['Red']['500'],
                     ecolor=plotting.palette['Red']['500'],
                     markerfacecolor='None',
-                    zorder=100,
-                )
+                    zorder=100, )
 
                 rmin, _rmax = set_lim(deltas - r2_erd, 0.2)
                 _rmin, rmax = set_lim(deltas + r2_eru, 0.2)
