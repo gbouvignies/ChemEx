@@ -13,8 +13,10 @@ from chemex.experiments import plotting
 
 
 def sigma_estimator(x):
-    """Estimates standard deviation using median to exclude outliers. Up to
-    50% can be bad.
+    """Estimates standard deviation using median to exclude outliers.
+
+    Up to 50% can be bad.
+
     """
     return np.median([np.median(abs(xi - np.asarray(x))) for xi in x]) * 1.1926
 
@@ -83,12 +85,12 @@ def write_profile_exp(name, b1_ppm, mag_exp, mag_err, mag_cal, file_txt):
 
 
 def plot_data(data, params, output_dir='./'):
-    """Write experimental and fitted data to a file and plot the CEST
-    profiles.
+    """Write experimental and fitted data to a file and plot the CEST profiles.
 
     - *.exp: contains the experimental data
     - *.fit: contains the fitted data
     - *.pdf: contains the plot of experimental and fitted data
+
     """
     datasets = dict()
 

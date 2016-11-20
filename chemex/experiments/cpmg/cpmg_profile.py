@@ -85,9 +85,8 @@ class CPMGProfile(base_profile.BaseProfile):
         return ncycs / self.time_t2
 
     def filter_points(self, params=None):
-        """Evaluate some criteria to know whether the point should be considered
-        in the calculation or not.
-        """
+        """Evaluate some criteria to know whether the point should be
+        considered in the calculation or not."""
         return False
 
     def print_profile(self, params=None):

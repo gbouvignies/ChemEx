@@ -111,8 +111,7 @@ class CESTProfile(base_profile.BaseProfile):
 
     def filter_points(self, params=None):
         """Evaluate some criteria to know whether or not the point should be
-        considered in the calculation.
-        """
+        considered in the calculation."""
         cs = params[self.map_names['cs_i_a']].value
         nu_offsets = ((cs - self.carrier) * self.ppm_i / (2.0 * np.pi) - self.b1_offsets)
 

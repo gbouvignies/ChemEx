@@ -1,4 +1,4 @@
-"""Pure in-phase CEST in uniformly C13-labeled samples
+"""Pure in-phase CEST in uniformly C13-labeled samples.
 
 Analyzes 15N chemical exchange in the presence of 1H composite decoupling
 during the CEST block. This keeps the spin system purely in-phase throughout,
@@ -14,6 +14,7 @@ the references:
 J Am Chem Soc (2012), 134, 8148-61
 Angew Chem (2013), 52, 4156-9
 JMB (2014), 426, 763-74
+
 """
 
 import numpy as np
@@ -74,6 +75,7 @@ class Profile(cest_profile.CESTProfile):
         -------
         out : float
             Intensity after the CEST block
+
         """
         cs_i = np.array([kwargs.get(key, 0.0) for key in ('cs_i_a', 'cs_i_b', 'cs_i_c', 'cs_i_d')])
         omega_i_cars = (cs_i - self.carrier) * self.ppm_i

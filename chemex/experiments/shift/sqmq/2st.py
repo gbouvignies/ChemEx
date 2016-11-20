@@ -1,4 +1,4 @@
-"""HMQC-HSQC shifts"""
+"""HMQC-HSQC shifts."""
 
 import copy
 from functools import lru_cache
@@ -87,6 +87,7 @@ class Profile(base_profile.BaseProfile):
         -------
         out : float
             Intensity after the CEST block
+
         """
         domega_i_ab = dw_i_ab * self.ppm_i
         domega_s_ab = dw_s_ab * self.ppm_s
@@ -108,10 +109,11 @@ class Profile(base_profile.BaseProfile):
         return values
 
     def filter_points(self, params=None):
-        """Evaluate some criteria to know whether the point should be considered
-        in the calculation or not.
+        """Evaluate some criteria to know whether the point should be
+        considered in the calculation or not.
 
         Returns 'True' if the point should NOT be considered.
+
         """
         return False
 

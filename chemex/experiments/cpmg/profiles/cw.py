@@ -1,4 +1,4 @@
-"""Pure in-phase CPMG
+"""Pure in-phase CPMG.
 
 Analyzes chemical exchange in the presence of high power 1H CW decoupling during
 the CPMG block. This keeps the spin system purely in-phase throughout, and is
@@ -14,6 +14,7 @@ The calculation is designed specifically to analyze the experiment found in the
 reference:
 
 Journal of Physical Chemistry B (2008), 112, 5898-5904
+
 """
 
 import functools
@@ -84,6 +85,7 @@ class Profile(cpmg_profile.CPMGProfile):
         -------
         out : float
             Intensity after the CEST block
+
         """
         cs_i = np.array([kwargs.get(key, 0.0) for key in ('cs_i_a', 'cs_i_b', 'cs_i_c', 'cs_i_d')])
         omega_i_a, omega_i_b, omega_i_c, omega_i_d = (cs_i - self.carrier) * self.ppm_i

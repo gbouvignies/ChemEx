@@ -1,7 +1,7 @@
 """TODO: module docstring.
 
-# Operator basis:
-# {Ix, Iy, Iz, 2IxSz, 2IySz, 2IzSz}{a, b, c}
+# Operator basis: # {Ix, Iy, Iz, 2IxSz, 2IySz, 2IzSz}{a, b, c}
+
 """
 
 import lmfit

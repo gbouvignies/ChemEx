@@ -56,9 +56,10 @@ def run_fit(fit_filename, params, data):
 def find_independent_clusters(data, params):
     """Find clusters of datapoints that depend on disjoint sets of variables.
 
-    For example, if the population of the minor state and the exchange rate
-    are set to 'fix', chances are that the fit can be decomposed
+    For example, if the population of the minor state and the exchange
+    rate are set to 'fix', chances are that the fit can be decomposed
     residue-specifically.
+
     """
     clusters = []
 

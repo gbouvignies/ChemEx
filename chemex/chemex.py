@@ -79,6 +79,7 @@ def write_results(params, data, method, output_dir):
       - contstraints.fit: expression used for constraining parameters
       - *.dat: experimental and fitted data
       - chi2.fit: statistics for the fit
+
     """
     util.header1("Writing Results")
 

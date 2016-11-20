@@ -1,6 +1,5 @@
 """The peaks module contains the code for handling peak assignments and
-resonances.
-"""
+resonances."""
 
 import functools
 import re

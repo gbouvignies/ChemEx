@@ -8,7 +8,9 @@ from scipy import interpolate, linalg, signal, stats
 
 def estimate_noise(x):
     """Estimate the uncertainty in the CEST profile.
+
     # TODO: add reference to this method...
+
     """
     n = len(x)
 

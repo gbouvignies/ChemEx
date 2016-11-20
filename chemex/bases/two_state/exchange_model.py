@@ -1,6 +1,5 @@
 """Module exchange_model contains code for setting up different two-site
-exchange models.
-"""
+exchange models."""
 
 from scipy import constants as cst
 
@@ -22,6 +21,7 @@ def update_params(params=None,
     :param p_total:
     :param l_total:
     :return:
+
     """
     if model not in {'2st.pb_kex', '2st.eyring', '2st.kab_kd', '2st.kon_koff'}:
         print("Warning: The \'model\' option should be either \'2st.pb_kex\'")

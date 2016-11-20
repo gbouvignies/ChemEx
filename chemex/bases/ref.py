@@ -1,6 +1,5 @@
-"""The ref module conatains the reference matrices and code for calculating
-the Liouvillian.
-"""
+"""The ref module conatains the reference matrices and code for calculating the
+Liouvillian."""
 
 import numpy as np
 

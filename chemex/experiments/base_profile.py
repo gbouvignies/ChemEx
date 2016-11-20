@@ -26,9 +26,8 @@ class BaseProfile(metaclass=abc.ABCMeta):
         pass
 
     def calculate_residuals(self, params):
-        """Calculate the residuals between the experimental and
-        back-calculated values.
-        """
+        """Calculate the residuals between the experimental and back-calculated
+        values."""
         values = self.calculate_profile(params)
 
         return (self.val - values) / self.err
@@ -36,8 +35,7 @@ class BaseProfile(metaclass=abc.ABCMeta):
 
 def check_par(parameters=None, name=None, convert=None, default=None, required=True):
     """Check for experimental parameters and convert them to their appropriate
-    type.
-    """
+    type."""
     value = parameters.get(name, default)
 
     if required and value is None:

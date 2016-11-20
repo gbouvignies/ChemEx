@@ -1,6 +1,5 @@
 """Module exchange_model contains code for setting up different three-site
-exchange models.
-"""
+exchange models."""
 
 
 def update_params(params=None,
@@ -9,7 +8,8 @@ def update_params(params=None,
                   temperature=None,
                   p_total=None,
                   l_total=None):
-    """Update the experimental and fitting parameters depending on the model."""
+    """Update the experimental and fitting parameters depending on the
+    model."""
 
     if model not in {'pb_kex'}:
         print("Warning: The \'model\' option should be either \'3st.pb_kex\'.")

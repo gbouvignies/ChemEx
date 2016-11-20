@@ -1,6 +1,5 @@
 """The parameters module contains the code for handling of the experimental and
-fitting parameters.
-"""
+fitting parameters."""
 
 import ast
 import configparser
@@ -360,6 +359,7 @@ def get_pairs_from_file(filename, name):
           G23N-H  105.0  8.0
       * To set a parameter depending on multiple nuclei (e.g., G23N and G23H):
           G23N-H  -93.0
+
     """
     pairs = []
 
@@ -407,8 +407,7 @@ def set_param_status(params, items):
 
 def set_param_expr(params, name_short, name_short_expr=None):
     """Set an optional parameter expression, used to constrain its value during
-    the fit.
-    """
+    the fit."""
     matches = set()
     name_short_re = name_short.to_re()
 

@@ -78,6 +78,7 @@ class Profile(cpmg_profile.CPMGProfile):
         -------
         out : float
             Intensity after the CEST block
+
         """
         omega_i_a, omega_i_b, omega_i_c, omega_i_d = np.array(
             [kwargs.get(key, 0.0) for key in ('cs_i_a', 'cs_i_b', 'cs_i_c', 'cs_i_d')]) * self.ppm_i
