@@ -6,6 +6,8 @@ import importlib
 import pkgutil
 import sys
 
+import lmfit
+
 from chemex import __version__, experiments, util
 
 
@@ -13,7 +15,7 @@ class MyParser(argparse.ArgumentParser):
     """Subclass of ArgumentParser to override the error method."""
 
     def error(self, message):
-        sys.stderr.write('error: {}\n'.format(message))
+        sys.stderr.write('error: {}\n\n'.format(message))
         self.print_help()
         sys.exit(2)
 
@@ -110,6 +112,16 @@ def arg_parse():
         '-o', dest='out_dir', metavar='DIR', default='./output', help='Directory for output files')
 
     parser_fit.add_argument('--noplot', action='store_true', help='No plots of the fits')
+
+    fitmethods = lmfit.minimizer.SCALAR_METHODS
+    fitmethods.update({'leastsq': '', 'least_squares': ''})
+    parser_fit.add_argument(
+        '-f',
+        dest='fitmethod',
+        metavar='FITMETHOD',
+        default='leastsq',
+        choices=sorted(fitmethods),
+        help='Specify the fitting method')
 
     group_residue_selec = parser_fit.add_mutually_exclusive_group()
 

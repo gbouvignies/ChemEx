@@ -113,7 +113,7 @@ def plot_results(params, data, output_dir):
 
 def fit_write_plot(args, params, data, output_dir):
     """Perform the fit, write the output files and plot the results."""
-    params = fitting.run_fit(args.method, params, data)
+    params = fitting.run_fit(args.method, params, data, args.fitmethod)
 
     util.make_dir(output_dir)
 

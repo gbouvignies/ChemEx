@@ -7,7 +7,7 @@ import lmfit
 from chemex import datasets, parameters, util
 
 
-def run_fit(fit_filename, params, data):
+def run_fit(fit_filename, params, data, cl_fitmethod):
     """Perform the the fit."""
     util.header1("Fit")
 
@@ -26,6 +26,20 @@ def run_fit(fit_filename, params, data):
         independent_clusters = find_independent_clusters(data, params)
         independent_clusters_no = len(independent_clusters)
 
+        fitmethod = fit_config.get(section, 'fitmethod', fallback=cl_fitmethod)
+        allowed_fitmethods = lmfit.minimizer.SCALAR_METHODS
+        allowed_fitmethods.update({
+            'leastsq': 'least-squares using Levenberg-Marquardt',
+            'least_squares': 'least-squares using Trust Region Reflective algorithm'
+        })
+
+        if fitmethod not in allowed_fitmethods.keys():
+            exit(
+                "The fitting method \'{}\', as specified in section \'{}\', is invalid! Please choose from:\n  {}".
+                format(fitmethod, section, list(sorted(allowed_fitmethods.keys()))))
+
+        print("Fitting method: {}\n".format(allowed_fitmethods[fitmethod]))
+
         for c_name, c_data, c_params in independent_clusters:
             if independent_clusters_no > 1:
                 print("[{}]".format(c_name))
@@ -36,7 +50,7 @@ def run_fit(fit_filename, params, data):
             minimizer = lmfit.Minimizer(func, c_params)
 
             try:
-                result = minimizer.minimize(params=c_params)
+                result = minimizer.minimize(method=fitmethod, params=c_params)
 
             except KeyboardInterrupt:
                 result = minimizer.result
@@ -49,6 +63,10 @@ def run_fit(fit_filename, params, data):
 
         print("Final Chi2        : {:.3e}".format(data.calculate_chisq(params)))
         print("Final Reduced Chi2: {:.3e}".format(data.calculate_redchi(params)))
+
+        if result.method != 'leastsq':
+            print("\nWarning: uncertainties and covariance of fitting parameters are only")
+            print("         calculated when using the \'leastsq\' fitting method!")
 
     return params
 
