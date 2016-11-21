@@ -1,10 +1,4 @@
-cycler==0.10.0
-emcee==2.2.1
+numpy
+scipy
+matplotlib
 lmfit==0.9.5
-matplotlib==1.5.3
-numpy==1.11.1
-pyparsing==2.1.4
-python-dateutil==2.5.3
-pytz==2016.6.1
-scipy==0.18.1
-six==1.10.0
