@@ -122,7 +122,7 @@ def plot_data(data, params, output_dir='./'):
                 name_exp, 'w') as file_exp:
 
             for peak in sorted(profiles):
-                b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit, cs, dw = profiles[peak]
+                b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit, cs, dw, dw2 = profiles[peak]
 
                 write_profile_fit(peak.assignment, b1_ppm_fit, mag_fit, file_txt)
                 write_profile_exp(peak.assignment, b1_ppm, mag_exp, mag_err, mag_cal, file_exp)
