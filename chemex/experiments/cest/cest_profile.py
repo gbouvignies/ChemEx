@@ -20,7 +20,7 @@ class CESTProfile(base_profile.BaseProfile):
         self.val = measurements['intensities']
         self.err = measurements['intensities_err']
 
-        self.reference = (self.b1_offsets <= -1.0e+04)
+        self.reference = (self.b1_offsets <= -1.0e+04) | (self.b1_offsets >= 1.0e+04)
 
         self.on_resonance_filter = base_profile.check_par(
             exp_details, 'on_resonance_filter', float, default=0.0)

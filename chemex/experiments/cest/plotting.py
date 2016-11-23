@@ -47,7 +47,7 @@ def compute_profiles(data_grouped, params):
     profiles = {}
 
     for peak, profile in data_grouped.items():
-        mask = profile.b1_offsets > -10000.0
+        mask = (profile.b1_offsets > -10000.0) & (profile.b1_offsets < 10000.0)
         mask_ref = np.logical_not(mask)
 
         val_ref = np.mean(profile.val[mask_ref])
@@ -65,8 +65,12 @@ def compute_profiles(data_grouped, params):
 
         cs = params[profile.map_names['cs_i_a']].value
         dw = params[profile.map_names['dw_i_ab']].value
+        if '3st' in profile.model:
+            dw2 = params[profile.map_names['dw_i_ac']].value
+        else:
+            dw2 = None
 
-        profiles[peak] = b1_ppm_exp, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit, cs, dw
+        profiles[peak] = b1_ppm_exp, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit, cs, dw, dw2
 
     return profiles
 
@@ -118,7 +122,7 @@ def plot_data(data, params, output_dir='./'):
                 name_exp, 'w') as file_exp:
 
             for peak in sorted(profiles):
-                b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit, cs, dw = profiles[peak]
+                b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit, cs, dw, dw2 = profiles[peak]
 
                 write_profile_fit(peak.assignment, b1_ppm_fit, mag_fit, file_txt)
                 write_profile_exp(peak.assignment, b1_ppm, mag_exp, mag_err, mag_cal, file_exp)
@@ -131,28 +135,41 @@ def plot_data(data, params, output_dir='./'):
 
                 ax1.axvline(
                     cs,
-                    color=plotting.palette['Black']['Dividers'],
+                    color=plotting.palette['Blue']['100'],
                     linestyle='-',
                     linewidth=1.0,
                     zorder=-100)
                 ax2.axvline(
                     cs,
-                    color=plotting.palette['Black']['Dividers'],
+                    color=plotting.palette['Blue']['100'],
                     linestyle='-',
                     linewidth=1.0,
                     zorder=-100)
                 ax1.axvline(
                     cs + dw,
-                    color=plotting.palette['Black']['Dividers'],
+                    color=plotting.palette['Red']['100'],
                     linestyle='-',
                     linewidth=1.0,
                     zorder=-100)
                 ax2.axvline(
                     cs + dw,
-                    color=plotting.palette['Black']['Dividers'],
+                    color=plotting.palette['Red']['100'],
                     linestyle='-',
                     linewidth=1.0,
                     zorder=-100)
+                if dw2 is not None:
+                    ax1.axvline(
+                        cs + dw2,
+                        color=plotting.palette['Orange']['100'],
+                        linestyle='-',
+                        linewidth=1.0,
+                        zorder=-100)
+                    ax2.axvline(
+                        cs + dw2,
+                        color=plotting.palette['Orange']['100'],
+                        linestyle='-',
+                        linewidth=1.0,
+                        zorder=-100)
 
                 ax1.axhline(0, color=plotting.palette['Black']['Text'], linewidth=0.5)
                 ax2.axhline(0, color=plotting.palette['Black']['Text'], linewidth=0.5)
