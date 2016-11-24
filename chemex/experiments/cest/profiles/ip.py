@@ -46,9 +46,9 @@ class Profile(cest_profile.CESTProfile):
             l_total=self.l_total, )
 
         if '3st' in self.model:
-            for short_name, long_names in self.map_names.items():
-                if short_name.startswith('r2') and short_name != 'r2_i_a':
-                    self.default_params[long_names].set(expr=self.map_names['r2_i_a'])
+            for name in ('r2_i_b', 'r2_i_c'):
+                param = self.default_params[self.map_names[name]]
+                param.set(min=param.min, max=param.max, expr=self.map_names['r2_i_a'])
 
     def calculate_unscaled_profile(self, **kwargs):
         """Calculate the CEST profile in the presence of exchange.
