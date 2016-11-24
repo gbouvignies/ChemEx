@@ -5,6 +5,8 @@ import os
 import shutil
 import sys
 
+import matplotlib
+matplotlib.use('PDF')
 import numpy as np
 
 from chemex import datasets, fitting, parameters, parsing, util
