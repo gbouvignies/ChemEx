@@ -293,11 +293,11 @@ def create_params(data):
 
     for profile in data:
         for name, param in profile.default_params.items():
-            params[name] = lmfit.Parameter(name)
-
-    for profile in data:
-        for name, param in profile.default_params.items():
+            param._delay_asteval = True
             params[name] = param
+
+    for p in params.values():
+        p._delay_asteval = False
 
     return params
 
