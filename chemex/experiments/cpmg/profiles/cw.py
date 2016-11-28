@@ -126,8 +126,7 @@ class Profile(cpmg_profile.CPMGProfile):
             elif ncyc == -1:
                 p_free = p_free_list[tau_cp]
                 mag = functools.reduce(
-                    np.dot,
-                    [p_equil, p_90px, p_neg, p_free, p_180pmx, p_free, p_neg, p_90px, mag0])
+                    np.dot, [p_equil, p_90px, p_neg, p_free, p_180pmx, p_free, p_neg, p_90px, mag0])
 
             else:
                 p_free = p_free_list[tau_cp]

@@ -8,7 +8,7 @@ from chemex import datasets, parameters, util
 
 
 def run_fit(fit_filename, params, data, cl_fitmethod):
-    """Perform the the fit."""
+    """Perform the fit."""
     util.header1("Fit")
 
     fit_config = util.read_cfg_file(fit_filename)

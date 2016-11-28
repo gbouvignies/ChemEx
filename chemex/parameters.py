@@ -312,7 +312,6 @@ def set_params_from_config_file(params, config_filename):
     print("{:<45s} {:<30s}".format("-------", "-------"))
 
     for section in config.sections():
-
         if section.lower() in ('global', 'default'):
             print("{:<45s}".format("[{}]".format(section)))
 
@@ -391,7 +390,7 @@ def get_pairs_from_file(filename, name):
 
 
 def set_param_status(params, items):
-    """Fix (or not) fitting parameters according to the method file."""
+    """Set whether or not to vary a fitting parameter or to use a mathemetical expression."""
 
     vary = {'fix': False, 'fit': True}
 

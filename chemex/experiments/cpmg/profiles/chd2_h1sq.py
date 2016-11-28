@@ -157,8 +157,8 @@ class Profile(cpmg_profile.CPMGProfile):
             else:
                 p_free = p_free_list[tau_cp]
                 p_cpy = np.linalg.matrix_power(p_free.dot(p_180py).dot(p_free), int(ncyc))
-                mag = functools.reduce(
-                    np.dot, [p_90px, p_neg, p_cpy, p_180pmx, p_cpy, p_neg, p_90px, mag0])
+                mag = functools.reduce(np.dot,
+                                       [p_90px, p_neg, p_cpy, p_180pmx, p_cpy, p_neg, p_90px, mag0])
 
             # 2HzNz (A)
             profile.append(np.float64(mag[self.base.index_2izsz_a]))
