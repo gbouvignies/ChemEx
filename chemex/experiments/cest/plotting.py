@@ -47,8 +47,8 @@ def compute_profiles(data_grouped, params):
     profiles = {}
 
     for peak, profile in data_grouped.items():
-        mask = (profile.b1_offsets > -10000.0) & (profile.b1_offsets < 10000.0)
-        mask_ref = np.logical_not(mask)
+        mask_ref = profile.reference
+        mask = np.logical_not(mask_ref)
 
         val_ref = np.mean(profile.val[mask_ref])
 
