@@ -439,10 +439,10 @@ def set_params(params, name_short, value=None, vary=None, min=None, max=None):
 
     for name, param in params.items():
         if name_short_re.match(name):
-            if not param.expr or vary is not None:
-                min = param.min if min is None else min
-                max = param.max if max is None else max
-                param.set(value=value, vary=vary, min=min, max=max)
+            if value is not None: param.value = value
+            if vary is not None: param.vary = vary
+            if min is not None: param.min = min
+            if max is not None: param.max = max
 
             matches.add(name)
 
