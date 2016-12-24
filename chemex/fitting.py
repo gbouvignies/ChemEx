@@ -36,7 +36,7 @@ def run_fit(fit_filename, params, data):
             minimizer = lmfit.Minimizer(func, c_params)
 
             try:
-                result = minimizer.minimize(params=c_params)
+                result = minimizer.minimize(params=c_params, xtol=1e-5, ftol=1e-5)
 
             except KeyboardInterrupt:
                 result = minimizer.result
