@@ -11,6 +11,7 @@ Analyzes chemical exchange during the CEST block. This is calculated using the
 import numpy as np
 from scipy import linalg
 
+from chemex.util import expmm
 from chemex import parameters
 from chemex.experiments.cest import cest_profile
 
@@ -141,7 +142,7 @@ class Profile(cest_profile.CESTProfile):
 
                 else:
                     propagators = [
-                        linalg.expm(liouvillian * self.time_t1) for liouvillian in liouvillians
+                        expmm(liouvillian, self.time_t1) for liouvillian in liouvillians
                     ]
                     propagator = np.average(propagators, weights=self.b1_weights, axis=0)[mesh]
 

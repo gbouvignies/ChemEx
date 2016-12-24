@@ -22,6 +22,7 @@ import functools
 import numpy as np
 from scipy import linalg
 
+from chemex.util import expmm
 from chemex.bases import util
 from chemex.experiments import base_profile
 from chemex.experiments.cpmg import cpmg_profile
@@ -103,10 +104,10 @@ class Profile(cpmg_profile.CPMGProfile):
         l_mw1x = l_free + self.base.compute_liouvillian(omega1x_i=-self.omega1_i)
 
         # Calculation of all the needed propagators
-        p_90px = linalg.expm(l_pw1x * self.pw)
+        p_90px = expmm(l_pw1x, self.pw)
         p_180px = np.linalg.matrix_power(p_90px, 2)
-        p_180py = linalg.expm(l_pw1y * 2.0 * self.pw)
-        p_180mx = linalg.expm(l_mw1x * 2.0 * self.pw)
+        p_180py = expmm(l_pw1y, 2.0 * self.pw)
+        p_180mx = expmm(l_mw1x, 2.0 * self.pw)
         p_180pmx = 0.5 * (p_180px + p_180mx)  # +/- phase cycling
 
         p_free_list = util.compute_propagators_from_time_series(l_free, self.time_series)

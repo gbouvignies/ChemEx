@@ -3,7 +3,8 @@
 import configparser
 import os
 import sys
-
+import numpy as np
+from scipy import linalg
 
 def make_dir(path=None):
     """Ensure existence of the directory."""
@@ -78,3 +79,17 @@ def header1(string):
 def header2(string):
     """Print a formatted subheading."""
     print(("\n".join(["", string, "-" * len(string), ""])))
+
+
+def expmm(A, t):
+    """Calculate exp(A*t) by eigendecomposition.
+
+    For performance, the input matrix is assumed to be square and double precision.
+    """
+    s, vr = linalg.eig(A)
+    # propagators are negative semi-definite, i.e. no propagator should have a positive eigenvalue
+    s = np.minimum(s, 0)
+    vri = linalg.inv(vr)
+    r = np.real(np.dot(np.dot(vr, np.diag(np.exp(s*t))), vri))
+
+    return r

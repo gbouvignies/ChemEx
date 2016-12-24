@@ -22,6 +22,7 @@ from scipy import linalg
 
 from chemex import constants
 from chemex.experiments.cest import cest_profile, util
+from chemex.util import expmm
 
 
 class Profile(cest_profile.CESTProfile):
@@ -118,7 +119,7 @@ class Profile(cest_profile.CESTProfile):
 
                     else:
                         propagators = [
-                            linalg.expm(liouvillian * self.time_t1) for liouvillian in liouvillians
+                            expmm(liouvillian, self.time_t1) for liouvillian in liouvillians
                         ]
                         propagator = np.average(propagators, weights=self.b1_weights, axis=0)[mesh]
 

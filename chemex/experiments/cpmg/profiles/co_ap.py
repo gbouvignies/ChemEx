@@ -26,6 +26,7 @@ import functools
 import numpy as np
 from scipy import linalg
 
+from chemex.util import expmm
 from chemex import parameters
 from chemex.bases import util
 from chemex.experiments import base_profile
@@ -141,8 +142,8 @@ class Profile(cpmg_profile.CPMGProfile):
         l_mw1y = l_free + self.base.compute_liouvillian(omega1y_i=-self.omega1_i)
 
         # Propagators
-        p_90py = linalg.expm(l_pw1y * self.pw)
-        p_90my = linalg.expm(l_mw1y * self.pw)
+        p_90py = expmm(l_pw1y * self.pw)
+        p_90my = expmm(l_mw1y * self.pw)
         p_180py = np.linalg.matrix_power(p_90py, 2)
         p_180my = np.linalg.matrix_power(p_90my, 2)
         p_180pmy = 0.5 * (p_180py + p_180my)
