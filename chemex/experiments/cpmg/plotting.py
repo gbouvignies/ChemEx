@@ -14,8 +14,6 @@ from chemex.experiments import plotting
 def compute_profiles(data_grouped, params):
     """Compute the CPMG profiles used for plotting."""
     profiles = {}
-    r2_min = +1e16
-    r2_max = -1e16
 
     for peak, profile in data_grouped.items():
         mask = profile.ncycs != 0
@@ -43,10 +41,7 @@ def compute_profiles(data_grouped, params):
 
         profiles[peak] = nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru
 
-        r2_min = min(r2_min, min(r2_cal), min(r2_exp - r2_erd))
-        r2_max = max(r2_max, max(r2_cal), max(r2_exp + r2_eru))
-
-    return profiles, r2_min, r2_max
+    return profiles
 
 
 def write_profile(name, profile, file_txt):
@@ -79,14 +74,17 @@ def plot_data(data, params, output_dir='./'):
         print(("  * {} [.fit]".format(name_pdf)))
 
         data_grouped = plotting.group_data(dataset)
-        profiles, r2_min, r2_max = compute_profiles(data_grouped, params)
-        ymin, ymax = plotting.set_lim([r2_min, r2_max], 0.10)
+        profiles = compute_profiles(data_grouped, params)
 
         with backend_pdf.PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt:
 
             for peak in sorted(profiles):
                 nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru = profiles[peak]
                 write_profile(peak.assignment, profiles[peak], file_txt)
+
+                r2_min = min(min(r2_cal), min(r2_exp - r2_erd))
+                r2_max = max(max(r2_cal), max(r2_exp + r2_eru))
+                ymin, ymax = plotting.set_lim([r2_min, r2_max], 0.10)
 
                 # Matplotlib #
                 gs = gsp.GridSpec(2, 1, height_ratios=[1, 4])
