@@ -3,6 +3,8 @@ functions."""
 
 import matplotlib as mpl
 
+from chemex import peaks
+
 dark_gray = '0.13'
 medium_gray = '0.44'
 
@@ -376,6 +378,27 @@ style_dict = {
 mpl.rcParams['pdf.fonttype'] = 42
 mpl.rcParams.update(base_context)
 mpl.rcParams.update(style_dict)
+
+
+def set_lim(values, scale):
+    """Provide a range that contains all the value and adds a margin."""
+    v_min, v_max = min(values), max(values)
+    margin = (v_max - v_min) * scale
+    v_min, v_max = v_min - margin, v_max + margin
+
+    return v_min, v_max
+
+
+def group_data(dataset):
+    """Group the data resonance specifically."""
+    data_grouped = dict()
+
+    for profile in dataset:
+        resonance_id = profile.profile_name
+        peak = peaks.Peak(resonance_id)
+        data_grouped[peak] = profile
+
+    return data_grouped
 
 
 def plot_data(data, params, output_dir='./'):
