@@ -6,9 +6,11 @@ import importlib
 import pkgutil
 import sys
 
-import lmfit
-
 from chemex import __version__, experiments, util
+
+fitmethods = {'cobyla', 'slsqp', 'tnc', 'nelder', 'cg', 'bfgs', 'powell',
+              'l-bfgsb', 'least_squares', 'lbfgsb', 'differential_evolution',
+              'leastsq'}
 
 
 class MyParser(argparse.ArgumentParser):
@@ -113,8 +115,6 @@ def arg_parse():
 
     parser_fit.add_argument('--noplot', action='store_true', help='No plots of the fits')
 
-    fitmethods = lmfit.minimizer.SCALAR_METHODS
-    fitmethods.update({'leastsq': '', 'least_squares': ''})
     parser_fit.add_argument(
         '-f',
         dest='fitmethod',

@@ -5,6 +5,7 @@ import sys
 import lmfit
 
 from chemex import datasets, parameters, util
+from chemex.parsing import fitmethods
 
 
 def run_fit(fit_filename, params, data, cl_fitmethod):
@@ -27,11 +28,12 @@ def run_fit(fit_filename, params, data, cl_fitmethod):
         independent_clusters_no = len(independent_clusters)
 
         fitmethod = fit_config.get(section, 'fitmethod', fallback=cl_fitmethod)
-        allowed_fitmethods = lmfit.minimizer.SCALAR_METHODS
-        allowed_fitmethods.update({
+        all_fitmethods = lmfit.minimizer.SCALAR_METHODS
+        all_fitmethods.update({
             'leastsq': 'least-squares using Levenberg-Marquardt',
             'least_squares': 'least-squares using Trust Region Reflective algorithm'
         })
+        allowed_fitmethods = {name: all_fitmethods[name] for name in all_fitmethods.keys() if name in fitmethods}
 
         if fitmethod not in allowed_fitmethods.keys():
             exit(
