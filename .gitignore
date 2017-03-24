@@ -199,3 +199,4 @@ setuptools*
 
 ### Test ###
 test_*/
+test_*

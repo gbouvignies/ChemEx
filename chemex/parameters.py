@@ -401,8 +401,7 @@ def set_param_status(params, items):
         if status in vary:
             set_params(params, name, vary=vary[status])
         else:
-            name_short_expr = ParameterName.from_section(status)
-            set_param_expr(params, name, name_short_expr=name_short_expr)
+            set_param_expr(params, name, name_short_expr=status)
 
 
 def set_param_expr(params, name_short, name_short_expr=None):
@@ -412,19 +411,28 @@ def set_param_expr(params, name_short, name_short_expr=None):
     name_short_re = name_short.to_re()
 
     for name, param in params.items():
+
         if name_short_re.match(name):
+
             expr = None
 
             if name_short_expr == '':
+
                 expr = name_short_expr
 
             elif name_short_expr is not None:
-                name_expr = ParameterName.from_full_name(name).update(name_short_expr).to_full_name(
-                )
-                if name_expr != name and name_expr in params:
-                    min = param.min
-                    max = param.max
-                    param.set(expr=name_expr, min=min, max=max)
+
+                expr = name_short_expr
+
+                for name_dep in astutils.get_ast_names(ast.parse(name_short_expr)):
+
+                    param_name = ParameterName.from_full_name(name)
+                    param_name_dep = ParameterName.from_section(name_dep)
+                    name_updated = param_name.update(param_name_dep).to_full_name()
+
+                    expr = expr.replace(name_dep, name_updated)
+
+                param.expr = expr
 
             if expr is not None:
                 matches.add(name)
@@ -440,7 +448,9 @@ def set_params(params, name_short, value=None, vary=None, min=None, max=None):
     for name, param in params.items():
         if name_short_re.match(name):
             if value is not None: param.value = value
-            if vary is not None: param.vary = vary
+            if vary is not None:
+                param.vary = vary
+                param.expr = ''
             if min is not None: param.min = min
             if max is not None: param.max = max
 
