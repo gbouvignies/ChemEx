@@ -353,11 +353,9 @@ style_dict = {
     'xtick.color': palette['Black']['Text'],
     'xtick.major.size': 3,
     'xtick.minor.size': 3,
-    'xtick.direction': 'outside',
     'ytick.color': palette['Black']['Text'],
     'ytick.major.size': 3,
     'ytick.minor.size': 3,
-    'ytick.direction': 'outside',
     'grid.color': '0.88',
     'grid.linestyle': '-',
     'axes.labelcolor': palette['Black']['Text'],
@@ -365,17 +363,14 @@ style_dict = {
     'axes.edgecolor': palette['Black']['Text'],  # axes edge color
     'axes.grid': True,
     'axes.axisbelow': True,
-    'axes.hold': True,
     'lines.dash_joinstyle': 'round',  # miter|round|bevel
     'lines.dash_capstyle': 'round',  # butt|round|projecting
     'lines.solid_joinstyle': 'round',  # miter|round|bevel
     'lines.solid_capstyle': 'round',  # butt|round|projecting
     'font.family': ['sans-serif'],
-    'font.sans-serif': ['Arial', 'Liberation Sans', 'Bitstream Vera Sans', 'sans-serif'],
     'mathtext.default': 'regular',
 }
 
-mpl.rcParams['pdf.fonttype'] = 42
 mpl.rcParams.update(base_context)
 mpl.rcParams.update(style_dict)
 
