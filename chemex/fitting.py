@@ -31,7 +31,8 @@ def run_fit(fit_filename, params, data, cl_fitmethod):
         all_fitmethods = lmfit.minimizer.SCALAR_METHODS
         all_fitmethods.update({
             'leastsq': 'least-squares using Levenberg-Marquardt',
-            'least_squares': 'least-squares using Trust Region Reflective algorithm'
+            'least_squares': 'least-squares using Trust Region Reflective algorithm',
+            'brute': 'grid search using the brute force method'
         })
         allowed_fitmethods = {name: all_fitmethods[name] for name in all_fitmethods.keys() if name in fitmethods}
 
@@ -52,7 +53,10 @@ def run_fit(fit_filename, params, data, cl_fitmethod):
             minimizer = lmfit.Minimizer(func, c_params)
 
             try:
-                result = minimizer.minimize(method=fitmethod, params=c_params)
+                if fitmethod == 'brute':
+                    result = minimizer.minimize(method=fitmethod, params=c_params, keep='all')
+                else:
+                    result = minimizer.minimize(method=fitmethod, params=c_params)
 
             except KeyboardInterrupt:
                 result = minimizer.result

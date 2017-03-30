@@ -10,7 +10,7 @@ from chemex import __version__, experiments, util
 
 fitmethods = {'cobyla', 'slsqp', 'tnc', 'nelder', 'cg', 'bfgs', 'powell',
               'l-bfgsb', 'least_squares', 'lbfgsb', 'differential_evolution',
-              'leastsq'}
+              'leastsq', 'brute'}
 
 
 class MyParser(argparse.ArgumentParser):
