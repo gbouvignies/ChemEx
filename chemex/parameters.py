@@ -49,6 +49,15 @@ re_value_min_max = re.compile('''
         .*$
     '''.format('[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?', '[-+]?inf'), re.IGNORECASE | re.VERBOSE)
 
+# Regular expression to pick values of the form: intial value [min, max, brute_stepsize]
+re_value_min_max_brute = re.compile('''
+        ^\s*
+        (?P<value>{0})?\s*
+        (\[\s*(?P<min>({0}|{1}))\s*,\s*(?P<max>({0}|{1}))\s*,\s*(?P<brute_step>({0}|None))\s*\]\s*)?
+        .*$
+    '''.format('[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?', '[-+]?inf'), re.IGNORECASE | re.VERBOSE)
+
+
 re_par_name = re.compile('''
         (__n_(?P<name>\w+)_n__)?
         (__r_(?P<nuclei>(\w|-)+)_r__)?
@@ -303,7 +312,7 @@ def create_params(data):
 
 
 def set_params_from_config_file(params, config_filename):
-    """Read the parameter file and set initial values and optional bounds."""
+    """Read the parameter file and set initial values and optional bounds and brute step size."""
     print("File Name: {:s}".format(config_filename), end='\n\n')
 
     config = util.read_cfg_file(config_filename)
@@ -317,7 +326,10 @@ def set_params_from_config_file(params, config_filename):
 
             for key, value in config.items(section):
                 name = ParameterName.from_section(key)
-                default = re_to_dict(re_value_min_max, value)
+                if value.count(',') == 2:
+                    default = re_to_dict(re_value_min_max_brute, value)
+                else:
+                    default = re_to_dict(re_value_min_max, value)
                 default = {key: np.float64(val) for key, val in default.items()}
                 matches = set_params(params, name, **default)
 
@@ -341,7 +353,10 @@ def set_params_from_config_file(params, config_filename):
             total_matches = set()
 
             for name, value in pairs:
-                default = re_to_dict(re_value_min_max, value)
+                if value.count(',') == 2:
+                    default = re_to_dict(re_value_min_max_brute, value)
+                else:
+                    default = re_to_dict(re_value_min_max, value)
                 default = {key: np.float64(val) for key, val in default.items()}
                 matches = set_params(params, name, **default)
                 total_matches.update(matches)
