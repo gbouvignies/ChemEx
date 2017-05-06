@@ -436,9 +436,7 @@ def set_param_expr(params, name_short, name_short_expr=None):
                 name_expr = ParameterName.from_full_name(name).update(name_short_expr).to_full_name(
                 )
                 if name_expr != name and name_expr in params:
-                    min = param.min
-                    max = param.max
-                    param.set(expr=name_expr, min=min, max=max)
+                    param.set(expr=name_expr)
 
             if expr is not None:
                 matches.add(name)
