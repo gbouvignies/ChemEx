@@ -446,18 +446,15 @@ def set_param_expr(params, name_short, name_short_expr=None):
     return matches
 
 
-def set_params(params, name_short, value=None, vary=None, min=None, max=None):
-    """Set the initial value and (optional) boundaries for parameters."""
+def set_params(params, name_short, value=None, vary=None, min=None, max=None,
+               expr=None, brute_step=None):
+    """Set the initial value and (optional) bounds and brute step size for parameters."""
     matches = set()
     name_short_re = name_short.to_re()
 
     for name, param in params.items():
         if name_short_re.match(name):
-            if value is not None: param.value = value
-            if vary is not None: param.vary = vary
-            if min is not None: param.min = min
-            if max is not None: param.max = max
-
+            param.set(value, vary, min, max, expr, brute_step)
             matches.add(name)
 
     return matches
