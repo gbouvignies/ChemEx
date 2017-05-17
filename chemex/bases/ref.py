@@ -217,7 +217,7 @@ mat_kdc = np.kron([[+0.0, +0.0, +0.0, +0.0],
 
 
 def compute_liouvillian(
-        pb=0.0, pc=0.0, pd=0.0, kex_ab=0.0,
+        pa=0.0, pb=0.0, pc=0.0, pd=0.0, kex_ab=0.0,
         kex_ac=0.0, kex_ad=0.0, kex_bc=0.0, kex_bd=0.0, kex_cd=0.0,
         r2_i_a=0.0, r1_i_a=0.0, r2a_i_a=0.0, etaxy_i_a=0.0, etaz_i_a=0.0, omega_i_a=0.0,
         r2_i_b=0.0, r1_i_b=0.0, r2a_i_b=0.0, etaxy_i_b=0.0, etaz_i_b=0.0, omega_i_b=0.0,
@@ -233,7 +233,6 @@ def compute_liouvillian(
         r2_mq_d=0.0, r1a_d=0.0, mu_mq_d=0.0, sigma_d=0.0, j_d=0.0,
         omega1x_i=0.0, omega1y_i=0.0, omega1x_s=0.0, omega1y_s=0.0):
     """Compute the liouvillian."""
-    pa = 1.0 - pb - pc - pd
 
     kab = kba = kac = kca = kad = kda = kbc = kcb = kbd = kdb = kcd = kdc = 0.0
 

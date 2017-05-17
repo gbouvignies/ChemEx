@@ -48,7 +48,7 @@ index_iz_c = [8]
 
 
 def compute_liouvillian(
-        pb=0.0, pc=0.0,
+        pa=0.0, pb=0.0, pc=0.0,
         kex_ab=0.0, kex_bc=0.0, kex_ac=0.0,
         r2_i_a=0.0, r1_i_a=0.0, omega_i_a=0.0,
         r2_i_b=0.0, r1_i_b=0.0, omega_i_b=0.0,
@@ -56,7 +56,6 @@ def compute_liouvillian(
         omega1x_i=0.0, omega1y_i=0.0,
         **kwargs):
     """Compute the Liouvillian."""
-    pa = 1.0 - pb - pc
 
     kab = kba = kbc = kcb = kac = kca = 0.0
 
@@ -99,10 +98,14 @@ def compute_liouvillian(
 # yapf: enable
 
 
+def compute_equilibrium(pa=0.0, pb=0.0, pc=0.0, **kwargs):
+    """Compute the equilibrium magnetization."""
+    return np.array([[0.0, 0.0, pa, 0.0, 0.0, pb, 0.0, 0.0, pc, 1.0]]).T
+
 
 def compute_equilibrium_after_d1(
         time_d1=0.0,
-        pb=0.0, pc=0.0,
+        pa=0.0, pb=0.0, pc=0.0,
         kex_ab=0.0, kex_ac=0.0, kex_bc=0.0,
         r1_i_a=0.0, r1_i_b=0.0, r1_i_c=0.0,
         **kwargs):
@@ -111,7 +114,7 @@ def compute_equilibrium_after_d1(
     mag0 = np.array([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]]).T
 
     liouvillian_free = compute_liouvillian(
-        pb=pb, pc=pc,
+        pa=pa, pb=pb, pc=pc,
         kex_ab=kex_ab, kex_ac=kex_ac, kex_bc=kex_bc,
         r1_i_a=r1_i_a, r1_i_b=r1_i_b, r1_i_c=r1_i_c)
 
@@ -130,6 +133,7 @@ def create_default_params(model=None,
     kwargs3 = {'temperature': temperature, 'nuclei': nuclei, 'h_larmor_frq': h_larmor_frq}
 
     map_names = {
+        'pa': parameters.ParameterName('pa', **kwargs1).to_full_name(),
         'pb': parameters.ParameterName('pb', **kwargs1).to_full_name(),
         'pc': parameters.ParameterName('pc', **kwargs1).to_full_name(),
         'kex_ab': parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
@@ -146,6 +150,7 @@ def create_default_params(model=None,
         'r1_i_c': parameters.ParameterName('r1_c', **kwargs3).to_full_name(),
     }
 
+    pa = '1.0 - {pb} - {pc}'.format(**map_names)
     r1_i_b = r1_i_c = map_names['r1_i_a']
 
     params = lmfit.Parameters()
@@ -154,6 +159,7 @@ def create_default_params(model=None,
         # Name, Value, Vary, Min, Max, Expr
         (map_names['pb'], 0.025, True, 0.0, 1.0, None),
         (map_names['pc'], 0.025, True, 0.0, 1.0, None),
+        (map_names['pa'], 0.0, True, 0.0, 1.0, pa),
         (map_names['kex_ab'], 200.0, True, 0.0, None, None),
         (map_names['kex_ac'], 0.0, False, 0.0, None, None),
         (map_names['kex_bc'], 200.0, True, 0.0, None, None),

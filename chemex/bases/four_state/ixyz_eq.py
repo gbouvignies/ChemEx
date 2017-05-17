@@ -61,7 +61,8 @@ index_iz_d = [11]
 
 
 def compute_liouvillian(
-        pb=0.0, pc=0.0, pd=0.0, kex_ab=0.0, kex_ac=0.0, kex_ad=0.0, kex_bc=0.0, kex_bd=0.0, kex_cd=0.0,
+        pa=0.0, pb=0.0, pc=0.0, pd=0.0,
+        kex_ab=0.0, kex_ac=0.0, kex_ad=0.0, kex_bc=0.0, kex_bd=0.0, kex_cd=0.0,
         r2_i_a=0.0, r1_i_a=0.0, omega_i_a=0.0,
         r2_i_b=0.0, r1_i_b=0.0, omega_i_b=0.0,
         r2_i_c=0.0, r1_i_c=0.0, omega_i_c=0.0,
@@ -69,7 +70,6 @@ def compute_liouvillian(
         omega1x_i=0.0, omega1y_i=0.0,
         **kwargs):
     """Compute the Liouvillian."""
-    pa = 1.0 - pb - pc - pd
 
     kab = kba = kac = kca = kad = kda = kbc = kcb = kbd = kdb = kcd = kdc = 0.0
 
@@ -130,9 +130,14 @@ def compute_liouvillian(
 # yapf: enable
 
 
+def compute_equilibrium(pa=0.0, pb=0.0, pc=0.0, pd=0.0, **kwargs):
+    """Compute the equilibrium magnetization."""
+    return np.array([[0.0, 0.0, pa, 0.0, 0.0, pb, 0.0, 0.0, pc, 0.0, 0.0, pd, 1.0]]).T
+
+
 def compute_equilibrium_after_d1(
         time_d1=0.0,
-        pb=0.0, pc=0.0, pd=0.0,
+        pa=0.0, pb=0.0, pc=0.0, pd=0.0,
         kex_ab=0.0, kex_ac=0.0, kex_ad=0.0, kex_bc=0.0, kex_bd=0.0, kex_cd=0.0,
         r1_i_a=0.0, r1_i_b=0.0, r1_i_c=0.0, r1_i_d=0.0, **kwargs):
     """Compute the equilibrium magnetization."""
@@ -140,7 +145,7 @@ def compute_equilibrium_after_d1(
     mag0 = np.array([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]]).T
 
     liouvillian_free = compute_liouvillian(
-        pb=pb, pc=pc, pd=pd,
+        pa=pa, pb=pb, pc=pc, pd=pd,
         kex_ab=kex_ab, kex_ac=kex_ac, kex_ad=kex_ad,
         kex_bc=kex_bc, kex_bd=kex_bd, kex_cd=kex_cd,
         r1_i_a=r1_i_a, r1_i_b=r1_i_b, r1_i_c=r1_i_c, r1_i_d=r1_i_d)
@@ -160,6 +165,7 @@ def create_default_params(model=None,
     kwargs3 = {'temperature': temperature, 'nuclei': nuclei, 'h_larmor_frq': h_larmor_frq}
 
     map_names = {
+        'pa': parameters.ParameterName('pa', **kwargs1).to_full_name(),
         'pb': parameters.ParameterName('pb', **kwargs1).to_full_name(),
         'pc': parameters.ParameterName('pc', **kwargs1).to_full_name(),
         'pd': parameters.ParameterName('pd', **kwargs1).to_full_name(),
@@ -183,6 +189,7 @@ def create_default_params(model=None,
         'r1_i_d': parameters.ParameterName('r1_d', **kwargs3).to_full_name(),
     }
 
+    pa = '1.0 - {pb} - {pc} - {pd}'.format(**map_names)
     r1_i_b = r1_i_c = r1_i_d = map_names['r1_i_a']
 
     params = lmfit.Parameters()
@@ -192,6 +199,7 @@ def create_default_params(model=None,
         (map_names['pb'], 0.025, True, 0.0, 1.0, None),
         (map_names['pc'], 0.0, False, 0.0, 1.0, None),
         (map_names['pd'], 0.0, False, 0.0, 1.0, None),
+        (map_names['pa'], 0.0, True, 0.0, 1.0, pa),
         (map_names['kex_ab'], 200.0, True, 0.0, None, None),
         (map_names['kex_ac'], 0.0, False, 0.0, None, None),
         (map_names['kex_ad'], 0.0, False, 0.0, None, None),

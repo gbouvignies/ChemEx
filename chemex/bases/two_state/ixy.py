@@ -73,6 +73,7 @@ def create_default_params(model=None,
     kwargs3 = {'temperature': temperature, 'nuclei': nuclei, 'h_larmor_frq': h_larmor_frq}
 
     map_names = {
+        'pa': parameters.ParameterName('pa', **kwargs1).to_full_name(),
         'pb': parameters.ParameterName('pb', **kwargs1).to_full_name(),
         'kex_ab': parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
         'dw_i_ab': parameters.ParameterName('dw_ab', **kwargs2).to_full_name(),
@@ -82,6 +83,7 @@ def create_default_params(model=None,
         'r2_i_b': parameters.ParameterName('r2_b', **kwargs3).to_full_name(),
     }
 
+    pa = '1.0 - {pb}'.format(**map_names)
     cs_i_b = '{cs_i_a} + {dw_i_ab}'.format(**map_names)
     r2_i_b = map_names['r2_i_a']
 
@@ -90,6 +92,7 @@ def create_default_params(model=None,
     params.add_many(
         # Name, Value, Vary, Min, Max, Expr
         (map_names['pb'], 0.025, True, 0.0, 1.0, None),
+        (map_names['pa'], 0.00, True, 0.0, 1.0, pa),
         (map_names['kex_ab'], 200.0, True, 0.0, None, None),
         (map_names['dw_i_ab'], 0.0, True, None, None, None),
         (map_names['dw_i_ac'], 0.0, True, None, None, None),

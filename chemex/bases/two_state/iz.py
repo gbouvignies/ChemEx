@@ -21,11 +21,11 @@ index_iz_a = [0]
 
 # yapf: disable
 def compute_liouvillian(
-        pb=0.0, kex_ab=0.0,
+        pa=0.0, pb=0.0, kex_ab=0.0,
         r1_i_a=0.0,
         r1_i_b=0.0):
     """Compute the Liouvillian."""
-    pa = 1.0 - pb
+
     kab, kba = kex_ab * np.asarray([pb, pa])
 
     liouvillian = (
@@ -60,12 +60,14 @@ def create_default_params(model=None,
     kwargs3 = {'temperature': temperature, 'nuclei': nuclei, 'h_larmor_frq': h_larmor_frq}
 
     map_names = {
+        'pa': parameters.ParameterName('pa', **kwargs1).to_full_name(),
         'pb': parameters.ParameterName('pb', **kwargs1).to_full_name(),
         'kex_ab': parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
         'r1_i_a': parameters.ParameterName('r1_a', **kwargs3).to_full_name(),
         'r1_i_b': parameters.ParameterName('r1_b', **kwargs3).to_full_name(),
     }
 
+    pa = '1.0 - {pb}'.format(**map_names)
     r1_i_b = map_names['r1_i_a']
 
     params = lmfit.Parameters()
@@ -73,6 +75,7 @@ def create_default_params(model=None,
     params.add_many(
         # Name, Value, Vary, Min, Max, Expr
         (map_names['pb'], 0.05, True, 0.0, 1.0, None),
+        (map_names['pa'], 0.00, True, 0.0, 1.0, pa),
         (map_names['kex_ab'], 200.0, True, 0.0, None, None),
         (map_names['r1_i_a'], 1.0, True, 0.0, None, None),
         (map_names['r1_i_b'], 1.0, True, 0.0, None, r1_i_b), )

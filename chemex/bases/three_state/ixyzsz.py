@@ -179,6 +179,7 @@ def create_default_params(model=None,
     }
 
     map_names = {
+        'pa': parameters.ParameterName('pa', **kwargs1).to_full_name(),
         'pb': parameters.ParameterName('pb', **kwargs1).to_full_name(),
         'pc': parameters.ParameterName('pc', **kwargs1).to_full_name(),
         'kex_ab': parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
@@ -212,6 +213,7 @@ def create_default_params(model=None,
         'j_c': parameters.ParameterName('j_c', **kwargs4).to_full_name(),
     }
 
+    pa = '1.0 - {pb} - {pc}'.format(**map_names)
     cs_i_b = '{cs_i_a} + {dw_i_ab}'.format(**map_names)
     cs_i_c = '{cs_i_a} + {dw_i_ac}'.format(**map_names)
     r1_i_c = r1_i_b = map_names['r1_i_a']
@@ -228,6 +230,7 @@ def create_default_params(model=None,
         # Name, Value, Vary, Min, Max, Expr
         (map_names['pb'], 0.025, True, 0.0, 1.0, None),
         (map_names['pc'], 0.025, True, 0.0, 1.0, None),
+        (map_names['pa'], 0.000, True, 0.0, 1.0, pa),
         (map_names['kex_ab'], 200.0, True, 0.0, None, None),
         (map_names['kex_bc'], 200.0, True, 0.0, None, None),
         (map_names['kex_ac'], 0.0, False, 0.0, None, None),
