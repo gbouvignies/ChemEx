@@ -119,6 +119,15 @@ class CPMGProfile(base_profile.BaseProfile):
 
         return "\n".join(output).upper()
 
+    def make_mc_profile(self, params):
+        """Make a CEST profile for boostrap analysis."""
+
+        profile = copy.copy(self)
+        profile.val = self.calculate_profile(params) + np.random.randn(len(
+            self.val)) * self.err
+
+        return profile
+
     def make_bs_profile(self):
         """Make a CPMG profile for boostrap analysis."""
         indexes = np.array(range(len(self.val)))
@@ -132,7 +141,7 @@ class CPMGProfile(base_profile.BaseProfile):
 
         bs_indexes = sorted(bs_indexes)
 
-        profile = copy.deepcopy(self)
+        profile = copy.copy(self)
         profile.ncycs = profile.ncycs[bs_indexes]
         profile.tau_cp_list = profile.tau_cp_list[bs_indexes]
         profile.val = profile.val[bs_indexes]
