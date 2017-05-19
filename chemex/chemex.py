@@ -43,11 +43,10 @@ def make_bootstrap_dataset(data):
 def make_montecarlo_dataset(data, params):
     """Create a new dataset to run a Monte-Carlo simulation."""
     # TODO: fix Monte-Carlo error estimation, issue with copy.deepcoopy()
-    data_mc = copy.deepcopy(data)
+    data_mc = datasets.DataSet()
 
-    for profile in data_mc:
-        profile.val = profile.calculate_profile(params) + np.random.randn(len(
-            profile.val)) * profile.err
+    for profile in data:
+        data_mc.append(profile.make_mc_profile(params=params))
 
     return data_mc
 
