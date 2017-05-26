@@ -73,7 +73,7 @@ def read_data(args):
     return data
 
 
-def write_results(params, data, method, output_dir):
+def write_results(result, data, method, output_dir):
     """Write the results of the fit to output files.
 
     The files below are created and contain the following information:
@@ -90,13 +90,13 @@ def write_results(params, data, method, output_dir):
     if method:
         shutil.copyfile(method, os.path.join(output_dir, 'fitting-method.cfg'))
 
-    parameters.write_par(params, output_dir=output_dir)
-    parameters.write_constraints(params, output_dir=output_dir)
-    data.write_to(params, output_dir=output_dir)
-    data.write_statistics_to(params, path=output_dir)
+    parameters.write_par(result.params, output_dir=output_dir)
+    parameters.write_constraints(result.params, output_dir=output_dir)
+    data.write_to(result.params, output_dir=output_dir)
+    data.write_statistics_to(result.params, path=output_dir)
 
 
-def plot_results(params, data, output_dir):
+def plot_results(result, data, output_dir):
     """Plot the experimental and fitted data."""
     from chemex.experiments import plotting
 
@@ -108,23 +108,23 @@ def plot_results(params, data, output_dir):
     util.make_dir(output_dir_plot)
 
     try:
-        plotting.plot_data(data, params, output_dir=output_dir_plot)
+        plotting.plot_data(data, result.params, output_dir=output_dir_plot)
     except KeyboardInterrupt:
         print(" - Plotting cancelled")
 
 
 def fit_write_plot(args, params, data, output_dir):
     """Perform the fit, write the output files and plot the results."""
-    params = fitting.run_fit(args.method, params, data, args.fitmethod)
+    result = fitting.run_fit(args.method, params, data, args.fitmethod)
 
     util.make_dir(output_dir)
 
-    write_results(params, data, args.method, output_dir)
+    write_results(result, data, args.method, output_dir)
 
     if not args.noplot:
-        plot_results(params, data, output_dir)
+        plot_results(result, data, output_dir)
 
-    return params
+    return result
 
 
 def main():
@@ -157,7 +157,7 @@ def main():
                 output_dir = os.path.join(output_dir, args.res_incl.pop().upper())
 
         if not args.bs:
-            params = fit_write_plot(args, params, data, output_dir)
+            result = fit_write_plot(args, params, data, output_dir)
 
         if args.bs or args.mc:
             if args.bs:
@@ -171,10 +171,10 @@ def main():
                 if args.bs:
                     data_index = make_bootstrap_dataset(data)
                 else:
-                    data_index = make_montecarlo_dataset(data, params)
+                    data_index = make_montecarlo_dataset(data, result.params)
 
                 output_dir_ = os.path.join(output_dir, formatter_output_dir.format(index))
 
-                params_mc = copy.deepcopy(params)
+                params_mc = copy.deepcopy(result.params)
 
                 fit_write_plot(args, params_mc, data_index, output_dir_)

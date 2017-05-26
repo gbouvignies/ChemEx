@@ -8,6 +8,14 @@ from chemex import datasets, parameters, util
 from chemex.parsing import fitmethods
 
 
+all_fitmethods = lmfit.minimizer.SCALAR_METHODS
+all_fitmethods.update({
+    'leastsq': 'least-squares using Levenberg-Marquardt',
+    'least_squares': 'least-squares using Trust Region Reflective algorithm',
+    'brute': 'grid search using the brute force method'})
+allowed_fitmethods = {name: desc for name, desc in all_fitmethods.items() if name in fitmethods}
+
+
 def run_fit(fit_filename, params, data, cl_fitmethod):
     """Perform the fit."""
     util.header1("Fit")
@@ -28,17 +36,10 @@ def run_fit(fit_filename, params, data, cl_fitmethod):
         independent_clusters_no = len(independent_clusters)
 
         fitmethod = fit_config.get(section, 'fitmethod', fallback=cl_fitmethod)
-        all_fitmethods = lmfit.minimizer.SCALAR_METHODS
-        all_fitmethods.update({
-            'leastsq': 'least-squares using Levenberg-Marquardt',
-            'least_squares': 'least-squares using Trust Region Reflective algorithm',
-            'brute': 'grid search using the brute force method'
-        })
-        allowed_fitmethods = {name: all_fitmethods[name] for name in all_fitmethods.keys() if name in fitmethods}
 
         if fitmethod not in allowed_fitmethods.keys():
             exit(
-                "The fitting method \'{}\', as specified in section \'{}\', is invalid! Please choose from:\n  {}".
+                "The fitting method \'{}\', as specified in section [\'{}\'], is invalid! Please choose from:\n  {}".
                 format(fitmethod, section, list(sorted(allowed_fitmethods.keys()))))
 
         print("Fitting method: {}\n".format(allowed_fitmethods[fitmethod]))
@@ -54,9 +55,9 @@ def run_fit(fit_filename, params, data, cl_fitmethod):
 
             try:
                 if fitmethod == 'brute':
-                    result = minimizer.minimize(method=fitmethod, params=c_params, keep='all')
+                    result = minimizer.minimize(method=fitmethod, keep='all')
                 else:
-                    result = minimizer.minimize(method=fitmethod, params=c_params)
+                    result = minimizer.minimize(method=fitmethod)
 
             except KeyboardInterrupt:
                 result = minimizer.result
@@ -67,14 +68,14 @@ def run_fit(fit_filename, params, data, cl_fitmethod):
 
             print('')
 
-        print("Final Chi2        : {:.3e}".format(data.calculate_chisq(params)))
-        print("Final Reduced Chi2: {:.3e}".format(data.calculate_redchi(params)))
+        print("Final Chi2        : {:.3e}".format(result.chisqr))
+        print("Final Reduced Chi2: {:.3e}".format(result.redchi))
 
-        if result.method != 'leastsq':
-            print("\nWarning: uncertainties and covariance of fitting parameters are only")
-            print("         calculated when using the \'leastsq\' fitting method!")
+    if result.method != 'leastsq':
+        print("\nWarning: uncertainties and covariance of fitting parameters are only")
+        print("         calculated when using the \'leastsq\' fitting method!")
 
-    return params
+    return result
 
 
 def find_independent_clusters(data, params):
