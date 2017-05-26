@@ -1,6 +1,9 @@
 """The fitting module contains the code for fitting the experimental data."""
 
+import os.path
 import sys
+
+from scipy import stats
 
 import lmfit
 
@@ -130,3 +133,26 @@ def find_independent_clusters(data, params):
             clusters.append((name_cluster, data_cluster, params_cluster))
 
     return sorted(clusters)
+
+
+def write_statistics(result, path='./'):
+    """Write fitting statistics to a file."""
+
+    ks_value, ks_p_value = stats.kstest(result.residual, 'norm')
+    chi2_p_value = 1.0 - stats.chi2.cdf(result.chisqr, result.nfree)
+
+    filename = os.path.join(path, 'statistics.fit')
+
+    with open(filename, 'w') as f:
+        print("  * {}".format(filename))
+
+        f.write("# Number of data points: {}\n".format(result.ndata))
+        f.write("# Number of variables: {}\n".format(result.nvarys))
+        f.write("# Fitting method: {}\n".format(result.method))
+        f.write("# Number of function evaluations: {}\n\n".format(result.nfev))
+        f.write("chi-square         = {: .5e}\n".format(result.chisqr))
+        f.write("reduced chi-square = {: .5e}\n".format(result.redchi))
+        f.write("chisq_p-value      = {: .5e} # Chi-squared test\n".format(chi2_p_value))
+        f.write("ks_p-value         = {: .5e} # Kolmogorov-Smirnov test\n\n".format(ks_p_value))
+        f.write("Akaike Information Criterion = {: .5e}\n".format(result.aic))
+        f.write("Bayesian Information Criterion = {: .5e}\n".format(result.bic))

@@ -80,7 +80,7 @@ def write_results(result, data, method, output_dir):
       - parameters.fit: fitting parameters and their uncertainties
       - contstraints.fit: expression used for constraining parameters
       - *.dat: experimental and fitted data
-      - chi2.fit: statistics for the fit
+      - statistics.fit: statistics for the fit
 
     """
     util.header1("Writing Results")
@@ -93,7 +93,7 @@ def write_results(result, data, method, output_dir):
     parameters.write_par(result.params, output_dir=output_dir)
     parameters.write_constraints(result.params, output_dir=output_dir)
     data.write_to(result.params, output_dir=output_dir)
-    data.write_statistics_to(result.params, path=output_dir)
+    fitting.write_statistics(result, path=output_dir)
 
 
 def plot_results(result, data, output_dir):

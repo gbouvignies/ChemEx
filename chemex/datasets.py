@@ -9,7 +9,6 @@ import os.path
 import sys
 
 import numpy as np
-from scipy import stats
 
 from chemex import util
 from chemex.experiments import base_profile
@@ -105,28 +104,6 @@ class DataSet(object):
             with open(filename, 'w') as f:
                 for profile in sorted(data, key=operator.attrgetter('peak')):
                     f.write(profile.print_profile(params=params))
-
-    def write_statistics_to(self, params, path='./'):
-        """Write fitting statistics to a file."""
-        residuals = self.calculate_residuals(params, verbose=False)
-        chisq = sum(residuals**2)
-        nvarys = len([param for param in params.values() if param.vary])
-        nfree = self.ndata - nvarys
-        redchi = chisq / nfree
-        ks_value, ks_p_value = stats.kstest(residuals, 'norm')
-        chi2_p_value = 1.0 - stats.chi2.cdf(chisq, nfree)
-
-        filename = os.path.join(path, 'statistics.fit')
-
-        with open(filename, 'w') as f:
-            print("  * {}".format(filename))
-
-            f.write("# Number of values: {}\n".format(self.ndata))
-            f.write("# Number of varying parameters: {}\n".format(nvarys))
-            f.write("chisq         = {: .5e}\n".format(chisq))
-            f.write("redchi        = {: .5e}\n".format(redchi))
-            f.write("chisq_p-value = {: .5e} # Chi-squared test\n".format(chi2_p_value))
-            f.write("ks_p-value    = {: .5e} # Kolmogorov-Smirnov test\n".format(ks_p_value))
 
     def add_dataset_from_file(self, filename, model=None, res_incl=None, res_excl=None):
         """Add data from a file to the dataset."""
