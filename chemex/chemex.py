@@ -112,6 +112,12 @@ def plot_results(result, data, output_dir):
     except KeyboardInterrupt:
         print(" - Plotting cancelled")
 
+    if result.method == 'brute':
+        labels = [parameters.ParameterName.from_full_name(var).name.upper() for var in result.var_names]
+        outfile = os.path.join(output_dir, 'results_brute.pdf')
+        plotting.plot_results_brute(result, varlabels=labels, output=outfile)
+        print(("  * {}".format(outfile)))
+
 
 def fit_write_plot(args, params, data, output_dir):
     """Perform the fit, write the output files and plot the results."""
