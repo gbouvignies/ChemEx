@@ -74,19 +74,6 @@ class DataSet(object):
 
         return residuals
 
-    def calculate_chisq(self, params):
-        """Calculate the chi-square."""
-        residuals = self.calculate_residuals(params, verbose=False)
-
-        return sum(residuals**2)
-
-    def calculate_redchi(self, params):
-        """Calculate the redcuded chi-square."""
-        chisq = self.calculate_chisq(params)
-        nvarys = len([param for param in params.values() if param.vary])
-
-        return chisq / (self.ndata - nvarys)
-
     def write_to(self, params=None, output_dir='./'):
         """Write experimental and fitted profiles to a file."""
         datasets = dict()
