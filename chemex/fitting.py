@@ -3,6 +3,7 @@
 import os.path
 import sys
 
+import numpy as np
 from scipy import stats
 
 import lmfit
@@ -47,6 +48,12 @@ def run_fit(fit_filename, params, data, cl_fitmethod):
 
         print("Fitting method: {}\n".format(allowed_fitmethods[fitmethod]))
 
+        # initialize a MinimizerResult instance to combine the residue specific
+        # fits
+        if independent_clusters_no > 1:
+            minimizer = lmfit.Minimizer(data.calculate_residuals, params)
+            result_final = minimizer.prepare_fit()
+
         for c_name, c_data, c_params in independent_clusters:
             if independent_clusters_no > 1:
                 print("[{}]".format(c_name))
@@ -69,7 +76,23 @@ def run_fit(fit_filename, params, data, cl_fitmethod):
             for name, param in result.params.items():
                 params[name] = param
 
+            if independent_clusters_no > 1:
+                result_final.nfev += result.nfev
+
             print('')
+
+        if independent_clusters_no > 1:
+            result_final.params = params
+            result_final.residual = data.calculate_residuals(result_final.params, verbose=False)
+            result_final.method = result.method
+            result_final.chisqr = (result_final.residual**2).sum()
+            result_final.ndata = len(result_final.residual)
+            result_final.nfree = result_final.ndata - result_final.nvarys
+            result_final.redchi = result_final.chisqr / result_final.nfree
+            _neg2_log_likel = result_final.ndata * np.log(result_final.chisqr / result_final.ndata)
+            result_final.aic = _neg2_log_likel + 2 * result_final.nvarys
+            result_final.bic = _neg2_log_likel + np.log(result_final.ndata) * result_final.nvarys
+            result = result_final
 
         print("Final Chi2        : {:.3e}".format(result.chisqr))
         print("Final Reduced Chi2: {:.3e}".format(result.redchi))
