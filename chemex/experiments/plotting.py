@@ -1,7 +1,12 @@
 """The plotting module contains experiment-independent settings and
 functions."""
 
+import numpy as np
 import matplotlib as mpl
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
+
+from chemex import peaks
 
 dark_gray = '0.13'
 medium_gray = '0.44'
@@ -351,11 +356,9 @@ style_dict = {
     'xtick.color': palette['Black']['Text'],
     'xtick.major.size': 3,
     'xtick.minor.size': 3,
-    'xtick.direction': 'outside',
     'ytick.color': palette['Black']['Text'],
     'ytick.major.size': 3,
     'ytick.minor.size': 3,
-    'ytick.direction': 'outside',
     'grid.color': '0.88',
     'grid.linestyle': '-',
     'axes.labelcolor': palette['Black']['Text'],
@@ -363,19 +366,37 @@ style_dict = {
     'axes.edgecolor': palette['Black']['Text'],  # axes edge color
     'axes.grid': True,
     'axes.axisbelow': True,
-    'axes.hold': True,
     'lines.dash_joinstyle': 'round',  # miter|round|bevel
     'lines.dash_capstyle': 'round',  # butt|round|projecting
     'lines.solid_joinstyle': 'round',  # miter|round|bevel
     'lines.solid_capstyle': 'round',  # butt|round|projecting
     'font.family': ['sans-serif'],
-    'font.sans-serif': ['Arial', 'Liberation Sans', 'Bitstream Vera Sans', 'sans-serif'],
     'mathtext.default': 'regular',
 }
 
-mpl.rcParams['pdf.fonttype'] = 42
 mpl.rcParams.update(base_context)
 mpl.rcParams.update(style_dict)
+
+
+def set_lim(values, scale):
+    """Provide a range that contains all the value and adds a margin."""
+    v_min, v_max = min(values), max(values)
+    margin = (v_max - v_min) * scale
+    v_min, v_max = v_min - margin, v_max + margin
+
+    return v_min, v_max
+
+
+def group_data(dataset):
+    """Group the data resonance specifically."""
+    data_grouped = dict()
+
+    for profile in dataset:
+        resonance_id = profile.profile_name
+        peak = peaks.Peak(resonance_id)
+        data_grouped[peak] = profile
+
+    return data_grouped
 
 
 def plot_data(data, params, output_dir='./'):
@@ -389,3 +410,91 @@ def plot_data(data, params, output_dir='./'):
         plot(dataset, params, output_dir)
 
     return
+
+
+def plot_results_brute(result, best_vals=True, varlabels=None,
+                       output='results_brute'):
+    """Visualize the result of the brute force grid search.
+
+    The output file will display the chi-square value per parameter and contour
+    plots for all combination of two parameters.
+
+    Inspired by the `corner` package (https://github.com/dfm/corner.py).
+
+    """
+    npars = len(result.var_names)
+    fig, axes = plt.subplots(npars, npars)
+
+    if not varlabels:
+        varlabels = result.var_names
+    if best_vals and isinstance(best_vals, bool):
+        best_vals = result.params
+
+    for i, par1 in enumerate(result.var_names):
+        for j, par2 in enumerate(result.var_names):
+
+            # parameter vs chi2 in case of only one parameter
+            if npars == 1:
+                axes.plot(result.brute_grid, result.brute_Jout, 'o', ms=3)
+                axes.set_ylabel(r'$\chi^{2}$')
+                axes.set_xlabel(varlabels[i])
+                if best_vals:
+                    axes.axvline(best_vals[par1].value, ls='dashed', color='r')
+
+            # parameter vs chi2 profile on top
+            elif i == j and j < npars-1:
+                if i == 0:
+                    axes[0, 0].axis('off')
+                ax = axes[i, j+1]
+                red_axis = tuple([a for a in range(npars) if a != i])
+                ax.plot(np.unique(result.brute_grid[i]),
+                        np.minimum.reduce(result.brute_Jout, axis=red_axis),
+                        'o', ms=3)
+                ax.set_ylabel(r'$\chi^{2}$')
+                ax.yaxis.set_label_position("right")
+                ax.yaxis.set_ticks_position('right')
+                ax.set_xticks([])
+                if best_vals:
+                    ax.axvline(best_vals[par1].value, ls='dashed', color='r')
+
+            # parameter vs chi2 profile on the left
+            elif j == 0 and i > 0:
+                ax = axes[i, j]
+                red_axis = tuple([a for a in range(npars) if a != i])
+                ax.plot(np.minimum.reduce(result.brute_Jout, axis=red_axis),
+                        np.unique(result.brute_grid[i]), 'o', ms=3)
+                ax.invert_xaxis()
+                ax.set_ylabel(varlabels[i])
+                if i != npars-1:
+                    ax.set_xticks([])
+                elif i == npars-1:
+                    ax.set_xlabel(r'$\chi^{2}$')
+                if best_vals:
+                    ax.axhline(best_vals[par1].value, ls='dashed', color='r')
+
+            # contour plots for all combinations of two parameters
+            elif j > i:
+                ax = axes[j, i+1]
+                red_axis = tuple([a for a in range(npars) if a != i and a != j])
+                X, Y = np.meshgrid(np.unique(result.brute_grid[i]),
+                                   np.unique(result.brute_grid[j]))
+                lvls1 = np.linspace(result.brute_Jout.min(),
+                                    np.median(result.brute_Jout)/2.0, 7, dtype='int')
+                lvls2 = np.linspace(np.median(result.brute_Jout)/2.0,
+                                    np.median(result.brute_Jout), 3, dtype='int')
+                lvls = np.unique(np.concatenate((lvls1, lvls2)))
+                ax.contourf(X.T, Y.T, np.minimum.reduce(result.brute_Jout, axis=red_axis),
+                            lvls, norm=LogNorm())
+                ax.set_yticks([])
+                if best_vals:
+                    ax.axvline(best_vals[par1].value, ls='dashed', color='r')
+                    ax.axhline(best_vals[par2].value, ls='dashed', color='r')
+                    ax.plot(best_vals[par1].value, best_vals[par2].value, 'rs', ms=3)
+                if j != npars-1:
+                    ax.set_xticks([])
+                elif j == npars-1:
+                    ax.set_xlabel(varlabels[i])
+                if j - i >= 2:
+                    axes[i, j].axis('off')
+
+    plt.savefig('{}.pdf'.format(output.split('.')[0]))

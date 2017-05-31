@@ -46,30 +46,6 @@ def normalize_path(working_dir, filename):
     return path
 
 
-def include_selection(data, selection):
-    """Make a new dataset including points whose 'id' is in the selection."""
-    new_data = [
-        a_data_point for a_data_point in data
-        if a_data_point.par.get('resonance_id', None) in selection
-    ]
-
-    return new_data
-
-
-def exclude_selection(data, selection):
-    """Make a new dataset excluding points whose 'id' is in the selection."""
-    new_data = [
-        a_data_point for a_data_point in data
-        if a_data_point.par.get('resonance_id', None) not in selection
-    ]
-
-    if new_data == data:
-        sys.stdout.write("\n No data removed! Aborting ...\n")
-        exit(1)
-
-    return new_data
-
-
 def header1(string):
     """Print a formatted heading."""
     print(("\n".join(["", "", string, "=" * len(string), ""])))

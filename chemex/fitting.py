@@ -1,14 +1,27 @@
 """The fitting module contains the code for fitting the experimental data."""
 
+import os.path
 import sys
+
+import numpy as np
+from scipy import stats
 
 import lmfit
 
 from chemex import datasets, parameters, util
+from chemex.parsing import fitmethods
 
 
-def run_fit(fit_filename, params, data):
-    """Perform the the fit."""
+all_fitmethods = lmfit.minimizer.SCALAR_METHODS
+all_fitmethods.update({
+    'leastsq': 'least-squares using Levenberg-Marquardt',
+    'least_squares': 'least-squares using Trust Region Reflective algorithm',
+    'brute': 'grid search using the brute force method'})
+allowed_fitmethods = {name: desc for name, desc in all_fitmethods.items() if name in fitmethods}
+
+
+def run_fit(fit_filename, params, data, cl_fitmethod):
+    """Perform the fit."""
     util.header1("Fit")
 
     fit_config = util.read_cfg_file(fit_filename)
@@ -26,6 +39,21 @@ def run_fit(fit_filename, params, data):
         independent_clusters = find_independent_clusters(data, params)
         independent_clusters_no = len(independent_clusters)
 
+        fitmethod = fit_config.get(section, 'fitmethod', fallback=cl_fitmethod)
+
+        if fitmethod not in allowed_fitmethods.keys():
+            exit(
+                "The fitting method \'{}\', as specified in section [\'{}\'], is invalid! Please choose from:\n  {}".
+                format(fitmethod, section, list(sorted(allowed_fitmethods.keys()))))
+
+        print("Fitting method: {}\n".format(allowed_fitmethods[fitmethod]))
+
+        # initialize a MinimizerResult instance to combine the residue specific
+        # fits
+        if independent_clusters_no > 1:
+            minimizer = lmfit.Minimizer(data.calculate_residuals, params)
+            result_final = minimizer.prepare_fit()
+
         for c_name, c_data, c_params in independent_clusters:
             if independent_clusters_no > 1:
                 print("[{}]".format(c_name))
@@ -36,7 +64,10 @@ def run_fit(fit_filename, params, data):
             minimizer = lmfit.Minimizer(func, c_params)
 
             try:
-                result = minimizer.minimize(params=c_params)
+                if fitmethod == 'brute':
+                    result = minimizer.minimize(method=fitmethod, keep='all')
+                else:
+                    result = minimizer.minimize(method=fitmethod)
 
             except KeyboardInterrupt:
                 result = minimizer.result
@@ -45,12 +76,32 @@ def run_fit(fit_filename, params, data):
             for name, param in result.params.items():
                 params[name] = param
 
+            if independent_clusters_no > 1:
+                result_final.nfev += result.nfev
+
             print('')
 
-        print("Final Chi2        : {:.3e}".format(data.calculate_chisq(params)))
-        print("Final Reduced Chi2: {:.3e}".format(data.calculate_redchi(params)))
+        if independent_clusters_no > 1:
+            result_final.params = params
+            result_final.residual = data.calculate_residuals(result_final.params, verbose=False)
+            result_final.method = result.method
+            result_final.chisqr = (result_final.residual**2).sum()
+            result_final.ndata = len(result_final.residual)
+            result_final.nfree = result_final.ndata - result_final.nvarys
+            result_final.redchi = result_final.chisqr / result_final.nfree
+            _neg2_log_likel = result_final.ndata * np.log(result_final.chisqr / result_final.ndata)
+            result_final.aic = _neg2_log_likel + 2 * result_final.nvarys
+            result_final.bic = _neg2_log_likel + np.log(result_final.ndata) * result_final.nvarys
+            result = result_final
 
-    return params
+        print("Final Chi2        : {:.3e}".format(result.chisqr))
+        print("Final Reduced Chi2: {:.3e}".format(result.redchi))
+
+    if result.method != 'leastsq':
+        print("\nWarning: uncertainties and covariance of fitting parameters are only")
+        print("         calculated when using the \'leastsq\' fitting method!")
+
+    return result
 
 
 def find_independent_clusters(data, params):
@@ -105,3 +156,26 @@ def find_independent_clusters(data, params):
             clusters.append((name_cluster, data_cluster, params_cluster))
 
     return sorted(clusters)
+
+
+def write_statistics(result, path='./'):
+    """Write fitting statistics to a file."""
+
+    ks_value, ks_p_value = stats.kstest(result.residual, 'norm')
+    chi2_p_value = 1.0 - stats.chi2.cdf(result.chisqr, result.nfree)
+
+    filename = os.path.join(path, 'statistics.fit')
+
+    with open(filename, 'w') as f:
+        print("  * {}".format(filename))
+
+        f.write("# Number of data points: {}\n".format(result.ndata))
+        f.write("# Number of variables: {}\n".format(result.nvarys))
+        f.write("# Fitting method: {}\n".format(result.method))
+        f.write("# Number of function evaluations: {}\n\n".format(result.nfev))
+        f.write("chi-square         = {: .5e}\n".format(result.chisqr))
+        f.write("reduced chi-square = {: .5e}\n".format(result.redchi))
+        f.write("chisq_p-value      = {: .5e} # Chi-squared test\n".format(chi2_p_value))
+        f.write("ks_p-value         = {: .5e} # Kolmogorov-Smirnov test\n\n".format(ks_p_value))
+        f.write("Akaike Information Criterion = {: .5e}\n".format(result.aic))
+        f.write("Bayesian Information Criterion = {: .5e}\n".format(result.bic))

@@ -49,6 +49,15 @@ re_value_min_max = re.compile('''
         .*$
     '''.format('[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?', '[-+]?inf'), re.IGNORECASE | re.VERBOSE)
 
+# Regular expression to pick values of the form: intial value [min, max, brute_stepsize]
+re_value_min_max_brute = re.compile('''
+        ^\s*
+        (?P<value>{0})?\s*
+        (\[\s*(?P<min>({0}|{1}))\s*,\s*(?P<max>({0}|{1}))\s*,\s*(?P<brute_step>({0}|None))\s*\]\s*)?
+        .*$
+    '''.format('[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?', '[-+]?inf'), re.IGNORECASE | re.VERBOSE)
+
+
 re_par_name = re.compile('''
         (__n_(?P<name>\w+)_n__)?
         (__r_(?P<nuclei>(\w|-)+)_r__)?
@@ -293,17 +302,17 @@ def create_params(data):
 
     for profile in data:
         for name, param in profile.default_params.items():
-            params[name] = lmfit.Parameter(name)
-
-    for profile in data:
-        for name, param in profile.default_params.items():
+            param._delay_asteval = True
             params[name] = param
+
+    for p in params.values():
+        p._delay_asteval = False
 
     return params
 
 
 def set_params_from_config_file(params, config_filename):
-    """Read the parameter file and set initial values and optional bounds."""
+    """Read the parameter file and set initial values and optional bounds and brute step size."""
     print("File Name: {:s}".format(config_filename), end='\n\n')
 
     config = util.read_cfg_file(config_filename)
@@ -312,13 +321,15 @@ def set_params_from_config_file(params, config_filename):
     print("{:<45s} {:<30s}".format("-------", "-------"))
 
     for section in config.sections():
-
         if section.lower() in ('global', 'default'):
             print("{:<45s}".format("[{}]".format(section)))
 
             for key, value in config.items(section):
                 name = ParameterName.from_section(key)
-                default = re_to_dict(re_value_min_max, value)
+                if value.count(',') == 2:
+                    default = re_to_dict(re_value_min_max_brute, value)
+                else:
+                    default = re_to_dict(re_value_min_max, value)
                 default = {key: np.float64(val) for key, val in default.items()}
                 matches = set_params(params, name, **default)
 
@@ -342,7 +353,10 @@ def set_params_from_config_file(params, config_filename):
             total_matches = set()
 
             for name, value in pairs:
-                default = re_to_dict(re_value_min_max, value)
+                if value.count(',') == 2:
+                    default = re_to_dict(re_value_min_max_brute, value)
+                else:
+                    default = re_to_dict(re_value_min_max, value)
                 default = {key: np.float64(val) for key, val in default.items()}
                 matches = set_params(params, name, **default)
                 total_matches.update(matches)
@@ -391,7 +405,7 @@ def get_pairs_from_file(filename, name):
 
 
 def set_param_status(params, items):
-    """Fix (or not) fitting parameters according to the method file."""
+    """Set whether or not to vary a fitting parameter or to use a mathemetical expression."""
 
     vary = {'fix': False, 'fit': True}
 
@@ -422,9 +436,7 @@ def set_param_expr(params, name_short, name_short_expr=None):
                 name_expr = ParameterName.from_full_name(name).update(name_short_expr).to_full_name(
                 )
                 if name_expr != name and name_expr in params:
-                    min = param.min
-                    max = param.max
-                    param.set(expr=name_expr, min=min, max=max)
+                    param.set(expr=name_expr)
 
             if expr is not None:
                 matches.add(name)
@@ -432,18 +444,15 @@ def set_param_expr(params, name_short, name_short_expr=None):
     return matches
 
 
-def set_params(params, name_short, value=None, vary=None, min=None, max=None):
-    """Set the initial value and (optional) boundaries for parameters."""
+def set_params(params, name_short, value=None, vary=None, min=None, max=None,
+               expr=None, brute_step=None):
+    """Set the initial value and (optional) bounds and brute step size for parameters."""
     matches = set()
     name_short_re = name_short.to_re()
 
     for name, param in params.items():
         if name_short_re.match(name):
-            if value is not None: param.value = value
-            if vary is not None: param.vary = vary
-            if min is not None: param.min = min
-            if max is not None: param.max = max
-
+            param.set(value, vary, min, max, expr, brute_step)
             matches.add(name)
 
     return matches

@@ -1,7 +1,17 @@
 # yapf: disable
+from __future__ import print_function
+
+import sys
+
 from setuptools import find_packages, setup
 
 import versioneer
+
+v = sys.version_info
+if v[0] < 3:
+    error = "ERROR: chemex only works with Python 3!"
+    print(error, file=sys.stderr)
+    sys.exit(1)
 
 with open("README.md", "rb") as f:
     long_description = f.read().decode("utf-8")

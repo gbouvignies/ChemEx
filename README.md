@@ -24,9 +24,11 @@ Prerequisites
 
 You should have installed on your system:
 
-  * [Python 3.5.x](https://www.python.org/download/releases/3.5/)
-  * [SciPy 0.11.x](http://www.scipy.org/install.html)
-  * [MatPlotLib 1.1.x](http://matplotlib.org/users/installing.html)
+  * [Python 3.5.x](https://www.python.org/downloads/)
+  * [SciPy 0.15](https://www.scipy.org/install.html)
+  * [NumPy 0.15.1](https://www.scipy.org/scipylib/download.html)
+  * [Matplotlib 2.0.x](http://matplotlib.org/users/installing.html)
+  * [lmfit 0.9.6](https://lmfit.github.io/lmfit-py/)
 
 Newer versions of the above should be fine, as will be some older versions.
 Please report any compatibility issues that you run into.
