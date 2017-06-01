@@ -44,11 +44,32 @@ def compute_profiles(data_grouped, params):
     return profiles
 
 
-def write_profile(name, profile, file_txt):
-    """Write the experimental and fitted CPMG profile."""
-    for nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru in sorted(zip(*profile)):
-        file_txt.write("{:10s} {:8.3f} {:8.3f} {:8.3f} {:8.3f} {:8.3f}\n".format(name.upper(
-        ), nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru))
+def write_profile_fit(name, profile, file_txt):
+    """Write the fitted CPMG profile."""
+
+    file_txt.write("[{}]\n".format(name.upper()))
+
+    file_txt.write("# {:>17s}   {:>17s}\n".format("NU_CPMG", "R2"))
+
+    for nu_cpmg, r2_cal, _r2_exp, _r2_erd, _r2_eru in sorted(zip(*profile)):
+        file_txt.write("  {0:17.8e} = {1:17.8e}\n".format(nu_cpmg, r2_cal))
+
+    file_txt.write("\n")
+
+
+def write_profile_exp(name, profile, file_txt):
+    """Write the experimental CPMG profile."""
+
+    file_txt.write("[{}]\n".format(name.upper()))
+
+    file_txt.write("# {:>17s}   {:>17s} {:>17s} {:>17s}\n".format(
+        "NU_CPMG", "R2", "UNCERTAINTY_DOWN", "UNCERTAINTY_UP"))
+
+    for nu_cpmg, _r2_cal, r2_exp, r2_erd, r2_eru in sorted(zip(*profile)):
+        file_txt.write("  {0:17.8e} = {1:17.8e} {2:17.8e} {3:17.8e}\n".format(nu_cpmg, r2_exp,
+                                                                              r2_erd, r2_eru))
+
+    file_txt.write("\n")
 
 
 def plot_data(data, params, output_dir='./'):
@@ -68,19 +89,24 @@ def plot_data(data, params, output_dir='./'):
         name_pdf = ''.join([experiment_name, '.pdf'])
         name_pdf = os.path.join(output_dir, name_pdf)
 
-        name_txt = ''.join([experiment_name, '.fit'])
-        name_txt = os.path.join(output_dir, name_txt)
+        name_exp = ''.join([experiment_name, '.exp'])
+        name_exp = os.path.join(output_dir, name_exp)
+
+        name_fit = ''.join([experiment_name, '.fit'])
+        name_fit = os.path.join(output_dir, name_fit)
 
         print(("  * {} [.fit]".format(name_pdf)))
 
         data_grouped = plotting.group_data(dataset)
         profiles = compute_profiles(data_grouped, params)
 
-        with backend_pdf.PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt:
+        with backend_pdf.PdfPages(name_pdf) as file_pdf, open(name_fit, 'w') as file_fit, open(
+                name_exp, 'w') as file_exp:
 
             for peak in sorted(profiles):
                 nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru = profiles[peak]
-                write_profile(peak.assignment, profiles[peak], file_txt)
+                write_profile_exp(peak.assignment, profiles[peak], file_exp)
+                write_profile_fit(peak.assignment, profiles[peak], file_fit)
 
                 r2_min = min(min(r2_cal), min(r2_exp - r2_erd))
                 r2_max = max(max(r2_cal), max(r2_exp + r2_eru))

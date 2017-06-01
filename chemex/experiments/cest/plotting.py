@@ -52,17 +52,30 @@ def compute_profiles(data_grouped, params):
     return profiles
 
 
-def write_profile_fit(name, b1_ppm_fit, mag_fit, file_txt):
+def write_profile_fit(name, b1_ppm_fit, mag_fit, file_):
     """Write the fitted CEST profile."""
+
+    file_.write("[{}]\n".format(name.upper()))
+
+    file_.write("# {:>17s}   {:>17s}\n".format("OFFSET", "INTENSITY"))
+
     for b1_ppm_cal, mag_cal in zip(b1_ppm_fit, mag_fit):
-        file_txt.write("{:10s} {:8.3f} {:8.3f}\n".format(name.upper(), b1_ppm_cal, mag_cal))
+        file_.write("  {0:17.8e} = {1:17.8e}\n".format(b1_ppm_cal, mag_cal))
+
+    file_.write("\n")
 
 
-def write_profile_exp(name, b1_ppm, mag_exp, mag_err, mag_cal, file_txt):
+def write_profile_exp(name, b1_ppm, mag_exp, mag_err, mag_cal, file_):
     """Write the experimental CEST profile."""
+
+    file_.write("[{}]\n".format(name.upper()))
+
+    file_.write("# {:>17s}   {:>17s} {:>17s}\n".format("OFFSET", "INTENSITY", "UNCERTAINTY"))
+
     for b1_ppm_, mag_exp_, mag_err_, mag_cal_ in zip(b1_ppm, mag_exp, mag_err, mag_cal):
-        file_txt.write("{:10s} {:8.3f} {:8.3f} {:8.3f} {:8.3f}\n".format(name.upper(
-        ), b1_ppm_, mag_exp_, mag_err_, mag_cal_))
+        file_.write("  {0:17.8e} = {1:17.8e} {2:17.8e}\n".format(b1_ppm_, mag_exp_, mag_err_))
+
+    file_.write("\n")
 
 
 def plot_data(data, params, output_dir='./'):
