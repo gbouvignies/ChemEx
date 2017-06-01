@@ -33,7 +33,6 @@ def print_logo():
 
 def make_bootstrap_dataset(data):
     """Create a new dataset to run a bootstrap simulation."""
-    # TODO: fix bootstrap error estimation, issue with copy.deepcoopy()
     data_bs = datasets.DataSet()
 
     for profile in data:
@@ -44,12 +43,10 @@ def make_bootstrap_dataset(data):
 
 def make_montecarlo_dataset(data, params):
     """Create a new dataset to run a Monte-Carlo simulation."""
-    # TODO: fix Monte-Carlo error estimation, issue with copy.deepcoopy()
-    data_mc = copy.deepcopy(data)
+    data_mc = datasets.DataSet()
 
-    for profile in data_mc:
-        profile.val = profile.calculate_profile(params) + np.random.randn(len(
-            profile.val)) * profile.err
+    for profile in data:
+        data_mc.append(profile.make_mc_profile(params=params))
 
     return data_mc
 
@@ -113,7 +110,9 @@ def plot_results(result, data, output_dir):
         print(" - Plotting cancelled")
 
     if result.method == 'brute':
-        labels = [parameters.ParameterName.from_full_name(var).name.upper() for var in result.var_names]
+        labels = [
+            parameters.ParameterName.from_full_name(var).name.upper() for var in result.var_names
+        ]
         outfile = os.path.join(output_dir, 'results_brute.pdf')
         plotting.plot_results_brute(result, varlabels=labels, output=outfile)
         print(("  * {}".format(outfile)))
@@ -162,8 +161,7 @@ def main():
             if len(args.res_incl) == 1:
                 output_dir = os.path.join(output_dir, args.res_incl.pop().upper())
 
-        if not args.bs:
-            result = fit_write_plot(args, params, data, output_dir)
+        result = fit_write_plot(args, params, data, output_dir)
 
         if args.bs or args.mc:
             if args.bs:

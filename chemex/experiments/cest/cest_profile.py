@@ -67,7 +67,13 @@ class CESTProfile(base_profile.BaseProfile):
 
     def calculate_scale(self, cal):
         """Calculate the scaling factor."""
-        scale = (sum(cal * self.val / self.err**2) / sum((cal / self.err)**2))
+
+        norm = sum((cal / self.err)**2)
+
+        if norm:
+            scale = (sum(cal * self.val / self.err**2) / norm)
+        else:
+            scale = 0.0
 
         return scale
 
@@ -152,6 +158,14 @@ class CESTProfile(base_profile.BaseProfile):
 
         return "\n".join(output).upper()
 
+    def make_mc_profile(self, params):
+        """Make a CEST profile for boostrap analysis."""
+
+        profile = copy.copy(self)
+        profile.val = self.calculate_profile(params) + np.random.randn(len(self.val)) * self.err
+
+        return profile
+
     def make_bs_profile(self):
         """Make a CEST profile for boostrap analysis."""
         indexes = np.array(range(len(self.val)))
@@ -165,7 +179,7 @@ class CESTProfile(base_profile.BaseProfile):
 
         bs_indexes = sorted(bs_indexes)
 
-        profile = copy.deepcopy(self)
+        profile = copy.copy(self)
         profile.b1_offsets = profile.b1_offsets[bs_indexes]
         profile.val = profile.val[bs_indexes]
         profile.err = profile.err[bs_indexes]
