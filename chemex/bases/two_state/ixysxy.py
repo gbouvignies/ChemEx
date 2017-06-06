@@ -31,6 +31,7 @@ mat_kba = ref.mat_kba[mesh]
 
 index_iysx = [2, 6]
 index_iysx_a = [2]
+index_iysx_b = [6]
 
 p_180x_i = np.diag([1.0, 1.0, -1.0, -1.0,
                     1.0, 1.0, -1.0, -1.0])
