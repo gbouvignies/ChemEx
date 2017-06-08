@@ -39,6 +39,10 @@ class Profile(cest_profile.CESTProfile):
             p_total=self.p_total,
             l_total=self.l_total, )
 
+        for name in ('r2_i_b', 'r2_i_c', 'r2_i_d'):
+            if name in self.map_names:
+                self.default_params[self.map_names[name]].set(vary=True)
+
         kwargs = {
             'temperature': self.temperature,
             'nuclei': self.resonance_s['name'],

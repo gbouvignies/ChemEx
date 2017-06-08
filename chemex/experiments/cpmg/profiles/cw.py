@@ -57,11 +57,6 @@ class Profile(cpmg_profile.CPMGProfile):
 
         self.default_params[self.map_names['r1_i_a']].set(vary=False)
 
-        for name in ('r2_i_b', 'r2_i_c', 'r2_i_d'):
-            if name in self.map_names:
-                param = self.default_params[self.map_names[name]]
-                param.set(min=param.min, max=param.max, expr=self.map_names['r2_i_a'])
-
     def calculate_unscaled_profile(self, **kwargs):
         """Calculate the intensity in presence of exchange after a CEST block.
 

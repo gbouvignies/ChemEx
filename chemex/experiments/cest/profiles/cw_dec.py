@@ -62,6 +62,10 @@ class Profile(cest_profile.CESTProfile):
             (self.map_names['r2a_s_a'], 0.0, False, 0.0, None, r2a_s_a),
             (self.map_names['r2a_s_b'], 0.0, False, 0.0, None, r2a_s_b), )
 
+        for name in ('r2_i_b', 'r2_i_c', 'r2_i_d'):
+            if name in self.map_names:
+                self.default_params[self.map_names[name]].set(vary=True)
+
         if '3st' in self.model:
             r2a_i_c = '{r2_i_c} + {r1a_c} - {r1_i_c}'.format(**self.map_names)
             r2a_s_c = '{r2_s_c} - {r1_i_c}'.format(**self.map_names)
