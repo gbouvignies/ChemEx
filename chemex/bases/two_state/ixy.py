@@ -68,37 +68,36 @@ def create_default_params(model=None,
                           p_total=None,
                           l_total=None):
     """Create the default experimental and fitting parameters."""
-    kwargs1 = {'temperature': temperature, 'p_total': p_total, 'l_total': l_total}
-    kwargs2 = {'temperature': temperature, 'nuclei': nuclei}
-    kwargs3 = {'temperature': temperature, 'nuclei': nuclei, 'h_larmor_frq': h_larmor_frq}
 
-    map_names = {
-        'pb': parameters.ParameterName('pb', **kwargs1).to_full_name(),
-        'kex_ab': parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
-        'dw_i_ab': parameters.ParameterName('dw_ab', **kwargs2).to_full_name(),
-        'cs_i_a': parameters.ParameterName('cs_a', **kwargs2).to_full_name(),
-        'r2_i_a': parameters.ParameterName('r2_a', **kwargs3).to_full_name(),
-        'cs_i_b': parameters.ParameterName('cs_b', **kwargs2).to_full_name(),
-        'r2_i_b': parameters.ParameterName('r2_b', **kwargs3).to_full_name(),
-    }
+    map_names, params = exchange_model.create_exchange_params(model, temperature, p_total, l_total)
+
+    resonance_i = nuclei.resonances[0]
+
+    kw1 = {'temperature': temperature, 'nuclei': resonance_i['name']}
+
+    map_names.update({
+        'dw_i_ab': parameters.ParameterName('dw_ab', **kw1).to_full_name(),
+        'cs_i_a': parameters.ParameterName('cs_a', **kw1).to_full_name(),
+        'cs_i_b': parameters.ParameterName('cs_b', **kw1).to_full_name(),
+    })
+
+    kw2 = {'temperature': temperature, 'nuclei': resonance_i['name'], 'h_larmor_frq': h_larmor_frq}
+
+    map_names.update({
+        'r2_i_a': parameters.ParameterName('r2_a', **kw2).to_full_name(),
+        'r2_i_b': parameters.ParameterName('r2_b', **kw2).to_full_name(),
+    })
+
+    params.add_many(
+        (map_names['dw_i_ab'], 0.0, True, None, None, None),
+        (map_names['cs_i_a'], 0.0, False, None, None, None),
+        (map_names['r2_i_a'], 10.0, True, 0.0, None, None), )
 
     cs_i_b = '{cs_i_a} + {dw_i_ab}'.format(**map_names)
     r2_i_b = map_names['r2_i_a']
 
-    params = lmfit.Parameters()
-
     params.add_many(
-        # Name, Value, Vary, Min, Max, Expr
-        (map_names['pb'], 0.025, True, 0.0, 1.0, None),
-        (map_names['kex_ab'], 200.0, True, 0.0, None, None),
-        (map_names['dw_i_ab'], 0.0, True, None, None, None),
-        (map_names['dw_i_ac'], 0.0, True, None, None, None),
-        (map_names['cs_i_a'], 0.0, False, None, None, None),
-        (map_names['r2_i_a'], 10.0, True, 0.0, None, None),
-        (map_names['cs_i_b'], 0.0, True, None, None, cs_i_b),
+        (map_names['cs_i_b'], 0.0, None, None, None, cs_i_b),
         (map_names['r2_i_b'], 10.0, None, 0.0, None, r2_i_b), )
-
-    map_names, params = exchange_model.update_params(params, map_names, model, temperature, p_total,
-                                                     l_total)
 
     return map_names, params

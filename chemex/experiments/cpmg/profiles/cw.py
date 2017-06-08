@@ -49,7 +49,7 @@ class Profile(cpmg_profile.CPMGProfile):
 
         self.map_names, self.default_params = self.base.create_default_params(
             model=self.model,
-            nuclei=self.resonance_i['name'],
+            nuclei=self.peak,
             temperature=self.temperature,
             h_larmor_frq=self.h_larmor_frq,
             p_total=self.p_total,

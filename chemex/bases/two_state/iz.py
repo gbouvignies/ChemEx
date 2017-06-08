@@ -56,28 +56,22 @@ def create_default_params(model=None,
                           p_total=None,
                           l_total=None):
     """Create the default experimental and fitting parameters."""
-    kwargs1 = {'temperature': temperature, 'p_total': p_total, 'l_total': l_total}
-    kwargs3 = {'temperature': temperature, 'nuclei': nuclei, 'h_larmor_frq': h_larmor_frq}
 
-    map_names = {
-        'pb': parameters.ParameterName('pb', **kwargs1).to_full_name(),
-        'kex_ab': parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
-        'r1_i_a': parameters.ParameterName('r1_a', **kwargs3).to_full_name(),
-        'r1_i_b': parameters.ParameterName('r1_b', **kwargs3).to_full_name(),
-    }
+    map_names, params = exchange_model.create_exchange_params(model, temperature, p_total, l_total)
+
+    resonance_i = nuclei.resonances[0]
+
+    kw2 = {'temperature': temperature, 'nuclei': resonance_i['name'], 'h_larmor_frq': h_larmor_frq}
+
+    map_names.update({
+        'r1_i_a': parameters.ParameterName('r1_a', **kw2).to_full_name(),
+        'r1_i_b': parameters.ParameterName('r1_b', **kw2).to_full_name(),
+    })
+
+    params.add_many((map_names['r1_i_a'], 1.0, True, 0.0, None, None), )
 
     r1_i_b = map_names['r1_i_a']
 
-    params = lmfit.Parameters()
-
-    params.add_many(
-        # Name, Value, Vary, Min, Max, Expr
-        (map_names['pb'], 0.05, True, 0.0, 1.0, None),
-        (map_names['kex_ab'], 200.0, True, 0.0, None, None),
-        (map_names['r1_i_a'], 1.0, True, 0.0, None, None),
-        (map_names['r1_i_b'], 1.0, True, 0.0, None, r1_i_b), )
-
-    map_names, params = exchange_model.update_params(params, map_names, model, temperature, p_total,
-                                                     l_total)
+    params.add_many((map_names['r1_i_b'], 1.0, None, 0.0, None, r1_i_b), )
 
     return map_names, params

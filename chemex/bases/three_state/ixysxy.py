@@ -4,7 +4,6 @@
 
 """
 
-import lmfit
 import numpy as np
 
 from chemex import parameters
@@ -60,7 +59,7 @@ p_180y_s = np.diag([-1.0, 1.0, -1.0, 1.0,
 
 
 def compute_liouvillian(
-        pb=0.0, pc=0.0, kex_ab=0.0, kex_bc=0.0, kex_ac=0.0,
+        kab=0.0, kba=0.0, kac=0.0, kca=0.0, kbc=0.0, kcb=0.0,
         omega_i_a=0.0, omega_s_a=0.0,
         omega_i_b=0.0, omega_s_b=0.0,
         omega_i_c=0.0, omega_s_c=0.0,
@@ -69,16 +68,6 @@ def compute_liouvillian(
         r2_mq_c=0.0, mu_mq_c=0.0,
         **kwargs):
     """Compute the Liouvillian."""
-    pa = 1.0 - pb - pc
-
-    kab = kba = kbc = kcb = kac = kca = 0.0
-
-    if pa + pb:
-        kab, kba = kex_ab / (pa + pb) * np.array([pb, pa])
-    if pb + pc:
-        kbc, kcb = kex_bc / (pb + pc) * np.array([pc, pb])
-    if pa + pc:
-        kac, kca = kex_ac / (pa + pc) * np.array([pc, pa])
 
     liouvillian = (
         mat_omega_i_a * omega_i_a +
@@ -109,10 +98,10 @@ def compute_liouvillian(
 # yapf: enable
 
 
-def compute_equilibrium_iysx(pb=0.0, pc=0.0, **kwargs):
+def compute_equilibrium_iysx(pa=0.0, pb=0.0, pc=0.0, **kwargs):
     """Compute the equilibrium magnetization."""
     mag0 = np.zeros((12, 1))
-    mag0[index_iysx] = [[1.0 - pb - pc], [pb], [pc]]
+    mag0[index_iysx] = [[pa], [pb], [pc]]
 
     return mag0
 
@@ -124,74 +113,67 @@ def create_default_params(model=None,
                           p_total=None,
                           l_total=None):
     """Create the default experimental and fitting parameters."""
+
+    map_names, params = exchange_model.create_exchange_params(model, temperature, p_total, l_total)
+
     resonance_i, resonance_s = nuclei.resonances
-    kwargs1 = {'temperature': temperature, 'p_total': p_total, 'l_total': l_total}
-    kwargs2 = {'temperature': temperature, 'nuclei': resonance_i['name']}
-    kwargs3 = {'temperature': temperature, 'nuclei': resonance_s['name']}
-    kwargs4 = {
-        'temperature': temperature,
-        'nuclei': nuclei.assignment,
-        'h_larmor_frq': h_larmor_frq
-    }
 
-    map_names = {
-        'pb': parameters.ParameterName('pb', **kwargs1).to_full_name(),
-        'pc': parameters.ParameterName('pc', **kwargs1).to_full_name(),
-        'kex_ab': parameters.ParameterName('kex_ab', **kwargs1).to_full_name(),
-        'kex_ac': parameters.ParameterName('kex_ac', **kwargs1).to_full_name(),
-        'kex_bc': parameters.ParameterName('kex_bc', **kwargs1).to_full_name(),
-        'dw_i_ab': parameters.ParameterName('dw_ab', **kwargs2).to_full_name(),
-        'dw_i_ac': parameters.ParameterName('dw_ac', **kwargs2).to_full_name(),
-        'dw_s_ab': parameters.ParameterName('dw_ab', **kwargs3).to_full_name(),
-        'dw_s_ac': parameters.ParameterName('dw_ac', **kwargs3).to_full_name(),
-        'cs_i_a': parameters.ParameterName('cs_a', **kwargs2).to_full_name(),
-        'cs_s_a': parameters.ParameterName('cs_a', **kwargs3).to_full_name(),
-        'r2_mq_a': parameters.ParameterName('r2_mq_a', **kwargs4).to_full_name(),
-        'mu_mq_a': parameters.ParameterName('mu_mq_a', **kwargs4).to_full_name(),
-        'cs_i_b': parameters.ParameterName('cs_b', **kwargs2).to_full_name(),
-        'cs_s_b': parameters.ParameterName('cs_b', **kwargs3).to_full_name(),
-        'r2_mq_b': parameters.ParameterName('r2_mq_b', **kwargs4).to_full_name(),
-        'mu_mq_b': parameters.ParameterName('mu_mq_b', **kwargs4).to_full_name(),
-        'cs_i_c': parameters.ParameterName('cs_c', **kwargs2).to_full_name(),
-        'cs_s_c': parameters.ParameterName('cs_c', **kwargs3).to_full_name(),
-        'r2_mq_c': parameters.ParameterName('r2_mq_c', **kwargs4).to_full_name(),
-        'mu_mq_c': parameters.ParameterName('mu_mq_c', **kwargs4).to_full_name(),
-    }
+    kw1 = {'temperature': temperature, 'nuclei': resonance_i['name']}
 
-    cs_i_b = '{cs_i_a} + {dw_i_ab}'.format(**map_names)
-    cs_i_c = '{cs_i_a} + {dw_i_ac}'.format(**map_names)
-    cs_s_b = '{cs_s_a} + {dw_s_ab}'.format(**map_names)
-    cs_s_c = '{cs_s_a} + {dw_s_ac}'.format(**map_names)
-    r2_mq_c = r2_mq_b = map_names['r2_mq_a']
-    mu_mq_c = mu_mq_b = map_names['mu_mq_a']
+    map_names.update({
+        'dw_i_ab': parameters.ParameterName('dw_ab', **kw1).to_full_name(),
+        'dw_i_ac': parameters.ParameterName('dw_ac', **kw1).to_full_name(),
+        'cs_i_a': parameters.ParameterName('cs_a', **kw1).to_full_name(),
+        'cs_i_b': parameters.ParameterName('cs_b', **kw1).to_full_name(),
+        'cs_i_c': parameters.ParameterName('cs_c', **kw1).to_full_name(),
+    })
 
-    params = lmfit.Parameters()
+    kw3 = {'temperature': temperature, 'nuclei': resonance_s['name']}
+
+    map_names.update({
+        'dw_s_ab': parameters.ParameterName('dw_ab', **kw3).to_full_name(),
+        'dw_s_ac': parameters.ParameterName('dw_ac', **kw3).to_full_name(),
+        'cs_s_a': parameters.ParameterName('cs_a', **kw3).to_full_name(),
+        'cs_s_b': parameters.ParameterName('cs_b', **kw3).to_full_name(),
+        'cs_s_c': parameters.ParameterName('cs_c', **kw3).to_full_name(),
+    })
+
+    kw6 = {'temperature': temperature, 'nuclei': nuclei.assignment, 'h_larmor_frq': h_larmor_frq}
+
+    map_names.update({
+        'r2_mq_a': parameters.ParameterName('r2_mq_a', **kw6).to_full_name(),
+        'mu_mq_a': parameters.ParameterName('mu_mq_a', **kw6).to_full_name(),
+        'r2_mq_b': parameters.ParameterName('r2_mq_b', **kw6).to_full_name(),
+        'mu_mq_b': parameters.ParameterName('mu_mq_b', **kw6).to_full_name(),
+        'r2_mq_c': parameters.ParameterName('r2_mq_c', **kw6).to_full_name(),
+        'mu_mq_c': parameters.ParameterName('mu_mq_c', **kw6).to_full_name(),
+    })
 
     params.add_many(
-        # Name, Value, Vary, Min, Max, Expr
-        (map_names['pb'], 0.05, True, 0.0, 1.0, None),
-        (map_names['pc'], 0.05, True, 0.0, 1.0, None),
-        (map_names['kex_ab'], 200.0, True, 0.0, None, None),
-        (map_names['kex_bc'], 200.0, True, 0.0, None, None),
-        (map_names['kex_ac'], 0.0, False, 0.0, None, None),
         (map_names['dw_i_ab'], 0.0, True, None, None, None),
         (map_names['dw_i_ac'], 0.0, True, None, None, None),
-        (map_names['dw_s_ab'], 0.0, True, None, None, None),
-        (map_names['dw_s_ac'], 0.0, True, None, None, None),
+        (map_names['dw_s_ab'], 0.0, False, None, None, None),
+        (map_names['dw_s_ac'], 0.0, False, None, None, None),
         (map_names['cs_i_a'], 0.0, False, None, None, None),
         (map_names['cs_s_a'], 0.0, False, None, None, None),
-        (map_names['r2_mq_a'], 10.0, True, 0.0, None, None),
-        (map_names['mu_mq_a'], 0.0, False, 0.0, None, None),
-        (map_names['cs_i_b'], 0.0, False, None, None, cs_i_b),
-        (map_names['cs_s_b'], 0.0, False, None, None, cs_s_b),
-        (map_names['r2_mq_b'], 10.0, None, 0.0, None, r2_mq_b),
-        (map_names['mu_mq_b'], 0.0, None, 0.0, None, mu_mq_b),
-        (map_names['cs_i_c'], 0.0, False, None, None, cs_i_c),
-        (map_names['cs_s_b'], 0.0, False, None, None, cs_s_c),
-        (map_names['r2_mq_c'], 10.0, None, 0.0, None, r2_mq_c),
-        (map_names['mu_mq_c'], 0.0, None, 0.0, None, mu_mq_c), )
+        (map_names['mu_mq_a'], 0.0, False, None, None, None),
+        (map_names['r2_mq_a'], 10.0, False, 0.0, None, None), )
 
-    map_names, params = exchange_model.update_params(params, map_names, model, temperature, p_total,
-                                                     l_total)
+    cs_i_b = '{cs_i_a} + {dw_i_ab}'.format(**map_names)
+    cs_s_b = '{cs_s_a} + {dw_s_ab}'.format(**map_names)
+    cs_i_c = '{cs_i_a} + {dw_i_ac}'.format(**map_names)
+    cs_s_c = '{cs_s_a} + {dw_s_ac}'.format(**map_names)
+    mu_mq_c = mu_mq_b = map_names['mu_mq_a']
+    r2_mq_c = r2_mq_b = map_names['r2_mq_a']
+
+    params.add_many(
+        (map_names['cs_i_b'], 0.0, None, None, None, cs_i_b),
+        (map_names['cs_s_b'], 0.0, None, None, None, cs_s_b),
+        (map_names['mu_mq_b'], 0.0, None, None, None, mu_mq_b),
+        (map_names['r2_mq_b'], 10.0, None, 0.0, None, r2_mq_b),
+        (map_names['cs_i_c'], 0.0, None, None, None, cs_i_c),
+        (map_names['cs_s_c'], 0.0, None, None, None, cs_s_c),
+        (map_names['mu_mq_c'], 0.0, None, None, None, mu_mq_c),
+        (map_names['r2_mq_c'], 10.0, None, 0.0, None, r2_mq_c), )
 
     return map_names, params
