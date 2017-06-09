@@ -56,7 +56,7 @@ p_180x_i_perfect = np.diag([1.0, -1.0, -1.0, 1.0, -1.0, -1.0,
 
 
 def compute_liouvillian(
-        pb=0.0, kex_ab=0.0,
+        kab=0.0, kba=0.0,
         r2_i_a=0.0, r1_i_a=0.0, r2a_i_a=0.0, etaxy_i_a=0.0, etaz_i_a=0.0, omega_i_a=0.0,
         r2_i_b=0.0, r1_i_b=0.0, r2a_i_b=0.0, etaxy_i_b=0.0, etaz_i_b=0.0, omega_i_b=0.0,
         r1a_a=0.0, j_a=0.0,
@@ -64,9 +64,6 @@ def compute_liouvillian(
         omega1x_i=0.0, omega1y_i=0.0,
         **kwargs):
     """Compute the Liouvillian."""
-    pa = 1.0 - pb
-
-    kab, kba = kex_ab * np.array([pb, pa])
 
     liouvillian = (
         mat_r2_i_a * r2_i_a +
@@ -104,18 +101,18 @@ def compute_liouvillian(
 # yapf: enable
 
 
-def compute_equilibrium_2izsz(pb=0.0, **kwargs):
+def compute_equilibrium_2izsz(pa=0.0, pb=0.0, **kwargs):
     """Compute the equilibrium magnetization."""
     mag0 = np.zeros((12, 1))
-    mag0[index_2izsz] = [[1.0 - pb], [pb]]
+    mag0[index_2izsz] = [[pa], [pb]]
 
     return mag0
 
 
-def compute_2izsz_a(pb=0.0, **kwargs):
+def compute_2izsz_a(pa=0.0, **kwargs):
     """Compute the equilibrium magnetization for anti-TROSY."""
     mag0 = np.zeros((12, 1))
-    mag0[index_2izsz] = [[1.0 - pb], [0.0]]
+    mag0[index_2izsz] = [[pa], [0.0]]
 
     return mag0
 

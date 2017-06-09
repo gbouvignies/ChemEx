@@ -32,14 +32,11 @@ p_180y_i = np.diag([-1.0, 1.0,
 
 
 def compute_liouvillian(
-        pb=0.0, kex_ab=0.0,
+        kab=0.0, kba=0.0,
         r2_i_a=0.0, omega_i_a=0.0,
         r2_i_b=0.0, omega_i_b=0.0,
         **kwargs):
     """Compute the Liouvillian."""
-    pa = 1.0 - pb
-
-    kab, kba = kex_ab * np.array([pb, pa])
 
     liouvillian = (
         mat_r2_i_a * r2_i_a +
@@ -56,9 +53,9 @@ def compute_liouvillian(
 # yapf: enable
 
 
-def compute_equilibrium_x(pb=0.0, **kwargs):
+def compute_equilibrium_x(pa=0.0, pb=0.0, **kwargs):
     """Compute the equilibrium magnetization."""
-    return np.array([[1.0 - pb, 0.0, pb, 0.0]]).T
+    return np.array([[pa, 0.0, pb, 0.0]]).T
 
 
 def create_default_params(model=None,

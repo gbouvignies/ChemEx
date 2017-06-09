@@ -62,7 +62,7 @@ index_iz_a = [2]
 
 # yapf: disable
 def compute_liouvillian(
-        pb=0.0, kex_ab=0.0,
+        kab=0.0, kba=0.0,
         r2_i_a=0.0, r1_i_a=0.0, r2a_i_a=0.0, etaxy_i_a=0.0, etaz_i_a=0.0, omega_i_a=0.0,
         r2_s_a=0.0, r1_s_a=0.0, r2a_s_a=0.0, etaxy_s_a=0.0, etaz_s_a=0.0, omega_s_a=0.0,
         r2_mq_a=0.0, r1a_a=0.0, mu_mq_a=0.0, sigma_a=0.0, j_a=0.0,
@@ -72,9 +72,6 @@ def compute_liouvillian(
         omega1x_i=0.0, omega1y_i=0.0, omega1x_s=0.0, omega1y_s=0.0,
         **kwargs):
     """Compute the Liouvillian."""
-    pa = 1.0 - pb
-
-    kab, kba = kex_ab * np.array([pb, pa])
 
     liouvillian = (
         mat_r2_i_a * r2_i_a +
@@ -141,10 +138,10 @@ def compute_liouvillian(
 # yapf: enable
 
 
-def compute_equilibrium(pb=0.0, **kwargs):
+def compute_equilibrium(pa=0.0, pb=0.0, **kwargs):
     """Compute the equilibrium magnetization."""
     mag0 = np.zeros((30, 1))
-    mag0[index_iz] = [[1.0 - pb], [pb]]
+    mag0[index_iz] = [[pa], [pb]]
 
     return mag0
 

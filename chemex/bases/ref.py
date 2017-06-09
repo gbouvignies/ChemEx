@@ -217,8 +217,8 @@ mat_kdc = np.kron([[+0.0, +0.0, +0.0, +0.0],
 
 
 def compute_liouvillian(
-        pb=0.0, pc=0.0, pd=0.0, kex_ab=0.0,
-        kex_ac=0.0, kex_ad=0.0, kex_bc=0.0, kex_bd=0.0, kex_cd=0.0,
+        kab=0.0, kba=0.0, kac=0.0, kca=0.0, kad=0.0, kda=0.0,
+        kbc=0.0, kcb=0.0, kbd=0.0, kdb=0.0, kcd=0.0, kdc=0.0,
         r2_i_a=0.0, r1_i_a=0.0, r2a_i_a=0.0, etaxy_i_a=0.0, etaz_i_a=0.0, omega_i_a=0.0,
         r2_i_b=0.0, r1_i_b=0.0, r2a_i_b=0.0, etaxy_i_b=0.0, etaz_i_b=0.0, omega_i_b=0.0,
         r2_i_c=0.0, r1_i_c=0.0, r2a_i_c=0.0, etaxy_i_c=0.0, etaz_i_c=0.0, omega_i_c=0.0,
@@ -233,22 +233,6 @@ def compute_liouvillian(
         r2_mq_d=0.0, r1a_d=0.0, mu_mq_d=0.0, sigma_d=0.0, j_d=0.0,
         omega1x_i=0.0, omega1y_i=0.0, omega1x_s=0.0, omega1y_s=0.0):
     """Compute the liouvillian."""
-    pa = 1.0 - pb - pc - pd
-
-    kab = kba = kac = kca = kad = kda = kbc = kcb = kbd = kdb = kcd = kdc = 0.0
-
-    if pa + pb:
-        kab, kba = kex_ab / (pa + pb) * np.asarray([pb, pa])
-    if pa + pc:
-        kac, kca = kex_ac / (pa + pc) * np.asarray([pc, pa])
-    if pa + pd:
-        kad, kda = kex_ad / (pa + pd) * np.asarray([pd, pa])
-    if pb + pc:
-        kbc, kcb = kex_bc / (pb + pc) * np.asarray([pc, pb])
-    if pb + pd:
-        kbd, kdb = kex_bd / (pb + pd) * np.asarray([pd, pb])
-    if pc + pd:
-        kcd, kdc = kex_cd / (pc + pd) * np.asarray([pd, pc])
 
     liouvillian = (
         mat_r2_i_a * r2_i_a +

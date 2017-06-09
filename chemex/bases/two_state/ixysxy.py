@@ -46,16 +46,13 @@ p_180y_s = np.diag([-1.0, 1.0, -1.0, 1.0,
 
 
 def compute_liouvillian(
-        pb=0.0, kex_ab=0.0,
+        kab=0.0, kba=0.0,
         omega_i_a=0.0, omega_s_a=0.0,
         omega_i_b=0.0, omega_s_b=0.0,
         r2_mq_a=0.0, mu_mq_a=0.0,
         r2_mq_b=0.0, mu_mq_b=0.0,
         **kwargs):
     """Compute the Liouvillian."""
-    pa = 1.0 - pb
-
-    kab, kba = kex_ab * np.array([pb, pa])
 
     liouvillian = (
         mat_omega_i_a * omega_i_a +
@@ -78,10 +75,10 @@ def compute_liouvillian(
 # yapf: enable
 
 
-def compute_equilibrium_iysx(pb=0.0, **kwargs):
+def compute_equilibrium_iysx(pa=0.0, pb=0.0, **kwargs):
     """Compute the equilibrium magnetization."""
     mag0 = np.zeros((8, 1))
-    mag0[index_iysx] = [[1.0 - pb], [pb]]
+    mag0[index_iysx] = [[pa], [pb]]
 
     return mag0
 
