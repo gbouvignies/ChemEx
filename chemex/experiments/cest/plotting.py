@@ -8,7 +8,6 @@ from matplotlib import ticker
 from matplotlib.backends import backend_pdf
 import numpy as np
 
-from chemex import peaks
 from chemex.experiments import plotting
 
 
@@ -21,34 +20,13 @@ def sigma_estimator(x):
     return np.median([np.median(abs(xi - np.asarray(x))) for xi in x]) * 1.1926
 
 
-def set_lim(values, scale):
-    """Provide a range that contains all the value and adds a margin."""
-    v_min, v_max = min(values), max(values)
-    margin = (v_max - v_min) * scale
-    v_min, v_max = v_min - margin, v_max + margin
-
-    return v_min, v_max
-
-
-def group_data(dataset):
-    """Group the data resonance specifically."""
-    data_grouped = dict()
-
-    for profile in dataset:
-        name = profile.profile_name
-        peak = peaks.Peak(name)
-        data_grouped[peak] = profile
-
-    return data_grouped
-
-
 def compute_profiles(data_grouped, params):
     """Compute the CEST profiles used for plotting."""
     profiles = {}
 
     for peak, profile in data_grouped.items():
-        mask = (profile.b1_offsets > -10000.0) & (profile.b1_offsets < 10000.0)
-        mask_ref = np.logical_not(mask)
+        mask_ref = profile.reference
+        mask = np.logical_not(mask_ref)
 
         val_ref = np.mean(profile.val[mask_ref])
 
@@ -57,7 +35,7 @@ def compute_profiles(data_grouped, params):
         mag_exp = profile.val[mask] / val_ref
         mag_err = profile.err[mask] / np.absolute(val_ref)
 
-        b1_offsets_min, b1_offsets_max = set_lim(profile.b1_offsets[mask], 0.02)
+        b1_offsets_min, b1_offsets_max = plotting.set_lim(profile.b1_offsets[mask], 0.02)
         b1_offsets = np.linspace(b1_offsets_min, b1_offsets_max, 500)
 
         b1_ppm_fit = profile.b1_offsets_to_ppm(b1_offsets)
@@ -74,17 +52,30 @@ def compute_profiles(data_grouped, params):
     return profiles
 
 
-def write_profile_fit(name, b1_ppm_fit, mag_fit, file_txt):
+def write_profile_fit(name, b1_ppm_fit, mag_fit, file_):
     """Write the fitted CEST profile."""
+
+    file_.write("[{}]\n".format(name.upper()))
+
+    file_.write("# {:>17s}   {:>17s}\n".format("OFFSET", "INTENSITY"))
+
     for b1_ppm_cal, mag_cal in zip(b1_ppm_fit, mag_fit):
-        file_txt.write("{:10s} {:8.3f} {:8.3f}\n".format(name.upper(), b1_ppm_cal, mag_cal))
+        file_.write("  {0:17.8e} = {1:17.8e}\n".format(b1_ppm_cal, mag_cal))
+
+    file_.write("\n")
 
 
-def write_profile_exp(name, b1_ppm, mag_exp, mag_err, mag_cal, file_txt):
+def write_profile_exp(name, b1_ppm, mag_exp, mag_err, mag_cal, file_):
     """Write the experimental CEST profile."""
+
+    file_.write("[{}]\n".format(name.upper()))
+
+    file_.write("# {:>17s}   {:>17s} {:>17s}\n".format("OFFSET", "INTENSITY", "UNCERTAINTY"))
+
     for b1_ppm_, mag_exp_, mag_err_, mag_cal_ in zip(b1_ppm, mag_exp, mag_err, mag_cal):
-        file_txt.write("{:10s} {:8.3f} {:8.3f} {:8.3f} {:8.3f}\n".format(name.upper(
-        ), b1_ppm_, mag_exp_, mag_err_, mag_cal_))
+        file_.write("  {0:17.8e} = {1:17.8e} {2:17.8e}\n".format(b1_ppm_, mag_exp_, mag_err_))
+
+    file_.write("\n")
 
 
 def plot_data(data, params, output_dir='./'):
@@ -113,7 +104,7 @@ def plot_data(data, params, output_dir='./'):
 
         print(("  * {} [.fit]".format(name_pdf)))
 
-        data_grouped = group_data(dataset)
+        data_grouped = plotting.group_data(dataset)
 
         profiles = compute_profiles(data_grouped, params)
 
@@ -167,9 +158,9 @@ def plot_data(data, params, output_dir='./'):
                     markerfacecolor='None',
                     zorder=3, )
 
-                xmin, xmax = set_lim(b1_ppm_fit, 0.05)
+                xmin, xmax = plotting.set_lim(b1_ppm_fit, 0.05)
                 mags = list(mag_exp) + list(mag_fit)
-                ymin, ymax = set_lim(mags, 0.10)
+                ymin, ymax = plotting.set_lim(mags, 0.10)
 
                 ax2.set_xlim(xmin, xmax)
                 ax2.set_ylim(ymin, ymax)
@@ -211,7 +202,7 @@ def plot_data(data, params, output_dir='./'):
                     markerfacecolor='None',
                     zorder=100, )
 
-                rmin, rmax = set_lim(deltas, 0.1)
+                rmin, rmax = plotting.set_lim(deltas, 0.1)
                 rmin = min([-3 * sigma, rmin - max(mag_err)])
                 rmax = max([+3 * sigma, rmax + max(mag_err)])
 
