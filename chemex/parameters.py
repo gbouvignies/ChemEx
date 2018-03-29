@@ -9,7 +9,7 @@ import os.path
 import re
 
 import lmfit
-from lmfit import astutils
+from asteval import astutils
 import numpy as np
 
 from chemex import peaks, util

@@ -57,6 +57,7 @@ setup(
         'scipy',
         'matplotlib',
         'lmfit',
+        'asteval',
     ],
 
     entry_points={
