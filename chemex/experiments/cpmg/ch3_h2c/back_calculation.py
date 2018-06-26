@@ -6,7 +6,7 @@ Created on Aug 15, 2011
 
 # Python Modules
 from scipy import pi, dot
-from scipy.linalg import expm2 as expm
+from scipy.linalg import expm
 from numpy.linalg import matrix_power
 
 # Local Modules

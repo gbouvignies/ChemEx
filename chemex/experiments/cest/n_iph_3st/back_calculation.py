@@ -1,5 +1,5 @@
 import scipy as sc
-from scipy.linalg import expm2 as expm
+from scipy.linalg import expm
 
 from ....caching import lru_cache
 from .liouvillian import compute_nz_eq, compute_base_liouvillians, \
