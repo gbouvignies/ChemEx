@@ -1,5 +1,5 @@
 import scipy as sc
-from scipy.linalg import expm2 as expm
+from scipy.linalg import expm
 
 from chemex.experiments.misc import correct_chemical_shift
 from chemex.caching import lru_cache

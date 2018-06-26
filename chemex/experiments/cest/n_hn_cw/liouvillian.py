@@ -1,7 +1,7 @@
 from math import pi
 
 from scipy import zeros, cos, sin
-from scipy.linalg import expm2 as expm
+from scipy.linalg import expm
 
 from chemex import caching
 from chemex.constants import scalar_couplings
