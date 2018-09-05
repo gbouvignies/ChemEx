@@ -118,8 +118,10 @@ class Profile(cest_profile.CESTProfile):
 
         cs = params[self.map_names["cs_i_a"]].value
 
-        filter_offsets = list(self.exp_details["filter_offsets"])
-        filter_bandwidths = list(self.exp_details["filter_bandwidths"])
+        filter_offsets = np.asarray(self.exp_details["filter_offsets"]).reshape(-1)
+        filter_bandwidths = np.asarray(self.exp_details["filter_bandwidths"]).reshape(
+            -1
+        )
 
         for offset, bandwidth in zip(filter_offsets, filter_bandwidths):
             nu_offsets = (
