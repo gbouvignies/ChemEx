@@ -1,6 +1,6 @@
 """
-Pure In-phase CEST
-==================
+Pure In-phase D-CEST
+====================
 
 Analyzes chemical exchange in the presence of 1H composite decoupling during
 the CEST block. This keeps the spin system purely in-phase throughout, and is
@@ -12,7 +12,7 @@ calculated using the 6x6, single spin matrix:
 Reference
 ---------
 
-Vallurupalli, Bouvignies and Kay. J Am Chem Soc (2012) 134:8148-8161
+Yuwen, Kay and Bouvignies. ChemPhysChem (2018) 19:1707-1710
 
 """
 
@@ -24,6 +24,8 @@ from chemex.spindynamics import basis, constants, default
 EXP_DETAILS = {
     "carrier": {"type": float},
     "time_t1": {"type": float},
+    "pw90_dante": {"type": float},
+    "sw_dante": {"type": float},
     "b1_frq": {"type": float},
     "b1_inh": {"default": np.inf, "type": float},
     "b1_inh_res": {"default": 11, "type": int},
@@ -41,7 +43,14 @@ class Profile(cest_profile.CESTProfile):
 
         self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
 
-        self.time_t1 = self.exp_details["time_t1"]
+        pw90_dante = self.exp_details["pw90_dante"]
+        self.sw_dante = self.exp_details["sw_dante"]
+        b1_frq = self.exp_details["b1_frq"]
+        time_t1 = self.exp_details["time_t1"]
+
+        self.pw_dante = 4.0 * pw90_dante * b1_frq / self.sw_dante
+        self.tau_dante = 1.0 / self.sw_dante - self.pw_dante
+        self.ncyc_dante = int(time_t1 * self.sw_dante + 0.1)
 
         self.liouv = basis.Liouvillian(
             system="ixyz",
@@ -51,13 +60,12 @@ class Profile(cest_profile.CESTProfile):
             equilibrium=False,
         )
 
-        self.liouv.w1_i = 2 * np.pi * self.exp_details["b1_frq"]
+        self.liouv.w1_i = 2.0 * np.pi / (4.0 * pw90_dante)
         self.liouv.w1_i_inh = self.exp_details["b1_inh"]
         self.liouv.w1_i_inh_res = self.exp_details["b1_inh_res"]
 
         self.carriers_i = self.b1_offsets_to_ppm()
         self.detect = self.liouv.detect["iz_a"]
-        self.dephasing = self.exp_details["b1_inh"] == np.inf
 
         if self.exp_details["cn_label"]:
             symbol, nucleus = self.peak.symbols["i"], self.peak.nuclei["i"]
@@ -89,24 +97,31 @@ class Profile(cest_profile.CESTProfile):
 
         """
 
-        self.liouv.update(**parvals)
-
         reference = self.reference
         carriers_i = self.carriers_i
 
         if b1_offsets is not None:
-            reference = np.zeros_like(b1_offsets, dtype=np.bool)
-            carriers_i = self.b1_offsets_to_ppm(b1_offsets)
+            carriers_i = (
+                self.exp_details["carrier"]
+                + 2.0 * np.pi * b1_offsets / self.liouv.ppms["i"]
+            )
+            reference = [False for _ in b1_offsets]
 
         mag0 = self.liouv.compute_mag_eq(term="iz", **parvals)
+
+        self.liouv.update(**parvals)
 
         profile = []
 
         for ref, carrier_i in zip(reference, carriers_i):
             self.liouv.carrier_i = carrier_i
             mag = mag0.copy()
+
             if not ref:
-                mag = self.liouv.pulse_i(self.time_t1, 0.0, self.dephasing) @ mag
+                p_delay = self.liouv.delays(self.tau_dante)
+                p_pulse = self.liouv.pulse_i(self.pw_dante, 0.0)
+                mag = np.linalg.matrix_power(p_pulse @ p_delay, self.ncyc_dante) @ mag
+
             mag = self.detect @ mag
             profile.append(np.float64(self.liouv.collapse(mag)))
 
@@ -118,8 +133,10 @@ class Profile(cest_profile.CESTProfile):
 
         cs = params[self.map_names["cs_i_a"]].value
 
-        filter_offsets = list(self.exp_details["filter_offsets"])
-        filter_bandwidths = list(self.exp_details["filter_bandwidths"])
+        filter_offsets = np.asarray(self.exp_details["filter_offsets"]).reshape(-1)
+        filter_bandwidths = np.asarray(self.exp_details["filter_bandwidths"]).reshape(
+            -1
+        )
 
         for offset, bandwidth in zip(filter_offsets, filter_bandwidths):
             nu_offsets = (
@@ -129,12 +146,14 @@ class Profile(cest_profile.CESTProfile):
                 - self.b1_offsets
                 + offset
             )
+            nu_offsets = (
+                nu_offsets + 0.5 * self.sw_dante
+            ) % self.sw_dante - 0.5 * self.sw_dante
 
             self.mask = np.logical_and(self.mask, abs(nu_offsets) > bandwidth * 0.5)
 
     def b1_offsets_to_ppm(self, b1_offsets=None):
         """Convert B1 offset from Hz to ppm."""
-
         if b1_offsets is None:
             b1_offsets = self.b1_offsets
 

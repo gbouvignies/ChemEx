@@ -6,16 +6,15 @@ calculated using the 6x6, single spin matrix:
 
 [ Ix(a), Iy(a), Iz(a), Ix(b), Iy(b), Iz(b) ]
 
-Notes
------
-Off resonance effects are taken into account.
+References
+----------
 
-The calculation is designed specifically to analyze the experiment found in the
-reference:
-
-Journal of Physical Chemistry B (2008), 112, 5898-5904
+Hansen, Vallurupalli and Kay. Journal of Physical Chemistry B (2008) 112:5898-5904
 
 """
+
+from functools import reduce
+from itertools import cycle, islice
 
 import numpy as np
 
@@ -27,6 +26,7 @@ EXP_DETAILS = {
     "time_t2": {"type": float},
     "pw90": {"type": float},
     "time_equil": {"default": 0.0, "type": float},
+    "ncyc_max": {"type": int},
 }
 
 
@@ -51,20 +51,30 @@ class Profile(cpmg_profile.CPMGProfile):
 
         self.detect = self.liouv.detect["iz_a"]
 
-        self.t_cps = {
-            ncyc: self.exp_details["time_t2"] / (4.0 * ncyc) - self.exp_details["pw90"]
-            for ncyc in self.ncycs
-        }
-        self.t_cps[-1] = 0.5 * self.exp_details["time_t2"] / 2.0
+        self.t_cps = {}
 
+        for ncyc in self.ncycs[self.ncycs > 0]:
+            self.t_cps[ncyc] = (
+                self.exp_details["time_t2"] / (4.0 * ncyc)
+                - self.exp_details["pw90"] * 0.75
+            )
+
+        self.t_pos_2 = +4.0 * self.exp_details["pw90"] / np.pi
         self.t_neg = -2.0 * self.exp_details["pw90"] / np.pi
 
-        self.delays = [self.t_neg, self.exp_details["time_equil"]]
+        self.delays = [self.t_pos_2, self.t_neg, self.exp_details["time_equil"]]
         self.delays.extend(self.t_cps.values())
+        self.delays.extend(
+            [self.exp_details["pw90"] * _ for _ in range(self.exp_details["ncyc_max"])]
+        )
+
+        self.phase_1 = [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3]
+        self.phase_2 = [1, 3, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 1, 3, 2, 2]
+        self.n_phase = len(self.phase_1)
 
         self.map_names, self.params = default.create_params(
             basis=self.liouv,
-            model=self.model.name,
+            model=self.model,
             nuclei=self.peak.names,
             conditions=self.conditions,
         )
@@ -106,7 +116,7 @@ class Profile(cpmg_profile.CPMGProfile):
         pulses = self.liouv.pulses_90_180_i()
         delays = dict(zip(self.delays, self.liouv.delays(self.delays)))
 
-        p_180pmx = 0.5 * (pulses["180px"] + pulses["180mx"])  # +/- phase cycling
+        p_180s = [pulses["180px"], pulses["180py"], pulses["180mx"], pulses["180my"]]
 
         # Simulate the CPMG block as function of ncyc
         mag0 = self.liouv.compute_mag_eq(term="iz", **parvals)
@@ -117,46 +127,55 @@ class Profile(cpmg_profile.CPMGProfile):
 
             if ncyc == 0:
 
-                mag = (
-                    self.detect
-                    @ delays[self.exp_details["time_equil"]]
-                    @ pulses["90px"]
-                    @ p_180pmx
-                    @ pulses["90px"]
-                    @ mag0
+                delay = self.exp_details["pw90"] * (self.exp_details["ncyc_max"] - 1)
+
+                p_centre = 0.5 * (
+                    pulses["180px"] @ delays[self.t_pos_2] @ pulses["180px"]
+                    + pulses["180my"] @ delays[self.t_pos_2] @ pulses["180py"]
                 )
 
-            elif ncyc == -1:
                 mag = (
                     self.detect
                     @ delays[self.exp_details["time_equil"]]
-                    @ pulses["90px"]
-                    @ delays[self.t_neg]
-                    @ delays[self.t_cps[ncyc]]
-                    @ p_180pmx
-                    @ delays[self.t_cps[ncyc]]
-                    @ delays[self.t_neg]
-                    @ pulses["90px"]
+                    @ delays[delay]
+                    @ pulses["90my"]
+                    @ p_centre
+                    @ pulses["90py"]
                     @ mag0
                 )
 
             else:
-                p_cp = np.linalg.matrix_power(
-                    delays[self.t_cps[ncyc]]
-                    @ pulses["180py"]
-                    @ delays[self.t_cps[ncyc]],
-                    int(ncyc),
+
+                delay = self.exp_details["pw90"] * (self.exp_details["ncyc_max"] - ncyc)
+                p_t_cp = delays[self.t_cps[ncyc]]
+                p_echoes = [p_t_cp @ p_180 @ p_t_cp for p_180 in p_180s]
+
+                p_cp1 = reduce(
+                    np.matmul,
+                    [
+                        p_echoes[phase]
+                        for phase in islice(cycle(self.phase_1), 2 * ncyc)
+                    ],
                 )
+                p_cp2 = reduce(
+                    np.matmul,
+                    [
+                        p_echoes[phase]
+                        for phase in islice(cycle(self.phase_2), 2 * ncyc)
+                    ],
+                )
+
+                p_cp = 0.5 * (p_cp1 + p_cp2)
+
                 mag = (
                     self.detect
                     @ delays[self.exp_details["time_equil"]]
-                    @ pulses["90px"]
+                    @ delays[delay]
+                    @ pulses["90my"]
                     @ delays[self.t_neg]
                     @ p_cp
-                    @ p_180pmx
-                    @ p_cp
                     @ delays[self.t_neg]
-                    @ pulses["90px"]
+                    @ pulses["90py"]
                     @ mag0
                 )
 

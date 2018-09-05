@@ -28,7 +28,7 @@ class DataSet(object):
 
         elif isinstance(other, base_profile.BaseProfile):
             self.data.append(other)
-            self.ndata = len(other.val)
+            self.ndata = len(other)
 
     def __iter__(self):
         for some_data in self.data:
@@ -57,10 +57,13 @@ class DataSet(object):
 
     def calculate_residuals(self, params, verbose=True, threshold=1e-3):
         """Calculate the residuals."""
-        residuals = np.concatenate([profile.calculate_residuals(params) for profile in self.data])
+
+        residuals = np.concatenate(
+            [profile.calculate_residuals(params) for profile in self.data]
+        )
 
         if verbose:
-            chisq = sum(residuals**2)
+            chisq = sum(residuals ** 2)
 
             change = (chisq - self.chisq_ref) / self.chisq_ref
 
@@ -74,7 +77,7 @@ class DataSet(object):
 
         return residuals
 
-    def write_to(self, params=None, output_dir='./'):
+    def write_to(self, params=None, output_dir="./"):
         """Write experimental and fitted profiles to a file."""
         datasets = dict()
 
@@ -83,18 +86,18 @@ class DataSet(object):
             datasets.setdefault(experiment_name, list()).append(profile)
 
         for experiment_name, data in datasets.items():
-            filename = ''.join([experiment_name, '.dat'])
+            filename = "".join([experiment_name, ".dat"])
             filename = os.path.join(output_dir, filename)
 
             print("  * {}".format(filename))
 
-            with open(filename, 'w') as f:
-                for profile in sorted(data, key=operator.attrgetter('peak')):
+            with open(filename, "w") as f:
+                for profile in sorted(data, key=operator.attrgetter("peak")):
                     f.write(profile.print_profile(params=params))
 
-    def add_dataset_from_file(self, filename, model=None, res_incl=None, res_excl=None):
+    def add_dataset_from_file(self, filename, model=None, included=None, excluded=None):
         """Add data from a file to the dataset."""
-        print("{:<45s} ".format(filename), end='')
+        print("{:<45s} ".format(filename), end="")
 
         # Get the directory of the input file
         working_dir = os.path.dirname(filename)
@@ -104,48 +107,57 @@ class DataSet(object):
 
         try:
             # Read the experiment information
-            experiment_details = dict(config.items('experiment'))
-            experiment_type = experiment_details['type']
-            experiment_class = experiment_type.split('.')[0]
+            details = dict(config.items("experiment"))
+            experiment_type = details["type"]
+            experiment_class = experiment_type.split(".")[0]
 
             # Read the experimental parameters
-            experiment_details.update(
-                {key.lower(): val
-                 for key, val in config.items('experimental_parameters')})
+            details.update(
+                {
+                    key.lower(): val
+                    for key, val in config.items("experimental_parameters")
+                }
+            )
 
             # Read the profile information (name, filename)
-            profile_filenames = {key.lower(): val for key, val in config.items('data')}
-
-            experiment_details['model'] = model
+            filenames = {key.lower(): val for key, val in config.items("data")}
 
         except configparser.NoSectionError as e:
             sys.exit("    Reading aborted: {}".format(e))
 
         except KeyError as e:
-            sys.exit("\nIn the section 'experiment' of {}, '{}' must be provided!".format(filename,
-                                                                                          e))
+            sys.exit(
+                "\nIn the section 'experiment' of {}, '{}' must be provided!".format(
+                    filename, e
+                )
+            )
 
         try:
             # Read (optional) additional parameters
-            experiment_details.update(
-                {key.lower(): val
-                 for key, val in config.items('extra_parameters')})
+            details.update(
+                {key.lower(): val for key, val in config.items("extra_parameters")}
+            )
 
         except configparser.NoSectionError:
             pass
 
-        path = util.normalize_path(working_dir, experiment_details.get('path', './'))
+        path = util.normalize_path(working_dir, details.get("path", "./"))
 
         try:
-            reading = importlib.import_module('.'.join(
-                ['chemex.experiments', experiment_class, 'reading']))
+            reading = importlib.import_module(
+                ".".join(["chemex.experiments", experiment_class, "reading"])
+            )
 
         except ImportError:
-            sys.exit("The experiment '{}', referred in '{}' is not implemented.".format(
-                experiment_type, filename))
+            sys.exit(
+                "The experiment '{}', referred in '{}' is not implemented.".format(
+                    experiment_type, filename
+                )
+            )
 
-        data, ndata = reading.read_profiles(path, profile_filenames, experiment_details, res_incl,
-                                            res_excl)
+        data, ndata = reading.read_profiles(
+            path, filenames, details, model, included, excluded
+        )
 
         self.data.extend(data)
         self.ndata += ndata

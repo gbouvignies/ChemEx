@@ -1,4 +1,6 @@
-"""Pure anti-phase CEST.
+"""
+Pure anti-phase CEST
+====================
 
 Analyzes chemical exchange during the CEST block. This is calculated using the
 12x12, single spin matrix:
@@ -6,99 +8,70 @@ Analyzes chemical exchange during the CEST block. This is calculated using the
 [ Ix(a), Iy(a), Iz(a), IxSz(a), IySz(a), IzSz(a),
   Ix(b), Iy(b), Iz(b), IxSz(b), IySz(b), IzSz(b) ]
 
+Reference
+=========
+
+Sekhar, Rosenzweig, Bouvignies and Kay. PNAS (2016) 113:E2794-E2801
+
 """
 
-import numpy as np
-from scipy import linalg
 
-from chemex import parameters
+import numpy as np
+
 from chemex.experiments.cest import cest_profile
+from chemex.spindynamics import basis, constants, default
+
+EXP_DETAILS = {
+    "carrier": {"type": float},
+    "time_t1": {"type": float},
+    "b1_frq": {"type": float},
+    "b1_inh": {"default": np.inf, "type": float},
+    "b1_inh_res": {"default": 11, "type": int},
+    "filter_offsets": {"default": 0.0, "type": float},
+    "filter_bandwidths": {"default": 0.0, "type": float},
+}
 
 
 class Profile(cest_profile.CESTProfile):
-    """TODO: class docstring."""
+    """Profile for pure in-phase CEST."""
 
-    def __init__(self, profile_name, measurements, exp_details):
-        super().__init__(profile_name, measurements, exp_details)
+    def __init__(self, name, measurements, exp_details, model):
+        super().__init__(name, measurements, exp_details, model)
 
-        if '3st' in self.model:
-            from chemex.bases.three_state import ixyzsz
-            self.base = ixyzsz
-        else:
-            from chemex.bases.two_state import ixyzsz
-            self.base = ixyzsz
+        self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
 
-        self.liouvillians_b1 = np.array(
-            [self.base.compute_liouvillian(omega1x_i=omega1) for omega1 in self.omega1s])
+        self.liouv = basis.Liouvillian(
+            system="ixyzsz",
+            state_nb=self.model.state_nb,
+            atoms=self.peak.atoms,
+            h_larmor_frq=self.conditions["h_larmor_frq"],
+            equilibrium=False,
+        )
 
-        self.map_names, self.default_params = self.base.create_default_params(
-            model=self.model,
-            nuclei=self.peak,
-            temperature=self.temperature,
-            h_larmor_frq=self.h_larmor_frq,
-            p_total=self.p_total,
-            l_total=self.l_total, )
+        self.liouv.w1_i = 2 * np.pi * self.exp_details["b1_frq"]
+        self.liouv.w1_i_inh = self.exp_details["b1_inh"]
+        self.liouv.w1_i_inh_res = self.exp_details["b1_inh_res"]
 
-        for name in ('r2_i_b', 'r2_i_c', 'r2_i_d'):
-            if name in self.map_names:
-                self.default_params[self.map_names[name]].set(vary=True)
+        self.carriers_i = self.b1_offsets_to_ppm()
+        self.detect = self.liouv.detect["2izsz_a"]
+        self.dephasing = self.exp_details["b1_inh"] == np.inf
 
-        kwargs = {
-            'temperature': self.temperature,
-            'nuclei': self.resonance_s['name'],
-            'h_larmor_frq': self.h_larmor_frq
-        }
+        self.map_names, self.params = default.create_params(
+            basis=self.liouv,
+            model=self.model.name,
+            nuclei=self.peak.names,
+            conditions=self.conditions,
+        )
 
-        self.map_names['r1_s_a'] = parameters.ParameterName('r1_a', **kwargs).to_full_name()
-        self.map_names['r1_s_b'] = parameters.ParameterName('r1_b', **kwargs).to_full_name()
+        for name, full_name in self.map_names.items():
+            if name.startswith(("dw", "r1_i_a", "r2")):
+                self.params[full_name].set(vary=True)
 
-        r1_s_b = self.map_names['r1_s_a']
-        r1_i_a = '{r1a_a} - {r1_s_a}'.format(**self.map_names)
-        r1_i_b = '{r1a_b} - {r1_s_b}'.format(**self.map_names)
-        r2a_i_a = '{r2_i_a} - {r1_s_a}'.format(**self.map_names)
-        r2a_i_b = '{r2_i_b} - {r1_s_b}'.format(**self.map_names)
+    def calculate_unscaled_profile(self, b1_offsets=None, **parvals):
+        """Calculate the CEST profile in the presence of exchange.
 
-        self.default_params.add_many(
-            # Name, Value, Vary, Min, Max, Expr
-            (self.map_names['r1_s_a'], 1.5, False, 0.0, None, None),
-            (self.map_names['r1_s_b'], 1.5, None, 0.0, None, r1_s_b),
-            (self.map_names['r1_i_a'], 0.0, None, 0.0, None, r1_i_a),
-            (self.map_names['r1_i_b'], 0.0, None, 0.0, None, r1_i_b),
-            (self.map_names['r2a_i_a'], 0.0, None, 0.0, None, r2a_i_a),
-            (self.map_names['r2a_i_b'], 0.0, None, 0.0, None, r2a_i_b), )
-
-        if '3st' in self.model:
-            self.map_names['r1_s_c'] = parameters.ParameterName('r1_c', **kwargs).to_full_name()
-
-            r1_s_c = self.map_names['r1_s_a']
-            r1_i_c = '{r1a_c} - {r1_s_c}'.format(**self.map_names)
-            r2a_i_c = '{r2_i_c} - {r1_s_c}'.format(**self.map_names)
-
-            self.default_params.add_many(
-                # Name, Value, Vary, Min, Max, Expr
-                (self.map_names['r1_s_c'], 1.5, None, 0.0, None, r1_s_c),
-                (self.map_names['r1_i_c'], 0.0, None, 0.0, None, r1_i_c),
-                (self.map_names['r2a_i_c'], 0.0, None, 0.0, None, r2a_i_c), )
-
-    def calculate_unscaled_profile(self, **kwargs):
-        """Calculate the intensity in presence of exchange after a CEST block.
-
-        Parameters
+        TODO: Parameters
         ----------
-        pb : float
-            Fractional population of state B.
-        kex_ab : float
-            Exchange rates between states A and B in /s.
-        dw_i_ab : float
-            Chemical shift difference between states A and B in rad/s.
-        r1_i_a : float
-            Longitudinal relaxation rate of states A in /s.
-        r2_i_a : float
-            Transverse relaxation rate of state A in /s.
-        dr2_i_ab : float
-            Transverse relaxation rate difference between states A and B in /s.
-        cs_i_a : float
-            Resonance position of state A in ppm.
 
         Returns
         -------
@@ -106,51 +79,67 @@ class Profile(cest_profile.CESTProfile):
             Intensity after the CEST block
 
         """
-        cs_i = np.array([kwargs.get(key, 0.0) for key in ('cs_i_a', 'cs_i_b', 'cs_i_c', 'cs_i_d')])
-        omega_i_cars = (cs_i - self.carrier) * self.ppm_i
 
-        start = self.base.index_2izsz_a
-        end = self.base.index_2izsz_a
-        mesh = np.ix_(end, start)
+        reference = self.reference
+        carriers_i = self.carriers_i
 
-        # 2HzNz
-        mag0 = self.base.compute_2izsz_a(**kwargs)
+        if b1_offsets is not None:
+            carriers_i = (
+                self.exp_details["carrier"]
+                + 2.0 * np.pi * b1_offsets / self.liouv.ppms["i"]
+            )
+            reference = [False for _ in b1_offsets]
+
+        mag0 = self.liouv.compute_mag_eq(term="2izsz", **parvals)
+
+        # As the CEST block is after t1 evolution, the excited state magnetization is set to 0.
+        mag0[6:] = 0.0
+
+        self.liouv.update(**parvals)
 
         profile = []
 
-        for index, b1_offset in enumerate(self.b1_offsets):
-            if self.reference[index]:
-                magz_a = mag0[end]
-
-            else:
-                omega_i_a, omega_i_b, omega_i_c, omega_i_d = omega_i_cars - 2.0 * np.pi * b1_offset
-
-                louvillian_nob1 = self.base.compute_liouvillian(
-                    omega_i_a=omega_i_a,
-                    omega_i_b=omega_i_b,
-                    omega_i_c=omega_i_c,
-                    omega_i_d=omega_i_d,
-                    **kwargs)
-
-                liouvillians = self.liouvillians_b1 + louvillian_nob1
-
-                if self.b1_inh == np.inf:
-                    s, vr = linalg.eig(liouvillians[0])
-                    vri = linalg.inv(vr)
-
-                    sl = [i for i, omega_i_eig in enumerate(s.imag) if abs(omega_i_eig) < 0.1]
-
-                    propagator = (vr[np.ix_(end, sl)].dot(np.diag(np.exp(s[sl] * self.time_t1)))
-                                  .dot(vri[np.ix_(sl, start)]))
-
-                else:
-                    propagators = [
-                        linalg.expm(liouvillian * self.time_t1) for liouvillian in liouvillians
-                    ]
-                    propagator = np.average(propagators, weights=self.b1_weights, axis=0)[mesh]
-
-                magz_a = propagator.dot(mag0[start]).real
-
-            profile.append(np.float64(magz_a))
+        for ref, carrier_i in zip(reference, carriers_i):
+            self.liouv.carrier_i = carrier_i
+            mag = mag0.copy()
+            if not ref:
+                mag = (
+                    self.liouv.pulse_i(self.exp_details["time_t1"], 0.0, self.dephasing)
+                    @ mag
+                )
+            mag = self.detect @ mag
+            profile.append(np.float64(self.liouv.collapse(mag)))
 
         return np.asarray(profile)
+
+    def filter_points(self, params=None):
+        """Evaluate some criteria to know whether or not the point should be
+        considered in the calculation."""
+
+        cs = params[self.map_names["cs_i_a"]].value
+
+        filter_offsets = np.asarray(self.exp_details["filter_offsets"]).reshape(-1)
+        filter_bandwidths = np.asarray(self.exp_details["filter_bandwidths"]).reshape(
+            -1
+        )
+
+        for offset, bandwidth in zip(filter_offsets, filter_bandwidths):
+            nu_offsets = (
+                (cs - self.exp_details["carrier"])
+                * self.liouv.ppms["i"]
+                / (2.0 * np.pi)
+                - self.b1_offsets
+                + offset
+            )
+
+            self.mask = np.logical_and(self.mask, abs(nu_offsets) > bandwidth * 0.5)
+
+    def b1_offsets_to_ppm(self, b1_offsets=None):
+        """Convert B1 offset from Hz to ppm."""
+        if b1_offsets is None:
+            b1_offsets = self.b1_offsets
+
+        return (
+            2.0 * np.pi * b1_offsets / self.liouv.ppms["i"]
+            + self.exp_details["carrier"]
+        )

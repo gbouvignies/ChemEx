@@ -16,7 +16,7 @@ def make_dir(path=None):
 
 def read_cfg_file(filename):
     """Read and parse the experiment configuration file with configparser."""
-    config = configparser.ConfigParser(inline_comment_prefixes=('#', ';'))
+    config = configparser.ConfigParser(inline_comment_prefixes=("#", ";"))
     config.optionxform = str
 
     if filename:
@@ -24,14 +24,22 @@ def read_cfg_file(filename):
             out = config.read(filename)
 
             if not out:
-                exit("\nERROR: The file \'{}\' is empty or does not exist!\n".format(filename))
+                exit(
+                    "\nERROR: The file '{}' is empty or does not exist!\n".format(
+                        filename
+                    )
+                )
 
         except configparser.MissingSectionHeaderError:
-            exit("\nERROR: You are missing a section heading in {:s}\n".format(filename))
+            exit(
+                "\nERROR: You are missing a section heading in {:s}\n".format(filename)
+            )
 
         except configparser.ParsingError:
-            exit("\nERROR: Having trouble reading your parameter file, did you"
-                 " forget '=' signs?\n{:s}".format(sys.exc_info()[1]))
+            exit(
+                "\nERROR: Having trouble reading your parameter file, did you"
+                " forget '=' signs?\n{:s}".format(sys.exc_info()[1])
+            )
 
     return config
 
