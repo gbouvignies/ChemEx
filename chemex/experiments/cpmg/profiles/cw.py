@@ -8,10 +8,11 @@ calculated using the 6x6, single spin matrix:
 
 Notes
 -----
+
 Off resonance effects are taken into account.
 
-The calculation is designed specifically to analyze the experiment found in the
-reference:
+Reference
+---------
 
 Journal of Physical Chemistry B (2008), 112, 5898-5904
 
@@ -53,7 +54,7 @@ class Profile(cpmg_profile.CPMGProfile):
 
         self.t_cps = {
             ncyc: self.exp_details["time_t2"] / (4.0 * ncyc) - self.exp_details["pw90"]
-            for ncyc in self.ncycs
+            for ncyc in self.ncycs[self.ncycs > 0]
         }
         self.t_cps[-1] = 0.5 * self.exp_details["time_t2"] / 2.0
 

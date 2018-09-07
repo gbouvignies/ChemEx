@@ -15,8 +15,8 @@ from scipy import linalg, stats
 
 from chemex.spindynamics import constants
 
-COMPONENTS = dict(
-    (name, index)
+COMPONENTS = {
+    name: index
     for index, name in enumerate(
         (
             "ix",  # 0
@@ -36,7 +36,7 @@ COMPONENTS = dict(
             "2izsz",  # 14
         )
     )
-)
+}
 
 SPIN_SYSTEMS = {
     "iz": np.array([2]),
@@ -232,15 +232,15 @@ def add_cs_and_carrier(matrices, ppms):
     return matrices_
 
 
-def calculate_propagators(liouvillians, delays, dephasing=False):
+def calculate_propagators(liouvillian, delays, dephasing=False):
     """TODO: function docstring."""
 
     delays_ = np.asarray(delays).reshape(-1)
-    shape = liouvillians.shape
+    shape = liouvillian.shape
 
     propagators = []
 
-    for l in liouvillians.reshape(-1, *shape[-2:]):
+    for l in liouvillian.reshape(-1, *shape[-2:]):
         s, vr = linalg.eig(l)
         vri = linalg.inv(vr)
 
@@ -255,6 +255,31 @@ def calculate_propagators(liouvillians, delays, dephasing=False):
     propagators = np.asarray(propagators).swapaxes(0, 1).reshape(-1, *shape)
 
     return propagators
+
+
+def make_perfect180(vectors):
+
+    vect_size = list(vectors.values())[0].size
+
+    perfect180 = {ptype: np.identity(vect_size) for ptype in ("ix", "iy", "sx", "sy")}
+
+    for key in set(vectors) & set(COMPONENTS):
+        if "ix" in key:
+            perfect180["iy"] -= 2 * np.diag(vectors[key].reshape(-1))
+        if "iy" in key:
+            perfect180["ix"] -= 2 * np.diag(vectors[key].reshape(-1))
+        if "iz" in key:
+            perfect180["ix"] -= 2 * np.diag(vectors[key].reshape(-1))
+            perfect180["iy"] -= 2 * np.diag(vectors[key].reshape(-1))
+        if "sx" in key:
+            perfect180["sy"] -= 2 * np.diag(vectors[key].reshape(-1))
+        if "sy" in key:
+            perfect180["sx"] -= 2 * np.diag(vectors[key].reshape(-1))
+        if "sz" in key:
+            perfect180["sx"] -= 2 * np.diag(vectors[key].reshape(-1))
+            perfect180["sy"] -= 2 * np.diag(vectors[key].reshape(-1))
+
+    return perfect180
 
 
 class Liouvillian(object):
@@ -276,6 +301,8 @@ class Liouvillian(object):
         self.keys = self._matrices.keys()
 
         self.detect = {name: vector.T for name, vector in self._vectors.items()}
+
+        self.perfect180 = make_perfect180(self._vectors)
 
         self._w1_i_weights = 1.0
         self._w1_s_weights = 1.0

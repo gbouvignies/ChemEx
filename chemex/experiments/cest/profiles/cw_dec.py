@@ -70,6 +70,7 @@ class Profile(cest_profile.CESTProfile):
             model=self.model.name,
             nuclei=self.peak.names,
             conditions=self.conditions,
+            nh_constraints=True,
         )
 
         for name, full_name in self.map_names.items():

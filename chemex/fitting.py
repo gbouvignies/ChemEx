@@ -4,11 +4,11 @@ import functools
 import os.path
 import sys
 
+import lmfit
 from scipy import stats
 
 from chemex import datasets, parameters, util
 from chemex.cli import FITMETHODS
-import lmfit
 
 all_fitmethods = lmfit.minimizer.SCALAR_METHODS
 all_fitmethods.update(
@@ -41,7 +41,8 @@ def run_fit(fit_filename, params, data, cl_fitmethod):
 
         if fitmethod not in allowed_fitmethods.keys():
             exit(
-                "The fitting method '{}', as specified in section ['{}'], is invalid! Please choose from:\n  {}".format(
+                "The fitting method '{}', as specified in section ['{}'],"
+                "is invalid! Please choose from:\n  {}".format(
                     fitmethod, section, list(sorted(allowed_fitmethods.keys()))
                 )
             )
@@ -103,52 +104,54 @@ def find_independent_clusters(data, params):
     clusters = []
 
     for profile in data:
-        params_profile = lmfit.Parameters(asteval=params._asteval)
-        for name, param in profile.params.items():
-            params_profile[name] = lmfit.Parameter(name)
 
-        names_vary_profile = []
+        parnames = profile.params.keys()
+        parnames_vary = {
+            name for name in parnames if params[name].vary and not params[name].expr
+        }
 
-        for name in profile.params:
-            params_profile[name] = params[name]
-            if params[name].vary and not params[name].expr:
-                names_vary_profile.append(name)
+        for data_cluster, parnames_cluster, parnames_vary_cluster in clusters:
 
-        for name_cluster, data_cluster, params_cluster in clusters:
-            names_vary_shared = [
-                name
-                for name, param in params_cluster.items()
-                if param.vary and name in names_vary_profile
-            ]
-
-            if names_vary_shared:
+            if parnames_vary & parnames_vary_cluster:
                 data_cluster.append(profile)
-                for name in params_profile:
-                    if name not in params_cluster:
-                        params_cluster[name] = lmfit.Parameter(name)
-                params_cluster.update(params_profile)
-                for name in names_vary_shared:
-                    name_cluster = name_cluster.intersection(
-                        parameters.ParameterName.from_full_name(name)
-                    )
+                parnames_cluster.extend(parnames)
+                parnames_vary_cluster.update(parnames_vary)
                 break
 
         else:
-            data_cluster = datasets.DataSet(profile)
-            params_cluster = params_profile
 
-            name_cluster = parameters.ParameterName.from_full_name(
-                names_vary_profile[0]
+            data_cluster = datasets.DataSet(profile)
+            parnames_cluster = list(parnames)
+            parnames_vary_cluster = parnames_vary
+
+            clusters.append((data_cluster, parnames_cluster, parnames_vary_cluster))
+
+    clusters_ = []
+
+    for data_cluster, parnames_cluster, parnames_vary_cluster in clusters:
+
+        name_cluster = parameters.ParameterName.from_full_name(
+            parnames_vary_cluster.pop()
+        )
+
+        while parnames_vary_cluster:
+            name_cluster = name_cluster.intersection(
+                parameters.ParameterName.from_full_name(parnames_vary_cluster.pop())
             )
 
-            for name in names_vary_profile:
-                name_cluster = name_cluster.intersection(
-                    parameters.ParameterName.from_full_name(name)
-                )
+        params_cluster = lmfit.Parameters()
 
-            clusters.append((name_cluster, data_cluster, params_cluster))
+        for parname in parnames_cluster:
+            par = params[parname]
+            par._delay_asteval = True
+            params_cluster[parname] = par
 
-    return sorted(clusters)
+        for p in params_cluster.values():
+            p._delay_asteval = False
+
+        clusters_.append((name_cluster, data_cluster, params_cluster))
+
+    return sorted(clusters_)
 
 
 def write_statistics(result, path="./"):

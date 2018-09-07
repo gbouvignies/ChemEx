@@ -26,7 +26,6 @@ import numpy as np
 from chemex.experiments.cpmg import cpmg_profile
 from chemex.spindynamics import basis, default
 
-
 EXP_DETAILS = {
     "carrier": {"type": float},
     "time_t2": {"type": float},
@@ -58,9 +57,8 @@ class Profile(cpmg_profile.CPMGProfile):
 
         self.t_cps = {
             ncyc: self.exp_details["time_t2"] / (4.0 * ncyc) - self.exp_details["pw90"]
-            for ncyc in self.ncycs
+            for ncyc in self.ncycs[self.ncycs > 0]
         }
-        self.t_cps[-1] = 0.5 * self.exp_details["time_t2"] / 2.0
 
         self.t_neg = -2.0 * self.exp_details["pw90"] / np.pi
 
@@ -72,6 +70,7 @@ class Profile(cpmg_profile.CPMGProfile):
             model=self.model.name,
             nuclei=self.peak.names,
             conditions=self.conditions,
+            hn_ap_constraints=True,
         )
 
         for name, full_name in self.map_names.items():
@@ -79,31 +78,7 @@ class Profile(cpmg_profile.CPMGProfile):
                 self.params[full_name].set(vary=True)
 
     def calculate_unscaled_profile(self, **parvals):
-        """Calculate the intensity in presence of exchange after a CEST block.
-
-        Parameters
-        ----------
-        pb : float
-            Fractional population of state B.
-        kex_ab : float
-            Exchange rates between states A and B in /s.
-        dw_i_ab : float
-            Chemical shift difference between states A and B in rad/s.
-        r1_i_a : float
-            Longitudinal relaxation rate of states A in /s.
-        r2_i_a : float
-            Transverse relaxation rate of state A in /s.
-        dr2_i_ab : float
-            Transverse relaxation rate difference between states A and B in /s.
-        cs_i_a : float
-            Resonance position of state A in ppm.
-
-        Returns
-        -------
-        out : float
-            Intensity after the CEST block
-
-        """
+        """TODO: class docstring."""
 
         self.liouv.update(**parvals)
 

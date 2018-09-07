@@ -186,6 +186,6 @@ class Profile(cpmg_profile.CPMGProfile):
     def ncycs_to_nu_cpmgs(self, ncycs=None):
         """Calculate the pulsing frequency, v(CPMG), from ncyc values."""
         if ncycs is None:
-            ncycs = np.array([ncyc if ncyc >= 0 else 0.5 for ncyc in self.ncycs])
+            ncycs = self.ncycs
 
         return ncycs / self.exp_details["time_t2"]

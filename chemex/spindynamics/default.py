@@ -2,11 +2,11 @@ import copy
 import itertools
 import re
 
+import lmfit as lf
 from scipy import constants as cst
 
 from chemex import parameters
 from chemex.spindynamics import util
-import lmfit as lf
 
 OTHER_SPIN = {"i": "s", "s": "i"}
 RE_VARNAME = re.compile(
@@ -45,9 +45,6 @@ def create_params(
 ):
     """TODO"""
 
-    # fnames, params = get_default_from_basis(basis, nuclei, conditions)
-    # fnames, params = set_kinetics(fnames, params, model, conditions)
-
     fnames_k, params_k = create_params_k(model_name=model, conditions=conditions)
     fnames_lr, params_lr = create_params_lr(basis, conditions, nuclei)
 
@@ -68,52 +65,6 @@ def create_params(
     params.add_many(*(lf.Parameter(fname) for fname in fnames.values()))
     params.update(params_lr)
     params.update(params_k)
-
-    return fnames, params
-
-
-def get_default_from_basis(basis, nuclei, conditions):
-    if basis is None:
-        exit("'basis' is not defined.")
-
-    if nuclei is None:
-        exit("'nuclei' is not defined.")
-
-    if conditions is None:
-        conditions = {}
-
-    fnames = {}
-    params = lf.Parameters()
-
-    for name in set(basis.keys) & set(DEFAULT_PARAMS):
-
-        parsed = RE_VARNAME.match(name).groupdict()
-
-        short_name = "_".join(
-            filter(None, (parsed.get(key) for key in ("name", "state")))
-        )
-
-        spin = parsed["spin"]
-        if spin is None:
-            spin = "is"
-        nuclei_ = nuclei[spin]
-
-        attributes = {}
-        if short_name.startswith(("cs")):
-            attributes = {key: conditions[key] for key in ("temperature",)}
-        elif short_name.startswith(("r", "eta", "sigma", "mu", "theta")):
-            attributes = conditions
-        elif short_name.startswith("k"):
-            attributes = {
-                key: conditions[key] for key in ("temperature", "l_total", "p_total")
-            }
-            nuclei_ = None
-
-        fnames[short_name] = parameters.ParameterName(
-            name=short_name, nuclei=nuclei_, **attributes
-        ).to_full_name()
-
-        params[fnames[short_name]] = copy.copy(DEFAULT_PARAMS[name])
 
     return fnames, params
 
@@ -218,7 +169,7 @@ def buid_params(map_names):
 def set_thermal_factors(fnames, params, nuclei):
     """TODO"""
 
-    for spin, state in itertools.product(("i", "s"), ("a", "b", "c", "d")):
+    for spin, state in itertools.product("is", "abcd"):
 
         theta = "theta_{}_{}".format(spin, state)
 
@@ -248,7 +199,7 @@ def set_thermal_factors(fnames, params, nuclei):
 
             params[fnames[theta]].set(expr=expr)
 
-    for state in ("a", "b", "c", "d"):
+    for state in "abcd":
 
         theta = "theta_is_{}".format(state)
 
@@ -258,7 +209,7 @@ def set_thermal_factors(fnames, params, nuclei):
 
             terms = []
 
-            for spin in ("i", "s"):
+            for spin in "is":
 
                 etaz = "etaz_{}_{}".format(spin, state)
 
@@ -277,36 +228,45 @@ def set_thermal_factors(fnames, params, nuclei):
 
 
 def set_hn_ap_constraints(map_names, params, nuclei=None, conditions=None):
+
     try:
-        resonance_s = nuclei.resonances["s"]
+        name_s = nuclei["s"]
     except IndexError:
         raise
 
-    definition = {"nuclei": resonance_s["name"]}
+    definition = {"nuclei": name_s}
     definition.update(conditions)
 
-    for state in ("a", "b", "c", "d"):
+    for state in "abcd":
 
         r1_i = "r1_i_{}".format(state)
         r2_i = "r2_i_{}".format(state)
+        r1_s = "r1_s_{}".format(state)
         r2a_i = "r2a_i_{}".format(state)
         r1a = "r1a_{}".format(state)
-        r1_s = "r1_s_{}".format(state)
         r1 = "r1_{}".format(state)
 
         if r1_i in map_names:
 
             if r1_s not in map_names:
+
                 map_names[r1_s] = parameters.ParameterName(
                     r1, **definition
                 ).to_full_name()
+
+                if state != "a":
+                    expr = map_names["r1_s_a"]
+                else:
+                    expr = None
+
                 params[map_names[r1_s]] = lf.Parameter(
-                    map_names[r1_s], value=0.0, min=0.0, vary=False
+                    map_names[r1_s], value=1.0, min=0.0, vary=False, expr=expr
                 )
 
             params[map_names[r1_i]].set(
                 expr="{} - {}".format(map_names[r1a], map_names[r1_s])
             )
+
             params[map_names[r2a_i]].set(
                 expr="{} - {}".format(map_names[r2_i], map_names[r1_s])
             )
@@ -315,7 +275,8 @@ def set_hn_ap_constraints(map_names, params, nuclei=None, conditions=None):
 
 
 def set_nh_constraints(map_names, params):
-    for state in ("a", "b", "c", "d"):
+
+    for state in "abcd":
         r1_i = "r1_i_{}".format(state)
         r2_i = "r2_i_{}".format(state)
         r2a_i = "r2a_i_{}".format(state)

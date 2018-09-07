@@ -4,18 +4,18 @@ fitting parameters."""
 import ast
 import configparser
 import copy
+from difflib import get_close_matches
 import os
 import os.path
 import re
-from difflib import get_close_matches
-
-import numpy as np
 
 from asteval import astutils
-from chemex import peaks, util
 import lmfit
+import numpy as np
 
-name_markers = {
+from chemex import peaks, util
+
+NAME_MARKERS = {
     "name": "__n_{}_n__",
     "nuclei": "__r_{}_r__",
     "temperature": "__t_{}_t__",
@@ -24,7 +24,7 @@ name_markers = {
     "l_total": "__l_{}_l__",
 }
 
-friendly_markers = {
+FRIENDLY_MARKERS = {
     "name": "{}",
     "nuclei": "NUC->{}",
     "temperature": "T->{:.1f}C",
@@ -33,7 +33,7 @@ friendly_markers = {
     "l_total": "[L]->{:e}M",
 }
 
-re_qualifiers = re.compile(
+RE_QUALIFIERS = re.compile(
     """
         (^\s*(?P<name>\w+)) |
         (NUC\s*->\s*(?P<nuclei>(\w|-)+)) |
@@ -48,7 +48,7 @@ re_qualifiers = re.compile(
 )
 
 # Regular expression to pick values of the form: intial value [min, max]
-re_value_min_max = re.compile(
+RE_VALUE_MIN_MAX = re.compile(
     """
         ^\s*
         (?P<value>{0})?\s*
@@ -61,7 +61,7 @@ re_value_min_max = re.compile(
 )
 
 # Regular expression to pick values of the form: intial value [min, max, brute_stepsize]
-re_value_min_max_brute = re.compile(
+RE_VALUE_MIN_MAX_BRUTE = re.compile(
     """
         ^\s*
         (?P<value>{0})?\s*
@@ -73,7 +73,7 @@ re_value_min_max_brute = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 
-re_par_name = re.compile(
+RE_PARNAME = re.compile(
     """
         (__n_(?P<name>\w+)_n__)?
         (__r_(?P<nuclei>(\w|-)+)_r__)?
@@ -152,7 +152,7 @@ class ParameterName(object):
 
         full_name = compress(full_name)
 
-        match = re.match(re_par_name, full_name)
+        match = re.match(RE_PARNAME, full_name)
         qualifiers = {}
         if match is not None:
             qualifiers.update(match.groupdict())
@@ -164,27 +164,9 @@ class ParameterName(object):
         """TODO: method docstring."""
         if section is None:
             section = ""
-        qualifiers = re_to_dict(re_qualifiers, section)
+        qualifiers = re_to_dict(RE_QUALIFIERS, section)
 
         return cls(**qualifiers)
-
-    def update(self, other):
-        """TODO: method docstring."""
-        if isinstance(other, ParameterName):
-            if other.name is not None:
-                self.name = other.name
-            if other.nuclei is not None:
-                self.nuclei = other.nuclei
-            if other.temperature is not None:
-                self.temperature = other.temperature
-            if other.h_larmor_frq is not None:
-                self.h_larmor_frq = other.h_larmor_frq
-            if other.p_total is not None:
-                self.p_total = other.p_total
-            if other.l_total is not None:
-                self.l_total = other.l_total
-
-        return self
 
     def update_nuclei(self, nuclei=None):
         """TODO: method docstring."""
@@ -197,17 +179,9 @@ class ParameterName(object):
         """TODO: method docstring."""
         name_components = []
 
-        for condition in (
-            "name",
-            "nuclei",
-            "temperature",
-            "h_larmor_frq",
-            "p_total",
-            "l_total",
-        ):
-            attr = getattr(self, condition)
-            if attr is not None:
-                name_components.append(name_markers[condition].format(attr))
+        for attribute, value in vars(self).items():
+            if value is not None:
+                name_components.append(NAME_MARKERS[attribute].format(value))
 
         full_name = expand("".join(name_components))
 
@@ -215,24 +189,12 @@ class ParameterName(object):
 
     def to_section_name(self, nuclei=False):
         """TODO: method docstring."""
+
         name_components = []
 
-        if nuclei:
-            attributes = (
-                "name",
-                "nuclei",
-                "temperature",
-                "h_larmor_frq",
-                "p_total",
-                "l_total",
-            )
-        else:
-            attributes = ("name", "temperature", "h_larmor_frq", "p_total", "l_total")
-
-        for name in attributes:
-            attr = getattr(self, name)
-            if attr is not None:
-                name_components.append(friendly_markers[name].format(attr))
+        for attribute, value in vars(self).items():
+            if (attribute != "nuclei" or nuclei) and value is not None:
+                name_components.append(FRIENDLY_MARKERS[attribute].format(value))
 
         section_name = ", ".join(name_components).upper()
 
@@ -240,7 +202,7 @@ class ParameterName(object):
 
     def to_re(self):
         """TODO: method docstring."""
-        re_components = [name_markers["name"].format(expand(self.name))]
+        re_components = [NAME_MARKERS["name"].format(expand(self.name))]
 
         if self.nuclei is not None:
             group_name = peaks.Peak(self.nuclei)._resonances["i"]["group"]
@@ -249,35 +211,35 @@ class ParameterName(object):
             else:
                 all_res = ""
             re_components.append(
-                name_markers["nuclei"].format("".join([all_res, expand(self.nuclei)]))
+                NAME_MARKERS["nuclei"].format("".join([all_res, expand(self.nuclei)]))
             )
         else:
             re_components.append(".*")
 
         if self.temperature is not None:
             re_components.append(
-                name_markers["temperature"].format(expand(str(self.temperature)))
+                NAME_MARKERS["temperature"].format(expand(str(self.temperature)))
             )
         elif re_components[-1] != ".*":
             re_components.append(".*")
 
         if self.h_larmor_frq is not None:
             re_components.append(
-                name_markers["h_larmor_frq"].format(expand(str(self.h_larmor_frq)))
+                NAME_MARKERS["h_larmor_frq"].format(expand(str(self.h_larmor_frq)))
             )
         elif re_components[-1] != ".*":
             re_components.append(".*")
 
         if self.p_total is not None:
             re_components.append(
-                name_markers["p_total"].format(expand(str(self.p_total)))
+                NAME_MARKERS["p_total"].format(expand(str(self.p_total)))
             )
         elif re_components[-1] != ".*":
             re_components.append(".*")
 
         if self.l_total is not None:
             re_components.append(
-                name_markers["l_total"].format(expand(str(self.l_total)))
+                NAME_MARKERS["l_total"].format(expand(str(self.l_total)))
             )
         elif re_components[-1] != ".*":
             re_components.append(".*")
@@ -383,9 +345,9 @@ def set_params_from_config_file(params, config_filename):
             for key, value in config.items(section):
                 name = ParameterName.from_section(key)
                 if value.count(",") == 2:
-                    default = re_to_dict(re_value_min_max_brute, value)
+                    default = re_to_dict(RE_VALUE_MIN_MAX_BRUTE, value)
                 else:
-                    default = re_to_dict(re_value_min_max, value)
+                    default = re_to_dict(RE_VALUE_MIN_MAX, value)
                 default = {key: np.float64(val) for key, val in default.items()}
                 matches = set_params(params, name, **default)
 
@@ -412,9 +374,9 @@ def set_params_from_config_file(params, config_filename):
 
             for name, value in pairs:
                 if value.count(",") == 2:
-                    default = re_to_dict(re_value_min_max_brute, value)
+                    default = re_to_dict(RE_VALUE_MIN_MAX_BRUTE, value)
                 else:
-                    default = re_to_dict(re_value_min_max, value)
+                    default = re_to_dict(RE_VALUE_MIN_MAX, value)
                 default = {key: np.float64(val) for key, val in default.items()}
                 matches = set_params(params, name, **default)
                 total_matches.update(matches)
