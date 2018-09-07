@@ -157,7 +157,7 @@ def find_independent_clusters(data, params):
 def write_statistics(result, path="./"):
     """Write fitting statistics to a file."""
 
-    ks_value, ks_p_value = stats.kstest(result.residual, "norm")
+    _, ks_p_value = stats.kstest(result.residual, "norm")
     chi2_p_value = 1.0 - stats.chi2.cdf(result.chisqr, result.nfree)
 
     filename = os.path.join(path, "statistics.fit")

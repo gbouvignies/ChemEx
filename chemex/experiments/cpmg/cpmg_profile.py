@@ -32,7 +32,7 @@ class CPMGProfile(base_profile.BaseProfile):
         self.map_names = {}
         self.basis = None
 
-    def calculate_unscaled_profile(self, *args, **kwargs):
+    def calculate_unscaled_profile(self, **parvals):
         """Calculate the unscaled CPMG profile."""
         pass
 

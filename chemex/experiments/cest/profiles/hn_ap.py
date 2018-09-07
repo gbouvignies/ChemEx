@@ -19,7 +19,7 @@ Sekhar, Rosenzweig, Bouvignies and Kay. PNAS (2016) 113:E2794-E2801
 import numpy as np
 
 from chemex.experiments.cest import cest_profile
-from chemex.spindynamics import basis, constants, default
+from chemex.spindynamics import basis, default
 
 EXP_DETAILS = {
     "carrier": {"type": float},

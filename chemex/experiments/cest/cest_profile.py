@@ -33,7 +33,7 @@ class CESTProfile(base_profile.BaseProfile):
         self.map_names = {}
         self.basis = None
 
-    def calculate_unscaled_profile(self, *args, **kwargs):
+    def calculate_unscaled_profile(self, b1_offsets=None, **parvals):
         """Calculate the unscaled CEST profile."""
         pass
 

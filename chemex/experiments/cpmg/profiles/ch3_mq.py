@@ -83,7 +83,6 @@ class Profile(cpmg_profile.CPMGProfile):
         self.liouv.update(**parvals)
 
         # Calculation of all the needed propagators
-        pulses = self.liouv.pulses_90_180_i()
         delays = dict(zip(self.delays, self.liouv.delays(self.delays)))
 
         # Simulate the CPMG block as function of ncyc

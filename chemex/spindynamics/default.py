@@ -1,4 +1,3 @@
-import copy
 import itertools
 import re
 
@@ -8,7 +7,9 @@ from scipy import constants as cst
 from chemex import parameters
 from chemex.spindynamics import util
 
+
 OTHER_SPIN = {"i": "s", "s": "i"}
+
 RE_VARNAME = re.compile(
     "^(?P<name>.+?)(_(?P<spin>[is]{1,2}))?(_(?P<state>[abcd]{1,2}))?$"
 )
