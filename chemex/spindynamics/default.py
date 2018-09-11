@@ -414,8 +414,7 @@ def create_params_k(model_name=None, conditions=None):
 
         expr_dict = {
             "kd": "{koff} / {kon}",
-            "kab": "{kon} * 0.5 * ({delta} - {kd} "
-            "+ sqrt(({delta} - {kd}) ** 2 + 4.0 * {kd} * {l_total}))",
+            "kab": "{kon} * 0.5 * ({delta} - {kd} + sqrt(({delta} - {kd}) ** 2 + 4.0 * {kd} * {l_total}))",
             "kba": "{koff}",
             "pa": "{kba} / ({kba} + {kab})",
             "pb": "{kab} / ({kba} + {kab})",

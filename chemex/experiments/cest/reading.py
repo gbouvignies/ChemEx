@@ -9,6 +9,7 @@ from scipy import interpolate, linalg, signal, stats
 
 def read_profiles(path, filenames, details, model, included=None, excluded=None):
     """Read the CEST profiles."""
+
     experiment_type = details["type"].split(".")
     details["name"] = name_experiment(details)
     experiment_module = importlib.import_module(
@@ -27,9 +28,13 @@ def read_profiles(path, filenames, details, model, included=None, excluded=None)
 
     if included is None:
         included = filenames.keys()
+    else:
+        included = [_.lower() for _ in included]
 
     if excluded is None:
         excluded = []
+    else:
+        excluded = [_.lower() for _ in excluded]
 
     Profile = getattr(experiment_module, "Profile")
 
@@ -38,12 +43,20 @@ def read_profiles(path, filenames, details, model, included=None, excluded=None)
     profiles = []
 
     for profile_name, filename in filenames.items():
+
         full_path = os.path.join(path, filename)
+
         measurements = np.loadtxt(full_path, dtype=dtype)
         measurements.sort(order="b1_offsets")
+
         profile = Profile(profile_name, measurements, details, model)
-        if (profile_name in included) and (profile_name not in excluded):
+
+        is_included = profile_name.lower() in included
+        is_not_excluded = profile_name.lower() not in excluded
+
+        if is_included and is_not_excluded:
             profiles.append(profile)
+
         if error == "auto":
             excl_reference = np.logical_not(profile.reference)
             error_values.append(estimate_noise(profile.val[excl_reference]))
@@ -51,7 +64,9 @@ def read_profiles(path, filenames, details, model, included=None, excluded=None)
     error = details.get("error", "file")
 
     if error == "auto":
+
         error_value = np.mean(error_values)
+
         for profile in profiles:
             profile.err[:] = error_value
 
