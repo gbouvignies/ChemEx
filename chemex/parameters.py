@@ -572,9 +572,12 @@ def write_constraints(params, output_dir="./"):
             expr_formatted = param.expr
             for name_dep in astutils.get_ast_names(ast.parse(param.expr)):
                 par_name_dep = ParameterName.from_full_name(name_dep)
-                expr_formatted = expr_formatted.replace(
-                    name_dep, "[{}]".format(par_name_dep.to_section_name(nuclei=True))
-                )
+                if str(par_name_dep):
+                    expr_formatted = expr_formatted.replace(
+                        name_dep,
+                        "[{}]".format(par_name_dep.to_section_name(nuclei=True)),
+                    )
+
             param_dict[par_name] = "{} = {}\n".format(name_formatted, expr_formatted)
 
     with open(filename, "w") as f:
