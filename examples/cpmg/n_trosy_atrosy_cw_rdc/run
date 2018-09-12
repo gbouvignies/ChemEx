@@ -1,2 +1,0 @@
-rm -fr output
-chemex fit -e experiments/*.cfg -p parameters/params_n15.cfg -o output/ -m methods/method_n15.cfg
