@@ -5,7 +5,7 @@ from functools import lru_cache
 
 import numpy as np
 
-from chemex import constants, peaks
+from chemex import peaks
 from chemex.experiments import base_profile
 from chemex.experiments.cpmg import plotting
 
@@ -13,59 +13,36 @@ from chemex.experiments.cpmg import plotting
 class CPMGProfile(base_profile.BaseProfile):
     """CPMGProfile class."""
 
-    def __init__(self, profile_name, measurements, exp_details):
-        self.profile_name = profile_name
-        self.ncycs = measurements['ncycs']
-        self.val = measurements['intensities']
-        self.err = measurements['intensities_err']
-
-        self.reference = (self.ncycs == 0)
-
-        self.h_larmor_frq = base_profile.check_par(exp_details, 'h_larmor_frq', float)
-        self.temperature = base_profile.check_par(exp_details, 'temperature', float)
-        self.time_t2 = base_profile.check_par(exp_details, 'time_t2', float)
-        self.pw = base_profile.check_par(exp_details, 'pw', float, 0.0)
-        self.p_total = base_profile.check_par(exp_details, 'p_total', float, required=False)
-        self.l_total = base_profile.check_par(exp_details, 'l_total', float, required=False)
-
-        self.experiment_name = base_profile.check_par(exp_details, 'name')
-        self.model = base_profile.check_par(exp_details, 'model', default='2st.pb_kex')
-
-        self.tau_cp_list = np.array([
-            self.time_t2 / (4.0 * ncyc) - self.pw if ncyc > 0 else self.time_t2 / 2.0
-            if ncyc else 0.0 for ncyc in self.ncycs
-        ])
+    def __init__(self, name, measurements, exp_details, model):
+        super().__init__(name, exp_details, model)
 
         self.plot_data = plotting.plot_data
+        self.calculate_unscaled_profile_cached = lru_cache(8)(
+            self.calculate_unscaled_profile
+        )
 
         self.peak = peaks.Peak(self.profile_name)
-        self.resonance_i = self.peak.resonances[0]
-        self.ppm_i = 2.0 * np.pi * self.h_larmor_frq * constants.xi_ratio[self.resonance_i['atom']]
-        if len(self.peak.resonances) > 1:
-            self.resonance_s = self.peak.resonances[1]
-            self.ppm_s = 2.0 * np.pi * self.h_larmor_frq * constants.xi_ratio[self.resonance_s[
-                'atom']]
 
-        if self.pw > 0.0:
-            self.omega1_i = 2.0 * np.pi / (4.0 * self.pw)
-        else:
-            self.omega1_i = 0.0
+        self.ncycs = np.asarray(measurements["ncycs"], dtype=int)
+        self.val = measurements["intensities"]
+        self.err = measurements["intensities_err"]
 
-        self.calculate_unscaled_profile_cached = lru_cache(5)(self.calculate_unscaled_profile)
+        self.reference = self.ncycs == 0
 
         self.map_names = {}
+        self.basis = None
 
-    def calculate_unscaled_profile(self, *args, **kwargs):
+    def calculate_unscaled_profile(self, **parvals):
         """Calculate the unscaled CPMG profile."""
         pass
 
     def calculate_scale(self, cal):
         """Calculate the scaling factor."""
 
-        norm = sum((cal / self.err)**2)
+        norm = sum((cal / self.err) ** 2)
 
         if norm:
-            scale = (sum(cal * self.val / self.err**2) / norm)
+            scale = sum(cal * self.val / self.err ** 2) / norm
         else:
             scale = 0.0
 
@@ -83,18 +60,6 @@ class CPMGProfile(base_profile.BaseProfile):
 
         return values * scale
 
-    def ncycs_to_nu_cpmgs(self, ncycs=None):
-        """Calculate the pulsing frequency, v(CPMG), from ncyc values."""
-        if ncycs is None:
-            ncycs = np.array([ncyc if ncyc >= 0 else 0.5 for ncyc in self.ncycs])
-
-        return ncycs / self.time_t2
-
-    def filter_points(self, params=None):
-        """Evaluate some criteria to know whether the point should be
-        considered in the calculation or not."""
-        return False
-
     def print_profile(self, params=None):
         """Print the CPMG profile."""
         output = []
@@ -107,11 +72,14 @@ class CPMGProfile(base_profile.BaseProfile):
         iter_vals = list(zip(self.ncycs, self.val, self.err, values))
 
         output.append("[{}]".format(self.profile_name))
-        output.append("# {:>5s}   {:>17s} {:>17s} {:>17s}".format(
-            "ncyc", "intensity (exp)", "uncertainty", "intensity (calc)"))
+        output.append(
+            "# {:>5s}   {:>17s} {:>17s} {:>17s}".format(
+                "ncyc", "intensity (exp)", "uncertainty", "intensity (calc)"
+            )
+        )
 
         for ncyc, val, err, cal in iter_vals:
-            line = ("  {0:5.0f} = {1:17.8e} {2:17.8e}".format(ncyc, val, err))
+            line = "  {0:5.0f} = {1:17.8e} {2:17.8e}".format(ncyc, val, err)
 
             if params is not None:
                 line += "{:17.8e}".format(cal)
@@ -125,11 +93,19 @@ class CPMGProfile(base_profile.BaseProfile):
 
         return "\n".join(output).upper()
 
+    def filter_points(self, params=None):
+        """Evaluate some criteria to know whether the point should be
+        considered in the calculation or not."""
+
+        self.mask = np.ones_like(self.val, dtype=np.bool)
+
     def make_mc_profile(self, params):
         """Make a CPMG profile for boostrap analysis."""
 
         profile = copy.copy(self)
-        profile.val = self.calculate_profile(params) + np.random.randn(len(self.val)) * self.err
+        profile.val = (
+            self.calculate_profile(params) + np.random.randn(len(self.val)) * self.err
+        )
 
         return profile
 
@@ -152,6 +128,8 @@ class CPMGProfile(base_profile.BaseProfile):
         profile.val = profile.val[bs_indexes]
         profile.err = profile.err[bs_indexes]
 
-        profile.calculate_unscaled_profile_cached = lru_cache(5)(profile.calculate_unscaled_profile)
+        profile.calculate_unscaled_profile_cached = lru_cache(5)(
+            profile.calculate_unscaled_profile
+        )
 
         return profile

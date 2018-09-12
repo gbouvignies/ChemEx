@@ -1,5 +1,5 @@
 """chemex.__main__: executed when the chemex directory is called as script."""
 
-import chemex
+from chemex import chemex
 
 chemex.main()

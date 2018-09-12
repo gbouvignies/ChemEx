@@ -2,9 +2,7 @@
 
 import os
 
-from matplotlib import gridspec as gsp
-from matplotlib import pyplot as plt
-from matplotlib import ticker
+from matplotlib import gridspec as gsp, pyplot as plt, ticker
 from matplotlib.backends import backend_pdf
 import numpy as np
 
@@ -34,20 +32,34 @@ def compute_profiles(data_grouped, params):
         mag_cal = profile.calculate_profile(params)[mask] / val_ref
         mag_exp = profile.val[mask] / val_ref
         mag_err = profile.err[mask] / np.absolute(val_ref)
+        filtered = profile.mask[mask]
 
-        b1_offsets_min, b1_offsets_max = plotting.set_lim(profile.b1_offsets[mask], 0.02)
+        b1_offsets_min, b1_offsets_max = plotting.set_lim(
+            profile.b1_offsets[mask], 0.02
+        )
         b1_offsets = np.linspace(b1_offsets_min, b1_offsets_max, 500)
 
         b1_ppm_fit = profile.b1_offsets_to_ppm(b1_offsets)
-        mag_fit = profile.calculate_synthetic_profile(params, b1_offsets) / val_ref
+        mag_fit = profile.calculate_profile(params, b1_offsets) / val_ref
 
-        cs_a = params.get(profile.map_names.get('cs_i_a'))
-        cs_b = params.get(profile.map_names.get('cs_i_b'))
-        cs_c = params.get(profile.map_names.get('cs_i_c'))
-        cs_d = params.get(profile.map_names.get('cs_i_d'))
+        cs_a = params.get(profile.map_names.get("cs_i_a"))
+        cs_b = params.get(profile.map_names.get("cs_i_b"))
+        cs_c = params.get(profile.map_names.get("cs_i_c"))
+        cs_d = params.get(profile.map_names.get("cs_i_d"))
 
-        profiles[peak] = (b1_ppm_exp, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit, cs_a, cs_b,
-                          cs_c, cs_d)
+        profiles[peak] = (
+            b1_ppm_exp,
+            mag_cal,
+            mag_exp,
+            mag_err,
+            b1_ppm_fit,
+            mag_fit,
+            cs_a,
+            cs_b,
+            cs_c,
+            cs_d,
+            filtered,
+        )
 
     return profiles
 
@@ -70,15 +82,19 @@ def write_profile_exp(name, b1_ppm, mag_exp, mag_err, mag_cal, file_):
 
     file_.write("[{}]\n".format(name.upper()))
 
-    file_.write("# {:>17s}   {:>17s} {:>17s}\n".format("OFFSET", "INTENSITY", "UNCERTAINTY"))
+    file_.write(
+        "# {:>17s}   {:>17s} {:>17s}\n".format("OFFSET", "INTENSITY", "UNCERTAINTY")
+    )
 
     for b1_ppm_, mag_exp_, mag_err_, mag_cal_ in zip(b1_ppm, mag_exp, mag_err, mag_cal):
-        file_.write("  {0:17.8e} = {1:17.8e} {2:17.8e}\n".format(b1_ppm_, mag_exp_, mag_err_))
+        file_.write(
+            "  {0:17.8e} = {1:17.8e} {2:17.8e}\n".format(b1_ppm_, mag_exp_, mag_err_)
+        )
 
     file_.write("\n")
 
 
-def plot_data(data, params, output_dir='./'):
+def plot_data(data, params, output_dir="./"):
     """Write experimental and fitted data to a file and plot the CEST profiles.
 
     - *.exp: contains the experimental data
@@ -93,13 +109,13 @@ def plot_data(data, params, output_dir='./'):
         datasets.setdefault(experiment_name, []).append(data_point)
 
     for experiment_name, dataset in datasets.items():
-        name_pdf = ''.join([experiment_name, '.pdf'])
+        name_pdf = "".join([experiment_name, ".pdf"])
         name_pdf = os.path.join(output_dir, name_pdf)
 
-        name_txt = ''.join([experiment_name, '.fit'])
+        name_txt = "".join([experiment_name, ".fit"])
         name_txt = os.path.join(output_dir, name_txt)
 
-        name_exp = ''.join([experiment_name, '.exp'])
+        name_exp = "".join([experiment_name, ".exp"])
         name_exp = os.path.join(output_dir, name_exp)
 
         print(("  * {} [.fit]".format(name_pdf)))
@@ -108,15 +124,29 @@ def plot_data(data, params, output_dir='./'):
 
         profiles = compute_profiles(data_grouped, params)
 
-        with backend_pdf.PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt, open(
-                name_exp, 'w') as file_exp:
+        with backend_pdf.PdfPages(name_pdf) as file_pdf, open(
+            name_txt, "w"
+        ) as file_txt, open(name_exp, "w") as file_exp:
 
             for peak in sorted(profiles):
-                (b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit, cs_a, cs_b, cs_c,
-                 cs_d) = profiles[peak]
+                (
+                    b1_ppm,
+                    mag_cal,
+                    mag_exp,
+                    mag_err,
+                    b1_ppm_fit,
+                    mag_fit,
+                    cs_a,
+                    cs_b,
+                    cs_c,
+                    cs_d,
+                    filtered,
+                ) = profiles[peak]
 
                 write_profile_fit(peak.assignment, b1_ppm_fit, mag_fit, file_txt)
-                write_profile_exp(peak.assignment, b1_ppm, mag_exp, mag_err, mag_cal, file_exp)
+                write_profile_exp(
+                    peak.assignment, b1_ppm, mag_exp, mag_err, mag_cal, file_exp
+                )
 
                 # Matplotlib #
                 gs = gsp.GridSpec(2, 1, height_ratios=[1, 4])
@@ -125,38 +155,60 @@ def plot_data(data, params, output_dir='./'):
                 ax2 = plt.subplot(gs[1])
 
                 cs_colors = list(
-                    zip((cs_a, cs_b, cs_c, cs_d), ('Blue', 'Red', 'Orange', 'Deep Orange')))
+                    zip(
+                        (cs_a, cs_b, cs_c, cs_d),
+                        ("Blue", "Red", "Orange", "Deep Orange"),
+                    )
+                )
 
                 for ax_ in (ax1, ax2):
                     for cs, color in cs_colors:
                         if cs is not None:
                             ax_.axvline(
                                 cs.value,
-                                color=plotting.palette[color]['100'],
-                                linestyle='-',
+                                color=plotting.palette[color]["100"],
+                                linestyle="-",
                                 linewidth=1.0,
-                                zorder=-100)
+                                zorder=-100,
+                            )
 
-                    ax_.axhline(0, color=plotting.palette['Black']['Text'], linewidth=0.5)
+                    ax_.axhline(
+                        0, color=plotting.palette["Black"]["Text"], linewidth=0.5
+                    )
 
                 ########################
 
                 ax2.plot(
                     b1_ppm_fit,
                     mag_fit,
-                    linestyle='-',
-                    color=plotting.palette['Grey']['700'],
-                    zorder=2, )
+                    linestyle="-",
+                    color=plotting.palette["Grey"]["700"],
+                    zorder=2,
+                )
 
                 ax2.errorbar(
-                    b1_ppm,
-                    mag_exp,
-                    mag_err,
-                    fmt='o',
-                    markeredgecolor=plotting.palette['Red']['500'],
-                    ecolor=plotting.palette['Red']['500'],
-                    markerfacecolor='None',
-                    zorder=3, )
+                    b1_ppm[filtered],
+                    mag_exp[filtered],
+                    mag_err[filtered],
+                    fmt="o",
+                    markeredgecolor=plotting.palette["Red"]["500"],
+                    ecolor=plotting.palette["Red"]["500"],
+                    markerfacecolor="None",
+                    zorder=3,
+                )
+
+                unfiltered = np.logical_not(filtered)
+
+                ax2.errorbar(
+                    b1_ppm[unfiltered],
+                    mag_exp[unfiltered],
+                    mag_err[unfiltered],
+                    fmt="o",
+                    markeredgecolor=plotting.palette["Red"]["100"],
+                    ecolor=plotting.palette["Red"]["100"],
+                    markerfacecolor="None",
+                    zorder=3,
+                )
 
                 xmin, xmax = plotting.set_lim(b1_ppm_fit, 0.05)
                 mags = list(mag_exp) + list(mag_fit)
@@ -172,8 +224,8 @@ def plot_data(data, params, output_dir='./'):
 
                 ax2.xaxis.grid(False)
 
-                ax2.set_xlabel(r'$\mathregular{B_1 \ position \ (ppm)}$')
-                ax2.set_ylabel(r'$\mathregular{I/I_0}$')
+                ax2.set_xlabel(r"$\mathregular{B_1 \ position \ (ppm)}$")
+                ax2.set_ylabel(r"$\mathregular{I/I_0}$")
 
                 ########################
 
@@ -183,24 +235,38 @@ def plot_data(data, params, output_dir='./'):
                 ax1.fill(
                     (xmin, xmin, xmax, xmax),
                     1.0 * sigma * np.asarray([-1.0, 1.0, 1.0, -1.0]),
-                    fc=plotting.palette['Black']['Dividers'],
-                    ec='none')
+                    fc=plotting.palette["Black"]["Dividers"],
+                    ec="none",
+                )
 
                 ax1.fill(
                     (xmin, xmin, xmax, xmax),
                     2.0 * sigma * np.asarray([-1.0, 1.0, 1.0, -1.0]),
-                    fc=plotting.palette['Black']['Dividers'],
-                    ec='none')
+                    fc=plotting.palette["Black"]["Dividers"],
+                    ec="none",
+                )
 
                 ax1.errorbar(
-                    b1_ppm,
-                    deltas,
-                    mag_err,
-                    fmt='o',
-                    markeredgecolor=plotting.palette['Red']['500'],
-                    ecolor=plotting.palette['Red']['500'],
-                    markerfacecolor='None',
-                    zorder=100, )
+                    b1_ppm[filtered],
+                    deltas[filtered],
+                    mag_err[filtered],
+                    fmt="o",
+                    markeredgecolor=plotting.palette["Red"]["500"],
+                    ecolor=plotting.palette["Red"]["500"],
+                    markerfacecolor="None",
+                    zorder=100,
+                )
+
+                ax1.errorbar(
+                    b1_ppm[unfiltered],
+                    deltas[unfiltered],
+                    mag_err[unfiltered],
+                    fmt="o",
+                    markeredgecolor=plotting.palette["Red"]["100"],
+                    ecolor=plotting.palette["Red"]["100"],
+                    markerfacecolor="None",
+                    zorder=100,
+                )
 
                 rmin, rmax = plotting.set_lim(deltas, 0.1)
                 rmin = min([-3 * sigma, rmin - max(mag_err)])
@@ -219,16 +285,16 @@ def plot_data(data, params, output_dir='./'):
                 ax1.xaxis.grid(False)
                 ax1.yaxis.grid(False)
 
-                ax1.ticklabel_format(style='sci', scilimits=(0, 0), axis='y')
+                ax1.ticklabel_format(style="sci", scilimits=(0, 0), axis="y")
 
-                ax1.set_title('{:s}'.format(peak.assignment.upper()))
-                ax1.set_ylabel('Residual')
+                ax1.set_title("{:s}".format(peak.assignment.upper()))
+                ax1.set_ylabel("Residual")
 
                 ########################
 
                 for ax in (ax1, ax2):
-                    ax.yaxis.set_ticks_position('left')
-                    ax.xaxis.set_ticks_position('bottom')
+                    ax.yaxis.set_ticks_position("left")
+                    ax.xaxis.set_ticks_position("bottom")
 
                 ########################
 

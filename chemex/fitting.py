@@ -1,23 +1,26 @@
 """The fitting module contains the code for fitting the experimental data."""
 
+import functools
 import os.path
 import sys
 
-import numpy as np
+import lmfit
 from scipy import stats
 
-import lmfit
-
 from chemex import datasets, parameters, util
-from chemex.parsing import fitmethods
-
+from chemex.cli import FITMETHODS
 
 all_fitmethods = lmfit.minimizer.SCALAR_METHODS
-all_fitmethods.update({
-    'leastsq': 'least-squares using Levenberg-Marquardt',
-    'least_squares': 'least-squares using Trust Region Reflective algorithm',
-    'brute': 'grid search using the brute force method'})
-allowed_fitmethods = {name: desc for name, desc in all_fitmethods.items() if name in fitmethods}
+all_fitmethods.update(
+    {
+        "leastsq": "least-squares using Levenberg-Marquardt",
+        "least_squares": "least-squares using Trust Region Reflective algorithm",
+        "brute": "grid search using the brute force method",
+    }
+)
+allowed_fitmethods = {
+    name: desc for name, desc in all_fitmethods.items() if name in FITMETHODS
+}
 
 
 def run_fit(fit_filename, params, data, cl_fitmethod):
@@ -27,79 +30,65 @@ def run_fit(fit_filename, params, data, cl_fitmethod):
     fit_config = util.read_cfg_file(fit_filename)
 
     if not fit_config.sections():
-        fit_config.add_section('Standard Calculation')
+        fit_config.add_section("Standard Calculation")
 
     for section in fit_config.sections():
         util.header2(section)
-
         items = fit_config.items(section)
-
         parameters.set_param_status(params, items)
-
-        independent_clusters = find_independent_clusters(data, params)
-        independent_clusters_no = len(independent_clusters)
-
-        fitmethod = fit_config.get(section, 'fitmethod', fallback=cl_fitmethod)
+        clusters = find_independent_clusters(data, params)
+        fitmethod = fit_config.get(section, "fitmethod", fallback=cl_fitmethod)
 
         if fitmethod not in allowed_fitmethods.keys():
             exit(
-                "The fitting method \'{}\', as specified in section [\'{}\'], is invalid! Please choose from:\n  {}".
-                format(fitmethod, section, list(sorted(allowed_fitmethods.keys()))))
+                "The fitting method '{}', as specified in section ['{}'],"
+                "is invalid! Please choose from:\n  {}".format(
+                    fitmethod, section, list(sorted(allowed_fitmethods.keys()))
+                )
+            )
 
         print("Fitting method: {}\n".format(allowed_fitmethods[fitmethod]))
 
-        # initialize a MinimizerResult instance to combine the residue specific
-        # fits
-        if independent_clusters_no > 1:
-            minimizer = lmfit.Minimizer(data.calculate_residuals, params)
-            result_final = minimizer.prepare_fit()
-
-        for c_name, c_data, c_params in independent_clusters:
-            if independent_clusters_no > 1:
+        for c_name, c_data, c_params in clusters:
+            if len(clusters) > 1:
                 print("[{}]".format(c_name))
 
             print("Chi2 / Reduced Chi2:")
 
-            func = c_data.calculate_residuals
-            minimizer = lmfit.Minimizer(func, c_params)
+            c_func = c_data.calculate_residuals
+            c_minimizer = lmfit.Minimizer(c_func, c_params)
 
             try:
-                if fitmethod == 'brute':
-                    result = minimizer.minimize(method=fitmethod, keep='all')
+                if fitmethod == "brute":
+                    c_result = c_minimizer.minimize(method=fitmethod, keep="all")
                 else:
-                    result = minimizer.minimize(method=fitmethod)
+                    c_result = c_minimizer.minimize(method=fitmethod)
 
             except KeyboardInterrupt:
-                result = minimizer.result
                 sys.stderr.write("\n -- Keyboard Interrupt: minimization stopped\n")
+                c_result = c_minimizer.minimize(
+                    params=c_minimizer.result.params, maxfev=1
+                )
 
-            for name, param in result.params.items():
+            for name, param in c_result.params.items():
                 params[name] = param
 
-            if independent_clusters_no > 1:
-                result_final.nfev += result.nfev
+            print("")
 
-            print('')
-
-        if independent_clusters_no > 1:
-            result_final.params = params
-            result_final.residual = data.calculate_residuals(result_final.params, verbose=False)
-            result_final.method = result.method
-            result_final.chisqr = (result_final.residual**2).sum()
-            result_final.ndata = len(result_final.residual)
-            result_final.nfree = result_final.ndata - result_final.nvarys
-            result_final.redchi = result_final.chisqr / result_final.nfree
-            _neg2_log_likel = result_final.ndata * np.log(result_final.chisqr / result_final.ndata)
-            result_final.aic = _neg2_log_likel + 2 * result_final.nvarys
-            result_final.bic = _neg2_log_likel + np.log(result_final.ndata) * result_final.nvarys
-            result = result_final
+        if len(clusters) > 1:
+            c_func = functools.partial(data.calculate_residuals, verbose=False)
+            minimizer = lmfit.Minimizer(c_func, params)
+            result = minimizer.minimize(maxfev=1)
+            result.params = params
+        else:
+            result = c_result
 
         print("Final Chi2        : {:.3e}".format(result.chisqr))
         print("Final Reduced Chi2: {:.3e}".format(result.redchi))
 
-    if result.method != 'leastsq':
+    if result.method != "leastsq":
         print("\nWarning: uncertainties and covariance of fitting parameters are only")
-        print("         calculated when using the \'leastsq\' fitting method!")
+        print("         calculated when using the 'leastsq' fitting method!")
 
     return result
 
@@ -115,58 +104,65 @@ def find_independent_clusters(data, params):
     clusters = []
 
     for profile in data:
-        params_profile = lmfit.Parameters()
-        for name, param in profile.default_params.items():
-            params_profile[name] = lmfit.Parameter(name)
 
-        names_vary_profile = []
+        parnames = profile.params.keys()
+        parnames_vary = {
+            name for name in parnames if params[name].vary and not params[name].expr
+        }
 
-        for name in profile.default_params:
-            params_profile[name] = params[name]
-            if params[name].vary and not params[name].expr:
-                names_vary_profile.append(name)
+        for data_cluster, parnames_cluster, parnames_vary_cluster in clusters:
 
-        for name_cluster, data_cluster, params_cluster in clusters:
-            names_vary_shared = [
-                name for name, param in params_cluster.items()
-                if param.vary and name in names_vary_profile
-            ]
-
-            if names_vary_shared:
+            if parnames_vary & parnames_vary_cluster:
                 data_cluster.append(profile)
-                for name in params_profile:
-                    if name not in params_cluster:
-                        params_cluster[name] = lmfit.Parameter(name)
-                params_cluster.update(params_profile)
-                for name in names_vary_shared:
-                    name_cluster = name_cluster.intersection(
-                        parameters.ParameterName.from_full_name(name))
+                parnames_cluster.extend(parnames)
+                parnames_vary_cluster.update(parnames_vary)
                 break
 
         else:
+
             data_cluster = datasets.DataSet(profile)
-            params_cluster = params_profile
+            parnames_cluster = list(parnames)
+            parnames_vary_cluster = parnames_vary
 
-            name_cluster = parameters.ParameterName.from_full_name(names_vary_profile[0])
+            clusters.append((data_cluster, parnames_cluster, parnames_vary_cluster))
 
-            for name in names_vary_profile:
-                name_cluster = name_cluster.intersection(
-                    parameters.ParameterName.from_full_name(name))
+    clusters_ = []
 
-            clusters.append((name_cluster, data_cluster, params_cluster))
+    for data_cluster, parnames_cluster, parnames_vary_cluster in clusters:
 
-    return sorted(clusters)
+        name_cluster = parameters.ParameterName.from_full_name(
+            parnames_vary_cluster.pop()
+        )
+
+        while parnames_vary_cluster:
+            name_cluster = name_cluster.intersection(
+                parameters.ParameterName.from_full_name(parnames_vary_cluster.pop())
+            )
+
+        params_cluster = lmfit.Parameters()
+
+        for parname in parnames_cluster:
+            par = params[parname]
+            par._delay_asteval = True
+            params_cluster[parname] = par
+
+        for p in params_cluster.values():
+            p._delay_asteval = False
+
+        clusters_.append((name_cluster, data_cluster, params_cluster))
+
+    return sorted(clusters_)
 
 
-def write_statistics(result, path='./'):
+def write_statistics(result, path="./"):
     """Write fitting statistics to a file."""
 
-    ks_value, ks_p_value = stats.kstest(result.residual, 'norm')
+    _, ks_p_value = stats.kstest(result.residual, "norm")
     chi2_p_value = 1.0 - stats.chi2.cdf(result.chisqr, result.nfree)
 
-    filename = os.path.join(path, 'statistics.fit')
+    filename = os.path.join(path, "statistics.fit")
 
-    with open(filename, 'w') as f:
+    with open(filename, "w") as f:
         print("  * {}".format(filename))
 
         f.write("# Number of data points: {}\n".format(result.ndata))
@@ -175,7 +171,13 @@ def write_statistics(result, path='./'):
         f.write("# Number of function evaluations: {}\n\n".format(result.nfev))
         f.write("chi-square         = {: .5e}\n".format(result.chisqr))
         f.write("reduced chi-square = {: .5e}\n".format(result.redchi))
-        f.write("chisq_p-value      = {: .5e} # Chi-squared test\n".format(chi2_p_value))
-        f.write("ks_p-value         = {: .5e} # Kolmogorov-Smirnov test\n\n".format(ks_p_value))
+        f.write(
+            "chisq_p-value      = {: .5e} # Chi-squared test\n".format(chi2_p_value)
+        )
+        f.write(
+            "ks_p-value         = {: .5e} # Kolmogorov-Smirnov test\n\n".format(
+                ks_p_value
+            )
+        )
         f.write("Akaike Information Criterion = {: .5e}\n".format(result.aic))
         f.write("Bayesian Information Criterion = {: .5e}\n".format(result.bic))

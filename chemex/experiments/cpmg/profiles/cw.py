@@ -8,61 +8,73 @@ calculated using the 6x6, single spin matrix:
 
 Notes
 -----
+
 Off resonance effects are taken into account.
 
-The calculation is designed specifically to analyze the experiment found in the
-reference:
+Reference
+---------
 
 Journal of Physical Chemistry B (2008), 112, 5898-5904
 
 """
 
-import functools
-
 import numpy as np
-from scipy import linalg
 
-from chemex.bases import util
-from chemex.experiments import base_profile
 from chemex.experiments.cpmg import cpmg_profile
+from chemex.spindynamics import basis, default
+
+EXP_DETAILS = {
+    "carrier": {"type": float},
+    "time_t2": {"type": float},
+    "pw90": {"type": float},
+    "time_equil": {"default": 0.0, "type": float},
+}
 
 
 class Profile(cpmg_profile.CPMGProfile):
     """TODO: class docstring."""
 
-    def __init__(self, profile_name, measurements, exp_details):
-        super().__init__(profile_name, measurements, exp_details)
+    def __init__(self, name, measurements, exp_details, model):
+        super().__init__(name, measurements, exp_details, model)
 
-        self.carrier = base_profile.check_par(exp_details, 'carrier', float)
-        self.time_equil = base_profile.check_par(exp_details, 'time_equil', float)
+        self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
 
-        self.t_neg = -2.0 * self.pw / np.pi
-        self.time_series = [self.t_neg, self.time_equil]
-        self.time_series.extend(self.tau_cp_list)
+        self.liouv = basis.Liouvillian(
+            system="ixyz",
+            state_nb=self.model.state_nb,
+            atoms=self.peak.atoms,
+            h_larmor_frq=self.conditions["h_larmor_frq"],
+            equilibrium=False,
+        )
 
-        if '3st' in self.model:
-            from chemex.bases.three_state import ixyz
-            self.base = ixyz
-        else:
-            from chemex.bases.two_state import ixyz
-            self.base = ixyz
+        self.liouv.carrier_i = self.exp_details["carrier"]
+        self.liouv.w1_i = 2.0 * np.pi / (4.0 * self.exp_details["pw90"])
 
-        self.map_names, self.default_params = self.base.create_default_params(
-            model=self.model,
-            nuclei=self.resonance_i['name'],
-            temperature=self.temperature,
-            h_larmor_frq=self.h_larmor_frq,
-            p_total=self.p_total,
-            l_total=self.l_total, )
+        self.detect = self.liouv.detect["iz_a"]
 
-        self.default_params[self.map_names['r1_i_a']].set(vary=False)
+        self.t_cps = {
+            ncyc: self.exp_details["time_t2"] / (4.0 * ncyc) - self.exp_details["pw90"]
+            for ncyc in self.ncycs[self.ncycs > 0]
+        }
+        self.t_cps[-1] = 0.5 * self.exp_details["time_t2"] / 2.0
 
-        for name in ('r2_i_b', 'r2_i_c', 'r2_i_d'):
-            if name in self.map_names:
-                param = self.default_params[self.map_names[name]]
-                param.set(min=param.min, max=param.max, expr=self.map_names['r2_i_a'])
+        self.t_neg = -2.0 * self.exp_details["pw90"] / np.pi
 
-    def calculate_unscaled_profile(self, **kwargs):
+        self.delays = [self.t_neg, self.exp_details["time_equil"]]
+        self.delays.extend(self.t_cps.values())
+
+        self.map_names, self.params = default.create_params(
+            basis=self.liouv,
+            model=self.model.name,
+            nuclei=self.peak.names,
+            conditions=self.conditions,
+        )
+
+        for name, full_name in self.map_names.items():
+            if name.startswith(("dw", "r2_i_a")):
+                self.params[full_name].set(vary=True)
+
+    def calculate_unscaled_profile(self, **parvals):
         """Calculate the intensity in presence of exchange after a CEST block.
 
         Parameters
@@ -88,52 +100,74 @@ class Profile(cpmg_profile.CPMGProfile):
             Intensity after the CEST block
 
         """
-        cs_i = np.array([kwargs.get(key, 0.0) for key in ('cs_i_a', 'cs_i_b', 'cs_i_c', 'cs_i_d')])
-        omega_i_a, omega_i_b, omega_i_c, omega_i_d = (cs_i - self.carrier) * self.ppm_i
 
-        # Calculation of the different liouvillians
-        l_free = self.base.compute_liouvillian(
-            omega_i_a=omega_i_a,
-            omega_i_b=omega_i_b,
-            omega_i_c=omega_i_c,
-            omega_i_d=omega_i_d,
-            **kwargs)
-        l_pw1x = l_free + self.base.compute_liouvillian(omega1x_i=+self.omega1_i)
-        l_pw1y = l_free + self.base.compute_liouvillian(omega1y_i=+self.omega1_i)
-        l_mw1x = l_free + self.base.compute_liouvillian(omega1x_i=-self.omega1_i)
+        self.liouv.update(**parvals)
 
         # Calculation of all the needed propagators
-        p_90px = linalg.expm(l_pw1x * self.pw)
-        p_180px = np.linalg.matrix_power(p_90px, 2)
-        p_180py = linalg.expm(l_pw1y * 2.0 * self.pw)
-        p_180mx = linalg.expm(l_mw1x * 2.0 * self.pw)
-        p_180pmx = 0.5 * (p_180px + p_180mx)  # +/- phase cycling
+        pulses = self.liouv.pulses_90_180_i()
+        delays = dict(zip(self.delays, self.liouv.delays(self.delays)))
 
-        p_free_list = util.compute_propagators_from_time_series(l_free, self.time_series)
-
-        p_equil = p_free_list[self.time_equil]
-        p_neg = p_free_list[self.t_neg]
+        p_180pmx = 0.5 * (pulses["180px"] + pulses["180mx"])  # +/- phase cycling
 
         # Simulate the CPMG block as function of ncyc
-        mag0 = self.base.compute_equilibrium(**kwargs)
+        mag0 = self.liouv.compute_mag_eq(term="iz", **parvals)
 
         profile = []
 
-        for ncyc, tau_cp in zip(self.ncycs, self.tau_cp_list):
+        for ncyc in self.ncycs:
+
             if ncyc == 0:
-                mag = functools.reduce(np.dot, [p_equil, p_90px, p_180pmx, p_90px, mag0])
+
+                mag = (
+                    self.detect
+                    @ delays[self.exp_details["time_equil"]]
+                    @ pulses["90px"]
+                    @ p_180pmx
+                    @ pulses["90px"]
+                    @ mag0
+                )
 
             elif ncyc == -1:
-                p_free = p_free_list[tau_cp]
-                mag = functools.reduce(
-                    np.dot, [p_equil, p_90px, p_neg, p_free, p_180pmx, p_free, p_neg, p_90px, mag0])
+                mag = (
+                    self.detect
+                    @ delays[self.exp_details["time_equil"]]
+                    @ pulses["90px"]
+                    @ delays[self.t_neg]
+                    @ delays[self.t_cps[ncyc]]
+                    @ p_180pmx
+                    @ delays[self.t_cps[ncyc]]
+                    @ delays[self.t_neg]
+                    @ pulses["90px"]
+                    @ mag0
+                )
 
             else:
-                p_free = p_free_list[tau_cp]
-                p_cp = np.linalg.matrix_power(np.dot(np.dot(p_free, p_180py), p_free), int(ncyc))
-                mag = functools.reduce(
-                    np.dot, [p_equil, p_90px, p_neg, p_cp, p_180pmx, p_cp, p_neg, p_90px, mag0])
+                p_cp = np.linalg.matrix_power(
+                    delays[self.t_cps[ncyc]]
+                    @ pulses["180py"]
+                    @ delays[self.t_cps[ncyc]],
+                    int(ncyc),
+                )
+                mag = (
+                    self.detect
+                    @ delays[self.exp_details["time_equil"]]
+                    @ pulses["90px"]
+                    @ delays[self.t_neg]
+                    @ p_cp
+                    @ p_180pmx
+                    @ p_cp
+                    @ delays[self.t_neg]
+                    @ pulses["90px"]
+                    @ mag0
+                )
 
-            profile.append(np.float64(mag[self.base.index_iz_a]))
+            profile.append(np.float64(self.liouv.collapse(mag)))
 
         return np.asarray(profile)
+
+    def ncycs_to_nu_cpmgs(self, ncycs=None):
+        """Calculate the pulsing frequency, v(CPMG), from ncyc values."""
+        if ncycs is None:
+            ncycs = np.array([ncyc if ncyc >= 0 else 0.5 for ncyc in self.ncycs])
+
+        return ncycs / self.exp_details["time_t2"]
