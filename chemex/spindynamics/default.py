@@ -46,7 +46,7 @@ def create_params(
 ):
     """TODO"""
 
-    fnames_k, params_k = create_params_k(model_name=model, conditions=conditions)
+    fnames_k, params_k = create_params_k(model_name=model.name, conditions=conditions)
     fnames_lr, params_lr = create_params_lr(basis, conditions, nuclei)
 
     params_lr = set_thermal_factors(fnames_lr, params_lr, nuclei)

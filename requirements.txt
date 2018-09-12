@@ -1,4 +1,0 @@
-numpy
-scipy
-matplotlib>=2.0.0
-lmfit>=0.9.6
