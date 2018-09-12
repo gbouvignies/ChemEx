@@ -2,7 +2,7 @@
 {% set data = load_setup_py_data() %}
 
 package:
-  name: repository_name
+  name: chemex
   
   version: {{ data['version'] }}
 
@@ -39,4 +39,4 @@ test:
 
 about:
   home: https://github.com/gbouvignies/chemex
-  summary: ChemEx is a program to fit chemical exchange induced shift and relaxation data
+  summary: ChemEx is an analysis program for chemical exchange detected by NMR.

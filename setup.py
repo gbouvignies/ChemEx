@@ -8,7 +8,7 @@ setup(
     name="chemex",
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
-    description="ChemEx is a program to fit chemical exchange induced shift and relaxation data",
+    description="ChemEx is an analysis program for chemical exchange detected by NMR.",
     long_description=long_description,
     author="Guillaume Bouvignies",
     author_email="gbouvignies@gmail.com",
