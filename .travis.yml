@@ -3,26 +3,32 @@ language: python
 sudo: false
 
 python:
-  - "3.5"
-  - "3.6"
+  - 3.5
+  - 3.6
+
+env:
+  global:
+    - CONDA_DEPS="numpy scipy matplotlib lmfit asteval pytest pytest-cov"
+    - PACKAGENAME="chemex"
+
+before_install:
+  - export MINICONDA=$HOME/miniconda
+  - export PATH="$MINICONDA/bin:$PATH"
+  - hash -r
+  - wget http://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh -O miniconda.sh
+  - bash miniconda.sh -b -f -p $MINICONDA
+  - conda config --set always_yes yes
+  - conda update conda
+  - conda info -a
+  - conda create -n testenv python=$TRAVIS_PYTHON_VERSION
+  - source activate testenv
+  - conda install -c conda-forge $CONDA_DEPS
 
 install:
-  - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh;
-  - bash miniconda.sh -b -p $HOME/miniconda
-  - export PATH="$HOME/miniconda/bin:$PATH"
-  - hash -r
-  - conda config --set always_yes yes --set changeps1 no
-  - conda config --add channels conda-forge
-  - conda install -q python=$TRAVIS_PYTHON_VERSION conda-build pytest pytest-cov
-  - conda update -q conda
-  - conda config --set auto_update_conda no
-  - conda build conda.recipe --no-test
-  - conda install --use-local chemex
-  - conda info -a
-  - conda list
+  - python setup.py install
 
 script:
-  - pytest -v --color=yes --cov=chemex tests
+  - pytest -v --color=yes --cov=$PACKAGENAME tests
 
 after_success:
   - conda install -c conda-forge codecov
@@ -37,3 +43,4 @@ deploy:
   on:
     tags: true
     repo: gbouvignies/chemex
+    condition: $TRAVIS_PYTHON_VERSION = "3.6"
