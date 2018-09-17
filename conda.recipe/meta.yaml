@@ -6,34 +6,32 @@ package:
   version: {{ version }}
 
 source:
-  url: https://github.com/chemex/{{ name }}/archive/{{ version }}.tar.gz
-  sha256: ce73d0b2eb10c9cf87924d4e0ff6405f6cce71df560812a07019fd817625b6c8
+  url: https://github.com/gbouvignies/{{ name }}/archive/{{ version }}.tar.gz
+  sha256: 14d5ebdc058ec7fd106be754720b96f44322692742138ea22d9045d286d7c407
 
 build:
   noarch: python
   number: 0
   script: "{{ PYTHON }} -m pip install . --no-deps --ignore-installed --no-cache-dir -vvv"
-  skip: True  # [py<35]
+  entry_points:
+      - chemex = chemex.chemex:main
 
 requirements:
   host:
-    - python
+    - python>=3.5
+    - setuptools
     - pip
   run:
-    - python
-    - numpy>=1.0
-    - scipy>=1.0
-    - matplotlib>=2.0
-    - lmfit>=0.9.11
-    - asteval>=0.9.11
+    - python>=3.5
+    - numpy
+    - scipy
+    - matplotlib
+    - lmfit
+    - asteval
 
 test:
-  requires:
-    - pytest
-    - pytes-cov
   imports:
     - chemex
-    - chemex.tests
 
 about:
   home: http://github.com/gbouvignies/chemex
@@ -41,7 +39,6 @@ about:
   license_family: BSD
   license_file: LICENSE
   summary: 'ChemEx is an analysis program for chemical exchange detected by NMR.'
-
   description: |
       ChemEx is an analysis program for chemical exchange detected by NMR.
       It is designed to take almost any kind of NMR data to aid the analysis,

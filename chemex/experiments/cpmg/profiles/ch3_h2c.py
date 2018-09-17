@@ -68,7 +68,7 @@ class Profile(cpmg_profile.CPMGProfile):
 
         self.map_names, self.params = default.create_params(
             basis=self.liouv,
-            model=self.model.name,
+            model=self.model,
             nuclei=self.peak.names,
             conditions=self.conditions,
             nh_constraints=True,
