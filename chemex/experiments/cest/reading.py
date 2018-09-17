@@ -1,192 +1,139 @@
+"""Read the experimental CEST data."""
+
+import importlib
 import os
 
-import scipy as sc
-import scipy.stats as st
-import scipy.linalg as la
-import scipy.signal as si
-import scipy.interpolate as ip
-
-from chemex import utils
+import numpy as np
+from scipy import interpolate, linalg, signal, stats
 
 
-def read_data(cfg, working_dir, global_parameters, res_incl=None,
-              res_excl=None):
+def read_profiles(path, filenames, details, model, included=None, excluded=None):
+    """Read the CEST profiles."""
 
-    # Reads the path to get the intensities
-    exp_data_dir = utils.normalize_path(
-        working_dir,
-        cfg.get('path', 'exp_data_dir')
+    experiment_type = details["type"].split(".")
+    details["name"] = name_experiment(details)
+    experiment_module = importlib.import_module(
+        ".".join(
+            ["chemex.experiments", experiment_type[0], "profiles", experiment_type[1]]
+        )
     )
 
-    data_points = list()
+    error = details.get("error", "file")
+    if error not in {"file", "auto"}:
+        print("Warning: The 'error' option should either be 'file' or ")
+        print("'auto'. Using the default 'file' option.")
+        error = "file"
 
-    experiment_name = name_experiment(global_parameters)
+    error_values = []
 
-    for resonance_id, filename in cfg.items('data'):
+    if included is None:
+        included = filenames.keys()
+    else:
+        included = [_.lower() for _ in included]
 
-        included = (
-            (res_incl is not None and resonance_id in res_incl) or
-            (res_excl is not None and resonance_id not in res_excl) or
-            (res_incl is None and res_excl is None)
-        )
+    if excluded is None:
+        excluded = []
+    else:
+        excluded = [_.lower() for _ in excluded]
 
-        if not included:
-            continue
+    Profile = getattr(experiment_module, "Profile")
 
-        parameters = dict(global_parameters)
+    dtype = [("b1_offsets", "<f8"), ("intensities", "<f8"), ("intensities_err", "<f8")]
 
-        parameters['experiment_name'] = experiment_name
-        parameters['resonance_id'] = resonance_id
+    profiles = []
 
-        # Get the r2 values from the fuda files containing intensities
-        abs_path_filename = os.path.join(exp_data_dir, filename)
-        data_points += read_a_cest_profile(abs_path_filename, parameters)
+    for profile_name, filename in filenames.items():
 
-    # Adjust the minimal uncertainty
-    # data_points = adjust_min_int_uncertainty(data_points)
+        full_path = os.path.join(path, filename)
 
-    # Normalize intensities
-    data_points = norm_int(data_points)
+        measurements = np.loadtxt(full_path, dtype=dtype)
+        measurements.sort(order="b1_offsets")
 
-    return data_points
+        profile = Profile(profile_name, measurements, details, model)
+
+        is_included = profile_name.lower() in included
+        is_not_excluded = profile_name.lower() not in excluded
+
+        if is_included and is_not_excluded:
+            profiles.append(profile)
+
+        if error == "auto":
+            excl_reference = np.logical_not(profile.reference)
+            error_values.append(estimate_noise(profile.val[excl_reference]))
+
+    error = details.get("error", "file")
+
+    if error == "auto":
+
+        error_value = np.mean(error_values)
+
+        for profile in profiles:
+            profile.err[:] = error_value
+
+    ndata = sum(len(profile.val) for profile in profiles)
+
+    return profiles, ndata
 
 
-def name_experiment(global_parameters=None):
-    if not global_parameters:
-        global_parameters = dict()
+def name_experiment(experiment_details=None):
+    """Generate a unique name for the experiment."""
+    if experiment_details is None:
+        experiment_details = dict()
 
-    if 'experiment_name' in global_parameters:
-        name = global_parameters['experiment_name'].strip().replace(' ', '_')
+    if "name" in experiment_details:
+        name = experiment_details["name"].strip().replace(" ", "_")
 
     else:
-        exp_type = global_parameters['experiment_type']
-        h_larmor_frq = float(global_parameters['h_larmor_frq'])
-        temperature = float(global_parameters['temperature'])
-        b1_frq = float(global_parameters['b1_frq'])
+        exp_type = experiment_details["type"].replace(".", "_")
+        h_larmor_frq = float(experiment_details["h_larmor_frq"])
+        temperature = float(experiment_details["temperature"])
+        b1_frq = float(experiment_details["b1_frq"])
+        time_t1 = float(experiment_details["time_t1"])
 
-        time_t1 = float(global_parameters['time_t1'])
-
-        name = '{:s}_{:.0f}Hz_{:.0f}ms_{:.0f}MHz_{:.0f}C'.format(
-            exp_type,
-            b1_frq,
-            time_t1 * 1e3,
-            h_larmor_frq,
-            temperature
+        name = "{:s}_{:.0f}Hz_{:.0f}ms_{:.0f}MHz_{:.0f}C".format(
+            exp_type, b1_frq, time_t1 * 1e3, h_larmor_frq, temperature
         ).lower()
 
     return name
 
 
-def read_a_cest_profile(filename, parameters):
-    """Reads in the fuda file and spit out the intensities"""
-
-    data = sc.loadtxt(filename, dtype=[('b1_offset', '<f8'),
-                                       ('intensity', '<f8'),
-                                       ('intensity_err', '<f8')])
-
-    uncertainty = estimate_uncertainty(data)
-
-    data_points = []
-
-    exp_type = parameters['experiment_type'].replace('_cest', '')
-    data_point = __import__(exp_type + '.data_point', globals(), locals(),
-                            ['DataPoint'], -1)
-
-    intensity_ref = 1.0
-
-    for b1_offset, intensity_val, intensity_err in data:
-        if abs(b1_offset) >= 10000.0:
-            intensity_ref = intensity_val
-
-    parameters['intensity_ref'] = intensity_ref
-    parameters['profile_id'] = filename
-
-    for b1_offset, intensity_val, intensity_err in data:
-        parameters['b1_offset'] = b1_offset
-
-        # Used to keep reference points out of the bootstrapping
-        parameters['reference'] = abs(b1_offset) >= 10000.0
-
-        intensity_err = uncertainty
-
-        data_points.append(
-            data_point.DataPoint(intensity_val, intensity_err, parameters)
-        )
-
-    return data_points
-
-
-def estimate_uncertainty(data):
-    """Estimates uncertainty using the baseline"""
-
-    data.sort()
-    int_list = sc.asarray([it for of, it, _er in data if abs(of) < 10000.0])
-
-    return estimate_noise(int_list)
-
-
-def adjust_min_int_uncertainty(data_int):
-    """Adjusts the uncertainty of data points to the maximum of
-    either the present uncertainty or the median of all the uncertainties
-    """
-
-    int_err = sc.median([data_point.err for data_point in data_int])
-
-    new_data_int = list()
-
-    for data_point in data_int:
-        data_point.err = int_err
-        new_data_int.append(data_point)
-
-    return new_data_int
-
-
-def norm_int(data_int):
-    """Normalize intensities relative to the intensity of the reference
-    plane"""
-
-    new_data_int = list()
-
-    for data_point in data_int:
-        data_point.val /= data_point.par['intensity_ref']
-        data_point.err /= data_point.par['intensity_ref']
-        data_point.err = abs(data_point.err)
-        new_data_int.append(data_point)
-
-    return new_data_int
-
-
 def estimate_noise(x):
+    """Estimate the uncertainty in the CEST profile.
+
+    # TODO: add reference to this method...
+
+    """
     n = len(x)
 
-    fda = [[1, -1],
-           [1, -2, 1],
-           [1, -3, 3, -1],
-           [1, -4, 6, -4, 1],
-           [1, -5, 10, -10, 5, -1],
-           [1, -6, 15, -20, 15, -6, 1]]
-    fda = [sc.array(a_fda) / la.norm(a_fda) for a_fda in fda]
+    fda = [
+        [1, -1],
+        [1, -2, 1],
+        [1, -3, 3, -1],
+        [1, -4, 6, -4, 1],
+        [1, -5, 10, -10, 5, -1],
+        [1, -6, 15, -20, 15, -6, 1],
+    ]
 
-    perc = sc.array([0.05] + list(sc.arange(0.1, 0.40, 0.025)))
-    z = st.norm.ppf(1.0 - perc)
+    fda = [np.array(a_fda) / linalg.norm(a_fda) for a_fda in fda]
+
+    perc = np.array([0.05] + list(np.arange(0.1, 0.40, 0.025)))
+    z = stats.norm.ppf(1.0 - perc)
 
     sigma_est = []
 
     for fdai in fda:
-
-        noisedata = si.convolve(x, fdai, mode='valid')
+        noisedata = signal.convolve(x, fdai, mode="valid")
         ntrim = len(noisedata)
 
         if ntrim >= 2:
-
             noisedata.sort()
 
-            p = 0.5 + sc.arange(1, ntrim + 1)
+            p = 0.5 + np.arange(1, ntrim + 1)
             p /= ntrim + 0.5
 
             q = []
 
-            f = ip.interp1d(p, noisedata, 'linear')
+            f = interpolate.interp1d(p, noisedata, "linear")
 
             for a_perc, a_z in zip(perc, z):
                 try:
@@ -195,10 +142,9 @@ def estimate_noise(x):
                 except ValueError:
                     pass
 
-            sigma_est.append(sc.median(q))
+            sigma_est.append(np.median(q))
 
-    noisevar = sc.median(sigma_est) ** 2
-    noisevar /= (1.0 + 15.0 * (n + 1.225) ** -1.245)
+    noisevar = np.median(sigma_est) ** 2
+    noisevar /= 1.0 + 15.0 * (n + 1.225) ** -1.245
 
-    return sc.sqrt(noisevar)
-
+    return np.sqrt(noisevar)

@@ -1,32 +1,36 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
+import versioneer
 
-with open('chemex/version.py') as f:
-    exec (f.read())  # read and set the variable __version__
-
-description = ('Program to fit chemical exchange induced shift and '
-               'relaxation data.')
-
-install_requires = [
-    'numpy',
-    'scipy',
-    'matplotlib>=1.3.1',
-]
-
-entry_points = {
-    'console_scripts': [
-        'chemex = chemex.__main__:main',
-    ]
-}
+with open("README.md", "rb") as f:
+    long_description = f.read().decode("utf-8")
 
 setup(
-    name='chemex',
-    version=__version__,
-    description=description,
-    long_description=open('README.md').read(),
-    license='BSD 3-Clause',
-    author='Guillaume Bouvignies',
-    author_email='gbouvignies@gmail.com',
+    name="chemex",
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
+    description="ChemEx is an analysis program for chemical exchange detected by NMR.",
+    long_description=long_description,
+    author="Guillaume Bouvignies",
+    author_email="gbouvignies@gmail.com",
+    url="https://github.com/gbouvignies/chemex",
+    license="3-Clause BSD",
+    classifiers=[
+        "Intended Audience :: Science/Research",
+        "License :: OSI Approved :: BSD License",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
+    ],
+    keywords="nmr protein dynamics chemical exchange cpmg cest relaxation data fitting",
     packages=find_packages(),
-    install_requires=install_requires,
-    entry_points=entry_points
+    install_requires=[
+        "numpy>=1.0",
+        "scipy>=1.0",
+        "matplotlib>=2.0",
+        "lmfit>=0.9.11",
+        "asteval>=0.9.11",
+    ],
+    python_requires=">=3.5",
+    entry_points={"console_scripts": ["chemex = chemex.chemex:main"]},
 )

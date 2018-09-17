@@ -1,232 +1,274 @@
+"""Plot the CEST profiles."""
+
 import os
 
-import scipy as sp
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gsp
-from matplotlib.ticker import MaxNLocator, NullFormatter
-from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib import gridspec as gsp, pyplot as plt, ticker
+from matplotlib.backends import backend_pdf
+import numpy as np
 
-from chemex.parsing import parse_assignment
-
-
-dark_gray = '0.13'
-red500 = '#F44336'
-red200 = '#EF9A9A'
+from chemex.experiments import plotting
 
 
 def sigma_estimator(x):
-    """ Estimates standard deviation using median to exclude outliers. Up to
-    50% can be bad """
+    """Estimates standard deviation using median to exclude outliers.
 
-    return sp.median([sp.median(abs(xi - sp.asarray(x))) for xi in x]) * 1.1926
+    Up to 50% can be bad.
 
-
-def set_lim(values, scale):
-    """Provides a range that contains all the value and adds a margin."""
-
-    v_min, v_max = min(values), max(values)
-    margin = (v_max - v_min) * scale
-    v_min, v_max = v_min - margin, v_max + margin
-
-    return v_min, v_max
+    """
+    return np.median([np.median(abs(xi - np.asarray(x))) for xi in x]) * 1.1926
 
 
-def group_data(dataset):
-    """Groups the data resonance specifically"""
-
-    data_grouped = dict()
-
-    for data_pt in dataset:
-        id_ = data_pt.par['resonance_id']
-
-        assignment = parse_assignment(id_)
-        index = int(assignment[0][0])
-
-        data_grouped.setdefault((index, id_), []).append(data_pt)
-
-    return data_grouped
-
-
-def compute_profiles(data_grouped, par, par_names, par_fixed):
-    """Creates the arrays that will be used to plot one profile"""
-
+def compute_profiles(data_grouped, params):
+    """Compute the CEST profiles used for plotting."""
     profiles = {}
 
-    for (index, resonance_id), profile in data_grouped.items():
+    for peak, profile in data_grouped.items():
+        mask_ref = profile.reference
+        mask = np.logical_not(mask_ref)
 
-        profile_exp = []
-        b1_offset_min = +1e16
-        b1_offset_max = -1e16
+        val_ref = np.mean(profile.val[mask_ref])
 
-        for data_pt in profile:
+        b1_ppm_exp = profile.b1_offsets_to_ppm()[mask]
+        mag_cal = profile.calculate_profile(params)[mask] / val_ref
+        mag_exp = profile.val[mask] / val_ref
+        mag_err = profile.err[mask] / np.absolute(val_ref)
+        filtered = profile.mask[mask]
 
-            b1_offset = data_pt.par['b1_offset']
-            ppm_to_rads = data_pt.par['ppm_to_rads']
-            carrier_ppm = data_pt.par['carrier']
-
-            if abs(b1_offset) < 1e4:
-                b1_ppm = (2.0 * sp.pi * b1_offset) / ppm_to_rads + carrier_ppm
-
-                mag_cal = data_pt.cal
-                mag_exp = data_pt.val
-                mag_err = data_pt.err
-
-                profile_exp.append([b1_ppm, mag_cal, mag_exp, mag_err])
-
-                b1_offset_min = min(b1_offset_min, b1_offset)
-                b1_offset_max = max(b1_offset_max, b1_offset)
-
-        b1_ppm_exp, mag_cal, mag_exp, mag_err = zip(*sorted(profile_exp))
-
-        profile_cal = []
-
-        b1_offset_min, b1_offset_max = set_lim(
-            [b1_offset_min, b1_offset_max], 0.02
+        b1_offsets_min, b1_offsets_max = plotting.set_lim(
+            profile.b1_offsets[mask], 0.02
         )
+        b1_offsets = np.linspace(b1_offsets_min, b1_offsets_max, 500)
 
-        data_pt = profile[0]
+        b1_ppm_fit = profile.b1_offsets_to_ppm(b1_offsets)
+        mag_fit = profile.calculate_profile(params, b1_offsets) / val_ref
 
-        for b1_offset in sp.linspace(b1_offset_min, b1_offset_max, 500):
-            ppm_to_rads = data_pt.par['ppm_to_rads']
-            carrier_ppm = data_pt.par['carrier']
-            b1_ppm = (2.0 * sp.pi * b1_offset) / ppm_to_rads + carrier_ppm
+        cs_a = params.get(profile.map_names.get("cs_i_a"))
+        cs_b = params.get(profile.map_names.get("cs_i_b"))
+        cs_c = params.get(profile.map_names.get("cs_i_c"))
+        cs_d = params.get(profile.map_names.get("cs_i_d"))
 
-            data_pt.update_b1_offset(b1_offset)
-            data_pt.calc_val(par, par_names, par_fixed)
-
-            profile_cal.append([b1_ppm, data_pt.cal])
-
-        b1_ppm_fit, mag_fit = zip(*sorted(profile_cal))
-
-        profiles.setdefault((index, resonance_id), []).append(
-            [b1_ppm_exp, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit]
+        profiles[peak] = (
+            b1_ppm_exp,
+            mag_cal,
+            mag_exp,
+            mag_err,
+            b1_ppm_fit,
+            mag_fit,
+            cs_a,
+            cs_b,
+            cs_c,
+            cs_d,
+            filtered,
         )
 
     return profiles
 
 
-def write_profile(resonance_id, b1_ppm_fit, mag_fit, file_txt):
+def write_profile_fit(name, b1_ppm_fit, mag_fit, file_):
+    """Write the fitted CEST profile."""
+
+    file_.write("[{}]\n".format(name.upper()))
+
+    file_.write("# {:>17s}   {:>17s}\n".format("OFFSET", "INTENSITY"))
+
     for b1_ppm_cal, mag_cal in zip(b1_ppm_fit, mag_fit):
-        file_txt.write(
-            "{:10s} {:8.3f} {:8.3f}\n".format(
-                resonance_id.upper(), b1_ppm_cal, mag_cal
-            )
+        file_.write("  {0:17.8e} = {1:17.8e}\n".format(b1_ppm_cal, mag_cal))
+
+    file_.write("\n")
+
+
+def write_profile_exp(name, b1_ppm, mag_exp, mag_err, mag_cal, file_):
+    """Write the experimental CEST profile."""
+
+    file_.write("[{}]\n".format(name.upper()))
+
+    file_.write(
+        "# {:>17s}   {:>17s} {:>17s}\n".format("OFFSET", "INTENSITY", "UNCERTAINTY")
+    )
+
+    for b1_ppm_, mag_exp_, mag_err_, mag_cal_ in zip(b1_ppm, mag_exp, mag_err, mag_cal):
+        file_.write(
+            "  {0:17.8e} = {1:17.8e} {2:17.8e}\n".format(b1_ppm_, mag_exp_, mag_err_)
         )
 
+    file_.write("\n")
 
-def plot_data(data, par, par_names, par_fixed, output_dir='./'):
-    """Plot cest profiles and write a pdf file"""
 
+def plot_data(data, params, output_dir="./"):
+    """Write experimental and fitted data to a file and plot the CEST profiles.
+
+    - *.exp: contains the experimental data
+    - *.fit: contains the fitted data
+    - *.pdf: contains the plot of experimental and fitted data
+
+    """
     datasets = dict()
 
     for data_point in data:
-        experiment_name = data_point.par['experiment_name']
+        experiment_name = data_point.experiment_name
         datasets.setdefault(experiment_name, []).append(data_point)
 
     for experiment_name, dataset in datasets.items():
-
-        # ##### Matplotlib ######
-        name_pdf = ''.join([experiment_name, '.pdf'])
+        name_pdf = "".join([experiment_name, ".pdf"])
         name_pdf = os.path.join(output_dir, name_pdf)
 
-        name_txt = ''.join([experiment_name, '.fit'])
+        name_txt = "".join([experiment_name, ".fit"])
         name_txt = os.path.join(output_dir, name_txt)
 
-        print("  * {} [.fit]".format(name_pdf))
+        name_exp = "".join([experiment_name, ".exp"])
+        name_exp = os.path.join(output_dir, name_exp)
 
-        # #######################
+        print(("  * {} [.fit]".format(name_pdf)))
 
-        data_grouped = group_data(dataset)
+        data_grouped = plotting.group_data(dataset)
 
-        profiles = compute_profiles(
-            data_grouped, par, par_names, par_fixed
-        )
+        profiles = compute_profiles(data_grouped, params)
 
-        with PdfPages(name_pdf) as file_pdf, open(name_txt, 'w') as file_txt:
+        with backend_pdf.PdfPages(name_pdf) as file_pdf, open(
+            name_txt, "w"
+        ) as file_txt, open(name_exp, "w") as file_exp:
 
-            for (_index, resonance_id), profile in sorted(profiles.items()):
-                b1_ppm, mag_cal, mag_exp, mag_err, b1_ppm_fit, mag_fit = \
-                profile[0]
+            for peak in sorted(profiles):
+                (
+                    b1_ppm,
+                    mag_cal,
+                    mag_exp,
+                    mag_err,
+                    b1_ppm_fit,
+                    mag_fit,
+                    cs_a,
+                    cs_b,
+                    cs_c,
+                    cs_d,
+                    filtered,
+                ) = profiles[peak]
 
-                write_profile(resonance_id, b1_ppm_fit, mag_fit, file_txt)
+                write_profile_fit(peak.assignment, b1_ppm_fit, mag_fit, file_txt)
+                write_profile_exp(
+                    peak.assignment, b1_ppm, mag_exp, mag_err, mag_cal, file_exp
+                )
 
-                ###### Matplotlib ######
-
-                # fig = plt.figure(1)
-                fig = plt.figure(1)
-
+                # Matplotlib #
                 gs = gsp.GridSpec(2, 1, height_ratios=[1, 4])
 
                 ax1 = plt.subplot(gs[0])
                 ax2 = plt.subplot(gs[1])
 
-                ax1.axhline(0, color='black', alpha=0.87)
-                ax2.axhline(0, color='black', alpha=0.87)
+                cs_colors = list(
+                    zip(
+                        (cs_a, cs_b, cs_c, cs_d),
+                        ("Blue", "Red", "Orange", "Deep Orange"),
+                    )
+                )
+
+                for ax_ in (ax1, ax2):
+                    for cs, color in cs_colors:
+                        if cs is not None:
+                            ax_.axvline(
+                                cs.value,
+                                color=plotting.palette[color]["100"],
+                                linestyle="-",
+                                linewidth=1.0,
+                                zorder=-100,
+                            )
+
+                    ax_.axhline(
+                        0, color=plotting.palette["Black"]["Text"], linewidth=0.5
+                    )
 
                 ########################
 
-                ax2.plot(b1_ppm_fit,
-                         mag_fit,
-                         linestyle='-',
-                         color=red200,
-                )
-
                 ax2.plot(
-                    b1_ppm,
-                    mag_exp,
-                    'o',
-                    color=red500,
+                    b1_ppm_fit,
+                    mag_fit,
+                    linestyle="-",
+                    color=plotting.palette["Grey"]["700"],
+                    zorder=2,
                 )
 
-                xmin, xmax = set_lim(b1_ppm_fit, 0.05)
+                ax2.errorbar(
+                    b1_ppm[filtered],
+                    mag_exp[filtered],
+                    mag_err[filtered],
+                    fmt="o",
+                    markeredgecolor=plotting.palette["Red"]["500"],
+                    ecolor=plotting.palette["Red"]["500"],
+                    markerfacecolor="None",
+                    zorder=3,
+                )
+
+                unfiltered = np.logical_not(filtered)
+
+                ax2.errorbar(
+                    b1_ppm[unfiltered],
+                    mag_exp[unfiltered],
+                    mag_err[unfiltered],
+                    fmt="o",
+                    markeredgecolor=plotting.palette["Red"]["100"],
+                    ecolor=plotting.palette["Red"]["100"],
+                    markerfacecolor="None",
+                    zorder=3,
+                )
+
+                xmin, xmax = plotting.set_lim(b1_ppm_fit, 0.05)
                 mags = list(mag_exp) + list(mag_fit)
-                ymin, ymax = set_lim(mags, 0.10)
+                ymin, ymax = plotting.set_lim(mags, 0.10)
 
                 ax2.set_xlim(xmin, xmax)
                 ax2.set_ylim(ymin, ymax)
 
                 ax2.invert_xaxis()
 
-                ax2.xaxis.set_major_locator(MaxNLocator(9))
-                # ax2.yaxis.set_major_locator(MaxNLocator(6))
+                ax2.xaxis.set_major_locator(ticker.MaxNLocator(9))
+                # ax2.yaxis.set_major_locator(ticker.MaxNLocator(6))
 
-                ax2.set_xlabel(r'$\mathregular{B_1 \ position \ (ppm)}$')
-                ax2.set_ylabel(r'$\mathregular{I/I_0}$')
+                ax2.xaxis.grid(False)
+
+                ax2.set_xlabel(r"$\mathregular{B_1 \ position \ (ppm)}$")
+                ax2.set_ylabel(r"$\mathregular{I/I_0}$")
 
                 ########################
 
-                deltas = sp.asarray(mag_exp) - sp.asarray(mag_cal)
-                max_val = max(sp.absolute(set_lim(deltas, 0.1))) + max(mag_err)
-                power10 = int(sp.log10(max_val))
-                deltas /= 10 ** power10
-                mag_err = sp.array(mag_err) / 10 ** power10
+                deltas = np.asarray(mag_exp) - np.asarray(mag_cal)
                 sigma = sigma_estimator(deltas)
 
                 ax1.fill(
                     (xmin, xmin, xmax, xmax),
-                    1.0 * sigma * sp.asarray([-1.0, 1.0, 1.0, -1.0]),
-                    fc='black',
-                    alpha=0.12,
-                    ec='none'
+                    1.0 * sigma * np.asarray([-1.0, 1.0, 1.0, -1.0]),
+                    fc=plotting.palette["Black"]["Dividers"],
+                    ec="none",
                 )
 
                 ax1.fill(
                     (xmin, xmin, xmax, xmax),
-                    2.0 * sigma * sp.asarray([-1.0, 1.0, 1.0, -1.0]),
-                    fc='black',
-                    alpha=0.12,
-                    ec='none'
+                    2.0 * sigma * np.asarray([-1.0, 1.0, 1.0, -1.0]),
+                    fc=plotting.palette["Black"]["Dividers"],
+                    ec="none",
                 )
 
                 ax1.errorbar(
-                    b1_ppm,
-                    deltas,
-                    mag_err,
-                    fmt='o',
-                    color=red500,
+                    b1_ppm[filtered],
+                    deltas[filtered],
+                    mag_err[filtered],
+                    fmt="o",
+                    markeredgecolor=plotting.palette["Red"]["500"],
+                    ecolor=plotting.palette["Red"]["500"],
+                    markerfacecolor="None",
+                    zorder=100,
                 )
 
-                rmin, rmax = set_lim(deltas, 0.1)
+                ax1.errorbar(
+                    b1_ppm[unfiltered],
+                    deltas[unfiltered],
+                    mag_err[unfiltered],
+                    fmt="o",
+                    markeredgecolor=plotting.palette["Red"]["100"],
+                    ecolor=plotting.palette["Red"]["100"],
+                    markerfacecolor="None",
+                    zorder=100,
+                )
+
+                rmin, rmax = plotting.set_lim(deltas, 0.1)
                 rmin = min([-3 * sigma, rmin - max(mag_err)])
                 rmax = max([+3 * sigma, rmax + max(mag_err)])
 
@@ -235,21 +277,24 @@ def plot_data(data, par, par_names, par_fixed, output_dir='./'):
 
                 ax1.invert_xaxis()
 
-                ax1.xaxis.set_major_locator(MaxNLocator(9))
-                ax1.yaxis.set_major_locator(MaxNLocator(5))
+                ax1.xaxis.set_major_locator(ticker.MaxNLocator(9))
+                ax1.yaxis.set_major_locator(ticker.MaxNLocator(4))
 
-                ax1.xaxis.set_major_formatter(NullFormatter())
+                ax1.xaxis.set_major_formatter(ticker.NullFormatter())
 
-                ax1.set_title('{:s}'.format(resonance_id.upper()))
-                ax1.set_ylabel(r''.join([
-                    r'$\mathregular{Resid. \ x10^{',
-                    r'{:d}'.format(power10),
-                    r'}}$'
-                ]))
+                ax1.xaxis.grid(False)
+                ax1.yaxis.grid(False)
+
+                ax1.ticklabel_format(style="sci", scilimits=(0, 0), axis="y")
+
+                ax1.set_title("{:s}".format(peak.assignment.upper()))
+                ax1.set_ylabel("Residual")
 
                 ########################
 
-                fig.tight_layout()
+                for ax in (ax1, ax2):
+                    ax.yaxis.set_ticks_position("left")
+                    ax.xaxis.set_ticks_position("bottom")
 
                 ########################
 

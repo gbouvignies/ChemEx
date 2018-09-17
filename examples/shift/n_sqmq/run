@@ -1,3 +1,0 @@
-rm -fr output
-
-chemex fit -e experiments/*.cfg -p parameters/params.cfg -o output/global

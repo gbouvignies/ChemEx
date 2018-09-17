@@ -1,9 +1,0 @@
-rm -fr output
-echo Global Test
-chemex fit -e experiments/cest_c13*.cfg -p parameters/params_c13.cfg -o output/global
-echo Exclusion Test
-chemex fit -e experiments/cest_c13*.cfg -p parameters/params_c13.cfg -r I50CD1-HD1 -o output/no_50
-echo Inclusion Test
-chemex fit -e experiments/cest_c13*.cfg -p parameters/params_c13.cfg +r I50CD1-HD1 -o output/just_50
-echo Method Test
-chemex fit -e experiments/cest_c13*.cfg -p parameters/params_c13.cfg -m methods/method_c13.cfg -o output/method
