@@ -1,6 +1,7 @@
 ChemEx
 ======
 
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/da6be0c1863c4655b1ee15006bc90f36)](https://app.codacy.com/app/gbouvignies/chemex?utm_source=github.com&utm_medium=referral&utm_content=gbouvignies/chemex&utm_campaign=Badge_Grade_Dashboard)
 [![Build Status](https://travis-ci.org/gbouvignies/chemex.svg?branch=develop)](https://travis-ci.org/gbouvignies/chemex)
 
 
