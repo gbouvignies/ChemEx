@@ -39,10 +39,10 @@ Prerequisites
 
 You should have installed on your system:
 
-  * [Python>=3.6](https://www.python.org/downloads/)
+  * [Python>=3.5](https://www.python.org/downloads/)
   * [SciPy>=1.0](https://www.scipy.org/install.html)
   * [NumPy>=1.0](https://www.scipy.org/scipylib/download.html)
   * [Matplotlib>=2.0](http://matplotlib.org/users/installing.html)
-  * [lmfit>=0.9.11](https://lmfit.github.io/lmfit-py/)
-  * [asteval>=0.9.11](https://github.com/newville/asteval)
+  * [LmFit>=0.9.11](https://lmfit.github.io/lmfit-py/)
+  * [ASTEVAL>=0.9.11](https://github.com/newville/asteval)
 
