@@ -66,38 +66,6 @@ class BaseProfile(metaclass=abc.ABCMeta):
         return residuals[self.mask]
 
     @staticmethod
-    def check_par(
-        parameters=None, name=None, convert=None, default=None, required=True
-    ):
-        """Check for experimental parameters and convert them to their appropriate
-        type."""
-        value = parameters.get(name, default)
-
-        if isinstance(value, str):
-            value = value.split()
-            if len(value) == 1:
-                value = value[0]
-
-        if required and value is None:
-            exit(
-                "Missing experimental parameter detected. Please set: {:s}".format(name)
-            )
-
-        if convert is not None and value is not None:
-            try:
-                if isinstance(value, list):
-                    value = [convert(_) for _ in value]
-                else:
-                    value = convert(value)
-            except ValueError:
-                exit(
-                    "\nExperimental parameter of wrong type detected. Please make"
-                    " sure that {:s} is a {:s}".format(name, str(convert))
-                )
-
-        return value
-
-    @staticmethod
     def check_exp_details(exp_details=None, expected=None):
         """Check for experimental parameters and convert them to their appropriate
         type."""
