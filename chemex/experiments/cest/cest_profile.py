@@ -3,11 +3,10 @@
 import copy
 from functools import lru_cache
 
-import numpy as np
-
 from chemex import peaks
 from chemex.experiments import base_profile
 from chemex.experiments.cest import plotting
+import numpy as np
 
 
 class CESTProfile(base_profile.BaseProfile):
@@ -32,6 +31,15 @@ class CESTProfile(base_profile.BaseProfile):
 
         self.map_names = {}
         self.basis = None
+
+    def calculate_residuals(self, params):
+        """Calculate the residuals between the experimental and back-calculated
+        values."""
+
+        values = self.calculate_profile(params)
+        residuals = (self.val - values) / self.err
+
+        return residuals[self.mask]
 
     def calculate_unscaled_profile(self, b1_offsets=None, **parvals):
         """Calculate the unscaled CEST profile."""

@@ -3,11 +3,10 @@
 import copy
 from functools import lru_cache
 
-import numpy as np
-
 from chemex import peaks
 from chemex.experiments import base_profile
 from chemex.experiments.cpmg import plotting
+import numpy as np
 
 
 class CPMGProfile(base_profile.BaseProfile):
@@ -31,6 +30,15 @@ class CPMGProfile(base_profile.BaseProfile):
 
         self.map_names = {}
         self.basis = None
+
+    def calculate_residuals(self, params):
+        """Calculate the residuals between the experimental and back-calculated
+        values."""
+
+        values = self.calculate_profile(params)
+        residuals = (self.val - values) / self.err
+
+        return residuals[self.mask]
 
     def calculate_unscaled_profile(self, **parvals):
         """Calculate the unscaled CPMG profile."""

@@ -2,9 +2,8 @@
 
 import abc
 
-import numpy as np
-
 from chemex.spindynamics import util
+import numpy as np
 
 EXP_DETAILS = {"name": {"type": str}}
 
@@ -43,23 +42,15 @@ class BaseProfile(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def calculate_profile(self, params):
-        """TODO: method docstring."""
-        pass
-
-    @abc.abstractmethod
     def filter_points(self, params=None):
         """TODO: method docstring."""
         pass
 
+    @abc.abstractmethod
     def calculate_residuals(self, params):
         """Calculate the residuals between the experimental and back-calculated
         values."""
-
-        values = self.calculate_profile(params)
-        residuals = (self.val - values) / self.err
-
-        return residuals[self.mask]
+        pass
 
     @staticmethod
     def check_exp_details(exp_details=None, expected=None):
