@@ -2,11 +2,10 @@
 
 import os
 
+from chemex.experiments import plotting
 from matplotlib import gridspec as gsp, pyplot as plt, ticker
 from matplotlib.backends import backend_pdf
 import numpy as np
-
-from chemex.experiments import plotting
 
 
 def sigma_estimator(x):
@@ -86,7 +85,7 @@ def write_profile_exp(name, b1_ppm, mag_exp, mag_err, mag_cal, file_):
         "# {:>17s}   {:>17s} {:>17s}\n".format("OFFSET", "INTENSITY", "UNCERTAINTY")
     )
 
-    for b1_ppm_, mag_exp_, mag_err_, mag_cal_ in zip(b1_ppm, mag_exp, mag_err, mag_cal):
+    for b1_ppm_, mag_exp_, mag_err_ in zip(b1_ppm, mag_exp, mag_err):
         file_.write(
             "  {0:17.8e} = {1:17.8e} {2:17.8e}\n".format(b1_ppm_, mag_exp_, mag_err_)
         )

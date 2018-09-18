@@ -37,7 +37,7 @@ class BaseProfile(metaclass=abc.ABCMeta):
         return self.val.size
 
     @abc.abstractmethod
-    def print_profile(self):
+    def print_profile(self, params=None):
         """TODO: method docstring."""
         pass
 

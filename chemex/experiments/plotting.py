@@ -1,12 +1,11 @@
 """The plotting module contains experiment-independent settings and
 functions."""
 
+from chemex import peaks
 import matplotlib as mpl
 from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt
 import numpy as np
-
-from chemex import peaks
 
 dark_gray = "0.13"
 medium_gray = "0.44"
@@ -422,7 +421,7 @@ def plot_results_brute(result, best_vals=True, varlabels=None, output="results_b
 
     """
     npars = len(result.var_names)
-    fig, axes = plt.subplots(npars, npars)
+    _, axes = plt.subplots(npars, npars)
 
     if not varlabels:
         varlabels = result.var_names
