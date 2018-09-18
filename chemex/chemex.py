@@ -5,12 +5,11 @@ import os
 import shutil
 import sys
 
+from chemex import __version__, cli, datasets, fitting, parameters, util
 import matplotlib
-
-matplotlib.use("PDF")
 import numpy as np
 
-from chemex import datasets, fitting, parameters, cli, util, __version__
+matplotlib.use("PDF")
 
 
 LOGO = r"""

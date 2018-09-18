@@ -1,7 +1,8 @@
 """Unit and regression test for the chemex package."""
 
-import chemex
 import sys
+
+import chemex
 
 
 def test_chemex_imported():

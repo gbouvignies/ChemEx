@@ -2,14 +2,4 @@
 line-length = 88
 py36 = false
 include = '\.pyi?$'
-exclude = '''
-/(
-    \.git
-  | \.mypy_cache
-  | _build
-  | build
-  | dist
-  | versioneer.py
-  | _version.py
-)/
-'''
+exclude = '/(\.git|\.hg|\.mypy_cache|\.tox|\.venv|_build|buck-out|build|dist|.version.)'
