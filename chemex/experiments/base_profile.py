@@ -47,10 +47,6 @@ class BaseProfile(metaclass=abc.ABCMeta):
         """TODO: method docstring."""
         pass
 
-    def create_default_parameters(self):
-        """TODO: method docstring."""
-        pass
-
     @abc.abstractmethod
     def filter_points(self, params=None):
         """TODO: method docstring."""

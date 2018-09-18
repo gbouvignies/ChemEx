@@ -1,0 +1,15 @@
+[tool.black]
+line-length = 88
+py36 = false
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.mypy_cache
+  | _build
+  | build
+  | dist
+  | versioneer.py
+  | _version.py
+)/
+'''
