@@ -6,11 +6,7 @@ import shutil
 import sys
 
 from chemex import __version__, cli, datasets, fitting, parameters, util
-import matplotlib
 import numpy as np
-
-matplotlib.use("PDF")
-
 
 LOGO = r"""
 * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -30,7 +26,7 @@ LOGO = r"""
 )
 
 
-def make_bootstrap_dataset(data):
+def make_bs_dataset(data):
     """Create a new dataset to run a bootstrap simulation."""
     data_bs = datasets.DataSet()
 
@@ -40,7 +36,7 @@ def make_bootstrap_dataset(data):
     return data_bs
 
 
-def make_montecarlo_dataset(data, params):
+def make_mc_dataset(data, params):
     """Create a new dataset to run a Monte-Carlo simulation."""
     data_mc = datasets.DataSet()
 
@@ -153,13 +149,14 @@ def fit(args):
     # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
     for profile in data:
         profile.filter_points(params)
+
     data.ndata = sum([len(profile.val) for profile in data])
 
     # Customize the output directory
     output_dir = args.out_dir if args.out_dir else "./Output"
-    if args.res_incl:
-        if len(args.res_incl) == 1:
-            output_dir = os.path.join(output_dir, args.res_incl.pop().upper())
+
+    if args.res_incl and len(args.res_incl) == 1:
+        output_dir = os.path.join(output_dir, args.res_incl.pop().upper())
 
     result = fit_write_plot(args, params, data, output_dir)
 
@@ -173,9 +170,9 @@ def fit(args):
 
         for index in range(1, nmb + 1):
             if args.bs:
-                data_index = make_bootstrap_dataset(data)
+                data_index = make_bs_dataset(data)
             else:
-                data_index = make_montecarlo_dataset(data, result.params)
+                data_index = make_mc_dataset(data, result.params)
 
             output_dir_ = os.path.join(output_dir, formatter_output_dir.format(index))
 

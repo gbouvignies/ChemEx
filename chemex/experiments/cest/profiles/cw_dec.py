@@ -14,10 +14,9 @@ Bouvignies and Kay. J Phys Chem B (2012), 116:14311-7
 
 """
 
-import numpy as np
-
 from chemex.experiments.cest import cest_profile
 from chemex.spindynamics import basis, constants, default
+import numpy as np
 
 EXP_DETAILS = {
     "carrier": {"type": float},
@@ -74,7 +73,9 @@ class Profile(cest_profile.CESTProfile):
         )
 
         for name, full_name in self.map_names.items():
-            if name.startswith(("dw", "r1_i_a", "r2")):
+            if name.startswith(
+                ("dw", "r1_i_a", "r2_i_a", "r2_mq_a", "etaxy_i_a", "etaz_i_a")
+            ):
                 self.params[full_name].set(vary=True)
 
     def calculate_unscaled_profile(self, b1_offsets=None, **parvals):
