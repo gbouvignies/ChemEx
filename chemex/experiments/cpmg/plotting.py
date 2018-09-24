@@ -2,9 +2,9 @@
 
 import os
 
+import numpy as np
 from matplotlib import gridspec as gsp, pyplot as plt, ticker
 from matplotlib.backends import backend_pdf
-import numpy as np
 
 from chemex.experiments import plotting
 

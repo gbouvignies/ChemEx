@@ -3,10 +3,10 @@
 import copy
 import os
 import shutil
-import sys
+
+import numpy as np
 
 from chemex import __version__, cli, datasets, fitting, parameters, util
-import numpy as np
 
 LOGO = r"""
 * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -26,45 +26,82 @@ LOGO = r"""
 )
 
 
-def make_bs_dataset(data):
-    """Create a new dataset to run a bootstrap simulation."""
-    data_bs = datasets.DataSet()
+def main():
+    """Do all the magic."""
+    print(LOGO)
 
+    parser = cli.build_parser(fit)
+    args = parser.parse_args()
+
+    if args.commands is None:
+        parser.print_help()
+    else:
+        args.func(args)
+
+
+def get_info(args):
+    # cli.format_experiment_help(args.types, args.experiments)
+    print(args.experiments)
+
+
+def fit(args):
+    # Read experimental setup and data
+    data = datasets.read_data(args)
+
+    # Create and update initial values of fitting/fixed parameters
+    util.header1("Reading Default Parameters")
+    params = parameters.create_params(data)
+
+    for name in args.parameters:
+        parameters.set_params_from_config_file(params, name)
+
+    # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
     for profile in data:
-        data_bs.append(profile.make_bs_profile())
+        profile.filter_points(params)
 
-    return data_bs
+    data.ndata = sum([len(profile.val) for profile in data])
+
+    # Customize the output directory
+    output_dir = args.out_dir if args.out_dir else "./Output"
+
+    if args.res_incl and len(args.res_incl) == 1:
+        output_dir = os.path.join(output_dir, args.res_incl.pop().upper())
+
+    result = fit_write_plot(args, params, data, output_dir)
+
+    if args.bs or args.mc:
+        if args.bs:
+            nmb = args.bs
+        else:
+            nmb = args.mc
+
+        formatter_output_dir = "".join(["{:0", str(int(np.log10(nmb)) + 1), "d}"])
+
+        for index in range(1, nmb + 1):
+            if args.bs:
+                data_index = data.make_bs_dataset()
+            else:
+                data_index = data.make_mc_dataset(result.params)
+
+            output_dir_ = os.path.join(output_dir, formatter_output_dir.format(index))
+
+            params_mc = copy.deepcopy(result.params)
+
+            fit_write_plot(args, params_mc, data_index, output_dir_)
 
 
-def make_mc_dataset(data, params):
-    """Create a new dataset to run a Monte-Carlo simulation."""
-    data_mc = datasets.DataSet()
+def fit_write_plot(args, params, data, output_dir):
+    """Perform the fit, write the output files and plot the results."""
+    result = fitting.run_fit(args.method, params, data, args.fitmethod)
 
-    for profile in data:
-        data_mc.append(profile.make_mc_profile(params=params))
+    util.make_dir(output_dir)
 
-    return data_mc
+    write_results(result, data, args.method, output_dir)
 
+    if not args.noplot:
+        plot_results(result, data, output_dir)
 
-def read_data(args):
-    """Read experimental setup and data."""
-    util.header1("Reading Experimental Data")
-
-    data = datasets.DataSet()
-
-    if args.experiments:
-        print(("{:<45s} {:<25s} {:<25s}".format("File Name", "Experiment", "Profiles")))
-        print(("{:<45s} {:<25s} {:<25s}".format("---------", "----------", "--------")))
-
-        for filename in args.experiments:
-            data.add_dataset_from_file(
-                filename, args.model, args.res_incl, args.res_excl
-            )
-
-    if not data.data:
-        sys.exit("\nNo data to fit!\n")
-
-    return data
+    return result
 
 
 def write_results(result, data, method, output_dir):
@@ -114,81 +151,3 @@ def plot_results(result, data, output_dir):
         outfile = os.path.join(output_dir, "results_brute.pdf")
         plotting.plot_results_brute(result, varlabels=labels, output=outfile)
         print(("  * {}".format(outfile)))
-
-
-def fit_write_plot(args, params, data, output_dir):
-    """Perform the fit, write the output files and plot the results."""
-    result = fitting.run_fit(args.method, params, data, args.fitmethod)
-
-    util.make_dir(output_dir)
-
-    write_results(result, data, args.method, output_dir)
-
-    if not args.noplot:
-        plot_results(result, data, output_dir)
-
-    return result
-
-
-def get_info(args):
-    # cli.format_experiment_help(args.types, args.experiments)
-    print(args.experiments)
-
-
-def fit(args):
-    # Read experimental setup and data
-    data = read_data(args)
-
-    # Create and update initial values of fitting/fixed parameters
-    util.header1("Reading Default Parameters")
-    params = parameters.create_params(data)
-
-    for name in args.parameters:
-        parameters.set_params_from_config_file(params, name)
-
-    # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
-    for profile in data:
-        profile.filter_points(params)
-
-    data.ndata = sum([len(profile.val) for profile in data])
-
-    # Customize the output directory
-    output_dir = args.out_dir if args.out_dir else "./Output"
-
-    if args.res_incl and len(args.res_incl) == 1:
-        output_dir = os.path.join(output_dir, args.res_incl.pop().upper())
-
-    result = fit_write_plot(args, params, data, output_dir)
-
-    if args.bs or args.mc:
-        if args.bs:
-            nmb = args.bs
-        else:
-            nmb = args.mc
-
-        formatter_output_dir = "".join(["{:0", str(int(np.log10(nmb)) + 1), "d}"])
-
-        for index in range(1, nmb + 1):
-            if args.bs:
-                data_index = make_bs_dataset(data)
-            else:
-                data_index = make_mc_dataset(data, result.params)
-
-            output_dir_ = os.path.join(output_dir, formatter_output_dir.format(index))
-
-            params_mc = copy.deepcopy(result.params)
-
-            fit_write_plot(args, params_mc, data_index, output_dir_)
-
-
-def main():
-    """Do all the magic."""
-    print(LOGO)
-
-    parser = cli.build_parser(fit)
-    args = parser.parse_args()
-
-    if args.commands is None:
-        parser.print_help()
-    else:
-        args.func(args)

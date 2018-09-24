@@ -3,9 +3,9 @@ import re
 import string
 
 import lmfit as lf
+from scipy import constants as cst
 
 from chemex import parameters
-from scipy import constants as cst
 
 OTHER_SPIN = {"i": "s", "s": "i"}
 

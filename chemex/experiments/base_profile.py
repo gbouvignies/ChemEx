@@ -2,8 +2,9 @@
 
 import abc
 
-from chemex.spindynamics import util
 import numpy as np
+
+from chemex.spindynamics import util
 
 EXP_DETAILS = {"name": {"type": str}}
 

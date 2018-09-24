@@ -23,9 +23,10 @@ Journal of the American Chemical Society (2004), 126, 3964-73
 """
 
 
+import numpy as np
+
 from chemex.experiments.cpmg import cpmg_profile
 from chemex.spindynamics import basis, default
-import numpy as np
 
 EXP_DETAILS = {
     "time_t2": {"type": float},

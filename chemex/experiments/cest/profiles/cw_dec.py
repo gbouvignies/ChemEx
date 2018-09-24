@@ -14,9 +14,10 @@ Bouvignies and Kay. J Phys Chem B (2012), 116:14311-7
 
 """
 
+import numpy as np
+
 from chemex.experiments.cest import cest_profile
 from chemex.spindynamics import basis, constants, default
-import numpy as np
 
 EXP_DETAILS = {
     "carrier": {"type": float},

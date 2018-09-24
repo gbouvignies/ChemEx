@@ -28,9 +28,10 @@ Journal of Biomolecular NMR (2008) 42, 35-47
 
 """
 
+import numpy as np
+
 from chemex.experiments.cpmg import cpmg_profile
 from chemex.spindynamics import basis, default
-import numpy as np
 
 EXP_DETAILS = {
     "carrier": {"type": float},

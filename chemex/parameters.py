@@ -4,14 +4,14 @@ fitting parameters."""
 import ast
 import configparser
 import copy
-from difflib import get_close_matches
 import os
 import os.path
 import re
+from difflib import get_close_matches
 
-from asteval import astutils
 import lmfit
 import numpy as np
+from asteval import astutils
 
 from chemex import peaks, util
 

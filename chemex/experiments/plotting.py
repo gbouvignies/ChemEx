@@ -1,11 +1,12 @@
 """The plotting module contains experiment-independent settings and
 functions."""
 
-from chemex import peaks
 import matplotlib as mpl
-from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import LogNorm
+
+from chemex import peaks
 
 dark_gray = "0.13"
 medium_gray = "0.44"

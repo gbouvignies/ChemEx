@@ -165,3 +165,44 @@ class DataSet(object):
         print("{:<25s} {:<25d}".format(experiment_type, len(data)))
 
         return data
+
+    def make_bs_dataset(self):
+        """Create a new dataset to run a bootstrap simulation."""
+
+        data_bs = DataSet()
+
+        for profile in self.data:
+            data_bs.append(profile.make_bs_profile())
+
+        return data_bs
+
+    def make_mc_dataset(self, params):
+        """Create a new dataset to run a Monte-Carlo simulation."""
+
+        data_mc = DataSet()
+
+        for profile in self.data:
+            data_mc.append(profile.make_mc_profile(params=params))
+
+        return data_mc
+
+
+def read_data(args):
+    """Read experimental setup and data."""
+    util.header1("Reading Experimental Data")
+
+    data = DataSet()
+
+    if args.experiments:
+        print(("{:<45s} {:<25s} {:<25s}".format("File Name", "Experiment", "Profiles")))
+        print(("{:<45s} {:<25s} {:<25s}".format("---------", "----------", "--------")))
+
+        for filename in args.experiments:
+            data.add_dataset_from_file(
+                filename, args.model, args.res_incl, args.res_excl
+            )
+
+    if not data.data:
+        sys.exit("\nNo data to fit!\n")
+
+    return data

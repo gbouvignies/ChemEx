@@ -2,10 +2,11 @@
 
 import os
 
-from chemex.experiments import plotting
+import numpy as np
 from matplotlib import gridspec as gsp, pyplot as plt, ticker
 from matplotlib.backends import backend_pdf
-import numpy as np
+
+from chemex.experiments import plotting
 
 
 def sigma_estimator(x):

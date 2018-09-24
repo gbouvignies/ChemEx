@@ -3,10 +3,11 @@
 import copy
 from functools import lru_cache
 
+import numpy as np
+
 from chemex import peaks
 from chemex.experiments import base_profile
 from chemex.experiments.cpmg import plotting
-import numpy as np
 
 
 class CPMGProfile(base_profile.BaseProfile):
@@ -132,7 +133,6 @@ class CPMGProfile(base_profile.BaseProfile):
 
         profile = copy.copy(self)
         profile.ncycs = profile.ncycs[bs_indexes]
-        profile.tau_cp_list = profile.tau_cp_list[bs_indexes]
         profile.val = profile.val[bs_indexes]
         profile.err = profile.err[bs_indexes]
 
