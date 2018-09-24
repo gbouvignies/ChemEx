@@ -42,5 +42,5 @@ deploy:
     secure: Fgf70cb/r8u68r0YTI8wYvAcPu1VrLIIYZffo7p9OuKXaIjcihOs4g7y8akCG7hpH2PAmrIpqE2SrKfwz0/hpCQjP+3nVPQfxlSM+fad/kum1+7tfq8zzQFY2V+mfSaeM29lKAH3oFXllbeDMZZ25yMpM33+OafCrozSO6oyqVbYfjLhhagRi/TvGxBLY5gFeAwxHBqv8Ll4CRIQdVm98inm7rGyHS7qshjG+Gu0zVEw65Bfrkroakn5PxvNS2Sk32I0tjG/0bjUhCbPGaY6bEJJK1jrGdlKCK9OrAFxxaGaRq22wSw8nZLMtkb1s5WqrWyx0MyBipOl3+e4IRtQvIVZVnmiLHnXdnG8zsQIcbDflqkqkffNcMiI9qKS5c94bOVI26gaGWFClx2hEyU8wRiWAFQV/kULz6YIrzJYQmD+wQHqwO+KqI5e7ZYV6K8XyWz9LXOfO6eqzQETJIg9NrtuNdgqMDu0UYTEMmyYBhbJHQRFHwj/LCqQ5ufa9Fog6Xtr6HqofP6kUXP6o2p1YrmNQdznH5a91beZBdgu20L1DXX4ndKNmg98jcpCUSmQSqARM4UdXvl4yjpJny/vSrvWrPuYwKzhbY5BF9xJDAAZp59TW9wMhP1Z/lV1bxRMZiyqboRsTgIcXAd1FudNlNvktAZkRNHnSAjU/vZ8pDY=
   on:
     tags: true
-    repo: gbouvignies/chemex
+    repo: gbouvignies/ChemEx
     condition: $TRAVIS_PYTHON_VERSION = "3.6"
