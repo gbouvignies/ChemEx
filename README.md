@@ -14,31 +14,29 @@ It is designed to take almost any kind of NMR data to aid the analysis,
 but the principle techniques are CPMG relaxation dispersion and Chemical
 Exchange Saturation Transfer.
 
-Quick install
--------------
-
-In a clean directory run:
-
-    git clone https://github.com/gbouvignies/chemex
-
-Navigate to the chemex directory and run:
-
-    python setup.py install --user
-
-Quick update
+Installation
 ------------
 
-To get the latest code using git:
+The easiest way to install `chemex` is via [conda](http://conda.pydata.org):
+```bash
+conda install -c conda-forge chemex
+```
+If your version of python is less than 3.5, you can also install `chemex` in a separate conda environment enforcing the use of python 3.7:
+```bash
+conda create -c conda-forge -n chemex python=3.7 chemex
+conda activate chemex
+```
+`chemex` is also available via the [Python package index](https://pypi.python.org/pypi/chemex) using `pip`:
+```bash
+pip install chemex
+```
+The development version can be installed directly from github via `pip`:
+```bash
+pip install git+https://github.com/gbouvignies/chemex.git
+```
 
-    git pull
-
-Then simply re-run the install command above.
-
-
-Prerequisites
--------------
-
-You should have installed on your system:
+Dependencies
+------------
 
   * [Python>=3.5](https://www.python.org/downloads/)
   * [SciPy>=1.0](https://www.scipy.org/install.html)
