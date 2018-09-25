@@ -3,6 +3,7 @@ arguments."""
 
 import argparse
 import importlib
+import pathlib
 import pkgutil
 import sys
 
@@ -22,6 +23,8 @@ FITMETHODS = {
     "differential_evolution",
     "leastsq",
     "brute",
+    "basinhopping",
+    "ampgo",
 }
 
 
@@ -83,6 +86,7 @@ def build_parser(func_fit):
     fit.add_argument(
         "-e",
         dest="experiments",
+        type=pathlib.Path,
         metavar="FILE",
         nargs="+",
         required=True,
@@ -100,6 +104,7 @@ def build_parser(func_fit):
     fit.add_argument(
         "-p",
         dest="parameters",
+        type=pathlib.Path,
         metavar="FILE",
         nargs="+",
         required=True,
@@ -109,6 +114,7 @@ def build_parser(func_fit):
     fit.add_argument(
         "-m",
         dest="method",
+        type=pathlib.Path,
         metavar="FILE",
         help="Input file containing the fitting method",
     )
@@ -116,6 +122,7 @@ def build_parser(func_fit):
     fit.add_argument(
         "-o",
         dest="out_dir",
+        type=pathlib.Path,
         metavar="DIR",
         default="./Output",
         help="Directory for output files",

@@ -4,8 +4,7 @@ import configparser
 import copy
 import importlib
 import operator
-import os
-import os.path
+import pathlib
 import sys
 
 import numpy as np
@@ -77,7 +76,7 @@ class DataSet(object):
 
         return residuals
 
-    def write_to(self, params=None, output_dir="./"):
+    def write_to(self, params, path):
         """Write experimental and fitted profiles to a file."""
         datasets = dict()
 
@@ -86,21 +85,22 @@ class DataSet(object):
             datasets.setdefault(experiment_name, list()).append(profile)
 
         for experiment_name, data in datasets.items():
-            filename = "".join([experiment_name, ".dat"])
-            filename = os.path.join(output_dir, filename)
+
+            filename = path / experiment_name
+            filename.with_suffix(".dat")
 
             print("  * {}".format(filename))
 
-            with open(filename, "w") as f:
+            with filename.open("w") as f:
                 for profile in sorted(data, key=operator.attrgetter("peak")):
                     f.write(profile.print_profile(params=params))
 
     def add_dataset_from_file(self, filename, model=None, included=None, excluded=None):
         """Add data from a file to the dataset."""
-        print("{:<45s} ".format(filename), end="")
+        print("{:<45s} ".format(str(filename)), end="")
 
         # Get the directory of the input file
-        working_dir = os.path.dirname(filename)
+        working_dir = filename.parent
 
         # Parse the experiment configuration file
         config = util.read_cfg_file(filename)
@@ -141,7 +141,8 @@ class DataSet(object):
         except configparser.NoSectionError:
             pass
 
-        path = util.normalize_path(working_dir, details.get("path", "./"))
+        path = pathlib.Path(details.get("path", "."))
+        path = util.normalize_path(working_dir, path)
 
         try:
             reading = importlib.import_module(
@@ -198,8 +199,9 @@ def read_data(args):
         print(("{:<45s} {:<25s} {:<25s}".format("---------", "----------", "--------")))
 
         for filename in args.experiments:
+            filename_ = pathlib.Path(filename)
             data.add_dataset_from_file(
-                filename, args.model, args.res_incl, args.res_excl
+                filename_, args.model, args.res_incl, args.res_excl
             )
 
     if not data.data:

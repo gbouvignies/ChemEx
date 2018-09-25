@@ -399,7 +399,7 @@ def group_data(dataset):
     return data_grouped
 
 
-def plot_data(data, params, output_dir="./"):
+def plot_data(data, params, path):
     """Plot all data types."""
     subsets = dict()
 
@@ -407,7 +407,7 @@ def plot_data(data, params, output_dir="./"):
         subsets.setdefault(profile.plot_data, []).append(profile)
 
     for plot, dataset in subsets.items():
-        plot(dataset, params, output_dir)
+        plot(dataset, params, path)
 
     return
 

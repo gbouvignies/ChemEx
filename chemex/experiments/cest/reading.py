@@ -1,7 +1,6 @@
 """Read the experimental CEST data."""
 
 import importlib
-import os
 
 import numpy as np
 from scipy import interpolate, linalg, signal, stats
@@ -44,7 +43,7 @@ def read_profiles(path, filenames, details, model, included=None, excluded=None)
 
     for profile_name, filename in filenames.items():
 
-        full_path = os.path.join(path, filename)
+        full_path = path / filename
 
         measurements = np.loadtxt(full_path, dtype=dtype)
         measurements.sort(order="b1_offsets")

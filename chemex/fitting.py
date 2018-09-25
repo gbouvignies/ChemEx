@@ -1,7 +1,6 @@
 """The fitting module contains the code for fitting the experimental data."""
 
 import functools
-import os.path
 import sys
 
 import lmfit
@@ -16,6 +15,8 @@ all_fitmethods.update(
         "leastsq": "least-squares using Levenberg-Marquardt",
         "least_squares": "least-squares using Trust Region Reflective algorithm",
         "brute": "grid search using the brute force method",
+        "basinhopping": "basinhopping",
+        "ampgo": "Adaptive Memory Programming for Global Optimization (AMPGO)",
     }
 )
 allowed_fitmethods = {
@@ -154,13 +155,13 @@ def find_independent_clusters(data, params):
     return sorted(clusters_)
 
 
-def write_statistics(result, path="./"):
+def write_statistics(result, path):
     """Write fitting statistics to a file."""
 
     _, ks_p_value = stats.kstest(result.residual, "norm")
     chi2_p_value = 1.0 - stats.chi2.cdf(result.chisqr, result.nfree)
 
-    filename = os.path.join(path, "statistics.fit")
+    filename = path / "statistics.fit"
 
     with open(filename, "w") as f:
         print("  * {}".format(filename))

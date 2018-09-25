@@ -1,6 +1,6 @@
 """Plot the CEST profiles."""
 
-import os
+import contextlib
 
 import numpy as np
 from matplotlib import gridspec as gsp, pyplot as plt, ticker
@@ -77,7 +77,7 @@ def write_profile_fit(name, b1_ppm_fit, mag_fit, file_):
     file_.write("\n")
 
 
-def write_profile_exp(name, b1_ppm, mag_exp, mag_err, mag_cal, file_):
+def write_profile_exp(name, b1_ppm, mag_exp, mag_err, file_):
     """Write the experimental CEST profile."""
 
     file_.write("[{}]\n".format(name.upper()))
@@ -94,7 +94,7 @@ def write_profile_exp(name, b1_ppm, mag_exp, mag_err, mag_cal, file_):
     file_.write("\n")
 
 
-def plot_data(data, params, output_dir="./"):
+def plot_data(data, params, output_dir):
     """Write experimental and fitted data to a file and plot the CEST profiles.
 
     - *.exp: contains the experimental data
@@ -109,24 +109,21 @@ def plot_data(data, params, output_dir="./"):
         datasets.setdefault(experiment_name, []).append(data_point)
 
     for experiment_name, dataset in datasets.items():
-        name_pdf = "".join([experiment_name, ".pdf"])
-        name_pdf = os.path.join(output_dir, name_pdf)
+        basename = output_dir / experiment_name
+        name_pdf = basename.with_suffix(".pdf")
+        name_fit = basename.with_suffix(".fit")
+        name_exp = basename.with_suffix(".exp")
 
-        name_txt = "".join([experiment_name, ".fit"])
-        name_txt = os.path.join(output_dir, name_txt)
-
-        name_exp = "".join([experiment_name, ".exp"])
-        name_exp = os.path.join(output_dir, name_exp)
-
-        print(("  * {} [.fit]".format(name_pdf)))
+        print(("  * {} [.fit, .exp]".format(name_pdf)))
 
         data_grouped = plotting.group_data(dataset)
 
         profiles = compute_profiles(data_grouped, params)
 
-        with backend_pdf.PdfPages(name_pdf) as file_pdf, open(
-            name_txt, "w"
-        ) as file_txt, open(name_exp, "w") as file_exp:
+        with contextlib.ExitStack() as stack:
+            file_pdf = stack.enter_context(backend_pdf.PdfPages(name_pdf))
+            file_fit = stack.enter_context(name_fit.open("w"))
+            file_exp = stack.enter_context(name_exp.open("w"))
 
             for peak in sorted(profiles):
                 (
@@ -143,10 +140,8 @@ def plot_data(data, params, output_dir="./"):
                     filtered,
                 ) = profiles[peak]
 
-                write_profile_fit(peak.assignment, b1_ppm_fit, mag_fit, file_txt)
-                write_profile_exp(
-                    peak.assignment, b1_ppm, mag_exp, mag_err, mag_cal, file_exp
-                )
+                write_profile_fit(peak.assignment, b1_ppm_fit, mag_fit, file_fit)
+                write_profile_exp(peak.assignment, b1_ppm, mag_exp, mag_err, file_exp)
 
                 # Matplotlib #
                 gs = gsp.GridSpec(2, 1, height_ratios=[1, 4])

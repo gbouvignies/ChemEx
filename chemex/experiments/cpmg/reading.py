@@ -2,7 +2,6 @@
 
 import importlib
 import math
-import os
 
 import numpy as np
 
@@ -43,7 +42,7 @@ def read_profiles(path, filenames, details, model, included=None, excluded=None)
 
     for profile_name, filename in filenames.items():
 
-        full_path = os.path.join(path, filename)
+        full_path = path / filename
 
         measurements = np.loadtxt(full_path, dtype=dtype)
 

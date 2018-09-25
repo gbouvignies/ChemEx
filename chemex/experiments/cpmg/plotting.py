@@ -1,6 +1,6 @@
 """Plot the CPMG profiles."""
 
-import os
+import contextlib
 
 import numpy as np
 from matplotlib import gridspec as gsp, pyplot as plt, ticker
@@ -76,7 +76,7 @@ def write_profile_exp(name, profile, file_txt):
     file_txt.write("\n")
 
 
-def plot_data(data, params, output_dir="./"):
+def plot_data(data, params, output_dir):
     """Write experimental and fitted data to a file and plot the CPMG profiles.
 
     - *.fit: contains the experimental and fitted data
@@ -90,23 +90,20 @@ def plot_data(data, params, output_dir="./"):
         datasets.setdefault(experiment_name, []).append(data_point)
 
     for experiment_name, dataset in datasets.items():
-        name_pdf = "".join([experiment_name, ".pdf"])
-        name_pdf = os.path.join(output_dir, name_pdf)
+        basename = output_dir / experiment_name
+        name_pdf = basename.with_suffix(".pdf")
+        name_fit = basename.with_suffix(".fit")
+        name_exp = basename.with_suffix(".exp")
 
-        name_exp = "".join([experiment_name, ".exp"])
-        name_exp = os.path.join(output_dir, name_exp)
-
-        name_fit = "".join([experiment_name, ".fit"])
-        name_fit = os.path.join(output_dir, name_fit)
-
-        print(("  * {} [.fit]".format(name_pdf)))
+        print(("  * {} [.fit, .exp]".format(name_pdf)))
 
         data_grouped = plotting.group_data(dataset)
         profiles = compute_profiles(data_grouped, params)
 
-        with backend_pdf.PdfPages(name_pdf) as file_pdf, open(
-            name_fit, "w"
-        ) as file_fit, open(name_exp, "w") as file_exp:
+        with contextlib.ExitStack() as stack:
+            file_pdf = stack.enter_context(backend_pdf.PdfPages(name_pdf))
+            file_fit = stack.enter_context(name_fit.open("w"))
+            file_exp = stack.enter_context(name_exp.open("w"))
 
             for peak in sorted(profiles):
                 nu_cpmg, r2_cal, r2_exp, r2_erd, r2_eru = profiles[peak]

@@ -4,8 +4,7 @@ fitting parameters."""
 import ast
 import configparser
 import copy
-import os
-import os.path
+import pathlib
 import re
 from difflib import get_close_matches
 
@@ -361,8 +360,9 @@ def set_params_from_config_file(params, config_filename):
             for key, value in config.items(section):
                 if "file" in key:
                     for filename in value.split():
+                        filename_ = pathlib.Path(filename)
                         filename_ = util.normalize_path(
-                            os.path.dirname(config_filename), filename
+                            config_filename.parent, filename_
                         )
                         pairs.extend(get_pairs_from_file(filename_, name))
 
@@ -503,9 +503,9 @@ def set_params(
     return matches
 
 
-def write_par(params, output_dir="./"):
+def write_par(params, path):
     """Write the fitting parameters and their uncertainties to a file."""
-    filename = os.path.join(output_dir, "parameters.fit")
+    filename = path / "parameters.fit"
 
     print("  * {}".format(filename))
 
@@ -555,9 +555,9 @@ def write_par(params, output_dir="./"):
         cfg.write(f)
 
 
-def write_constraints(params, output_dir="./"):
+def write_constraints(params, path):
     """Write the (optional) parameter expression constraints to a file."""
-    filename = os.path.join(output_dir, "constraints.fit")
+    filename = path / "constraints.fit"
 
     print("  * {}".format(filename))
 

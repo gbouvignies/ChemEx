@@ -1,7 +1,6 @@
 """The chemex module provides the entry point for the chemex script."""
 
 import copy
-import os
 import shutil
 
 import numpy as np
@@ -62,10 +61,10 @@ def fit(args):
     data.ndata = sum([len(profile.val) for profile in data])
 
     # Customize the output directory
-    output_dir = args.out_dir if args.out_dir else "./Output"
+    output_dir = args.out_dir
 
     if args.res_incl and len(args.res_incl) == 1:
-        output_dir = os.path.join(output_dir, args.res_incl.pop().upper())
+        output_dir = output_dir / args.res_incl.pop().upper()
 
     result = fit_write_plot(args, params, data, output_dir)
 
@@ -83,7 +82,7 @@ def fit(args):
             else:
                 data_index = data.make_mc_dataset(result.params)
 
-            output_dir_ = os.path.join(output_dir, formatter_output_dir.format(index))
+            output_dir_ = output_dir / formatter_output_dir.format(index)
 
             params_mc = copy.deepcopy(result.params)
 
@@ -92,9 +91,10 @@ def fit(args):
 
 def fit_write_plot(args, params, data, output_dir):
     """Perform the fit, write the output files and plot the results."""
+
     result = fitting.run_fit(args.method, params, data, args.fitmethod)
 
-    util.make_dir(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     write_results(result, data, args.method, output_dir)
 
@@ -119,15 +119,15 @@ def write_results(result, data, method, output_dir):
     print("\nFile(s):")
 
     if method:
-        shutil.copyfile(method, os.path.join(output_dir, "fitting-method.cfg"))
+        shutil.copyfile(method, output_dir / "fitting-method.cfg")
 
-    parameters.write_par(result.params, output_dir=output_dir)
-    parameters.write_constraints(result.params, output_dir=output_dir)
-    data.write_to(result.params, output_dir=output_dir)
+    parameters.write_par(result.params, path=output_dir)
+    parameters.write_constraints(result.params, path=output_dir)
+    data.write_to(result.params, path=output_dir)
     fitting.write_statistics(result, path=output_dir)
 
 
-def plot_results(result, data, output_dir):
+def plot_results(result, data, path):
     """Plot the experimental and fitted data."""
     from chemex.experiments import plotting
 
@@ -135,11 +135,11 @@ def plot_results(result, data, output_dir):
 
     print("\nFile(s):")
 
-    output_dir_plot = os.path.join(output_dir, "Plots")
-    util.make_dir(output_dir_plot)
+    path_plots = path / "Plots"
+    path_plots.mkdir(parents=True, exist_ok=True)
 
     try:
-        plotting.plot_data(data, result.params, output_dir=output_dir_plot)
+        plotting.plot_data(data, result.params, path=path_plots)
     except KeyboardInterrupt:
         print(" - Plotting cancelled")
 
@@ -148,6 +148,6 @@ def plot_results(result, data, output_dir):
             parameters.ParameterName.from_full_name(var).name.upper()
             for var in result.var_names
         ]
-        outfile = os.path.join(output_dir, "results_brute.pdf")
+        outfile = path / "results_brute.pdf"
         plotting.plot_results_brute(result, varlabels=labels, output=outfile)
         print(("  * {}".format(outfile)))
