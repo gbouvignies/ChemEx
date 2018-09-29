@@ -79,6 +79,10 @@ class Peak(object):
     def nuclei(self):
         return {key: res.get("nucleus", "") for key, res in self._resonances.items()}
 
+    @property
+    def numbers(self):
+        return {key: res.get("number", "") for key, res in self._resonances.items()}
+
     def __repr__(self):
         return self.assignment
 
