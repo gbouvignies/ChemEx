@@ -433,7 +433,7 @@ def set_param_status(params, items):
         name = ParameterName.from_section(key)
 
         if status in vary:
-            set_params(params, name, vary=vary[status])
+            set_params(params, name, vary=vary[status], expr="")
         else:
             set_param_expr(params, name, expr=status)
 
