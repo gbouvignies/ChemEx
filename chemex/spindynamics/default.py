@@ -379,8 +379,8 @@ def model_2st_binding(conditions, fnames, params):
     expr_kab = "{kon} * 0.5 * ({delta} - {kd} + sqrt(({delta} - {kd}) ** 2 + 4.0 * {kd} * {l_total}))"
 
     settings = {
-        "kon": {"value": 10.0, "vary": True},
-        "koff": {"value": 1.0e7, "vary": True},
+        "kon": {"value": 1.0e7, "vary": True},
+        "koff": {"value": 10.0, "vary": True},
         "kd": {"expr": "{koff} / {kon}".format(**fnames)},
         "pa": {"expr": "{kba} / ({kba} + {kab})".format(**fnames)},
         "pb": {"expr": "{kab} / ({kba} + {kab})".format(**fnames)},
