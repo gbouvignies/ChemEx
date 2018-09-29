@@ -56,7 +56,7 @@ class Profile(cpmg_profile.CPMGProfile):
             ncyc: self.exp_details["time_t2"] / (4.0 * ncyc) - self.exp_details["pw90"]
             for ncyc in self.ncycs[self.ncycs > 0]
         }
-        self.t_cps[-1] = 0.5 * self.exp_details["time_t2"] / 2.0
+        self.t_cps[-1.0] = 0.5 * self.exp_details["time_t2"]
 
         self.t_neg = -2.0 * self.exp_details["pw90"] / np.pi
 
