@@ -53,14 +53,12 @@ def plot_param():
 
             curves[section] = zip(*points)
 
-    fig = plt.figure(figsize=(12, 5))
+    fig, axis = plt.subplots(figsize=(12, 5))
 
-    ax = fig.add_subplot(111)
+    axis.yaxis.grid(True)
 
-    ax.yaxis.grid(True)
-
-    for section, (x, y, e) in curves.items():
-        ax.errorbar(x, y, yerr=e, label=section, fmt=".", barsabove=True)
+    for section, (res, vals, errors) in curves.items():
+        axis.errorbar(res, vals, yerr=errors, label=section, fmt=".", barsabove=True)
 
     plt.legend()
     plt.show()
@@ -91,28 +89,27 @@ def cest_pick():
     plt.show()
 
 
-def get_numbers(s):
-    RE_NUMBERS = re.compile("\d+")
-    return [int(n) for n in RE_NUMBERS.findall(s)]
+def get_numbers(name):
+    return [int(number) for number in re.findall("\d+", name)]
 
 
 def prepare_profile(filename, frq, carrier):
+
     data = np.loadtxt(filename)
     mask = data[:, 0] > -10000.0
     norm = np.mean(data[~mask][:, 1])
     data = data[mask]
     data[:, 1:] /= norm
-    data[0, 1] = data[-1, 1] = np.mean((data[[0, -1], 1]))
 
     offsets = data[:, 0] / frq + carrier
 
     profile = {"x": offsets, "y": data[:, 1], "e": data[:, 2]}
 
-    cs = interpolate.CubicSpline(profile["x"], profile["y"])
+    spline = interpolate.CubicSpline(profile["x"], profile["y"])
 
     fine_offsets = np.linspace(min(offsets), max(offsets), 1000)
 
-    profile_cs = {"x": fine_offsets, "y": cs(fine_offsets)}
+    profile_cs = {"x": fine_offsets, "y": spline(fine_offsets)}
 
     return profile, profile_cs
 
@@ -120,20 +117,14 @@ def prepare_profile(filename, frq, carrier):
 class Buttons(object):
     def __init__(self, args):
 
-        self.p1, self.p2 = None, None
-        self.p1_cs, self.p2_cs = None, None
-        self.p_dcest1, self.p_dcest2, self.p_cest = None, None, None
-        self.x1, self.x2 = {}, {}
-        self.positions = []
-        self.params = None
-        self.cid = None
-
         self.out = args.out
 
-        self.fig, self.axes = plt.subplots(
-            1, sharex="all", sharey="all", figsize=(12, 5)
-        )
-        self.ax = self.axes
+        self.profile, self.profile_spline = None, None
+        self.cs_a, self.cs_b = {}, {}
+        self.positions = []
+        self.cid = None
+
+        self.fig, self.axis = plt.subplots(figsize=(12, 5))
         self.fig.subplots_adjust(left=0.07, bottom=0.1, right=0.8, top=0.9)
 
         self.filenames = {}
@@ -173,21 +164,21 @@ class Buttons(object):
     def clear(self):
         while self.positions:
             self.positions.pop().remove()
-        self.ax.clear()
+        self.axis.clear()
 
     def prepare_profiles(self, name):
-        self.p, self.p_cs = prepare_profile(
+        self.profile, self.profile_spline = prepare_profile(
             self.filenames[name], self.frq, self.carrier
         )
 
     def plot_profiles(self):
 
-        self.ax.plot(self.p["x"], self.p["y"], ".", color="C0")
+        self.axis.plot(self.profile["x"], self.profile["y"], ".", color="C0")
 
-        self.ax.set_title(self.name)
+        self.axis.set_title(self.name)
 
-        self.ax.set_xlabel(r"$^{15}$N (ppm)")
-        self.ax.set_ylabel("$I/I_0$")
+        self.axis.set_xlabel(r"$^{15}$N (ppm)")
+        self.axis.set_ylabel("$I/I_0$")
 
         self.fig.canvas.draw()
 
@@ -199,7 +190,13 @@ class Buttons(object):
 
         self.clear()
         self.plot_positions()
-        self.ax.plot(self.p_cs["x"], self.p_cs["y"], "--", color="C0", alpha=0.66)
+        self.axis.plot(
+            self.profile_spline["x"],
+            self.profile_spline["y"],
+            "--",
+            color="C0",
+            alpha=0.66,
+        )
 
         self.plot_profiles()
 
@@ -207,41 +204,38 @@ class Buttons(object):
 
     def plot_positions(self, event=None):
 
-        ax = self.axes
+        cs_a = self.cs_a.get(self.name)
+        cs_b = self.cs_b.get(self.name)
 
-        x1 = self.x1.get(self.name)
-        x2 = self.x2.get(self.name)
-
-        if event and event.inaxes == self.axes:
-            if x1 is None:
-                self.x1[self.name] = event.xdata
-            elif x2 is None:
-                self.x2[self.name] = event.xdata
+        if event and event.inaxes == self.axis:
+            if cs_a is None:
+                self.cs_a[self.name] = event.xdata
+            elif cs_b is None:
+                self.cs_b[self.name] = event.xdata
             else:
                 while self.positions:
                     self.positions.pop().remove()
-                self.x1[self.name] = event.xdata
-                self.x2[self.name] = None
-            axes = [self.ax]
+                self.cs_a[self.name] = event.xdata
+                self.cs_b[self.name] = None
 
-        x1 = self.x1.get(self.name)
-        x2 = self.x2.get(self.name)
+        cs_a = self.cs_a.get(self.name)
+        cs_b = self.cs_b.get(self.name)
 
         kwargs = {"color": "0.74", "linewidth": 1.0}
 
-        if x1 is not None:
-            self.positions.append(ax.axvline(x1, **kwargs))
-            text = "".join([r"$\varpi_a$ = ", "{:.3f} ppm".format(float(x1))])
+        if cs_a is not None:
+            self.positions.append(self.axis.axvline(cs_a, **kwargs))
+            text = "".join([r"$\varpi_a$ = ", "{:.3f} ppm".format(float(cs_a))])
             self.positions.append(self.fig.text(0.82, 0.8, text))
 
-        if x2 is not None:
-            self.positions.append(ax.axvline(x2, linestyle="dashed", **kwargs))
-            text = "".join([r"$\varpi_b$ = ", "{:.3f} ppm".format(float(x2))])
+        if cs_b is not None:
+            self.positions.append(self.axis.axvline(cs_b, linestyle="dashed", **kwargs))
+            text = "".join([r"$\varpi_b$ = ", "{:.3f} ppm".format(float(cs_b))])
             self.positions.append(self.fig.text(0.82, 0.75, text))
 
-        if x1 is not None and x2 is not None:
+        if cs_a is not None and cs_b is not None:
             text = "".join(
-                [r"$\Delta\varpi_{ab}$ = ", "{:.3f} ppm".format(float(x2 - x1))]
+                [r"$\Delta\varpi_{ab}$ = ", "{:.3f} ppm".format(float(cs_b - cs_a))]
             )
             self.positions.append(self.fig.text(0.82, 0.7, text))
             self.save()
@@ -258,26 +252,26 @@ class Buttons(object):
         fname3 = self.out / "dw_ab.txt"
 
         with contextlib.ExitStack() as stack:
-            f1 = stack.enter_context(fname1.open("w"))
-            f2 = stack.enter_context(fname2.open("w"))
-            f3 = stack.enter_context(fname3.open("w"))
+            file1 = stack.enter_context(fname1.open("w"))
+            file2 = stack.enter_context(fname2.open("w"))
+            file3 = stack.enter_context(fname3.open("w"))
 
             for name in self.names:
-                x1 = self.x1.get(name)
-                x2 = self.x2.get(name)
+                cs_a = self.cs_a.get(name)
+                cs_b = self.cs_b.get(name)
 
-                if x1 is None:
+                if cs_a is None:
                     continue
 
-                x1 = float(x1)
+                cs_a = float(cs_a)
 
-                if x2 is None:
-                    x2 = x1
+                if cs_b is None:
+                    cs_b = cs_a
                 else:
-                    x2 = float(x2)
+                    cs_b = float(cs_b)
 
-                dw = x2 - x1
+                dw_ab = cs_b - cs_a
 
-                f1.write(f"{name:10s} {x1:8.3f}\n")
-                f2.write(f"{name:10s} {x2:8.3f}\n")
-                f3.write(f"{name:10s} {dw:8.3f}\n")
+                file1.write(f"{name:10s} {cs_a:8.3f}\n")
+                file2.write(f"{name:10s} {cs_b:8.3f}\n")
+                file3.write(f"{name:10s} {dw_ab:8.3f}\n")
