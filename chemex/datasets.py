@@ -87,7 +87,7 @@ class DataSet(object):
         for experiment_name, data in datasets.items():
 
             filename = path / experiment_name
-            filename.with_suffix(".dat")
+            filename = filename.with_suffix(".dat")
 
             print("  * {}".format(filename))
 
