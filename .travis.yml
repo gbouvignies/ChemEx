@@ -3,44 +3,43 @@ language: python
 sudo: false
 
 python:
-  - 3.5
-  - 3.6
-
+    - 3.5
+    - 3.6
 env:
-  global:
-    - CONDA_DEPS="numpy scipy matplotlib lmfit asteval pytest pytest-cov"
-    - PACKAGENAME="chemex"
+    global:
+        - CONDA_DEPS="numpy scipy matplotlib lmfit asteval pytest pytest-cov"
+        - PACKAGENAME="chemex"
 
 before_install:
-  - export MINICONDA=$HOME/miniconda
-  - export PATH="$MINICONDA/bin:$PATH"
-  - hash -r
-  - wget http://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh -O miniconda.sh
-  - bash miniconda.sh -b -f -p $MINICONDA
-  - conda config --set always_yes yes
-  - conda update conda
-  - conda info -a
-  - conda create -n testenv python=$TRAVIS_PYTHON_VERSION
-  - source activate testenv
-  - conda install -c conda-forge $CONDA_DEPS
+    - export MINICONDA=$HOME/miniconda
+    - export PATH="$MINICONDA/bin:$PATH"
+    - hash -r
+    - wget http://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh -O miniconda.sh
+    - bash miniconda.sh -b -f -p $MINICONDA
+    - conda config --set always_yes yes
+    - conda update conda
+    - conda info -a
+    - conda create -n testenv python=$TRAVIS_PYTHON_VERSION
+    - source activate testenv
+    - conda install -c conda-forge $CONDA_DEPS
 
 install:
-  - python setup.py install
+    - python setup.py install
 
 script:
-  - pytest -v --color=yes --cov=$PACKAGENAME tests
+    - pytest -v --color=yes --cov=$PACKAGENAME tests
 
 after_success:
-  - conda install -c conda-forge codecov
-  - codecov
+    - conda install -c conda-forge codecov
+    - codecov
 
 deploy:
-  provider: pypi
-  distributions: sdist bdist_wheel
-  user: gbouvignies
-  password:
-    secure: Fgf70cb/r8u68r0YTI8wYvAcPu1VrLIIYZffo7p9OuKXaIjcihOs4g7y8akCG7hpH2PAmrIpqE2SrKfwz0/hpCQjP+3nVPQfxlSM+fad/kum1+7tfq8zzQFY2V+mfSaeM29lKAH3oFXllbeDMZZ25yMpM33+OafCrozSO6oyqVbYfjLhhagRi/TvGxBLY5gFeAwxHBqv8Ll4CRIQdVm98inm7rGyHS7qshjG+Gu0zVEw65Bfrkroakn5PxvNS2Sk32I0tjG/0bjUhCbPGaY6bEJJK1jrGdlKCK9OrAFxxaGaRq22wSw8nZLMtkb1s5WqrWyx0MyBipOl3+e4IRtQvIVZVnmiLHnXdnG8zsQIcbDflqkqkffNcMiI9qKS5c94bOVI26gaGWFClx2hEyU8wRiWAFQV/kULz6YIrzJYQmD+wQHqwO+KqI5e7ZYV6K8XyWz9LXOfO6eqzQETJIg9NrtuNdgqMDu0UYTEMmyYBhbJHQRFHwj/LCqQ5ufa9Fog6Xtr6HqofP6kUXP6o2p1YrmNQdznH5a91beZBdgu20L1DXX4ndKNmg98jcpCUSmQSqARM4UdXvl4yjpJny/vSrvWrPuYwKzhbY5BF9xJDAAZp59TW9wMhP1Z/lV1bxRMZiyqboRsTgIcXAd1FudNlNvktAZkRNHnSAjU/vZ8pDY=
-  on:
-    tags: true
-    repo: gbouvignies/ChemEx
-    condition: $TRAVIS_PYTHON_VERSION = "3.6"
+    provider: pypi
+    distributions: sdist bdist_wheel
+    user: gbouvignies
+    password:
+        secure: ME1QkK7Mq2DP65QrqJ0rFac/GHidF/EmxkKN6bFufCWCnDpbO8UMWlm3jrSNgo1633hEBkrt1DZnZQBaWloATHwToOOc26+FYQPbFtKVuG7bjdF/OouO3fITxV/h+YujApf2KhLE3SXfnKrFluj661i3f1zf5wQzSrlqMRiq5RGyT0emgL4cSW9M2QMqFhESnmu/d3726DKufsjuE44AZBC/OrwQ9/yPq/olKUrrXRftek+ANeImoCm/vwS2vUUTrsv/PFOZ2NtSUiDXLj8hmhnmnbP4f6qjgnESgFfScfx/wkdMooG/2xAn2hZBS6ZcX7Li6wADdnypRz3l4VCapxVGmuiKkSAzOWRGa+1U6ayazHeMpEuxbp/GqBjpe59hhM4VvEMurg5Zrn/mTHqz/mdAH9etFtstawclPyKQpRXl9AmB7QO1ZjBSHd7nnznM/JoL7VBmUz7cafHeb7g5tULW/0rIAt63n50bz8jlxhl+RcbwsPZ4XRp3rz7GrUj63/7TUMT37Bmvr+8zc58nveQA71Cm4SC1McMv7j+Uva1uin0jb98DoBDeuOZmm5XnU5KUuFpZlJmE8AgYvo+KJGhbjj09Y3yGoKiV0o4Uyb4Rp9n6MjqkBJ5VWI8TMfTEV9pW4aAHzgFXg1Avi0GBmF6kwQBYpQTqw+2Gv1AWCgg=
+    on:
+        tags: true
+        repo: gbouvignies/ChemEx
+        condition: $TRAVIS_PYTHON_VERSION = "3.6"
