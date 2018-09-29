@@ -96,13 +96,13 @@ def name_experiment(experiment_details=None):
     return name
 
 
-def estimate_noise(x):
+def estimate_noise(values):
     """Estimate the uncertainty in the CEST profile.
 
     # TODO: add reference to this method...
 
     """
-    n = len(x)
+    size = len(values)
 
     fda = [
         [1, -1],
@@ -115,35 +115,37 @@ def estimate_noise(x):
 
     fda = [np.array(a_fda) / linalg.norm(a_fda) for a_fda in fda]
 
-    perc = np.array([0.05] + list(np.arange(0.1, 0.40, 0.025)))
-    z = stats.norm.ppf(1.0 - perc)
+    percents = np.array([0.05] + list(np.arange(0.1, 0.40, 0.025)))
+    percent_points = stats.norm.ppf(1.0 - percents)
 
     sigma_est = []
 
     for fdai in fda:
-        noisedata = signal.convolve(x, fdai, mode="valid")
+        noisedata = signal.convolve(values, fdai, mode="valid")
         ntrim = len(noisedata)
 
         if ntrim >= 2:
             noisedata.sort()
 
-            p = 0.5 + np.arange(1, ntrim + 1)
-            p /= ntrim + 0.5
+            xaxis = 0.5 + np.arange(1, ntrim + 1)
+            xaxis /= ntrim + 0.5
 
-            q = []
+            sigmas = []
 
-            f = interpolate.interp1d(p, noisedata, "linear")
+            f_interpalated = interpolate.interp1d(xaxis, noisedata, "linear")
 
-            for a_perc, a_z in zip(perc, z):
+            for a_perc, a_z in zip(percents, percent_points):
                 try:
-                    val = (f(1.0 - a_perc) - f(a_perc)) / (2.0 * a_z)
-                    q.append(val)
+                    val = (f_interpalated(1.0 - a_perc) - f_interpalated(a_perc)) / (
+                        2.0 * a_z
+                    )
+                    sigmas.append(val)
                 except ValueError:
                     pass
 
-            sigma_est.append(np.median(q))
+            sigma_est.append(np.median(sigmas))
 
     noisevar = np.median(sigma_est) ** 2
-    noisevar /= 1.0 + 15.0 * (n + 1.225) ** -1.245
+    noisevar /= 1.0 + 15.0 * (size + 1.225) ** -1.245
 
     return np.sqrt(noisevar)

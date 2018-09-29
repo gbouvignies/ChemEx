@@ -5,7 +5,7 @@ import collections
 import functools
 import re
 
-re_peak_name = re.compile(
+RE_PEAK_NAME = re.compile(
     """
         (^\s*|\-)
         (                                # group name
@@ -21,7 +21,7 @@ re_peak_name = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 
-spin_names = ("i", "s", "x")
+SPIN_NAMES = ("i", "s", "x")
 
 
 @functools.total_ordering
@@ -29,6 +29,8 @@ class Peak(object):
     """Peak class."""
 
     def __init__(self, assignment=None):
+
+        self._assignment = None
 
         if assignment is None:
             assignment = ""
@@ -144,7 +146,7 @@ def get_resonances(assignment):
     resonances = []
     last_resonance = None
 
-    for match in re.finditer(re_peak_name, assignment.lower()):
+    for match in re.finditer(RE_PEAK_NAME, assignment.lower()):
 
         resonance = match.groupdict()
 

@@ -9,8 +9,8 @@ from scipy import stats
 from chemex import datasets, parameters, util
 from chemex.cli import FITMETHODS
 
-all_fitmethods = lmfit.minimizer.SCALAR_METHODS
-all_fitmethods.update(
+ALL_FITMETHODS = lmfit.minimizer.SCALAR_METHODS
+ALL_FITMETHODS.update(
     {
         "leastsq": "least-squares using Levenberg-Marquardt",
         "least_squares": "least-squares using Trust Region Reflective algorithm",
@@ -19,8 +19,8 @@ all_fitmethods.update(
         "ampgo": "Adaptive Memory Programming for Global Optimization (AMPGO)",
     }
 )
-allowed_fitmethods = {
-    name: desc for name, desc in all_fitmethods.items() if name in FITMETHODS
+ALLOWED_FITMETHODS = {
+    name: desc for name, desc in ALL_FITMETHODS.items() if name in FITMETHODS
 }
 
 
@@ -40,15 +40,15 @@ def run_fit(fit_filename, params, data, cl_fitmethod):
         clusters = find_independent_clusters(data, params)
         fitmethod = fit_config.get(section, "fitmethod", fallback=cl_fitmethod)
 
-        if fitmethod not in allowed_fitmethods.keys():
+        if fitmethod not in ALLOWED_FITMETHODS.keys():
             exit(
                 "The fitting method '{}', as specified in section ['{}'],"
                 "is invalid! Please choose from:\n  {}".format(
-                    fitmethod, section, list(sorted(allowed_fitmethods.keys()))
+                    fitmethod, section, list(sorted(ALLOWED_FITMETHODS.keys()))
                 )
             )
 
-        print("Fitting method: {}\n".format(allowed_fitmethods[fitmethod]))
+        print("Fitting method: {}\n".format(ALLOWED_FITMETHODS[fitmethod]))
 
         for c_name, c_data, c_params in clusters:
             if len(clusters) > 1:
@@ -106,49 +106,49 @@ def find_independent_clusters(data, params):
 
     for profile in data:
 
-        parnames = profile.params.keys()
-        parnames_vary = {
-            name for name in parnames if params[name].vary and not params[name].expr
+        pnames = profile.params.keys()
+        pnames_vary = {
+            name for name in pnames if params[name].vary and not params[name].expr
         }
 
-        for data_cluster, parnames_cluster, parnames_vary_cluster in clusters:
+        for data_cluster, pnames_cluster, pnames_vary_cluster in clusters:
 
-            if parnames_vary & parnames_vary_cluster:
+            if pnames_vary & pnames_vary_cluster:
                 data_cluster.append(profile)
-                parnames_cluster.extend(parnames)
-                parnames_vary_cluster.update(parnames_vary)
+                pnames_cluster.extend(pnames)
+                pnames_vary_cluster.update(pnames_vary)
                 break
 
         else:
 
             data_cluster = datasets.DataSet(profile)
-            parnames_cluster = list(parnames)
-            parnames_vary_cluster = parnames_vary
+            pnames_cluster = list(pnames)
+            pnames_vary_cluster = pnames_vary
 
-            clusters.append((data_cluster, parnames_cluster, parnames_vary_cluster))
+            clusters.append((data_cluster, pnames_cluster, pnames_vary_cluster))
 
     clusters_ = []
 
-    for data_cluster, parnames_cluster, parnames_vary_cluster in clusters:
+    for data_cluster, pnames_cluster, pnames_vary_cluster in clusters:
 
         name_cluster = parameters.ParameterName.from_full_name(
-            parnames_vary_cluster.pop()
+            pnames_vary_cluster.pop()
         )
 
-        while parnames_vary_cluster:
+        while pnames_vary_cluster:
             name_cluster = name_cluster.intersection(
-                parameters.ParameterName.from_full_name(parnames_vary_cluster.pop())
+                parameters.ParameterName.from_full_name(pnames_vary_cluster.pop())
             )
 
         params_cluster = lmfit.Parameters()
 
-        for parname in parnames_cluster:
-            par = params[parname]
-            par._delay_asteval = True
-            params_cluster[parname] = par
+        for pname in pnames_cluster:
+            param = params[pname]
+            params[pname]._delay_asteval = True
+            params_cluster[pname] = param
 
-        for p in params_cluster.values():
-            p._delay_asteval = False
+        for param in params_cluster.values():
+            param._delay_asteval = False
 
         clusters_.append((name_cluster, data_cluster, params_cluster))
 

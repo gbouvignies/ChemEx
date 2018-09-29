@@ -144,10 +144,10 @@ def plot_data(data, params, output_dir):
                 write_profile_exp(peak.assignment, b1_ppm, mag_exp, mag_err, file_exp)
 
                 # Matplotlib #
-                gs = gsp.GridSpec(2, 1, height_ratios=[1, 4])
+                grid_spec = gsp.GridSpec(2, 1, height_ratios=[1, 4])
 
-                ax1 = plt.subplot(gs[0])
-                ax2 = plt.subplot(gs[1])
+                ax1 = plt.subplot(grid_spec[0])
+                ax2 = plt.subplot(grid_spec[1])
 
                 cs_colors = list(
                     zip(
@@ -157,18 +157,18 @@ def plot_data(data, params, output_dir):
                 )
 
                 for ax_ in (ax1, ax2):
-                    for cs, color in cs_colors:
-                        if cs is not None:
+                    for a_cs, color in cs_colors:
+                        if a_cs is not None:
                             ax_.axvline(
-                                cs.value,
-                                color=plotting.palette[color]["100"],
+                                a_cs.value,
+                                color=plotting.PALETTE[color]["100"],
                                 linestyle="-",
                                 linewidth=1.0,
                                 zorder=-100,
                             )
 
                     ax_.axhline(
-                        0, color=plotting.palette["Black"]["Text"], linewidth=0.5
+                        0, color=plotting.PALETTE["Black"]["Text"], linewidth=0.5
                     )
 
                 ########################
@@ -177,7 +177,7 @@ def plot_data(data, params, output_dir):
                     b1_ppm_fit,
                     mag_fit,
                     linestyle="-",
-                    color=plotting.palette["Grey"]["700"],
+                    color=plotting.PALETTE["Grey"]["700"],
                     zorder=2,
                 )
 
@@ -186,8 +186,8 @@ def plot_data(data, params, output_dir):
                     mag_exp[filtered],
                     mag_err[filtered],
                     fmt="o",
-                    markeredgecolor=plotting.palette["Red"]["500"],
-                    ecolor=plotting.palette["Red"]["500"],
+                    markeredgecolor=plotting.PALETTE["Red"]["500"],
+                    ecolor=plotting.PALETTE["Red"]["500"],
                     markerfacecolor="None",
                     zorder=3,
                 )
@@ -199,8 +199,8 @@ def plot_data(data, params, output_dir):
                     mag_exp[unfiltered],
                     mag_err[unfiltered],
                     fmt="o",
-                    markeredgecolor=plotting.palette["Red"]["100"],
-                    ecolor=plotting.palette["Red"]["100"],
+                    markeredgecolor=plotting.PALETTE["Red"]["100"],
+                    ecolor=plotting.PALETTE["Red"]["100"],
                     markerfacecolor="None",
                     zorder=3,
                 )
@@ -230,14 +230,14 @@ def plot_data(data, params, output_dir):
                 ax1.fill(
                     (xmin, xmin, xmax, xmax),
                     1.0 * sigma * np.asarray([-1.0, 1.0, 1.0, -1.0]),
-                    fc=plotting.palette["Black"]["Dividers"],
+                    fc=plotting.PALETTE["Black"]["Dividers"],
                     ec="none",
                 )
 
                 ax1.fill(
                     (xmin, xmin, xmax, xmax),
                     2.0 * sigma * np.asarray([-1.0, 1.0, 1.0, -1.0]),
-                    fc=plotting.palette["Black"]["Dividers"],
+                    fc=plotting.PALETTE["Black"]["Dividers"],
                     ec="none",
                 )
 
@@ -246,8 +246,8 @@ def plot_data(data, params, output_dir):
                     deltas[filtered],
                     mag_err[filtered],
                     fmt="o",
-                    markeredgecolor=plotting.palette["Red"]["500"],
-                    ecolor=plotting.palette["Red"]["500"],
+                    markeredgecolor=plotting.PALETTE["Red"]["500"],
+                    ecolor=plotting.PALETTE["Red"]["500"],
                     markerfacecolor="None",
                     zorder=100,
                 )
@@ -257,8 +257,8 @@ def plot_data(data, params, output_dir):
                     deltas[unfiltered],
                     mag_err[unfiltered],
                     fmt="o",
-                    markeredgecolor=plotting.palette["Red"]["100"],
-                    ecolor=plotting.palette["Red"]["100"],
+                    markeredgecolor=plotting.PALETTE["Red"]["100"],
+                    ecolor=plotting.PALETTE["Red"]["100"],
                     markerfacecolor="None",
                     zorder=100,
                 )

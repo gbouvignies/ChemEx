@@ -84,7 +84,7 @@ class Liouvillian(object):
             atoms = {"i": "h"}
 
         self.ppms = {
-            spin: 2.0 * np.pi * h_larmor_frq * constants.xi_ratio[atom]
+            spin: 2.0 * np.pi * h_larmor_frq * constants.XI_RATIO[atom]
             for spin, atom in atoms.items()
         }
 
@@ -97,6 +97,15 @@ class Liouvillian(object):
 
         self.perfect180 = make_perfect180(self._vectors)
 
+        self._carrier_i = None
+        self._carrier_s = None
+        self._j_eff_i = None
+        self._j_eff_i_weights = None
+        self._l_carrier_i = None
+        self._l_carrier_s = None
+        self._l_j_eff_i = None
+        self._w1_i = None
+        self._w1_s = None
         self._w1_i_weights = 1.0
         self._w1_s_weights = 1.0
         self._w1_i_inh = 0.0
@@ -402,9 +411,9 @@ def build_4st_is_spin_system():
     matrices = {}
 
     for kind in ("l", "r"):
-        for name, ij in indexes[kind].items():
+        for name, index_ij in indexes[kind].items():
             matrix = ZEROS_M_SINGLE.copy()
-            matrix[ij] = values[kind] * scales.get(name, 1.0)
+            matrix[index_ij] = values[kind] * scales.get(name, 1.0)
             for state_name, state_matrix in STATES_M.items():
                 if state_name != "all" or name.startswith(("w1", "w_")):
                     fname = "_".join([name, state_name])
@@ -412,9 +421,9 @@ def build_4st_is_spin_system():
                     matrices[fname] = ZEROS_M_FULL.copy()
                     matrices[fname][:-1, :-1] = np.kron(state_matrix, matrix)
 
-    for name, ij in indexes["k"].items():
+    for name, index_ij in indexes["k"].items():
         matrix = np.zeros((4, 4))
-        matrix[ij] = values["k"]
+        matrix[index_ij] = values["k"]
         matrices[name] = ZEROS_M_FULL.copy()
         matrices[name][:-1, :-1] = np.kron(matrix, np.eye(15))
 
@@ -433,9 +442,9 @@ def build_4st_is_spin_system():
 
     vectors = {}
 
-    for name, index in COMPONENTS.items():
+    for name, index_ij in COMPONENTS.items():
         vector = ZEROS_V_SINGLE.copy()
-        vector[index] = 1.0
+        vector[index_ij] = 1.0
         for state_name, state_vector in STATES_V.items():
             fname = "_".join([name, state_name])
             fname = fname.replace("_all", "")
@@ -511,8 +520,8 @@ def calculate_propagators(liouvillian, delays, dephasing=False):
 
     propagators = []
 
-    for l in liouvillian.reshape(-1, *shape[-2:]):
-        s, vr = linalg.eig(l)
+    for a_liouvillian in liouvillian.reshape(-1, *shape[-2:]):
+        s, vr = linalg.eig(a_liouvillian)
         vri = linalg.inv(vr)
 
         if dephasing:

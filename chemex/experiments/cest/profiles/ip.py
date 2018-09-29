@@ -116,7 +116,7 @@ class Profile(cest_profile.CESTProfile):
         """Evaluate some criteria to know whether or not the point should be
         considered in the calculation."""
 
-        cs = params[self.map_names["cs_i_a"]].value
+        cs_a = params[self.map_names["cs_i_a"]].value
 
         filter_offsets = np.asarray(self.exp_details["filter_offsets"]).reshape(-1)
         filter_bandwidths = np.asarray(self.exp_details["filter_bandwidths"]).reshape(
@@ -125,7 +125,7 @@ class Profile(cest_profile.CESTProfile):
 
         for offset, bandwidth in zip(filter_offsets, filter_bandwidths):
             nu_offsets = (
-                (cs - self.exp_details["carrier"])
+                (cs_a - self.exp_details["carrier"])
                 * self.liouv.ppms["i"]
                 / (2.0 * np.pi)
                 - self.b1_offsets

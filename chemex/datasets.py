@@ -122,13 +122,13 @@ class DataSet(object):
             # Read the profile information (name, filename)
             filenames = {key.lower(): val for key, val in config.items("data")}
 
-        except configparser.NoSectionError as e:
-            sys.exit("    Reading aborted: {}".format(e))
+        except configparser.NoSectionError as error:
+            sys.exit("    Reading aborted: {}".format(error))
 
-        except KeyError as e:
+        except KeyError as error:
             sys.exit(
                 "\nIn the section 'experiment' of {}, '{}' must be provided!".format(
-                    filename, e
+                    filename, error
                 )
             )
 

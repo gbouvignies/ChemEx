@@ -151,15 +151,15 @@ def set_thermal_factors(fnames, params, nuclei):
 
         if theta in fnames:
 
-            r1 = "r1_{}_{}".format(spin, state)
+            r1_expr = "r1_{}_{}".format(spin, state)
             sigma = "sigma_{}".format(state)
             pop = "p{}".format(state)
 
             terms = []
 
             terms.append(
-                "{g_ratio} * {r1}".format(
-                    g_ratio=nuclei.atoms[spin]["g_ratio"], r1=fnames[r1]
+                "{g_ratio} * {r1_expr}".format(
+                    g_ratio=nuclei.atoms[spin]["g_ratio"], r1_expr=fnames[r1_expr]
                 )
             )
 
@@ -540,12 +540,14 @@ def _get_k_from_kex_p(states):
 
 
 def _get_k_from_h_s(states):
-    dh = "{{dh_{}{}}}".format(*sorted(states))
-    ds = "{{ds_{}{}}}".format(*sorted(states))
+    expr_dh = "{{dh_{}{}}}".format(*sorted(states))
+    expr_ds = "{{ds_{}{}}}".format(*sorted(states))
     if states[0] != "a":
-        dh += " - {{dh_{}}}".format(states[0])
-        ds += " - {{ds_{}}}".format(states[0])
-    return "{{kbt_h}} * exp(-(({dh}) - {{tk}} * ({ds})) / {{rt}})".format(dh=dh, ds=ds)
+        expr_dh += " - {{dh_{}}}".format(states[0])
+        expr_ds += " - {{ds_{}}}".format(states[0])
+    return "{{kbt_h}} * exp(-(({expr_dh}) - {{tk}} * ({expr_ds})) / {{rt}})".format(
+        expr_dh=expr_dh, expr_ds=expr_ds
+    )
 
 
 def _define_thermo(celcius):

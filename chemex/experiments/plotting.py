@@ -8,10 +8,10 @@ from matplotlib.colors import LogNorm
 
 from chemex import peaks
 
-dark_gray = "0.13"
-medium_gray = "0.44"
+DARK_GRAY = "0.13"
+MEDIUM_GRAY = "0.44"
 
-palette = {
+PALETTE = {
     "Red": {
         "50": "#FFEBEE",
         "100": "#FFCDD2",
@@ -324,7 +324,7 @@ palette = {
     },
 }
 
-base_context = {
+BASE_CONTEXT = {
     "figure.figsize": (6, 5),
     "figure.subplot.bottom": 0.12,
     "figure.subplot.top": 0.92,
@@ -351,19 +351,19 @@ base_context = {
     "ytick.major.pad": 3,
 }
 
-style_dict = {
-    "text.color": palette["Black"]["Text"],
-    "xtick.color": palette["Black"]["Text"],
+STYLE_DICT = {
+    "text.color": PALETTE["Black"]["Text"],
+    "xtick.color": PALETTE["Black"]["Text"],
     "xtick.major.size": 3,
     "xtick.minor.size": 3,
-    "ytick.color": palette["Black"]["Text"],
+    "ytick.color": PALETTE["Black"]["Text"],
     "ytick.major.size": 3,
     "ytick.minor.size": 3,
     "grid.color": "0.88",
     "grid.linestyle": "-",
-    "axes.labelcolor": palette["Black"]["Text"],
+    "axes.labelcolor": PALETTE["Black"]["Text"],
     "axes.facecolor": "None",  # axes background color
-    "axes.edgecolor": palette["Black"]["Text"],  # axes edge color
+    "axes.edgecolor": PALETTE["Black"]["Text"],  # axes edge color
     "axes.grid": True,
     "axes.axisbelow": True,
     "lines.dash_joinstyle": "round",  # miter|round|bevel
@@ -374,8 +374,8 @@ style_dict = {
     "mathtext.default": "regular",
 }
 
-mpl.rcParams.update(base_context)
-mpl.rcParams.update(style_dict)
+mpl.rcParams.update(BASE_CONTEXT)
+mpl.rcParams.update(STYLE_DICT)
 
 
 def set_lim(values, scale):
@@ -444,43 +444,43 @@ def plot_results_brute(result, best_vals=True, varlabels=None, output="results_b
             elif i == j and j < npars - 1:
                 if i == 0:
                     axes[0, 0].axis("off")
-                ax = axes[i, j + 1]
+                axis = axes[i, j + 1]
                 red_axis = tuple([a for a in range(npars) if a != i])
-                ax.plot(
+                axis.plot(
                     np.unique(result.brute_grid[i]),
                     np.minimum.reduce(result.brute_Jout, axis=red_axis),
                     "o",
                     ms=3,
                 )
-                ax.set_ylabel(r"$\chi^{2}$")
-                ax.yaxis.set_label_position("right")
-                ax.yaxis.set_ticks_position("right")
-                ax.set_xticks([])
+                axis.set_ylabel(r"$\chi^{2}$")
+                axis.yaxis.set_label_position("right")
+                axis.yaxis.set_ticks_position("right")
+                axis.set_xticks([])
                 if best_vals:
-                    ax.axvline(best_vals[par1].value, ls="dashed", color="r")
+                    axis.axvline(best_vals[par1].value, ls="dashed", color="r")
 
             # parameter vs chi2 profile on the left
             elif j == 0 and i > 0:
-                ax = axes[i, j]
+                axis = axes[i, j]
                 red_axis = tuple([a for a in range(npars) if a != i])
-                ax.plot(
+                axis.plot(
                     np.minimum.reduce(result.brute_Jout, axis=red_axis),
                     np.unique(result.brute_grid[i]),
                     "o",
                     ms=3,
                 )
-                ax.invert_xaxis()
-                ax.set_ylabel(varlabels[i])
+                axis.invert_xaxis()
+                axis.set_ylabel(varlabels[i])
                 if i != npars - 1:
-                    ax.set_xticks([])
+                    axis.set_xticks([])
                 elif i == npars - 1:
-                    ax.set_xlabel(r"$\chi^{2}$")
+                    axis.set_xlabel(r"$\chi^{2}$")
                 if best_vals:
-                    ax.axhline(best_vals[par1].value, ls="dashed", color="r")
+                    axis.axhline(best_vals[par1].value, ls="dashed", color="r")
 
             # contour plots for all combinations of two parameters
             elif j > i:
-                ax = axes[j, i + 1]
+                axis = axes[j, i + 1]
                 red_axis = tuple([a for a in range(npars) if a != i and a != j])
                 X, Y = np.meshgrid(
                     np.unique(result.brute_grid[i]), np.unique(result.brute_grid[j])
@@ -498,22 +498,22 @@ def plot_results_brute(result, best_vals=True, varlabels=None, output="results_b
                     dtype="int",
                 )
                 lvls = np.unique(np.concatenate((lvls1, lvls2)))
-                ax.contourf(
+                axis.contourf(
                     X.T,
                     Y.T,
                     np.minimum.reduce(result.brute_Jout, axis=red_axis),
                     lvls,
                     norm=LogNorm(),
                 )
-                ax.set_yticks([])
+                axis.set_yticks([])
                 if best_vals:
-                    ax.axvline(best_vals[par1].value, ls="dashed", color="r")
-                    ax.axhline(best_vals[par2].value, ls="dashed", color="r")
-                    ax.plot(best_vals[par1].value, best_vals[par2].value, "rs", ms=3)
+                    axis.axvline(best_vals[par1].value, ls="dashed", color="r")
+                    axis.axhline(best_vals[par2].value, ls="dashed", color="r")
+                    axis.plot(best_vals[par1].value, best_vals[par2].value, "rs", ms=3)
                 if j != npars - 1:
-                    ax.set_xticks([])
+                    axis.set_xticks([])
                 elif j == npars - 1:
-                    ax.set_xlabel(varlabels[i])
+                    axis.set_xlabel(varlabels[i])
                 if j - i >= 2:
                     axes[i, j].axis("off")
 

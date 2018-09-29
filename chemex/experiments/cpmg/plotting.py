@@ -115,13 +115,13 @@ def plot_data(data, params, output_dir):
                 ymin, ymax = plotting.set_lim([r2_min, r2_max], 0.10)
 
                 # Matplotlib #
-                gs = gsp.GridSpec(2, 1, height_ratios=[1, 4])
+                grid_spec = gsp.GridSpec(2, 1, height_ratios=[1, 4])
 
-                ax1 = plt.subplot(gs[0])
-                ax2 = plt.subplot(gs[1])
+                ax1 = plt.subplot(grid_spec[0])
+                ax2 = plt.subplot(grid_spec[1])
 
-                ax1.axhline(0, color=plotting.palette["Black"]["Text"], linewidth=0.5)
-                ax2.axhline(0, color=plotting.palette["Black"]["Text"], linewidth=0.5)
+                ax1.axhline(0, color=plotting.PALETTE["Black"]["Text"], linewidth=0.5)
+                ax2.axhline(0, color=plotting.PALETTE["Black"]["Text"], linewidth=0.5)
 
                 ########################
 
@@ -129,7 +129,7 @@ def plot_data(data, params, output_dir):
                     nu_cpmg,
                     r2_cal,
                     linestyle="-",
-                    color=plotting.palette["Grey"]["700"],
+                    color=plotting.PALETTE["Grey"]["700"],
                     zorder=2,
                 )
 
@@ -138,8 +138,8 @@ def plot_data(data, params, output_dir):
                     r2_exp,
                     yerr=(r2_erd, r2_eru),
                     fmt="o",
-                    markeredgecolor=plotting.palette["Red"]["500"],
-                    ecolor=plotting.palette["Red"]["500"],
+                    markeredgecolor=plotting.PALETTE["Red"]["500"],
+                    ecolor=plotting.PALETTE["Red"]["500"],
                     markerfacecolor="None",
                     zorder=3,
                 )
@@ -169,8 +169,8 @@ def plot_data(data, params, output_dir):
                     deltas,
                     yerr=(r2_erd, r2_eru),
                     fmt="o",
-                    markeredgecolor=plotting.palette["Red"]["500"],
-                    ecolor=plotting.palette["Red"]["500"],
+                    markeredgecolor=plotting.PALETTE["Red"]["500"],
+                    ecolor=plotting.PALETTE["Red"]["500"],
                     markerfacecolor="None",
                     zorder=100,
                 )

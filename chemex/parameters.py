@@ -88,13 +88,16 @@ RE_PARNAME = re.compile(
 
 
 class MakeTranslate(object):
-    """MakeTranslate class for translating parameter names."""
+    """MakeTranslate class for translating parameter names.
+
+    From: https://www.oreilly.com/library/view/python-cookbook-2nd/0596007973/ch01s19.html
+    """
 
     def __init__(self, *args, **kwds):
         self.dictionary = dict(*args, **kwds)
-        self.rx = self.make_rx()
+        self.re_expr = self.make_re_expr()
 
-    def make_rx(self):
+    def make_re_expr(self):
         """TODO: method docstring."""
         return re.compile("|".join(map(re.escape, self.dictionary)), re.IGNORECASE)
 
@@ -103,11 +106,11 @@ class MakeTranslate(object):
         return self.dictionary[match.group(0)]
 
     def __call__(self, text):
-        return self.rx.sub(self.one_xlat, text)
+        return self.re_expr.sub(self.one_xlat, text)
 
 
-expand = MakeTranslate({"-": "__minus__", "+": "__plus__", ".": "__point__"})
-compress = MakeTranslate({"__minus__": "-", "__plus__": "+", "__point__": "."})
+EXPAND = MakeTranslate({"-": "__minus__", "+": "__plus__", ".": "__point__"})
+COMPRESS = MakeTranslate({"__minus__": "-", "__plus__": "+", "__point__": "."})
 
 
 class ParameterName(object):
@@ -149,7 +152,7 @@ class ParameterName(object):
         if full_name is None:
             full_name = ""
 
-        full_name = compress(full_name)
+        full_name = COMPRESS(full_name)
 
         match = re.match(RE_PARNAME, full_name)
         qualifiers = {}
@@ -182,7 +185,7 @@ class ParameterName(object):
             if value is not None:
                 name_components.append(NAME_MARKERS[attribute].format(value))
 
-        full_name = expand("".join(name_components))
+        full_name = EXPAND("".join(name_components))
 
         return full_name
 
@@ -201,7 +204,7 @@ class ParameterName(object):
 
     def to_re(self):
         """TODO: method docstring."""
-        re_components = [NAME_MARKERS["name"].format(expand(self.name))]
+        re_components = [NAME_MARKERS["name"].format(EXPAND(self.name))]
 
         if self.nuclei is not None:
             group_name = peaks.Peak(self.nuclei)._resonances["i"]["group"]
@@ -210,35 +213,35 @@ class ParameterName(object):
             else:
                 all_res = ""
             re_components.append(
-                NAME_MARKERS["nuclei"].format("".join([all_res, expand(self.nuclei)]))
+                NAME_MARKERS["nuclei"].format("".join([all_res, EXPAND(self.nuclei)]))
             )
         else:
             re_components.append(".*")
 
         if self.temperature is not None:
             re_components.append(
-                NAME_MARKERS["temperature"].format(expand(str(self.temperature)))
+                NAME_MARKERS["temperature"].format(EXPAND(str(self.temperature)))
             )
         elif re_components[-1] != ".*":
             re_components.append(".*")
 
         if self.h_larmor_frq is not None:
             re_components.append(
-                NAME_MARKERS["h_larmor_frq"].format(expand(str(self.h_larmor_frq)))
+                NAME_MARKERS["h_larmor_frq"].format(EXPAND(str(self.h_larmor_frq)))
             )
         elif re_components[-1] != ".*":
             re_components.append(".*")
 
         if self.p_total is not None:
             re_components.append(
-                NAME_MARKERS["p_total"].format(expand(str(self.p_total)))
+                NAME_MARKERS["p_total"].format(EXPAND(str(self.p_total)))
             )
         elif re_components[-1] != ".*":
             re_components.append(".*")
 
         if self.l_total is not None:
             re_components.append(
-                NAME_MARKERS["l_total"].format(expand(str(self.l_total)))
+                NAME_MARKERS["l_total"].format(EXPAND(str(self.l_total)))
             )
         elif re_components[-1] != ".*":
             re_components.append(".*")
@@ -366,7 +369,7 @@ def set_params_from_config_file(params, config_filename):
                         )
                         pairs.extend(get_pairs_from_file(filename_, name))
 
-                elif peaks.re_peak_name.match(key):
+                elif peaks.RE_PEAK_NAME.match(key):
                     name.update_nuclei(key)
                     pairs.append((copy.deepcopy(name), value))
 
@@ -587,8 +590,8 @@ def write_constraints(params, path):
 
 def remove_comments(line, sep):
     """Remove (optional) comments."""
-    for s in sep:
-        line = line.split(s)[0]
+    for a_sep in sep:
+        line = line.split(a_sep)[0]
 
     return line.strip()
 

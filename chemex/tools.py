@@ -53,7 +53,7 @@ def plot_param():
 
             curves[section] = zip(*points)
 
-    fig, axis = plt.subplots(figsize=(12, 5))
+    _, axis = plt.subplots(figsize=(12, 5))
 
     axis.yaxis.grid(True)
 

@@ -9,7 +9,7 @@ import collections
 
 import numpy as np
 
-gamma = {
+GAMMA = {
     "h": 26.7522128e+07,
     "q": 26.7522128e+07,
     "n": -2.71261804e+07,
@@ -18,11 +18,11 @@ gamma = {
     "p": 10.8394e+07,
 }
 
-g_ratio = {key: val / gamma["h"] for key, val in gamma.items()}
+G_RATIO = {key: val / GAMMA["h"] for key, val in GAMMA.items()}
 
 # Define nuclide frequency ratios wrt proton
 # IUPAC values for bio NMR: Markley et al, Pure & Appl. Chem., (1998) 70, p117
-xi_ratio = {
+XI_RATIO = {
     "h": 100.0000000e-02,
     "q": 100.0000000e-02,
     "n": 10.1329118e-02,
@@ -31,7 +31,7 @@ xi_ratio = {
 }
 
 # Residue-specific scalar coupling values with neighbouring carbons (in Hz)
-j_couplings = {
+J_COUPLING = {
     "a": {"n": (7.7, 10.7, 14.4), "c": (52.0, 14.4), "ca": (52.0, 35.0), "cb": (35.0,)},
     "c": {"n": (7.7, 10.7, 14.4), "c": (52.0, 14.4), "ca": (52.0, 35.0), "cb": (35.0,)},
     "d": {
@@ -164,7 +164,7 @@ Distribution = collections.namedtuple("Distribution", ["values", "weights"])
 def get_multiplet(symbol, nucleus):
     """Calculate the multiplet pattern."""
     multiplet = np.array([0.0])
-    for coupling in j_couplings[symbol][nucleus]:
+    for coupling in J_COUPLING[symbol][nucleus]:
         doublet = coupling * 0.5 * np.array([-1.0, 1.0]).reshape(-1, 1)
         multiplet = (multiplet + doublet).reshape(-1)
     counter = collections.Counter(multiplet)
