@@ -1,20 +1,45 @@
-"""Pure in-phase CPMG.
+"""
+Pure in-phase CPMG
+==================
 
 Analyzes chemical exchange in the presence of high power 1H CW decoupling during
 the CPMG block. This keeps the spin system purely in-phase throughout, and is
-calculated using the 6x6, single spin matrix:
+calculated using the (3n)x(3n), single spin matrix, where n is the number of
+states:
 
-[ Ix(a), Iy(a), Iz(a), Ix(b), Iy(b), Iz(b) ]
+[ Ix(a), Iy(a), Iz(a),
+  Ix(b), Iy(b), Iz(b),
+   ... ]
+
 
 Notes
 -----
+Off resonance effects are taken into account. The calculation is designed
+specifically to analyze the experiment found in the reference:
 
-Off resonance effects are taken into account.
 
 Reference
 ---------
-
 Journal of Physical Chemistry B (2008), 112, 5898-5904
+
+
+Experimental parameters
+-----------------------
+  * h_larmor_frq (1H Larmor frequency, in MHz)
+  * temperature  (sample temperature, in Celsius)
+  * p_total      (optional: protein concentration, in M)
+  * l_total      (optional: ligand concentration, in M)
+  * time_t2      (CPMG relaxation delay in seconds)
+  * carrier      (position of the 15N carrier during the CPMG period, in ppm)
+  * pw90         (15N 90 degree pulse width of CPMG pulses, in seconds)
+  * time_equil   (equilibration delay at the end of the CPMG period, in seconds)
+
+
+Extra parameters
+----------------
+  * path         (directory of the profiles)
+  * error        (= 'file': uncertainties are taken from the profile files
+                  = 'auto': uncertainties are calculated from duplicates)
 
 """
 

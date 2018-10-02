@@ -1,21 +1,47 @@
-"""15N - N-H anti-TROSY CPMG
+"""
+15N - N-H anti-TROSY CPMG
+=========================
 
 Analyzes 15N constant-time anti-TROSY CPMG relaxation dispersion experiments
 for measurement of ΔD NH in protein systems undergoing millisecond-time-scale
 exchange dynamics. Resulting magnetization intensity after the CPMG block is
-calculated using the 12x12, two spin matrix:
+calculated using the (6n)x(6n), two spin matrix, where n is the number of
+states:
 
 [ Nx(a), Ny(a), Nz(a), 2HzNx(a), 2HzNy(a), 2HzNz(a),
-  Nx(b), Ny(b), Nz(b), 2HzNx(b), 2HzNy(b), 2HzNz(b) ]
+  Nx(b), Ny(b), Nz(b), 2HzNx(b), 2HzNy(b), 2HzNz(b),
+  ... ]
+
 
 Note
 ----
 Off resonance effects are taken into account. The calculation is designed
 specifically to analyze the experiment found in the reference:
 
+
 Reference
 ---------
 Proc Natl Acad Sci USA (2007) 104, 18473-7
+
+
+Experimental parameters
+-----------------------
+  * h_larmor_frq (1H Larmor frequency, in MHz)
+  * temperature  (sample temperature, in Celsius)
+  * p_total      (optional: protein concentration, in M)
+  * l_total      (optional: ligand concentration, in M)
+  * time_t2      (CPMG relaxation delay in seconds)
+  * carrier      (position of the 15N carrier during the CPMG period, in ppm)
+  * pw90         (15N 90 degree pulse width of CPMG pulses, in seconds)
+  * time_equil   (equilibration delay at the end of the CPMG period, in seconds)
+  * taub         (p-element delay = 1/4J, in seconds)
+
+
+Extra parameters
+----------------
+  * path         (directory of the profiles)
+  * error        (= 'file': uncertainties are taken from the profile files
+                  = 'auto': uncertainties are calculated from duplicates)
 
 """
 

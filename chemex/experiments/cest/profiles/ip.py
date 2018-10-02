@@ -4,15 +4,46 @@ Pure In-phase CEST
 
 Analyzes chemical exchange in the presence of 1H composite decoupling during
 the CEST block. This keeps the spin system purely in-phase throughout, and is
-calculated using the 6x6, single spin matrix:
+calculated using the (3n)x(3n), single spin matrix, where n is the number of
+states:
 
-[ Ix(a), Iy(a), Iz(a), Ix(b), Iy(b), Iz(b) ]
+[ Ix(a), Iy(a), Iz(a),
+  Ix(b), Iy(b), Iz(b),
+   ... ]
 
 
 Reference
 ---------
-
 Vallurupalli, Bouvignies and Kay. J Am Chem Soc (2012) 134:8148-8161
+
+
+Experimental parameters
+-----------------------
+  * h_larmor_frq (1H Larmor frequency, in MHz)
+  * temperature  (sample temperature, in Celsius)
+  * p_total      (optional: protein concentration, in M)
+  * l_total      (optional: ligand concentration, in M)
+  * time_t1      (CEST relaxation delay, in seconds)
+  * carrier      (position of the carrier during the CEST period, in ppm)
+  * b1_frq       (B1 radio-frequency field strength, in Hz)
+  * b1_inh       (B1 inhomogeneity expressed as a fraction of 'b1_inh'.
+                  If not set, a faster calculation takes place assuming
+                  full dephasing of the magnetization components that oscillate
+                  during the irradiation period.)
+  * b1_inh_res   (number of points used to simulate B1 inhomogeneity, the larger
+                  the longer the calculation)
+
+
+Extra parameters
+----------------
+  * path              (directory of the profiles)
+  * error             (= 'file': uncertainties are taken from the profile files
+                       = 'auto': uncertainties are calculated from the baseline)
+  * filter_offsets    (list of offsets relative to the main resonance position,
+                       defining regions where points are excluded from the
+                       calculation, in Hz)
+  * filter_bandwidths (list of values defining the exclusion range around each
+                       previously defined offset, in Hz)
 
 """
 
