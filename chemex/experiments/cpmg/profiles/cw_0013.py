@@ -1,20 +1,48 @@
-"""Pure in-phase CPMG.
+"""
+15N - Pure In-phase Nitrogen CPMG with 0013 phase cycle
+=======================================================
 
-Analyzes chemical exchange in the presence of high power 1H CW decoupling during
-the CPMG block. This keeps the spin system purely in-phase throughout, and is
-calculated using the 6x6, single spin matrix:
+Analyzes 15N chemical exchange in the presence of high power 1H CW decoupling
+during the CPMG block. This keeps the spin system purely in-phase throughout,
+and is calculated using the (3n)x(3n), single spin matrix, where n is the number
+of states:
 
-[ Ix(a), Iy(a), Iz(a), Ix(b), Iy(b), Iz(b) ]
+[ Ix(a), Iy(a), Iz(a),
+  Ix(b), Iy(b), Iz(b),
+   ... ]
+
+This version is modified such that CPMG pulses are applied with [0013] phase cycle
+as shown in Daiwen's paper. The cw decoupling on 1H is assumed to be
+strong enough (> 15 kHz) such that perfect 1H decoupling can be achieved.
 
 References
 ----------
 
+Jiang et al. Journal of Magnetic Resonance (2015) 257
 Hansen, Vallurupalli and Kay. Journal of Physical Chemistry B (2008) 112:5898-5904
+
+Experimental parameters
+-----------------------
+  * h_larmor_frq (1H Larmor frequency, in MHz)
+  * temperature  (sample temperature, in Celsius)
+  * p_total      (optional: protein concentration, in M)
+  * l_total      (optional: ligand concentration, in M)
+  * time_t2      (CPMG relaxation delay in seconds)
+  * carrier      (position of the 15N carrier during the CPMG period, in ppm)
+  * pw90         (15N 90 degree pulse width of CPMG pulses, in seconds)
+  * time_equil   (equilibration delay at the end of the CPMG period, in seconds)
+  * ncyc_max     (maximum number of cycles)
+
+
+Extra parameters
+----------------
+  * path         (directory of the profiles)
+  * error        (= 'file': uncertainties are taken from the profile files
+                  = 'auto': uncertainties are calculated from duplicates)
 
 """
 
 from functools import reduce
-from itertools import cycle, islice
 
 import numpy as np
 
@@ -29,6 +57,11 @@ EXP_DETAILS = {
     "ncyc_max": {"type": int},
 }
 
+CP_PHASES = [
+    [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3],
+    [1, 3, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 1, 3, 2, 2],
+]
+
 
 class Profile(cpmg_profile.CPMGProfile):
     """TODO: class docstring."""
@@ -38,6 +71,12 @@ class Profile(cpmg_profile.CPMGProfile):
 
         self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
 
+        self.time_t2 = self.exp_details["time_t2"]
+        self.time_eq = self.exp_details["time_equil"]
+        self.pw90 = self.exp_details["pw90"]
+        self.ncyc_max = self.exp_details["ncyc_max"]
+
+        # Set the liouvillian
         self.liouv = basis.Liouvillian(
             system="ixyz",
             state_nb=self.model.state_nb,
@@ -47,31 +86,31 @@ class Profile(cpmg_profile.CPMGProfile):
         )
 
         self.liouv.carrier_i = self.exp_details["carrier"]
-        self.liouv.w1_i = 2.0 * np.pi / (4.0 * self.exp_details["pw90"])
+        self.liouv.w1_i = 2.0 * np.pi / (4.0 * self.pw90)
 
+        # Set the row vector for detection
         self.detect = self.liouv.detect["iz_a"]
 
-        self.t_cps = {}
-
-        for ncyc in self.ncycs[self.ncycs > 0]:
-            self.t_cps[ncyc] = (
-                self.exp_details["time_t2"] / (4.0 * ncyc)
-                - self.exp_details["pw90"] * 0.75
-            )
-
-        self.t_pos_2 = +4.0 * self.exp_details["pw90"] / np.pi
-        self.t_neg = -2.0 * self.exp_details["pw90"] / np.pi
-
-        self.delays = [self.t_pos_2, self.t_neg, self.exp_details["time_equil"]]
-        self.delays.extend(self.t_cps.values())
-        self.delays.extend(
-            [self.exp_details["pw90"] * _ for _ in range(self.exp_details["ncyc_max"])]
+        # Set the delays in the experiments
+        ncycs = self.ncycs[~self.reference]
+        self.tau_cps = dict(zip(ncycs, self.time_t2 / (4.0 * ncycs) - 0.75 * self.pw90))
+        self.deltas = dict(zip(ncycs, self.pw90 * (self.ncyc_max - ncycs)))
+        self.deltas[0] = self.pw90 * (self.ncyc_max - 1)
+        self.t_pos2 = +4.0 * self.pw90 / np.pi
+        self.t_neg = -2.0 * self.pw90 / np.pi
+        self.delays = (
+            [self.t_neg, self.t_pos2, self.time_eq]
+            + list(self.tau_cps.values())
+            + list(self.deltas.values())
         )
 
-        self.phase_1 = [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3]
-        self.phase_2 = [1, 3, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 1, 3, 2, 2]
-        self.n_phase = len(self.phase_1)
+        # Set the phase cycling of the cpmg pulses
+        self.phases = {
+            ncyc: np.take(CP_PHASES, np.arange(2 * ncyc), mode="wrap", axis=1)
+            for ncyc in ncycs
+        }
 
+        # Get the parameters this profile depends on
         self.map_names, self.params = default.create_params(
             basis=self.liouv,
             model=self.model,
@@ -84,102 +123,44 @@ class Profile(cpmg_profile.CPMGProfile):
                 self.params[full_name].set(vary=True)
 
     def calculate_unscaled_profile(self, **parvals):
-        """Calculate the intensity in presence of exchange after a CEST block.
-
-        Parameters
-        ----------
-        pb : float
-            Fractional population of state B.
-        kex_ab : float
-            Exchange rates between states A and B in /s.
-        dw_i_ab : float
-            Chemical shift difference between states A and B in rad/s.
-        r1_i_a : float
-            Longitudinal relaxation rate of states A in /s.
-        r2_i_a : float
-            Transverse relaxation rate of state A in /s.
-        dr2_i_ab : float
-            Transverse relaxation rate difference between states A and B in /s.
-        cs_i_a : float
-            Resonance position of state A in ppm.
-
-        Returns
-        -------
-        out : float
-            Intensity after the CEST block
-
-        """
+        """TODO: Write docstring"""
 
         self.liouv.update(**parvals)
 
-        # Calculation of all the needed propagators
-        pulses = self.liouv.pulses_90_180_i()
+        # Calculation of the propagators corresponding to all the delays
         delays = dict(zip(self.delays, self.liouv.delays(self.delays)))
+        d_neg = delays[self.t_neg]
+        d_pos2 = delays[self.t_pos2]
+        d_eq = delays[self.time_eq]
+        delta = {ncyc: delays[delay] for ncyc, delay in self.deltas.items()}
 
-        p_180s = [pulses["180px"], pulses["180py"], pulses["180mx"], pulses["180my"]]
+        # Calculation of the propagators corresponding to all the pulses
+        pulses = self.liouv.pulses_90_180_i()
+        p90 = np.array([pulses[name] for name in ["90px", "90py", "90mx", "90my"]])
+        p180 = np.array([pulses[name] for name in ["180px", "180py", "180mx", "180my"]])
 
-        # Simulate the CPMG block as function of ncyc
+        # Getting the starting magnetization
         mag0 = self.liouv.compute_mag_eq(term="iz", **parvals)
 
-        profile = []
+        # Calculating the cpmg trains
+        cp = {0: p180[[0, 3]] @ d_pos2 @ p180[[0, 1]]}
 
-        for ncyc in self.ncycs:
+        for ncyc in set(self.ncycs[~self.reference]):
+            tau_cp = delays[self.tau_cps[ncyc]]
+            phase_cp = self.phases[ncyc]
 
-            if ncyc == 0:
+            echo = tau_cp @ p180 @ tau_cp
 
-                delay = self.exp_details["pw90"] * (self.exp_details["ncyc_max"] - 1)
+            cp[ncyc] = [reduce(np.matmul, echo[phases]) for phases in phase_cp]
+            cp[ncyc] = d_neg @ np.array(cp[ncyc]) @ d_neg
 
-                p_centre = 0.5 * (
-                    pulses["180px"] @ delays[self.t_pos_2] @ pulses["180px"]
-                    + pulses["180my"] @ delays[self.t_pos_2] @ pulses["180py"]
-                )
-
-                mag = (
-                    self.detect
-                    @ delays[self.exp_details["time_equil"]]
-                    @ delays[delay]
-                    @ pulses["90my"]
-                    @ p_centre
-                    @ pulses["90py"]
-                    @ mag0
-                )
-
-            else:
-
-                delay = self.exp_details["pw90"] * (self.exp_details["ncyc_max"] - ncyc)
-                p_t_cp = delays[self.t_cps[ncyc]]
-                p_echoes = [p_t_cp @ p_180 @ p_t_cp for p_180 in p_180s]
-
-                p_cp1 = reduce(
-                    np.matmul,
-                    [
-                        p_echoes[phase]
-                        for phase in islice(cycle(self.phase_1), 2 * ncyc)
-                    ],
-                )
-                p_cp2 = reduce(
-                    np.matmul,
-                    [
-                        p_echoes[phase]
-                        for phase in islice(cycle(self.phase_2), 2 * ncyc)
-                    ],
-                )
-
-                p_cp = 0.5 * (p_cp1 + p_cp2)
-
-                mag = (
-                    self.detect
-                    @ delays[self.exp_details["time_equil"]]
-                    @ delays[delay]
-                    @ pulses["90my"]
-                    @ delays[self.t_neg]
-                    @ p_cp
-                    @ delays[self.t_neg]
-                    @ pulses["90py"]
-                    @ mag0
-                )
-
-            profile.append(np.float64(self.liouv.collapse(mag)))
+        # Make profile
+        profile = [
+            self.liouv.collapse(
+                self.detect @ d_eq @ delta[ncyc] @ p90[3] @ cp[ncyc] @ p90[1] @ mag0
+            )
+            for ncyc in self.ncycs
+        ]
 
         return np.asarray(profile)
 
