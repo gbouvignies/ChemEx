@@ -47,7 +47,6 @@ def plot_param():
                     error = float(split[2])
                 except ValueError:
                     error = 0.0
-                    print(res, value, error)
 
                 points.append((res, value, error))
 
