@@ -69,8 +69,8 @@ EXP_DETAILS = {
     "taub": {"default": 2.68e-3, "type": float},
     "time_equil": {"default": 0.0, "type": float},
     "ncyc_max": {"type": int},
-    "antitrosy": {"default": False, "type": bool},
-    "s3e": {"default": True, "type": bool},
+    "antitrosy": {"default": "False", "type": str},
+    "s3e": {"default": "True", "type": str},
 }
 
 CP_PHASES = [
@@ -95,8 +95,8 @@ class Profile(cpmg_profile.CPMGProfile):
         self.pw90 = self.exp_details["pw90"]
         self.taub = self.exp_details["taub"]
         self.ncyc_max = self.exp_details["ncyc_max"]
-        self.antitrosy = self.exp_details["antitrosy"]
-        self.s3e = self.exp_details["s3e"]
+        self.antitrosy = self.get_bool(self.exp_details["antitrosy"])
+        self.s3e = self.get_bool(self.exp_details["s3e"])
 
         # Set the liouvillian
         self.liouv = basis.Liouvillian(
@@ -168,11 +168,11 @@ class Profile(cpmg_profile.CPMGProfile):
         # Calculating the p-element
         if self.antitrosy:
             palmer_ = (
-                p180_sx @ d_taub @ p90[1] @ p90[0] @ p180_sx @ p90[0] @ p90[1] @ d_taub
+                d_taub @ p90[1] @ p90[0] @ p180_sx @ p90[0] @ p90[1] @ d_taub @ p180_sx
             )
         else:
             palmer_ = (
-                p180_sx @ d_taub @ p90[0] @ p90[1] @ p180_sx @ p90[1] @ p90[0] @ d_taub
+                d_taub @ p90[0] @ p90[1] @ p180_sx @ p90[1] @ p90[0] @ d_taub @ p180_sx
             )
 
         palmer = np.mean(p90[[0, 2]] @ palmer_ @ p90[[1, 3]], axis=0)
@@ -240,6 +240,6 @@ def _get_phases(ncycs):
 
     for ncyc in ncycs:
         phases[ncyc] = np.take(CP_PHASES, np.arange(ncyc), mode="wrap", axis=1)
-        phases[ncyc][2:4] = np.flip(phases[ncyc][2:4], axis=1)
+        phases[ncyc][:2] = np.flip(phases[ncyc][:2], axis=1)
 
     return phases

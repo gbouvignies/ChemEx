@@ -106,7 +106,7 @@ class Profile(cpmg_profile.CPMGProfile):
 
         # Set the phase cycling of the cpmg pulses
         self.phases = {
-            ncyc: np.take(CP_PHASES, np.arange(2 * ncyc), mode="wrap", axis=1)
+            ncyc: np.take(CP_PHASES, np.flip(np.arange(2 * ncyc)), mode="wrap", axis=1)
             for ncyc in ncycs
         }
 
