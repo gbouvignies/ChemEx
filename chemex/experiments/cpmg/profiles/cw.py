@@ -44,6 +44,7 @@ Extra parameters
 """
 
 import numpy as np
+from numpy import linalg as la
 
 from chemex.experiments.cpmg import cpmg_profile
 from chemex.spindynamics import basis, default
@@ -64,6 +65,11 @@ class Profile(cpmg_profile.CPMGProfile):
 
         self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
 
+        self.time_t2 = self.exp_details["time_t2"]
+        self.time_eq = self.exp_details["time_equil"]
+        self.pw90 = self.exp_details["pw90"]
+
+        # Set the liouvillian
         self.liouv = basis.Liouvillian(
             system="ixyz",
             state_nb=self.model.state_nb,
@@ -75,19 +81,17 @@ class Profile(cpmg_profile.CPMGProfile):
         self.liouv.carrier_i = self.exp_details["carrier"]
         self.liouv.w1_i = 2.0 * np.pi / (4.0 * self.exp_details["pw90"])
 
+        # Set the row vector for detection
         self.detect = self.liouv.detect["iz_a"]
 
-        self.t_cps = {
-            ncyc: self.exp_details["time_t2"] / (4.0 * ncyc) - self.exp_details["pw90"]
-            for ncyc in self.ncycs[self.ncycs > 0]
-        }
-        self.t_cps[-1.0] = 0.5 * self.exp_details["time_t2"]
+        # Set the delays in the experiments
+        ncycs = self.ncycs[~self.reference]
+        self.tau_cps = dict(zip(ncycs, self.time_t2 / (4.0 * ncycs) - self.pw90))
+        self.tau_cps[-1.0] = 0.5 * self.exp_details["time_t2"]
+        self.t_neg = -2.0 * self.pw90 / np.pi
+        self.delays = [self.t_neg, self.time_eq] + list(self.tau_cps.values())
 
-        self.t_neg = -2.0 * self.exp_details["pw90"] / np.pi
-
-        self.delays = [self.t_neg, self.exp_details["time_equil"]]
-        self.delays.extend(self.t_cps.values())
-
+        # Get the parameters this profile depends on
         self.map_names, self.params = default.create_params(
             basis=self.liouv,
             model=self.model,
@@ -100,93 +104,48 @@ class Profile(cpmg_profile.CPMGProfile):
                 self.params[full_name].set(vary=True)
 
     def calculate_unscaled_profile(self, **parvals):
-        """Calculate the intensity in presence of exchange after a CEST block.
-
-        Parameters
-        ----------
-        pb : float
-            Fractional population of state B.
-        kex_ab : float
-            Exchange rates between states A and B in /s.
-        dw_i_ab : float
-            Chemical shift difference between states A and B in rad/s.
-        r1_i_a : float
-            Longitudinal relaxation rate of states A in /s.
-        r2_i_a : float
-            Transverse relaxation rate of state A in /s.
-        dr2_i_ab : float
-            Transverse relaxation rate difference between states A and B in /s.
-        cs_i_a : float
-            Resonance position of state A in ppm.
-
-        Returns
-        -------
-        out : float
-            Intensity after the CEST block
-
-        """
+        """TODO: Write docstring"""
 
         self.liouv.update(**parvals)
 
-        # Calculation of all the needed propagators
-        pulses = self.liouv.pulses_90_180_i()
+        # Calculation of the propagators corresponding to all the delays
         delays = dict(zip(self.delays, self.liouv.delays(self.delays)))
+        d_neg = delays[self.t_neg]
+        d_eq = delays[self.time_eq]
 
-        p_180pmx = 0.5 * (pulses["180px"] + pulses["180mx"])  # +/- phase cycling
+        # Calculation of the propagators corresponding to all the pulses
+        pulses = self.liouv.pulses_90_180_i()
+        p90 = np.array([pulses[name] for name in ["90px", "90py", "90mx", "90my"]])
+        p180 = np.array([pulses[name] for name in ["180px", "180py", "180mx", "180my"]])
+        p_180pmx = 0.5 * (p180[0] + p180[2])  # +/- phase cycling
 
         # Simulate the CPMG block as function of ncyc
         mag0 = self.liouv.compute_mag_eq(term="iz", **parvals)
 
-        profile = []
+        # Calculating the cpmg trains
+        cp1 = {0: np.identity(p180[1].shape[-1]), -1: delays[self.tau_cps[-1]] @ d_neg}
+        cp2 = {0: np.identity(p180[0].shape[-1]), -1: d_neg @ delays[self.tau_cps[-1]]}
 
-        for ncyc in self.ncycs:
+        for ncyc in set(self.ncycs[~self.reference]):
+            tau_cp = delays[self.tau_cps[ncyc]]
+            echo = tau_cp @ p180[1] @ tau_cp
+            cp_trains = la.matrix_power(echo, int(ncyc))
+            cp1[ncyc] = cp_trains @ d_neg
+            cp2[ncyc] = d_neg @ cp_trains
 
-            if ncyc == 0:
-
-                mag = (
-                    self.detect
-                    @ delays[self.exp_details["time_equil"]]
-                    @ pulses["90px"]
-                    @ p_180pmx
-                    @ pulses["90px"]
-                    @ mag0
-                )
-
-            elif ncyc == -1:
-                mag = (
-                    self.detect
-                    @ delays[self.exp_details["time_equil"]]
-                    @ pulses["90px"]
-                    @ delays[self.t_neg]
-                    @ delays[self.t_cps[ncyc]]
-                    @ p_180pmx
-                    @ delays[self.t_cps[ncyc]]
-                    @ delays[self.t_neg]
-                    @ pulses["90px"]
-                    @ mag0
-                )
-
-            else:
-                p_cp = np.linalg.matrix_power(
-                    delays[self.t_cps[ncyc]]
-                    @ pulses["180py"]
-                    @ delays[self.t_cps[ncyc]],
-                    int(ncyc),
-                )
-                mag = (
-                    self.detect
-                    @ delays[self.exp_details["time_equil"]]
-                    @ pulses["90px"]
-                    @ delays[self.t_neg]
-                    @ p_cp
-                    @ p_180pmx
-                    @ p_cp
-                    @ delays[self.t_neg]
-                    @ pulses["90px"]
-                    @ mag0
-                )
-
-            profile.append(np.float64(self.liouv.collapse(mag)))
+        profile = [
+            self.liouv.collapse(
+                self.detect
+                @ d_eq
+                @ p90[0]
+                @ cp2[ncyc]
+                @ p_180pmx
+                @ cp1[ncyc]
+                @ p90[0]
+                @ mag0
+            )
+            for ncyc in self.ncycs
+        ]
 
         return np.asarray(profile)
 
