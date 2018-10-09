@@ -19,6 +19,17 @@ CONDITIONS = {
 class BaseProfile(metaclass=abc.ABCMeta):
     """TODO: class docstring."""
 
+    BOOLEAN_STATES = {
+        "1": True,
+        "yes": True,
+        "true": True,
+        "on": True,
+        "0": False,
+        "no": False,
+        "false": False,
+        "off": False,
+    }
+
     def __init__(self, name=None, exp_details=None, model=None):
         """TODO: method docstring."""
 
@@ -87,3 +98,10 @@ class BaseProfile(metaclass=abc.ABCMeta):
             )
 
         return details
+
+    def get_bool(self, value):
+
+        if value.lower() not in self.BOOLEAN_STATES:
+            raise ValueError("Not a boolean: %s" % value)
+
+        return self.BOOLEAN_STATES[value.lower()]

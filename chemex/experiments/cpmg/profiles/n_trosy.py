@@ -60,7 +60,7 @@ EXP_DETAILS = {
     "pw90": {"type": float},
     "taub": {"default": 2.68e-3, "type": float},
     "time_equil": {"default": 0.0, "type": float},
-    "antitrosy": {"default": False, "type": bool},
+    "antitrosy": {"default": "False", "type": str},
 }
 
 
@@ -76,7 +76,7 @@ class Profile(cpmg_profile.CPMGProfile):
         self.time_eq = self.exp_details["time_equil"]
         self.pw90 = self.exp_details["pw90"]
         self.taub = self.exp_details["taub"]
-        self.antitrosy = self.exp_details["antitrosy"]
+        self.antitrosy = self.get_bool(self.exp_details["antitrosy"])
 
         # Set the liouvillian
         self.liouv = basis.Liouvillian(
