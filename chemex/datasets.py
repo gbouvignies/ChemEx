@@ -29,6 +29,12 @@ class DataSet(object):
             self.data.append(other)
             self.ndata = len(other)
 
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, key):
+        return self.data[key]
+
     def __iter__(self):
         for some_data in self.data:
             yield some_data
@@ -97,6 +103,10 @@ class DataSet(object):
 
     def add_dataset_from_file(self, filename, model=None, included=None, excluded=None):
         """Add data from a file to the dataset."""
+
+        if model is None:
+            model = "2st.pb_kex"
+
         print("{:<45s} ".format(str(filename)), end="")
 
         # Get the directory of the input file
@@ -194,15 +204,24 @@ def read_data(args):
 
     data = DataSet()
 
+    model = res_incl = res_excl = None
+
+    if "model" in args:
+        model = args.model
+
+    if "res_incl" in args:
+        res_incl = args.res_incl
+
+    if "res_excl" in args:
+        res_excl = args.res_excl
+
     if args.experiments:
         print(("{:<45s} {:<25s} {:<25s}".format("File Name", "Experiment", "Profiles")))
         print(("{:<45s} {:<25s} {:<25s}".format("---------", "----------", "--------")))
 
         for filename in args.experiments:
             filename_ = pathlib.Path(filename)
-            data.add_dataset_from_file(
-                filename_, args.model, args.res_incl, args.res_excl
-            )
+            data.add_dataset_from_file(filename_, model, res_incl, res_excl)
 
     if not data.data:
         sys.exit("\nNo data to fit!\n")

@@ -29,18 +29,13 @@ def main():
     """Do all the magic."""
     print(LOGO)
 
-    parser = cli.build_parser(fit)
+    parser = cli.build_parser()
     args = parser.parse_args()
 
     if args.commands is None:
         parser.print_help()
     else:
         args.func(args)
-
-
-def get_info(args):
-    # cli.format_experiment_help(args.types, args.experiments)
-    print(args.experiments)
 
 
 def fit(args):

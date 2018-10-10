@@ -32,11 +32,5 @@ setup(
         "asteval>=0.9.11",
     ],
     python_requires=">=3.5",
-    entry_points={
-        "console_scripts": [
-            "chemex = chemex.chemex:main",
-            "chemex_plot_param = chemex.tools:plot_param",
-            "cest_pick = chemex.tools:cest_pick",
-        ]
-    },
+    entry_points={"console_scripts": ["chemex = chemex.chemex:main"]},
 )

@@ -7,7 +7,8 @@ import pathlib
 import pkgutil
 import sys
 
-from chemex import __version__, experiments, util
+from chemex import __version__, chemex, experiments, util
+from chemex.tools import pick_cest, plot_param
 
 FITMETHODS = {
     "cobyla",
@@ -37,7 +38,7 @@ class MyParser(argparse.ArgumentParser):
         sys.exit(2)
 
 
-def build_parser(func_fit):
+def build_parser():
     """Parse the command-line arguments."""
     description = (
         "ChemEx is an analysis program for chemical exchange detected by "
@@ -79,11 +80,11 @@ def build_parser(func_fit):
         )
 
     # parser for the positional argument "fit"
-    fit = commands.add_parser("fit", help="Starts a fit", prefix_chars="+-")
+    fit_parser = commands.add_parser("fit", help="Starts a fit", prefix_chars="+-")
 
-    fit.set_defaults(func=func_fit)
+    fit_parser.set_defaults(func=chemex.fit)
 
-    fit.add_argument(
+    fit_parser.add_argument(
         "-e",
         dest="experiments",
         type=pathlib.Path,
@@ -93,7 +94,7 @@ def build_parser(func_fit):
         help="Input files containing experimental setup and data location",
     )
 
-    fit.add_argument(
+    fit_parser.add_argument(
         "-d",
         dest="model",
         metavar="MODEL",
@@ -101,7 +102,7 @@ def build_parser(func_fit):
         help="Exchange model used to fit the data",
     )
 
-    fit.add_argument(
+    fit_parser.add_argument(
         "-p",
         dest="parameters",
         type=pathlib.Path,
@@ -111,7 +112,7 @@ def build_parser(func_fit):
         help="Input file containing the initial values of fitting parameters",
     )
 
-    fit.add_argument(
+    fit_parser.add_argument(
         "-m",
         dest="method",
         type=pathlib.Path,
@@ -119,7 +120,7 @@ def build_parser(func_fit):
         help="Input file containing the fitting method",
     )
 
-    fit.add_argument(
+    fit_parser.add_argument(
         "-o",
         dest="out_dir",
         type=pathlib.Path,
@@ -128,9 +129,11 @@ def build_parser(func_fit):
         help="Directory for output files",
     )
 
-    fit.add_argument("--noplot", action="store_true", help="No plots of the fits")
+    fit_parser.add_argument(
+        "--noplot", action="store_true", help="No plots of the fits"
+    )
 
-    fit.add_argument(
+    fit_parser.add_argument(
         "-f",
         dest="fitmethod",
         metavar="FITMETHOD",
@@ -139,7 +142,7 @@ def build_parser(func_fit):
         help="Specify the fitting method",
     )
 
-    selection = fit.add_mutually_exclusive_group()
+    selection = fit_parser.add_mutually_exclusive_group()
     selection.add_argument(
         "+r",
         dest="res_incl",
@@ -155,12 +158,62 @@ def build_parser(func_fit):
         help="residue(s) to exclude from the fit",
     )
 
-    simulation = fit.add_mutually_exclusive_group()
+    simulation = fit_parser.add_mutually_exclusive_group()
     simulation.add_argument(
         "--mc", metavar="N", type=int, help="Run N Monte-Carlo simulations"
     )
     simulation.add_argument(
         "--bs", metavar="N", type=int, help="Run N Bootstrap simulations"
+    )
+
+    # parser for the positional argument "pick_cest"
+    pick_cest_parser = commands.add_parser(
+        "pick_cest", help="Plot CEST profiles for dip picking"
+    )
+
+    pick_cest_parser.set_defaults(func=pick_cest.pick_cest)
+
+    pick_cest_parser.add_argument(
+        "-e",
+        dest="experiments",
+        type=pathlib.Path,
+        metavar="FILE",
+        nargs=1,
+        required=True,
+        help="Input files containing experimental setup and data location",
+    )
+
+    pick_cest_parser.add_argument(
+        "-o",
+        dest="out_dir",
+        type=pathlib.Path,
+        metavar="DIR",
+        default="./Output",
+        help="Directory for output files",
+    )
+
+    # parser for the positional argument "pick_cest"
+    plot_param_parser = commands.add_parser(
+        "plot_param", help="Plot one selected parameter from a 'parameters.fit' file"
+    )
+
+    plot_param_parser.set_defaults(func=plot_param.plot_param)
+
+    plot_param_parser.add_argument(
+        "-p",
+        dest="parameters",
+        type=pathlib.Path,
+        metavar="FILE",
+        required=True,
+        help="Input file containing the initial values of fitting parameters",
+    )
+
+    plot_param_parser.add_argument(
+        "-n",
+        dest="parname",
+        metavar="NAME",
+        required=True,
+        help="Name of the parameter to plot",
     )
 
     return parser
