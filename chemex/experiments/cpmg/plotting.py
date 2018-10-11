@@ -1,9 +1,10 @@
 """Plot the CPMG profiles."""
-
 import contextlib
 
 import numpy as np
-from matplotlib import gridspec as gsp, pyplot as plt, ticker
+from matplotlib import gridspec as gsp
+from matplotlib import pyplot as plt
+from matplotlib import ticker
 from matplotlib.backends import backend_pdf
 
 from chemex.experiments import plotting
@@ -50,7 +51,7 @@ def write_profile_fit(name, profile, file_txt):
     file_txt.write("# {:>17s}   {:>17s}\n".format("NU_CPMG", "R2"))
 
     for nu_cpmg, r2_cal, _r2_exp, _r2_erd, _r2_eru in sorted(zip(*profile)):
-        file_txt.write("  {0:17.8e} = {1:17.8e}\n".format(nu_cpmg, r2_cal))
+        file_txt.write(f"  {nu_cpmg:17.8e} = {r2_cal:17.8e}\n")
 
     file_txt.write("\n")
 
@@ -68,7 +69,7 @@ def write_profile_exp(name, profile, file_txt):
 
     for nu_cpmg, _r2_cal, r2_exp, r2_erd, r2_eru in sorted(zip(*profile)):
         file_txt.write(
-            "  {0:17.8e} = {1:17.8e} {2:17.8e} {3:17.8e}\n".format(
+            "  {:17.8e} = {:17.8e} {:17.8e} {:17.8e}\n".format(
                 nu_cpmg, r2_exp, r2_erd, r2_eru
             )
         )
@@ -95,7 +96,7 @@ def plot_data(data, params, output_dir):
         name_fit = basename.with_suffix(".fit")
         name_exp = basename.with_suffix(".exp")
 
-        print(("  * {} [.fit, .exp]".format(name_pdf)))
+        print((f"  * {name_pdf} [.fit, .exp]"))
 
         data_grouped = plotting.group_data(dataset)
         profiles = compute_profiles(data_grouped, params)

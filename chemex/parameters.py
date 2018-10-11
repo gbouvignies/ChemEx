@@ -1,6 +1,5 @@
 """The parameters module contains the code for handling of the experimental and
 fitting parameters."""
-
 import ast
 import configparser
 import copy
@@ -12,7 +11,8 @@ import lmfit
 import numpy as np
 from asteval import astutils
 
-from chemex import peaks, util
+from chemex import peaks
+from chemex import util
 
 NAME_MARKERS = {
     "name": "__n_{}_n__",
@@ -87,7 +87,7 @@ RE_PARNAME = re.compile(
 )
 
 
-class MakeTranslate(object):
+class MakeTranslate:
     """MakeTranslate class for translating parameter names.
 
     From: https://www.oreilly.com/library/view/python-cookbook-2nd/0596007973/ch01s19.html
@@ -113,7 +113,7 @@ EXPAND = MakeTranslate({"-": "__minus__", "+": "__plus__", ".": "__point__"})
 COMPRESS = MakeTranslate({"__minus__": "-", "__plus__": "+", "__point__": "."})
 
 
-class ParameterName(object):
+class ParameterName:
     """ParameterName class."""
 
     def __init__(
@@ -333,7 +333,7 @@ def create_params(data):
 def set_params_from_config_file(params, config_filename):
     """Read the parameter file and set initial values and optional bounds and brute step size."""
 
-    print("File Name: {}".format(config_filename), end="\n\n")
+    print(f"File Name: {config_filename}", end="\n\n")
 
     config = util.read_cfg_file(config_filename)
 
@@ -342,7 +342,7 @@ def set_params_from_config_file(params, config_filename):
 
     for section in config.sections():
         if section.lower() in ("global", "default"):
-            print("{:<45s}".format("[{}]".format(section)))
+            print("{:<45s}".format(f"[{section}]"))
 
             for key, value in config.items(section):
                 name = ParameterName.from_section(key)
@@ -353,7 +353,7 @@ def set_params_from_config_file(params, config_filename):
                 default = {key: np.float64(val) for key, val in default.items()}
                 matches = set_params(params, name, **default)
 
-                print("  {:<43s} {:<30d}".format("({})".format(key), len(matches)))
+                print("  {:<43s} {:<30d}".format(f"({key})", len(matches)))
 
         else:
             name = ParameterName.from_section(section)
@@ -384,7 +384,7 @@ def set_params_from_config_file(params, config_filename):
                 matches = set_params(params, name, **default)
                 total_matches.update(matches)
 
-            print("{:<45s} {:<30d}".format("[{}]".format(section), len(total_matches)))
+            print("{:<45s} {:<30d}".format(f"[{section}]", len(total_matches)))
 
 
 def get_pairs_from_file(filename, name):
@@ -510,7 +510,7 @@ def write_par(params, path):
     """Write the fitting parameters and their uncertainties to a file."""
     filename = path / "parameters.fit"
 
-    print("  * {}".format(filename))
+    print(f"  * {filename}")
 
     par_dict = {}
 
@@ -527,15 +527,15 @@ def write_par(params, path):
             section = par_name.to_section_name()
 
         if not param.vary and param.expr is None:
-            val_print = "{: .5e} ; fixed".format(param.value)
+            val_print = f"{param.value: .5e} ; fixed"
         elif param.stderr is None:
-            val_print = "{: .5e}  ; error not calculated".format(param.value)
+            val_print = f"{param.value: .5e}  ; error not calculated"
         elif param.expr:
             val_print = "{: .5e} +/- {:.5e} ; constrained".format(
                 param.value, param.stderr
             )
         else:
-            val_print = "{: .5e} +/- {:.5e}".format(param.value, param.stderr)
+            val_print = f"{param.value: .5e} +/- {param.stderr:.5e}"
 
         par_dict.setdefault(section, []).append((name_print, val_print))
 
@@ -562,7 +562,7 @@ def write_constraints(params, path):
     """Write the (optional) parameter expression constraints to a file."""
     filename = path / "constraints.fit"
 
-    print("  * {}".format(filename))
+    print(f"  * {filename}")
 
     param_dict = dict()
 
@@ -581,7 +581,7 @@ def write_constraints(params, path):
                         "[{}]".format(par_name_dep.to_section_name(nuclei=True)),
                     )
 
-            param_dict[par_name] = "{} = {}\n".format(name_formatted, expr_formatted)
+            param_dict[par_name] = f"{name_formatted} = {expr_formatted}\n"
 
     with open(filename, "w") as f:
         for name, constraint in sorted(param_dict.items()):

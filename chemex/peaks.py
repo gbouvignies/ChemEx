@@ -1,6 +1,5 @@
 """The peaks module contains the code for handling peak assignments and
 resonances."""
-
 import collections
 import functools
 import re
@@ -25,7 +24,7 @@ SPIN_NAMES = ("i", "s", "x")
 
 
 @functools.total_ordering
-class Peak(object):
+class Peak:
     """Peak class."""
 
     def __init__(self, assignment=None):

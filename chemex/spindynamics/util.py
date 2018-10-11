@@ -113,4 +113,4 @@ def parse_model(name):
         kind = match.group(2)
         return Model(name, state_nb, kind)
     else:
-        raise NameError("The model name '{}' is not correct.".format(name))
+        raise NameError(f"The model name '{name}' is not correct.")

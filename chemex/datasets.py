@@ -1,5 +1,4 @@
 """The dataset module contains the code for handling the experimental data."""
-
 import configparser
 import copy
 import importlib
@@ -13,7 +12,7 @@ from chemex import util
 from chemex.experiments import base_profile
 
 
-class DataSet(object):
+class DataSet:
     """DataSet class for handling experimental data."""
 
     def __init__(self, other=None):
@@ -76,7 +75,7 @@ class DataSet(object):
                 nvarys = len([param for param in params.values() if param.vary])
                 redchi = chisq / (self.ndata - nvarys)
 
-                print("  * {:.3e} / {:.3e}".format(chisq, redchi))
+                print(f"  * {chisq:.3e} / {redchi:.3e}")
 
                 self.chisq_ref = chisq
 
@@ -95,7 +94,7 @@ class DataSet(object):
             filename = path / experiment_name
             filename = filename.with_suffix(".dat")
 
-            print("  * {}".format(filename))
+            print(f"  * {filename}")
 
             with filename.open("w") as f:
                 for profile in sorted(data, key=operator.attrgetter("peak")):
@@ -133,7 +132,7 @@ class DataSet(object):
             filenames = {key.lower(): val for key, val in config.items("data")}
 
         except configparser.NoSectionError as error:
-            sys.exit("    Reading aborted: {}".format(error))
+            sys.exit(f"    Reading aborted: {error}")
 
         except KeyError as error:
             sys.exit(

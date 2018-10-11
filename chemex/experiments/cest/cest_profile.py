@@ -1,5 +1,4 @@
 """The cest_profile module contains the code for handling CEST profiles."""
-
 import copy
 from functools import lru_cache
 
@@ -28,7 +27,7 @@ class CESTProfile(base_profile.BaseProfile):
         self.err = measurements["intensities_err"]
 
         self.mask = np.ones_like(self.b1_offsets, dtype=np.bool)
-        self.reference = np.abs(self.b1_offsets) >= 1.0e+04
+        self.reference = np.abs(self.b1_offsets) >= 1.0e04
 
         self.map_names = {}
         self.basis = None
@@ -84,7 +83,7 @@ class CESTProfile(base_profile.BaseProfile):
 
         iter_vals = list(zip(self.b1_offsets, self.val, self.err, values))
 
-        output.append("[{}]".format(self.profile_name))
+        output.append(f"[{self.profile_name}]")
         output.append(
             "# {:>12s}   {:>17s} {:>17s} {:>17s}".format(
                 "offset (Hz)", "intensity (exp)", "uncertainty", "intensity (calc)"
@@ -92,10 +91,10 @@ class CESTProfile(base_profile.BaseProfile):
         )
 
         for b1_offset, val, err, cal in iter_vals:
-            line = "  {0:12.2f} = {1:17.8e} {2:17.8e}".format(b1_offset, val, err)
+            line = f"  {b1_offset:12.2f} = {val:17.8e} {err:17.8e}"
 
             if params is not None:
-                line += "{:17.8e}".format(cal)
+                line += f"{cal:17.8e}"
             else:
                 line += "{:17s}".format("xxx")
 

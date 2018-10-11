@@ -1,9 +1,10 @@
 """Plot the CEST profiles."""
-
 import contextlib
 
 import numpy as np
-from matplotlib import gridspec as gsp, pyplot as plt, ticker
+from matplotlib import gridspec as gsp
+from matplotlib import pyplot as plt
+from matplotlib import ticker
 from matplotlib.backends import backend_pdf
 
 from chemex.experiments import plotting
@@ -72,7 +73,7 @@ def write_profile_fit(name, b1_ppm_fit, mag_fit, file_):
     file_.write("# {:>17s}   {:>17s}\n".format("OFFSET", "INTENSITY"))
 
     for b1_ppm_cal, mag_cal in zip(b1_ppm_fit, mag_fit):
-        file_.write("  {0:17.8e} = {1:17.8e}\n".format(b1_ppm_cal, mag_cal))
+        file_.write(f"  {b1_ppm_cal:17.8e} = {mag_cal:17.8e}\n")
 
     file_.write("\n")
 
@@ -87,9 +88,7 @@ def write_profile_exp(name, b1_ppm, mag_exp, mag_err, file_):
     )
 
     for b1_ppm_, mag_exp_, mag_err_ in zip(b1_ppm, mag_exp, mag_err):
-        file_.write(
-            "  {0:17.8e} = {1:17.8e} {2:17.8e}\n".format(b1_ppm_, mag_exp_, mag_err_)
-        )
+        file_.write(f"  {b1_ppm_:17.8e} = {mag_exp_:17.8e} {mag_err_:17.8e}\n")
 
     file_.write("\n")
 
@@ -114,7 +113,7 @@ def plot_data(data, params, output_dir):
         name_fit = basename.with_suffix(".fit")
         name_exp = basename.with_suffix(".exp")
 
-        print(("  * {} [.fit, .exp]".format(name_pdf)))
+        print((f"  * {name_pdf} [.fit, .exp]"))
 
         data_grouped = plotting.group_data(dataset)
 

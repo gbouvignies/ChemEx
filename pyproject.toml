@@ -1,5 +1,17 @@
 [tool.black]
 line-length = 88
-py36 = false
+py36 = true
 include = '\.pyi?$'
-exclude = '/(\.git|\.hg|\.mypy_cache|\.tox|\.venv|_build|buck-out|build|dist|.version.)'
+exclude = '''
+/(
+    \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''

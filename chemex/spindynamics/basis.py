@@ -7,11 +7,11 @@
         2IxSx, 2IxSy, 2IySx, 2IySy,
         2IzSz}
 """
-
 import itertools
 
 import numpy as np
-from scipy import linalg, stats
+from scipy import linalg
+from scipy import stats
 
 from chemex.spindynamics import constants
 
@@ -75,7 +75,7 @@ ZEROS_V_SINGLE = np.zeros((N_SINGLE, 1))
 ZEROS_V_FULL = np.zeros((N_FULL, 1))
 
 
-class Liouvillian(object):
+class Liouvillian:
     """TODO"""
 
     def __init__(self, system, state_nb, atoms, h_larmor_frq, equilibrium=True):

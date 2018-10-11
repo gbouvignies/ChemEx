@@ -1,4 +1,6 @@
-from setuptools import find_packages, setup
+from setuptools import find_packages
+from setuptools import setup
+
 import versioneer
 
 with open("README.md", "rb") as f:
@@ -18,7 +20,6 @@ setup(
         "Intended Audience :: Science/Research",
         "License :: OSI Approved :: BSD License",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.5",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
     ],
@@ -31,6 +32,6 @@ setup(
         "lmfit>=0.9.11",
         "asteval>=0.9.11",
     ],
-    python_requires=">=3.5",
+    python_requires=">=3.6",
     entry_points={"console_scripts": ["chemex = chemex.chemex:main"]},
 )

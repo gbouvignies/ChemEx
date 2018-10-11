@@ -60,8 +60,8 @@ def create_params_lr(basis, conditions, nuclei):
             fname_a = fnames[name_a]
             params[fname].set(expr=fname_a)
     for state in "bcd":
-        short_name = "cs_{}".format(state)
-        short_name_expr = "cs_a + dw_a{}".format(state)
+        short_name = f"cs_{state}"
+        short_name_expr = f"cs_a + dw_a{state}"
         parameters.set_param_expr(params, short_name, short_name_expr)
     return fnames, params
 
@@ -147,13 +147,13 @@ def set_thermal_factors(fnames, params, nuclei):
 
     for spin, state in itertools.product("is", STATES):
 
-        theta = "theta_{}_{}".format(spin, state)
+        theta = f"theta_{spin}_{state}"
 
         if theta in fnames:
 
-            r1_expr = "r1_{}_{}".format(spin, state)
-            sigma = "sigma_{}".format(state)
-            pop = "p{}".format(state)
+            r1_expr = f"r1_{spin}_{state}"
+            sigma = f"sigma_{state}"
+            pop = f"p{state}"
 
             terms = []
 
@@ -177,17 +177,17 @@ def set_thermal_factors(fnames, params, nuclei):
 
     for state in STATES:
 
-        theta = "theta_is_{}".format(state)
+        theta = f"theta_is_{state}"
 
         if theta in fnames:
 
-            pop = "p{}".format(state)
+            pop = f"p{state}"
 
             terms = []
 
             for spin in "is":
 
-                etaz = "etaz_{}_{}".format(spin, state)
+                etaz = f"etaz_{spin}_{state}"
 
                 if etaz in fnames:
                     terms.append(
@@ -213,9 +213,7 @@ def set_hn_ap_constraints(fnames, params, nuclei=None, conditions=None):
     attributes = {"nuclei": name_s}
     attributes.update(conditions)
 
-    names = (
-        "r1_s_{}".format(state) for state in STATES if "r1_i_{}".format(state) in fnames
-    )
+    names = (f"r1_s_{state}" for state in STATES if f"r1_i_{state}" in fnames)
     fnames, params = _add_params(fnames, params, names, attributes)
 
     expr_r1_i = "{{r1a_{state}}} - {{r1_s_{state}}}"
@@ -225,9 +223,9 @@ def set_hn_ap_constraints(fnames, params, nuclei=None, conditions=None):
 
     for state in STATES:
 
-        r1_s = "r1_s_{}".format(state)
-        r1_i = "r1_i_{}".format(state)
-        r2a_i = "r2a_i_{}".format(state)
+        r1_s = f"r1_s_{state}"
+        r1_i = f"r1_i_{state}"
+        r2a_i = f"r2a_i_{state}"
 
         if r1_s not in fnames:
             continue
@@ -254,21 +252,17 @@ def set_nh_constraints(fnames, params):
 
     settings.update(
         {
-            "r2a_i_{}".format(state): {
-                "expr": expr_r2a_i.format(state=state).format(**fnames)
-            }
+            f"r2a_i_{state}": {"expr": expr_r2a_i.format(state=state).format(**fnames)}
             for state in STATES
-            if "r2a_i_{}".format(state) in fnames
+            if f"r2a_i_{state}" in fnames
         }
     )
 
     settings.update(
         {
-            "r2a_s_{}".format(state): {
-                "expr": expr_r2a_s.format(state=state).format(**fnames)
-            }
+            f"r2a_s_{state}": {"expr": expr_r2a_s.format(state=state).format(**fnames)}
             for state in STATES
-            if "r2a_s_{}".format(state) in fnames
+            if f"r2a_s_{state}" in fnames
         }
     )
 
@@ -291,7 +285,7 @@ def create_params_k(model=None, conditions=None):
 
     states = string.ascii_lowercase[: model.state_nb]
     names = ["k{}{}".format(*pairs) for pairs in itertools.permutations(states, 2)]
-    names.extend(["p{}".format(state) for state in states])
+    names.extend([f"p{state}" for state in states])
 
     fnames, params = _add_params(fnames, params, names, attributes)
 
@@ -309,7 +303,7 @@ def create_params_k(model=None, conditions=None):
     if kinetic_model is None:
         print("Warning: The 'model' option should either be:")
         for model in sorted(kinetic_models):
-            print("    - '{}'".format(model))
+            print(f"    - '{model}'")
         print("Set to the default value: '2st.pb_kex'.")
         kinetic_model = kinetic_models["2st.pb_kex"]
 
@@ -350,10 +344,10 @@ def model_2st_eyring(conditions, fnames, params):
     thermo = _define_thermo(conditions.get("temperature"))
 
     settings = {
-        "dh_b": {"value": 6.5e+03, "vary": True},
-        "ds_b": {"value": 1.0e+10},
-        "dh_ab": {"value": 6.5e+04, "vary": True},
-        "ds_ab": {"value": 1.0e+10},
+        "dh_b": {"value": 6.5e03, "vary": True},
+        "ds_b": {"value": 1.0e10},
+        "dh_ab": {"value": 6.5e04, "vary": True},
+        "ds_ab": {"value": 1.0e10},
         "pa": {"expr": "{kba} / ({kba} + {kab})".format(**fnames)},
         "pb": {"expr": "{kab} / ({kba} + {kab})".format(**fnames)},
         "kab": {"expr": _get_k_from_h_s("ab").format(**fnames, **thermo)},
@@ -435,16 +429,16 @@ def model_3st_eyring(conditions, fnames, params):
     expr_pc = "{kbc} * {kac} / ({kbc} * {kac} + {kcb} * {kab} + {kca} * {kbc})"
 
     settings = {
-        "dh_b": {"value": 6.5e+03, "vary": True},
-        "dh_c": {"value": 6.5e+03, "vary": True},
-        "dh_ab": {"value": 6.5e+04, "vary": True},
-        "dh_bc": {"value": 6.5e+04, "vary": True},
-        "dh_ac": {"value": 1.0e+10},
-        "ds_b": {"value": 1.0e+10},
-        "ds_c": {"value": 1.0e+10},
-        "ds_ab": {"value": 1.0e+10},
-        "ds_bc": {"value": 1.0e+10},
-        "ds_ac": {"value": 1.0e+10},
+        "dh_b": {"value": 6.5e03, "vary": True},
+        "dh_c": {"value": 6.5e03, "vary": True},
+        "dh_ab": {"value": 6.5e04, "vary": True},
+        "dh_bc": {"value": 6.5e04, "vary": True},
+        "dh_ac": {"value": 1.0e10},
+        "ds_b": {"value": 1.0e10},
+        "ds_c": {"value": 1.0e10},
+        "ds_ab": {"value": 1.0e10},
+        "ds_bc": {"value": 1.0e10},
+        "ds_ac": {"value": 1.0e10},
         "kab": {"expr": _get_k_from_h_s("ab").format(**fnames, **thermo)},
         "kba": {"expr": _get_k_from_h_s("bs").format(**fnames, **thermo)},
         "kac": {"expr": _get_k_from_h_s("ac").format(**fnames, **thermo)},

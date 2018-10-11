@@ -1,5 +1,4 @@
 """The cpmg_profile module contains the code for handling CPMG profiles."""
-
 import copy
 from functools import lru_cache
 
@@ -80,7 +79,7 @@ class CPMGProfile(base_profile.BaseProfile):
 
         iter_vals = list(zip(self.ncycs, self.val, self.err, values))
 
-        output.append("[{}]".format(self.profile_name))
+        output.append(f"[{self.profile_name}]")
         output.append(
             "# {:>5s}   {:>17s} {:>17s} {:>17s}".format(
                 "ncyc", "intensity (exp)", "uncertainty", "intensity (calc)"
@@ -88,10 +87,10 @@ class CPMGProfile(base_profile.BaseProfile):
         )
 
         for ncyc, val, err, cal in iter_vals:
-            line = "  {0:5.0f} = {1:17.8e} {2:17.8e}".format(ncyc, val, err)
+            line = f"  {ncyc:5.0f} = {val:17.8e} {err:17.8e}"
 
             if params is not None:
-                line += "{:17.8e}".format(cal)
+                line += f"{cal:17.8e}"
             else:
                 line += "{:17s}".format("xxx")
 

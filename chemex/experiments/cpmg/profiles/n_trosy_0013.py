@@ -53,14 +53,13 @@ Extra parameters
 
 
 """
-
 from functools import reduce
 
 import numpy as np
 
 from chemex.experiments.cpmg import cpmg_profile
-from chemex.spindynamics import basis, default
-
+from chemex.spindynamics import basis
+from chemex.spindynamics import default
 
 EXP_DETAILS = {
     "carrier": {"type": float},

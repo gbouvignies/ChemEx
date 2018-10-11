@@ -6,7 +6,8 @@ import numpy as np
 from matplotlib.widgets import Button
 from scipy import interpolate
 
-from chemex import datasets, peaks
+from chemex import datasets
+from chemex import peaks
 
 
 def pick_cest(args):
@@ -40,10 +41,10 @@ def pick_cest(args):
     plt.show()
 
 
-class Buttons(object):
+class Buttons:
 
     KWARGS = {"color": "0.74", "linewidth": 1.0}
-    LS = {"a": "-", "b": ":"}
+    LSTYLE = {"a": "-", "b": ":"}
     TEXT_Y = {"a": 0.8, "b": 0.75}
 
     def __init__(self, data, path):
@@ -162,13 +163,13 @@ class Buttons(object):
         return result
 
     def _add_line(self, position, state):
-        text_ = r"$\varpi_{}$ = {:.3f} ppm".format(state, position)
+        text_ = fr"$\varpi_{state}$ = {position:.3f} ppm"
         text = self.fig.text(0.82, self.TEXT_Y[state], text_)
-        line = self.axis.axvline(position, linestyle=self.LS[state], **self.KWARGS)
+        line = self.axis.axvline(position, linestyle=self.LSTYLE[state], **self.KWARGS)
         self.lines.extend([line, text])
 
     def _add_text_dw(self, dw_ab):
-        text_ = r"$\Delta\varpi_{{ab}}$ = {:.3f} ppm".format(dw_ab)
+        text_ = fr"$\Delta\varpi_{{ab}}$ = {dw_ab:.3f} ppm"
         text = self.fig.text(0.82, 0.7, text_)
         self.lines.append(text)
 

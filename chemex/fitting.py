@@ -1,12 +1,13 @@
 """The fitting module contains the code for fitting the experimental data."""
-
 import functools
 import sys
 
 import lmfit
 from scipy import stats
 
-from chemex import datasets, parameters, util
+from chemex import datasets
+from chemex import parameters
+from chemex import util
 from chemex.cli import FITMETHODS
 
 ALL_FITMETHODS = lmfit.minimizer.SCALAR_METHODS
@@ -52,7 +53,7 @@ def run_fit(fit_filename, params, data, cl_fitmethod):
 
         for c_name, c_data, c_params in clusters:
             if len(clusters) > 1:
-                print("[{}]".format(c_name))
+                print(f"[{c_name}]")
 
             print("Chi2 / Reduced Chi2:")
 
@@ -84,8 +85,8 @@ def run_fit(fit_filename, params, data, cl_fitmethod):
         else:
             result = c_result
 
-        print("Final Chi2        : {:.3e}".format(result.chisqr))
-        print("Final Reduced Chi2: {:.3e}".format(result.redchi))
+        print(f"Final Chi2        : {result.chisqr:.3e}")
+        print(f"Final Reduced Chi2: {result.redchi:.3e}")
 
     if result.method != "leastsq":
         print("\nWarning: uncertainties and covariance of fitting parameters are only")
@@ -164,21 +165,19 @@ def write_statistics(result, path):
     filename = path / "statistics.fit"
 
     with open(filename, "w") as f:
-        print("  * {}".format(filename))
+        print(f"  * {filename}")
 
-        f.write("# Number of data points: {}\n".format(result.ndata))
-        f.write("# Number of variables: {}\n".format(result.nvarys))
-        f.write("# Fitting method: {}\n".format(result.method))
-        f.write("# Number of function evaluations: {}\n\n".format(result.nfev))
-        f.write("chi-square         = {: .5e}\n".format(result.chisqr))
-        f.write("reduced chi-square = {: .5e}\n".format(result.redchi))
-        f.write(
-            "chisq_p-value      = {: .5e} # Chi-squared test\n".format(chi2_p_value)
-        )
+        f.write(f"# Number of data points: {result.ndata}\n")
+        f.write(f"# Number of variables: {result.nvarys}\n")
+        f.write(f"# Fitting method: {result.method}\n")
+        f.write(f"# Number of function evaluations: {result.nfev}\n\n")
+        f.write(f"chi-square         = {result.chisqr: .5e}\n")
+        f.write(f"reduced chi-square = {result.redchi: .5e}\n")
+        f.write(f"chisq_p-value      = {chi2_p_value: .5e} # Chi-squared test\n")
         f.write(
             "ks_p-value         = {: .5e} # Kolmogorov-Smirnov test\n\n".format(
                 ks_p_value
             )
         )
-        f.write("Akaike Information Criterion = {: .5e}\n".format(result.aic))
-        f.write("Bayesian Information Criterion = {: .5e}\n".format(result.bic))
+        f.write(f"Akaike Information Criterion = {result.aic: .5e}\n")
+        f.write(f"Bayesian Information Criterion = {result.bic: .5e}\n")

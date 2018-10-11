@@ -1,14 +1,17 @@
 """The parsing module contains the code for the parsing of command-line
 arguments."""
-
 import argparse
 import importlib
 import pathlib
 import pkgutil
 import sys
 
-from chemex import __version__, chemex, experiments, util
-from chemex.tools import pick_cest, plot_param
+from chemex import __version__
+from chemex import chemex
+from chemex import experiments
+from chemex import util
+from chemex.tools import pick_cest
+from chemex.tools import plot_param
 
 FITMETHODS = {
     "cobyla",
@@ -33,7 +36,7 @@ class MyParser(argparse.ArgumentParser):
     """Subclass of ArgumentParser to override the error method."""
 
     def error(self, message):
-        sys.stderr.write("error: {}\n\n".format(message))
+        sys.stderr.write(f"error: {message}\n\n")
         self.print_help()
         sys.exit(2)
 
@@ -50,7 +53,7 @@ def build_parser():
     parser = MyParser(description=description, prog="chemex")
 
     parser.add_argument(
-        "--version", action="version", version="{} {}".format(parser.prog, __version__)
+        "--version", action="version", version=f"{parser.prog} {__version__}"
     )
 
     commands = parser.add_subparsers(dest="commands")

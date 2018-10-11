@@ -1,5 +1,4 @@
 """The util module contains a variety of utility functions."""
-
 import configparser
 import sys
 
@@ -14,12 +13,10 @@ def read_cfg_file(filename):
         out = config.read(str(filename))
 
         if not out and filename is not None:
-            exit(
-                "\nERROR: The file '{}' is empty or does not exist!\n".format(filename)
-            )
+            exit(f"\nERROR: The file '{filename}' is empty or does not exist!\n")
 
     except configparser.MissingSectionHeaderError:
-        exit("\nERROR: You are missing a section heading in {:s}\n".format(filename))
+        exit(f"\nERROR: You are missing a section heading in {filename:s}\n")
 
     except configparser.ParsingError:
         exit(

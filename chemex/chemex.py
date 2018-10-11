@@ -1,11 +1,15 @@
 """The chemex module provides the entry point for the chemex script."""
-
 import copy
 import shutil
 
 import numpy as np
 
-from chemex import __version__, cli, datasets, fitting, parameters, util
+from chemex import __version__
+from chemex import cli
+from chemex import datasets
+from chemex import fitting
+from chemex import parameters
+from chemex import util
 
 LOGO = r"""
 * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -145,4 +149,4 @@ def plot_results(result, data, path):
         ]
         outfile = path / "results_brute.pdf"
         plotting.plot_results_brute(result, varlabels=labels, output=outfile)
-        print(("  * {}".format(outfile)))
+        print((f"  * {outfile}"))
