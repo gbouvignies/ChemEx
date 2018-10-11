@@ -6,7 +6,7 @@ import pathlib
 import pkgutil
 import sys
 
-from chemex import _version
+from chemex import __version__
 from chemex import chemex
 from chemex import experiments
 from chemex import util
@@ -53,7 +53,7 @@ def build_parser():
     parser = MyParser(description=description, prog="chemex")
 
     parser.add_argument(
-        "--version", action="version", version=f"{parser.prog} {_version.version}"
+        "--version", action="version", version=f"{parser.prog} {__version__}"
     )
 
     commands = parser.add_subparsers(dest="commands")

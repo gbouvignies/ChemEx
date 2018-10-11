@@ -6,7 +6,7 @@ with open("README.md", "rb") as f:
 
 setup(
     name="chemex",
-    use_scm_version={"write_to": "chemex/_version.py"},
+    use_scm_version=True,
     description="ChemEx is an analysis program for chemical exchange detected by NMR.",
     long_description=long_description,
     author="Guillaume Bouvignies",

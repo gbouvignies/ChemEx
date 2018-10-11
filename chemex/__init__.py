@@ -5,12 +5,13 @@ but the principle techniques are CPMG relaxation dispersion and Chemical
 Exchange Saturation Transfer.
 
 """
+from pkg_resources import DistributionNotFound
+from pkg_resources import get_distribution
 
 __all__ = ["__version__"]
 
 try:
-    from chemex._version import version as __version__
-except ImportError:
-    # broken installation, we don't even try
-    # unknown only works because we do poor mans version compare
-    __version__ = "unknown"
+    __version__ = get_distribution(__name__).version
+except DistributionNotFound:
+    # package is not installed
+    pass

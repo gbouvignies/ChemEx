@@ -1,6 +1,5 @@
 ---
 exclude_paths:
-  - 'chemex/_version.py'
   - 'tests/**/*'
   - 'tests/*'
   - 'setup.py'
