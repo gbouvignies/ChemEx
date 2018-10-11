@@ -1,15 +1,12 @@
 from setuptools import find_packages
 from setuptools import setup
 
-import versioneer
-
 with open("README.md", "rb") as f:
     long_description = f.read().decode("utf-8")
 
 setup(
     name="chemex",
-    version=versioneer.get_version(),
-    cmdclass=versioneer.get_cmdclass(),
+    use_scm_version={"write_to": "chemex/_version.py"},
     description="ChemEx is an analysis program for chemical exchange detected by NMR.",
     long_description=long_description,
     author="Guillaume Bouvignies",

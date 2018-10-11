@@ -4,7 +4,7 @@ import shutil
 
 import numpy as np
 
-from chemex import __version__
+from chemex import _version
 from chemex import cli
 from chemex import datasets
 from chemex import fitting
@@ -25,7 +25,7 @@ LOGO = r"""
 *                                               *
 * * * * * * * * * * * * * * * * * * * * * * * * *
 """.format(
-    __version__
+    _version.version
 )
 
 

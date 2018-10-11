@@ -6,7 +6,11 @@ Exchange Saturation Transfer.
 
 """
 
-from ._version import get_versions
+__all__ = ["__version__"]
 
-__version__ = get_versions()["version"]
-del get_versions
+try:
+    from chemex._version import version as __version__
+except ImportError:
+    # broken installation, we don't even try
+    # unknown only works because we do poor mans version compare
+    __version__ = "unknown"

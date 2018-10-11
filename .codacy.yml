@@ -4,4 +4,3 @@ exclude_paths:
   - 'tests/**/*'
   - 'tests/*'
   - 'setup.py'
-  - 'versioneer.py'
