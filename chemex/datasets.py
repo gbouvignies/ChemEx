@@ -17,16 +17,13 @@ class DataSet:
 
     def __init__(self, other=None):
         self.data = []
-        self.ndata = 0
         self.chisq_ref = 1e32
 
         if isinstance(other, DataSet):
             self.data = copy.deepcopy(other.data)
-            self.ndata = other.ndata
 
         elif isinstance(other, base_profile.BaseProfile):
             self.data.append(other)
-            self.ndata = len(other)
 
     def __len__(self):
         return len(self.data)
@@ -41,7 +38,6 @@ class DataSet:
     def __add__(self, other):
         data_sum = DataSet(self)
         data_sum.data.extend(other.data)
-        data_sum.ndata = self.ndata + other.ndata
         return data_sum
 
     def __radd__(self, other):
@@ -49,15 +45,17 @@ class DataSet:
 
     def __iadd__(self, other):
         self.data.extend(other.data)
-        self.ndata += other.ndata
         return self
+
+    @property
+    def ndata(self):
+        return sum(len(profile) for profile in self.data)
 
     def append(self, profile):
         """Append data to an exisiting dataset."""
         if not isinstance(profile, base_profile.BaseProfile):
             raise TypeError
         self.data.append(profile)
-        self.ndata += len(profile.val)
 
     def calculate_residuals(self, params, verbose=True, threshold=1e-3):
         """Calculate the residuals."""
@@ -101,7 +99,7 @@ class DataSet:
                     f.write(profile.print_profile(params=params))
 
     def add_dataset_from_file(self, filename, model=None, included=None, excluded=None):
-        """Add data from a file to the dataset."""
+        """Add profiles from a file to the dataset."""
 
         if model is None:
             model = "2st.pb_kex"
@@ -165,16 +163,15 @@ class DataSet:
                 )
             )
 
-        data, ndata = reading.read_profiles(
+        profiles = reading.read_profiles(
             path, filenames, details, model, included, excluded
         )
 
-        self.data.extend(data)
-        self.ndata += ndata
+        self.data.extend(profiles)
 
-        print("{:<25s} {:<25d}".format(experiment_type, len(data)))
+        print("{:<25s} {:<25d}".format(experiment_type, len(profiles)))
 
-        return data
+        return profiles
 
     def make_bs_dataset(self):
         """Create a new dataset to run a bootstrap simulation."""

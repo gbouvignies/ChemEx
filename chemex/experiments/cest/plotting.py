@@ -27,21 +27,21 @@ def compute_profiles(data_grouped, params):
         mask_ref = profile.reference
         mask = np.logical_not(mask_ref)
 
-        val_ref = np.mean(profile.val[mask_ref])
+        val_ref = np.mean(profile.data["intensities"][mask_ref])
 
         b1_ppm_exp = profile.b1_offsets_to_ppm()[mask]
         mag_cal = profile.calculate_profile(params)[mask] / val_ref
-        mag_exp = profile.val[mask] / val_ref
-        mag_err = profile.err[mask] / np.absolute(val_ref)
+        mag_exp = profile.data["intensities"][mask] / val_ref
+        mag_err = profile.data["errors"][mask] / np.absolute(val_ref)
         filtered = profile.mask[mask]
 
         b1_offsets_min, b1_offsets_max = plotting.set_lim(
-            profile.b1_offsets[mask], 0.02
+            profile.data["offsets"][mask], 0.02
         )
         b1_offsets = np.linspace(b1_offsets_min, b1_offsets_max, 500)
 
         b1_ppm_fit = profile.b1_offsets_to_ppm(b1_offsets)
-        mag_fit = profile.calculate_profile(params, b1_offsets) / val_ref
+        mag_fit = profile.calculate_profile(params, b1_offsets=b1_offsets) / val_ref
 
         cs_a = params.get(profile.map_names.get("cs_i_a"))
         cs_b = params.get(profile.map_names.get("cs_i_b"))

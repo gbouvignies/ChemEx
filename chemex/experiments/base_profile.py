@@ -1,9 +1,10 @@
 """TODO: module docstring."""
-
 import abc
+from functools import lru_cache
 
 import numpy as np
 
+from chemex import peaks
 from chemex.spindynamics import util
 
 EXP_DETAILS = {"name": {"type": str}}
@@ -30,23 +31,60 @@ class BaseProfile(metaclass=abc.ABCMeta):
         "off": False,
     }
 
-    def __init__(self, name=None, exp_details=None, model=None):
+    def __init__(self, name=None, data=None, exp_details=None, model=None):
         """TODO: method docstring."""
 
         if name is None:
             name = ""
 
         self.profile_name = name
+        self.peak = peaks.Peak(self.profile_name)
         self.model = util.parse_model(model)
         self.experiment_name = self.check_exp_details(exp_details, EXP_DETAILS)["name"]
         self.conditions = self.check_exp_details(exp_details, CONDITIONS)
-        self.val = None
-        self.err = None
-        self.data = None
+        self.data = data
         self.mask = None
+        self.map_names = {}
+        self.basis = None
+
+        self.calculate_unscaled_profile = lru_cache(8)(self.calculate_unscaled_profile)
 
     def __len__(self):
-        return self.val.size
+        return self.data.size
+
+    def calculate_residuals(self, params):
+        """Calculate the residuals between the experimental and back-calculated
+        values."""
+
+        values = self.calculate_profile(params)
+        residuals = (self.data["intensities"] - values) / self.data["errors"]
+
+        return residuals[self.mask]
+
+    def calculate_unscaled_profile(self, params_local, **kwargs):
+        """Calculate the unscaled CEST profile."""
+        pass
+
+    def calculate_profile(self, params=None, **kwargs):
+        """Calculate the CEST profile."""
+        params_local = tuple(
+            (name_s, params[name_l].value) for name_s, name_l in self.map_names.items()
+        )
+
+        values = self.calculate_unscaled_profile(params_local)
+
+        try:
+            scale = sum(
+                values * self.data["intensities"] / self.data["errors"] ** 2
+            ) / sum((values / self.data["errors"]) ** 2)
+
+        except ZeroDivisionError:
+            scale = 0.0
+
+        if kwargs:
+            values = self.calculate_unscaled_profile.__wrapped__(params_local, **kwargs)
+
+        return values * scale
 
     @abc.abstractmethod
     def print_profile(self, params=None):
@@ -56,12 +94,6 @@ class BaseProfile(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def filter_points(self, params=None):
         """TODO: method docstring."""
-        pass
-
-    @abc.abstractmethod
-    def calculate_residuals(self, params):
-        """Calculate the residuals between the experimental and back-calculated
-        values."""
         pass
 
     @staticmethod

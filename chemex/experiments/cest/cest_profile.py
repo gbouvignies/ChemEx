@@ -3,8 +3,11 @@ import copy
 from functools import lru_cache
 
 import numpy as np
+from scipy import interpolate
+from scipy import linalg
+from scipy import signal
+from scipy import stats
 
-from chemex import peaks
 from chemex.experiments import base_profile
 from chemex.experiments.cest import plotting
 
@@ -12,65 +15,12 @@ from chemex.experiments.cest import plotting
 class CESTProfile(base_profile.BaseProfile):
     """CESTProfile class."""
 
-    def __init__(self, name, measurements, exp_details, model):
-        super().__init__(name, exp_details, model)
+    def __init__(self, name, data, exp_details, model):
+        super().__init__(name, data, exp_details, model)
 
         self.plot_data = plotting.plot_data
-        self.calculate_unscaled_profile_cached = lru_cache(8)(
-            self.calculate_unscaled_profile
-        )
-
-        self.peak = peaks.Peak(self.profile_name)
-
-        self.b1_offsets = measurements["b1_offsets"]
-        self.val = measurements["intensities"]
-        self.err = measurements["intensities_err"]
-
-        self.mask = np.ones_like(self.b1_offsets, dtype=np.bool)
-        self.reference = np.abs(self.b1_offsets) >= 1.0e04
-
-        self.map_names = {}
-        self.basis = None
-
-    def calculate_residuals(self, params):
-        """Calculate the residuals between the experimental and back-calculated
-        values."""
-
-        values = self.calculate_profile(params)
-        residuals = (self.val - values) / self.err
-
-        return residuals[self.mask]
-
-    def calculate_unscaled_profile(self, b1_offsets=None, **parvals):
-        """Calculate the unscaled CEST profile."""
-        pass
-
-    def calculate_scale(self, cal):
-        """Calculate the scaling factor."""
-
-        norm = sum((cal / self.err) ** 2)
-
-        if norm:
-            scale = sum(cal * self.val / self.err ** 2) / norm
-        else:
-            scale = 0.0
-
-        return scale
-
-    def calculate_profile(self, params=None, b1_offsets=None):
-        """Calculate the CEST profile."""
-        kwargs = {
-            short_name: params[long_name].value
-            for short_name, long_name in self.map_names.items()
-        }
-
-        values = self.calculate_unscaled_profile_cached(**kwargs)
-        scale = self.calculate_scale(values)
-
-        if b1_offsets is not None:
-            values = self.calculate_unscaled_profile(b1_offsets=b1_offsets, **kwargs)
-
-        return values * scale
+        self.mask = np.ones_like(self.data["offsets"], dtype=np.bool)
+        self.reference = np.abs(self.data["offsets"]) >= 1.0e04
 
     def print_profile(self, params=None):
         """Print the CEST profile."""
@@ -79,9 +29,16 @@ class CESTProfile(base_profile.BaseProfile):
         if params is not None:
             values = self.calculate_profile(params)
         else:
-            values = self.val
+            values = self.data["intensities"]
 
-        iter_vals = list(zip(self.b1_offsets, self.val, self.err, values))
+        iter_vals = list(
+            zip(
+                self.data["offsets"],
+                self.data["intensities"],
+                self.data["errors"],
+                values,
+            )
+        )
 
         output.append(f"[{self.profile_name}]")
         output.append(
@@ -109,15 +66,16 @@ class CESTProfile(base_profile.BaseProfile):
         """Make a CEST profile for boostrap analysis."""
 
         profile = copy.copy(self)
-        profile.val = (
-            self.calculate_profile(params) + np.random.randn(len(self.val)) * self.err
+        profile.data["intensities"] = (
+            self.calculate_profile(params)
+            + np.random.randn(len(self.data["intensities"])) * self.data["errors"]
         )
 
         return profile
 
     def make_bs_profile(self):
         """Make a CEST profile for boostrap analysis."""
-        indexes = np.array(range(len(self.val)))
+        indexes = np.array(range(len(self.data["intensities"])))
         pool1 = indexes[self.reference]
         pool2 = indexes[~self.reference]
 
@@ -129,12 +87,69 @@ class CESTProfile(base_profile.BaseProfile):
         bs_indexes = sorted(bs_indexes)
 
         profile = copy.copy(self)
-        profile.b1_offsets = profile.b1_offsets[bs_indexes]
-        profile.val = profile.val[bs_indexes]
-        profile.err = profile.err[bs_indexes]
+        profile.data["offsets"] = profile.data["offsets"][bs_indexes]
+        profile.data["intensities"] = profile.data["intensities"][bs_indexes]
+        profile.data["errors"] = profile.data["errors"][bs_indexes]
 
         profile.calculate_unscaled_profile_cached = lru_cache(5)(
             profile.calculate_unscaled_profile
         )
 
         return profile
+
+    def estimate_noise(self):
+        """Estimate the uncertainty in the CEST profile.
+
+        # TODO: add reference to this method...
+
+        """
+
+        data_sorted = np.sort(self.data[~self.reference], order="offsets")
+        values = data_sorted["intensities"]
+        size = len(values)
+
+        fda = [
+            [1, -1],
+            [1, -2, 1],
+            [1, -3, 3, -1],
+            [1, -4, 6, -4, 1],
+            [1, -5, 10, -10, 5, -1],
+            [1, -6, 15, -20, 15, -6, 1],
+        ]
+
+        fda = [np.array(a_fda) / linalg.norm(a_fda) for a_fda in fda]
+
+        percents = np.array([0.05] + list(np.arange(0.1, 0.40, 0.025)))
+        percent_points = stats.norm.ppf(1.0 - percents)
+
+        sigma_est = []
+
+        for fdai in fda:
+            noisedata = signal.convolve(values, fdai, mode="valid")
+            ntrim = len(noisedata)
+
+            if ntrim >= 2:
+                noisedata.sort()
+
+                xaxis = 0.5 + np.arange(1, ntrim + 1)
+                xaxis /= ntrim + 0.5
+
+                sigmas = []
+
+                f_interpalated = interpolate.interp1d(xaxis, noisedata, "linear")
+
+                for a_perc, a_z in zip(percents, percent_points):
+                    try:
+                        val = (
+                            f_interpalated(1.0 - a_perc) - f_interpalated(a_perc)
+                        ) / (2.0 * a_z)
+                        sigmas.append(val)
+                    except ValueError:
+                        pass
+
+                sigma_est.append(np.median(sigmas))
+
+        noisevar = np.median(sigma_est) ** 2
+        noisevar /= 1.0 + 15.0 * (size + 1.225) ** -1.245
+
+        return np.sqrt(noisevar)

@@ -57,8 +57,6 @@ def fit(args):
     for profile in data:
         profile.filter_points(params)
 
-    data.ndata = sum([len(profile.val) for profile in data])
-
     # Customize the output directory
     output_dir = args.out_dir
 

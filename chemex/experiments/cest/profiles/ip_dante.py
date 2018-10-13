@@ -15,11 +15,12 @@ Reference
 Yuwen, Kay and Bouvignies. ChemPhysChem (2018) 19:1707-1710
 
 """
-
 import numpy as np
 
 from chemex.experiments.cest import cest_profile
-from chemex.spindynamics import basis, constants, default
+from chemex.spindynamics import basis
+from chemex.spindynamics import constants
+from chemex.spindynamics import default
 
 EXP_DETAILS = {
     "carrier": {"type": float},
@@ -38,13 +39,14 @@ EXP_DETAILS = {
 class Profile(cest_profile.CESTProfile):
     """Profile for pure in-phase CEST."""
 
-    def __init__(self, name, measurements, exp_details, model):
-        super().__init__(name, measurements, exp_details, model)
+    def __init__(self, name, data, exp_details, model):
+        super().__init__(name, data, exp_details, model)
 
         self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
 
-        pw90_dante = self.exp_details["pw90_dante"]
+        self.carrier = self.exp_details["carrier"]
         self.sw_dante = self.exp_details["sw_dante"]
+        pw90_dante = self.exp_details["pw90_dante"]
         b1_frq = self.exp_details["b1_frq"]
         time_t1 = self.exp_details["time_t1"]
 
@@ -52,6 +54,7 @@ class Profile(cest_profile.CESTProfile):
         self.tau_dante = 1.0 / self.sw_dante - self.pw_dante
         self.ncyc_dante = int(time_t1 * self.sw_dante + 0.1)
 
+        # Set the liouvillian
         self.liouv = basis.Liouvillian(
             system="ixyz",
             state_nb=self.model.state_nb,
@@ -63,16 +66,19 @@ class Profile(cest_profile.CESTProfile):
         self.liouv.w1_i = 2.0 * np.pi / (4.0 * pw90_dante)
         self.liouv.w1_i_inh = self.exp_details["b1_inh"]
         self.liouv.w1_i_inh_res = self.exp_details["b1_inh_res"]
-
         self.carriers_i = self.b1_offsets_to_ppm()
+
+        # Set the row vector for detection
         self.detect = self.liouv.detect["iz_a"]
 
+        # Set the smaple labeling
         if self.exp_details["cn_label"]:
             symbol, nucleus = self.peak.symbols["i"], self.peak.nuclei["i"]
             j_values, j_weights = constants.get_multiplet(symbol, nucleus)
             self.liouv.j_eff_i = j_values
             self.liouv.j_eff_i_weights = j_weights
 
+        # Get the parameters this profile depends on
         self.map_names, self.params = default.create_params(
             basis=self.liouv,
             model=self.model,
@@ -84,7 +90,7 @@ class Profile(cest_profile.CESTProfile):
             if name.startswith(("dw", "r1_i_a", "r2")):
                 self.params[full_name].set(vary=True)
 
-    def calculate_unscaled_profile(self, b1_offsets=None, **parvals):
+    def calculate_unscaled_profile(self, b1_offsets=None, **params_local):
         """Calculate the CEST profile in the presence of exchange.
 
         TODO: Parameters
@@ -97,6 +103,8 @@ class Profile(cest_profile.CESTProfile):
 
         """
 
+        self.liouv.update(**params_local)
+
         reference = self.reference
         carriers_i = self.carriers_i
 
@@ -107,23 +115,20 @@ class Profile(cest_profile.CESTProfile):
             )
             reference = [False for _ in b1_offsets]
 
-        mag0 = self.liouv.compute_mag_eq(term="iz", **parvals)
-
-        self.liouv.update(**parvals)
+        mag0 = self.liouv.compute_mag_eq(term="iz", **params_local)
 
         profile = []
 
         for ref, carrier_i in zip(reference, carriers_i):
             self.liouv.carrier_i = carrier_i
-            mag = mag0.copy()
-
             if not ref:
                 p_delay = self.liouv.delays(self.tau_dante)
                 p_pulse = self.liouv.pulse_i(self.pw_dante, 0.0)
-                mag = np.linalg.matrix_power(p_pulse @ p_delay, self.ncyc_dante) @ mag
-
-            mag = self.detect @ mag
-            profile.append(np.float64(self.liouv.collapse(mag)))
+                dcest = np.linalg.matrix_power(p_pulse @ p_delay, self.ncyc_dante)
+            else:
+                dcest = self.liouv.identity
+            mag = self.liouv.collapse(self.detect @ dcest @ mag0)
+            profile.append(mag)
 
         return np.asarray(profile)
 
@@ -143,7 +148,7 @@ class Profile(cest_profile.CESTProfile):
                 (cs_a - self.exp_details["carrier"])
                 * self.liouv.ppms["i"]
                 / (2.0 * np.pi)
-                - self.b1_offsets
+                - self.data["offsets"]
                 + offset
             )
             nu_offsets = (
@@ -155,9 +160,6 @@ class Profile(cest_profile.CESTProfile):
     def b1_offsets_to_ppm(self, b1_offsets=None):
         """Convert B1 offset from Hz to ppm."""
         if b1_offsets is None:
-            b1_offsets = self.b1_offsets
+            b1_offsets = self.data["offsets"]
 
-        return (
-            2.0 * np.pi * b1_offsets / self.liouv.ppms["i"]
-            + self.exp_details["carrier"]
-        )
+        return 2.0 * np.pi * b1_offsets / self.liouv.ppms["i"] + self.carrier

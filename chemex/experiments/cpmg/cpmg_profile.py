@@ -1,10 +1,10 @@
 """The cpmg_profile module contains the code for handling CPMG profiles."""
 import copy
+import math
 from functools import lru_cache
 
 import numpy as np
 
-from chemex import peaks
 from chemex.experiments import base_profile
 from chemex.experiments.cpmg import plotting
 
@@ -12,61 +12,11 @@ from chemex.experiments.cpmg import plotting
 class CPMGProfile(base_profile.BaseProfile):
     """CPMGProfile class."""
 
-    def __init__(self, name, measurements, exp_details, model):
-        super().__init__(name, exp_details, model)
+    def __init__(self, name, data, exp_details, model):
+        super().__init__(name, data, exp_details, model)
 
         self.plot_data = plotting.plot_data
-        self.calculate_unscaled_profile_cached = lru_cache(8)(
-            self.calculate_unscaled_profile
-        )
-
-        self.peak = peaks.Peak(self.profile_name)
-
-        self.ncycs = np.asarray(measurements["ncycs"], dtype=int)
-        self.val = measurements["intensities"]
-        self.err = measurements["intensities_err"]
-
-        self.reference = self.ncycs == 0
-
-        self.map_names = {}
-        self.basis = None
-
-    def calculate_residuals(self, params):
-        """Calculate the residuals between the experimental and back-calculated
-        values."""
-
-        values = self.calculate_profile(params)
-        residuals = (self.val - values) / self.err
-
-        return residuals[self.mask]
-
-    def calculate_unscaled_profile(self, **parvals):
-        """Calculate the unscaled CPMG profile."""
-        pass
-
-    def calculate_scale(self, cal):
-        """Calculate the scaling factor."""
-
-        norm = sum((cal / self.err) ** 2)
-
-        if norm:
-            scale = sum(cal * self.val / self.err ** 2) / norm
-        else:
-            scale = 0.0
-
-        return scale
-
-    def calculate_profile(self, params):
-        """Calculate the CMPG profile."""
-        kwargs = {
-            short_name: params[long_name].value
-            for short_name, long_name in self.map_names.items()
-        }
-
-        values = self.calculate_unscaled_profile_cached(**kwargs)
-        scale = self.calculate_scale(values)
-
-        return values * scale
+        self.reference = self.data["ncycs"] == 0
 
     def print_profile(self, params=None):
         """Print the CPMG profile."""
@@ -75,9 +25,16 @@ class CPMGProfile(base_profile.BaseProfile):
         if params is not None:
             values = self.calculate_profile(params)
         else:
-            values = self.val
+            values = self.data["intensities"]
 
-        iter_vals = list(zip(self.ncycs, self.val, self.err, values))
+        iter_vals = list(
+            zip(
+                self.data["ncycs"],
+                self.data["intensities"],
+                self.data["errors"],
+                values,
+            )
+        )
 
         output.append(f"[{self.profile_name}]")
         output.append(
@@ -105,21 +62,22 @@ class CPMGProfile(base_profile.BaseProfile):
         """Evaluate some criteria to know whether the point should be
         considered in the calculation or not."""
 
-        self.mask = np.ones_like(self.val, dtype=np.bool)
+        self.mask = np.ones_like(self.data["intensities"], dtype=np.bool)
 
     def make_mc_profile(self, params):
         """Make a CPMG profile for boostrap analysis."""
 
         profile = copy.copy(self)
-        profile.val = (
-            self.calculate_profile(params) + np.random.randn(len(self.val)) * self.err
+        profile.data["intensities"] = (
+            self.calculate_profile(params)
+            + np.random.randn(len(self.data["intensities"])) * self.data["errors"]
         )
 
         return profile
 
     def make_bs_profile(self):
         """Make a CPMG profile for boostrap analysis."""
-        indexes = np.array(range(len(self.val)))
+        indexes = np.array(range(len(self.data["intensities"])))
         pool1 = indexes[self.reference]
         pool2 = indexes[np.logical_not(self.reference)]
 
@@ -131,12 +89,54 @@ class CPMGProfile(base_profile.BaseProfile):
         bs_indexes = sorted(bs_indexes)
 
         profile = copy.copy(self)
-        profile.ncycs = profile.ncycs[bs_indexes]
-        profile.val = profile.val[bs_indexes]
-        profile.err = profile.err[bs_indexes]
+        profile.data["ncycs"] = profile.data["ncycs"][bs_indexes]
+        profile.data["intensities"] = profile.data["intensities"][bs_indexes]
+        profile.data["errors"] = profile.data["errors"][bs_indexes]
 
         profile.calculate_unscaled_profile_cached = lru_cache(5)(
             profile.calculate_unscaled_profile
         )
 
         return profile
+
+    def estimate_noise(self):
+        """Estimate the uncertainty in CPMG data points (i.e., R2eff)."""
+
+        intensity_dict = {}
+
+        for ncyc, intensity in zip(self.data["ncycs"], self.data["intensities"]):
+            intensity_dict.setdefault(ncyc, []).append(intensity)
+
+        std_list = []
+        for duplicates in intensity_dict.values():
+            n_duplicates = len(duplicates)
+            if n_duplicates > 1:
+                std_list.append(np.std(duplicates, ddof=1) * _correction(n_duplicates))
+
+        if std_list:
+            error = np.mean(std_list)
+        else:
+            error = np.mean(self.data["errors"])
+
+        return error
+
+
+def _correction(n):
+    """Calculate correction factor for noise estimate."""
+    k = n // 2
+
+    if n == 2 * k:
+        factor = (
+            math.sqrt(math.pi * (2 * k - 1) / 2.0)
+            * math.factorial(2 * k - 2)
+            / ((2 ** (2 * k - 2)) * (math.factorial(k - 1) ** 2))
+        )
+    else:
+        factor = (
+            math.sqrt(k / math.pi)
+            * (2 ** (2 * k - 1))
+            * (math.factorial(k - 1) ** 2)
+            / math.factorial(2 * k - 1)
+        )
+
+    return factor

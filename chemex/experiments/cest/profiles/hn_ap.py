@@ -14,12 +14,11 @@ Reference
 Sekhar, Rosenzweig, Bouvignies and Kay. PNAS (2016) 113:E2794-E2801
 
 """
-
-
 import numpy as np
 
 from chemex.experiments.cest import cest_profile
-from chemex.spindynamics import basis, default
+from chemex.spindynamics import basis
+from chemex.spindynamics import default
 
 EXP_DETAILS = {
     "carrier": {"type": float},
@@ -35,8 +34,8 @@ EXP_DETAILS = {
 class Profile(cest_profile.CESTProfile):
     """Profile for pure in-phase CEST."""
 
-    def __init__(self, name, measurements, exp_details, model):
-        super().__init__(name, measurements, exp_details, model)
+    def __init__(self, name, data, exp_details, model):
+        super().__init__(name, data, exp_details, model)
 
         self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
 
@@ -68,7 +67,7 @@ class Profile(cest_profile.CESTProfile):
             if name.startswith(("dw", "r1_i_a", "r2")):
                 self.params[full_name].set(vary=True)
 
-    def calculate_unscaled_profile(self, b1_offsets=None, **parvals):
+    def calculate_unscaled_profile(self, b1_offsets=None, **params_local):
         """Calculate the CEST profile in the presence of exchange.
 
         TODO: Parameters
@@ -91,12 +90,13 @@ class Profile(cest_profile.CESTProfile):
             )
             reference = [False for _ in b1_offsets]
 
-        mag0 = self.liouv.compute_mag_eq(term="2izsz", **parvals)
+        mag0 = self.liouv.compute_mag_eq(params_local, term="2izsz")
 
-        # As the CEST block is after t1 evolution, the excited state magnetization is set to 0.
+        # As the CEST block is after t1 evolution, the excited state
+        # magnetization is set to 0.
         mag0[6:] = 0.0
 
-        self.liouv.update(**parvals)
+        self.liouv.update(**params_local)
 
         profile = []
 
@@ -129,7 +129,7 @@ class Profile(cest_profile.CESTProfile):
                 (cs_a - self.exp_details["carrier"])
                 * self.liouv.ppms["i"]
                 / (2.0 * np.pi)
-                - self.b1_offsets
+                - self.data["offsets"]
                 + offset
             )
 
@@ -138,7 +138,7 @@ class Profile(cest_profile.CESTProfile):
     def b1_offsets_to_ppm(self, b1_offsets=None):
         """Convert B1 offset from Hz to ppm."""
         if b1_offsets is None:
-            b1_offsets = self.b1_offsets
+            b1_offsets = self.data["offsets"]
 
         return (
             2.0 * np.pi * b1_offsets / self.liouv.ppms["i"]

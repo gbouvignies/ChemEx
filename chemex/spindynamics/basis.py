@@ -91,7 +91,7 @@ class Liouvillian:
         self._vectors, matrices = build_basis(system, state_nb, equilibrium)
         self._matrices = add_cs_and_carrier(matrices, self.ppms)
 
-        self.keys = self._matrices.keys()
+        self.identity = np.identity(self._matrices["cs_i_a"].shape[-1])
 
         self.detect = {name: vector.T for name, vector in self._vectors.items()}
 
@@ -113,7 +113,7 @@ class Liouvillian:
         self._w1_i_inh_res = 11
         self._w1_s_inh_res = 11
 
-        self.update(cs_i_a=0.0)
+        self.update((("cs_i_a", 0.0),))
         self.carrier_i = 0.0
         self.carrier_s = 0.0
         self.w1_i = 1e32
@@ -250,16 +250,18 @@ class Liouvillian:
     def j_eff_i_weights(self, value):
         self._j_eff_i_weights = np.asarray(value).reshape(-1, 1, 1, 1, 1)
 
-    def compute_mag_eq(self, term="iz", **parvals):
+    def compute_mag_eq(self, parvals, term="iz"):
+        parvals_ = dict(parvals)
         return sum(
-            self._vectors.get(name1, 0.0) * parvals.get(name2, 0.0)
+            self._vectors.get(name1, 0.0) * parvals_.get(name2, 0.0)
             for name1, name2 in POP_PAIRS[term]
         )
 
-    def update(self, **parvals):
+    def update(self, parvals):
         self._l_free = sum(
-            self._matrices[name] * parvals[name]
-            for name in set(parvals) & set(self._matrices)
+            self._matrices[name] * parval
+            for name, parval in parvals
+            if name in self._matrices
         )
 
     def collapse(self, vector):

@@ -15,16 +15,16 @@ def compute_profiles(data_grouped, params):
     profiles = {}
 
     for peak, profile in data_grouped.items():
-        mask = profile.ncycs != 0
+        mask = profile.data["ncycs"] != 0
         mask_ref = np.logical_not(mask)
 
-        mag_ref = np.mean(profile.val[mask_ref])
+        mag_ref = np.mean(profile.data["intensities"][mask_ref])
 
         nu_cpmg = profile.ncycs_to_nu_cpmgs()[mask]
 
         mag_cal = profile.calculate_profile(params)[mask]
-        mag_exp = profile.val[mask]
-        mag_err = profile.err[mask]
+        mag_exp = profile.data["intensities"][mask]
+        mag_err = profile.data["errors"][mask]
 
         # sort values according to increasing nu_cpmg values
         sorted_items = list(zip(*sorted(zip(nu_cpmg, mag_cal, mag_exp, mag_err))))

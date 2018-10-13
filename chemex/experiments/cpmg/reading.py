@@ -1,7 +1,5 @@
 """Read the experimental CPMG data."""
-
 import importlib
-import math
 
 import numpy as np
 
@@ -16,27 +14,18 @@ def read_profiles(path, filenames, details, model, included=None, excluded=None)
         )
     )
 
-    error = details.get("error", "file")
-    if error not in {"file", "auto"}:
-        print("Warning: The 'error' option should either be 'file' or ")
-        print("'auto'. Using the default 'file' option.")
-        error = "file"
-
-    error_values = []
-
     if included is None:
         included = filenames.keys()
-    else:
-        included = [_.lower() for _ in included]
 
     if excluded is None:
         excluded = []
-    else:
-        excluded = [_.lower() for _ in excluded]
+
+    included = [_.lower() for _ in included]
+    excluded = [_.lower() for _ in excluded]
 
     Profile = getattr(experiment_module, "Profile")
 
-    dtype = [("ncycs", "<f8"), ("intensities", "<f8"), ("intensities_err", "<f8")]
+    dtype = [("ncycs", "i4"), ("intensities", "f8"), ("errors", "f8")]
 
     profiles = []
 
@@ -44,9 +33,9 @@ def read_profiles(path, filenames, details, model, included=None, excluded=None)
 
         full_path = path / filename
 
-        measurements = np.loadtxt(full_path, dtype=dtype)
+        data = np.loadtxt(full_path, dtype=dtype)
 
-        profile = Profile(profile_name, measurements, details, model)
+        profile = Profile(profile_name, data, details, model)
 
         is_included = profile_name in included
         is_not_excluded = profile_name not in excluded
@@ -54,17 +43,26 @@ def read_profiles(path, filenames, details, model, included=None, excluded=None)
         if is_included and is_not_excluded:
             profiles.append(profile)
 
-        if error == "auto":
-            error_values.append(estimate_noise(profile))
+    error = details.get("error", "file")
+
+    if error not in {"file", "auto"}:
+        print("Warning: The 'error' option should either be 'file' or ")
+        print("'auto'. Using the default 'file' option.")
+        error = "file"
 
     if error == "auto":
-        error_value = np.mean(error_values)
+
+        noise_values = []
+
         for profile in profiles:
-            profile.err[:] = error_value
+            noise_values.append(profile.estimate_noise())
 
-    ndata = sum(len(profile.val) for profile in profiles)
+        noise_mean = np.mean(noise_values)
 
-    return profiles, ndata
+        for profile in profiles:
+            profile.data["errors"] = noise_mean
+
+    return profiles
 
 
 def name_experiment(experiment_details=None):
@@ -86,45 +84,3 @@ def name_experiment(experiment_details=None):
         ).lower()
 
     return name
-
-
-def correction(n):
-    """Calculate correction factor for noise estimate."""
-    k = n // 2
-
-    if n == 2 * k:
-        factor = (
-            math.sqrt(math.pi * (2 * k - 1) / 2.0)
-            * math.factorial(2 * k - 2)
-            / ((2 ** (2 * k - 2)) * (math.factorial(k - 1) ** 2))
-        )
-    else:
-        factor = (
-            math.sqrt(k / math.pi)
-            * (2 ** (2 * k - 1))
-            * (math.factorial(k - 1) ** 2)
-            / math.factorial(2 * k - 1)
-        )
-
-    return factor
-
-
-def estimate_noise(profile):
-    """Estimate the uncertainty in CPMG data points (i.e., R2eff)."""
-    intensity_dict = {}
-
-    for ncyc, intensity in zip(profile.ncycs, profile.val):
-        intensity_dict.setdefault(ncyc, []).append(intensity)
-
-    std_list = []
-    for duplicates in intensity_dict.values():
-        n_duplicates = len(duplicates)
-        if n_duplicates > 1:
-            std_list.append(np.std(duplicates, ddof=1) * correction(n_duplicates))
-
-    if std_list:
-        error = np.mean(std_list)
-    else:
-        error = np.mean(profile.err)
-
-    return error

@@ -19,12 +19,11 @@ with antiphase_flg set to 'y'
 
 Journal of Biomolecular NMR (2011) 50, 13-8
 """
-
-
 import numpy as np
 
 from chemex.experiments.cpmg import cpmg_profile
-from chemex.spindynamics import basis, default
+from chemex.spindynamics import basis
+from chemex.spindynamics import default
 
 EXP_DETAILS = {
     "carrier": {"type": float},
@@ -37,8 +36,8 @@ EXP_DETAILS = {
 class Profile(cpmg_profile.CPMGProfile):
     """TODO: class docstring."""
 
-    def __init__(self, name, measurements, exp_details, model):
-        super().__init__(name, measurements, exp_details, model)
+    def __init__(self, name, data, exp_details, model):
+        super().__init__(name, data, exp_details, model)
 
         self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
 
@@ -57,7 +56,7 @@ class Profile(cpmg_profile.CPMGProfile):
 
         self.t_cps = {
             ncyc: self.exp_details["time_t2"] / (4.0 * ncyc) - self.exp_details["pw90"]
-            for ncyc in self.ncycs[self.ncycs > 0]
+            for ncyc in self.data["ncycs"][~self.reference]
         }
 
         self.t_neg = -2.0 * self.exp_details["pw90"] / np.pi
@@ -77,10 +76,10 @@ class Profile(cpmg_profile.CPMGProfile):
             if name.startswith(("dw", "r2_i_a")):
                 self.params[full_name].set(vary=True)
 
-    def calculate_unscaled_profile(self, **parvals):
+    def calculate_unscaled_profile(self, params_local, **kwargs):
         """TODO: class docstring."""
 
-        self.liouv.update(**parvals)
+        self.liouv.update(params_local)
 
         # Calculation of all the needed propagators
         pulses = self.liouv.pulses_90_180_i()
@@ -89,11 +88,11 @@ class Profile(cpmg_profile.CPMGProfile):
         p_180pmx = 0.5 * (pulses["180px"] + pulses["180mx"])  # +/- phase cycling
 
         # Simulate the CPMG block as function of ncyc
-        mag0 = self.liouv.compute_mag_eq(term="2izsz", **parvals)
+        mag0 = self.liouv.compute_mag_eq(params_local, term="2izsz")
 
         profile = []
 
-        for ncyc in self.ncycs:
+        for ncyc in self.data["ncycs"]:
 
             if ncyc == 0:
 
@@ -133,6 +132,6 @@ class Profile(cpmg_profile.CPMGProfile):
     def ncycs_to_nu_cpmgs(self, ncycs=None):
         """Calculate the pulsing frequency, v(CPMG), from ncyc values."""
         if ncycs is None:
-            ncycs = self.ncycs
+            ncycs = self.data["ncycs"]
 
         return ncycs / self.exp_details["time_t2"]

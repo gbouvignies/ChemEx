@@ -41,13 +41,13 @@ Extra parameters
                   = 'auto': uncertainties are calculated from duplicates)
 
 """
-
 from functools import reduce
 
 import numpy as np
 
 from chemex.experiments.cpmg import cpmg_profile
-from chemex.spindynamics import basis, default
+from chemex.spindynamics import basis
+from chemex.spindynamics import default
 
 EXP_DETAILS = {
     "carrier": {"type": float},
@@ -66,8 +66,8 @@ CP_PHASES = [
 class Profile(cpmg_profile.CPMGProfile):
     """TODO: class docstring."""
 
-    def __init__(self, name, measurements, exp_details, model):
-        super().__init__(name, measurements, exp_details, model)
+    def __init__(self, name, data, exp_details, model):
+        super().__init__(name, data, exp_details, model)
 
         self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
 
@@ -92,7 +92,7 @@ class Profile(cpmg_profile.CPMGProfile):
         self.detect = self.liouv.detect["iz_a"]
 
         # Set the delays in the experiments
-        ncycs = self.ncycs[~self.reference]
+        ncycs = self.data["ncycs"][~self.reference]
         self.tau_cps = dict(zip(ncycs, self.time_t2 / (4.0 * ncycs) - 0.75 * self.pw90))
         self.deltas = dict(zip(ncycs, self.pw90 * (self.ncyc_max - ncycs)))
         self.deltas[0] = self.pw90 * (self.ncyc_max - 1)
@@ -122,10 +122,10 @@ class Profile(cpmg_profile.CPMGProfile):
             if name.startswith(("dw", "r2_i_a")):
                 self.params[full_name].set(vary=True)
 
-    def calculate_unscaled_profile(self, **parvals):
+    def calculate_unscaled_profile(self, params_local, **kwargs):
         """TODO: Write docstring"""
 
-        self.liouv.update(**parvals)
+        self.liouv.update(params_local)
 
         # Calculation of the propagators corresponding to all the delays
         delays = dict(zip(self.delays, self.liouv.delays(self.delays)))
@@ -140,12 +140,12 @@ class Profile(cpmg_profile.CPMGProfile):
         p180 = np.array([pulses[name] for name in ["180px", "180py", "180mx", "180my"]])
 
         # Getting the starting magnetization
-        mag0 = self.liouv.compute_mag_eq(term="iz", **parvals)
+        mag0 = self.liouv.compute_mag_eq(params_local, term="iz")
 
         # Calculating the cpmg trains
         cp = {0: p180[[0, 3]] @ d_pos2 @ p180[[0, 1]]}
 
-        for ncyc in set(self.ncycs[~self.reference]):
+        for ncyc in set(self.data["ncycs"][~self.reference]):
             tau_cp = delays[self.tau_cps[ncyc]]
             phase_cp = self.phases[ncyc]
 
@@ -159,7 +159,7 @@ class Profile(cpmg_profile.CPMGProfile):
             self.liouv.collapse(
                 self.detect @ d_eq @ delta[ncyc] @ p90[3] @ cp[ncyc] @ p90[1] @ mag0
             )
-            for ncyc in self.ncycs
+            for ncyc in self.data["ncycs"]
         ]
 
         return np.asarray(profile)
@@ -167,6 +167,6 @@ class Profile(cpmg_profile.CPMGProfile):
     def ncycs_to_nu_cpmgs(self, ncycs=None):
         """Calculate the pulsing frequency, v(CPMG), from ncyc values."""
         if ncycs is None:
-            ncycs = self.ncycs
+            ncycs = self.data["ncycs"]
 
         return ncycs / self.exp_details["time_t2"]
