@@ -75,7 +75,7 @@ class Profile(cpmg_profile.CPMGProfile):
             if name.startswith(("dw", "r2_mq_a")):
                 self.params[full_name].set(vary=True)
 
-    def calculate_unscaled_profile(self, params_local, **kwargs):
+    def _calculate_unscaled_profile(self, params_local, **kwargs):
         """TODO: class docstring."""
 
         self.liouv.update(params_local)

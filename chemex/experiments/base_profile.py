@@ -1,5 +1,6 @@
 """TODO: module docstring."""
 import abc
+import copy
 from functools import lru_cache
 
 import numpy as np
@@ -47,7 +48,9 @@ class BaseProfile(metaclass=abc.ABCMeta):
         self.map_names = {}
         self.basis = None
 
-        self.calculate_unscaled_profile = lru_cache(8)(self.calculate_unscaled_profile)
+        self.calculate_unscaled_profile = lru_cache(256)(
+            self._calculate_unscaled_profile
+        )
 
     def __len__(self):
         return self.data.size
@@ -61,7 +64,7 @@ class BaseProfile(metaclass=abc.ABCMeta):
 
         return residuals[self.mask]
 
-    def calculate_unscaled_profile(self, params_local, **kwargs):
+    def _calculate_unscaled_profile(self, params_local, **kwargs):
         """Calculate the unscaled CEST profile."""
         pass
 
@@ -82,7 +85,7 @@ class BaseProfile(metaclass=abc.ABCMeta):
             scale = 0.0
 
         if kwargs:
-            values = self.calculate_unscaled_profile.__wrapped__(params_local, **kwargs)
+            values = self._calculate_unscaled_profile(params_local, **kwargs)
 
         return values * scale
 
@@ -95,6 +98,17 @@ class BaseProfile(metaclass=abc.ABCMeta):
     def filter_points(self, params=None):
         """TODO: method docstring."""
         pass
+
+    def make_mc_profile(self, params):
+        """Make a profile for MC analysis."""
+
+        profile = copy.copy(self)
+        profile.data["intensities"] = (
+            self.calculate_profile(params)
+            + np.random.randn(len(self.data["intensities"])) * self.data["errors"]
+        )
+
+        return profile
 
     @staticmethod
     def check_exp_details(exp_details=None, expected=None):

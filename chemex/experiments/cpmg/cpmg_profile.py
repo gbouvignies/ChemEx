@@ -16,7 +16,10 @@ class CPMGProfile(base_profile.BaseProfile):
         super().__init__(name, data, exp_details, model)
 
         self.plot_data = plotting.plot_data
-        self.reference = self.data["ncycs"] == 0
+
+    @property
+    def reference(self):
+        return self.data["ncycs"] == 0
 
     def print_profile(self, params=None):
         """Print the CPMG profile."""
@@ -64,22 +67,11 @@ class CPMGProfile(base_profile.BaseProfile):
 
         self.mask = np.ones_like(self.data["intensities"], dtype=np.bool)
 
-    def make_mc_profile(self, params):
-        """Make a CPMG profile for boostrap analysis."""
-
-        profile = copy.copy(self)
-        profile.data["intensities"] = (
-            self.calculate_profile(params)
-            + np.random.randn(len(self.data["intensities"])) * self.data["errors"]
-        )
-
-        return profile
-
     def make_bs_profile(self):
         """Make a CPMG profile for boostrap analysis."""
         indexes = np.array(range(len(self.data["intensities"])))
         pool1 = indexes[self.reference]
-        pool2 = indexes[np.logical_not(self.reference)]
+        pool2 = indexes[~self.reference]
 
         bs_indexes = []
         if pool1.size:
@@ -89,12 +81,9 @@ class CPMGProfile(base_profile.BaseProfile):
         bs_indexes = sorted(bs_indexes)
 
         profile = copy.copy(self)
-        profile.data["ncycs"] = profile.data["ncycs"][bs_indexes]
-        profile.data["intensities"] = profile.data["intensities"][bs_indexes]
-        profile.data["errors"] = profile.data["errors"][bs_indexes]
-
-        profile.calculate_unscaled_profile_cached = lru_cache(5)(
-            profile.calculate_unscaled_profile
+        profile.data = self.data[bs_indexes]
+        profile.calculate_unscaled_profile = lru_cache(256)(
+            profile._calculate_unscaled_profile
         )
 
         return profile

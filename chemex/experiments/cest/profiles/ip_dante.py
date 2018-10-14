@@ -90,7 +90,7 @@ class Profile(cest_profile.CESTProfile):
             if name.startswith(("dw", "r1_i_a", "r2")):
                 self.params[full_name].set(vary=True)
 
-    def calculate_unscaled_profile(self, b1_offsets=None, **params_local):
+    def _calculate_unscaled_profile(self, b1_offsets=None, **params_local):
         """Calculate the CEST profile in the presence of exchange.
 
         TODO: Parameters

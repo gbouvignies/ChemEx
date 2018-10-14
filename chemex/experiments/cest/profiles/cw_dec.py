@@ -80,7 +80,7 @@ class Profile(cest_profile.CESTProfile):
             ):
                 self.params[full_name].set(vary=True)
 
-    def calculate_unscaled_profile(self, b1_offsets=None, **params_local):
+    def _calculate_unscaled_profile(self, b1_offsets=None, **params_local):
         """Calculate the CEST profile in the presence of exchange.
 
         TODO: Parameters

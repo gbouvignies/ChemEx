@@ -1,6 +1,5 @@
 """The cest_profile module contains the code for handling CEST profiles."""
 import copy
-from functools import lru_cache
 
 import numpy as np
 from scipy import interpolate
@@ -20,7 +19,10 @@ class CESTProfile(base_profile.BaseProfile):
 
         self.plot_data = plotting.plot_data
         self.mask = np.ones_like(self.data["offsets"], dtype=np.bool)
-        self.reference = np.abs(self.data["offsets"]) >= 1.0e04
+
+    @property
+    def reference(self):
+        return np.abs(self.data["offsets"]) >= 1.0e04
 
     def print_profile(self, params=None):
         """Print the CEST profile."""
@@ -62,17 +64,6 @@ class CESTProfile(base_profile.BaseProfile):
 
         return "\n".join(output).upper()
 
-    def make_mc_profile(self, params):
-        """Make a CEST profile for boostrap analysis."""
-
-        profile = copy.copy(self)
-        profile.data["intensities"] = (
-            self.calculate_profile(params)
-            + np.random.randn(len(self.data["intensities"])) * self.data["errors"]
-        )
-
-        return profile
-
     def make_bs_profile(self):
         """Make a CEST profile for boostrap analysis."""
         indexes = np.array(range(len(self.data["intensities"])))
@@ -87,13 +78,9 @@ class CESTProfile(base_profile.BaseProfile):
         bs_indexes = sorted(bs_indexes)
 
         profile = copy.copy(self)
-        profile.data["offsets"] = profile.data["offsets"][bs_indexes]
-        profile.data["intensities"] = profile.data["intensities"][bs_indexes]
-        profile.data["errors"] = profile.data["errors"][bs_indexes]
+        profile.data = self.data[bs_indexes]
 
-        profile.calculate_unscaled_profile_cached = lru_cache(5)(
-            profile.calculate_unscaled_profile
-        )
+        profile._calculate_unscaled_profile.cache_clear()
 
         return profile
 

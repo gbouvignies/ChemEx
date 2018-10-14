@@ -7,7 +7,9 @@ import numpy as np
 def read_profiles(path, filenames, details, model, included=None, excluded=None):
     """Read the CPMG profiles."""
     experiment_type = details["type"].split(".")
+
     details["name"] = name_experiment(details)
+
     experiment_module = importlib.import_module(
         ".".join(
             ["chemex.experiments", experiment_type[0], "profiles", experiment_type[1]]
