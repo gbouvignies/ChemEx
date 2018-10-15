@@ -44,7 +44,8 @@ def main():
 
 def fit(args):
     # Read experimental setup and data
-    data = datasets.read_data(args)
+    data = datasets.read_data(args.experiments, args.model)
+    data.filter(args.res_incl, args.res_excl)
 
     # Create and update initial values of fitting/fixed parameters
     util.header1("Reading Default Parameters")

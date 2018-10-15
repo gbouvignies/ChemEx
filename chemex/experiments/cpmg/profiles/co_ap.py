@@ -29,7 +29,7 @@ Journal of Biomolecular NMR (2008) 42, 35-47
 """
 import numpy as np
 
-from chemex.experiments.cpmg import cpmg_profile
+from chemex.experiments.cpmg import base_cpmg
 from chemex.spindynamics import basis
 from chemex.spindynamics import default
 
@@ -43,7 +43,7 @@ EXP_DETAILS = {
 }
 
 
-class Profile(cpmg_profile.CPMGProfile):
+class Profile(base_cpmg.ProfileCPMG):
     """TODO: class docstring."""
 
     def __init__(self, name, data, exp_details, model):

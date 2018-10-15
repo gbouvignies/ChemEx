@@ -7,11 +7,11 @@ from scipy import linalg
 from scipy import signal
 from scipy import stats
 
-from chemex.experiments import base_profile
+from chemex.experiments import base_intensity
 from chemex.experiments.cest import plotting
 
 
-class CESTProfile(base_profile.BaseProfile):
+class ProfileCEST(base_intensity.ProfileIntensity):
     """CESTProfile class."""
 
     def __init__(self, name, data, exp_details, model):
@@ -42,7 +42,7 @@ class CESTProfile(base_profile.BaseProfile):
             )
         )
 
-        output.append(f"[{self.profile_name}]")
+        output.append(f"[{self.name}]")
         output.append(
             "# {:>12s}   {:>17s} {:>17s} {:>17s}".format(
                 "offset (Hz)", "intensity (exp)", "uncertainty", "intensity (calc)"

@@ -18,7 +18,7 @@ CONDITIONS = {
 }
 
 
-class BaseProfile(metaclass=abc.ABCMeta):
+class ProfileIntensity(metaclass=abc.ABCMeta):
     """TODO: class docstring."""
 
     BOOLEAN_STATES = {
@@ -38,8 +38,8 @@ class BaseProfile(metaclass=abc.ABCMeta):
         if name is None:
             name = ""
 
-        self.profile_name = name
-        self.peak = peaks.Peak(self.profile_name)
+        self.name = name
+        self.peak = peaks.Peak(self.name)
         self.model = util.parse_model(model)
         self.experiment_name = self.check_exp_details(exp_details, EXP_DETAILS)["name"]
         self.conditions = self.check_exp_details(exp_details, CONDITIONS)

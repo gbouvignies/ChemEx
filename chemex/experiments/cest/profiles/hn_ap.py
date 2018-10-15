@@ -16,7 +16,7 @@ Sekhar, Rosenzweig, Bouvignies and Kay. PNAS (2016) 113:E2794-E2801
 """
 import numpy as np
 
-from chemex.experiments.cest import cest_profile
+from chemex.experiments.cest import base_cest
 from chemex.spindynamics import basis
 from chemex.spindynamics import default
 
@@ -31,7 +31,7 @@ EXP_DETAILS = {
 }
 
 
-class Profile(cest_profile.CESTProfile):
+class Profile(base_cest.ProfileCEST):
     """Profile for pure in-phase CEST."""
 
     def __init__(self, name, data, exp_details, model):

@@ -45,7 +45,7 @@ Extra parameters
 import numpy as np
 from numpy import linalg as la
 
-from chemex.experiments.cpmg import cpmg_profile
+from chemex.experiments.cpmg import base_cpmg
 from chemex.spindynamics import basis
 from chemex.spindynamics import default
 
@@ -57,7 +57,7 @@ EXP_DETAILS = {
 }
 
 
-class Profile(cpmg_profile.CPMGProfile):
+class Profile(base_cpmg.ProfileCPMG):
     """TODO: class docstring."""
 
     def __init__(self, name, data, exp_details, model):

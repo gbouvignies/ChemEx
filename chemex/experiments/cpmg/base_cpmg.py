@@ -5,11 +5,11 @@ from functools import lru_cache
 
 import numpy as np
 
-from chemex.experiments import base_profile
+from chemex.experiments import base_intensity
 from chemex.experiments.cpmg import plotting
 
 
-class CPMGProfile(base_profile.BaseProfile):
+class ProfileCPMG(base_intensity.ProfileIntensity):
     """CPMGProfile class."""
 
     def __init__(self, name, data, exp_details, model):
@@ -39,7 +39,7 @@ class CPMGProfile(base_profile.BaseProfile):
             )
         )
 
-        output.append(f"[{self.profile_name}]")
+        output.append(f"[{self.name}]")
         output.append(
             "# {:>5s}   {:>17s} {:>17s} {:>17s}".format(
                 "ncyc", "intensity (exp)", "uncertainty", "intensity (calc)"

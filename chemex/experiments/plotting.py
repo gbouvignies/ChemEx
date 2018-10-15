@@ -1,7 +1,5 @@
 """The plotting module contains experiment-independent settings and
 functions."""
-
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LogNorm
@@ -374,8 +372,8 @@ STYLE_DICT = {
     "mathtext.default": "regular",
 }
 
-mpl.rcParams.update(BASE_CONTEXT)
-mpl.rcParams.update(STYLE_DICT)
+plt.rcParams.update(BASE_CONTEXT)
+plt.rcParams.update(STYLE_DICT)
 
 
 def set_lim(values, scale):
@@ -392,7 +390,7 @@ def group_data(dataset):
     data_grouped = dict()
 
     for profile in dataset:
-        resonance_id = profile.profile_name
+        resonance_id = profile.name
         peak = peaks.Peak(resonance_id)
         data_grouped[peak] = profile
 

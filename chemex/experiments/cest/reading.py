@@ -4,7 +4,7 @@ import importlib
 import numpy as np
 
 
-def read_profiles(path, filenames, details, model, included=None, excluded=None):
+def read_profiles(path, filenames, details, model):
     """Read the CEST profiles."""
 
     experiment_type = details["type"].split(".")
@@ -17,15 +17,6 @@ def read_profiles(path, filenames, details, model, included=None, excluded=None)
         )
     )
 
-    if included is None:
-        included = filenames.keys()
-
-    if excluded is None:
-        excluded = []
-
-    included = [_.lower() for _ in included]
-    excluded = [_.lower() for _ in excluded]
-
     Profile = getattr(experiment_module, "Profile")
 
     dtype = [("offsets", "f8"), ("intensities", "f8"), ("errors", "f8")]
@@ -33,18 +24,9 @@ def read_profiles(path, filenames, details, model, included=None, excluded=None)
     profiles = []
 
     for name, filename in filenames.items():
-
         full_path = path / filename
-
         data = np.loadtxt(full_path, dtype=dtype)
-
-        profile = Profile(name, data, details, model)
-
-        is_included = name.lower() in included
-        is_not_excluded = name.lower() not in excluded
-
-        if is_included and is_not_excluded:
-            profiles.append(profile)
+        profiles.append(Profile(name, data, details, model))
 
     error = details.get("error", "file")
 

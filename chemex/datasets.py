@@ -9,59 +9,59 @@ import sys
 import numpy as np
 
 from chemex import util
-from chemex.experiments import base_profile
+from chemex.experiments import base_intensity
 
 
 class DataSet:
     """DataSet class for handling experimental data."""
 
     def __init__(self, other=None):
-        self.dataset = []
+        self.datasets = []
         self.chisq_ref = 1e32
 
         if isinstance(other, DataSet):
-            self.dataset = copy.deepcopy(other.dataset)
+            self.datasets = copy.deepcopy(other.datasets)
 
-        elif isinstance(other, base_profile.BaseProfile):
-            self.dataset.append(other)
+        elif isinstance(other, base_intensity.ProfileIntensity):
+            self.datasets.append(other)
 
     def __len__(self):
-        return len(self.dataset)
+        return len(self.datasets)
 
     def __getitem__(self, key):
-        return self.dataset[key]
+        return self.datasets[key]
 
     def __iter__(self):
-        for some_data in self.dataset:
+        for some_data in self.datasets:
             yield some_data
 
     def __add__(self, other):
         data_sum = DataSet(self)
-        data_sum.dataset.extend(other.data)
+        data_sum.datasets.extend(other.data)
         return data_sum
 
     def __radd__(self, other):
         return self.__add__(other)
 
     def __iadd__(self, other):
-        self.dataset.extend(other.data)
+        self.datasets.extend(other.data)
         return self
 
     @property
     def ndata(self):
-        return sum(len(profile) for profile in self.dataset)
+        return sum(len(profile) for profile in self.datasets)
 
     def append(self, profile):
         """Append data to an exisiting dataset."""
-        if not isinstance(profile, base_profile.BaseProfile):
+        if not isinstance(profile, base_intensity.ProfileIntensity):
             raise TypeError
-        self.dataset.append(profile)
+        self.datasets.append(profile)
 
     def calculate_residuals(self, params, verbose=True, threshold=1e-3):
         """Calculate the residuals."""
 
         residuals = np.concatenate(
-            [profile.calculate_residuals(params) for profile in self.dataset]
+            [profile.calculate_residuals(params) for profile in self.datasets]
         )
 
         if verbose:
@@ -83,7 +83,7 @@ class DataSet:
         """Write experimental and fitted profiles to a file."""
         datasets = dict()
 
-        for profile in self.dataset:
+        for profile in self.datasets:
             experiment_name = profile.experiment_name
             datasets.setdefault(experiment_name, list()).append(profile)
 
@@ -98,7 +98,7 @@ class DataSet:
                 for profile in sorted(data, key=operator.attrgetter("peak")):
                     f.write(profile.print_profile(params=params))
 
-    def add_dataset_from_file(self, filename, model=None, included=None, excluded=None):
+    def add_dataset_from_file(self, filename, model=None):
         """Add profiles from a file to the dataset."""
 
         if model is None:
@@ -163,22 +163,43 @@ class DataSet:
                 )
             )
 
-        profiles = reading.read_profiles(
-            path, filenames, details, model, included, excluded
-        )
+        profiles = reading.read_profiles(path, filenames, details, model)
 
-        self.dataset.extend(profiles)
+        self.datasets.extend(profiles)
 
         print("{:<25s} {:<25d}".format(experiment_type, len(profiles)))
 
         return profiles
+
+    def filter(self, included=None, excluded=None):
+
+        names = [dataset.name for dataset in self.datasets]
+
+        if included is None:
+            included = names
+
+        if excluded is None:
+            excluded = []
+
+        included = [_.lower() for _ in included]
+        excluded = [_.lower() for _ in excluded]
+
+        datasets_new = []
+
+        for dataset in self.datasets:
+            name = dataset.name
+
+            if name in included and name not in excluded:
+                datasets_new.append(dataset)
+
+        self.datasets = datasets_new
 
     def make_bs_dataset(self):
         """Create a new dataset to run a bootstrap simulation."""
 
         data_bs = DataSet()
 
-        for profile in self.dataset:
+        for profile in self.datasets:
             data_bs.append(profile.make_bs_profile())
 
         return data_bs
@@ -188,38 +209,27 @@ class DataSet:
 
         data_mc = DataSet()
 
-        for profile in self.dataset:
+        for profile in self.datasets:
             data_mc.append(profile.make_mc_profile(params=params))
 
         return data_mc
 
 
-def read_data(args):
+def read_data(filenames=None, model=None):
     """Read experimental setup and data."""
     util.header1("Reading Experimental Data")
 
     data = DataSet()
 
-    model = res_incl = res_excl = None
-
-    if "model" in args:
-        model = args.model
-
-    if "res_incl" in args:
-        res_incl = args.res_incl
-
-    if "res_excl" in args:
-        res_excl = args.res_excl
-
-    if args.experiments:
+    if filenames:
         print(("{:<45s} {:<25s} {:<25s}".format("File Name", "Experiment", "Profiles")))
         print(("{:<45s} {:<25s} {:<25s}".format("---------", "----------", "--------")))
 
-        for filename in args.experiments:
-            filename_ = pathlib.Path(filename)
-            data.add_dataset_from_file(filename_, model, res_incl, res_excl)
+        for filename in filenames:
+            path = pathlib.Path(filename)
+            data.add_dataset_from_file(path, model)
 
-    if not data.dataset:
+    if not data.datasets:
         sys.exit("\nNo data to fit!\n")
 
     return data
