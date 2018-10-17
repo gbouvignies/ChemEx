@@ -1,10 +1,9 @@
-import argparse
 import configparser
-import pathlib
 
 from matplotlib import pyplot as plt
 
-from chemex import parameters, peaks
+from chemex import parameters
+from chemex import peaks
 
 
 def plot_param(args):
@@ -20,7 +19,7 @@ def plot_param(args):
 
     for section in params.sections():
 
-        short_name = parameters.ParameterName().from_section(section).name
+        short_name = parameters.ParamName().from_section(section).name
 
         if parname.lower() in short_name:
             print("".join(["  [", section, "]"]))

@@ -1,23 +1,35 @@
-"""13C(methyl) - H to C CPMG
+"""13CO - Pure Anti-phase Carbonyl 13C CPMG
 
-Measures methyl carbon chemical exchange recorded on site-specifically
-13CH3-labeled proteins in a highly deuterated background. Magnetization is
-initally anti-phase and is read out as in-phase. Because of the P-element only
-even ncyc should be recorded. The calculation uses a 12x12 basis set:
+Analyzes carbonyl chemical exchange that is maintained as anti-phase
+magnetization throughout the CPMG block. This results in lower intrinsic
+relaxation rates and therefore better sensitivity. The calculations use a 12x12,
+2-spin exchange matrix:
 
-[Cx(a), Cy(a), Cz(a), 2HxCz(a), 2HyCz(a), 2HzCz(a),
- Cx(b), Cy(b), Cz(b), 2HxCz(b), 2HyCz(b), 2HzCz(b)]
+[ COx(a), COy(a), COz(a), 2COxNz(a), 2COyNz(a), 2COzNz(a),
+  COx(b), COy(b), COz(b), 2COxNz(b), 2COyNz(b), 2COzNz(b)]
 
-Off resonance effects are taken into account. The calculation is designed
-explicitly for analyzing the Lewis Kay pulse sequence:
+Notes
+-----
 
-HtoC_CH3_exchange_*00_lek_ILV
+Because of the length of the shaped pulses used during the CPMG blocks, off-
+resonance effects are taken into account only for the 90-degree pulses that
+create COxNz before the CPMG and COzNz after the CPMG. The calculation is
+designed explicitly for analyzing the Kay laboratory pulse sequence:
 
-Journal of Biomolecular NMR (2007) 38, 79-88
+CO_CPMG_SCFilter_x00_dfh1
+
+And can be run with or without sidechain CO inversion via the Inv_CO flag for
+uniformly 13C-labeled proteins.
+
+Reference
+---------
+
+Journal of Biomolecular NMR (2008) 42, 35-47
+
 """
 import numpy as np
 
-from chemex.experiments.cpmg import base_cpmg
+from chemex.experiments.cpmg.base_cpmg import ProfileCPMG
 from chemex.spindynamics import basis
 from chemex.spindynamics import default
 
@@ -25,12 +37,13 @@ EXP_DETAILS = {
     "carrier": {"type": float},
     "time_t2": {"type": float},
     "pw90": {"type": float},
-    "taub": {"default": 1.99e-3, "type": float},
-    "time_equil": {"default": 0.0, "type": float},
+    "time_equil": {"type": float, "default": 0.0},
+    "sidechain_flg": {"type": str, "default": "n"},
+    "taucc": {"type": float, "default": 9.09e-3},
 }
 
 
-class Profile(base_cpmg.ProfileCPMG):
+class ProfileCPMG_CO_AP(ProfileCPMG):
     """TODO: class docstring."""
 
     def __init__(self, name, data, exp_details, model):
@@ -49,10 +62,10 @@ class Profile(base_cpmg.ProfileCPMG):
         self.liouv.carrier_i = self.exp_details["carrier"]
         self.liouv.w1_i = 2.0 * np.pi / (4.0 * self.exp_details["pw90"])
 
-        self.detect = self.liouv.detect["iz_a"]
+        self.detect = self.liouv.detect["2izsz_a"]
 
         self.t_cps = {
-            ncyc: self.exp_details["time_t2"] / (4.0 * ncyc) - self.exp_details["pw90"]
+            ncyc: self.exp_details["time_t2"] / (4.0 * ncyc)
             for ncyc in self.data["ncycs"][~self.reference]
         }
 
@@ -61,16 +74,18 @@ class Profile(base_cpmg.ProfileCPMG):
         self.delays = [
             self.t_neg,
             self.exp_details["time_equil"],
-            self.exp_details["taub"],
+            self.exp_details["taucc"],
         ]
         self.delays.extend(self.t_cps.values())
+
+        self.sidechain_flg = self.exp_details["sidechain_flg"].lower().startswith("y")
 
         self.map_names, self.params = default.create_params(
             basis=self.liouv,
             model=self.model,
             nuclei=self.peak.names,
             conditions=self.conditions,
-            nh_constraints=True,
+            hn_ap_constraints=True,
         )
 
         for name, full_name in self.map_names.items():
@@ -110,18 +125,23 @@ class Profile(base_cpmg.ProfileCPMG):
         pulses = self.liouv.pulses_90_180_i()
         delays = dict(zip(self.delays, self.liouv.delays(self.delays)))
 
+        p_180pmy = 0.5 * (pulses["180py"] + pulses["180my"])  # +/- phase cycling
+
         # Simulate the CPMG block as function of ncyc
         mag0 = self.liouv.compute_mag_eq(params_local, term="2izsz")
 
         profile = []
 
-        p_element = (
-            delays[self.exp_details["taub"]]
-            @ pulses["90px"]
-            @ self.liouv.perfect180["sx"]
-            @ pulses["90px"]
-            @ delays[self.exp_details["taub"]]
-        )
+        if self.sidechain_flg:
+            p_flip = p_180pmy
+        else:
+            p_flip = (
+                pulses["90my"]
+                @ delays[self.exp_details["taucc"]]
+                @ p_180pmy
+                @ delays[self.exp_details["taucc"]]
+                @ pulses["90py"]
+            )
 
         for ncyc in self.data["ncycs"]:
 
@@ -131,8 +151,8 @@ class Profile(base_cpmg.ProfileCPMG):
                     self.detect
                     @ delays[self.exp_details["time_equil"]]
                     @ pulses["90py"]
-                    @ p_element
-                    @ pulses["90px"]
+                    @ p_flip
+                    @ pulses["90py"]
                     @ mag0
                 )
 
@@ -140,14 +160,7 @@ class Profile(base_cpmg.ProfileCPMG):
 
                 p_cpx = np.linalg.matrix_power(
                     delays[self.t_cps[ncyc]]
-                    @ pulses["180px"]
-                    @ delays[self.t_cps[ncyc]],
-                    int(ncyc),
-                )
-
-                p_cpy = np.linalg.matrix_power(
-                    delays[self.t_cps[ncyc]]
-                    @ pulses["180py"]
+                    @ self.liouv.perfect180["ix"]
                     @ delays[self.t_cps[ncyc]],
                     int(ncyc),
                 )
@@ -158,10 +171,12 @@ class Profile(base_cpmg.ProfileCPMG):
                     @ pulses["90py"]
                     @ delays[self.t_neg]
                     @ p_cpx
-                    @ p_element
-                    @ p_cpy
                     @ delays[self.t_neg]
-                    @ pulses["90px"]
+                    @ p_flip
+                    @ delays[self.t_neg]
+                    @ p_cpx
+                    @ delays[self.t_neg]
+                    @ pulses["90py"]
                     @ mag0
                 )
 

@@ -57,7 +57,7 @@ from functools import reduce
 
 import numpy as np
 
-from chemex.experiments.cpmg import base_cpmg
+from chemex.experiments.cpmg.base_cpmg import ProfileCPMG
 from chemex.spindynamics import basis
 from chemex.spindynamics import default
 
@@ -80,7 +80,7 @@ CP_PHASES = [
 ]
 
 
-class Profile(base_cpmg.ProfileCPMG):
+class ProfileCPMG_N_TROSY_0013(ProfileCPMG):
     """TODO: class docstring."""
 
     def __init__(self, name, data, exp_details, model):

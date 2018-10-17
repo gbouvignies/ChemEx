@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 from matplotlib import ticker
 from matplotlib.backends import backend_pdf
 
-from chemex.experiments import plotting
+from chemex.experiments.base import plotting
 
 
 def sigma_estimator(x):

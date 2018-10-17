@@ -1,8 +1,7 @@
 """Unit and regression test for the chemex package."""
-
 import sys
 
-import chemex
+import chemex  # noqa: F401; pylint: disable=unused-variable
 
 
 def test_chemex_imported():

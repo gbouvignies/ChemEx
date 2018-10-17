@@ -17,7 +17,7 @@ Yuwen, Kay and Bouvignies. ChemPhysChem (2018) 19:1707-1710
 """
 import numpy as np
 
-from chemex.experiments.cest import base_cest
+from chemex.experiments.cest.base_cest import ProfileCEST
 from chemex.spindynamics import basis
 from chemex.spindynamics import constants
 from chemex.spindynamics import default
@@ -36,7 +36,7 @@ EXP_DETAILS = {
 }
 
 
-class Profile(base_cest.ProfileCEST):
+class ProfileCEST_X_IP_DANTE(ProfileCEST):
     """Profile for pure in-phase CEST."""
 
     def __init__(self, name, data, exp_details, model):
@@ -90,7 +90,7 @@ class Profile(base_cest.ProfileCEST):
             if name.startswith(("dw", "r1_i_a", "r2")):
                 self.params[full_name].set(vary=True)
 
-    def _calculate_unscaled_profile(self, b1_offsets=None, **params_local):
+    def _calculate_unscaled_profile(self, params_local, b1_offsets=None):
         """Calculate the CEST profile in the presence of exchange.
 
         TODO: Parameters
@@ -103,7 +103,7 @@ class Profile(base_cest.ProfileCEST):
 
         """
 
-        self.liouv.update(**params_local)
+        self.liouv.update(params_local)
 
         reference = self.reference
         carriers_i = self.carriers_i
@@ -115,7 +115,7 @@ class Profile(base_cest.ProfileCEST):
             )
             reference = [False for _ in b1_offsets]
 
-        mag0 = self.liouv.compute_mag_eq(term="iz", **params_local)
+        mag0 = self.liouv.compute_mag_eq(params_local, term="iz")
 
         profile = []
 

@@ -1,21 +1,54 @@
-"""15N CEST with CW decoupling.
+"""
+Pure In-phase CEST
+==================
 
-Analyzes chemical exchange in the presence of 1H CW decoupling during the CEST
-block. Magnetization evolution is calculated using the 30*30 two-spin matrix:
+Analyzes chemical exchange in the presence of 1H composite decoupling during
+the CEST block. This keeps the spin system purely in-phase throughout, and is
+calculated using the (3n)x(3n), single spin matrix, where n is the number of
+states:
 
-[ I{xyz}, S{xyz}, 2I{xyz}S{xyz} ]{a, b, ...}
+[ Ix(a), Iy(a), Iz(a),
+  Ix(b), Iy(b), Iz(b),
+   ... ]
 
-Notes
------
-The calculation is designed specifically to analyze the experiment found in the
-reference:
 
-Bouvignies and Kay. J Phys Chem B (2012), 116:14311-7
+Reference
+---------
+Vallurupalli, Bouvignies and Kay. J Am Chem Soc (2012) 134:8148-8161
+
+
+Experimental parameters
+-----------------------
+  * h_larmor_frq (1H Larmor frequency, in MHz)
+  * temperature  (sample temperature, in Celsius)
+  * p_total      (optional: protein concentration, in M)
+  * l_total      (optional: ligand concentration, in M)
+  * time_t1      (CEST relaxation delay, in seconds)
+  * carrier      (position of the carrier during the CEST period, in ppm)
+  * b1_frq       (B1 radio-frequency field strength, in Hz)
+  * b1_inh       (B1 inhomogeneity expressed as a fraction of 'b1_inh'.
+                  If not set, a faster calculation takes place assuming
+                  full dephasing of the magnetization components that oscillate
+                  during the irradiation period.)
+  * b1_inh_res   (number of points used to simulate B1 inhomogeneity, the larger
+                  the longer the calculation)
+
+
+Extra parameters
+----------------
+  * path              (directory of the profiles)
+  * error             (= 'file': uncertainties are taken from the profile files
+                       = 'auto': uncertainties are calculated from the baseline)
+  * filter_offsets    (list of offsets relative to the main resonance position,
+                       defining regions where points are excluded from the
+                       calculation, in Hz)
+  * filter_bandwidths (list of values defining the exclusion range around each
+                       previously defined offset, in Hz)
 
 """
 import numpy as np
 
-from chemex.experiments.cest import base_cest
+from chemex.experiments.cest.base_cest import ProfileCEST
 from chemex.spindynamics import basis
 from chemex.spindynamics import constants
 from chemex.spindynamics import default
@@ -29,21 +62,24 @@ EXP_DETAILS = {
     "cn_label": {"default": False, "type": bool},
     "filter_offsets": {"default": 0.0, "type": float},
     "filter_bandwidths": {"default": 0.0, "type": float},
-    "carrier_dec": {"type": float},
-    "b1_frq_dec": {"type": float},
 }
 
 
-class Profile(base_cest.ProfileCEST):
-    """Profile for CEST with CW decoupling."""
+class ProfileCEST_X_IP(ProfileCEST):
+    """Profile for pure in-phase CEST."""
 
     def __init__(self, name, data, exp_details, model):
         super().__init__(name, data, exp_details, model)
 
         self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
 
+        self.carrier = self.exp_details["carrier"]
+        self.time_t1 = self.exp_details["time_t1"]
+        self.dephasing = self.exp_details["b1_inh"] == np.inf
+
+        # Set the liouvillian
         self.liouv = basis.Liouvillian(
-            system="ixyzsxyz",
+            system="ixyz",
             state_nb=self.model.state_nb,
             atoms=self.peak.atoms,
             h_larmor_frq=self.conditions["h_larmor_frq"],
@@ -53,34 +89,31 @@ class Profile(base_cest.ProfileCEST):
         self.liouv.w1_i = 2 * np.pi * self.exp_details["b1_frq"]
         self.liouv.w1_i_inh = self.exp_details["b1_inh"]
         self.liouv.w1_i_inh_res = self.exp_details["b1_inh_res"]
-        self.liouv.w1_s = 2 * np.pi * self.exp_details["b1_frq_dec"]
-        self.liouv.carrier_s = self.exp_details["carrier_dec"]
-
         self.carriers_i = self.b1_offsets_to_ppm()
-        self.detect = self.liouv.detect["iz_a"]
-        self.dephasing = self.exp_details["b1_inh"] == np.inf
 
+        # Set the row vector for detection
+        self.detect = self.liouv.detect["iz_a"]
+
+        # Set the smaple labeling
         if self.exp_details["cn_label"]:
             symbol, nucleus = self.peak.symbols["i"], self.peak.nuclei["i"]
             j_values, j_weights = constants.get_multiplet(symbol, nucleus)
             self.liouv.j_eff_i = j_values
             self.liouv.j_eff_i_weights = j_weights
 
+        # Get the parameters this profile depends on
         self.map_names, self.params = default.create_params(
             basis=self.liouv,
             model=self.model,
             nuclei=self.peak.names,
             conditions=self.conditions,
-            nh_constraints=True,
         )
 
         for name, full_name in self.map_names.items():
-            if name.startswith(
-                ("dw", "r1_i_a", "r2_i_a", "r2_mq_a", "etaxy_i_a", "etaz_i_a")
-            ):
+            if name.startswith(("dw", "r1_i_a", "r2")):
                 self.params[full_name].set(vary=True)
 
-    def _calculate_unscaled_profile(self, b1_offsets=None, **params_local):
+    def _calculate_unscaled_profile(self, params_local, b1_offsets=None):
         """Calculate the CEST profile in the presence of exchange.
 
         TODO: Parameters
@@ -93,34 +126,27 @@ class Profile(base_cest.ProfileCEST):
 
         """
 
+        self.liouv.update(params_local)
+
         reference = self.reference
         carriers_i = self.carriers_i
 
         if b1_offsets is not None:
-            carriers_i = (
-                self.exp_details["carrier"]
-                + 2.0 * np.pi * b1_offsets / self.liouv.ppms["i"]
-            )
-            reference = [False for _ in b1_offsets]
+            reference = np.zeros_like(b1_offsets, dtype=np.bool)
+            carriers_i = self.b1_offsets_to_ppm(b1_offsets)
 
-        mag0 = self.liouv.compute_mag_eq(term="iz", **params_local)
-
-        self.liouv.update(**params_local)
+        mag0 = self.liouv.compute_mag_eq(params_local, term="iz")
 
         profile = []
 
         for ref, carrier_i in zip(reference, carriers_i):
             self.liouv.carrier_i = carrier_i
-            mag = mag0.copy()
             if not ref:
-                mag = (
-                    self.liouv.pulse_is(
-                        self.exp_details["time_t1"], 0.0, 0.0, self.dephasing
-                    )
-                    @ mag
-                )
-            mag = self.detect @ mag
-            profile.append(np.float64(self.liouv.collapse(mag)))
+                cest = self.liouv.pulse_i(self.time_t1, 0.0, self.dephasing)
+            else:
+                cest = self.liouv.identity
+            mag = self.liouv.collapse(self.detect @ cest @ mag0)
+            profile.append(mag)
 
         return np.asarray(profile)
 
@@ -137,9 +163,7 @@ class Profile(base_cest.ProfileCEST):
 
         for offset, bandwidth in zip(filter_offsets, filter_bandwidths):
             nu_offsets = (
-                (cs_a - self.exp_details["carrier"])
-                * self.liouv.ppms["i"]
-                / (2.0 * np.pi)
+                (cs_a - self.carrier) * self.liouv.ppms["i"] / (2.0 * np.pi)
                 - self.data["offsets"]
                 + offset
             )
@@ -148,10 +172,8 @@ class Profile(base_cest.ProfileCEST):
 
     def b1_offsets_to_ppm(self, b1_offsets=None):
         """Convert B1 offset from Hz to ppm."""
+
         if b1_offsets is None:
             b1_offsets = self.data["offsets"]
 
-        return (
-            2.0 * np.pi * b1_offsets / self.liouv.ppms["i"]
-            + self.exp_details["carrier"]
-        )
+        return 2.0 * np.pi * b1_offsets / self.liouv.ppms["i"] + self.carrier

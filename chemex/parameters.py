@@ -59,12 +59,16 @@ RE_VALUE_MIN_MAX = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 
-# Regular expression to pick values of the form: intial value [min, max, brute_stepsize]
+# Regular expression to pick values of the form:
+# intial value [min, max, brute_stepsize]
 RE_VALUE_MIN_MAX_BRUTE = re.compile(
     """
         ^\s*
         (?P<value>{0})?\s*
-        (\[\s*(?P<min>({0}|{1}))\s*,\s*(?P<max>({0}|{1}))\s*,\s*(?P<brute_step>({0}|None))\s*\]\s*)?
+        (\[\s*(?P<min>({0}|{1}))\s*,
+           \s*(?P<max>({0}|{1}))\s*,
+           \s*(?P<brute_step>({0}|None))\s*
+        \]\s*)?
         .*$
     """.format(
         "[-+]?[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?", "[-+]?inf"
@@ -90,7 +94,7 @@ RE_PARNAME = re.compile(
 class MakeTranslate:
     """MakeTranslate class for translating parameter names.
 
-    From: https://www.oreilly.com/library/view/python-cookbook-2nd/0596007973/ch01s19.html
+    From: www.oreilly.com/library/view/python-cookbook-2nd/0596007973/ch01s19.html
     """
 
     def __init__(self, *args, **kwds):
@@ -113,7 +117,7 @@ EXPAND = MakeTranslate({"-": "__minus__", "+": "__plus__", ".": "__point__"})
 COMPRESS = MakeTranslate({"__minus__": "-", "__plus__": "+", "__point__": "."})
 
 
-class ParameterName:
+class ParamName:
     """ParameterName class."""
 
     def __init__(
@@ -147,7 +151,7 @@ class ParameterName:
             self.l_total = float(l_total)
 
     @classmethod
-    def from_full_name(cls, full_name=None):
+    def from_fname(cls, full_name=None):
         """TODO: method docstring."""
         if full_name is None:
             full_name = ""
@@ -300,7 +304,7 @@ class ParameterName:
         if self.l_total == other.l_total:
             l_total = self.l_total
 
-        return ParameterName(
+        return ParamName(
             name=name,
             nuclei=nuclei,
             temperature=temperature,
@@ -331,7 +335,8 @@ def create_params(data):
 
 
 def set_params_from_config_file(params, config_filename):
-    """Read the parameter file and set initial values and optional bounds and brute step size."""
+    """Read the parameter file and set initial values and optional bounds and brute
+    step size."""
 
     print(f"File Name: {config_filename}", end="\n\n")
 
@@ -345,7 +350,7 @@ def set_params_from_config_file(params, config_filename):
             print("{:<45s}".format(f"[{section}]"))
 
             for key, value in config.items(section):
-                name = ParameterName.from_section(key)
+                name = ParamName.from_section(key)
                 if value.count(",") == 2:
                     default = re_to_dict(RE_VALUE_MIN_MAX_BRUTE, value)
                 else:
@@ -356,7 +361,7 @@ def set_params_from_config_file(params, config_filename):
                 print("  {:<43s} {:<30d}".format(f"({key})", len(matches)))
 
         else:
-            name = ParameterName.from_section(section)
+            name = ParamName.from_section(section)
 
             pairs = []
 
@@ -428,12 +433,13 @@ def get_pairs_from_file(filename, name):
 
 
 def set_param_status(params, items):
-    """Set whether or not to vary a fitting parameter or to use a mathemetical expression."""
+    """Set whether or not to vary a fitting parameter or to use a mathemetical
+    expression."""
 
     vary = {"fix": False, "fit": True}
 
     for key, status in items:
-        name = ParameterName.from_section(key)
+        name = ParamName.from_section(key)
 
         if status in vary:
             set_params(params, name, vary=vary[status], expr="")
@@ -448,8 +454,8 @@ def set_param_expr(params, name, expr=None):
     if expr is None:
         expr = ""
 
-    if not isinstance(name, ParameterName):
-        name = ParameterName.from_section(name)
+    if not isinstance(name, ParamName):
+        name = ParamName.from_section(name)
 
     names_full = [name_full for name_full in params if name.to_re().match(name_full)]
     names_expr = astutils.get_ast_names(ast.parse(expr))
@@ -457,7 +463,7 @@ def set_param_expr(params, name, expr=None):
         name: [
             name_full_expr
             for name_full_expr in params
-            if ParameterName.from_section(name).to_re().match(name_full_expr)
+            if ParamName.from_section(name).to_re().match(name_full_expr)
         ]
         for name in names_expr
     }
@@ -491,7 +497,8 @@ def set_params(
     expr=None,
     brute_step=None,
 ):
-    """Set the initial value and (optional) bounds and brute step size for parameters."""
+    """Set the initial value and (optional) bounds and brute step size for
+    parameters."""
     matches = set()
     name_short_re = name_short.to_re()
 
@@ -516,7 +523,7 @@ def write_par(params, path):
 
     for name, param in params.items():
 
-        par_name = ParameterName.from_full_name(name)
+        par_name = ParamName.from_fname(name)
 
         if par_name.nuclei is None:  # global parameter
             name_print = par_name
@@ -527,15 +534,13 @@ def write_par(params, path):
             section = par_name.to_section_name()
 
         if not param.vary and param.expr is None:
-            val_print = f"{param.value: .5e} ; fixed"
+            val_print = f"{param.value:.5e} ; fixed"
         elif param.stderr is None:
-            val_print = f"{param.value: .5e}  ; error not calculated"
+            val_print = f"{param.value:.5e} ; error not calculated"
         elif param.expr:
-            val_print = "{: .5e} +/- {:.5e} ; constrained".format(
-                param.value, param.stderr
-            )
+            val_print = f"{param.value:.5e} +/- {param.stderr:.5e} ; constrained"
         else:
-            val_print = f"{param.value: .5e} +/- {param.stderr:.5e}"
+            val_print = f"{param.value:.5e} +/- {param.stderr:.5e}"
 
         par_dict.setdefault(section, []).append((name_print, val_print))
 
@@ -568,13 +573,13 @@ def write_constraints(params, path):
 
     for name, param in params.items():
 
-        par_name = ParameterName.from_full_name(name)
+        par_name = ParamName.from_fname(name)
 
         if param.expr:
             name_formatted = "[{}]".format(par_name.to_section_name(nuclei=True))
             expr_formatted = param.expr
             for name_dep in astutils.get_ast_names(ast.parse(param.expr)):
-                par_name_dep = ParameterName.from_full_name(name_dep)
+                par_name_dep = ParamName.from_fname(name_dep)
                 if str(par_name_dep):
                     expr_formatted = expr_formatted.replace(
                         name_dep,

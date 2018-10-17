@@ -102,6 +102,8 @@ def find_independent_clusters(data, params):
     rate are set to 'fix', chances are that the fit can be decomposed
     residue-specifically.
 
+    TODO: Breaks when no parameter varies
+
     """
     clusters = []
 
@@ -132,13 +134,11 @@ def find_independent_clusters(data, params):
 
     for data_cluster, pnames_cluster, pnames_vary_cluster in clusters:
 
-        name_cluster = parameters.ParameterName.from_full_name(
-            pnames_vary_cluster.pop()
-        )
+        name_cluster = parameters.ParamName.from_fname(pnames_vary_cluster.pop())
 
         while pnames_vary_cluster:
             name_cluster = name_cluster.intersection(
-                parameters.ParameterName.from_full_name(pnames_vary_cluster.pop())
+                parameters.ParamName.from_fname(pnames_vary_cluster.pop())
             )
 
         params_cluster = lmfit.Parameters()
@@ -150,6 +150,8 @@ def find_independent_clusters(data, params):
 
         for param in params_cluster.values():
             param._delay_asteval = False
+
+        params_cluster.update_constraints()
 
         clusters_.append((name_cluster, data_cluster, params_cluster))
 

@@ -18,8 +18,10 @@ CONDITIONS = {
 }
 
 
-class ProfileIntensity(metaclass=abc.ABCMeta):
+class BaseProfile(metaclass=abc.ABCMeta):
     """TODO: class docstring."""
+
+    subclasses = []
 
     BOOLEAN_STATES = {
         "1": True,
@@ -31,6 +33,10 @@ class ProfileIntensity(metaclass=abc.ABCMeta):
         "false": False,
         "off": False,
     }
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.subclasses.append(cls)
 
     def __init__(self, name=None, data=None, exp_details=None, model=None):
         """TODO: method docstring."""
@@ -64,10 +70,6 @@ class ProfileIntensity(metaclass=abc.ABCMeta):
 
         return residuals[self.mask]
 
-    def _calculate_unscaled_profile(self, params_local, **kwargs):
-        """Calculate the unscaled CEST profile."""
-        pass
-
     def calculate_profile(self, params=None, **kwargs):
         """Calculate the CEST profile."""
         params_local = tuple(
@@ -88,6 +90,11 @@ class ProfileIntensity(metaclass=abc.ABCMeta):
             values = self._calculate_unscaled_profile(params_local, **kwargs)
 
         return values * scale
+
+    @abc.abstractmethod
+    def _calculate_unscaled_profile(self, params_local, **kwargs):
+        """Calculate the unscaled CEST profile."""
+        pass
 
     @abc.abstractmethod
     def print_profile(self, params=None):

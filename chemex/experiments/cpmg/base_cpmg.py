@@ -5,11 +5,11 @@ from functools import lru_cache
 
 import numpy as np
 
-from chemex.experiments import base_intensity
+from chemex.experiments.base.base_profile import BaseProfile
 from chemex.experiments.cpmg import plotting
 
 
-class ProfileCPMG(base_intensity.ProfileIntensity):
+class ProfileCPMG(BaseProfile):
     """CPMGProfile class."""
 
     def __init__(self, name, data, exp_details, model):

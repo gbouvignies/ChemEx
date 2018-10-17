@@ -113,7 +113,7 @@ def set_fnames(names=None, nuclei=None, conditions=None):
         if not name.startswith(("dw", "cs", "j")):
             definition["h_larmor_frq"] = conditions.get("h_larmor_frq", 1.0)
 
-        fnames[name] = parameters.ParameterName(short_name, **definition).to_full_name()
+        fnames[name] = parameters.ParamName(short_name, **definition).to_full_name()
 
     return fnames
 
@@ -370,7 +370,10 @@ def model_2st_binding(conditions, fnames, params):
     delta = l_total - p_total
     extra = {"delta": delta, "l_total": l_total}
 
-    expr_kab = "{kon} * 0.5 * ({delta} - {kd} + sqrt(({delta} - {kd}) ** 2 + 4.0 * {kd} * {l_total}))"
+    expr_kab = (
+        "{kon} * 0.5 * ({delta} - {kd} "
+        "+ sqrt(({delta} - {kd}) ** 2 + 4.0 * {kd} * {l_total}))"
+    )
 
     settings = {
         "kon": {"value": 1.0e7, "vary": True},
@@ -505,7 +508,7 @@ def _add_params(fnames, params, names, attributes):
 def _get_fullname(shortname, attributes=None):
     if attributes is None:
         attributes = {}
-    return parameters.ParameterName(shortname, **attributes).to_full_name()
+    return parameters.ParamName(shortname, **attributes).to_full_name()
 
 
 def _apply_settings(fnames, params, settings):
@@ -514,12 +517,12 @@ def _apply_settings(fnames, params, settings):
 
     for name, setting in settings_filtered.items():
         fname = fnames[name]
-        params[fname]._delay_asteval = False
+        params[fname]._delay_asteval = True
         params[fname].set(**setting)
 
     for name in settings_filtered:
         fname = fnames[name]
-        params[fname]._delay_asteval = True
+        params[fname]._delay_asteval = False
 
     return fnames, params
 
@@ -528,9 +531,9 @@ def _get_k_from_kex_p(states):
     kwargs = {
         "kex": "{{kex_{}{}}}".format(*sorted(states)),
         "p1": "{{p{}}}".format(states[0]),
-        "psum": "{{p{}}} + {{p{}}}".format(*sorted(states)),
+        "p2": "{{p{}}}".format(states[1]),
     }
-    return "{kex} * {p1} / {psum} if {psum} else 0.0".format(**kwargs)
+    return "{kex} / (1.0 + {p1} / {p2}) if {p2} else 0.0".format(**kwargs)
 
 
 def _get_k_from_h_s(states):

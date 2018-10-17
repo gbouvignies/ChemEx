@@ -1,9 +1,7 @@
 """The parsing module contains the code for the parsing of command-line
 arguments."""
 import argparse
-import importlib
 import pathlib
-import pkgutil
 import sys
 
 from chemex import __version__
@@ -70,16 +68,11 @@ def build_parser():
     experiments_parser = info_parser.add_subparsers(dest="experiments")
     experiments_parser.required = True
 
-    experiments_names = list_experiments()
+    docs = experiments.get_experiment_docs()
 
-    for name in experiments_names:
-        experiment_module = importlib.import_module(name)
-        experiment_shortname = compress_name(name)
-
+    for exp_name, doc in docs.items():
         experiments_parser.add_parser(
-            experiment_shortname,
-            help=get_description_from_module(experiment_module),
-            add_help=False,
+            exp_name, help=get_description_from_doc(doc), add_help=False
         )
 
     # parser for the positional argument "fit"
@@ -222,36 +215,11 @@ def build_parser():
     return parser
 
 
-def get_description_from_module(module):
-    return module.__doc__.strip().splitlines()[0]
-
-
-def list_experiments():
-    path = experiments.__path__
-    prefix = experiments.__name__ + "."
-    names = []
-    types_modules = pkgutil.walk_packages(path, prefix)
-    for __, name, ispkg in types_modules:
-        module = importlib.import_module(name)
-        if not ispkg and hasattr(module, "Profile"):
-            names.append(name)
-    return names
+def get_description_from_doc(doc):
+    return doc.strip().splitlines()[0]
 
 
 def get_info(args):
-    name = expand_name(args.experiments)
-    module = importlib.import_module(name)
+    docs = experiments.get_experiment_docs()
     util.header1('Description of the "' "{}" '" experiment'.format(args.experiments))
-    print(module.__doc__)
-
-
-def compress_name(name):
-    tree = name.split(".")
-    shortname = ".".join((tree[-3], tree[-1]))
-    return shortname
-
-
-def expand_name(name):
-    type1, type2 = name.split(".")
-    fullname = ".".join(["chemex.experiments", type1, "profiles", type2])
-    return fullname
+    print(docs[args.experiments])

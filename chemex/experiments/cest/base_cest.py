@@ -7,11 +7,11 @@ from scipy import linalg
 from scipy import signal
 from scipy import stats
 
-from chemex.experiments import base_intensity
+from chemex.experiments.base.base_profile import BaseProfile
 from chemex.experiments.cest import plotting
 
 
-class ProfileCEST(base_intensity.ProfileIntensity):
+class ProfileCEST(BaseProfile):
     """CESTProfile class."""
 
     def __init__(self, name, data, exp_details, model):

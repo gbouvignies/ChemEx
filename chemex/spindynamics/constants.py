@@ -4,18 +4,17 @@ constants.
 Define the gyromagnetic ratios in rad/s/T
 IUPAC values: Harris et al, Concepts in Magn. Reson., (2002) 14, p326
 """
-
 import collections
 
 import numpy as np
 
 GAMMA = {
-    "h": 26.7522128e+07,
-    "q": 26.7522128e+07,
-    "n": -2.71261804e+07,
-    "c": 6.728284e+07,
-    "f": 25.18148e+07,
-    "p": 10.8394e+07,
+    "h": 26.752_212_8e07,
+    "q": 26.752_212_8e07,
+    "n": -2.712_618_04e07,
+    "c": 6.728_284e07,
+    "f": 25.18148e07,
+    "p": 10.8394e07,
 }
 
 G_RATIO = {key: val / GAMMA["h"] for key, val in GAMMA.items()}
@@ -23,11 +22,11 @@ G_RATIO = {key: val / GAMMA["h"] for key, val in GAMMA.items()}
 # Define nuclide frequency ratios wrt proton
 # IUPAC values for bio NMR: Markley et al, Pure & Appl. Chem., (1998) 70, p117
 XI_RATIO = {
-    "h": 100.0000000e-02,
-    "q": 100.0000000e-02,
-    "n": 10.1329118e-02,
-    "c": 25.1449530e-02,
-    "f": 40.4808636e-02,
+    "h": 100.000_000_0e-02,
+    "q": 100.000_000_0e-02,
+    "n": 10.132_911_8e-02,
+    "c": 25.144_953_0e-02,
+    "f": 40.480_863_6e-02,
 }
 
 # Residue-specific scalar coupling values with neighbouring carbons (in Hz)

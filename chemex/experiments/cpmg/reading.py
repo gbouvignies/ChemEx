@@ -1,23 +1,14 @@
 """Read the experimental CPMG data."""
-import importlib
-
 import numpy as np
+
+from chemex import experiments
 
 
 def read_profiles(path, filenames, details, model):
     """Read the CPMG profiles."""
-    experiment_type = details["type"].split(".")
 
     details["name"] = name_experiment(details)
-
-    experiment_module = importlib.import_module(
-        ".".join(
-            ["chemex.experiments", experiment_type[0], "profiles", experiment_type[1]]
-        )
-    )
-
-    Profile = getattr(experiment_module, "Profile")
-
+    Profile = experiments.grab(details["type"])
     dtype = [("ncycs", "i4"), ("intensities", "f8"), ("errors", "f8")]
 
     profiles = []

@@ -1,27 +1,29 @@
-"""1H - Pure Anti-phase Proton CPMG
+"""1H(methyl - 13CHD2) - Pure Anti-Phase Proton CPMG
 
-Analyzes amide proton chemical exchange that is maintained as anti-phase
-magnetization throughout the CPMG block. This results in lower intrinsic
-relaxation rates and therefore better sensitivity. The calculations use a 12x12,
-2-spin exchange matrix:
+Measures methyl proton chemical exchange recorded on site-specifically
+13CHD2-labeled proteins in a highly deuterated background. Magnetization is
+initally anti-phase and is read out as anti-phase prior to 13C evolution. The
+calculation uses a 12x12 basis set:
 
-[ Hx(a), Hy(a), Hz(a), 2HxNz(a), 2HyNz(a), 2HzNz(a),
-  Hx(b), Hy(b), Hz(b), 2HxNz(b), 2HyNz(b), 2HzNz(b)]
+[ Hx(a), Hy(a), Hz(a), 2HxCz(a), 2HyCz(a), 2HzCz(a),
+  Hx(b), Hy(b), Hz(b), 2HxCz(b), 2HyCz(b), 2HzCz(b)]
 
 Note
 ----
+
 Off resonance effects are taken into account. The calculation is designed
 explicitly for analyzing the Lewis Kay pulse sequence:
 
-H1_CPMG_Rex_hsqc_lek_x00
+CHD2_H_SQ_exchange_hsqc_lek_*00_enhanced
 
-with antiphase_flg set to 'y'
+Reference
+---------
 
-Journal of Biomolecular NMR (2011) 50, 13-8
+Journal of the American Chemical Society (2010) 132, 10992-5
 """
 import numpy as np
 
-from chemex.experiments.cpmg import base_cpmg
+from chemex.experiments.cpmg.base_cpmg import ProfileCPMG
 from chemex.spindynamics import basis
 from chemex.spindynamics import default
 
@@ -33,7 +35,7 @@ EXP_DETAILS = {
 }
 
 
-class Profile(base_cpmg.ProfileCPMG):
+class ProfileCPMG_CHD2_H1SQ(ProfileCPMG):
     """TODO: class docstring."""
 
     def __init__(self, name, data, exp_details, model):
@@ -77,7 +79,31 @@ class Profile(base_cpmg.ProfileCPMG):
                 self.params[full_name].set(vary=True)
 
     def _calculate_unscaled_profile(self, params_local, **kwargs):
-        """TODO: class docstring."""
+        """Calculate the intensity in presence of exchange after a CEST block.
+
+        Parameters
+        ----------
+        pb : float
+            Fractional population of state B.
+        kex_ab : float
+            Exchange rates between states A and B in /s.
+        dw_i_ab : float
+            Chemical shift difference between states A and B in rad/s.
+        r1_i_a : float
+            Longitudinal relaxation rate of states A in /s.
+        r2_i_a : float
+            Transverse relaxation rate of state A in /s.
+        dr2_i_ab : float
+            Transverse relaxation rate difference between states A and B in /s.
+        cs_i_a : float
+            Resonance position of state A in ppm.
+
+        Returns
+        -------
+        out : float
+            Intensity after the CEST block
+
+        """
 
         self.liouv.update(params_local)
 

@@ -127,7 +127,7 @@ def write_results(result, data, method, output_dir):
 
 def plot_results(result, data, path):
     """Plot the experimental and fitted data."""
-    from chemex.experiments import plotting
+    from chemex.experiments.base import plotting
 
     util.header1("Plotting Data")
 
@@ -143,7 +143,7 @@ def plot_results(result, data, path):
 
     if result.method == "brute":
         labels = [
-            parameters.ParameterName.from_full_name(var).name.upper()
+            parameters.ParamName.from_fname(var).name.upper()
             for var in result.var_names
         ]
         outfile = path / "results_brute.pdf"

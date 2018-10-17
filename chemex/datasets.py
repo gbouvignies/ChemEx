@@ -9,7 +9,7 @@ import sys
 import numpy as np
 
 from chemex import util
-from chemex.experiments import base_intensity
+from chemex.experiments.base import base_profile
 
 
 class DataSet:
@@ -22,7 +22,7 @@ class DataSet:
         if isinstance(other, DataSet):
             self.datasets = copy.deepcopy(other.datasets)
 
-        elif isinstance(other, base_intensity.ProfileIntensity):
+        elif isinstance(other, base_profile.BaseProfile):
             self.datasets.append(other)
 
     def __len__(self):
@@ -53,7 +53,7 @@ class DataSet:
 
     def append(self, profile):
         """Append data to an exisiting dataset."""
-        if not isinstance(profile, base_intensity.ProfileIntensity):
+        if not isinstance(profile, base_profile.BaseProfile):
             raise TypeError
         self.datasets.append(profile)
 
@@ -106,9 +106,6 @@ class DataSet:
 
         print("{:<45s} ".format(str(filename)), end="")
 
-        # Get the directory of the input file
-        working_dir = filename.parent
-
         # Parse the experiment configuration file
         config = util.read_cfg_file(filename)
 
@@ -148,6 +145,7 @@ class DataSet:
         except configparser.NoSectionError:
             pass
 
+        working_dir = filename.parent
         path = pathlib.Path(details.get("path", "."))
         path = util.normalize_path(working_dir, path)
 

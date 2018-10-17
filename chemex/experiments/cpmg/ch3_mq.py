@@ -23,7 +23,7 @@ Journal of the American Chemical Society (2004), 126, 3964-73
 """
 import numpy as np
 
-from chemex.experiments.cpmg import base_cpmg
+from chemex.experiments.cpmg.base_cpmg import ProfileCPMG
 from chemex.spindynamics import basis
 from chemex.spindynamics import default
 
@@ -33,7 +33,7 @@ EXP_DETAILS = {
 }
 
 
-class Profile(base_cpmg.ProfileCPMG):
+class ProfileCPMG_CH3_MQ(ProfileCPMG):
     """TODO: class docstring."""
 
     def __init__(self, name, data, exp_details, model):
