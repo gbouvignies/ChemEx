@@ -9,7 +9,7 @@ def read_profiles(path, filenames, details, model):
 
     details["name"] = name_experiment(details)
     Profile = experiments.grab(details["type"])
-    dtype = [("offsets", "f8"), ("intensities", "f8"), ("errors", "f8")]
+    dtype = [("offsets", "f8"), ("intensity", "f8"), ("error", "f8")]
 
     profiles = []
 
@@ -35,7 +35,7 @@ def read_profiles(path, filenames, details, model):
         noise_mean = np.mean(noise_values)
 
         for profile in profiles:
-            profile.data["errors"] = noise_mean
+            profile.data["error"] = noise_mean
 
     return profiles
 

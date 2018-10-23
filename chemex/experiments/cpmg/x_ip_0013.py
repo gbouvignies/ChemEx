@@ -45,48 +45,25 @@ from functools import reduce
 
 import numpy as np
 
-from chemex.experiments.cpmg.base_cpmg import ProfileCPMG
-from chemex.spindynamics import basis
-from chemex.spindynamics import default
+from chemex.experiments.cpmg.base_cpmg import ProfileCPMG2
 
-EXP_DETAILS = {
-    "carrier": {"type": float},
-    "time_t2": {"type": float},
-    "pw90": {"type": float},
-    "time_equil": {"default": 0.0, "type": float},
-    "ncyc_max": {"type": int},
-}
-
-CP_PHASES = [
-    [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3],
-    [1, 3, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 1, 3, 2, 2],
-]
+_EXP_DETAILS = {"ncyc_max": {"type": int}}
 
 
-class ProfileCPMG_X_IP_0013(ProfileCPMG):
+class ProfileCPMGXIP0013(ProfileCPMG2):
     """TODO: class docstring."""
+
+    EXP_DETAILS = dict(**ProfileCPMG2.EXP_DETAILS, **_EXP_DETAILS)
+    SPIN_SYSTEM = "ixyz"
+    CP_PHASES = [
+        [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3],
+        [1, 3, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 1, 3, 2, 2],
+    ]
 
     def __init__(self, name, data, exp_details, model):
         super().__init__(name, data, exp_details, model)
 
-        self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
-
-        self.time_t2 = self.exp_details["time_t2"]
-        self.time_eq = self.exp_details["time_equil"]
-        self.pw90 = self.exp_details["pw90"]
         self.ncyc_max = self.exp_details["ncyc_max"]
-
-        # Set the liouvillian
-        self.liouv = basis.Liouvillian(
-            system="ixyz",
-            state_nb=self.model.state_nb,
-            atoms=self.peak.atoms,
-            h_larmor_frq=self.conditions["h_larmor_frq"],
-            equilibrium=False,
-        )
-
-        self.liouv.carrier_i = self.exp_details["carrier"]
-        self.liouv.w1_i = 2.0 * np.pi / (4.0 * self.pw90)
 
         # Set the row vector for detection
         self.detect = self.liouv.detect["iz_a"]
@@ -97,7 +74,6 @@ class ProfileCPMG_X_IP_0013(ProfileCPMG):
         self.deltas = dict(zip(ncycs, self.pw90 * (self.ncyc_max - ncycs)))
         self.deltas[0] = self.pw90 * (self.ncyc_max - 1)
         self.t_pos2 = +4.0 * self.pw90 / np.pi
-        self.t_neg = -2.0 * self.pw90 / np.pi
         self.delays = (
             [self.t_neg, self.t_pos2, self.time_eq]
             + list(self.tau_cps.values())
@@ -106,18 +82,13 @@ class ProfileCPMG_X_IP_0013(ProfileCPMG):
 
         # Set the phase cycling of the cpmg pulses
         self.phases = {
-            ncyc: np.take(CP_PHASES, np.flip(np.arange(2 * ncyc)), mode="wrap", axis=1)
+            ncyc: np.take(
+                self.CP_PHASES, np.flip(np.arange(2 * ncyc)), mode="wrap", axis=1
+            )
             for ncyc in ncycs
         }
 
-        # Get the parameters this profile depends on
-        self.map_names, self.params = default.create_params(
-            basis=self.liouv,
-            model=self.model,
-            nuclei=self.peak.names,
-            conditions=self.conditions,
-        )
-
+        # Set the varying parameters by default
         for name, full_name in self.map_names.items():
             if name.startswith(("dw", "r2_i_a")):
                 self.params[full_name].set(vary=True)
@@ -163,10 +134,3 @@ class ProfileCPMG_X_IP_0013(ProfileCPMG):
         ]
 
         return np.asarray(profile)
-
-    def ncycs_to_nu_cpmgs(self, ncycs=None):
-        """Calculate the pulsing frequency, v(CPMG), from ncyc values."""
-        if ncycs is None:
-            ncycs = self.data["ncycs"]
-
-        return ncycs / self.exp_details["time_t2"]

@@ -57,57 +57,37 @@ from functools import reduce
 
 import numpy as np
 
-from chemex.experiments.cpmg.base_cpmg import ProfileCPMG
-from chemex.spindynamics import basis
-from chemex.spindynamics import default
+from chemex.experiments.cpmg.base_cpmg import ProfileCPMG2
 
-EXP_DETAILS = {
-    "carrier": {"type": float},
-    "time_t2": {"type": float},
-    "pw90": {"type": float},
+_EXP_DETAILS = {
     "taub": {"default": 2.68e-3, "type": float},
-    "time_equil": {"default": 0.0, "type": float},
     "ncyc_max": {"type": int},
     "antitrosy": {"default": "False", "type": str},
     "s3e": {"default": "True", "type": str},
 }
 
-CP_PHASES = [
-    [1, 1, 0, 2, 1, 1, 2, 0, 1, 1, 2, 0, 1, 1, 0, 2],
-    [0, 2, 3, 3, 2, 0, 3, 3, 2, 0, 3, 3, 0, 2, 3, 3],
-    [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3],
-    [1, 3, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 1, 3, 2, 2],
-]
 
-
-class ProfileCPMG_N_TROSY_0013(ProfileCPMG):
+class ProfileCPMGNTROSY0013(ProfileCPMG2):
     """TODO: class docstring."""
+
+    EXP_DETAILS = dict(**ProfileCPMG2.EXP_DETAILS, **_EXP_DETAILS)
+    SPIN_SYSTEM = "ixyzsz"
+    CONSTRAINTS = "nh"
+    CP_PHASES = [
+        [1, 1, 0, 2, 1, 1, 2, 0, 1, 1, 2, 0, 1, 1, 0, 2],
+        [0, 2, 3, 3, 2, 0, 3, 3, 2, 0, 3, 3, 0, 2, 3, 3],
+        [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3],
+        [1, 3, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 1, 3, 2, 2],
+    ]
 
     def __init__(self, name, data, exp_details, model):
 
         super().__init__(name, data, exp_details, model)
 
-        self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
-
-        self.time_t2 = self.exp_details["time_t2"]
-        self.time_eq = self.exp_details["time_equil"]
-        self.pw90 = self.exp_details["pw90"]
         self.taub = self.exp_details["taub"]
         self.ncyc_max = self.exp_details["ncyc_max"]
         self.antitrosy = self.get_bool(self.exp_details["antitrosy"])
         self.s3e = self.get_bool(self.exp_details["s3e"])
-
-        # Set the liouvillian
-        self.liouv = basis.Liouvillian(
-            system="ixyzsz",
-            state_nb=self.model.state_nb,
-            atoms=self.peak.atoms,
-            h_larmor_frq=self.conditions["h_larmor_frq"],
-            equilibrium=False,
-        )
-
-        self.liouv.carrier_i = self.exp_details["carrier"]
-        self.liouv.w1_i = 2.0 * np.pi / (4.0 * self.pw90)
 
         # Set the row vector for detection
         if self.antitrosy:
@@ -120,7 +100,6 @@ class ProfileCPMG_N_TROSY_0013(ProfileCPMG):
         self.tau_cps = dict(zip(ncycs, self.time_t2 / (4.0 * ncycs) - 0.75 * self.pw90))
         self.deltas = dict(zip(ncycs, 0.5 * self.pw90 * (self.ncyc_max - ncycs)))
         self.deltas[0] = 0.5 * self.pw90 * (self.ncyc_max - 1)
-        self.t_neg = -2.0 * self.pw90 / np.pi
         self.delays = (
             [self.t_neg, self.time_eq, self.taub]
             + list(self.tau_cps.values())
@@ -128,17 +107,9 @@ class ProfileCPMG_N_TROSY_0013(ProfileCPMG):
         )
 
         # Set the phase cycling of the cpmg pulses
-        self.phases = _get_phases(self.data["ncycs"][self.data["ncycs"] != 0])
+        self.phases = self._get_phases()
 
-        # Get the parameters this profile depends on
-        self.map_names, self.params = default.create_params(
-            basis=self.liouv,
-            model=self.model,
-            nuclei=self.peak.names,
-            conditions=self.conditions,
-            nh_constraints=True,
-        )
-
+        # Set the varying parameters by default
         for name, full_name in self.map_names.items():
             if name.startswith(("dw", "r2_i_a")):
                 self.params[full_name].set(vary=True)
@@ -212,13 +183,6 @@ class ProfileCPMG_N_TROSY_0013(ProfileCPMG):
 
         return np.asarray(profile)
 
-    def ncycs_to_nu_cpmgs(self, ncycs=None):
-        """Calculate the pulsing frequency, v(CPMG), from ncyc values."""
-        if ncycs is None:
-            ncycs = self.data["ncycs"]
-
-        return ncycs / self.exp_details["time_t2"]
-
     def _get_mag0(self, params_local):
 
         mag0 = self.liouv.compute_mag_eq(params_local, term="2izsz")
@@ -232,13 +196,12 @@ class ProfileCPMG_N_TROSY_0013(ProfileCPMG):
 
         return mag0
 
+    def _get_phases(self):
 
-def _get_phases(ncycs):
+        phases = {}
 
-    phases = {}
+        for ncyc in self.data["ncycs"][~self.reference]:
+            phases[ncyc] = np.take(self.CP_PHASES, np.arange(ncyc), mode="wrap", axis=1)
+            phases[ncyc][:2] = np.flip(phases[ncyc][:2], axis=1)
 
-    for ncyc in ncycs:
-        phases[ncyc] = np.take(CP_PHASES, np.arange(ncyc), mode="wrap", axis=1)
-        phases[ncyc][:2] = np.flip(phases[ncyc][:2], axis=1)
-
-    return phases
+        return phases

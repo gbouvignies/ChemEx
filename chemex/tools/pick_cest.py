@@ -110,11 +110,11 @@ class Buttons:
         profile = self._profile
 
         ref = profile.reference
-        val_ref = np.mean(profile.data["intensities"][ref])
+        val_ref = np.mean(profile.data["intensity"][ref])
 
-        offsets = profile.b1_offsets_to_ppm()[~ref]
-        vals = profile.data["intensities"][~ref] / val_ref
-        errs = profile.data["errors"][~ref] / abs(val_ref)
+        offsets = profile.offsets_to_ppm()[~ref]
+        vals = profile.data["intensity"][~ref] / val_ref
+        errs = profile.data["error"][~ref] / abs(val_ref)
 
         spline = interpolate.CubicSpline(offsets, vals)
         fine_offsets = np.linspace(min(offsets), max(offsets), 1000)

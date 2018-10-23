@@ -16,14 +16,7 @@ RE_VARNAME = re.compile(
 )
 
 
-def create_params(
-    basis,
-    model,
-    nuclei=None,
-    conditions=None,
-    hn_ap_constraints=False,
-    nh_constraints=False,
-):
+def create_params(basis, model, nuclei=None, conditions=None, constraints=None):
     """TODO"""
 
     fnames_k, params_k = create_params_k(model=model, conditions=conditions)
@@ -31,12 +24,12 @@ def create_params(
 
     params_lr = set_thermal_factors(fnames_lr, params_lr, nuclei)
 
-    if hn_ap_constraints:
+    if constraints == "hn_ap":
         fnames_lr, params_lr = set_hn_ap_constraints(
             fnames_lr, params_lr, nuclei=nuclei, conditions=conditions
         )
 
-    if nh_constraints:
+    if constraints == "nh":
         fnames_lr, params_lr = set_nh_constraints(fnames_lr, params_lr)
 
     fnames = dict(**fnames_k, **fnames_lr)
@@ -210,14 +203,11 @@ def set_hn_ap_constraints(fnames, params, nuclei=None, conditions=None):
     if name_s is None:
         return fnames, params
 
-    attributes = {"nuclei": name_s}
-    attributes.update(conditions)
+    attributes = conditions.copy()
+    attributes.update({"nuclei": name_s})
 
     names = (f"r1_s_{state}" for state in STATES if f"r1_i_{state}" in fnames)
     fnames, params = _add_params(fnames, params, names, attributes)
-
-    expr_r1_i = "{{r1a_{state}}} - {{r1_s_{state}}}"
-    expr_r2a_i = "{{r2_i_{state}}} - {{r1_s_{state}}}"
 
     settings = {}
 
@@ -234,9 +224,12 @@ def set_hn_ap_constraints(fnames, params, nuclei=None, conditions=None):
         if state != "a":
             expr_r1_s = "{r1a_a}".format(**fnames)
 
+        expr_r1_i = f"{{r1a_{state}}} - {{r1_s_{state}}}"
+        expr_r2a_i = f"{{r2_i_{state}}} - {{r1_s_{state}}}"
+
         settings[r1_s] = {"value": 1.0, "min": 0.0, "vary": False, "expr": expr_r1_s}
-        settings[r1_i] = {"expr": expr_r1_i.format(state=state).format(**fnames)}
-        settings[r2a_i] = {"expr": expr_r2a_i.format(state=state).format(**fnames)}
+        settings[r1_i] = {"expr": expr_r1_i.format(**fnames)}
+        settings[r2a_i] = {"expr": expr_r2a_i.format(**fnames)}
 
     fnames, params = _apply_settings(fnames, params, settings)
 
@@ -245,26 +238,19 @@ def set_hn_ap_constraints(fnames, params, nuclei=None, conditions=None):
 
 def set_nh_constraints(fnames, params):
 
-    expr_r2a_i = "{{r2_i_{state}}} + {{r1a_{state}}} - {{r1_i_{state}}}"
-    expr_r2a_s = "{{r2_s_{state}}} - {{r1_i_{state}}}"
-
     settings = {}
 
-    settings.update(
-        {
-            f"r2a_i_{state}": {"expr": expr_r2a_i.format(state=state).format(**fnames)}
-            for state in STATES
-            if f"r2a_i_{state}" in fnames
-        }
-    )
+    for state in STATES:
+        r2a_i = f"r2a_i_{state}"
+        r2a_s = f"r2a_s_{state}"
+        expr_r2a_i = f"{{r2_i_{state}}} + {{r1a_{state}}} - {{r1_i_{state}}}"
+        expr_r2a_s = f"{{r2_s_{state}}} - {{r1_i_{state}}}"
 
-    settings.update(
-        {
-            f"r2a_s_{state}": {"expr": expr_r2a_s.format(state=state).format(**fnames)}
-            for state in STATES
-            if f"r2a_s_{state}" in fnames
-        }
-    )
+        if r2a_i in fnames:
+            settings[r2a_i] = {"expr": expr_r2a_i.format(**fnames)}
+
+        if r2a_s in fnames:
+            settings[r2a_s] = {"expr": expr_r2a_s.format(**fnames)}
 
     fnames, params = _apply_settings(fnames, params, settings)
 

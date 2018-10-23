@@ -49,60 +49,21 @@ Extra parameters
 import numpy as np
 from numpy import linalg as la
 
-from chemex.experiments.cpmg.base_cpmg import ProfileCPMG
-from chemex.spindynamics import basis
-from chemex.spindynamics import default
-
-EXP_DETAILS = {
-    "carrier": {"type": float},
-    "time_t2": {"type": float},
-    "pw90": {"type": float},
-    "time_equil": {"default": 0.0, "type": float},
-}
+from chemex.experiments.cpmg.base_cpmg import ProfileCPMG2
 
 
-class ProfileCPMG_X_IP(ProfileCPMG):
+class ProfileCPMGXIP(ProfileCPMG2):
     """TODO: class docstring."""
+
+    SPIN_SYSTEM = "ixyz"
 
     def __init__(self, name, data, exp_details, model):
         super().__init__(name, data, exp_details, model)
 
-        self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
-
-        self.time_t2 = self.exp_details["time_t2"]
-        self.time_eq = self.exp_details["time_equil"]
-        self.pw90 = self.exp_details["pw90"]
-
-        # Set the liouvillian
-        self.liouv = basis.Liouvillian(
-            system="ixyz",
-            state_nb=self.model.state_nb,
-            atoms=self.peak.atoms,
-            h_larmor_frq=self.conditions["h_larmor_frq"],
-            equilibrium=False,
-        )
-
-        self.liouv.carrier_i = self.exp_details["carrier"]
-        self.liouv.w1_i = 2.0 * np.pi / (4.0 * self.exp_details["pw90"])
-
         # Set the row vector for detection
         self.detect = self.liouv.detect["iz_a"]
 
-        # Set the delays in the experiments
-        ncycs = self.data["ncycs"][~self.reference]
-        self.tau_cps = dict(zip(ncycs, self.time_t2 / (4.0 * ncycs) - self.pw90))
-        self.tau_cps[-1.0] = 0.5 * self.time_t2
-        self.t_neg = -2.0 * self.pw90 / np.pi
-        self.delays = [self.t_neg, self.time_eq] + list(self.tau_cps.values())
-
-        # Get the parameters this profile depends on
-        self.map_names, self.params = default.create_params(
-            basis=self.liouv,
-            model=self.model,
-            nuclei=self.peak.names,
-            conditions=self.conditions,
-        )
-
+        # Set the varying parameters by default
         for name, full_name in self.map_names.items():
             if name.startswith(("dw", "r2_i_a")):
                 self.params[full_name].set(vary=True)
@@ -121,9 +82,9 @@ class ProfileCPMG_X_IP(ProfileCPMG):
         pulses = self.liouv.pulses_90_180_i()
         p90 = np.array([pulses[name] for name in ["90px", "90py", "90mx", "90my"]])
         p180 = np.array([pulses[name] for name in ["180px", "180py", "180mx", "180my"]])
-        p_180pmx = 0.5 * (p180[0] + p180[2])  # +/- phase cycling
+        p180pmx = 0.5 * (p180[0] + p180[2])  # +/- phase cycling
 
-        # Simulate the CPMG block as function of ncyc
+        # Calculate starting magnetization vector
         mag0 = self.liouv.compute_mag_eq(params_local, term="iz")
 
         # Calculating the cpmg trains
@@ -143,7 +104,7 @@ class ProfileCPMG_X_IP(ProfileCPMG):
                 @ d_eq
                 @ p90[0]
                 @ cp2[ncyc]
-                @ p_180pmx
+                @ p180pmx
                 @ cp1[ncyc]
                 @ p90[0]
                 @ mag0
@@ -152,12 +113,3 @@ class ProfileCPMG_X_IP(ProfileCPMG):
         ]
 
         return np.asarray(profile)
-
-    def ncycs_to_nu_cpmgs(self, ncycs=None):
-        """Calculate the pulsing frequency, v(CPMG), from ncyc values."""
-        if ncycs is None:
-            ncycs = np.array(
-                [ncyc if ncyc >= 0 else 0.5 for ncyc in self.data["ncycs"]]
-            )
-
-        return ncycs / self.exp_details["time_t2"]

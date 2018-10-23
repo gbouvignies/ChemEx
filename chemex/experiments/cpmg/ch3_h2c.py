@@ -16,163 +16,81 @@ HtoC_CH3_exchange_*00_lek_ILV
 Journal of Biomolecular NMR (2007) 38, 79-88
 """
 import numpy as np
+from numpy import linalg as la
 
-from chemex.experiments.cpmg.base_cpmg import ProfileCPMG
-from chemex.spindynamics import basis
-from chemex.spindynamics import default
+from chemex.experiments.cpmg.base_cpmg import ProfileCPMG2
 
-EXP_DETAILS = {
-    "carrier": {"type": float},
-    "time_t2": {"type": float},
-    "pw90": {"type": float},
-    "taub": {"default": 1.99e-3, "type": float},
-    "time_equil": {"default": 0.0, "type": float},
-}
+_EXP_DETAILS = {"taub": {"default": 1.99e-3, "type": float}}
 
 
-class CH3_H2C_ProfileCPMG(ProfileCPMG):
+class ProfileCPMGCH3H2C(ProfileCPMG2):
     """TODO: class docstring."""
+
+    EXP_DETAILS = dict(**ProfileCPMG2.EXP_DETAILS, **_EXP_DETAILS)
+    SPIN_SYSTEM = "ixyzsz"
+    CONSTRAINTS = "nh"
 
     def __init__(self, name, data, exp_details, model):
         super().__init__(name, data, exp_details, model)
 
-        self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
+        self.taub = self.exp_details["taub"]
 
-        self.liouv = basis.Liouvillian(
-            system="ixyzsz",
-            state_nb=self.model.state_nb,
-            atoms=self.peak.atoms,
-            h_larmor_frq=self.conditions["h_larmor_frq"],
-            equilibrium=False,
-        )
-
-        self.liouv.carrier_i = self.exp_details["carrier"]
-        self.liouv.w1_i = 2.0 * np.pi / (4.0 * self.exp_details["pw90"])
-
+        # Set the row vector for detection
         self.detect = self.liouv.detect["iz_a"]
 
-        self.t_cps = {
-            ncyc: self.exp_details["time_t2"] / (4.0 * ncyc) - self.exp_details["pw90"]
-            for ncyc in self.data["ncycs"][~self.reference]
-        }
+        # Set the delays in the experiments
+        self.delays += [self.taub]
 
-        self.t_neg = -2.0 * self.exp_details["pw90"] / np.pi
-
-        self.delays = [
-            self.t_neg,
-            self.exp_details["time_equil"],
-            self.exp_details["taub"],
-        ]
-        self.delays.extend(self.t_cps.values())
-
-        self.map_names, self.params = default.create_params(
-            basis=self.liouv,
-            model=self.model,
-            nuclei=self.peak.names,
-            conditions=self.conditions,
-            nh_constraints=True,
-        )
-
+        # Set the varying parameters by default
         for name, full_name in self.map_names.items():
             if name.startswith(("dw", "r2_i_a")):
                 self.params[full_name].set(vary=True)
 
     def _calculate_unscaled_profile(self, params_local, **kwargs):
-        """Calculate the intensity in presence of exchange after a CEST block.
-
-        Parameters
-        ----------
-        pb : float
-            Fractional population of state B.
-        kex_ab : float
-            Exchange rates between states A and B in /s.
-        dw_i_ab : float
-            Chemical shift difference between states A and B in rad/s.
-        r1_i_a : float
-            Longitudinal relaxation rate of states A in /s.
-        r2_i_a : float
-            Transverse relaxation rate of state A in /s.
-        dr2_i_ab : float
-            Transverse relaxation rate difference between states A and B in /s.
-        cs_i_a : float
-            Resonance position of state A in ppm.
-
-        Returns
-        -------
-        out : float
-            Intensity after the CEST block
-
-        """
+        """TODO: Write docstring"""
 
         self.liouv.update(params_local)
 
-        # Calculation of all the needed propagators
-        pulses = self.liouv.pulses_90_180_i()
+        # Calculation of the propagators corresponding to all the delays
         delays = dict(zip(self.delays, self.liouv.delays(self.delays)))
+        d_neg = delays[self.t_neg]
+        d_eq = delays[self.time_eq]
+        d_taub = delays[self.taub]
 
-        # Simulate the CPMG block as function of ncyc
+        # Calculation of the propagators corresponding to all the pulses
+        pulses = self.liouv.pulses_90_180_i()
+        p90 = np.array([pulses[name] for name in ["90px", "90py", "90mx", "90my"]])
+        p180 = np.array([pulses[name] for name in ["180px", "180py", "180mx", "180my"]])
+        p180_s = self.liouv.perfect180["sx"]
+
+        # Calculate starting magnetization vector
         mag0 = self.liouv.compute_mag_eq(params_local, term="2izsz")
 
-        profile = []
+        palmer = d_taub @ p90[0] @ p180_s @ p90[0] @ d_taub
 
-        p_element = (
-            delays[self.exp_details["taub"]]
-            @ pulses["90px"]
-            @ self.liouv.perfect180["sx"]
-            @ pulses["90px"]
-            @ delays[self.exp_details["taub"]]
-        )
+        # Calculating the cpmg trains
+        cp1 = {0: self.liouv.identity}
+        cp2 = {0: self.liouv.identity}
 
-        for ncyc in self.data["ncycs"]:
+        for ncyc in set(self.data["ncycs"][~self.reference]):
+            tau_cp = delays[self.tau_cps[ncyc]]
+            echo = tau_cp @ p180[[1, 0]] @ tau_cp
+            cp_trains = la.matrix_power(echo, int(ncyc))
+            cp1[ncyc] = cp_trains[0] @ d_neg
+            cp2[ncyc] = d_neg @ cp_trains[1]
 
-            if ncyc == 0:
-
-                mag = (
-                    self.detect
-                    @ delays[self.exp_details["time_equil"]]
-                    @ pulses["90py"]
-                    @ p_element
-                    @ pulses["90px"]
-                    @ mag0
-                )
-
-            else:
-
-                p_cpx = np.linalg.matrix_power(
-                    delays[self.t_cps[ncyc]]
-                    @ pulses["180px"]
-                    @ delays[self.t_cps[ncyc]],
-                    int(ncyc),
-                )
-
-                p_cpy = np.linalg.matrix_power(
-                    delays[self.t_cps[ncyc]]
-                    @ pulses["180py"]
-                    @ delays[self.t_cps[ncyc]],
-                    int(ncyc),
-                )
-
-                mag = (
-                    self.detect
-                    @ delays[self.exp_details["time_equil"]]
-                    @ pulses["90py"]
-                    @ delays[self.t_neg]
-                    @ p_cpx
-                    @ p_element
-                    @ p_cpy
-                    @ delays[self.t_neg]
-                    @ pulses["90px"]
-                    @ mag0
-                )
-
-            profile.append(np.float64(self.liouv.collapse(mag)))
+        profile = [
+            self.liouv.collapse(
+                self.detect
+                @ d_eq
+                @ p90[1]
+                @ cp2[ncyc]
+                @ palmer
+                @ cp1[ncyc]
+                @ p90[0]
+                @ mag0
+            )
+            for ncyc in self.data["ncycs"]
+        ]
 
         return np.asarray(profile)
-
-    def ncycs_to_nu_cpmgs(self, ncycs=None):
-        """Calculate the pulsing frequency, v(CPMG), from ncyc values."""
-
-        if ncycs is None:
-            ncycs = self.data["ncycs"]
-
-        return ncycs / self.exp_details["time_t2"]

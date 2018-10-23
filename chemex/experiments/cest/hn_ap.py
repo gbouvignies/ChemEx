@@ -17,8 +17,6 @@ Sekhar, Rosenzweig, Bouvignies and Kay. PNAS (2016) 113:E2794-E2801
 import numpy as np
 
 from chemex.experiments.cest.base_cest import ProfileCEST
-from chemex.spindynamics import basis
-from chemex.spindynamics import default
 
 EXP_DETAILS = {
     "carrier": {"type": float},
@@ -31,43 +29,24 @@ EXP_DETAILS = {
 }
 
 
-class ProfileCEST_HN_AP(ProfileCEST):
+class ProfileCESTHNAP(ProfileCEST):
     """Profile for pure in-phase CEST."""
+
+    SPIN_SYSTEM = "ixyzsz"
+    CONSTRAINTS = "hn_ap"
 
     def __init__(self, name, data, exp_details, model):
         super().__init__(name, data, exp_details, model)
 
-        self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
-
-        self.liouv = basis.Liouvillian(
-            system="ixyzsz",
-            state_nb=self.model.state_nb,
-            atoms=self.peak.atoms,
-            h_larmor_frq=self.conditions["h_larmor_frq"],
-            equilibrium=False,
-        )
-
-        self.liouv.w1_i = 2 * np.pi * self.exp_details["b1_frq"]
-        self.liouv.w1_i_inh = self.exp_details["b1_inh"]
-        self.liouv.w1_i_inh_res = self.exp_details["b1_inh_res"]
-
-        self.carriers_i = self.b1_offsets_to_ppm()
+        # Set the row vector for detection
         self.detect = self.liouv.detect["2izsz_a"]
-        self.dephasing = self.exp_details["b1_inh"] == np.inf
 
-        self.map_names, self.params = default.create_params(
-            basis=self.liouv,
-            model=self.model,
-            nuclei=self.peak.names,
-            conditions=self.conditions,
-            hn_ap_constraints=True,
-        )
-
+        # Set the varying parameters by default
         for name, full_name in self.map_names.items():
             if name.startswith(("dw", "r1_i_a", "r2")):
                 self.params[full_name].set(vary=True)
 
-    def _calculate_unscaled_profile(self, params_local, b1_offsets=None):
+    def _calculate_unscaled_profile(self, params_local, offsets=None):
         """Calculate the CEST profile in the presence of exchange.
 
         TODO: Parameters
@@ -80,67 +59,29 @@ class ProfileCEST_HN_AP(ProfileCEST):
 
         """
 
+        self.liouv.update(params_local)
+
         reference = self.reference
         carriers_i = self.carriers_i
 
-        if b1_offsets is not None:
-            carriers_i = (
-                self.exp_details["carrier"]
-                + 2.0 * np.pi * b1_offsets / self.liouv.ppms["i"]
-            )
-            reference = [False for _ in b1_offsets]
-
-        mag0 = self.liouv.compute_mag_eq(params_local, term="2izsz")
+        if offsets is not None:
+            reference = np.zeros_like(offsets, dtype=np.bool)
+            carriers_i = self.offsets_to_ppm(offsets)
 
         # As the CEST block is after t1 evolution, the excited state
         # magnetization is set to 0.
+        mag0 = self.liouv.compute_mag_eq(params_local, term="2izsz")
         mag0[6:] = 0.0
-
-        self.liouv.update(params_local)
 
         profile = []
 
         for ref, carrier_i in zip(reference, carriers_i):
             self.liouv.carrier_i = carrier_i
-            mag = mag0.copy()
             if not ref:
-                mag = (
-                    self.liouv.pulse_i(self.exp_details["time_t1"], 0.0, self.dephasing)
-                    @ mag
-                )
-            mag = self.detect @ mag
-            profile.append(np.float64(self.liouv.collapse(mag)))
+                cest = self.liouv.pulse_i(self.time_t1, 0.0, self.dephasing)
+            else:
+                cest = self.liouv.identity
+            mag = self.liouv.collapse(self.detect @ cest @ mag0)
+            profile.append(mag)
 
         return np.asarray(profile)
-
-    def filter_points(self, params=None):
-        """Evaluate some criteria to know whether or not the point should be
-        considered in the calculation."""
-
-        cs_a = params[self.map_names["cs_i_a"]].value
-
-        filter_offsets = np.asarray(self.exp_details["filter_offsets"]).reshape(-1)
-        filter_bandwidths = np.asarray(self.exp_details["filter_bandwidths"]).reshape(
-            -1
-        )
-
-        for offset, bandwidth in zip(filter_offsets, filter_bandwidths):
-            nu_offsets = (
-                (cs_a - self.exp_details["carrier"])
-                * self.liouv.ppms["i"]
-                / (2.0 * np.pi)
-                - self.data["offsets"]
-                + offset
-            )
-
-            self.mask = np.logical_and(self.mask, abs(nu_offsets) > bandwidth * 0.5)
-
-    def b1_offsets_to_ppm(self, b1_offsets=None):
-        """Convert B1 offset from Hz to ppm."""
-        if b1_offsets is None:
-            b1_offsets = self.data["offsets"]
-
-        return (
-            2.0 * np.pi * b1_offsets / self.liouv.ppms["i"]
-            + self.exp_details["carrier"]
-        )

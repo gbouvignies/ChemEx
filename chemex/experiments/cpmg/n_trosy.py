@@ -50,45 +50,26 @@ Extra parameters
 import numpy as np
 from numpy import linalg as la
 
-from chemex.experiments.cpmg.base_cpmg import ProfileCPMG
-from chemex.spindynamics import basis
-from chemex.spindynamics import default
+from chemex.experiments.cpmg.base_cpmg import ProfileCPMG2
 
-EXP_DETAILS = {
-    "carrier": {"type": float},
-    "time_t2": {"type": float},
-    "pw90": {"type": float},
+_EXP_DETAILS = {
     "taub": {"default": 2.68e-3, "type": float},
-    "time_equil": {"default": 0.0, "type": float},
     "antitrosy": {"default": "False", "type": str},
 }
 
 
-class ProfileCPMG_N_TROSY(ProfileCPMG):
+class ProfileCPMGNTROSY(ProfileCPMG2):
     """TODO: class docstring."""
+
+    EXP_DETAILS = dict(**ProfileCPMG2.EXP_DETAILS, **_EXP_DETAILS)
+    SPIN_SYSTEM = "ixyzsz"
+    CONSTRAINTS = "nh"
 
     def __init__(self, name, data, exp_details, model):
         super().__init__(name, data, exp_details, model)
 
-        self.exp_details = self.check_exp_details(exp_details, expected=EXP_DETAILS)
-
-        self.time_t2 = self.exp_details["time_t2"]
-        self.time_eq = self.exp_details["time_equil"]
-        self.pw90 = self.exp_details["pw90"]
         self.taub = self.exp_details["taub"]
         self.antitrosy = self.get_bool(self.exp_details["antitrosy"])
-
-        # Set the liouvillian
-        self.liouv = basis.Liouvillian(
-            system="ixyzsz",
-            state_nb=self.model.state_nb,
-            atoms=self.peak.atoms,
-            h_larmor_frq=self.conditions["h_larmor_frq"],
-            equilibrium=False,
-        )
-
-        self.liouv.carrier_i = self.exp_details["carrier"]
-        self.liouv.w1_i = 2.0 * np.pi / (4.0 * self.pw90)
 
         # Set the row vector for detection
         if self.antitrosy:
@@ -97,22 +78,9 @@ class ProfileCPMG_N_TROSY(ProfileCPMG):
             self.detect = self.liouv.detect["2izsz_a"] - self.liouv.detect["iz_a"]
 
         # Set the delays in the experiments
-        ncycs = self.data["ncycs"][~self.reference]
-        self.tau_cps = dict(zip(ncycs, self.time_t2 / (4.0 * ncycs) - self.pw90))
-        self.t_neg = -2.0 * self.pw90 / np.pi
-        self.delays = [self.t_neg, self.time_eq, self.taub] + list(
-            self.tau_cps.values()
-        )
+        self.delays += [self.taub]
 
-        # Get the parameters this profile depends on
-        self.map_names, self.params = default.create_params(
-            basis=self.liouv,
-            model=self.model,
-            nuclei=self.peak.names,
-            conditions=self.conditions,
-            nh_constraints=True,
-        )
-
+        # Set the varying parameters by default
         for name, full_name in self.map_names.items():
             if name.startswith(("dw", "r2_i_a")):
                 self.params[full_name].set(vary=True)
@@ -150,8 +118,8 @@ class ProfileCPMG_N_TROSY(ProfileCPMG):
         palmer = np.mean(p90[[0, 2]] @ palmer_ @ p90[[1, 3]], axis=0)
 
         # Calculating the cpmg trains
-        cp1 = {0: np.identity(p180[1].shape[-1])}
-        cp2 = {0: np.identity(p180[0].shape[-1])}
+        cp1 = {0: self.liouv.identity}
+        cp2 = {0: self.liouv.identity}
 
         for ncyc in set(self.data["ncycs"][~self.reference]):
             tau_cp = delays[self.tau_cps[ncyc]]
@@ -174,10 +142,3 @@ class ProfileCPMG_N_TROSY(ProfileCPMG):
         ]
 
         return np.asarray(profile)
-
-    def ncycs_to_nu_cpmgs(self, ncycs=None):
-        """Calculate the pulsing frequency, v(CPMG), from ncyc values."""
-        if ncycs is None:
-            ncycs = self.data["ncycs"]
-
-        return ncycs / self.exp_details["time_t2"]
