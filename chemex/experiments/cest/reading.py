@@ -20,12 +20,12 @@ def read_profiles(path, filenames, details, model):
 
     error = details.get("error", "file")
 
-    if error not in {"file", "auto"}:
+    if error not in {"file", "scatter"}:
         print("Warning: The 'error' option should either be 'file' or ")
-        print("'auto'. Using the default 'file' option.")
+        print("'scatter'. Using the default 'file' option.")
         error = "file"
 
-    if error == "auto":
+    if error == "scatter":
 
         noise_values = []
 

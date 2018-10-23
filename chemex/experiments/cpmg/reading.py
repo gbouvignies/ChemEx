@@ -20,19 +20,21 @@ def read_profiles(path, filenames, details, model):
 
     error = details.get("error", "file")
 
-    if error not in {"file", "auto"}:
+    if error not in {"file", "duplicates"}:
         print("Warning: The 'error' option should either be 'file' or ")
-        print("'auto'. Using the default 'file' option.")
+        print("'duplicates'. Using the default 'file' option.")
         error = "file"
 
-    if error == "auto":
+    if error == "duplicates":
+        # Estimate the uncertainty using the pooled standard deviation
+        # Ref: http://goldbook.iupac.org/html/P/P04758.html
 
-        noise_values = []
+        variances = []
 
         for profile in profiles:
-            noise_values.append(profile.estimate_noise())
+            variances.append(profile.get_variance_from_duplicates())
 
-        noise_mean = np.mean(noise_values)
+        noise_mean = np.sqrt(np.mean(variances))
 
         for profile in profiles:
             profile.data["error"] = noise_mean

@@ -1,6 +1,4 @@
 """The cpmg_profile module contains the code for handling CPMG profiles."""
-import math
-
 import numpy as np
 from matplotlib import pyplot as plt
 
@@ -91,29 +89,29 @@ class ProfileCPMG1(BaseProfile):
 
     def filter_points(self, params=None):
         """Evaluate some criteria to know whether the point should be
-        considered in the calculation or not."""
+        considered in the calculation or not"""
         pass
 
-    def estimate_noise(self):
-        """Estimate the uncertainty in CPMG data points (i.e., R2eff)."""
+    def get_variance_from_duplicates(self):
+        """Estimate the variance of duplicate points"""
 
-        intensity_dict = {}
+        groups = {}
 
-        for ncyc, intensity in zip(self.data["ncycs"], self.data["intensity"]):
-            intensity_dict.setdefault(ncyc, []).append(intensity)
+        for ncyc, intensity in self.data[["ncycs", "intensity"]]:
+            groups.setdefault(ncyc, []).append(intensity)
 
-        std_list = []
-        for duplicates in intensity_dict.values():
-            n_duplicates = len(duplicates)
+        variances = []
+        for values in groups.values():
+            n_duplicates = len(values)
             if n_duplicates > 1:
-                std_list.append(np.std(duplicates, ddof=1) * _correction(n_duplicates))
+                variances.append(np.var(values, ddof=1))
 
-        if std_list:
-            error = np.mean(std_list)
+        if groups:
+            variance = np.mean(variances)
         else:
-            error = np.mean(self.data["error"])
+            variance = np.mean(self.data["error"])
 
-        return error
+        return variance
 
     def get_plot_fig(self, params):
 
@@ -262,24 +260,3 @@ class ProfileCPMG2(ProfileCPMG1):
         self.delays = [self.t_neg, self.time_eq] + list(self.tau_cps.values())
 
         self.plot_data = plotting.plot_data
-
-
-def _correction(n):
-    """Calculate correction factor for noise estimate."""
-    k = n // 2
-
-    if n == 2 * k:
-        factor = (
-            math.sqrt(math.pi * (2 * k - 1) / 2.0)
-            * math.factorial(2 * k - 2)
-            / ((2 ** (2 * k - 2)) * (math.factorial(k - 1) ** 2))
-        )
-    else:
-        factor = (
-            math.sqrt(k / math.pi)
-            * (2 ** (2 * k - 1))
-            * (math.factorial(k - 1) ** 2)
-            / math.factorial(2 * k - 1)
-        )
-
-    return factor
