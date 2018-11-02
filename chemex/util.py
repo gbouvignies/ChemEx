@@ -3,16 +3,22 @@ import configparser
 import sys
 
 
-def read_cfg_file(filename):
+def listfloat(text):
+    return [float(val) for val in text.strip("[]").split(",")]
+
+
+def read_cfg_file(filename=None):
     """Read and parse the experiment configuration file with configparser."""
 
-    config = configparser.ConfigParser(inline_comment_prefixes=("#", ";"))
+    config = configparser.ConfigParser(
+        comment_prefixes="#", inline_comment_prefixes="#", converters=listfloat
+    )
     config.optionxform = str
 
     try:
-        out = config.read(str(filename))
+        result = config.read(str(filename))
 
-        if not out and filename is not None:
+        if not result and filename is not None:
             exit(f"\nERROR: The file '{filename}' is empty or does not exist!\n")
 
     except configparser.MissingSectionHeaderError:
