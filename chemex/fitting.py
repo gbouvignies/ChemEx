@@ -1,5 +1,4 @@
 """The fitting module contains the code for fitting the experimental data."""
-import functools
 import sys
 
 import lmfit
@@ -78,10 +77,12 @@ def run_fit(fit_filename, params, data, cl_fitmethod):
             print("")
 
         if len(clusters) > 1:
-            c_func = functools.partial(data.calculate_residuals, verbose=False)
-            minimizer = lmfit.Minimizer(c_func, params)
-            result = minimizer.minimize(maxfev=1)
+            minimizer = lmfit.Minimizer(data.calculate_residuals, params)
+            result = minimizer.prepare_fit()
+            result.residual = data.calculate_residuals(params, verbose=False)
             result.params = params
+            result._calculate_statistics()
+            result.method = fitmethod
         else:
             result = c_result
 
