@@ -37,7 +37,8 @@ PALETTE = {
 def set_lim(values, scale):
     """Provide a range that contains all the value and adds a margin."""
 
-    v_min, v_max = min(values), max(values)
+    values_ = values[np.isfinite(values)]
+    v_min, v_max = min(values_), max(values_)
     margin = (v_max - v_min) * scale
     v_min, v_max = v_min - margin, v_max + margin
 

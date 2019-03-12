@@ -134,10 +134,13 @@ class ProfileCPMG1(BaseProfile):
             color=pl.PALETTE["Red"]["300"],
         )
 
+        errors = profile_exp["error"].copy()
+        errors[errors == np.inf] = 1e16
+
         ax2.errorbar(
             profile_exp["nu_cpmg"],
             profile_exp["r2"],
-            yerr=abs(profile_exp["error"]).T,
+            yerr=abs(errors).T,
             fmt=".",
             color=pl.PALETTE["Red"]["700"],
             zorder=3,
@@ -228,7 +231,10 @@ class ProfileCPMG1(BaseProfile):
 
         # MC simulation to propagate the error
         mag_ens = ndata["error"] * self.RANDN + ndata["intensity"]
-        r2_ens = -np.log(mag_ens) / self.time_t2
+        r2_ens = np.empty_like(mag_ens)
+        neg_vals = mag_ens <= 0.0
+        r2_ens[~neg_vals] = -np.log(mag_ens[~neg_vals]) / self.time_t2
+        r2_ens[neg_vals] = np.inf
         r2_ens -= profile_exp["r2"]
         profile_exp["error"] = np.percentile(r2_ens, [15.9, 84.1], axis=0).transpose()
 
