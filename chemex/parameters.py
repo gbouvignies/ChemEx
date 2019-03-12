@@ -259,20 +259,20 @@ class ParamName:
 
     def __lt__(self, other):
         tuple_self = (
-            self.name,
-            self.temperature,
-            self.h_larmor_frq,
-            self.p_total,
-            self.l_total,
+            str(self.name),
+            str(self.temperature),
+            str(self.h_larmor_frq),
+            str(self.p_total),
+            str(self.l_total),
             peaks.Peak(self.nuclei),
         )
 
         tuple_other = (
-            other.name,
-            other.temperature,
-            other.h_larmor_frq,
-            other.p_total,
-            other.l_total,
+            str(other.name),
+            str(other.temperature),
+            str(other.h_larmor_frq),
+            str(other.p_total),
+            str(other.l_total),
             peaks.Peak(other.nuclei),
         )
 
