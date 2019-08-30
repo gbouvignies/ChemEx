@@ -1,0 +1,14 @@
+[step1]
+PB     = "fix"
+KEX_AB = "fix"
+CS_A   = "fix"
+DW_AB  = "fit"
+R1_A   = "fit"
+R1_B   = "0.5 * R1_A"
+R2_A   = "fit"
+R2_B   = "0.4 * R2_A"
+
+[step2]
+PB     = "fit"
+KEX_AB = "fit"
+R2_B   = "fit"

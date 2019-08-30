@@ -1,0 +1,69 @@
+[experiment]
+name         = "cpmg_15n_tr_0013"
+time_t2      = 40.0e-3
+carrier      = 119.000
+pw90         = 43.800e-6
+time_equil   = 5.0e-3
+ncyc_max     = 40
+s3e          = true
+antitrosy    = false
+
+[conditions]
+h_larmor_frq = 800.304
+
+[data]
+path = "../Data/TROSY"
+error = "file"
+profiles = [
+  ["3N-H", "3N-HN.out"],
+  ["4N-H", "4N-HN.out"],
+  ["5N-H", "5N-HN.out"],
+  ["7N-H", "7N-HN.out"],
+  ["8N-H", "8N-HN.out"],
+  ["9N-H", "9N-HN.out"],
+  ["10N-H", "10N-HN.out"],
+  ["11N-H", "11N-HN.out"],
+  ["12N-H", "12N-HN.out"],
+  ["13N-H", "13N-HN.out"],
+  ["14N-H", "14N-HN.out"],
+  ["15N-H", "15N-HN.out"],
+  ["16N-H", "16N-HN.out"],
+  ["17N-H", "17N-HN.out"],
+  ["19N-H", "19N-HN.out"],
+  ["20N-H", "20N-HN.out"],
+  ["21N-H", "21N-HN.out"],
+  ["22N-H", "22N-HN.out"],
+  ["23N-H", "23N-HN.out"],
+  ["24N-H", "24N-HN.out"],
+  ["25N-H", "25N-HN.out"],
+  ["26N-H", "26N-HN.out"],
+  ["27N-H", "27N-HN.out"],
+  ["28N-H", "28N-HN.out"],
+  ["29N-H", "29N-HN.out"],
+  ["30N-H", "30N-HN.out"],
+  ["32N-H", "32N-HN.out"],
+  ["33N-H", "33N-HN.out"],
+  ["34N-H", "34N-HN.out"],
+  ["35N-H", "35N-HN.out"],
+  ["36N-H", "36N-HN.out"],
+  ["38N-H", "38N-HN.out"],
+  ["39N-H", "39N-HN.out"],
+  ["40N-H", "40N-HN.out"],
+  ["41N-H", "41N-HN.out"],
+  ["42N-H", "42N-HN.out"],
+  ["43N-H", "43N-HN.out"],
+  ["44N-H", "44N-HN.out"],
+  ["45N-H", "45N-HN.out"],
+  ["46N-H", "46N-HN.out"],
+  ["47N-H", "47N-HN.out"],
+  ["48N-H", "48N-HN.out"],
+  ["49N-H", "49N-HN.out"],
+  ["50N-H", "50N-HN.out"],
+  ["52N-H", "52N-HN.out"],
+  ["53N-H", "53N-HN.out"],
+  ["54N-H", "54N-HN.out"],
+  ["55N-H", "55N-HN.out"],
+  ["56N-H", "56N-HN.out"],
+  ["59N-H", "59N-HN.out"],
+  ["60N-H", "60N-HN.out"],
+  ]

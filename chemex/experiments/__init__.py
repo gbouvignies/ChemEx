@@ -1,58 +1,64 @@
-import inspect
-import pkgutil
-from importlib import import_module
+import importlib as il
+import importlib.resources as ir
+import pathlib as pl
+import pkgutil as pu
 
-from chemex.experiments.base.base_profile import BaseProfile
+import chemex.experiments.configs as cec
+import chemex.helper as ch
+import chemex.parameters.kinetics as cpk
 
 
-def grab(exp_name):
+def read(filename, model):
+    config = ch.read_toml(filename)
+    config["filename"] = pl.Path(filename)
+    config["model"] = model
+    experiment_name = get_experiment_name(config)
+    cpk.validates_conditions(config)
+    module = grab(experiment_name)
+    experiment = module.read(config)
+    return experiment
 
+
+def get_experiment_name(config):
+    filename = config["filename"]
+    if "experiment" not in config:
+        exit(
+            f"\nerror: The experiment file '{filename}' has no section '[experiment]'."
+        )
+    elif "name" not in config["experiment"]:
+        exit(
+            f"\nerror: The experiment file '{filename}' has no entry 'name' in the "
+            f"section '[experiment]'."
+        )
+    return config["experiment"]["name"]
+
+
+def grab(name):
     try:
-        imported_module = import_module(f"{__name__}.{exp_name}")
-
+        module = il.import_module(f"{__package__}.{name}")
     except ModuleNotFoundError:
-        raise ImportError(
-            "{} is not part of our experiment collection!".format(exp_name)
+        exit(
+            f"\nerror: '{name}' is not part of our experiment collection! "
+            f"Run 'chemex info' to obtain the full list of the available experiments."
         )
-
-    for dir_name in dir(imported_module):
-
-        attribute = getattr(imported_module, dir_name)
-
-        if (
-            inspect.isclass(attribute)
-            and issubclass(attribute, BaseProfile)
-            and not inspect.isabstract(attribute)
-        ):
-            profile_class = attribute
-            break
-
     else:
-        raise ImportError(
-            f"We currently don't have {exp_name}, but you are welcome to send in the "
-            f"request for it!"
-        )
-
-    return profile_class
+        return module
 
 
-def get_experiment_docs():
-
+def get_info():
     docs = {}
-
-    for (_, name, _) in pkgutil.walk_packages(__path__, __name__ + "."):
-
-        imported_module = import_module(f"{name}")
-
-        for dir_name in vars(imported_module):
-            attribute = getattr(imported_module, dir_name)
-
-            if (
-                inspect.isclass(attribute)
-                and issubclass(attribute, BaseProfile)
-                and not inspect.isabstract(attribute)
-            ):
-                exp_name = name.replace(__name__ + ".", "")
-                docs[exp_name] = imported_module.__doc__
-
+    for _, name, _ in pu.walk_packages(__path__, __name__ + "."):
+        imported_module = il.import_module(f"{name}")
+        if "TYPE" in dir(imported_module):
+            exp_name = name.replace(__name__ + ".", "")
+            docs[exp_name] = imported_module.__doc__
     return docs
+
+
+def get_config():
+    cfgs = {
+        name.replace(".toml", ""): ir.read_text(cec, name)
+        for name in ir.contents(cec)
+        if name.endswith(".toml")
+    }
+    return cfgs

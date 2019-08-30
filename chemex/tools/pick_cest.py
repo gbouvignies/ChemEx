@@ -6,8 +6,9 @@ import numpy as np
 from matplotlib.widgets import Button
 from scipy import interpolate
 
-from chemex import datasets
-from chemex import peaks
+import chemex.experiments as ce
+import chemex.parameters.kinetics as cpk
+from chemex.nmr import helper
 
 
 def pick_cest(args):
@@ -19,15 +20,17 @@ def pick_cest(args):
         )
 
     # Read experimental setup and data
-    data = datasets.read_data(args)
+    model = cpk.parse_model(name="2st.pb_kex")
+    # Read experimental setup and data
+    experiment = ce.read(filename=args.experiments.pop(), model=model)
 
-    if not data.data[0].experiment_name.startswith("cest"):
+    if not experiment.exp_type.startswith("cest"):
         sys.exit(
             "\nError: The command 'chemex pick_cest' only works with CEST "
             "experiments.\n"
         )
 
-    callback = Buttons(data, args.out_dir)
+    callback = Buttons(experiment, args.out_dir)
 
     axprevious = plt.axes([0.825, 0.1, 0.075, 0.075])
     axnext = plt.axes([0.9, 0.1, 0.075, 0.075])
@@ -49,11 +52,11 @@ class Buttons:
 
     def __init__(self, data, path):
 
-        self.data = data
+        self.data = list(data._profiles.values())
         self.out = path
 
         self.names = sorted(
-            [peaks.Peak(profile.profile_name).names["i"] for profile in self.data]
+            [helper.SpinSystem(profile.name).names["i"] for profile in self.data]
         )
 
         self.curve, self.curve_sp = None, None
@@ -77,7 +80,7 @@ class Buttons:
         self.index += step
         self.index %= len(self.data)
         self._profile = self.data[self.index]
-        self.name = peaks.Peak(self._profile.profile_name)
+        self.name = helper.SpinSystem(self._profile.name)
         self._profile_to_curve()
         self._clear_axis()
         self._plot()
@@ -108,18 +111,15 @@ class Buttons:
 
     def _profile_to_curve(self):
         profile = self._profile
+        data_exp, _data_fit = profile._get_plot_data(profile.params_default)
+        spline = interpolate.CubicSpline(data_exp["ppms"], data_exp["intensities"])
+        fine_offsets = np.linspace(min(data_exp["ppms"]), max(data_exp["ppms"]), 1000)
 
-        ref = profile.reference
-        val_ref = np.mean(profile.data["intensity"][ref])
-
-        offsets = profile.offsets_to_ppm()[~ref]
-        vals = profile.data["intensity"][~ref] / val_ref
-        errs = profile.data["error"][~ref] / abs(val_ref)
-
-        spline = interpolate.CubicSpline(offsets, vals)
-        fine_offsets = np.linspace(min(offsets), max(offsets), 1000)
-
-        self.curve = {"x": offsets, "y": vals, "e": errs}
+        self.curve = {
+            "x": data_exp["ppms"],
+            "y": data_exp["intensities"],
+            "e": data_exp["errors"],
+        }
         self.curve_sp = {"x": fine_offsets, "y": spline(fine_offsets)}
 
     def _plot_lines(self, event=None):

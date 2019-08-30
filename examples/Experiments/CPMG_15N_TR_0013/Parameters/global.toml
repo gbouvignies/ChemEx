@@ -1,0 +1,10 @@
+[GLOBAL]
+PB              = 0.07
+KEX_AB          = 100.0
+DW_AB           = 0.1
+R1_A            = 1.9
+R1A_A           = 4.0
+R2_A            = 6.0
+ETAXY_A         = 5.0
+ETAZ_A          = 1.5
+J_A             = -93.0

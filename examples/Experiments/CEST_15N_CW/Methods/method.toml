@@ -1,0 +1,10 @@
+[default]
+PB                = "fix"
+KEX_AB            = "fix"
+DW_AB             = "fit"
+"R1_A, NUC->N"    = "fit"
+R2_A              = "fit"
+"R2_A, NUC->N"    = "fit"
+R2MQ_A            = "fit"
+"ETAXY_A, NUC->N" = "fit"
+"ETAZ_A, NUC->N"  = "fit"

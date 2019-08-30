@@ -1,0 +1,7 @@
+[global]
+PB         = 5.7e-2
+KEX_AB     = 1.3e+2
+DW_AB      = 0.1
+R2_A       = 6.0
+R2_B       = 6.0
+R1_A       = 1.2

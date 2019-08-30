@@ -1,0 +1,38 @@
+[experiment]
+name         = "cpmg_15n_tr"
+time_t2      = 30.0e-3
+carrier      = 118.559
+pw90         = 40.6625e-6
+time_equil   = 5.0e-3
+
+[conditions]
+h_larmor_frq = 500.0
+
+[data]
+path = "../Data/500MHz/"
+error = "duplicates"
+profiles = [
+  ["8N-H", "8N-HN.out"],
+  ["10N-H", "10N-HN.out"],
+  ["11N-H", "11N-HN.out"],
+  ["12N-H", "12N-HN.out"],
+  ["13N-H", "13N-HN.out"],
+  ["14N-H", "14N-HN.out"],
+  ["15N-H", "15N-HN.out"],
+  ["16N-H", "16N-HN.out"],
+  ["17N-H", "17N-HN.out"],
+  ["18N-H", "18N-HN.out"],
+  ["19N-H", "19N-HN.out"],
+  ["29N-H", "29N-HN.out"],
+  ["30N-H", "30N-HN.out"],
+  ["31N-H", "31N-HN.out"],
+  ["32N-H", "32N-HN.out"],
+  ["33N-H", "33N-HN.out"],
+  ["34N-H", "34N-HN.out"],
+  ["35N-H", "35N-HN.out"],
+  ["36N-H", "36N-HN.out"],
+  ["37N-H", "37N-HN.out"],
+  ["49N-H", "49N-HN.out"],
+  ["52N-H", "52N-HN.out"],
+  ["53N-H", "53N-HN.out"],
+  ]

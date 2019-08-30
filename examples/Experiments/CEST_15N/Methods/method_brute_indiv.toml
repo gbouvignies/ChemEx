@@ -1,0 +1,15 @@
+[step_1]
+pb     = "fix"
+kex_ab = "fix"
+dw_ab  = "fit"
+r2_b   = "fit"
+
+[step_2]
+fitmethod = "brute"
+pb     = "fit"
+kex_ab = "fit"
+dw_ab  = "fit"
+r1_a   = "fix"
+r1_b   = "fix"
+r2_a   = "fix"
+r2_b   = "fix"

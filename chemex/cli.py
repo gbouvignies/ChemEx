@@ -4,30 +4,10 @@ import argparse
 import pathlib
 import sys
 
-from chemex import __version__
-from chemex import chemex
-from chemex import experiments
-from chemex import util
-from chemex.tools import pick_cest
-from chemex.tools import plot_param
-
-FITMETHODS = {
-    "cobyla",
-    "slsqp",
-    "tnc",
-    "nelder",
-    "cg",
-    "bfgs",
-    "powell",
-    "l-bfgsb",
-    "least_squares",
-    "lbfgsb",
-    "differential_evolution",
-    "leastsq",
-    "brute",
-    "basinhopping",
-    "ampgo",
-}
+import chemex.chemex as cc
+import chemex.experiments as ce
+import chemex.helper as ch
+import chemex.tools as ct
 
 
 class MyParser(argparse.ArgumentParser):
@@ -51,7 +31,7 @@ def build_parser():
     parser = MyParser(description=description, prog="chemex")
 
     parser.add_argument(
-        "--version", action="version", version=f"{parser.prog} {__version__}"
+        "--version", action="version", version=f"{parser.prog} {'__version__'}"
     )
 
     commands = parser.add_subparsers(dest="commands")
@@ -63,22 +43,48 @@ def build_parser():
         description="Enter the name of an experiment to obtain more info about it.",
     )
 
-    info_parser.set_defaults(func=get_info)
+    info_parser.set_defaults(func=print_info)
 
     experiments_parser = info_parser.add_subparsers(dest="experiments")
     experiments_parser.required = True
 
-    docs = experiments.get_experiment_docs()
+    docs = ce.get_info()
 
     for exp_name, doc in docs.items():
         experiments_parser.add_parser(
             exp_name, help=get_description_from_doc(doc), add_help=False
         )
 
+    # parser for the positional argument "info"
+    config_parser = commands.add_parser(
+        "config",
+        help="Shows sample configuration files of the modules",
+        description="Enter the name of an experiment to obtain the associated sample "
+        "configuration file.",
+    )
+
+    config_parser.set_defaults(func=write_config)
+
+    config_exp_parser = config_parser.add_subparsers(dest="experiments")
+    config_exp_parser.required = True
+
+    infos = ce.get_config()
+
+    for exp_name in infos:
+        parser_ = config_exp_parser.add_parser(exp_name)
+        parser_.add_argument(
+            "-o",
+            dest="output",
+            type=pathlib.Path,
+            metavar="FILE",
+            default="./experiment.toml",
+            help="Name of the output file",
+        )
+
     # parser for the positional argument "fit"
     fit_parser = commands.add_parser("fit", help="Starts a fit", prefix_chars="+-")
 
-    fit_parser.set_defaults(func=chemex.fit)
+    fit_parser.set_defaults(func=cc.fit)
 
     fit_parser.add_argument(
         "-e",
@@ -134,7 +140,6 @@ def build_parser():
         dest="fitmethod",
         metavar="FITMETHOD",
         default="leastsq",
-        choices=sorted(FITMETHODS),
         help="Specify the fitting method",
     )
 
@@ -167,7 +172,7 @@ def build_parser():
         "pick_cest", help="Plot CEST profiles for dip picking"
     )
 
-    pick_cest_parser.set_defaults(func=pick_cest.pick_cest)
+    pick_cest_parser.set_defaults(func=ct.pick_cest.pick_cest)
 
     pick_cest_parser.add_argument(
         "-e",
@@ -193,7 +198,7 @@ def build_parser():
         "plot_param", help="Plot one selected parameter from a 'parameters.fit' file"
     )
 
-    plot_param_parser.set_defaults(func=plot_param.plot_param)
+    plot_param_parser.set_defaults(func=ct.plot_param.plot_param)
 
     plot_param_parser.add_argument(
         "-p",
@@ -219,7 +224,16 @@ def get_description_from_doc(doc):
     return doc.strip().splitlines()[0]
 
 
-def get_info(args):
-    docs = experiments.get_experiment_docs()
-    util.header1('Description of the "' "{}" '" experiment'.format(args.experiments))
+def print_info(args):
+    docs = ce.get_info()
+    ch.header1(f'Description of the "{args.experiments}" experiment')
     print(docs[args.experiments])
+
+
+def write_config(args):
+    config = ce.get_config()
+    args.output.write_text(config[args.experiments])
+    print(
+        f"\nSample configuration file for '{args.experiments}' written to "
+        f"'{args.output}'.\n"
+    )
