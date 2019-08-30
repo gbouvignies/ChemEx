@@ -1,0 +1,30 @@
+[experiment]
+name         = "cpmg_ch3_1h_tq_dif"
+time_t2      = 40.0e-3
+carrier      = 0.67800
+pw90         = 12.050e-6
+comp_flg     = true
+eq_flg       = false
+gradient     = 30.6e-2
+delta        = 1.0e-3
+
+[conditions]
+h_larmor_frq = 800.200
+
+[data]
+path = "../Data/800MHzGrad"
+profiles = [
+    ["L7HD1-CD1", "L7HD1-CD1.out"],
+    ["L7HD2-CD2", "L7HD2-CD2.out"],
+    ["L18HD1-CD1", "L18HD1-CD1.out"],
+    ["L18HD2-CD2", "L18HD2-CD2.out"],
+    # ["I28HD1-CD1", "I28HD1-CD1.out"],
+    ["L29HD1-CD1", "L29HD1-CD1.out"],
+    ["L29HD2-CD2", "L29HD2-CD2.out"],
+    # ["L42HD1-CD1", "L42HD1-CD1.out"],
+    # ["I50HD1-CD1", "I50HD1-CD1.out"],
+    ["V55HG1-CG1", "V55HG1-CG1.out"],
+    ["V55HG2-CG2", "V55HG2-CG2.out"],
+    ["V58HG1-CG1", "V58HG1-CG1.out"],
+    ["V58HG2-CG2", "V58HG2-CG2.out"],
+]

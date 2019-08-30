@@ -1,0 +1,20 @@
+[experiment]
+name         = "cest_15n_cw"
+time_t1      = 0.5
+carrier      = 119.776
+carrier_dec  = 8.502
+b1_frq       = 18.9
+b1_frq_dec   = 1e5
+
+[conditions]
+h_larmor_frq = 598.8165859
+
+[data]
+path = "../Data/dec/"
+error = "scatter"
+profiles = [
+  ["52N-HN", "52N-HN.out"],
+  ["55N-HN", "55N-HN.out"],
+  ["67N-HN", "67N-HN.out"],
+]
+

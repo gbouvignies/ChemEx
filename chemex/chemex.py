@@ -4,12 +4,14 @@ import shutil
 
 import numpy as np
 
-from chemex import __version__
-from chemex import cli
-from chemex import datasets
-from chemex import fitting
-from chemex import parameters
-from chemex import util
+import chemex
+import chemex.cli as cc
+import chemex.containers.experiment as cce
+import chemex.fitting as cf
+import chemex.helper as ch
+import chemex.parameters.kinetics as cpk
+import chemex.parameters.settings as cpp
+
 
 LOGO = r"""
 * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -25,7 +27,7 @@ LOGO = r"""
 *                                               *
 * * * * * * * * * * * * * * * * * * * * * * * * *
 """.format(
-    __version__
+    chemex.__version__
 )
 
 
@@ -33,7 +35,7 @@ def main():
     """Do all the magic."""
     print(LOGO)
 
-    parser = cli.build_parser()
+    parser = cc.build_parser()
     args = parser.parse_args()
 
     if args.commands is None:
@@ -43,66 +45,54 @@ def main():
 
 
 def fit(args):
+
+    # Parse kinetics model
+    model = cpk.parse_model(name=args.model)
+
     # Read experimental setup and data
-    data = datasets.read_data(args.experiments, args.model)
-    data.filter(args.res_incl, args.res_excl)
+    experiments = cce.read(filenames=args.experiments, model=model)
+    experiments.select(args.res_incl, args.res_excl)
 
     # Create and update initial values of fitting/fixed parameters
-    util.header1("Reading Default Parameters")
-    params = parameters.create_params(data)
-
-    for name in args.parameters:
-        parameters.set_params_from_config_file(params, name)
+    ch.header1("Reading Default Parameters")
+    params = experiments.params_default
+    for filename in args.parameters:
+        cpp.set_params_from_config_file(params, filename)
 
     # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
-    for profile in data:
-        profile.filter_points(params)
+    experiments.filter(params)
 
     # Customize the output directory
-    output_dir = args.out_dir
-
-    if args.res_incl and len(args.res_incl) == 1:
-        output_dir = output_dir / args.res_incl.pop().upper()
-
-    result = fit_write_plot(args, params, data, output_dir)
+    out_dir = args.out_dir
+    result = fit_write_plot(experiments, params, out_dir, args)
 
     if args.bs or args.mc:
         if args.bs:
             nmb = args.bs
         else:
             nmb = args.mc
-
         formatter_output_dir = "".join(["{:0", str(int(np.log10(nmb)) + 1), "d}"])
-
         for index in range(1, nmb + 1):
             if args.bs:
-                data_index = data.make_bs_dataset()
+                experiments_index = experiments.bootstrap()
             else:
-                data_index = data.make_mc_dataset(result.params)
-
-            output_dir_ = output_dir / formatter_output_dir.format(index)
-
+                experiments_index = experiments.monte_carlo(result.params)
+            output_dir_ = out_dir / formatter_output_dir.format(index)
             params_mc = copy.deepcopy(result.params)
+            fit_write_plot(experiments_index, params_mc, output_dir_, args)
 
-            fit_write_plot(args, params_mc, data_index, output_dir_)
 
-
-def fit_write_plot(args, params, data, output_dir):
+def fit_write_plot(experiments, params, output_dir, args):
     """Perform the fit, write the output files and plot the results."""
-
-    result = fitting.run_fit(args.method, params, data, args.fitmethod)
-
+    result = cf.run_fit(experiments, params, args.method, args.fitmethod)
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    write_results(result, data, args.method, output_dir)
-
+    write_results(result, experiments, args.method, output_dir)
     if not args.noplot:
-        plot_results(result, data, output_dir)
-
+        plot_results(result, experiments, output_dir)
     return result
 
 
-def write_results(result, data, method, output_dir):
+def write_results(result, experiments, method, output_dir):
     """Write the results of the fit to output files.
 
     The files below are created and contain the following information:
@@ -112,40 +102,35 @@ def write_results(result, data, method, output_dir):
       - statistics.fit: statistics for the fit
 
     """
-    util.header1("Writing Results")
+    ch.header1("Writing Results")
 
     print("\nFile(s):")
 
     if method:
         shutil.copyfile(method, output_dir / "fitting-method.cfg")
 
-    parameters.write_par(result.params, path=output_dir)
-    parameters.write_constraints(result.params, path=output_dir)
-    data.write_to(result.params, path=output_dir)
-    fitting.write_statistics(result, path=output_dir)
+    cpp.write_par(result.params, path=output_dir)
+    cpp.write_constraints(result.params, path=output_dir)
+    experiments.write(path=output_dir, params=result.params)
+    cf.write_statistics(result, path=output_dir)
 
 
-def plot_results(result, data, path):
+def plot_results(result, experiments, path):
     """Plot the experimental and fitted data."""
-    from chemex.experiments.base import plotting
-
-    util.header1("Plotting Data")
-
+    ch.header1("Plotting Data")
     print("\nFile(s):")
-
     path_plots = path / "Plots"
     path_plots.mkdir(parents=True, exist_ok=True)
-
     try:
-        plotting.plot_data(data, result.params, path=path_plots)
+        experiments.plot(path=path_plots, params=result.params)
     except KeyboardInterrupt:
-        print(" - Plotting cancelled")
+        print("  - Plotting cancelled")
 
-    if result.method == "brute":
-        labels = [
-            parameters.ParamName.from_fname(var).name.upper()
-            for var in result.var_names
-        ]
-        outfile = path / "results_brute.pdf"
-        plotting.plot_results_brute(result, varlabels=labels, output=outfile)
-        print((f"  * {outfile}"))
+    # if result.method == "brute":
+    #     labels = [
+    #         cpn.ParamName.from_full_name(var).name.upper()
+    #         for var in result.var_names
+    #     ]
+    #     outfile = path / "results_brute.pdf"
+    #     plotting.plot_results_brute(result, varlabels=labels, output=outfile)
+    #     print((f"  * {outfile}"))

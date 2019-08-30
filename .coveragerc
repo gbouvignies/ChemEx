@@ -1,7 +1,0 @@
-[report]
-omit =
-    setup.py
-    chemex/__main__.py
-    chemex/_version.py
-    versioneer.py
-    tests/*

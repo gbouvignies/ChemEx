@@ -1,0 +1,24 @@
+[experiment]
+name         = "cpmg_1hn_ap"
+time_t2      = 20.0e-3
+carrier      = 8.071
+pw90         = 12e-6
+
+[conditions]
+h_larmor_frq = 598.846
+
+[data]
+path = "../Data/600MHz/"
+error = "duplicates"
+profiles = [
+  ["3H-N", "3H-N.out"],
+  ["8H-N", "8H-N.out"],
+  ["29H-N", "29H-N.out"],
+  ["70H-N", "70H-N.out"],
+  ["75H-N", "75H-N.out"],
+  ["103H-N", "103H-N.out"],
+  ["104H-N", "104H-N.out"],
+  ["105H-N", "105H-N.out"],
+  ["115H-N", "115H-N.out"],
+  ["121H-N", "121H-N.out"],
+]

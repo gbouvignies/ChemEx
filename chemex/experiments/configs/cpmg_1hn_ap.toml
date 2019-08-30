@@ -1,0 +1,58 @@
+## This is a sample configuration file for the module 'cpmg_1hn_ap'
+
+[experiment]
+
+## Name of the chemex module corresponding to the experiment
+name = "cpmg_1hn_ap"
+
+## CPMG relaxation delay, in seconds
+time_t2 = 0.02
+
+## Position of the 1H carrier during the CPMG period, in ppm
+carrier = 8.3
+
+## 1H 90 degree pulse width of CPMG pulses, in seconds
+pw90 = 10.0e-6
+
+## Equilibration delay at the end of the CPMG period, in seconds
+## [optional, default: 0.0]
+# time_equil = 0.0
+
+## State of the observed resonance [optional, default: "a"]
+# observed_state = "a"
+
+[conditions]
+
+## 1H Larmor frequency, in MHz
+h_larmor_frq = 800.0
+
+## Sample temperature, in Celsius [optional, depending on the kinetic model]
+# temperature = 25.0
+
+## Protein concentration, in M [optional, depending on the kinetic model]
+# p_total = 500.0e-6
+
+## Ligand concentration, in M [optional, depending on the kinetic model]
+# l_total = 50.0e-6
+
+[data]
+
+## Option defining how intensity uncertainties are estimated.
+## "file": uncertainties are taken from the profile files
+## "duplicates": uncertainties are calculated from the duplicate points
+## [optional, default: "file"]
+# error = "file"
+
+## Directory containing the profiles [optional, default: "./"]
+# path = "./"
+
+## List of the profile names and their associated filenames.
+## The name of the spin systems should follow the Sparky-NMR
+## conventions.
+profiles = [
+  ["G1H-N", "G1H-N.out"],
+  ["H2H-N", "H2H-N.out"],
+  ["M3H-N", "M3H-N.out"],
+  ["S4H-N", "S4H-N.out"],
+  ["T5H-N", "T5H-N.out"],
+]

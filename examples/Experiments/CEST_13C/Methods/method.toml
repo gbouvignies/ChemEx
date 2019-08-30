@@ -1,0 +1,11 @@
+[STEP1]
+PB     = "fix"
+KEX_AB = "fix"
+DW_AB  = "fit"
+R1_A   = "fit"
+R2_A   = "fit"
+R2_B   = "R2_A"
+
+[STEP2]
+PB     = "fit"
+KEX_AB = "fit"

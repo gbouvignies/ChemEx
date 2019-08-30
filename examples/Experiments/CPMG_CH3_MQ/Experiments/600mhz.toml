@@ -1,0 +1,16 @@
+[experiment]
+name          = "cpmg_ch3_mq"
+time_t2       = 30.0e-3
+small_protein = true
+
+[conditions]
+h_larmor_frq  = 600.0
+
+[data]
+path = "../Data/600MHz/"
+error = "duplicates"
+profiles = [
+  ["I125CD1-I125QD1", "I125CD1-I125QD1.out"],
+  ["M145CE-M145QE", "M145CE-M145QE.out"],
+  ["M71CE-M71QE", "M71CE-M71QE.out"],
+]

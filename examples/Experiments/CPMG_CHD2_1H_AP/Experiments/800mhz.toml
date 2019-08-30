@@ -1,0 +1,17 @@
+[experiment]
+name         = "cpmg_chd2_1h_ap"
+time_t2      = 20.0e-3
+carrier      = 0.977
+pw90         = 9.9e-6
+
+[conditions]
+h_larmor_frq = 800.0
+
+[data]
+path = "../Data/800MHz/"
+error = "duplicates"
+profiles = [
+  ["I27HD1-CD1", "I27HD1-CD1.out"],
+  ["L69HD1-CD1", "L69HD1-CD1.out"],
+  ["M72HE-CE", "M72HE-CE.out"],
+]

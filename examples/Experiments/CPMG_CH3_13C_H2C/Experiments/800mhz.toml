@@ -1,0 +1,20 @@
+[experiment]
+name         = "cpmg_ch3_13c_h2c"
+h_larmor_frq = 800.0
+time_t2      = 20.0e-3
+taub	     = 2.00e-3
+carrier      = 19.610
+pw90         = 15.8e-6
+
+[conditions]
+h_larmor_frq = 800.0
+
+[data]
+path = "../Data/800MHz/"
+error = "duplicates"
+profiles = [
+  ["L18CD2-QD2", "L18CD2-QD2.out"],
+  ["M109CE-QE", "M109CE-QE.out"],
+  ["M145CE-QE", "M145CE-QE.out"],
+]
+

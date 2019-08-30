@@ -1,4 +1,6 @@
 """chemex.__main__: executed when the chemex directory is called as script."""
-from chemex import chemex
+import chemex.chemex as cc
 
-chemex.main()
+
+if __name__ == "__main__":
+    cc.main()

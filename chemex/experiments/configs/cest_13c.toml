@@ -1,0 +1,76 @@
+## This is a sample configuration file for the module 'cest_13c'
+
+[experiment]
+
+## Name of the chemex module corresponding to the experiment
+name = "cest_13c"
+
+## CEST relaxation delay, in seconds
+time_t1 = 0.5
+
+## Position of the 13C carrier during the CEST period, in ppm
+carrier = 45.0
+
+## B1 radio-frequency field strength, in Hz
+b1_frq = 25.0
+
+## B1 inhomogeneity expressed as a fraction of 'b1_frq'
+## [optional, default: 0.1]
+# b1_inh_scale = 0.1
+
+## Number of points used to simulate B1 inhomogeneity, the larger
+## the longer the calculation. If set to 0, a faster calculation
+## takes place assuming full dephasing of the magnetization components
+## orthogonal to the effective field. [optional, default: 11]
+# b1_inh_res = 11
+
+## State of the observed resonance [optional, default: "a"]
+# observed_state = "a"
+
+## Set to true when the sample is uniformly 15N/13C labeled
+## [optional, default: false]
+# cn_label = false
+
+[conditions]
+
+## 1H Larmor frequency, in MHz
+h_larmor_frq = 800.0
+
+## Sample temperature, in Celsius [optional, depending on the kinetic model]
+# temperature = 25.0
+
+## Protein concentration, in M [optional, depending on the kinetic model]
+# p_total = 500.0e-6
+
+## Ligand concentration, in M [optional, depending on the kinetic model]
+# l_total = 50.0e-6
+
+[data]
+
+## Option defining how intensity uncertainties are estimated.
+## "file": uncertainties are taken from the profile files
+## "scatter": uncertainties are calculated from the baseline
+## [optional, default: "file"]
+# error = "file"
+
+## List of offsets relative to the main resonance position
+## (nu) and bandwidths (delta_nu) defining regions where
+## points are excluded from the calculation (nu +/- 0.5 * delta_nu),
+## both are in Hz [optional, default: [[0.0, 0.0]] ]
+# filter_offsets = [
+#   [0.0, 0.0],
+# ]
+
+## Directory containing the profiles [optional, default: "./"]
+# path = "./"
+
+## List of the profile names and their associated filenames.
+## The name of the spin systems should follow the Sparky-NMR
+## conventions.
+profiles = [
+  ["G1CA", "G1CA-H.out"],
+  ["H2CB", "H2CB-H.out"],
+  ["K3CD", "K3CD-H.out"],
+  ["S4CB", "S4CB-H.out"],
+  ["L5CD1", "L5CD1-H.out"],
+]

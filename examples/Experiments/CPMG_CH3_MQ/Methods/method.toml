@@ -1,0 +1,11 @@
+[STEP1]
+PB                = "fix"
+KEX_AB            = "fix"
+DW_AB             = "fit"
+"DW_AB, NUC->QD1" = "fix"
+"DW_AB, NUC->QE"  = "fix"
+R2MQ_A            = "fit"
+
+[STEP2]
+PB                = "fit"
+KEX_AB            = "fit"
