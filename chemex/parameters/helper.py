@@ -15,11 +15,9 @@ def settings_to_params(settings, fnames):
             vary=setting.get("vary"),
             expr=setting.get("expr", "").format_map(fnames),
         )
-        param._delay_asteval = True
         parameter_list.append(param)
     params = lf.Parameters()
     params.add_many(*parameter_list)
-    set_delay_eval(params, False)
     return params
 
 
@@ -30,17 +28,12 @@ def make_params(settings, conditions, spin_system=None):
 
 
 def merge(params_list):
-    params_merged = lf.Parameters()
+    params_merged = {}
     for params in params_list:
-        set_delay_eval(params, delay=True)
         for name, param in params.items():
             if name in params_merged and params_merged[name].vary:
                 continue
             params_merged[name] = param
-    set_delay_eval(params_merged, delay=False)
-    return params_merged
-
-
-def set_delay_eval(params, delay=False):
-    for param in params.values():
-        param._delay_asteval = delay
+    params = lf.Parameters()
+    params.add_many(*params_merged.values())
+    return params
