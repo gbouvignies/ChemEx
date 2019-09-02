@@ -46,8 +46,8 @@ class CpmgProfile:
         self._plot = cp.cpmg
 
     @classmethod
-    def from_file(cls, path, pulse_seq, par_names, params_default, **kws):
-        name = cnsn.SpinSystem(path.name)
+    def from_file(cls, path, config, pulse_seq, par_names, params_default):
+        name = config["spin_system"]["spin_system"]
         data = CpmgData.from_file(path)
         return cls(name, data, pulse_seq, par_names, params_default)
 
