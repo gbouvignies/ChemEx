@@ -47,7 +47,7 @@ def minimize(func, params, fitmethod):
         result = minimizer.minimize(method=fitmethod, **kws)
     except KeyboardInterrupt:
         sys.stderr.write("\n -- Keyboard Interrupt: minimization stopped\n")
-        result = minimizer.minimize(params=minimizer.result.params, maxfev=1)
+        result = minimizer.result
     return result
 
 
