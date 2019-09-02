@@ -1,0 +1,8 @@
+[STEP1]
+PB              = "fit"
+KEX_AB          = "fit"
+CS_A            = "fix"
+DW_AB           = "fit"
+R2_A            = "fit"
+R1A_A           = "fit"
+ETAXY_A         = "fit"

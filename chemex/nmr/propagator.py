@@ -11,17 +11,11 @@ class PropagatorIS:
         self.liouvillian = self.LIOUV(basis, model, atoms, h_frq)
         self.identity = np.eye(self.liouvillian.size)
         self.perfect180 = self._make_perfect180()
-        self.phases = self.get_phases()
         self.ppm_i = self.liouvillian.ppm_i
         self.ppm_s = self.liouvillian.ppm_s
-
-    def get_phases(self):
-        phases = {}
-        zeros = self.identity * 0.0
-        for spin in "is":
-            l_rotz = self.liouvillian.matrices.get(f"rotz_{spin}", zeros)
-            phases[spin] = [linalg.expm(n * 0.5 * np.pi * l_rotz) for n in range(4)]
-        return phases
+        self._phases = self._get_phases()
+        self.perfect90_i = self._make_perfect90("i")
+        self.perfect90_s = self._make_perfect90("s")
 
     def update(self, parvals):
         return self.liouvillian.update(parvals)
@@ -146,7 +140,7 @@ class PropagatorIS:
 
     def pulses_90_180_i(self):
         pw = 1.0 / (4.0 * self.liouvillian.b1_i)
-        phases = self.phases["i"]
+        phases = self._phases["i"]
         base = self.pulse_i(pw, 0.0)
         p90 = np.array([phases[i] @ base @ phases[-i] for i in range(4)])
         p180 = np.array([pulse @ pulse for pulse in p90])
@@ -154,7 +148,7 @@ class PropagatorIS:
 
     def pulses_90_180_s(self):
         pw = 1.0 / (4.0 * self.liouvillian.b1_s)
-        phases = self.phases["s"]
+        phases = self._phases["s"]
         base = self.pulse_i(pw, 0.0)
         p90 = np.array([phases[i] @ base @ phases[-i] for i in range(4)])
         p180 = np.array([pulse @ pulse for pulse in p90])
@@ -179,6 +173,22 @@ class PropagatorIS:
             if "sy" in component or "sz" in component:
                 perfect180["sx"] -= 2 * np.diag(vect)
         return perfect180
+
+    def _make_perfect90(self, spin):
+        phases = self._phases[spin]
+        zeros = self.identity * 0.0
+        rot = self.liouvillian.matrices.get(f"b1x_{spin}", zeros)
+        base = linalg.expm(0.25 * rot)
+        p90 = np.array([phases[i] @ base @ phases[-i] for i in range(4)])
+        return p90
+
+    def _get_phases(self):
+        phases = {}
+        zeros = self.identity * 0.0
+        for spin in "is":
+            l_rotz = self.liouvillian.matrices.get(f"rotz_{spin}", zeros)
+            phases[spin] = [linalg.expm(n * 0.5 * np.pi * l_rotz) for n in range(4)]
+        return phases
 
 
 class Propagator1HTQDif(PropagatorIS):
