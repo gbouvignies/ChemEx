@@ -256,7 +256,7 @@ def _name_to_spin_system(name, spin_system):
         return spin_system.names.get(spin)
 
 
-def _get_fnames(settings, conditions=None, spin_system=None):
+def get_fnames(settings, conditions=None, spin_system=None):
     attributes = conditions.copy()
     if spin_system is not None:
         attributes["spin_system"] = spin_system

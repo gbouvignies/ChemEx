@@ -21,7 +21,7 @@ Note
 
 A sample configuration  file for this module is available using the command:
 
-    chemex config cest_13c
+    chemex config cest_1hn_ap
 
 """
 import functools as ft
