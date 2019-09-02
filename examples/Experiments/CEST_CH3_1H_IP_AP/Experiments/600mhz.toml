@@ -1,0 +1,26 @@
+[experiment]
+name         = "cest_ch3_1h_ip_ap"
+d1           = 0.5
+time_t1      = 1.0
+carrier      = 0.5
+b1_frq       = 30.593
+b1_inh_res   = 5
+
+[conditions]
+h_larmor_frq = 800.0
+
+[data]
+path = "../Data/30Hz/"
+error = "scatter"
+profiles = [
+  ["14H-C", "14C-H.out"],
+  ["16H-C", "16C-H.out"],
+  ["18H-C", "18C-H.out"],
+  ["35H-C", "35C-H.out"],
+  ["36H-C", "36C-H.out"],
+  ["43H-C", "43C-H.out"],
+  ["51H-C", "51C-H.out"],
+  ["54H-C", "54C-H.out"],
+  ["57H-C", "57C-H.out"],
+  ["60H-C", "60C-H.out"],
+]
