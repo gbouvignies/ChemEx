@@ -2,8 +2,8 @@ import configparser
 
 import matplotlib.pyplot as plt
 
-import chemex.parameters.name as cpn
 import chemex.nmr.helper as cnh
+import chemex.parameters.name as cpn
 
 
 def plot_param(args):
