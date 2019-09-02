@@ -57,7 +57,7 @@ class CestProfile:
 
     @classmethod
     def from_file(cls, path, config, pulse_seq, par_names, params_default):
-        name = cnsn.SpinSystem(path.name)
+        name = config["spin_system"]["spin_system"]
         data = CestData.from_file(path, filter_offsets=config["data"]["filter_offsets"])
         return cls(name, data, pulse_seq, par_names, params_default)
 
