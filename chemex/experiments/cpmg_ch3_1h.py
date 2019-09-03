@@ -151,7 +151,6 @@ class PulseSeq:
                 / (4.0 * ncycs_),
             )
         )
-        tau_cps[-1] = 0.5 * self.time_t2
         delays = [self.taua]
         delays.extend(tau_cps.values())
         return tau_cps, delays
