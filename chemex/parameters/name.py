@@ -183,12 +183,11 @@ class ParamName:
 
 
 def _get_re_component(value, kind):
-    if value:
-        if kind != "spin_system":
-            value = _expand(value)
-        return _DECORATORS[kind].format(value)
-    else:
+    if not value:
         return "([a-z_][a-z0-9_]*)?"
+    if kind != "spin_system":
+        value = _expand(value)
+    return _DECORATORS[kind].format(value)
 
 
 def _clean_re(value):
@@ -224,7 +223,7 @@ def _multireplace(string, replacements):
     substrings = sorted(replacements, key=len, reverse=True)
 
     # Create a big OR regex that matches any of the substrings to replace
-    regexp = re.compile("|".join(map(re.escape, substrings)))
+    regexp = re.compile("|".join([re.escape(substring) for substring in substrings]))
 
     # For each match, look up the new string in the replacements
     return regexp.sub(lambda match: replacements[match.group(0)], string)
@@ -252,8 +251,7 @@ def _name_to_spin_system(name, spin_system):
     spin = parsed.get("spin")
     if spin is None:
         return spin_system.groups.get("i")
-    else:
-        return spin_system.names.get(spin)
+    return spin_system.names.get(spin)
 
 
 def get_fnames(settings, conditions=None, spin_system=None):

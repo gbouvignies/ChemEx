@@ -27,18 +27,14 @@ A sample configuration  file for this module is available using the command:
     chemex config cpmg_ch3_mq
 
 """
-import dataclasses as dc
 import functools as ft
 
 import numpy as np
 import numpy.linalg as nl
 
 import chemex.containers.cpmg as ccc
-import chemex.containers.experiment as cce
 import chemex.experiments.helper as ceh
-import chemex.nmr.helper as cnsn
 import chemex.nmr.propagator as cnp
-import chemex.parameters as cp
 
 
 TYPE = __name__.split(".")[-1]

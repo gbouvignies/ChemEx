@@ -1,5 +1,6 @@
 import collections
 import re
+import sys
 
 import jsonschema as js
 import numpy as np
@@ -14,12 +15,11 @@ Model = collections.namedtuple("Model", ["name", "state_nb", "kind"])
 def parse_model(name):
     name_ = _check_model_name(name)
     match = re.match(r"(\d)st\.(\w+)", name_, re.IGNORECASE)
-    if match:
-        state_nb = int(match.group(1))
-        kind = match.group(2)
-        return Model(name_, state_nb, kind)
-    else:
+    if not match:
         raise NameError(f"Impossible to parse the model name '{name_}'.")
+    state_nb = int(match.group(1))
+    kind = match.group(2)
+    return Model(name_, state_nb, kind)
 
 
 def _check_model_name(name):
@@ -29,8 +29,7 @@ def _check_model_name(name):
             print(f"    - '{model_name}'")
         print("Set to the default value: '2st.pb_kex'.")
         return "2st.pb_kex"
-    else:
-        return name
+    return name
 
 
 def create_params_k(model, conditions, spin_system=None):
@@ -696,12 +695,12 @@ def validates_conditions(config):
     except js.ValidationError as e:
         filename = config["filename"]
         if len(e.path) == 1:
-            exit(
+            sys.exit(
                 f"\nerror: The experiment file '{filename}' has no section "
                 f"'[conditions]'."
             )
         else:
-            exit(
+            sys.exit(
                 f"\nerror: The model '{model}' requires the condition '{e.instance}' "
                 f"to be defined in the experiment file. '{e.instance}' is missing from"
                 f"'{filename}'."

@@ -1,10 +1,10 @@
 import copy
+import sys
 
 import numpy as np
 
 import chemex.containers.helper as cch
 import chemex.containers.noise as ccn
-import chemex.nmr.helper as cnsn
 import chemex.plot as cp
 
 
@@ -167,7 +167,7 @@ class CpmgData:
         try:
             points = np.loadtxt(path, dtype=cls.dtype)
         except OSError as err:
-            exit(f"\nerror: {err}")
+            sys.exit(f"\nerror: {err}")
         else:
             refs = points["ncycs"] == 0
             mask = np.array([True] * len(points))

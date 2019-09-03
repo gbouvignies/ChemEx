@@ -2,8 +2,8 @@ import contextlib
 import sys
 
 import matplotlib.pyplot as plt
+import matplotlib.widgets as mw
 import numpy as np
-from matplotlib.widgets import Button
 from scipy import interpolate
 
 import chemex.experiments as ce
@@ -35,10 +35,10 @@ def pick_cest(args):
     axprevious = plt.axes([0.825, 0.1, 0.075, 0.075])
     axnext = plt.axes([0.9, 0.1, 0.075, 0.075])
 
-    bprevious = Button(axprevious, "Previous")
+    bprevious = mw.Button(axprevious, "Previous")
     bprevious.on_clicked(callback.previous)
 
-    bnext = Button(axnext, "Next")
+    bnext = mw.Button(axnext, "Next")
     bnext.on_clicked(callback.next)
 
     plt.show()
