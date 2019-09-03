@@ -112,7 +112,7 @@ class PulseSeq:
 
         # Calculation of the propagators corresponding to all the pulses
         p90, p180 = self.prop.pulses_90_180_i()
-        perfect180x = self.prop.perfect180["ix"]
+        perfect180x = self.prop.perfect180_i[0]
         p180pmy = 0.5 * (p180[1] + p180[3])  # +/- phase cycling
 
         # Getting the starting magnetization

@@ -102,7 +102,7 @@ class PulseSeq:
 
         # Calculation of the propagators corresponding to all the pulses
         p90, p180 = self.prop.pulses_90_180_i()
-        p180_sx = self.prop.perfect180["sx"]
+        p180_sx = self.prop.perfect180_s[0]
 
         # Getting the starting magnetization
         start = self.prop.get_start_magnetization("2izsz")

@@ -104,8 +104,9 @@ class PulseSeq:
                 )
             else:
                 p90 = self.prop.perfect90_i
-                p180 = self.prop.perfect180
-                inept = p90[3] @ d_taua @ p180["sx"] @ p180["ix"] @ d_taua @ p90[0]
+                p180_ix = self.prop.perfect180_i[0]
+                p180_sx = self.prop.perfect180_s[0]
+                inept = p90[3] @ d_taua @ p180_sx @ p180_ix @ d_taua @ p90[0]
                 intst[offset] = self.prop.detect(inept @ d_t1 @ start)
         return np.array([intst[offset] for offset in offsets])
 

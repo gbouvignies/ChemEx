@@ -10,12 +10,13 @@ class PropagatorIS:
     def __init__(self, basis, model, atoms, h_frq):
         self.liouvillian = self.LIOUV(basis, model, atoms, h_frq)
         self.identity = np.eye(self.liouvillian.size)
-        self.perfect180 = self._make_perfect180()
         self.ppm_i = self.liouvillian.ppm_i
         self.ppm_s = self.liouvillian.ppm_s
         self._phases = self._get_phases()
         self.perfect90_i = self._make_perfect90("i")
         self.perfect90_s = self._make_perfect90("s")
+        self.perfect180_i = self._make_perfect180("i")
+        self.perfect180_s = self._make_perfect180("s")
 
     def update(self, parvals):
         return self.liouvillian.update(parvals)
@@ -160,19 +161,17 @@ class PropagatorIS:
     def ppms_to_offsets(self, ppms):
         return self.liouvillian.ppms_to_offsets(ppms)
 
-    def _make_perfect180(self):
-        perfect180 = {ptype: self.identity.copy() for ptype in ("ix", "iy", "sx", "sy")}
-        for component in self.liouvillian.basis:
-            vect = self.liouvillian.vectors[component]
-            if "ix" in component or "iz" in component:
-                perfect180["iy"] -= 2 * np.diag(vect)
-            if "iy" in component or "iz" in component:
-                perfect180["ix"] -= 2 * np.diag(vect)
-            if "sx" in component or "sz" in component:
-                perfect180["sy"] -= 2 * np.diag(vect)
-            if "sy" in component or "sz" in component:
-                perfect180["sx"] -= 2 * np.diag(vect)
-        return perfect180
+    def _make_perfect180(self, spin):
+        compx, compy, compz = (f"{spin}{axis}" for axis in "xyz")
+        perfect180 = {comp: self.identity.copy() for comp in (compx, compy)}
+        for comp in self.liouvillian.basis:
+            vect = self.liouvillian.vectors[comp]
+            if compx in comp or compz in comp:
+                perfect180[compy] -= 2 * np.diag(vect)
+            if compy in comp or compz in comp:
+                perfect180[compx] -= 2 * np.diag(vect)
+        p180 = [perfect180[comp] for comp in (compx, compy, compx, compy)]
+        return p180
 
     def _make_perfect90(self, spin):
         phases = self._phases[spin]
