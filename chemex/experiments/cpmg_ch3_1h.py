@@ -165,5 +165,4 @@ class PulseSeq:
 
     def ncycs_to_nu_cpmgs(self, ncycs):
         ncycs_ = np.array(ncycs, dtype=np.float)
-        ncycs_[ncycs_ == -1.0] = 0.5
         return ncycs_[ncycs_ > 0.0] / self.time_t2
