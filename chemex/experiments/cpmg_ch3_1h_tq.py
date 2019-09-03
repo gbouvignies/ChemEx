@@ -95,17 +95,18 @@ class PulseSeq:
         # Getting the starting magnetization
         start = self.prop.get_start_magnetization(terms="2ixsz", atom="h")
 
-        # Calculation of the propagators
+        # Calculation of the propagators corresponding to all the delays
         tau_cps, all_delays = self._get_delays(ncycs)
         delays = dict(zip(all_delays, self.prop.delays(all_delays)))
         d_cp = {ncyc: delays[delay] for ncyc, delay in tau_cps.items()}
         d_tauc = delays[self.tauc]
-        p90, p180 = self.prop.pulses_90_180_i()
-        p180pmy = 0.5 * (p180[1] + p180[3])  # +/- phase cycling
 
+        # Calculation of the propagators corresponding to all the pulses
+        p180 = self.prop.p180_i
+        p180pmy = 0.5 * (p180[1] + p180[3])  # +/- phase cycling
         if self.comp_flg:
-            p180_cp1 = p90[[3, 0, 1, 2]] @ p180 @ p90[[3, 0, 1, 2]]
-            p180_cp2 = p90[[1, 2, 3, 0]] @ p180 @ p90[[1, 2, 3, 0]]
+            p180_cp1 = self.prop.p9018090_i_1
+            p180_cp2 = self.prop.p9018090_i_2
         else:
             p180_cp1 = p180_cp2 = p180
 

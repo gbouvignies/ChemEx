@@ -117,7 +117,8 @@ class PulseSeq:
         # Calculation of the propagators with gradient 2
         self.prop.gradient_dephasing = self.k2_factor
         d_tau_2, = self.prop.delays(self.tau)
-        p90_2, p180_2 = self.prop.pulses_90_180_i()
+        p90_2 = self.prop.p90_i
+        p180_2 = self.prop.p180_i
 
         # Calculation of the propagators with gradient 3
         self.prop.gradient_dephasing = 7.0 / 3.0 * self.k2_factor
@@ -129,12 +130,12 @@ class PulseSeq:
         delays_4 = dict(zip(all_delays, self.prop.delays(all_delays)))
         d_cp_4 = {ncyc: delays_4[delay] for ncyc, delay in tau_cps.items()}
         d_tau_4 = delays_4[self.tau]
-        p90_4, p180_4 = self.prop.pulses_90_180_i()
+        p180_4 = self.prop.p180_i
         p180pmy_4 = 0.5 * (p180_4[1] + p180_4[3])  # +/- phase cycling
 
         if self.comp_flg:
-            p180_cp1 = p90_4[[3, 0, 1, 2]] @ p180_4 @ p90_4[[3, 0, 1, 2]]
-            p180_cp2 = p90_4[[1, 2, 3, 0]] @ p180_4 @ p90_4[[1, 2, 3, 0]]
+            p180_cp1 = self.prop.p9018090_i_1
+            p180_cp2 = self.prop.p9018090_i_1
         else:
             p180_cp1 = p180_cp2 = p180_4
 

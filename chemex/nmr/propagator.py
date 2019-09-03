@@ -8,6 +8,8 @@ class PropagatorIS:
     LIOUV = liouvillian.LiouvillianIS
 
     def __init__(self, basis, model, atoms, h_frq):
+        self._p90_i = self._p180_i = self._p240_i = None
+        self._p90_s = self._p180_s = self._p240_s = None
         self.liouvillian = self.LIOUV(basis, model, atoms, h_frq)
         self.identity = np.eye(self.liouvillian.size)
         self.ppm_i = self.liouvillian.ppm_i
@@ -19,7 +21,8 @@ class PropagatorIS:
         self.perfect180_s = self._make_perfect180("s")
 
     def update(self, parvals):
-        return self.liouvillian.update(parvals)
+        self.liouvillian.update(parvals)
+        self._p90_i = self._p90_s = None
 
     @property
     def carrier_i(self):
@@ -28,6 +31,7 @@ class PropagatorIS:
     @carrier_i.setter
     def carrier_i(self, value):
         self.liouvillian.carrier_i = value
+        self._p90_i = self._p90_s = None
 
     @property
     def carrier_s(self):
@@ -36,6 +40,7 @@ class PropagatorIS:
     @carrier_s.setter
     def carrier_s(self, value):
         self.liouvillian.carrier_s = value
+        self._p90_i = self._p90_s = None
 
     @property
     def offset_i(self):
@@ -44,6 +49,7 @@ class PropagatorIS:
     @offset_i.setter
     def offset_i(self, value):
         self.liouvillian.offset_i = value
+        self._p90_i = self._p90_s = None
 
     @property
     def offset_s(self):
@@ -52,6 +58,7 @@ class PropagatorIS:
     @offset_s.setter
     def offset_s(self, value):
         self.liouvillian.offset_s = value
+        self._p90_i = self._p90_s = None
 
     @property
     def b1_i(self):
@@ -60,6 +67,7 @@ class PropagatorIS:
     @b1_i.setter
     def b1_i(self, value):
         self.liouvillian.b1_i = value
+        self._p90_i = self._p90_s = None
 
     @property
     def b1_s(self):
@@ -68,6 +76,7 @@ class PropagatorIS:
     @b1_s.setter
     def b1_s(self, value):
         self.liouvillian.b1_s = value
+        self._p90_i = self._p90_s = None
 
     @property
     def b1_i_inh_scale(self):
@@ -76,6 +85,7 @@ class PropagatorIS:
     @b1_i_inh_scale.setter
     def b1_i_inh_scale(self, value):
         self.liouvillian.b1_i_inh_scale = value
+        self._p90_i = self._p90_s = None
 
     @property
     def b1_i_inh_res(self):
@@ -84,6 +94,7 @@ class PropagatorIS:
     @b1_i_inh_res.setter
     def b1_i_inh_res(self, value):
         self.liouvillian.b1_i_inh_res = value
+        self._p90_i = self._p90_s = None
 
     @property
     def jeff_i(self):
@@ -92,12 +103,16 @@ class PropagatorIS:
     @jeff_i.setter
     def jeff_i(self, value):
         self.liouvillian.jeff_i = value
+        self._p90_i = self._p90_s = None
 
     def get_equilibrium(self):
         return self.liouvillian.get_equilibrium()
 
     def get_start_magnetization(self, terms=None, atom=None):
         return self.liouvillian.get_start_magnetization(terms=terms, atom=atom)
+
+    def keep_components(self, magnetization, terms=None):
+        return self.liouvillian.keep_components(magnetization, terms)
 
     @property
     def detection(self):
@@ -139,27 +154,93 @@ class PropagatorIS:
         )
         return calculate_propagators(liouv, times, dephasing)
 
-    def pulses_90_180_i(self):
-        pw = 1.0 / (4.0 * self.liouvillian.b1_i)
-        phases = self._phases["i"]
-        base = self.pulse_i(pw, 0.0)
-        p90 = np.array([phases[i] @ base @ phases[-i] for i in range(4)])
-        p180 = np.array([pulse @ pulse for pulse in p90])
-        return p90, p180
+    @property
+    def p90_i(self):
+        self._calculate_base_pulses_i()
+        return self._p90_i
 
-    def pulses_90_180_s(self):
-        pw = 1.0 / (4.0 * self.liouvillian.b1_s)
-        phases = self._phases["s"]
-        base = self.pulse_i(pw, 0.0)
-        p90 = np.array([phases[i] @ base @ phases[-i] for i in range(4)])
-        p180 = np.array([pulse @ pulse for pulse in p90])
-        return p90, p180
+    @property
+    def p180_i(self):
+        self._calculate_base_pulses_i()
+        return self._p180_i
+
+    @property
+    def p240_i(self):
+        self._calculate_base_pulses_i()
+        return self._p240_i
+
+    @property
+    def p9018090_i_1(self):
+        return self.p90_i[[3, 0, 1, 2]] @ self.p180_i @ self.p90_i[[3, 0, 1, 3]]
+
+    @property
+    def p9018090_i_2(self):
+        return self.p90_i[[1, 2, 3, 0]] @ self.p180_i @ self.p90_i[[1, 2, 3, 0]]
+
+    @property
+    def p9024090_i_1(self):
+        return self.p90_i[[3, 0, 1, 2]] @ self.p240_i @ self.p90_i[[3, 0, 1, 3]]
+
+    @property
+    def p9024090_i_2(self):
+        return self.p90_i[[1, 2, 3, 0]] @ self.p240_i @ self.p90_i[[1, 2, 3, 0]]
+
+    @property
+    def p90_s(self):
+        self._calculate_base_pulses_s()
+        return self._p90_s
+
+    @property
+    def p180_s(self):
+        self._calculate_base_pulses_s()
+        return self._p180_s
+
+    @property
+    def p240_s(self):
+        self._calculate_base_pulses_s()
+        return self._p240_s
+
+    @property
+    def p9018090_s_1(self):
+        return self.p90_s[3, 0, 1, 2] @ self.p180_s @ self.p90_s[3, 0, 1, 3]
+
+    @property
+    def p9018090_s_2(self):
+        return self.p90_s[1, 2, 3, 0] @ self.p180_s @ self.p90_s[1, 2, 3, 0]
+
+    @property
+    def p9024090_s_1(self):
+        return self.p90_s[3, 0, 1, 2] @ self.p240_s @ self.p90_s[3, 0, 1, 3]
+
+    @property
+    def p9024090_s_2(self):
+        return self.p90_s[1, 2, 3, 0] @ self.p240_s @ self.p90_s[1, 2, 3, 0]
 
     def offsets_to_ppms(self, offsets):
         return self.liouvillian.offsets_to_ppms(offsets)
 
     def ppms_to_offsets(self, ppms):
         return self.liouvillian.ppms_to_offsets(ppms)
+
+    def _calculate_base_pulses_i(self):
+        if self._p90_i is None:
+            phases = self._phases["i"]
+            pulse_widths = np.array([1.0, 2.0, 8.0 / 3.0]) / (
+                4.0 * self.liouvillian.b1_i
+            )
+            pulses_ = self.pulse_i(pulse_widths, 0.0)
+            pulses = np.array([phases[j] @ pulses_ @ phases[-j] for j in range(4)])
+            self._p90_i, self._p180_i, self._p240_i = pulses.swapaxes(0, 1)
+
+    def _calculate_base_pulses_s(self):
+        if self._p90_s is None:
+            phases = self._phases["s"]
+            pulse_widths = np.array([1.0, 2.0, 8.0 / 3.0]) / (
+                4.0 * self.liouvillian.b1_s
+            )
+            pulses_ = self.pulse_s(pulse_widths, 0.0)
+            pulses = np.array([phases[j] @ pulses_ @ phases[-j] for j in range(4)])
+            self._p90_s, self._p180_s, self._p240_s = pulses.swapaxes(0, 1)
 
     def _make_perfect180(self, spin):
         compx, compy, compz = (f"{spin}{axis}" for axis in "xyz")
@@ -186,7 +267,9 @@ class PropagatorIS:
         zeros = self.identity * 0.0
         for spin in "is":
             l_rotz = self.liouvillian.matrices.get(f"rotz_{spin}", zeros)
-            phases[spin] = [linalg.expm(n * 0.5 * np.pi * l_rotz) for n in range(4)]
+            phases[spin] = np.array(
+                [linalg.expm(n * 0.5 * np.pi * l_rotz) for n in range(4)]
+            )
         return phases
 
 
@@ -200,6 +283,7 @@ class Propagator1HTQDif(PropagatorIS):
     @gradient_dephasing.setter
     def gradient_dephasing(self, value):
         self.liouvillian.gradient_dephasing = value
+        self._p90_i = self._p90_s = None
 
 
 def calculate_propagators(liouv, delays, dephasing=False):
