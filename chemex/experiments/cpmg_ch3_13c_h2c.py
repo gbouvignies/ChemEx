@@ -101,7 +101,8 @@ class PulseSeq:
         d_cp = {ncyc: delays[delay] for ncyc, delay in tau_cps.items()}
 
         # Calculation of the propagators corresponding to all the pulses
-        p90, p180 = self.prop.pulses_90_180_i()
+        p90 = self.prop.p90_i
+        p180 = self.prop.p80_i
         p180_sx = self.prop.perfect180_s[0]
 
         # Getting the starting magnetization

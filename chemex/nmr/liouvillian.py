@@ -288,6 +288,12 @@ class LiouvillianIS:
         self.detection = ""
         self.update((("cs_i_a", 0.0), ("pa", 1.0)))
 
+    def update(self, parvals):
+        self._parvals = parvals
+        self._l_base = sum(
+            self.matrices.get(name, 0.0) * value for name, value in parvals
+        )
+
     @property
     def ppm_i(self):
         return self._ppm_i
@@ -431,12 +437,6 @@ class LiouvillianIS:
         mag = mag_weighted.reshape(shape).sum(axis=0)
         return np.float64(self._detect_vector @ mag)
 
-    def update(self, parvals):
-        self._parvals = parvals
-        self._l_base = sum(
-            self.matrices.get(name, 0.0) * value for name, value in parvals
-        )
-
     def get_equilibrium(self):
         parvals = dict(self._parvals)
         mag = np.zeros(self.size)
@@ -459,6 +459,18 @@ class LiouvillianIS:
                 if comp.startswith(term) and comp.endswith(f"_{state}"):
                     mag += parvals[f"p{state}"] * ratio * vector
         return mag.reshape(-1, 1)
+
+    def keep_components(self, magnetization, terms=None):
+        if terms is None:
+            terms = []
+        elif isinstance(terms, str):
+            terms = [terms]
+        keep = np.zeros((self.size, 1))
+        for term in terms:
+            for state, (comp, vector) in it.product(self.states, self.vectors.items()):
+                if comp.startswith(term) and comp.endswith(f"_{state}"):
+                    keep += vector.reshape(-1, 1)
+        return keep * magnetization
 
     def offsets_to_ppms(self, offsets):
         return self.carrier_i + 2.0 * np.pi * offsets / self.ppm_i
