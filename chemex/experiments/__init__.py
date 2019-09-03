@@ -2,6 +2,7 @@ import importlib as il
 import importlib.resources as ir
 import pathlib as pl
 import pkgutil as pu
+import sys
 
 import chemex.experiments.configs as cec
 import chemex.helper as ch
@@ -22,11 +23,11 @@ def read(filename, model):
 def get_experiment_name(config):
     filename = config["filename"]
     if "experiment" not in config:
-        exit(
+        sys.exit(
             f"\nerror: The experiment file '{filename}' has no section '[experiment]'."
         )
     elif "name" not in config["experiment"]:
-        exit(
+        sys.exit(
             f"\nerror: The experiment file '{filename}' has no entry 'name' in the "
             f"section '[experiment]'."
         )
@@ -37,7 +38,7 @@ def grab(name):
     try:
         module = il.import_module(f"{__package__}.{name}")
     except ModuleNotFoundError:
-        exit(
+        sys.exit(
             f"\nerror: '{name}' is not part of our experiment collection! "
             f"Run 'chemex info' to obtain the full list of the available experiments."
         )

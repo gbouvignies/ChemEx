@@ -33,6 +33,7 @@ import numpy.linalg as la
 import chemex.containers.cest as ccc
 import chemex.experiments.helper as ceh
 import chemex.nmr.constants as cnc
+import chemex.nmr.propagator as cnp
 
 
 TYPE = __name__.split(".")[-1]

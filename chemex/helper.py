@@ -1,5 +1,6 @@
 """The util module contains a variety of utility functions."""
 import re
+import sys
 
 import toml
 
@@ -14,10 +15,10 @@ def read_toml(filename=None):
         config = toml.load(filename)
 
     except FileNotFoundError:
-        exit(f"\nERROR: The file '{filename}' is empty or does not exist!\n")
+        sys.exit(f"\nERROR: The file '{filename}' is empty or does not exist!\n")
 
     except (toml.TomlDecodeError, TypeError) as e:
-        exit(f"\nERROR: '{filename}': {e}\n")
+        sys.exit(f"\nERROR: '{filename}': {e}\n")
 
     else:
         return config

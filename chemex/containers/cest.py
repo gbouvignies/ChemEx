@@ -1,10 +1,10 @@
 import copy
+import sys
 
 import numpy as np
 
 import chemex.containers.helper as cch
 import chemex.containers.noise as ccn
-import chemex.nmr.helper as cnsn
 import chemex.plot as cp
 
 
@@ -191,7 +191,7 @@ class CestData:
         try:
             points = np.loadtxt(path, dtype=cls.dtype)
         except OSError as err:
-            exit(f"\nerror: {err}")
+            sys.exit(f"\nerror: {err}")
         else:
             refs = abs(points["offsets"]) >= 1.0e4
             mask = np.array([True] * len(points))
