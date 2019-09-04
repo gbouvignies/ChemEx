@@ -84,6 +84,12 @@ class Experiments:
             profile.params_default for profile in self._experiments.values()
         )
 
+    def __len__(self):
+        return sum([len(experiment) for experiment in self._experiments.values()])
+
+    def __bool__(self):
+        return bool(len(self))
+
 
 class RelaxationExperiment:
     def __init__(self, filename, exp_type, profiles, verbose=True):
