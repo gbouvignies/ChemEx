@@ -1,6 +1,7 @@
 """The chemex module provides the entry point for the chemex script."""
 import copy
 import shutil
+import sys
 
 import numpy as np
 
@@ -51,7 +52,14 @@ def fit(args):
 
     # Read experimental setup and data
     experiments = cce.read(filenames=args.experiments, model=model)
-    experiments.select(args.res_incl, args.res_excl)
+
+    if args.res_incl or args.res_excl:
+        print("Selecting profiles...")
+        experiments.select(args.res_incl, args.res_excl)
+        print(f"  - Profile(s): {len(experiments)}")
+
+    if not experiments:
+        sys.exit("\nerror: No data to fit")
 
     # Create and update initial values of fitting/fixed parameters
     ch.header1("Reading Default Parameters")
