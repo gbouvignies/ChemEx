@@ -132,6 +132,21 @@ class ParamName:
                 components.append(formatters[name].format(value))
         return ", ".join(components).upper()
 
+    def to_folder_name(self):
+        formatters = {
+            "name": "{}",
+            "spin_system": "{}",
+            "temperature": "{:.1f}C",
+            "h_larmor_frq": "{:.1f}MHz",
+            "p_total": "P{:e}M",
+            "l_total": "L{:e}M",
+        }
+        components = []
+        for name, value in self.to_dict().items():
+            if value:
+                components.append(formatters[name].format(value))
+        return "-".join(components).upper()
+
     def match(self, string):
         re_name = self._to_re()
         return re_name.match(string)

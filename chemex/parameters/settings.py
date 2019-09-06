@@ -39,7 +39,7 @@ _SCHEMA_CONFIG_PARAM = {
 def set_params_from_config_file(params, config_filename):
     """Read the parameter file and set initial values and optional bounds and brute
     step size."""
-    print(f"Reading '{config_filename}'...")
+    print(f"\nReading '{config_filename}'...")
     config = ch.read_toml(config_filename)
     try:
         js.validate(config, _SCHEMA_CONFIG_PARAM)
@@ -59,19 +59,24 @@ def set_params_from_config_file(params, config_filename):
             matches.update({name.to_section_name(): len(matched)})
     for key, value in matches.items():
         print(f"  - [{key}] -> {value} parameter(s) updated")
-    print("")
 
 
-def set_param_status(params, items):
+def set_param_status(params, settings):
     """Set whether or not to vary a fitting parameter or to use a mathemetical
     expression."""
     vary = {"fix": False, "fit": True}
-    for key, status in items:
+    if settings:
+        print("\nSettings parameter status and constraints...")
+    matches = cl.Counter()
+    for key, status in settings.items():
         name = cpn.ParamName.from_section(key)
         if status in vary:
-            set_params(params, name, vary=vary[status], expr="")
+            matched = set_params(params, name, vary=vary[status], expr="")
         else:
-            set_param_expr(params, name, expr=status)
+            matched = set_param_expr(params, name, expr=status)
+        matches.update({name.to_section_name(): len(matched)})
+    for key, value in matches.items():
+        print(f"  - [{key}] -> {value} parameter(s) updated")
 
 
 def set_param_expr(params, name, expr=None):

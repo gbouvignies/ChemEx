@@ -135,14 +135,6 @@ def build_parser():
         "--noplot", action="store_true", help="No plots of the fits"
     )
 
-    fit_parser.add_argument(
-        "-f",
-        dest="fitmethod",
-        metavar="FITMETHOD",
-        default="leastsq",
-        help="Specify the fitting method",
-    )
-
     selection = fit_parser.add_mutually_exclusive_group()
     selection.add_argument(
         "+r",

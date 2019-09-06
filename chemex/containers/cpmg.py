@@ -114,13 +114,13 @@ class CpmgProfile:
 
     def monte_carlo(self, params):
         intensities_ref = self.calculate(params)
-        profile = copy.deepcopy(self)
+        profile = copy.copy(self)
         profile.data = profile.data.monte_carlo(intensities_ref)
         return profile
 
     def bootstrap(self):
         """Make a profile for boostrap analysis."""
-        profile = copy.deepcopy(self)
+        profile = copy.copy(self)
         profile.data = profile.data.bootstrap()
         return profile
 
