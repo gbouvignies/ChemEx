@@ -43,11 +43,13 @@ def normalize_path(working_dir, filename):
     return path.resolve()
 
 
-def header1(strings):
+def header1(string_):
     """Print a formatted heading."""
-    print(("\n".join(["", "", strings, "=" * len(strings), ""])))
+    if string_:
+        print(("\n".join(["", "", string_, "=" * len(string_)])))
 
 
-def header2(strings):
+def header2(string_):
     """Print a formatted subheading."""
-    print(("\n".join(["", strings, "-" * len(strings), ""])))
+    if string_:
+        print(("\n".join(["", string_, "-" * len(string_)])))

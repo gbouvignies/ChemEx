@@ -99,7 +99,7 @@ class RelaxationExperiment:
         self._filtered = {}
         if verbose:
             print(f"  - Experiment: {exp_type}")
-            print(f"  - Profiles: {len(profiles)}\n")
+            print(f"  - Profiles: {len(profiles)}")
 
     def residuals(self, params):
         return list(
@@ -166,13 +166,17 @@ class RelaxationExperiment:
         profiles = {}
         for name, profile in self._profiles.items():
             profiles[name] = profile.monte_carlo(params)
-        return RelaxationExperiment(self.filename, self.exp_type, profiles)
+        return RelaxationExperiment(
+            self.filename, self.exp_type, profiles, verbose=False
+        )
 
     def bootstrap(self):
         profiles = {}
         for name, profile in self._profiles.items():
             profiles[name] = profile.bootstrap()
-        return RelaxationExperiment(self.filename, self.exp_type, profiles)
+        return RelaxationExperiment(
+            self.filename, self.exp_type, profiles, verbose=False
+        )
 
     def estimate_noise(self, kind):
         implemented = ("file", "scatter", "duplicates")
@@ -203,10 +207,10 @@ class RelaxationExperiment:
 def read(filenames=None, model=None):
     if not filenames:
         return None
-    ch.header1("Experimental Data")
+    ch.header1("Reading experimental data")
     experiments = Experiments()
     for filename in filenames:
-        print(f"Reading '{filename}'...")
+        print(f"\nReading '{filename}'...")
         experiment = ce.read(filename, model)
         experiments.add(experiment)
     return experiments

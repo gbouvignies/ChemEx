@@ -1,18 +1,13 @@
 """The chemex module provides the entry point for the chemex script."""
-import copy
-import shutil
 import sys
-
-import numpy as np
 
 import chemex
 import chemex.cli as cc
 import chemex.containers.experiment as cce
-import chemex.fitting as cf
 import chemex.helper as ch
 import chemex.parameters.kinetics as cpk
 import chemex.parameters.settings as cpp
-
+import chemex.fitting as cf
 
 LOGO = r"""
 * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -62,7 +57,7 @@ def fit(args):
         sys.exit("\nerror: No data to fit")
 
     # Create and update initial values of fitting/fixed parameters
-    ch.header1("Reading Default Parameters")
+    ch.header1("Reading default parameters")
     params = experiments.params_default
     for filename in args.parameters:
         cpp.set_params_from_config_file(params, filename)
@@ -70,75 +65,12 @@ def fit(args):
     # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
     experiments.filter(params)
 
-    # Customize the output directory
-    out_dir = args.out_dir
-    result = fit_write_plot(experiments, params, out_dir, args)
-
-    if args.bs or args.mc:
-        if args.bs:
-            nmb = args.bs
-        else:
-            nmb = args.mc
-        formatter_output_dir = "".join(["{:0", str(int(np.log10(nmb)) + 1), "d}"])
-        for index in range(1, nmb + 1):
-            if args.bs:
-                experiments_index = experiments.bootstrap()
-            else:
-                experiments_index = experiments.monte_carlo(result.params)
-            output_dir_ = out_dir / formatter_output_dir.format(index)
-            params_mc = copy.deepcopy(result.params)
-            fit_write_plot(experiments_index, params_mc, output_dir_, args)
-
-
-def fit_write_plot(experiments, params, output_dir, args):
-    """Perform the fit, write the output files and plot the results."""
-    result = cf.run_fit(experiments, params, args.method, args.fitmethod)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_results(result, experiments, args.method, output_dir)
-    if not args.noplot:
-        plot_results(result, experiments, output_dir)
-    return result
-
-
-def write_results(result, experiments, method, output_dir):
-    """Write the results of the fit to output files.
-
-    The files below are created and contain the following information:
-      - parameters.fit: fitting parameters and their uncertainties
-      - contstraints.fit: expression used for constraining parameters
-      - *.dat: experimental and fitted data
-      - statistics.fit: statistics for the fit
-
-    """
-    ch.header1("Writing Results")
-
-    print("\nFile(s):")
-
-    if method:
-        shutil.copyfile(method, output_dir / "fitting-method.cfg")
-
-    cpp.write_par(result.params, path=output_dir)
-    cpp.write_constraints(result.params, path=output_dir)
-    experiments.write(path=output_dir, params=result.params)
-    cf.write_statistics(result, path=output_dir)
-
-
-def plot_results(result, experiments, path):
-    """Plot the experimental and fitted data."""
-    ch.header1("Plotting Data")
-    print("\nFile(s):")
-    path_plots = path / "Plots"
-    path_plots.mkdir(parents=True, exist_ok=True)
-    try:
-        experiments.plot(path=path_plots, params=result.params)
-    except KeyboardInterrupt:
-        print("  - Plotting cancelled")
-
-    # if result.method == "brute":
-    #     labels = [
-    #         cpn.ParamName.from_full_name(var).name.upper()
-    #         for var in result.var_names
-    #     ]
-    #     outfile = path / "results_brute.pdf"
-    #     plotting.plot_results_brute(result, varlabels=labels, output=outfile)
-    #     print((f"  * {outfile}"))
+    # Run the fit
+    ch.header1("Running the main fit")
+    fitter = cf.Fit(experiments, args.out_dir, args.noplot)
+    fitter.read_method(args.method)
+    result = fitter.fit(params)
+    if args.bs:
+        fitter.bootstrap(result.params, args.bs)
+    elif args.mc:
+        fitter.monte_carlo(result.params, args.mc)

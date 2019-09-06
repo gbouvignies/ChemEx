@@ -1,10 +1,10 @@
 [step1]
-PB	    = "fix"
+PB      = "fix"
 KEX_AB  = "fix"
 DW_AB   = "fit"
 R2_A    = "fit"
 ETAXY_A = "fit"
 
 [step2]
-PB	    = "fit"
+PB      = "fit"
 KEX_AB  = "fit"
