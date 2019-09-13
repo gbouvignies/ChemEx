@@ -63,11 +63,13 @@ def model_2st_pb_kex(conditions, spin_system):
         "kab": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
+            "max": np.inf,
             "expr": "{kex_ab} * {pb}",
         },
         "kba": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
+            "max": np.inf,
             "expr": "{kex_ab} * {pa}",
         },
     }
@@ -81,7 +83,6 @@ def model_2st_pb_kexrs(conditions, spin_system):
             "attributes": ("spin_system", "temperature", "p_total", "l_total"),
             "value": 200.0,
             "min": 0.0,
-            "max": np.inf,
             "vary": True,
         },
         "pb": {
@@ -113,34 +114,10 @@ def model_2st_pb_kexrs(conditions, spin_system):
 def model_2st_eyring(conditions, spin_system):
     celsius = conditions.temperature
     settings = {
-        "dh_b": {
-            "attributes": ("p_total", "l_total"),
-            "value": 8e3,
-            "min": -np.inf,
-            "max": np.inf,
-            "vary": True,
-        },
-        "ds_b": {
-            "attributes": ("p_total", "l_total"),
-            "value": 0e2,
-            "min": -np.inf,
-            "max": np.inf,
-            "vary": False,
-        },
-        "dh_ab": {
-            "attributes": ("p_total", "l_total"),
-            "value": 6.5e4,
-            "min": -np.inf,
-            "max": np.inf,
-            "vary": True,
-        },
-        "ds_ab": {
-            "attributes": ("p_total", "l_total"),
-            "value": 0e4,
-            "min": -np.inf,
-            "max": np.inf,
-            "vary": False,
-        },
+        "dh_b": {"attributes": ("p_total", "l_total"), "value": 8e3, "vary": True},
+        "ds_b": {"attributes": ("p_total", "l_total"), "value": 0e2, "vary": False},
+        "dh_ab": {"attributes": ("p_total", "l_total"), "value": 6.5e4, "vary": True},
+        "ds_ab": {"attributes": ("p_total", "l_total"), "value": 0e4, "vary": False},
         "pa": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
@@ -155,10 +132,12 @@ def model_2st_eyring(conditions, spin_system):
         },
         "kab": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": hs_to_k("ab", celsius),
         },
         "kba": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": hs_to_k("ba", celsius),
         },
     }
@@ -179,17 +158,19 @@ def model_2st_binding(conditions, spin_system):
             "attributes": ("temperature",),
             "value": 1.0e7,
             "min": 0.0,
-            "max": np.inf,
             "vary": True,
         },
         "koff": {
             "attributes": ("temperature",),
             "value": 10.0,
             "min": 0.0,
-            "max": np.inf,
             "vary": True,
         },
-        "kd": {"attributes": ("temperature",), "expr": "{koff} / max({kon}, 1e-100)"},
+        "kd": {
+            "attributes": ("temperature",),
+            "min": 0.0,
+            "expr": "{koff} / max({kon}, 1e-100)",
+        },
         "pa": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
@@ -202,8 +183,16 @@ def model_2st_binding(conditions, spin_system):
             "max": 1.0,
             "expr": "{kab} / max({kba} + {kab}, 1e-100)",
         },
-        "kab": {"attributes": ("temperature", "p_total", "l_total"), "expr": expr_kab},
-        "kba": {"attributes": ("temperature", "p_total", "l_total"), "expr": "{koff}"},
+        "kab": {
+            "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
+            "expr": expr_kab,
+        },
+        "kba": {
+            "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
+            "expr": "{koff}",
+        },
     }
     fnames, params = cph.make_params(settings, conditions, spin_system)
     return fnames, params
@@ -228,21 +217,18 @@ def model_3st_pb_kex(conditions, spin_system):
         "kex_ab": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "max": np.inf,
             "value": 200.0,
             "vary": True,
         },
         "kex_ac": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "max": np.inf,
             "value": 0.0,
             "vary": False,
         },
         "kex_bc": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "max": np.inf,
             "value": 200.0,
             "vary": True,
         },
@@ -254,26 +240,32 @@ def model_3st_pb_kex(conditions, spin_system):
         },
         "kab": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("ab"),
         },
         "kba": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("ba"),
         },
         "kac": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("ac"),
         },
         "kca": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("ca"),
         },
         "kbc": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("bc"),
         },
         "kcb": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("cb"),
         },
     }
@@ -284,98 +276,44 @@ def model_3st_pb_kex(conditions, spin_system):
 def model_3st_eyring(conditions, spin_system):
     celcius = conditions.temperature
     settings = {
-        "dh_b": {
-            "attributes": ("p_total", "l_total"),
-            "value": 8e3,
-            "min": -np.inf,
-            "max": np.inf,
-            "vary": True,
-        },
-        "dh_c": {
-            "attributes": ("p_total", "l_total"),
-            "value": 8e3,
-            "min": -np.inf,
-            "max": np.inf,
-            "vary": True,
-        },
-        "dh_ab": {
-            "attributes": ("p_total", "l_total"),
-            "value": 6.5e4,
-            "min": -np.inf,
-            "max": np.inf,
-            "vary": True,
-        },
-        "dh_bc": {
-            "attributes": ("p_total", "l_total"),
-            "value": 6.5e4,
-            "min": -np.inf,
-            "max": np.inf,
-            "vary": True,
-        },
-        "dh_ac": {
-            "attributes": ("p_total", "l_total"),
-            "value": 1.0e10,
-            "min": -np.inf,
-            "max": np.inf,
-            "vary": False,
-        },
-        "ds_b": {
-            "attributes": ("p_total", "l_total"),
-            "value": 0.0,
-            "min": -np.inf,
-            "max": np.inf,
-            "vary": False,
-        },
-        "ds_c": {
-            "attributes": ("p_total", "l_total"),
-            "value": 0.0,
-            "min": -np.inf,
-            "max": np.inf,
-            "vary": False,
-        },
-        "ds_ab": {
-            "attributes": ("p_total", "l_total"),
-            "value": 0.0,
-            "min": -np.inf,
-            "max": np.inf,
-            "vary": False,
-        },
-        "ds_bc": {
-            "attributes": ("p_total", "l_total"),
-            "value": 0.0,
-            "min": -np.inf,
-            "max": np.inf,
-            "vary": False,
-        },
-        "ds_ac": {
-            "attributes": ("p_total", "l_total"),
-            "value": 0.0,
-            "min": -np.inf,
-            "max": np.inf,
-            "vary": False,
-        },
+        "dh_b": {"attributes": ("p_total", "l_total"), "value": 8e3, "vary": True},
+        "dh_c": {"attributes": ("p_total", "l_total"), "value": 8e3, "vary": True},
+        "dh_ab": {"attributes": ("p_total", "l_total"), "value": 6.5e4, "vary": True},
+        "dh_bc": {"attributes": ("p_total", "l_total"), "value": 6.5e4, "vary": True},
+        "dh_ac": {"attributes": ("p_total", "l_total"), "value": 1.0e10, "vary": False},
+        "ds_b": {"attributes": ("p_total", "l_total"), "value": 0.0, "vary": False},
+        "ds_c": {"attributes": ("p_total", "l_total"), "value": 0.0, "vary": False},
+        "ds_ab": {"attributes": ("p_total", "l_total"), "value": 0.0, "vary": False},
+        "ds_bc": {"attributes": ("p_total", "l_total"), "value": 0.0, "vary": False},
+        "ds_ac": {"attributes": ("p_total", "l_total"), "value": 0.0, "vary": False},
         "kab": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": hs_to_k("ab", celcius),
         },
         "kba": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": hs_to_k("ba", celcius),
         },
         "kac": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": hs_to_k("ac", celcius),
         },
         "kca": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": hs_to_k("ca", celcius),
         },
         "kbc": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": hs_to_k("bc", celcius),
         },
         "kcb": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": hs_to_k("cb", celcius),
         },
         "pa": {
@@ -427,39 +365,33 @@ def model_4st_pb_kex(conditions, spin_system):
         "kex_ab": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "max": np.inf,
             "value": 200.0,
             "vary": True,
         },
         "kex_ac": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "max": np.inf,
             "value": 0.0,
         },
         "kex_ad": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "max": np.inf,
             "value": 0.0,
         },
         "kex_bc": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "max": np.inf,
             "value": 200.0,
             "vary": True,
         },
         "kex_bd": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "max": np.inf,
             "value": 0.0,
         },
         "kex_cd": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "max": np.inf,
             "value": 200.0,
             "vary": True,
         },
@@ -471,26 +403,32 @@ def model_4st_pb_kex(conditions, spin_system):
         },
         "kab": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("ab"),
         },
         "kba": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("ba"),
         },
         "kac": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("ac"),
         },
         "kca": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("ca"),
         },
         "kad": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("ad"),
         },
         "kda": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("da"),
         },
         "kbc": {
@@ -499,22 +437,27 @@ def model_4st_pb_kex(conditions, spin_system):
         },
         "kcb": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("cb"),
         },
         "kbd": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("bd"),
         },
         "kdb": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("db"),
         },
         "kcd": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("cd"),
         },
         "kdc": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("dc"),
         },
     }
@@ -559,60 +502,64 @@ def model_4st_hd_exch(conditions, spin_system):
         "kex_ab": {
             "attributes": ("spin_system", "temperature", "p_total", "l_total"),
             "min": 0.0,
-            "max": np.inf,
             "value": 200.0,
             "vary": True,
         },
         "kex_ac": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "max": np.inf,
             "value": 0.0,
             "vary": True,
         },
         "kex_bd": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "max": np.inf,
             "expr": "{kex_ac}",
         },
         "kex_cd": {
             "attributes": ("spin_system", "temperature", "p_total", "l_total"),
             "min": 0.0,
-            "max": np.inf,
             "value": 200.0,
             "vary": True,
         },
         "kab": {
             "attributes": ("spin_system", "temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("ab"),
         },
         "kba": {
             "attributes": ("spin_system", "temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("ba"),
         },
         "kac": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("ac"),
         },
         "kca": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("ca"),
         },
         "kbd": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("bd"),
         },
         "kdb": {
             "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("db"),
         },
         "kcd": {
             "attributes": ("spin_system", "temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("cd"),
         },
         "kdc": {
             "attributes": ("spin_system", "temperature", "p_total", "l_total"),
+            "min": 0.0,
             "expr": kex_p_to_k("dc"),
         },
     }

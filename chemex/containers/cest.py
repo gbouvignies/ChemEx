@@ -83,9 +83,10 @@ class CestProfile:
         self.data.points["errors"] = value
 
     def print(self, params):
-        output = f"[{str(self.name).upper()}]\n"
-        output += "# {:>12s}  {:>17s} {:>17s} {:>17s}\n".format(
-            "OFFSET (HZ)", "Intensity (exp)", "ERROR (EXP)", "Intensity (calc)"
+        output = f"[{self.name}]\n"
+        output += (
+            "# {'OFFSET (HZ)':>12s}  {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s} "
+            "{'INTENSITY (CALC)':>17s}\n"
         )
         values = self.calculate(params)
         for point, value in zip(self.data.points, values):
@@ -102,16 +103,16 @@ class CestProfile:
         sw_dante = getattr(self._pulse_seq, "sw_dante", None)
         self.data.filter(cs_offset, sw_dante)
 
-    def plot(self, file_pdf, params):
+    def plot(self, params, file_pdf):
         data_exp, data_fit = self._get_plot_data(params)
         cs_values = self._get_cs_values(params)
         self._plot(file_pdf, self.name, data_exp, data_fit, cs_values)
 
-    def write_plot(self, file_exp, file_fit, params):
+    def write_plot(self, params, file_exp, file_fit):
         data_exp, data_fit = self._get_plot_data(params)
         output_exp = f"[{self.name}]\n"
         output_exp += (
-            "# {'CS (PPM)':>12s}  {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s}\n"
+            f"# {'CS (PPM)':>12s}  {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s}\n"
         )
         for point in data_exp:
             nu_cpmgs = point["ppms"]
@@ -120,7 +121,7 @@ class CestProfile:
             output_exp += f"  {nu_cpmgs:12.2f}  {intensities:17.8e} {errors[1]:17.8e}\n"
         file_exp.write(output_exp + "\n\n")
         output_fit = f"[{self.name}]\n"
-        output_fit += "# {'CS (PPM)':>12s}  {'INTENSITY (CALC)':>17s}\n"
+        output_fit += f"# {'CS (PPM)':>12s}  {'INTENSITY (CALC)':>17s}\n"
         for point in data_fit:
             output_fit += "  {ppms: 12.2f}  {intensities: 17.8e}\n".format_map(point)
         file_fit.write(output_fit + "\n\n")

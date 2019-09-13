@@ -73,9 +73,10 @@ class CpmgProfile:
         self.data.points["errors"] = value
 
     def print(self, params):
-        output = f"[{str(self.name).upper()}]\n"
-        output += "# {:>12s}  {:>17s} {:>17s} {:>17s}\n".format(
-            "NCYC", "INTENSITY (EXP)", "ERROR (EXP)", "Intensity (calc)"
+        output = f"[{self.name}]\n"
+        output += (
+            f"# {'NCYC':>12s}  {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s} "
+            f"{'INTENSITY (CALC)':>17s}\n"
         )
         values = self.calculate(params)
         for point, value in zip(self.data.points, values):
@@ -87,16 +88,16 @@ class CpmgProfile:
     def filter(self, params):
         pass
 
-    def plot(self, file_pdf, params):
+    def plot(self, params, file_pdf):
         data_exp, data_fit = self._get_plot_data(params)
         self._plot(file_pdf, self.name, data_exp, data_fit)
 
-    def write_plot(self, file_exp, file_fit, params):
+    def write_plot(self, params, file_exp, file_fit):
         data_exp, data_fit = self._get_plot_data(params)
         output_exp = f"[{self.name}]\n"
         output_exp += (
-            "# {'NU_CPMG':>12s}  {'R2 (EXP)':>17s} {'ERROR DOWN (EXP)':>17s} "
-            "{'ERROR UP (EXP)':>17s}\n"
+            f"# {'NU_CPMG':>12s}  {'R2 (EXP)':>17s} {'ERROR DOWN (EXP)':>17s} "
+            f"{'ERROR UP (EXP)':>17s}\n"
         )
         for point in data_exp:
             nu_cpmgs = point["nu_cpmgs"]
@@ -107,7 +108,7 @@ class CpmgProfile:
             )
         file_exp.write(output_exp + "\n\n")
         output_fit = f"[{self.name}]\n"
-        output_fit += "# {'NU_CPMG':>12s}  {'R2 (CALC)':>17s}\n"
+        output_fit += f"# {'NU_CPMG':>12s}  {'R2 (CALC)':>17s}\n"
         for point in data_fit:
             output_fit += "  {nu_cpmgs:12.3f}  {r2:17.8e}\n".format_map(point)
         file_fit.write(output_fit + "\n\n")

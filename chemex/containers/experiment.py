@@ -13,11 +13,12 @@ class Experiments:
     def __init__(self):
         self._experiments = {}
         self._chisq_ref = 1e32
+        self.verbose = False
 
     def add(self, experiment):
         self._experiments[experiment.filename] = experiment
 
-    def residuals(self, params, verbose=True, threshold=1e-3):
+    def residuals(self, params, threshold=1e-3):
         residuals = np.asarray(
             list(
                 it.chain.from_iterable(
@@ -26,8 +27,8 @@ class Experiments:
                 )
             )
         )
-        if verbose:
-            chisq = sum(np.asarray(residuals) ** 2)
+        if self.verbose:
+            chisq = (residuals ** 2).sum()
             change = (chisq - self._chisq_ref) / self._chisq_ref
             if change < -threshold:
                 nvarys = len([param for param in params.values() if param.vary])
@@ -50,17 +51,17 @@ class Experiments:
             relevant_subset.add(experiment.get_relevant_subset(par_names))
         return relevant_subset
 
-    def write(self, path, params):
+    def write(self, params, path):
         for experiment in self._experiments.values():
-            experiment.write(path, params)
+            experiment.write(params, path)
 
-    def plot(self, path, params):
+    def plot(self, params, path):
         for experiment in self._experiments.values():
-            experiment.plot(path, params)
+            experiment.plot(params, path)
 
-    def select(self, included=None, excluded=None):
+    def select(self, included=None):
         for experiment in self._experiments.values():
-            experiment.select(included, excluded)
+            experiment.select(included)
 
     def filter(self, params=None):
         for experiment in self._experiments.values():
@@ -123,7 +124,7 @@ class RelaxationExperiment:
             self.filename, self.exp_type, profiles=profiles, verbose=False
         )
 
-    def plot(self, path, params):
+    def plot(self, params, path):
         basename = path / self.filename.name
         name_pdf = basename.with_suffix(".pdf")
         name_exp = basename.with_suffix(".exp")
@@ -134,29 +135,24 @@ class RelaxationExperiment:
             file_exp = stack.enter_context(name_exp.open("w"))
             file_fit = stack.enter_context(name_fit.open("w"))
             for profile in self._profiles.values():
-                profile.plot(file_pdf, params)
-                profile.write_plot(file_exp, file_fit, params)
+                profile.plot(params, file_pdf)
+                profile.write_plot(params, file_exp, file_fit)
 
-    def write(self, path, params):
+    def write(self, params, path):
         filename = (path / self.filename.name).with_suffix(".dat")
-        print(f"  - {filename}")
         with filename.open("w") as file_dat:
             profiles = self._profiles.values()
             profiles_sorted = sorted(profiles, key=lambda profile_: profile_.name)
             for profile in profiles_sorted:
-                file_dat.write(profile.print(params=params))
+                file_dat.write(profile.print(params))
 
-    def select(self, included=None, excluded=None):
-        # TODO: Clean this
+    def select(self, included=None):
         if included is None:
-            included = list(str(profile.name) for profile in self._profiles.values())
-        if excluded is None:
-            excluded = []
-        included = [name.lower() for name in included]
-        excluded = [name.lower() for name in excluded]
+            included = list(profile.name for profile in self._profiles.values())
         for name, profile in self._profiles.copy().items():
-            if str(profile.name) not in included or str(profile.name) in excluded:
-                self._filtered[name] = self._profiles.pop(name)
+            for name_incl in included:
+                if profile.name & name_incl != name_incl:
+                    self._filtered[name] = self._profiles.pop(name)
 
     def filter(self, params=None):
         for profile in self._profiles.values():

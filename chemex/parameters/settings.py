@@ -36,29 +36,33 @@ _SCHEMA_CONFIG_PARAM = {
 }
 
 
-def set_params_from_config_file(params, config_filename):
+def set_params_from_config_file(params, filename):
     """Read the parameter file and set initial values and optional bounds and brute
     step size."""
-    print(f"\nReading '{config_filename}'...")
-    config = ch.read_toml(config_filename)
-    try:
-        js.validate(config, _SCHEMA_CONFIG_PARAM)
-    except js.ValidationError as err:
-        print("Validation error: {0}".format(err))
-        raise
+    config = _read_config(filename)
     matches = cl.Counter()
-    for section in config:
-        is_not_global = section.lower() != "global"
+    for section, settings in config.items():
+        is_not_global = section.upper() != "GLOBAL"
         prefix = f"{section}, NUC->" if is_not_global else ""
-        for key, values in config[section].items():
+        for key, values in settings.items():
             name = cpn.ParamName.from_section(f"{prefix}{key}")
             if isinstance(values, float):
                 values = [values]
             values_ = dict(zip(("value", "min", "max", "brute_step"), values))
             matched = set_params(params, name, **values_)
             matches.update({name.to_section_name(): len(matched)})
-    for key, value in matches.items():
-        print(f"  - [{key}] -> {value} parameter(s) updated")
+    _print_matches(matches)
+
+
+def _read_config(filename):
+    print(f"\nReading '{filename}'...")
+    config = ch.read_toml(filename)
+    try:
+        js.validate(config, _SCHEMA_CONFIG_PARAM)
+    except js.ValidationError as err:
+        print("Validation error: {0}".format(err))
+        raise
+    return config
 
 
 def set_param_status(params, settings):
@@ -75,8 +79,15 @@ def set_param_status(params, settings):
         else:
             matched = set_param_expr(params, name, expr=status)
         matches.update({name.to_section_name(): len(matched)})
+    _print_matches(matches)
+
+
+def _print_matches(matches):
     for key, value in matches.items():
-        print(f"  - [{key}] -> {value} parameter(s) updated")
+        if value > 0:
+            print(f"  - [{key}] -> {value} parameter(s) updated")
+        else:
+            print(f"  - [{key}] -> Nothing to update")
 
 
 def set_param_expr(params, name, expr=None):
@@ -86,26 +97,26 @@ def set_param_expr(params, name, expr=None):
         expr = ""
     if not isinstance(name, cpn.ParamName):
         name = cpn.ParamName.from_section(name)
-    names_full = [name_full for name_full in params if name.match(name_full)]
+    fnames = [fname for fname in params if name.match(fname)]
     names_expr = aa.get_ast_names(ast.parse(expr))
-    names_full_expr = {
+    fnames_expr = {
         name: [
-            name_full_expr
-            for name_full_expr in params
-            if cpn.ParamName.from_section(name).match(name_full_expr)
+            fname_expr
+            for fname_expr in params
+            if cpn.ParamName.from_section(name).match(fname_expr)
         ]
         for name in names_expr
     }
     matches = set()
-    for name_full in names_full:
-        expr_ = expr
+    for fname in fnames:
         for name_expr in names_expr:
-            name_full_expr = dl.get_close_matches(
-                name_full, names_full_expr[name_expr], n=1
-            )[0]
-            expr_ = expr_.replace(name_expr, name_full_expr)
-        params[name_full].expr = expr_
-        matches.add(name_full)
+            fname_expr = dl.get_close_matches(fname, fnames_expr[name_expr], n=1)[0]
+            expr = expr.replace(name_expr, fname_expr)
+        param = params[fname]
+        repr_ = repr(param)
+        param.expr = expr
+        if repr(param) != repr_:
+            matches.add(fname)
     return matches
 
 
@@ -124,18 +135,19 @@ def set_params(
     matches = set()
     for name, param in params.items():
         if name_short.match(name):
+            repr_ = repr(param)
             if expr is None and param.expr and vary is None:
                 param.value = value
             else:
                 param.set(value, vary, min, max, expr, brute_step)
-            matches.add(name)
+            if repr(param) != repr_:
+                matches.add(name)
     return matches
 
 
 def write_par(params, path):
     """Write the fitting parameters and their uncertainties to a file."""
     filename = path / "parameters.toml"
-    print(f"  - {filename}")
     par_dict = {}
     for name, param in params.items():
         par_name = cpn.ParamName.from_full_name(name)
@@ -187,7 +199,6 @@ def _param_to_string(param):
 def write_constraints(params, path):
     """Write the (optional) parameter expression constraints to a file."""
     filename = path / "constraints.fit"
-    print(f"  - {filename}")
     param_dict = dict()
     for name, param in params.items():
         par_name = cpn.ParamName.from_full_name(name)
@@ -209,10 +220,3 @@ def write_constraints(params, path):
     with open(filename, "w") as f:
         for name, constraint in sorted(param_dict.items()):
             f.write(constraint)
-
-
-def remove_comments(line, sep):
-    """Remove (optional) comments."""
-    for a_sep in sep:
-        line = line.split(a_sep)[0]
-    return line.strip()

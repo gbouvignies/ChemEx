@@ -48,9 +48,9 @@ def fit(args):
     # Read experimental setup and data
     experiments = cce.read(filenames=args.experiments, model=model)
 
-    if args.res_incl or args.res_excl:
-        print("Selecting profiles...")
-        experiments.select(args.res_incl, args.res_excl)
+    if args.included:
+        print("\nSelecting profiles...")
+        experiments.select(args.included)
         print(f"  - Profile(s): {len(experiments)}")
 
     if not experiments:
@@ -67,10 +67,10 @@ def fit(args):
 
     # Run the fit
     ch.header1("Running the main fit")
-    fitter = cf.Fit(experiments, args.out_dir, args.noplot)
+    fitter = cf.Fit(experiments, args.out_dir, args.plot)
     fitter.read_method(args.method)
-    result = fitter.fit(params)
+    params_ = fitter.fit(params)
     if args.bs:
-        fitter.bootstrap(result.params, args.bs)
+        fitter.bootstrap(params_, args.bs)
     elif args.mc:
-        fitter.monte_carlo(result.params, args.mc)
+        fitter.monte_carlo(params_, args.mc)
