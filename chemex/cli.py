@@ -8,6 +8,7 @@ import chemex.chemex as cc
 import chemex.experiments as ce
 import chemex.helper as ch
 import chemex.tools as ct
+import chemex.nmr.helper as cnh
 
 
 class MyParser(argparse.ArgumentParser):
@@ -97,14 +98,6 @@ def build_parser():
     )
 
     fit_parser.add_argument(
-        "-d",
-        dest="model",
-        metavar="MODEL",
-        default="2st.pb_kex",
-        help="Exchange model used to fit the data",
-    )
-
-    fit_parser.add_argument(
         "-p",
         dest="parameters",
         type=pathlib.Path,
@@ -132,30 +125,35 @@ def build_parser():
     )
 
     fit_parser.add_argument(
-        "--noplot", action="store_true", help="No plots of the fits"
+        "-d",
+        dest="model",
+        metavar="MODEL",
+        default="2st.pb_kex",
+        help="Exchange model used to fit the data",
     )
 
-    selection = fit_parser.add_mutually_exclusive_group()
-    selection.add_argument(
-        "+r",
-        dest="res_incl",
-        metavar="ID",
-        nargs="+",
-        help="residue(s) to include in the fit",
+    fit_parser.add_argument(
+        "--plot",
+        type=str,
+        help="Plotting level",
+        choices=["nothing", "normal", "all"],
+        default="normal",
     )
-    selection.add_argument(
+
+    fit_parser.add_argument(
         "-r",
-        dest="res_excl",
+        dest="included",
         metavar="ID",
         nargs="+",
-        help="residue(s) to exclude from the fit",
+        help="Residue(s) to include in the fit",
+        type=cnh.SpinSystem,
     )
 
-    simulation = fit_parser.add_mutually_exclusive_group()
-    simulation.add_argument(
+    fit_parser.add_argument(
         "--mc", metavar="N", type=int, help="Run N Monte-Carlo simulations"
     )
-    simulation.add_argument(
+
+    fit_parser.add_argument(
         "--bs", metavar="N", type=int, help="Run N Bootstrap simulations"
     )
 

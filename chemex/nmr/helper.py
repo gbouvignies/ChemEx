@@ -71,7 +71,7 @@ class SpinSystem:
     def numbers(self):
         return {key: int(spin["number"]) for key, spin in self._spins.items()}
 
-    def intersection(self, other):
+    def __and__(self, other):
         if isinstance(other, str):
             other = SpinSystem(other)
         if self.name == other.name:
@@ -85,7 +85,7 @@ class SpinSystem:
         return _spins_to_re(self._spins)
 
     def __repr__(self):
-        return str(self.name)
+        return str(self.name).upper()
 
     def __hash__(self):
         return hash(self.name)
@@ -108,7 +108,7 @@ def _name_to_spins(name):
     """Get spins from an assignment."""
     spins = []
     last_spin = {}
-    for match in re.finditer(RE_NAME, name.lower()):
+    for match in re.finditer(RE_NAME, name):
         spin = match.groupdict()
         for key, value in spin.items():
             if value is None:

@@ -5,8 +5,7 @@ chemex fit -e Experiments/*.toml \
               Parameters/n15_cs.toml \
               Parameters/n15_dw_brute.toml \
            -m Methods/method_brute_indiv.toml \
-           -o Output/brute \
-           -d 2st.pb_kex \
+           -o Output/Brute \
            +r 50N-HN
 
 chemex fit -e Experiments/*.toml \
@@ -14,5 +13,4 @@ chemex fit -e Experiments/*.toml \
               Parameters/n15_cs.toml \
               Parameters/n15_dw_brute.toml \
            -m Methods/method_brute_global.toml \
-           -o Output/brute-global \
-           -d 2st.pb_kex
+           -o Output/BruteGlobal

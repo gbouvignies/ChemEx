@@ -1,10 +1,11 @@
 """The fitting module contains the code for fitting the experimental data."""
 import copy
-import shutil
+import functools as ft
 import sys
 
 import lmfit
-from scipy import stats
+import numpy as np
+import scipy.stats as ss
 
 import chemex.parameters.helper as cph
 import chemex.parameters.name as cpn
@@ -13,80 +14,79 @@ from chemex.parameters import settings as cpp
 
 
 class Fit:
-    def __init__(self, experiments, path, no_plot=False):
+    def __init__(self, experiments, path, plot):
         self._experiments = experiments
         self._path = path
-        self._no_plot = no_plot
         self._method = {"Standard Calculation": {}}
         self._method_file = None
         self._result = None
+        self._plot = plot
 
     def read_method(self, filename):
-        self._method = ch.read_toml(filename)
-        self._method_file = filename
+        if filename is None:
+            self._method = {"": {}}
+            self._method_file = None
+        else:
+            self._method = ch.read_toml(filename)
+            self._method_file = filename
 
-    def fit(self, params, method=None, path=None, noplot=False):
-        params_ = copy.deepcopy(params)
-        fitmethod = None
+    def fit(self, params, method=None, path=None):
         if method is None:
             method = self._method
         if path is None:
             path = self._path
-        for name, settings in method.items():
-            ch.header2(name.upper())
-            cpp.set_param_status(params, settings)
+        params_ = copy.deepcopy(params)
+        for section, settings in method.items():
+            ch.header2(section.upper())
             fitmethod = settings.get("fitmethod", "leastsq")
-            print(f"\nFitting method: {fitmethod}")
-            groups = self._cluster_data(params)
-            for group_name, (experiments, group_params) in groups.items():
-                group_path = path / name.upper()
-                if group_name:
+            print(f'\nFitting method -> "{fitmethod}"')
+            cpp.set_param_status(params_, settings)
+            groups = self._cluster_data(params_)
+            multi_groups = len(groups) > 1
+            plot_group_flg = self._plot == "all" or (
+                not multi_groups and self._plot == "normal"
+            )
+            for group_name, (group_experiments, group_params) in groups.items():
+                group_path = path / section.upper()
+                if multi_groups:
+                    group_path = group_path / "Clusters" / group_name.to_folder_name()
                     print(f"\n[{group_name}]")
-                    folder = group_name.to_folder_name()
-                    group_path = group_path / "Clusters" / folder
-                group_result = _minimize(experiments, group_params, fitmethod)
-                self._write_files(experiments, group_result, group_path, noplot)
-                params_.update(group_result.params)
-            if len(groups) > 1:
-                print("[ALL]")
-                path_ = path / name / "All"
-                result = self._gather_result(params_, fitmethod)
-                self._write_files(self._experiments, result, path_, noplot)
-        result = self._gather_result(params_, fitmethod)
-        return result
-
-    def _write_files(self, experiments, result, path, no_plot=False):
-        print("")
-        print(f"Final Chi2        : {result.chisqr:.3e}")
-        print(f"Final Reduced Chi2: {result.redchi:.3e}")
-        path.mkdir(parents=True, exist_ok=True)
-        _write(experiments, result, path, self._method_file)
-        if not no_plot:
-            _plot(experiments, result.params, path)
+                group_params = _minimize(group_experiments, group_params, fitmethod)
+                params_.update(group_params)
+                _write_files(group_experiments, group_params, group_path)
+                if plot_group_flg:
+                    _write_plots(group_experiments, group_params, group_path)
+            if multi_groups:
+                print("\n[All]")
+                path_ = path / section.upper() / "All"
+                _write_files(self._experiments, params_, path_)
+                if self._plot != "nothing":
+                    _write_plots(self._experiments, params_, path_)
+        return params_
 
     def bootstrap(self, params, iter_nb):
         if iter_nb is None:
             return
         ch.header1("Running bootstrap simulations")
-        method = {"": {}}
-        experiments_orig = self._experiments
+        ndigits = len(str(iter_nb))
         for index in range(1, iter_nb + 1):
             ch.header2(f"Iteration {index} out of {iter_nb}")
-            path = self._path / "Bootstrap" / str(index).zfill(len(str(iter_nb)))
-            self._experiments = experiments_orig.bootstrap()
-            self.fit(params, method, path, noplot=True)
+            path = self._path / "Bootstrap" / f"{index:0{ndigits}}"
+            experiments = self._experiments.bootstrap()
+            params_ = _minimize(experiments, params)
+            _write_files(experiments, params_, path)
 
     def monte_carlo(self, params, iter_nb):
         if iter_nb is None:
             return
         ch.header1("Running Monte Carlo simulations")
-        method = {"": {}}
-        experiments_orig = self._experiments
+        ndigits = len(str(iter_nb))
         for index in range(1, iter_nb + 1):
             ch.header2(f"Iteration {index} out of {iter_nb}")
-            path = self._path / "Bootstrap" / str(index).zfill(len(str(iter_nb)))
-            self._experiments = experiments_orig.monte_carlo(params)
-            self.fit(params, method, path, noplot=True)
+            path = self._path / "MonteCarlo" / f"{index:0{ndigits}}"
+            experiments = self._experiments.monte_carlo(params)
+            params_ = _minimize(experiments, params)
+            _write_files(experiments, params_, path)
 
     def _cluster_data(self, params):
         """Find clusters of datapoints that depend on disjoint sets of variables.
@@ -97,21 +97,9 @@ class Fit:
         """
         par_name_groups = self._group_par_names(params)
         if len(par_name_groups) <= 1:
-            return {"": (self._experiments, params)}
+            return {cpn.ParamName(): (self._experiments, params)}
         groups = self._group_data(params, par_name_groups)
         return {name: groups[name] for name in sorted(groups)}
-
-    def _group_data(self, params, par_name_groups):
-        clusters_ = {}
-        for par_names in par_name_groups:
-            cluster_name = _get_cluster_name(par_names)
-            cluster_experiments = self._experiments.get_relevant_subset(par_names)
-            params_c = {
-                name: params[name] for name in cluster_experiments.params_default
-            }
-            cluster_params = cph.merge([params_c])
-            clusters_[cluster_name] = (cluster_experiments, cluster_params)
-        return clusters_
 
     def _group_par_names(self, params):
         par_names_vary = {
@@ -130,96 +118,102 @@ class Fit:
                 clusters.append(varies)
         return clusters
 
-    def _gather_result(self, params, fitmethod=None):
-        minimizer = lmfit.Minimizer(self._experiments.residuals, params)
-        result = minimizer.prepare_fit()
-        result.residual = self._experiments.residuals(params, verbose=False)
-        result.params = params
-        result._calculate_statistics()
-        result.method = fitmethod
-        return result
+    def _group_data(self, params, par_name_groups):
+        clusters_ = {}
+        for par_names in par_name_groups:
+            cluster_name = _get_cluster_name(par_names)
+            cluster_experiments = self._experiments.get_relevant_subset(par_names)
+            params_c = {
+                name: params[name] for name in cluster_experiments.params_default
+            }
+            cluster_params = cph.merge([params_c])
+            clusters_[cluster_name] = (cluster_experiments, cluster_params)
+        return clusters_
 
 
-def _minimize(experiments, params, fitmethod):
+def _get_cluster_name(par_names):
+    par_names_ = [cpn.ParamName.from_full_name(par_name) for par_name in par_names]
+    name = ft.reduce(lambda a, b: a & b, par_names_)
+    return name
+
+
+def _minimize(experiments, params, fitmethod=None):
+    if fitmethod is None:
+        fitmethod = "least_squares"
     kws = {}
     if fitmethod == "brute":
         kws["keep"] = "all"
-    print("\nChi2 / Reduced Chi2:")
+    elif fitmethod == "least_squares":
+        kws["verbose"] = 2
+    elif fitmethod in ["basinhopping", "differential_evolution"]:
+        kws["disp"] = True
+    if fitmethod in ["leastsq", "shgo", "dual_annealing"]:
+        experiments.verbose = True
+
+    print("\nMinimizing...")
     minimizer = lmfit.Minimizer(experiments.residuals, params)
     try:
         result = minimizer.minimize(method=fitmethod, **kws)
     except KeyboardInterrupt:
         sys.stderr.write("\n -- Keyboard Interrupt: minimization stopped\n")
         result = minimizer.result
-    return result
+    except ValueError:
+        print(minimizer.result.params.pretty_print())
+    print("")
+    print(f"Final Chi2        : {result.chisqr:.3e}")
+    print(f"Final Reduced Chi2: {result.redchi:.3e}")
+    return result.params
 
 
-def _get_result(func, params, fitmethod):
-    minimizer = lmfit.Minimizer(func, params)
-    result = minimizer.prepare_fit()
-    result.residual = func(params, verbose=False)
-    result.params = params
-    result._calculate_statistics()
-    result.method = fitmethod
-    return result
-
-
-def _get_cluster_name(par_names):
-    par_names_ = par_names.copy()
-    name = cpn.ParamName.from_full_name(par_names_.pop())
-    while par_names_:
-        name = name.intersection(cpn.ParamName.from_full_name(par_names_.pop()))
-    return name
-
-
-def _write_statistics(result, path):
-    """Write fitting statistics to a file."""
-    _, ks_p_value = stats.kstest(result.residual, "norm")
-    chi2_p_value = 1.0 - stats.chi2.cdf(result.chisqr, result.nfree)
-    filename = path / "statistics.toml"
-    with open(filename, "w") as f:
-        print(f"  - {filename}")
-        f.write(f"# Number of data points: {result.ndata}\n")
-        f.write(f"# Number of variables: {result.nvarys}\n")
-        f.write(f"# Fitting method: {result.method}\n")
-        f.write(f"# Number of function evaluations: {result.nfev}\n\n")
-        f.write(f"chi-square         = {result.chisqr: .5e}\n")
-        f.write(f"reduced-chi-square = {result.redchi: .5e}\n")
-        f.write(f"chisq_p-value      = {chi2_p_value: .5e} # Chi-squared test\n")
-        f.write(
-            "ks_p-value         = {: .5e} # Kolmogorov-Smirnov test\n\n".format(
-                ks_p_value
-            )
-        )
-        f.write(f"Akaike Information Criterion = {result.aic: .5e}\n")
-        f.write(f"Bayesian Information Criterion = {result.bic: .5e}\n")
-
-
-def _write(experiments, result, path, method_file=None):
+def _write_files(experiments, params, path):
     """Write the results of the fit to output files.
 
     The files below are created and contain the following information:
-      - parameters.fit: fitting parameters and their uncertainties
+      - parameters.toml: fitting parameters and their uncertainties
       - contstraints.fit: expression used for constraining parameters
       - *.dat: experimental and fitted data
       - statistics.fit: statistics for the fit
 
     """
-    print("\nWriting Results...")
-    if method_file:
-        shutil.copyfile(method_file, path / "fitting-method.toml")
-    cpp.write_par(result.params, path=path)
-    cpp.write_constraints(result.params, path=path)
-    experiments.write(path=path, params=result.params)
-    _write_statistics(result, path=path)
+    print("\nWriting results...")
+    print(f'  -> "{path}/"')
+    path.mkdir(parents=True, exist_ok=True)
+    cpp.write_par(params, path)
+    cpp.write_constraints(params, path)
+    experiments.write(params, path)
+    _write_statistics(experiments, params, path=path)
 
 
-def _plot(experiments, params, path):
+def _write_statistics(experiments, params, path):
+    """Write fitting statistics to a file."""
+    residuals = experiments.residuals(params)
+    ndata = len(residuals)
+    nvarys = len([param for param in params.values() if param.vary and not param.expr])
+    chisqr = sum(residuals ** 2)
+    redchi = chisqr / max(1, ndata - nvarys)
+    _neg2_log_likel = ndata * np.log(chisqr / ndata)
+    aic = _neg2_log_likel + 2 * nvarys
+    bic = _neg2_log_likel + np.log(ndata) * nvarys
+    _, ks_p_value = ss.kstest(residuals, "norm")
+    pvalue = 1.0 - ss.chi2.cdf(chisqr, ndata - nvarys)
+    filename = path / "statistics.toml"
+    with open(filename, "w") as f:
+        f.write(f"number of data points          = {ndata}\n")
+        f.write(f"number of variables            = {nvarys}\n")
+        f.write(f"chi-square                     = {chisqr: .5e}\n")
+        f.write(f"reduced-chi-square             = {redchi: .5e}\n")
+        f.write(f"chi-squared test               = {pvalue: .5e}\n")
+        f.write(f"Kolmogorov-Smirnov test        = {ks_p_value: .5e}\n")
+        f.write(f"Akaike Information Criterion   = {aic: .5e}\n")
+        f.write(f"Bayesian Information Criterion = {bic: .5e}\n")
+
+
+def _write_plots(experiments, params, path):
     """Plot the experimental and fitted data."""
-    print("\nPlotting data..")
-    path_plots = path / "Plots"
-    path_plots.mkdir(parents=True, exist_ok=True)
+    print("\nPlotting data...")
+    path_ = path / "Plots"
+    path_.mkdir(parents=True, exist_ok=True)
     try:
-        experiments.plot(path=path_plots, params=params)
+        experiments.plot(path=path_, params=params)
     except KeyboardInterrupt:
         print("  - Plotting cancelled")

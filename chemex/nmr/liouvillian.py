@@ -520,7 +520,7 @@ class LiouvillianIS:
 
     def _scale_matrix(self, name, value):
         names = {name.format(state=state) for state in self.states}
-        for name_ in names.intersection(self.matrices):
+        for name_ in names & set(self.matrices):
             self.matrices[name_] = np.sign(self._matrices_ref[name_]) * value
 
 

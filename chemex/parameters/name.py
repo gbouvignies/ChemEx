@@ -170,15 +170,26 @@ class ParamName:
         return self.to_section_name(show_spin_system=True)
 
     def __hash__(self):
-        return hash(self.__members())
+        return hash(self._members())
 
-    def __eq__(self, other):
-        return self.__members() == other.__members()
+    def __eq__(self, other: "ParamName"):
+        return self._members() == other._members()
 
-    def __lt__(self, other):
-        return self.__members() < other.__members()
+    def __lt__(self, other: "ParamName"):
+        return self._members() < other._members()
 
-    def __members(self):
+    def __and__(self, other: "ParamName"):
+        both = {}
+        for name in ("name", "temperature", "h_larmor_frq", "p_total", "l_total"):
+            if getattr(self, name) == getattr(other, name):
+                both[name] = getattr(self, name)
+        both["spin_system"] = self._spin_system & other._spin_system
+        return ParamName(**both)
+
+    def __bool__(self):
+        return bool(str(self))
+
+    def _members(self):
         return (
             self.name,
             self.temperature,
@@ -187,14 +198,6 @@ class ParamName:
             self.l_total,
             self._spin_system,
         )
-
-    def intersection(self, other):
-        both = {}
-        for name in ("name", "temperature", "h_larmor_frq", "p_total", "l_total"):
-            if getattr(self, name) == getattr(other, name):
-                both[name] = getattr(self, name)
-        both["spin_system"] = self._spin_system.intersection(other._spin_system)
-        return ParamName(**both)
 
 
 def _get_re_component(value, kind):
