@@ -79,6 +79,10 @@ class Experiments:
             experiments_bs.add(experiment.bootstrap())
         return experiments_bs
 
+    def set_params(self, params, model_free):
+        for experiment in self._experiments.values():
+            experiment.set_params(params, model_free)
+
     @property
     def params_default(self):
         return cph.merge(
@@ -93,11 +97,12 @@ class Experiments:
 
 
 class RelaxationExperiment:
-    def __init__(self, filename, exp_type, profiles, verbose=True):
+    def __init__(self, filename, exp_type, profiles, rates=None, verbose=True):
         self.filename = filename
         self.exp_type = exp_type
         self._profiles = profiles
         self._filtered = {}
+        self._rates = rates
         if verbose:
             print(f"  - Experiment: {exp_type}")
             print(f"  - Profiles: {len(profiles)}")
@@ -149,10 +154,16 @@ class RelaxationExperiment:
     def select(self, included=None):
         if included is None:
             included = list(profile.name for profile in self._profiles.values())
-        for name, profile in self._profiles.copy().items():
+        path_included = set()
+        profiles = dict(self._profiles)
+        profiles.update(self._filtered)
+        for name, profile in profiles.items():
             for name_incl in included:
-                if profile.name & name_incl != name_incl:
-                    self._filtered[name] = self._profiles.pop(name)
+                if profile.name & name_incl == name_incl:
+                    path_included.add(name)
+                    break
+        self._profiles = {name: profiles.pop(name) for name in path_included}
+        self._filtered = profiles
 
     def filter(self, params=None):
         for profile in self._profiles.values():
@@ -191,6 +202,13 @@ class RelaxationExperiment:
         noise_mean = np.sqrt(np.mean(noise_variance_values))
         for profile in self._profiles.values():
             profile.set_noise(noise_mean)
+
+    def set_params(self, params, model_free):
+        rates = {}
+        if self._rates is not None:
+            rates = self._rates.calculate(model_free)
+        for profile in self._profiles.values():
+            profile.set_params(params, rates)
 
     @property
     def params_default(self):

@@ -2,11 +2,9 @@
 
 chemex fit \
     -e Experiments/*.toml \
-    -p parameters/global.toml \
-       parameters/cs_a.toml \
-    -m methods/method.toml \
+    -p Parameters/global.toml \
+       Parameters/cs_a.toml \
+    -m Methods/method.toml \
     -d 2st.pb_kexrs \
     -o Output \
-    +r 11N-HN 25N-HN 60N-HN 62N-HN \
-       63N-HN 66N-HN 80N-HN 81N-HN \
-       82N-HN 83N-HN 96N-HN
+    -r 11N 25N 60N 62N 63N 66N 80N 81N 82N 83N 96N

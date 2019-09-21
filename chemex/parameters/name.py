@@ -256,6 +256,14 @@ def _re_to_dict(re_to_match, text):
     }
 
 
+def remove_state(name):
+    parsed = _re_to_dict(_RE_NAME, name)
+    name_ = f"{parsed['name']}"
+    if "spin" in parsed:
+        name_ += f"_{parsed['spin']}"
+    return name_
+
+
 def _squeeze_name(name):
     parsed = _re_to_dict(_RE_NAME, name)
     if "spin" in parsed:

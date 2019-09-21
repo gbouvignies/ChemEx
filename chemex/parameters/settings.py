@@ -4,46 +4,59 @@ import ast
 import collections as cl
 import configparser
 import difflib as dl
+import re
 
 import asteval.astutils as aa
-import jsonschema as js
 
 import chemex.helper as ch
 import chemex.nmr.helper as cnh
+import chemex.nmr.rates as cnr
 import chemex.parameters.name as cpn
 
 
+RE_GROUPNAME = re.compile(r"^[A-Za-z0-9_-]+$")
+
 _SCHEMA_CONFIG_PARAM = {
     "type": "object",
-    "patternProperties": {
-        r"^[A-Za-z_][A-Za-z0-9_,->]*$": {
+    "properties": {
+        "model_free": {
             "type": "object",
-            "patternProperties": {
-                r"^[A-Za-z_][A-Za-z0-9_,->]*$": {
-                    "oneOf": [
-                        {
-                            "type": "array",
-                            "items": {"type": "number"},
-                            "minItems": 3,
-                            "maxItems": 4,
-                        },
-                        {"type": "number"},
-                    ]
-                }
+            "properties": {
+                "tauc": {"type": "number"},
+                "taui": {"type": "number"},
+                "s2": {"type": "number"},
+                "deuterated": {"type": "boolean"},
             },
+            "additionalProperties": False,
+            "default": {},
         }
+    },
+    "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+            "oneOf": [
+                {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 4,
+                },
+                {"type": "number"},
+            ]
+        },
     },
 }
 
 
-def set_params_from_config_file(params, filename):
+def set_params_from_files(params, experiments, filenames):
     """Read the parameter file and set initial values and optional bounds and brute
     step size."""
-    config = _read_config(filename)
+    config = _read_config(filenames)
     matches = cl.Counter()
+    cfg_model_free = config.pop("model_free")
+    _set_param_mf(params, experiments, cfg_model_free)
     for section, settings in config.items():
-        is_not_global = section.upper() != "GLOBAL"
-        prefix = f"{section}, NUC->" if is_not_global else ""
+        prefix = f"{section}, NUC->" if section != "global" else ""
         for key, values in settings.items():
             name = cpn.ParamName.from_section(f"{prefix}{key}")
             if isinstance(values, float):
@@ -54,15 +67,17 @@ def set_params_from_config_file(params, filename):
     _print_matches(matches)
 
 
-def _read_config(filename):
-    print(f"\nReading '{filename}'...")
-    config = ch.read_toml(filename)
-    try:
-        js.validate(config, _SCHEMA_CONFIG_PARAM)
-    except js.ValidationError as err:
-        print("Validation error: {0}".format(err))
-        raise
-    return config
+def _set_param_mf(params, experiments, cfg_model_free):
+    model_free = cnr.ModelFree(**cfg_model_free)
+    experiments.set_params(params, model_free)
+
+
+def _read_config(filenames):
+    print(f"\nSetting parameters starting values...")
+    config = ch.read_toml_multi(filenames, _SCHEMA_CONFIG_PARAM)
+    config_ = {"global": config.pop("global", {})}
+    config_.update(config)
+    return config_
 
 
 def set_param_status(params, settings):
@@ -109,12 +124,13 @@ def set_param_expr(params, name, expr=None):
     }
     matches = set()
     for fname in fnames:
+        expr_ = str(expr)
         for name_expr in names_expr:
             fname_expr = dl.get_close_matches(fname, fnames_expr[name_expr], n=1)[0]
-            expr = expr.replace(name_expr, fname_expr)
+            expr_ = expr_.replace(name_expr, fname_expr)
         param = params[fname]
         repr_ = repr(param)
-        param.expr = expr
+        param.expr = expr_
         if repr(param) != repr_:
             matches.add(fname)
     return matches
@@ -166,7 +182,7 @@ def write_par(params, path):
         for name, val in sorted(section_global):
             cfg.set("GLOBAL", f"{str(name):10s}", val)
     for section, name_vals in sorted(par_dict.items()):
-        if not ch.RE_GROUPNAME.match(section):
+        if not RE_GROUPNAME.match(section):
             section = f'"{section}"'
         cfg.add_section(section)
         for peak, val in sorted(name_vals):

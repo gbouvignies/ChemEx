@@ -1,7 +1,6 @@
-[global]
-pb      = 0.015
-kex_ab  = 70.0
-dw_ab   = 0.0
-r1_a    = 1.3
-r2_a    = 10.0
-r2_b    = 10.0
+[MODEL_FREE]
+TAUC    = 11E-9
+
+[GLOBAL]
+PB      = 0.015
+KEX_AB  = 70.0

@@ -1,5 +1,8 @@
+[MODEL_FREE]
+TAUC   = 11e-9
+DEUTERATED = true
+
 [GLOBAL]
 PB     = 0.04
 KEX_AB = 1200.0
 DW_AB  = 0.25
-J_A    = -93.0

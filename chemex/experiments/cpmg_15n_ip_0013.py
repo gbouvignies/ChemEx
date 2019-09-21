@@ -35,7 +35,9 @@ import numpy as np
 
 import chemex.containers.cpmg as ccc
 import chemex.experiments.helper as ceh
+import chemex.helper as ch
 import chemex.nmr.propagator as cnp
+import chemex.nmr.rates as cnr
 
 
 TYPE = __name__.split(".")[-1]
@@ -63,14 +65,15 @@ _SCHEMA = {
 
 
 def read(config):
-    config["spin_system"] = {"basis": "ixyz", "atoms": {"i": "n"}}
-    ceh.validate(config, _SCHEMA)
-    ceh.validate(config, ccc.CPMG_SCHEMA)
+    config["spin_system"] = {"basis": "ixyz", "atoms": {"i": "n"}, "rates": "nh"}
+    ch.validate(config, _SCHEMA)
+    ch.validate(config, ccc.CPMG_SCHEMA)
     experiment = ceh.read(
         config=config,
         pulse_seq_cls=PulseSeq,
         propagator_cls=cnp.PropagatorIS,
         container_cls=ccc.CpmgProfile,
+        rates_cls=cnr.RatesIS,
     )
     return experiment
 

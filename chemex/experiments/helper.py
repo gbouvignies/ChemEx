@@ -1,29 +1,23 @@
 import pathlib as pl
 
-import jsonschema as js
-
 import chemex.containers.experiment as cce
 import chemex.helper as ch
 import chemex.nmr.helper as cnn
 import chemex.parameters as cp
 
 
-def validate(config, schema):
-    try:
-        Validator(schema).validate(config)
-    except js.ValidationError as err:
-        print("Validation error: {0}".format(err))
-        raise
-
-
-def read(config, pulse_seq_cls, propagator_cls, container_cls):
+def read(config, pulse_seq_cls, propagator_cls, container_cls, rates_cls=None):
     filename = config["filename"]
     exp_type = config["experiment"]["name"]
     paths = _get_profile_paths(config)
     profiles = _read_profiles(
         paths, config, pulse_seq_cls, propagator_cls, container_cls
     )
-    experiment = cce.RelaxationExperiment(filename, exp_type, profiles)
+    h_frq = config["conditions"]["h_larmor_frq"]
+    rates = None
+    if rates_cls is not None:
+        rates = rates_cls(h_frq, config["spin_system"].get("rates"))
+    experiment = cce.RelaxationExperiment(filename, exp_type, profiles, rates)
     experiment.estimate_noise(config["data"]["error"])
     return experiment
 
@@ -64,20 +58,3 @@ def _read_profiles(paths, config, pulse_seq_cls, propagator_cls, container_cls):
             params_default=params_default,
         )
     return profiles
-
-
-def _extend_with_default(validator_class):
-    """Taken from: https://python-jsonschema.readthedocs.io/en/stable/faq/"""
-    validate_properties = validator_class.VALIDATORS["properties"]
-
-    def set_defaults(validator, properties, instance, schema):
-        for property_, subschema in properties.items():
-            if "default" in subschema:
-                instance.setdefault(property_, subschema["default"])
-        for error in validate_properties(validator, properties, instance, schema):
-            yield error
-
-    return js.validators.extend(validator_class, {"properties": set_defaults})
-
-
-Validator = _extend_with_default(js.Draft7Validator)

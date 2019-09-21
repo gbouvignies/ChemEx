@@ -1,6 +1,3 @@
 [GLOBAL]
 PB     = 0.06
 KEX_AB = 400.0
-DW_AB  = 0.01
-R1_A   = 1.7
-R2_A   = 5.0

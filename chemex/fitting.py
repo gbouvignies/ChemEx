@@ -3,7 +3,7 @@ import copy
 import functools as ft
 import sys
 
-import lmfit
+import lmfit as lm
 import numpy as np
 import scipy.stats as ss
 
@@ -151,7 +151,7 @@ def _minimize(experiments, params, fitmethod=None):
         experiments.verbose = True
 
     print("\nMinimizing...")
-    minimizer = lmfit.Minimizer(experiments.residuals, params)
+    minimizer = lm.Minimizer(experiments.residuals, params)
     try:
         result = minimizer.minimize(method=fitmethod, **kws)
     except KeyboardInterrupt:
