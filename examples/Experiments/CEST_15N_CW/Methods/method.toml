@@ -1,4 +1,4 @@
-[default]
+[DEFAULT]
 PB                = "fix"
 KEX_AB            = "fix"
 DW_AB             = "fit"

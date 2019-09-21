@@ -30,7 +30,9 @@ import numpy as np
 
 import chemex.containers.cest as ccc
 import chemex.experiments.helper as ceh
+import chemex.helper as ch
 import chemex.nmr.propagator as cnp
+import chemex.nmr.rates as cnr
 
 
 TYPE = __name__.split(".")[-1]
@@ -62,14 +64,16 @@ def read(config):
         "basis": "ixyzsz",
         "atoms": {"i": "h", "s": "n"},
         "constraints": ["hn"],
+        "rates": "hn",
     }
-    ceh.validate(config, _SCHEMA)
-    ceh.validate(config, ccc.CEST_SCHEMA)
+    ch.validate(config, _SCHEMA)
+    ch.validate(config, ccc.CEST_SCHEMA)
     experiment = ceh.read(
         config=config,
         pulse_seq_cls=PulseSeq,
         propagator_cls=cnp.PropagatorIS,
         container_cls=ccc.CestProfile,
+        rates_cls=cnr.RatesIS,
     )
     return experiment
 

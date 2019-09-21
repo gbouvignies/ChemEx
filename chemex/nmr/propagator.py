@@ -216,6 +216,50 @@ class PropagatorIS:
     def p9024090_s_2(self):
         return self.p90_s[1, 2, 3, 0] @ self.p240_s @ self.p90_s[1, 2, 3, 0]
 
+    @property
+    def p9024090_is_1(self):
+        pw90_i = 1.0 / (4.0 * self.liouvillian.b1_i)
+        pw90_s = 1.0 / (4.0 * self.liouvillian.b1_s)
+        pw240_i = 8.0 / 3.0 * pw90_i
+        pw240_s = 8.0 / 3.0 * pw90_s
+        pw9024090_i = pw240_i + 2.0 * pw90_i
+        pw9024090_s = pw240_s + 2.0 * pw90_s
+        if pw9024090_i <= pw9024090_s:
+            if pw9024090_i <= pw240_s:
+                p1 = self.pulse_is(pw240_i, 0.0, 0.0)
+                p2 = self.pulse_is(pw90_i, 3.0, 0.0)
+                p3 = self.pulse_s(0.5 * (pw240_s - pw9024090_i), 0.0)
+                p4 = self.p90_s[3]
+            else:
+                p1 = self.pulse_is(pw240_i, 0.0, 0.0)
+                p2 = self.pulse_is(0.5 * (pw240_s - pw240_i), 3.0, 0.0)
+                p3 = self.pulse_is(0.5 * (pw9024090_i - pw240_s), 3.0, 3.0)
+                p4 = self.pulse_s(0.5 * (pw9024090_s - pw9024090_i), 3.0)
+        else:
+            if pw9024090_s <= pw240_i:
+                p1 = self.pulse_is(pw240_s, 0.0, 0.0)
+                p2 = self.pulse_is(pw90_s, 0.0, 3.0)
+                p3 = self.pulse_i(0.5 * (pw240_i - pw9024090_s), 0.0)
+                p4 = self.p90_i[3]
+            else:
+                p1 = self.pulse_is(pw240_s, 0.0, 0.0)
+                p2 = self.pulse_is(0.5 * (pw240_i - pw240_s), 0.0, 3.0)
+                p3 = self.pulse_is(0.5 * (pw9024090_s - pw240_i), 3.0, 3.0)
+                p4 = self.pulse_s(0.5 * (pw9024090_i - pw9024090_s), 3.0)
+        p_comp_xx = p4 @ p3 @ p2 @ p1 @ p2 @ p3 @ p4
+        phases_i = self._phases["i"]
+        phases_s = self._phases["s"]
+        p_comp_is = np.array(
+            [
+                [
+                    phases_i[k] @ phases_s[j] @ p_comp_xx @ phases_s[-j] @ phases_i[-k]
+                    for j in range(4)
+                ]
+                for k in range(4)
+            ]
+        )
+        return p_comp_is
+
     def offsets_to_ppms(self, offsets):
         return self.liouvillian.offsets_to_ppms(offsets)
 
@@ -225,20 +269,16 @@ class PropagatorIS:
     def _calculate_base_pulses_i(self):
         if self._p90_i is None:
             phases = self._phases["i"]
-            pulse_widths = np.array([1.0, 2.0, 8.0 / 3.0]) / (
-                4.0 * self.liouvillian.b1_i
-            )
-            pulses_ = self.pulse_i(pulse_widths, 0.0)
+            pws = np.array([1.0, 2.0, 8.0 / 3.0]) / (4.0 * self.liouvillian.b1_i)
+            pulses_ = self.pulse_i(pws, 0.0)
             pulses = np.array([phases[j] @ pulses_ @ phases[-j] for j in range(4)])
             self._p90_i, self._p180_i, self._p240_i = pulses.swapaxes(0, 1)
 
     def _calculate_base_pulses_s(self):
         if self._p90_s is None:
             phases = self._phases["s"]
-            pulse_widths = np.array([1.0, 2.0, 8.0 / 3.0]) / (
-                4.0 * self.liouvillian.b1_s
-            )
-            pulses_ = self.pulse_s(pulse_widths, 0.0)
+            pws = np.array([1.0, 2.0, 8.0 / 3.0]) / (4.0 * self.liouvillian.b1_s)
+            pulses_ = self.pulse_s(pws, 0.0)
             pulses = np.array([phases[j] @ pulses_ @ phases[-j] for j in range(4)])
             self._p90_s, self._p180_s, self._p240_s = pulses.swapaxes(0, 1)
 

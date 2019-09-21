@@ -7,8 +7,8 @@ import sys
 import chemex.chemex as cc
 import chemex.experiments as ce
 import chemex.helper as ch
-import chemex.tools as ct
 import chemex.nmr.helper as cnh
+import chemex.tools as ct
 
 
 class MyParser(argparse.ArgumentParser):

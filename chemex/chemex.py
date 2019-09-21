@@ -4,10 +4,11 @@ import sys
 import chemex
 import chemex.cli as cc
 import chemex.containers.experiment as cce
+import chemex.fitting as cf
 import chemex.helper as ch
 import chemex.parameters.kinetics as cpk
 import chemex.parameters.settings as cpp
-import chemex.fitting as cf
+
 
 LOGO = r"""
 * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -59,8 +60,7 @@ def fit(args):
     # Create and update initial values of fitting/fixed parameters
     ch.header1("Reading default parameters")
     params = experiments.params_default
-    for filename in args.parameters:
-        cpp.set_params_from_config_file(params, filename)
+    cpp.set_params_from_files(params, experiments, args.parameters)
 
     # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
     experiments.filter(params)

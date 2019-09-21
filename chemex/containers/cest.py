@@ -5,6 +5,7 @@ import numpy as np
 
 import chemex.containers.helper as cch
 import chemex.containers.noise as ccn
+import chemex.parameters.name as cpn
 import chemex.plot as cp
 
 
@@ -137,6 +138,12 @@ class CestProfile:
         profile = copy.copy(self)
         profile.data = profile.data.bootstrap()
         return profile
+
+    def set_params(self, params, rates):
+        for name1, name2 in self._par_names.items():
+            name = cpn.remove_state(name1)
+            if name in rates:
+                params[name2].value = rates[name]
 
     def _get_parvals(self, params):
         parvals = tuple(
