@@ -37,8 +37,8 @@ class Fit:
             path = self._path
         params_ = copy.deepcopy(params)
         for section, settings in method.items():
-            ch.header2(section.upper())
-            fitmethod = settings.get("fitmethod", "leastsq")
+            ch.header2(f"\n{section.upper()}")
+            fitmethod = settings.pop("fitmethod", "leastsq")
             print(f'\nFitting method -> "{fitmethod}"')
             cpp.set_param_status(params_, settings)
             groups = self._cluster_data(params_)
@@ -46,18 +46,21 @@ class Fit:
             plot_group_flg = self._plot == "all" or (
                 not multi_groups and self._plot == "normal"
             )
-            for group_name, (group_experiments, group_params) in groups.items():
-                group_path = path / section.upper()
+            for index, (g_name, (g_experiments, g_params)) in enumerate(groups.items()):
+                group_path = path
+                if len(method) > 1:
+                    group_path = group_path / section.upper()
                 if multi_groups:
-                    group_path = group_path / "Clusters" / group_name.to_folder_name()
-                    print(f"\n[{group_name}]")
-                group_params = _minimize(group_experiments, group_params, fitmethod)
-                params_.update(group_params)
-                _write_files(group_experiments, group_params, group_path)
+                    group_path = group_path / "Clusters" / g_name.to_folder_name()
+                    print(f"\n\n-- Cluster {index + 1}/{len(groups)} ({g_name}) --")
+                g_params = _minimize(g_experiments, g_params, fitmethod)
+                params_.update(g_params)
+                _write_files(g_experiments, g_params, group_path)
                 if plot_group_flg:
-                    _write_plots(group_experiments, group_params, group_path)
+                    _write_plots(g_experiments, g_params, group_path)
             if multi_groups:
-                print("\n[All]")
+                print("\n\n-- All clusters --")
+                _print_chisqr(self._experiments, params_)
                 path_ = path / section.upper() / "All"
                 _write_files(self._experiments, params_, path_)
                 if self._plot != "nothing":
@@ -155,13 +158,12 @@ def _minimize(experiments, params, fitmethod=None):
     try:
         result = minimizer.minimize(method=fitmethod, **kws)
     except KeyboardInterrupt:
-        sys.stderr.write("\n -- Keyboard Interrupt: minimization stopped\n")
+        sys.stderr.write("\n -- Keyboard Interrupt: minimization stopped --\n")
         result = minimizer.result
     except ValueError:
-        print(minimizer.result.params.pretty_print())
-    print("")
-    print(f"Final Chi2        : {result.chisqr:.3e}")
-    print(f"Final Reduced Chi2: {result.redchi:.3e}")
+        result = minimizer.result
+        sys.exit((result.params.pretty_print()))
+    _print_chisqr(experiments, result.params)
     return result.params
 
 
@@ -175,8 +177,7 @@ def _write_files(experiments, params, path):
       - statistics.fit: statistics for the fit
 
     """
-    print("\nWriting results...")
-    print(f'  -> "{path}/"')
+    print(f'\nWriting results -> "{path}/"')
     path.mkdir(parents=True, exist_ok=True)
     cpp.write_par(params, path)
     cpp.write_constraints(params, path)
@@ -186,6 +187,27 @@ def _write_files(experiments, params, path):
 
 def _write_statistics(experiments, params, path):
     """Write fitting statistics to a file."""
+    statistics = _calculate_statistics(experiments, params)
+    filename = path / "statistics.toml"
+    with open(filename, "w") as f:
+        f.write(f"number of data points          = {statistics['ndata']}\n")
+        f.write(f"number of variables            = {statistics['nvarys']}\n")
+        f.write(f"chi-square                     = {statistics['chisqr']: .5e}\n")
+        f.write(f"reduced-chi-square             = {statistics['redchi']: .5e}\n")
+        f.write(f"chi-squared test               = {statistics['pvalue']: .5e}\n")
+        f.write(f"Kolmogorov-Smirnov test        = {statistics['ks_pvalue']: .5e}\n")
+        f.write(f"Akaike Information Criterion   = {statistics['aic']: .5e}\n")
+        f.write(f"Bayesian Information Criterion = {statistics['bic']: .5e}\n")
+
+
+def _print_chisqr(experiments, params):
+    statistics = _calculate_statistics(experiments, params)
+    print("")
+    print(f"Final Chi2        : {statistics['chisqr']:.3e}")
+    print(f"Final Reduced Chi2: {statistics['redchi']:.3e}")
+
+
+def _calculate_statistics(experiments, params):
     residuals = experiments.residuals(params)
     ndata = len(residuals)
     nvarys = len([param for param in params.values() if param.vary and not param.expr])
@@ -196,16 +218,16 @@ def _write_statistics(experiments, params, path):
     bic = _neg2_log_likel + np.log(ndata) * nvarys
     _, ks_p_value = ss.kstest(residuals, "norm")
     pvalue = 1.0 - ss.chi2.cdf(chisqr, ndata - nvarys)
-    filename = path / "statistics.toml"
-    with open(filename, "w") as f:
-        f.write(f"number of data points          = {ndata}\n")
-        f.write(f"number of variables            = {nvarys}\n")
-        f.write(f"chi-square                     = {chisqr: .5e}\n")
-        f.write(f"reduced-chi-square             = {redchi: .5e}\n")
-        f.write(f"chi-squared test               = {pvalue: .5e}\n")
-        f.write(f"Kolmogorov-Smirnov test        = {ks_p_value: .5e}\n")
-        f.write(f"Akaike Information Criterion   = {aic: .5e}\n")
-        f.write(f"Bayesian Information Criterion = {bic: .5e}\n")
+    return {
+        "ndata": ndata,
+        "nvarys": nvarys,
+        "chisqr": chisqr,
+        "redchi": redchi,
+        "pvalue": pvalue,
+        "ks_pvalue": ks_p_value,
+        "aic": aic,
+        "bic": bic,
+    }
 
 
 def _write_plots(experiments, params, path):

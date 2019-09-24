@@ -5,8 +5,8 @@ import numpy as np
 
 import chemex.containers.helper as cch
 import chemex.containers.noise as ccn
-import chemex.plot as cp
 import chemex.parameters.name as cpn
+import chemex.plot as cp
 
 
 CPMG_SCHEMA = {

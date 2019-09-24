@@ -3,6 +3,7 @@ name         = "cest_13c"
 time_t1      = 0.250
 carrier      = 58.2120954474
 b1_frq       = 23.4
+b1_inh_res   = 5
 cn_label     = true
 
 [conditions]
