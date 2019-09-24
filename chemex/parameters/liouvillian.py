@@ -64,9 +64,9 @@ def _set_constraints_hn(settings, states):
         r2_i = f"r2_i_{state}"
         r1a_is = f"r1a_is_{state}"
         r2a_i = f"r2a_i_{state}"
-        if r1_i in settings_:
+        if {r1_i, r1a_is, r1_s} <= set(settings_):
             settings_[r1_i]["expr"] = f"{{{r1a_is}}} - {{{r1_s}}}"
-        if r2a_i in settings_:
+        if {r2a_i, r2_i, r1_s} <= set(settings_):
             settings_[r2a_i]["expr"] = f"{{{r2_i}}} - {{{r1_s}}}"
     return settings_
 
@@ -80,9 +80,9 @@ def _set_constraints_nh(settings, states):
         r1a_is = f"r1a_is_{state}"
         r2a_i = f"r2a_i_{state}"
         r2a_s = f"r2a_s_{state}"
-        if r2a_i in settings_:
+        if {r2a_i, r2_i, r1_i} <= set(settings_):
             settings_[r2a_i]["expr"] = f"{{{r2_i}}} + {{{r1a_is}}} - {{{r1_i}}}"
-        if r2a_s in settings_:
+        if {r2a_s, r2_s, r1_i} <= set(settings_):
             settings_[r2a_s]["expr"] = f"{{{r2_s}}} - {{{r1_i}}}"
     return settings
 
@@ -95,9 +95,9 @@ def _set_constraints_ch3_1htq(settings, states):
         r2_i = f"r2_i_{state}"
         r1a_is = f"r1a_is_{state}"
         r2a_i = f"r2a_i_{state}"
-        if r1a_is in settings_:
+        if {r1a_is, r1_i, r1_s} <= set(settings_):
             settings_[r1a_is]["expr"] = f"{{{r1_i}}} + {{{r1_s}}}"
-        if r2a_i in settings_:
+        if {r2a_i, r2_i, r1_s} <= set(settings_):
             settings_[r2a_i]["expr"] = f"{{{r2_i}}} - {{{r1_s}}}"
     return settings_
 

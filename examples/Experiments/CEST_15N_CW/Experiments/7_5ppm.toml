@@ -5,6 +5,7 @@ carrier      = 119.776
 carrier_dec  = 7.502
 b1_frq       = 18.9
 b1_frq_dec   = 924.21
+b1_inh_scale = inf
 
 [conditions]
 h_larmor_frq = 598.8165859

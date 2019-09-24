@@ -16,7 +16,7 @@ import numpy as np
 import scipy.stats as ss
 
 import chemex.nmr.constants as cnc
-import chemex.nmr.helper
+import chemex.nmr.helper as cnh
 
 
 class LiouvillianIS:
@@ -110,10 +110,10 @@ class LiouvillianIS:
             ("iz", "se", +1.0),
         ),
         "mu_is_{state}": (
-            ("2ixsx", "2iysy", -1.0),
+            ("2ixsx", "2iysy", +1.0),
             ("2ixsy", "2iysx", -1.0),
             ("2iysx", "2ixsy", -1.0),
-            ("2iysy", "2ixsx", -1.0),
+            ("2iysy", "2ixsx", +1.0),
         ),
         "rotz_i": (
             ("ix", "iy", -1.0),
@@ -267,7 +267,7 @@ class LiouvillianIS:
         self.state_nb = model.state_nb
         self.atoms = atoms
         self.h_frq = h_frq
-        self.states = chemex.nmr.helper.get_state_names(model.state_nb)
+        self.states = cnh.get_state_names(model.state_nb)
         self.basis = self.BASES[name]
         self.size = len(self.basis) * model.state_nb
         self.matrices = {
@@ -279,8 +279,8 @@ class LiouvillianIS:
         self._interpreter = asteval.Interpreter(
             symtable={"vectors": self.vectors}, minimal=True
         )
-        self.ppm_i = 2.0 * np.pi * h_frq * cnc.XI_RATIO.get(atoms.get("i"), 1.0)
-        self.ppm_s = 2.0 * np.pi * h_frq * cnc.XI_RATIO.get(atoms.get("s"), 1.0)
+        self.ppm_i = 2.0 * np.pi * h_frq * cnc.G_RATIO.get(atoms.get("i"), 1.0)
+        self.ppm_s = 2.0 * np.pi * h_frq * cnc.G_RATIO.get(atoms.get("s"), 1.0)
         self.carrier_i, self.carrier_s = 0.0, 0.0
         self.offset_i, self.offset_s = 0.0, 0.0
         self.b1_i, self.b1_s = 1e32, 1e32
@@ -339,7 +339,9 @@ class LiouvillianIS:
     @offset_i.setter
     def offset_i(self, value):
         self._offset_i = np.asarray(value)
-        self._l_offset_i = self.matrices.get("offset_i", 0.0) * value
+        self._l_offset_i = (
+            self.matrices.get("offset_i", 0.0) * value * np.sign(self.ppm_i)
+        )
 
     @property
     def offset_s(self):
@@ -348,7 +350,9 @@ class LiouvillianIS:
     @offset_s.setter
     def offset_s(self, value):
         self._offset_s = np.asarray(value)
-        self._l_offset_s = self.matrices.get("offset_s", 0.0) * value
+        self._l_offset_s = (
+            self.matrices.get("offset_s", 0.0) * value * np.sign(self.ppm_s)
+        )
 
     @property
     def b1_i(self):
@@ -428,14 +432,17 @@ class LiouvillianIS:
     @detection.setter
     def detection(self, value):
         self._detection = value
-        expr = re.sub(r"(\w+)", r'vectors["\1"].reshape(1, -1)', value)
+        expr = re.sub(r"(\w+\b(?<!\b1j))", r'vectors["\1"].reshape(1, -1)', value)
         self._detect_vector = self._interpreter(expr)
 
     def detect(self, magnetization):
         shape = -1, *magnetization.shape[-2:]
         mag_weighted = self.weights * magnetization
         mag = mag_weighted.reshape(shape).sum(axis=0)
-        return np.float64(self._detect_vector @ mag)
+        detected = self._detect_vector @ mag
+        if np.iscomplexobj(detected):
+            detected = np.sign(detected.real) * np.abs(detected)
+        return np.float64(detected)
 
     def get_equilibrium(self):
         parvals = dict(self._parvals)
@@ -473,10 +480,10 @@ class LiouvillianIS:
         return keep * magnetization
 
     def offsets_to_ppms(self, offsets):
-        return self.carrier_i + 2.0 * np.pi * offsets / self.ppm_i
+        return self.carrier_i + 2.0 * np.pi * offsets / abs(self.ppm_i)
 
     def ppms_to_offsets(self, ppms):
-        return (ppms - self.carrier_i) * self.ppm_i / (2.0 * np.pi)
+        return (ppms - self.carrier_i) * abs(self.ppm_i) / (2.0 * np.pi)
 
     def _build_transition_matrices(self):
         m_zeros = np.zeros((self.size, self.size))
@@ -529,21 +536,21 @@ class Liouvillian1HTQDif(LiouvillianIS):
         **LiouvillianIS.TRANSITIONS,
         **{
             "d_{state}": (
-                ("ix", "ix", -1),
-                ("iy", "iy", -1),
-                ("iz", "iz", -1),
-                ("sx", "sx", -1),
-                ("sy", "sy", -1),
-                ("sz", "sz", -1),
-                ("2ixsz", "2ixsz", -1),
-                ("2iysz", "2iysz", -1),
-                ("2izsx", "2izsx", -1),
-                ("2izsy", "2izsy", -1),
-                ("2ixsx", "2ixsx", -1),
-                ("2ixsy", "2ixsy", -1),
-                ("2iysx", "2iysx", -1),
-                ("2iysy", "2iysy", -1),
-                ("2izsz", "2izsz", -1),
+                ("ix", "ix", -1.0),
+                ("iy", "iy", -1.0),
+                ("iz", "iz", -1.0),
+                ("sx", "sx", -1.0),
+                ("sy", "sy", -1.0),
+                ("sz", "sz", -1.0),
+                ("2ixsz", "2ixsz", -1.0),
+                ("2iysz", "2iysz", -1.0),
+                ("2izsx", "2izsx", -1.0),
+                ("2izsy", "2izsy", -1.0),
+                ("2ixsx", "2ixsx", -1.0),
+                ("2ixsy", "2ixsy", -1.0),
+                ("2iysx", "2iysx", -1.0),
+                ("2iysy", "2iysy", -1.0),
+                ("2izsz", "2izsz", -1.0),
             )
         },
     )

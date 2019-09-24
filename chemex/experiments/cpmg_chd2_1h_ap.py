@@ -100,7 +100,7 @@ class PulseSeq:
 
         # Calculation of the propagators corresponding to all the pulses
         p90 = self.prop.p90_i
-        p180 = self.prop.p80_i
+        p180 = self.prop.p180_i
         p180pmx = 0.5 * (p180[0] + p180[2])  # +/- phase cycling
 
         # Getting the starting magnetization

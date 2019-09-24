@@ -7,6 +7,6 @@ do
                 Parameters/cs_a.toml \
                 Parameters/dw_ab.toml \
              -m Methods/method.toml \
-             -o Output/"$i"H-C \
-             +r "$i"H-C
+             -o Output/${i}H-C \
+             -r $i
 done

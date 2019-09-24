@@ -8,10 +8,12 @@ class PropagatorIS:
     LIOUV = liouvillian.LiouvillianIS
 
     def __init__(self, basis, model, atoms, h_frq):
+        self._pw90_i = self._pw90_s = None
         self._p90_i = self._p180_i = self._p240_i = None
         self._p90_s = self._p180_s = self._p240_s = None
         self.liouvillian = self.LIOUV(basis, model, atoms, h_frq)
-        self.identity = np.eye(self.liouvillian.size)
+        size = self.liouvillian.size
+        self.identity = np.eye(self.liouvillian.size).reshape((1, 1, size, size))
         self.ppm_i = self.liouvillian.ppm_i
         self.ppm_s = self.liouvillian.ppm_s
         self._phases = self._get_phases()
@@ -66,6 +68,7 @@ class PropagatorIS:
 
     @b1_i.setter
     def b1_i(self, value):
+        self._pw90_i = 1.0 / (4.0 * value) if value else 0.0
         self.liouvillian.b1_i = value
         self._p90_i = self._p90_s = None
 
@@ -75,6 +78,7 @@ class PropagatorIS:
 
     @b1_s.setter
     def b1_s(self, value):
+        self._pw90_s = 1.0 / (4.0 * value) if value else 0.0
         self.liouvillian.b1_s = value
         self._p90_i = self._p90_s = None
 
@@ -171,7 +175,7 @@ class PropagatorIS:
 
     @property
     def p9018090_i_1(self):
-        return self.p90_i[[3, 0, 1, 2]] @ self.p180_i @ self.p90_i[[3, 0, 1, 3]]
+        return self.p90_i[[3, 0, 1, 2]] @ self.p180_i @ self.p90_i[[3, 0, 1, 2]]
 
     @property
     def p9018090_i_2(self):
@@ -179,7 +183,7 @@ class PropagatorIS:
 
     @property
     def p9024090_i_1(self):
-        return self.p90_i[[3, 0, 1, 2]] @ self.p240_i @ self.p90_i[[3, 0, 1, 3]]
+        return self.p90_i[[3, 0, 1, 2]] @ self.p240_i @ self.p90_i[[3, 0, 1, 2]]
 
     @property
     def p9024090_i_2(self):
@@ -217,42 +221,33 @@ class PropagatorIS:
         return self.p90_s[1, 2, 3, 0] @ self.p240_s @ self.p90_s[1, 2, 3, 0]
 
     @property
-    def p9024090_is_1(self):
-        pw90_i = 1.0 / (4.0 * self.liouvillian.b1_i)
-        pw90_s = 1.0 / (4.0 * self.liouvillian.b1_s)
-        pw240_i = 8.0 / 3.0 * pw90_i
-        pw240_s = 8.0 / 3.0 * pw90_s
-        pw9024090_i = pw240_i + 2.0 * pw90_i
-        pw9024090_s = pw240_s + 2.0 * pw90_s
+    def p9024090_is(self):
+        pw240_i, pw9024090_i = np.array([8.0, 14.0]) * self._pw90_i / 3.0
+        pw240_s, pw9024090_s = np.array([8.0, 14.0]) * self._pw90_s / 3.0
+        times = np.sort([0.0, pw240_i, pw240_s, pw9024090_i, pw9024090_s])
+        deltas = (times[1:] - times[:-1]) * np.array([1.0, 0.5, 0.5, 0.5])
+        phase_i, phase_s = (0, 3), (0, 3)
+        p0 = self.pulse_is(deltas[0], phase_i[0], phase_s[0])
         if pw9024090_i <= pw9024090_s:
+            p1 = self.pulse_is(deltas[1], phase_i[1], phase_s[0])
             if pw9024090_i <= pw240_s:
-                p1 = self.pulse_is(pw240_i, 0.0, 0.0)
-                p2 = self.pulse_is(pw90_i, 3.0, 0.0)
-                p3 = self.pulse_s(0.5 * (pw240_s - pw9024090_i), 0.0)
-                p4 = self.p90_s[3]
+                p2 = self.pulse_s(deltas[2], phase_s[0])
             else:
-                p1 = self.pulse_is(pw240_i, 0.0, 0.0)
-                p2 = self.pulse_is(0.5 * (pw240_s - pw240_i), 3.0, 0.0)
-                p3 = self.pulse_is(0.5 * (pw9024090_i - pw240_s), 3.0, 3.0)
-                p4 = self.pulse_s(0.5 * (pw9024090_s - pw9024090_i), 3.0)
+                p2 = self.pulse_is(deltas[2], phase_i[1], phase_s[1])
+            p3 = self.pulse_s(deltas[3], phase_s[1])
         else:
+            p1 = self.pulse_is(deltas[1], phase_i[0], phase_s[1])
             if pw9024090_s <= pw240_i:
-                p1 = self.pulse_is(pw240_s, 0.0, 0.0)
-                p2 = self.pulse_is(pw90_s, 0.0, 3.0)
-                p3 = self.pulse_i(0.5 * (pw240_i - pw9024090_s), 0.0)
-                p4 = self.p90_i[3]
+                p2 = self.pulse_i(deltas[2], phase_i[0])
             else:
-                p1 = self.pulse_is(pw240_s, 0.0, 0.0)
-                p2 = self.pulse_is(0.5 * (pw240_i - pw240_s), 0.0, 3.0)
-                p3 = self.pulse_is(0.5 * (pw9024090_s - pw240_i), 3.0, 3.0)
-                p4 = self.pulse_s(0.5 * (pw9024090_i - pw9024090_s), 3.0)
-        p_comp_xx = p4 @ p3 @ p2 @ p1 @ p2 @ p3 @ p4
-        phases_i = self._phases["i"]
-        phases_s = self._phases["s"]
+                p2 = self.pulse_is(deltas[2], phase_i[1], phase_s[1])
+            p3 = self.pulse_i(deltas[3], phase_i[1])
+        p_xx = p3 @ p2 @ p1 @ p0 @ p1 @ p2 @ p3
+        phases_i, phases_s = self._phases["i"], self._phases["s"]
         p_comp_is = np.array(
             [
                 [
-                    phases_i[k] @ phases_s[j] @ p_comp_xx @ phases_s[-j] @ phases_i[-k]
+                    phases_i[k] @ phases_s[j] @ p_xx @ phases_s[-j] @ phases_i[-k]
                     for j in range(4)
                 ]
                 for k in range(4)
@@ -292,11 +287,11 @@ class PropagatorIS:
             if compy in comp or compz in comp:
                 perfect180[compx] -= 2 * np.diag(vect)
         p180 = [perfect180[comp] for comp in (compx, compy, compx, compy)]
-        return p180
+        return np.array(p180)
 
     def _make_perfect90(self, spin):
         phases = self._phases[spin]
-        zeros = self.identity * 0.0
+        zeros = np.zeros((self.liouvillian.size, self.liouvillian.size))
         rot = self.liouvillian.matrices.get(f"b1x_{spin}", zeros)
         base = linalg.expm(0.25 * rot)
         p90 = np.array([phases[i] @ base @ phases[-i] for i in range(4)])
@@ -304,7 +299,7 @@ class PropagatorIS:
 
     def _get_phases(self):
         phases = {}
-        zeros = self.identity * 0.0
+        zeros = np.zeros((self.liouvillian.size, self.liouvillian.size))
         for spin in "is":
             l_rotz = self.liouvillian.matrices.get(f"rotz_{spin}", zeros)
             phases[spin] = np.array(
@@ -339,4 +334,6 @@ def calculate_propagators(liouv, delays, dephasing=False):
         d = np.asarray([np.diag(np.exp(s * t)) for t in delays_])
         propagators.append((vr @ d @ vri).real)
     propagators = np.asarray(propagators).swapaxes(0, 1).reshape(-1, *shape)
+    if propagators.shape[0] == 1:
+        propagators = propagators[0]
     return propagators

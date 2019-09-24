@@ -1,0 +1,11 @@
+[MODEL_FREE]
+TAUC       = 4e-9
+TAUI       = 10e-12
+S2         = 0.8
+DEUTERATED = true
+
+[GLOBAL]
+PB              = 0.1
+KEX_AB          = 100.0
+"DW_AB, NUC->N" = 1.0
+"DW_AB, NUC->H" = 0.1

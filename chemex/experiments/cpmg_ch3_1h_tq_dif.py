@@ -18,10 +18,8 @@ References
 ----------
 Yuwen et al. Angewandte Chemie (2018) 57, 16777-80
 
-
 Note
 ----
-
 A sample configuration  file for this module is available using the command:
 
     chemex config cpmg_ch3_1h_tq_dif
@@ -136,7 +134,7 @@ class PulseSeq:
 
         if self.comp_flg:
             p180_cp1 = self.prop.p9018090_i_1
-            p180_cp2 = self.prop.p9018090_i_1
+            p180_cp2 = self.prop.p9018090_i_2
         else:
             p180_cp1 = p180_cp2 = p180_4
 

@@ -164,7 +164,7 @@ Distribution = collections.namedtuple("Distribution", ["values", "weights"])
 def get_multiplet(symbol, nucleus):
     """Calculate the multiplet pattern."""
     multiplet = np.array([0.0])
-    for coupling in J_COUPLING[symbol][nucleus]:
+    for coupling in J_COUPLING[symbol.lower()][nucleus.lower()]:
         doublet = coupling * 0.5 * np.array([-1.0, 1.0]).reshape(-1, 1)
         multiplet = (multiplet + doublet).reshape(-1)
     counter = collections.Counter(multiplet)
