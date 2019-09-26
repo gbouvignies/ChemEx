@@ -11,12 +11,12 @@ h_larmor_frq = 598.826355
 path = "../Data/15Hz"
 error = "scatter"
 profiles = [
-    ["L07CD2", "L07CD2-HD2.out"],
-    ["L18CD2", "L18CD2-HD2.out"],
-    ["I28CD1", "I28CD1-HD1.out"],
-    ["L29CD1", "L29CD1-HD1.out"],
-    ["L29CD2", "L29CD2-HD2.out"],
-    ["I50CD1", "I50CD1-HD1.out"],
-    ["V55CG2", "V55CG2-HG2.out"],
-    ["V58CG2", "V58CG2-HG2.out"],
+    ["L07CD2", "L07CD2-QD2.out"],
+    ["L18CD2", "L18CD2-QD2.out"],
+    ["I28CD1", "I28CD1-QD1.out"],
+    ["L29CD1", "L29CD1-QD1.out"],
+    ["L29CD2", "L29CD2-QD2.out"],
+    ["I50CD1", "I50CD1-QD1.out"],
+    ["V55CG2", "V55CG2-QG2.out"],
+    ["V58CG2", "V58CG2-QG2.out"],
 ]

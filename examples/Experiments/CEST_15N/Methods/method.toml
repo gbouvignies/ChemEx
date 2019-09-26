@@ -1,7 +1,7 @@
-[step_1]
-pb     = "fit"
-kex_ab = "fit"
-dw_ab  = "fit"
-r1_a   = "fit"
-r2_a   = "fit"
-r2_b   = "fit"
+[DEFAULT]
+PB     = "fit"
+KEX_AB = "fit"
+DW_AB  = "fit"
+R1_A   = "fit"
+R2_A   = "fit"
+R2_B   = "fit"

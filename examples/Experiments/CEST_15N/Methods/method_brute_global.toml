@@ -1,15 +1,15 @@
-[step_1]
-pb     = "fix"
-kex_ab = "fix"
-dw_ab  = "fit"
-r2_b   = "fit"
+[STEP_1]
+PB     = "fix"
+KEX_AB = "fix"
+DW_AB  = "fit"
+R2_B   = "fit"
 
-[step_2]
+[STEP_2]
 fitmethod = "brute"
-pb     = "fit"
-kex_ab = "fit"
-dw_ab  = "fix"
-r1_a   = "fix"
-r1_b   = "fix"
-r2_a   = "fix"
-r2_b   = "fix"
+PB     = "fit"
+KEX_AB = "fit"
+DW_AB  = "fix"
+R1_A   = "fix"
+R1_B   = "fix"
+R2_A   = "fix"
+R2_B   = "fix"

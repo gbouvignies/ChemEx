@@ -1,14 +1,14 @@
 #!/bin/sh
 
-chemex fit -e Experiments/*.toml \
+chemex fit -e Experiments/*hz.toml \
            -p Parameters/global_brute.toml \
               Parameters/n15_cs.toml \
               Parameters/n15_dw_brute.toml \
            -m Methods/method_brute_indiv.toml \
            -o Output/Brute \
-           +r 50N-HN
+           -r 50N
 
-chemex fit -e Experiments/*.toml \
+chemex fit -e Experiments/*hz.toml \
            -p Parameters/global_brute.toml \
               Parameters/n15_cs.toml \
               Parameters/n15_dw_brute.toml \
