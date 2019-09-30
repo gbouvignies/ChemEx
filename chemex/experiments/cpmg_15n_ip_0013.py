@@ -20,10 +20,8 @@ References
 Jiang et al. Journal of Magnetic Resonance (2015) 257
 Hansen, Vallurupalli and Kay. Journal of Physical Chemistry B (2008) 112:5898-5904
 
-
 Note
 ----
-
 A sample configuration  file for this module is available using the command:
 
     chemex config cpmg_15n_ip_0013

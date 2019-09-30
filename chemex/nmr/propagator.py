@@ -264,7 +264,7 @@ class PropagatorIS:
     def _calculate_base_pulses_i(self):
         if self._p90_i is None:
             phases = self._phases["i"]
-            pws = np.array([1.0, 2.0, 8.0 / 3.0]) / (4.0 * self.liouvillian.b1_i)
+            pws = np.array([1.0, 2.0, 8.0 / 3.0]) * self._pw90_i
             pulses_ = self.pulse_i(pws, 0.0)
             pulses = np.array([phases[j] @ pulses_ @ phases[-j] for j in range(4)])
             self._p90_i, self._p180_i, self._p240_i = pulses.swapaxes(0, 1)
@@ -272,7 +272,7 @@ class PropagatorIS:
     def _calculate_base_pulses_s(self):
         if self._p90_s is None:
             phases = self._phases["s"]
-            pws = np.array([1.0, 2.0, 8.0 / 3.0]) / (4.0 * self.liouvillian.b1_s)
+            pws = np.array([1.0, 2.0, 8.0 / 3.0]) * self._pw90_s
             pulses_ = self.pulse_s(pws, 0.0)
             pulses = np.array([phases[j] @ pulses_ @ phases[-j] for j in range(4)])
             self._p90_s, self._p180_s, self._p240_s = pulses.swapaxes(0, 1)
@@ -293,7 +293,7 @@ class PropagatorIS:
         phases = self._phases[spin]
         zeros = np.zeros((self.liouvillian.size, self.liouvillian.size))
         rot = self.liouvillian.matrices.get(f"b1x_{spin}", zeros)
-        base = linalg.expm(0.25 * rot)
+        base = linalg.expm(0.25 * rot).reshape(self.identity.shape)
         p90 = np.array([phases[i] @ base @ phases[-i] for i in range(4)])
         return p90
 
