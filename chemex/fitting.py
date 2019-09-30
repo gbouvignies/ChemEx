@@ -1,4 +1,5 @@
 """The fitting module contains the code for fitting the experimental data."""
+import collections.abc as ca
 import copy
 import functools as ft
 import sys
@@ -7,10 +8,28 @@ import lmfit as lm
 import numpy as np
 import scipy.stats as ss
 
+import chemex.nmr.helper as cnh
 import chemex.parameters.helper as cph
 import chemex.parameters.name as cpn
 from chemex import helper as ch
 from chemex.parameters import settings as cpp
+
+
+def _pop_fitmethod(settings):
+    fitmethod = settings.pop("fitmethod", "leastsq")
+    print(f'\nFitting method -> "{fitmethod}"')
+    return fitmethod
+
+
+def _select(experiments, settings):
+    selection = settings.pop("selection", None)
+    if selection is None:
+        return
+    if isinstance(selection, list) and not isinstance(selection, str):
+        selection = [cnh.SpinSystem(name) for name in selection]
+    print("\nSelecting profiles...")
+    experiments.select(selection)
+    print(f"  - Profile(s): {len(experiments)}")
 
 
 class Fit:
@@ -38,8 +57,8 @@ class Fit:
         params_ = copy.deepcopy(params)
         for section, settings in method.items():
             ch.header2(f"\n{section.upper()}")
-            fitmethod = settings.pop("fitmethod", "leastsq")
-            print(f'\nFitting method -> "{fitmethod}"')
+            fitmethod = _pop_fitmethod(settings)
+            _select(self._experiments, settings)
             cpp.set_param_status(params_, settings)
             groups = self._cluster_data(params_)
             multi_groups = len(groups) > 1

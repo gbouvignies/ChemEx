@@ -1,5 +1,7 @@
 import contextlib as cl
 import itertools as it
+from typing import Any
+from typing import Dict
 
 import matplotlib.backends.backend_pdf as pdf
 import numpy as np
@@ -59,9 +61,9 @@ class Experiments:
         for experiment in self._experiments.values():
             experiment.plot(params, path)
 
-    def select(self, included=None):
+    def select(self, selection=None):
         for experiment in self._experiments.values():
-            experiment.select(included)
+            experiment.select(selection)
 
     def filter(self, params=None):
         for experiment in self._experiments.values():
@@ -139,7 +141,7 @@ class RelaxationExperiment:
             file_pdf = stack.enter_context(pdf.PdfPages(str(name_pdf)))
             file_exp = stack.enter_context(name_exp.open("w"))
             file_fit = stack.enter_context(name_fit.open("w"))
-            for profile in self._profiles.values():
+            for _name, profile in sorted(self._profiles.items()):
                 profile.plot(params, file_pdf)
                 profile.write_plot(params, file_exp, file_fit)
 
@@ -151,19 +153,22 @@ class RelaxationExperiment:
             for profile in profiles_sorted:
                 file_dat.write(profile.print(params))
 
-    def select(self, included=None):
-        if included is None:
-            included = list(profile.name for profile in self._profiles.values())
-        path_included = set()
-        profiles = dict(self._profiles)
-        profiles.update(self._filtered)
-        for name, profile in profiles.items():
-            for name_incl in included:
-                if profile.name & name_incl == name_incl:
-                    path_included.add(name)
-                    break
-        self._profiles = {name: profiles.pop(name) for name in path_included}
-        self._filtered = profiles
+    def select(self, selection=None):
+        if selection is None:
+            return
+        profiles = {**self._profiles, **self._filtered}
+        if isinstance(selection, str) and selection.lower() in ("all", "*"):
+            self._profiles = profiles
+            self._filtered = {}
+        else:
+            selected = set()
+            for name, profile in profiles.items():
+                for name_incl in selection:
+                    if profile.name & name_incl == name_incl:
+                        selected.add(name)
+                        break
+            self._profiles = {name: profiles.pop(name) for name in selected}
+            self._filtered = profiles
 
     def filter(self, params=None):
         for profile in self._profiles.values():

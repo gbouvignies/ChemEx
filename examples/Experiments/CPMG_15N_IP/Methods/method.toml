@@ -1,5 +1,11 @@
-[step1]
-PB     = "fit"
-KEX_AB = "fit"
-DW_AB  = "fit"
-R2_A   = "fit"
+[STEP1]
+SELECTION = ["15", "30", "31", "32", "33", "34", "37"]
+PB        = "fit"
+KEX_AB    = "fit"
+DW_AB     = "fit"
+R2_A      = "fit"
+
+[STEP2]
+SELECTION = "*"
+PB        = "fix"
+KEX_AB    = "fix"
