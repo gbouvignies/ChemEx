@@ -1,0 +1,12 @@
+[MODEL_FREE]
+TAUC = 10e-9
+
+[GLOBAL]
+PB     = 0.05
+KEX_AB = 1000.0
+DW_AB  = 0.1
+
+[DW_AB]
+104H = 1.0
+110H = 1.0
+118H = 1.0

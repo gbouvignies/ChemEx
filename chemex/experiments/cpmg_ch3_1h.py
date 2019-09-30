@@ -134,7 +134,7 @@ class PulseSeq:
                 cpmg2 = cpmg2 @ ft.reduce(np.matmul, p180_cp2[phases2[ncyc:]])
             centre = cpmg2 @ p180pmy @ cpmg1
             intst[ncyc] = self.prop.detect(
-                d_taua @ (p180pmy @ centre + centre @ p180c_py) @ d_taua @ start
+                d_taua @ (centre @ p180c_py + p180c_my @ centre) @ d_taua @ start
             )
 
         # Return profile
