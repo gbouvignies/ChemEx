@@ -59,7 +59,7 @@ def set_params_from_files(params, experiments, filenames):
         prefix = f"{section}, NUC->" if section != "global" else ""
         for key, values in settings.items():
             name = cpn.ParamName.from_section(f"{prefix}{key}")
-            if isinstance(values, float):
+            if not isinstance(values, cl.abc.Iterable):
                 values = [values]
             values_ = dict(zip(("value", "min", "max", "brute_step"), values))
             matched = set_params(params, name, **values_)

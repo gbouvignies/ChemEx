@@ -142,7 +142,7 @@ def build_parser():
 
     fit_parser.add_argument(
         "-r",
-        dest="included",
+        dest="selection",
         metavar="ID",
         nargs="+",
         help="Residue(s) to include in the fit",

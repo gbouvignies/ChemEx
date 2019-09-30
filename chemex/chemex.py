@@ -49,9 +49,9 @@ def fit(args):
     # Read experimental setup and data
     experiments = cce.read(filenames=args.experiments, model=model)
 
-    if args.included:
+    if args.selection:
         print("\nSelecting profiles...")
-        experiments.select(args.included)
+        experiments.select(args.selection)
         print(f"  - Profile(s): {len(experiments)}")
 
     if not experiments:

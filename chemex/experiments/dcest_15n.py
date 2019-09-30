@@ -50,6 +50,7 @@ _SCHEMA = {
                 "b1_frq": {"type": "number"},
                 "pw90_dante": {"type": "number"},
                 "sw_dante": {"type": "number"},
+                "time_equil": {"type": "number", "default": 0.0},
                 "b1_inh_scale": {"type": "number", "default": 0.1},
                 "b1_inh_res": {"type": "integer", "default": 11},
                 "observed_state": {
@@ -90,6 +91,7 @@ class PulseSeq:
         self.pw_dante = (
             4.0 * settings["pw90_dante"] * settings["b1_frq"] / settings["sw_dante"]
         )
+        self.time_eq = settings["time_equil"]
         self.tau_dante = 1.0 / settings["sw_dante"] - self.pw_dante
         self.ncyc = int(settings["time_t1"] * settings["sw_dante"] + 0.1)
         self.prop.b1_i = 1.0 / (4.0 * settings["pw90_dante"])
@@ -109,14 +111,19 @@ class PulseSeq:
         else:
             start = self.prop.get_start_magnetization(["iz_a", "iz_c"])
         intst = {}
+        d_eq = (
+            self.prop.delays(self.time_eq) if self.time_eq > 0.0 else self.prop.identity
+        )
         for offset in set(offsets):
             if abs(offset) < 1e4:
                 self.prop.offset_i = offset
                 p_delay = self.prop.delays(self.tau_dante)
                 p_pulse = self.prop.pulse_i(self.pw_dante, 0.0)
-                intst[offset] = la.matrix_power(p_pulse @ p_delay, self.ncyc) @ start
+                intst[offset] = (
+                    d_eq @ la.matrix_power(p_pulse @ p_delay, self.ncyc) @ start
+                )
             else:
-                intst[offset] = start
+                intst[offset] = d_eq @ start
         return np.array([self.prop.detect(intst[offset]) for offset in offsets])
 
     def offsets_to_ppms(self, offsets):
