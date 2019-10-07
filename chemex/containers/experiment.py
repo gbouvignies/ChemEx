@@ -141,16 +141,18 @@ class RelaxationExperiment:
             file_pdf = stack.enter_context(pdf.PdfPages(str(name_pdf)))
             file_exp = stack.enter_context(name_exp.open("w"))
             file_fit = stack.enter_context(name_fit.open("w"))
-            for _name, profile in sorted(self._profiles.items()):
+            for profile in sorted(
+                self._profiles.values(), key=lambda profile_: profile_.name
+            ):
                 profile.plot(params, file_pdf)
                 profile.write_plot(params, file_exp, file_fit)
 
     def write(self, params, path):
         filename = (path / self.filename.name).with_suffix(".dat")
         with filename.open("w") as file_dat:
-            profiles = self._profiles.values()
-            profiles_sorted = sorted(profiles, key=lambda profile_: profile_.name)
-            for profile in profiles_sorted:
+            for profile in sorted(
+                self._profiles.values(), key=lambda profile_: profile_.name
+            ):
                 file_dat.write(profile.print(params))
 
     def select(self, selection=None):

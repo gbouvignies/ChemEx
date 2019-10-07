@@ -199,6 +199,15 @@ class ParamName:
             self._spin_system,
         )
 
+    @classmethod
+    def cluster_name(cls, name1: "ParamName", name2: "ParamName"):
+        both = {}
+        for name in ("name", "temperature", "h_larmor_frq", "p_total", "l_total"):
+            if getattr(name1, name) == getattr(name2, name):
+                both[name] = getattr(name1, name)
+        both["spin_system"] = name1._spin_system | name2._spin_system
+        return cls(**both)
+
 
 def _get_re_component(value, kind):
     if not value:

@@ -20,6 +20,11 @@ CPMG_SCHEMA = {
                     "enum": ["file", "duplicates"],
                     "default": "file",
                 },
+                "filter_planes": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "default": [],
+                },
                 "path": {"type": "string", "default": "./"},
                 "profiles": {
                     "type": "array",
@@ -49,17 +54,16 @@ class CpmgProfile:
     @classmethod
     def from_file(cls, path, config, pulse_seq, par_names, params_default):
         name = config["spin_system"]["spin_system"]
-        data = CpmgData.from_file(path)
+        data = CpmgData.from_file(path, filter_planes=config["data"]["filter_planes"])
         return cls(name, data, pulse_seq, par_names, params_default)
 
     def residuals(self, params):
-        data = self.data.points
-        mask = self.data.mask
+        data = self.data.points[self.data.mask]
         residuals = (self.calculate(params) - data["intensities"]) / data["errors"]
-        return residuals[mask]
+        return residuals
 
     def calculate(self, params, ncycs=None):
-        data = self.data.points
+        data = self.data.points[self.data.mask]
         par_values = self._get_parvals(params)
         calculated = self._pulse_seq.calculate(tuple(data["ncycs"]), par_values)
         scale = cch.get_scale(data["intensities"], data["errors"], calculated)
@@ -75,15 +79,13 @@ class CpmgProfile:
 
     def print(self, params):
         output = f"[{self.name}]\n"
-        output += (
-            f"# {'NCYC':>12s}  {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s} "
-            f"{'INTENSITY (CALC)':>17s}\n"
-        )
+        output += f"# {'NCYC':>12s}  {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s} {'INTENSITY (CALC)':>17s}\n"
         values = self.calculate(params)
-        for point, value in zip(self.data.points, values):
+        for point, mask, value in zip(self.data.points, self.data.mask, values):
             ncyc, intensity, error = point
-            output += f"  {ncyc:12d}  {intensity:17.8e} {error:17.8e} {value:17.8e}\n"
-
+            output += "#" if not mask else " "
+            output += f" {ncyc:12d}  {intensity:17.8e} {error:17.8e} {value:17.8e}"
+            output += " # NOT USED IN THE FIT\n" if not mask else "\n"
         return output + "\n\n"
 
     def filter(self, params):
@@ -96,17 +98,15 @@ class CpmgProfile:
     def write_plot(self, params, file_exp, file_fit):
         data_exp, data_fit = self._get_plot_data(params)
         output_exp = f"[{self.name}]\n"
-        output_exp += (
-            f"# {'NU_CPMG':>12s}  {'R2 (EXP)':>17s} {'ERROR DOWN (EXP)':>17s} "
-            f"{'ERROR UP (EXP)':>17s}\n"
-        )
+        output_exp += f"# {'NU_CPMG':>12s}  {'R2 (EXP)':>17s} {'ERROR DOWN (EXP)':>17s} {'ERROR UP (EXP)':>17s}\n"
         for point in data_exp:
             nu_cpmgs = point["nu_cpmgs"]
             r2 = point["r2"]
             errors = point["errors"]
             output_exp += (
-                f"  {nu_cpmgs:12.3f}  {r2:17.8e} {errors[0]:17.8e} {errors[1]:17.8e}\n"
+                f"  {nu_cpmgs:12.3f}  {r2:17.8e} {errors[0]:17.8e} {errors[1]:17.8e}"
             )
+            output_exp += " # NOT USED IN THE FIT\n" if not point["mask"] else "\n"
         file_exp.write(output_exp + "\n\n")
         output_fit = f"[{self.name}]\n"
         output_fit += f"# {'NU_CPMG':>12s}  {'R2 (CALC)':>17s}\n"
@@ -141,7 +141,7 @@ class CpmgProfile:
     def _get_plot_data(self, params):
         time_t2 = self._pulse_seq.time_t2
         nu_cpmgs, r2_exp, r2_err, mask = self.data.to_r2(time_t2)
-        intst_fit = self.calculate(params)
+        intst_fit = self.calculate(params, self.data.points["ncycs"])
         refs = self.data.refs
         intst_ref = self.data.points[refs]["intensities"]
         r2_fit = intensities_to_r2(intst_fit[~refs], intst_ref, time_t2)
@@ -171,7 +171,7 @@ class CpmgData:
         self.mask = mask
 
     @classmethod
-    def from_file(cls, path):
+    def from_file(cls, path, filter_planes):
         try:
             points = np.loadtxt(path, dtype=cls.dtype)
         except OSError as err:
@@ -179,6 +179,10 @@ class CpmgData:
         else:
             refs = points["ncycs"] == 0
             mask = np.array([True] * len(points))
+            planes_to_filter = [
+                index for index in filter_planes if 0 <= index < len(points)
+            ]
+            mask[planes_to_filter] = False
             return cls(points, refs, mask)
 
     def estimate_noise_variance(self, kind):

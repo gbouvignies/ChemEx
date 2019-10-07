@@ -30,6 +30,12 @@ CEST_SCHEMA = {
                     },
                     "default": [[0.0, 0.0]],
                 },
+                "filter_planes": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "default": [],
+                },
+                "filter_ref_planes": {"type": "boolean", "default": False},
                 "path": {"type": "string", "default": "./"},
                 "profiles": {
                     "type": "array",
@@ -59,17 +65,21 @@ class CestProfile:
     @classmethod
     def from_file(cls, path, config, pulse_seq, par_names, params_default):
         name = config["spin_system"]["spin_system"]
-        data = CestData.from_file(path, filter_offsets=config["data"]["filter_offsets"])
+        data = CestData.from_file(
+            path,
+            filter_offsets=config["data"]["filter_offsets"],
+            filter_planes=config["data"]["filter_planes"],
+            filter_ref_planes=config["data"]["filter_ref_planes"],
+        )
         return cls(name, data, pulse_seq, par_names, params_default)
 
     def residuals(self, params):
-        data = self.data.points
-        mask = self.data.mask
+        data = self.data.points[self.data.mask]
         residuals = (self.calculate(params) - data["intensities"]) / data["errors"]
-        return residuals[mask]
+        return residuals
 
     def calculate(self, params, offsets=None):
-        data = self.data.points
+        data = self.data.points[self.data.mask]
         par_values = self._get_parvals(params)
         calculated = self._pulse_seq.calculate(tuple(data["offsets"]), par_values)
         scale = cch.get_scale(data["intensities"], data["errors"], calculated)
@@ -85,17 +95,15 @@ class CestProfile:
 
     def print(self, params):
         output = f"[{self.name}]\n"
-        output += (
-            "# {'OFFSET (HZ)':>12s}  {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s} "
-            "{'INTENSITY (CALC)':>17s}\n"
-        )
-        values = self.calculate(params)
-        for point, value in zip(self.data.points, values):
+        output += f"# {'OFFSET (HZ)':>12s}  {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s} {'INTENSITY (CALC)':>17s}\n"
+        values = self.calculate(params, self.data.points["offsets"])
+        for point, mask, value in zip(self.data.points, self.data.mask, values):
             offset, intensity, error = point
+            output += "#" if not mask else " "
             output += (
-                f"  {offset: 12.2f}  {intensity: 17.8e} {error: 17.8e} {value: 17.8e}\n"
+                f" {offset: 12.2f}  {intensity: 17.8e} {error: 17.8e} {value: 17.8e}"
             )
-
+            output += " # NOT USED IN THE FIT\n" if not mask else "\n"
         return output + "\n\n"
 
     def filter(self, params):
@@ -119,7 +127,8 @@ class CestProfile:
             nu_cpmgs = point["ppms"]
             intensities = point["intensities"]
             errors = point["errors"]
-            output_exp += f"  {nu_cpmgs:12.2f}  {intensities:17.8e} {errors[1]:17.8e}\n"
+            output_exp += f"  {nu_cpmgs:12.2f}  {intensities:17.8e} {errors[1]:17.8e}"
+            output_exp += " # NOT USED IN THE FIT" if not point["mask"] else "\n"
         file_exp.write(output_exp + "\n\n")
         output_fit = f"[{self.name}]\n"
         output_fit += f"# {'CS (PPM)':>12s}  {'INTENSITY (CALC)':>17s}\n"
@@ -160,14 +169,14 @@ class CestProfile:
         data = self.data.points[~self.data.refs]
         data_refs = self.data.points[self.data.refs]
         mask = self.data.mask[~self.data.refs]
-        intensity_ref = np.mean(data_refs["intensities"])
+        intstref = np.mean(data_refs["intensities"])
         ppms = self._pulse_seq.offsets_to_ppms(data["offsets"])
-        intensities = data["intensities"] / intensity_ref
-        errors = data["errors"] / abs(intensity_ref)
+        intensities = data["intensities"] / intstref
+        errors = data["errors"] / abs(intstref)
         errors = np.array([-errors, errors]).transpose()
         offsets_fit = cp.get_grid(data["offsets"], 500, 0.02)
         ppms_fit = self._pulse_seq.offsets_to_ppms(offsets_fit)
-        intensities_fit = self.calculate(params, offsets_fit) / intensity_ref
+        intst_fit = self.calculate(params, offsets_fit) / intstref
         data_exp = np.rec.array(
             [ppms, intensities, errors, mask],
             dtype=[
@@ -177,9 +186,7 @@ class CestProfile:
                 ("mask", "?"),
             ],
         )
-        data_fit = np.rec.array(
-            [ppms_fit, intensities_fit], names=["ppms", "intensities"]
-        )
+        data_fit = np.rec.array([ppms_fit, intst_fit], names=["ppms", "intensities"])
         data_exp = np.sort(data_exp, order="ppms")
         data_fit = np.unique(np.sort(data_fit, order="ppms"))
         return data_exp, data_fit
@@ -195,7 +202,7 @@ class CestData:
         self._filter_offsets = filter_offsets
 
     @classmethod
-    def from_file(cls, path, filter_offsets):
+    def from_file(cls, path, filter_offsets, filter_planes, filter_ref_planes):
         try:
             points = np.loadtxt(path, dtype=cls.dtype)
         except OSError as err:
@@ -203,6 +210,12 @@ class CestData:
         else:
             refs = abs(points["offsets"]) >= 1.0e4
             mask = np.array([True] * len(points))
+            planes_to_filter = [
+                index for index in filter_planes if 0 <= index < len(points)
+            ]
+            mask[planes_to_filter] = False
+            if filter_ref_planes:
+                mask[refs] = False
             return cls(points, refs, mask, filter_offsets)
 
     def estimate_noise_variance(self, kind):

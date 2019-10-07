@@ -65,10 +65,9 @@ class Fit:
             plot_group_flg = self._plot == "all" or (
                 not multi_groups and self._plot == "normal"
             )
+            section_path = section.upper() if len(method) > 1 else ""
             for index, (g_name, (g_experiments, g_params)) in enumerate(groups.items()):
-                group_path = path
-                if len(method) > 1:
-                    group_path = group_path / section.upper()
+                group_path = path / section_path
                 if multi_groups:
                     group_path = group_path / "Clusters" / g_name.to_folder_name()
                     print(f"\n\n-- Cluster {index + 1}/{len(groups)} ({g_name}) --")
@@ -80,7 +79,7 @@ class Fit:
             if multi_groups:
                 print("\n\n-- All clusters --")
                 _print_chisqr(self._experiments, params_)
-                path_ = path / section.upper() / "All"
+                path_ = path / section_path / "All"
                 _write_files(self._experiments, params_, path_)
                 if self._plot != "nothing":
                     _write_plots(self._experiments, params_, path_)
@@ -155,7 +154,7 @@ class Fit:
 
 def _get_cluster_name(par_names):
     par_names_ = [cpn.ParamName.from_full_name(par_name) for par_name in par_names]
-    name = ft.reduce(lambda a, b: a & b, par_names_)
+    name = ft.reduce(lambda a, b: cpn.ParamName.cluster_name(a, b), par_names_)
     return name
 
 
