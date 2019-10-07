@@ -31,6 +31,18 @@ is_params = {
         "phi_s": np.deg2rad(8.0),
         "j_is": -93.0,
     },
+    "ch": {
+        "gamma_i": cnc.GAMMA["c"],
+        "gamma_s": cnc.GAMMA["h"],
+        "ris3": 1.09e-10 ** 3,
+        "rext3_p": 1.85e-10 ** 3,
+        "rext3_d": 2.48e-10 ** 3,
+        "csa_i": 16e-6,
+        "csa_s": 0e-6,
+        "phi_i": np.deg2rad(22.0),
+        "phi_s": np.deg2rad(0.0),
+        "j_is": 140.0,
+    },
 }
 
 
