@@ -6,25 +6,25 @@
 name = "cest_ch3_1h_ip_ap"
 
 ## Recycle delay, in seconds
-d1 = 0.1
+d1 = 1.0
 
 ## CEST relaxation delay, in seconds
 time_t1 = 0.5
 
 ## Position of the carrier during the CEST period, in ppm
-carrier = 8.3
+carrier = 0.5
 
 ## B1 radio-frequency field strength, in Hz
 b1_frq = 25.0
 
-## B1 inhomogeneity expressed as a fraction of 'b1_frq'
+## B1 inhomogeneity expressed as a fraction of 'b1_frq'. If set to "inf",
+## a faster calculation takes place assuming full dephasing of the
+## magnetization components orthogonal to the effective field.
 ## [optional, default: 0.1]
 # b1_inh_scale = 0.1
 
 ## Number of points used to simulate B1 inhomogeneity, the larger
-## the longer the calculation. If set to 0, a faster calculation
-## takes place assuming full dephasing of the magnetization components
-## orthogonal to the effective field. [optional, default: 11]
+## the longer the calculation. [optional, default: 11]
 # b1_inh_res = 11
 
 ## State of the observed resonance [optional, default: "a"]
@@ -46,6 +46,9 @@ h_larmor_frq = 800.0
 
 [data]
 
+## Directory containing the profiles [optional, default: "./"]
+# path = "./"
+
 ## Option defining how intensity uncertainties are estimated.
 ## "file": uncertainties are taken from the profile files
 ## "scatter": uncertainties are calculated from the baseline
@@ -60,16 +63,19 @@ h_larmor_frq = 800.0
 #   [0.0, 0.0],
 # ]
 
-## Directory containing the profiles [optional, default: "./"]
-# path = "./"
+## List of plane indices to be excluded from the calculation, 
+## the first plane has index 0 and is usually the reference plane.
+## [optional, default: [] ]
+# filter_planes = []
 
 ## List of the profile names and their associated filenames.
 ## The name of the spin systems should follow the Sparky-NMR
 ## conventions.
 profiles = [
-  ["G1H-N", "G1H-N.out"],
-  ["H2H-N", "H2H-N.out"],
-  ["M3H-N", "M3H-N.out"],
-  ["S4H-N", "S4H-N.out"],
-  ["T5H-N", "T5H-N.out"],
+    ["L3HD1-CD1", "L3CD1-QD1.out"],
+    ["L3HD2-CD2", "L3CD2-QD2.out"],
+    ["I12HD1-CD1", "I12CD1-QD1.out"],
+    ["V25HG1-CG1", "V25CG1-QG1.out"],
+    ["V25HG2-CG2", "V25CG2-QG2.out"],
+    ["M36HE-CE", "M36CE-QE.out"],
 ]

@@ -1,5 +1,5 @@
 """
-Pure anti-phase 1HN CEST
+In-phase/anti-phase CH3/CHD2 1H CEST
 ========================
 
 Analyzes chemical exchange during the CEST block. Magnetization evolution is
@@ -13,15 +13,16 @@ states:
 
 Reference
 ---------
-Sekhar, Rosenzweig, Bouvignies and Kay. PNAS (2016) 113:E2794-E2801
+Yuwen and Kay. J Biomol NMR (2017) 68:215-224
+Yuwen and Kay. J Biomol NMR (2018) 70:93-102
 
 
 Note
 ----
 
-A sample configuration  file for this module is available using the command:
+A sample configuration file for this module is available using the command:
 
-    chemex config cest_1hn_ip_ap
+    chemex config cest_ch3_1h_ip_ap
 
 """
 import functools as ft
@@ -65,6 +66,7 @@ def read(config):
         "atoms": {"i": "h", "s": "c"},
         "constraints": ["hn"],
     }
+    config["data"]["filter_ref_planes"] = True
     ch.validate(config, _SCHEMA)
     ch.validate(config, ccc.CEST_SCHEMA)
     experiment = ceh.read(
@@ -82,7 +84,7 @@ class PulseSeq:
         settings = config["experiment"]
         self.time_t1 = settings["time_t1"]
         self.d1 = settings["d1"]
-        self.taua = 2e-3
+        self.taua = 2.00e-3
         self.prop.carrier_i = settings["carrier"]
         self.prop.b1_i = settings["b1_frq"]
         self.prop.b1_i_inh_scale = settings["b1_inh_scale"]
@@ -91,24 +93,22 @@ class PulseSeq:
         self.prop.detection = f"2izsz_{self.observed_state}"
         self.dephased = settings["b1_inh_scale"] == np.inf
         self.calculate = ft.lru_cache(maxsize=5)(self.calculate_)
+        self.p90_i = self.prop.perfect90_i
+        self.p180_isx = self.prop.perfect180_i[0] @ self.prop.perfect180_s[0]
 
     def calculate_(self, offsets, params_local):
         self.prop.update(params_local)
-        d_d1, d_t1, d_taua = self.prop.delays([self.d1, self.time_t1, self.taua])
+        self.prop.offset_i = 0.0
+        d_d1, d_taua = self.prop.delays([self.d1, self.taua])
         start = d_d1 @ self.prop.get_start_magnetization(terms=f"ie")
         intst = {}
         for offset in set(offsets):
-            if abs(offset) < 1e4:
-                self.prop.offset_i = offset
-                intst[offset] = self.prop.detect(
-                    self.prop.pulse_i(self.time_t1, 0.0, self.dephased) @ start
-                )
-            else:
-                p90 = self.prop.perfect90_i
-                p180_ix = self.prop.perfect180_i[0]
-                p180_sx = self.prop.perfect180_s[0]
-                inept = p90[3] @ d_taua @ p180_sx @ p180_ix @ d_taua @ p90[0]
-                intst[offset] = self.prop.detect(inept @ d_t1 @ start)
+            self.prop.offset_i = offset
+            mag = self.prop.pulse_i(self.time_t1, 0.0, self.dephased) @ start
+            if abs(offset) >= 1e4:
+                inept = self.p90_i[3] @ d_taua @ self.p180_isx @ d_taua @ self.p90_i[0]
+                mag = inept @ mag
+            intst[offset] = self.prop.detect(mag)
         return np.array([intst[offset] for offset in offsets])
 
     def offsets_to_ppms(self, offsets):

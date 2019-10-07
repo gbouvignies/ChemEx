@@ -14,14 +14,14 @@ carrier = 118.0
 ## B1 radio-frequency field strength, in Hz
 b1_frq = 25.0
 
-## B1 inhomogeneity expressed as a fraction of 'b1_frq'
+## B1 inhomogeneity expressed as a fraction of 'b1_frq'. If set to "inf",
+## a faster calculation takes place assuming full dephasing of the
+## magnetization components orthogonal to the effective field.
 ## [optional, default: 0.1]
 # b1_inh_scale = 0.1
 
 ## Number of points used to simulate B1 inhomogeneity, the larger
-## the longer the calculation. If set to 0, a faster calculation
-## takes place assuming full dephasing of the magnetization components
-## orthogonal to the effective field. [optional, default: 11]
+## the longer the calculation. [optional, default: 11]
 # b1_inh_res = 11
 
 ## State of the observed resonance [optional, default: "a"]
