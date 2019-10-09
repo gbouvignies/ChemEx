@@ -1,5 +1,5 @@
 """
-15N - Pure In-phase Nitrogen CPMG
+Pure In-phase 15N CPMG
 =================================
 
 Analyzes 15N chemical exchange in the presence of high power 1H CW decoupling
@@ -16,6 +16,7 @@ decoupling can be achieved.
 
 References
 ----------
+
 Hansen, Vallurupalli and Kay. Journal of Physical Chemistry B (2008) 112:5898-5904
 
 

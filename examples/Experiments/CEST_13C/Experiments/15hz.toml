@@ -6,12 +6,14 @@ b1_frq       = 15.0
 
 [conditions]
 h_larmor_frq = 598.826355
+#sample = "G48M Fyn SH3"
+#temperature = 5.0
 
 [data]
-path = "../Data/15Hz"
+path = "../Data/15Hz/"
 error = "scatter"
 profiles = [
-    ["L07CD2", "L07CD2-QD2.out"],
+    ["L7CD2", "L7CD2-QD2.out"],
     ["L18CD2", "L18CD2-QD2.out"],
     ["I28CD1", "I28CD1-QD1.out"],
     ["L29CD1", "L29CD1-QD1.out"],

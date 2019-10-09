@@ -1,0 +1,29 @@
+[experiment]
+name         = "cest_15n"
+time_t1      = 0.5
+carrier      = 118.763249733
+b1_frq       = 27.0
+b1_inh_scale = inf
+cn_label     = true
+
+[conditions]
+h_larmor_frq = 499.241015264
+#sample = "G48A Fyn SH3"
+#temperature = 25.0
+
+[data]
+path = "../Data/27Hz/"
+error = "scatter"
+filter_offsets = [[0.0, 50.0]]
+profiles = [
+    ["E5N", "E5N-HN.out"],
+    ["D9N", "D9N-HN.out"],
+    ["E11N", "E11N-HN.out"],
+    ["E15N", "E15N-HN.out"],
+    ["D16N", "D16N-HN.out"],
+    ["E24N", "E24N-HN.out"],
+    ["E38N", "E38N-HN.out"],
+    ["A39N", "A39N-HN.out"],
+    ["S41N", "S41N-HN.out"],
+    ["A56N", "A56N-HN.out"],
+]

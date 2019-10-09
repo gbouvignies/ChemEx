@@ -21,7 +21,7 @@ Vallurupalli, Bouvignies and Kay. J Am Chem Soc (2012) 134:8148-8161
 Note
 ----
 
-A sample configuration  file for this module is available using the command:
+A sample configuration file for this module is available using the command:
 
     chemex config cest_15n
 

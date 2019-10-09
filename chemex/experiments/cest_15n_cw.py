@@ -11,13 +11,13 @@ is the number of states:
 Reference
 ---------
 
-Bouvignies and Kay. J Phys Chem B (2012), 116:14311-7
+Bouvignies and Kay. J Phys Chem B (2012) 116:14311-14317
 
 
 Note
 ----
 
-A sample configuration  file for this module is available using the command:
+A sample configuration file for this module is available using the command:
 
     chemex config cest_15n_cw
 

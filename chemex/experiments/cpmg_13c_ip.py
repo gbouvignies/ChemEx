@@ -1,5 +1,5 @@
 """
-13C - Pure In-phase Carbon CPMG
+Pure In-phase 13C CPMG
 =================================
 
 Analyzes 13C chemical exchange in the presence of high power 1H CW decoupling
@@ -11,11 +11,13 @@ of states:
   Ix(b), Iy(b), Iz(b),
    ... ]
 
-The cw decoupling on 1H is assumed to be strong enough (> 15 kHz) such that perfect 1H
-decoupling can be achieved.
+The cw decoupling on 1H is assumed to be strong enough (> 15 kHz) such that 
+perfect 1H decoupling can be achieved. In the case of CHD2 experiment, cw 
+decoupling on 2H should be properly applied.
 
 References
 ----------
+
 Hansen, Vallurupalli, Lundstrom, Neudecker and Kay. J Am Chem Soc (2008) 130:2667-2675
 Renella, Schuetz and Kay. J Biomol NMR (2016) 65:59-64
 
@@ -23,7 +25,7 @@ Renella, Schuetz and Kay. J Biomol NMR (2016) 65:59-64
 Note
 ----
 
-A sample configuration  file for this module is available using the command:
+A sample configuration file for this module is available using the command:
 
     chemex config cpmg_13c_ip
 

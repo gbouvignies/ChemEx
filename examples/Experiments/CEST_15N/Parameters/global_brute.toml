@@ -5,7 +5,7 @@
 #   The grid for that parameter will be between `min` and `max` in 20 equal steps
 
 [MODEL_FREE]
-TAUC    = 10E-9
+TAUC    = 10e-9
 
 [GLOBAL]
 PB      = [0.015, 0.0075, 0.05, 0.0025]  # [INIT_VAL, MIN, MAX, STEPSIZE]

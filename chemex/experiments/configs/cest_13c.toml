@@ -47,6 +47,9 @@ h_larmor_frq = 800.0
 
 [data]
 
+## Directory containing the profiles [optional, default: "./"]
+# path = "./"
+
 ## Option defining how intensity uncertainties are estimated.
 ## "file": uncertainties are taken from the profile files
 ## "scatter": uncertainties are calculated from the baseline
@@ -61,16 +64,13 @@ h_larmor_frq = 800.0
 #   [0.0, 0.0],
 # ]
 
-## Directory containing the profiles [optional, default: "./"]
-# path = "./"
-
 ## List of the profile names and their associated filenames.
 ## The name of the spin systems should follow the Sparky-NMR
 ## conventions.
 profiles = [
-  ["G1CA", "G1CA-H.out"],
-  ["H2CB", "H2CB-H.out"],
-  ["K3CD", "K3CD-H.out"],
-  ["S4CB", "S4CB-H.out"],
-  ["L5CD1", "L5CD1-H.out"],
+    ["G2CA", "G2CA-HA1.out"],
+    ["H3CB", "H3CB-HB2.out"],
+    ["K4CD", "K4CD-HD3.out"],
+    ["S5CB", "S5CB-HB2.out"],
+    ["L6CD1", "L6CD1-QD1.out"],
 ]

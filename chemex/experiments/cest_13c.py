@@ -14,16 +14,17 @@ states:
 
 Reference
 ---------
-Bouvignies, Vallurupalli and Kay. J Mol Biol (2014) 426:763-74
-Vallurupalli and Kay. Angewandte Chemie (2013) 52:4156-9
-Hansen, Bouvignies and Kay (2013) J Biomol NMR (2013) 55:279-89
-Bouvignies and Kay (2012) J Biomol NMR (2012) 53:303-10
+
+Bouvignies, Vallurupalli and Kay. J Mol Biol (2014) 426:763-774
+Vallurupalli and Kay. Angew Chem Int Ed (2013) 52:4156-4159
+Hansen, Bouvignies and Kay. J Biomol NMR (2013) 55:279-289
+Bouvignies and Kay. J Biomol NMR (2012) 53:303-310
 
 
 Note
 ----
 
-A sample configuration  file for this module is available using the command:
+A sample configuration file for this module is available using the command:
 
     chemex config cest_13c
 

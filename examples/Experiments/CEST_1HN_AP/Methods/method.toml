@@ -1,0 +1,9 @@
+[DEFAULT]
+PB              = "fit"
+KEX_AB          = "fit"
+DW_AB           = "fit"
+R1A_A           = "fit"
+"R1_A, NUC->N"  = "fit"
+R2_A            = "fit"
+R2_B            = "fit"
+ETAXY_A         = "fit"
