@@ -80,7 +80,7 @@ h_larmor_frq = 800.0
 profiles = [
     ["G2HN-N", "G2N-HN.out"],
     ["H3HN-N", "H3N-HN.out"],
-    ["M4HN-N", "M4N-HN.out"],
+    ["K4HN-N", "K4N-HN.out"],
     ["S5HN-N", "S5N-HN.out"],
-    ["T6HN-N", "T6N-HN.out"],
+    ["L6HN-N", "L6N-HN.out"],
 ]

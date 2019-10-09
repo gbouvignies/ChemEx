@@ -1,6 +1,6 @@
 [experiment]
 name         = "cest_13c"
-time_t1      = 0.250
+time_t1      = 0.25
 carrier      = 58.2120954474
 b1_frq       = 23.4
 b1_inh_res   = 5
@@ -8,13 +8,15 @@ cn_label     = true
 
 [conditions]
 h_larmor_frq = 598.813731811
+#sample = "G48A Fyn SH3"
+#temperature = 25.0
 
 [data]
-path = "../Data/23Hz"
+path = "../Data/23Hz/"
 error = "scatter"
 filter_offsets = [[0.0, 50.0]]
 profiles = [
-  ["L18CA", "L18CA-HA.out"],
-  ["K25CA", "K25CA-HA.out"],
-  ["I28CA", "I28CA-HA.out"],
+    ["L18CA", "L18CA-HA.out"],
+    ["K25CA", "K25CA-HA.out"],
+    ["I28CA", "I28CA-HA.out"],
 ]

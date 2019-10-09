@@ -2,18 +2,21 @@
 name         = "dcest_15n"
 time_t1      = 1.0
 carrier      = 118.000
-pw90_dante   = 44.7e-6
+pw90_dante   = 96.0e-6
 sw_dante     = 120.0
-b1_frq       = 2.921
+b1_frq       = 3.038
 b1_inh_res   = 5
 hd_exchange  = true
 
 [conditions]
-h_larmor_frq = 800.200
+h_larmor_frq = 800.2
+#sample = "CtoS Ddx4 (condensed phase)"
+#temperature = 30.0
 
 [data]
-path = "../Data/3hz"
+path = "../Data/3Hz/"
 error = "scatter"
+filter_offsets = [[0.0, 3.0]]
 profiles = [
     ["1N", "1N-HN.out"],
     ["2N", "2N-HN.out"],

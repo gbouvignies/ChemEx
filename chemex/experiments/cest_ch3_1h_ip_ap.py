@@ -1,5 +1,5 @@
 """
-In-phase/anti-phase CH3/CHD2 1H CEST
+In-phase/Anti-phase CH3/CHD2 1H CEST
 ========================
 
 Analyzes chemical exchange during the CEST block. Magnetization evolution is
@@ -13,6 +13,7 @@ states:
 
 Reference
 ---------
+
 Yuwen and Kay. J Biomol NMR (2017) 68:215-224
 Yuwen and Kay. J Biomol NMR (2018) 70:93-102
 

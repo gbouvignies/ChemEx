@@ -1,4 +1,4 @@
-[step1]
+[DEFAULT]
 PB                = "fit"
 KEX_AB            = "fit"
 DW_AB             = "fit"

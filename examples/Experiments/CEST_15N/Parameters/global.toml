@@ -1,5 +1,5 @@
 [MODEL_FREE]
-TAUC    = 11E-9
+TAUC    = 10e-9
 
 [GLOBAL]
 PB      = 0.015

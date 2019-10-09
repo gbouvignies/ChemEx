@@ -15,12 +15,13 @@ Reference
 ---------
 
 Yuwen, Kay and Bouvignies. ChemPhysChem (2018) 19:1707-1710
+Yuwen, Bah, Brady, Ferrage, Bouvignies and Kay. J Phys Chem B (2018) 122:11206-11217
 
 
 Note
 ----
 
-A sample configuration  file for this module is available using the command:
+A sample configuration file for this module is available using the command:
 
     chemex config dcest_15n
 

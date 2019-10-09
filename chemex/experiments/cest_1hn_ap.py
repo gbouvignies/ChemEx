@@ -1,5 +1,5 @@
 """
-Pure anti-phase 1HN CEST
+Pure Anti-phase 1HN CEST
 ========================
 
 Analyzes chemical exchange during the CEST block. Magnetization evolution is
@@ -13,13 +13,14 @@ states:
 
 Reference
 ---------
+
 Sekhar, Rosenzweig, Bouvignies and Kay. PNAS (2016) 113:E2794-E2801
 
 
 Note
 ----
 
-A sample configuration  file for this module is available using the command:
+A sample configuration file for this module is available using the command:
 
     chemex config cest_1hn_ap
 

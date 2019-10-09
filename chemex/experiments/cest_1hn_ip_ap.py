@@ -1,5 +1,5 @@
 """
-In-phase/anti-phase 1HN CEST
+In-phase/Anti-phase 1HN CEST
 ========================
 
 Analyzes chemical exchange during the CEST block. Magnetization evolution is
@@ -13,6 +13,7 @@ states:
 
 Reference
 ---------
+
 Yuwen, Sekhar and Kay. Angew Chem Int Ed (2017) 56:6122-6125
 Yuwen and Kay. J Biomol NMR (2017) 67:295-307
 Yuwen and Kay. J Biomol NMR (2018) 70:93-102
