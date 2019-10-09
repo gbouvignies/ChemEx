@@ -113,7 +113,8 @@ class PulseSeq:
         self.prop.update(params_local)
         self.prop.offset_i = 0.0
         d_taud, d_taua = self.prop.delays([self.taud, self.taua])
-        start = d_taud @ self.prop.get_start_magnetization(terms=f"ie")
+        start = d_taud @ self.prop.get_start_magnetization(terms="ie")
+        start = self.prop.keep_components(start, terms=["ie", "iz"])
         intst = {}
         for offset in set(offsets):
             self.prop.offset_i = offset

@@ -199,15 +199,6 @@ class ParamName:
             self._spin_system,
         )
 
-    @classmethod
-    def cluster_name(cls, name1: "ParamName", name2: "ParamName"):
-        both = {}
-        for name in ("name", "temperature", "h_larmor_frq", "p_total", "l_total"):
-            if getattr(name1, name) == getattr(name2, name):
-                both[name] = getattr(name1, name)
-        both["spin_system"] = name1._spin_system | name2._spin_system
-        return cls(**both)
-
 
 def _get_re_component(value, kind):
     if not value:
@@ -282,10 +273,9 @@ def _squeeze_name(name):
 
 def _name_to_spin_system(name, spin_system):
     parsed = _re_to_dict(_RE_NAME, name)
-    spin_system = cnh.SpinSystem(spin_system)
     spin = parsed.get("spin")
     if spin is None:
-        return spin_system.groups.get("i")
+        return spin_system
     return spin_system.names.get(spin)
 
 
