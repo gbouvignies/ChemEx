@@ -1,18 +1,16 @@
 """The fitting module contains the code for fitting the experimental data."""
-import collections.abc as ca
 import copy
-import functools as ft
 import sys
 
 import lmfit as lm
 import numpy as np
 import scipy.stats as ss
 
+import chemex.helper as ch
 import chemex.nmr.helper as cnh
 import chemex.parameters.helper as cph
 import chemex.parameters.name as cpn
-from chemex import helper as ch
-from chemex.parameters import settings as cpp
+import chemex.parameters.settings as cps
 
 
 def _pop_fitmethod(settings):
@@ -59,7 +57,7 @@ class Fit:
             ch.header2(f"\n{section.upper()}")
             fitmethod = _pop_fitmethod(settings)
             _select(self._experiments, settings)
-            cpp.set_param_status(params_, settings)
+            cps.set_param_status(params_, settings)
             groups = self._cluster_data(params_)
             multi_groups = len(groups) > 1
             plot_group_flg = self._plot == "all" or (
@@ -69,7 +67,7 @@ class Fit:
             for index, (g_name, (g_experiments, g_params)) in enumerate(groups.items()):
                 group_path = path / section_path
                 if multi_groups:
-                    group_path = group_path / "Clusters" / g_name.to_folder_name()
+                    group_path = group_path / "Clusters" / str(g_name)
                     print(f"\n\n-- Cluster {index + 1}/{len(groups)} ({g_name}) --")
                 g_params = _minimize(g_experiments, g_params, fitmethod)
                 params_.update(g_params)
@@ -116,10 +114,13 @@ class Fit:
         rate are set to 'fix', chances are that the fit can be decomposed
         residue-specifically.
         """
-        par_name_groups = self._group_par_names(params)
+        params_ = cph.merge(
+            [{name: params[name] for name in self._experiments.params_default}]
+        )
+        par_name_groups = self._group_par_names(params_)
         if len(par_name_groups) <= 1:
-            return {cpn.ParamName(): (self._experiments, params)}
-        groups = self._group_data(params, par_name_groups)
+            return {cpn.ParamName(): (self._experiments, params_)}
+        groups = self._group_data(params_, par_name_groups)
         return {name: groups[name] for name in sorted(groups)}
 
     def _group_par_names(self, params):
@@ -142,20 +143,14 @@ class Fit:
     def _group_data(self, params, par_name_groups):
         clusters_ = {}
         for par_names in par_name_groups:
-            cluster_name = _get_cluster_name(par_names)
             cluster_experiments = self._experiments.get_relevant_subset(par_names)
             params_c = {
                 name: params[name] for name in cluster_experiments.params_default
             }
             cluster_params = cph.merge([params_c])
+            cluster_name = cluster_experiments.get_cluster_name()
             clusters_[cluster_name] = (cluster_experiments, cluster_params)
         return clusters_
-
-
-def _get_cluster_name(par_names):
-    par_names_ = [cpn.ParamName.from_full_name(par_name) for par_name in par_names]
-    name = ft.reduce(lambda a, b: cpn.ParamName.cluster_name(a, b), par_names_)
-    return name
 
 
 def _minimize(experiments, params, fitmethod=None):
@@ -197,8 +192,8 @@ def _write_files(experiments, params, path):
     """
     print(f'\nWriting results -> "{path}/"')
     path.mkdir(parents=True, exist_ok=True)
-    cpp.write_par(params, path)
-    cpp.write_constraints(params, path)
+    cps.write_par(params, path)
+    cps.write_constraints(params, path)
     experiments.write(params, path)
     _write_statistics(experiments, params, path=path)
 

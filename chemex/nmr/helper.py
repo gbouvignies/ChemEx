@@ -84,13 +84,6 @@ class SpinSystem:
             return SpinSystem(groups.pop())
         return SpinSystem()
 
-    def __or__(self, other):
-        if isinstance(other, str):
-            other = SpinSystem(other)
-        names1 = set(spin["name"] for spin in self._spins.values())
-        names2 = set(spin["name"] for spin in other._spins.values())
-        return SpinSystem("-".join(sorted(names1 | names2)))
-
     def to_re(self):
         return _spins_to_re(self._spins)
 
@@ -106,8 +99,12 @@ class SpinSystem:
     def __lt__(self, other):
         if isinstance(other, str):
             other = SpinSystem(other)
-        self_tuple = tuple(zip(self.numbers.values(), self.nuclei.values()))
-        other_tuple = tuple(zip(other.numbers.values(), other.nuclei.values()))
+        self_tuple = tuple(
+            zip(self.atoms.values(), self.numbers.values(), self.nuclei.values())
+        )
+        other_tuple = tuple(
+            zip(other.atoms.values(), other.numbers.values(), other.nuclei.values())
+        )
         return self_tuple < other_tuple
 
     def __len__(self):

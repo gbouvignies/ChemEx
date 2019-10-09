@@ -1,8 +1,8 @@
 """The parameters module contains the code for handling of the experimental and
 fitting parameters."""
+
 import ast
 import collections as cl
-import configparser
 import difflib as dl
 import re
 
@@ -163,9 +163,33 @@ def set_params(
 
 def write_par(params, path):
     """Write the fitting parameters and their uncertainties to a file."""
-    filename = path / "parameters.toml"
-    par_dict = {}
-    for name, param in params.items():
+    params_free = {name: param for name, param in params.items() if param.vary}
+    params_not_free = {name: param for name, param in params.items() if not param.vary}
+    free = _params_to_text(params_free)
+    not_free = _params_to_text(params_not_free)
+    path_ = path / "Parameters"
+    path_.mkdir(parents=True, exist_ok=True)
+    (path_ / "free.toml").write_text(free)
+    (path_ / "not_free.toml").write_text(not_free)
+
+
+def _params_to_text(params):
+    par_string, col_width = _params_to_string(params)
+    result = []
+    for section, key_values in par_string.items():
+        section_ = f'"{section}"' if not RE_GROUPNAME.match(section) else section
+        result.append(f"[{section_}]")
+        width = col_width[section]
+        for key, value in sorted(key_values):
+            result.append(f"{str(key):<{width}} = {value}")
+        result.append("")
+    return "\n".join(result)
+
+
+def _params_to_string(params):
+    col_width = {}
+    par_string = {"GLOBAL": []}
+    for name, param in sorted(params.items()):
         par_name = cpn.ParamName.from_full_name(name)
         if not par_name.spin_system:  # global parameter
             name_print = par_name
@@ -173,22 +197,12 @@ def write_par(params, path):
         else:  # residue-specific parameter
             name_print = cnh.SpinSystem(par_name.spin_system)
             section = par_name.to_section_name()
-        par_dict.setdefault(section, []).append((name_print, _param_to_string(param)))
-    cfg = configparser.ConfigParser()
-    cfg.optionxform = str
-    section_global = par_dict.pop("GLOBAL", None)
-    if section_global is not None:
-        cfg.add_section("GLOBAL")
-        for name, val in sorted(section_global):
-            cfg.set("GLOBAL", f"{str(name):10s}", val)
-    for section, name_vals in sorted(par_dict.items()):
-        if not RE_GROUPNAME.match(section):
-            section = f'"{section}"'
-        cfg.add_section(section)
-        for peak, val in sorted(name_vals):
-            cfg.set(section, f"{peak.name.upper():10s}", val)
-    with open(filename, "w") as f:
-        cfg.write(f)
+        value_print = _param_to_string(param)
+        par_string.setdefault(section, []).append((name_print, value_print))
+        col_width[section] = max(10, len(str(name_print)), col_width.get(section, 0))
+    if not par_string["GLOBAL"]:
+        del par_string["GLOBAL"]
+    return par_string, col_width
 
 
 def _param_to_string(param):
@@ -214,7 +228,6 @@ def _param_to_string(param):
 
 def write_constraints(params, path):
     """Write the (optional) parameter expression constraints to a file."""
-    filename = path / "constraints.fit"
     param_dict = dict()
     for name, param in params.items():
         par_name = cpn.ParamName.from_full_name(name)
@@ -233,6 +246,8 @@ def write_constraints(params, path):
                         ),
                     )
             param_dict[par_name] = f"{name_formatted} = {expr_formatted}\n"
-    with open(filename, "w") as f:
+    path_ = path / "Parameters"
+    path_.mkdir(parents=True, exist_ok=True)
+    with open(path_ / "constraints.txt", "w") as f:
         for name, constraint in sorted(param_dict.items()):
             f.write(constraint)

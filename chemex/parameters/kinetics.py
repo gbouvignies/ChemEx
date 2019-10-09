@@ -77,7 +77,46 @@ def model_2st_pb_kex(conditions, spin_system):
     return fnames, params
 
 
-def model_2st_pb_kexrs(conditions, spin_system):
+def model_2st_pb_kex_rs(conditions, spin_system):
+    settings = {
+        "kex_ab": {
+            "attributes": ("spin_system", "temperature", "p_total", "l_total"),
+            "value": 200.0,
+            "min": 0.0,
+            "max": np.inf,
+            "vary": True,
+        },
+        "pb": {
+            "attributes": ("spin_system", "temperature", "p_total", "l_total"),
+            "value": 0.05,
+            "min": 0.0,
+            "max": 1.0,
+            "vary": True,
+        },
+        "pa": {
+            "attributes": ("spin_system", "temperature", "p_total", "l_total"),
+            "min": 0.0,
+            "max": 1.0,
+            "expr": "1.0 - {pb}",
+        },
+        "kab": {
+            "attributes": ("spin_system", "temperature", "p_total", "l_total"),
+            "min": 0.0,
+            "max": np.inf,
+            "expr": "{kex_ab} * {pb}",
+        },
+        "kba": {
+            "attributes": ("spin_system", "temperature", "p_total", "l_total"),
+            "min": 0.0,
+            "max": np.inf,
+            "expr": "{kex_ab} * {pa}",
+        },
+    }
+    fnames, params = cph.make_params(settings, conditions, spin_system)
+    return fnames, params
+
+
+def model_2st_hd_exch(conditions, spin_system):
     settings = {
         "kex_ab": {
             "attributes": ("spin_system", "temperature", "p_total", "l_total"),
@@ -569,7 +608,8 @@ def model_4st_hd_exch(conditions, spin_system):
 
 models = {
     "2st.pb_kex": model_2st_pb_kex,
-    "2st.pb_kexrs": model_2st_pb_kexrs,
+    "2st.pb_kex_rs": model_2st_pb_kex_rs,
+    "2st.hd_exch": model_2st_hd_exch,
     "3st.pb_kex": model_3st_pb_kex,
     "4st.pb_kex": model_4st_pb_kex,
     "2st.eyring": model_2st_eyring,

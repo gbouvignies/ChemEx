@@ -1,7 +1,6 @@
 import contextlib as cl
+import functools as ft
 import itertools as it
-from typing import Any
-from typing import Dict
 
 import matplotlib.backends.backend_pdf as pdf
 import numpy as np
@@ -54,8 +53,10 @@ class Experiments:
         return relevant_subset
 
     def write(self, params, path):
+        path_ = path / "Data"
+        path_.mkdir(parents=True, exist_ok=True)
         for experiment in self._experiments.values():
-            experiment.write(params, path)
+            experiment.write(params, path_)
 
     def plot(self, params, path):
         for experiment in self._experiments.values():
@@ -90,6 +91,12 @@ class Experiments:
         return cph.merge(
             profile.params_default for profile in self._experiments.values()
         )
+
+    def get_cluster_name(self):
+        names = [
+            experiment.get_cluster_name() for experiment in self._experiments.values()
+        ]
+        return ft.reduce(lambda a, b: a & b, names)
 
     def __len__(self):
         return sum([len(experiment) for experiment in self._experiments.values()])
@@ -220,6 +227,10 @@ class RelaxationExperiment:
     @property
     def params_default(self):
         return cph.merge(profile.params_default for profile in self._profiles.values())
+
+    def get_cluster_name(self):
+        names = [profile.name for profile in self._profiles.values()]
+        return ft.reduce(lambda a, b: a & b, names)
 
     def __len__(self):
         return len(self._profiles)
