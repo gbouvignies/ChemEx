@@ -25,7 +25,7 @@ def read(config, pulse_seq_cls, propagator_cls, container_cls, rates_cls=None):
 def _get_profile_paths(config):
     path = ch.normalize_path(config["filename"].parent, pl.Path(config["data"]["path"]))
     paths = {
-        cnn.SpinSystem(profile[0]): path / profile[1]
+        path / profile[1]: cnn.SpinSystem(profile[0])
         for profile in config["data"]["profiles"]
     }
     return paths
@@ -39,7 +39,7 @@ def _read_profiles(paths, config, pulse_seq_cls, propagator_cls, container_cls):
     constraints = config["spin_system"].get("constraints")
     h_frq = conditions["h_larmor_frq"]
     profiles = {}
-    for spin_system, path in paths.items():
+    for path, spin_system in paths.items():
         config["spin_system"]["spin_system"] = spin_system
         par_names, params_default = cp.create_params(
             basis=basis,
