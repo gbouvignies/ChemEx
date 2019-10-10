@@ -49,6 +49,9 @@ def fit(args):
     # Read experimental setup and data
     experiments = cce.read(filenames=args.experiments, model=model)
 
+    # Create parameters
+    params = experiments.params_default
+
     if args.selection:
         print("\nSelecting profiles...")
         experiments.select(args.selection)
@@ -57,9 +60,8 @@ def fit(args):
     if not experiments:
         sys.exit("\nerror: No data to fit")
 
-    # Create and update initial values of fitting/fixed parameters
+    # Update initial values of fitting/fixed parameters
     ch.header1("Reading default parameters")
-    params = experiments.params_default
     cpp.set_params_from_files(params, experiments, args.parameters)
 
     # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
