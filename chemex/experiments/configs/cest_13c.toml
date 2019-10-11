@@ -68,9 +68,9 @@ h_larmor_frq = 800.0
 ## The name of the spin systems should follow the Sparky-NMR
 ## conventions.
 profiles = [
-    ["G2CA", "G2CA-HA1.out"],
-    ["H3CB", "H3CB-HB2.out"],
-    ["K4CD", "K4CD-HD3.out"],
-    ["S5CB", "S5CB-HB2.out"],
-    ["L6CD1", "L6CD1-QD1.out"],
+    ["G2CA-HA1", "G2CA-HA1.out"],
+    ["H3CB-HB2", "H3CB-HB2.out"],
+    ["K4CD-HD3", "K4CD-HD3.out"],
+    ["S5CB-HB2", "S5CB-HB2.out"],
+    ["L6CD1-HD1", "L6CD1-QD1.out"],
 ]
