@@ -49,7 +49,9 @@ class Experiments:
     def get_relevant_subset(self, par_names):
         relevant_subset = Experiments()
         for experiment in self._experiments.values():
-            relevant_subset.add(experiment.get_relevant_subset(par_names))
+            subset = experiment.get_relevant_subset(par_names)
+            if subset:
+                relevant_subset.add(subset)
         return relevant_subset
 
     def write(self, params, path):
