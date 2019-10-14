@@ -24,7 +24,7 @@ def read(
     exp_type = config["experiment"]["name"]
     paths = _get_profile_paths(config)
     profiles = _read_profiles(
-        paths, config, pulse_seq_cls, propagator_cls, container_cls
+        paths, config, pulse_seq_cls, propagator_cls, container_cls, fit_setting
     )
     h_frq = config["conditions"]["h_larmor_frq"]
     rates = None
@@ -32,7 +32,7 @@ def read(
         rates = rates_cls(h_frq, config["spin_system"].get("rates"))
     experiment = cce.RelaxationExperiment(filename, exp_type, profiles, rates)
     experiment.estimate_noise(config["data"]["error"])
-    cps.set_param_status(experiment.params_default, fit_setting, verbose=False)
+    experiment.merge_same_profiles()
     return experiment
 
 
@@ -45,14 +45,16 @@ def _get_profile_paths(config):
     return paths
 
 
-def _read_profiles(paths, config, pulse_seq_cls, propagator_cls, container_cls):
+def _read_profiles(
+    paths, config, pulse_seq_cls, propagator_cls, container_cls, fit_setting
+):
     model = config["model"]
     conditions = config["conditions"]
     basis = config["spin_system"]["basis"]
     atoms = config["spin_system"]["atoms"]
     constraints = config["spin_system"].get("constraints")
     h_frq = conditions["h_larmor_frq"]
-    profiles = {}
+    profiles = []
     for path, spin_system in paths.items():
         config["spin_system"]["spin_system"] = spin_system
         par_names, params_default = cp.create_params(
@@ -64,11 +66,13 @@ def _read_profiles(paths, config, pulse_seq_cls, propagator_cls, container_cls):
         )
         propagator = propagator_cls(basis=basis, model=model, atoms=atoms, h_frq=h_frq)
         pulse_seq = pulse_seq_cls(config=config, propagator=propagator)
-        profiles[path] = container_cls.from_file(
+        profile = container_cls.from_file(
             path=path,
             config=config,
             pulse_seq=pulse_seq,
             par_names=par_names,
             params_default=params_default,
         )
-    return profiles
+        cps.set_param_status(profile.params_default, fit_setting, verbose=False)
+        profiles.append(profile)
+    return sorted(profiles)

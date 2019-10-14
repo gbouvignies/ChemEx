@@ -54,7 +54,7 @@ def fit(args):
 
     if args.selection:
         print("\nSelecting profiles...")
-        experiments.select(args.selection)
+        experiments.select(args.selection, discard=True)
         print(f"  - Profile(s): {len(experiments)}")
 
     if not experiments:

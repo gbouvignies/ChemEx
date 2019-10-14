@@ -1,4 +1,5 @@
 import copy
+import functools as ft
 import sys
 
 import numpy as np
@@ -42,6 +43,7 @@ CPMG_SCHEMA = {
 }
 
 
+@ft.total_ordering
 class CpmgProfile:
     def __init__(self, name, data, pulse_seq, par_names, params_default):
         self.name = name
@@ -159,6 +161,18 @@ class CpmgProfile:
         data_fit = np.unique(np.sort(data_fit, order="nu_cpmgs"))
         return data_exp, data_fit
 
+    def __add__(self, other: "CpmgProfile"):
+        data = self.data + other.data
+        return CpmgProfile(
+            self.name, data, self._pulse_seq, self._par_names, self.params_default
+        )
+
+    def __eq__(self, other: "CestProfile"):
+        return self.name == other.name
+
+    def __lt__(self, other: "CestProfile"):
+        return self.name < other.name
+
 
 class CpmgData:
     randm1 = np.random.randn(10000, 1)
@@ -219,6 +233,16 @@ class CpmgData:
         r2_ens = intensities_to_r2(intst_ens, intst_ref_ens, time_t2) - r2
         r2_err = np.percentile(r2_ens, [15.9, 84.1], axis=0).transpose()
         return nu_cpmgs, r2, r2_err, self.mask[~self.refs]
+
+    def __add__(self, other: "CpmgData"):
+        points = self.points.copy()
+        points["intensities"] = self.points["intensities"] + other.points["intensities"]
+        points["errors"] = np.sqrt(
+            (self.points["errors"] ** 2 + other.points["errors"] ** 2)
+        )
+        refs = self.refs.copy()
+        mask = self.mask.copy()
+        return CpmgData(points, refs, mask)
 
 
 def intensities_to_r2(intst, intst_ref, time_t2):

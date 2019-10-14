@@ -1,4 +1,5 @@
 import copy
+import functools as ft
 import sys
 
 import numpy as np
@@ -53,6 +54,7 @@ CEST_SCHEMA = {
 }
 
 
+@ft.total_ordering
 class CestProfile:
     def __init__(self, name, data, pulse_seq, par_names, params_default):
         self.name = name
@@ -191,6 +193,18 @@ class CestProfile:
         data_fit = np.unique(np.sort(data_fit, order="ppms"))
         return data_exp, data_fit
 
+    def __add__(self, other: "CestProfile"):
+        data = self.data + other.data
+        return CestProfile(
+            self.name, data, self._pulse_seq, self._par_names, self.params_default
+        )
+
+    def __eq__(self, other: "CestProfile"):
+        return self.name == other.name
+
+    def __lt__(self, other: "CestProfile"):
+        return self.name < other.name
+
 
 class CestData:
     dtype = np.dtype([("offsets", "f8"), ("intensities", "f8"), ("errors", "f8")])
@@ -248,3 +262,14 @@ class CestData:
         data = copy.deepcopy(self)
         data.points = self.points[bs_indexes]
         return data
+
+    def __add__(self, other: "CestData"):
+        points = self.points.copy()
+        points["intensities"] = self.points["intensities"] + other.points["intensities"]
+        points["errors"] = np.sqrt(
+            (self.points["errors"] ** 2 + other.points["errors"] ** 2)
+        )
+        refs = self.refs.copy()
+        mask = self.mask.copy()
+        filter_offsets = self._filter_offsets
+        return CestData(points, refs, mask, filter_offsets)
