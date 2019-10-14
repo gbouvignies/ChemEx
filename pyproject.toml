@@ -29,7 +29,7 @@ bump2version = "^0.5.10"
 pre-commit = "^1.18"
 pyinstaller = "^3.5"
 macholib = "^1.11"
-pylint = "^2.4"
+flake8 = "^3.7"
 
 [tool.poetry.scripts]
 chemex = "chemex.chemex:main"
@@ -64,4 +64,3 @@ use_parentheses = true
 [build-system]
 requires = ["poetry>=0.12"]
 build-backend = "poetry.masonry.api"
-
