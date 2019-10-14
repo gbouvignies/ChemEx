@@ -85,3 +85,6 @@ ENV/
 
 # MacOS
 .DS_Store
+
+# ChemEx
+examples/**/Output*
