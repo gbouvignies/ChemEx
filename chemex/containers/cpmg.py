@@ -167,10 +167,10 @@ class CpmgProfile:
             self.name, data, self._pulse_seq, self._par_names, self.params_default
         )
 
-    def __eq__(self, other: "CestProfile"):
+    def __eq__(self, other: "CpmgProfile"):
         return self.name == other.name
 
-    def __lt__(self, other: "CestProfile"):
+    def __lt__(self, other: "CpmgProfile"):
         return self.name < other.name
 
 
