@@ -64,13 +64,17 @@ class Experiments:
         for experiment in self._experiments.values():
             experiment.plot(params, path)
 
-    def select(self, selection=None):
+    def select(self, selection=None, discard=False):
         for experiment in self._experiments.values():
-            experiment.select(selection)
+            experiment.select(selection, discard)
 
     def filter(self, params=None):
         for experiment in self._experiments.values():
             experiment.filter(params)
+
+    def merge_same_profiles(self):
+        for experiment in self._experiments.values():
+            experiment.merge_same_profiles()
 
     def monte_carlo(self, params):
         experiments_mc = Experiments()
@@ -111,8 +115,8 @@ class RelaxationExperiment:
     def __init__(self, filename, exp_type, profiles, rates=None, verbose=True):
         self.filename = filename
         self.exp_type = exp_type
-        self._profiles = profiles
-        self._filtered = {}
+        self._profiles = sorted(profiles)
+        self._filtered = []
         self._rates = rates
         if verbose:
             print(f"  - Experiment: {exp_type}")
@@ -121,21 +125,19 @@ class RelaxationExperiment:
     def residuals(self, params):
         return list(
             it.chain.from_iterable(
-                profile.residuals(params) for profile in self._profiles.values()
+                profile.residuals(params) for profile in self._profiles
             )
         )
 
     @property
     def par_name_sets(self):
-        return list(
-            set(profile.params_default.keys()) for profile in self._profiles.values()
-        )
+        return list(set(profile.params_default.keys()) for profile in self._profiles)
 
     def get_relevant_subset(self, par_names):
-        profiles = {}
-        for filename, profile in self._profiles.items():
+        profiles = []
+        for profile in self._profiles:
             if set(profile.params_default) & set(par_names):
-                profiles[filename] = profile
+                profiles.append(profile)
         return RelaxationExperiment(
             self.filename, self.exp_type, profiles=profiles, verbose=False
         )
@@ -150,53 +152,57 @@ class RelaxationExperiment:
             file_pdf = stack.enter_context(pdf.PdfPages(str(name_pdf)))
             file_exp = stack.enter_context(name_exp.open("w"))
             file_fit = stack.enter_context(name_fit.open("w"))
-            for profile in sorted(
-                self._profiles.values(), key=lambda profile_: profile_.name
-            ):
+            for profile in sorted(self._profiles):
                 profile.plot(params, file_pdf)
                 profile.write_plot(params, file_exp, file_fit)
 
     def write(self, params, path):
         filename = (path / self.filename.name).with_suffix(".dat")
         with filename.open("w") as file_dat:
-            for profile in sorted(
-                self._profiles.values(), key=lambda profile_: profile_.name
-            ):
+            for profile in sorted(self._profiles):
                 file_dat.write(profile.print(params))
 
-    def select(self, selection=None):
+    def select(self, selection=None, discard=False):
         if selection is None:
             return
-        profiles = {**self._profiles, **self._filtered}
+        profiles = self._profiles + self._filtered
         if isinstance(selection, str) and selection.lower() in ("all", "*"):
-            self._profiles = profiles
-            self._filtered = {}
+            selected = profiles
         else:
-            selected = set()
-            for name, profile in profiles.items():
+            selected = []
+            for profile in profiles:
                 for name_incl in selection:
                     if profile.name & name_incl == name_incl:
-                        selected.add(name)
+                        selected.append(profile)
                         break
-            self._profiles = {name: profiles.pop(name) for name in selected}
-            self._filtered = profiles
+        self._profiles = sorted(selected)
+        if not discard:
+            self._filtered = sorted(
+                profile for profile in profiles if profile not in selected
+            )
+        else:
+            self._filtered = []
 
     def filter(self, params=None):
-        for profile in self._profiles.values():
+        for profile in self._profiles:
             profile.filter(params)
 
+    def merge_same_profiles(self):
+        self._profiles = _merge_same_profiles(self._profiles)
+        self._filtered = _merge_same_profiles(self._filtered)
+
     def monte_carlo(self, params):
-        profiles = {}
-        for name, profile in self._profiles.items():
-            profiles[name] = profile.monte_carlo(params)
+        profiles = []
+        for profile in self._profiles:
+            profiles.append(profile.monte_carlo(params))
         return RelaxationExperiment(
             self.filename, self.exp_type, profiles, verbose=False
         )
 
     def bootstrap(self):
-        profiles = {}
-        for name, profile in self._profiles.items():
-            profiles[name] = profile.bootstrap()
+        profiles = []
+        for profile in self._profiles:
+            profiles.append(profile.bootstrap())
         return RelaxationExperiment(
             self.filename, self.exp_type, profiles, verbose=False
         )
@@ -213,25 +219,25 @@ class RelaxationExperiment:
         if kind == "file":
             return
         noise_variance_values = []
-        for profile in self._profiles.values():
+        for profile in self._profiles:
             noise_variance_values.append(profile.estimate_noise_variance(kind))
         noise_mean = np.sqrt(np.mean(noise_variance_values))
-        for profile in self._profiles.values():
+        for profile in self._profiles:
             profile.set_noise(noise_mean)
 
     def set_params(self, params, model_free):
         rates = {}
         if self._rates is not None:
             rates = self._rates.calculate(model_free)
-        for profile in self._profiles.values():
+        for profile in self._profiles:
             profile.set_params(params, rates)
 
     @property
     def params_default(self):
-        return cph.merge(profile.params_default for profile in self._profiles.values())
+        return cph.merge(profile.params_default for profile in self._profiles)
 
     def get_cluster_name(self):
-        names = [profile.name for profile in self._profiles.values()]
+        names = [profile.name for profile in self._profiles]
         return ft.reduce(lambda a, b: a & b, names)
 
     def __len__(self):
@@ -248,3 +254,16 @@ def read(filenames=None, model=None):
         experiment = ce.read(filename, model)
         experiments.add(experiment)
     return experiments
+
+
+def _merge_same_profiles(profiles):
+    merged = []
+    profile_sets = {}
+    for profile in profiles:
+        profile_sets.setdefault(profile.name, []).append((profile))
+    for profile_set in profile_sets.values():
+        if len(profile_set) > 0:
+            merged.append(np.sum(profile_set))
+        else:
+            merged.append(profile_set.pop())
+    return merged
