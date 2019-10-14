@@ -48,11 +48,12 @@ def grab(name):
 
 def get_info():
     docs = {}
-    for _, name, _ in pu.walk_packages(__path__, __name__ + "."):
-        imported_module = il.import_module(f"{name}")
-        if "TYPE" in dir(imported_module):
-            exp_name = name.replace(__name__ + ".", "")
-            docs[exp_name] = imported_module.__doc__
+    for module in pu.iter_modules(__path__, __name__ + "."):
+        if module.ispkg or "helper" in module.name:
+            continue
+        imported_module = il.import_module(module.name)
+        exp_name = module.name.replace(__name__ + ".", "")
+        docs[exp_name] = imported_module.__doc__
     return docs
 
 

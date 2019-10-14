@@ -37,7 +37,6 @@ import chemex.nmr.propagator as cnp
 import chemex.nmr.rates as cnr
 
 
-TYPE = __name__.split(".")[-1]
 _SCHEMA = {
     "type": "object",
     "properties": {
@@ -62,6 +61,7 @@ _SCHEMA = {
         }
     },
 }
+_FIT_SETTING = {"dw_ab": "fit", "r2_a": "fit"}
 
 
 def read(config):
@@ -79,6 +79,7 @@ def read(config):
         propagator_cls=cnp.PropagatorIS,
         container_cls=ccc.CpmgProfile,
         rates_cls=cnr.RatesIS,
+        fit_setting=_FIT_SETTING,
     )
     return experiment
 

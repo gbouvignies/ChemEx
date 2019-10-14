@@ -1,12 +1,7 @@
 [STEP1]
-PB	             = "fix"
-KEX_AB           = "fix"
-DW_AB 	         = "fit"
-"R2_A, NUC->H*"  = "fit"
-"R2A_A, NUC->H*" = "fit"
-D_A              = "fit"
-D_B              = "fit"
+PB	   = "fix"
+KEX_AB = "fix"
 
 [STEP2]
-PB	             = "fit"
-KEX_AB           = "fit"
+PB	   = "fit"
+KEX_AB = "fit"

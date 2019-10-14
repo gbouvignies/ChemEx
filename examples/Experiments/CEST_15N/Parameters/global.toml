@@ -4,3 +4,9 @@ TAUC    = 10e-9
 [GLOBAL]
 PB      = 0.015
 KEX_AB  = 70.0
+
+# For the `brute` force method:
+# * stepszise is provided:
+#   The grid for that parameter will be between `min` and `max`, in steps of `stepsize`
+# * NO stepszise is provided:
+#   The grid for that parameter will be between `min` and `max` in 20 equal steps

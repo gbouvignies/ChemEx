@@ -2,11 +2,24 @@ import pathlib as pl
 
 import chemex.containers.experiment as cce
 import chemex.helper as ch
+import chemex.parameters.settings as cps
 import chemex.nmr.helper as cnn
 import chemex.parameters as cp
 
 
-def read(config, pulse_seq_cls, propagator_cls, container_cls, rates_cls=None):
+def get_type():
+    print(__name__)
+    return __name__.split(".")[-1]
+
+
+def read(
+    config,
+    pulse_seq_cls,
+    propagator_cls,
+    container_cls,
+    rates_cls=None,
+    fit_setting=None,
+):
     filename = config["filename"]
     exp_type = config["experiment"]["name"]
     paths = _get_profile_paths(config)
@@ -19,6 +32,7 @@ def read(config, pulse_seq_cls, propagator_cls, container_cls, rates_cls=None):
         rates = rates_cls(h_frq, config["spin_system"].get("rates"))
     experiment = cce.RelaxationExperiment(filename, exp_type, profiles, rates)
     experiment.estimate_noise(config["data"]["error"])
+    cps.set_param_status(experiment.params_default, fit_setting, verbose=False)
     return experiment
 
 
