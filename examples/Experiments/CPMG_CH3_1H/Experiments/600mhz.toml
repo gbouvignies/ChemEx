@@ -12,7 +12,6 @@ h_larmor_frq = 600.250
 
 [data]
 path = "../Data/600MHz"
-error = "duplicates"
 profiles = [
     ["1HD1-CD1", "1CD1-HD1.out"],
     ["2HD1-CD1", "2CD1-HD1.out"],

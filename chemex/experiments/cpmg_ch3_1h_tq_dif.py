@@ -36,7 +36,6 @@ import chemex.nmr.constants as cnc
 import chemex.nmr.propagator as cnp
 
 
-TYPE = __name__.split(".")[-1]
 _SCHEMA = {
     "type": "object",
     "properties": {
@@ -61,6 +60,13 @@ _SCHEMA = {
         }
     },
 }
+_FIT_SETTING = {
+    "dw_ab": "fit",
+    "r2_a": "fit",
+    "r2a_a": "fit",
+    "d_a": "fit",
+    "d_b": "fit",
+}
 
 
 def read(config):
@@ -76,6 +82,7 @@ def read(config):
         pulse_seq_cls=PulseSeq,
         propagator_cls=cnp.Propagator1HTQDif,
         container_cls=ccc.CpmgProfile,
+        fit_setting=_FIT_SETTING,
     )
     return experiment
 
@@ -97,9 +104,9 @@ class PulseSeq:
         self.prop.carrier_i = settings["carrier"]
         self.prop.b1_i = 1 / (4.0 * self.pw90)
         self.prop.detection = f"2ixsz_{settings['observed_state']}"
-        self.calculate = ft.lru_cache(maxsize=5)(self.calculate)
+        self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
-    def calculate(self, ncycs, params_local):
+    def _calculate(self, ncycs, params_local):
         self.prop.update(params_local)
 
         # Getting the starting magnetization

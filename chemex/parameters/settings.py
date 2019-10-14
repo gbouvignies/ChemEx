@@ -80,12 +80,14 @@ def _read_config(filenames):
     return config_
 
 
-def set_param_status(params, settings):
+def set_param_status(params, settings=None, verbose=True):
     """Set whether or not to vary a fitting parameter or to use a mathemetical
-    expression."""
-    vary = {"fix": False, "fit": True}
-    if settings:
+    expression. """
+    if settings is None:
+        settings = {}
+    if verbose and settings:
         print("\nSettings parameter status and constraints...")
+    vary = {"fix": False, "fit": True}
     matches = cl.Counter()
     for key, status in settings.items():
         name = cpn.ParamName.from_section(key)
@@ -94,7 +96,8 @@ def set_param_status(params, settings):
         else:
             matched = set_param_expr(params, name, expr=status)
         matches.update({name.to_section_name(): len(matched)})
-    _print_matches(matches)
+    if verbose:
+        _print_matches(matches)
 
 
 def _print_matches(matches):

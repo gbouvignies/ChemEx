@@ -1,11 +1,3 @@
 [DEFAULT]
-PB              = "fit"
 KEX_AB          = "fix"
 CS_A            = "fit"
-DW_AB           = "fit"
-R2_A            = "fit"
-R2_B            = "fit"
-"R1_A, NUC->N"  = "fit"
-R1A_A           = "fit"
-ETAXY_A         = "fit"
-ETAZ_A          = "fit"

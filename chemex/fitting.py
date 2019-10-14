@@ -54,10 +54,14 @@ class Fit:
             path = self._path
         params_ = copy.deepcopy(params)
         for section, settings in method.items():
-            ch.header2(f"\n{section.upper()}")
+            if section:
+                ch.header2(f"\n{section.upper()}")
             fitmethod = _pop_fitmethod(settings)
             _select(self._experiments, settings)
             cps.set_param_status(params_, settings)
+            if not self._experiments:
+                print("No data to fit...")
+                continue
             groups = self._cluster_data(params_)
             multi_groups = len(groups) > 1
             plot_group_flg = self._plot == "all" or (

@@ -1,10 +1,7 @@
-[step1]
+[STEP1]
 PB      = "fix"
 KEX_AB  = "fix"
-DW_AB   = "fit"
-R2_A    = "fit"
-ETAXY_A = "fit"
 
-[step2]
+[STEP2]
 PB      = "fit"
 KEX_AB  = "fit"

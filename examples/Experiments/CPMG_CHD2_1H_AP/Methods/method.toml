@@ -1,8 +1,2 @@
-[STEP1]
+[DEFAULT]
 PB     = "fix"
-KEX_AB = "fix"
-DW_AB  = "fit"
-R2_A   = "fit"
-
-[STEP2]
-KEX_AB = "fit"

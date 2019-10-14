@@ -1,14 +1,16 @@
-[STEP_1]
+[STEP1]
+SELECTION = ["57", "66", "74", "78", "79", "93", "96", "97", "98", "109"]
 PB     = "fix"
 KEX_AB = "fix"
-CS_A   = "fix"
-DW_AB  = "fit"
-R1_A   = "fit"
 R1_B   = "0.5 * R1_A"
-R2_A   = "fit"
 R2_B   = "0.4 * R2_A"
 
-[STEP_2]
+[STEP2]
 PB     = "fit"
 KEX_AB = "fit"
 R2_B   = "fit"
+
+[STEP3]
+SELECTION = "*"
+PB     = "fix"
+KEX_AB = "fit"

@@ -42,7 +42,6 @@ import chemex.helper as ch
 import chemex.nmr.propagator as cnp
 
 
-TYPE = __name__.split(".")[-1]
 _SCHEMA = {
     "type": "object",
     "properties": {
@@ -65,6 +64,7 @@ _SCHEMA = {
         }
     },
 }
+_FIT_SETTING = {"dw_ab": "fit", "r2_a": "fit"}
 
 
 def read(config):
@@ -80,6 +80,7 @@ def read(config):
         pulse_seq_cls=PulseSeq,
         propagator_cls=cnp.PropagatorIS,
         container_cls=ccc.CpmgProfile,
+        fit_setting=_FIT_SETTING,
     )
     return experiment
 

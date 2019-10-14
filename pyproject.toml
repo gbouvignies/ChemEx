@@ -29,6 +29,7 @@ bump2version = "^0.5.10"
 pre-commit = "^1.18"
 pyinstaller = "^3.5"
 macholib = "^1.11"
+pylint = "^2.4"
 
 [tool.poetry.scripts]
 chemex = "chemex.chemex:main"

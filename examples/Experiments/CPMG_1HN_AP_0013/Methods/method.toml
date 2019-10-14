@@ -1,5 +1,9 @@
-[DEFAULT]
-PB	   = "fit"
-KEX_AB = "fit"
-DW_AB  = "fit"
-R2_A   = "fit"
+[STEP1]
+SELECTION = ["4", "8", "15", "29", "74", "104", "108", "110", "111", "154"]
+PB        = "fit"
+KEX_AB    = "fit"
+
+[STEP2]
+SELECTION = "*"
+PB        = "fix"
+KEX_AB    = "fix"

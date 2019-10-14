@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/bin/sh
 
 chemex fit -e Experiments/*.toml \
            -p Parameters/*.toml \
-           -m Methods/method.toml \
+           -m Methods/*.toml \
            -o Output

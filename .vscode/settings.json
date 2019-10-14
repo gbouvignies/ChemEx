@@ -1,0 +1,16 @@
+{
+    "python.pythonPath": "/Users/gbouvignies/Library/Caches/pypoetry/virtualenvs/chemex-py3.7/bin/python",
+    "python.poetryPath": "/Users/gbouvignies/.poetry/bin/poetry",
+    "editor.formatOnPaste": true,
+    "editor.formatOnSave": true,
+    "editor.formatOnType": true,
+    "files.autoSave": "afterDelay",
+    "files.autoSaveDelay": 500,
+    "files.trimFinalNewlines": true,
+    "files.exclude": {
+        "**/*.pyc": {
+            "when": "$(basename).py"
+        },
+        "**/__pycache__": true
+    }
+}

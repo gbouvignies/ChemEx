@@ -1,10 +1,7 @@
+[MODEL_FREE]
+TAUC            = 3.0e-9
+DEUTERATED      = true
+
 [GLOBAL]
 PB              =   0.10
 KEX_AB          = 200.0
-"R1_A, NUC->N"  =   2.0
-R1A_A           =   3.5
-R2_A            =  10.0
-R2_B            =  20.0
-ETAXY_A         =   0.0
-ETAZ_A          =   0.0
-J_A             = -93.0

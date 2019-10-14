@@ -46,7 +46,9 @@ def build_parser():
 
     info_parser.set_defaults(func=print_info)
 
-    experiments_parser = info_parser.add_subparsers(dest="experiments")
+    experiments_parser = info_parser.add_subparsers(
+        dest="experiments", metavar="experiment_type"
+    )
     experiments_parser.required = True
 
     docs = ce.get_info()
