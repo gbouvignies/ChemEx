@@ -1,3 +1,5 @@
+import functools as ft
+
 import numpy as np
 from scipy import linalg
 
@@ -132,19 +134,21 @@ class PropagatorIS:
     def delays(self, times):
         return calculate_propagators(self.liouvillian.l_free, times)
 
-    def pulse_i(self, times, phase, dephasing=False):
+    def pulse_i(self, times, phase, dephasing=False, scale=1.0):
+        rad = phase * np.pi * 0.5
         liouv = (
             self.liouvillian.l_free
-            + np.cos(phase * np.pi * 0.5) * self.liouvillian.l_b1x_i
-            + np.sin(phase * np.pi * 0.5) * self.liouvillian.l_b1y_i
+            + scale * np.cos(rad) * self.liouvillian.l_b1x_i
+            + scale * np.sin(rad) * self.liouvillian.l_b1y_i
         )
         return calculate_propagators(liouv, times, dephasing)
 
-    def pulse_s(self, times, phase, dephasing=False):
+    def pulse_s(self, times, phase, dephasing=False, scale=1.0):
+        rad = phase * np.pi * 0.5
         liouv = (
             self.liouvillian.l_free
-            + np.cos(phase * np.pi * 0.5) * self.liouvillian.l_b1x_s
-            + np.sin(phase * np.pi * 0.5) * self.liouvillian.l_b1y_s
+            + scale * np.cos(rad) * self.liouvillian.l_b1x_s
+            + scale * np.sin(rad) * self.liouvillian.l_b1y_s
         )
         return calculate_propagators(liouv, times, dephasing)
 
@@ -157,6 +161,14 @@ class PropagatorIS:
             + np.sin(phase_s * np.pi * 0.5) * self.liouvillian.l_b1y_s
         )
         return calculate_propagators(liouv, times, dephasing)
+
+    def shaped_pulse_i(self, pw, amplitudes, phases):
+        time = pw / len(amplitudes)
+        pairs = zip(amplitudes, phases)
+        pulses = {}
+        for amp, ph in set(pairs):
+            pulses[(amp, ph)] = self.pulse_i(time, ph, scale=amp)
+        return ft.reduce(pulses[pair] for pair in reversed(pairs))
 
     @property
     def p90_i(self):
@@ -222,38 +234,23 @@ class PropagatorIS:
 
     @property
     def p9024090_is(self):
-        pw240_i, pw9024090_i = np.array([8.0, 14.0]) * self._pw90_i / 3.0
-        pw240_s, pw9024090_s = np.array([8.0, 14.0]) * self._pw90_s / 3.0
-        times = np.sort([0.0, pw240_i, pw240_s, pw9024090_i, pw9024090_s])
-        deltas = (times[1:] - times[:-1]) * np.array([1.0, 0.5, 0.5, 0.5])
-        phase_i, phase_s = (0, 3), (0, 3)
-        p0 = self.pulse_is(deltas[0], phase_i[0], phase_s[0])
-        if pw9024090_i <= pw9024090_s:
-            p1 = self.pulse_is(deltas[1], phase_i[1], phase_s[0])
-            if pw9024090_i <= pw240_s:
-                p2 = self.pulse_s(deltas[2], phase_s[0])
-            else:
-                p2 = self.pulse_is(deltas[2], phase_i[1], phase_s[1])
-            p3 = self.pulse_s(deltas[3], phase_s[1])
-        else:
-            p1 = self.pulse_is(deltas[1], phase_i[0], phase_s[1])
-            if pw9024090_s <= pw240_i:
-                p2 = self.pulse_i(deltas[2], phase_i[0])
-            else:
-                p2 = self.pulse_is(deltas[2], phase_i[1], phase_s[1])
-            p3 = self.pulse_i(deltas[3], phase_i[1])
-        p_xx = p3 @ p2 @ p1 @ p0 @ p1 @ p2 @ p3
-        phases_i, phases_s = self._phases["i"], self._phases["s"]
-        p_comp_is = np.array(
-            [
-                [
-                    phases_i[k] @ phases_s[j] @ p_xx @ phases_s[-j] @ phases_i[-k]
-                    for j in range(4)
-                ]
-                for k in range(4)
-            ]
+        pw240i, pw9024090i = np.array([8.0, 14.0]) * self._pw90_i / 3.0
+        pw240s, pw9024090s = np.array([8.0, 14.0]) * self._pw90_s / 3.0
+        t0, t1, t2, t3 = 0.5 * np.diff(
+            np.sort([pw240i, pw240s, pw9024090i, pw9024090s]), prepend=0.0
         )
-        return p_comp_is
+        p0 = self.pulse_is(2.0 * t0, 0, 0)
+        if pw9024090i <= pw9024090s:
+            p1 = self.pulse_is(t1, 3, 0)
+            p2 = self.pulse_is(t2, 3, 3) if pw9024090i > pw240s else self.pulse_s(t2, 0)
+            p3 = self.pulse_s(t3, 3)
+        else:
+            p1 = self.pulse_is(t1, 0, 3)
+            p2 = self.pulse_is(t2, 3, 3) if pw9024090s > pw240i else self.pulse_i(t2, 0)
+            p3 = self.pulse_i(t3, 3)
+        pw9024090is_xx = p3 @ p2 @ p1 @ p0 @ p1 @ p2 @ p3
+        pw9024090is = self._add_phases(self._add_phases(pw9024090is_xx, "s"), "i")
+        return pw9024090is
 
     def offsets_to_ppms(self, offsets):
         return self.liouvillian.offsets_to_ppms(offsets)
@@ -263,18 +260,16 @@ class PropagatorIS:
 
     def _calculate_base_pulses_i(self):
         if self._p90_i is None:
-            phases = self._phases["i"]
             pws = np.array([1.0, 2.0, 8.0 / 3.0]) * self._pw90_i
-            pulses_ = self.pulse_i(pws, 0.0)
-            pulses = np.array([phases[j] @ pulses_ @ phases[-j] for j in range(4)])
+            base = self.pulse_i(pws, 0.0)
+            pulses = self._add_phases(base, "i")
             self._p90_i, self._p180_i, self._p240_i = pulses.swapaxes(0, 1)
 
     def _calculate_base_pulses_s(self):
         if self._p90_s is None:
-            phases = self._phases["s"]
             pws = np.array([1.0, 2.0, 8.0 / 3.0]) * self._pw90_s
-            pulses_ = self.pulse_s(pws, 0.0)
-            pulses = np.array([phases[j] @ pulses_ @ phases[-j] for j in range(4)])
+            base = self.pulse_s(pws, 0.0)
+            pulses = self._add_phases(base, "s")
             self._p90_s, self._p180_s, self._p240_s = pulses.swapaxes(0, 1)
 
     def _make_perfect180(self, spin):
@@ -290,11 +285,10 @@ class PropagatorIS:
         return np.array(p180)
 
     def _make_perfect90(self, spin):
-        phases = self._phases[spin]
         zeros = np.zeros((self.liouvillian.size, self.liouvillian.size))
         rot = self.liouvillian.matrices.get(f"b1x_{spin}", zeros)
         base = linalg.expm(0.25 * rot).reshape(self.identity.shape)
-        p90 = np.array([phases[i] @ base @ phases[-i] for i in range(4)])
+        p90 = self._add_phases(base, spin)
         return p90
 
     def _get_phases(self):
@@ -306,6 +300,10 @@ class PropagatorIS:
                 [linalg.expm(n * 0.5 * np.pi * l_rotz) for n in range(4)]
             )
         return phases
+
+    def _add_phases(self, propagator, spin="i"):
+        phases = self._phases[spin]
+        return np.array([phases[i] @ propagator @ phases[-i] for i in range(4)])
 
 
 class Propagator1HTQDif(PropagatorIS):
