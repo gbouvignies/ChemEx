@@ -30,6 +30,7 @@ pre-commit = "^1.18"
 pyinstaller = "^3.5"
 macholib = "^1.11"
 flake8 = "^3.7"
+rope = "^0.14.0"
 
 [tool.poetry.scripts]
 chemex = "chemex.chemex:main"
