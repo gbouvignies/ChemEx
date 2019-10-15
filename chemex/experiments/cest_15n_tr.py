@@ -71,7 +71,7 @@ _FIT_SETTING = {
 def read(config):
     config["spin_system"] = {
         "basis": "ixyzsz",
-        "atoms": {"i": "h", "s": "n"},
+        "atoms": {"i": "n", "s": "h"},
         "constraints": ["nh"],
         "rates": "nh",
     }
