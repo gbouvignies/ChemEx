@@ -49,13 +49,13 @@ def fit(args):
     # Read experimental setup and data
     experiments = cce.read(filenames=args.experiments, model=model)
 
-    # Create parameters
-    params = experiments.params_default
-
     if args.selection:
         print("\nSelecting profiles...")
         experiments.select(args.selection, discard=True)
         print(f"  - Profile(s): {len(experiments)}")
+
+    # Create parameters
+    params = experiments.params_default
 
     if not experiments:
         sys.exit("\nerror: No data to fit")
