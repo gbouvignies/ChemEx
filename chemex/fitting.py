@@ -68,23 +68,26 @@ class Fit:
                 not multi_groups and self._plot == "normal"
             )
             section_path = section.upper() if len(method) > 1 else ""
+            g_params_all = []
             for index, (g_name, (g_experiments, g_params)) in enumerate(groups.items()):
                 group_path = path / section_path
                 if multi_groups:
                     group_path = group_path / "Clusters" / str(g_name)
                     print(f"\n\n-- Cluster {index + 1}/{len(groups)} ({g_name}) --")
                 g_params = _minimize(g_experiments, g_params, fitmethod)
-                params_.update(g_params)
                 _write_files(g_experiments, g_params, group_path)
                 if plot_group_flg:
                     _write_plots(g_experiments, g_params, group_path)
+                g_params_all.append(g_params)
+            g_params_merged = cph.merge(g_params_all)
             if multi_groups:
                 print("\n\n-- All clusters --")
-                _print_chisqr(self._experiments, params_)
+                _print_chisqr(self._experiments, g_params_merged)
                 path_ = path / section_path / "All"
-                _write_files(self._experiments, params_, path_)
+                _write_files(self._experiments, g_params_merged, path_)
                 if self._plot != "nothing":
-                    _write_plots(self._experiments, params_, path_)
+                    _write_plots(self._experiments, g_params_merged, path_)
+            params_.update(g_params_merged)
         return params_
 
     def bootstrap(self, params, iter_nb):
