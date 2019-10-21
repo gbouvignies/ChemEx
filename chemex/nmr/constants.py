@@ -30,6 +30,8 @@ XI_RATIO = {
     "f": 40.480_863_6e-02,
 }
 
+SIGNED_XI_RATIO = {key: np.sign(GAMMA[key]) * val for key, val in XI_RATIO.items()}
+
 # Residue-specific scalar coupling values with neighbouring carbons (in Hz)
 J_COUPLING = {
     "a": {
@@ -65,11 +67,7 @@ J_COUPLING = {
         "ca": (52.5, 35.0, -10.7, -7.7),
         "cb": (35.0, 52.5),
     },
-    "g": {
-        "n": (-7.7, -10.7, -14.4),
-        "c": (52.5, -14.4),
-        "ca": (52.5, -10.7, -7.7)
-    },
+    "g": {"n": (-7.7, -10.7, -14.4), "c": (52.5, -14.4), "ca": (52.5, -10.7, -7.7)},
     "h": {
         "n": (-7.7, -10.7, -14.4),
         "c": (52.5, -14.4),
