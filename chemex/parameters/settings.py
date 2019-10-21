@@ -166,14 +166,25 @@ def set_params(
 
 def write_par(params, path):
     """Write the fitting parameters and their uncertainties to a file."""
-    params_free = {name: param for name, param in params.items() if param.vary}
-    params_not_free = {name: param for name, param in params.items() if not param.vary}
-    free = _params_to_text(params_free)
-    not_free = _params_to_text(params_not_free)
+    fitted_, fixed_, constrained_ = {}, {}, {}
+    for name, param in params.items():
+        if param.vary:
+            fitted_[name] = param
+        elif param.expr:
+            constrained_[name] = param
+        else:
+            fixed_[name] = param
+    fitted = _params_to_text(fitted_)
+    constrained = _params_to_text(constrained_)
+    fixed = _params_to_text(fixed_)
     path_ = path / "Parameters"
     path_.mkdir(parents=True, exist_ok=True)
-    (path_ / "free.toml").write_text(free)
-    (path_ / "not_free.toml").write_text(not_free)
+    if fitted:
+        (path_ / "fitted.toml").write_text(fitted)
+    if constrained:
+        (path_ / "constrained.toml").write_text(constrained)
+    if fixed:
+        (path_ / "fixed.toml").write_text(fixed)
 
 
 def _params_to_text(params):
@@ -218,7 +229,7 @@ def _param_to_string(param):
         elif not param.expr:
             comments.append("error not calculated")
     if param.expr:
-        comments.append("constrained")
+        comments.append(_print_constraint(param))
     elif not param.vary:
         comments.append("fixed")
     if comments:
@@ -229,28 +240,15 @@ def _param_to_string(param):
     return string_
 
 
-def write_constraints(params, path):
+def _print_constraint(param):
     """Write the (optional) parameter expression constraints to a file."""
-    param_dict = dict()
-    for name, param in params.items():
-        par_name = cpn.ParamName.from_full_name(name)
-        if param.expr:
-            name_formatted = "[{}]".format(
-                par_name.to_section_name(show_spin_system=True)
-            )
-            expr_formatted = param.expr
-            for name_dep in aa.get_ast_names(ast.parse(param.expr)):
-                par_name_dep = cpn.ParamName.from_full_name(name_dep)
-                if str(par_name_dep):
-                    expr_formatted = expr_formatted.replace(
-                        name_dep,
-                        "[{}]".format(
-                            par_name_dep.to_section_name(show_spin_system=True)
-                        ),
-                    )
-            param_dict[par_name] = f"{name_formatted} = {expr_formatted}\n"
-    path_ = path / "Parameters"
-    path_.mkdir(parents=True, exist_ok=True)
-    with open(path_ / "constraints.txt", "w") as f:
-        for name, constraint in sorted(param_dict.items()):
-            f.write(constraint)
+    if not param.expr:
+        return ""
+    par_name = cpn.ParamName.from_full_name(param.name)
+    name_formatted = f"[{par_name.to_section_name(show_spin_system=True)}]"
+    expr_formatted = str(param.expr)
+    for name_dep in aa.get_ast_names(ast.parse(param.expr)):
+        par_name_dep = cpn.ParamName.from_full_name(name_dep)
+        name_dep_formatted = f"[{par_name_dep.to_section_name(show_spin_system=True)}]"
+        expr_formatted = expr_formatted.replace(name_dep, name_dep_formatted)
+    return f"{name_formatted} = {expr_formatted}"

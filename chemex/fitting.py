@@ -200,7 +200,6 @@ def _write_files(experiments, params, path):
     print(f'\nWriting results -> "{path}/"')
     path.mkdir(parents=True, exist_ok=True)
     cps.write_par(params, path)
-    cps.write_constraints(params, path)
     experiments.write(params, path)
     _write_statistics(experiments, params, path=path)
 
