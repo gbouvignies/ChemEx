@@ -7,6 +7,8 @@ time_equil   = 2.0e-3
 
 [conditions]
 h_larmor_frq = 500.0
+#sample = "Ark1p peptide-bound form Abp1p SH3 (6.8% bound)"
+#temperature = 25.0
 
 [data]
 path = "../Data/500MHz/"

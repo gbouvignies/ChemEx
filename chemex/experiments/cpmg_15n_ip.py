@@ -17,7 +17,7 @@ decoupling can be achieved.
 References
 ----------
 
-Hansen, Vallurupalli and Kay. Journal of Physical Chemistry B (2008) 112:5898-5904
+Hansen, Vallurupalli and Kay. J Phys Chem B (2008) 112:5898-5904
 
 
 Note

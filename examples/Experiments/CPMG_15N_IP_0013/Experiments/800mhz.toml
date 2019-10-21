@@ -1,16 +1,18 @@
 [experiment]
 name         = "cpmg_15n_ip_0013"
 time_t2      = 40.0e-3
-carrier      = 119.00000
-pw90         = 43.800e-6
+carrier      = 119.0
+pw90         = 43.8e-6
 ncyc_max     = 40
 time_equil   = 5.0e-3
 
 [conditions]
-h_larmor_frq = 800.304
+h_larmor_frq = 800.3
+#sample = "G48A Fyn SH3"
+#temperature = 25.0
 
 [data]
-path = "../data/800MHz"
+path = "../Data/800MHz"
 error = "duplicates"
 profiles = [
     ["3N", "3N-HN.out"],
@@ -64,4 +66,4 @@ profiles = [
     ["56N", "56N-HN.out"],
     ["59N", "59N-HN.out"],
     ["60N", "60N-HN.out"],
-    ]
+]

@@ -18,8 +18,9 @@ pw90 = 25.0
 ## [optional, default: 0.0]
 # time_equil = 0.0
 
-## Perform sidechain CO inversion [optional, default: false]
-# sidechain = false
+## Set to true when C-C J-coupling refocusing element is applied
+## [optional, default: false]
+# refocusing = false
 
 ## 1/2*JCC, in seconds [optional, default: 9.09e-3]
 # taucc = 9.09e-3
@@ -43,22 +44,22 @@ h_larmor_frq = 800.0
 
 [data]
 
+## Directory containing the profiles [optional, default: "./"]
+# path = "./"
+
 ## Option defining how intensity uncertainties are estimated.
 ## "file": uncertainties are taken from the profile files
 ## "duplicates": uncertainties are calculated from the duplicate points
 ## [optional, default: "file"]
 # error = "file"
 
-## Directory containing the profiles [optional, default: "./"]
-# path = "./"
-
 ## List of the profile names and their associated filenames.
 ## The name of the spin systems should follow the Sparky-NMR
 ## conventions.
 profiles = [
-  ["G1C-N", "G1C-N.out"],
-  ["H2C-N", "H2C-N.out"],
-  ["M3C-N", "M3C-N.out"],
-  ["S4C-N", "S4C-N.out"],
-  ["T5C-N", "T5C-N.out"],
+    ["M1CO-G2N", "G2N-HN.out"],
+    ["G2CO-H3N", "H3N-HN.out"],
+    ["H3CO-K4N", "K4N-HN.out"],
+    ["K4CO-S5N", "S5N-HN.out"],
+    ["S5CO-L6N", "L6N-HN.out"],
 ]

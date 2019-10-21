@@ -18,7 +18,7 @@ decoupling on 2H should be properly applied.
 References
 ----------
 
-Hansen, Vallurupalli, Lundstrom, Neudecker and Kay. J Am Chem Soc (2008) 130:2667-2675
+Hansen, Vallurupalli, Lundström, Neudecker and Kay. J Am Chem Soc (2008) 130:2667-2675
 Renella, Schuetz and Kay. J Biomol NMR (2016) 65:59-64
 
 

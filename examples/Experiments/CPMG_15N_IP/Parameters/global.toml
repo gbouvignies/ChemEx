@@ -1,3 +1,7 @@
+[MODEL_FREE]
+TAUC       = 4e-9
+DEUTERATED = true
+
 [GLOBAL]
-PB     = 0.06
-KEX_AB = 400.0
+PB         = 0.07
+KEX_AB     = 400.0
