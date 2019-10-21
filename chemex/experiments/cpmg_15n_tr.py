@@ -14,7 +14,8 @@ states:
 
 References
 ----------
-Vallurupalli et al. Proc Natl Acad Sci USA (2007) 104
+
+Vallurupalli, Hansen, Stollar, Meirovitch and Kay. PNAS (2007) 104:18473-18477
 
 
 Note

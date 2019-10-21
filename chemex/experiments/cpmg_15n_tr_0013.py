@@ -17,8 +17,9 @@ as shown in Daiwen's paper.
 
 References
 ----------
-Jiang et al. Journal of Magnetic Resonance (2015) 257
-Vallurupalli et al. Proc Natl Acad Sci USA (2007) 104
+
+Jiang, Yu, Zhang, Liu and Yang. J Magn Reson (2015) 257:1-7
+Vallurupalli, Hansen, Stollar, Meirovitch and Kay. PNAS (2007) 104:18473-18477
 
 
 Note

@@ -17,8 +17,10 @@ strong enough (> 15 kHz) such that perfect 1H decoupling can be achieved.
 
 References
 ----------
-Jiang et al. Journal of Magnetic Resonance (2015) 257
-Hansen, Vallurupalli and Kay. Journal of Physical Chemistry B (2008) 112:5898-5904
+
+Jiang, Yu, Zhang, Liu and Yang. J Magn Reson (2015) 257:1-7
+Hansen, Vallurupalli and Kay. J Phys Chem B (2008) 112:5898-5904
+
 
 Note
 ----

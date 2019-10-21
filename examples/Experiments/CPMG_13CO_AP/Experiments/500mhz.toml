@@ -7,19 +7,21 @@ time_equil   = 0.003
 
 [conditions]
 h_larmor_frq = 500.0
+#sample = "wild-type Im7"
+#temperature = 25.0
 
 [data]
 path = "../Data/500MHz/"
 error = "duplicates"
 profiles = [
-  ["22C-N", "22CO-23N.out"],
-  ["23C-N", "23CO-24N.out"],
-  ["24C-N", "24CO-25N.out"],
-  ["25C-N", "25CO-26N.out"],
-  ["36C-N", "36CO-37N.out"],
-  ["39C-N", "39CO-40N.out"],
-  ["41C-N", "41CO-42N.out"],
-  ["42C-N", "42CO-43N.out"],
-  ["46C-N", "46CO-47N.out"],
-  ["51C-N", "51CO-52N.out"],
+    ["22CO-23N", "23N-HN.out"],
+    ["23CO-24N", "24N-HN.out"],
+    ["24CO-25N", "25N-HN.out"],
+    ["25CO-26N", "26N-HN.out"],
+    ["36CO-37N", "37N-HN.out"],
+    ["39CO-40N", "40N-HN.out"],
+    ["41CO-42N", "42N-HN.out"],
+    ["42CO-43N", "43N-HN.out"],
+    ["46CO-47N", "47N-HN.out"],
+    ["51CO-52N", "52N-HN.out"],
 ]

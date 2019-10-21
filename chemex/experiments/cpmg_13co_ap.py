@@ -15,12 +15,14 @@ Because of the length of the shaped pulses used during the CPMG blocks, off-
 resonance effects are taken into account only for the 90-degree pulses that
 create COxNz before the CPMG and COzNz after the CPMG.
 
-The calculation can be run with or without sidechain CO inversion via the
-'sidechain' flag for uniformly 13C-labeled proteins.
+The calculation can be run with or without C-C J-coupling refocusing element
+via the 'refocusing' flag, with such option ncyc_cp should be set as even.
 
 References
 ----------
-Journal of Biomolecular NMR (2008) 42, 35-47
+
+Lundström, Hansen and Kay. J Biomol NMR (2008) 42:35-47
+Hansen and Kay. J Biomol NMR (2011) 50:347-355
 
 
 Note
@@ -52,7 +54,7 @@ _SCHEMA = {
                 "carrier": {"type": "number"},
                 "pw90": {"type": "number"},
                 "time_equil": {"type": "number", "default": 0.0},
-                "sidechain": {"type": "boolean", "default": False},
+                "refocusing": {"type": "boolean", "default": False},
                 "taucc": {"type": "number", "default": 9.09e-3},
                 "observed_state": {
                     "type": "string",
@@ -94,7 +96,7 @@ class PulseSeq:
         self.prop.carrier_i = settings["carrier"]
         self.pw90 = settings["pw90"]
         self.t_neg = -2.0 * self.pw90 / np.pi
-        self.sidechain = settings["sidechain"]
+        self.refocusing = settings["refocusing"]
         self.taucc = settings["taucc"]
         self.prop.b1_i = 1 / (4.0 * self.pw90)
         self.observed_state = settings["observed_state"]
@@ -122,10 +124,10 @@ class PulseSeq:
         start = self.prop.get_start_magnetization(terms=f"2izsz_{self.observed_state}")
 
         # Calculate the flip block
-        if self.sidechain:
-            p_flip = p180pmy
-        else:
+        if self.refocusing:
             p_flip = p90[3] @ d_taucc @ p180pmy @ d_taucc @ p90[1]
+        else:
+            p_flip = p180pmy
 
         # Calculating the intensities as a function of ncyc
         part1 = p90[1] @ start
