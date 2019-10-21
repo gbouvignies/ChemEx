@@ -14,7 +14,7 @@ states:
 Reference
 ---------
 
-Dong, Bouvignies and Kay. PNAS (2014) 24:8820-5
+Long, Bouvignies and Kay. PNAS (2014) 111:8820-8825
 
 
 Note
@@ -64,7 +64,7 @@ _FIT_SETTING = {
     "r2_a": "fit",
     "r2_b": "fit",
     "r1a_a": "fit",
-    "etaxy_a": "fit",
+    "r1a_b": "fit",
 }
 
 
@@ -78,6 +78,7 @@ def read(config):
     ch.validate(config, _SCHEMA)
     ch.validate(config, ccc.CEST_SCHEMA)
     if config["experiment"]["antitrosy"]:
+        _FIT_SETTING["etaxy_a"] = "fit"
         _FIT_SETTING["etaz_a"] = "fit"
     experiment = ceh.read(
         config=config,
@@ -103,19 +104,21 @@ class PulseSeq:
         self.observed_state = settings["observed_state"]
         self.prop.detection = self._get_detection(settings["observed_state"])
         self.dephased = settings["b1_inh_scale"] == np.inf
-        self.calculate = ft.lru_cache(maxsize=5)(self.calculate_)
+        self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
-    def calculate_(self, offsets, params_local):
+    def _calculate(self, offsets, params_local):
         self.prop.update(params_local)
         start = self._get_start()
-        ref = abs(offsets) < 1e4
-        intst = {offset: self.prop.detect(start) for offset in offsets[ref]}
-        for offset in set(offsets[~ref]):
-            self.prop.offset_i = offset
-            intst[offset] = self.prop.detect(
-                self.prop.pulse_i(self.time_t1, 0.0, self.dephased) @ start
-            )
-        return np.array([intst[offset] for offset in offsets])
+        intst = {}
+        for offset in set(offsets):
+            if abs(offset) < 1e4:
+                self.prop.offset_i = offset
+                intst[offset] = (
+                    self.prop.pulse_i(self.time_t1, 0.0, self.dephased) @ start
+                )
+            else:
+                intst[offset] = start
+        return np.array([self.prop.detect(intst[offset]) for offset in offsets])
 
     def _get_start(self):
         start = self.prop.get_start_magnetization("2izsz")

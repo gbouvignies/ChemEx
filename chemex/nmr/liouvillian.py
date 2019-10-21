@@ -279,8 +279,8 @@ class LiouvillianIS:
         self._interpreter = asteval.Interpreter(
             symtable={"vectors": self.vectors}, minimal=True
         )
-        self.ppm_i = 2.0 * np.pi * h_frq * cnc.G_RATIO.get(atoms.get("i"), 1.0)
-        self.ppm_s = 2.0 * np.pi * h_frq * cnc.G_RATIO.get(atoms.get("s"), 1.0)
+        self.ppm_i = -2.0 * np.pi * h_frq * cnc.SIGNED_XI_RATIO.get(atoms.get("i"), 1.0)
+        self.ppm_s = -2.0 * np.pi * h_frq * cnc.SIGNED_XI_RATIO.get(atoms.get("s"), 1.0)
         self.carrier_i, self.carrier_s = 0.0, 0.0
         self.offset_i, self.offset_s = 0.0, 0.0
         self.b1_i, self.b1_s = 1e32, 1e32

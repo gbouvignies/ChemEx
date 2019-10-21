@@ -1,0 +1,4 @@
+[DEFAULT]
+PB     = "fix"
+KEX_AB = "fix"
+R2_B   = "R2_A"

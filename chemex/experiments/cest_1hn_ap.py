@@ -99,9 +99,9 @@ class PulseSeq:
         self.observed_state = settings["observed_state"]
         self.prop.detection = f"2izsz_{self.observed_state}"
         self.dephased = settings["b1_inh_scale"] == np.inf
-        self.calculate = ft.lru_cache(maxsize=5)(self.calculate_)
+        self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
-    def calculate_(self, offsets, params_local):
+    def _calculate(self, offsets, params_local):
         self.prop.update(params_local)
         start = self.prop.get_start_magnetization(terms=f"2izsz_{self.observed_state}")
         intst = {}
