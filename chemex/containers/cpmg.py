@@ -161,6 +161,9 @@ class CpmgProfile:
         data_fit = np.unique(np.sort(data_fit, order="nu_cpmgs"))
         return data_exp, data_fit
 
+    def any_duplicate(self):
+        return self.data.any_duplicate()
+
     def __add__(self, other: "CpmgProfile"):
         data = self.data + other.data
         return CpmgProfile(
@@ -233,6 +236,9 @@ class CpmgData:
         r2_ens = intensities_to_r2(intst_ens, intst_ref_ens, time_t2) - r2
         r2_err = np.percentile(r2_ens, [15.9, 84.1], axis=0).transpose()
         return nu_cpmgs, r2, r2_err, self.mask[~self.refs]
+
+    def any_duplicate(self):
+        return np.unique(self.points["ncycs"]).size != self.points.size
 
     def __add__(self, other: "CpmgData"):
         points = self.points.copy()

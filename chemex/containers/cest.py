@@ -193,6 +193,9 @@ class CestProfile:
         data_fit = np.unique(np.sort(data_fit, order="ppms"))
         return data_exp, data_fit
 
+    def any_duplicate(self):
+        return self.data.any_duplicate()
+
     def __add__(self, other: "CestProfile"):
         data = self.data + other.data
         return CestProfile(
@@ -262,6 +265,9 @@ class CestData:
         data = copy.deepcopy(self)
         data.points = self.points[bs_indexes]
         return data
+
+    def any_duplicate(self):
+        return np.unique(self.points["offsets"]).size != self.points.size
 
     def __add__(self, other: "CestData"):
         points = self.points.copy()
