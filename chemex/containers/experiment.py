@@ -216,6 +216,13 @@ class RelaxationExperiment:
                 f"{implemented}"
             )
             kind = "file"
+        if kind == "duplicates" and not self._any_duplicate():
+            print(
+                f"Warning: Experiment {self.filename.name}: Some profiles have no "
+                f"duplicate points: Uncertainties are not estimated and directly taken "
+                f"from the files."
+            )
+            kind = "file"
         if kind == "file":
             return
         noise_variance_values = []
@@ -242,6 +249,9 @@ class RelaxationExperiment:
 
     def __len__(self):
         return len(self._profiles)
+
+    def _any_duplicate(self):
+        return any(profile.any_duplicate() for profile in self._profiles)
 
 
 def read(filenames=None, model=None):
