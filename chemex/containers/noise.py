@@ -64,7 +64,8 @@ def _variance_from_scatter(data):
                 except ValueError:
                     pass
             sigma_est.append(np.median(sigmas))
-    return np.median(sigma_est) ** 2 / (1.0 + 15.0 * (size + 1.225) ** -1.245)
+    variance = np.median(sigma_est) ** 2 / (1.0 + 15.0 * (size + 1.225) ** -1.245)
+    return max(variance, 1e-8)
 
 
 estimate_noise_variance = {
