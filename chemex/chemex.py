@@ -51,11 +51,6 @@ def fit(args):
         filenames=args.experiments, model=model, selection=args.selection
     )
 
-    # if args.selection:
-    #     print("\nSelecting profiles...")
-    #     experiments.select(args.selection, discard=True)
-    #     print(f"  - Profile(s): {len(experiments)}")
-
     # Create parameters
     params = experiments.params_default
 
@@ -64,7 +59,7 @@ def fit(args):
 
     # Update initial values of fitting/fixed parameters
     ch.header1("Reading default parameters")
-    cpp.set_params_from_files(params, experiments, args.parameters)
+    cpp.set_values(params, experiments, args.parameters)
 
     # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
     experiments.filter(params)

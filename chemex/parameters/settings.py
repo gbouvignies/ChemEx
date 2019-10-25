@@ -49,7 +49,7 @@ _SCHEMA_CONFIG_PARAM = {
 }
 
 
-def set_params_from_files(params, experiments, filenames):
+def set_values(params, experiments, filenames):
     """Read the parameter file and set initial values and optional bounds and brute
     step size."""
     config = _read_config(filenames)
@@ -105,7 +105,7 @@ def _check_params(params):
         print("\n\n".join(np.unique(messages)))
 
 
-def set_param_status(params, settings=None, verbose=True):
+def set_status(params, settings=None, verbose=True):
     """Set whether or not to vary a fitting parameter or to use a mathemetical
     expression. """
     if settings is None:
@@ -123,6 +123,12 @@ def set_param_status(params, settings=None, verbose=True):
         matches.update({name.to_section_name(): len(matched)})
     if verbose:
         _print_matches(matches)
+
+
+def put_back_starting_values(params):
+    for param in params.values():
+        if param.user_data:
+            param.value = param.user_data
 
 
 def _print_matches(matches):
@@ -171,10 +177,9 @@ def _set_params(params, name_short, values):
     for name, param in params.items():
         if name_short.match(name):
             repr_ = repr(param)
-            if values.get("expr") is None and param.expr and values.get("vary") is None:
-                param.value = values["value"]
-            else:
-                param.set(**values)
+            param.set(**values)
+            if values.get("value") is not None:
+                param.user_data = values["value"]
             if repr(param) != repr_:
                 matches.add(name)
     return matches
