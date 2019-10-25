@@ -16,11 +16,13 @@ as shown in Daiwen's paper.
 
 References
 ----------
-Yuwen T and Kay LE. Journal of magnetic resonance (2019) in press
+
+Yuwen and Kay. J Biomol NMR (2019) in press
+
 
 Note
 ----
-A sample configuration  file for this module is available using the command:
+A sample configuration file for this module is available using the command:
 
     chemex config cpmg_1hn_ap_0013
 

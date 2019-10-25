@@ -8,7 +8,7 @@ from scipy import interpolate
 
 import chemex.experiments as ce
 import chemex.parameters.kinetics as cpk
-from chemex.nmr import helper
+from chemex.nmr import spin_system
 
 
 def pick_cest(args):
@@ -56,7 +56,7 @@ class Buttons:
         self.out = path
 
         self.names = sorted(
-            [helper.SpinSystem(profile.name).names["i"] for profile in self.data]
+            [spin_system.SpinSystem(profile.name).names["i"] for profile in self.data]
         )
 
         self.curve, self.curve_sp = None, None
@@ -80,7 +80,7 @@ class Buttons:
         self.index += step
         self.index %= len(self.data)
         self._profile = self.data[self.index]
-        self.name = helper.SpinSystem(self._profile.name)
+        self.name = spin_system.SpinSystem(self._profile.name)
         self._profile_to_curve()
         self._clear_axis()
         self._plot()

@@ -16,7 +16,7 @@ import numpy as np
 import scipy.stats as ss
 
 import chemex.nmr.constants as cnc
-import chemex.nmr.helper as cnh
+import chemex.nmr.spin_system as cns
 
 
 class LiouvillianIS:
@@ -267,7 +267,7 @@ class LiouvillianIS:
         self.state_nb = model.state_nb
         self.atoms = atoms
         self.h_frq = h_frq
-        self.states = cnh.get_state_names(model.state_nb)
+        self.states = cns.get_state_names(model.state_nb)
         self.basis = self.BASES[name]
         self.size = len(self.basis) * model.state_nb
         self.matrices = {

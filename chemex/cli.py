@@ -7,7 +7,7 @@ import sys
 import chemex.chemex as cc
 import chemex.experiments as ce
 import chemex.helper as ch
-import chemex.nmr.helper as cnh
+import chemex.nmr.spin_system as cns
 import chemex.tools as ct
 
 
@@ -148,7 +148,7 @@ def build_parser():
         metavar="ID",
         nargs="+",
         help="Residue(s) to include in the fit",
-        type=cnh.SpinSystem,
+        type=cns.SpinSystem,
     )
 
     fit_parser.add_argument(

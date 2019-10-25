@@ -9,10 +9,11 @@ import chemex.helper as ch
 import chemex.parameters.kinetics as cpk
 
 
-def read(filename, model):
+def read(filename, model, selection):
     config = ch.read_toml(filename)
     config["filename"] = pl.Path(filename)
     config["model"] = model
+    config["selection"] = selection
     experiment_name = get_experiment_name(config)
     cpk.validates_conditions(config)
     module = grab(experiment_name)

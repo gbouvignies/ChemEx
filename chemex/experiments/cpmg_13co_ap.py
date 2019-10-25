@@ -28,7 +28,7 @@ Hansen and Kay. J Biomol NMR (2011) 50:347-355
 Note
 ----
 
-A sample configuration  file for this module is available using the command:
+A sample configuration file for this module is available using the command:
 
     chemex config cpmg_13co_ap
 

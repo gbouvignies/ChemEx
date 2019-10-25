@@ -13,11 +13,13 @@ relaxation rates and therefore better sensitivity. The calculations use a 12x12,
 References
 ----------
 Adapted from:
-Ishima R. and Torshia D. Journal of Biomolecular NMR (2003) 25, 243-248
+
+Ishima and Torshia. J Biomol NMR (2003) 25:243-248
+
 
 Note
 ----
-A sample configuration  file for this module is available using the command:
+A sample configuration file for this module is available using the command:
 
     chemex config cpmg_1hn_ap
 
