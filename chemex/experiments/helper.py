@@ -59,6 +59,7 @@ def _read_profiles(
     atoms = config["spin_system"]["atoms"]
     constraints = config["spin_system"].get("constraints")
     h_frq = conditions["h_larmor_frq"]
+    propagator = propagator_cls(basis=basis, model=model, atoms=atoms, h_frq=h_frq)
     profiles = []
     for path, spin_system in paths.items():
         config["spin_system"]["spin_system"] = spin_system
@@ -69,7 +70,6 @@ def _read_profiles(
             spin_system=spin_system,
             constraints=constraints,
         )
-        propagator = propagator_cls(basis=basis, model=model, atoms=atoms, h_frq=h_frq)
         pulse_seq = pulse_seq_cls(config=config, propagator=propagator)
         profile = container_cls.from_file(
             path=path,
