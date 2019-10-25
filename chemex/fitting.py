@@ -34,40 +34,54 @@ class Fit:
     def __init__(self, experiments, path, plot):
         self._experiments = experiments
         self._path = path
-        self._method = {"Standard Calculation": {}}
-        self._method_file = None
+        self._method = {"": {}}
         self._result = None
         self._plot = plot
 
     def read_method(self, filename):
         if filename is None:
-            self._method = {"": {}}
-            self._method_file = None
-        else:
-            self._method = ch.read_toml(filename)
-            self._method_file = filename
+            return
+        self._method = ch.read_toml(filename)
 
-    def fit(self, params, method=None, path=None):
-        if method is None:
-            method = self._method
+    def fit(self, params, path=None):
+
         if path is None:
             path = self._path
+
         params_ = copy.deepcopy(params)
-        for section, settings in method.items():
+
+        for index, (section, settings) in enumerate(self._method.items()):
+
             if section:
                 ch.header2(f"\n{section.upper()}")
+
+            # Set the fitting algorithm
             fitmethod = _pop_fitmethod(settings)
+
+            # Select a subset of profiles based on the "SELECTION"
             _select(self._experiments, settings)
-            cps.set_param_status(params_, settings)
+
+            # Update the parameter "vary" and "expr" status
+            cps.set_status(params_, settings)
+
+            # Hack to set back parameters without an "expr" to the user values
+            if index == 0:
+                cps.put_back_starting_values(params_)
+
             if not self._experiments:
                 print("No data to fit...")
                 continue
+
+            # Make cluster of data depending on indendent set of parameters
             groups = self._cluster_data(params_)
+
+            # Set section flags and path
             multi_groups = len(groups) > 1
             plot_group_flg = self._plot == "all" or (
                 not multi_groups and self._plot == "normal"
             )
-            section_path = section.upper() if len(method) > 1 else ""
+            section_path = section.upper() if len(self._method) > 1 else ""
+
             g_params_all = []
             for index, (g_name, (g_experiments, g_params)) in enumerate(groups.items()):
                 group_path = path / section_path
@@ -79,7 +93,9 @@ class Fit:
                 if plot_group_flg:
                     _write_plots(g_experiments, g_params, group_path)
                 g_params_all.append(g_params)
+
             g_params_merged = cph.merge(g_params_all)
+
             if multi_groups:
                 print("\n\n-- All clusters --")
                 _print_chisqr(self._experiments, g_params_merged)
@@ -87,7 +103,9 @@ class Fit:
                 _write_files(self._experiments, g_params_merged, path_)
                 if self._plot != "nothing":
                     _write_plots(self._experiments, g_params_merged, path_)
+
             params_.update(g_params_merged)
+
         return params_
 
     def bootstrap(self, params, iter_nb):

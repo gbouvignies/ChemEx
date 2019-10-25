@@ -78,6 +78,6 @@ def _read_profiles(
             par_names=par_names,
             params_default=params_default,
         )
-        cps.set_param_status(profile.params_default, fit_setting, verbose=False)
+        cps.set_status(profile.params_default, fit_setting, verbose=False)
         profiles.append(profile)
     return sorted(profiles)
