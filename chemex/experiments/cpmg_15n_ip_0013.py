@@ -24,7 +24,7 @@ Hansen, Vallurupalli and Kay. J Phys Chem B (2008) 112:5898-5904
 
 Note
 ----
-A sample configuration  file for this module is available using the command:
+A sample configuration file for this module is available using the command:
 
     chemex config cpmg_15n_ip_0013
 

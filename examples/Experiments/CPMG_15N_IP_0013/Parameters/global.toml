@@ -6,3 +6,7 @@ DEUTERATED = true
 PB         = 0.07
 KEX_AB     = 100.0
 DW_AB      = 1.0
+
+[DW_AB]
+I50        = 10.0
+V55        = 10.0

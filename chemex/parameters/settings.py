@@ -7,10 +7,11 @@ import difflib as dl
 import re
 
 import asteval.astutils as aa
+import numpy as np
 
 import chemex.helper as ch
-import chemex.nmr.helper as cnh
 import chemex.nmr.rates as cnr
+import chemex.nmr.spin_system as cns
 import chemex.parameters.name as cpn
 
 
@@ -62,9 +63,10 @@ def set_params_from_files(params, experiments, filenames):
             if not isinstance(values, cl.abc.Iterable):
                 values = [values]
             values_ = dict(zip(("value", "min", "max", "brute_step"), values))
-            matched = set_params(params, name, **values_)
+            matched = _set_params(params, name, values_)
             matches.update({name.to_section_name(): len(matched)})
     _print_matches(matches)
+    _check_params(params)
 
 
 def _set_param_mf(params, experiments, cfg_model_free):
@@ -80,6 +82,29 @@ def _read_config(filenames):
     return config_
 
 
+def _check_params(params):
+    messages = []
+    for param in params.values():
+        pname = cpn.ParamName.from_full_name(param.name)
+        sname = pname.name.upper()
+        atoms = set(cns.SpinSystem(pname.spin_system).atoms.values())
+        if sname.startswith("J_") and atoms == {"N", "H"} and param.value > 0.0:
+            messages.append(
+                "Warning: Some 1J(NH) scalar couplings are set with positive values. \n"
+                "This can cause the TROSY and anti-TROSY components to be switched in \n"
+                "some experiments."
+            )
+        if sname.startswith("J_") and atoms == {"C", "H"} and param.value < 0.0:
+            messages.append(
+                "Warning: Some 1J(CH) scalar couplings are set with negative values. \n"
+                "This can cause the TROSY and anti-TROSY components to be switched in \n"
+                "some experiments."
+            )
+    if messages:
+        print("")
+        print("\n\n".join(np.unique(messages)))
+
+
 def set_param_status(params, settings=None, verbose=True):
     """Set whether or not to vary a fitting parameter or to use a mathemetical
     expression. """
@@ -92,9 +117,9 @@ def set_param_status(params, settings=None, verbose=True):
     for key, status in settings.items():
         name = cpn.ParamName.from_section(key)
         if status in vary:
-            matched = set_params(params, name, vary=vary[status], expr="")
+            matched = _set_params(params, name, {"vary": vary[status], "expr": ""})
         else:
-            matched = set_param_expr(params, name, expr=status)
+            matched = _set_param_expr(params, name, expr=status)
         matches.update({name.to_section_name(): len(matched)})
     if verbose:
         _print_matches(matches)
@@ -108,7 +133,7 @@ def _print_matches(matches):
             print(f"  - [{key}] -> Nothing to update")
 
 
-def set_param_expr(params, name, expr=None):
+def _set_param_expr(params, name, expr=None):
     """Set an optional parameter expression, used to constrain its value during
     the fit."""
     if expr is None:
@@ -139,26 +164,17 @@ def set_param_expr(params, name, expr=None):
     return matches
 
 
-def set_params(
-    params,
-    name_short,
-    value=None,
-    vary=None,
-    min=None,
-    max=None,
-    expr=None,
-    brute_step=None,
-):
+def _set_params(params, name_short, values):
     """Set the initial value and (optional) bounds and brute step size for
     parameters."""
     matches = set()
     for name, param in params.items():
         if name_short.match(name):
             repr_ = repr(param)
-            if expr is None and param.expr and vary is None:
-                param.value = value
+            if values.get("expr") is None and param.expr and values.get("vary") is None:
+                param.value = values["value"]
             else:
-                param.set(value, vary, min, max, expr, brute_step)
+                param.set(**values)
             if repr(param) != repr_:
                 matches.add(name)
     return matches
@@ -209,7 +225,7 @@ def _params_to_string(params):
             name_print = par_name
             section = "GLOBAL"
         else:  # residue-specific parameter
-            name_print = cnh.SpinSystem(par_name.spin_system)
+            name_print = cns.SpinSystem(par_name.spin_system)
             section = par_name.to_section_name()
         value_print = _param_to_string(param)
         par_string.setdefault(section, []).append((name_print, value_print))

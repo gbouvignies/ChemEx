@@ -64,9 +64,9 @@ class Experiments:
         for experiment in self._experiments.values():
             experiment.plot(params, path)
 
-    def select(self, selection=None, discard=False):
+    def select(self, selection=None):
         for experiment in self._experiments.values():
-            experiment.select(selection, discard)
+            experiment.select(selection)
 
     def filter(self, params=None):
         for experiment in self._experiments.values():
@@ -162,7 +162,7 @@ class RelaxationExperiment:
             for profile in sorted(self._profiles):
                 file_dat.write(profile.print(params))
 
-    def select(self, selection=None, discard=False):
+    def select(self, selection=None):
         if selection is None:
             return
         profiles = self._profiles + self._filtered
@@ -176,12 +176,9 @@ class RelaxationExperiment:
                         selected.append(profile)
                         break
         self._profiles = sorted(selected)
-        if not discard:
-            self._filtered = sorted(
-                profile for profile in profiles if profile not in selected
-            )
-        else:
-            self._filtered = []
+        self._filtered = sorted(
+            profile for profile in profiles if profile not in selected
+        )
 
     def filter(self, params=None):
         for profile in self._profiles:
@@ -223,7 +220,7 @@ class RelaxationExperiment:
                 f"from the files."
             )
             kind = "file"
-        if kind == "file":
+        if kind == "file" or not self._profiles:
             return
         noise_variance_values = []
         for profile in self._profiles:
@@ -254,14 +251,14 @@ class RelaxationExperiment:
         return any(profile.any_duplicate() for profile in self._profiles)
 
 
-def read(filenames=None, model=None):
+def read(filenames=None, model=None, selection=None):
     if not filenames:
         return None
     ch.header1("Reading experimental data")
     experiments = Experiments()
     for filename in filenames:
         print(f"\nReading '{filename}'...")
-        experiment = ce.read(filename, model)
+        experiment = ce.read(filename, model, selection)
         experiments.add(experiment)
     return experiments
 

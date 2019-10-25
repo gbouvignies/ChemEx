@@ -7,7 +7,7 @@ import numpy as np
 import scipy.stats as ss
 
 import chemex.helper as ch
-import chemex.nmr.helper as cnh
+import chemex.nmr.spin_system as cns
 import chemex.parameters.helper as cph
 import chemex.parameters.name as cpn
 import chemex.parameters.settings as cps
@@ -24,7 +24,7 @@ def _select(experiments, settings):
     if selection is None:
         return
     if isinstance(selection, list) and not isinstance(selection, str):
-        selection = [cnh.SpinSystem(name) for name in selection]
+        selection = [cns.SpinSystem(name) for name in selection]
     print("\nSelecting profiles...")
     experiments.select(selection)
     print(f"  - Profile(s): {len(experiments)}")

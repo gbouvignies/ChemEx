@@ -25,7 +25,7 @@ Vallurupalli, Hansen, Stollar, Meirovitch and Kay. PNAS (2007) 104:18473-18477
 Note
 ----
 
-A sample configuration  file for this module is available using the command:
+A sample configuration file for this module is available using the command:
 
     chemex config cpmg_15n_tr_0013
 
@@ -53,6 +53,7 @@ _SCHEMA = {
                 "time_equil": {"type": "number", "default": 0.0},
                 "taub": {"type": "number", "default": 2.68e-3},
                 "antitrosy": {"type": "boolean", "default": False},
+                "s3e": {"type": "boolean", "default": True},
                 "observed_state": {
                     "type": "string",
                     "pattern": "[a-z]",

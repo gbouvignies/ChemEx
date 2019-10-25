@@ -7,7 +7,7 @@ time_equil   = 2.0e-3
 
 [conditions]
 h_larmor_frq = 800.0
-#sample = "Ark1p peptide-bound form Abp1p SH3 (6.8% bound)"
+#sample = "Abp1p SH3 bound with Ark1p peptide (6.8% bound)"
 #temperature = 25.0
 
 [data]

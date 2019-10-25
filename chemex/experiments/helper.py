@@ -2,9 +2,9 @@ import pathlib as pl
 
 import chemex.containers.experiment as cce
 import chemex.helper as ch
-import chemex.parameters.settings as cps
-import chemex.nmr.helper as cnn
+import chemex.nmr.spin_system as cns
 import chemex.parameters as cp
+import chemex.parameters.settings as cps
 
 
 def get_type():
@@ -39,9 +39,14 @@ def read(
 def _get_profile_paths(config):
     path = ch.normalize_path(config["filename"].parent, pl.Path(config["data"]["path"]))
     paths = {
-        path / profile[1]: cnn.SpinSystem(profile[0])
+        path / profile[1]: cns.SpinSystem(profile[0])
         for profile in config["data"]["profiles"]
     }
+    selection = config["selection"]
+    if selection is not None:
+        for path, spin_system in paths.copy().items():
+            if not any(spin_system & name == name for name in selection):
+                del paths[path]
     return paths
 
 

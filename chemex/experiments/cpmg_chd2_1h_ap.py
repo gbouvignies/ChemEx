@@ -14,7 +14,9 @@ the (6n)x(6n), two spin matrix, where n is the number of states:
 
 References
 ----------
-Baldwin, Religa, Hansen, Bouvignies and Kay. J. Am. Chem. Soc. (2010) 132, 10992-5
+
+Baldwin, Religa, Hansen, Bouvignies and Kay. J Am Chem Soc (2010) 132:10992-10995
+
 
 Note
 ----

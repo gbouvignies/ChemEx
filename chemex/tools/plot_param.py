@@ -2,7 +2,7 @@ import configparser
 
 import matplotlib.pyplot as plt
 
-import chemex.nmr.helper as cnh
+import chemex.nmr.spin_system as cns
 import chemex.parameters.name as cpn
 
 
@@ -19,7 +19,7 @@ def plot_param(args):
             print(f"  - [{section}]")
             points = []
             for key, value in params.items(section):
-                res = int(cnh.SpinSystem(key).numbers["i"])
+                res = int(cns.SpinSystem(key).numbers["i"])
                 split = value.split()
                 value = float(split[0])
                 try:

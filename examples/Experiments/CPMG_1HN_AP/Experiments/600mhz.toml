@@ -2,23 +2,25 @@
 name         = "cpmg_1hn_ap"
 time_t2      = 20.0e-3
 carrier      = 8.071
-pw90         = 12e-6
+pw90         = 12.0e-6
 
 [conditions]
 h_larmor_frq = 598.846
+#sample = "L99A T4 lysozyme"
+#temperature = 25.0
 
 [data]
 path = "../Data/600MHz/"
 error = "duplicates"
 profiles = [
-  ["3H-N", "3H-N.out"],
-  ["8H-N", "8H-N.out"],
-  ["29H-N", "29H-N.out"],
-  ["70H-N", "70H-N.out"],
-  ["75H-N", "75H-N.out"],
-  ["103H-N", "103H-N.out"],
-  ["104H-N", "104H-N.out"],
-  ["105H-N", "105H-N.out"],
-  ["115H-N", "115H-N.out"],
-  ["121H-N", "121H-N.out"],
+    ["3HN-N", "3N-HN.out"],
+    ["8HN-N", "8N-HN.out"],
+    ["29HN-N", "29N-HN.out"],
+    ["70HN-N", "70N-HN.out"],
+    ["75HN-N", "75N-HN.out"],
+    ["103HN-N", "103N-HN.out"],
+    ["104HN-N", "104N-HN.out"],
+    ["105HN-N", "105N-HN.out"],
+    ["115HN-N", "115N-HN.out"],
+    ["121HN-N", "121N-HN.out"],
 ]

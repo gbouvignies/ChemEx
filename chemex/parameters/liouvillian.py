@@ -2,7 +2,7 @@ import itertools as it
 
 import numpy as np
 
-import chemex.nmr.helper as cnh
+import chemex.nmr.spin_system as cns
 import chemex.parameters.helper as cph
 
 
@@ -12,7 +12,7 @@ def create_params_l(basis, model, conditions, spin_system=None, constraints=None
         for basis_name in BASIS_TO_SHORTNAMES:
             message += f"    - '{basis_name}'\n"
         raise NameError(message)
-    states = cnh.get_state_names(model.state_nb)
+    states = cns.get_state_names(model.state_nb)
     shortnames = _get_shortnames(basis, constraints)
     settings = _make_settings(shortnames, states, constraints)
     fnames, params = cph.make_params(settings, conditions, spin_system)

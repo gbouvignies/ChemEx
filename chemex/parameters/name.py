@@ -1,7 +1,7 @@
 import functools as ft
 import re
 
-import chemex.nmr.helper as cnh
+import chemex.nmr.spin_system as cns
 
 
 _DECORATORS = {
@@ -56,10 +56,10 @@ class ParamName:
 
     @spin_system.setter
     def spin_system(self, value):
-        if isinstance(value, cnh.SpinSystem):
+        if isinstance(value, cns.SpinSystem):
             self._spin_system = value
         else:
-            self._spin_system = cnh.SpinSystem(value)
+            self._spin_system = cns.SpinSystem(value)
 
     def to_dict(self):
         return {
