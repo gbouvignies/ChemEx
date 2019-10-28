@@ -30,7 +30,6 @@ A sample configuration file for this module is available using the command:
 import functools as ft
 
 import numpy as np
-import numpy.linalg as nl
 
 import chemex.containers.cpmg as ccc
 import chemex.experiments.helper as ceh
@@ -127,7 +126,7 @@ class PulseSeq:
             pp90pmy = self.prop.perfect90_i[[1, 3]]
             d_eburp = delays[self.pw_eburp]
             e180e_pmy = pp90pmy @ d_eburp @ p180pmy @ d_eburp @ pp90pmy
-            centre = np.mean([p180pmy @ e180e_pmy, e180e_pmy @ p180pmy], axis=0)
+            centre = [p180pmy @ e180e_pmy, e180e_pmy @ p180pmy]
         elif self.reburp_flg:
             pp180pmy = self.prop.perfect180_i[[1, 3]]
             d_reburp = delays[0.5 * self.pw_reburp]
