@@ -174,11 +174,12 @@ def _set_params(params, name_short, values):
     """Set the initial value and (optional) bounds and brute step size for
     parameters."""
     matches = set()
+    value = values.pop("value", None)
     for name, param in params.items():
         if name_short.match(name):
             repr_ = repr(param)
-            if values.get("value") is not None:
-                param.user_data = param.value = values.pop("value")
+            if value is not None:
+                param.user_data = param.value = value
             param.set(**values)
             if repr(param) != repr_:
                 matches.add(name)
