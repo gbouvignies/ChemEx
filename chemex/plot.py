@@ -13,23 +13,14 @@ _RED700 = "#D32F2F"
 def profile(name, data_exp, data_fit):
     xname, yname, ename, *_ = data_exp.dtype.names
     residuals = _get_residuals(data_exp, data_fit)
-    xrange = get_grid(data_fit[xname], 2, 0.02)
-    data_y = np.concatenate(
-        [(data_exp[yname] + data_exp[ename].T).flatten(), data_fit[yname]]
-    )
-    yrange2 = get_grid(data_y, 2, 0.1)
-    yrange1 = get_grid((residuals + data_exp[ename].T).flatten(), 2, 0.1)
+    range_x = get_grid(data_fit[xname], 2, 0.02)
     fig = mf.Figure()
     ax1, ax2 = fig.subplots(2, 1, sharex="all", gridspec_kw={"height_ratios": [1, 4]})
     fig.align_labels()
     fig.suptitle(f"{str(name).upper()}")
-    ax1.set_xlim(*xrange)
-    ax1.set_ylim(*yrange1)
-    ax2.set_ylim(*yrange2)
+    ax1.set_xlim(*range_x)
     ax1.set_ylabel("Residuals")
     ax1.ticklabel_format(style="sci", scilimits=(0, 0), axis="y", useMathText=True)
-    for axis in (ax1, ax2):
-        axis.axhline(0, color="k", linewidth=0.5)
     ax1.errorbar(
         data_exp[data_exp.mask][xname],
         residuals[data_exp.mask],
@@ -63,16 +54,20 @@ def profile(name, data_exp, data_fit):
         color=_RED100,
         zorder=3,
     )
+    range_y = ax2.get_ylim()
+    for axis in (ax1, ax2):
+        axis.axhline(0, color="k", linewidth=0.5, zorder=1)
+    range_y = ax2.set_ylim(range_y)
     return fig
 
 
 def cpmg(file_pdf, name, data_exp, data_fit):
-    xname, *_ = data_exp.dtype.names
+    xname, *_ = data_fit.dtype.names
     fig = profile(name, data_exp, data_fit)
     ax1, ax2 = fig.axes
     ax2.set_xlabel(r"$\nu_\mathregular{CPMG}$ (Hz)")
     ax2.set_ylabel(r"$R_{2,\mathregular{eff}}$ (s$^{-1}$)")
-    ax2.set_xlim(0.0, max(data_exp[xname]) + min(data_exp[xname]))
+    ax2.set_xlim(0.0, max(data_fit[xname]) + min(data_fit[xname]))
     file_pdf.savefig(fig)
 
 
@@ -115,6 +110,8 @@ def _estimate_sigma(values):
     10.1080/01621459.1993.10476408.
 
     """
+    if not all(values):
+        return 0.0
     _values = values.reshape(1, -1)
     return 1.1926 * np.median(np.median(abs(_values - _values.T), axis=0))
 
@@ -124,3 +121,14 @@ def get_grid(values, size=500, extension=0.0):
     value_max = np.max(values)
     extra = (value_max - value_min) * extension
     return np.linspace(value_min - extra, value_max + extra, size)
+
+
+def write_plots(experiments, params, path, simulation=False):
+    """Plot the experimental and fitted data."""
+    print("\nPlotting data...")
+    path_ = path / "Plots"
+    path_.mkdir(parents=True, exist_ok=True)
+    try:
+        experiments.plot(path=path_, params=params, simulation=simulation)
+    except KeyboardInterrupt:
+        print("  - Plotting cancelled")

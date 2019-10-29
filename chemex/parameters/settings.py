@@ -177,9 +177,9 @@ def _set_params(params, name_short, values):
     for name, param in params.items():
         if name_short.match(name):
             repr_ = repr(param)
-            param.set(**values)
             if values.get("value") is not None:
-                param.user_data = values["value"]
+                param.user_data = param.value = values.pop("value")
+            param.set(**values)
             if repr(param) != repr_:
                 matches.add(name)
     return matches

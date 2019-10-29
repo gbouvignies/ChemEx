@@ -85,7 +85,7 @@ def build_parser():
         )
 
     # parser for the positional argument "fit"
-    fit_parser = commands.add_parser("fit", help="Starts a fit", prefix_chars="+-")
+    fit_parser = commands.add_parser("fit", help="Starts a fit")
 
     fit_parser.set_defaults(func=cc.fit)
 
@@ -157,6 +157,57 @@ def build_parser():
 
     fit_parser.add_argument(
         "--bs", metavar="N", type=int, help="Run N Bootstrap simulations"
+    )
+
+    # parser for the positional argument "simulate"
+    simulate_parser = commands.add_parser("simulate", help="Starts a simulation")
+
+    simulate_parser.set_defaults(func=cc.simulate)
+
+    simulate_parser.add_argument(
+        "-e",
+        dest="experiments",
+        type=pathlib.Path,
+        metavar="FILE",
+        nargs="+",
+        required=True,
+        help="Input files containing experimental setup and data location",
+    )
+
+    simulate_parser.add_argument(
+        "-p",
+        dest="parameters",
+        type=pathlib.Path,
+        metavar="FILE",
+        nargs="+",
+        required=True,
+        help="Input file containing the initial values of fitting parameters",
+    )
+
+    simulate_parser.add_argument(
+        "-o",
+        dest="out_dir",
+        type=pathlib.Path,
+        metavar="DIR",
+        default="./Output",
+        help="Directory for output files",
+    )
+
+    simulate_parser.add_argument(
+        "-d",
+        dest="model",
+        metavar="MODEL",
+        default="2st.pb_kex",
+        help="Exchange model used to fit the data",
+    )
+
+    simulate_parser.add_argument(
+        "-r",
+        dest="selection",
+        metavar="ID",
+        nargs="+",
+        help="Residue(s) to include in the fit",
+        type=cns.SpinSystem,
     )
 
     # parser for the positional argument "pick_cest"
