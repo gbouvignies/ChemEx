@@ -60,9 +60,9 @@ class Experiments:
         for experiment in self._experiments.values():
             experiment.write(params, path_)
 
-    def plot(self, params, path):
+    def plot(self, params, path, simulation=False):
         for experiment in self._experiments.values():
-            experiment.plot(params, path)
+            experiment.plot(params, path, simulation)
 
     def select(self, selection=None):
         for experiment in self._experiments.values():
@@ -142,7 +142,7 @@ class RelaxationExperiment:
             self.filename, self.exp_type, profiles=profiles, verbose=False
         )
 
-    def plot(self, params, path):
+    def plot(self, params, path, simulation=False):
         basename = path / self.filename.name
         name_pdf = basename.with_suffix(".pdf")
         name_exp = basename.with_suffix(".exp")
@@ -150,11 +150,13 @@ class RelaxationExperiment:
         print(f"  - {name_pdf} [.fit, .exp]")
         with cl.ExitStack() as stack:
             file_pdf = stack.enter_context(pdf.PdfPages(str(name_pdf)))
-            file_exp = stack.enter_context(name_exp.open("w"))
             file_fit = stack.enter_context(name_fit.open("w"))
+            if not simulation:
+                file_exp = stack.enter_context(name_exp.open("w"))
+            else:
+                file_exp = None
             for profile in sorted(self._profiles):
-                profile.plot(params, file_pdf)
-                profile.write_plot(params, file_exp, file_fit)
+                profile.plot(params, file_pdf, file_exp, file_fit, simulation)
 
     def write(self, params, path):
         filename = (path / self.filename.name).with_suffix(".dat")

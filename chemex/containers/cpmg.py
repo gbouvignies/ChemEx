@@ -56,7 +56,11 @@ class CpmgProfile:
     @classmethod
     def from_file(cls, path, config, pulse_seq, par_names, params_default):
         name = config["spin_system"]["spin_system"]
-        data = CpmgData.from_file(path, filter_planes=config["data"]["filter_planes"])
+        data = CpmgData.from_file(
+            path,
+            filter_planes=config["data"]["filter_planes"],
+            time_t2=config["experiment"]["time_t2"],
+        )
         return cls(name, data, pulse_seq, par_names, params_default)
 
     def residuals(self, params):
@@ -93,28 +97,16 @@ class CpmgProfile:
     def filter(self, params):
         pass
 
-    def plot(self, params, file_pdf):
-        data_exp, data_fit = self._get_plot_data(params)
+    def plot(self, params, file_pdf, file_exp, file_fit, simulation=False):
+        data_exp = self.data.get_r2_exp(simulation)
+        intst_fit = self.calculate(params)
+        data_fit = self.data.get_r2_fit(intst_fit, simulation)
         self._plot(file_pdf, self.name, data_exp, data_fit)
-
-    def write_plot(self, params, file_exp, file_fit):
-        data_exp, data_fit = self._get_plot_data(params)
-        output_exp = f"[{self.name}]\n"
-        output_exp += f"# {'NU_CPMG':>12s}  {'R2 (EXP)':>17s} {'ERROR DOWN (EXP)':>17s} {'ERROR UP (EXP)':>17s}\n"
-        for point in data_exp:
-            nu_cpmgs = point["nu_cpmgs"]
-            r2 = point["r2"]
-            errors = point["errors"]
-            output_exp += (
-                f"  {nu_cpmgs:12.3f}  {r2:17.8e} {errors[0]:17.8e} {errors[1]:17.8e}"
-            )
-            output_exp += " # NOT USED IN THE FIT\n" if not point["mask"] else "\n"
-        file_exp.write(output_exp + "\n\n")
-        output_fit = f"[{self.name}]\n"
-        output_fit += f"# {'NU_CPMG':>12s}  {'R2 (CALC)':>17s}\n"
-        for point in data_fit:
-            output_fit += "  {nu_cpmgs:12.3f}  {r2:17.8e}\n".format_map(point)
+        output_fit = self._format_data_fit(data_fit)
         file_fit.write(output_fit + "\n\n")
+        if not simulation:
+            output_exp = self._format_data_exp(data_exp)
+            file_exp.write(output_exp + "\n\n")
 
     def monte_carlo(self, params):
         intensities_ref = self.calculate(params)
@@ -140,26 +132,25 @@ class CpmgProfile:
         )
         return parvals
 
-    def _get_plot_data(self, params):
-        time_t2 = self._pulse_seq.time_t2
-        nu_cpmgs, r2_exp, r2_err, mask = self.data.to_r2(time_t2)
-        intst_fit = self.calculate(params, self.data.points["ncycs"])
-        refs = self.data.refs
-        intst_ref = self.data.points[refs]["intensities"]
-        r2_fit = intensities_to_r2(intst_fit[~refs], intst_ref, time_t2)
-        data_exp = np.rec.array(
-            [nu_cpmgs, r2_exp, r2_err, mask],
-            dtype=[
-                ("nu_cpmgs", "f8"),
-                ("r2", "f8"),
-                ("errors", "f8", (2,)),
-                ("mask", "?"),
-            ],
-        )
-        data_fit = np.rec.array([nu_cpmgs, r2_fit], names=["nu_cpmgs", "r2"])
-        data_exp = np.sort(data_exp, order="nu_cpmgs")
-        data_fit = np.unique(np.sort(data_fit, order="nu_cpmgs"))
-        return data_exp, data_fit
+    def _format_data_exp(self, data_exp):
+        result = f"[{self.name}]\n"
+        result += f"# {'NU_CPMG':>12s}  {'R2 (EXP)':>17s} {'ERROR DOWN (EXP)':>17s} {'ERROR UP (EXP)':>17s}\n"
+        for point in data_exp:
+            nu_cpmgs = point["nu_cpmgs"]
+            r2 = point["r2"]
+            errors = point["errors"]
+            result += (
+                f"  {nu_cpmgs:12.3f}  {r2:17.8e} {errors[0]:17.8e} {errors[1]:17.8e}"
+            )
+            result += " # NOT USED IN THE FIT\n" if not point["mask"] else "\n"
+        return result
+
+    def _format_data_fit(self, data_fit):
+        result = f"[{self.name}]\n"
+        result += f"# {'NU_CPMG':>12s}  {'R2 (CALC)':>17s}\n"
+        for point in data_fit:
+            result += "  {nu_cpmgs:12.3f}  {r2:17.8e}\n".format_map(point)
+        return result
 
     def any_duplicate(self):
         return self.data.any_duplicate()
@@ -182,13 +173,14 @@ class CpmgData:
     randm2 = np.random.randn(10000, 1)
     dtype = np.dtype([("ncycs", "i4"), ("intensities", "f8"), ("errors", "f8")])
 
-    def __init__(self, points, refs, mask):
+    def __init__(self, points, refs, mask, time_t2):
         self.points = points
         self.refs = refs
         self.mask = mask
+        self._time_t2 = time_t2
 
     @classmethod
-    def from_file(cls, path, filter_planes):
+    def from_file(cls, path, filter_planes, time_t2):
         try:
             points = np.loadtxt(path, dtype=cls.dtype)
         except OSError as err:
@@ -200,7 +192,7 @@ class CpmgData:
                 index for index in filter_planes if 0 <= index < len(points)
             ]
             mask[planes_to_filter] = False
-            return cls(points, refs, mask)
+            return cls(points, refs, mask, time_t2)
 
     def estimate_noise_variance(self, kind):
         return ccn.estimate_noise_variance[kind](self.points)
@@ -224,18 +216,50 @@ class CpmgData:
         data.points = self.points[bs_indexes]
         return data
 
-    def to_r2(self, time_t2):
+    def get_r2_exp(self, simulation=False):
+        dtype = [
+            ("nu_cpmgs", "f8"),
+            ("r2", "f8"),
+            ("errors", "f8", (2,)),
+            ("mask", "?"),
+        ]
+        if simulation:
+            return np.rec.array([[], [], [], []], dtype=dtype)
         points = self.points[~self.refs]
         points_ref = self.points[self.refs]
-        intst = points["intensities"]
-        intst_ref = points_ref["intensities"]
-        nu_cpmgs = ncycs_to_nu_cpmgs(points["ncycs"], time_t2)
-        r2 = intensities_to_r2(intst, intst_ref, time_t2)
-        intst_ens = intst + points["errors"] * self.randm1
-        intst_ref_ens = intst_ref + points_ref["errors"] * self.randm2
-        r2_ens = intensities_to_r2(intst_ens, intst_ref_ens, time_t2) - r2
-        r2_err = np.percentile(r2_ens, [15.9, 84.1], axis=0).transpose()
-        return nu_cpmgs, r2, r2_err, self.mask[~self.refs]
+        nu_cpmgs = self._ncycs_to_nu_cpmg(points["ncycs"])
+        r2 = self._intst_to_r2(points["intensities"], points_ref["intensities"])
+        intst_ens = points["intensities"] + points["errors"] * self.randm1
+        intst_ref_ens = points_ref["intensities"] + points_ref["errors"] * self.randm2
+        r2_ens = self._intst_to_r2(intst_ens, intst_ref_ens)
+        errors = np.percentile(r2_ens - r2, [15.9, 84.1], axis=0).transpose()
+        mask = self.mask[~self.refs]
+        r2_exp = np.rec.array([nu_cpmgs, r2, errors, mask], dtype=dtype)
+        return np.sort(r2_exp, order="nu_cpmgs")
+
+    def get_r2_fit(self, intst_fit, simulation=False):
+        refs = self.refs
+        intst = intst_fit[~refs]
+        if simulation:
+            intst_ref = intst_fit[refs]
+        else:
+            intst_ref = self.points[refs]["intensities"]
+        nu_cpmgs = self._ncycs_to_nu_cpmg(self.points[~refs]["ncycs"])
+        r2 = self._intst_to_r2(intst, intst_ref)
+        r2_fit = np.rec.array([nu_cpmgs, r2], names=["nu_cpmgs", "r2"])
+        return np.sort(r2_fit, order="nu_cpmgs")
+
+    def _ncycs_to_nu_cpmg(self, ncycs=None):
+        ncycs_ = np.array(ncycs, dtype=np.float)
+        ncycs_[ncycs_ == -1.0] = 0.5
+        return ncycs_[ncycs_ != 0.0] / self._time_t2
+
+    def _intst_to_r2(self, intst, intst_ref):
+        intst_norm = intst / np.mean(intst_ref, axis=-1, keepdims=True)
+        r2 = np.full_like(intst, np.inf)
+        neg = intst_norm <= 0.0
+        r2[~neg] = -np.log(intst_norm[~neg]) / self._time_t2
+        return r2
 
     def any_duplicate(self):
         return np.unique(self.points["ncycs"]).size != self.points.size
@@ -249,16 +273,3 @@ class CpmgData:
         refs = self.refs.copy()
         mask = self.mask.copy()
         return CpmgData(points, refs, mask)
-
-
-def intensities_to_r2(intst, intst_ref, time_t2):
-    r2 = np.zeros_like(intst)
-    intst_norm = intst / np.mean(intst_ref, axis=-1, keepdims=True)
-    neg = intst_norm <= 0.0
-    r2[neg] = np.inf
-    r2[~neg] = -np.log(intst_norm[~neg]) / time_t2
-    return r2
-
-
-def ncycs_to_nu_cpmgs(ncycs, time_t2):
-    return np.asarray(ncycs) / time_t2

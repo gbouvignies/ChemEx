@@ -7,7 +7,8 @@ import chemex.containers.experiment as cce
 import chemex.fitting as cf
 import chemex.helper as ch
 import chemex.parameters.kinetics as cpk
-import chemex.parameters.settings as cpp
+import chemex.parameters.settings as cps
+import chemex.plot as cp
 
 
 LOGO = r"""
@@ -59,7 +60,7 @@ def fit(args):
 
     # Update initial values of fitting/fixed parameters
     ch.header1("Reading default parameters")
-    cpp.set_values(params, experiments, args.parameters)
+    cps.set_values(params, experiments, args.parameters)
 
     # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
     experiments.filter(params)
@@ -73,3 +74,39 @@ def fit(args):
         fitter.bootstrap(params_, args.bs)
     elif args.mc:
         fitter.monte_carlo(params_, args.mc)
+
+
+def simulate(args):
+
+    # Parse kinetics model
+    model = cpk.parse_model(name=args.model)
+
+    # Read experimental setup and data
+    experiments = cce.read(
+        filenames=args.experiments, model=model, selection=args.selection
+    )
+
+    # Create parameters
+    params = experiments.params_default
+
+    if not experiments:
+        sys.exit("\nerror: No data to simulate")
+
+    # Update initial values of fitting/fixed parameters
+    ch.header1("Reading default parameters")
+    cps.set_values(params, experiments, args.parameters)
+
+    # Set to "fix" all parameters that are set to "fit"
+    for param in params.values():
+        if param.vary:
+            param.vary = False
+
+    # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
+    experiments.filter(params)
+
+    # Run the simulation
+    ch.header1("Running the simulation")
+    path = args.out_dir
+    print(f'\nWriting results -> "{path}/"')
+    cps.write_par(params, path)
+    cp.write_plots(experiments, params, path, simulation=True)

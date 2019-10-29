@@ -11,23 +11,7 @@ import chemex.nmr.spin_system as cns
 import chemex.parameters.helper as cph
 import chemex.parameters.name as cpn
 import chemex.parameters.settings as cps
-
-
-def _pop_fitmethod(settings):
-    fitmethod = settings.pop("fitmethod", "leastsq")
-    print(f'\nFitting method -> "{fitmethod}"')
-    return fitmethod
-
-
-def _select(experiments, settings):
-    selection = settings.pop("selection", None)
-    if selection is None:
-        return
-    if isinstance(selection, list) and not isinstance(selection, str):
-        selection = [cns.SpinSystem(name) for name in selection]
-    print("\nSelecting profiles...")
-    experiments.select(selection)
-    print(f"  - Profile(s): {len(experiments)}")
+import chemex.plot as cp
 
 
 class Fit:
@@ -91,7 +75,7 @@ class Fit:
                 g_params = _minimize(g_experiments, g_params, fitmethod)
                 _write_files(g_experiments, g_params, group_path)
                 if plot_group_flg:
-                    _write_plots(g_experiments, g_params, group_path)
+                    cp.write_plots(g_experiments, g_params, group_path)
                 g_params_all.append(g_params)
 
             g_params_merged = cph.merge(g_params_all)
@@ -102,7 +86,7 @@ class Fit:
                 path_ = path / section_path / "All"
                 _write_files(self._experiments, g_params_merged, path_)
                 if self._plot != "nothing":
-                    _write_plots(self._experiments, g_params_merged, path_)
+                    cp.write_plots(self._experiments, g_params_merged, path_)
 
             params_.update(g_params_merged)
 
@@ -176,6 +160,23 @@ class Fit:
             cluster_name = cluster_experiments.get_cluster_name()
             clusters_[cluster_name] = (cluster_experiments, cluster_params)
         return clusters_
+
+
+def _pop_fitmethod(settings):
+    fitmethod = settings.pop("fitmethod", "leastsq")
+    print(f'\nFitting method -> "{fitmethod}"')
+    return fitmethod
+
+
+def _select(experiments, settings):
+    selection = settings.pop("selection", None)
+    if selection is None:
+        return
+    if isinstance(selection, list) and not isinstance(selection, str):
+        selection = [cns.SpinSystem(name) for name in selection]
+    print("\nSelecting profiles...")
+    experiments.select(selection)
+    print(f"  - Profile(s): {len(experiments)}")
 
 
 def _minimize(experiments, params, fitmethod=None):
@@ -265,14 +266,3 @@ def _calculate_statistics(experiments, params):
         "aic": aic,
         "bic": bic,
     }
-
-
-def _write_plots(experiments, params, path):
-    """Plot the experimental and fitted data."""
-    print("\nPlotting data...")
-    path_ = path / "Plots"
-    path_.mkdir(parents=True, exist_ok=True)
-    try:
-        experiments.plot(path=path_, params=params)
-    except KeyboardInterrupt:
-        print("  - Plotting cancelled")

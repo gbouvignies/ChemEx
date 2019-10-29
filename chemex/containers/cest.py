@@ -114,29 +114,16 @@ class CestProfile:
         sw_dante = getattr(self._pulse_seq, "sw_dante", None)
         self.data.filter(cs_offset, sw_dante)
 
-    def plot(self, params, file_pdf):
-        data_exp, data_fit = self._get_plot_data(params)
+    def plot(self, params, file_pdf, file_exp, file_fit, simulation=False):
+        data_exp = self._get_plot_data_exp(simulation)
+        data_fit = self._get_plot_data_fit(params, simulation)
         cs_values = self._get_cs_values(params)
         self._plot(file_pdf, self.name, data_exp, data_fit, cs_values)
-
-    def write_plot(self, params, file_exp, file_fit):
-        data_exp, data_fit = self._get_plot_data(params)
-        output_exp = f"[{self.name}]\n"
-        output_exp += (
-            f"# {'CS (PPM)':>12s}  {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s}\n"
-        )
-        for point in data_exp:
-            nu_cpmgs = point["ppms"]
-            intensities = point["intensities"]
-            errors = point["errors"]
-            output_exp += f"  {nu_cpmgs:12.2f}  {intensities:17.8e} {errors[1]:17.8e}"
-            output_exp += " # NOT USED IN THE FIT" if not point["mask"] else "\n"
-        file_exp.write(output_exp + "\n\n")
-        output_fit = f"[{self.name}]\n"
-        output_fit += f"# {'CS (PPM)':>12s}  {'INTENSITY (CALC)':>17s}\n"
-        for point in data_fit:
-            output_fit += "  {ppms: 12.2f}  {intensities: 17.8e}\n".format_map(point)
+        output_fit = self._format_data_fit(data_fit)
         file_fit.write(output_fit + "\n\n")
+        if not simulation:
+            output_exp = self._format_data_exp(data_exp)
+            file_exp.write(output_exp + "\n\n")
 
     def monte_carlo(self, params):
         intensities_ref = self.calculate(params)
@@ -167,31 +154,59 @@ class CestProfile:
         fnames = (self._par_names[name] for name in names if name in self._par_names)
         return [params[fname] for fname in fnames]
 
-    def _get_plot_data(self, params):
-        data = self.data.points[~self.data.refs]
-        data_refs = self.data.points[self.data.refs]
-        mask = self.data.mask[~self.data.refs]
-        intstref = np.mean(data_refs["intensities"])
-        ppms = self._pulse_seq.offsets_to_ppms(data["offsets"])
-        intensities = data["intensities"] / intstref
-        errors = data["errors"] / abs(intstref)
+    def _get_plot_data_exp(self, simulation=False):
+        dtype = [
+            ("ppms", "f8"),
+            ("intensities", "f8"),
+            ("errors", "f8", (2,)),
+            ("mask", "?"),
+        ]
+        if simulation:
+            return np.rec.array([[], [], [], []], dtype=dtype)
+        refs = self.data.refs
+        points = self.data.points[~refs]
+        intst_ref = np.mean(self.data.points[refs]["intensities"])
+        ppms = self._pulse_seq.offsets_to_ppms(points["offsets"])
+        intensities = points["intensities"] / intst_ref
+        errors = points["errors"] / abs(intst_ref)
         errors = np.array([-errors, errors]).transpose()
+        mask = self.data.mask[~refs]
+        data_exp = np.rec.array([ppms, intensities, errors, mask], dtype=dtype)
+        return np.sort(data_exp, order="ppms")
+
+    def _get_plot_data_fit(self, params, simulation=False):
+        refs = self.data.refs
+        data = self.data.points[~refs]
+        if simulation:
+            intst_calc = self.calculate(params)
+            intst_ref = np.mean(intst_calc[refs[self.data.mask]])
+        else:
+            intst_ref = np.mean(self.data.points[refs]["intensities"])
         offsets_fit = cp.get_grid(data["offsets"], 500, 0.02)
-        ppms_fit = self._pulse_seq.offsets_to_ppms(offsets_fit)
-        intst_fit = self.calculate(params, offsets_fit) / intstref
-        data_exp = np.rec.array(
-            [ppms, intensities, errors, mask],
-            dtype=[
-                ("ppms", "f8"),
-                ("intensities", "f8"),
-                ("errors", "f8", (2,)),
-                ("mask", "?"),
-            ],
+        ppms = self._pulse_seq.offsets_to_ppms(offsets_fit)
+        intensities = self.calculate(params, offsets_fit) / intst_ref
+        data_fit = np.rec.array([ppms, intensities], names=["ppms", "intensities"])
+        return np.sort(data_fit, order="ppms")
+
+    def _format_data_exp(self, data_exp):
+        result = f"[{self.name}]\n"
+        result += (
+            f"# {'CS (PPM)':>12s}  {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s}\n"
         )
-        data_fit = np.rec.array([ppms_fit, intst_fit], names=["ppms", "intensities"])
-        data_exp = np.sort(data_exp, order="ppms")
-        data_fit = np.unique(np.sort(data_fit, order="ppms"))
-        return data_exp, data_fit
+        for point in data_exp:
+            nu_cpmgs = point["ppms"]
+            intensities = point["intensities"]
+            errors = point["errors"]
+            result += f"  {nu_cpmgs:12.2f}  {intensities:17.8e} {errors[1]:17.8e}"
+            result += " # NOT USED IN THE FIT" if not point["mask"] else "\n"
+        return result
+
+    def _format_data_fit(self, data_fit):
+        result = f"[{self.name}]\n"
+        result += f"# {'CS (PPM)':>12s}  {'INTENSITY (CALC)':>17s}\n"
+        for point in data_fit:
+            result += "  {ppms: 12.2f}  {intensities: 17.8e}\n".format_map(point)
+        return result
 
     def any_duplicate(self):
         return self.data.any_duplicate()
