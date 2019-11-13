@@ -19,256 +19,280 @@ import chemex.nmr.constants as cnc
 import chemex.nmr.spin_system as cns
 
 
-class LiouvillianIS:
-    BASES = {
-        "ixy": ["ix", "iy"],
-        "iz": ["iz"],
-        "iz_eq": ["ie", "iz"],
-        "ixyz": ["ix", "iy", "iz"],
-        "ixyz_eq": ["ie", "ix", "iy", "iz"],
-        "ixysxy": ["2ixsx", "2ixsy", "2iysx", "2iysy"],
-        "ixyzsz": ["ix", "iy", "iz", "2ixsz", "2iysz", "2izsz"],
-        "ixyzsz_eq": ["ie", "ix", "iy", "iz", "2ixsz", "2iysz", "2izsz"],
-        "ixyzsxyz": [
-            "ix",
-            "iy",
-            "iz",
-            "sx",
-            "sy",
-            "sz",
-            "2ixsz",
-            "2iysz",
-            "2izsx",
-            "2izsy",
-            "2ixsx",
-            "2ixsy",
-            "2iysx",
-            "2iysy",
-            "2izsz",
-        ],
-        "ixyzsxyz_eq": [
-            "ie",
-            "se",
-            "ix",
-            "iy",
-            "iz",
-            "sx",
-            "sy",
-            "sz",
-            "2ixsz",
-            "2iysz",
-            "2izsx",
-            "2izsy",
-            "2ixsx",
-            "2ixsy",
-            "2iysx",
-            "2iysy",
-            "2izsz",
-        ],
-        "ch3_1htq_grad": ["ix", "iy", "iz", "2ixsz", "2iysz", "2izsz"],
-    }
-    TRANSITIONS = {
-        "r2_i_{state}": (("ix", "ix", -1.0), ("iy", "iy", -1.0)),
-        "r2_s_{state}": (("sx", "sx", -1.0), ("sy", "sy", -1.0)),
-        "r1_i_{state}": (("iz", "iz", -1.0), ("iz", "ie", +1.0)),
-        "r1_s_{state}": (("sz", "sz", -1.0), ("sz", "se", +1.0)),
-        "r2a_i_{state}": (("2ixsz", "2ixsz", -1.0), ("2iysz", "2iysz", -1.0)),
-        "r2a_s_{state}": (("2izsx", "2izsx", -1.0), ("2izsy", "2izsy", -1.0)),
-        "r2mq_is_{state}": (
-            ("2ixsx", "2ixsx", -1.0),
-            ("2ixsy", "2ixsy", -1.0),
-            ("2iysx", "2iysx", -1.0),
-            ("2iysy", "2iysy", -1.0),
-        ),
-        "r1a_is_{state}": (("2izsz", "2izsz", -1.0),),
-        "etaxy_i_{state}": (
-            ("ix", "2ixsz", -1.0),
-            ("iy", "2iysz", -1.0),
-            ("2ixsz", "ix", -1.0),
-            ("2iysz", "iy", -1.0),
-        ),
-        "etaxy_s_{state}": (
-            ("sx", "2izsx", -1.0),
-            ("sy", "2izsy", -1.0),
-            ("2izsx", "sx", -1.0),
-            ("2izsy", "sy", -1.0),
-        ),
-        "etaz_i_{state}": (
-            ("iz", "2izsz", -1.0),
-            ("2izsz", "iz", -1.0),
-            ("2izsz", "ie", +1.0),
-        ),
-        "etaz_s_{state}": (
-            ("sz", "2izsz", -1.0),
-            ("2izsz", "sz", -1.0),
-            ("2izsz", "se", +1.0),
-        ),
-        "sigma_is_{state}": (
-            ("iz", "sz", -1.0),
-            ("sz", "iz", -1.0),
-            ("sz", "ie", +1.0),
-            ("iz", "se", +1.0),
-        ),
-        "mu_is_{state}": (
-            ("2ixsx", "2iysy", +1.0),
-            ("2ixsy", "2iysx", -1.0),
-            ("2iysx", "2ixsy", -1.0),
-            ("2iysy", "2ixsx", +1.0),
-        ),
-        "rotz_i": (
-            ("ix", "iy", -1.0),
-            ("iy", "ix", +1.0),
-            ("2ixsx", "2iysx", -1.0),
-            ("2iysx", "2ixsx", +1.0),
-            ("2ixsy", "2iysy", -1.0),
-            ("2iysy", "2ixsy", +1.0),
-            ("2ixsz", "2iysz", -1.0),
-            ("2iysz", "2ixsz", +1.0),
-        ),
-        "rotz_s": (
-            ("sx", "sy", -1.0),
-            ("sy", "sx", +1.0),
-            ("2ixsx", "2ixsy", -1.0),
-            ("2ixsy", "2ixsx", +1.0),
-            ("2iysx", "2iysy", -1.0),
-            ("2iysy", "2iysx", +1.0),
-            ("2izsx", "2izsy", -1.0),
-            ("2izsy", "2izsx", +1.0),
-        ),
-        "cs_i_{state}": (
-            ("ix", "iy", -1.0),
-            ("iy", "ix", +1.0),
-            ("2ixsx", "2iysx", -1.0),
-            ("2iysx", "2ixsx", +1.0),
-            ("2ixsy", "2iysy", -1.0),
-            ("2iysy", "2ixsy", +1.0),
-            ("2ixsz", "2iysz", -1.0),
-            ("2iysz", "2ixsz", +1.0),
-        ),
-        "cs_s_{state}": (
-            ("sx", "sy", -1.0),
-            ("sy", "sx", +1.0),
-            ("2ixsx", "2ixsy", -1.0),
-            ("2ixsy", "2ixsx", +1.0),
-            ("2iysx", "2iysy", -1.0),
-            ("2iysy", "2iysx", +1.0),
-            ("2izsx", "2izsy", -1.0),
-            ("2izsy", "2izsx", +1.0),
-        ),
-        "carrier_i": (
-            ("ix", "iy", +1.0),
-            ("iy", "ix", -1.0),
-            ("2ixsx", "2iysx", +1.0),
-            ("2iysx", "2ixsx", -1.0),
-            ("2ixsy", "2iysy", +1.0),
-            ("2iysy", "2ixsy", -1.0),
-            ("2ixsz", "2iysz", +1.0),
-            ("2iysz", "2ixsz", -1.0),
-        ),
-        "carrier_s": (
-            ("sx", "sy", +1.0),
-            ("sy", "sx", -1.0),
-            ("2ixsx", "2ixsy", +1.0),
-            ("2ixsy", "2ixsx", -1.0),
-            ("2iysx", "2iysy", +1.0),
-            ("2iysy", "2iysx", -1.0),
-            ("2izsx", "2izsy", +1.0),
-            ("2izsy", "2izsx", -1.0),
-        ),
-        "offset_i": (
-            ("ix", "iy", +2.0 * np.pi),
-            ("iy", "ix", -2.0 * np.pi),
-            ("2ixsx", "2iysx", +2.0 * np.pi),
-            ("2iysx", "2ixsx", -2.0 * np.pi),
-            ("2ixsy", "2iysy", +2.0 * np.pi),
-            ("2iysy", "2ixsy", -2.0 * np.pi),
-            ("2ixsz", "2iysz", +2.0 * np.pi),
-            ("2iysz", "2ixsz", -2.0 * np.pi),
-        ),
-        "offset_s": (
-            ("sx", "sy", +2.0 * np.pi),
-            ("sy", "sx", -2.0 * np.pi),
-            ("2ixsx", "2ixsy", +2.0 * np.pi),
-            ("2ixsy", "2ixsx", -2.0 * np.pi),
-            ("2iysx", "2iysy", +2.0 * np.pi),
-            ("2iysy", "2iysx", -2.0 * np.pi),
-            ("2izsx", "2izsy", +2.0 * np.pi),
-            ("2izsy", "2izsx", -2.0 * np.pi),
-        ),
-        "jeff_i": (
-            ("ix", "iy", -2.0 * np.pi),
-            ("iy", "ix", +2.0 * np.pi),
-            ("2ixsx", "2iysx", -2.0 * np.pi),
-            ("2iysx", "2ixsx", +2.0 * np.pi),
-            ("2ixsy", "2iysy", -2.0 * np.pi),
-            ("2iysy", "2ixsy", +2.0 * np.pi),
-            ("2ixsz", "2iysz", -2.0 * np.pi),
-            ("2iysz", "2ixsz", +2.0 * np.pi),
-        ),
-        "j_is_{state}": (
-            ("ix", "2iysz", -np.pi),
-            ("2iysz", "ix", +np.pi),
-            ("2ixsz", "iy", -np.pi),
-            ("iy", "2ixsz", +np.pi),
-            ("sx", "2izsy", -np.pi),
-            ("2izsy", "sx", +np.pi),
-            ("2izsx", "sy", -np.pi),
-            ("sy", "2izsx", +np.pi),
-        ),
-        "b1x_i": (
-            ("iy", "iz", -2.0 * np.pi),
-            ("iz", "iy", +2.0 * np.pi),
-            ("2iysx", "2izsx", -2.0 * np.pi),
-            ("2izsx", "2iysx", +2.0 * np.pi),
-            ("2iysy", "2izsy", -2.0 * np.pi),
-            ("2izsy", "2iysy", +2.0 * np.pi),
-            ("2iysz", "2izsz", -2.0 * np.pi),
-            ("2izsz", "2iysz", +2.0 * np.pi),
-        ),
-        "b1y_i": (
-            ("iz", "ix", -2.0 * np.pi),
-            ("ix", "iz", +2.0 * np.pi),
-            ("2izsx", "2ixsx", -2.0 * np.pi),
-            ("2ixsx", "2izsx", +2.0 * np.pi),
-            ("2izsy", "2ixsy", -2.0 * np.pi),
-            ("2ixsy", "2izsy", +2.0 * np.pi),
-            ("2izsz", "2ixsz", -2.0 * np.pi),
-            ("2ixsz", "2izsz", +2.0 * np.pi),
-        ),
-        "b1x_s": (
-            ("sy", "sz", -2.0 * np.pi),
-            ("sz", "sy", +2.0 * np.pi),
-            ("2ixsy", "2ixsz", -2.0 * np.pi),
-            ("2ixsz", "2ixsy", +2.0 * np.pi),
-            ("2iysy", "2iysz", -2.0 * np.pi),
-            ("2iysz", "2iysy", +2.0 * np.pi),
-            ("2izsy", "2izsz", -2.0 * np.pi),
-            ("2izsz", "2izsy", +2.0 * np.pi),
-        ),
-        "b1y_s": (
-            ("sz", "sx", -2.0 * np.pi),
-            ("sx", "sz", +2.0 * np.pi),
-            ("2ixsz", "2ixsx", -2.0 * np.pi),
-            ("2ixsx", "2ixsz", +2.0 * np.pi),
-            ("2iysz", "2iysx", -2.0 * np.pi),
-            ("2iysx", "2iysz", +2.0 * np.pi),
-            ("2izsz", "2izsx", -2.0 * np.pi),
-            ("2izsx", "2izsz", +2.0 * np.pi),
-        ),
-    }
+_BASES = {
+    "ixy": ["ix", "iy"],
+    "iz": ["iz"],
+    "iz_eq": ["ie", "iz"],
+    "ixyz": ["ix", "iy", "iz"],
+    "ixyz_eq": ["ie", "ix", "iy", "iz"],
+    "ixysxy": ["2ixsx", "2ixsy", "2iysx", "2iysy"],
+    "ixyzsz": ["ix", "iy", "iz", "2ixsz", "2iysz", "2izsz"],
+    "ixyzsz_dif": ["ix", "iy", "iz", "2ixsz", "2iysz", "2izsz"],
+    "ixyzsz_eq": ["ie", "ix", "iy", "iz", "2ixsz", "2iysz", "2izsz"],
+    "ixyzsxyz": [
+        "ix",
+        "iy",
+        "iz",
+        "sx",
+        "sy",
+        "sz",
+        "2ixsz",
+        "2iysz",
+        "2izsx",
+        "2izsy",
+        "2ixsx",
+        "2ixsy",
+        "2iysx",
+        "2iysy",
+        "2izsz",
+    ],
+    "ixyzsxyz_eq": [
+        "ie",
+        "se",
+        "ix",
+        "iy",
+        "iz",
+        "sx",
+        "sy",
+        "sz",
+        "2ixsz",
+        "2iysz",
+        "2izsx",
+        "2izsy",
+        "2ixsx",
+        "2ixsy",
+        "2iysx",
+        "2iysy",
+        "2izsz",
+    ],
+}
+_TRANSITIONS = {
+    "r2_i_{state}": (("ix", "ix", -1.0), ("iy", "iy", -1.0)),
+    "r2_s_{state}": (("sx", "sx", -1.0), ("sy", "sy", -1.0)),
+    "r1_i_{state}": (("iz", "iz", -1.0), ("iz", "ie", +1.0)),
+    "r1_s_{state}": (("sz", "sz", -1.0), ("sz", "se", +1.0)),
+    "r2a_i_{state}": (("2ixsz", "2ixsz", -1.0), ("2iysz", "2iysz", -1.0)),
+    "r2a_s_{state}": (("2izsx", "2izsx", -1.0), ("2izsy", "2izsy", -1.0)),
+    "r2mq_is_{state}": (
+        ("2ixsx", "2ixsx", -1.0),
+        ("2ixsy", "2ixsy", -1.0),
+        ("2iysx", "2iysx", -1.0),
+        ("2iysy", "2iysy", -1.0),
+    ),
+    "r1a_is_{state}": (("2izsz", "2izsz", -1.0),),
+    "etaxy_i_{state}": (
+        ("ix", "2ixsz", -1.0),
+        ("iy", "2iysz", -1.0),
+        ("2ixsz", "ix", -1.0),
+        ("2iysz", "iy", -1.0),
+    ),
+    "etaxy_s_{state}": (
+        ("sx", "2izsx", -1.0),
+        ("sy", "2izsy", -1.0),
+        ("2izsx", "sx", -1.0),
+        ("2izsy", "sy", -1.0),
+    ),
+    "etaz_i_{state}": (
+        ("iz", "2izsz", -1.0),
+        ("2izsz", "iz", -1.0),
+        ("2izsz", "ie", +1.0),
+    ),
+    "etaz_s_{state}": (
+        ("sz", "2izsz", -1.0),
+        ("2izsz", "sz", -1.0),
+        ("2izsz", "se", +1.0),
+    ),
+    "sigma_is_{state}": (
+        ("iz", "sz", -1.0),
+        ("sz", "iz", -1.0),
+        ("sz", "ie", +1.0),
+        ("iz", "se", +1.0),
+    ),
+    "mu_is_{state}": (
+        ("2ixsx", "2iysy", +1.0),
+        ("2ixsy", "2iysx", -1.0),
+        ("2iysx", "2ixsy", -1.0),
+        ("2iysy", "2ixsx", +1.0),
+    ),
+    "rotz_i": (
+        ("ix", "iy", -1.0),
+        ("iy", "ix", +1.0),
+        ("2ixsx", "2iysx", -1.0),
+        ("2iysx", "2ixsx", +1.0),
+        ("2ixsy", "2iysy", -1.0),
+        ("2iysy", "2ixsy", +1.0),
+        ("2ixsz", "2iysz", -1.0),
+        ("2iysz", "2ixsz", +1.0),
+    ),
+    "rotz_s": (
+        ("sx", "sy", -1.0),
+        ("sy", "sx", +1.0),
+        ("2ixsx", "2ixsy", -1.0),
+        ("2ixsy", "2ixsx", +1.0),
+        ("2iysx", "2iysy", -1.0),
+        ("2iysy", "2iysx", +1.0),
+        ("2izsx", "2izsy", -1.0),
+        ("2izsy", "2izsx", +1.0),
+    ),
+    "cs_i_{state}": (
+        ("ix", "iy", -1.0),
+        ("iy", "ix", +1.0),
+        ("2ixsx", "2iysx", -1.0),
+        ("2iysx", "2ixsx", +1.0),
+        ("2ixsy", "2iysy", -1.0),
+        ("2iysy", "2ixsy", +1.0),
+        ("2ixsz", "2iysz", -1.0),
+        ("2iysz", "2ixsz", +1.0),
+    ),
+    "cs_s_{state}": (
+        ("sx", "sy", -1.0),
+        ("sy", "sx", +1.0),
+        ("2ixsx", "2ixsy", -1.0),
+        ("2ixsy", "2ixsx", +1.0),
+        ("2iysx", "2iysy", -1.0),
+        ("2iysy", "2iysx", +1.0),
+        ("2izsx", "2izsy", -1.0),
+        ("2izsy", "2izsx", +1.0),
+    ),
+    "carrier_i": (
+        ("ix", "iy", +1.0),
+        ("iy", "ix", -1.0),
+        ("2ixsx", "2iysx", +1.0),
+        ("2iysx", "2ixsx", -1.0),
+        ("2ixsy", "2iysy", +1.0),
+        ("2iysy", "2ixsy", -1.0),
+        ("2ixsz", "2iysz", +1.0),
+        ("2iysz", "2ixsz", -1.0),
+    ),
+    "carrier_s": (
+        ("sx", "sy", +1.0),
+        ("sy", "sx", -1.0),
+        ("2ixsx", "2ixsy", +1.0),
+        ("2ixsy", "2ixsx", -1.0),
+        ("2iysx", "2iysy", +1.0),
+        ("2iysy", "2iysx", -1.0),
+        ("2izsx", "2izsy", +1.0),
+        ("2izsy", "2izsx", -1.0),
+    ),
+    "offset_i": (
+        ("ix", "iy", +2.0 * np.pi),
+        ("iy", "ix", -2.0 * np.pi),
+        ("2ixsx", "2iysx", +2.0 * np.pi),
+        ("2iysx", "2ixsx", -2.0 * np.pi),
+        ("2ixsy", "2iysy", +2.0 * np.pi),
+        ("2iysy", "2ixsy", -2.0 * np.pi),
+        ("2ixsz", "2iysz", +2.0 * np.pi),
+        ("2iysz", "2ixsz", -2.0 * np.pi),
+    ),
+    "offset_s": (
+        ("sx", "sy", +2.0 * np.pi),
+        ("sy", "sx", -2.0 * np.pi),
+        ("2ixsx", "2ixsy", +2.0 * np.pi),
+        ("2ixsy", "2ixsx", -2.0 * np.pi),
+        ("2iysx", "2iysy", +2.0 * np.pi),
+        ("2iysy", "2iysx", -2.0 * np.pi),
+        ("2izsx", "2izsy", +2.0 * np.pi),
+        ("2izsy", "2izsx", -2.0 * np.pi),
+    ),
+    "jeff_i": (
+        ("ix", "iy", -2.0 * np.pi),
+        ("iy", "ix", +2.0 * np.pi),
+        ("2ixsx", "2iysx", -2.0 * np.pi),
+        ("2iysx", "2ixsx", +2.0 * np.pi),
+        ("2ixsy", "2iysy", -2.0 * np.pi),
+        ("2iysy", "2ixsy", +2.0 * np.pi),
+        ("2ixsz", "2iysz", -2.0 * np.pi),
+        ("2iysz", "2ixsz", +2.0 * np.pi),
+    ),
+    "j_is_{state}": (
+        ("ix", "2iysz", -np.pi),
+        ("2iysz", "ix", +np.pi),
+        ("2ixsz", "iy", -np.pi),
+        ("iy", "2ixsz", +np.pi),
+        ("sx", "2izsy", -np.pi),
+        ("2izsy", "sx", +np.pi),
+        ("2izsx", "sy", -np.pi),
+        ("sy", "2izsx", +np.pi),
+    ),
+    "d_{state}": (
+        ("ix", "ix", -1.0),
+        ("iy", "iy", -1.0),
+        ("iz", "iz", -1.0),
+        ("sx", "sx", -1.0),
+        ("sy", "sy", -1.0),
+        ("sz", "sz", -1.0),
+        ("2ixsz", "2ixsz", -1.0),
+        ("2iysz", "2iysz", -1.0),
+        ("2izsx", "2izsx", -1.0),
+        ("2izsy", "2izsy", -1.0),
+        ("2ixsx", "2ixsx", -1.0),
+        ("2ixsy", "2ixsy", -1.0),
+        ("2iysx", "2iysx", -1.0),
+        ("2iysy", "2iysy", -1.0),
+        ("2izsz", "2izsz", -1.0),
+    ),
+    "b1x_i": (
+        ("iy", "iz", -2.0 * np.pi),
+        ("iz", "iy", +2.0 * np.pi),
+        ("2iysx", "2izsx", -2.0 * np.pi),
+        ("2izsx", "2iysx", +2.0 * np.pi),
+        ("2iysy", "2izsy", -2.0 * np.pi),
+        ("2izsy", "2iysy", +2.0 * np.pi),
+        ("2iysz", "2izsz", -2.0 * np.pi),
+        ("2izsz", "2iysz", +2.0 * np.pi),
+    ),
+    "b1y_i": (
+        ("iz", "ix", -2.0 * np.pi),
+        ("ix", "iz", +2.0 * np.pi),
+        ("2izsx", "2ixsx", -2.0 * np.pi),
+        ("2ixsx", "2izsx", +2.0 * np.pi),
+        ("2izsy", "2ixsy", -2.0 * np.pi),
+        ("2ixsy", "2izsy", +2.0 * np.pi),
+        ("2izsz", "2ixsz", -2.0 * np.pi),
+        ("2ixsz", "2izsz", +2.0 * np.pi),
+    ),
+    "b1x_s": (
+        ("sy", "sz", -2.0 * np.pi),
+        ("sz", "sy", +2.0 * np.pi),
+        ("2ixsy", "2ixsz", -2.0 * np.pi),
+        ("2ixsz", "2ixsy", +2.0 * np.pi),
+        ("2iysy", "2iysz", -2.0 * np.pi),
+        ("2iysz", "2iysy", +2.0 * np.pi),
+        ("2izsy", "2izsz", -2.0 * np.pi),
+        ("2izsz", "2izsy", +2.0 * np.pi),
+    ),
+    "b1y_s": (
+        ("sz", "sx", -2.0 * np.pi),
+        ("sx", "sz", +2.0 * np.pi),
+        ("2ixsz", "2ixsx", -2.0 * np.pi),
+        ("2ixsx", "2ixsz", +2.0 * np.pi),
+        ("2iysz", "2iysx", -2.0 * np.pi),
+        ("2iysx", "2iysz", +2.0 * np.pi),
+        ("2izsz", "2izsx", -2.0 * np.pi),
+        ("2izsx", "2izsz", +2.0 * np.pi),
+    ),
+}
 
-    def __init__(self, name, model, atoms, h_frq):
+Q_ORDER_I = {"dq": 2.0, "tq": 3.0}
+
+
+class LiouvillianIS:
+    def __init__(self, basis, model, atoms, h_frq):
+        basis_name, *extensions = basis.split(".")
         self._b1_i_inh_scale = 0.0
         self._b1_i_inh_res = 11
         self._ppm_i = self._ppm_s = 1.0
         self._parvals = None
         self._l_base = None
-        self.name = name
+        self._q_order_i = 1.0
+        if extensions:
+            self._q_order_i = Q_ORDER_I.get(extensions[0], 1.0)
+        self.name = basis_name
         self.state_nb = model.state_nb
         self.atoms = atoms
         self.h_frq = h_frq
         self.states = cns.get_state_names(model.state_nb)
-        self.basis = self.BASES[name]
+        self.basis = _BASES[basis_name]
         self.size = len(self.basis) * model.state_nb
         self.matrices = {
             **self._build_transition_matrices(),
@@ -287,6 +311,8 @@ class LiouvillianIS:
         self.jeff_i = cnc.Distribution(0.0, 1.0)
         self.detection = ""
         self.update((("cs_i_a", 0.0), ("pa", 1.0)))
+        self.gradient_dephasing = 0.0
+        self._scale_matrix("j_is_{state}", self._q_order_i * np.pi)
 
     def update(self, parvals):
         self._parvals = parvals
@@ -301,8 +327,8 @@ class LiouvillianIS:
     @ppm_i.setter
     def ppm_i(self, value):
         self._ppm_i = value
-        self._scale_matrix("cs_i_{state}", value)
-        self._scale_matrix("carrier_i", value)
+        self._scale_matrix("cs_i_{state}", self._q_order_i * value)
+        self._scale_matrix("carrier_i", self._q_order_i * value)
 
     @property
     def ppm_s(self):
@@ -409,6 +435,16 @@ class LiouvillianIS:
         self._jeff_i_weights = np.asarray(value.weights).reshape((-1, 1, 1, 1))
 
     @property
+    def gradient_dephasing(self):
+        return self._gradient_dephasing
+
+    @gradient_dephasing.setter
+    def gradient_dephasing(self, value):
+        self._gradient_dephasing = value
+        self._scale_matrix("d_{state}", value)
+        self.update(self._parvals)
+
+    @property
     def l_free(self):
         return sum(
             [
@@ -488,7 +524,7 @@ class LiouvillianIS:
     def _build_transition_matrices(self):
         m_zeros = np.zeros((self.size, self.size))
         matrices = {}
-        for transition_name, state in it.product(self.TRANSITIONS, self.states):
+        for transition_name, state in it.product(_TRANSITIONS, self.states):
             name_ = transition_name.format(state=state)
             indices, values = self._get_indices(transition_name, state)
             if values:
@@ -518,7 +554,7 @@ class LiouvillianIS:
         cols = []
         vals = []
         offset = self.states.index(state) * len(self.basis)
-        for start, end, value in self.TRANSITIONS[transition_name]:
+        for start, end, value in _TRANSITIONS[transition_name]:
             if {start, end}.issubset(self.basis):
                 rows.append(self.basis.index(start) + offset)
                 cols.append(self.basis.index(end) + offset)
@@ -529,62 +565,6 @@ class LiouvillianIS:
         names = {name.format(state=state) for state in self.states}
         for name_ in names & set(self.matrices):
             self.matrices[name_] = np.sign(self._matrices_ref[name_]) * value
-
-
-class Liouvillian1HTQDif(LiouvillianIS):
-    TRANSITIONS = dict(
-        **LiouvillianIS.TRANSITIONS,
-        **{
-            "d_{state}": (
-                ("ix", "ix", -1.0),
-                ("iy", "iy", -1.0),
-                ("iz", "iz", -1.0),
-                ("sx", "sx", -1.0),
-                ("sy", "sy", -1.0),
-                ("sz", "sz", -1.0),
-                ("2ixsz", "2ixsz", -1.0),
-                ("2iysz", "2iysz", -1.0),
-                ("2izsx", "2izsx", -1.0),
-                ("2izsy", "2izsy", -1.0),
-                ("2ixsx", "2ixsx", -1.0),
-                ("2ixsy", "2ixsy", -1.0),
-                ("2iysx", "2iysx", -1.0),
-                ("2iysy", "2iysy", -1.0),
-                ("2izsz", "2izsz", -1.0),
-            )
-        },
-    )
-
-    def __init__(self, name, model, atoms, h_frq):
-        if "ch3_1htq" not in name:
-            print(
-                "'Liouvillian1HTQDif' is only compatible with the 'ch3_1htq_grad' "
-                "basis. Basis changed to 'ch3_1htq_grad'"
-            )
-            name = "ch3_1htq_grad"
-        super().__init__(name, model, atoms, h_frq)
-        self._scale_matrix("j_is_{state}", 3.0 * np.pi)
-        self.gradient_dephasing = 0.0
-
-    @property
-    def ppm_i(self):
-        return self._ppm_i
-
-    @ppm_i.setter
-    def ppm_i(self, value):
-        self._ppm_i = value
-        self._scale_matrix("cs_i_{state}", 3.0 * value)
-        self._scale_matrix("carrier_i", 3.0 * value)
-
-    @property
-    def gradient_dephasing(self):
-        return self._gradient_dephasing
-
-    @gradient_dephasing.setter
-    def gradient_dephasing(self, value):
-        self._gradient_dephasing = value
-        self._scale_matrix("d_{state}", value)
-        self.update(self._parvals)
 
 
 def make_gaussian(value, scale, res):

@@ -14,7 +14,8 @@ n is the number of states:
 
 References
 ----------
-Yuwen, vallurupallo and Kay. Angewandte Chemie (2016) 55, 11490-4
+
+Yuwen, Vallurupalli and Kay. Angew Chemie Int Ed (2016) 55, 11490-11494
 
 
 Note
@@ -44,8 +45,8 @@ _SCHEMA = {
                 "time_t2": {"type": "number"},
                 "carrier": {"type": "number"},
                 "pw90": {"type": "number"},
-                "comp_flg": {"type": "boolean", "default": True},
-                "eq_flg": {"type": "boolean", "default": False},
+                "comp180_flg": {"type": "boolean", "default": True},
+                "ipap_flg": {"type": "boolean", "default": False},
                 "observed_state": {
                     "type": "string",
                     "pattern": "[a-z]",
@@ -56,21 +57,23 @@ _SCHEMA = {
         }
     },
 }
-_FIT_SETTING = {"dw_ab": "fit", "r2_a": "fit"}
+_FIT_SETTING = {"dw_ab": "fit", "r2tq_a": "fit"}
 
 
 def read(config):
     config["spin_system"] = {
-        "basis": "ch3_1htq",
+        "basis": "ixyzsz.tq",
         "atoms": {"i": "h", "s": "c"},
-        "constraints": ["ch3_1htq"],
+        "constraints": ["hc"],
     }
     ch.validate(config, _SCHEMA)
     ch.validate(config, ccc.CPMG_SCHEMA)
+    if not config["experiment"]["ipap_flg"]:
+        _FIT_SETTING["r2atq_a"] = "fit"
     experiment = ceh.read(
         config=config,
         pulse_seq_cls=PulseSeq,
-        propagator_cls=cnp.Propagator1HTQDif,
+        propagator_cls=cnp.PropagatorIS,
         container_cls=ccc.CpmgProfile,
         fit_setting=_FIT_SETTING,
     )
@@ -84,8 +87,8 @@ class PulseSeq:
         self.time_t2 = settings["time_t2"]
         self.tauc = 0.67e-3  # ~ 1/(12*J[HC])
         self.pw90 = settings["pw90"]
-        self.eq_flg = settings["eq_flg"]
-        self.comp_flg = settings["comp_flg"]
+        self.ipap_flg = settings["ipap_flg"]
+        self.comp180_flg = settings["comp180_flg"]
         self.prop.carrier_i = settings["carrier"]
         self.prop.b1_i = 1 / (4.0 * self.pw90)
         self.prop.detection = f"2ixsz_{settings['observed_state']}"
@@ -106,27 +109,35 @@ class PulseSeq:
         # Calculation of the propagators corresponding to all the pulses
         p180 = self.prop.p180_i
         p180pmy = 0.5 * (p180[1] + p180[3])  # +/- phase cycling
-        if self.comp_flg:
+        if self.comp180_flg:
             p180_cp1 = self.prop.p9018090_i_1
             p180_cp2 = self.prop.p9018090_i_2
         else:
             p180_cp1 = p180_cp2 = p180
 
         # Calculating the intensities as a function of ncyc
-        if self.eq_flg:
+        if self.ipap_flg:
+            p180_sx = self.prop.perfect180_s[0]
             part1 = d_tauc @ start
             part2 = d_tauc
+            centre0 = 0.5 * (p180pmy + p180_sx @ p180pmy @ p180_sx)
         else:
             part1 = start
             part2 = self.prop.identity
-        intst = {0: self.prop.detect(part2 @ p180pmy @ part1)}
+            centre0 = p180pmy
+
+        intst = {0: self.prop.detect(part2 @ centre0 @ part1)}
+
         for ncyc in set(ncycs) - {0}:
             phases1, phases2 = self._get_phases(ncyc)
             echo1 = d_cp[ncyc] @ p180_cp1 @ d_cp[ncyc]
             echo2 = d_cp[ncyc] @ p180_cp2 @ d_cp[ncyc]
             cpmg1 = ft.reduce(np.matmul, echo1[phases1])
             cpmg2 = ft.reduce(np.matmul, echo2[phases2])
-            intst[ncyc] = self.prop.detect(part2 @ cpmg2 @ p180pmy @ cpmg1 @ part1)
+            centre = cpmg2 @ p180pmy @ cpmg1
+            if self.ipap_flg:
+                centre = 0.5 * (centre + p180_sx @ centre @ p180_sx)
+            intst[ncyc] = self.prop.detect(part2 @ centre @ part1)
 
         # Return profile
         return np.array([intst[ncyc] for ncyc in ncycs])
@@ -134,7 +145,7 @@ class PulseSeq:
     def _get_delays(self, ncycs):
         ncycs_ = np.asarray(ncycs)
         ncycs_ = ncycs_[ncycs_ > 0]
-        if self.comp_flg:
+        if self.comp180_flg:
             tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - 2 * self.pw90))
         else:
             tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - self.pw90))

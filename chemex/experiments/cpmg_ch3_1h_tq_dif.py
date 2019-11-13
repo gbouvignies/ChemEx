@@ -48,8 +48,8 @@ _SCHEMA = {
                 "delta": {"type": "number"},
                 "gradient": {"type": "number"},
                 "tau": {"type": "number", "default": 500.0e-6},
-                "comp_flg": {"type": "boolean", "default": True},
-                "eq_flg": {"type": "boolean", "default": False},
+                "comp180_flg": {"type": "boolean", "default": True},
+                "ipap_flg": {"type": "boolean", "default": False},
                 "observed_state": {
                     "type": "string",
                     "pattern": "[a-z]",
@@ -60,27 +60,23 @@ _SCHEMA = {
         }
     },
 }
-_FIT_SETTING = {
-    "dw_ab": "fit",
-    "r2_a": "fit",
-    "r2a_a": "fit",
-    "d_a": "fit",
-    "d_b": "fit",
-}
+_FIT_SETTING = {"dw_ab": "fit", "r2tq_a": "fit", "d_a": "fit", "d_b": "fit"}
 
 
 def read(config):
     config["spin_system"] = {
-        "basis": "ch3_1htq_grad",
+        "basis": "ixyzsz_dif.tq",
         "atoms": {"i": "h", "s": "c"},
-        "constraints": ["ch3_1htq"],
+        "constraints": ["hc"],
     }
     ch.validate(config, _SCHEMA)
     ch.validate(config, ccc.CPMG_SCHEMA)
+    if not config["experiment"]["ipap_flg"]:
+        _FIT_SETTING["r2atq_a"] = "fit"
     experiment = ceh.read(
         config=config,
         pulse_seq_cls=PulseSeq,
-        propagator_cls=cnp.Propagator1HTQDif,
+        propagator_cls=cnp.PropagatorIS,
         container_cls=ccc.CpmgProfile,
         fit_setting=_FIT_SETTING,
     )
@@ -99,8 +95,8 @@ class PulseSeq:
         self.k2_factor = (
             3.0 * cnc.GAMMA["h"] * settings["gradient"] * settings["delta"]
         ) ** 2
-        self.eq_flg = settings["eq_flg"]
-        self.comp_flg = settings["comp_flg"]
+        self.ipap_flg = settings["ipap_flg"]
+        self.comp180_flg = settings["comp180_flg"]
         self.prop.carrier_i = settings["carrier"]
         self.prop.b1_i = 1 / (4.0 * self.pw90)
         self.prop.detection = f"2ixsz_{settings['observed_state']}"
@@ -139,7 +135,7 @@ class PulseSeq:
         p180_4 = self.prop.p180_i
         p180pmy_4 = 0.5 * (p180_4[1] + p180_4[3])  # +/- phase cycling
 
-        if self.comp_flg:
+        if self.comp180_flg:
             p180_cp1 = self.prop.p9018090_i_1
             p180_cp2 = self.prop.p9018090_i_2
         else:
@@ -149,7 +145,7 @@ class PulseSeq:
         p180_grad1, p180_grad2 = p90_2[[1, 3]] @ p180_2[0] @ p90_2[[1, 3]]
         grad1 = d_tau_4 @ d_delta_3 @ p180_grad1 @ d_tau_2 @ d_delta_1
         grad2 = d_tau_0 @ d_delta_1 @ p180_grad2 @ d_tau_2 @ d_delta_3
-        if self.eq_flg:
+        if self.ipap_flg:
             grad1 = grad1 @ d_tauc_0
             grad2 = d_tauc_0 @ grad2
 
@@ -170,7 +166,7 @@ class PulseSeq:
     def _get_delays(self, ncycs):
         ncycs_ = np.asarray(ncycs)
         ncycs_ = ncycs_[ncycs_ > 0]
-        if self.comp_flg:
+        if self.comp180_flg:
             tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - 2 * self.pw90))
         else:
             tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - self.pw90))

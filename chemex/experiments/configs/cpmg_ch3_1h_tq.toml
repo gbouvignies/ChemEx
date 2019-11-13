@@ -15,11 +15,11 @@ carrier = 0.5
 pw90 = 12.0
 
 ## Performs CPMG using 90-180-90 composite pulses [optional, default: true]
-# comp_flg = true
+# comp180_flg = true
 
 ## Enters the CPMG period with equal amount of initial IP and
 ## AP TQ magnetizations [optional, default: false]
-# eq_flg = false
+# ipap_flg = false
 
 ## State of the observed resonance [optional, default: "a"]
 # observed_state = "a"
@@ -40,21 +40,23 @@ h_larmor_frq = 800.0
 
 [data]
 
+## Directory containing the profiles [optional, default: "./"]
+# path = "./"
+
 ## Option defining how intensity uncertainties are estimated.
 ## "file": uncertainties are taken from the profile files
 ## "duplicates": uncertainties are calculated from the duplicate points
 ## [optional, default: "file"]
 # error = "file"
 
-## Directory containing the profiles [optional, default: "./"]
-# path = "./"
-
 ## List of the profile names and their associated filenames.
 ## The name of the spin systems should follow the Sparky-NMR
 ## conventions.
 profiles = [
-    ["L1HD1-CD1", "L7HD1-CD1.out"],
-    ["L1HD2-CD2", "L7HD2-CD2.out"],
-    ["V2HG1-CG1", "V2HG1-CG1.out"],
-    ["V2HG2-CG2", "V2HG2-CG2.out"],
+    ["L3HD1-CD1", "L3CD1-QD1.out"],
+    ["L3HD2-CD2", "L3CD2-QD2.out"],
+    ["I12HD1-CD1", "I12CD1-QD1.out"],
+    ["V25HG1-CG1", "V25CG1-QG1.out"],
+    ["V25HG2-CG2", "V25CG2-QG2.out"],
+    ["M36HE-CE", "M36CE-QE.out"],
 ]

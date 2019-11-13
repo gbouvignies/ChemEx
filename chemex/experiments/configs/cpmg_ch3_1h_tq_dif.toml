@@ -24,11 +24,11 @@ gradient = 30.0e-2
 # tau = 500.0e-6
 
 ## Performs CPMG using 90-180-90 composite pulses [optional, default: true]
-# comp_flg = true
+# comp180_flg = true
 
 ## Enters the CPMG period with equal amount of initial IP and
 ## AP TQ magnetizations [optional, default: false]
-# eq_flg = false
+# ipap_flg = false
 
 ## State of the observed resonance [optional, default: "a"]
 # observed_state = "a"

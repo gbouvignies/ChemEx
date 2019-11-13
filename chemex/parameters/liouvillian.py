@@ -7,14 +7,10 @@ import chemex.parameters.helper as cph
 
 
 def create_params_l(basis, model, conditions, spin_system=None, constraints=None):
-    if basis not in BASIS_TO_SHORTNAMES:
-        message = "The 'basis' option should either be:\n"
-        for basis_name in BASIS_TO_SHORTNAMES:
-            message += f"    - '{basis_name}'\n"
-        raise NameError(message)
+    basis_name, *extensions = basis.split(".")
     states = cns.get_state_names(model.state_nb)
-    shortnames = _get_shortnames(basis, constraints)
-    settings = _make_settings(shortnames, states, constraints)
+    shortnames = _get_shortnames(basis_name, constraints)
+    settings = _make_settings(shortnames, states, constraints, extensions)
     fnames, params = cph.make_params(settings, conditions, spin_system)
     return fnames, params
 
@@ -24,12 +20,12 @@ def _get_shortnames(basis, constraints=None):
         constraints = []
     shortnames = BASIS_TO_SHORTNAMES[basis]
     for constraint in constraints:
-        if constraint in ("hn",) and "r1_s" not in shortnames:
+        if constraint in ("hn", "hc") and "r1_s" not in shortnames:
             shortnames.append("r1_s")
     return shortnames
 
 
-def _make_settings(shortnames, states, constraints=None):
+def _make_settings(shortnames, states, constraints=None, extensions=None):
     if constraints is None:
         constraints = []
     settings = {}
@@ -38,6 +34,12 @@ def _make_settings(shortnames, states, constraints=None):
         settings[name] = SETTINGS[shortname].copy()
         if state != "a":
             settings[name]["expr"] = f"{{{shortname}_a}}"
+        if (
+            extensions
+            and extensions[0] in {"dq", "tq"}
+            and shortname in _TO_BE_EXTENDED
+        ):
+            settings[name]["ext"] = extensions[0]
     for constraint in constraints:
         if constraint in set_constraints:
             settings = set_constraints[constraint](settings, states)
@@ -87,7 +89,7 @@ def _set_constraints_nh(settings, states):
     return settings
 
 
-def _set_constraints_ch3_1htq(settings, states):
+def _set_constraints_hc(settings, states):
     settings_ = settings.copy()
     for state in states:
         r1_s = f"r1_s_{state}"
@@ -105,7 +107,7 @@ def _set_constraints_ch3_1htq(settings, states):
 set_constraints = {
     "hn": _set_constraints_hn,
     "nh": _set_constraints_nh,
-    "ch3_1htq": _set_constraints_ch3_1htq,
+    "hc": _set_constraints_hc,
 }
 
 
@@ -247,6 +249,17 @@ BASIS_TO_SHORTNAMES = {
     "ixyz_eq": ["r2_i", "r1_i", "cs_i"],
     "ixysxy": ["r2mq_is", "mu_is", "cs_i"],
     "ixyzsz": ["r2_i", "r1_i", "r2a_i", "etaxy_i", "etaz_i", "r1a_is", "cs_i", "j_is"],
+    "ixyzsz_dif": [
+        "r2_i",
+        "r1_i",
+        "r2a_i",
+        "etaxy_i",
+        "etaz_i",
+        "r1a_is",
+        "cs_i",
+        "j_is",
+        "d",
+    ],
     "ixyzsz_eq": [
         "r2_i",
         "r1_i",
@@ -295,6 +308,6 @@ BASIS_TO_SHORTNAMES = {
         "cs_s",
         "j_is",
     ],
-    "ch3_1htq": ["r2_i", "r1_i", "r1_s", "r2a_i", "r1a_is", "cs_i", "j_is"],
-    "ch3_1htq_grad": ["r2_i", "r1_i", "r1_s", "r2a_i", "r1a_is", "cs_i", "j_is", "d"],
 }
+
+_TO_BE_EXTENDED = ["r2_i", "r1_i", "r2a_i", "etaxy_i", "etaz_i", "r1a_is"]

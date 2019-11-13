@@ -264,10 +264,10 @@ def remove_state(name):
     return name_
 
 
-def _squeeze_name(name):
+def _squeeze_name(name, ext=""):
     parsed = _re_to_dict(_RE_NAME, name)
     if "spin" in parsed:
-        return f"{parsed['name']}_{parsed['state']}"
+        return f"{parsed['name']}{ext}_{parsed['state']}"
     return name
 
 
@@ -286,7 +286,7 @@ def get_fnames(settings, conditions=None, spin_system=None):
     fnames = {}
     for name, setting in settings.items():
         attributes_ = {key: attributes.get(key) for key in setting["attributes"]}
-        name_ = _squeeze_name(name)
+        name_ = _squeeze_name(name, setting.get("ext", ""))
         spin_system_ = _name_to_spin_system(name, attributes_.get("spin_system"))
         attributes_["spin_system"] = spin_system_
         fnames[name] = ParamName(name_, **attributes_).to_full_name()

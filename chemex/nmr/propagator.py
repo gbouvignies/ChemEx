@@ -131,6 +131,15 @@ class PropagatorIS:
     def detect(self, magnetization):
         return self.liouvillian.detect(magnetization)
 
+    @property
+    def gradient_dephasing(self):
+        return self.liouvillian.gradient_dephasing
+
+    @gradient_dephasing.setter
+    def gradient_dephasing(self, value):
+        self.liouvillian.gradient_dephasing = value
+        self._p90_i = self._p90_s = None
+
     def delays(self, times):
         return calculate_propagators(self.liouvillian.l_free, times)
 
@@ -304,19 +313,6 @@ class PropagatorIS:
     def _add_phases(self, propagator, spin="i"):
         phases = self._phases[spin]
         return np.array([phases[i] @ propagator @ phases[-i] for i in range(4)])
-
-
-class Propagator1HTQDif(PropagatorIS):
-    LIOUV = liouvillian.Liouvillian1HTQDif
-
-    @property
-    def gradient_dephasing(self):
-        return self.liouvillian.gradient_dephasing
-
-    @gradient_dephasing.setter
-    def gradient_dephasing(self, value):
-        self.liouvillian.gradient_dephasing = value
-        self._p90_i = self._p90_s = None
 
 
 def calculate_propagators(liouv, delays, dephasing=False):
