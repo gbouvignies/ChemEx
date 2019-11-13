@@ -1,9 +1,9 @@
 [GLOBAL]
 PB              = 0.10
 KEX_AB          = 100.0
-"R1_A, NUC->C*" = 1.2
-"R1_A, NUC->H*" = 1.5
-"R2_A, NUC->H*" = 10.0
+"R1_A, NUC->C"  = 1.2
+"R1_A, NUC->H"  = 1.5
+"R2_A, NUC->H"  = 10.0
 J_A             = 125.0
 D_A             = 1e-10
 D_B             = 1e-10

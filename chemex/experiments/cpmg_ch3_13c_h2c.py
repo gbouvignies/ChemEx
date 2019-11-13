@@ -15,11 +15,12 @@ number of states:
 
 References
 ----------
-Lundstrom et al. Journal of Biomolecular NMR (2007) 38, 79-88
+Lundström, Vallurupalli, Religa, Dahlquist and Kay. J Biomol NMR (2007) 38, 79-88
+
 
 Note
 ----
-A sample configuration  file for this module is available using the command:
+A sample configuration file for this module is available using the command:
 
     chemex config cpmg_ch3_13c_h2c
 
@@ -85,7 +86,7 @@ class PulseSeq:
         self.time_eq = settings["time_equil"]
         self.prop.carrier_i = settings["carrier"]
         self.pw90 = settings["pw90"]
-        self.taub = settings["taub"] - 2.0 * self.pw90 - 2.0 * self.pw90 / np.pi
+        self.taub = settings["taub"] - 2.0 * self.pw90
         self.t_neg = -2.0 * self.pw90 / np.pi
         self.prop.b1_i = 1 / (4.0 * self.pw90)
         self.prop.detection = f"iz_{settings['observed_state']}"

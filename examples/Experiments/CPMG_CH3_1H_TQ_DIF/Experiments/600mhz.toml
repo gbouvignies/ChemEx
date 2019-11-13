@@ -3,8 +3,8 @@ name         = "cpmg_ch3_1h_tq_dif"
 time_t2      = 40.0e-3
 carrier      = 0.69266
 pw90         = 10.500e-6
-comp_flg     = false
-eq_flg       = false
+comp180_flg  = false
+ipap_flg     = false
 gradient     = 0.0
 delta        = 1.0e-3
 
