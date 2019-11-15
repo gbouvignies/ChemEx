@@ -57,13 +57,13 @@ def normalize_path(working_dir, filename):
 def header1(string_):
     """Print a formatted heading."""
     if string_:
-        print(("\n".join(["", "", string_, "=" * len(string_)])))
+        print("\n".join(["", "", string_, "=" * len(string_)]))
 
 
 def header2(string_):
     """Print a formatted subheading."""
     if string_:
-        print(("\n".join(["", string_, "-" * len(string_)])))
+        print("\n".join(["", string_, "-" * len(string_)]))
 
 
 # Taken from: https://python-jsonschema.readthedocs.io/en/stable/faq/
@@ -74,8 +74,7 @@ def _extend_with_default(validator_class):
         for property_, subschema in properties.items():
             if "default" in subschema:
                 instance.setdefault(property_, subschema["default"])
-        for error in validate_properties(validator, properties, instance, schema):
-            yield error
+        yield from validate_properties(validator, properties, instance, schema)
 
     return js.validators.extend(validator_class, {"properties": set_defaults})
 

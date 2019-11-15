@@ -1,9 +1,9 @@
 [STEP1]
-SELECTION = ["Y10", "K25", "Q27", "E33", "W36", "S41", "E46", "S52", "A56"]
+INCLUDE = ["Y10", "K25", "Q27", "E33", "W36", "S41", "E46", "S52", "A56"]
 PB     = "fit"
 KEX_AB = "fit"
 
 [STEP2]
-SELECTION = "*"
+INCLUDE = "*"
 PB     = "fix"
 KEX_AB = "fix"

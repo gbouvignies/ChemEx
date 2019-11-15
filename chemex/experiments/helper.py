@@ -38,15 +38,15 @@ def read(
 
 def _get_profile_paths(config):
     path = ch.normalize_path(config["filename"].parent, pl.Path(config["data"]["path"]))
-    paths = {
-        path / profile[1]: cns.SpinSystem(profile[0])
-        for profile in config["data"]["profiles"]
-    }
-    selection = config["selection"]
-    if selection is not None:
-        for path, spin_system in paths.copy().items():
-            if not any(spin_system & name == name for name in selection):
-                del paths[path]
+    include = config["selection"]["include"]
+    exclude = config["selection"]["exclude"]
+    paths = {}
+    for name, filename in config["data"]["profiles"]:
+        spin_system = cns.SpinSystem(name)
+        included = include is None or spin_system.part_of(include)
+        excluded = exclude is not None and spin_system.part_of(exclude)
+        if included and not excluded:
+            paths[path / filename] = spin_system
     return paths
 
 

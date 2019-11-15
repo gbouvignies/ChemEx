@@ -65,8 +65,15 @@ class Experiments:
             experiment.plot(params, path, simulation)
 
     def select(self, selection=None):
+        if selection is None:
+            selection = {}
+        include, exclude = (selection.get(key) for key in ("include", "exclude"))
+        if include is None and exclude is None:
+            return
+        print("\nSelecting profiles...")
         for experiment in self._experiments.values():
-            experiment.select(selection)
+            experiment.select(include, exclude)
+        print(f"  - Profile(s): {len(self)}")
 
     def filter(self, params=None):
         for experiment in self._experiments.values():
@@ -164,23 +171,22 @@ class RelaxationExperiment:
             for profile in sorted(self._profiles):
                 file_dat.write(profile.print(params))
 
-    def select(self, selection=None):
-        if selection is None:
+    def select(self, include=None, exclude=None):
+        profiles_all = self._profiles + self._filtered
+        if isinstance(include, str) and include.lower() in ("all", "*"):
+            self._profiles = profiles_all
+            self._filtered = []
             return
-        profiles = self._profiles + self._filtered
-        if isinstance(selection, str) and selection.lower() in ("all", "*"):
-            selected = profiles
-        else:
-            selected = []
-            for profile in profiles:
-                for name_incl in selection:
-                    if profile.name & name_incl == name_incl:
-                        selected.append(profile)
-                        break
-        self._profiles = sorted(selected)
-        self._filtered = sorted(
-            profile for profile in profiles if profile not in selected
-        )
+        profiles, filtered = [], []
+        for profile in profiles_all:
+            included = include is None or profile.name.part_of(include)
+            excluded = exclude is not None and profile.name.part_of(exclude)
+            if included and not excluded:
+                profiles.append(profile)
+            else:
+                filtered.append(profile)
+        self._profiles = profiles
+        self._filtered = filtered
 
     def filter(self, params=None):
         for profile in self._profiles:
@@ -269,7 +275,7 @@ def _merge_same_profiles(profiles):
     merged = []
     profile_sets = {}
     for profile in profiles:
-        profile_sets.setdefault(profile.name, []).append((profile))
+        profile_sets.setdefault(profile.name, []).append(profile)
     for profile_set in profile_sets.values():
         if len(profile_set) > 0:
             merged.append(np.sum(profile_set))

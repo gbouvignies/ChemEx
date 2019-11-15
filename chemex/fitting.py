@@ -7,7 +7,6 @@ import numpy as np
 import scipy.stats as ss
 
 import chemex.helper as ch
-import chemex.nmr.spin_system as cns
 import chemex.parameters.helper as cph
 import chemex.parameters.name as cpn
 import chemex.parameters.settings as cps
@@ -42,8 +41,9 @@ class Fit:
             # Set the fitting algorithm
             fitmethod = _pop_fitmethod(settings)
 
-            # Select a subset of profiles based on the "SELECTION"
-            _select(self._experiments, settings)
+            # Select a subset of profiles based on "INCLUDE" and "EXCLUDE"
+            selection = {key: settings.pop(key, None) for key in ("include", "exclude")}
+            self._experiments.select(selection)
 
             # Update the parameter "vary" and "expr" status
             cps.set_status(params_, settings)
@@ -168,17 +168,6 @@ def _pop_fitmethod(settings):
     return fitmethod
 
 
-def _select(experiments, settings):
-    selection = settings.pop("selection", None)
-    if selection is None:
-        return
-    if isinstance(selection, list) and not isinstance(selection, str):
-        selection = [cns.SpinSystem(name) for name in selection]
-    print("\nSelecting profiles...")
-    experiments.select(selection)
-    print(f"  - Profile(s): {len(experiments)}")
-
-
 def _minimize(experiments, params, fitmethod=None):
     if fitmethod is None:
         fitmethod = "least_squares"
@@ -201,7 +190,7 @@ def _minimize(experiments, params, fitmethod=None):
         result = minimizer.result
     except ValueError:
         result = minimizer.result
-        sys.exit((result.params.pretty_print()))
+        sys.exit(result.params.pretty_print())
     _print_chisqr(experiments, result.params)
     return result.params
 

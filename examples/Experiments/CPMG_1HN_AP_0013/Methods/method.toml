@@ -1,9 +1,9 @@
 [STEP1]
-SELECTION = ["4", "8", "15", "29", "74", "104", "108", "110", "111", "154"]
+INCLUDE   = [4, 8, 15, 29, 74, 104, 108, 110, 111, 154]
 PB        = "fit"
 KEX_AB    = "fit"
 
 [STEP2]
-SELECTION = "*"
+INCLUDE   = "*"
 PB        = "fix"
 KEX_AB    = "fix"

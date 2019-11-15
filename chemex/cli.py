@@ -143,11 +143,20 @@ def build_parser():
     )
 
     fit_parser.add_argument(
-        "-r",
-        dest="selection",
+        "--include",
+        dest="include",
         metavar="ID",
         nargs="+",
         help="Residue(s) to include in the fit",
+        type=cns.SpinSystem,
+    )
+
+    fit_parser.add_argument(
+        "--exclude",
+        dest="exclude",
+        metavar="ID",
+        nargs="+",
+        help="Residue(s) to exclude from the fit",
         type=cns.SpinSystem,
     )
 
@@ -203,7 +212,7 @@ def build_parser():
 
     simulate_parser.add_argument(
         "-r",
-        dest="selection",
+        dest="include",
         metavar="ID",
         nargs="+",
         help="Residue(s) to include in the fit",

@@ -29,7 +29,7 @@ class SpinSystem:
     def __init__(self, name=None):
         if name is None:
             name = ""
-        self.name = name
+        self.name = str(name)
 
     @property
     def name(self):
@@ -71,6 +71,13 @@ class SpinSystem:
     def numbers(self):
         return {key: int(spin["number"]) for key, spin in self._spins.items()}
 
+    def to_re(self):
+        return _spins_to_re(self._spins)
+
+    def part_of(self, selection):
+        selection_ = (SpinSystem(item) for item in selection)
+        return any(self & name == name for name in selection_)
+
     def __and__(self, other):
         if isinstance(other, str):
             other = SpinSystem(other)
@@ -86,9 +93,6 @@ class SpinSystem:
         if len(numbers) == 1:
             return SpinSystem(numbers.pop())
         return SpinSystem()
-
-    def to_re(self):
-        return _spins_to_re(self._spins)
 
     def __repr__(self):
         return str(self.name).upper()
@@ -169,7 +173,7 @@ def _spins_to_re(spins):
 
 
 def _is_empty(spins):
-    values = set(value for spin in spins.values() for value in spin.values())
+    values = {value for spin in spins.values() for value in spin.values()}
     return len(values) == 1 and values.pop() == ""
 
 

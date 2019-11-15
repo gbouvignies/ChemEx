@@ -48,9 +48,8 @@ def fit(args):
     model = cpk.parse_model(name=args.model)
 
     # Read experimental setup and data
-    experiments = cce.read(
-        filenames=args.experiments, model=model, selection=args.selection
-    )
+    selection = {"include": args.include, "exclude": args.exclude}
+    experiments = cce.read(filenames=args.experiments, model=model, selection=selection)
 
     # Create parameters
     params = experiments.params_default
@@ -82,9 +81,8 @@ def simulate(args):
     model = cpk.parse_model(name=args.model)
 
     # Read experimental setup and data
-    experiments = cce.read(
-        filenames=args.experiments, model=model, selection=args.selection
-    )
+    selection = {"include": args.include, "exclude": args.exclude}
+    experiments = cce.read(filenames=args.experiments, model=model, selection=selection)
 
     # Create parameters
     params = experiments.params_default
