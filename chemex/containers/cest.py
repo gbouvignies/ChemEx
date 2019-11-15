@@ -288,7 +288,7 @@ class CestData:
         points = self.points.copy()
         points["intensities"] = self.points["intensities"] + other.points["intensities"]
         points["errors"] = np.sqrt(
-            (self.points["errors"] ** 2 + other.points["errors"] ** 2)
+            self.points["errors"] ** 2 + other.points["errors"] ** 2
         )
         refs = self.refs.copy()
         mask = self.mask.copy()

@@ -1,5 +1,5 @@
 [STEP1]
-SELECTION = ["L24HD2", "L25HD1", "V30HG1", "V30HG2", "M40HE", "I44HD1", "L52HD1", "L52HD2", "L55HD1", "L55HD2"]
+INCLUDE = ["L24HD2", "L25HD1", "V30HG1", "V30HG2", "M40HE", "I44HD1", "L52HD1", "L52HD2", "L55HD1", "L55HD2"]
 PB      = "fix"
 KEX_AB  = "fix"
 
@@ -8,6 +8,6 @@ PB      = "fit"
 KEX_AB  = "fit"
 
 [STEP3]
-SELECTION = "*"
+INCLUDE = "*"
 PB      = "fix"
 KEX_AB  = "fix"
