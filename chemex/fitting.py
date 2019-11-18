@@ -6,11 +6,10 @@ import lmfit as lm
 import numpy as np
 import scipy.stats as ss
 
+import chemex.containers.plot as ccp
 import chemex.helper as ch
 import chemex.parameters.helper as cph
-import chemex.parameters.name as cpn
 import chemex.parameters.settings as cps
-import chemex.plot as cp
 
 
 class Fit:
@@ -75,7 +74,7 @@ class Fit:
                 g_params = _minimize(g_experiments, g_params, fitmethod)
                 _write_files(g_experiments, g_params, group_path)
                 if plot_group_flg:
-                    cp.write_plots(g_experiments, g_params, group_path)
+                    ccp.write_plots(g_experiments, g_params, group_path)
                 g_params_all.append(g_params)
 
             g_params_merged = cph.merge(g_params_all)
@@ -86,7 +85,7 @@ class Fit:
                 path_ = path / section_path / "All"
                 _write_files(self._experiments, g_params_merged, path_)
                 if self._plot != "nothing":
-                    cp.write_plots(self._experiments, g_params_merged, path_)
+                    ccp.write_plots(self._experiments, g_params_merged, path_)
 
             params_.update(g_params_merged)
 
@@ -126,23 +125,21 @@ class Fit:
         params_ = cph.merge(
             [{name: params[name] for name in self._experiments.params_default}]
         )
-        par_name_groups = self._group_par_names(params_)
-        if len(par_name_groups) <= 1:
-            return {cpn.ParamName(): (self._experiments, params_)}
-        groups = self._group_data(params_, par_name_groups)
+        pnames_groups = self._group_pnames(params_)
+        groups = self._group_data(params_, pnames_groups)
         return {name: groups[name] for name in sorted(groups)}
 
-    def _group_par_names(self, params):
-        par_names_vary = {
+    def _group_pnames(self, params):
+        pnames_vary = {
             name for name, param in params.items() if param.vary and not param.expr
         }
         clusters = []
-        for par_names in self._experiments.par_name_sets:
-            varies = par_names & par_names_vary
+        for pnames in self._experiments.pname_sets:
+            varies = pnames & pnames_vary
             found = False
-            for par_name_cluster in clusters:
-                if varies & par_name_cluster:
-                    par_name_cluster |= varies
+            for pname_cluster in clusters:
+                if varies & pname_cluster:
+                    pname_cluster |= varies
                     found = True
                     break
             if not found and varies:
@@ -151,8 +148,8 @@ class Fit:
 
     def _group_data(self, params, par_name_groups):
         clusters_ = {}
-        for par_names in par_name_groups:
-            cluster_experiments = self._experiments.get_relevant_subset(par_names)
+        for pnames in par_name_groups:
+            cluster_experiments = self._experiments.get_relevant_subset(pnames)
             params_c = {
                 name: params[name] for name in cluster_experiments.params_default
             }

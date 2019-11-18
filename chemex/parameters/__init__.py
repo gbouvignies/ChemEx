@@ -8,6 +8,6 @@ def create_params(basis, model, conditions, spin_system=None, constraints=None):
     fnames_l, params_l = cpl.create_params_l(
         basis, model, conditions, spin_system, constraints
     )
-    par_names = {**fnames_k, **fnames_l}
+    pnames = {**fnames_k, **fnames_l}
     params = cph.merge((params_k, params_l))
-    return par_names, params
+    return pnames, params

@@ -1,2 +1,11 @@
-[DEFAULT]
-R2_B = "R2_A"
+[STEP_1]
+INCLUDE = ["L18CB", "L18CD2", "K25CA", "K25CB", "K25CG", "I28CA", "I28CB", "I28CD1"]
+PB      = "fit"
+KEX_AB  = "fit"
+CS_A    = "fit"
+R2_B    = "R2_A"
+
+[STEP_2]
+INCLUDE = "all"
+PB      = "fix"
+KEX_AB  = "fix"

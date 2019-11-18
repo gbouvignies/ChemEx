@@ -5,3 +5,4 @@ DEUTERATED = true
 [GLOBAL]
 PB         = 0.07
 KEX_AB     = 400.0
+DW_AB      = 2.0

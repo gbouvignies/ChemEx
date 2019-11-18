@@ -26,6 +26,7 @@ _BASES = {
     "ixyz": ["ix", "iy", "iz"],
     "ixyz_eq": ["ie", "ix", "iy", "iz"],
     "ixysxy": ["2ixsx", "2ixsy", "2iysx", "2iysy"],
+    "ixy_ixysxy": ["ix", "iy", "2ixsx", "2ixsy", "2iysx", "2iysy"],
     "ixyzsz": ["ix", "iy", "iz", "2ixsz", "2iysz", "2izsz"],
     "ixyzsz_dif": ["ix", "iy", "iz", "2ixsz", "2iysz", "2izsz"],
     "ixyzsz_eq": ["ie", "ix", "iy", "iz", "2ixsz", "2iysz", "2izsz"],
@@ -387,7 +388,7 @@ class LiouvillianIS:
     @b1_i.setter
     def b1_i(self, value):
         self._b1_i = value
-        self._b1_i_dist, self._b1_i_weights = make_gaussian(
+        self._b1_i_dist, self._b1_i_weights = _make_gaussian(
             self.b1_i, self.b1_i_inh_scale, self.b1_i_inh_res
         )
         self._b1_i_dist = self._b1_i_dist.reshape((-1, 1, 1))
@@ -567,7 +568,7 @@ class LiouvillianIS:
             self.matrices[name_] = np.sign(self._matrices_ref[name_]) * value
 
 
-def make_gaussian(value, scale, res):
+def _make_gaussian(value, scale, res):
     if scale not in (0.0, np.inf) and res > 1:
         grid = np.linspace(-2.0, 2.0, res)
         dist = grid * scale + 1.0

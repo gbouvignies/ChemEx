@@ -247,7 +247,8 @@ BASIS_TO_SHORTNAMES = {
     "iz_eq": ["r1_i"],
     "ixyz": ["r2_i", "r1_i", "cs_i"],
     "ixyz_eq": ["r2_i", "r1_i", "cs_i"],
-    "ixysxy": ["r2mq_is", "mu_is", "cs_i"],
+    "ixysxy": ["r2mq_is", "mu_is", "cs_i", "cs_s"],
+    "ixy_ixysxy": ["r2_i", "r2mq_is", "mu_is", "cs_i", "cs_s"],
     "ixyzsz": ["r2_i", "r1_i", "r2a_i", "etaxy_i", "etaz_i", "r1a_is", "cs_i", "j_is"],
     "ixyzsz_dif": [
         "r2_i",

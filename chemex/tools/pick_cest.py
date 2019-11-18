@@ -24,7 +24,7 @@ def pick_cest(args):
     # Read experimental setup and data
     experiment = ce.read(filename=args.experiments.pop(), model=model)
 
-    if not experiment.exp_type.startswith("cest"):
+    if not experiment.name.startswith("cest"):
         sys.exit(
             "\nError: The command 'chemex pick_cest' only works with CEST "
             "experiments.\n"
