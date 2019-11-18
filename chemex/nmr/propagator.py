@@ -1,13 +1,13 @@
 import functools as ft
 
 import numpy as np
-from scipy import linalg
+import scipy.linalg as sl
 
-from chemex.nmr import liouvillian
+import chemex.nmr.liouvillian as cnl
 
 
 class PropagatorIS:
-    LIOUV = liouvillian.LiouvillianIS
+    LIOUV = cnl.LiouvillianIS
 
     def __init__(self, basis, model, atoms, h_frq):
         self._pw90_i = self._pw90_s = None
@@ -23,6 +23,15 @@ class PropagatorIS:
         self.perfect90_s = self._make_perfect90("s")
         self.perfect180_i = self._make_perfect180("i")
         self.perfect180_s = self._make_perfect180("s")
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(
+            basis=config["spin_system"]["basis"],
+            model=config["model"],
+            atoms=config["spin_system"]["atoms"],
+            h_frq=config["conditions"]["h_larmor_frq"],
+        )
 
     def update(self, parvals):
         self.liouvillian.update(parvals)
@@ -261,6 +270,12 @@ class PropagatorIS:
         pw9024090is = self._add_phases(self._add_phases(pw9024090is_xx, "s"), "i")
         return pw9024090is
 
+    def calculate_shifts(self):
+        liouv = self.liouvillian.l_free.reshape(
+            (self.liouvillian.size, self.liouvillian.size)
+        )
+        return sl.eigvals(liouv).imag
+
     def offsets_to_ppms(self, offsets):
         return self.liouvillian.offsets_to_ppms(offsets)
 
@@ -296,7 +311,7 @@ class PropagatorIS:
     def _make_perfect90(self, spin):
         zeros = np.zeros((self.liouvillian.size, self.liouvillian.size))
         rot = self.liouvillian.matrices.get(f"b1x_{spin}", zeros)
-        base = linalg.expm(0.25 * rot).reshape(self.identity.shape)
+        base = sl.expm(0.25 * rot).reshape(self.identity.shape)
         p90 = self._add_phases(base, spin)
         return p90
 
@@ -306,7 +321,7 @@ class PropagatorIS:
         for spin in "is":
             l_rotz = self.liouvillian.matrices.get(f"rotz_{spin}", zeros)
             phases[spin] = np.array(
-                [linalg.expm(n * 0.5 * np.pi * l_rotz) for n in range(4)]
+                [sl.expm(n * 0.5 * np.pi * l_rotz) for n in range(4)]
             )
         return phases
 
@@ -320,11 +335,11 @@ def calculate_propagators(liouv, delays, dephasing=False):
     shape = liouv.shape
     propagators = []
     for a_liouvillian in liouv.reshape(-1, *shape[-2:]):
-        s, vr = linalg.eig(a_liouvillian)
-        vri = linalg.inv(vr)
+        s, vr = sl.eig(a_liouvillian)
+        vri = sl.inv(vr)
         if dephasing:
-            sl = np.where(abs(s.imag) < 1e-6)[0]
-            vr, s, vri = vr[:, sl], s[sl], vri[sl, :]
+            indexes = np.where(abs(s.imag) < 1e-6)[0]
+            vr, s, vri = vr[:, indexes], s[indexes], vri[indexes, :]
         d = np.asarray([np.diag(np.exp(s * t)) for t in delays_])
         propagators.append((vr @ d @ vri).real)
     propagators = np.asarray(propagators).swapaxes(0, 1).reshape(-1, *shape)

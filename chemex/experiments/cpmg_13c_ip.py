@@ -1,6 +1,6 @@
 """
 Pure In-phase 13C CPMG
-=================================
+======================
 
 Analyzes 13C chemical exchange in the presence of high power 1H CW decoupling
 during the CPMG block. This keeps the spin system purely in-phase throughout,
@@ -11,8 +11,8 @@ of states:
   Ix(b), Iy(b), Iz(b),
    ... ]
 
-The cw decoupling on 1H is assumed to be strong enough (> 15 kHz) such that 
-perfect 1H decoupling can be achieved. In the case of CHD2 experiment, cw 
+The cw decoupling on 1H is assumed to be strong enough (> 15 kHz) such that
+perfect 1H decoupling can be achieved. In the case of CHD2 experiment, cw
 decoupling on 2H should be properly applied.
 
 References

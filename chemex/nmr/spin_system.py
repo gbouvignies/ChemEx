@@ -69,7 +69,11 @@ class SpinSystem:
 
     @property
     def numbers(self):
-        return {key: int(spin["number"]) for key, spin in self._spins.items()}
+        return {
+            key: int(spin["number"])
+            for key, spin in self._spins.items()
+            if spin["number"]
+        }
 
     def to_re(self):
         return _spins_to_re(self._spins)

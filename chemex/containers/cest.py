@@ -6,8 +6,8 @@ import numpy as np
 
 import chemex.containers.helper as cch
 import chemex.containers.noise as ccn
+import chemex.containers.plot as ccp
 import chemex.parameters.name as cpn
-import chemex.plot as cp
 
 
 CEST_SCHEMA = {
@@ -56,16 +56,16 @@ CEST_SCHEMA = {
 
 @ft.total_ordering
 class CestProfile:
-    def __init__(self, name, data, pulse_seq, par_names, params_default):
+    def __init__(self, name, data, pulse_seq, pnames, params_default):
         self.name = name
         self.data = data
         self._pulse_seq = pulse_seq
-        self._par_names = par_names
+        self._pnames = pnames
         self.params_default = params_default
-        self._plot = cp.cest
+        self._plot = ccp.cest
 
     @classmethod
-    def from_file(cls, path, config, pulse_seq, par_names, params_default):
+    def from_file(cls, path, config, pulse_seq, pnames, params_default):
         name = config["spin_system"]["spin_system"]
         data = CestData.from_file(
             path,
@@ -73,7 +73,7 @@ class CestProfile:
             filter_planes=config["data"]["filter_planes"],
             filter_ref_planes=config["data"]["filter_ref_planes"],
         )
-        return cls(name, data, pulse_seq, par_names, params_default)
+        return cls(name, data, pulse_seq, pnames, params_default)
 
     def residuals(self, params):
         data = self.data.points[self.data.mask]
@@ -138,20 +138,20 @@ class CestProfile:
         return profile
 
     def set_params(self, params, rates):
-        for name1, name2 in self._par_names.items():
+        for name1, name2 in self._pnames.items():
             name = cpn.remove_state(name1)
             if name in rates:
                 params[name2].value = rates[name]
 
     def _get_parvals(self, params):
         parvals = tuple(
-            (name1, params[name2].value) for name1, name2 in self._par_names.items()
+            (name1, params[name2].value) for name1, name2 in self._pnames.items()
         )
         return parvals
 
     def _get_cs_values(self, params):
         names = (f"cs_i_{state}" for state in "abcd")
-        fnames = (self._par_names[name] for name in names if name in self._par_names)
+        fnames = (self._pnames[name] for name in names if name in self._pnames)
         return [params[fname] for fname in fnames]
 
     def _get_plot_data_exp(self, simulation=False):
@@ -182,7 +182,7 @@ class CestProfile:
             intst_ref = np.mean(intst_calc[refs[self.data.mask]])
         else:
             intst_ref = np.mean(self.data.points[refs]["intensities"])
-        offsets_fit = cp.get_grid(data["offsets"], 500, 0.02)
+        offsets_fit = ccp.get_grid(data["offsets"], 500, 0.02)
         ppms = self._pulse_seq.offsets_to_ppms(offsets_fit)
         intensities = self.calculate(params, offsets_fit) / intst_ref
         data_fit = np.rec.array([ppms, intensities], names=["ppms", "intensities"])
@@ -214,7 +214,7 @@ class CestProfile:
     def __add__(self, other: "CestProfile"):
         data = self.data + other.data
         return CestProfile(
-            self.name, data, self._pulse_seq, self._par_names, self.params_default
+            self.name, data, self._pulse_seq, self._pnames, self.params_default
         )
 
     def __eq__(self, other: "CestProfile"):

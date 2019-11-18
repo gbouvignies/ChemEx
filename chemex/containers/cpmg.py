@@ -6,8 +6,8 @@ import numpy as np
 
 import chemex.containers.helper as cch
 import chemex.containers.noise as ccn
+import chemex.containers.plot as ccp
 import chemex.parameters.name as cpn
-import chemex.plot as cp
 
 
 CPMG_SCHEMA = {
@@ -45,23 +45,23 @@ CPMG_SCHEMA = {
 
 @ft.total_ordering
 class CpmgProfile:
-    def __init__(self, name, data, pulse_seq, par_names, params_default):
+    def __init__(self, name, data, pulse_seq, pnames, params_default):
         self.name = name
         self.data = data
         self._pulse_seq = pulse_seq
-        self._par_names = par_names
+        self._pnames = pnames
         self.params_default = params_default
-        self._plot = cp.cpmg
+        self._plot = ccp.cpmg
 
     @classmethod
-    def from_file(cls, path, config, pulse_seq, par_names, params_default):
+    def from_file(cls, path, config, pulse_seq, pnames, params_default):
         name = config["spin_system"]["spin_system"]
         data = CpmgData.from_file(
             path,
             filter_planes=config["data"]["filter_planes"],
             time_t2=config["experiment"]["time_t2"],
         )
-        return cls(name, data, pulse_seq, par_names, params_default)
+        return cls(name, data, pulse_seq, pnames, params_default)
 
     def residuals(self, params):
         data = self.data.points[self.data.mask]
@@ -121,14 +121,14 @@ class CpmgProfile:
         return profile
 
     def set_params(self, params, rates):
-        for name1, name2 in self._par_names.items():
+        for name1, name2 in self._pnames.items():
             name = cpn.remove_state(name1)
             if name in rates:
                 params[name2].value = rates[name]
 
     def _get_parvals(self, params):
         parvals = tuple(
-            (name1, params[name2].value) for name1, name2 in self._par_names.items()
+            (name1, params[name2].value) for name1, name2 in self._pnames.items()
         )
         return parvals
 
@@ -158,7 +158,7 @@ class CpmgProfile:
     def __add__(self, other: "CpmgProfile"):
         data = self.data + other.data
         return CpmgProfile(
-            self.name, data, self._pulse_seq, self._par_names, self.params_default
+            self.name, data, self._pulse_seq, self._pnames, self.params_default
         )
 
     def __eq__(self, other: "CpmgProfile"):

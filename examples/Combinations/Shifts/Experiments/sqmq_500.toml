@@ -1,0 +1,10 @@
+[experiment]
+name = "shift_15n_sqmq"
+
+[conditions]
+h_larmor_frq = 499.684
+# temperature  = 20.5
+
+[data]
+path = "../Data"
+shifts = "sqmq_500.txt"
