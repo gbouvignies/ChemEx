@@ -28,12 +28,19 @@ def _settings_to_params(settings, fnames):
 
 
 def merge(params_list):
+    # The symtable fix will be unnecessary in the next version of lmfit
     params_merged = {}
+    symtable_merged = {}
     for params in params_list:
+        unique_symbols = {
+            key: params._asteval.symtable[key]
+            for key in params._asteval.user_defined_symbols()
+        }
+        symtable_merged.update(unique_symbols)
         for name, param in params.items():
             if name in params_merged and params_merged[name].vary:
                 continue
             params_merged[name] = param
-    params = lf.Parameters()
+    params = lf.Parameters(usersyms=symtable_merged)
     params.add_many(*params_merged.values())
     return params

@@ -53,16 +53,13 @@ class ModelFree:
     s2: float = 0.9
     deuterated: bool = False
 
-    @property
-    def tau_(self):
-        return self.tauc * self.taui / (self.tauc + self.taui)
-
     def jw(self, w):
         tauc = self.tauc
-        tau_ = self.tau_
-        lc = tauc / (1.0 + (w * tauc) ** 2)
-        l_ = tau_ / (1.0 + (w * tau_) ** 2)
-        jw = 2.0 / 5.0 * (lc * self.s2 + l_ * (1.0 - self.s2))
+        taui = self.taui
+        taup = taui + tauc
+        arg1 = self.s2 / (1.0 + (w * tauc) ** 2)
+        arg2 = (1.0 - self.s2) * taup * taui / (taup ** 2 + (w * taui * tauc) ** 2)
+        jw = 2.0 / 5.0 * tauc * (arg1 + arg2)
         return jw
 
     def jw_isx(self, w0_i, w0_s, w0_x):

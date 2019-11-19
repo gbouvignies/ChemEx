@@ -113,6 +113,14 @@ class Experiments:
             profile.params_default for profile in self._experiments.values()
         )
 
+    def select_params(self, params):
+        pnames = self.params_default.keys()
+        selected = params.copy()
+        for pname in params:
+            if pname not in pnames:
+                del selected[pname]
+        return selected
+
     def __len__(self):
         return sum([len(experiment) for experiment in self._experiments.values()])
 
