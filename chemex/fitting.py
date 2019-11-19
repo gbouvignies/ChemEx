@@ -1,5 +1,4 @@
 """The fitting module contains the code for fitting the experimental data."""
-import copy
 import sys
 
 import lmfit as lm
@@ -30,7 +29,7 @@ class Fit:
         if path is None:
             path = self._path
 
-        params_ = copy.deepcopy(params)
+        params_ = params.copy()
 
         for index, (section, settings) in enumerate(self._method.items()):
 
@@ -122,9 +121,7 @@ class Fit:
         rate are set to 'fix', chances are that the fit can be decomposed
         residue-specifically.
         """
-        params_ = cph.merge(
-            [{name: params[name] for name in self._experiments.params_default}]
-        )
+        params_ = self._experiments.select_params(params)
         pnames_groups = self._group_pnames(params_)
         groups = self._group_data(params_, pnames_groups)
         return {name: groups[name] for name in sorted(groups)}
@@ -150,10 +147,7 @@ class Fit:
         clusters_ = {}
         for pnames in par_name_groups:
             cluster_experiments = self._experiments.get_relevant_subset(pnames)
-            params_c = {
-                name: params[name] for name in cluster_experiments.params_default
-            }
-            cluster_params = cph.merge([params_c])
+            cluster_params = cluster_experiments.select_params(params)
             cluster_name = cluster_experiments.get_cluster_name()
             clusters_[cluster_name] = (cluster_experiments, cluster_params)
         return clusters_

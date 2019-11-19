@@ -266,11 +266,11 @@ def _print_constraint(param):
     """Write the (optional) parameter expression constraints to a file."""
     if not param.expr:
         return ""
-    par_name = cpn.ParamName.from_full_name(param.name)
-    name_formatted = f"[{par_name.to_section_name(show_spin_system=True)}]"
     expr_formatted = str(param.expr)
     for name_dep in aa.get_ast_names(ast.parse(param.expr)):
         par_name_dep = cpn.ParamName.from_full_name(name_dep)
+        if not par_name_dep:
+            continue
         name_dep_formatted = f"[{par_name_dep.to_section_name(show_spin_system=True)}]"
         expr_formatted = expr_formatted.replace(name_dep, name_dep_formatted)
-    return f"{name_formatted} = {expr_formatted}"
+    return f"= {expr_formatted}".upper()

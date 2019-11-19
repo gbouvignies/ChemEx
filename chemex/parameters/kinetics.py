@@ -645,7 +645,7 @@ def hs_to_p(state, states, celcius):
     for a_state in states:
         if a_state != "a":
             dg[a_state] = (
-                f"exp(" f"-({{dh_{a_state}}} - {kelvin} * {{ds_{a_state}}}) " f"/ {rt})"
+                f"exp(" f"-({{dh_{a_state}}} - {kelvin} * {{ds_{a_state}}}) / {rt})"
             )
         else:
             dg[a_state] = "1.0"
