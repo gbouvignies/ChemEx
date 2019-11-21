@@ -9,6 +9,7 @@ import numpy as np
 import chemex.containers.plot as ccp
 import chemex.experiments as ce
 import chemex.helper as ch
+import chemex.nmr.rates as cnr
 import chemex.parameters.helper as cph
 
 
@@ -131,14 +132,14 @@ class Experiments:
 class Experiment(abc.ABC):
     print_name = ""
 
-    def __init__(self, filename, name, profiles, rates=None, verbose=True):
-        self.filename = filename
-        self.name = name
+    def __init__(self, config, profiles, verbose=True):
+        self.config = config
+        self.filename = config["filename"]
+        self.name = config["experiment"]["name"]
         self._profiles = sorted(profiles)
         self._filtered = []
-        self._rates = rates
         if verbose:
-            print(f"  - Experiment: {name}")
+            print(f"  - Experiment: {self.name}")
             print(f"  - {self.print_name}: {len(profiles)}")
 
     def residuals(self, params):
@@ -157,7 +158,7 @@ class Experiment(abc.ABC):
         for profile in self._profiles:
             if set(profile.params_default) & set(pnames):
                 profiles.append(profile)
-        return type(self)(self.filename, self.name, profiles=profiles, verbose=False)
+        return type(self)(self.config, profiles=profiles, verbose=False)
 
     @abc.abstractmethod
     def plot(self, params, path, simulation=False):
@@ -230,9 +231,15 @@ class Experiment(abc.ABC):
             profile.set_noise(noise_mean)
 
     def set_params(self, params, model_free):
+        spin_system = self.config["spin_system"].get("rates")
         rates = {}
-        if self._rates is not None:
-            rates = self._rates.calculate(model_free)
+        if model_free and spin_system:
+            h_frq = self.config["conditions"]["h_larmor_frq"]
+            tauc = model_free["tauc"]
+            taui = model_free["taui"]
+            s2 = model_free["s2"]
+            deuterated = model_free["deuterated"]
+            rates = cnr.calculate_rates(spin_system, h_frq, tauc, taui, s2, deuterated)
         for profile in self._profiles:
             profile.set_params(params, rates)
 
@@ -277,7 +284,7 @@ class RelaxationExperiment(Experiment):
         profiles = []
         for profile in self._profiles:
             profiles.append(profile.bootstrap())
-        return type(self)(self.filename, self.name, profiles, verbose=False)
+        return type(self)(self.config, profiles, verbose=False)
 
 
 class ShiftExperiment(Experiment):
@@ -297,7 +304,7 @@ class ShiftExperiment(Experiment):
 
     def bootstrap(self):
         profiles = np.random.choice(self._profiles, len(self._profiles))
-        return type(self)(self.filename, self.name, profiles, verbose=False)
+        return type(self)(self.config, profiles, verbose=False)
 
 
 def read(filenames=None, model=None, selection=None):

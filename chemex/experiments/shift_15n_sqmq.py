@@ -28,7 +28,6 @@ import chemex.containers.shift as ccs
 import chemex.experiments.helper as ceh
 import chemex.helper as ch
 import chemex.nmr.propagator as cnp
-import chemex.nmr.rates as cnr
 
 
 _SCHEMA = {
@@ -57,7 +56,6 @@ def read(config):
         pulse_seq_cls=PulseSeq,
         propagator_cls=cnp.PropagatorIS,
         container_cls=ccs.ShiftProfile,
-        rates_cls=cnr.RatesIS,
         fit_setting={},
     )
     return experiment

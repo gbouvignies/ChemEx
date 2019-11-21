@@ -1,12 +1,10 @@
-import dataclasses as dc
-
 import numpy as np
 import scipy.constants as sc
 
 import chemex.nmr.constants as cnc
 
 
-is_params = {
+_PARAMS_IS = {
     "hn": {
         "gamma_i": cnc.GAMMA["h"],
         "gamma_s": cnc.GAMMA["n"],
@@ -46,134 +44,94 @@ is_params = {
 }
 
 
-@dc.dataclass
-class ModelFree:
-    tauc: float = 5.0e-9
-    taui: float = 50.0e-12
-    s2: float = 0.9
-    deuterated: bool = False
-
-    def jw(self, w):
-        tauc = self.tauc
-        taui = self.taui
-        taup = taui + tauc
-        arg1 = self.s2 / (1.0 + (w * tauc) ** 2)
-        arg2 = (1.0 - self.s2) * taup * taui / (taup ** 2 + (w * taui * tauc) ** 2)
-        jw = 2.0 / 5.0 * tauc * (arg1 + arg2)
-        return jw
-
-    def jw_isx(self, w0_i, w0_s, w0_x):
-        ws = np.array(
-            [
-                0.0,
-                w0_i,
-                w0_s,
-                w0_x,
-                w0_i - w0_s,
-                w0_i + w0_s,
-                w0_i - w0_x,
-                w0_i + w0_x,
-                w0_s - w0_x,
-                w0_s + w0_x,
-            ]
-        )
-        return self.jw(ws)
+def _calculate_jw(tauc, taui, s2, w):
+    taup = taui + tauc
+    arg1 = s2 / (1.0 + (w * tauc) ** 2)
+    arg2 = (1.0 - s2) * taup * taui / (taup ** 2 + (w * taui * tauc) ** 2)
+    jw = 2.0 / 5.0 * tauc * (arg1 + arg2)
+    return jw
 
 
-@dc.dataclass
-class RatesIS:
-    h_larmor_frq: float
-    spins: str
+def calculate_rates(spin_system, h_frq, tauc, taui, s2, deuterated=False):
+    ss_params = _PARAMS_IS[spin_system]
 
-    def __post_init__(self):
-        is_param = is_params[self.spins]
-        gi = is_param["gamma_i"]
-        gs = is_param["gamma_s"]
-        gh = cnc.GAMMA["h"]
-        b0 = 2.0 * np.pi * 1e6 * self.h_larmor_frq / gh
-        self.wi = -gi * b0
-        self.ws = -gs * b0
-        self.wh = -gh * b0
-        self.dis = -sc.mu_0 * sc.hbar / (8.0 * np.pi) * gi * gs
-        self.dih = -sc.mu_0 * sc.hbar / (8.0 * np.pi) * gi * gh
-        self.dsh = -sc.mu_0 * sc.hbar / (8.0 * np.pi) * gs * gh
-        self.ci = 1.0 / 3.0 * is_param["csa_i"] * gi * b0
-        self.cs = 1.0 / 3.0 * is_param["csa_s"] * gs * b0
-        self.p2i = 0.5 * (3.0 * np.cos(is_param["phi_i"]) ** 2 - 1.0)
-        self.p2s = 0.5 * (3.0 * np.cos(is_param["phi_s"]) ** 2 - 1.0)
+    gi, gs, gh = ss_params["gamma_i"], ss_params["gamma_s"], cnc.GAMMA["h"]
+    ris3 = ss_params["ris3"]
+    rih3 = rsh3 = ss_params["rext3_d"] if deuterated else ss_params["rext3_p"]
+    csa_i, csa_s = ss_params["csa_i"], ss_params["csa_s"]
+    phi_i, phi_s = ss_params["phi_i"], ss_params["phi_s"]
 
-    def calculate(self, model_free):
-        is_param = is_params[self.spins]
-        ris3 = is_param["ris3"]
-        rih3 = is_param["rext3_d"] if model_free.deuterated else is_param["rext3_p"]
-        rsh3 = rih3
-        dis = self.dis / ris3
-        dih = self.dih / rih3
-        dsh = self.dsh / rsh3
-        ci = self.ci
-        cs = self.cs
-        p2i = self.p2i
-        p2s = self.p2s
-        js = model_free.jw_isx(self.wi, self.ws, self.wh)
-        j0, ji, js, jh, jmis, jpis, jmih, jpih, jmsh, jpsh = js
-        rates = {
-            "r2_i": 0.5
-            * (
-                ci ** 2 * (4 * j0 + 3 * ji)
-                + dis ** 2 * (4 * j0 + 3 * ji + jmis + 6 * js + 6 * jpis)
-                + dih ** 2 * (4 * j0 + 3 * ji + jmih + 6 * jh + 6 * jpih)
-            ),
-            "r2_s": 0.5
-            * (
-                cs ** 2 * (4 * j0 + 3 * js)
-                + dis ** 2 * (4 * j0 + 3 * js + jmis + 6 * ji + 6 * jpis)
-                + dsh ** 2 * (4 * j0 + 3 * js + jmsh + 6 * jh + 6 * jpsh)
-            ),
-            "r1_i": (
-                ci ** 2 * 3 * ji
-                + dis ** 2 * (3 * ji + jmis + 6 * jpis)
-                + dih ** 2 * (3 * ji + jmih + 6 * jpih)
-            ),
-            "r1_s": (
-                cs ** 2 * 3 * js
-                + dis ** 2 * (3 * js + jmis + 6 * jpis)
-                + dsh ** 2 * (3 * js + jmsh + 6 * jpsh)
-            ),
-            "r2a_i": (
-                0.5 * ci ** 2 * (4 * j0 + 3 * ji)
-                + cs ** 2 * 3 * js
-                + 0.5 * dis ** 2 * (4 * j0 + 3 * ji + jmis + 6 * jpis)
-                + 0.5 * dih ** 2 * (4 * j0 + 3 * ji + jmih + 6 * jh + 6 * jpih)
-                + dsh ** 2 * (3 * js + jmsh + 6 * jpsh)
-            ),
-            "r2a_s": (
-                0.5 * cs ** 2 * (4 * j0 + 3 * js)
-                + ci ** 2 * 3 * ji
-                + 0.5 * dis ** 2 * (4 * j0 + 3 * js + jmis + 6 * jpis)
-                + 0.5 * dsh ** 2 * (4 * j0 + 3 * js + jmsh + 6 * jh + 6 * jpsh)
-                + dih ** 2 * (3 * ji + jmih + 6 * jpih)
-            ),
-            "r2mq_is": 0.5
-            * (
-                ci ** 2 * (4 * j0 + 3 * ji)
-                + cs ** 2 * (4 * j0 + 3 * js)
-                + dis ** 2 * (3 * ji + jmis + 3 * js + 6 * jpis)
-                + dih ** 2 * (4 * j0 + 3 * ji + jmih + 6 * jh + 6 * jpih)
-                + dsh ** 2 * (4 * j0 + 3 * js + jmsh + 6 * jh + 6 * jpsh)
-            ),
-            "r1a_is": (
-                ci ** 2 * 3 * ji
-                + cs ** 2 * 3 * js
-                + dis ** 2 * (3 * ji + 3 * js)
-                + dih ** 2 * (3 * ji + jmih + 6 * jpih)
-                + dsh ** 2 * (3 * js + jmsh + 6 * jpsh)
-            ),
-            "etaxy_i": dis * ci * p2i * (4 * j0 + 3 * ji),
-            "etaxy_s": dis * cs * p2s * (4 * j0 + 3 * js),
-            "etaz_i": dis * ci * p2i * 6 * ji,
-            "etaz_s": dis * cs * p2s * 6 * js,
-            "sigma_is": dis ** 2 * (-jmis + 6.0 * jpis),
-            "mu_is": 0.5 * dis ** 2 * (-jmis + 6.0 * jpis),
-            "j_is": is_param["j_is"],
-        }
-        return rates
+    b0 = 2.0 * np.pi * 1e6 * h_frq / gh
+    wi, ws, wh = -np.array([gi, gs, gh]) * b0
+    scale = -sc.mu_0 * sc.hbar / (8.0 * np.pi)
+    dis, dih, dsh = scale * np.array([gi * gs / ris3, gi * gh / rih3, gs * gh / rsh3])
+    ci, cs = -np.array([csa_i * wi, csa_s * ws]) / 3.0
+    p2i, p2s = 0.5 * (3.0 * np.cos(np.array([phi_i, phi_s])) ** 2 - 1.0)
+
+    ws = np.array(
+        [0.0, wi, ws, wh, wi - ws, wi + ws, wi - wh, wi + wh, ws - wh, ws + wh]
+    )
+    jw = _calculate_jw(tauc, taui, s2, ws)
+    j0, ji, js, jh, jmis, jpis, jmih, jpih, jmsh, jpsh = jw
+
+    rates = {
+        "r2_i": 0.5
+        * (
+            ci ** 2 * (4 * j0 + 3 * ji)
+            + dis ** 2 * (4 * j0 + 3 * ji + jmis + 6 * js + 6 * jpis)
+            + dih ** 2 * (4 * j0 + 3 * ji + jmih + 6 * jh + 6 * jpih)
+        ),
+        "r2_s": 0.5
+        * (
+            cs ** 2 * (4 * j0 + 3 * js)
+            + dis ** 2 * (4 * j0 + 3 * js + jmis + 6 * ji + 6 * jpis)
+            + dsh ** 2 * (4 * j0 + 3 * js + jmsh + 6 * jh + 6 * jpsh)
+        ),
+        "r1_i": (
+            ci ** 2 * 3 * ji
+            + dis ** 2 * (3 * ji + jmis + 6 * jpis)
+            + dih ** 2 * (3 * ji + jmih + 6 * jpih)
+        ),
+        "r1_s": (
+            cs ** 2 * 3 * js
+            + dis ** 2 * (3 * js + jmis + 6 * jpis)
+            + dsh ** 2 * (3 * js + jmsh + 6 * jpsh)
+        ),
+        "r2a_i": (
+            0.5 * ci ** 2 * (4 * j0 + 3 * ji)
+            + cs ** 2 * 3 * js
+            + 0.5 * dis ** 2 * (4 * j0 + 3 * ji + jmis + 6 * jpis)
+            + 0.5 * dih ** 2 * (4 * j0 + 3 * ji + jmih + 6 * jh + 6 * jpih)
+            + dsh ** 2 * (3 * js + jmsh + 6 * jpsh)
+        ),
+        "r2a_s": (
+            0.5 * cs ** 2 * (4 * j0 + 3 * js)
+            + ci ** 2 * 3 * ji
+            + 0.5 * dis ** 2 * (4 * j0 + 3 * js + jmis + 6 * jpis)
+            + 0.5 * dsh ** 2 * (4 * j0 + 3 * js + jmsh + 6 * jh + 6 * jpsh)
+            + dih ** 2 * (3 * ji + jmih + 6 * jpih)
+        ),
+        "r2mq_is": 0.5
+        * (
+            ci ** 2 * (4 * j0 + 3 * ji)
+            + cs ** 2 * (4 * j0 + 3 * js)
+            + dis ** 2 * (3 * ji + jmis + 3 * js + 6 * jpis)
+            + dih ** 2 * (4 * j0 + 3 * ji + jmih + 6 * jh + 6 * jpih)
+            + dsh ** 2 * (4 * j0 + 3 * js + jmsh + 6 * jh + 6 * jpsh)
+        ),
+        "r1a_is": (
+            ci ** 2 * 3 * ji
+            + cs ** 2 * 3 * js
+            + dis ** 2 * (3 * ji + 3 * js)
+            + dih ** 2 * (3 * ji + jmih + 6 * jpih)
+            + dsh ** 2 * (3 * js + jmsh + 6 * jpsh)
+        ),
+        "etaxy_i": dis * ci * p2i * (4 * j0 + 3 * ji),
+        "etaxy_s": dis * cs * p2s * (4 * j0 + 3 * js),
+        "etaz_i": dis * ci * p2i * 6 * ji,
+        "etaz_s": dis * cs * p2s * 6 * js,
+        "sigma_is": dis ** 2 * (-jmis + 6.0 * jpis),
+        "mu_is": 0.5 * dis ** 2 * (-jmis + 6.0 * jpis),
+        "j_is": ss_params["j_is"],
+    }
+    return rates

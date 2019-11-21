@@ -36,7 +36,6 @@ import chemex.experiments.helper as ceh
 import chemex.helper as ch
 import chemex.nmr.constants as cnc
 import chemex.nmr.propagator as cnp
-import chemex.nmr.rates as cnr
 
 
 _SCHEMA = {
@@ -77,7 +76,6 @@ def read(config):
         pulse_seq_cls=PulseSeq,
         propagator_cls=cnp.PropagatorIS,
         container_cls=ccc.CestProfile,
-        rates_cls=cnr.RatesIS,
         fit_setting=_FIT_SETTING,
     )
     return experiment
