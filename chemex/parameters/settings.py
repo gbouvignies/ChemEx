@@ -10,7 +10,6 @@ import asteval.astutils as aa
 import numpy as np
 
 import chemex.helper as ch
-import chemex.nmr.rates as cnr
 import chemex.nmr.spin_system as cns
 import chemex.parameters.name as cpn
 
@@ -23,10 +22,10 @@ _SCHEMA_CONFIG_PARAM = {
         "model_free": {
             "type": "object",
             "properties": {
-                "tauc": {"type": "number"},
-                "taui": {"type": "number"},
-                "s2": {"type": "number"},
-                "deuterated": {"type": "boolean"},
+                "tauc": {"type": "number", "default": 4e-9},
+                "taui": {"type": "number", "default": 50e-12},
+                "s2": {"type": "number", "default": 0.9},
+                "deuterated": {"type": "boolean", "default": False},
             },
             "additionalProperties": False,
             "default": {},
@@ -55,7 +54,7 @@ def set_values(params, experiments, filenames):
     config = _read_config(filenames)
     matches = cl.Counter()
     cfg_model_free = config.pop("model_free")
-    _set_param_mf(params, experiments, cfg_model_free)
+    experiments.set_params(params, cfg_model_free)
     for section, settings in config.items():
         prefix = f"{section}, NUC->" if section != "global" else ""
         for key, values in settings.items():
@@ -67,11 +66,6 @@ def set_values(params, experiments, filenames):
             matches.update({name.to_section_name(): len(matched)})
     _print_matches(matches)
     _check_params(params)
-
-
-def _set_param_mf(params, experiments, cfg_model_free):
-    model_free = cnr.ModelFree(**cfg_model_free)
-    experiments.set_params(params, model_free)
 
 
 def _read_config(filenames):

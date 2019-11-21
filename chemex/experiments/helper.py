@@ -9,57 +9,21 @@ import chemex.parameters as cp
 import chemex.parameters.settings as cps
 
 
-def read(
-    config,
-    pulse_seq_cls,
-    propagator_cls,
-    container_cls,
-    rates_cls=None,
-    fit_setting=None,
-):
+def read(config, pulse_seq_cls, propagator_cls, container_cls, fit_setting=None):
     profiles = _read_profiles(
         config, pulse_seq_cls, propagator_cls, container_cls, fit_setting
     )
-    rates = None
-    if rates_cls is not None:
-        rates = rates_cls(
-            h_larmor_frq=config["conditions"]["h_larmor_frq"],
-            spins=config["spin_system"].get("rates"),
-        )
-    experiment = cce.RelaxationExperiment(
-        filename=config["filename"],
-        name=config["experiment"]["name"],
-        profiles=profiles,
-        rates=rates,
-    )
+    experiment = cce.RelaxationExperiment(config=config, profiles=profiles)
     experiment.estimate_noise(config["data"]["error"])
     experiment.merge_same_profiles()
     return experiment
 
 
-def read_shift(
-    config,
-    pulse_seq_cls,
-    propagator_cls,
-    container_cls,
-    rates_cls=None,
-    fit_setting=None,
-):
+def read_shift(config, pulse_seq_cls, propagator_cls, container_cls, fit_setting=None):
     profiles = _read_shifts(
         config, pulse_seq_cls, propagator_cls, container_cls, fit_setting
     )
-    rates = None
-    if rates_cls is not None:
-        rates = rates_cls(
-            h_larmor_frq=config["conditions"]["h_larmor_frq"],
-            spins=config["spin_system"].get("rates"),
-        )
-    experiment = cce.ShiftExperiment(
-        filename=config["filename"],
-        name=config["experiment"]["name"],
-        profiles=profiles,
-        rates=rates,
-    )
+    experiment = cce.ShiftExperiment(config=config, profiles=profiles)
     experiment.estimate_noise(config["data"]["error"])
     experiment.merge_same_profiles()
     return experiment
