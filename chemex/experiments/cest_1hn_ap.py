@@ -29,10 +29,8 @@ import functools as ft
 
 import numpy as np
 
-import chemex.containers.cest as ccc
 import chemex.experiments.helper as ceh
 import chemex.helper as ch
-import chemex.nmr.propagator as cnp
 
 
 _SCHEMA = {
@@ -74,13 +72,8 @@ def read(config):
         "rates": "hn",
     }
     ch.validate(config, _SCHEMA)
-    ch.validate(config, ccc.CEST_SCHEMA)
-    experiment = ceh.read(
-        config=config,
-        pulse_seq_cls=PulseSeq,
-        propagator_cls=cnp.PropagatorIS,
-        container_cls=ccc.CestProfile,
-        fit_setting=_FIT_SETTING,
+    experiment = ceh.load_experiment(
+        config=config, pulse_seq_cls=PulseSeq, fit_setting=_FIT_SETTING
     )
     return experiment
 

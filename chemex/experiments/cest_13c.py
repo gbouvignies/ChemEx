@@ -33,11 +33,9 @@ import functools as ft
 
 import numpy as np
 
-import chemex.containers.cest as ccc
 import chemex.experiments.helper as ceh
 import chemex.helper as ch
 import chemex.nmr.constants as cnc
-import chemex.nmr.propagator as cnp
 
 
 _SCHEMA = {
@@ -68,13 +66,8 @@ _FIT_SETTING = {"dw_ab": "fit", "r1_a": "fit", "r2_a": "fit", "r2_b": "fit"}
 def read(config):
     config["spin_system"] = {"basis": "ixyz", "atoms": {"i": "c"}}
     ch.validate(config, _SCHEMA)
-    ch.validate(config, ccc.CEST_SCHEMA)
-    experiment = ceh.read(
-        config=config,
-        pulse_seq_cls=PulseSeq,
-        propagator_cls=cnp.PropagatorIS,
-        container_cls=ccc.CestProfile,
-        fit_setting=_FIT_SETTING,
+    experiment = ceh.load_experiment(
+        config=config, pulse_seq_cls=PulseSeq, fit_setting=_FIT_SETTING
     )
     return experiment
 

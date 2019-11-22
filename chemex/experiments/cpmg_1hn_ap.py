@@ -29,10 +29,8 @@ import functools as ft
 import numpy as np
 import numpy.linalg as nl
 
-import chemex.containers.cpmg as ccc
 import chemex.experiments.helper as ceh
 import chemex.helper as ch
-import chemex.nmr.propagator as cnp
 
 
 _SCHEMA = {
@@ -66,13 +64,8 @@ def read(config):
         "rates": "hn",
     }
     ch.validate(config, _SCHEMA)
-    ch.validate(config, ccc.CPMG_SCHEMA)
-    experiment = ceh.read(
-        config=config,
-        pulse_seq_cls=PulseSeq,
-        propagator_cls=cnp.PropagatorIS,
-        container_cls=ccc.CpmgProfile,
-        fit_setting=_FIT_SETTING,
+    experiment = ceh.load_experiment(
+        config=config, pulse_seq_cls=PulseSeq, fit_setting=_FIT_SETTING
     )
     return experiment
 
