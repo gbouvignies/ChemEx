@@ -24,10 +24,8 @@ import functools as ft
 
 import numpy as np
 
-import chemex.containers.shift as ccs
 import chemex.experiments.helper as ceh
 import chemex.helper as ch
-import chemex.nmr.propagator as cnp
 
 
 _SCHEMA = {
@@ -50,13 +48,8 @@ def read(config):
         "rates": "nh",
     }
     ch.validate(config, _SCHEMA)
-    ch.validate(config, ccs.SHIFT_SCHEMA)
-    experiment = ceh.read_shift(
-        config=config,
-        pulse_seq_cls=PulseSeq,
-        propagator_cls=cnp.PropagatorIS,
-        container_cls=ccs.ShiftProfile,
-        fit_setting={},
+    experiment = ceh.load_experiment(
+        config=config, pulse_seq_cls=PulseSeq, fit_setting={}
     )
     return experiment
 
