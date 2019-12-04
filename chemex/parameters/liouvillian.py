@@ -244,6 +244,7 @@ SETTINGS = {
 BASIS_TO_SHORTNAMES = {
     "ixy": ["r2_i", "cs_i"],
     "iz": ["r1_i"],
+    "izsz": ["r1_i", "r1a_is"],
     "iz_eq": ["r1_i"],
     "ixyz": ["r2_i", "r1_i", "cs_i"],
     "ixyz_eq": ["r2_i", "r1_i", "cs_i"],

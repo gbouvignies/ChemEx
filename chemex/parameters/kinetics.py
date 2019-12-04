@@ -6,7 +6,7 @@ import jsonschema as js
 import numpy as np
 import scipy.constants as cst
 
-from chemex.parameters import helper as cph
+import chemex.parameters.helper as cph
 
 
 Model = collections.namedtuple("Model", ["name", "state_nb", "kind"])

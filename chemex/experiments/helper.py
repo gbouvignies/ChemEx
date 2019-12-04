@@ -5,6 +5,7 @@ import numpy as np
 import chemex.containers.cest as ccce
 import chemex.containers.cpmg as cccp
 import chemex.containers.experiment as cce
+import chemex.containers.relaxation as ccr
 import chemex.containers.shift as ccs
 import chemex.helper as ch
 import chemex.nmr.propagator as cnp
@@ -115,6 +116,12 @@ def _get_shifts(config):
 
 
 _CONTAINERS = {
+    "relaxation": {
+        "experiment": cce.RelaxationExperiment,
+        "profile": ccr.RelaxationProfile,
+        "read": _read_profiles,
+        "schema": ccr.RELAXATION_SCHEMA,
+    },
     "cest": {
         "experiment": cce.RelaxationExperiment,
         "profile": ccce.CestProfile,

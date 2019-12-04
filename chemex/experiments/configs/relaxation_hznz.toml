@@ -1,0 +1,45 @@
+## This is a sample configuration file for the module 'relaxation_hznz'
+
+[experiment]
+
+## Name of the chemex module corresponding to the experiment
+name = "relaxation_hznz"
+
+## State of the observed resonance [optional, default: "a"]
+# observed_state = "a"
+
+[conditions]
+
+## 1H Larmor frequency, in MHz
+h_larmor_frq = 800.0
+
+## Sample temperature, in Celsius [optional, depending on the kinetic model]
+# temperature = 25.0
+
+## Protein concentration, in M [optional, depending on the kinetic model]
+# p_total = 500.0e-6
+
+## Ligand concentration, in M [optional, depending on the kinetic model]
+# l_total = 50.0e-6
+
+[data]
+
+## Directory containing the profiles [optional, default: "./"]
+# path = "./"
+
+## Option defining how intensity uncertainties are estimated.
+## "file": uncertainties are taken from the profile files
+## "duplicates": uncertainties are calculated from the duplicate points
+## [optional, default: "file"]
+# error = "file"
+
+## List of the profile names and their associated filenames.
+## The name of the spin systems should follow the Sparky-NMR
+## conventions.
+profiles = [
+    ["G2N", "G2N-HN.out"],
+    ["H3N", "H3N-HN.out"],
+    ["K4N", "K4N-HN.out"],
+    ["S5N", "S5N-HN.out"],
+    ["L6N", "L6N-HN.out"],
+]

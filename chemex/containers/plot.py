@@ -71,6 +71,16 @@ def cpmg(file_pdf, name, data_exp, data_fit):
     file_pdf.savefig(fig)
 
 
+def relaxation(file_pdf, name, data_exp, data_fit):
+    xname, *_ = data_fit.dtype.names
+    fig = profile(name, data_exp, data_fit)
+    ax2 = fig.axes[1]
+    ax2.set_xlabel(r"Time (s)")
+    ax2.set_ylabel(r"Intensity")
+    ax2.set_xlim(0.0, max(data_fit[xname]) + min(data_fit[xname]))
+    file_pdf.savefig(fig)
+
+
 def cest(file_pdf, name, data_exp, data_fit, cs_values):
     residuals = _get_residuals(data_exp, data_fit)
     sigma = _estimate_sigma(residuals)
