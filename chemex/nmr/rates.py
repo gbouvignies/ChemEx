@@ -44,15 +44,11 @@ _PARAMS_IS = {
 }
 
 
-def _calculate_jw(tauc, taui, s2, w):
-    taup = taui + tauc
-    arg1 = s2 / (1.0 + (w * tauc) ** 2)
-    arg2 = (1.0 - s2) * taup * taui / (taup ** 2 + (w * taui * tauc) ** 2)
-    jw = 2.0 / 5.0 * tauc * (arg1 + arg2)
-    return jw
+def _calculate_jw(tauc, s2, w):
+    return 2.0 / 5.0 * tauc * s2 / (1.0 + (w * tauc) ** 2)
 
 
-def calculate_rates(spin_system, h_frq, tauc, taui, s2, deuterated=False):
+def calculate_rates(spin_system, h_frq, tauc, s2, kh2o, deuterated=False):
     ss_params = _PARAMS_IS[spin_system]
 
     gi, gs, gh = ss_params["gamma_i"], ss_params["gamma_s"], cnc.GAMMA["h"]
@@ -71,7 +67,7 @@ def calculate_rates(spin_system, h_frq, tauc, taui, s2, deuterated=False):
     ws = np.array(
         [0.0, wi, ws, wh, wi - ws, wi + ws, wi - wh, wi + wh, ws - wh, ws + wh]
     )
-    jw = _calculate_jw(tauc, taui, s2, ws)
+    jw = _calculate_jw(tauc, s2, ws)
     j0, ji, js, jh, jmis, jpis, jmih, jpih, jmsh, jpsh = jw
 
     rates = {

@@ -23,7 +23,6 @@ _SCHEMA_CONFIG_PARAM = {
             "type": "object",
             "properties": {
                 "tauc": {"type": "number", "default": 4e-9},
-                "taui": {"type": "number", "default": 50e-12},
                 "s2": {"type": "number", "default": 0.9},
                 "deuterated": {"type": "boolean", "default": False},
             },

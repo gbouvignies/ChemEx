@@ -22,6 +22,7 @@ import chemex.nmr.spin_system as cns
 _BASES = {
     "ixy": ["ix", "iy"],
     "iz": ["iz"],
+    "izsz": ["iz", "2izsz"],
     "iz_eq": ["ie", "iz"],
     "ixyz": ["ix", "iy", "iz"],
     "ixyz_eq": ["ie", "ix", "iy", "iz"],

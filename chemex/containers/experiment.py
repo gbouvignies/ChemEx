@@ -236,10 +236,9 @@ class Experiment(abc.ABC):
         if model_free and spin_system:
             h_frq = self.config["conditions"]["h_larmor_frq"]
             tauc = model_free["tauc"]
-            taui = model_free["taui"]
             s2 = model_free["s2"]
             deuterated = model_free["deuterated"]
-            rates = cnr.calculate_rates(spin_system, h_frq, tauc, taui, s2, deuterated)
+            rates = cnr.calculate_rates(spin_system, h_frq, tauc, s2, deuterated)
         for profile in self._profiles:
             profile.set_params(params, rates)
 
