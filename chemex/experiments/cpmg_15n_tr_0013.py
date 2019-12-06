@@ -62,17 +62,21 @@ _SCHEMA = {
         }
     },
 }
-_FIT_SETTING = {"dw_ab": "fit", "r2_a": "fit"}
 
 
 def read(config):
-    config["basis"] = cnl.Basis(type="ixyzsz", spin_system="nh")
     ch.validate(config, _SCHEMA)
+    config["basis"] = cnl.Basis(type="ixyzsz", spin_system="nh")
+    config["fit"] = _fit_this(config)
+    return ceh.load_experiment(config=config, pulse_seq_cls=PulseSeq)
+
+
+def _fit_this(config):
+    state = config["experiment"]["observed_state"]
+    this = ["dw_ab", f"r2_{state}"]
     if config["experiment"]["antitrosy"]:
-        _FIT_SETTING["etaxy_a"] = "fit"
-    return ceh.load_experiment(
-        config=config, pulse_seq_cls=PulseSeq, fit_setting=_FIT_SETTING
-    )
+        this.append(f"etaxy_{state}")
+    return this
 
 
 class PulseSeq:

@@ -44,12 +44,15 @@ _SCHEMA = {
 
 
 def read(config):
-    config["basis"] = cnl.Basis(type="iz", spin_system="nh")
     ch.validate(config, _SCHEMA)
-    fit_setting = {"r1_a": "fit"}
-    return ceh.load_experiment(
-        config=config, pulse_seq_cls=PulseSeq, fit_setting=fit_setting
-    )
+    config["basis"] = cnl.Basis(type="iz", spin_system="nh")
+    config["fit"] = _fit_this(config)
+    return ceh.load_experiment(config=config, pulse_seq_cls=PulseSeq)
+
+
+def _fit_this(config):
+    state = config["experiment"]["observed_state"]
+    return [f"r1_{state}"]
 
 
 class PulseSeq:

@@ -14,7 +14,7 @@ import chemex.parameters as cp
 import chemex.parameters.settings as cps
 
 
-def load_experiment(config, pulse_seq_cls, fit_setting=None):
+def load_experiment(config, pulse_seq_cls):
     read = experiment_cls = profile_cls = schema = None
     for key, container in _CONTAINERS.items():
         if config["experiment"]["name"].startswith(key):
@@ -24,14 +24,14 @@ def load_experiment(config, pulse_seq_cls, fit_setting=None):
             schema = container["schema"]
             break
     ch.validate(config, schema)
-    profiles = read(config, pulse_seq_cls, profile_cls, fit_setting)
+    profiles = read(config, pulse_seq_cls, profile_cls)
     experiment = experiment_cls(config=config, profiles=profiles)
     experiment.estimate_noise(config["data"]["error"])
     experiment.merge_same_profiles()
     return experiment
 
 
-def _read_profiles(config, pulse_seq_cls, profile_cls, fit_setting):
+def _read_profiles(config, pulse_seq_cls, profile_cls):
     propagator = cnp.PropagatorIS.from_config(config)
     paths = _get_profile_paths(config)
     profiles = []
@@ -51,12 +51,13 @@ def _read_profiles(config, pulse_seq_cls, profile_cls, fit_setting):
             pnames=pnames,
             params_default=params_default,
         )
+        fit_setting = {key: "fit" for key in config.get("fit", [])}
         cps.set_status(profile.params_default, fit_setting, verbose=False)
         profiles.append(profile)
     return sorted(profiles)
 
 
-def _read_shifts(config, pulse_seq_cls, profile_cls, fit_setting):
+def _read_shifts(config, pulse_seq_cls, profile_cls):
     propagator = cnp.PropagatorIS.from_config(config)
     shifts = _get_shifts(config)
     profiles = []
@@ -75,6 +76,7 @@ def _read_shifts(config, pulse_seq_cls, profile_cls, fit_setting):
             pnames=pnames,
             params_default=params_default,
         )
+        fit_setting = {key: "fit" for key in config.get("fit", [])}
         cps.set_status(profile.params_default, fit_setting, verbose=False)
         profiles.append(profile)
     return sorted(profiles)
