@@ -60,24 +60,27 @@ _SCHEMA = {
         }
     },
 }
-_FIT_SETTING = {
-    "dw_ab": "fit",
-    "r1a_a": "fit",
-    "r1_a, nuc->n": "fit",
-    "r2_a": "fit",
-    "r2_b": "fit",
-    "etaxy_a": "fit",
-    "etaz_a": "fit",
-}
 
 
 def read(config):
-    config["basis"] = cnl.Basis(type="ixyzsz_eq", spin_system="hn")
-    config["data"]["filter_ref_planes"] = True
     ch.validate(config, _SCHEMA)
-    return ceh.load_experiment(
-        config=config, pulse_seq_cls=PulseSeq, fit_setting=_FIT_SETTING
-    )
+    config["basis"] = cnl.Basis(type="ixyzsz_eq", spin_system="hn")
+    config["fit"] = _fit_this(config)
+    config["data"]["filter_ref_planes"] = True
+    return ceh.load_experiment(config=config, pulse_seq_cls=PulseSeq)
+
+
+def _fit_this(config):
+    state = config["experiment"]["observed_state"]
+    this = [
+        "dw_ab",
+        f"r1a_{state}",
+        f"r1_{state}, nuc->n",
+        f"etaxy_{state}",
+        f"etaz_{state}",
+    ]
+    this.extend([f"r2_{state}" for state in config["model"].states])
+    return this
 
 
 class PulseSeq:

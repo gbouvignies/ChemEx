@@ -56,22 +56,25 @@ _SCHEMA = {
         }
     },
 }
-_FIT_SETTING = {
-    "dw_ab": "fit",
-    "r1_a, nuc->n": "fit",
-    "r2_a, nuc->n": "fit",
-    "r2mq_a": "fit",
-    "etaz_a, nuc->n": "fit",
-    "etaxy_a, nuc->n": "fit",
-}
 
 
 def read(config):
-    config["basis"] = cnl.Basis(type="ixyzsxyz", spin_system="nh")
     ch.validate(config, _SCHEMA)
-    return ceh.load_experiment(
-        config=config, pulse_seq_cls=PulseSeq, fit_setting=_FIT_SETTING
-    )
+    config["basis"] = cnl.Basis(type="ixyzsxyz", spin_system="nh")
+    config["fit"] = _fit_this(config)
+    return ceh.load_experiment(config=config, pulse_seq_cls=PulseSeq)
+
+
+def _fit_this(config):
+    state = config["experiment"]["observed_state"]
+    return [
+        "dw_ab",
+        f"r1_{state}, nuc->n",
+        f"r1_{state}, nuc->n",
+        f"r2mq_{state}",
+        f"etaxy_{state}",
+        f"etaz_{state}",
+    ]
 
 
 class PulseSeq:
