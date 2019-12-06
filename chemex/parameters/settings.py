@@ -220,12 +220,12 @@ def _params_to_string(params):
     par_string = {"GLOBAL": []}
     for name, param in sorted(params.items()):
         par_name = cpn.ParamName.from_full_name(name)
-        if not par_name.spin_system:  # global parameter
-            name_print = par_name
-            section = "GLOBAL"
-        else:  # residue-specific parameter
+        if par_name.spin_system:  # residue-specific parameter
             name_print = cns.SpinSystem(par_name.spin_system)
             section = par_name.to_section_name()
+        else:  # global parameter
+            name_print = par_name
+            section = "GLOBAL"
         value_print = _param_to_string(param)
         par_string.setdefault(section, []).append((name_print, value_print))
         col_width[section] = max(10, len(str(name_print)), col_width.get(section, 0))

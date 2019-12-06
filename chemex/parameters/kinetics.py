@@ -1,5 +1,6 @@
 import collections
 import re
+import string
 import sys
 
 import jsonschema as js
@@ -9,7 +10,7 @@ import scipy.constants as cst
 import chemex.parameters.helper as cph
 
 
-Model = collections.namedtuple("Model", ["name", "state_nb", "kind"])
+Model = collections.namedtuple("Model", ["name", "states", "kind"])
 
 
 def parse_model(name):
@@ -18,8 +19,13 @@ def parse_model(name):
     if not match:
         raise NameError(f"Impossible to parse the model name '{name_}'.")
     state_nb = int(match.group(1))
+    states = _get_state_names(state_nb)
     kind = match.group(2)
-    return Model(name_, state_nb, kind)
+    return Model(name_, states, kind)
+
+
+def _get_state_names(state_nb):
+    return string.ascii_lowercase[:state_nb]
 
 
 def _check_model_name(name):

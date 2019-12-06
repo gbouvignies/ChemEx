@@ -36,6 +36,7 @@ import numpy as np
 
 import chemex.experiments.helper as ceh
 import chemex.helper as ch
+import chemex.nmr.liouvillian as cnl
 
 
 _SCHEMA = {
@@ -71,17 +72,11 @@ _FIT_SETTING = {"dw_ab": "fit", "r2mq_a": "fit", "mu_a": "fit"}
 
 
 def read(config):
-    config["spin_system"] = {
-        "basis": "ixyzsxyz",
-        "atoms": {"i": "n", "s": "h"},
-        "constraints": ["nh"],
-        "rates": "nh",
-    }
+    config["basis"] = cnl.Basis(type="ixyzsxyz", spin_system="nh")
     ch.validate(config, _SCHEMA)
-    experiment = ceh.load_experiment(
+    return ceh.load_experiment(
         config=config, pulse_seq_cls=PulseSeq, fit_setting=_FIT_SETTING
     )
-    return experiment
 
 
 class PulseSeq:
@@ -127,10 +122,9 @@ class PulseSeq:
     def _get_tau_cps(self, ncycs):
         ncycs_ = np.asarray(ncycs)
         ncycs_ = ncycs_[ncycs_ > 0]
-        tau_cps = dict(
+        return dict(
             zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - 7.0 / 3.0 * self.pw90_i)
         )
-        return tau_cps
 
     @ft.lru_cache()
     def _get_phases(self, ncyc):
@@ -141,8 +135,7 @@ class PulseSeq:
             phases_ = [0]
         else:
             phases_ = [0, 1, 0, 1, 1, 0, 1, 0]
-        phases = np.take(phases_, np.flip(np.arange(2 * ncyc)), mode="wrap")
-        return phases
+        return np.take(phases_, np.flip(np.arange(2 * ncyc)), mode="wrap")
 
     def _get_detection(self, state):
         if self.dq_flg:

@@ -17,8 +17,7 @@ def read(filename, model, selection):
     experiment_name = get_experiment_name(config)
     cpk.validates_conditions(config)
     module = grab(experiment_name)
-    experiment = module.read(config)
-    return experiment
+    return module.read(config)
 
 
 def get_experiment_name(config):
@@ -59,9 +58,8 @@ def get_info():
 
 
 def get_config():
-    cfgs = {
+    return {
         name.replace(".toml", ""): ir.read_text(cec, name)
         for name in ir.contents(cec)
         if name.endswith(".toml")
     }
-    return cfgs

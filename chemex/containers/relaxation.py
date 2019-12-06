@@ -55,7 +55,7 @@ class RelaxationProfile:
 
     @classmethod
     def from_file(cls, path, config, pulse_seq, pnames, params_default):
-        name = config["spin_system"]["spin_system"]
+        name = config["spin_system"]
         data = RelaxationData.from_file(
             path, filter_planes=config["data"]["filter_planes"]
         )
@@ -63,8 +63,7 @@ class RelaxationProfile:
 
     def residuals(self, params):
         data = self.data.points[self.data.mask]
-        residuals = (self.calculate(params) - data["intensities"]) / data["errors"]
-        return residuals
+        return (self.calculate(params) - data["intensities"]) / data["errors"]
 
     def calculate(self, params, times=None):
         data = self.data.points[self.data.mask]
@@ -126,10 +125,9 @@ class RelaxationProfile:
                 params[name2].value = rates[name]
 
     def _get_parvals(self, params):
-        parvals = tuple(
+        return tuple(
             (name1, params[name2].value) for name1, name2 in self._pnames.items()
         )
-        return parvals
 
     def _get_plot_data_exp(self, simulation=False):
         dtype = [
@@ -189,16 +187,22 @@ class RelaxationProfile:
     def any_duplicate(self):
         return self.data.any_duplicate()
 
-    def __add__(self, other: "RelaxationProfile"):
+    def __add__(self, other: object):
+        if not isinstance(other, type(self)):
+            return NotImplemented
         data = self.data + other.data
         return RelaxationProfile(
             self.name, data, self._pulse_seq, self._pnames, self.params_default
         )
 
-    def __eq__(self, other: "RelaxationProfile"):
+    def __eq__(self, other: object):
+        if not isinstance(other, type(self)):
+            return NotImplemented
         return self.name == other.name
 
-    def __lt__(self, other: "RelaxationProfile"):
+    def __lt__(self, other: object):
+        if not isinstance(other, type(self)):
+            return NotImplemented
         return self.name < other.name
 
 

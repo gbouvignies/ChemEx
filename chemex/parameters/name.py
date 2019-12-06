@@ -41,14 +41,8 @@ class ParamName:
             self.h_larmor_frq = round(float(h_larmor_frq), 1)
         else:
             self.h_larmor_frq = None
-        if p_total is not None:
-            self.p_total = float(p_total)
-        else:
-            self.p_total = None
-        if l_total is not None:
-            self.l_total = float(l_total)
-        else:
-            self.l_total = None
+        self.p_total = float(p_total) if p_total is not None else None
+        self.l_total = float(l_total) if l_total is not None else None
 
     @property
     def spin_system(self):
@@ -141,10 +135,11 @@ class ParamName:
             "p_total": "P{:e}M",
             "l_total": "L{:e}M",
         }
-        components = []
-        for name, value in self.to_dict().items():
-            if value:
-                components.append(formatters[name].format(value))
+        components = [
+            formatters[name].format(value)
+            for name, value in self.to_dict().items()
+            if value
+        ]
         return "-".join(components).upper()
 
     def match(self, string):
@@ -179,10 +174,11 @@ class ParamName:
         return self._members() < other._members()
 
     def __and__(self, other: "ParamName"):
-        both = {}
-        for name in ("name", "temperature", "h_larmor_frq", "p_total", "l_total"):
-            if getattr(self, name) == getattr(other, name):
-                both[name] = getattr(self, name)
+        both = {
+            name: getattr(self, name)
+            for name in ("name", "temperature", "h_larmor_frq", "p_total", "l_total")
+            if getattr(self, name) == getattr(other, name)
+        }
         both["spin_system"] = self._spin_system & other._spin_system
         return ParamName(**both)
 

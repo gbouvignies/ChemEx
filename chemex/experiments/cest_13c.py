@@ -36,6 +36,7 @@ import numpy as np
 import chemex.experiments.helper as ceh
 import chemex.helper as ch
 import chemex.nmr.constants as cnc
+import chemex.nmr.liouvillian as cnl
 
 
 _SCHEMA = {
@@ -64,12 +65,11 @@ _FIT_SETTING = {"dw_ab": "fit", "r1_a": "fit", "r2_a": "fit", "r2_b": "fit"}
 
 
 def read(config):
-    config["spin_system"] = {"basis": "ixyz", "atoms": {"i": "c"}}
+    config["basis"] = cnl.Basis(type="ixyz", spin_system="ch")
     ch.validate(config, _SCHEMA)
-    experiment = ceh.load_experiment(
+    return ceh.load_experiment(
         config=config, pulse_seq_cls=PulseSeq, fit_setting=_FIT_SETTING
     )
-    return experiment
 
 
 class PulseSeq:
@@ -82,7 +82,7 @@ class PulseSeq:
         self.prop.b1_i_inh_scale = settings["b1_inh_scale"]
         self.prop.b1_i_inh_res = settings["b1_inh_res"]
         if settings["cn_label"]:
-            spin_system = config["spin_system"]["spin_system"]
+            spin_system = config["spin_system"]
             symbol = spin_system.symbols["i"]
             nucleus = spin_system.nuclei["i"]
             self.prop.jeff_i = cnc.get_multiplet(symbol, nucleus)

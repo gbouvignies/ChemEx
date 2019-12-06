@@ -66,7 +66,7 @@ class CestProfile:
 
     @classmethod
     def from_file(cls, path, config, pulse_seq, pnames, params_default):
-        name = config["spin_system"]["spin_system"]
+        name = config["spin_system"]
         data = CestData.from_file(
             path,
             filter_offsets=config["data"]["filter_offsets"],
@@ -77,8 +77,7 @@ class CestProfile:
 
     def residuals(self, params):
         data = self.data.points[self.data.mask]
-        residuals = (self.calculate(params) - data["intensities"]) / data["errors"]
-        return residuals
+        return (self.calculate(params) - data["intensities"]) / data["errors"]
 
     def calculate(self, params, offsets=None):
         data = self.data.points[self.data.mask]
@@ -144,10 +143,9 @@ class CestProfile:
                 params[name2].value = rates[name]
 
     def _get_parvals(self, params):
-        parvals = tuple(
+        return tuple(
             (name1, params[name2].value) for name1, name2 in self._pnames.items()
         )
-        return parvals
 
     def _get_cs_values(self, params):
         names = (f"cs_i_{state}" for state in "abcd")
@@ -211,16 +209,22 @@ class CestProfile:
     def any_duplicate(self):
         return self.data.any_duplicate()
 
-    def __add__(self, other: "CestProfile"):
+    def __add__(self, other: object):
+        if not isinstance(other, type(self)):
+            return NotImplemented
         data = self.data + other.data
         return CestProfile(
             self.name, data, self._pulse_seq, self._pnames, self.params_default
         )
 
-    def __eq__(self, other: "CestProfile"):
+    def __eq__(self, other: object):
+        if not isinstance(other, type(self)):
+            return NotImplemented
         return self.name == other.name
 
-    def __lt__(self, other: "CestProfile"):
+    def __lt__(self, other: object):
+        if not isinstance(other, type(self)):
+            return NotImplemented
         return self.name < other.name
 
 

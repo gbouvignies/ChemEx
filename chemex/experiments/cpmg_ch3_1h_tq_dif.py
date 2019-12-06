@@ -32,6 +32,7 @@ import numpy as np
 import chemex.experiments.helper as ceh
 import chemex.helper as ch
 import chemex.nmr.constants as cnc
+import chemex.nmr.liouvillian as cnl
 
 
 _SCHEMA = {
@@ -62,18 +63,13 @@ _FIT_SETTING = {"dw_ab": "fit", "r2tq_a": "fit", "d_a": "fit", "d_b": "fit"}
 
 
 def read(config):
-    config["spin_system"] = {
-        "basis": "ixyzsz_dif.tq",
-        "atoms": {"i": "h", "s": "c"},
-        "constraints": ["hc"],
-    }
+    config["basis"] = cnl.Basis(type="ixyzsz_dif", extension="tq", spin_system="hc")
     ch.validate(config, _SCHEMA)
     if not config["experiment"]["ipap_flg"]:
         _FIT_SETTING["r2atq_a"] = "fit"
-    experiment = ceh.load_experiment(
+    return ceh.load_experiment(
         config=config, pulse_seq_cls=PulseSeq, fit_setting=_FIT_SETTING
     )
-    return experiment
 
 
 class PulseSeq:
@@ -107,17 +103,17 @@ class PulseSeq:
 
         # Calculation of the propagators with gradient 1
         self.prop.gradient_dephasing = 1.0 / 3.0 * self.k2_factor
-        d_delta_1, = self.prop.delays(self.delta)
+        (d_delta_1,) = self.prop.delays(self.delta)
 
         # Calculation of the propagators with gradient 2
         self.prop.gradient_dephasing = self.k2_factor
-        d_tau_2, = self.prop.delays(self.tau)
+        (d_tau_2,) = self.prop.delays(self.tau)
         p90_2 = self.prop.p90_i
         p180_2 = self.prop.p180_i
 
         # Calculation of the propagators with gradient 3
         self.prop.gradient_dephasing = 7.0 / 3.0 * self.k2_factor
-        d_delta_3, = self.prop.delays(self.delta)
+        (d_delta_3,) = self.prop.delays(self.delta)
 
         # Calculation of the propagators with gradient 4
         self.prop.gradient_dephasing = 4.0 * self.k2_factor

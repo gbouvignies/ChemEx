@@ -9,11 +9,11 @@ import chemex.nmr.liouvillian as cnl
 class PropagatorIS:
     LIOUV = cnl.LiouvillianIS
 
-    def __init__(self, basis, model, atoms, h_frq):
+    def __init__(self, basis, model, h_frq):
         self._pw90_i = self._pw90_s = None
         self._p90_i = self._p180_i = self._p240_i = None
         self._p90_s = self._p180_s = self._p240_s = None
-        self.liouvillian = self.LIOUV(basis, model, atoms, h_frq)
+        self.liouvillian = self.LIOUV(basis, model, h_frq)
         size = self.liouvillian.size
         self.identity = np.eye(self.liouvillian.size).reshape((1, 1, size, size))
         self.ppm_i = self.liouvillian.ppm_i
@@ -27,9 +27,8 @@ class PropagatorIS:
     @classmethod
     def from_config(cls, config):
         return cls(
-            basis=config["spin_system"]["basis"],
+            basis=config["basis"],
             model=config["model"],
-            atoms=config["spin_system"]["atoms"],
             h_frq=config["conditions"]["h_larmor_frq"],
         )
 
@@ -267,8 +266,7 @@ class PropagatorIS:
             p2 = self.pulse_is(t2, 3, 3) if pw9024090s > pw240i else self.pulse_i(t2, 0)
             p3 = self.pulse_i(t3, 3)
         pw9024090is_xx = p3 @ p2 @ p1 @ p0 @ p1 @ p2 @ p3
-        pw9024090is = self._add_phases(self._add_phases(pw9024090is_xx, "s"), "i")
-        return pw9024090is
+        return self._add_phases(self._add_phases(pw9024090is_xx, "s"), "i")
 
     def calculate_shifts(self):
         liouv = self.liouvillian.l_free.reshape(
@@ -299,7 +297,7 @@ class PropagatorIS:
     def _make_perfect180(self, spin):
         compx, compy, compz = (f"{spin}{axis}" for axis in "xyz")
         perfect180 = {comp: self.identity.copy() for comp in (compx, compy)}
-        for comp in self.liouvillian.basis:
+        for comp in self.liouvillian.basis.components:
             vect = self.liouvillian.vectors[comp]
             if compx in comp or compz in comp:
                 perfect180[compy] -= 2 * np.diag(vect)
@@ -312,8 +310,7 @@ class PropagatorIS:
         zeros = np.zeros((self.liouvillian.size, self.liouvillian.size))
         rot = self.liouvillian.matrices.get(f"b1x_{spin}", zeros)
         base = sl.expm(0.25 * rot).reshape(self.identity.shape)
-        p90 = self._add_phases(base, spin)
-        return p90
+        return self._add_phases(base, spin)
 
     def _get_phases(self):
         phases = {}
