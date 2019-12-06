@@ -40,8 +40,7 @@ class ShiftProfile:
 
     def calculate(self, params):
         par_values = self._get_parvals(params)
-        calculated = self._pulse_seq.calculate(par_values)
-        return calculated
+        return self._pulse_seq.calculate(par_values)
 
     def estimate_noise_variance(self, kind):
         return self.data.estimate_noise_variance(kind)
@@ -53,8 +52,7 @@ class ShiftProfile:
         shift = self.data["shift"]
         error = self.data["error"]
         value = self.calculate(params)
-        output = f"{str(self.name):10s} {shift: 17.8e} {error: 17.8e} {value: 17.8e}\n"
-        return output
+        return f"{str(self.name):10s} {shift: 17.8e} {error: 17.8e} {value: 17.8e}\n"
 
     def filter(self, params):
         pass
@@ -77,21 +75,27 @@ class ShiftProfile:
         return params[fname]
 
     def _get_parvals(self, params):
-        parvals = tuple(
+        return tuple(
             (name1, params[name2].value) for name1, name2 in self._pnames.items()
         )
-        return parvals
 
-    def __add__(self, other: "ShiftProfile"):
-        data = {}
-        data["shift"] = 0.5 * (self.data["shift"] + other.data["shift"])
-        data["error"] = np.sqrt(self.data["error"] ** 2 + other.data["error"] ** 2)
+    def __add__(self, other: object):
+        if not isinstance(other, type(self)):
+            return NotImplemented
+        data = {
+            "shift": 0.5 * (self.data["shift"] + other.data["shift"]),
+            "error": np.sqrt(self.data["error"] ** 2 + other.data["error"] ** 2),
+        }
         return ShiftProfile(
             self.name, data, self._pulse_seq, self._pnames, self.params_default
         )
 
-    def __eq__(self, other: "ShiftProfile"):
+    def __eq__(self, other: object):
+        if not isinstance(other, type(self)):
+            return NotImplemented
         return self.name == other.name
 
-    def __lt__(self, other: "ShiftProfile"):
+    def __lt__(self, other: object):
+        if not isinstance(other, type(self)):
+            return NotImplemented
         return self.name < other.name

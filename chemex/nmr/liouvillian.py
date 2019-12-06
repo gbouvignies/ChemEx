@@ -8,6 +8,7 @@
         2IxSx, 2IxSy, 2IySx, 2IySy,
         2IzSz}
 """
+import dataclasses as dc
 import itertools as it
 import re
 
@@ -16,7 +17,7 @@ import numpy as np
 import scipy.stats as ss
 
 import chemex.nmr.constants as cnc
-import chemex.nmr.spin_system as cns
+import chemex.parameters.kinetics as cpk
 
 
 _BASES = {
@@ -275,41 +276,66 @@ _TRANSITIONS = {
     ),
 }
 
-Q_ORDER_I = {"dq": 2.0, "tq": 3.0}
+_Q_ORDER_I = {"sq": 1.0, "dq": 2.0, "tq": 3.0}
+
+_ATOMS = {
+    "hn": {"i": "h", "s": "n"},
+    "hc": {"i": "h", "s": "c"},
+    "nh": {"i": "n", "s": "h"},
+    "ch": {"i": "c", "s": "h"},
+    "cn": {"i": "c", "s": "n"},
+}
+
+
+@dc.dataclass
+class Basis:
+    type: str
+    extension: str = dc.field(default_factory=str)
+    spin_system: str = dc.field(default_factory=str)
+
+    @property
+    def name(self):
+        return ".".join([self.type, self.extension, self.spin_system])
+
+    @property
+    def components(self):
+        return _BASES[self.type]
+
+    @property
+    def atoms(self):
+        return _ATOMS.get(self.spin_system)
+
+    def __len__(self):
+        return len(self.components)
 
 
 class LiouvillianIS:
-    def __init__(self, basis, model, atoms, h_frq):
-        basis_name, *extensions = basis.split(".")
+    def __init__(self, basis: Basis, model: cpk.Model, h_frq: float):
         self._b1_i_inh_scale = 0.0
         self._b1_i_inh_res = 11
         self._ppm_i = self._ppm_s = 1.0
         self._parvals = None
         self._l_base = None
-        self._q_order_i = 1.0
-        if extensions:
-            self._q_order_i = Q_ORDER_I.get(extensions[0], 1.0)
-        self.name = basis_name
-        self.state_nb = model.state_nb
-        self.atoms = atoms
+        self._q_order_i = _Q_ORDER_I.get(basis.extension, 1.0)
+        self.basis = basis
+        self.states = model.states
         self.h_frq = h_frq
-        self.states = cns.get_state_names(model.state_nb)
-        self.basis = _BASES[basis_name]
-        self.size = len(self.basis) * model.state_nb
+        self.size = len(self.basis) * len(self.states)
+        self.vectors = self._build_component_vectors()
         self.matrices = {
             **self._build_transition_matrices(),
             **self._build_exchange_matrices(),
         }
         self._matrices_ref = self.matrices.copy()
-        self.vectors = self._build_component_vectors()
         self._interpreter = asteval.Interpreter(
             symtable={"vectors": self.vectors}, minimal=True
         )
-        self.ppm_i = -2.0 * np.pi * h_frq * cnc.SIGNED_XI_RATIO.get(atoms.get("i"), 1.0)
-        self.ppm_s = -2.0 * np.pi * h_frq * cnc.SIGNED_XI_RATIO.get(atoms.get("s"), 1.0)
-        self.carrier_i, self.carrier_s = 0.0, 0.0
-        self.offset_i, self.offset_s = 0.0, 0.0
-        self.b1_i, self.b1_s = 1e32, 1e32
+        scale = -2.0 * np.pi * h_frq
+        self.ppm_i = scale * cnc.SIGNED_XI_RATIO.get(basis.atoms.get("i"), 1.0)
+        self.ppm_s = scale * cnc.SIGNED_XI_RATIO.get(basis.atoms.get("s"), 1.0)
+        self.carrier_i = self.carrier_s = 0.0
+        self.offset_i = self.offset_s = 0.0
+        self.b1_i = self.b1_s = 1e32
         self.jeff_i = cnc.Distribution(0.0, 1.0)
         self.detection = ""
         self.update((("cs_i_a", 0.0), ("pa", 1.0)))
@@ -485,7 +511,7 @@ class LiouvillianIS:
     def get_equilibrium(self):
         parvals = dict(self._parvals)
         mag = np.zeros(self.size)
-        for state, (name, atom) in it.product(self.states, self.atoms.items()):
+        for state, (name, atom) in it.product(self.states, self.basis.atoms.items()):
             scale = parvals.get(f"p{state}", 0.0) * cnc.XI_RATIO.get(atom, 1.0)
             mag += self.vectors.get(f"{name}e_{state}", 0.0) * scale
             mag += self.vectors.get(f"{name}z_{state}", 0.0) * scale
@@ -538,17 +564,20 @@ class LiouvillianIS:
         matrices = {}
         for (i1, s1), (i2, s2) in it.permutations(enumerate(self.states), r=2):
             name = f"k{s1}{s2}"
-            matrix = np.zeros((self.state_nb, self.state_nb))
+            matrix = np.zeros((len(self.states), len(self.states)))
             matrix[((i1, i2), i1)] = -1.0, 1.0
             matrices[name] = np.kron(matrix, np.eye(len(self.basis)))
         return matrices
 
     def _build_component_vectors(self):
-        names = [f"{name}_{state}" for state in self.states for name in self.basis]
-        vectors = dict(zip(names, np.eye(self.size)))
-        for state, name in it.product(self.states, self.basis):
+        vectors = {}
+        eye = np.eye(self.size)
+        components = self.basis.components
+        for index, (state, name) in enumerate(it.product(self.states, components)):
+            name_state = f"{name}_{state}"
+            vectors[name_state] = eye[index]
             vectors.setdefault(name, 0.0)
-            vectors[name] += vectors.get(f"{name}_{state}", 0.0)
+            vectors[name] += eye[index]
         return vectors
 
     def _get_indices(self, transition_name, state):
@@ -556,10 +585,11 @@ class LiouvillianIS:
         cols = []
         vals = []
         offset = self.states.index(state) * len(self.basis)
+        components = self.basis.components
         for start, end, value in _TRANSITIONS[transition_name]:
-            if {start, end}.issubset(self.basis):
-                rows.append(self.basis.index(start) + offset)
-                cols.append(self.basis.index(end) + offset)
+            if {start, end}.issubset(components):
+                rows.append(components.index(start) + offset)
+                cols.append(components.index(end) + offset)
                 vals.append(value)
         return (rows, cols), vals
 

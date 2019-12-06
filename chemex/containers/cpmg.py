@@ -55,7 +55,7 @@ class CpmgProfile:
 
     @classmethod
     def from_file(cls, path, config, pulse_seq, pnames, params_default):
-        name = config["spin_system"]["spin_system"]
+        name = config["spin_system"]
         data = CpmgData.from_file(
             path,
             filter_planes=config["data"]["filter_planes"],
@@ -65,8 +65,7 @@ class CpmgProfile:
 
     def residuals(self, params):
         data = self.data.points[self.data.mask]
-        residuals = (self.calculate(params) - data["intensities"]) / data["errors"]
-        return residuals
+        return (self.calculate(params) - data["intensities"]) / data["errors"]
 
     def calculate(self, params, ncycs=None):
         data = self.data.points[self.data.mask]
@@ -127,10 +126,9 @@ class CpmgProfile:
                 params[name2].value = rates[name]
 
     def _get_parvals(self, params):
-        parvals = tuple(
+        return tuple(
             (name1, params[name2].value) for name1, name2 in self._pnames.items()
         )
-        return parvals
 
     def _format_data_exp(self, data_exp):
         result = f"[{self.name}]\n"
@@ -155,16 +153,22 @@ class CpmgProfile:
     def any_duplicate(self):
         return self.data.any_duplicate()
 
-    def __add__(self, other: "CpmgProfile"):
+    def __add__(self, other: object):
+        if not isinstance(other, type(self)):
+            return NotImplemented
         data = self.data + other.data
         return CpmgProfile(
             self.name, data, self._pulse_seq, self._pnames, self.params_default
         )
 
-    def __eq__(self, other: "CpmgProfile"):
+    def __eq__(self, other: object):
+        if not isinstance(other, type(self)):
+            return NotImplemented
         return self.name == other.name
 
-    def __lt__(self, other: "CpmgProfile"):
+    def __lt__(self, other: object):
+        if not isinstance(other, type(self)):
+            return NotImplemented
         return self.name < other.name
 
 
@@ -240,10 +244,7 @@ class CpmgData:
     def get_r2_fit(self, intst_fit, simulation=False):
         refs = self.refs
         intst = intst_fit[~refs]
-        if simulation:
-            intst_ref = intst_fit[refs]
-        else:
-            intst_ref = self.points[refs]["intensities"]
+        intst_ref = intst_fit[refs] if simulation else self.points[refs]["intensities"]
         nu_cpmgs = self._ncycs_to_nu_cpmg(self.points[~refs]["ncycs"])
         r2 = self._intst_to_r2(intst, intst_ref)
         r2_fit = np.rec.array([nu_cpmgs, r2], names=["nu_cpmgs", "r2"])
@@ -264,7 +265,9 @@ class CpmgData:
     def any_duplicate(self):
         return np.unique(self.points["ncycs"]).size != self.points.size
 
-    def __add__(self, other: "CpmgData"):
+    def __add__(self, other: object):
+        if not isinstance(other, type(self)):
+            return NotImplemented
         points = self.points.copy()
         points["intensities"] = self.points["intensities"] + other.points["intensities"]
         points["errors"] = np.sqrt(
@@ -272,4 +275,4 @@ class CpmgData:
         )
         refs = self.refs.copy()
         mask = self.mask.copy()
-        return CpmgData(points, refs, mask)
+        return CpmgData(points, refs, mask, self._time_t2)

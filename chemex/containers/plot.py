@@ -118,8 +118,7 @@ def _get_residuals(data_exp, data_fit):
     xname, yname, *_ = data_exp.dtype.names
     data_fit_ = np.unique(np.sort(data_fit, order=xname))
     data_fit_f = ip.interp1d(data_fit_[xname], data_fit_[yname], "cubic")
-    residuals = data_exp[yname] - data_fit_f(data_exp[xname])
-    return residuals
+    return data_exp[yname] - data_fit_f(data_exp[xname])
 
 
 def _estimate_sigma(values):

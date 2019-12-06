@@ -36,13 +36,12 @@ def _read_profiles(config, pulse_seq_cls, profile_cls, fit_setting):
     paths = _get_profile_paths(config)
     profiles = []
     for path, spin_system in paths.items():
-        config["spin_system"]["spin_system"] = spin_system
+        config["spin_system"] = spin_system
         pnames, params_default = cp.create_params(
-            basis=config["spin_system"]["basis"],
+            basis=config["basis"],
             model=config["model"],
             conditions=config["conditions"],
             spin_system=spin_system,
-            constraints=config["spin_system"].get("constraints"),
         )
         pulse_seq = pulse_seq_cls(config=config, propagator=propagator)
         profile = profile_cls.from_file(
@@ -62,13 +61,11 @@ def _read_shifts(config, pulse_seq_cls, profile_cls, fit_setting):
     shifts = _get_shifts(config)
     profiles = []
     for spin_system, data in shifts.items():
-        config["spin_system"]["spin_system"] = spin_system
         pnames, params_default = cp.create_params(
-            basis=config["spin_system"]["basis"],
+            basis=config["basis"],
             model=config["model"],
             conditions=config["conditions"],
             spin_system=spin_system,
-            constraints=config["spin_system"].get("constraints"),
         )
         pulse_seq = pulse_seq_cls(config=config, propagator=propagator)
         profile = profile_cls(

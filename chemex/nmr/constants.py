@@ -204,5 +204,4 @@ def get_multiplet(symbol, nucleus):
         multiplet = (multiplet + doublet).reshape(-1)
     counter = collections.Counter(multiplet)
     values, weights = zip(*counter.items())
-    distribution = Distribution(np.array(values), np.array(weights))
-    return distribution
+    return Distribution(np.array(values), np.array(weights))

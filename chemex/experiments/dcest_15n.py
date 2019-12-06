@@ -34,6 +34,7 @@ import numpy.linalg as la
 import chemex.experiments.helper as ceh
 import chemex.helper as ch
 import chemex.nmr.constants as cnc
+import chemex.nmr.liouvillian as cnl
 
 
 _SCHEMA = {
@@ -66,12 +67,11 @@ _FIT_SETTING = {"dw_ab": "fit", "r1_a": "fit", "r2_a": "fit", "r2_b": "fit"}
 
 
 def read(config):
-    config["spin_system"] = {"basis": "ixyz", "atoms": {"i": "n"}, "rates": "nh"}
+    config["basis"] = cnl.Basis(type="ixyz", spin_system="nh")
     ch.validate(config, _SCHEMA)
-    experiment = ceh.load_experiment(
+    return ceh.load_experiment(
         config=config, pulse_seq_cls=PulseSeq, fit_setting=_FIT_SETTING
     )
-    return experiment
 
 
 class PulseSeq:
@@ -99,10 +99,10 @@ class PulseSeq:
 
     def _calculate(self, offsets, params_local):
         self.prop.update(params_local)
-        if not self.hd_exchange:
-            start = self.prop.get_equilibrium()
-        else:
+        if self.hd_exchange:
             start = self.prop.get_start_magnetization(["iz_a", "iz_c"])
+        else:
+            start = self.prop.get_equilibrium()
         intst = {}
         d_eq = (
             self.prop.delays(self.time_eq) if self.time_eq > 0.0 else self.prop.identity

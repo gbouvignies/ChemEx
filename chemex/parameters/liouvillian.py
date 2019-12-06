@@ -2,49 +2,40 @@ import itertools as it
 
 import numpy as np
 
-import chemex.nmr.spin_system as cns
 import chemex.parameters.helper as cph
 
 
-def create_params_l(basis, model, conditions, spin_system=None, constraints=None):
-    basis_name, *extensions = basis.split(".")
-    states = cns.get_state_names(model.state_nb)
-    shortnames = _get_shortnames(basis_name, constraints)
-    settings = _make_settings(shortnames, states, constraints, extensions)
+def create_params_l(basis, model, conditions, spin_system=None):
+    settings = _make_settings(basis, model)
     fnames, params = cph.make_params(settings, conditions, spin_system)
     return fnames, params
 
 
-def _get_shortnames(basis, constraints=None):
-    if constraints is None:
-        constraints = []
-    shortnames = BASIS_TO_SHORTNAMES[basis]
-    for constraint in constraints:
-        if constraint in ("hn", "hc") and "r1_s" not in shortnames:
-            shortnames.append("r1_s")
-    return shortnames
-
-
-def _make_settings(shortnames, states, constraints=None, extensions=None):
-    if constraints is None:
-        constraints = []
+def _make_settings(basis, model):
+    shortnames = _get_shortnames(basis)
     settings = {}
-    for shortname, state in it.product(shortnames, states):
+    for shortname, state in it.product(shortnames, model.states):
         name = f"{shortname}_{state}"
         settings[name] = SETTINGS[shortname].copy()
         if state != "a":
             settings[name]["expr"] = f"{{{shortname}_a}}"
         if (
-            extensions
-            and extensions[0] in {"dq", "tq"}
+            basis.extension
+            and basis.extension in {"dq", "tq"}
             and shortname in _TO_BE_EXTENDED
         ):
-            settings[name]["ext"] = extensions[0]
-    for constraint in constraints:
-        if constraint in set_constraints:
-            settings = set_constraints[constraint](settings, states)
-    settings = _add_dw(settings, states)
+            settings[name]["ext"] = basis.extension
+    if basis.spin_system in set_constraints:
+        settings = set_constraints[basis.spin_system](settings, model.states)
+    settings = _add_dw(settings, model.states)
     return settings
+
+
+def _get_shortnames(basis):
+    shortnames = BASIS_TO_SHORTNAMES[basis.type]
+    if basis.spin_system in ("hn", "cn", "hc") and "r1_s" not in shortnames:
+        shortnames.append("r1_s")
+    return shortnames
 
 
 def _add_dw(settings, states):
@@ -106,8 +97,10 @@ def _set_constraints_hc(settings, states):
 
 set_constraints = {
     "hn": _set_constraints_hn,
+    "cn": _set_constraints_hn,
     "nh": _set_constraints_nh,
-    "hc": _set_constraints_hc,
+    "ch": _set_constraints_nh,
+    "hc": _set_constraints_hn,
 }
 
 

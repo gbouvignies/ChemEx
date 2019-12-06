@@ -35,6 +35,7 @@ import numpy as np
 
 import chemex.experiments.helper as ceh
 import chemex.helper as ch
+import chemex.nmr.liouvillian as cnl
 
 
 _SCHEMA = {
@@ -62,12 +63,11 @@ _FIT_SETTING = {"dw_ab": "fit", "r2_a": "fit"}
 
 
 def read(config):
-    config["spin_system"] = {"basis": "ixyz", "atoms": {"i": "n"}, "rates": "nh"}
+    config["basis"] = cnl.Basis(type="ixyz", spin_system="nh")
     ch.validate(config, _SCHEMA)
-    experiment = ceh.load_experiment(
+    return ceh.load_experiment(
         config=config, pulse_seq_cls=PulseSeq, fit_setting=_FIT_SETTING
     )
-    return experiment
 
 
 class PulseSeq:
@@ -146,8 +146,7 @@ class PulseSeq:
             [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3],
             [1, 3, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 1, 3, 2, 2],
         ]
-        phases = np.take(cp_phases, np.flip(np.arange(2 * ncyc)), mode="wrap", axis=1)
-        return phases
+        return np.take(cp_phases, np.flip(np.arange(2 * ncyc)), mode="wrap", axis=1)
 
     def ncycs_to_nu_cpmgs(self, ncycs):
         ncycs_ = np.asarray(ncycs)

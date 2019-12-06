@@ -154,10 +154,11 @@ class Experiment(abc.ABC):
         return list(set(profile.params_default.keys()) for profile in self._profiles)
 
     def get_relevant_subset(self, pnames):
-        profiles = []
-        for profile in self._profiles:
-            if set(profile.params_default) & set(pnames):
-                profiles.append(profile)
+        profiles = [
+            profile
+            for profile in self._profiles
+            if set(profile.params_default) & set(pnames)
+        ]
         return type(self)(self.config, profiles=profiles, verbose=False)
 
     @abc.abstractmethod
@@ -196,9 +197,7 @@ class Experiment(abc.ABC):
         self._filtered = _merge_same_profiles(self._filtered)
 
     def monte_carlo(self, params):
-        profiles = []
-        for profile in self._profiles:
-            profiles.append(profile.monte_carlo(params))
+        profiles = [profile.monte_carlo(params) for profile in self._profiles]
         return type(self)(self.filename, self.name, profiles, verbose=False)
 
     @abc.abstractmethod
@@ -223,22 +222,22 @@ class Experiment(abc.ABC):
             kind = "file"
         if kind == "file" or not self._profiles:
             return
-        noise_variance_values = []
-        for profile in self._profiles:
-            noise_variance_values.append(profile.estimate_noise_variance(kind))
+        noise_variance_values = [
+            profile.estimate_noise_variance(kind) for profile in self._profiles
+        ]
         noise_mean = np.sqrt(np.mean(noise_variance_values))
         for profile in self._profiles:
             profile.set_noise(noise_mean)
 
     def set_params(self, params, model_free):
-        spin_system = self.config["spin_system"].get("rates")
+        spin_system = self.config["basis"].spin_system
         rates = {}
         if model_free and spin_system:
             h_frq = self.config["conditions"]["h_larmor_frq"]
             tauc = model_free["tauc"]
             s2 = model_free["s2"]
             deuterated = model_free["deuterated"]
-            rates = cnr.calculate_rates(spin_system, h_frq, tauc, s2, deuterated)
+            rates = cnr.calculate_rates(tauc, s2, spin_system, h_frq, deuterated)
         for profile in self._profiles:
             profile.set_params(params, rates)
 
@@ -272,17 +271,12 @@ class RelaxationExperiment(Experiment):
         with cl.ExitStack() as stack:
             file_pdf = stack.enter_context(pdf.PdfPages(str(name_pdf)))
             file_fit = stack.enter_context(name_fit.open("w"))
-            if not simulation:
-                file_exp = stack.enter_context(name_exp.open("w"))
-            else:
-                file_exp = None
+            file_exp = None if simulation else stack.enter_context(name_exp.open("w"))
             for profile in sorted(self._profiles):
                 profile.plot(params, file_pdf, file_exp, file_fit, simulation)
 
     def bootstrap(self):
-        profiles = []
-        for profile in self._profiles:
-            profiles.append(profile.bootstrap())
+        profiles = [profile.bootstrap() for profile in self._profiles]
         return type(self)(self.config, profiles, verbose=False)
 
 

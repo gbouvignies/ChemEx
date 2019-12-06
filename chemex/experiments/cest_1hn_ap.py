@@ -31,6 +31,7 @@ import numpy as np
 
 import chemex.experiments.helper as ceh
 import chemex.helper as ch
+import chemex.nmr.liouvillian as cnl
 
 
 _SCHEMA = {
@@ -65,17 +66,11 @@ _FIT_SETTING = {
 
 
 def read(config):
-    config["spin_system"] = {
-        "basis": "ixyzsz",
-        "atoms": {"i": "h", "s": "n"},
-        "constraints": ["hn"],
-        "rates": "hn",
-    }
+    config["basis"] = cnl.Basis(type="ixyzsz", spin_system="hn")
     ch.validate(config, _SCHEMA)
-    experiment = ceh.load_experiment(
+    return ceh.load_experiment(
         config=config, pulse_seq_cls=PulseSeq, fit_setting=_FIT_SETTING
     )
-    return experiment
 
 
 class PulseSeq:

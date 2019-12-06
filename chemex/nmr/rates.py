@@ -48,7 +48,10 @@ def _calculate_jw(tauc, s2, w):
     return 2.0 / 5.0 * tauc * s2 / (1.0 + (w * tauc) ** 2)
 
 
-def calculate_rates(spin_system, h_frq, tauc, s2, kh2o, deuterated=False):
+def calculate_rates(tauc, s2, spin_system, h_frq, deuterated=False):
+    if spin_system not in _PARAMS_IS:
+        return {}
+
     ss_params = _PARAMS_IS[spin_system]
 
     gi, gs, gh = ss_params["gamma_i"], ss_params["gamma_s"], cnc.GAMMA["h"]
@@ -70,7 +73,7 @@ def calculate_rates(spin_system, h_frq, tauc, s2, kh2o, deuterated=False):
     jw = _calculate_jw(tauc, s2, ws)
     j0, ji, js, jh, jmis, jpis, jmih, jpih, jmsh, jpsh = jw
 
-    rates = {
+    return {
         "r2_i": 0.5
         * (
             ci ** 2 * (4 * j0 + 3 * ji)
@@ -130,4 +133,3 @@ def calculate_rates(spin_system, h_frq, tauc, s2, kh2o, deuterated=False):
         "mu_is": 0.5 * dis ** 2 * (-jmis + 6.0 * jpis),
         "j_is": ss_params["j_is"],
     }
-    return rates

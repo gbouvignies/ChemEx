@@ -3,7 +3,6 @@ resonances."""
 import functools as ft
 import itertools as it
 import re
-import string
 
 
 _ALIASES = "isx"
@@ -159,19 +158,19 @@ def _spins_to_re(spins):
     for index, spin in enumerate(spins.values()):
         if index > 0:
             re_expr += "(-|__minus__)"
-        if spin["group"] != last_spin.get("group"):
+        if spin["group"] == last_spin.get("group"):
+            re_expr += f"(?P=group{index-1})?"
+        else:
             re_expr += f"(?P<group{index}>"
             re_expr += _to_re(spin["symbol"], r"(\D?)")
             re_expr += _to_re(spin["number"], r"([0-9]+)")
             re_expr += _to_re(spin["suffix"], r"([abd-gi-mopr-z]*)")
             re_expr += ")"
-        else:
-            re_expr += f"(?P=group{index-1})?"
-        if spin["nucleus"] != spin["atom"]:
-            re_expr += _to_re(spin["nucleus"], r"[hncq][a-z0-9]*")
-        else:
+        if spin["nucleus"] == spin["atom"]:
             re_expr += _to_re(spin["atom"], r"[hncq]")
             re_expr += r"[a-z0-9]*"
+        else:
+            re_expr += _to_re(spin["nucleus"], r"[hncq][a-z0-9]*")
         last_spin = spin
     return re.compile(re_expr, re.IGNORECASE)
 
@@ -191,7 +190,3 @@ def _powerset(iterable):
     """powerset([1,2,3]) --> (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"""
     s = list(iterable)
     return it.chain.from_iterable(it.combinations(s, r + 1) for r in range(len(s)))
-
-
-def get_state_names(state_nb):
-    return string.ascii_lowercase[:state_nb]

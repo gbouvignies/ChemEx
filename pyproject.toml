@@ -14,23 +14,24 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = "^3.7"
-numpy = "^1.16"
-scipy = "^1.3"
-matplotlib = "^3.1"
-lmfit = "^0.9.13"
-asteval = "^0.9.14"
-toml = "^0.10.0"
-jsonschema = "^3.0"
+numpy = "^"
+scipy = "^"
+matplotlib = "^"
+lmfit = "^"
+asteval = "^"
+toml = "^"
+jsonschema = "^"
 
 [tool.poetry.dev-dependencies]
-black = {version = "^18.3-alpha.0", allows-prereleases = true}
-isort = "^4.3"
-bump2version = "^0.5.10"
-pre-commit = "^1.18"
-pyinstaller = "^3.5"
-macholib = "^1.11"
-flake8 = "^3.7"
-rope = "^0.14.0"
+black = {version = "^", allows-prereleases = true}
+isort = "^"
+bump2version = "^"
+pre-commit = "^"
+pyinstaller = "^"
+macholib = "^"
+flake8 = "^"
+rope = "^"
+mypy = "^"
 
 [tool.poetry.scripts]
 chemex = "chemex.chemex:main"
