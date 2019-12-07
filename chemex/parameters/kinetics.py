@@ -7,6 +7,7 @@ import jsonschema as js
 import numpy as np
 import scipy.constants as cst
 
+import chemex.helper as ch
 import chemex.parameters.helper as cph
 
 
@@ -670,6 +671,7 @@ def validates_conditions(config):
                     "temperatures": {"type": "number"},
                     "p_total": {"type": "number"},
                     "l_total": {"type": "number"},
+                    "deuterated": {"type": "boolean", "default": False},
                 },
                 "dependencies": {"p_total": ["l_total"], "l_total": ["p_total"]},
                 "required": ["h_larmor_frq"],
@@ -684,7 +686,7 @@ def validates_conditions(config):
         _schema["properties"]["conditions"]["required"].append("temperature")
 
     try:
-        js.validate(config, _schema)
+        ch.validate(config, _schema)
     except js.ValidationError as e:
         filename = config["filename"]
         if len(e.path) == 1:

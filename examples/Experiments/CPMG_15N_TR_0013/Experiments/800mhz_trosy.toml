@@ -10,6 +10,7 @@ antitrosy    = false
 
 [conditions]
 h_larmor_frq = 800.3
+deuterated   = true
 #sample = "G48A Fyn SH3"
 #temperature = 25.0
 

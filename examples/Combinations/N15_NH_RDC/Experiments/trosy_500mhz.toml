@@ -8,6 +8,7 @@ antitrosy    = false
 
 [conditions]
 h_larmor_frq = 500.0
+deuterated   = true
 
 [data]
 path = "../Data/Trosy500MHz/"
