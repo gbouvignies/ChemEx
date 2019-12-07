@@ -6,6 +6,7 @@ pw90         = 12.0e-6
 
 [conditions]
 h_larmor_frq = 598.846
+deuterated   = true
 #sample = "L99A T4 lysozyme"
 #temperature = 25.0
 

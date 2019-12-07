@@ -7,6 +7,7 @@ time_equil   = 2.0e-3
 
 [conditions]
 h_larmor_frq = 800.0
+deuterated   = true
 
 [data]
 path = "../Data/InPhase800MHz/"

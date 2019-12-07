@@ -8,6 +8,7 @@ b1_inh_scale = inf
 
 [conditions]
 h_larmor_frq = 800.3
+DEUTERATED = true
 #sample = "L99A T4 lysozyme"
 #temperature = 9.0
 

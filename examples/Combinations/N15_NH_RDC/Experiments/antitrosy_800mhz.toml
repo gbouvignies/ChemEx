@@ -4,11 +4,11 @@ time_t2      = 30.0e-3
 carrier      = 119.013
 pw90         = 41.825e-6
 time_equil   = 2.0e-3
-taub         = 2.68e-3
 antitrosy    = true
 
 [conditions]
 h_larmor_frq = 800.0
+deuterated   = true
 
 [data]
 path = "../Data/AntiTrosy800MHz/"

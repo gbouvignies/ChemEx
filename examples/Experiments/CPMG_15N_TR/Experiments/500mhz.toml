@@ -7,6 +7,7 @@ time_equil   = 5.0e-3
 
 [conditions]
 h_larmor_frq = 500.0
+deuterated   = true
 #sample = "Abp1p SH3 bound with Ark1p peptide (6.8% bound)"
 #temperature = 25.0
 
