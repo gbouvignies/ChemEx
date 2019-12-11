@@ -232,12 +232,13 @@ class Experiment(abc.ABC):
     def set_params(self, params, model_free):
         spin_system = self.config["basis"].spin_system
         rates = {}
-        if model_free and spin_system:
+        extension = "_d" if self.config["conditions"]["deuterated"] else ""
+        calculate_rates = cnr.rate_functions.get(f"{spin_system}{extension}")
+        if model_free and calculate_rates is not None:
             tauc = model_free["tauc"]
             s2 = model_free["s2"]
             h_frq = self.config["conditions"]["h_larmor_frq"]
-            deuterated = self.config["conditions"]["deuterated"]
-            rates = cnr.calculate_rates(tauc, s2, spin_system, h_frq, deuterated)
+            rates = calculate_rates(h_frq, tauc, s2)
         for profile in self._profiles:
             profile.set_params(params, rates)
 
