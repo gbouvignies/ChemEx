@@ -1,6 +1,5 @@
 [MODEL_FREE]
 TAUC            = 4e-9
-DEUTERATED      = true
 
 [GLOBAL]
 PB              = 0.08
