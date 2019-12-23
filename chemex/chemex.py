@@ -47,19 +47,20 @@ def fit(args):
     # Parse kinetics model
     model = cpk.parse_model(name=args.model)
 
+    # Read initial values of fitting/fixed parameters
+    defaults = cps.read_defaults(args.parameters)
+
     # Read experimental setup and data
     selection = {"include": args.include, "exclude": args.exclude}
-    experiments = cce.read(filenames=args.experiments, model=model, selection=selection)
-
-    # Create parameters
-    params = experiments.params_default
+    experiments = cce.read(
+        filenames=args.experiments, model=model, selection=selection, defaults=defaults
+    )
 
     if not experiments:
         sys.exit("\nerror: No data to fit")
 
-    # Update initial values of fitting/fixed parameters
-    ch.header1("Reading default parameters")
-    cps.set_values(params, experiments, args.parameters)
+    # Create parameters
+    params = experiments.params
 
     # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
     experiments.filter(params)
@@ -85,14 +86,14 @@ def simulate(args):
     experiments = cce.read(filenames=args.experiments, model=model, selection=selection)
 
     # Create parameters
-    params = experiments.params_default
+    params = experiments.params
 
     if not experiments:
         sys.exit("\nerror: No data to simulate")
 
     # Update initial values of fitting/fixed parameters
     ch.header1("Reading default parameters")
-    cps.set_values(params, experiments, args.parameters)
+    cps.set_values(params, args.parameters)
 
     # Set to "fix" all parameters that are set to "fit"
     for param in params.values():

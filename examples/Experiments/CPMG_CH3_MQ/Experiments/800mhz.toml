@@ -10,7 +10,7 @@ h_larmor_frq  = 800.0
 path = "../Data/800MHz/"
 error = "duplicates"
 profiles = [
-  ["I125CD1-I125QD1", "I125CD1-I125QD1.out"],
-  ["M145CE-M145QE", "M145CE-M145QE.out"],
-  ["M71CE-M71QE", "M71CE-M71QE.out"],
+  ["I125CD1-I125HD1", "I125CD1-I125QD1.out"],
+  ["M145CE-M145HE", "M145CE-M145QE.out"],
+  ["M71CE-M71HE", "M71CE-M71QE.out"],
 ]

@@ -3,8 +3,6 @@ import functools as ft
 
 import numpy as np
 
-import chemex.parameters.name as cpn
-
 
 SHIFT_SCHEMA = {
     "type": "object",
@@ -27,12 +25,12 @@ SHIFT_SCHEMA = {
 
 @ft.total_ordering
 class ShiftProfile:
-    def __init__(self, name, data, pulse_seq, pnames, params_default):
+    def __init__(self, name, data, pulse_seq, pnames, params):
         self.name = name
         self.data = data
-        self.params_default = params_default
         self._pulse_seq = pulse_seq
         self._pnames = pnames
+        self.params = params
 
     def residuals(self, params):
         residuals = (self.calculate(params) - self.data["shift"]) / self.data["error"]
@@ -63,12 +61,6 @@ class ShiftProfile:
         profile.data["shift"] = np.random.normal(shift_ref, profile.data["error"])
         return profile
 
-    def set_params(self, params, rates):
-        for name1, name2 in self._pnames.items():
-            name = cpn.remove_state(name1)
-            if name in rates:
-                params[name2].value = rates[name]
-
     def get_cs_value(self, params):
         name = self._pulse_seq.cs_i_state
         fname = self._pnames[name]
@@ -86,9 +78,7 @@ class ShiftProfile:
             "shift": 0.5 * (self.data["shift"] + other.data["shift"]),
             "error": np.sqrt(self.data["error"] ** 2 + other.data["error"] ** 2),
         }
-        return ShiftProfile(
-            self.name, data, self._pulse_seq, self._pnames, self.params_default
-        )
+        return ShiftProfile(self.name, data, self._pulse_seq, self._pnames, self.params)
 
     def __eq__(self, other: object):
         if not isinstance(other, type(self)):

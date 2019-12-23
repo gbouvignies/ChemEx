@@ -23,15 +23,14 @@ toml = "^"
 jsonschema = "^"
 
 [tool.poetry.dev-dependencies]
-black = {version = "^", allows-prereleases = true}
+black = {version = "^", allow-prereleases = true}
 isort = "^"
 bump2version = "^"
 pre-commit = "^"
 pyinstaller = "^"
-macholib = "^"
-flake8 = "^"
 rope = "^"
-mypy = "^"
+flake8 = "^3.7"
+mypy = "^0.750.0"
 
 [tool.poetry.scripts]
 chemex = "chemex.chemex:main"

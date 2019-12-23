@@ -182,9 +182,9 @@ class PropagatorIS:
     def shaped_pulse_i(self, pw, amplitudes, phases):
         time = pw / len(amplitudes)
         pairs = zip(amplitudes, phases)
-        pulses = {}
-        for amp, ph in set(pairs):
-            pulses[(amp, ph)] = self.pulse_i(time, ph, scale=amp)
+        pulses = {
+            (amp, ph): self.pulse_i(time, ph, scale=amp) for amp, ph in set(pairs)
+        }
         return ft.reduce(pulses[pair] for pair in reversed(pairs))
 
     @property
@@ -279,6 +279,10 @@ class PropagatorIS:
 
     def ppms_to_offsets(self, ppms):
         return self.liouvillian.ppms_to_offsets(ppms)
+
+    @property
+    def snames(self):
+        return self.liouvillian.snames
 
     def _calculate_base_pulses_i(self):
         if self._p90_i is None:

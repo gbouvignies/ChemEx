@@ -7,7 +7,6 @@ import numpy as np
 import chemex.containers.helper as cch
 import chemex.containers.noise as ccn
 import chemex.containers.plot as ccp
-import chemex.parameters.name as cpn
 
 
 CEST_SCHEMA = {
@@ -56,16 +55,16 @@ CEST_SCHEMA = {
 
 @ft.total_ordering
 class CestProfile:
-    def __init__(self, name, data, pulse_seq, pnames, params_default):
+    def __init__(self, name, data, pulse_seq, pnames, params):
         self.name = name
         self.data = data
         self._pulse_seq = pulse_seq
         self._pnames = pnames
-        self.params_default = params_default
+        self.params = params
         self._plot = ccp.cest
 
     @classmethod
-    def from_file(cls, path, config, pulse_seq, pnames, params_default):
+    def from_file(cls, path, config, pulse_seq, pnames, params):
         name = config["spin_system"]
         data = CestData.from_file(
             path,
@@ -73,7 +72,7 @@ class CestProfile:
             filter_planes=config["data"]["filter_planes"],
             filter_ref_planes=config["data"]["filter_ref_planes"],
         )
-        return cls(name, data, pulse_seq, pnames, params_default)
+        return cls(name, data, pulse_seq, pnames, params)
 
     def residuals(self, params):
         data = self.data.points[self.data.mask]
@@ -135,12 +134,6 @@ class CestProfile:
         profile = copy.copy(self)
         profile.data = profile.data.bootstrap()
         return profile
-
-    def set_params(self, params, rates):
-        for name1, name2 in self._pnames.items():
-            name = cpn.remove_state(name1)
-            if name in rates:
-                params[name2].value = rates[name]
 
     def _get_parvals(self, params):
         return tuple(
@@ -213,9 +206,7 @@ class CestProfile:
         if not isinstance(other, type(self)):
             return NotImplemented
         data = self.data + other.data
-        return CestProfile(
-            self.name, data, self._pulse_seq, self._pnames, self.params_default
-        )
+        return CestProfile(self.name, data, self._pulse_seq, self._pnames, self.params)
 
     def __eq__(self, other: object):
         if not isinstance(other, type(self)):

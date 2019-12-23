@@ -143,9 +143,9 @@ class Fit:
                 clusters.append(varies)
         return clusters
 
-    def _group_data(self, params, par_name_groups):
+    def _group_data(self, params, pname_groups):
         clusters_ = {}
-        for pnames in par_name_groups:
+        for pnames in pname_groups:
             cluster_experiments = self._experiments.get_relevant_subset(pnames)
             cluster_params = cluster_experiments.select_params(params)
             cluster_name = cluster_experiments.get_cluster_name()
@@ -172,7 +172,7 @@ def _minimize(experiments, params, fitmethod=None):
     if fitmethod in ["leastsq", "shgo", "dual_annealing"]:
         experiments.verbose = True
 
-    print("\nMinimizing...")
+    print("\nMinimizing...\n")
     minimizer = lm.Minimizer(experiments.residuals, params)
     try:
         result = minimizer.minimize(method=fitmethod, **kws)

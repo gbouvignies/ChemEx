@@ -1,5 +1,4 @@
 import collections
-import re
 import string
 import sys
 
@@ -8,21 +7,18 @@ import numpy as np
 import scipy.constants as cst
 
 import chemex.helper as ch
-import chemex.parameters.helper as cph
 
 
-Model = collections.namedtuple("Model", ["name", "states", "kind"])
+Model = collections.namedtuple("Model", ["name", "states", "model_free"])
 
 
 def parse_model(name):
-    name_ = _check_model_name(name)
-    match = re.match(r"(\d)st\.(\w+)", name_, re.IGNORECASE)
-    if not match:
-        raise NameError(f"Impossible to parse the model name '{name_}'.")
-    state_nb = int(match.group(1))
+    name_, *ext = name.split(".")
+    name_ = _check_model_name(name_)
+    state_nb = int(name_[0])
     states = _get_state_names(state_nb)
-    kind = match.group(2)
-    return Model(name_, states, kind)
+    make_settings_free = ext[0] == "mf" if ext else False
+    return Model(name_, states, make_settings_free)
 
 
 def _get_state_names(state_nb):
@@ -30,23 +26,17 @@ def _get_state_names(state_nb):
 
 
 def _check_model_name(name):
-    if name not in models:
+    if name not in make_settings:
         print("Warning: The 'model' option should either be:")
-        for model_name in models:
-            print(f"    - '{model_name}'")
-        print("Set to the default value: '2st.pb_kex'.")
-        return "2st.pb_kex"
+        for make_settings_name in make_settings:
+            print(f"    - '{make_settings_name}'")
+        print("Set to the default value: '2st'.")
+        return "2st"
     return name
 
 
-def create_params_k(model, conditions, spin_system=None):
-    """Update the experimental and fitting parameters depending on the model."""
-    fnames, params = models[model.name](conditions, spin_system)
-    return fnames, params
-
-
-def model_2st_pb_kex(conditions, spin_system):
-    settings = {
+def make_settings_2st(conditions, spin_system):
+    return {
         "kex_ab": {
             "attributes": ("temperature", "p_total", "l_total"),
             "value": 200.0,
@@ -80,12 +70,10 @@ def model_2st_pb_kex(conditions, spin_system):
             "expr": "{kex_ab} * {pa}",
         },
     }
-    fnames, params = cph.make_params(settings, conditions, spin_system)
-    return fnames, params
 
 
-def model_2st_pb_kex_rs(conditions, spin_system):
-    settings = {
+def make_settings_2st_rs(conditions, spin_system):
+    return {
         "kex_ab": {
             "attributes": ("spin_system", "temperature", "p_total", "l_total"),
             "value": 200.0,
@@ -119,12 +107,10 @@ def model_2st_pb_kex_rs(conditions, spin_system):
             "expr": "{kex_ab} * {pa}",
         },
     }
-    fnames, params = cph.make_params(settings, conditions, spin_system)
-    return fnames, params
 
 
-def model_2st_hd_exch(conditions, spin_system):
-    settings = {
+def make_settings_2st_hd(conditions, spin_system):
+    return {
         "kex_ab": {
             "attributes": ("spin_system", "temperature", "p_total", "l_total"),
             "value": 200.0,
@@ -153,13 +139,11 @@ def model_2st_hd_exch(conditions, spin_system):
             "expr": "{kex_ab} * {pa}",
         },
     }
-    fnames, params = cph.make_params(settings, conditions, spin_system)
-    return fnames, params
 
 
-def model_2st_eyring(conditions, spin_system):
+def make_settings_2st_eyring(conditions, spin_system):
     celsius = conditions.temperature
-    settings = {
+    return {
         "dh_b": {"attributes": ("p_total", "l_total"), "value": 8e3, "vary": True},
         "ds_b": {"attributes": ("p_total", "l_total"), "value": 0e2, "vary": False},
         "dh_ab": {"attributes": ("p_total", "l_total"), "value": 6.5e4, "vary": True},
@@ -187,11 +171,9 @@ def model_2st_eyring(conditions, spin_system):
             "expr": hs_to_k("ba", celsius),
         },
     }
-    fnames, params = cph.make_params(settings, conditions, spin_system)
-    return fnames, params
 
 
-def model_2st_binding(conditions, spin_system):
+def make_settings_2st_binding(conditions, spin_system):
     p_total = conditions.p_total
     l_total = conditions.l_total
     delta = l_total - p_total
@@ -199,7 +181,7 @@ def model_2st_binding(conditions, spin_system):
         f"{{kon}} * 0.5 * ({delta} - {{kd}} "
         f"+ sqrt(({delta} - {{kd}}) ** 2 + 4.0 * {{kd}} * {l_total}))"
     )
-    settings = {
+    return {
         "kon": {
             "attributes": ("temperature",),
             "value": 1.0e7,
@@ -240,12 +222,10 @@ def model_2st_binding(conditions, spin_system):
             "expr": "{koff}",
         },
     }
-    fnames, params = cph.make_params(settings, conditions, spin_system)
-    return fnames, params
 
 
-def model_3st_pb_kex(conditions, spin_system):
-    settings = {
+def make_settings_3st(conditions, spin_system):
+    return {
         "pb": {
             "attributes": ("temperature", "p_total", "l_total"),
             "value": 0.02,
@@ -315,13 +295,11 @@ def model_3st_pb_kex(conditions, spin_system):
             "expr": kex_p_to_k("cb"),
         },
     }
-    fnames, params = cph.make_params(settings, conditions, spin_system)
-    return fnames, params
 
 
-def model_3st_eyring(conditions, spin_system):
+def make_settings_3st_eyring(conditions, spin_system):
     celcius = conditions.temperature
-    settings = {
+    return {
         "dh_b": {"attributes": ("p_total", "l_total"), "value": 8e3, "vary": True},
         "dh_c": {"attributes": ("p_total", "l_total"), "value": 8e3, "vary": True},
         "dh_ab": {"attributes": ("p_total", "l_total"), "value": 6.5e4, "vary": True},
@@ -381,12 +359,10 @@ def model_3st_eyring(conditions, spin_system):
             "expr": hs_to_p("c", "abc", celcius),
         },
     }
-    fnames, params = cph.make_params(settings, conditions, spin_system)
-    return fnames, params
 
 
-def model_4st_pb_kex(conditions, spin_system):
-    settings = {
+def make_settings_4st(conditions, spin_system):
+    return {
         "pb": {
             "attributes": ("temperature", "p_total", "l_total"),
             "value": 0.02,
@@ -507,12 +483,10 @@ def model_4st_pb_kex(conditions, spin_system):
             "expr": kex_p_to_k("dc"),
         },
     }
-    fnames, params = cph.make_params(settings, conditions, spin_system)
-    return fnames, params
 
 
-def model_4st_hd_exch(conditions, spin_system):
-    settings = {
+def make_settings_4st_hd(conditions, spin_system):
+    return {
         "frac": {
             "attributes": ("temperature", "p_total", "l_total"),
             "value": 0.1,
@@ -609,20 +583,18 @@ def model_4st_hd_exch(conditions, spin_system):
             "expr": kex_p_to_k("dc"),
         },
     }
-    fnames, params = cph.make_params(settings, conditions, spin_system)
-    return fnames, params
 
 
-models = {
-    "2st.pb_kex": model_2st_pb_kex,
-    "2st.pb_kex_rs": model_2st_pb_kex_rs,
-    "2st.hd_exch": model_2st_hd_exch,
-    "3st.pb_kex": model_3st_pb_kex,
-    "4st.pb_kex": model_4st_pb_kex,
-    "2st.eyring": model_2st_eyring,
-    "3st.eyring": model_3st_eyring,
-    "2st.binding": model_2st_binding,
-    "4st.hd_exch": model_4st_hd_exch,
+make_settings = {
+    "2st": make_settings_2st,
+    "3st": make_settings_2st,
+    "4st": make_settings_2st,
+    "2st_rs": make_settings_2st_rs,
+    "2st_hd": make_settings_2st_hd,
+    "2st_eyring": make_settings_2st_eyring,
+    "3st_eyring": make_settings_3st_eyring,
+    "2st_binding": make_settings_2st_binding,
+    "4st_hd": make_settings_4st_hd,
 }
 
 

@@ -7,7 +7,6 @@ import numpy as np
 import chemex.containers.helper as cch
 import chemex.containers.noise as ccn
 import chemex.containers.plot as ccp
-import chemex.parameters.name as cpn
 
 
 CPMG_SCHEMA = {
@@ -45,23 +44,23 @@ CPMG_SCHEMA = {
 
 @ft.total_ordering
 class CpmgProfile:
-    def __init__(self, name, data, pulse_seq, pnames, params_default):
+    def __init__(self, name, data, pulse_seq, pnames, params):
         self.name = name
         self.data = data
         self._pulse_seq = pulse_seq
         self._pnames = pnames
-        self.params_default = params_default
+        self.params = params
         self._plot = ccp.cpmg
 
     @classmethod
-    def from_file(cls, path, config, pulse_seq, pnames, params_default):
+    def from_file(cls, path, config, pulse_seq, pnames, params):
         name = config["spin_system"]
         data = CpmgData.from_file(
             path,
             filter_planes=config["data"]["filter_planes"],
             time_t2=config["experiment"]["time_t2"],
         )
-        return cls(name, data, pulse_seq, pnames, params_default)
+        return cls(name, data, pulse_seq, pnames, params)
 
     def residuals(self, params):
         data = self.data.points[self.data.mask]
@@ -119,12 +118,6 @@ class CpmgProfile:
         profile.data = profile.data.bootstrap()
         return profile
 
-    def set_params(self, params, rates):
-        for name1, name2 in self._pnames.items():
-            name = cpn.remove_state(name1)
-            if name in rates:
-                params[name2].value = rates[name]
-
     def _get_parvals(self, params):
         return tuple(
             (name1, params[name2].value) for name1, name2 in self._pnames.items()
@@ -157,9 +150,7 @@ class CpmgProfile:
         if not isinstance(other, type(self)):
             return NotImplemented
         data = self.data + other.data
-        return CpmgProfile(
-            self.name, data, self._pulse_seq, self._pnames, self.params_default
-        )
+        return CpmgProfile(self.name, data, self._pulse_seq, self._pnames, self.params)
 
     def __eq__(self, other: object):
         if not isinstance(other, type(self)):

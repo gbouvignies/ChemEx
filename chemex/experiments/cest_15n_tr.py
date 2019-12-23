@@ -66,12 +66,12 @@ def read(config):
 
 
 def _fit_this(config):
-    state = config["experiment"]["observed_state"]
-    this = ["dw_ab", f"r1_{state}"]
-    this.extend([f"r2_{state}" for state in config["model"].states])
-    this.extend([f"r1a_{state}" for state in config["model"].states])
+    this = {
+        "rates": ["r2_i_{states}", "r1_i_{observed_state}", "r1a_is_{states}"],
+        "model_free": ["tauc_{observed_state}", "s2_{observed_state}", "khh_{states}"],
+    }
     if config["experiment"]["antitrosy"]:
-        this.extend([f"etaxy_{state}", f"etaz_{state}"])
+        this["rates"].extend(["etaxy_i_{observed_state}", "etaz_i_{observed_state}"])
     return this
 
 

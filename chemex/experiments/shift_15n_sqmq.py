@@ -45,7 +45,8 @@ _SCHEMA = {
 def read(config):
     ch.validate(config, _SCHEMA)
     config["basis"] = cnl.Basis(type="ixy_ixysxy", spin_system="nh")
-    return ceh.load_experiment(config=config, pulse_seq_cls=PulseSeq, fit_setting={})
+    config["fit"] = {"rates": {}, "model_free": {}}
+    return ceh.load_experiment(config=config, pulse_seq_cls=PulseSeq)
 
 
 class PulseSeq:

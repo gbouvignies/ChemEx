@@ -323,7 +323,7 @@ class LiouvillianIS:
         self.size = len(self.basis) * len(self.states)
         self.vectors = self._build_component_vectors()
         self.matrices = {
-            **self._build_transition_matrices(),
+            **self._build_transition_matrices(basis),
             **self._build_exchange_matrices(),
         }
         self._matrices_ref = self.matrices.copy()
@@ -549,10 +549,18 @@ class LiouvillianIS:
     def ppms_to_offsets(self, ppms):
         return (ppms - self.carrier_i) * abs(self.ppm_i) / (2.0 * np.pi)
 
-    def _build_transition_matrices(self):
+    @property
+    def snames(self):
+        snames = [f"p{state}" for state in self.states]
+        snames.extend(self.matrices)
+        return snames
+
+    def _build_transition_matrices(self, basis):
         m_zeros = np.zeros((self.size, self.size))
         matrices = {}
         for transition_name, state in it.product(_TRANSITIONS, self.states):
+            if not basis.type.endswith("_dif") and transition_name.startswith("d_"):
+                continue
             name_ = transition_name.format(state=state)
             indices, values = self._get_indices(transition_name, state)
             if values:

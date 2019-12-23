@@ -53,8 +53,14 @@ def read(config):
 
 
 def _fit_this(config):
-    state = config["experiment"]["observed_state"]
-    return [f"r1a_{state}"]
+    return {
+        "rates": ["r1_i_{observed_state}", "r1a_is_{observed_state}"],
+        "model_free": [
+            "tauc_{observed_state}",
+            "s2_{observed_state}",
+            "khh_{observed_state}",
+        ],
+    }
 
 
 class PulseSeq:
