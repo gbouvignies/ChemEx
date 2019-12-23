@@ -18,18 +18,6 @@ RE_GROUPNAME = re.compile(r"^[A-Za-z0-9_-]+$")
 
 _SCHEMA_CONFIG_PARAM = {
     "type": "object",
-    "properties": {
-        "model_free": {
-            "type": "object",
-            "properties": {
-                "tauc": {"type": "number", "default": 4e-9},
-                "s2": {"type": "number", "default": 0.9},
-                "deuterated": {"type": "boolean", "default": False},
-            },
-            "additionalProperties": False,
-            "default": {},
-        }
-    },
     "additionalProperties": {
         "type": "object",
         "additionalProperties": {
@@ -47,14 +35,19 @@ _SCHEMA_CONFIG_PARAM = {
 }
 
 
-def set_values(params, experiments, filenames):
+def read_defaults(filenames):
+    print(f"\nReading parameters default values...")
+    config = ch.read_toml_multi(filenames, _SCHEMA_CONFIG_PARAM)
+    defaults = {"global": config.pop("global", {})}
+    defaults.update(config)
+    return defaults
+
+
+def set_values(params, defaults):
     """Read the parameter file and set initial values and optional bounds and brute
     step size."""
-    config = _read_config(filenames)
     matches = cl.Counter()
-    cfg_model_free = config.pop("model_free")
-    experiments.set_params(params, cfg_model_free)
-    for section, settings in config.items():
+    for section, settings in defaults.items():
         prefix = f"{section}, NUC->" if section != "global" else ""
         for key, values in settings.items():
             name = cpn.ParamName.from_section(f"{prefix}{key}")
@@ -63,16 +56,10 @@ def set_values(params, experiments, filenames):
             values_ = dict(zip(("value", "min", "max", "brute_step"), values))
             matched = _set_params(params, name, values_)
             matches.update({name.to_section_name(): len(matched)})
-    _print_matches(matches)
+    # _print_matches(matches)
     _check_params(params)
-
-
-def _read_config(filenames):
-    print(f"\nSetting parameters starting values...")
-    config = ch.read_toml_multi(filenames, _SCHEMA_CONFIG_PARAM)
-    config_ = {"global": config.pop("global", {})}
-    config_.update(config)
-    return config_
+    for param in params.values():
+        param.user_data = param.value
 
 
 def _check_params(params):
@@ -139,9 +126,9 @@ def _set_param_expr(params, name, expr=None):
         expr = ""
     if not isinstance(name, cpn.ParamName):
         name = cpn.ParamName.from_section(name)
-    fnames = [fname for fname in params if name.match(fname)]
+    pnames = [fname for fname in params if name.match(fname)]
     names_expr = aa.get_ast_names(ast.parse(expr))
-    fnames_expr = {
+    pnames_expr = {
         name: [
             fname_expr
             for fname_expr in params
@@ -150,29 +137,29 @@ def _set_param_expr(params, name, expr=None):
         for name in names_expr
     }
     matches = set()
-    for fname in fnames:
+    for pname in pnames:
         expr_ = str(expr)
         for name_expr in names_expr:
-            fname_expr = dl.get_close_matches(fname, fnames_expr[name_expr], n=1)[0]
-            expr_ = expr_.replace(name_expr, fname_expr)
-        param = params[fname]
+            pname_expr = dl.get_close_matches(pname, pnames_expr[name_expr], n=1)[0]
+            expr_ = expr_.replace(name_expr, pname_expr)
+        param = params[pname]
         repr_ = repr(param)
         param.expr = expr_
         if repr(param) != repr_:
-            matches.add(fname)
+            matches.add(pname)
     return matches
 
 
 def _set_params(params, name_short, values):
     """Set the initial value and (optional) bounds and brute step size for
-    parameters."""
+    parameters. """
     matches = set()
     value = values.pop("value", None)
     for name, param in params.items():
         if name_short.match(name):
             repr_ = repr(param)
             if value is not None:
-                param.user_data = param.value = value
+                param.value = value
             param.set(**values)
             if repr(param) != repr_:
                 matches.add(name)

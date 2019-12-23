@@ -3,6 +3,7 @@ import contextlib as cl
 import functools as ft
 import itertools as it
 
+import lmfit as lf
 import matplotlib.backends.backend_pdf as pdf
 import numpy as np
 
@@ -40,28 +41,6 @@ class Experiments:
                 print(f"  - {chisq:.3e} / {redchi:.3e}")
                 self._chisq_ref = chisq
         return residuals
-
-    @property
-    def pname_sets(self):
-        return list(
-            it.chain.from_iterable(
-                experiment.pname_sets for experiment in self._experiments.values()
-            )
-        )
-
-    def get_relevant_subset(self, pnames):
-        relevant_subset = Experiments()
-        for experiment in self._experiments.values():
-            subset = experiment.get_relevant_subset(pnames)
-            if subset:
-                relevant_subset.add(subset)
-        return relevant_subset
-
-    def get_cluster_name(self):
-        names = [
-            experiment.get_cluster_name() for experiment in self._experiments.values()
-        ]
-        return ft.reduce(lambda a, b: a & b, names)
 
     def write(self, params, path):
         path_ = path / "Data"
@@ -104,23 +83,37 @@ class Experiments:
             experiments_bs.add(experiment.bootstrap())
         return experiments_bs
 
-    def set_params(self, params, model_free):
-        for experiment in self._experiments.values():
-            experiment.set_params(params, model_free)
-
     @property
-    def params_default(self):
-        return cph.merge(
-            profile.params_default for profile in self._experiments.values()
-        )
+    def params(self):
+        return cph.merge(experiment.params for experiment in self._experiments.values())
 
     def select_params(self, params):
-        pnames = self.params_default.keys()
-        selected = params.copy()
-        for pname in params:
-            if pname not in pnames:
-                del selected[pname]
+        pnames = self.params.keys()
+        selected = lf.Parameters(usersyms=cnr.rate_functions)
+        selected.add_many(*(params[pname] for pname in pnames))
         return selected
+
+    def get_relevant_subset(self, pnames):
+        relevant_subset = Experiments()
+        for experiment in self._experiments.values():
+            subset = experiment.get_relevant_subset(pnames)
+            if subset:
+                relevant_subset.add(subset)
+        return relevant_subset
+
+    @property
+    def pname_sets(self):
+        return list(
+            it.chain.from_iterable(
+                experiment.pname_sets for experiment in self._experiments.values()
+            )
+        )
+
+    def get_cluster_name(self):
+        names = [
+            experiment.get_cluster_name() for experiment in self._experiments.values()
+        ]
+        return ft.reduce(lambda a, b: a & b, names)
 
     def __len__(self):
         return sum([len(experiment) for experiment in self._experiments.values()])
@@ -148,18 +141,6 @@ class Experiment(abc.ABC):
                 profile.residuals(params) for profile in self._profiles
             )
         )
-
-    @property
-    def pname_sets(self):
-        return list(set(profile.params_default.keys()) for profile in self._profiles)
-
-    def get_relevant_subset(self, pnames):
-        profiles = [
-            profile
-            for profile in self._profiles
-            if set(profile.params_default) & set(pnames)
-        ]
-        return type(self)(self.config, profiles=profiles, verbose=False)
 
     @abc.abstractmethod
     def plot(self, params, path, simulation=False):
@@ -229,22 +210,19 @@ class Experiment(abc.ABC):
         for profile in self._profiles:
             profile.set_noise(noise_mean)
 
-    def set_params(self, params, model_free):
-        spin_system = self.config["basis"].spin_system
-        rates = {}
-        extension = "_d" if self.config["conditions"]["deuterated"] else ""
-        calculate_rates = cnr.rate_functions.get(f"{spin_system}{extension}")
-        if model_free and calculate_rates is not None:
-            tauc = model_free["tauc"]
-            s2 = model_free["s2"]
-            h_frq = self.config["conditions"]["h_larmor_frq"]
-            rates = calculate_rates(h_frq, tauc, s2)
-        for profile in self._profiles:
-            profile.set_params(params, rates)
+    @property
+    def params(self):
+        return cph.merge(profile.params for profile in self._profiles)
 
     @property
-    def params_default(self):
-        return cph.merge(profile.params_default for profile in self._profiles)
+    def pname_sets(self):
+        return list(set(profile.params) for profile in self._profiles)
+
+    def get_relevant_subset(self, pnames):
+        profiles = [
+            profile for profile in self._profiles if set(profile.params) & set(pnames)
+        ]
+        return type(self)(self.config, profiles=profiles, verbose=False)
 
     def get_cluster_name(self):
         names = [profile.name for profile in self._profiles]
@@ -290,7 +268,6 @@ class ShiftExperiment(Experiment):
         print(f"  - {name_pdf}")
         fit, exp, err = [], [], []
         for profile in self._profiles:
-            # shift = profile.get_cs_value(params)
             fit.append(profile.calculate(params))
             exp.append(profile.data["shift"])
             err.append(profile.data["error"])
@@ -301,14 +278,14 @@ class ShiftExperiment(Experiment):
         return type(self)(self.config, profiles, verbose=False)
 
 
-def read(filenames=None, model=None, selection=None):
+def read(filenames=None, model=None, selection=None, defaults=None):
     if not filenames:
         return None
     ch.header1("Reading experimental data")
     experiments = Experiments()
     for filename in filenames:
         print(f"\nReading '{filename}'...")
-        experiment = ce.read(filename, model, selection)
+        experiment = ce.read(filename, model, selection, defaults)
         experiments.add(experiment)
     return experiments
 

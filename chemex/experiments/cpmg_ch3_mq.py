@@ -65,8 +65,10 @@ def read(config):
 
 
 def _fit_this(config):
-    state = config["experiment"]["observed_state"]
-    return ["dw_ab, nuc->c", f"r2mq_{state}"]
+    return {
+        "rates": ["r2mq_is_{observed_state}"],
+        "model_free": ["tauc_{observed_state}"],
+    }
 
 
 class PulseSeq:

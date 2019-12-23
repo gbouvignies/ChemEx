@@ -1,11 +1,9 @@
-[MODEL_FREE]
-TAUC       = 4e-9
-
 [GLOBAL]
-PB         = 0.07
-KEX_AB     = 100.0
-DW_AB      = 1.0
+PB     =   0.07
+KEX_AB = 100.0
+DW_AB  =   1.0
+TAUC_A =   4.0
 
 [DW_AB]
-I50        = 10.0
-V55        = 10.0
+I50    =  10.0
+V55    =  10.0

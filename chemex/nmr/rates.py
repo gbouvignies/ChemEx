@@ -7,7 +7,8 @@ import chemex.nmr.constants as cnc
 
 
 def _calculate_jw(tauc, s2, w):
-    return 2.0 / 5.0 * tauc * s2 / (1.0 + (w * tauc) ** 2)
+    tauc_ = tauc * 1e-9
+    return 2.0 / 5.0 * tauc_ * s2 / (1.0 + (w * tauc_) ** 2)
 
 
 class RatesIS:
@@ -36,6 +37,8 @@ class RatesIS:
         # CSA factors
         self.delta_i = self.csa_i[0:2] - self.csa_i[2]
         self.delta_s = self.csa_s[0:2] - self.csa_s[2]
+
+        self.__call__ = ft.lru_cache(1024)(self.__call__)
 
     def __call__(self, h_frq, tauc, s2):
 
@@ -137,6 +140,18 @@ class RateNH(RatesIS):
     phi_s = np.deg2rad([10.0, 80.0, 90.0])
     j_is = -93.0
 
+    def __call__(self, h_frq, tauc, s2, khh=0.0):
+        rates = super().__call__(h_frq, tauc, s2)
+        if khh == 0.0:
+            return rates
+        rates["r2_s"] += khh
+        rates["r1_s"] += khh
+        rates["r2a_i"] += khh
+        rates["r2a_s"] += khh
+        rates["r2mq_is"] += khh
+        rates["r1a_is"] += khh
+        return rates
+
 
 class RateNH_D(RateNH):
     rih3 = 2.50e-10 ** 3
@@ -154,6 +169,18 @@ class RateHN(RatesIS):
     phi_i = np.deg2rad([10.0, 80.0, 90.0])
     phi_s = np.deg2rad([109.6, 90.0, 19.6])
     j_is = -93.0
+
+    def __call__(self, h_frq, tauc, s2, khh=0.0):
+        rates = super().__call__(h_frq, tauc, s2)
+        if khh == 0.0:
+            return rates
+        rates["r2_i"] += khh
+        rates["r1_i"] += khh
+        rates["r2a_i"] += khh
+        rates["r2a_s"] += khh
+        rates["r2mq_is"] += khh
+        rates["r1a_is"] += khh
+        return rates
 
 
 class RateHN_D(RateHN):
@@ -179,9 +206,61 @@ class RateCH_D(RateCH):
     rsh3 = 2.52e-10 ** 3
 
 
+class RateHC(RatesIS):
+    gi = cnc.GAMMA["h"]
+    gs = cnc.GAMMA["c"]
+    ris3 = 1.09e-10 ** 3
+    rih3 = 1.85e-10 ** 3
+    rsh3 = 1.70e-10 ** 3
+    csa_i = np.array([0.0, 0.0, 0.0]) * 1e-6
+    csa_s = np.array([-5.3, -5.3, 10.7]) / 3.0 * 1e-6
+    phi_i = np.deg2rad([0.0, 0.0, 0.0])
+    phi_s = np.deg2rad([109.6, 90.0, 19.6])
+    j_is = 140.0
+
+
+class RateHC_D(RateHC):
+    rih3 = 2.52e-10 ** 3
+    rsh3 = 2.03e-10 ** 3
+
+
 rate_functions = {
-    "nh": ft.lru_cache(32)(RateNH()),
-    "nh_d": ft.lru_cache(32)(RateNH_D()),
-    "hn": ft.lru_cache(32)(RateHN()),
-    "hn_d": ft.lru_cache(32)(RateHN_D()),
+    "nh": RateNH(),
+    "nh_d": RateNH_D(),
+    "hn": RateHN(),
+    "hn_d": RateHN_D(),
+    "ch": RateCH(),
+    "ch_d": RateCH_D(),
+    "hc": RateHC(),
+    "hc_d": RateHC_D(),
+}
+
+
+_RATE_NAMES = [
+    "r2_i",
+    "r2_s",
+    "r1_i",
+    "r1_s",
+    "r2a_i",
+    "r2a_s",
+    "r2mq_is",
+    "r1a_is",
+    "etaxy_i",
+    "etaxy_s",
+    "etaz_i",
+    "etaz_s",
+    "sigma_is",
+    "mu_is",
+]
+
+
+RATE_CONSTRAINTS = {
+    ss: {
+        f"{name}_{state}": f"{ss}({{h_larmor_frq}}, {{tauc_{state}}}, {{s2_{state}}}"
+        + (f", {{khh_{state}}})" if ss.startswith(("nh", "hn")) else ")")
+        + (f"['{name}']")
+        for name in _RATE_NAMES
+        for state in "abcd"
+    }
+    for ss in rate_functions
 }

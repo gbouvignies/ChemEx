@@ -10,8 +10,7 @@ import chemex.containers.shift as ccs
 import chemex.helper as ch
 import chemex.nmr.propagator as cnp
 import chemex.nmr.spin_system as cns
-import chemex.parameters as cp
-import chemex.parameters.settings as cps
+import chemex.parameters.helper as cph
 
 
 def load_experiment(config, pulse_seq_cls):
@@ -37,22 +36,9 @@ def _read_profiles(config, pulse_seq_cls, profile_cls):
     profiles = []
     for path, spin_system in paths.items():
         config["spin_system"] = spin_system
-        pnames, params_default = cp.create_params(
-            basis=config["basis"],
-            model=config["model"],
-            conditions=config["conditions"],
-            spin_system=spin_system,
-        )
-        pulse_seq = pulse_seq_cls(config=config, propagator=propagator)
-        profile = profile_cls.from_file(
-            path=path,
-            config=config,
-            pulse_seq=pulse_seq,
-            pnames=pnames,
-            params_default=params_default,
-        )
-        fit_setting = {key: "fit" for key in config.get("fit", [])}
-        cps.set_status(profile.params_default, fit_setting, verbose=False)
+        pnames, params = cph.create_params(config, propagator,)
+        pulse_seq = pulse_seq_cls(config, propagator)
+        profile = profile_cls.from_file(path, config, pulse_seq, pnames, params,)
         profiles.append(profile)
     return sorted(profiles)
 
@@ -62,22 +48,10 @@ def _read_shifts(config, pulse_seq_cls, profile_cls):
     shifts = _get_shifts(config)
     profiles = []
     for spin_system, data in shifts.items():
-        pnames, params_default = cp.create_params(
-            basis=config["basis"],
-            model=config["model"],
-            conditions=config["conditions"],
-            spin_system=spin_system,
-        )
-        pulse_seq = pulse_seq_cls(config=config, propagator=propagator)
-        profile = profile_cls(
-            name=spin_system,
-            data=data,
-            pulse_seq=pulse_seq,
-            pnames=pnames,
-            params_default=params_default,
-        )
-        fit_setting = {key: "fit" for key in config.get("fit", [])}
-        cps.set_status(profile.params_default, fit_setting, verbose=False)
+        config["spin_system"] = spin_system
+        pnames, params = cph.create_params(config, propagator)
+        pulse_seq = pulse_seq_cls(config, propagator)
+        profile = profile_cls(spin_system, data, pulse_seq, pnames, params)
         profiles.append(profile)
     return sorted(profiles)
 

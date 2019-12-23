@@ -1,9 +1,7 @@
-[MODEL_FREE]
-TAUC    = 10e-9
-
 [GLOBAL]
-PB      = 0.015
-KEX_AB  = 70.0
+PB     =  0.015
+KEX_AB = 70.0
+TAUC   = 10.0
 
 # For the `brute` force method:
 # * stepszise is provided:

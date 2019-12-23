@@ -1,6 +1,4 @@
-[MODEL_FREE]
-TAUC       = 4e-9
-
 [GLOBAL]
-PB         =   0.05
-KEX_AB     = 100.00
+PB     =   0.05
+KEX_AB = 100.0
+TAUC_A =   4.0

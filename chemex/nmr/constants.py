@@ -32,8 +32,17 @@ XI_RATIO = {
 
 SIGNED_XI_RATIO = {key: np.sign(GAMMA[key]) * val for key, val in XI_RATIO.items()}
 
+# Generic scalar couplings used as starting values in IS systems (in Hz)
+J_COUPLINGS = {
+    "nh": -93.0,
+    "hn": -93.0,
+    "cn": -10.7,
+    "ch": 130.0,
+    "hc": 130.0,
+}
+
 # Residue-specific scalar coupling values with neighbouring carbons (in Hz)
-J_COUPLING = {
+J_EFF = {
     "a": {
         "n": (-7.7, -10.7, -14.4),
         "c": (52.5, -14.4),
@@ -199,7 +208,7 @@ Distribution = collections.namedtuple("Distribution", ["values", "weights"])
 def get_multiplet(symbol, nucleus):
     """Calculate the multiplet pattern."""
     multiplet = np.array([0.0])
-    for coupling in J_COUPLING[symbol.lower()][nucleus.lower()]:
+    for coupling in J_EFF[symbol.lower()][nucleus.lower()]:
         doublet = coupling * 0.5 * np.array([-1.0, 1.0]).reshape(-1, 1)
         multiplet = (multiplet + doublet).reshape(-1)
     counter = collections.Counter(multiplet)

@@ -142,9 +142,9 @@ class ParamName:
         ]
         return "-".join(components).upper()
 
-    def match(self, string):
+    def match(self, other):
         re_name = self._to_re()
-        return re_name.match(string)
+        return re_name.match(other)
 
     @ft.lru_cache()
     def _to_re(self):
@@ -167,13 +167,19 @@ class ParamName:
     def __hash__(self):
         return hash(self._members())
 
-    def __eq__(self, other: "ParamName"):
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ParamName):
+            return NotImplemented
         return self._members() == other._members()
 
-    def __lt__(self, other: "ParamName"):
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, ParamName):
+            return NotImplemented
         return self._members() < other._members()
 
-    def __and__(self, other: "ParamName"):
+    def __and__(self, other: object) -> "ParamName":
+        if not isinstance(other, ParamName):
+            return NotImplemented
         both = {
             name: getattr(self, name)
             for name in ("name", "temperature", "h_larmor_frq", "p_total", "l_total")
@@ -260,6 +266,20 @@ def remove_state(name):
     return name_
 
 
+def get_pnames(settings, conditions=None, spin_system=None):
+    attributes = conditions.copy()
+    if spin_system is not None:
+        attributes["spin_system"] = spin_system
+    pnames = {}
+    for name, setting in settings.items():
+        attributes_ = {key: attributes.get(key) for key in setting["attributes"]}
+        name_ = _squeeze_name(name, setting.get("ext", ""))
+        spin_system_ = _name_to_spin_system(name, attributes_.get("spin_system"))
+        attributes_["spin_system"] = spin_system_
+        pnames[name] = ParamName(name_, **attributes_).to_full_name()
+    return pnames
+
+
 def _squeeze_name(name, ext=""):
     parsed = _re_to_dict(_RE_NAME, name)
     if "spin" in parsed:
@@ -271,19 +291,5 @@ def _name_to_spin_system(name, spin_system):
     parsed = _re_to_dict(_RE_NAME, name)
     spin = parsed.get("spin")
     if spin is None:
-        return spin_system
+        return None if spin_system is None else spin_system.names["i"]
     return spin_system.names.get(spin)
-
-
-def get_fnames(settings, conditions=None, spin_system=None):
-    attributes = conditions.copy()
-    if spin_system is not None:
-        attributes["spin_system"] = spin_system
-    fnames = {}
-    for name, setting in settings.items():
-        attributes_ = {key: attributes.get(key) for key in setting["attributes"]}
-        name_ = _squeeze_name(name, setting.get("ext", ""))
-        spin_system_ = _name_to_spin_system(name, attributes_.get("spin_system"))
-        attributes_["spin_system"] = spin_system_
-        fnames[name] = ParamName(name_, **attributes_).to_full_name()
-    return fnames

@@ -65,15 +65,19 @@ def read(config):
 
 
 def _fit_this(config):
-    state = config["experiment"]["observed_state"]
-    this = [
-        "dw_ab",
-        f"r1a_{state}",
-        f"r1_{state}, nuc->n",
-        f"etaxy_{state}",
-    ]
-    this.extend([f"r2_{state}" for state in config["model"].states])
-    return this
+    return {
+        "rates": [
+            "r2_i_{states}",
+            "r1_i_{observed_state}",
+            "r1_s_{observed_state}",
+            "etaxy_i_{observed_state}",
+        ],
+        "model_free": [
+            "tauc_{observed_state}",
+            "s2_{observed_state}",
+            "khh_{observed_state}",
+        ],
+    }
 
 
 class PulseSeq:
