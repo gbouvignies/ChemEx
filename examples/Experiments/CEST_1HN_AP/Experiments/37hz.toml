@@ -7,9 +7,9 @@ b1_inh_scale = inf
 
 [conditions]
 h_larmor_frq = 598.7970522
-deuterated   = true
-#sample = "K52C-tempol hTRF1 (oxidized)"
-#temperature = 35.0
+label        = ["2H"]
+# sample = "K52C-tempol hTRF1 (oxidized)"
+# temperature = 35.0
 
 [data]
 path = "../Data/37Hz/"

@@ -9,9 +9,9 @@ dq_flg       = false
 
 [conditions]
 h_larmor_frq = 600.25
-deuterated   = true
-#sample = "G48A Fyn SH3"
-#temperature = 25.0
+label        = ["2H"]
+# sample = "G48A Fyn SH3"
+# temperature = 25.0
 
 [data]
 path = "../Data/600MHzZQ/"

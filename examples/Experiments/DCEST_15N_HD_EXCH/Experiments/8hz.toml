@@ -10,8 +10,8 @@ hd_exchange  = true
 
 [conditions]
 h_larmor_frq = 800.2
-#sample = "CtoS Ddx4 (condensed phase)"
-#temperature = 30.0
+# sample = "CtoS Ddx4 (condensed phase)"
+# temperature = 30.0
 
 [data]
 path = "../Data/8Hz/"

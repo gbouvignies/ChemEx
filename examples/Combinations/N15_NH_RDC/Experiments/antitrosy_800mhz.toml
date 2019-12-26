@@ -8,7 +8,9 @@ antitrosy    = true
 
 [conditions]
 h_larmor_frq = 800.0
-deuterated   = true
+label        = ["2H"]
+# sample = "Abp1p SH3 bound with Ark1p peptide (6.8% bound)"
+# temperature = 25.0
 
 [data]
 path = "../Data/AntiTrosy800MHz/"

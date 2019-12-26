@@ -41,10 +41,6 @@ b1_frq = 25.0
 ## [optional, default: false]
 # hd_exchange = false
 
-## Set to true when the sample is uniformly 15N/13C labeled
-## [optional, default: false]
-# cn_label = false
-
 [conditions]
 
 ## 1H Larmor frequency, in MHz

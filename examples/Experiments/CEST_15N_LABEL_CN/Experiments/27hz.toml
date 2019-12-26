@@ -4,13 +4,12 @@ time_t1      = 0.5
 carrier      = 118.763249733
 b1_frq       = 27.0
 b1_inh_scale = inf
-cn_label     = true
 
 [conditions]
 h_larmor_frq = 499.241015264
-deuterated   = true
-#sample = "G48A Fyn SH3"
-#temperature = 25.0
+label        = ["13C"]
+# sample = "G48A Fyn SH3"
+# temperature = 25.0
 
 [data]
 path = "../Data/27Hz/"

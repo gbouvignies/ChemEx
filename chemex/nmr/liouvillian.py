@@ -287,7 +287,7 @@ _ATOMS = {
 }
 
 
-@dc.dataclass
+@dc.dataclass(frozen=True, eq=True)
 class Basis:
     type: str
     extension: str = dc.field(default_factory=str)

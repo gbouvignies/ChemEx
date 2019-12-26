@@ -1,4 +1,5 @@
 import ast
+import dataclasses as dc
 import itertools as it
 
 import asteval.astutils as aa
@@ -30,33 +31,34 @@ def create_params(config, propagator):
     spin_system = config["spin_system"]
     observed_state = config["experiment"]["observed_state"]
 
-    # Get settings for kinetic parameters
+    # Create settings for the parameters of the models
     settings_k = cpk.make_settings[model.name](conditions, spin_system)
-
-    # Get settings for the other parameters
     settings_l, settings_mf_l = cpl.make_settings(basis, model, conditions)
-    _set_to_fit(settings_l, model, observed_state, config["fit"]["rates"])
-    _set_to_fit(settings_mf_l, model, observed_state, config["fit"]["model_free"])
-
-    # Create standard parameters from settings
+    settings_mf = {**settings_k, **settings_mf_l}
     settings = {**settings_k, **settings_l}
-    settings_min, settings_max = _get_settings(settings, propagator)
-    pnames = cpn.get_pnames(settings_min, conditions, spin_system)
-    params = _settings_to_params(settings_max, conditions, spin_system)
 
     # Create standard parameters from settings including model free parameters
-    settings_mf = {**settings_k, **settings_mf_l}
-    _, settings_mf_max = _get_settings(settings_mf, propagator)
+    _set_to_fit(settings_mf_l, model, observed_state, config["fit"]["model_free"])
+    settings_mf_min, settings_mf_max = _get_settings(settings_mf, propagator)
+    pnames = cpn.get_pnames(settings_mf_min, conditions, spin_system)
     params_mf = _settings_to_params(settings_mf_max, conditions, spin_system)
 
     # Initialize parameters values using the parameter.toml file
     cps.set_values(params_mf, config["defaults"])
+
     if model.model_free:
-        params = params_mf
-    else:
-        for pname in set(params) & set(params_mf):
-            params[pname].value = params_mf[pname].value
-        cps.set_values(params, config["defaults"])
+        return pnames, params_mf
+
+    # Create standard parameters from settings
+    _set_to_fit(settings_l, model, observed_state, config["fit"]["rates"])
+    settings_min, settings_max = _get_settings(settings, propagator)
+    params = _settings_to_params(settings_max, conditions, spin_system)
+
+    # Initialize parameters values using the model-free values and
+    # the parameter.toml file
+    for pname in set(params) & set(params_mf):
+        params[pname].value = params_mf[pname].value
+    cps.set_values(params, config["defaults"])
 
     return pnames, params
 
@@ -75,7 +77,9 @@ def _settings_to_params(settings, conditions, spin_system):
             min=setting.get("min"),
             max=setting.get("max"),
             vary=setting.get("vary"),
-            expr=setting.get("expr", "").format_map({**pnames, **conditions}),
+            expr=setting.get("expr", "").format_map(
+                {**pnames, **dc.asdict(conditions)}
+            ),
         )
         for name, setting in settings.items()
     ]

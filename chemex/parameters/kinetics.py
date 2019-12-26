@@ -1,12 +1,9 @@
 import collections
+import functools as ft
 import string
-import sys
 
-import jsonschema as js
 import numpy as np
 import scipy.constants as cst
-
-import chemex.helper as ch
 
 
 Model = collections.namedtuple("Model", ["name", "states", "model_free"])
@@ -35,6 +32,7 @@ def _check_model_name(name):
     return name
 
 
+@ft.lru_cache()
 def make_settings_2st(conditions, spin_system):
     return {
         "kex_ab": {
@@ -72,6 +70,7 @@ def make_settings_2st(conditions, spin_system):
     }
 
 
+@ft.lru_cache()
 def make_settings_2st_rs(conditions, spin_system):
     return {
         "kex_ab": {
@@ -109,6 +108,7 @@ def make_settings_2st_rs(conditions, spin_system):
     }
 
 
+@ft.lru_cache()
 def make_settings_2st_hd(conditions, spin_system):
     return {
         "kex_ab": {
@@ -141,6 +141,7 @@ def make_settings_2st_hd(conditions, spin_system):
     }
 
 
+@ft.lru_cache()
 def make_settings_2st_eyring(conditions, spin_system):
     celsius = conditions.temperature
     return {
@@ -173,6 +174,7 @@ def make_settings_2st_eyring(conditions, spin_system):
     }
 
 
+@ft.lru_cache()
 def make_settings_2st_binding(conditions, spin_system):
     p_total = conditions.p_total
     l_total = conditions.l_total
@@ -224,6 +226,7 @@ def make_settings_2st_binding(conditions, spin_system):
     }
 
 
+@ft.lru_cache()
 def make_settings_3st(conditions, spin_system):
     return {
         "pb": {
@@ -297,6 +300,7 @@ def make_settings_3st(conditions, spin_system):
     }
 
 
+@ft.lru_cache()
 def make_settings_3st_eyring(conditions, spin_system):
     celcius = conditions.temperature
     return {
@@ -361,6 +365,7 @@ def make_settings_3st_eyring(conditions, spin_system):
     }
 
 
+@ft.lru_cache()
 def make_settings_4st(conditions, spin_system):
     return {
         "pb": {
@@ -485,6 +490,7 @@ def make_settings_4st(conditions, spin_system):
     }
 
 
+@ft.lru_cache()
 def make_settings_4st_hd(conditions, spin_system):
     return {
         "frac": {
@@ -629,46 +635,3 @@ def hs_to_p(state, states, celcius):
         else:
             dg[a_state] = "1.0"
     return f"{dg[state]} / ({' + '.join(dg.values())})"
-
-
-def validates_conditions(config):
-    model = config["model"]
-    _schema = {
-        "type": "object",
-        "properties": {
-            "conditions": {
-                "type": "object",
-                "properties": {
-                    "h_larmor_frq": {"type": "number"},
-                    "temperatures": {"type": "number"},
-                    "p_total": {"type": "number"},
-                    "l_total": {"type": "number"},
-                    "deuterated": {"type": "boolean", "default": False},
-                },
-                "dependencies": {"p_total": ["l_total"], "l_total": ["p_total"]},
-                "required": ["h_larmor_frq"],
-            }
-        },
-        "required": ["conditions"],
-    }
-    if "binding" in model:
-        _schema["properties"]["conditions"]["required"].extend(["p_total", "l_total"])
-
-    if "eyring" in model:
-        _schema["properties"]["conditions"]["required"].append("temperature")
-
-    try:
-        ch.validate(config, _schema)
-    except js.ValidationError as e:
-        filename = config["filename"]
-        if len(e.path) == 1:
-            sys.exit(
-                f"\nerror: The experiment file '{filename}' has no section "
-                f"'[conditions]'."
-            )
-        else:
-            sys.exit(
-                f"\nerror: The model '{model}' requires the condition '{e.instance}' "
-                f"to be defined in the experiment file. '{e.instance}' is missing from"
-                f"'{filename}'."
-            )

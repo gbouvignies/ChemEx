@@ -30,10 +30,6 @@ b1_frq = 25.0
 ## State of the observed resonance [optional, default: "a"]
 # observed_state = "a"
 
-## Set to true when the sample is uniformly 15N/13C labeled
-## [optional, default: false]
-# cn_label = false
-
 [conditions]
 
 ## 1H Larmor frequency, in MHz

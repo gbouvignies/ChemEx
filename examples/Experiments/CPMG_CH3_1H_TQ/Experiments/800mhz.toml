@@ -8,8 +8,8 @@ ipap_flg     = false
 
 [conditions]
 h_larmor_frq = 799.682
-#sample = "wild-type FF domain"
-#temperature = 25.0
+# sample = "wild-type FF domain"
+# temperature = 25.0
 
 [data]
 path = "../Data/800MHz/"

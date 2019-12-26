@@ -55,7 +55,6 @@ _SCHEMA = {
                     "pattern": "[a-z]",
                     "default": "a",
                 },
-                "cn_label": {"type": "boolean", "default": False},
             },
             "required": ["time_t1", "carrier", "b1_frq"],
         }
@@ -86,7 +85,7 @@ class PulseSeq:
         self.prop.b1_i = settings["b1_frq"]
         self.prop.b1_i_inh_scale = settings["b1_inh_scale"]
         self.prop.b1_i_inh_res = settings["b1_inh_res"]
-        if settings["cn_label"]:
+        if "13C" in config["conditions"].label:
             spin_system = config["spin_system"]
             symbol = spin_system.symbols["i"]
             nucleus = spin_system.nuclei["i"]

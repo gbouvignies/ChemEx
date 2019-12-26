@@ -50,7 +50,6 @@ _SCHEMA = {
                     "pattern": "[a-z]",
                     "default": "a",
                 },
-                "cn_label": {"type": "boolean", "default": False},
             },
             "required": ["time_t1", "carrier", "b1_frq", "carrier_dec", "b1_frq_dec"],
         }
@@ -95,7 +94,7 @@ class PulseSeq:
         self.prop.b1_i_inh_res = settings["b1_inh_res"]
         self.prop.carrier_s = settings["carrier_dec"]
         self.prop.b1_s = settings["b1_frq_dec"]
-        if settings["cn_label"]:
+        if "13C" in config["conditions"].label:
             self.prop.jeff_i = cnc.get_multiplet("", "n")
         self.prop.detection = f"iz_{settings['observed_state']}"
         self.dephased = settings["b1_inh_scale"] == np.inf

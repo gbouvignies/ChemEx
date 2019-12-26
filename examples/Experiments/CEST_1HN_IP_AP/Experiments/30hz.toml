@@ -8,9 +8,9 @@ b1_inh_scale = inf
 
 [conditions]
 h_larmor_frq = 800.3
-deuterated   = true
-#sample = "L99A T4 lysozyme"
-#temperature = 9.0
+label        = ["2H"]
+# sample = "L99A T4 lysozyme"
+# temperature = 9.0
 
 [data]
 path = "../Data/30Hz/"
