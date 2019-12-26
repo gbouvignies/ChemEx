@@ -6,8 +6,8 @@ b1_frq       = 13.0
 
 [conditions]
 h_larmor_frq = 499.243
-#sample = "A39G FF domain"
-#temperature = 1.0
+# sample = "A39G FF domain"
+# temperature = 1.0
 
 [data]
 path = "../Data/13Hz/"

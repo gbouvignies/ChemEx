@@ -4,12 +4,12 @@ time_t1      = 0.25
 carrier      = 36.2105778372
 b1_frq       = 23.4
 b1_inh_scale = inf
-cn_label     = true
 
 [conditions]
 h_larmor_frq = 598.813731811
-#sample = "G48A Fyn SH3"
-#temperature = 25.0
+label        = ["13C"]
+# sample = "G48A Fyn SH3"
+# temperature = 25.0
 
 [data]
 path = "../Data/23Hz/"

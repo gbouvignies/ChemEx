@@ -8,8 +8,8 @@ pw90_dante   = 36.2e-6
 
 [conditions]
 h_larmor_frq = 1000.29992943
-#sample = "G48A Fyn SH3"
-#temperature = 25.0
+# sample = "G48A Fyn SH3"
+# temperature = 25.0
 
 [data]
 path = "../Data/800Hz/"

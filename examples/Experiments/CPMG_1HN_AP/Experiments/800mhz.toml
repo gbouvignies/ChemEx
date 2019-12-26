@@ -6,9 +6,9 @@ pw90         = 11.425e-6
 
 [conditions]
 h_larmor_frq = 799.727
-deuterated   = true
-#sample = "L99A T4 lysozyme"
-#temperature = 25.0
+label        = ["2H"]
+# sample = "L99A T4 lysozyme"
+# temperature = 25.0
 
 [data]
 path = "../Data/800MHz/"

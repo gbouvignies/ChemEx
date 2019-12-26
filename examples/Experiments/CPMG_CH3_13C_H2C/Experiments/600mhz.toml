@@ -7,8 +7,8 @@ pw90         = 14.8e-6
 
 [conditions]
 h_larmor_frq = 600.25
-#sample = "wild-type FF domain"
-#temperature = 25.0
+# sample = "wild-type FF domain"
+# temperature = 25.0
 
 [data]
 path = "../Data/600MHz/"

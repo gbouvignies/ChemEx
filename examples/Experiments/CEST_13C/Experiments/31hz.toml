@@ -6,8 +6,8 @@ b1_frq       = 31.0
 
 [conditions]
 h_larmor_frq = 598.826355
-#sample = "G48M Fyn SH3"
-#temperature = 5.0
+# sample = "G48M Fyn SH3"
+# temperature = 5.0
 
 [data]
 path = "../Data/31Hz/"

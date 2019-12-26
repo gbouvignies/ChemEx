@@ -1,3 +1,4 @@
+import dataclasses as dc
 import functools as ft
 import re
 
@@ -267,7 +268,7 @@ def remove_state(name):
 
 
 def get_pnames(settings, conditions=None, spin_system=None):
-    attributes = conditions.copy()
+    attributes = dc.asdict(conditions)
     if spin_system is not None:
         attributes["spin_system"] = spin_system
     pnames = {}

@@ -8,8 +8,8 @@ antitrosy    = false
 
 [conditions]
 h_larmor_frq = 598.806
-#sample = "G48A Fyn SH3 (pH 7.65)"
-#temperature = 25.0
+# sample = "G48A Fyn SH3 (pH 7.65)"
+# temperature = 25.0
 
 [data]
 path = "../Data/TROSY/"

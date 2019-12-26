@@ -1,10 +1,12 @@
 import copy
+import functools as ft
 import itertools as it
 
 import chemex.nmr.constants as cnc
 import chemex.nmr.rates as cnr
 
 
+@ft.lru_cache()
 def make_settings(basis, model, conditions):
     settings = {}
     extension = basis.extension if basis.extension in {"dq", "tq"} else ""
@@ -149,10 +151,10 @@ def _add_dw(settings: dict, model) -> dict:
     return result
 
 
-def _set_model_free(settings: dict, basis, conditions: dict) -> dict:
+def _set_model_free(settings: dict, basis, conditions) -> dict:
     result = copy.deepcopy(settings)
     spin_system = basis.spin_system
-    if conditions["deuterated"]:
+    if "2H" in conditions.label:
         spin_system += "_d"
     rate_constraints = cnr.RATE_CONSTRAINTS.get(spin_system)
     if rate_constraints is None:

@@ -29,7 +29,7 @@ class PropagatorIS:
         return cls(
             basis=config["basis"],
             model=config["model"],
-            h_frq=config["conditions"]["h_larmor_frq"],
+            h_frq=config["conditions"].h_larmor_frq,
         )
 
     def update(self, parvals):

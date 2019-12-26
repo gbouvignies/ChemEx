@@ -7,8 +7,8 @@ time_equil   = 5.0e-3
 
 [conditions]
 h_larmor_frq = 600.25
-#sample = "G48A Fyn SH3"
-#temperature = 25.0
+# sample = "G48A Fyn SH3"
+# temperature = 25.0
 
 [data]
 path = "../Data/600MHz/"

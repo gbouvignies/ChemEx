@@ -9,8 +9,8 @@ b1_inh_scale = inf
 
 [conditions]
 h_larmor_frq = 598.8165859
-#sample = "A39G FF domain"
-#temperature = 1.0
+# sample = "A39G FF domain"
+# temperature = 1.0
 
 [data]
 path = "../Data/8_5ppm/"
@@ -20,4 +20,3 @@ profiles = [
     ["55N-HN", "55N-HN.out"],
     ["67N-HN", "67N-HN.out"],
 ]
-

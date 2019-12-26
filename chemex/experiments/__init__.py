@@ -4,9 +4,9 @@ import pathlib as pl
 import pkgutil as pu
 import sys
 
+import chemex.containers.conditions as ccc
 import chemex.experiments.configs as cec
 import chemex.helper as ch
-import chemex.parameters.kinetics as cpk
 
 
 def read(filename, model, selection, defaults):
@@ -15,8 +15,8 @@ def read(filename, model, selection, defaults):
     config["model"] = model
     config["selection"] = selection
     config["defaults"] = defaults
+    config["conditions"] = ccc.parse_conditions(config)
     experiment_name = get_experiment_name(config)
-    cpk.validates_conditions(config)
     module = grab(experiment_name)
     return module.read(config)
 
