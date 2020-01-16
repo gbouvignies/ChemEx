@@ -124,7 +124,10 @@ def make_settings(basis, model, conditions):
         elif spin_system == "hn":
             r2a_s = f"{{r2_s_{state}}} + {{r1a_is_{state}}} - {{r1_s_{state}}}"
             settings[f"r2a_s_{state}"]["expr"] = r2a_s
-    settings = _add_dw(settings, model)
+    if model.name.startswith("4st_hd"):
+        settings = _add_dw_hd(settings, model)
+    else:
+        settings = _add_dw(settings, model)
     settings = _set_equal_to_a(settings)
     settings_mf = _set_model_free(settings, basis, conditions)
     return settings, settings_mf
@@ -148,6 +151,20 @@ def _add_dw(settings: dict, model) -> dict:
         result[dw_name] = copy.deepcopy(settings[cs_name])
         result[dw_name]["vary"] = True
         result[cs_name]["expr"] = f"{{cs_{spin}_a}} + {{{dw_name}}}"
+    return result
+
+
+def _add_dw_hd(settings: dict, model) -> dict:
+    result = copy.deepcopy(settings)
+    result["dw_i_ab"] = copy.deepcopy(settings["cs_i_a"])
+    result["dwhd_i_a"] = copy.deepcopy(settings["cs_i_a"])
+    result["dwhd_i_b"] = copy.deepcopy(settings["cs_i_a"])
+    result["dw_i_ab"]["vary"] = True
+    result["dwhd_i_a"]["vary"] = True
+    result["dwhd_i_b"]["vary"] = True
+    result["cs_i_b"]["expr"] = "{cs_i_a} + {dw_i_ab}"
+    result["cs_i_c"]["expr"] = "{cs_i_a} + {dwhd_i_a}"
+    result["cs_i_d"]["expr"] = "{cs_i_a} + {dw_i_ab} + {dwhd_i_b}"
     return result
 
 

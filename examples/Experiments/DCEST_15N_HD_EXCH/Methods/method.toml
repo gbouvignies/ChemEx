@@ -1,16 +1,4 @@
-[STEP1]
-INCLUDE = [57, 66, 74, 78, 79, 93, 96, 97, 98, 109]
-PB     = "fix"
-KEX_AB = "fix"
-R1_B   = "0.5 * R1_A"
-R2_B   = "0.4 * R2_A"
-
-[STEP2]
-PB     = "fit"
-KEX_AB = "fit"
-R2_B   = "fit"
-
-[STEP3]
-INCLUDE = "*"
-PB     = "fix"
-KEX_AB = "fit"
+[DEFAULT]
+# INCLUDE = [57, 66, 74, 78, 79, 93, 96, 97, 98, 109, 121]
+CS_A    = "fit"
+R1_B    = "0.5 * R1_A"

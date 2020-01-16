@@ -56,7 +56,6 @@ _SCHEMA = {
                     "pattern": "[a-z]",
                     "default": "a",
                 },
-                "hd_exchange": {"type": "boolean", "default": False},
             },
             "required": ["time_t1", "carrier", "b1_frq", "pw90_dante", "sw_dante"],
         }
@@ -97,16 +96,20 @@ class PulseSeq:
         if "13C" in config["conditions"].label:
             self.prop.jeff_i = cnc.get_multiplet("", "n")
         self.prop.detection = f"iz_{settings['observed_state']}"
-        self.hd_exchange = settings["hd_exchange"]
+        self.start = None
+        if config["model"].name == "2st_hd":
+            self.start = ["iz_a"]
+        elif config["model"].name == "4st_hd":
+            self.start = ["iz_a", "iz_b"]
         self.dephased = settings["b1_inh_scale"] == np.inf
         self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
     def _calculate(self, offsets, params_local):
         self.prop.update(params_local)
-        if self.hd_exchange:
-            start = self.prop.get_start_magnetization(["iz_a", "iz_c"])
-        else:
+        if self.start is None:
             start = self.prop.get_equilibrium()
+        else:
+            start = self.prop.get_start_magnetization(self.start)
         intst = {}
         d_eq = (
             self.prop.delays(self.time_eq) if self.time_eq > 0.0 else self.prop.identity

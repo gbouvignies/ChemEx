@@ -110,33 +110,43 @@ def make_settings_2st_rs(conditions, spin_system):
 
 @ft.lru_cache()
 def make_settings_2st_hd(conditions, spin_system):
+    d2o = conditions.d2o
+    h2o = 1.0 - d2o
     return {
-        "kex_ab": {
-            "attributes": ("spin_system", "temperature", "p_total", "l_total"),
-            "value": 200.0,
+        "kdh": {
+            "attributes": ("spin_system", "temperature"),
+            "value": 1.0,
             "min": 0.0,
             "vary": True,
         },
-        "pb": {
-            "attributes": ("temperature", "p_total", "l_total"),
-            "value": 0.05,
-            "min": 0.0,
-            "max": 1.0,
-            "vary": True,
-        },
-        "pa": {
-            "attributes": ("temperature", "p_total", "l_total"),
-            "min": 0.0,
-            "max": 1.0,
-            "expr": "1.0 - {pb}",
+        "phi": {
+            "attributes": ("spin_system", "temperature"),
+            "value": 1.1,
+            "min": 0.75,
+            "max": 1.50,
+            "vary": False,
         },
         "kab": {
-            "attributes": ("spin_system", "temperature", "p_total", "l_total"),
-            "expr": "{kex_ab} * {pb}",
+            "attributes": ("spin_system", "temperature", "d2o"),
+            "min": 0.0,
+            "expr": f"{d2o} * {{kdh}} * {{phi}}",
         },
         "kba": {
-            "attributes": ("spin_system", "temperature", "p_total", "l_total"),
-            "expr": "{kex_ab} * {pa}",
+            "attributes": ("spin_system", "temperature", "d2o"),
+            "min": 0.0,
+            "expr": f"{h2o} * {{kdh}}",
+        },
+        "pa": {
+            "attributes": ("spin_system", "temperature", "p_total", "l_total", "d2o"),
+            "min": 0.0,
+            "max": 1.0,
+            "expr": f"{h2o} / ({h2o} + {d2o} * {{phi}})",
+        },
+        "pb": {
+            "attributes": ("spin_system", "temperature", "p_total", "l_total", "d2o"),
+            "min": 0.0,
+            "max": 1.0,
+            "expr": f"{d2o} * {{phi}} / ({h2o} + {d2o} * {{phi}})",
         },
     }
 
@@ -492,101 +502,111 @@ def make_settings_4st(conditions, spin_system):
 
 @ft.lru_cache()
 def make_settings_4st_hd(conditions, spin_system):
+    d2o = conditions.d2o
+    h2o = 1.0 - d2o
     return {
-        "frac": {
-            "attributes": ("temperature", "p_total", "l_total"),
-            "value": 0.1,
-            "min": 0.0,
-            "max": 1.0,
-            "vary": True,
-        },
-        "pc": {
+        "pop_b": {
             "attributes": ("temperature", "p_total", "l_total"),
             "value": 0.02,
             "min": 0.0,
             "max": 1.0,
             "vary": True,
         },
-        "pa": {
-            "attributes": ("temperature", "p_total", "l_total"),
-            "min": 0.0,
-            "max": 1.0,
-            "expr": "1.0 / (1.0 + {frac}) - {pc}",
-        },
-        "pb": {
-            "attributes": ("temperature", "p_total", "l_total"),
-            "min": 0.0,
-            "max": 1.0,
-            "expr": "{frac} / (1.0 + {frac}) - {frac} * {pc}",
-        },
-        "pd": {
-            "attributes": ("temperature", "p_total", "l_total"),
-            "min": 0.0,
-            "max": 1.0,
-            "expr": "{frac} * {pc}",
-        },
         "kex_ab": {
-            "attributes": ("spin_system", "temperature", "p_total", "l_total"),
-            "min": 0.0,
-            "value": 200.0,
-            "vary": True,
-        },
-        "kex_ac": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
             "value": 0.0,
             "vary": True,
         },
-        "kex_bd": {
-            "attributes": ("temperature", "p_total", "l_total"),
+        "kdh_a": {
+            "attributes": ("spin_system", "temperature"),
+            "value": 1.0,
             "min": 0.0,
-            "expr": "{kex_ac}",
-        },
-        "kex_cd": {
-            "attributes": ("spin_system", "temperature", "p_total", "l_total"),
-            "min": 0.0,
-            "value": 200.0,
             "vary": True,
         },
-        "kab": {
-            "attributes": ("spin_system", "temperature", "p_total", "l_total"),
+        "kdh_b": {
+            "attributes": ("spin_system", "temperature"),
+            "value": 1.0,
             "min": 0.0,
-            "expr": kex_p_to_k("ab"),
+            "vary": True,
+        },
+        "phi_a": {
+            "attributes": ("spin_system", "temperature"),
+            "value": 1.1,
+            "min": 0.75,
+            "max": 1.50,
+            "vary": False,
+        },
+        "phi_b": {
+            "attributes": ("spin_system", "temperature"),
+            "value": 0.02,
+            "min": 0.75,
+            "max": 1.50,
+            "expr": "{phi_a}",
+        },
+        "kab": {
+            "attributes": ("temperature", "p_total", "l_total"),
+            "min": 0.0,
+            "expr": "{pop_b} * {kex_ab}",
         },
         "kba": {
-            "attributes": ("spin_system", "temperature", "p_total", "l_total"),
-            "min": 0.0,
-            "expr": kex_p_to_k("ba"),
-        },
-        "kac": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "expr": kex_p_to_k("ac"),
-        },
-        "kca": {
-            "attributes": ("temperature", "p_total", "l_total"),
-            "min": 0.0,
-            "expr": kex_p_to_k("ca"),
-        },
-        "kbd": {
-            "attributes": ("temperature", "p_total", "l_total"),
-            "min": 0.0,
-            "expr": kex_p_to_k("bd"),
-        },
-        "kdb": {
-            "attributes": ("temperature", "p_total", "l_total"),
-            "min": 0.0,
-            "expr": kex_p_to_k("db"),
+            "expr": "(1.0 - {pop_b}) * {kex_ab}",
         },
         "kcd": {
-            "attributes": ("spin_system", "temperature", "p_total", "l_total"),
+            "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "expr": kex_p_to_k("cd"),
+            "expr": "{pop_b} * {kex_ab}",
         },
         "kdc": {
-            "attributes": ("spin_system", "temperature", "p_total", "l_total"),
+            "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "expr": kex_p_to_k("dc"),
+            "expr": "(1.0 - {pop_b}) * {kex_ab}",
+        },
+        "kac": {
+            "attributes": ("spin_system", "temperature", "d2o"),
+            "min": 0.0,
+            "expr": f"{d2o} * {{kdh_a}} * {{phi_a}}",
+        },
+        "kca": {
+            "attributes": ("spin_system", "temperature", "d2o"),
+            "min": 0.0,
+            "expr": f"{h2o} * {{kdh_a}}",
+        },
+        "kbd": {
+            "attributes": ("spin_system", "temperature", "d2o"),
+            "min": 0.0,
+            "expr": f"{d2o} * {{kdh_b}} * {{phi_b}}",
+        },
+        "kdb": {
+            "attributes": ("spin_system", "temperature", "d2o"),
+            "min": 0.0,
+            "expr": f"{h2o} * {{kdh_b}}",
+        },
+        "pa": {
+            "attributes": ("spin_system", "temperature", "p_total", "l_total", "d2o"),
+            "min": 0.0,
+            "max": 1.0,
+            "expr": f"(1.0 - {{pop_b}}) * {h2o} / ({h2o} + {d2o} * {{phi_a}})",
+        },
+        "pb": {
+            "attributes": ("spin_system", "temperature", "p_total", "l_total", "d2o"),
+            "min": 0.0,
+            "max": 1.0,
+            "expr": f"{{pop_b}} * {h2o} / ({h2o} + {d2o} * {{phi_b}})",
+        },
+        "pc": {
+            "attributes": ("spin_system", "temperature", "p_total", "l_total", "d2o"),
+            "min": 0.0,
+            "max": 1.0,
+            "expr": f"(1.0 - {{pop_b}}) * {d2o} * {{phi_a}} / ({h2o} + {d2o} * {{phi_a}})",
+        },
+        "pd": {
+            "attributes": ("spin_system", "temperature", "p_total", "l_total", "d2o"),
+            "min": 0.0,
+            "max": 1.0,
+            "expr": f"{{pop_b}} * {d2o} * {{phi_a}} / ({h2o} + {d2o} * {{phi_a}})",
         },
     }
 
