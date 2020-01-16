@@ -194,22 +194,28 @@ def make_settings_2st_binding(conditions, spin_system):
         f"+ sqrt(({delta} - {{kd}}) ** 2 + 4.0 * {{kd}} * {l_total}))"
     )
     return {
+        "koff": {
+            "attributes": ("temperature",),
+            "value": 100.0,
+            "min": 0.0,
+            "vary": True,
+        },
+        "kd": {"attributes": ("temperature",), "min": 0.0, "vary": True},
         "kon": {
             "attributes": ("temperature",),
             "value": 1.0e7,
             "min": 0.0,
-            "vary": True,
+            "expr": "{koff} / max({kd}, 1e-100)",
         },
-        "koff": {
-            "attributes": ("temperature",),
-            "value": 10.0,
+        "kab": {
+            "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "vary": True,
+            "expr": expr_kab,
         },
-        "kd": {
-            "attributes": ("temperature",),
+        "kba": {
+            "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "expr": "{koff} / max({kon}, 1e-100)",
+            "expr": "{koff}",
         },
         "pa": {
             "attributes": ("temperature", "p_total", "l_total"),
@@ -222,16 +228,6 @@ def make_settings_2st_binding(conditions, spin_system):
             "min": 0.0,
             "max": 1.0,
             "expr": "{kab} / max({kba} + {kab}, 1e-100)",
-        },
-        "kab": {
-            "attributes": ("temperature", "p_total", "l_total"),
-            "min": 0.0,
-            "expr": expr_kab,
-        },
-        "kba": {
-            "attributes": ("temperature", "p_total", "l_total"),
-            "min": 0.0,
-            "expr": "{koff}",
         },
     }
 
