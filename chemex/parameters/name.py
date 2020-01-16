@@ -12,6 +12,7 @@ _DECORATORS = {
     "h_larmor_frq": "__b_{}_b__",
     "p_total": "__p_{}_p__",
     "l_total": "__l_{}_l__",
+    "d2o": "__d_{}_d__",
 }
 _EXPAND = {"-": "__minus__", "+": "__plus__", ".": "__point__"}
 _COMPRESS = {val: key for key, val in _EXPAND.items()}
@@ -29,21 +30,21 @@ class ParamName:
         h_larmor_frq=None,
         p_total=None,
         l_total=None,
+        d2o=None,
     ):
         if name is None:
             name = ""
         self.name = name.lower()
         self.spin_system = spin_system
-        if temperature is not None:
-            self.temperature = round(float(temperature), 1)
-        else:
-            self.temperature = None
-        if h_larmor_frq is not None:
-            self.h_larmor_frq = round(float(h_larmor_frq), 1)
-        else:
-            self.h_larmor_frq = None
+        self.temperature = (
+            round(float(temperature), 1) if temperature is not None else None
+        )
+        self.h_larmor_frq = (
+            round(float(h_larmor_frq), 1) if h_larmor_frq is not None else None
+        )
         self.p_total = float(p_total) if p_total is not None else None
         self.l_total = float(l_total) if l_total is not None else None
+        self.d2o = float(d2o) if d2o is not None else None
 
     @property
     def spin_system(self):
@@ -64,6 +65,7 @@ class ParamName:
             "h_larmor_frq": self.h_larmor_frq,
             "p_total": self.p_total,
             "l_total": self.l_total,
+            "d2o": self.d2o,
         }
 
     @classmethod
@@ -76,6 +78,7 @@ class ParamName:
                 (__b_(?P<h_larmor_frq>.*?)_b__)?
                 (__p_(?P<p_total>.*?)_p__)?
                 (__l_(?P<l_total>.*?)_l__)?
+                (__d_(?P<d2o>.*?)_d__)?
             """,
             re.IGNORECASE | re.VERBOSE,
         )
@@ -99,6 +102,7 @@ class ParamName:
                 (B0\s*->\s*(?P<h_larmor_frq>{0})) |
                 (\[P\]\s*->\s*(?P<p_total>{0})) |
                 (\[L\]\s*->\s*(?P<l_total>{0})) |
+                (\[D2O/H2O\]\s*->\s*(?P<d2o>{0})) |
             """.format(
                 _RE_FLOAT
             ),
@@ -115,6 +119,7 @@ class ParamName:
             "h_larmor_frq": "B0->{:.1f}MHz",
             "p_total": "[P]->{:e}M",
             "l_total": "[L]->{:e}M",
+            "d2o": "D2O/H2O->{:.4f}",
         }
         components = []
         for name, value in self.to_dict().items():
@@ -135,6 +140,7 @@ class ParamName:
             "h_larmor_frq": "{:.1f}MHz",
             "p_total": "P{:e}M",
             "l_total": "L{:e}M",
+            "d2o": "D{:.4f}",
         }
         components = [
             formatters[name].format(value)
@@ -159,6 +165,7 @@ class ParamName:
         pattern += _get_re_component(self.h_larmor_frq, "h_larmor_frq")
         pattern += _get_re_component(self.p_total, "p_total")
         pattern += _get_re_component(self.l_total, "l_total")
+        pattern += _get_re_component(self.d2o, "d2o")
         pattern = _clean_re(pattern)
         return re.compile(pattern, re.IGNORECASE)
 
@@ -183,7 +190,14 @@ class ParamName:
             return NotImplemented
         both = {
             name: getattr(self, name)
-            for name in ("name", "temperature", "h_larmor_frq", "p_total", "l_total")
+            for name in (
+                "name",
+                "temperature",
+                "h_larmor_frq",
+                "p_total",
+                "l_total",
+                "d2o",
+            )
             if getattr(self, name) == getattr(other, name)
         }
         both["spin_system"] = self._spin_system & other._spin_system
@@ -289,8 +303,10 @@ def _squeeze_name(name, ext=""):
 
 
 def _name_to_spin_system(name, spin_system):
+    if spin_system is None:
+        return None
     parsed = _re_to_dict(_RE_NAME, name)
     spin = parsed.get("spin")
     if spin is None:
-        return None if spin_system is None else spin_system.names["i"]
+        return spin_system.names["i"]
     return spin_system.names.get(spin)

@@ -1,4 +1,5 @@
 import matplotlib.figure as mf
+import matplotlib.ticker as ticker
 import numpy as np
 import scipy.interpolate as ip
 
@@ -81,23 +82,28 @@ def relaxation(file_pdf, name, data_exp, data_fit):
     file_pdf.savefig(fig)
 
 
-def cest(file_pdf, name, data_exp, data_fit, cs_values):
+def cest(file_pdf, name, data_exp, data_fit, cs_values, alias_values):
     residuals = _get_residuals(data_exp, data_fit)
     sigma = _estimate_sigma(residuals)
     fig = profile(name, data_exp, data_fit)
     ax1, ax2 = fig.axes
+    lim = sorted(ax2.get_xlim(), reverse=True)
+    ax1.set_xlim(lim)
+    ax2.set_xlim(lim)
+    ax1.xaxis.set_major_locator(ticker.MaxNLocator(6))
+    ax2.xaxis.set_major_locator(ticker.MaxNLocator(6))
     ax2.set_xlabel(r"$B_1$ position (ppm)")
     ax2.set_ylabel(r"$I/I_0$")
     kwargs1 = {"facecolor": (0, 0, 0, 0.1), "edgecolor": "none"}
     ax1.fill_between(ax1.get_xlim(), -1.0 * sigma, 1.0 * sigma, **kwargs1)
     ax1.fill_between(ax1.get_xlim(), -2.0 * sigma, 2.0 * sigma, **kwargs1)
-    kwargs2 = {"color": _GREY400, "linewidth": 0.75}
-    for a_cs, lstyle in zip(cs_values, _LSTYLES):
-        ax1.axvline(a_cs, linestyle=lstyle, zorder=-1, **kwargs2)
-        ax2.axvline(a_cs, linestyle=lstyle, zorder=-1, **kwargs2)
-    lim = sorted(ax2.get_xlim(), reverse=True)
-    ax1.set_xlim(lim)
-    ax2.set_xlim(lim)
+    kwargs2 = {"color": _GREY400, "linewidth": 0.75, "zorder": -1}
+    for a_cs, alias, lstyle in zip(cs_values, alias_values, _LSTYLES):
+        ax1.axvline(a_cs, linestyle=lstyle, **kwargs2)
+        ax2.axvline(a_cs, linestyle=lstyle, **kwargs2)
+        if alias:
+            x, _ = ax2.transLimits.transform((a_cs, 0))
+            ax2.text(x - 0.02, 0.95, "*", transform=ax2.transAxes)
     file_pdf.savefig(fig)
 
 

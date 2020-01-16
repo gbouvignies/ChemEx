@@ -1,5 +1,6 @@
 import copy
 import functools as ft
+import string
 import sys
 
 import numpy as np
@@ -62,6 +63,8 @@ class CestProfile:
         self._pnames = pnames
         self.params = params
         self._plot = ccp.cest
+        self._sw_dante = getattr(self._pulse_seq, "sw_dante", None)
+        self._observed_state = getattr(self._pulse_seq, "observed_state", "a")
 
     @classmethod
     def from_file(cls, path, config, pulse_seq, pnames, params):
@@ -107,16 +110,15 @@ class CestProfile:
         return output + "\n\n"
 
     def filter(self, params):
-        cs_values = self._get_cs_values(params)
-        cs_offset = self._pulse_seq.ppms_to_offsets(cs_values)[0]
-        sw_dante = getattr(self._pulse_seq, "sw_dante", None)
-        self.data.filter(cs_offset, sw_dante)
+        cs_offsets = self._get_cs_offsets(params)
+        index = string.ascii_lowercase.index(self._observed_state)
+        self.data.filter(cs_offsets[index])
 
     def plot(self, params, file_pdf, file_exp, file_fit, simulation=False):
         data_exp = self._get_plot_data_exp(simulation)
         data_fit = self._get_plot_data_fit(params, simulation)
-        cs_values = self._get_cs_values(params)
-        self._plot(file_pdf, self.name, data_exp, data_fit, cs_values)
+        cs_values, aliased = self._get_cs_values(params)
+        self._plot(file_pdf, self.name, data_exp, data_fit, cs_values, aliased)
         output_fit = self._format_data_fit(data_fit)
         file_fit.write(output_fit + "\n\n")
         if not simulation:
@@ -143,7 +145,19 @@ class CestProfile:
     def _get_cs_values(self, params):
         names = (f"cs_i_{state}" for state in "abcd")
         fnames = (self._pnames[name] for name in names if name in self._pnames)
-        return [params[fname] for fname in fnames]
+        cs_values = np.array([params[fname] for fname in fnames])
+        aliased = cs_values * 0.0
+        if self._sw_dante is not None:
+            offset_min = min(self.data.points["offsets"][~self.data.refs])
+            cs_offsets = self._pulse_seq.ppms_to_offsets(cs_values)
+            cs_alias = (cs_offsets - offset_min) % self._sw_dante + offset_min
+            aliased = (cs_offsets - offset_min) // self._sw_dante
+            cs_values = self._pulse_seq.offsets_to_ppms(cs_alias)
+        return cs_values, aliased
+
+    def _get_cs_offsets(self, params):
+        cs_values, aliased = self._get_cs_values(params)
+        return self._pulse_seq.ppms_to_offsets(cs_values)
 
     def _get_plot_data_exp(self, simulation=False):
         dtype = [
@@ -248,12 +262,10 @@ class CestData:
     def estimate_noise_variance(self, kind):
         return ccn.estimate_noise_variance[kind](self.points)
 
-    def filter(self, cs_offset, sw_dante=None):
+    def filter(self, cs_offset):
         offsets = self.points["offsets"] - cs_offset
         for filter_offset, filter_bandwidth in self._filter_offsets:
             offsets_ = offsets - filter_offset
-            if sw_dante is not None:
-                offsets_ = (offsets_ + 0.5 * sw_dante) % sw_dante - 0.5 * sw_dante
             mask_filter = abs(offsets_) < filter_bandwidth * 0.5
             self.mask[mask_filter] = False
 

@@ -16,8 +16,7 @@ def read(filename, model, selection, defaults):
     config["selection"] = selection
     config["defaults"] = defaults
     config["conditions"] = ccc.parse_conditions(config)
-    experiment_name = get_experiment_name(config)
-    module = grab(experiment_name)
+    module = grab(get_experiment_name(config))
     return module.read(config)
 
 

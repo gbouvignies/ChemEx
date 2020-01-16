@@ -21,7 +21,6 @@ class RatesIS:
     csa_s: np.ndarray
     phi_i: np.ndarray
     phi_s: np.ndarray
-    j_is: float
 
     def __init__(self):
         self.gh = cnc.GAMMA["h"]
@@ -124,7 +123,6 @@ class RatesIS:
             "etaz_s": self.dis * cs * 6 * js,
             "sigma_is": self.dis2 * (-jmis + 6.0 * jpis),
             "mu_is": 0.5 * self.dis2 * (-jmis + 6.0 * jpis),
-            "j_is": self.j_is,
         }
 
 
@@ -138,7 +136,6 @@ class RateNH(RatesIS):
     csa_s = np.array([5.7, 0.5, -6.2]) * 1e-6
     phi_i = np.deg2rad([109.6, 90.0, 19.6])
     phi_s = np.deg2rad([10.0, 80.0, 90.0])
-    j_is = -93.0
 
     def __call__(self, h_frq, tauc, s2, khh=0.0):
         rates = super().__call__(h_frq, tauc, s2)
@@ -168,7 +165,6 @@ class RateHN(RatesIS):
     csa_s = np.array([69.0, 42.0, -111.0]) * 1e-6
     phi_i = np.deg2rad([10.0, 80.0, 90.0])
     phi_s = np.deg2rad([109.6, 90.0, 19.6])
-    j_is = -93.0
 
     def __call__(self, h_frq, tauc, s2, khh=0.0):
         rates = super().__call__(h_frq, tauc, s2)
@@ -198,7 +194,6 @@ class RateCH(RatesIS):
     csa_s = np.array([0.0, 0.0, 0.0]) * 1e-6
     phi_i = np.deg2rad([109.6, 90.0, 19.6])
     phi_s = np.deg2rad([0.0, 0.0, 0.0])
-    j_is = 140.0
 
 
 class RateCH_D(RateCH):
@@ -216,7 +211,6 @@ class RateHC(RatesIS):
     csa_s = np.array([-5.3, -5.3, 10.7]) / 3.0 * 1e-6
     phi_i = np.deg2rad([0.0, 0.0, 0.0])
     phi_s = np.deg2rad([109.6, 90.0, 19.6])
-    j_is = 140.0
 
 
 class RateHC_D(RateHC):

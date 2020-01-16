@@ -1,8 +1,2 @@
 [DEFAULT]
 R2_B              = "R2_A"
-# CS_A              = "fit"
-# "CS_A, NUC->A6N"  = "fix"
-# "CS_A, NUC->K25N" = "fix"
-# "CS_A, NUC->R40N" = "fix"
-# "CS_A, NUC->G45N" = "fix"
-# "CS_A, NUC->D59N" = "fix"

@@ -14,6 +14,7 @@ class Conditions:
     temperature: Optional[float] = None
     p_total: Optional[float] = None
     l_total: Optional[float] = None
+    d2o: Optional[float] = None
     label: List[str] = dc.field(default_factory=list)
 
     def __post_init__(self):
@@ -32,6 +33,7 @@ def parse_conditions(config):
                     "temperature": {"type": "number"},
                     "p_total": {"type": "number"},
                     "l_total": {"type": "number"},
+                    "d2o": {"type": "number", "minimum": 0.0, "maximum": 1.0},
                     "label": {
                         "type": "array",
                         "contains": {
@@ -40,20 +42,28 @@ def parse_conditions(config):
                         },
                     },
                 },
-                "dependencies": {"p_total": ["l_total"], "l_total": ["p_total"]},
                 "required": ["h_larmor_frq"],
             }
         },
         "required": ["conditions"],
     }
+
     if "binding" in model:
         _schema["properties"]["conditions"]["required"].extend(["p_total", "l_total"])
+        _schema["properties"]["conditions"]["dependencies"] = {
+            "p_total": ["l_total"],
+            "l_total": ["p_total"],
+        }
+
+    if "hd" in model:
+        _schema["properties"]["conditions"]["required"].append("d2o")
 
     if "eyring" in model:
         _schema["properties"]["conditions"]["required"].append("temperature")
 
     try:
         ch.validate(config, _schema)
+
     except js.ValidationError as e:
         filename = config["filename"]
         if len(e.path) == 1:
