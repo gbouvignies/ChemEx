@@ -110,9 +110,14 @@ def make_settings_2st_rs(conditions, spin_system):
 
 @ft.lru_cache()
 def make_settings_2st_hd(conditions, spin_system):
-    d2o = conditions.d2o
-    h2o = 1.0 - d2o
     return {
+        "d2o": {
+            "attributes": ("d2o",),
+            "value": conditions.d2o,
+            "min": 0.0,
+            "max": 1.0,
+            "vary": False,
+        },
         "kdh": {
             "attributes": ("spin_system", "temperature"),
             "value": 1.0,
@@ -129,24 +134,24 @@ def make_settings_2st_hd(conditions, spin_system):
         "kab": {
             "attributes": ("spin_system", "temperature", "d2o"),
             "min": 0.0,
-            "expr": f"{d2o} * {{kdh}} * {{phi}}",
+            "expr": f"{{d2o}} * {{kdh}} * {{phi}}",
         },
         "kba": {
             "attributes": ("spin_system", "temperature", "d2o"),
             "min": 0.0,
-            "expr": f"{h2o} * {{kdh}}",
+            "expr": f"(1.0 - {{d2o}}) * {{kdh}}",
         },
         "pa": {
             "attributes": ("spin_system", "temperature", "p_total", "l_total", "d2o"),
             "min": 0.0,
             "max": 1.0,
-            "expr": f"{h2o} / ({h2o} + {d2o} * {{phi}})",
+            "expr": f"(1.0 - {{d2o}}) / (1.0 + {{d2o}} * ({{phi}} - 1.0))",
         },
         "pb": {
             "attributes": ("spin_system", "temperature", "p_total", "l_total", "d2o"),
             "min": 0.0,
             "max": 1.0,
-            "expr": f"{d2o} * {{phi}} / ({h2o} + {d2o} * {{phi}})",
+            "expr": f"{{d2o}} * {{phi}} / (1.0 + {{d2o}} * ({{phi}} - 1.0))",
         },
     }
 
@@ -498,9 +503,14 @@ def make_settings_4st(conditions, spin_system):
 
 @ft.lru_cache()
 def make_settings_4st_hd(conditions, spin_system):
-    d2o = conditions.d2o
-    h2o = 1.0 - d2o
     return {
+        "d2o": {
+            "attributes": ("d2o",),
+            "value": conditions.d2o,
+            "min": 0.0,
+            "max": 1.0,
+            "vary": False,
+        },
         "pop_b": {
             "attributes": ("temperature", "p_total", "l_total"),
             "value": 0.02,
@@ -563,46 +573,46 @@ def make_settings_4st_hd(conditions, spin_system):
         "kac": {
             "attributes": ("spin_system", "temperature", "d2o"),
             "min": 0.0,
-            "expr": f"{d2o} * {{kdh_a}} * {{phi_a}}",
+            "expr": f"{{d2o}} * {{kdh_a}} * {{phi_a}}",
         },
         "kca": {
             "attributes": ("spin_system", "temperature", "d2o"),
             "min": 0.0,
-            "expr": f"{h2o} * {{kdh_a}}",
+            "expr": f"(1.0 - {{d2o}}) * {{kdh_a}}",
         },
         "kbd": {
             "attributes": ("spin_system", "temperature", "d2o"),
             "min": 0.0,
-            "expr": f"{d2o} * {{kdh_b}} * {{phi_b}}",
+            "expr": f"{{d2o}} * {{kdh_b}} * {{phi_b}}",
         },
         "kdb": {
             "attributes": ("spin_system", "temperature", "d2o"),
             "min": 0.0,
-            "expr": f"{h2o} * {{kdh_b}}",
+            "expr": f"(1.0 - {{d2o}}) * {{kdh_b}}",
         },
         "pa": {
             "attributes": ("spin_system", "temperature", "p_total", "l_total", "d2o"),
             "min": 0.0,
             "max": 1.0,
-            "expr": f"(1.0 - {{pop_b}}) * {h2o} / ({h2o} + {d2o} * {{phi_a}})",
+            "expr": f"(1.0 - {{pop_b}}) * (1.0 - {{d2o}}) / (1.0 + {{d2o}} * ({{phi_a}} - 1.0))",
         },
         "pb": {
             "attributes": ("spin_system", "temperature", "p_total", "l_total", "d2o"),
             "min": 0.0,
             "max": 1.0,
-            "expr": f"{{pop_b}} * {h2o} / ({h2o} + {d2o} * {{phi_b}})",
+            "expr": f"{{pop_b}} * (1.0 - {{d2o}}) / (1.0 + {{d2o}} * ({{phi_b}} - 1.0))",
         },
         "pc": {
             "attributes": ("spin_system", "temperature", "p_total", "l_total", "d2o"),
             "min": 0.0,
             "max": 1.0,
-            "expr": f"(1.0 - {{pop_b}}) * {d2o} * {{phi_a}} / ({h2o} + {d2o} * {{phi_a}})",
+            "expr": f"(1.0 - {{pop_b}}) * {{d2o}} * {{phi_a}} / (1.0 + {{d2o}} * ({{phi_a}} - 1.0))",
         },
         "pd": {
             "attributes": ("spin_system", "temperature", "p_total", "l_total", "d2o"),
             "min": 0.0,
             "max": 1.0,
-            "expr": f"{{pop_b}} * {d2o} * {{phi_a}} / ({h2o} + {d2o} * {{phi_a}})",
+            "expr": f"{{pop_b}} * {{d2o}} * {{phi_a}} / (1.0 + {{d2o}} * ({{phi_b}} - 1.0))",
         },
     }
 

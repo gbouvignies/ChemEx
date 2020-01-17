@@ -193,13 +193,19 @@ def _params_to_text(params):
     par_string, col_width = _params_to_string(params)
     result = []
     for section, key_values in par_string.items():
-        section_ = f'"{section}"' if not RE_GROUPNAME.match(section) else section
-        result.append(f"[{section_}]")
+        result.append(f"[{_quote(section)}]")
         width = col_width[section]
         for key, value in sorted(key_values):
-            result.append(f"{str(key):<{width}} = {value}")
+            result.append(f"{_quote(key):<{width}} = {value}")
         result.append("")
     return "\n".join(result)
+
+
+def _quote(text):
+    text_ = str(text)
+    if RE_GROUPNAME.match(text_):
+        return text_
+    return f'"{text_}"'
 
 
 def _params_to_string(params):
