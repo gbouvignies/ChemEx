@@ -102,7 +102,7 @@ class ParamName:
                 (B0\s*->\s*(?P<h_larmor_frq>{0})) |
                 (\[P\]\s*->\s*(?P<p_total>{0})) |
                 (\[L\]\s*->\s*(?P<l_total>{0})) |
-                (\[D2O/H2O\]\s*->\s*(?P<d2o>{0})) |
+                (D2O\s*->\s*(?P<d2o>{0})) |
             """.format(
                 _RE_FLOAT
             ),
@@ -119,7 +119,7 @@ class ParamName:
             "h_larmor_frq": "B0->{:.1f}MHz",
             "p_total": "[P]->{:e}M",
             "l_total": "[L]->{:e}M",
-            "d2o": "D2O/H2O->{:.4f}",
+            "d2o": "D2O->{:.4f}",
         }
         components = []
         for name, value in self.to_dict().items():

@@ -70,6 +70,7 @@ def _settings_to_pnames(settings, conditions, propagator, spin_system):
 
 def _settings_to_params(settings, conditions, spin_system):
     pnames = cpn.get_pnames(settings, conditions, spin_system)
+    conditions_ = dc.asdict(conditions)
     parameter_list = [
         lf.Parameter(
             name=pnames[name],
@@ -77,9 +78,7 @@ def _settings_to_params(settings, conditions, spin_system):
             min=setting.get("min"),
             max=setting.get("max"),
             vary=setting.get("vary"),
-            expr=setting.get("expr", "").format_map(
-                {**pnames, **dc.asdict(conditions)}
-            ),
+            expr=setting.get("expr", "").format_map({**conditions_, **pnames}),
         )
         for name, setting in settings.items()
     ]
