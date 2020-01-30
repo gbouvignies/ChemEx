@@ -19,9 +19,11 @@ setup(
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
     ],
     keywords="nmr protein dynamics chemical exchange cpmg cest relaxation data fitting",
     packages=find_packages(),
+    setup_requires=['setuptools_scm'],
     install_requires=[
         "numpy>=1.0",
         "scipy>=1.0",
