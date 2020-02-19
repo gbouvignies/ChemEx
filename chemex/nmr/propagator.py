@@ -181,11 +181,11 @@ class PropagatorIS:
 
     def shaped_pulse_i(self, pw, amplitudes, phases):
         time = pw / len(amplitudes)
-        pairs = zip(amplitudes, phases)
+        pairs = list(zip(amplitudes, phases))
         pulses = {
             (amp, ph): self.pulse_i(time, ph, scale=amp) for amp, ph in set(pairs)
         }
-        return ft.reduce(pulses[pair] for pair in reversed(pairs))
+        return ft.reduce(np.matmul, (pulses[pair] for pair in reversed(pairs)))
 
     @property
     def p90_i(self):

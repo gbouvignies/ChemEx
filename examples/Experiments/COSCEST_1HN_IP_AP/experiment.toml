@@ -1,0 +1,95 @@
+## This is a sample configuration file for the module 'coscest_1hn_ip_ap'
+
+[experiment]
+
+## Name of the chemex module corresponding to the experiment
+name = "coscest_1hn_ip_ap"
+
+## Recycle delay, in seconds
+d1 = 0.1
+
+## CEST relaxation delay, in seconds
+time_t1 = 0.5
+
+## Position of the carrier during the CEST period, in ppm
+carrier = 8.3
+
+## Cosine "spectral width", in Hz
+sw = 800.0
+
+## Number of excitation frequencies
+cos_n = 3
+
+## Number of points used to simulate the cosine-modulated shape
+# cos_res = 10
+
+## B1 radio-frequency field strength, in Hz
+b1_frq = 25.0
+
+## B1 inhomogeneity expressed as a fraction of 'b1_frq'. If set to "inf",
+## a faster calculation takes place assuming full dephasing of the
+## magnetization components orthogonal to the effective field. The "inf" value
+## should not be used with an "eta_block" value larger than 0.
+## [optional, default: 0.1]
+# b1_inh_scale = 0.1
+
+## Number of points used to simulate B1 inhomogeneity, the larger
+## the longer the calculation. [optional, default: 11]
+# b1_inh_res = 11
+
+## The number of CEST blocks for suppressing 1HN longitudinal differential
+## relaxation, only used in the new scheme with -Deta_flg option. If
+## such option is not used then just set to 0. [optional, default: 0]
+# eta_block = 0
+
+## State of the observed resonance [optional, default: "a"]
+# observed_state = "a"
+
+[conditions]
+
+## 1H Larmor frequency, in MHz
+h_larmor_frq = 800.0
+
+## Sample temperature, in Celsius [optional, depending on the kinetic model]
+# temperature = 25.0
+
+## Protein concentration, in M [optional, depending on the kinetic model]
+# p_total = 500.0e-6
+
+## Ligand concentration, in M [optional, depending on the kinetic model]
+# l_total = 50.0e-6
+
+[data]
+
+## Directory containing the profiles [optional, default: "./"]
+# path = "./"
+
+## Option defining how intensity uncertainties are estimated.
+## "file": uncertainties are taken from the profile files
+## "scatter": uncertainties are calculated from the baseline
+## [optional, default: "file"]
+# error = "file"
+
+## List of offsets relative to the main resonance position
+## (nu) and bandwidths (delta_nu) defining regions where
+## points are excluded from the calculation (nu +/- 0.5 * delta_nu),
+## both are in Hz [optional, default: [[0.0, 0.0]] ]
+# filter_offsets = [
+#   [0.0, 0.0],
+# ]
+
+## List of plane indices to be excluded from the calculation, 
+## the first plane has index 0 and is usually the reference plane.
+## [optional, default: [] ]
+# filter_planes = []
+
+## List of the profile names and their associated filenames.
+## The name of the spin systems should follow the Sparky-NMR
+## conventions.
+profiles = [
+    ["G2HN-N", "G2N-HN.out"],
+    ["H3HN-N", "H3N-HN.out"],
+    ["K4HN-N", "K4N-HN.out"],
+    ["S5HN-N", "S5N-HN.out"],
+    ["L6HN-N", "L6N-HN.out"],
+]
