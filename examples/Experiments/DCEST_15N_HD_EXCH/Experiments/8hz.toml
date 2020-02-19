@@ -2,8 +2,8 @@
 name         = "dcest_15n"
 time_t1      = 1.0
 carrier      = 118.000
-pw90_dante   = 96.0e-6
-sw_dante     = 160.0
+pw90         = 96.0e-6
+sw           = 160.0
 b1_frq       = 8.172
 b1_inh_res   = 5
 

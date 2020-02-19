@@ -12,10 +12,10 @@ time_t1 = 0.5
 carrier = 118.0
 
 ## Pulse width of a 90 pulse at the power used during the DANTE, in seconds
-pw90_dante = 45e-6
+pw90 = 45e-6
 
 ## DANTE "spectral width", in Hz
-sw_dante = 800.0
+sw = 800.0
 
 ## B1 radio-frequency field strength, in Hz
 b1_frq = 25.0

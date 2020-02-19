@@ -63,7 +63,7 @@ class CestProfile:
         self._pnames = pnames
         self.params = params
         self._plot = ccp.cest
-        self._sw_dante = getattr(self._pulse_seq, "sw_dante", None)
+        self._sw = getattr(self._pulse_seq, "sw", None)
         self._observed_state = getattr(self._pulse_seq, "observed_state", "a")
 
     @classmethod
@@ -147,11 +147,11 @@ class CestProfile:
         fnames = (self._pnames[name] for name in names if name in self._pnames)
         cs_values = np.array([params[fname] for fname in fnames])
         aliased = cs_values * 0.0
-        if self._sw_dante is not None:
+        if self._sw is not None:
             offset_min = min(self.data.points["offsets"][~self.data.refs])
             cs_offsets = self._pulse_seq.ppms_to_offsets(cs_values)
-            cs_alias = (cs_offsets - offset_min) % self._sw_dante + offset_min
-            aliased = (cs_offsets - offset_min) // self._sw_dante
+            cs_alias = (cs_offsets - offset_min) % self._sw + offset_min
+            aliased = (cs_offsets - offset_min) // self._sw
             cs_values = self._pulse_seq.offsets_to_ppms(cs_alias)
         return cs_values, aliased
 

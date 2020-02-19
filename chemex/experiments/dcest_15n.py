@@ -46,8 +46,8 @@ _SCHEMA = {
                 "time_t1": {"type": "number"},
                 "carrier": {"type": "number"},
                 "b1_frq": {"type": "number"},
-                "pw90_dante": {"type": "number"},
-                "sw_dante": {"type": "number"},
+                "pw90": {"type": "number"},
+                "sw": {"type": "number"},
                 "time_equil": {"type": "number", "default": 0.0},
                 "b1_inh_scale": {"type": "number", "default": 0.1},
                 "b1_inh_res": {"type": "integer", "default": 11},
@@ -57,7 +57,7 @@ _SCHEMA = {
                     "default": "a",
                 },
             },
-            "required": ["time_t1", "carrier", "b1_frq", "pw90_dante", "sw_dante"],
+            "required": ["time_t1", "carrier", "b1_frq", "pw90", "sw"],
         }
     },
 }
@@ -83,14 +83,12 @@ class PulseSeq:
         settings = config["experiment"]
         self.time_t1 = settings["time_t1"]
         self.prop.carrier_i = settings["carrier"]
-        self.sw_dante = settings["sw_dante"]
-        self.pw_dante = (
-            4.0 * settings["pw90_dante"] * settings["b1_frq"] / settings["sw_dante"]
-        )
+        self.sw = settings["sw"]
+        self.pw90 = 4.0 * settings["pw90"] * settings["b1_frq"] / settings["sw"]
         self.time_eq = settings["time_equil"]
-        self.tau_dante = 1.0 / settings["sw_dante"] - self.pw_dante
-        self.ncyc = int(settings["time_t1"] * settings["sw_dante"] + 0.1)
-        self.prop.b1_i = 1.0 / (4.0 * settings["pw90_dante"])
+        self.tau_dante = 1.0 / settings["sw"] - self.pw90
+        self.ncyc = int(settings["time_t1"] * settings["sw"] + 0.1)
+        self.prop.b1_i = 1.0 / (4.0 * settings["pw90"])
         self.prop.b1_i_inh_scale = settings["b1_inh_scale"]
         self.prop.b1_i_inh_res = settings["b1_inh_res"]
         if "13C" in config["conditions"].label:
@@ -118,7 +116,7 @@ class PulseSeq:
             if abs(offset) < 1e4:
                 self.prop.offset_i = offset
                 p_delay = self.prop.delays(self.tau_dante)
-                p_pulse = self.prop.pulse_i(self.pw_dante, 0.0)
+                p_pulse = self.prop.pulse_i(self.pw90, 0.0)
                 intst[offset] = (
                     d_eq @ la.matrix_power(p_pulse @ p_delay, self.ncyc) @ start
                 )
