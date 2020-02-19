@@ -619,8 +619,8 @@ def make_settings_4st_hd(conditions, spin_system):
 
 make_settings = {
     "2st": make_settings_2st,
-    "3st": make_settings_2st,
-    "4st": make_settings_2st,
+    "3st": make_settings_3st,
+    "4st": make_settings_4st,
     "2st_rs": make_settings_2st_rs,
     "2st_hd": make_settings_2st_hd,
     "2st_eyring": make_settings_2st_eyring,
