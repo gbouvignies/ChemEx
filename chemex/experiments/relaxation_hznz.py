@@ -20,7 +20,7 @@ Note
 
 A sample configuration file for this module is available using the command:
 
-    chemex config relaxation_nz
+    chemex config relaxation_hznz
 
 """
 import functools as ft
