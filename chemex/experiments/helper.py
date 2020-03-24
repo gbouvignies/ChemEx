@@ -107,6 +107,12 @@ _CONTAINERS = {
         "read": _read_profiles,
         "schema": ccce.CEST_SCHEMA,
     },
+    "coscest": {
+        "experiment": cce.RelaxationExperiment,
+        "profile": ccce.CestProfile,
+        "read": _read_profiles,
+        "schema": ccce.CEST_SCHEMA,
+    },
     "cpmg": {
         "experiment": cce.RelaxationExperiment,
         "profile": cccp.CpmgProfile,

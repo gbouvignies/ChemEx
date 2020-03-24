@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 SELECTION="48 61 114 115 147 151"
 
