@@ -1,0 +1,18 @@
+[experiment]
+name         = "relaxation_hznz"
+
+[conditions]
+h_larmor_frq = 800.0
+# sample = "synthetic datasets"
+# temperature = 25.0
+
+[data]
+path = "../Data/800MHz/"
+error = "file"
+profiles = [
+    ["G2N-HN", "G2N-HN.out"],
+    ["H3N-HN", "H3N-HN.out"],
+    ["K4N-HN", "K4N-HN.out"],
+    ["S5N-HN", "S5N-HN.out"],
+    ["L6N-HN", "L6N-HN.out"],
+]

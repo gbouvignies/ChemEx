@@ -54,7 +54,7 @@ def read(config):
 
 def _fit_this(config):
     return {
-        "rates": ["r1_i_{observed_state}", "r1a_is_{observed_state}"],
+        "rates": ["r1a_is_{observed_state}"],
         "model_free": [
             "tauc_{observed_state}",
             "s2_{observed_state}",
