@@ -1,2 +1,4 @@
 [DEFAULT]
-PB     = "fix"
+INCLUDE = ["L24HD2", "L25HD1", "V30HG1", "V30HG2", "M40HE", "I44HD1", "L52HD1", "L52HD2", "L55HD1", "L55HD2"]
+PB      = "fit"
+KEX_AB  = "fit"
