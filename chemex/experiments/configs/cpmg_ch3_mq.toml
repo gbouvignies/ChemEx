@@ -6,7 +6,7 @@
 name = "cpmg_ch3_mq"
 
 ## CPMG relaxation delay, in seconds
-time_t2 = 0.04
+time_t2 = 0.02
 
 ## Perform the calculation with the purge element [optional, default: false])
 # small_protein = false
@@ -30,19 +30,23 @@ h_larmor_frq = 800.0
 
 [data]
 
+## Directory containing the profiles [optional, default: "./"]
+# path = "./"
+
 ## Option defining how intensity uncertainties are estimated.
 ## "file": uncertainties are taken from the profile files
 ## "duplicates": uncertainties are calculated from the duplicate points
 ## [optional, default: "file"]
 # error = "file"
 
-## Directory containing the profiles [optional, default: "./"]
-# path = "./"
-
 ## List of the profile names and their associated filenames.
 ## The name of the spin systems should follow the Sparky-NMR
 ## conventions.
 profiles = [
-  ["L18CD2-QD2", "L18CD2-QD2.out"],
-  ["M109CE-QE", "M109CE-QE.out"],
+    ["L3CD1-HD1", "L3CD1-QD1.out"],
+    ["L3CD2-HD2", "L3CD2-QD2.out"],
+    ["I12CD1-HD1", "I12CD1-QD1.out"],
+    ["V25CG1-HG1", "V25CG1-QG1.out"],
+    ["V25CG2-HG2", "V25CG2-QG2.out"],
+    ["M36CE-HE", "M36CE-QE.out"],
 ]
