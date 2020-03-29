@@ -18,6 +18,6 @@ profiles = [
     ["L77CD2-HD2", "L77CD2-QD2.out"],
     ["L97CD2-HD2", "L97CD2-QD2.out"],
     ["L98CD1-HD1", "L98CD1-QD1.out"],
-    ["L98CD2-HD1", "L98CD2-QD1.out"],
+    ["L98CD2-HD2", "L98CD2-QD2.out"],
     ["L99CD1-HD1", "L99CD1-QD1.out"],
 ]
