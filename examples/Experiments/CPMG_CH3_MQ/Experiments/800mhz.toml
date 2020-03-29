@@ -4,7 +4,7 @@ time_t2       = 18.0e-3
 small_protein = true
 
 [conditions]
-h_larmor_frq  = 800.301
+h_larmor_frq  = 800.3
 # sample = "NCP H2B double mutant (H3A98H/H4Y98H), pH 6.0"
 # temperature = 45.0
 
