@@ -1,2 +1,7 @@
-[DEFAULT]
-"DW_AB, NUC->H" = "fix"
+[STEP1]
+PB      = "fix"
+KEX_AB  = "fix"
+
+[STEP2]
+PB      = "fit"
+KEX_AB  = "fit"

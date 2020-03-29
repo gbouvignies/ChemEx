@@ -1,16 +1,23 @@
 [experiment]
 name          = "cpmg_ch3_mq"
-time_t2       = 30.0e-3
+time_t2       = 18.0e-3
 small_protein = true
 
 [conditions]
-h_larmor_frq  = 600.0
+h_larmor_frq  = 600.25
+# sample = "NCP H2B double mutant (H3A98H/H4Y98H), pH 6.0"
+# temperature = 45.0
 
 [data]
 path = "../Data/600MHz/"
 error = "duplicates"
 profiles = [
-  ["I125CD1-I125HD1", "I125CD1-I125QD1.out"],
-  ["M145CE-M145HE", "M145CE-M145QE.out"],
-  ["M71CE-M71HE", "M71CE-M71QE.out"],
+    ["V45CG2-HG2", "V45CG2-QG2.out"],
+    ["I58CD1-HD1", "I58CD1-QD1.out"],
+    ["I66CD1-HD1", "I66CD1-QD1.out"],
+    ["L77CD2-HD2", "L77CD2-QD2.out"],
+    ["L97CD2-HD2", "L97CD2-QD2.out"],
+    ["L98CD1-HD1", "L98CD1-QD1.out"],
+    ["L98CD2-HD1", "L98CD2-QD1.out"],
+    ["L99CD1-HD1", "L99CD1-QD1.out"],
 ]

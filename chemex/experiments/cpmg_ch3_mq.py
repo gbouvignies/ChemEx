@@ -18,7 +18,7 @@ found in the reference and can be run with either small_protein_flag='y' or 'n'.
 
 Reference
 ---------
-Korzhnev et al. Journal of the American Chemical Society (2004), 126, 3964-73
+Korzhnev, Kloiber, Kanelis, Tugarinov and Kay. J Am Chem Soc (2004) 126:3964-3973
 
 Note
 ----
