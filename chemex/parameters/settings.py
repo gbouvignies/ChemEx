@@ -242,7 +242,8 @@ def _param_to_string(param):
         comments.append("fixed")
     if comments:
         comments_fmtd = f" ({'; '.join(comments)})"
-    string_ = f"{param.value: .5e}"
+    value = param.value if param.value != 0.0 else 0.0
+    string_ = f"{value: .5e}"
     if error or comments_fmtd:
         string_ += f" #{error}{comments_fmtd}"
     return string_
