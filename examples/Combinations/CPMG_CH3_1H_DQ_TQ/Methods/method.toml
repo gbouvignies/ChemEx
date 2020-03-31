@@ -1,0 +1,10 @@
+[STEP1]
+PB      = "fix"
+KEX_AB  = "fix"
+DW_AB   = "fit"
+R2ADQ_A = "R2DQ_A - R1_A/3"
+R2ADQ_B = "R2DQ_B - R1_B/3"
+
+[STEP2]
+PB      = "fit"
+KEX_AB  = "fit"
