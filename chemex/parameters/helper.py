@@ -33,31 +33,33 @@ def create_params(config, propagator):
 
     # Create settings for the parameters of the models
     settings_k = cpk.make_settings[model.name](conditions, spin_system)
-    settings_l, settings_mf_l = cpl.make_settings(basis, model, conditions)
-    settings_mf = {**settings_k, **settings_mf_l}
-    settings = {**settings_k, **settings_l}
+    settings_l, settings_l_mf = cpl.make_settings(basis, model, conditions)
 
-    # Create standard parameters from settings including model free parameters
-    _set_to_fit(settings_mf_l, model, observed_state, config["fit"]["model_free"])
-    settings_mf_min, settings_mf_max = _get_settings(settings_mf, propagator)
-    pnames = cpn.get_pnames(settings_mf_min, conditions, spin_system)
-    params_mf = _settings_to_params(settings_mf_max, conditions, spin_system)
+    if model.model_free:
+        settings_l = settings_l_mf
+        fitted = config["fit"]["model_free"]
+    else:
+        fitted = config["fit"]["rates"]
+
+    settings = {**settings_k, **settings_l}
+    _set_to_fit(settings, model, observed_state, fitted)
+    settings_min, settings_max = _get_settings(settings, propagator)
+    pnames = cpn.get_pnames(settings_min, conditions, spin_system)
+
+    # Create standard parameters from settings
+    params = _settings_to_params(settings_max, conditions, spin_system)
+
+    # Create the model free parameters
+    params_mf = _settings_to_params(settings_l_mf, conditions, spin_system)
 
     # Initialize parameters values using the parameter.toml file
     cps.set_values(params_mf, config["defaults"])
 
-    if model.model_free:
-        return pnames, params_mf
-
-    # Create standard parameters from settings
-    _set_to_fit(settings_l, model, observed_state, config["fit"]["rates"])
-    settings_min, settings_max = _get_settings(settings, propagator)
-    params = _settings_to_params(settings_max, conditions, spin_system)
-
-    # Initialize parameters values using the model-free values and
-    # the parameter.toml file
+    # Set parameters values using the model-free values
     for pname in set(params) & set(params_mf):
         params[pname].value = params_mf[pname].value
+
+    # Set parameters values using the parameter.toml file
     cps.set_values(params, config["defaults"])
 
     return pnames, params
