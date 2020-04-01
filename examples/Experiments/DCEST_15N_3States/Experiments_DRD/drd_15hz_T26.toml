@@ -1,0 +1,21 @@
+[experiment]
+name         = "dcest_15n"
+time_t1      = 0.5
+carrier      = 119.699
+b1_frq       = 15.0
+b1_inh_res   = 3
+sw           = 226.47
+pw90         = 78.0e-6
+
+[conditions]
+h_larmor_frq = 700.193
+# sample = "T4 lysozyme"
+# temperature = 50.0
+
+[data]
+path = "../Data/DRD_15Hz/"
+error = "file"
+filter_offsets = [[0.0, 15.0]]
+profiles = [
+    ["T26N", "T26N-HN.out"],
+]
