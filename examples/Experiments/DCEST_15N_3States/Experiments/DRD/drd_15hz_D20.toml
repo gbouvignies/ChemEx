@@ -2,9 +2,9 @@
 name         = "dcest_15n"
 time_t1      = 0.5
 carrier      = 119.699
-b1_frq       = 15.16
+b1_frq       = 15.21
 b1_inh_res   = 3
-sw           = 257.44
+sw           = 408.0
 pw90         = 78.0e-6
 
 [conditions]
@@ -13,9 +13,9 @@ h_larmor_frq = 700.193
 # temperature = 50.0
 
 [data]
-path = "../Data/DRD_15Hz/"
+path = "../../Data/DRD_15Hz/"
 error = "file"
 filter_offsets = [[0.0, 15.0]]
 profiles = [
-    ["K35N", "K35N-HN.out"],
+    ["D20N", "D20N-HN.out"],
 ]
