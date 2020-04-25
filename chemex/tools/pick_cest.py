@@ -20,7 +20,7 @@ def pick_cest(args):
         )
 
     # Read experimental setup and data
-    model = cpk.parse_model(name="2st.pb_kex")
+    model = cpk.parse_model(name="2st")
     # Read experimental setup and data
     experiment = ce.read(filename=args.experiments.pop(), model=model)
 

@@ -9,6 +9,7 @@ pw90         = 36.2e-6
 
 [conditions]
 h_larmor_frq = 1000.29992943
+# p_total    = 1.5e-3
 # sample = "G48A Fyn SH3"
 # temperature = 25.0
 

@@ -2,23 +2,24 @@
 15N T1
 ======
 
-Analyzes 15N T1 experiments. This keeps the spin system purely in-phase throughout, and
-is calculated using the (1n)x(1n), single spin matrix, where n is the number
-of states:
+Analyzes 15N T1 experiments. This keeps the spin system purely in-phase 
+throughout, and is calculated using the (1n)×(1n), single-spin matrix, 
+where n is the number of states::
 
-[ Iz(a), Iz(b), ... ]
+    { Iz(a), Iz(b), ... }
 
-Reference
----------
+References
+----------
 
 TODO
+
 
 Note
 ----
 
-A sample configuration file for this module is available using the command:
+A sample configuration file for this module is available using the command::
 
-    chemex config relaxation_nz
+    $ chemex config relaxation_nz
 
 """
 import functools as ft

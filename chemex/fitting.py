@@ -190,9 +190,10 @@ def _write_files(experiments, params, path):
     """Write the results of the fit to output files.
 
     The files below are created and contain the following information:
+
       - parameters.toml: fitting parameters and their uncertainties
       - contstraints.fit: expression used for constraining parameters
-      - *.dat: experimental and fitted data
+      - \*.dat: experimental and fitted data
       - statistics.fit: statistics for the fit
 
     """

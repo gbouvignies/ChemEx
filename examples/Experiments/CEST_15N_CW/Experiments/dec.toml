@@ -9,6 +9,7 @@ b1_inh_scale = inf
 
 [conditions]
 h_larmor_frq = 598.8165859
+# p_total    = 2.0e-3
 # sample = "A39G FF domain"
 # temperature = 1.0
 

@@ -5,6 +5,7 @@ small_protein = true
 
 [conditions]
 h_larmor_frq  = 600.25
+# p_total     = 150e-6
 # sample = "NCP H2B double mutant (H3A98H/H4Y98H), pH 6.0"
 # temperature = 45.0
 

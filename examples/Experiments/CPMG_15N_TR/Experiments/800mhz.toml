@@ -8,6 +8,7 @@ time_equil   = 2.0e-3
 [conditions]
 h_larmor_frq = 800.0
 label        = ["2H"]
+# p_total    = 1.3e-3
 # sample = "Abp1p SH3 bound with Ark1p peptide (6.8% bound)"
 # temperature = 25.0
 

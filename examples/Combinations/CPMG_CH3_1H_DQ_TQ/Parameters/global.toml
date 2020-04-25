@@ -1,10 +1,10 @@
 [GLOBAL]
-PB     = 2.0e-2
-KEX_AB = 1.0e+3
-R1DQ_A = 1.5
-R2DQ_A = 20.0
-R1TQ_A = 1.5
-R2TQ_A = 10.0
-R1_A   = 1.5
-DW_AB  = 0.1
-J_A    = 125
+PB      = 2.0e-2
+KEX_AB  = 1.0e+3
+R1DQ_A  = 1.5
+R2DQ_A  = 20.0
+R1TQ_A  = 1.5
+R2TQ_A  = 10.0
+R1_A    = 1.5
+DW_AB   = 0.1
+J_A     = 125

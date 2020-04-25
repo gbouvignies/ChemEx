@@ -4,6 +4,6 @@ PB        = "fit"
 KEX_AB    = "fit"
 
 [STEP2]
-INCLUDE   = "*"
+INCLUDE   = "all"
 PB        = "fix"
 KEX_AB    = "fix"

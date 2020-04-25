@@ -8,6 +8,7 @@ antitrosy    = true
 
 [conditions]
 h_larmor_frq = 598.806
+# p_total    = 1.5e-3
 # sample = "G48A Fyn SH3 (pH 7.65)"
 # temperature = 25.0
 
@@ -37,7 +38,7 @@ profiles = [
     ["K22N-HN", "K22N-HN.out"],
     ["G23N-HN", "G23N-HN.out"],
     ["E24N-HN", "E24N-HN.out"],
-    # ["K25N-HN", "K25N-HN.out"],
+#   ["K25N-HN", "K25N-HN.out"],
     ["F26N-HN", "F26N-HN.out"],
     ["Q27N-HN", "Q27N-HN.out"],
     ["I28N-HN", "I28N-HN.out"],
@@ -50,12 +51,12 @@ profiles = [
     ["W36N-HN", "W36N-HN.out"],
     ["E38N-HN", "E38N-HN.out"],
     ["A39N-HN", "A39N-HN.out"],
-    # ["R40N-HN", "R40N-HN.out"],
+#   ["R40N-HN", "R40N-HN.out"],
     ["S41N-HN", "S41N-HN.out"],
     ["L42N-HN", "L42N-HN.out"],
     ["T43N-HN", "T43N-HN.out"],
     ["T44N-HN", "T44N-HN.out"],
-    # ["G45N-HN", "G45N-HN.out"],
+#   ["G45N-HN", "G45N-HN.out"],
     ["E46N-HN", "E46N-HN.out"],
     ["T47N-HN", "T47N-HN.out"],
     ["A48N-HN", "A48N-HN.out"],

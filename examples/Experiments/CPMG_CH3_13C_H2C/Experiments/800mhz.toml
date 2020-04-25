@@ -7,6 +7,7 @@ pw90         = 13.6e-6
 
 [conditions]
 h_larmor_frq = 800.2
+# p_total    = 1.5e-3
 # sample = "wild-type FF domain"
 # temperature = 25.0
 

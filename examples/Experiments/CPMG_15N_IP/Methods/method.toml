@@ -1,9 +1,9 @@
 [STEP1]
-INCLUDE   = [15, 30, 31, 32, 33, 34, 37]
-PB        = "fit"
-KEX_AB    = "fit"
+INCLUDE  = [15, 30, 31, 32, 33, 34, 37]
+PB       = "fit"
+KEX_AB   = "fit"
 
 [STEP2]
-INCLUDE   = "*"
-PB        = "fix"
-KEX_AB    = "fix"
+INCLUDE  = "all"
+PB       = "fix"
+KEX_AB   = "fix"

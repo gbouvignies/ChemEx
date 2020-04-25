@@ -7,6 +7,8 @@ time_equil   = 0.002
 
 [conditions]
 h_larmor_frq = 799.708
+# p_total    = 1.5e-3
+# sample = "L99A/G113A/R119P T4 lysozyme"
 # temperature  = 20.5
 
 [data]

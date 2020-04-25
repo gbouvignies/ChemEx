@@ -9,6 +9,7 @@ time_equil   = 5.0e-3
 [conditions]
 h_larmor_frq = 600.25
 label        = ["2H"]
+# p_total    = 1.35e-3
 # sample = "G48A Fyn SH3"
 # temperature = 25.0
 

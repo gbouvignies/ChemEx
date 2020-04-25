@@ -8,6 +8,7 @@ ipap_flg     = false
 
 [conditions]
 h_larmor_frq = 799.682
+# p_total    = 1.5e-3
 # sample = "wild-type FF domain"
 # temperature = 25.0
 

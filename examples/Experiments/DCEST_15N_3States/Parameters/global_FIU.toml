@@ -1,7 +1,7 @@
 [GLOBAL]
-PB     =    0.03
-PC     =    0.03
-KEX_AB =   10.0
-KEX_AC =    0.0
-KEX_BC =   10.0
-TAUC_A =    4.0
+PB      =    0.03
+PC      =    0.03
+KEX_AB  =   10.0
+KEX_AC  =    0.0
+KEX_BC  =   10.0
+TAUC_A  =    4.0
