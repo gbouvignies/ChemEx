@@ -1,9 +1,9 @@
 [STEP1]
-INCLUDE = [486, 488, 489, 490, 491, 492, 493, 494, 495, 496, 497, 498, 499]
-KOFF = "fit"
-KD   = "fix"
-R2_B = "fit"
+INCLUDE  = [486, 488, 489, 490, 491, 492, 493, 494, 495, 496, 497, 498, 499]
+KOFF     = "fit"
+KD       = "fix"
+R2_B     = "fit"
 
 [STEP2]
-INCLUDE = "*"
-KOFF = "fix"
+INCLUDE  = "all"
+KOFF     = "fix"

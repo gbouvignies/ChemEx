@@ -1,13 +1,13 @@
 [STEP1]
-INCLUDE = ["L24HD2", "L25HD1", "V30HG1", "V30HG2", "M40HE", "I44HD1", "L52HD1", "L52HD2", "L55HD1", "L55HD2"]
-PB      = "fix"
-KEX_AB  = "fix"
+INCLUDE  = ["L24HD2", "L25HD1", "V30HG1", "V30HG2", "M40HE", "I44HD1", "L52HD1", "L52HD2", "L55HD1", "L55HD2"]
+PB       = "fix"
+KEX_AB   = "fix"
 
 [STEP2]
-PB      = "fit"
-KEX_AB  = "fit"
+PB       = "fit"
+KEX_AB   = "fit"
 
 [STEP3]
-INCLUDE = "*"
-PB      = "fix"
-KEX_AB  = "fix"
+INCLUDE  = "all"
+PB       = "fix"
+KEX_AB   = "fix"

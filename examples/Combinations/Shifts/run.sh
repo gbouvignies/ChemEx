@@ -1,6 +1,8 @@
 #!/bin/sh
 
-chemex fit -e Experiments/cp*.toml Experiments/sqmq*.toml \
+SELECTION="11 29 85 108 112 113 116 117 134 135 136 139"
+
+chemex fit -e Experiments/*.toml \
            -p Parameters/*.toml \
-           --include 11 29 85 108 112 113 116 117 134 135 136 139 \
+           --include $SELECTION \
            -o Output

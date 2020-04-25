@@ -10,6 +10,7 @@ b1_inh_res   = 5
 [conditions]
 h_larmor_frq = 800.2
 d2o          = 0.1
+# p_total    = 1.8e-3
 # sample = "CtoS Ddx4 (condensed phase)"
 # temperature = 30.0
 
@@ -34,7 +35,7 @@ profiles = [
     ["14N", "14N-HN.out"],
     ["15N", "15N-HN.out"],
     ["17N", "17N-HN.out"],
-    # ["18N", "18N-HN.out"],
+#   ["18N", "18N-HN.out"],
     ["20N", "20N-HN.out"],
     ["21N", "21N-HN.out"],
     ["22N", "22N-HN.out"],
@@ -129,7 +130,7 @@ profiles = [
     ["112N", "112N-HN.out"],
     ["113N", "113N-HN.out"],
     ["114N", "114N-HN.out"],
-    # ["115N", "115N-HN.out"],
+#   ["115N", "115N-HN.out"],
     ["116N", "116N-HN.out"],
     ["117N", "117N-HN.out"],
     ["118N", "118N-HN.out"],

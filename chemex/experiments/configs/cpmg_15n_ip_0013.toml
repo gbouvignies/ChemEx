@@ -38,6 +38,11 @@ h_larmor_frq = 800.0
 ## Ligand concentration, in M [optional, depending on the kinetic model]
 # l_total = 50.0e-6
 
+## Labeling scheme of the sample, for deuterated samples "2H" should 
+## be used to obtain accurate initial estimates of relaxation rates
+## based on model-free parameters [optional, default: []]
+# label = ["2H"]
+
 [data]
 
 ## Directory containing the profiles [optional, default: "./"]
@@ -53,9 +58,9 @@ h_larmor_frq = 800.0
 ## The name of the spin systems should follow the Sparky-NMR
 ## conventions.
 profiles = [
-    ["G2N", "G2N-H.out"],
-    ["H3N", "H3N-H.out"],
-    ["K4N", "K4N-H.out"],
-    ["S5N", "S5N-H.out"],
-    ["L6N", "L6N-H.out"],
+    ["G2N", "G2N-HN.out"],
+    ["H3N", "H3N-HN.out"],
+    ["K4N", "K4N-HN.out"],
+    ["S5N", "S5N-HN.out"],
+    ["L6N", "L6N-HN.out"],
 ]

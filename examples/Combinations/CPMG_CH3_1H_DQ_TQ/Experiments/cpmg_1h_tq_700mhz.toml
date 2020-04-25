@@ -8,12 +8,13 @@ ipap_flg     = false
 
 [conditions]
 h_larmor_frq = 700.193
+# p_total    = 1.5e-3
 # sample = "L99A T4 lysozyme"
 # temperature = 22.0
 
 [data]
 path = "../Data/CPMG_1H_TQ_700MHz/"
-#error = "duplicates"
+# error = "duplicates"
 profiles = [
     ["I3HD1-CD1", "I3CD1-QD1.out"],
     ["L7HD2-CD2", "L7CD2-QD2.out"],

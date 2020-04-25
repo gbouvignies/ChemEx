@@ -8,6 +8,7 @@ b1_inh_scale = inf
 [conditions]
 h_larmor_frq = 598.813731811
 label        = ["13C"]
+# p_total    = 2.0e-3
 # sample = "G48A Fyn SH3"
 # temperature = 25.0
 

@@ -1,12 +1,14 @@
 """ The ref module contains the reference matrices and code for calculating the
     Liouvillian.
 
-    Operator basis:
-       {Eq,
-        Ix, Iy, Iz, Sx, Sy, Sz,
-        2IxSz, 2IySz, 2IzSx, 2IzSy,
-        2IxSx, 2IxSy, 2IySx, 2IySy,
-        2IzSz}
+    Operator basis::
+
+       { Eq,
+         Ix, Iy, Iz, Sx, Sy, Sz,
+         2IxSz, 2IySz, 2IzSx, 2IzSy,
+         2IxSx, 2IxSy, 2IySx, 2IySy,
+         2IzSz }
+
 """
 import dataclasses as dc
 import itertools as it

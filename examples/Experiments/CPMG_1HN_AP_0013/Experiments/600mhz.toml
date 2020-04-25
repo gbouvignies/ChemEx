@@ -9,6 +9,7 @@ pw_eburp     = 1.824e-3
 
 [conditions]
 h_larmor_frq = 600.25
+# p_total    = 1.0e-3
 # sample = "L99A T4 lysozyme"
 # temperature = 25.0
 

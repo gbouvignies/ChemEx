@@ -54,6 +54,11 @@ h_larmor_frq = 800.0
 ## Ligand concentration, in M [optional, depending on the kinetic model]
 # l_total = 50.0e-6
 
+## Labeling scheme of the sample, for deuterated samples "2H" should 
+## be used to obtain accurate initial estimates of relaxation rates
+## based on model-free parameters [optional, default: []]
+# label = ["2H"]
+
 [data]
 
 ## Directory containing the profiles [optional, default: "./"]
@@ -73,9 +78,9 @@ h_larmor_frq = 800.0
 #   [0.0, 0.0],
 # ]
 
-## List of plane indices to be excluded from the calculation, 
-## the first plane has index 0 and is usually the reference plane.
-## [optional, default: [] ]
+## List of plane indices to be excluded from the calculation. 
+## The first plane has index 0 and is usually the reference plane,
+## this plane is always excluded by default [optional, default: [] ]
 # filter_planes = []
 
 ## List of the profile names and their associated filenames.

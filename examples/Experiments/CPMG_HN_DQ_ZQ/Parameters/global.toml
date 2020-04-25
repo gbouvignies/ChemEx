@@ -1,4 +1,4 @@
 [GLOBAL]
-PB     =   0.08
-KEX_AB = 100.0
-TAUC_A =   4.0
+PB      =   0.08
+KEX_AB  = 100.0
+TAUC_A  =   4.0

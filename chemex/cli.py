@@ -40,7 +40,7 @@ def build_parser():
     # parser for the positional argument "info"
     info_parser = commands.add_parser(
         "info",
-        help="Shows experiments that can be fit",
+        help="Show experiments that can be fit",
         description="Enter the name of an experiment to obtain more info about it.",
     )
 
@@ -61,7 +61,7 @@ def build_parser():
     # parser for the positional argument "info"
     config_parser = commands.add_parser(
         "config",
-        help="Shows sample configuration files of the modules",
+        help="Show sample configuration files of the modules",
         description="Enter the name of an experiment to obtain the associated sample "
         "configuration file.",
     )
@@ -85,7 +85,7 @@ def build_parser():
         )
 
     # parser for the positional argument "fit"
-    fit_parser = commands.add_parser("fit", help="Starts a fit")
+    fit_parser = commands.add_parser("fit", help="Start a fit")
 
     fit_parser.set_defaults(func=cc.fit)
 
@@ -106,7 +106,7 @@ def build_parser():
         metavar="FILE",
         nargs="+",
         required=True,
-        help="Input file containing the initial values of fitting parameters",
+        help="Input files containing the initial values of fitting parameters",
     )
 
     fit_parser.add_argument(
@@ -130,7 +130,7 @@ def build_parser():
         "-d",
         dest="model",
         metavar="MODEL",
-        default="2st.pb_kex",
+        default="2st",
         help="Exchange model used to fit the data",
     )
 
@@ -169,7 +169,7 @@ def build_parser():
     )
 
     # parser for the positional argument "simulate"
-    simulate_parser = commands.add_parser("simulate", help="Starts a simulation")
+    simulate_parser = commands.add_parser("simulate", help="Start a simulation")
 
     simulate_parser.set_defaults(func=cc.simulate)
 
@@ -190,7 +190,7 @@ def build_parser():
         metavar="FILE",
         nargs="+",
         required=True,
-        help="Input file containing the initial values of fitting parameters",
+        help="Input files containing the initial values of fitting parameters",
     )
 
     simulate_parser.add_argument(
@@ -206,7 +206,7 @@ def build_parser():
         "-d",
         dest="model",
         metavar="MODEL",
-        default="2st.pb_kex",
+        default="2st",
         help="Exchange model used to fit the data",
     )
 
@@ -267,7 +267,7 @@ def build_parser():
         type=pathlib.Path,
         metavar="FILE",
         required=True,
-        help="Input file containing the initial values of fitting parameters",
+        help="Output files containing the fitting parameters to be plotted",
     )
 
     plot_param_parser.add_argument(

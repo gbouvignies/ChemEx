@@ -1,5 +1,5 @@
 [GLOBAL]
-PB     =    0.02
-KEX_AB = 4000.0
-DW_AB  =    0.05
-TAUC_A =   10.0
+PB      =    0.02
+KEX_AB  = 4000.0
+DW_AB   =    0.05
+TAUC_A  =   10.0

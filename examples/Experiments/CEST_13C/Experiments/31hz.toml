@@ -6,6 +6,7 @@ b1_frq       = 31.0
 
 [conditions]
 h_larmor_frq = 598.826355
+# p_total    = 1.0e-3
 # sample = "G48M Fyn SH3"
 # temperature = 5.0
 

@@ -10,6 +10,7 @@ dq_flg       = false
 [conditions]
 h_larmor_frq = 800.2
 label        = ["2H"]
+# p_total    = 1.35e-3
 # sample = "G48A Fyn SH3"
 # temperature = 25.0
 

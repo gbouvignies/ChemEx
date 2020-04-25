@@ -7,6 +7,7 @@ pw90         = 11.425e-6
 [conditions]
 h_larmor_frq = 799.727
 label        = ["2H"]
+# p_total    = 1.5e-3
 # sample = "L99A T4 lysozyme"
 # temperature = 25.0
 

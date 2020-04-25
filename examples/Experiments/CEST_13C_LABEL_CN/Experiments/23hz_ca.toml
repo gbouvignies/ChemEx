@@ -8,6 +8,7 @@ b1_inh_scale = inf
 [conditions]
 h_larmor_frq = 598.813731811
 label        = ["13C"]
+# p_total    = 2.0e-3
 # sample = "G48A Fyn SH3"
 # temperature = 25.0
 
@@ -16,7 +17,7 @@ path = "../Data/23Hz/"
 error = "scatter"
 filter_offsets = [[0.0, 50.0]]
 profiles = [
-    ["L18CA-HA", "L18CA-HA.out"],
-    ["K25CA-HA", "K25CA-HA.out"],
-    ["I28CA-HA", "I28CA-HA.out"],
+    ["L18CA", "L18CA-HA.out"],
+    ["K25CA", "K25CA-HA.out"],
+    ["I28CA", "I28CA-HA.out"],
 ]

@@ -1,13 +1,12 @@
 """
-15N - (15N–1HN) HSQC/HMQC exchange induced shifts
-=================================================
+15N Exchange Induced Shifts with (15N–1HN) HSQC/HMQC
+====================================================
 
-Analyzes exchange induced 15N chemical shift changes measured in (15N–1HN) HMQC and HSQC
-data sets.
+Analyzes exchange induced 15N chemical shift changes measured in 
+(15N–1HN) HMQC and HSQC data sets.
 
-
-Reference
----------
+References
+----------
 
 Vallurupalli, Bouvignies and Kay. J Phys Chem B (2011) 115:14891-14900
 
@@ -15,9 +14,9 @@ Vallurupalli, Bouvignies and Kay. J Phys Chem B (2011) 115:14891-14900
 Note
 ----
 
-A sample configuration file for this module is available using the command:
+A sample configuration file for this module is available using the command::
 
-    chemex config shift_15n_sqmq
+    $ chemex config shift_15n_sqmq
 
 """
 import functools as ft

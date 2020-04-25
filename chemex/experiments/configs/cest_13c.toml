@@ -41,6 +41,11 @@ h_larmor_frq = 800.0
 ## Ligand concentration, in M [optional, depending on the kinetic model]
 # l_total = 50.0e-6
 
+## Labeling scheme of the sample, for uniformly 13C-labeled samples "13C"
+## should be used to account for 1JCC properly, note that 15N labeling
+## is always assumed in this experiment [optional, default: []]
+# label = ["13C"]
+
 [data]
 
 ## Directory containing the profiles [optional, default: "./"]
@@ -72,5 +77,6 @@ profiles = [
     ["K4CD", "K4CD-HD3.out"],
     ["S5CB", "S5CB-HB2.out"],
     ["S5CB", "S5CB-HB3.out"],
-    ["L6CD1-HD1", "L6CD1-QD1.out"],
+    ["L6CA", "L6CA-HA.out"],
+    ["L6CD1", "L6CD1-QD1.out"],
 ]
