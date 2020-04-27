@@ -91,3 +91,10 @@ examples/**/Output*
 
 # sandbox
 sandbox/
+
+# vim swap files
+*.swp
+*.*~
+
+# Documentation intermediates
+docs/source/modules/*/_autosummary/
