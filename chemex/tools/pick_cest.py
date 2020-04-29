@@ -4,7 +4,7 @@ import sys
 import matplotlib.pyplot as plt
 import matplotlib.widgets as mw
 import numpy as np
-from scipy import interpolate
+import scipy.interpolate as si
 
 import chemex.experiments as ce
 import chemex.parameters.kinetics as cpk
@@ -32,14 +32,18 @@ def pick_cest(args):
 
     callback = Buttons(experiment, args.out_dir)
 
-    axprevious = plt.axes([0.825, 0.1, 0.075, 0.075])
-    axnext = plt.axes([0.9, 0.1, 0.075, 0.075])
+    axprevious = plt.axes([0.825, 0.2, 0.075, 0.075])
+    axnext = plt.axes([0.9, 0.2, 0.075, 0.075])
+    axclose = plt.axes([0.825, 0.1, 0.15, 0.075])
 
     bprevious = mw.Button(axprevious, "Previous")
     bprevious.on_clicked(callback.previous)
 
     bnext = mw.Button(axnext, "Next")
     bnext.on_clicked(callback.next)
+
+    bnext = mw.Button(axclose, "Quit")
+    bnext.on_clicked(callback.close)
 
     plt.show()
 
@@ -52,7 +56,7 @@ class Buttons:
 
     def __init__(self, data, path):
 
-        self.data = list(data._profiles.values())
+        self.data = data._profiles
         self.out = path
 
         self.names = sorted(
@@ -75,6 +79,9 @@ class Buttons:
 
     def next(self, event):
         self._shift(+1)
+
+    def close(self, event):
+        plt.close()
 
     def _shift(self, step):
         self.index += step
@@ -111,10 +118,12 @@ class Buttons:
 
     def _profile_to_curve(self):
         profile = self._profile
-        data_exp, _data_fit = profile._get_plot_data(profile.params_default)
-        spline = interpolate.CubicSpline(data_exp["ppms"], data_exp["intensities"])
+        data_exp = profile._get_plot_data_exp()
+        _, indices = np.unique(data_exp["ppms"], return_index=True)
+        spline = si.CubicSpline(
+            data_exp["ppms"][indices], data_exp["intensities"][indices]
+        )
         fine_offsets = np.linspace(min(data_exp["ppms"]), max(data_exp["ppms"]), 1000)
-
         self.curve = {
             "x": data_exp["ppms"],
             "y": data_exp["intensities"],

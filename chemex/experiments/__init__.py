@@ -9,7 +9,11 @@ import chemex.experiments.configs as cec
 import chemex.helper as ch
 
 
-def read(filename, model, selection, defaults):
+def read(filename, model, selection=None, defaults=None):
+    if selection is None:
+        selection = {"include": None, "exclude": None}
+    if defaults is None:
+        defaults = {}
     config = ch.read_toml(filename)
     config["filename"] = pl.Path(filename)
     config["model"] = model
