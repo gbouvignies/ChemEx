@@ -42,8 +42,8 @@ def pick_cest(args):
     bnext = mw.Button(axnext, "Next")
     bnext.on_clicked(callback.next)
 
-    bnext = mw.Button(axclose, "Quit")
-    bnext.on_clicked(callback.close)
+    bclose = mw.Button(axclose, "Quit")
+    bclose.on_clicked(callback.close)
 
     plt.show()
 
@@ -194,15 +194,15 @@ class Buttons:
 
         self.out.mkdir(parents=True, exist_ok=True)
 
-        fname1 = self.out / "cs_a.txt"
-        fname2 = self.out / "cs_b.txt"
-        fname3 = self.out / "dw_ab.txt"
+        fname1 = self.out / "cs_a.toml"
+        fname2 = self.out / "dw_ab.toml"
 
         with contextlib.ExitStack() as stack:
 
             file1 = stack.enter_context(fname1.open("w"))
             file2 = stack.enter_context(fname2.open("w"))
-            file3 = stack.enter_context(fname3.open("w"))
+            file1.write("[CS_A]\n")
+            file2.write("[DW_AB]\n")
 
             for name in self.names:
 
@@ -216,6 +216,5 @@ class Buttons:
 
                 dw_ab = cs_b - cs_a
 
-                file1.write("{:10s} {:8.3f}\n".format(name.upper(), cs_a))
-                file2.write("{:10s} {:8.3f}\n".format(name.upper(), cs_b))
-                file3.write("{:10s} {:8.3f}\n".format(name.upper(), dw_ab))
+                file1.write("{:5s} = {:8.3f}\n".format(name.upper(), cs_a))
+                file2.write("{:5s} = {:8.3f}\n".format(name.upper(), dw_ab))
