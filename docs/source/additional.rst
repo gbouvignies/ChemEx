@@ -49,12 +49,12 @@ Example simulation results for CPMG and CEST experiments are shown below:
 Obtain initial estimates of Δϖ for CEST experiments
 ---------------------------------------------------------------------
 
-In CEST experiments (and also for D-CEST/COS-CEST), in order to 
-avoid getting trapped in a local minimum, it is necessary to choose 
-suitable initial value of Δϖ. ChemEx comes with a 
-module :ref:`tools_pick_cest` for manually picking the major and minor 
-dips of CEST profiles, which correspond to the ground and excited 
-states, respectively. A typical command for such purpose is like this:
+In CEST experiments, in order to avoid getting trapped in a local
+minimum, it is necessary to choose suitable initial value of Δϖ.
+ChemEx comes with a module :ref:`tools_pick_cest` for manually 
+picking the major and minor dips of CEST profiles, which correspond
+to the ground and excited states, respectively. A typical command
+for such purpose is like this:
 
 .. code-block:: console
 
@@ -65,13 +65,13 @@ come out. For each profile first click on the major dip and then on the
 minor dip. Note that in certain profiles only one dip could be visible, 
 which indicates the minor dip is overlapped with the major dip, therefore 
 the major dip should be clicked twice. When done with any profile, click 
-the :guilabel:`Next` button to proceed to the next profile. After all 
-profiles are finished three files will be created: :file:`cs_a.toml` and 
-:file:`cs_b.toml` with the chemical shifts of the major and the minor
-states, respectively, and :file:`dw_ab.toml` which contains chemical
-shift difference between the two states. Try to run the 
-:file:`pick_cest.sh` script under :file:`CEST_15N/` example to learn 
-how to make use of this function.
+the :guilabel:`Next` or :guilabel:`Previous` button to proceed to the 
+next or previous profile. After all profiles are finished click the 
+:guilabel:`Quit` button, then two separate files will be created: 
+:file:`cs_a.toml` and :file:`dw_ab.toml` that contain chemical shifts of 
+the major state and chemical shift difference between the major and 
+minor states, respectively. Try to run the :file:`pick_cest.sh` script 
+under :file:`CEST_15N/` example to learn how to make use of this function.
 
 
 .. _additional_visualize:
