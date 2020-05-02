@@ -32,9 +32,13 @@ def pick_cest(args):
 
     callback = Buttons(experiment, args.out_dir)
 
+    axclear = plt.axes([0.825, 0.3, 0.15, 0.075])
     axprevious = plt.axes([0.825, 0.2, 0.075, 0.075])
     axnext = plt.axes([0.9, 0.2, 0.075, 0.075])
     axclose = plt.axes([0.825, 0.1, 0.15, 0.075])
+
+    bclear = mw.Button(axclear, "Clear")
+    bclear.on_clicked(callback.clear)
 
     bprevious = mw.Button(axprevious, "Previous")
     bprevious.on_clicked(callback.previous)
@@ -59,9 +63,7 @@ class Buttons:
         self.data = data._profiles
         self.out = path
 
-        self.names = sorted(
-            [spin_system.SpinSystem(profile.name).names["i"] for profile in self.data]
-        )
+        self.names = [spin_system.SpinSystem(profile.name).names["i"] for profile in self.data]
 
         self.curve, self.curve_sp = None, None
         self.cs_a, self.cs_b = {}, {}
@@ -73,6 +75,11 @@ class Buttons:
 
         self.index = -1
         self.next(None)
+
+    def clear(self, event):
+        name = self.name.names["i"]
+        self.cs_a[name], self.cs_b[name] = None, None
+        self._clear_lines()
 
     def previous(self, event):
         self._shift(-1)
@@ -224,5 +231,5 @@ class Buttons:
 
                 dw_ab = cs_b - cs_a
 
-                file1.write("{:5s} = {:8.3f}\n".format(name.upper(), cs_a))
-                file2.write("{:5s} = {:8.3f}\n".format(name.upper(), dw_ab))
+                file1.write("{:10s} = {:8.3f}\n".format(name.upper(), cs_a))
+                file2.write("{:10s} = {:8.3f}\n".format(name.upper(), dw_ab))

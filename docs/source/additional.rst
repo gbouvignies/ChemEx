@@ -66,11 +66,12 @@ minor dip. Note that in certain profiles only one dip could be visible,
 which indicates the minor dip is overlapped with the major dip, therefore 
 the major dip should be clicked twice. When done with any profile, click 
 the :guilabel:`Next` or :guilabel:`Previous` button to proceed to the 
-next or previous profile. After all profiles are finished click the 
-:guilabel:`Quit` button, then two separate files will be created: 
-:file:`cs_a.toml` and :file:`dw_ab.toml` that contain chemical shifts of 
-the major state and chemical shift difference between the major and 
-minor states, respectively. Try to run the :file:`pick_cest.sh` script 
+next or previous profile. The :guilabel:`Clear` button allows cleaning
+the selection in the current profile. After all profiles are finished 
+click the :guilabel:`Quit` button, then two separate files will be 
+created: :file:`cs_a.toml` and :file:`dw_ab.toml` that contain chemical 
+shifts of the major state and chemical shift difference between the major 
+and minor states, respectively. Try to run the :file:`pick_cest.sh` script 
 under :file:`CEST_15N/` example to learn how to make use of this function.
 
 
