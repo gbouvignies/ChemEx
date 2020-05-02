@@ -79,7 +79,7 @@ class Buttons:
     def clear(self, event):
         name = self.name.names["i"]
         self.cs_a[name], self.cs_b[name] = None, None
-        self._clear_lines()
+        self._plot_lines()
 
     def previous(self, event):
         self._shift(-1)
@@ -226,10 +226,9 @@ class Buttons:
 
                 if cs_a is None:
                     continue
-                elif cs_b is None:
-                    cs_b = cs_a
-
-                dw_ab = cs_b - cs_a
 
                 file1.write("{:10s} = {:8.3f}\n".format(name.upper(), cs_a))
-                file2.write("{:10s} = {:8.3f}\n".format(name.upper(), dw_ab))
+
+                if cs_b is not None:
+                    dw_ab = cs_b - cs_a
+                    file2.write("{:10s} = {:8.3f}\n".format(name.upper(), dw_ab))
