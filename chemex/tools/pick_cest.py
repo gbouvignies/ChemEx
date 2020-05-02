@@ -32,13 +32,17 @@ def pick_cest(args):
 
     callback = Buttons(experiment, args.out_dir)
 
-    axclear = plt.axes([0.825, 0.3, 0.15, 0.075])
+    axclear = plt.axes([0.825, 0.4, 0.15, 0.075])
+    axswap = plt.axes([0.825, 0.3, 0.15, 0.075])
     axprevious = plt.axes([0.825, 0.2, 0.075, 0.075])
     axnext = plt.axes([0.9, 0.2, 0.075, 0.075])
     axclose = plt.axes([0.825, 0.1, 0.15, 0.075])
 
     bclear = mw.Button(axclear, "Clear")
     bclear.on_clicked(callback.clear)
+
+    bswap = mw.Button(axswap, "Swap")
+    bswap.on_clicked(callback.swap)
 
     bprevious = mw.Button(axprevious, "Previous")
     bprevious.on_clicked(callback.previous)
@@ -81,6 +85,12 @@ class Buttons:
         self.cs_a[name], self.cs_b[name] = None, None
         self._plot_lines()
 
+    def swap(self, event):
+        name = self.name.names["i"]
+        if self.cs_b[name] is not None:
+            self.cs_a[name], self.cs_b[name] = self.cs_b[name], self.cs_a[name]
+        self._plot_lines()
+
     def previous(self, event):
         self._shift(-1)
 
@@ -113,6 +123,7 @@ class Buttons:
 
         self.axis.plot(x, y, ".", color="C0")
         self.axis.plot(x_sp, y_sp, "--", color="C0", alpha=0.66)
+        self.axis.invert_xaxis()
 
         self._show_labels()
 
@@ -156,9 +167,8 @@ class Buttons:
         xdata = self._get_click_position(event)
 
         if xdata is not None:
-            if cs_a is None or cs_b is not None:
+            if cs_a is None:
                 cs_a = xdata
-                cs_b = None
             else:
                 cs_b = xdata
 
