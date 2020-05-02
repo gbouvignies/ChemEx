@@ -113,7 +113,15 @@ class Buttons:
 
     def _show_labels(self):
         self.axis.set_title(str(self.name).upper())
-        self.axis.set_xlabel(r"$^{15}$N (ppm)")
+        atom = (spin_system.SpinSystem(self._profile.name).atoms["i"])
+        if atom == "N":
+            self.axis.set_xlabel(r"$^{15}$N (ppm)")
+        elif atom == "C":
+            self.axis.set_xlabel(r"$^{13}$C (ppm)")
+        elif atom == "H":
+            self.axis.set_xlabel(r"$^{1}$H (ppm)")
+        else:
+            self.axis.set_xlabel(r"Chemical shift (ppm)")
         self.axis.set_ylabel("$I/I_0$")
 
     def _profile_to_curve(self):

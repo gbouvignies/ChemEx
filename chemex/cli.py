@@ -198,7 +198,7 @@ def build_parser():
         dest="out_dir",
         type=pathlib.Path,
         metavar="DIR",
-        default="./Output",
+        default="./OutputSim",
         help="Directory for output files",
     )
 
@@ -250,7 +250,7 @@ def build_parser():
         dest="out_dir",
         type=pathlib.Path,
         metavar="DIR",
-        default="./Output",
+        default="./sandbox",
         help="Directory for output files",
     )
 
