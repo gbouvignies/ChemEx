@@ -16,7 +16,7 @@ def pick_cest(args):
     if len(args.experiments) > 1:
         sys.exit(
             "\nError: Multiple experiment files were given. 'chemex pick_cest' "
-            "should only be run with a single experiment files.\n"
+            "should only be run with a single experiment file.\n"
         )
 
     # Read experimental setup and data

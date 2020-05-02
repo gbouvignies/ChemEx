@@ -1,4 +1,5 @@
 import configparser
+import sys
 
 import matplotlib.pyplot as plt
 
@@ -8,7 +9,14 @@ import chemex.parameters.name as cpn
 
 def plot_param(args):
     params = configparser.ConfigParser()
-    params.read(str(args.parameters))
+
+    if len(args.parameters) > 1:
+        sys.exit(
+            "\nError: Multiple parameter files were given. 'chemex plot_param' "
+            "should only be run with a single parameter file.\n"
+        )
+
+    params.read(str(args.parameters.pop()))
     parname = args.parname
     curves = {}
     print("Plotting...")
