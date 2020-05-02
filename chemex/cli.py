@@ -240,9 +240,9 @@ def build_parser():
         dest="experiments",
         type=pathlib.Path,
         metavar="FILE",
-        nargs=1,
+        nargs="+",
         required=True,
-        help="Input file containing experimental setup and data location",
+        help="Input files containing experimental setup and data location",
     )
 
     pick_cest_parser.add_argument(
@@ -266,8 +266,9 @@ def build_parser():
         dest="parameters",
         type=pathlib.Path,
         metavar="FILE",
+        nargs="+",
         required=True,
-        help="Output file containing the fitting parameters to be plotted",
+        help="Output files containing the fitting parameters to be plotted",
     )
 
     plot_param_parser.add_argument(
