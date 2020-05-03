@@ -32,17 +32,10 @@ def pick_cest(args):
 
     callback = Buttons(experiment, args.out_dir)
 
-    axclear = plt.axes([0.825, 0.4, 0.15, 0.075])
-    axswap = plt.axes([0.825, 0.3, 0.15, 0.075])
-    axprevious = plt.axes([0.825, 0.2, 0.075, 0.075])
-    axnext = plt.axes([0.9, 0.2, 0.075, 0.075])
-    axclose = plt.axes([0.825, 0.1, 0.15, 0.075])
-
-    bclear = mw.Button(axclear, "Clear")
-    bclear.on_clicked(callback.clear)
-
-    bswap = mw.Button(axswap, "Swap")
-    bswap.on_clicked(callback.swap)
+    axprevious = plt.axes([0.825, 0.3, 0.075, 0.075])
+    axnext = plt.axes([0.9, 0.3, 0.075, 0.075])
+    axswap = plt.axes([0.825, 0.2, 0.15, 0.075])
+    axclear = plt.axes([0.825, 0.1, 0.15, 0.075])
 
     bprevious = mw.Button(axprevious, "Previous")
     bprevious.on_clicked(callback.previous)
@@ -50,8 +43,11 @@ def pick_cest(args):
     bnext = mw.Button(axnext, "Next")
     bnext.on_clicked(callback.next)
 
-    bclose = mw.Button(axclose, "Quit")
-    bclose.on_clicked(callback.close)
+    bswap = mw.Button(axswap, "Swap")
+    bswap.on_clicked(callback.swap)
+
+    bclear = mw.Button(axclear, "Clear")
+    bclear.on_clicked(callback.clear)
 
     plt.show()
 
@@ -80,10 +76,11 @@ class Buttons:
         self.index = -1
         self.next(None)
 
-    def clear(self, event):
-        name = self.name.names["i"]
-        self.cs_a[name], self.cs_b[name] = None, None
-        self._plot_lines()
+    def previous(self, event):
+        self._shift(-1)
+
+    def next(self, event):
+        self._shift(+1)
 
     def swap(self, event):
         name = self.name.names["i"]
@@ -91,14 +88,10 @@ class Buttons:
             self.cs_a[name], self.cs_b[name] = self.cs_b[name], self.cs_a[name]
         self._plot_lines()
 
-    def previous(self, event):
-        self._shift(-1)
-
-    def next(self, event):
-        self._shift(+1)
-
-    def close(self, event):
-        plt.close()
+    def clear(self, event):
+        name = self.name.names["i"]
+        self.cs_a[name], self.cs_b[name] = None, None
+        self._plot_lines()
 
     def _shift(self, step):
         self.index += step
@@ -106,7 +99,6 @@ class Buttons:
         self._profile = self.data[self.index]
         self.name = spin_system.SpinSystem(self._profile.name)
         self._profile_to_curve()
-        self._clear_axis()
         self._plot()
 
     def _plot(self, event=None):
