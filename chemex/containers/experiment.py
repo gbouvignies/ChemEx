@@ -121,6 +121,9 @@ class Experiments:
     def __bool__(self):
         return bool(len(self))
 
+    def __iter__(self):
+        yield from self._experiments.values()
+
 
 class Experiment(abc.ABC):
     print_name = ""
@@ -233,6 +236,9 @@ class Experiment(abc.ABC):
 
     def __bool__(self):
         return bool(len(self._profiles))
+
+    def __iter__(self):
+        yield from self._profiles
 
     def _any_duplicate(self):
         return any(profile.any_duplicate() for profile in self._profiles)
