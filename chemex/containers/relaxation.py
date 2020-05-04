@@ -226,7 +226,7 @@ class RelaxationData:
     def monte_carlo(self, intensities_ref):
         noise = np.random.randn(len(self.points["intensities"])) * self.points["errors"]
         data = copy.deepcopy(self)
-        data.points["intensities"] = intensities_ref + noise
+        data.points["intensities"][self.mask] = intensities_ref + noise[self.mask]
         return data
 
     def bootstrap(self):
@@ -235,7 +235,7 @@ class RelaxationData:
         bs_indexes = np.random.choice(pool, pool.size)
         bs_indexes = sorted(bs_indexes)
         data = copy.deepcopy(self)
-        data.points = self.points[bs_indexes]
+        data.points[self.mask] = self.points[bs_indexes]
         return data
 
     def any_duplicate(self):
