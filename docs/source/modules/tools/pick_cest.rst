@@ -21,6 +21,7 @@ Classes
    :toctree: _autosummary/
 
    Buttons
+   Curve
 
 .. only:: builder_html
 

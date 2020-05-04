@@ -91,6 +91,7 @@ examples/**/Output*
 
 # sandbox
 sandbox/
+Sandbox/
 
 # vim swap files
 *.swp

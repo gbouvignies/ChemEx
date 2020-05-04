@@ -49,12 +49,12 @@ Example simulation results for CPMG and CEST experiments are shown below:
 Obtain initial estimates of Δϖ for CEST experiments
 ---------------------------------------------------------------------
 
-In CEST experiments, in order to avoid getting trapped in a local
-minimum, it is necessary to choose suitable initial value of Δϖ.
-ChemEx comes with a module :ref:`tools_pick_cest` for manually 
-picking the major and minor dips of CEST profiles, which correspond
-to the ground and excited states, respectively. A typical command
-for such purpose is like this:
+In CEST (and also D-CEST/COS-CEST) experiments, in order to avoid 
+getting trapped in a local minimum, it is necessary to choose suitable
+initial value of Δϖ.  ChemEx comes with a module :ref:`tools_pick_cest`
+for manually picking the major and minor dips of CEST profiles, which
+correspond to the ground and excited states, respectively. A typical
+command for such purpose is like this:
 
 .. code-block:: console
 
@@ -73,7 +73,9 @@ created at real-time during the dip picking process: :file:`cs_a.toml`
 and :file:`dw_ab.toml` that contain chemical shifts of the major state 
 and chemical shift difference between the major and minor states, 
 respectively. Try to run the :file:`pick_cest.sh` script under 
-:file:`CEST_15N/` example to learn how to make use of this function.
+:file:`CEST_15N/` example and :file:`pick_dcest.sh` script under
+:file:`DCEST_15N/` example to learn how to make use of this function
+for CEST and D-CEST experiment, respectively.
 
 
 .. _additional_visualize:
