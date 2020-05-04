@@ -285,7 +285,7 @@ class CestData:
         bs_indexes.extend(np.random.choice(pool2, pool2.size))
         bs_indexes = sorted(bs_indexes)
         data = copy.deepcopy(self)
-        data.points = self.points[bs_indexes]
+        data.points[self.mask] = self.points[bs_indexes]
         return data
 
     def any_duplicate(self):

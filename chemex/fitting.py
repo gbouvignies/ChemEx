@@ -161,7 +161,7 @@ def _pop_fitmethod(settings):
 
 def _minimize(experiments, params, fitmethod=None):
     if fitmethod is None:
-        fitmethod = "least_squares"
+        fitmethod = "leastsq"
     kws = {}
     if fitmethod == "brute":
         kws["keep"] = "all"
@@ -187,16 +187,7 @@ def _minimize(experiments, params, fitmethod=None):
 
 
 def _write_files(experiments, params, path):
-    """Write the results of the fit to output files.
-
-    The files below are created and contain the following information:
-
-      - parameters.toml: fitting parameters and their uncertainties
-      - contstraints.fit: expression used for constraining parameters
-      - \*.dat: experimental and fitted data
-      - statistics.fit: statistics for the fit
-
-    """
+    """Write the results of the fit to output files."""
     print(f'\nWriting results -> "{path}/"')
     path.mkdir(parents=True, exist_ok=True)
     cps.write_par(params, path)
