@@ -34,7 +34,7 @@ def pick_cest(args):
 
     if sw is not None:
         axsw = plt.axes([0.925, 0.425, 0.05, 0.05])
-        bsw = mw.TextBox(axsw, "Number of SWs:", initial="3", label_pad=0.15)
+        bsw = mw.TextBox(axsw, "Number of SWs:", initial="3.0", label_pad=0.15)
         bsw.on_submit(callback.set_sw)
 
     axprevious = plt.axes([0.825, 0.3, 0.075, 0.075])
