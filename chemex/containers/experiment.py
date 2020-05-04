@@ -182,7 +182,7 @@ class Experiment(abc.ABC):
 
     def monte_carlo(self, params):
         profiles = [profile.monte_carlo(params) for profile in self._profiles]
-        return type(self)(self.filename, self.name, profiles, verbose=False)
+        return type(self)(self.config, profiles, verbose=False)
 
     @abc.abstractmethod
     def bootstrap(self):

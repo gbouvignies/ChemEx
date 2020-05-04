@@ -272,7 +272,7 @@ class CestData:
     def monte_carlo(self, intensities_ref):
         noise = np.random.randn(len(self.points["intensities"])) * self.points["errors"]
         data = copy.deepcopy(self)
-        data.points["intensities"] = intensities_ref + noise
+        data.points["intensities"][self.mask] = intensities_ref + noise[self.mask]
         return data
 
     def bootstrap(self):
