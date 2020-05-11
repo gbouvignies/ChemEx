@@ -95,6 +95,8 @@ def set_status(params, settings=None, verbose=True):
     vary = {"fix": False, "fit": True}
     matches = cl.Counter()
     for key, status in settings.items():
+        if key in ("include", "exclude", "fitmethod"):
+            continue
         name = cpn.ParamName.from_section(key)
         if status in vary:
             matched = _set_params(params, name, {"vary": vary[status], "expr": ""})
@@ -109,6 +111,13 @@ def put_back_starting_values(params):
     for param in params.values():
         if param.user_data:
             param.value = param.user_data
+
+
+def copy_starting_values(params_from, params_to):
+    params = params_to.copy()
+    for name, param in params_from.items():
+        params[name].user_data = param.value
+    return params
 
 
 def _print_matches(matches):

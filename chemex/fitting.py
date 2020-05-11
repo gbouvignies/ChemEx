@@ -16,7 +16,6 @@ class Fit:
         self._experiments = experiments
         self._path = path
         self._method = {"": {}}
-        self._result = None
         self._plot = plot
 
     def read_method(self, filename):
@@ -24,10 +23,13 @@ class Fit:
             return
         self._method = ch.read_toml(filename)
 
-    def fit(self, params, path=None):
+    def fit(self, params, path=None, plot=None):
 
         if path is None:
             path = self._path
+
+        if plot is None:
+            plot = self._plot
 
         params_ = params.copy()
 
@@ -37,10 +39,11 @@ class Fit:
                 ch.header2(f"\n{section.upper()}")
 
             # Set the fitting algorithm
-            fitmethod = _pop_fitmethod(settings)
+            fitmethod = settings.get("fitmethod", "leastsq")
+            print(f'\nFitting method -> "{fitmethod}"')
 
             # Select a subset of profiles based on "INCLUDE" and "EXCLUDE"
-            selection = {key: settings.pop(key, None) for key in ("include", "exclude")}
+            selection = {key: settings.get(key, None) for key in ("include", "exclude")}
             self._experiments.select(selection)
 
             # Update the parameter "vary" and "expr" status
@@ -59,9 +62,7 @@ class Fit:
 
             # Set section flags and path
             multi_groups = len(groups) > 1
-            plot_group_flg = self._plot == "all" or (
-                not multi_groups and self._plot == "normal"
-            )
+            plot_group_flg = plot == "all" or (not multi_groups and plot == "normal")
             section_path = section.upper() if len(self._method) > 1 else ""
 
             g_params_all = []
@@ -83,36 +84,46 @@ class Fit:
                 _print_chisqr(self._experiments, g_params_merged)
                 path_ = path / section_path / "All"
                 _write_files(self._experiments, g_params_merged, path_)
-                if self._plot != "nothing":
+                if plot != "nothing":
                     ccp.write_plots(self._experiments, g_params_merged, path_)
 
             params_.update(g_params_merged)
 
         return params_
 
-    def bootstrap(self, params, iter_nb):
+    def mc_simulations(self, params, iter_nb, name="mc"):
         if iter_nb is None:
             return
-        ch.header1("Running bootstrap simulations")
+        methods = {
+            "mc": {
+                "message": "Monte Carlo",
+                "folder": "MonteCarlo",
+                "attr": "monte_carlo",
+                "args": [params],
+            },
+            "bs": {
+                "message": "bootstrap",
+                "folder": "Bootstrap",
+                "attr": "bootstrap",
+                "args": [],
+            },
+            "bsn": {
+                "message": "nucleus-specific",
+                "folder": "BootstrapNS",
+                "attr": "bootstrap_ns",
+                "args": [],
+            },
+        }
+        method = methods[name]
+        ch.header1(f"Running {method['message']} simulations")
         ndigits = len(str(iter_nb))
+        experiments = self._experiments
         for index in range(1, iter_nb + 1):
             ch.header2(f"Iteration {index} out of {iter_nb}")
-            path = self._path / "Bootstrap" / f"{index:0{ndigits}}"
-            experiments = self._experiments.bootstrap()
-            params_ = _minimize(experiments, params)
-            _write_files(experiments, params_, path)
-
-    def monte_carlo(self, params, iter_nb):
-        if iter_nb is None:
-            return
-        ch.header1("Running Monte Carlo simulations")
-        ndigits = len(str(iter_nb))
-        for index in range(1, iter_nb + 1):
-            ch.header2(f"Iteration {index} out of {iter_nb}")
-            path = self._path / "MonteCarlo" / f"{index:0{ndigits}}"
-            experiments = self._experiments.monte_carlo(params)
-            params_ = _minimize(experiments, params)
-            _write_files(experiments, params_, path)
+            path = self._path / method["folder"] / f"{index:0{ndigits}}"
+            self._experiments = getattr(experiments, method["attr"])(*method["args"])
+            self.fit(params, path, plot="nothing")
+        self._experiments = experiments
 
     def _cluster_data(self, params):
         """Find clusters of datapoints that depend on disjoint sets of variables.
@@ -151,12 +162,6 @@ class Fit:
             cluster_name = cluster_experiments.get_cluster_name()
             clusters_[cluster_name] = (cluster_experiments, cluster_params)
         return clusters_
-
-
-def _pop_fitmethod(settings):
-    fitmethod = settings.pop("fitmethod", "leastsq")
-    print(f'\nFitting method -> "{fitmethod}"')
-    return fitmethod
 
 
 def _minimize(experiments, params, fitmethod=None):

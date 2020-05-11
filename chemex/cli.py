@@ -165,7 +165,14 @@ def build_parser():
     )
 
     fit_parser.add_argument(
-        "--bs", metavar="N", type=int, help="Run N Bootstrap simulations"
+        "--bs", metavar="N", type=int, help="Run N bootstrap simulations"
+    )
+
+    fit_parser.add_argument(
+        "--bsn",
+        metavar="N",
+        type=int,
+        help="Run N nucleus-specific bootstrap simulations",
     )
 
     # parser for the positional argument "simulate"
