@@ -83,6 +83,20 @@ class Experiments:
             experiments_bs.add(experiment.bootstrap())
         return experiments_bs
 
+    def bootstrap_ns(self):
+        groups = self.groups
+        groups_bs = np.random.choice(list(groups), len(groups))
+        experiments_bs = Experiments()
+        for experiment in self._experiments.values():
+            experiments_bs.add(experiment.bootstrap_ns(groups_bs))
+        return experiments_bs
+
+    @property
+    def groups(self):
+        return set.union(
+            *(experiment.groups for experiment in self._experiments.values())
+        )
+
     @property
     def params(self):
         return cph.merge(experiment.params for experiment in self._experiments.values())
@@ -187,6 +201,20 @@ class Experiment(abc.ABC):
     @abc.abstractmethod
     def bootstrap(self):
         pass
+
+    def bootstrap_ns(self, groups):
+        """Residue-specific bootstrap"""
+        profiles = {}
+        for profile in self._profiles:
+            profiles.setdefault(profile.name.groups["i"], []).append(profile)
+        profiles_bs_ns = []
+        for group in groups:
+            profiles_bs_ns.extend(profiles.get(group, []))
+        return type(self)(self.config, profiles_bs_ns, verbose=False)
+
+    @property
+    def groups(self):
+        return {profile.name.groups["i"] for profile in self._profiles}
 
     def estimate_noise(self, kind):
         implemented = ("file", "scatter", "duplicates")

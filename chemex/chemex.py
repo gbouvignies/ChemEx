@@ -69,11 +69,13 @@ def fit(args):
     ch.header1("Running the main fit")
     fitter = cf.Fit(experiments, args.out_dir, args.plot)
     fitter.read_method(args.method)
-    params_ = fitter.fit(params)
-    if args.bs:
-        fitter.bootstrap(params_, args.bs)
-    elif args.mc:
-        fitter.monte_carlo(params_, args.mc)
+    params_fitted = fitter.fit(params)
+
+    # Run Monte-Carlo simulations
+    params_sim = cps.copy_starting_values(params_fitted, params)
+    for mc_name in ("mc", "bs", "bsn"):
+        n_iter = vars(args).get(mc_name)
+        fitter.mc_simulations(params_sim, n_iter, mc_name)
 
 
 def simulate(args):
