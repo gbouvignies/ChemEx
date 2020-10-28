@@ -2,8 +2,8 @@
 15N CEST with CW Decoupling
 ===========================
 
-Analyzes chemical exchange in the presence of 1H CW decoupling during the 
-CEST block.  Magnetization evolution is calculated using the (15n)×(15n), 
+Analyzes chemical exchange in the presence of 1H CW decoupling during the
+CEST block. Magnetization evolution is calculated using the (15n)×(15n),
 two-spin matrix, where n is the number of states::
 
     {        Ix(a),   Iy(a),   Iz(a),   Sx(a), IxSx(a), IySx(a), IzSx(a),
@@ -108,7 +108,7 @@ class PulseSeq:
         start = self.prop.get_equilibrium()
         intst = {}
         for offset in set(offsets):
-            if abs(offset) < 1e4:
+            if abs(offset) <= 1e4:
                 self.prop.offset_i = offset
                 intst[offset] = (
                     self.prop.pulse_is(self.time_t1, 0.0, 0.0, self.dephased) @ start

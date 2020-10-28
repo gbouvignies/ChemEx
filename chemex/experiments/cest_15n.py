@@ -91,7 +91,7 @@ class PulseSeq:
         start = self.prop.get_equilibrium()
         intst = {}
         for offset in set(offsets):
-            if abs(offset) < 1e4:
+            if abs(offset) <= 1e4:
                 self.prop.offset_i = offset
                 intst[offset] = (
                     self.prop.pulse_i(self.time_t1, 0.0, self.dephased) @ start

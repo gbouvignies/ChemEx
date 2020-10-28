@@ -9,7 +9,6 @@ states::
     { Ix(a), Iy(a), Iz(a), IxSz(a), IySz(a), IzSz(a),
       Ix(b), Iy(b), Iz(b), IxSz(b), IySz(b), IzSz(b), ... }
 
-
 References
 ----------
 
@@ -112,16 +111,17 @@ class PulseSeq:
     def _calculate(self, offsets, params_local):
         self.prop.update(params_local)
         self.prop.offset_i = 0.0
-        d_taud, d_taua = self.prop.delays([self.taud, self.taua])
+        d_taud, d_taua, d_t1 = self.prop.delays([self.taud, self.taua, self.time_t1])
         start = d_taud @ self.prop.get_start_magnetization(terms="ie")
         start = self.prop.keep_components(start, terms=["ie", "iz"])
         intst = {}
         for offset in set(offsets):
             self.prop.offset_i = offset
-            cest = self._calc_cosine_shape()
-            if abs(offset) >= 1e4:
+            if abs(offset) > 1e4:
                 inept = self.p90_i[3] @ d_taua @ self.p180_isx @ d_taua @ self.p90_i[0]
-                cest = inept @ cest
+                cest = inept @ d_t1
+            else:
+                cest = self._calc_cosine_shape()
             intst[offset] = self.prop.detect(cest @ start)
         return np.array([intst[offset] for offset in offsets])
 

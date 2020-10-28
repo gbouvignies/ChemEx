@@ -34,4 +34,3 @@ Classes
 .. only:: builder_html
 
    [:download:`source code <../../../../chemex/parameters/name.py>`]
-

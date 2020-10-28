@@ -4,13 +4,13 @@
 
 Analyzes 15N chemical exchange in the presence of high power 1H CW decoupling
 during the CPMG block. This keeps the spin system purely in-phase throughout,
-and is calculated using the (3n)×(3n), single-spin matrix, where n is the 
+and is calculated using the (3n)×(3n), single-spin matrix, where n is the
 number of states::
 
     { Ix(a), Iy(a), Iz(a),
       Ix(b), Iy(b), Iz(b), ... }
 
-The CW decoupling on 1H is assumed to be strong enough (> 15 kHz) such that 
+The CW decoupling on 1H is assumed to be strong enough (> 15 kHz) such that
 perfect 1H decoupling can be achieved.
 
 References
@@ -108,7 +108,7 @@ class PulseSeq:
         part1 = d_neg @ p90[0] @ start
         part2 = d_eq @ p90[0] @ d_neg
         intst = {
-            0: self.prop.detect(part2 @ p180pmx @ part1),
+            0: self.prop.detect(d_eq @ p90[0] @ p180pmx @ p90[0] @ start),
             -1: self.prop.detect(part2 @ d_cp[-1] @ p180pmx @ d_cp[-1] @ part1),
         }
         for ncyc in set(ncycs) - {0, -1}:
@@ -125,8 +125,7 @@ class PulseSeq:
         ncycs_ = ncycs_[ncycs_ > 0]
         tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - self.pw90))
         tau_cps[-1] = 0.5 * self.time_t2
-        delays = [self.t_neg, self.time_eq]
-        delays.extend(tau_cps.values())
+        delays = [self.t_neg, self.time_eq, *tau_cps.values()]
         return tau_cps, delays
 
     def ncycs_to_nu_cpmgs(self, ncycs):

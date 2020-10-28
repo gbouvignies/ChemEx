@@ -19,6 +19,7 @@ Baldwin, Religa, Hansen, Bouvignies and Kay. J Am Chem Soc (2010) 132:10992-1099
 
 Note
 ----
+
 A sample configuration  file for this module is available using the command::
 
     $ chemex config cpmg_chd2_1h_ap
@@ -100,20 +101,20 @@ class PulseSeq:
         p180pmx = 0.5 * (p180[0] + p180[2])  # +/- phase cycling
 
         # Getting the starting magnetization
-        start = self.prop.get_start_magnetization(terms=f"2izsz")
+        start = self.prop.get_start_magnetization(terms="2izsz")
 
         # Calculating the intensities as a function of ncyc
         part1 = d_neg @ p90[0] @ start
         part2 = d_eq @ p90[0] @ d_neg
         intst = {
-            0: self.prop.detect(part2 @ p180pmx @ part1),
+            0: self.prop.detect(d_eq @ p90[0] @ p180pmx @ p90[0] @ start),
             -1: self.prop.detect(part2 @ d_cp[-1] @ p180pmx @ d_cp[-1] @ part1),
         }
 
         for ncyc in set(ncycs) - {0, -1}:
             echo = d_cp[ncyc] @ p180[1] @ d_cp[ncyc]
-            cp_train = nl.matrix_power(echo, int(ncyc))
-            end = part2 @ cp_train @ p180pmx @ cp_train @ part1
+            cpmg = nl.matrix_power(echo, int(ncyc))
+            end = part2 @ cpmg @ p180pmx @ cpmg @ part1
             intst[ncyc] = self.prop.detect(end)
 
         # Return profile
@@ -125,8 +126,7 @@ class PulseSeq:
         ncycs_ = ncycs_[ncycs_ > 0]
         tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - self.pw90))
         tau_cps[-1] = 0.5 * self.time_t2
-        delays = [self.t_neg, self.time_eq]
-        delays.extend(tau_cps.values())
+        delays = [self.t_neg, self.time_eq, *tau_cps.values()]
         return tau_cps, delays
 
     def ncycs_to_nu_cpmgs(self, ncycs):

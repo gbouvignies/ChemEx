@@ -33,4 +33,3 @@ Classes
 .. only:: builder_html
 
    [:download:`source code <../../../../chemex/nmr/rates.py>`]
-

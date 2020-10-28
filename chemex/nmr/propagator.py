@@ -23,6 +23,9 @@ class PropagatorIS:
         self.perfect90_s = self._make_perfect90("s")
         self.perfect180_i = self._make_perfect180("i")
         self.perfect180_s = self._make_perfect180("s")
+        self.zfilter = self.keep_components(
+            self.identity, terms=["ie", "se", "iz", "sz", "2izsz"]
+        )
 
     @classmethod
     def from_config(cls, config):
@@ -249,8 +252,8 @@ class PropagatorIS:
     def p9024090_s_2(self):
         return self.p90_s[1, 2, 3, 0] @ self.p240_s @ self.p90_s[1, 2, 3, 0]
 
-    @property
-    def p9024090_is(self):
+    def p9024090_is(self, reversed=False):
+        p = 1 if reversed else 3
         pw240i, pw9024090i = np.array([8.0, 14.0]) * self._pw90_i / 3.0
         pw240s, pw9024090s = np.array([8.0, 14.0]) * self._pw90_s / 3.0
         t0, t1, t2, t3 = 0.5 * np.diff(
@@ -258,15 +261,23 @@ class PropagatorIS:
         )
         p0 = self.pulse_is(2.0 * t0, 0, 0)
         if pw9024090i <= pw9024090s:
-            p1 = self.pulse_is(t1, 3, 0)
-            p2 = self.pulse_is(t2, 3, 3) if pw9024090i > pw240s else self.pulse_s(t2, 0)
-            p3 = self.pulse_s(t3, 3)
+            p1 = self.pulse_is(t1, p, 0)
+            p2 = self.pulse_is(t2, p, p) if pw9024090i > pw240s else self.pulse_s(t2, 0)
+            p3 = self.pulse_s(t3, p)
         else:
-            p1 = self.pulse_is(t1, 0, 3)
-            p2 = self.pulse_is(t2, 3, 3) if pw9024090s > pw240i else self.pulse_i(t2, 0)
-            p3 = self.pulse_i(t3, 3)
+            p1 = self.pulse_is(t1, 0, p)
+            p2 = self.pulse_is(t2, p, p) if pw9024090s > pw240i else self.pulse_i(t2, 0)
+            p3 = self.pulse_i(t3, p)
         pw9024090is_xx = p3 @ p2 @ p1 @ p0 @ p1 @ p2 @ p3
         return self._add_phases(self._add_phases(pw9024090is_xx, "s"), "i")
+
+    @property
+    def p9024090_is_1(self):
+        return self.p9024090_is()
+
+    @property
+    def p9024090_is_2(self):
+        return self.p9024090_is(reversed=True)
 
     def calculate_shifts(self):
         liouv = self.liouvillian.l_free.reshape(

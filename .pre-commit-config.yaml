@@ -1,23 +1,26 @@
 repos:
-- repo: local
-  hooks:
-  - id: isort
-    name: isort
-    stages: [commit]
-    language: system
-    entry: poetry run isort
-    types: [python]
-
-  - id: black
-    name: black
-    stages: [commit]
-    language: system
-    entry: poetry run black
-    types: [python]
-
-  - id: flake8
-    name: flake8
-    stages: [commit]
-    language: system
-    entry: poetry run flake8
-    types: [python]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v2.4.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-added-large-files
+      - id: check-case-conflict # Check for files that would conflict in case-insensitive filesystems
+      - id: check-merge-conflict # Check for files that contain merge conflict strings.
+      - id: debug-statements # Check for debugger imports and py37+ `breakpoint()` calls in python source.
+      - id: forbid-new-submodules # Check for git submodules
+      - id: flake8 # runs python flake8
+  - repo: https://github.com/asottile/reorder_python_imports
+    rev: v2.3.5
+    hooks:
+      - id: reorder-python-imports
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v2.7.3
+    hooks:
+      - id: pyupgrade
+        args: [--py38-plus]
+  - repo: https://github.com/psf/black
+    rev: 20.8b1 # Replace by any tag/version: https://github.com/psf/black/tags
+    hooks:
+      - id: black
+        language_version: python3.8

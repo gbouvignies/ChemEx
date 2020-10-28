@@ -31,4 +31,3 @@ Functions
 .. only:: builder_html
 
    [:download:`source code <../../../../chemex/parameters/kinetics.py>`]
-

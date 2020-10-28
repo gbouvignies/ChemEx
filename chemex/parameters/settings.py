@@ -1,6 +1,5 @@
 """The parameters module contains the code for handling of the experimental and
 fitting parameters."""
-
 import ast
 import collections as cl
 import difflib as dl
@@ -36,7 +35,7 @@ _SCHEMA_CONFIG_PARAM = {
 
 
 def read_defaults(filenames):
-    print(f"\nReading parameters default values...")
+    print("\nReading parameters default values...")
     config = ch.read_toml_multi(filenames, _SCHEMA_CONFIG_PARAM)
     defaults = {"global": config.pop("global", {})}
     defaults.update(config)
@@ -87,7 +86,7 @@ def _check_params(params):
 
 def set_status(params, settings=None, verbose=True):
     """Set whether or not to vary a fitting parameter or to use a mathemetical
-    expression. """
+    expression."""
     if settings is None:
         settings = {}
     if verbose and settings:
@@ -161,7 +160,7 @@ def _set_param_expr(params, name, expr=None):
 
 def _set_params(params, name_short, values):
     """Set the initial value and (optional) bounds and brute step size for
-    parameters. """
+    parameters."""
     matches = set()
     value = values.pop("value", None)
     for name, param in params.items():

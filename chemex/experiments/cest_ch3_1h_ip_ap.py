@@ -106,7 +106,7 @@ class PulseSeq:
         for offset in set(offsets):
             self.prop.offset_i = offset
             mag = self.prop.pulse_i(self.time_t1, 0.0, self.dephased) @ start
-            if abs(offset) >= 1e4:
+            if abs(offset) > 1e4:
                 inept = self.p90_i[3] @ d_taua @ self.p180_isx @ d_taua @ self.p90_i[0]
                 mag = inept @ mag
             intst[offset] = self.prop.detect(mag)

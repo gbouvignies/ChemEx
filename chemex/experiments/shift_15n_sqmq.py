@@ -2,7 +2,7 @@
 15N Exchange Induced Shifts with (15N–1HN) HSQC/HMQC
 ====================================================
 
-Analyzes exchange induced 15N chemical shift changes measured in 
+Analyzes exchange induced 15N chemical shift changes measured in
 (15N–1HN) HMQC and HSQC data sets.
 
 References

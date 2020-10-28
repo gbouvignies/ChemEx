@@ -4,13 +4,13 @@
 
 Analyzes HyCx methyl group multiple quantum CPMG measured on site-specific
 13CH3-labeled methyl groups in a highly deuterated background. Resulting
-magnetization intensity after the CPMG block is calculated using the 
+magnetization intensity after the CPMG block is calculated using the
 (4n)×(4n), two-spin matrix, where n is the number of states::
 
     { HxCx(a), HyCx(a), HxCy(a), HyCy(a),
       HxCx(b), HyCx(b), HxCy(b), HyCy(b), ... }
 
-This is a simplified basis set, which assumes 13C is on-resonance 
+This is a simplified basis set, which assumes 13C is on-resonance
 (i.e., off-resonance effects are not taken into account).
 
 This calculation is designed specifically to analyze data from the experiment
@@ -107,7 +107,7 @@ class PulseSeq:
             part1 = d_zeta @ p180_sx @ p180_ix @ d_zeta @ start
         else:
             part1 = start
-        intst = {0: self.prop.detect(part1)}
+        intst = {0: self.prop.detect(p180_sx @ part1)}
         for ncyc in set(ncycs) - {0}:
             echo = d_cp[ncyc] @ p180_iy @ d_cp[ncyc]
             cpmg = nl.matrix_power(echo, int(ncyc))
@@ -121,11 +121,10 @@ class PulseSeq:
         ncycs_ = np.asarray(ncycs)
         ncycs_ = ncycs_[ncycs_ > 0]
         tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_)))
-        delays = [self.t_zeta]
-        delays.extend(tau_cps.values())
+        delays = [self.t_zeta, *tau_cps.values()]
         return tau_cps, delays
 
     def ncycs_to_nu_cpmgs(self, ncycs):
-        ncycs_ = np.array(ncycs, dtype=np.float)
-        ncycs_[ncycs_ == -1.0] = 0.5
-        return ncycs_[ncycs_ > 0.0] / self.time_t2
+        ncycs_ = np.asarray(ncycs)
+        ncycs_ = ncycs_[ncycs_ > 0]
+        return ncycs_ / self.time_t2

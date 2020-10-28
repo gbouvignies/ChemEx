@@ -18,6 +18,7 @@ References
 | Vallurupalli and Kay. Angew Chem Int Ed (2013) 52:4156-4159
 | Hansen, Bouvignies and Kay. J Biomol NMR (2013) 55:279-289
 | Bouvignies and Kay. J Biomol NMR (2012) 53:303-310
+| Rennella, Huang, Velyvis and Kay. J Biomol NMR (2015) 63:187-199
 
 
 Note
@@ -98,7 +99,7 @@ class PulseSeq:
         start = self.prop.get_equilibrium()
         intst = {}
         for offset in set(offsets):
-            if abs(offset) < 1e4:
+            if abs(offset) <= 1e4:
                 self.prop.offset_i = offset
                 intst[offset] = (
                     self.prop.pulse_i(self.time_t1, 0.0, self.dephased) @ start

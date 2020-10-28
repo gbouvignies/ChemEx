@@ -4,9 +4,9 @@
 Representative Examples
 =======================
 
-This section describes several representative examples in ChemEx. All 
+This section describes several representative examples in ChemEx. All
 examples are placed under ``examples/`` directory, each experiment module
-(see :ref:`chemex_experiments` section) typically has at least one 
+(see :ref:`chemex_experiments` section) typically has at least one
 example to demonstrate its application.
 
 .. toctree::
@@ -23,4 +23,3 @@ example to demonstrate its application.
    examples/coscest
    examples/binding
    examples/3-state
-

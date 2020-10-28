@@ -32,7 +32,7 @@ _BASES = {
     "ixysxy": ["2ixsx", "2ixsy", "2iysx", "2iysy"],
     "ixy_ixysxy": ["ix", "iy", "2ixsx", "2ixsy", "2iysx", "2iysy"],
     "ixyzsz": ["ix", "iy", "iz", "2ixsz", "2iysz", "2izsz"],
-    "ixyzsz_dif": ["ix", "iy", "iz", "2ixsz", "2iysz", "2izsz"],
+    "ixyzsz_diff": ["ix", "iy", "iz", "2ixsz", "2iysz", "2izsz"],
     "ixyzsz_eq": ["ie", "ix", "iy", "iz", "2ixsz", "2iysz", "2izsz"],
     "ixyzsxyz": [
         "ix",
@@ -561,7 +561,7 @@ class LiouvillianIS:
         m_zeros = np.zeros((self.size, self.size))
         matrices = {}
         for transition_name, state in it.product(_TRANSITIONS, self.states):
-            if not basis.type.endswith("_dif") and transition_name.startswith("d_"):
+            if not basis.type.endswith("_diff") and transition_name.startswith("d_"):
                 continue
             name_ = transition_name.format(state=state)
             indices, values = self._get_indices(transition_name, state)

@@ -1,9 +1,9 @@
-## This is a sample configuration file for the module 'cpmg_ch3_1h_tq_dif'
+## This is a sample configuration file for the module 'cpmg_ch3_1h_tq_diff'
 
 [experiment]
 
 ## Name of the chemex module corresponding to the experiment
-name = "cpmg_ch3_1h_tq_dif"
+name = "cpmg_ch3_1h_tq_diff"
 
 ## CPMG relaxation delay, in seconds
 time_t2 = 0.04

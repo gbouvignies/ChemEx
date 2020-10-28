@@ -17,4 +17,3 @@ Functions
 .. only:: builder_html
 
    [:download:`source code <../../../../chemex/nmr/constants.py>`]
-

@@ -10,7 +10,7 @@ the (6n)×(6n), two-spin matrix, where n is the number of states::
     { Hx(a), Hy(a), Hz(a), 2HxNz(a), 2HyNz(a), 2HzNz(a),
       Hx(b), Hy(b), Hz(b), 2HxNz(b), 2HyNz(b), 2HzNz(b), ... }
 
-This version is modified such that CPMG pulses are applied with [0013] 
+This version is modified such that CPMG pulses are applied with [0013]
 phase cycle in order to help better overcome off-resonance effects.
 
 References
@@ -21,6 +21,7 @@ Yuwen and Kay. J Biomol NMR (2019) 73:641-650
 
 Note
 ----
+
 A sample configuration file for this module is available using the command::
 
     $ chemex config cpmg_1hn_ap_0013
@@ -45,6 +46,8 @@ _SCHEMA = {
                 "carrier": {"type": "number"},
                 "pw90": {"type": "number"},
                 "ncyc_max": {"type": "integer"},
+                "taua": {"type": "number", "default": 2.38e-3},
+                "ipap_flg": {"type": "boolean", "default": False},
                 "eburp_flg": {"type": "boolean", "default": False},
                 "reburp_flg": {"type": "boolean", "default": False},
                 "pw_eburp": {"type": "number", "default": 1.4e-3},
@@ -84,13 +87,17 @@ class PulseSeq:
         self.pw90 = settings["pw90"]
         self.t_neg = -2.0 * self.pw90 / np.pi
         self.prop.b1_i = 1 / (4.0 * self.pw90)
+        self.taua = settings["taua"]
         self.ncyc_max = settings["ncyc_max"]
+        self.ipap_flg = settings["ipap_flg"]
         self.eburp_flg = settings["eburp_flg"]
         self.reburp_flg = settings["reburp_flg"]
         self.pw_eburp = settings["pw_eburp"]
         self.pw_reburp = settings["pw_reburp"]
         self.observed_state = settings["observed_state"]
-        self.prop.detection = f"2izsz_{self.observed_state}"
+        self.prop.detection = f"iz_{self.observed_state}"
+        self.p90_i = self.prop.perfect90_i
+        self.p180_isx = self.prop.perfect180_i[0] @ self.prop.perfect180_s[0]
         self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
     def _calculate(self, ncycs, params_local):
@@ -100,49 +107,59 @@ class PulseSeq:
         tau_cps, deltas, all_delays = self._get_delays(ncycs)
         delays = dict(zip(all_delays, self.prop.delays(all_delays)))
         d_neg = delays[self.t_neg]
+        d_taua = delays[self.taua]
+        d_eburp = delays[self.pw_eburp]
+        d_reburp = delays[0.5 * self.pw_reburp]
         d_delta = {ncyc: delays[delay] for ncyc, delay in deltas.items()}
         d_cp = {ncyc: delays[delay] for ncyc, delay in tau_cps.items()}
 
-        # Calculation of the propagators corresponding to all the pulses
+        # Calculation of the propagators corresponding to pulses
         p90 = self.prop.p90_i
         p180 = self.prop.p180_i
+
+        # Calculation of the propagators for INEPT and purge elements
+        inept = self.p90_i[1] @ d_taua @ self.p180_isx @ d_taua @ self.p90_i[0]
+        zfilter = self.prop.zfilter
 
         # Getting the starting magnetization
         start = self.prop.get_start_magnetization(terms=f"2izsz_{self.observed_state}")
 
-        # Calculating the intensities as a function of ncyc
+        # Calculating the central refocusing block
         if self.eburp_flg:
             p180pmy = p180[[1, 3]]
             pp90pmy = self.prop.perfect90_i[[1, 3]]
-            d_eburp = delays[self.pw_eburp]
             e180e_pmy = pp90pmy @ d_eburp @ p180pmy @ d_eburp @ pp90pmy
-            centre = [p180pmy @ e180e_pmy, e180e_pmy @ p180pmy]
+            middle = [p180pmy @ e180e_pmy, e180e_pmy @ p180pmy]
         elif self.reburp_flg:
             pp180pmy = self.prop.perfect180_i[[1, 3]]
-            d_reburp = delays[0.5 * self.pw_reburp]
-            centre = d_reburp @ pp180pmy @ d_reburp
+            middle = d_reburp @ pp180pmy @ d_reburp
         else:
-            centre = p180[[1, 3]]
-        centre = np.mean(centre, axis=0)
+            middle = p180[[1, 3]]
+        middle = np.mean(middle, axis=0)
 
-        intst = {0: self.prop.detect(d_delta[0] @ p90[0] @ centre @ p90[0] @ start)}
+        # Calculating the intensities as a function of ncyc
+        centre = {0: d_delta[0] @ p90[0] @ middle @ p90[0]}
 
         for ncyc in set(ncycs) - {0}:
             phases1, phases2 = self._get_phases(ncyc)
             echo = d_cp[ncyc] @ p180 @ d_cp[ncyc]
             cpmg1 = ft.reduce(np.matmul, echo[phases1.T])
             cpmg2 = ft.reduce(np.matmul, echo[phases2.T])
-            intst[ncyc] = self.prop.detect(
-                d_delta[ncyc]
-                @ p90[0]
-                @ d_neg
-                @ cpmg2
-                @ centre
-                @ cpmg1
-                @ d_neg
-                @ p90[0]
-                @ start
+            centre[ncyc] = (
+                d_delta[ncyc] @ p90[0] @ d_neg @ cpmg2 @ middle @ cpmg1 @ d_neg @ p90[0]
             )
+
+        intst = {
+            ncyc: self.prop.detect(inept @ zfilter @ centre[ncyc] @ start)
+            for ncyc in set(ncycs)
+        }
+
+        if self.ipap_flg:
+            intst = {
+                ncyc: intst[ncyc]
+                + self.prop.detect(centre[ncyc] @ zfilter @ inept @ start)
+                for ncyc in set(ncycs)
+            }
 
         # Return profile
         return np.array([intst[ncyc] for ncyc in ncycs])
@@ -154,9 +171,15 @@ class PulseSeq:
         tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - 0.75 * self.pw90))
         deltas = dict(zip(ncycs_, self.pw90 * (self.ncyc_max - ncycs_)))
         deltas[0] = self.pw90 * self.ncyc_max
-        delays = [self.t_neg, self.pw_eburp, 0.5 * self.pw_reburp]
-        delays.extend(tau_cps.values())
-        delays.extend(deltas.values())
+        delays = [
+            self.taua,
+            self.t_neg,
+            self.pw_eburp,
+            0.5 * self.pw_reburp,
+            *tau_cps.values(),
+            *deltas.values(),
+        ]
+
         return tau_cps, deltas, delays
 
     @staticmethod
@@ -175,6 +198,6 @@ class PulseSeq:
         return phases1, phases2
 
     def ncycs_to_nu_cpmgs(self, ncycs):
-        ncycs_ = np.array(ncycs, dtype=np.float)
-        ncycs_[ncycs_ == -1.0] = 0.5
-        return ncycs_[ncycs_ > 0.0] / self.time_t2
+        ncycs_ = np.asarray(ncycs)
+        ncycs_ = ncycs_[ncycs_ > 0]
+        return ncycs_ / self.time_t2

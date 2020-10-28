@@ -128,10 +128,8 @@ class PulseSeq:
         intst = {0: self.prop.detect(part2 @ palmer0 @ part1)}
         for ncyc in set(ncycs) - {0}:
             echo = d_cp[ncyc] @ p180[[1, 0]] @ d_cp[ncyc]
-            cpmg1, cpmg2 = nl.matrix_power(echo, ncyc)
-            intst[ncyc] = self.prop.detect(
-                part2 @ d_neg @ cpmg2 @ palmer @ cpmg1 @ d_neg @ part1
-            )
+            cpmg1, cpmg2 = d_neg @ nl.matrix_power(echo, ncyc) @ d_neg
+            intst[ncyc] = self.prop.detect(part2 @ cpmg2 @ palmer @ cpmg1 @ part1)
 
         # Return profile
         return np.array([intst[ncyc] for ncyc in ncycs])
@@ -141,9 +139,7 @@ class PulseSeq:
         ncycs_ = np.asarray(ncycs)
         ncycs_ = ncycs_[ncycs_ > 0]
         tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - self.pw90))
-        delays = [self.t_neg, self.taub, self.time_eq]
-        delays.extend(tau_cps.values())
-
+        delays = [self.t_neg, self.taub, self.time_eq, *tau_cps.values()]
         return tau_cps, delays
 
     def _get_detection(self, state):

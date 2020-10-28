@@ -18,4 +18,3 @@ Classes
 .. only:: builder_html
 
    [:download:`source code <../../../../chemex/containers/cest.py>`]
-

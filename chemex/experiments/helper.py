@@ -36,9 +36,18 @@ def _read_profiles(config, pulse_seq_cls, profile_cls):
     profiles = []
     for path, spin_system in paths.items():
         config["spin_system"] = spin_system
-        pnames, params = cph.create_params(config, propagator,)
+        pnames, params = cph.create_params(
+            config,
+            propagator,
+        )
         pulse_seq = pulse_seq_cls(config, propagator)
-        profile = profile_cls.from_file(path, config, pulse_seq, pnames, params,)
+        profile = profile_cls.from_file(
+            path,
+            config,
+            pulse_seq,
+            pnames,
+            params,
+        )
         profiles.append(profile)
     return sorted(profiles)
 
