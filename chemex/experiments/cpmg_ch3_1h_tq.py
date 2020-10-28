@@ -5,7 +5,7 @@
 Measures methyl proton chemical exchange recorded on site-specifically
 13CH3-labeled proteins in a highly deuterated background. Magnetization
 is initially anti-phase and is read out as anti-phase. The calculation
-uses a simplified scheme that includes only (6n)×(6n) basis set, 
+uses a simplified scheme that includes only (6n)×(6n) basis set,
 two-spin matrix, where n is the number of states::
 
     { 2HTQxCz(a), 2HTQyCz(a), 2HzCz(a), HTQx(a), HTQy(a), Hz(a),
@@ -104,6 +104,7 @@ class PulseSeq:
         # Calculation of the propagators corresponding to all the pulses
         p180 = self.prop.p180_i
         p180pmy = 0.5 * (p180[1] + p180[3])  # +/- phase cycling
+        p180_sx = self.prop.perfect180_s[0]
         if self.comp180_flg:
             p180_cp1 = self.prop.p9018090_i_1
             p180_cp2 = self.prop.p9018090_i_2
@@ -112,7 +113,6 @@ class PulseSeq:
 
         # Calculating the intensities as a function of ncyc
         if self.ipap_flg:
-            p180_sx = self.prop.perfect180_s[0]
             part1 = d_tauc @ start
             part2 = d_tauc
             centre0 = 0.5 * (p180pmy + p180_sx @ p180pmy @ p180_sx)
@@ -144,8 +144,7 @@ class PulseSeq:
             tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - 2 * self.pw90))
         else:
             tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - self.pw90))
-        delays = [self.tauc]
-        delays.extend(tau_cps.values())
+        delays = [self.tauc, *tau_cps.values()]
         return tau_cps, delays
 
     @staticmethod

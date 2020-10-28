@@ -26,4 +26,3 @@ Classes
 .. only:: builder_html
 
    [:download:`source code <../../../../chemex/tools/pick_cest.py>`]
-

@@ -17,6 +17,13 @@ pw90 = 10.0e-6
 ## Maximum number of cycles
 ncyc_max = 40
 
+## 1/4J, in seconds [optional, default: 2.38e-3]
+# taua = 2.38e-3
+
+## Apply IPAP scheme for IP/AP differential relaxation suppression
+## [optional, default: false]
+# ipap_flg = false
+
 ## Use the EBURP scheme instead of the standard 180 central pulse
 ## [optional, default: false]
 # eburp_flg = false
@@ -48,7 +55,7 @@ h_larmor_frq = 800.0
 ## Ligand concentration, in M [optional, depending on the kinetic model]
 # l_total = 50.0e-6
 
-## Labeling scheme of the sample, for deuterated samples "2H" should 
+## Labeling scheme of the sample, for deuterated samples "2H" should
 ## be used to obtain accurate initial estimates of relaxation rates
 ## based on model-free parameters [optional, default: []]
 # label = ["2H"]

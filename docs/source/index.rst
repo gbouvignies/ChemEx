@@ -37,7 +37,6 @@ ChemEx Documentation
 
     .. toctree::
         :maxdepth: 3
-    
+
         py-modindex
         genindex
-

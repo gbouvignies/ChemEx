@@ -168,10 +168,13 @@ class PulseSeq:
         tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - 0.75 * self.pw90))
         deltas = dict(zip(ncycs_, 0.5 * self.pw90 * (self.ncyc_max - ncycs_)))
         deltas[0] = 0.5 * self.pw90 * (self.ncyc_max - 1)
-        delays = [self.t_neg, self.taub, self.time_eq]
-        delays.extend(tau_cps.values())
-        delays.extend(deltas.values())
-
+        delays = [
+            self.t_neg,
+            self.taub,
+            self.time_eq,
+            *tau_cps.values(),
+            *deltas.values(),
+        ]
         return tau_cps, deltas, delays
 
     @staticmethod

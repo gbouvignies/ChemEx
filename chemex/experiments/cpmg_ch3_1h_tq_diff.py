@@ -21,9 +21,10 @@ Yuwen, Sekhar, Baldwin, Vallurupalli and Kay. Angew Chem Int Ed (2018) 57, 16777
 
 Note
 ----
+
 A sample configuration  file for this module is available using the command::
 
-    $ chemex config cpmg_ch3_1h_tq_dif
+    $ chemex config cpmg_ch3_1h_tq_diff
 
 """
 import functools as ft
@@ -64,7 +65,7 @@ _SCHEMA = {
 
 def read(config):
     ch.validate(config, _SCHEMA)
-    config["basis"] = cnl.Basis(type="ixyzsz_dif", extension="tq", spin_system="hc")
+    config["basis"] = cnl.Basis(type="ixyzsz_diff", extension="tq", spin_system="hc")
     config["fit"] = _fit_this(config)
     return ceh.load_experiment(config=config, pulse_seq_cls=PulseSeq)
 
@@ -108,6 +109,7 @@ class PulseSeq:
         # Calculation of the propagators with gradient 0
         self.prop.gradient_dephasing = 0.0
         d_tau_0, d_tauc_0 = self.prop.delays([self.tau, self.tauc])
+        p180_sx = self.prop.perfect180_s[0]
 
         # Calculation of the propagators with gradient 1
         self.prop.gradient_dephasing = 1.0 / 3.0 * self.k2_factor
@@ -143,19 +145,28 @@ class PulseSeq:
         grad1 = d_tau_4 @ d_delta_3 @ p180_grad1 @ d_tau_2 @ d_delta_1
         grad2 = d_tau_0 @ d_delta_1 @ p180_grad2 @ d_tau_2 @ d_delta_3
         if self.ipap_flg:
-            grad1 = grad1 @ d_tauc_0
-            grad2 = d_tauc_0 @ grad2
+            part1 = d_tauc_0 @ start
+            part2 = d_tauc_0
+            centre0 = grad2 @ p180pmy_4 @ grad1
+            centre0 = 0.5 * (centre0 + p180_sx @ centre0 @ p180_sx)
+        else:
+            part1 = start
+            part2 = self.prop.identity
+            centre0 = grad2 @ p180pmy_4 @ grad1
 
         # Calculating the intensities as a function of ncyc
-        part1 = grad1 @ start
-        intst = {0: self.prop.detect(grad2 @ p180pmy_4 @ part1)}
+        intst = {0: self.prop.detect(part2 @ centre0 @ part1)}
+
         for ncyc in set(ncycs) - {0}:
             phases1, phases2 = self._get_phases(ncyc)
             echo1 = d_cp_4[ncyc] @ p180_cp1 @ d_cp_4[ncyc]
             echo2 = d_cp_4[ncyc] @ p180_cp2 @ d_cp_4[ncyc]
             cpmg1 = ft.reduce(np.matmul, echo1[phases1])
             cpmg2 = ft.reduce(np.matmul, echo2[phases2])
-            intst[ncyc] = self.prop.detect(grad2 @ cpmg2 @ p180pmy_4 @ cpmg1 @ part1)
+            centre = grad2 @ cpmg2 @ p180pmy_4 @ cpmg1 @ grad1
+            if self.ipap_flg:
+                centre = 0.5 * (centre + p180_sx @ centre @ p180_sx)
+            intst[ncyc] = self.prop.detect(part2 @ centre @ part1)
 
         # Return profile
         return np.array([intst[ncyc] for ncyc in ncycs])
@@ -167,8 +178,7 @@ class PulseSeq:
             tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - 2 * self.pw90))
         else:
             tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - self.pw90))
-        delays = [self.tau]
-        delays.extend(tau_cps.values())
+        delays = [self.tau, *tau_cps.values()]
         return tau_cps, delays
 
     @staticmethod

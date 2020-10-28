@@ -19,6 +19,7 @@ Yuwen, Huang, Vallurupalli and Kay. Angew Chem Int Ed (2019) 58:6250-6254
 
 Note
 ----
+
 A sample configuration file for this module is available using the command::
 
     $ chemex config cpmg_ch3_1h_sq
@@ -43,7 +44,7 @@ _SCHEMA = {
                 "carrier": {"type": "number"},
                 "pw90": {"type": "number"},
                 "ncyc_max": {"type": "integer"},
-                "taua": {"type": "number", "default": 2e-3},
+                "taua": {"type": "number", "default": 2.00e-3},
                 "comp180_flg": {"type": "boolean", "default": True},
                 "ipap_flg": {"type": "boolean", "default": False},
                 "observed_state": {
@@ -114,7 +115,7 @@ class PulseSeq:
             p180_cp1 = p180_cp2 = p180
 
         # Getting the starting magnetization
-        start = self.prop.get_start_magnetization(terms=f"iy")
+        start = self.prop.get_start_magnetization(terms="iy")
         start = perfect180y @ d_taua @ d_taua @ start
         start = self.prop.keep_components(start, ["2ixsz_a", "2iysz_a"])
 
@@ -132,11 +133,11 @@ class PulseSeq:
         for ncyc in set(ncycs) - {0}:
             echo1 = d_cp[ncyc] @ p180_cp1 @ d_cp[ncyc]
             echo2 = d_cp[ncyc] @ p180_cp2 @ d_cp[ncyc]
-            cpmg1 = ft.reduce(np.matmul, echo1[phases1[-ncyc:]])
-            cpmg2 = ft.reduce(np.matmul, echo2[phases2[:ncyc]])
+            cpmg1 = ft.reduce(np.matmul, echo1[phases1.T[-ncyc:]])
+            cpmg2 = ft.reduce(np.matmul, echo2[phases2.T[:ncyc]])
             if ncyc < self.ncyc_max:
-                cpmg1 = ft.reduce(np.matmul, p180_cp1[phases1[:-ncyc]]) @ cpmg1
-                cpmg2 = cpmg2 @ ft.reduce(np.matmul, p180_cp2[phases2[ncyc:]])
+                cpmg1 = ft.reduce(np.matmul, p180_cp1[phases1.T[:-ncyc]]) @ cpmg1
+                cpmg2 = cpmg2 @ ft.reduce(np.matmul, p180_cp2[phases2.T[ncyc:]])
             centre = cpmg2 @ p180pmy @ cpmg1
             if self.ipap_flg:
                 intst[ncyc] = self.prop.detect(
@@ -162,17 +163,19 @@ class PulseSeq:
                 / (4.0 * ncycs_),
             )
         )
-        delays = [self.taua]
-        delays.extend(tau_cps.values())
+        delays = [self.taua, *tau_cps.values()]
         return tau_cps, delays
 
     def _get_phases(self):
-        cp_phases1 = [0, 1]
-        cp_phases2 = [0, 3]
-        phases1 = np.take(cp_phases1, np.flip(np.arange(self.ncyc_max)), mode="wrap")
-        phases2 = np.take(cp_phases2, np.arange(self.ncyc_max), mode="wrap")
+        cp_phases1 = [[0, 1], [1, 0]]
+        cp_phases2 = [[0, 3], [3, 0]]
+        phases1 = np.take(
+            cp_phases1, np.flip(np.arange(self.ncyc_max)), mode="wrap", axis=1
+        )
+        phases2 = np.take(cp_phases2, np.arange(self.ncyc_max), mode="wrap", axis=1)
         return phases1, phases2
 
     def ncycs_to_nu_cpmgs(self, ncycs):
-        ncycs_ = np.array(ncycs, dtype=np.float)
-        return ncycs_[ncycs_ > 0.0] / self.time_t2
+        ncycs_ = np.asarray(ncycs)
+        ncycs_ = ncycs_[ncycs_ > 0]
+        return ncycs_ / self.time_t2

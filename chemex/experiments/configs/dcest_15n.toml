@@ -55,8 +55,8 @@ h_larmor_frq = 800.0
 ## [optional, only used for HD exchange measurement]
 # d2o = 0.1
 
-## Labeling scheme of the sample, for deuterated samples "2H" should 
-## be used to obtain accurate initial estimates of relaxation rates 
+## Labeling scheme of the sample, for deuterated samples "2H" should
+## be used to obtain accurate initial estimates of relaxation rates
 ## based on model-free parameters, for uniformly 13C-labeled samples "13C"
 ## should be used to account for 1JCC properly [optional, default: []]
 # label = ["2H", "13C"]

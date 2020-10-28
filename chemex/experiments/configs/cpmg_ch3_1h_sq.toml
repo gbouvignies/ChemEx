@@ -18,7 +18,7 @@ pw90 = 10.0e-6
 ncyc_max = 40
 
 ## 1/4J, in seconds [optional, default: 2.0e-3]
-# taua = 2.0e-3
+# taua = 2.00e-3
 
 ## Performs CPMG using 90-240-90 composite pulses [optional, default: true]
 # comp180_flg = true

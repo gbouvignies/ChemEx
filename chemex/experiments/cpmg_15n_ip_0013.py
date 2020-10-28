@@ -4,25 +4,25 @@
 
 Analyzes 15N chemical exchange in the presence of high power 1H CW decoupling
 during the CPMG block. This keeps the spin system purely in-phase throughout,
-and is calculated using the (3n)×(3n), single-spin matrix, where n is the 
+and is calculated using the (3n)×(3n), single-spin matrix, where n is the
 number of states::
 
     { Ix(a), Iy(a), Iz(a),
       Ix(b), Iy(b), Iz(b), ... }
 
-This version is modified such that CPMG pulses are applied with [0013] phase 
+This version is modified such that CPMG pulses are applied with [0013] phase
 cycle as shown in Daiwen's paper. The CW decoupling on 1H is assumed to be
 strong enough (> 15 kHz) such that perfect 1H decoupling can be achieved.
 
 References
 ----------
 
-| Jiang, Yu, Zhang, Liu and Yang. J Magn Reson (2015) 257:1-7
-| Hansen, Vallurupalli and Kay. J Phys Chem B (2008) 112:5898-5904
+Jiang, Yu, Zhang, Liu and Yang. J Magn Reson (2015) 257:1-7
 
 
 Note
 ----
+
 A sample configuration file for this module is available using the command::
 
     $ chemex config cpmg_15n_ip_0013
@@ -137,10 +137,7 @@ class PulseSeq:
         tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - 0.75 * self.pw90))
         deltas = dict(zip(ncycs_, self.pw90 * (self.ncyc_max - ncycs_) + self.time_eq))
         deltas[0] = self.pw90 * (self.ncyc_max - 1) + self.time_eq
-        delays = [self.t_neg, self.t_pos2]
-        delays.extend(tau_cps.values())
-        delays.extend(deltas.values())
-
+        delays = [self.t_neg, self.t_pos2, *tau_cps.values(), *deltas.values()]
         return tau_cps, deltas, delays
 
     @staticmethod

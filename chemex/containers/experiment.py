@@ -130,7 +130,7 @@ class Experiments:
         return ft.reduce(lambda a, b: a & b, names)
 
     def __len__(self):
-        return sum([len(experiment) for experiment in self._experiments.values()])
+        return sum(len(experiment) for experiment in self._experiments.values())
 
     def __bool__(self):
         return bool(len(self))
@@ -247,7 +247,7 @@ class Experiment(abc.ABC):
 
     @property
     def pname_sets(self):
-        return list(set(profile.params) for profile in self._profiles)
+        return [set(profile.params) for profile in self._profiles]
 
     def get_relevant_subset(self, pnames):
         profiles = [

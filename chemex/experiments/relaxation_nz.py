@@ -2,8 +2,8 @@
 15N T1
 ======
 
-Analyzes 15N T1 experiments. This keeps the spin system purely in-phase 
-throughout, and is calculated using the (1n)×(1n), single-spin matrix, 
+Analyzes 15N T1 experiments. This keeps the spin system purely in-phase
+throughout, and is calculated using the (1n)×(1n), single-spin matrix,
 where n is the number of states::
 
     { Iz(a), Iz(b), ... }
@@ -11,7 +11,7 @@ where n is the number of states::
 References
 ----------
 
-TODO
+Kay, Nicholson, Delaglio, Bax, and Torchia. J Mag Reson (1992) 97:359-375
 
 
 Note

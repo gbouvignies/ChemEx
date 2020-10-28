@@ -112,12 +112,12 @@ class PulseSeq:
             self.prop.delays(self.time_eq) if self.time_eq > 0.0 else self.prop.identity
         )
         for offset in set(offsets):
-            if abs(offset) < 1e4:
+            if abs(offset) <= 1e4:
                 self.prop.offset_i = offset
                 p_delay = self.prop.delays(self.tau_dante)
                 p_pulse = self.prop.pulse_i(self.pw90, 0.0)
                 intst[offset] = (
-                    d_eq @ la.matrix_power(p_pulse @ p_delay, self.ncyc) @ start
+                    d_eq @ la.matrix_power(p_delay @ p_pulse, self.ncyc) @ start
                 )
             else:
                 intst[offset] = d_eq @ start

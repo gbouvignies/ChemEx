@@ -126,7 +126,7 @@ class PulseSeq:
                 cest = nl.matrix_power(cest_block, self.eta_block)
             else:
                 cest = self.prop.pulse_i(self.time_t1, 0.0, self.dephased)
-            if abs(offset) >= 1e4:
+            if abs(offset) > 1e4:
                 inept = self.p90_i[3] @ d_taua @ self.p180_isx @ d_taua @ self.p90_i[0]
                 cest = inept @ cest
             intst[offset] = self.prop.detect(cest @ start)

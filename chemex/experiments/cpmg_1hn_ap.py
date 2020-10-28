@@ -4,7 +4,7 @@
 
 Analyzes amide proton chemical exchange that is maintained as anti-phase
 magnetization throughout the CPMG block. This results in lower intrinsic
-relaxation rates and therefore better sensitivity. The calculations use 
+relaxation rates and therefore better sensitivity. The calculations use
 a (6n)×(6n), two-spin matrix, where n is the number of states::
 
     { Hx(a), Hy(a), Hz(a), 2HxNz(a), 2HyNz(a), 2HzNz(a),
@@ -19,6 +19,7 @@ Ishima and Torshia. J Biomol NMR (2003) 25:243-248
 
 Note
 ----
+
 A sample configuration file for this module is available using the command::
 
     $ chemex config cpmg_1hn_ap
@@ -106,7 +107,7 @@ class PulseSeq:
         part1 = d_neg @ p90[0] @ start
         part2 = d_eq @ p90[0] @ d_neg
         intst = {
-            0: self.prop.detect(part2 @ p180pmx @ part1),
+            0: self.prop.detect(d_eq @ p90[0] @ p180pmx @ p90[0] @ start),
             -1: self.prop.detect(part2 @ d_cp[-1] @ p180pmx @ d_cp[-1] @ part1),
         }
 
@@ -125,8 +126,7 @@ class PulseSeq:
         ncycs_ = ncycs_[ncycs_ > 0]
         tau_cps = dict(zip(ncycs_, self.time_t2 / (4.0 * ncycs_) - self.pw90))
         tau_cps[-1] = 0.5 * self.time_t2
-        delays = [self.t_neg, self.time_eq]
-        delays.extend(tau_cps.values())
+        delays = [self.t_neg, self.time_eq, *tau_cps.values()]
         return tau_cps, delays
 
     def ncycs_to_nu_cpmgs(self, ncycs):

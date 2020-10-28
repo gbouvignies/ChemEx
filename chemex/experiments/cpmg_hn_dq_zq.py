@@ -108,7 +108,8 @@ class PulseSeq:
         d_cp = {ncyc: delays[delay] for ncyc, delay in tau_cps.items()}
 
         # Calculation of the propagators corresponding to all the pulses
-        p9024090 = self.prop.p9024090_is[[0, 1], [0, 1]]
+        p9024090_1 = self.prop.p9024090_is_1[[0, 1], [0, 1]]
+        p9024090_2 = self.prop.p9024090_is_2[[0, 1], [0, 1]]
 
         # Getting the starting magnetization
         start = self.prop.get_start_magnetization(["2ixsx"])
@@ -116,10 +117,12 @@ class PulseSeq:
         # Calculating the cpmg trains
         intst = {0: self.prop.detect(start)}
         for ncyc in set(ncycs) - {0}:
-            phases = self._get_phases(ncyc)
-            echo = d_cp[ncyc] @ p9024090 @ d_cp[ncyc]
-            cpmg = ft.reduce(np.matmul, echo[phases])
-            intst[ncyc] = self.prop.detect(cpmg @ start)
+            phases1, phases2 = self._get_phases(ncyc)
+            echo1 = d_cp[ncyc] @ p9024090_1 @ d_cp[ncyc]
+            echo2 = d_cp[ncyc] @ p9024090_2 @ d_cp[ncyc]
+            cpmg1 = ft.reduce(np.matmul, echo1[phases1])
+            cpmg2 = ft.reduce(np.matmul, echo2[phases2])
+            intst[ncyc] = self.prop.detect(0.5 * (cpmg1 + cpmg2) @ start)
         return np.array([intst[ncyc] for ncyc in ncycs])
 
     @ft.lru_cache()
@@ -134,12 +137,17 @@ class PulseSeq:
     def _get_phases(self, ncyc):
         nu_cpmg = self.ncycs_to_nu_cpmgs(ncyc)
         if nu_cpmg < 51.0:
-            phases_ = [0, 1, 0, 1]
+            cp_phases1 = [0, 1, 0, 1]
+            cp_phases2 = [1, 0, 1, 0]
         elif nu_cpmg < 255.0:
-            phases_ = [0]
+            cp_phases1 = [0]
+            cp_phases2 = [1]
         else:
-            phases_ = [0, 1, 0, 1, 1, 0, 1, 0]
-        return np.take(phases_, np.flip(np.arange(2 * ncyc)), mode="wrap")
+            cp_phases1 = [0, 1, 0, 1, 1, 0, 1, 0]
+            cp_phases2 = [1, 0, 1, 0, 0, 1, 0, 1]
+        phases1 = np.take(cp_phases1, np.flip(np.arange(2 * ncyc)), mode="wrap")
+        phases2 = np.take(cp_phases2, np.flip(np.arange(2 * ncyc)), mode="wrap")
+        return phases1, phases2
 
     def _get_detection(self, state):
         if self.dq_flg:

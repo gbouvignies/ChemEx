@@ -35,7 +35,7 @@ h_larmor_frq = 800.0
 ## Ligand concentration, in M [optional, depending on the kinetic model]
 # l_total = 50.0e-6
 
-## Labeling scheme of the sample, for deuterated samples "2H" should 
+## Labeling scheme of the sample, for deuterated samples "2H" should
 ## be used to obtain accurate initial estimates of relaxation rates
 ## based on model-free parameters [optional, default: []]
 # label = ["2H"]

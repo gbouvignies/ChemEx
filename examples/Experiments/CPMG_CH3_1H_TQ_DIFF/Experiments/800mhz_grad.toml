@@ -1,11 +1,11 @@
 [experiment]
-name         = "cpmg_ch3_1h_tq_dif"
+name         = "cpmg_ch3_1h_tq_diff"
 time_t2      = 40.0e-3
 carrier      = 0.67800
 pw90         = 12.050e-6
 comp180_flg  = true
 ipap_flg     = false
-gradient     = 0.0
+gradient     = 30.6e-2
 delta        = 1.0e-3
 
 [conditions]
@@ -15,7 +15,7 @@ h_larmor_frq = 800.2
 # temperature = 25.0
 
 [data]
-path = "../Data/800MHz/"
+path = "../Data/800MHzGrad/"
 profiles = [
     ["L7HD1-CD1", "L7CD1-QD1.out"],
     ["L7HD2-CD2", "L7CD2-QD2.out"],

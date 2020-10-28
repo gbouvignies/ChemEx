@@ -12,7 +12,6 @@ Functions
 .. autosummary::
    :toctree: _autosummary/
 
-   _pop_fitmethod
    _minimize
    _write_files
    _write_statistics
@@ -30,4 +29,3 @@ Classes
 .. only:: builder_html
 
    [:download:`source code <../../../../chemex/fitting.py>`]
-
