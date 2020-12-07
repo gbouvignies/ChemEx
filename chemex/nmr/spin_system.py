@@ -104,7 +104,11 @@ class SpinSystem:
         return hash(self.name)
 
     def __eq__(self, other):
-        return self.name == other.name
+        if isinstance(other, str):
+            other = SpinSystem(other)
+        if isinstance(other, SpinSystem):
+            return self.name == other.name
+        return NotImplemented
 
     def __lt__(self, other):
         if isinstance(other, str):
@@ -120,6 +124,9 @@ class SpinSystem:
     def __len__(self):
         return len(self._spins)
 
+    def __bool__(self):
+        return bool(self._spins)
+
 
 def _name_to_spins(name):
     """Get spins from an assignment."""
@@ -127,6 +134,8 @@ def _name_to_spins(name):
     last_spin = {}
     for match in re.finditer(RE_NAME, name):
         spin = match.groupdict()
+        if not any(spin.values()):
+            continue
         for key, value in spin.items():
             if value is None:
                 spin[key] = last_spin.get(key, "")

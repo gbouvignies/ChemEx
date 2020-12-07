@@ -18,12 +18,12 @@ class Fit:
         self._method = {"": {}}
         self._plot = plot
 
-    def read_method(self, filename):
+    def read_methods(self, filename):
         if filename is None:
             return
         self._method = ch.read_toml(filename)
 
-    def fit(self, params, path=None, plot=None):
+    def run_methods(self, params, path=None, plot=None):
 
         if path is None:
             path = self._path
@@ -38,27 +38,22 @@ class Fit:
             if section:
                 ch.header2(f"\n{section.upper()}")
 
-            # Set the fitting algorithm
-            fitmethod = settings.get("fitmethod", "leastsq")
-            print(f'\nFitting method -> "{fitmethod}"')
-
             # Select a subset of profiles based on "INCLUDE" and "EXCLUDE"
             selection = {key: settings.get(key, None) for key in ("include", "exclude")}
             self._experiments.select(selection)
-
-            # Update the parameter "vary" and "expr" status
-            cps.set_status(params_, settings)
-
-            # Hack to set back parameters without an "expr" to the user values
-            if index == 0:
-                cps.put_back_starting_values(params_)
-
             if not self._experiments:
                 print("No data to fit...")
                 continue
 
+            # Update the parameter "vary" and "expr" status
+            cps.set_status(params_, settings, keep_starting_values=(index == 0))
+
+            # Set the fitting algorithm
+            fitmethod = settings.get("fitmethod", "leastsq")
+            print(f'\nFitting method -> "{fitmethod}"')
+
             # Make cluster of data depending on indendent set of parameters
-            groups = self._cluster_data(params_)
+            groups = self._create_clusters(params_)
 
             # Set section flags and path
             multi_groups = len(groups) > 1
@@ -69,7 +64,7 @@ class Fit:
             for index, (g_name, (g_experiments, g_params)) in enumerate(groups.items()):
                 group_path = path / section_path
                 if multi_groups:
-                    group_path = group_path / "Clusters" / str(g_name)
+                    group_path = group_path / "Clusters" / g_name.to_folder_name()
                     print(f"\n\n-- Cluster {index + 1}/{len(groups)} ({g_name}) --")
                 g_params = _minimize(g_experiments, g_params, fitmethod)
                 _write_files(g_experiments, g_params, group_path)
@@ -122,11 +117,11 @@ class Fit:
             ch.header2(f"Iteration {index} out of {iter_nb}")
             path = self._path / method["folder"] / f"{index:0{ndigits}}"
             self._experiments = getattr(experiments, method["attr"])(*method["args"])
-            self.fit(params, path, plot="nothing")
+            self.run_methods(params, path, plot="nothing")
         self._experiments = experiments
 
-    def _cluster_data(self, params):
-        """Find clusters of datapoints that depend on disjoint sets of variables.
+    def _create_clusters(self, params):
+        """Create clusters of datapoints that depend on disjoint sets of variables.
 
         For example, if the population of the minor state and the exchange
         rate are set to 'fix', chances are that the fit can be decomposed
@@ -172,6 +167,8 @@ def _minimize(experiments, params, fitmethod=None):
         kws["keep"] = "all"
     elif fitmethod == "least_squares":
         kws["verbose"] = 2
+    elif fitmethod == "leastsq":
+        kws["factor"] = 0.1
     elif fitmethod in ["basinhopping", "differential_evolution"]:
         kws["disp"] = True
     if fitmethod in ["leastsq", "shgo", "dual_annealing"]:
@@ -186,7 +183,7 @@ def _minimize(experiments, params, fitmethod=None):
         result = minimizer.result
     except ValueError:
         result = minimizer.result
-        sys.exit(result.params.pretty_print())
+        sys.stderr.write("\n -- Got a ValueError: minimization stopped --\n")
     _print_chisqr(experiments, result.params)
     return result.params
 

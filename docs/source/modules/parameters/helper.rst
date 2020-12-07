@@ -14,10 +14,8 @@ Functions
 
    merge
    create_params
-   _settings_to_pnames
    _settings_to_params
    _get_settings
-   _get_expr_names
    _set_to_fit
 
 .. only:: builder_html

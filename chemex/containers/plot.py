@@ -111,12 +111,13 @@ def shift(name_pdf, name, fit, exp, err):
     fig = mf.Figure()
     ax = fig.subplots(1, 1)
     fig.align_labels()
-    fig.suptitle(f"{str(name).upper()}")
     ax.errorbar(fit, exp, yerr=err, fmt=".", color=_RED700)
     val_min = min(ax.get_xlim()[0], ax.get_ylim()[0])
     val_max = max(ax.get_xlim()[1], ax.get_ylim()[1])
     ax.set_aspect("equal", "box")
     ax.plot([val_min, val_max], [val_min, val_max], color="k", linewidth=0.5, zorder=1)
+    ax.set_xlabel(r"$Δδ_\mathregular{fit}$ (ppb)")
+    ax.set_ylabel(r"$Δδ_\mathregular{exp}$ (ppb)")
     fig.savefig(name_pdf)
 
 

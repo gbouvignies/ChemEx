@@ -10,7 +10,7 @@ import chemex.helper as ch
 
 @dc.dataclass(frozen=True, eq=True)
 class Conditions:
-    h_larmor_frq: float
+    h_larmor_frq: Optional[float] = None
     temperature: Optional[float] = None
     p_total: Optional[float] = None
     l_total: Optional[float] = None
@@ -18,7 +18,34 @@ class Conditions:
     label: List[str] = dc.field(default_factory=list)
 
     def __post_init__(self):
+        for field in ("h_larmor_frq", "temperature", "p_total", "l_total", "d2o"):
+            value = getattr(self, field)
+            if value is not None:
+                super().__setattr__(field, float(value))
         super().__setattr__("label", tuple(self.label))
+
+    @classmethod
+    def from_dict(cls, dict_):
+        return cls(
+            dict_.get("h_larmor_frq"),
+            dict_.get("temperature"),
+            dict_.get("p_total"),
+            dict_.get("l_total"),
+            dict_.get("d2o"),
+            dict_.get("label", []),
+        )
+
+    def rounded(self):
+        h_larmor_frq = round(self.h_larmor_frq, 1) if self.h_larmor_frq else None
+        temperature = round(self.temperature, 1) if self.temperature else None
+        return dc.replace(self, h_larmor_frq=h_larmor_frq, temperature=temperature)
+
+    def __and__(self, other):
+        both = [
+            value1 if value1 == value2 else None
+            for value1, value2 in zip(dc.astuple(self), dc.astuple(other))
+        ]
+        return Conditions(*both)
 
 
 def parse_conditions(config):
@@ -77,5 +104,6 @@ def parse_conditions(config):
                 f"to be defined in the experiment file. '{e.instance}' is missing from"
                 f"'{filename}'."
             )
+
     else:
         return Conditions(**config["conditions"])

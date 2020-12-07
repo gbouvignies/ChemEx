@@ -61,11 +61,6 @@ class ShiftProfile:
         profile.data["shift"] = np.random.normal(shift_ref, profile.data["error"])
         return profile
 
-    def get_cs_value(self, params):
-        name = self._pulse_seq.cs_i_state
-        fname = self._pnames[name]
-        return params[fname]
-
     def _get_parvals(self, params):
         return tuple(
             (name1, params[name2].value) for name1, name2 in self._pnames.items()
