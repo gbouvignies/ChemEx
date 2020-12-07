@@ -102,11 +102,11 @@ def make_settings(basis, model, conditions):
                     "value": 0.0,
                 },
                 f"cs_i_{state}": {
-                    "attributes": ("spin_system", "temperature"),
+                    "attributes": ("spin_system",),
                     "value": 0.0,
                 },
                 f"cs_s_{state}": {
-                    "attributes": ("spin_system", "temperature"),
+                    "attributes": ("spin_system",),
                     "value": 0.0,
                 },
                 f"j_is_{state}": {
@@ -117,13 +117,13 @@ def make_settings(basis, model, conditions):
             }
         )
         # As 1HN sites exchange with water, the "expr" should be modified accordingly
-        if spin_system == "nh":
+        if spin_system == "hn":
+            r2a_s = f"{{r2_s_{state}}} + {{r1a_is_{state}}} - {{r1_s_{state}}}"
+            settings[f"r2a_s_{state}"]["expr"] = r2a_s
+        elif spin_system == "nh":
             r2a_i = f"{{r2_i_{state}}} + {{r1a_is_{state}}} - {{r1_i_{state}}}"
             settings[f"r2a_i_{state}"]["expr"] = r2a_i
             settings[f"r1a_is_{state}"]["expr"] = ""
-        elif spin_system == "hn":
-            r2a_s = f"{{r2_s_{state}}} + {{r1a_is_{state}}} - {{r1_s_{state}}}"
-            settings[f"r2a_s_{state}"]["expr"] = r2a_s
     if model.name.startswith("4st_hd"):
         settings = _add_dw_hd(settings, model)
     else:

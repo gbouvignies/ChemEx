@@ -45,16 +45,14 @@ def main():
 def fit(args):
 
     # Parse kinetics model
-    model = cpk.parse_model(name=args.model)
+    model = cpk.parse_model(args.model)
 
     # Read initial values of fitting/fixed parameters
     defaults = cps.read_defaults(args.parameters)
 
     # Read experimental setup and data
     selection = {"include": args.include, "exclude": args.exclude}
-    experiments = cce.read(
-        filenames=args.experiments, model=model, selection=selection, defaults=defaults
-    )
+    experiments = cce.read(args.experiments, model, selection, defaults)
 
     if not experiments:
         sys.exit("\nerror: No data to fit")
@@ -68,8 +66,8 @@ def fit(args):
     # Run the fit
     ch.header1("Running the main fit")
     fitter = cf.Fit(experiments, args.out_dir, args.plot)
-    fitter.read_method(args.method)
-    params_fitted = fitter.fit(params)
+    fitter.read_methods(args.method)
+    params_fitted = fitter.run_methods(params)
 
     # Run Monte-Carlo simulations
     params_sim = cps.copy_starting_values(params_fitted, params)

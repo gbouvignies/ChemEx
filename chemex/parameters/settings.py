@@ -55,7 +55,6 @@ def set_values(params, defaults):
             values_ = dict(zip(("value", "min", "max", "brute_step"), values))
             matched = _set_params(params, name, values_)
             matches.update({name.to_section_name(): len(matched)})
-    # _print_matches(matches)
     _check_params(params)
     for param in params.values():
         param.user_data = param.value
@@ -84,7 +83,7 @@ def _check_params(params):
         print("\n\n".join(np.unique(messages)))
 
 
-def set_status(params, settings=None, verbose=True):
+def set_status(params, settings=None, verbose=True, keep_starting_values=False):
     """Set whether or not to vary a fitting parameter or to use a mathemetical
     expression."""
     if settings is None:
@@ -104,6 +103,8 @@ def set_status(params, settings=None, verbose=True):
         matches.update({name.to_section_name(): len(matched)})
     if verbose:
         _print_matches(matches)
+    if keep_starting_values:
+        put_back_starting_values(params)
 
 
 def put_back_starting_values(params):

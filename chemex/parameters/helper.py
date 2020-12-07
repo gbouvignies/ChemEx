@@ -65,11 +65,6 @@ def create_params(config, propagator):
     return pnames, params
 
 
-def _settings_to_pnames(settings, conditions, propagator, spin_system):
-    settings_profile = {k: settings[k] for k in set(settings) & set(propagator.snames)}
-    return cpn.get_pnames(settings_profile, conditions, spin_system)
-
-
 def _settings_to_params(settings, conditions, spin_system):
     pnames = cpn.get_pnames(settings, conditions, spin_system)
     conditions_ = dc.asdict(conditions)
@@ -101,10 +96,6 @@ def _get_settings(settings_full, propagator):
             {k: settings_full[k].copy() for k in names_expr if k in settings_full}
         )
     return settings_profile, settings_params
-
-
-def _get_expr_names(expr):
-    return aa.get_ast_names(ast.parse(expr))
 
 
 def _set_to_fit(settings, model, observed_state, fitted):

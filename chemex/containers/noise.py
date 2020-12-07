@@ -21,11 +21,9 @@ def _variance_from_duplicates(data):
         if group_size > 1:
             variances.append(np.var(group, ddof=1))
             weights.append(group_size - 1)
-    if variances:
-        variance = np.average(variances, weights=weights)
-    else:
-        variance = np.mean(data[e_name])
-    return variance
+    if not variances:
+        return np.mean(data[e_name])
+    return np.average(variances, weights=weights)
 
 
 def _variance_from_scatter(data):

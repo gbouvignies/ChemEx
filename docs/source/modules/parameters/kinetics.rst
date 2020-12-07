@@ -13,7 +13,6 @@ Functions
    :toctree: _autosummary/
 
    parse_model
-   _get_state_names
    _check_model_name
    make_settings_2st
    make_settings_2st_rs

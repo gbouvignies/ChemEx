@@ -18,7 +18,6 @@ Functions
    _compress
    _multireplace
    _re_to_dict
-   remove_state
    get_pnames
    _squeeze_name
    _name_to_spin_system

@@ -2,8 +2,8 @@ import pathlib as pl
 
 import numpy as np
 
-import chemex.containers.cest as ccce
-import chemex.containers.cpmg as cccp
+import chemex.containers.cest as ccc
+import chemex.containers.cpmg as ccp
 import chemex.containers.experiment as cce
 import chemex.containers.relaxation as ccr
 import chemex.containers.shift as ccs
@@ -106,27 +106,27 @@ _CONTAINERS = {
     },
     "cest": {
         "experiment": cce.RelaxationExperiment,
-        "profile": ccce.CestProfile,
+        "profile": ccc.CestProfile,
         "read": _read_profiles,
-        "schema": ccce.CEST_SCHEMA,
+        "schema": ccc.CEST_SCHEMA,
     },
     "dcest": {
         "experiment": cce.RelaxationExperiment,
-        "profile": ccce.CestProfile,
+        "profile": ccc.CestProfile,
         "read": _read_profiles,
-        "schema": ccce.CEST_SCHEMA,
+        "schema": ccc.CEST_SCHEMA,
     },
     "coscest": {
         "experiment": cce.RelaxationExperiment,
-        "profile": ccce.CestProfile,
+        "profile": ccc.CestProfile,
         "read": _read_profiles,
-        "schema": ccce.CEST_SCHEMA,
+        "schema": ccc.CEST_SCHEMA,
     },
     "cpmg": {
         "experiment": cce.RelaxationExperiment,
-        "profile": cccp.CpmgProfile,
+        "profile": ccp.CpmgProfile,
         "read": _read_profiles,
-        "schema": cccp.CPMG_SCHEMA,
+        "schema": ccp.CPMG_SCHEMA,
     },
     "shift": {
         "experiment": cce.ShiftExperiment,

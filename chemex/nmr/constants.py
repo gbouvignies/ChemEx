@@ -18,8 +18,6 @@ GAMMA = {
     "p": 10.8394e07,
 }
 
-G_RATIO = {key: val / GAMMA["h"] for key, val in GAMMA.items()}
-
 # Define nuclide frequency ratios wrt proton
 # IUPAC values for bio NMR: Markley et al, Pure & Appl. Chem., (1998) 70, p117
 XI_RATIO = {

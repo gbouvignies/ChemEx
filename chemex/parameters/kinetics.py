@@ -13,13 +13,9 @@ def parse_model(name):
     name_, *ext = name.split(".")
     name_ = _check_model_name(name_)
     state_nb = int(name_[0])
-    states = _get_state_names(state_nb)
+    states = string.ascii_lowercase[:state_nb]
     make_settings_free = ext[0] == "mf" if ext else False
     return Model(name_, states, make_settings_free)
-
-
-def _get_state_names(state_nb):
-    return string.ascii_lowercase[:state_nb]
 
 
 def _check_model_name(name):
@@ -161,9 +157,9 @@ def make_settings_2st_eyring(conditions, spin_system):
     celsius = conditions.temperature
     return {
         "dh_b": {"attributes": ("p_total", "l_total"), "value": 8e3, "vary": True},
-        "ds_b": {"attributes": ("p_total", "l_total"), "value": 0e2, "vary": False},
+        "ds_b": {"attributes": ("p_total", "l_total"), "value": 0.0, "vary": False},
         "dh_ab": {"attributes": ("p_total", "l_total"), "value": 6.5e4, "vary": True},
-        "ds_ab": {"attributes": ("p_total", "l_total"), "value": 0e4, "vary": False},
+        "ds_ab": {"attributes": ("p_total", "l_total"), "value": 0.0, "vary": False},
         "pa": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,

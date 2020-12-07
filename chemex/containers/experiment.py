@@ -12,6 +12,7 @@ import chemex.experiments as ce
 import chemex.helper as ch
 import chemex.nmr.rates as cnr
 import chemex.parameters.helper as cph
+import chemex.parameters.name as cpn
 
 
 class Experiments:
@@ -124,10 +125,14 @@ class Experiments:
         )
 
     def get_cluster_name(self):
-        names = [
-            experiment.get_cluster_name() for experiment in self._experiments.values()
-        ]
-        return ft.reduce(lambda a, b: a & b, names)
+        experiments = iter(self._experiments.values())
+        experiment = next(experiments)
+        spin_system = experiment.get_cluster_name()
+        conditions = experiment.config["conditions"]
+        for experiment in experiments:
+            spin_system &= experiment.get_cluster_name()
+            conditions &= experiment.config["conditions"]
+        return cpn.ParamName(spin_system=spin_system, conditions=conditions)
 
     def __len__(self):
         return sum(len(experiment) for experiment in self._experiments.values())
