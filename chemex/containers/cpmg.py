@@ -222,13 +222,15 @@ class CpmgData:
             return np.rec.array([[], [], [], []], dtype=dtype)
         points = self.points[~self.refs]
         points_ref = self.points[self.refs]
-        nu_cpmgs = self._ncycs_to_nu_cpmg(points["ncycs"])
         r2 = self._intst_to_r2(points["intensities"], points_ref["intensities"])
+        mask_r2 = np.abs(r2) < 1e16
+        r2 = r2[mask_r2]
         intst_ens = points["intensities"] + points["errors"] * self.randm1
         intst_ref_ens = points_ref["intensities"] + points_ref["errors"] * self.randm2
-        r2_ens = self._intst_to_r2(intst_ens, intst_ref_ens)
+        r2_ens = self._intst_to_r2(intst_ens[:, mask_r2], intst_ref_ens)
         errors = np.percentile(r2_ens - r2, [15.9, 84.1], axis=0).transpose()
-        mask = self.mask[~self.refs]
+        nu_cpmgs = self._ncycs_to_nu_cpmg(points["ncycs"])[mask_r2]
+        mask = self.mask[~self.refs][mask_r2]
         r2_exp = np.rec.array([nu_cpmgs, r2, errors, mask], dtype=dtype)
         return np.sort(r2_exp, order="nu_cpmgs")
 
