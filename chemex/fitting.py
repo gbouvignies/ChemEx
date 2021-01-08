@@ -1,4 +1,5 @@
 """The fitting module contains the code for fitting the experimental data."""
+import pathlib
 import sys
 
 import lmfit as lm
@@ -8,6 +9,7 @@ import scipy.stats as ss
 import chemex.containers.plot as ccp
 import chemex.helper as ch
 import chemex.parameters.helper as cph
+import chemex.parameters.name as cpn
 import chemex.parameters.settings as cps
 
 
@@ -33,7 +35,7 @@ class Fit:
 
         params_ = params.copy()
 
-        for index, (section, settings) in enumerate(self._method.items()):
+        for section, settings in self._method.items():
 
             if section:
                 ch.header2(f"\n{section.upper()}")
@@ -46,45 +48,42 @@ class Fit:
                 continue
 
             # Update the parameter "vary" and "expr" status
-            cps.set_status(params_, settings, keep_starting_values=(index == 0))
+            cps.set_status(params_, settings)
 
             # Set the fitting algorithm
             fitmethod = settings.get("fitmethod", "leastsq")
             print(f'\nFitting method -> "{fitmethod}"')
 
             # Make cluster of data depending on indendent set of parameters
-            groups = self._create_clusters(params_)
-
-            # Set section flags and path
-            multi_groups = len(groups) > 1
-            plot_group_flg = plot == "all" or (not multi_groups and plot == "normal")
-            section_path = section.upper() if len(self._method) > 1 else ""
-
-            g_params_all = []
-            for index, (g_name, (g_experiments, g_params)) in enumerate(groups.items()):
-                group_path = path / section_path
-                if multi_groups:
-                    group_path = group_path / "Clusters" / g_name.to_folder_name()
-                    print(f"\n\n-- Cluster {index + 1}/{len(groups)} ({g_name}) --")
-                g_params = _minimize(g_experiments, g_params, fitmethod)
-                _write_files(g_experiments, g_params, group_path)
-                if plot_group_flg:
-                    ccp.write_plots(g_experiments, g_params, group_path)
-                g_params_all.append(g_params)
-
-            g_params_merged = cph.merge(g_params_all)
-
-            if multi_groups:
-                print("\n\n-- All clusters --")
-                _print_chisqr(self._experiments, g_params_merged)
-                path_ = path / section_path / "All"
-                _write_files(self._experiments, g_params_merged, path_)
-                if plot != "nothing":
-                    ccp.write_plots(self._experiments, g_params_merged, path_)
-
+            groups = self._create_groups(params_)
+            g_params_merged = self._fit_groups(path, plot, section, fitmethod, groups)
             params_.update(g_params_merged)
 
         return params_
+
+    def _fit_groups(self, path, plot, section, fitmethod, groups):
+        multi_groups = len(groups) > 1
+        plot_group_flg = plot == "all" or (not multi_groups and plot == "normal")
+        if len(self._method) > 1:
+            path /= pathlib.Path(section.upper())
+        params_list = []
+        for group in groups:
+            group_path = path / group["path"]
+            print(group["message"], end="")
+            params = _minimize(group["experiments"], group["params"], fitmethod)
+            _write_files(group["experiments"], params, group_path)
+            if plot_group_flg:
+                ccp.write_plots(group["experiments"], params, group_path)
+            params_list.append(params)
+        params_merged = cph.merge(params_list)
+        if multi_groups:
+            print("\n\n-- All clusters --")
+            _print_chisqr(self._experiments, params_merged)
+            path_ = path / pathlib.Path("All")
+            _write_files(self._experiments, params_merged, path_)
+            if plot != "nothing":
+                ccp.write_plots(self._experiments, params_merged, path_)
+        return params_merged
 
     def mc_simulations(self, params, iter_nb, name="mc"):
         if iter_nb is None:
@@ -114,49 +113,61 @@ class Fit:
         ndigits = len(str(iter_nb))
         experiments = self._experiments
         for index in range(1, iter_nb + 1):
+            params_mc = params.copy()
             ch.header2(f"Iteration {index} out of {iter_nb}")
             path = self._path / method["folder"] / f"{index:0{ndigits}}"
             self._experiments = getattr(experiments, method["attr"])(*method["args"])
-            self.run_methods(params, path, plot="nothing")
+            self.run_methods(params_mc, path, plot="nothing")
         self._experiments = experiments
 
-    def _create_clusters(self, params):
+    def _create_groups(self, params):
         """Create clusters of datapoints that depend on disjoint sets of variables.
 
         For example, if the population of the minor state and the exchange
         rate are set to 'fix', chances are that the fit can be decomposed
         residue-specifically.
         """
-        params_ = self._experiments.select_params(params)
-        pnames_groups = self._group_pnames(params_)
-        groups = self._group_data(params_, pnames_groups)
-        return {name: groups[name] for name in sorted(groups)}
+        params_exp = self._experiments.select_params(params)
+        pname_groups = self._group_pnames(params_exp)
+        number = len(pname_groups)
+        if number > 1:
+            path = pathlib.Path("Clusters")
+            message = f"\n\n-- Cluster {{index}}/{number} ({{name}}) --\n"
+        else:
+            path = pathlib.Path("")
+            message = ""
+        groups_dict = {}
+        for index, pnames in enumerate(pname_groups, start=1):
+            experiments = self._experiments.get_relevant_subset(pnames)
+            name = experiments.get_cluster_name() if number > 1 else cpn.ParamName()
+            group = {
+                "experiments": experiments,
+                "params": experiments.select_params(params_exp),
+                "path": path / name.to_folder_name(),
+            }
+            groups_dict[name] = group
+        groups = []
+        for index, (name, group) in enumerate(sorted(groups_dict.items()), start=1):
+            group["message"] = message.format(index=index, name=name)
+            groups.append(group)
+        return groups
 
     def _group_pnames(self, params):
         pnames_vary = {
             name for name, param in params.items() if param.vary and not param.expr
         }
-        clusters = []
+        groups = []
         for pnames in self._experiments.pname_sets:
             varies = pnames & pnames_vary
             found = False
-            for pname_cluster in clusters:
-                if varies & pname_cluster:
-                    pname_cluster |= varies
+            for group in groups:
+                if varies & group:
+                    group |= varies
                     found = True
                     break
             if not found and varies:
-                clusters.append(varies)
-        return clusters
-
-    def _group_data(self, params, pname_groups):
-        clusters_ = {}
-        for pnames in pname_groups:
-            cluster_experiments = self._experiments.get_relevant_subset(pnames)
-            cluster_params = cluster_experiments.select_params(params)
-            cluster_name = cluster_experiments.get_cluster_name()
-            clusters_[cluster_name] = (cluster_experiments, cluster_params)
-        return clusters_
+                groups.append(varies)
+        return groups
 
 
 def _minimize(experiments, params, fitmethod=None):

@@ -70,10 +70,9 @@ def fit(args):
     params_fitted = fitter.run_methods(params)
 
     # Run Monte-Carlo simulations
-    params_sim = cps.copy_starting_values(params_fitted, params)
     for mc_name in ("mc", "bs", "bsn"):
         n_iter = vars(args).get(mc_name)
-        fitter.mc_simulations(params_sim, n_iter, mc_name)
+        fitter.mc_simulations(params_fitted, n_iter, mc_name)
 
 
 def simulate(args):

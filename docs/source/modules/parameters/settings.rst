@@ -16,7 +16,6 @@ Functions
    set_values
    _check_params
    set_status
-   put_back_starting_values
    _print_matches
    _set_param_expr
    _set_params
