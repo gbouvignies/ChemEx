@@ -56,8 +56,6 @@ def set_values(params, defaults):
             matched = _set_params(params, name, values_)
             matches.update({name.to_section_name(): len(matched)})
     _check_params(params)
-    for param in params.values():
-        param.user_data = param.value
 
 
 def _check_params(params):
@@ -83,7 +81,7 @@ def _check_params(params):
         print("\n\n".join(np.unique(messages)))
 
 
-def set_status(params, settings=None, verbose=True, keep_starting_values=False):
+def set_status(params, settings=None, verbose=True):
     """Set whether or not to vary a fitting parameter or to use a mathemetical
     expression."""
     if settings is None:
@@ -103,21 +101,6 @@ def set_status(params, settings=None, verbose=True, keep_starting_values=False):
         matches.update({name.to_section_name(): len(matched)})
     if verbose:
         _print_matches(matches)
-    if keep_starting_values:
-        put_back_starting_values(params)
-
-
-def put_back_starting_values(params):
-    for param in params.values():
-        if param.user_data:
-            param.value = param.user_data
-
-
-def copy_starting_values(params_from, params_to):
-    params = params_to.copy()
-    for name, param in params_from.items():
-        params[name].user_data = param.value
-    return params
 
 
 def _print_matches(matches):
@@ -220,7 +203,10 @@ def _quote(text):
 def _params_to_string(params):
     col_width = {}
     par_string = {"GLOBAL": []}
-    for name, param in sorted(params.items()):
+    sorted_params = sorted(
+        params.items(), key=lambda x: cpn.ParamName.from_full_name(x[0])
+    )
+    for name, param in sorted_params:
         par_name = cpn.ParamName.from_full_name(name)
         if par_name.spin_system:  # residue-specific parameter
             name_print = cns.SpinSystem(par_name.spin_system)
