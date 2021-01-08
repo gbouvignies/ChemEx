@@ -6,4 +6,4 @@ Exchange Saturation Transfer.
 
 """
 
-__version__ = "2019.1.0-dev0"
+__version__ = "2020.1.0-dev0"
