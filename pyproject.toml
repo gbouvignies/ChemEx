@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "chemex"
-version = "2020.1.0-dev0"
+version = "2021.1.0-dev1"
 description = "ChemEx is an analysis program for chemical exchange detected by NMR"
 authors = ["Guillaume Bouvignies <gbouvignies@gmail.com>"]
 license = "BSD-3-Clause"
