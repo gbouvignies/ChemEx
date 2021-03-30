@@ -185,12 +185,21 @@ class ParamName:
         return bool(str(self))
 
     def _members(self):
+        temperature = h_larmor_frq = p_total = l_total = -1e16
+        if self.conditions.temperature is not None:
+            temperature = self.conditions.temperature
+        if self.conditions.h_larmor_frq is not None:
+            h_larmor_frq = self.conditions.h_larmor_frq
+        if self.conditions.p_total is not None:
+            p_total = self.conditions.p_total
+        if self.conditions.l_total is not None:
+            l_total = self.conditions.l_total
         return (
             self.name,
-            self.conditions.temperature,
-            self.conditions.h_larmor_frq,
-            self.conditions.p_total,
-            self.conditions.l_total,
+            temperature,
+            h_larmor_frq,
+            p_total,
+            l_total,
             self._spin_system,
         )
 
