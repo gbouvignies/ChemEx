@@ -85,15 +85,14 @@ def simulate(args):
 
     # Read experimental setup and data
     selection = {"include": args.include, "exclude": args.exclude}
-    experiments = cce.read(
-        filenames=args.experiments, model=model, selection=selection, defaults=defaults
-    )
-
-    # Create parameters
-    params = experiments.params
+    experiments = cce.read(args.experiments, model, selection, defaults)
 
     if not experiments:
         sys.exit("\nerror: No data to simulate")
+
+    # Create parameters
+    params = experiments.params
+    params.update_constraints()
 
     # Set to "fix" all parameters that are set to "fit"
     for param in params.values():
