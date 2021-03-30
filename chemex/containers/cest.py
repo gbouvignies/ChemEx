@@ -181,13 +181,13 @@ class CestProfile:
 
     def _get_plot_data_fit(self, params, simulation=False):
         refs = self.data.refs
-        data = self.data.points[~refs]
         if simulation:
+            self.data.mask[refs] = True
             intst_calc = self.calculate(params)
             intst_ref = np.mean(intst_calc[refs[self.data.mask]])
         else:
             intst_ref = np.mean(self.data.points[refs]["intensities"])
-        offsets_fit = ccp.get_grid(data["offsets"], 500, 0.02)
+        offsets_fit = ccp.get_grid(self.data.points[~refs]["offsets"], 500, 0.02)
         ppms = self._pulse_seq.offsets_to_ppms(offsets_fit)
         intensities = self.calculate(params, offsets_fit) / intst_ref
         data_fit = np.rec.array([ppms, intensities], names=["ppms", "intensities"])
