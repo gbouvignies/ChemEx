@@ -36,8 +36,7 @@ class SpinSystem:
 
     @name.setter
     def name(self, value):
-        spin_list = _name_to_spins(str(value).upper())
-        self._spins = dict(zip(_ALIASES, spin_list))
+        self._spins = _name_to_spins(str(value).upper())
         self._name = _spins_to_name(self._spins.values())
 
     @property
@@ -143,7 +142,7 @@ def _name_to_spins(name):
         spin["name"] = "{group}{nucleus}".format_map(spin)
         spins.append(spin)
         last_spin = spin
-    return spins
+    return dict(zip(_ALIASES, spins))
 
 
 def _spins_to_name(spins):

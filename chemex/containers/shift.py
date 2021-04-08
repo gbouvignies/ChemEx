@@ -25,12 +25,13 @@ SHIFT_SCHEMA = {
 
 @ft.total_ordering
 class ShiftProfile:
-    def __init__(self, name, data, pulse_seq, pnames, params):
+    def __init__(self, name, data, pulse_seq, pnames, params, params_mf):
         self.name = name
         self.data = data
         self._pulse_seq = pulse_seq
         self._pnames = pnames
         self.params = params
+        self.params_mf = params_mf
 
     def residuals(self, params):
         residuals = (self.calculate(params) - self.data["shift"]) / self.data["error"]
@@ -73,7 +74,9 @@ class ShiftProfile:
             "shift": 0.5 * (self.data["shift"] + other.data["shift"]),
             "error": np.sqrt(self.data["error"] ** 2 + other.data["error"] ** 2),
         }
-        return ShiftProfile(self.name, data, self._pulse_seq, self._pnames, self.params)
+        return ShiftProfile(
+            self.name, data, self._pulse_seq, self._pnames, self.params, self.params_mf
+        )
 
     def __eq__(self, other: object):
         if not isinstance(other, type(self)):

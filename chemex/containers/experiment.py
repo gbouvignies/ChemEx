@@ -102,6 +102,12 @@ class Experiments:
     def params(self):
         return cph.merge(experiment.params for experiment in self._experiments.values())
 
+    @property
+    def params_mf(self):
+        return cph.merge(
+            experiment.params_mf for experiment in self._experiments.values()
+        )
+
     def select_params(self, params):
         pnames = self.params.keys()
         selected = lf.Parameters(usersyms=cnr.rate_functions)
@@ -249,6 +255,10 @@ class Experiment(abc.ABC):
     @property
     def params(self):
         return cph.merge(profile.params for profile in self._profiles)
+
+    @property
+    def params_mf(self):
+        return cph.merge(profile.params_mf for profile in self._profiles)
 
     @property
     def pname_sets(self):

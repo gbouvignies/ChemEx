@@ -88,8 +88,8 @@ class ParamName:
                 (NUC\s*->\s*(?P<spin_system>(\w|-)+)) |
                 (T\s*->s*(?P<temperature>{0})) |
                 (B0\s*->\s*(?P<h_larmor_frq>{0})) |
-                (\[P\]\s*->\s*(?P<p_total>{0})) |
-                (\[L\]\s*->\s*(?P<l_total>{0})) |
+                (\[P]\s*->\s*(?P<p_total>{0})) |
+                (\[L]\s*->\s*(?P<l_total>{0})) |
                 (D2O\s*->\s*(?P<d2o>{0})) |
             """.format(
                 _RE_FLOAT
@@ -139,7 +139,7 @@ class ParamName:
         re_name = self._to_re()
         return re_name.match(other)
 
-    @ft.lru_cache()
+    @ft.lru_cache(maxsize=None)
     def _to_re(self):
         if self._spin_system is not None:
             spin_system = self._spin_system.to_re().pattern
@@ -245,7 +245,7 @@ def _multireplace(string, replacements):
     substrings = sorted(replacements, key=len, reverse=True)
 
     # Create a big OR regex that matches any of the substrings to replace
-    regexp = re.compile("|".join([re.escape(substring) for substring in substrings]))
+    regexp = re.compile("|".join(re.escape(substring) for substring in substrings))
 
     # For each match, look up the new string in the replacements
     return regexp.sub(lambda match: replacements[match.group(0)], string)
@@ -271,7 +271,7 @@ def get_pnames(settings, conditions=None, spin_system=None):
         spin_system_ = None
         if "spin_system" in attributes:
             spin_system_ = _name_to_spin_system(name, spin_system)
-        pnames[name] = ParamName(name_, spin_system_, conditions_).to_full_name()
+        pnames[name] = ParamName(name_, spin_system_, conditions_)
     return pnames
 
 

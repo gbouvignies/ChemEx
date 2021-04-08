@@ -7,6 +7,7 @@ import chemex.containers.experiment as cce
 import chemex.containers.plot as ccp
 import chemex.fitting as cf
 import chemex.helper as ch
+import chemex.parameters.helper as cph
 import chemex.parameters.kinetics as cpk
 import chemex.parameters.settings as cps
 
@@ -58,7 +59,7 @@ def fit(args):
         sys.exit("\nerror: No data to fit")
 
     # Create parameters
-    params = experiments.params
+    params = cph.create_params(experiments, defaults)
 
     # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
     experiments.filter(params)

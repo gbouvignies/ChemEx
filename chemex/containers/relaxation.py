@@ -44,21 +44,22 @@ RELAXATION_SCHEMA = {
 
 @ft.total_ordering
 class RelaxationProfile:
-    def __init__(self, name, data, pulse_seq, pnames, params):
+    def __init__(self, name, data, pulse_seq, pnames, params, params_mf):
         self.name = name
         self.data = data
         self._pulse_seq = pulse_seq
         self._pnames = pnames
         self.params = params
+        self.params_mf = params_mf
         self._plot = ccp.relaxation
 
     @classmethod
-    def from_file(cls, path, config, pulse_seq, pnames, params):
+    def from_file(cls, path, config, pulse_seq, pnames, params, params_mf):
         name = config["spin_system"]
         data = RelaxationData.from_file(
             path, filter_planes=config["data"]["filter_planes"]
         )
-        return cls(name, data, pulse_seq, pnames, params)
+        return cls(name, data, pulse_seq, pnames, params, params_mf)
 
     def residuals(self, params):
         data = self.data.points[self.data.mask]
@@ -185,7 +186,7 @@ class RelaxationProfile:
             return NotImplemented
         data = self.data + other.data
         return RelaxationProfile(
-            self.name, data, self._pulse_seq, self._pnames, self.params
+            self.name, data, self._pulse_seq, self._pnames, self.params, self.params_mf
         )
 
     def __eq__(self, other: object):
