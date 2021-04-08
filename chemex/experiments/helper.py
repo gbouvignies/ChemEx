@@ -36,9 +36,11 @@ def _read_profiles(config, pulse_seq_cls, profile_cls):
     profiles = []
     for path, spin_system in paths.items():
         config["spin_system"] = spin_system
-        pnames, params = cph.create_params(config, propagator)
+        pnames, params, params_mf = cph.create_profile_params(config, propagator)
         pulse_seq = pulse_seq_cls(config, propagator)
-        profile = profile_cls.from_file(path, config, pulse_seq, pnames, params)
+        profile = profile_cls.from_file(
+            path, config, pulse_seq, pnames, params, params_mf
+        )
         profiles.append(profile)
     return sorted(profiles)
 
@@ -49,9 +51,9 @@ def _read_shifts(config, pulse_seq_cls, profile_cls):
     profiles = []
     for spin_system, data in shifts.items():
         config["spin_system"] = spin_system
-        pnames, params = cph.create_params(config, propagator)
+        pnames, params, params_mf = cph.create_profile_params(config, propagator)
         pulse_seq = pulse_seq_cls(config, propagator)
-        profile = profile_cls(spin_system, data, pulse_seq, pnames, params)
+        profile = profile_cls(spin_system, data, pulse_seq, pnames, params, params_mf)
         profiles.append(profile)
     return sorted(profiles)
 

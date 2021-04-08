@@ -24,7 +24,22 @@ def merge(params_list):
     return params
 
 
-def create_params(config, propagator):
+def create_params(experiments, defaults):
+    params_mf = experiments.params_mf
+    params = experiments.params
+
+    cps.set_values(params_mf, defaults)
+
+    # Set parameters values using the model-free values
+    for pname in set(params) & set(params_mf):
+        params[pname].value = params_mf[pname].value
+
+    cps.set_values(params, defaults)
+
+    return params
+
+
+def create_profile_params(config, propagator):
     basis = config["basis"]
     model = config["model"]
     conditions = config["conditions"]
@@ -45,6 +60,7 @@ def create_params(config, propagator):
     _set_to_fit(settings, model, observed_state, fitted)
     settings_min, settings_max = _get_settings(settings, propagator)
     pnames = cpn.get_pnames(settings_min, conditions, spin_system)
+    pnames_ = {name: pname.to_full_name() for name, pname in pnames.items()}
 
     # Create standard parameters from settings
     params = _settings_to_params(settings_max, conditions, spin_system)
@@ -52,30 +68,22 @@ def create_params(config, propagator):
     # Create the model free parameters
     params_mf = _settings_to_params(settings_l_mf, conditions, spin_system)
 
-    # Initialize parameters values using the parameter.toml file
-    cps.set_values(params_mf, config["defaults"])
-
-    # Set parameters values using the model-free values
-    for pname in set(params) & set(params_mf):
-        params[pname].value = params_mf[pname].value
-
-    # Set parameters values using the parameter.toml file
-    cps.set_values(params, config["defaults"])
-
-    return pnames, params
+    return pnames_, params, params_mf
 
 
 def _settings_to_params(settings, conditions, spin_system):
     pnames = cpn.get_pnames(settings, conditions, spin_system)
+    fnames = {name: pname.to_full_name() for name, pname in pnames.items()}
     conditions_ = dc.asdict(conditions)
     parameter_list = [
         lf.Parameter(
-            name=pnames[name],
+            name=fnames[name],
             value=setting.get("value"),
             min=setting.get("min"),
             max=setting.get("max"),
             vary=setting.get("vary"),
-            expr=setting.get("expr", "").format_map({**conditions_, **pnames}),
+            expr=setting.get("expr", "").format_map({**conditions_, **fnames}),
+            user_data=pnames[name],
         )
         for name, setting in settings.items()
     ]

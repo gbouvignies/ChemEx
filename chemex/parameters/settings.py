@@ -37,15 +37,12 @@ _SCHEMA_CONFIG_PARAM = {
 def read_defaults(filenames):
     print("\nReading parameters default values...")
     config = ch.read_toml_multi(filenames, _SCHEMA_CONFIG_PARAM)
-    defaults = {"global": config.pop("global", {})}
-    defaults.update(config)
-    return defaults
+    defaults = {"global": config.pop("global", {}), **config}
+    return defaults_to_re_list(defaults)
 
 
-def set_values(params, defaults):
-    """Read the parameter file and set initial values and optional bounds and brute
-    step size."""
-    matches = cl.Counter()
+def defaults_to_re_list(defaults):
+    defaults_re = []
     for section, settings in defaults.items():
         prefix = f"{section}, NUC->" if section != "global" else ""
         for key, values in settings.items():
@@ -53,15 +50,32 @@ def set_values(params, defaults):
             if not isinstance(values, cl.abc.Iterable):
                 values = [values]
             values_ = dict(zip(("value", "min", "max", "brute_step"), values))
-            matched = _set_params(params, name, values_)
-            matches.update({name.to_section_name(): len(matched)})
+            defaults_re.append((name, values_))
+    return defaults_re
+
+
+def set_values(params, defaults):
+    """Read the parameter file and set initial values and optional bounds and brute
+    step size."""
+
+    fnames = {param.name for param in params.values() if not param.expr}
+
+    for name, values in reversed(defaults):
+        matches = set()
+        for fname in fnames:
+            if name.match(fname):
+                params[fname].set(**values)
+                matches.add(fname)
+        fnames -= matches
+    params.update_constraints()
     _check_params(params)
+    return params
 
 
 def _check_params(params):
     messages = []
     for param in params.values():
-        pname = cpn.ParamName.from_full_name(param.name)
+        pname = param.user_data
         sname = pname.name.upper()
         atoms = set(cns.SpinSystem(pname.spin_system).atoms.values())
         if sname.startswith("J_") and atoms == {"N", "H"} and param.value > 0.0:
@@ -203,11 +217,9 @@ def _quote(text):
 def _params_to_string(params):
     col_width = {}
     par_string = {"GLOBAL": []}
-    sorted_params = sorted(
-        params.items(), key=lambda x: cpn.ParamName.from_full_name(x[0])
-    )
+    sorted_params = sorted(params.items(), key=lambda x: x[1].user_data)
     for name, param in sorted_params:
-        par_name = cpn.ParamName.from_full_name(name)
+        par_name = param.user_data
         if par_name.spin_system:  # residue-specific parameter
             name_print = cns.SpinSystem(par_name.spin_system)
             section = par_name.to_section_name()

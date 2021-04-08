@@ -56,18 +56,19 @@ CEST_SCHEMA = {
 
 @ft.total_ordering
 class CestProfile:
-    def __init__(self, name, data, pulse_seq, pnames, params):
+    def __init__(self, name, data, pulse_seq, pnames, params, params_mf):
         self.name = name
         self.data = data
         self._pulse_seq = pulse_seq
         self._pnames = pnames
         self.params = params
+        self.params_mf = params_mf
         self._plot = ccp.cest
         self._sw = getattr(self._pulse_seq, "sw", None)
         self._observed_state = getattr(self._pulse_seq, "observed_state", "a")
 
     @classmethod
-    def from_file(cls, path, config, pulse_seq, pnames, params):
+    def from_file(cls, path, config, pulse_seq, pnames, params, params_mf):
         name = config["spin_system"]
         data = CestData.from_file(
             path,
@@ -75,7 +76,7 @@ class CestProfile:
             filter_planes=config["data"]["filter_planes"],
             filter_ref_planes=config["data"]["filter_ref_planes"],
         )
-        return cls(name, data, pulse_seq, pnames, params)
+        return cls(name, data, pulse_seq, pnames, params, params_mf)
 
     def residuals(self, params):
         data = self.data.points[self.data.mask]
@@ -220,7 +221,9 @@ class CestProfile:
         if not isinstance(other, type(self)):
             return NotImplemented
         data = self.data + other.data
-        return CestProfile(self.name, data, self._pulse_seq, self._pnames, self.params)
+        return CestProfile(
+            self.name, data, self._pulse_seq, self._pnames, self.params, self.params_mf
+        )
 
     def __eq__(self, other: object):
         if not isinstance(other, type(self)):
