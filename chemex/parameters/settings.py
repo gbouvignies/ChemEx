@@ -9,7 +9,6 @@ import asteval.astutils as aa
 import numpy as np
 
 import chemex.helper as ch
-import chemex.nmr.spin_system as cns
 import chemex.parameters.name as cpn
 
 
@@ -75,9 +74,9 @@ def set_values(params, defaults):
 def _check_params(params):
     messages = []
     for param in params.values():
-        pname = param.user_data
+        pname = param.user_data["pname"]
         sname = pname.name.upper()
-        atoms = set(cns.SpinSystem(pname.spin_system).atoms.values())
+        atoms = set(pname.spin_system.atoms.values())
         if sname.startswith("J_") and atoms == {"N", "H"} and param.value > 0.0:
             messages.append(
                 "Warning: Some 1J(NH) scalar couplings are set with positive values. \n"
@@ -105,14 +104,12 @@ def set_status(params, settings=None, verbose=True):
     vary = {"fix": False, "fit": True}
     matches = cl.Counter()
     for key, status in settings.items():
-        if key in ("include", "exclude", "fitmethod"):
-            continue
         name = cpn.ParamName.from_section(key)
         if status in vary:
             matched = _set_params(params, name, {"vary": vary[status], "expr": ""})
         else:
             matched = _set_param_expr(params, name, expr=status)
-        matches.update({name.to_section_name(): len(matched)})
+        matches.update({name.section: len(matched)})
     if verbose:
         _print_matches(matches)
 
@@ -125,11 +122,9 @@ def _print_matches(matches):
             print(f"  - [{key}] -> Nothing to update")
 
 
-def _set_param_expr(params, name, expr=None):
+def _set_param_expr(params, name, expr):
     """Set an optional parameter expression, used to constrain its value during
     the fit."""
-    if expr is None:
-        expr = ""
     if not isinstance(name, cpn.ParamName):
         name = cpn.ParamName.from_section(name)
     pnames = [fname for fname in params if name.match(fname)]
@@ -151,6 +146,12 @@ def _set_param_expr(params, name, expr=None):
         param = params[pname]
         repr_ = repr(param)
         param.expr = expr_
+        print_expr = str(expr_)
+        for fname in aa.get_ast_names(ast.parse(expr_)):
+            print_expr = print_expr.replace(
+                fname, str(params[fname].user_data["pname"])
+            )
+        param.user_data["print_expr"] = print_expr
         if repr(param) != repr_:
             matches.add(pname)
     return matches
@@ -217,14 +218,14 @@ def _quote(text):
 def _params_to_string(params):
     col_width = {}
     par_string = {"GLOBAL": []}
-    sorted_params = sorted(params.items(), key=lambda x: x[1].user_data)
-    for name, param in sorted_params:
-        par_name = param.user_data
-        if par_name.spin_system:  # residue-specific parameter
-            name_print = cns.SpinSystem(par_name.spin_system)
-            section = par_name.to_section_name()
+    sorted_params = sorted(params.values(), key=lambda x: x.user_data["pname"])
+    for param in sorted_params:
+        pname = param.user_data["pname"]
+        if pname.spin_system:  # residue-specific parameter
+            name_print = pname.spin_system
+            section = pname.section
         else:  # global parameter
-            name_print = par_name
+            name_print = pname.section_res
             section = "GLOBAL"
         value_print = _param_to_string(param)
         par_string.setdefault(section, []).append((name_print, value_print))
@@ -244,7 +245,7 @@ def _param_to_string(param):
         elif not param.expr:
             comments.append("error not calculated")
     if param.expr:
-        comments.append(_print_constraint(param))
+        comments.append(param.user_data["print_expr"])
     elif not param.vary:
         comments.append("fixed")
     if comments:
@@ -254,17 +255,3 @@ def _param_to_string(param):
     if error or comments_fmtd:
         string_ += f" #{error}{comments_fmtd}"
     return string_
-
-
-def _print_constraint(param):
-    """Write the (optional) parameter expression constraints to a file."""
-    if not param.expr:
-        return ""
-    expr_formatted = str(param.expr)
-    for name_dep in aa.get_ast_names(ast.parse(param.expr)):
-        par_name_dep = cpn.ParamName.from_full_name(name_dep)
-        if not par_name_dep:
-            continue
-        name_dep_formatted = f"[{par_name_dep.to_section_name(show_spin_system=True)}]"
-        expr_formatted = expr_formatted.replace(name_dep, name_dep_formatted)
-    return f"= {expr_formatted}".upper()

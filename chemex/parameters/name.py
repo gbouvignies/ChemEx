@@ -16,7 +16,6 @@ _DECORATORS = {
     "d2o": "__d_{}_d__",
 }
 _EXPAND = {"-": "__minus__", "+": "__plus__", ".": "__point__"}
-_COMPRESS = {val: key for key, val in _EXPAND.items()}
 _RE_FLOAT = r"[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?"
 _RE_NAME = re.compile(r"^(?P<name>.+?)(_(?P<spin>i|s|is))?(_(?P<state>[a-h]{1,2}))?$")
 
@@ -56,31 +55,6 @@ class ParamName:
         }
 
     @classmethod
-    def from_full_name(cls, full_name=""):
-        parser = re.compile(
-            r"""
-                (__n_(?P<name>.*?)_n__)?
-                (__r_(?P<spin_system>.*?)_r__)?
-                (__t_(?P<temperature>.*?)_t__)?
-                (__b_(?P<h_larmor_frq>.*?)_b__)?
-                (__p_(?P<p_total>.*?)_p__)?
-                (__l_(?P<l_total>.*?)_l__)?
-                (__d_(?P<d2o>.*?)_d__)?
-            """,
-            re.IGNORECASE | re.VERBOSE,
-        )
-        parsed = _re_to_dict(parser, _compress(full_name))
-        return cls.from_dict(parsed)
-
-    def to_full_name(self):
-        full_name = "".join(
-            _DECORATORS[name].format(value)
-            for name, value in self.to_dict().items()
-            if value
-        )
-        return _expand(full_name)
-
-    @classmethod
     def from_section(cls, section=""):
         parser = re.compile(
             r"""
@@ -99,7 +73,16 @@ class ParamName:
         parsed = _re_to_dict(parser, section)
         return cls.from_dict(parsed)
 
-    def to_section_name(self, show_spin_system=False):
+    @ft.cached_property
+    def full(self):
+        full_name = "".join(
+            _DECORATORS[name].format(value)
+            for name, value in self.to_dict().items()
+            if value
+        )
+        return _expand(full_name)
+
+    def _to_section_name(self, show_spin_system=False):
         formatters = {
             "name": "{}",
             "spin_system": "NUC->{}",
@@ -118,7 +101,16 @@ class ParamName:
         ]
         return ", ".join(components).upper()
 
-    def to_folder_name(self):
+    @ft.cached_property
+    def section(self):
+        return self._to_section_name()
+
+    @ft.cached_property
+    def section_res(self):
+        return self._to_section_name(show_spin_system=True)
+
+    @ft.cached_property
+    def folder(self):
         formatters = {
             "name": "{}",
             "spin_system": "{}",
@@ -136,11 +128,10 @@ class ParamName:
         return "_".join(components)
 
     def match(self, other):
-        re_name = self._to_re()
-        return re_name.match(other)
+        return self._re.match(other)
 
-    @ft.lru_cache(maxsize=None)
-    def _to_re(self):
+    @ft.cached_property
+    def _re(self):
         if self._spin_system is not None:
             spin_system = self._spin_system.to_re().pattern
         else:
@@ -156,7 +147,7 @@ class ParamName:
         return re.compile(pattern, re.IGNORECASE)
 
     def __repr__(self):
-        return self.to_section_name(show_spin_system=True)
+        return f"[{self.section_res}]"
 
     def __hash__(self):
         return hash(self._members())
@@ -223,10 +214,6 @@ def _clean_re(value):
 
 def _expand(string):
     return _multireplace(str(string), _EXPAND)
-
-
-def _compress(string):
-    return _multireplace(str(string), _COMPRESS)
 
 
 def _multireplace(string, replacements):

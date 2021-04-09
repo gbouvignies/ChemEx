@@ -14,11 +14,12 @@ import chemex.parameters.settings as cps
 
 
 class Fit:
-    def __init__(self, experiments, path, plot):
+    def __init__(self, experiments, path, plot, defaults):
         self._experiments = experiments
         self._path = path
         self._method = {"": {}}
         self._plot = plot
+        self._defaults = defaults
 
     def read_methods(self, filename):
         if filename is None:
@@ -35,24 +36,26 @@ class Fit:
 
         params_ = params.copy()
 
-        for section, settings in self._method.items():
+        for index, (section, settings) in enumerate(self._method.items()):
 
             if section:
                 ch.header2(f"\n{section.upper()}")
 
             # Select a subset of profiles based on "INCLUDE" and "EXCLUDE"
-            selection = {key: settings.get(key, None) for key in ("include", "exclude")}
+            selection = {key: settings.pop(key, None) for key in ("include", "exclude")}
             self._experiments.select(selection)
             if not self._experiments:
                 print("No data to fit...")
                 continue
 
+            # Set the fitting algorithm
+            fitmethod = settings.pop("fitmethod", "leastsq")
+            print(f'\nFitting method -> "{fitmethod}"')
+
             # Update the parameter "vary" and "expr" status
             cps.set_status(params_, settings)
-
-            # Set the fitting algorithm
-            fitmethod = settings.get("fitmethod", "leastsq")
-            print(f'\nFitting method -> "{fitmethod}"')
+            if index == 0:
+                cps.set_values(params_, self._defaults)
 
             # Make cluster of data depending on indendent set of parameters
             groups = self._create_groups(params_)
@@ -143,7 +146,7 @@ class Fit:
             group = {
                 "experiments": experiments,
                 "params": experiments.select_params(params_exp),
-                "path": path / name.to_folder_name(),
+                "path": path / name.folder,
             }
             groups_dict[name] = group
         groups = []

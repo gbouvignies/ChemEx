@@ -99,7 +99,12 @@ class CestProfile:
 
     def print(self, params):
         output = f"[{self.name}]\n"
-        output += f"# {'OFFSET (HZ)':>12s}  {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s} {'INTENSITY (CALC)':>17s}\n"
+        output += (
+            f"# {'OFFSET (HZ)':>12s}"
+            f"{'INTENSITY (EXP)':>17s}"
+            f"{'ERROR (EXP)':>17s} "
+            f"{'INTENSITY (CALC)':>17s}\n"
+        )
         values = self.calculate(params, self.data.points["offsets"])
         for point, mask, value in zip(self.data.points, self.data.mask, values):
             offset, intensity, error = point
