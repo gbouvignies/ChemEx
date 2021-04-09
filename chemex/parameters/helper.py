@@ -60,7 +60,7 @@ def create_profile_params(config, propagator):
     _set_to_fit(settings, model, observed_state, fitted)
     settings_min, settings_max = _get_settings(settings, propagator)
     pnames = cpn.get_pnames(settings_min, conditions, spin_system)
-    pnames_ = {name: pname.to_full_name() for name, pname in pnames.items()}
+    pnames_ = {name: pname.full for name, pname in pnames.items()}
 
     # Create standard parameters from settings
     params = _settings_to_params(settings_max, conditions, spin_system)
@@ -73,7 +73,7 @@ def create_profile_params(config, propagator):
 
 def _settings_to_params(settings, conditions, spin_system):
     pnames = cpn.get_pnames(settings, conditions, spin_system)
-    fnames = {name: pname.to_full_name() for name, pname in pnames.items()}
+    fnames = {name: pname.full for name, pname in pnames.items()}
     conditions_ = dc.asdict(conditions)
     parameter_list = [
         lf.Parameter(
@@ -83,7 +83,12 @@ def _settings_to_params(settings, conditions, spin_system):
             max=setting.get("max"),
             vary=setting.get("vary"),
             expr=setting.get("expr", "").format_map({**conditions_, **fnames}),
-            user_data=pnames[name],
+            user_data={
+                "pname": pnames[name],
+                "print_expr": setting.get("expr", "").format_map(
+                    {**conditions_, **pnames}
+                ),
+            },
         )
         for name, setting in settings.items()
     ]

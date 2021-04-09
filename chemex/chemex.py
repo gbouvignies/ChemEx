@@ -66,7 +66,7 @@ def fit(args):
 
     # Run the fit
     ch.header1("Running the main fit")
-    fitter = cf.Fit(experiments, args.out_dir, args.plot)
+    fitter = cf.Fit(experiments, args.out_dir, args.plot, defaults)
     fitter.read_methods(args.method)
     params_fitted = fitter.run_methods(params)
 

@@ -60,11 +60,11 @@ _SCHEMA = {
 def read(config):
     ch.validate(config, _SCHEMA)
     config["basis"] = cnl.Basis(type="ixyz", spin_system="nh")
-    config["fit"] = _fit_this(config)
+    config["fit"] = _fit_this()
     return ceh.load_experiment(config=config, pulse_seq_cls=PulseSeq)
 
 
-def _fit_this(config):
+def _fit_this():
     return {
         "rates": ["r2_i_{states}", "r1_i_{observed_state}"],
         "model_free": ["tauc_{observed_state}", "s2_{observed_state}"],

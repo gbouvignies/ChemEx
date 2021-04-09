@@ -84,7 +84,12 @@ class CpmgProfile:
 
     def print(self, params):
         output = f"[{self.name}]\n"
-        output += f"# {'NCYC':>12s}  {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s} {'INTENSITY (CALC)':>17s}\n"
+        output += (
+            f"# {'NCYC':>12s}  "
+            f"{'INTENSITY (EXP)':>17s} "
+            f"{'ERROR (EXP)':>17s} "
+            f"{'INTENSITY (CALC)':>17s}\n"
+        )
         values = self.calculate(params)
         for point, mask, value in zip(self.data.points, self.data.mask, values):
             ncyc, intensity, error = point
@@ -126,7 +131,12 @@ class CpmgProfile:
 
     def _format_data_exp(self, data_exp):
         result = f"[{self.name}]\n"
-        result += f"# {'NU_CPMG':>12s}  {'R2 (EXP)':>17s} {'ERROR DOWN (EXP)':>17s} {'ERROR UP (EXP)':>17s}\n"
+        result += (
+            f"# {'NU_CPMG':>12s}  "
+            f"{'R2 (EXP)':>17s} "
+            f"{'ERROR DOWN (EXP)':>17s} "
+            f"{'ERROR UP (EXP)':>17s}\n"
+        )
         for point in data_exp:
             nu_cpmgs = point["nu_cpmgs"]
             r2 = point["r2"]
