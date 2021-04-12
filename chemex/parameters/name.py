@@ -18,6 +18,20 @@ _DECORATORS = {
 _EXPAND = {"-": "__minus__", "+": "__plus__", ".": "__point__"}
 _RE_FLOAT = r"[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?"
 _RE_NAME = re.compile(r"^(?P<name>.+?)(_(?P<spin>i|s|is))?(_(?P<state>[a-h]{1,2}))?$")
+_RE_SECTION = re.compile(
+    r"""
+                (^\s*(?P<name>\w+)) |
+                (NUC\s*->\s*(?P<spin_system>(\w|-)+)) |
+                (T\s*->s*(?P<temperature>{0})) |
+                (B0\s*->\s*(?P<h_larmor_frq>{0})) |
+                (\[P]\s*->\s*(?P<p_total>{0})) |
+                (\[L]\s*->\s*(?P<l_total>{0})) |
+                (D2O\s*->\s*(?P<d2o>{0})) |
+            """.format(
+        _RE_FLOAT
+    ),
+    re.IGNORECASE | re.VERBOSE,
+)
 
 
 @ft.total_ordering
@@ -56,21 +70,7 @@ class ParamName:
 
     @classmethod
     def from_section(cls, section=""):
-        parser = re.compile(
-            r"""
-                (^\s*(?P<name>\w+)) |
-                (NUC\s*->\s*(?P<spin_system>(\w|-)+)) |
-                (T\s*->s*(?P<temperature>{0})) |
-                (B0\s*->\s*(?P<h_larmor_frq>{0})) |
-                (\[P]\s*->\s*(?P<p_total>{0})) |
-                (\[L]\s*->\s*(?P<l_total>{0})) |
-                (D2O\s*->\s*(?P<d2o>{0})) |
-            """.format(
-                _RE_FLOAT
-            ),
-            re.IGNORECASE | re.VERBOSE,
-        )
-        parsed = _re_to_dict(parser, section)
+        parsed = _re_to_dict(_RE_SECTION, section)
         return cls.from_dict(parsed)
 
     @ft.cached_property

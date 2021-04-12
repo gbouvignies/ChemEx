@@ -1,7 +1,5 @@
 [STEP1]
-PB      = "fix"
-KEX_AB  = "fix"
+FIX = ["PB", "KEX_AB"]
 
 [STEP2]
-PB      = "fit"
-KEX_AB  = "fit"
+FIT = ["PB", "KEX_AB"]

@@ -1,8 +1,6 @@
 import contextlib
 import sys
 
-import matplotlib.pyplot as plt
-import matplotlib.widgets as mw
 import numpy as np
 import scipy.interpolate as si
 
@@ -12,6 +10,8 @@ import chemex.parameters.kinetics as cpk
 
 
 def pick_cest(args):
+    import matplotlib.pyplot as plt
+    import matplotlib.widgets as mw
 
     # Read experimental setup and data
     model = cpk.parse_model(name="2st")
@@ -63,6 +63,7 @@ class Buttons:
     TEXT_Y = {"a": 0.8, "b": 0.75}
 
     def __init__(self, experiments, path, sw):
+        import matplotlib.pyplot as plt
 
         self.data = {}
         names = set()

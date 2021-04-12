@@ -1,5 +1,5 @@
 #!/bin/sh
 
 chemex simulate -e Experiments/*.toml \
-                -p Parameters/*.toml \
+                -p Parameters/parameters.toml \
                 -o OutputSim

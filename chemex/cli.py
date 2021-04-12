@@ -96,7 +96,7 @@ def build_parser():
         metavar="FILE",
         nargs="+",
         required=True,
-        help="Input files containing experimental setup and data location",
+        help="Input file(s) containing experimental setup and data location",
     )
 
     fit_parser.add_argument(
@@ -106,7 +106,7 @@ def build_parser():
         metavar="FILE",
         nargs="+",
         required=True,
-        help="Input files containing the initial values of fitting parameters",
+        help="Input file(s) containing the initial values of fitting parameters",
     )
 
     fit_parser.add_argument(
@@ -114,7 +114,8 @@ def build_parser():
         dest="method",
         type=pathlib.Path,
         metavar="FILE",
-        help="Input file containing the fitting method",
+        nargs="+",
+        help="Input file(s) containing the fitting method",
     )
 
     fit_parser.add_argument(

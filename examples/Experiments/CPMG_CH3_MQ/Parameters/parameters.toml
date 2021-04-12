@@ -1,0 +1,6 @@
+[GLOBAL]
+PB              = 0.100
+KEX_AB          = 1000.0
+"R2MQ_A"        = 15.0
+"DW_AB, NUC->C" = 0.3
+"DW_AB, NUC->H" = 0.01

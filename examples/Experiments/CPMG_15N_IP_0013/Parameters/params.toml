@@ -1,9 +1,0 @@
-[GLOBAL]
-PB      =   0.07
-KEX_AB  = 100.0
-DW_AB   =   1.0
-TAUC_A  =   4.0
-
-[DW_AB]
-I50N    =  10.0
-V55N    =  10.0

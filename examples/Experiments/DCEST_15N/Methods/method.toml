@@ -1,2 +1,2 @@
 [DEFAULT]
-R2_B = "R2_A"
+CONSTRAINTS = ["[R2_B] = [R2_A]"]
