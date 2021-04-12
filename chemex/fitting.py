@@ -21,10 +21,10 @@ class Fit:
         self._plot = plot
         self._defaults = defaults
 
-    def read_methods(self, filename):
-        if filename is None:
+    def read_methods(self, filenames):
+        if filenames is None:
             return
-        self._method = ch.read_toml(filename)
+        self._method = cps.read_methods(filenames)
 
     def run_methods(self, params, path=None, plot=None):
 

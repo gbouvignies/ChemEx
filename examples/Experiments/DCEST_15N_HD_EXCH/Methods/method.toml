@@ -1,9 +1,8 @@
 [STEP1]
-INCLUDE  = [57, 66, 74, 78, 79, 93, 96, 97, 98, 109, 121]
-D2O      = "fit"
-CS_A     = "fit"
-R1_B     = "0.5 * R1_A"
+INCLUDE     = [57, 66, 74, 78, 79, 93, 96, 97, 98, 109, 121]
+FIT         = ["D2O", "CS_A"]
+CONSTRAINTS = ["[R1_B] = 0.5 * [R1_A]"]
 
 [STEP2]
-INCLUDE  = "all"
-D2O      = "fix"
+INCLUDE = "ALL"
+FIX     = ["D2O"]

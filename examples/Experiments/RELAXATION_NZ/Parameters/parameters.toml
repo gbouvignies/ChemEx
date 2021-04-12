@@ -1,0 +1,4 @@
+[GLOBAL]
+PB     = 0.0
+KEX_AB = 0.0
+R1_A   = [1.5, 1.0, 2.0] # [value, min, max]

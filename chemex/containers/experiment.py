@@ -4,7 +4,6 @@ import functools as ft
 import itertools as it
 
 import lmfit as lf
-import matplotlib.backends.backend_pdf as pdf
 import numpy as np
 
 import chemex.containers.plot as ccp
@@ -291,6 +290,8 @@ class RelaxationExperiment(Experiment):
     print_name = "Profiles"
 
     def plot(self, params, path, simulation=False):
+        import matplotlib.backends.backend_pdf as pdf
+
         basename = path / self.filename.name
         name_pdf = basename.with_suffix(".pdf")
         name_exp = basename.with_suffix(".exp")

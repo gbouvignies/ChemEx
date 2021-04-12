@@ -1,3 +1,2 @@
 [DEFAULT]
-PB      = "fix"
-KEX_AB  = "fix"
+FIX = ["PB", "KEX_AB"]

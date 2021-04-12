@@ -1,11 +1,9 @@
 """The parameters module contains the code for handling of the experimental and
 fitting parameters."""
-import ast
 import collections as cl
 import difflib as dl
 import re
 
-import asteval.astutils as aa
 import numpy as np
 
 import chemex.helper as ch
@@ -32,25 +30,62 @@ _SCHEMA_CONFIG_PARAM = {
     },
 }
 
+_SCHEMA_METHODS_PARAM = {
+    "type": "object",
+    "additionalProperties": {
+        "type": "object",
+        "properties": {
+            "include": {
+                "oneOf": [
+                    {
+                        "type": "array",
+                        "items": {"anyOf": [{"type": "integer"}, {"type": "string"}]},
+                    },
+                    {"type": "string"},
+                ]
+            },
+            "exclude": {
+                "oneOf": [
+                    {
+                        "type": "array",
+                        "items": {"anyOf": [{"type": "integer"}, {"type": "string"}]},
+                    },
+                    {"type": "string"},
+                ]
+            },
+            "fit": {"type": "array", "items": {"type": "string"}},
+            "fix": {"type": "array", "items": {"type": "string"}},
+            "constraints": {"type": "array", "items": {"type": "string"}},
+        },
+    },
+}
+
 
 def read_defaults(filenames):
     print("\nReading parameters default values...")
     config = ch.read_toml_multi(filenames, _SCHEMA_CONFIG_PARAM)
+    # This is to put the "GLOBAL" section first
     defaults = {"global": config.pop("global", {}), **config}
-    return defaults_to_re_list(defaults)
+    return _defaults_to_list(defaults)
 
 
-def defaults_to_re_list(defaults):
-    defaults_re = []
+def _defaults_to_list(defaults):
+    """Take the TOML dictionary and make it a list of pairs of ParamName
+    and keyword arguments for the method lmfit.Parameter.set"""
+    defaults_list = []
     for section, settings in defaults.items():
         prefix = f"{section}, NUC->" if section != "global" else ""
         for key, values in settings.items():
-            name = cpn.ParamName.from_section(f"{prefix}{key}")
-            if not isinstance(values, cl.abc.Iterable):
-                values = [values]
+            pname = cpn.ParamName.from_section(f"{prefix}{key}")
+            values = values if isinstance(values, cl.abc.Iterable) else [values]
             values_ = dict(zip(("value", "min", "max", "brute_step"), values))
-            defaults_re.append((name, values_))
-    return defaults_re
+            defaults_list.append((pname, values_))
+    return defaults_list
+
+
+def read_methods(filenames):
+    print("\nReading methods...")
+    return ch.read_toml_multi(filenames, _SCHEMA_METHODS_PARAM)
 
 
 def set_values(params, defaults):
@@ -72,6 +107,7 @@ def set_values(params, defaults):
 
 
 def _check_params(params):
+    """Check wheither the J couplings have the right sign"""
     messages = []
     for param in params.values():
         pname = param.user_data["pname"]
@@ -97,112 +133,173 @@ def _check_params(params):
 def set_status(params, settings=None, verbose=True):
     """Set whether or not to vary a fitting parameter or to use a mathemetical
     expression."""
+
     if settings is None:
         settings = {}
+
     if verbose and settings:
         print("\nSettings parameter status and constraints...")
-    vary = {"fix": False, "fit": True}
-    matches = cl.Counter()
-    for key, status in settings.items():
-        name = cpn.ParamName.from_section(key)
-        if status in vary:
-            matched = _set_params(params, name, {"vary": vary[status], "expr": ""})
-        else:
-            matched = _set_param_expr(params, name, expr=status)
-        matches.update({name.section: len(matched)})
+
+    matches_con = _set_expr(params, settings.get("constraints"))
     if verbose:
-        _print_matches(matches)
+        _print_matches(matches_con, params, "constrained")
+
+    matches_fix = _set_vary(params, settings.get("fix"), vary=False)
+    if verbose:
+        _print_matches(matches_fix, params, "fixed")
+
+    matches_fit = _set_vary(params, settings.get("fit"), vary=True)
+    if verbose:
+        _print_matches(matches_fit, params, "varied")
 
 
-def _print_matches(matches):
-    for key, value in matches.items():
-        if value > 0:
-            print(f"  - [{key}] -> {value} parameter(s) updated")
-        else:
-            print(f"  - [{key}] -> Nothing to update")
-
-
-def _set_param_expr(params, name, expr):
-    """Set an optional parameter expression, used to constrain its value during
-    the fit."""
-    if not isinstance(name, cpn.ParamName):
-        name = cpn.ParamName.from_section(name)
-    pnames = [fname for fname in params if name.match(fname)]
-    names_expr = aa.get_ast_names(ast.parse(expr))
-    pnames_expr = {
-        name: [
-            fname_expr
-            for fname_expr in params
-            if cpn.ParamName.from_section(name).match(fname_expr)
-        ]
-        for name in names_expr
-    }
+def _set_vary(params, snames, vary=True):
+    """Set wheither the parameters corresponding to snames vary or not"""
     matches = set()
-    for pname in pnames:
-        expr_ = str(expr)
-        for name_expr in names_expr:
-            pname_expr = dl.get_close_matches(pname, pnames_expr[name_expr], n=1)[0]
-            expr_ = expr_.replace(name_expr, pname_expr)
-        param = params[pname]
-        repr_ = repr(param)
-        param.expr = expr_
-        print_expr = str(expr_)
-        for fname in aa.get_ast_names(ast.parse(expr_)):
-            print_expr = print_expr.replace(
-                fname, str(params[fname].user_data["pname"])
-            )
-        param.user_data["print_expr"] = print_expr
-        if repr(param) != repr_:
-            matches.add(pname)
+    if not snames:
+        return matches
+    fnames = {param.name for param in params.values() if param.vary != vary}
+    for sname in reversed(snames):
+        pname = cpn.ParamName.from_section(sname.strip("[] "))
+        for fname in fnames:
+            if pname.match(fname):
+                params[fname].set(vary=vary)
+                matches.add(fname)
+        fnames -= matches
     return matches
 
 
-def _set_params(params, name_short, values):
-    """Set the initial value and (optional) bounds and brute step size for
-    parameters."""
+def _set_expr(params, expr_list):
+    """Set the constraints given in expr_list"""
     matches = set()
-    value = values.pop("value", None)
-    for name, param in params.items():
-        if name_short.match(name):
-            repr_ = repr(param)
-            if value is not None:
-                param.value = value
-            param.set(**values)
-            if repr(param) != repr_:
-                matches.add(name)
+    if not expr_list:
+        return matches
+    fnames = set(params)
+    for expr in reversed(expr_list):
+        left, right, *somethingelse = expr.split("=")
+        if somethingelse:
+            continue
+        fnames_left = _get_fnames_left(left, params)
+        fnames_right = _get_fnames_right(right, params)
+        for fname in fnames_left:
+            expr_new = print_expr = right.strip()
+            for sname, fname_set in fnames_right.items():
+                fname_replace = dl.get_close_matches(fname, fname_set, n=1).pop()
+                sname_replace = str(params[fname_replace].user_data["pname"])
+                expr_new = expr_new.replace(sname, fname_replace)
+                print_expr = print_expr.replace(sname, sname_replace)
+            if expr_new != params[fname].expr:
+                params[fname].expr = expr_new
+                params[fname].user_data["print_expr"] = print_expr
+                matches.add(fname)
+        fnames -= matches
     return matches
+
+
+def _get_fnames_left(left, params):
+    pname_left = cpn.ParamName.from_section(left.strip("[] "))
+    return {fname for fname in params if pname_left.match(fname)}
+
+
+def _get_fnames_right(right, params):
+    fnames_right = {}
+    for match in re.finditer(r"\[(.+?)\]", right.strip()):
+        pname = cpn.ParamName.from_section(match.group(1))
+        fnames_right[match.group(0)] = {fname for fname in params if pname.match(fname)}
+    return fnames_right
+
+
+def _print_matches(matches, params, status):
+    count_dict = {}
+    for fname in matches:
+        sname = params[fname].user_data["pname"].section
+        count_dict.setdefault(sname, []).append(fname)
+    for key, fnames in count_dict.items():
+        number = len(fnames)
+        if number > 0:
+            print(f"  - [{key}] -> {number} parameter(s) set to be {status}")
 
 
 def write_par(params, path):
-    """Write the fitting parameters and their uncertainties to a file."""
-    fitted_, fixed_, constrained_ = {}, {}, {}
-    for name, param in params.items():
-        if param.vary:
-            fitted_[name] = param
-        elif param.expr:
-            constrained_[name] = param
-        else:
-            fixed_[name] = param
-    fitted = _params_to_text(fitted_)
-    constrained = _params_to_text(constrained_)
-    fixed = _params_to_text(fixed_)
+    """Write the model parameter values and their uncertainties to a file"""
     path_ = path / "Parameters"
     path_.mkdir(parents=True, exist_ok=True)
-    if fitted:
-        (path_ / "fitted.toml").write_text(fitted)
-    if constrained:
-        (path_ / "constrained.toml").write_text(constrained)
-    if fixed:
-        (path_ / "fixed.toml").write_text(fixed)
+    for status in ("fitted", "constrained", "fixed"):
+        selection = _select[status](params)
+        par_strings = _params_to_strings(selection, status)
+        formatted_strings = _format_strings(par_strings)
+        filename = path_ / f"{status}.toml"
+        filename.write_text(formatted_strings)
 
 
-def _params_to_text(params):
-    par_string, col_width = _params_to_string(params)
+def _select_fitted(params):
+    return {fname: param for fname, param in params.items() if param.vary}
+
+
+def _select_constrained(params):
+    return {fname: param for fname, param in params.items() if param.expr}
+
+
+def _select_fixed(params):
+    return {
+        fname: param
+        for fname, param in params.items()
+        if not (param.vary or param.expr)
+    }
+
+
+_select = {
+    "fitted": _select_fitted,
+    "constrained": _select_constrained,
+    "fixed": _select_fixed,
+}
+
+
+def _params_to_strings(params, status):
+    par_strings = {"GLOBAL": {}}
+    params_dict = {param.user_data["pname"]: param for param in params.values()}
+    for pname, param in sorted(params_dict.items()):
+        if pname.spin_system:  # residue-specific parameter
+            section = pname.section
+            name_print = str(pname.spin_system)
+        else:  # global parameter
+            section = "GLOBAL"
+            name_print = pname.section_res
+        value_print = _format_param[status](param)
+        par_strings.setdefault(section, {})[name_print] = value_print
+    if not par_strings["GLOBAL"]:
+        del par_strings["GLOBAL"]
+    return par_strings
+
+
+def _format_fitted(param):
+    error = f"±{param.stderr:.5e}" if param.stderr else "(error not calculated)"
+    return f"{param.value: .5e} # {error}"
+
+
+def _format_constrained(param):
+    error = f"±{param.stderr:.5e} " if param.stderr else ""
+    constraint = param.user_data["print_expr"]
+    return f"{param.value: .5e} # {error}({constraint})"
+
+
+def _format_fixed(param):
+    return f"{param.value: .5e} # (fixed)"
+
+
+_format_param = {
+    "fitted": _format_fitted,
+    "constrained": _format_constrained,
+    "fixed": _format_fixed,
+}
+
+
+def _format_strings(par_strings):
     result = []
-    for section, key_values in par_string.items():
+    for section, key_values in par_strings.items():
         result.append(f"[{_quote(section)}]")
-        width = col_width[section]
-        for key, value in sorted(key_values):
+        width = len(max(key_values, key=len))
+        for key, value in key_values.items():
             result.append(f"{_quote(key):<{width}} = {value}")
         result.append("")
     return "\n".join(result)
@@ -213,45 +310,3 @@ def _quote(text):
     if RE_GROUPNAME.match(text_):
         return text_
     return f'"{text_}"'
-
-
-def _params_to_string(params):
-    col_width = {}
-    par_string = {"GLOBAL": []}
-    sorted_params = sorted(params.values(), key=lambda x: x.user_data["pname"])
-    for param in sorted_params:
-        pname = param.user_data["pname"]
-        if pname.spin_system:  # residue-specific parameter
-            name_print = pname.spin_system
-            section = pname.section
-        else:  # global parameter
-            name_print = pname.section_res
-            section = "GLOBAL"
-        value_print = _param_to_string(param)
-        par_string.setdefault(section, []).append((name_print, value_print))
-        col_width[section] = max(10, len(str(name_print)), col_width.get(section, 0))
-    if not par_string["GLOBAL"]:
-        del par_string["GLOBAL"]
-    return par_string, col_width
-
-
-def _param_to_string(param):
-    comments = []
-    error = ""
-    comments_fmtd = ""
-    if param.vary or param.expr:
-        if param.stderr:
-            error += f" ±{param.stderr:.5e}"
-        elif not param.expr:
-            comments.append("error not calculated")
-    if param.expr:
-        comments.append(param.user_data["print_expr"])
-    elif not param.vary:
-        comments.append("fixed")
-    if comments:
-        comments_fmtd = f" ({'; '.join(comments)})"
-    value = param.value if param.value != 0.0 else 0.0
-    string_ = f"{value: .5e}"
-    if error or comments_fmtd:
-        string_ += f" #{error}{comments_fmtd}"
-    return string_

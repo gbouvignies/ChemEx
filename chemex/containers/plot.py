@@ -1,5 +1,3 @@
-import matplotlib.figure as mf
-import matplotlib.ticker as ticker
 import numpy as np
 import scipy.interpolate as ip
 
@@ -12,6 +10,8 @@ _RED700 = "#D32F2F"
 
 
 def profile(name, data_exp, data_fit):
+    import matplotlib.figure as mf
+
     xname, yname, ename, *_ = data_exp.dtype.names
     residuals = _get_residuals(data_exp, data_fit)
     range_x = get_grid(data_fit[xname], 2, 0.02)
@@ -83,6 +83,8 @@ def relaxation(file_pdf, name, data_exp, data_fit):
 
 
 def cest(file_pdf, name, data_exp, data_fit, cs_values, alias_values):
+    import matplotlib.ticker as ticker
+
     residuals = _get_residuals(data_exp, data_fit)
     sigma = _estimate_sigma(residuals)
     fig = profile(name, data_exp, data_fit)
@@ -108,6 +110,8 @@ def cest(file_pdf, name, data_exp, data_fit, cs_values, alias_values):
 
 
 def shift(name_pdf, name, fit, exp, err):
+    import matplotlib.figure as mf
+
     fig = mf.Figure()
     ax = fig.subplots(1, 1)
     fig.align_labels()
