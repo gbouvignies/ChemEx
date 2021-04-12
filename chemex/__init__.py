@@ -6,4 +6,4 @@ Exchange Saturation Transfer.
 
 """
 
-__version__ = "2021.1.0-dev1"
+__version__ = "2021.2.0-dev0"
