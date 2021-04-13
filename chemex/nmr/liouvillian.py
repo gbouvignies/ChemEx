@@ -12,9 +12,7 @@
 """
 import dataclasses as dc
 import itertools as it
-import re
 
-import asteval
 import numpy as np
 import scipy.stats as ss
 
@@ -329,9 +327,6 @@ class LiouvillianIS:
             **self._build_exchange_matrices(),
         }
         self._matrices_ref = self.matrices.copy()
-        self._interpreter = asteval.Interpreter(
-            symtable={"vectors": self.vectors}, minimal=True
-        )
         scale = -2.0 * np.pi * h_frq
         self.ppm_i = scale * cnc.SIGNED_XI_RATIO.get(basis.atoms.get("i"), 1.0)
         self.ppm_s = scale * cnc.SIGNED_XI_RATIO.get(basis.atoms.get("s"), 1.0)
@@ -498,8 +493,10 @@ class LiouvillianIS:
     @detection.setter
     def detection(self, value):
         self._detection = value
-        expr = re.sub(r"(\w+\b(?<!\b1j))", r'vectors["\1"].reshape(1, -1)', value)
-        self._detect_vector = self._interpreter(expr)
+        vector = self.vectors.get(value)
+        if vector is None:
+            return
+        self._detect_vector = vector.reshape(1, -1)
 
     def detect(self, magnetization):
         shape = -1, *magnetization.shape[-2:]

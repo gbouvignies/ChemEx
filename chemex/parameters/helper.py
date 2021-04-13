@@ -1,8 +1,7 @@
-import ast
 import dataclasses as dc
 import itertools as it
+import re
 
-import asteval.astutils as aa
 import lmfit as lf
 
 import chemex.nmr.rates as cnr
@@ -98,17 +97,16 @@ def _settings_to_params(settings, conditions, spin_system):
 
 
 def _get_settings(settings_full, propagator):
-    settings_profile = {
-        k: v for k, v in settings_full.items() if k in propagator.snames
+    settings_min = {k: v for k, v in settings_full.items() if k in propagator.snames}
+    # Find the additional parameters that are used in the profile param constaints
+    settings_expr = {
+        name: settings_full[name]
+        for setting in settings_min.values()
+        for name in re.findall(r"\{(.+?)\}", setting.get("expr", ""))
+        if name not in settings_min
     }
-    settings_params = {}
-    for name, setting in settings_profile.items():
-        settings_params[name] = setting.copy()
-        names_expr = aa.get_ast_names(ast.parse(setting.get("expr", "")))
-        settings_params.update(
-            {k: settings_full[k].copy() for k in names_expr if k in settings_full}
-        )
-    return settings_profile, settings_params
+    settings_max = {**settings_min, **settings_expr}
+    return settings_min, settings_max
 
 
 def _set_to_fit(settings, model, observed_state, fitted):
