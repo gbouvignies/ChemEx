@@ -5,15 +5,7 @@ chemex.containers.helper
 ========================
 
 .. automodule:: chemex.containers.helper
-
-Functions
----------
-
-.. autosummary::
-   :toctree: _autosummary/
-
-   get_scale
-
-.. only:: builder_html
-
-   [:download:`source code <../../../../chemex/containers/helper.py>`]
+   :members:
+   :undoc-members:
+   :special-members:
+   :exclude-members: __dict__,__weakref__

@@ -5,24 +5,7 @@ chemex.tools.pick_cest
 ======================
 
 .. automodule:: chemex.tools.pick_cest
-
-Functions
----------
-
-.. autosummary::
-   :toctree: _autosummary/
-
-   pick_cest
-
-Classes
--------
-
-.. autosummary::
-   :toctree: _autosummary/
-
-   Buttons
-   Curve
-
-.. only:: builder_html
-
-   [:download:`source code <../../../../chemex/tools/pick_cest.py>`]
+   :members:
+   :undoc-members:
+   :special-members:
+   :exclude-members: __dict__,__weakref__

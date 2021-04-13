@@ -5,16 +5,7 @@ chemex.containers.noise
 =======================
 
 .. automodule:: chemex.containers.noise
-
-Functions
----------
-
-.. autosummary::
-   :toctree: _autosummary/
-
-   _variance_from_duplicates
-   _variance_from_scatter
-
-.. only:: builder_html
-
-   [:download:`source code <../../../../chemex/containers/noise.py>`]
+   :members:
+   :undoc-members:
+   :special-members:
+   :exclude-members: __dict__,__weakref__
