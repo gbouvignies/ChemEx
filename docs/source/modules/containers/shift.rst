@@ -5,15 +5,7 @@ chemex.containers.shift
 =======================
 
 .. automodule:: chemex.containers.shift
-
-Classes
--------
-
-.. autosummary::
-   :toctree: _autosummary/
-
-   ShiftProfile
-
-.. only:: builder_html
-
-   [:download:`source code <../../../../chemex/containers/shift.py>`]
+   :members:
+   :undoc-members:
+   :special-members:
+   :exclude-members: __dict__,__weakref__

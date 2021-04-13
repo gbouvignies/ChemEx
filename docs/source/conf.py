@@ -40,7 +40,6 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.doctest",
     "sphinx.ext.mathjax",
-    "sphinx.ext.autosummary",
     "sphinx.ext.extlinks",
     "sphinx.ext.viewcode",
     "sphinx.ext.todo",
@@ -94,9 +93,6 @@ modindex_common_prefix = ["chemex."]
 
 # The default syntax to be highlighted
 highlight_language = "python"
-
-# Whether to generate autosummary or not
-autosummary_generate = True
 
 # Napoleon attributes
 napoleon_google_docstring = False

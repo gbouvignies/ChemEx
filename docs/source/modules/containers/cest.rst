@@ -5,16 +5,7 @@ chemex.containers.cest
 ======================
 
 .. automodule:: chemex.containers.cest
-
-Classes
--------
-
-.. autosummary::
-   :toctree: _autosummary/
-
-   CestProfile
-   CestData
-
-.. only:: builder_html
-
-   [:download:`source code <../../../../chemex/containers/cest.py>`]
+   :members:
+   :undoc-members:
+   :special-members:
+   :exclude-members: __dict__,__weakref__

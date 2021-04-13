@@ -5,27 +5,7 @@ chemex.fitting
 ==============
 
 .. automodule:: chemex.fitting
-
-Functions
----------
-
-.. autosummary::
-   :toctree: _autosummary/
-
-   _minimize
-   _write_files
-   _write_statistics
-   _print_chisqr
-   _calculate_statistics
-
-Classes
--------
-
-.. autosummary::
-   :toctree: _autosummary/
-
-   Fit
-
-.. only:: builder_html
-
-   [:download:`source code <../../../../chemex/fitting.py>`]
+   :members:
+   :undoc-members:
+   :special-members:
+   :exclude-members: __dict__,__weakref__

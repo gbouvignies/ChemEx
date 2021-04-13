@@ -5,16 +5,7 @@ chemex.containers.relaxation
 ============================
 
 .. automodule:: chemex.containers.relaxation
-
-Classes
--------
-
-.. autosummary::
-   :toctree: _autosummary/
-
-   RelaxationProfile
-   RelaxationData
-
-.. only:: builder_html
-
-   [:download:`source code <../../../../chemex/containers/relaxation.py>`]
+   :members:
+   :undoc-members:
+   :special-members:
+   :exclude-members: __dict__,__weakref__

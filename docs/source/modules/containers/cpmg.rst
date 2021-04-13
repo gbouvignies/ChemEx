@@ -5,16 +5,7 @@ chemex.containers.cpmg
 ======================
 
 .. automodule:: chemex.containers.cpmg
-
-Classes
--------
-
-.. autosummary::
-   :toctree: _autosummary/
-
-   CpmgProfile
-   CpmgData
-
-.. only:: builder_html
-
-   [:download:`source code <../../../../chemex/containers/cpmg.py>`]
+   :members:
+   :undoc-members:
+   :special-members:
+   :exclude-members: __dict__,__weakref__
