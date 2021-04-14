@@ -99,11 +99,12 @@ def _settings_to_params(settings, conditions, spin_system):
 def _get_settings(settings_full, propagator):
     settings_min = {k: v for k, v in settings_full.items() if k in propagator.snames}
     # Find the additional parameters that are used in the profile param constaints
+    remaining_names = set(settings_full) - set(settings_min)
     settings_expr = {
         name: settings_full[name]
         for setting in settings_min.values()
         for name in re.findall(r"\{(.+?)\}", setting.get("expr", ""))
-        if name not in settings_min
+        if name in remaining_names
     }
     settings_max = {**settings_min, **settings_expr}
     return settings_min, settings_max
