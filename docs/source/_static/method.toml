@@ -1,13 +1,11 @@
 [STEP1]
-INCLUDE  = ["L24HD2", "L25HD1", "V30HG1", "V30HG2", "M40HE", "I44HD1"]
-PB       = "fix"
-KEX_AB   = "fix"
+INCLUDE    = ["L24HD2", "L25HD1", "V30HG1", "V30HG2", "M40HE", "I44HD1"]
+FIX        = ["PB", "KEX_AB"]
+RESTRAINTS = ["[R2_B] = [R2_A]", "[R1_B] = [R1_A]"]
 
 [STEP2]
-PB       = "fit"
-KEX_AB   = "fit"
+FIT = ["PB", "KEX_AB"]
 
 [STEP3]
-INCLUDE  = "all"
-PB       = "fix"
-KEX_AB   = "fix"
+INCLUDE = "ALL"
+FIX     = ["PB", "KEX_AB"]

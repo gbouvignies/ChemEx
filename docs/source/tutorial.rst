@@ -198,8 +198,7 @@ be provided if necessary.
 
 .. note::
    If certain required parameter is not specified in parameter files, a
-   default value will be assigned as the initial value,  which is
-   determined by each specific experiment module.
+   default value will be assigned as the initial value.
 
 .. attention::
    Due to the multidimensional searching feature of *χ*\ :sup:`2`
@@ -242,10 +241,12 @@ be used during the fitting process, which typically looks like this:
 
 The method file defines the behavior of each parameter during the
 fitting process and may contain multiple fitting steps. Each parameter
-typically can be fixed (i.e. ``"fix"``) or fitted (i.e. ``"fit"``) during
-each fitting step. If the method file is not provided or certain parameter
-not specified, a default behavior will be assigned according to each
-experiment module.
+typically can be **fitted**, **fixed** or **constrained** during each
+fitting step using the :confval:`FIT`, :confval:`FIX` and
+:confval:`CONSTRAINTS` lists. Parameters in the mathematical expression
+given in the :confval:`CONSTRAINTS` list should be put in brackets.
+If the method file is not provided or certain parameter not specified,
+a default behavior will be assigned according to each experiment module.
 
 .. note::
    If the fitting method contains multiple fitting steps, the behavior of
@@ -255,9 +256,11 @@ experiment module.
 .. note::
    The :confval:`INCLUDE` key in method file allows selecting a subset
    of residues for analysis during each fitting step. The residue name
-   should match those in experiment files, ``"all"`` is the default value
+   should match those in experiment files, ``"ALL"`` is the default value
    which indicates all residues to be included in the current fitting
-   step.
+   step. Similarly, the :confval:`EXCLUDE` key can be used to exclude
+   from the analysis.
+   .
 
 .. tip::
    The set of residues to be included in global fits should be chosen
