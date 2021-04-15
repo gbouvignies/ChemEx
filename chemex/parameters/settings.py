@@ -226,6 +226,8 @@ def write_par(params, path):
     path_.mkdir(parents=True, exist_ok=True)
     for status in ("fitted", "constrained", "fixed"):
         selection = _select[status](params)
+        if not selection:
+            continue
         par_strings = _params_to_strings(selection, status)
         formatted_strings = _format_strings(par_strings)
         filename = path_ / f"{status}.toml"

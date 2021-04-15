@@ -92,8 +92,7 @@ def simulate(args):
         sys.exit("\nerror: No data to simulate")
 
     # Create parameters
-    params = experiments.params
-    params.update_constraints()
+    params = cph.create_params(experiments, defaults)
 
     # Set to "fix" all parameters that are set to "fit"
     for param in params.values():
