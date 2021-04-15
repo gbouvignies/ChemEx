@@ -225,8 +225,6 @@ class CpmgData:
         return data
 
     def get_r2_exp(self, simulation=False):
-        np.seterr(invalid="raise")
-        np.set_printoptions(threshold=sys.maxsize)
         dtype = [
             ("nu_cpmgs", "f8"),
             ("r2", "f8"),
