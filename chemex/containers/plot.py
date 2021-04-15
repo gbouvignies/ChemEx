@@ -10,56 +10,68 @@ _RED700 = "#D32F2F"
 
 
 def profile(name, data_exp, data_fit):
+
+    fig, ax1, ax2 = _create_fig(name)
+
+    _plot_fit(data_fit, ax2)
+
+    if data_exp:
+        _plot_exp(data_exp, data_fit, ax1, ax2)
+
+    return fig
+
+
+def _create_fig(name):
     import matplotlib.figure as mf
 
-    xname, yname, ename, *_ = data_exp.dtype.names
-    residuals = _get_residuals(data_exp, data_fit)
-    range_x = get_grid(data_fit[xname], 2, 0.02)
     fig = mf.Figure()
     ax1, ax2 = fig.subplots(2, 1, sharex="all", gridspec_kw={"height_ratios": [1, 4]})
     fig.align_labels()
     fig.suptitle(f"{str(name).upper()}")
-    ax1.set_xlim(*range_x)
     ax1.set_ylabel("Residuals")
     ax1.ticklabel_format(style="sci", scilimits=(0, 0), axis="y", useMathText=True)
-    ax1.errorbar(
-        data_exp[data_exp.mask][xname],
-        residuals[data_exp.mask],
-        abs(data_exp[data_exp.mask][ename].T),
-        fmt=".",
-        color=_RED700,
-        zorder=3,
-    )
-    ax1.errorbar(
-        data_exp[~data_exp.mask][xname],
-        residuals[~data_exp.mask],
-        abs(data_exp[~data_exp.mask][ename].T),
-        fmt=".",
-        color=_RED100,
-        zorder=3,
-    )
-    ax2.plot(data_fit[xname], data_fit[yname], linestyle="-", color=_RED300)
-    ax2.errorbar(
-        data_exp[data_exp.mask][xname],
-        data_exp[data_exp.mask][yname],
-        abs(data_exp[data_exp.mask][ename].T),
-        fmt=".",
-        color=_RED700,
-        zorder=3,
-    )
-    ax2.errorbar(
-        data_exp[~data_exp.mask][xname],
-        data_exp[~data_exp.mask][yname],
-        abs(data_exp[~data_exp.mask][ename].T),
-        fmt=".",
-        color=_RED100,
-        zorder=3,
-    )
-    range_y = ax2.get_ylim()
+
     for axis in (ax1, ax2):
         axis.axhline(0, color="k", linewidth=0.5, zorder=1)
-    range_y = ax2.set_ylim(range_y)
-    return fig
+
+    return fig, ax1, ax2
+
+
+def _plot_fit(data_fit, ax2):
+    xname, yname, *_ = data_fit.dtype.names
+    fit_x, fit_y = data_fit[xname], data_fit[yname]
+    range_x = get_grid(fit_x, 2, 0.02)
+    ax2.set_xlim(*range_x)
+    ax2.plot(fit_x, fit_y, linestyle="-", color=_RED300)
+
+
+def _plot_exp(data_exp, data_fit, ax1, ax2):
+
+    xname, yname, ename, *_ = data_exp.dtype.names
+    exp_x, exp_y, exp_e = data_exp[xname], data_exp[yname], abs(data_exp[ename])
+    res_y = _get_residuals(data_exp, data_fit)
+
+    m_sel = data_exp.mask
+    m_inf = exp_e.sum(axis=1) > 1e16
+
+    s1 = m_sel & ~m_inf
+    ax1.errorbar(exp_x[s1], res_y[s1], exp_e[s1].T, fmt=".", color=_RED700, zorder=3)
+    ax2.errorbar(exp_x[s1], exp_y[s1], exp_e[s1].T, fmt=".", color=_RED700, zorder=3)
+
+    range1_y = ax1.get_ylim()
+    range2_y = ax2.get_ylim()
+
+    exp_e[exp_e == np.inf] = 500.0
+    s2 = m_sel & m_inf
+    ax1.errorbar(exp_x[s2], res_y[s2], exp_e[s2].T, fmt=".", color=_RED700, zorder=3)
+    ax2.errorbar(exp_x[s2], exp_y[s2], exp_e[s2].T, fmt=".", color=_RED700, zorder=3)
+
+    s3 = ~m_sel
+    ax1.errorbar(exp_x[s3], res_y[s3], exp_e[s3].T, fmt=".", color=_RED100, zorder=3)
+    ax2.errorbar(exp_x[s3], exp_y[s3], exp_e[s3].T, fmt=".", color=_RED100, zorder=3)
+
+    ax1.set_ylim(range1_y)
+    ax2.set_ylim(range2_y)
 
 
 def cpmg(file_pdf, name, data_exp, data_fit):
