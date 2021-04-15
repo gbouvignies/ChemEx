@@ -15,7 +15,7 @@ def profile(name, data_exp, data_fit):
 
     _plot_fit(data_fit, ax2)
 
-    if data_exp:
+    if data_exp.size:
         _plot_exp(data_exp, data_fit, ax1, ax2)
 
     return fig
