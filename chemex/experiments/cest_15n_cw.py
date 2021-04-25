@@ -99,7 +99,8 @@ class PulseSeq:
         self.prop.b1_s = settings["b1_frq_dec"]
         if "13C" in config["conditions"].label:
             self.prop.jeff_i = cnc.get_multiplet("", "n")
-        self.prop.detection = f"iz_{settings['observed_state']}"
+        self.observed_state = settings["observed_state"]
+        self.prop.detection = f"iz_{self.observed_state}"
         self.dephased = settings["b1_inh_scale"] == np.inf
         self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
