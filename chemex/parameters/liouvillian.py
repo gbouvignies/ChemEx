@@ -116,6 +116,8 @@ def make_settings(basis, model, conditions):
                 f"d_{state}": {"attributes": ("temperature",), "value": 0.0},
             }
         )
+        for setting in settings.values():
+            setting["vary"] = False
         # As 1HN sites exchange with water, the "expr" should be modified accordingly
         if spin_system == "hn":
             r2a_s = f"{{r2_s_{state}}} + {{r1a_is_{state}}} - {{r1_s_{state}}}"
