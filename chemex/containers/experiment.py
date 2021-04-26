@@ -119,6 +119,7 @@ class Experiments:
             subset = experiment.get_relevant_subset(pnames)
             if subset:
                 relevant_subset.add(subset)
+        relevant_subset.verbose = self.verbose
         return relevant_subset
 
     @property
