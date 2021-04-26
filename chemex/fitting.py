@@ -1,10 +1,12 @@
 """The fitting module contains the code for fitting the experimental data."""
+import itertools as it
 import pathlib
 import sys
 
 import lmfit as lm
 import numpy as np
 import scipy.stats as ss
+import tqdm
 
 import chemex.containers.plot as ccp
 import chemex.helper as ch
@@ -21,7 +23,7 @@ class Fit:
         self._plot = plot
         self._defaults = defaults
 
-    def read_methods(self, filenames):
+    def read_methods(self, filenames=None):
         if filenames is None:
             return
         self._method = cps.read_methods(filenames)
@@ -42,14 +44,14 @@ class Fit:
                 ch.header2(f"\n{section.upper()}")
 
             # Select a subset of profiles based on "INCLUDE" and "EXCLUDE"
-            selection = {key: settings.pop(key, None) for key in ("include", "exclude")}
+            selection = {key: settings.get(key) for key in ("include", "exclude")}
             self._experiments.select(selection)
             if not self._experiments:
                 print("No data to fit...")
                 continue
 
             # Set the fitting algorithm
-            fitmethod = settings.pop("fitmethod", "leastsq")
+            fitmethod = settings.get("fitmethod", "leastsq")
             print(f'\nFitting method -> "{fitmethod}"')
 
             # Update the parameter "vary" and "expr" status
@@ -57,36 +59,123 @@ class Fit:
             if index == 0:
                 cps.set_values(params_, self._defaults)
 
-            # Make cluster of data depending on indendent set of parameters
-            groups = self._create_groups(params_)
-            g_params_merged = self._fit_groups(path, plot, section, fitmethod, groups)
-            params_.update(g_params_merged)
+            # Red grid search parameters
+            grid = settings.get("grid")
+
+            if grid:
+                self._experiments.verbose = False
+                g_params = self._run_grid(params_, grid, path, plot, section, fitmethod)
+
+            else:
+                # Make cluster of data depending on indendent set of parameters
+                self._experiments.verbose = True
+                g_params = self._fit_groups(params_, path, plot, section, fitmethod)
+
+            params_.update(g_params)
 
         return params_
 
-    def _fit_groups(self, path, plot, section, fitmethod, groups):
+    def _run_grid(self, params, grid, path, plot, section, fitmethod):
+
+        if len(self._method) > 1:
+            path /= section.upper()
+
+        path_grid = path / "Grid"
+
+        path_grid.mkdir(parents=True, exist_ok=True)
+
+        params_select = self._experiments.select_params(params)
+
+        grid_values, params = cps.read_grid(grid, params_select)
+
+        groups = self._create_groups(params)
+
+        print("\nRunning the grid search...\n")
+
+        best_chi2 = 1e32
+        best_params = None
+        grid_shape = [len(values) for values in grid_values.values()]
+        grid_n = np.prod(grid_shape)
+
+        with open(path_grid / "grid.out", "w") as fileout:
+
+            names = [
+                "# ",
+                " ".join(
+                    f"{str(params[fname].user_data['pname']):^17s}"
+                    for fname in grid_values
+                ),
+                f"{'redchi2':^17s}",
+                "\n",
+            ]
+            fileout.write("".join(names))
+
+            redchi2 = []
+
+            for values in tqdm.tqdm(it.product(*grid_values.values()), total=grid_n):
+
+                for fname, value in zip(grid_values, values):
+                    # Set parameters using grid values
+                    for group in groups:
+                        if fname in group["params"]:
+                            group["params"][fname].value = value
+
+                params = cph.merge(
+                    _minimize(group["experiments"], group["params"], fitmethod)
+                    for group in groups
+                )
+
+                statistics = _calculate_statistics(self._experiments, params)
+
+                redchi2.append(statistics["redchi"])
+
+                output = [
+                    "  ",
+                    " ".join(f"{value:17.8e}" for value in values),
+                    f"{redchi2[-1]:17.8e}",
+                    "\n",
+                ]
+                fileout.write("".join(output))
+                fileout.flush()
+
+                if redchi2[-1] < best_chi2:
+                    best_chi2 = redchi2[-1]
+                    best_params = params.copy()
+
+        _post_fit(self._experiments, best_params, path, False)
+
+        if plot != "nothing":
+            _plot_grid(grid_values, redchi2, params, path_grid)
+
+        return best_params
+
+    def _fit_groups(self, params, path, plot, section, fitmethod):
+
+        groups = self._create_groups(params)
+
         multi_groups = len(groups) > 1
         plot_group_flg = plot == "all" or (not multi_groups and plot == "normal")
+
         if len(self._method) > 1:
-            path /= pathlib.Path(section.upper())
+            path /= section.upper()
+
         params_list = []
-        for group in groups:
-            group_path = path / group["path"]
-            print(group["message"], end="")
-            params = _minimize(group["experiments"], group["params"], fitmethod)
-            _write_files(group["experiments"], params, group_path)
-            if plot_group_flg:
-                ccp.write_plots(group["experiments"], params, group_path)
-            params_list.append(params)
-        params_merged = cph.merge(params_list)
+        for group in self._create_groups(params):
+            g_mes, g_exp, g_par, g_pat = (
+                group[key] for key in ("message", "experiments", "params", "path")
+            )
+            print(f"{g_mes}\nMinimizing...\n")
+            g_par = _minimize(g_exp, g_par, fitmethod)
+            _post_fit(g_exp, g_par, path / g_pat, plot_group_flg)
+            params_list.append(g_par)
+        params = cph.merge(params_list)
+
         if multi_groups:
             print("\n\n-- All clusters --")
-            _print_chisqr(self._experiments, params_merged)
-            path_ = path / pathlib.Path("All")
-            _write_files(self._experiments, params_merged, path_)
-            if plot != "nothing":
-                ccp.write_plots(self._experiments, params_merged, path_)
-        return params_merged
+            self._experiments.verbose = False
+            _post_fit(self._experiments, params, path / "All", plot != "nothing")
+
+        return params
 
     def mc_simulations(self, params, iter_nb, name="mc"):
         if iter_nb is None:
@@ -177,18 +266,17 @@ def _minimize(experiments, params, fitmethod=None):
     if fitmethod is None:
         fitmethod = "leastsq"
     kws = {}
-    if fitmethod == "brute":
+    if fitmethod == "leastsq":
+        kws["factor"] = 0.1
+    elif fitmethod == "brute":
         kws["keep"] = "all"
     elif fitmethod == "least_squares":
         kws["verbose"] = 2
-    elif fitmethod == "leastsq":
-        kws["factor"] = 0.1
+        experiments.verbose = False
     elif fitmethod in ["basinhopping", "differential_evolution"]:
         kws["disp"] = True
-    if fitmethod in ["leastsq", "shgo", "dual_annealing"]:
-        experiments.verbose = True
+        experiments.verbose = False
 
-    print("\nMinimizing...\n")
     minimizer = lm.Minimizer(experiments.residuals, params)
     try:
         result = minimizer.minimize(method=fitmethod, **kws)
@@ -198,8 +286,14 @@ def _minimize(experiments, params, fitmethod=None):
     except ValueError:
         result = minimizer.result
         sys.stderr.write("\n -- Got a ValueError: minimization stopped --\n")
-    _print_chisqr(experiments, result.params)
     return result.params
+
+
+def _post_fit(experiments, params, path, plot=False):
+    _print_chisqr(experiments, params)
+    _write_files(experiments, params, path)
+    if plot:
+        ccp.write_plots(experiments, params, path)
 
 
 def _write_files(experiments, params, path):
@@ -254,3 +348,69 @@ def _calculate_statistics(experiments, params):
         "aic": aic,
         "bic": bic,
     }
+
+
+def _plot_grid(grid_values, redchi2, params, path):
+    """Visualize the result of the brute force grid search.
+
+    The output file will display the chi-square value per parameter and contour
+    plots for all combination of two parameters.
+    """
+
+    shape = [len(values) for values in grid_values.values()]
+    redchi2 = np.array(redchi2).reshape(shape)
+
+    _plot_grid_1d(grid_values, redchi2, params, path)
+
+    if len(grid_values) > 1:
+        _plot_grid_2d(grid_values, redchi2, params, path)
+
+
+def _plot_grid_1d(grid_values, redchi2, params, path):
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    with PdfPages(path / "grid_1d.pdf") as pdf:
+        for i, (fname, values) in enumerate(grid_values.items()):
+            red_axis = tuple(a for a in range(len(grid_values)) if a != i)
+            chi2_vector = np.minimum.reduce(redchi2, axis=red_axis)
+            _fig, ax = plt.subplots(1, 1)
+            ax.plot(values, chi2_vector, "o", ms=3)
+            min_index = np.argmin(chi2_vector)
+            ax.axvline(values[min_index], ls="dashed", color="r")
+            ax.set_xlabel(str(params[fname].user_data["pname"]))
+            ax.set_ylabel(r"$\chi^{2}$")
+            pdf.savefig()
+
+
+def _plot_grid_2d(grid_values, redchi2, params, path):
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+    from matplotlib.colors import LogNorm
+    from matplotlib import cm
+
+    with PdfPages(path / "grid_2d.pdf") as pdf:
+        combinations = it.combinations(enumerate(grid_values.items()), 2)
+        for (i, (n1, v1)), (j, (n2, v2)) in combinations:
+            fig, ax = plt.subplots(1, 1)
+            grid_x, grid_y = np.meshgrid(v1, v2)
+            red_axis = tuple(a for a in range(len(grid_values)) if a not in (i, j))
+            chi2_matrix = np.minimum.reduce(redchi2, axis=red_axis).T
+            cs = ax.pcolormesh(
+                grid_x,
+                grid_y,
+                chi2_matrix,
+                norm=LogNorm(),
+                cmap=cm.Blues_r,
+                shading="gouraud",
+            )
+            fig.colorbar(cs)
+            min_indexes = np.unravel_index(np.argmin(chi2_matrix), chi2_matrix.shape)
+            min_x = grid_x[min_indexes]
+            min_y = grid_y[min_indexes]
+            ax.axvline(min_x, ls="dashed", color="r")
+            ax.axhline(min_y, ls="dashed", color="r")
+            ax.plot(min_x, min_y, "rs", ms=3)
+            ax.set_xlabel(str(params[n1].user_data["pname"]))
+            ax.set_ylabel(str(params[n2].user_data["pname"]))
+            pdf.savefig()

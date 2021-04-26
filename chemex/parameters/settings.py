@@ -56,6 +56,7 @@ _SCHEMA_METHODS_PARAM = {
             "fit": {"type": "array", "items": {"type": "string"}},
             "fix": {"type": "array", "items": {"type": "string"}},
             "constraints": {"type": "array", "items": {"type": "string"}},
+            "grid": {"type": "array", "items": {"type": "string"}},
         },
     },
 }
@@ -207,6 +208,28 @@ def _get_fnames_right(right, params):
         pname = cpn.ParamName.from_section(match.group(1))
         fnames_right[match.group(0)] = {fname for fname in params if pname.match(fname)}
     return fnames_right
+
+
+def read_grid(grid, params):
+    re_ = re.compile(
+        fr"(lin[(]{cpn._RE_FLOAT},{cpn._RE_FLOAT},\d+[)]$)|"
+        fr"(log[(]{cpn._RE_FLOAT},{cpn._RE_FLOAT},\d+[)]$)|"
+        fr"([(](({cpn._RE_FLOAT})(,|[)]$))+)"
+    )
+    fnames_all = set(params)
+    grid_values = {}
+    for entry in reversed(grid):
+        left, right = entry.replace(" ", "").split("=")
+        if not re_.match(right):
+            continue
+        fnames_left = _get_fnames_left(left, fnames_all)
+        expr = right.replace("lin", "np.linspace").replace("log", "np.geomspace")
+        values = eval(expr)
+        grid_values.update({fname: values for fname in fnames_left})
+        fnames_all -= fnames_left
+    for fname in grid_values:
+        params[fname].vary = False
+    return grid_values, params
 
 
 def _print_matches(matches, params, status):
