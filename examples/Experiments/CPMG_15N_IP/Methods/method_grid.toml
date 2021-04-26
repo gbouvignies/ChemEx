@@ -1,0 +1,10 @@
+[STEP1]
+INCLUDE = [15, 30, 31, 32, 33, 34, 37]
+GRID    = ["[KEX_AB] = log(200.0, 1000.0, 5)", "[PB] = log(0.03, 0.1, 5)"]
+
+[STEP2]
+FIT = ["PB", "KEX_AB"]
+
+[STEP3]
+INCLUDE = "ALL"
+FIX     = ["PB", "KEX_AB"]

@@ -18,6 +18,9 @@ def profile(name, data_exp, data_fit):
     if data_exp.size:
         _plot_exp(data_exp, data_fit, ax1, ax2)
 
+    for axis in (ax1, ax2):
+        axis.axhline(0, color="k", linewidth=0.5, zorder=1)
+
     return fig
 
 
@@ -30,9 +33,6 @@ def _create_fig(name):
     fig.suptitle(f"{str(name).upper()}")
     ax1.set_ylabel("Residuals")
     ax1.ticklabel_format(style="sci", scilimits=(0, 0), axis="y", useMathText=True)
-
-    for axis in (ax1, ax2):
-        axis.axhline(0, color="k", linewidth=0.5, zorder=1)
 
     return fig, ax1, ax2
 
