@@ -8,9 +8,9 @@ What is ChemEx
 --------------
 
 ChemEx a Python module for analyzing datasets from different types
-of NMR experiments for chemical exchange process study, the most
-commonly used experiments include Carr–Purcell–Meiboom–Gill
-relaxation dispersion (CPMG) and Chemical Exchange Saturation
+of NMR experiments to study chemical exchange processes. The most
+commonly used experiments include Carr–Purcell–Meiboom–Gill (CPMG)
+relaxation dispersion and Chemical Exchange Saturation
 Transfer (CEST).
 
 
@@ -18,9 +18,9 @@ Where to get ChemEx
 -------------------
 
 The source code and documentation of ChemEx for all platforms
-(Linux, OS X and Windows) are available for
+(Linux, OS X and Windows) is available for
 `download <https://github.com/gbouvignies/ChemEx/releases>`_ from
-`github <https://github.com>`_.
+`GitHub <https://github.com>`_.
 
 
 Requirements
@@ -35,15 +35,14 @@ Python distribution that provides these packages, such as
 `Intel® Distribution for Python <https://software.intel.com/en-us/distribution-for-python>`_.
 
 .. attention::
-   Due to the highly extensive numerical calculation feature during
-   the fitting process, the performance of ChemEx highly depends on
-   the efficiency of numerical calculation modules.  It is highly
-   recommended to install `SciPy`_/`NumPy`_ modules compiled with
-   Intel® Math Kernel Library (Intel® MKL), which can be obtained
-   from `Anaconda`_ or `Intel® Distribution for Python`_.
-   The `SciPy`_/`NumPy`_ modules installed with :command:`pip` are
-   usually not optimized and may show much lower performance in
-   many cases.
+   Due to the extensive numerical calculations during the fitting
+   process, the performance of ChemEx highly depends on the efficiency
+   of numerical calculation modules. It is highly recommended to
+   install `SciPy`_/`NumPy`_ modules compiled with Intel® Math Kernel
+   Library (Intel® MKL), which can be obtained from `Anaconda`_ or
+   `Intel® Distribution for Python`_. The `SciPy`_/`NumPy`_ modules
+   installed with :command:`pip` are usually not optimized and may show
+   much lower performance in many cases.
 
 
 Installation
@@ -57,11 +56,11 @@ The easiest way to install ChemEx is via
 
    $ conda install -c conda-forge chemex
 
-Note that there is minimum version of Python required. If the version
-of Python is less than 3.7, ChemEx can be installed in a separate conda
-environment which enforces the use of Python 3.7::
+Note that the minimum required version of Python is 3.8. If the version
+of Python is less than 3.8, ChemEx can be installed in a separate conda
+environment, which enforces the use of Python 3.8::
 
-   $ conda create -c conda-forge -n chemex python=3.7 chemex
+   $ conda create -c conda-forge -n chemex python=3.8 chemex
    $ conda activate chemex
 
 ChemEx is also available via the Python package index using :command:`pip`::
@@ -69,7 +68,7 @@ ChemEx is also available via the Python package index using :command:`pip`::
    $ pip install chemex
 
 The development version can be installed directly from
-`github`_ via :command:`pip`::
+`GitHub`_ via :command:`pip`::
 
    $ pip install git+https://github.com/gbouvignies/chemex.git
 

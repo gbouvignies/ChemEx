@@ -1,10 +1,10 @@
 .. _chemex_develop:
 
-==================
-Developement Guide
-==================
+=================
+Development Guide
+=================
 
-This guide provides instruction for setting up the environment for
+This guide provides instructions for setting up the environment for
 developing ChemEx, an overview of the project layout, the summary
 of all modules and the contribution process.
 
@@ -13,7 +13,7 @@ Requirements
 ------------
 
 To create an environment for developing ChemEx the following additional
-programs should be installed aside form the required Python modules:
+programs should be installed in addition to the required Python modules:
 
 * `git <https://git-scm.com>`_
 
@@ -23,9 +23,9 @@ programs should be installed aside form the required Python modules:
 Source code
 -----------
 
-ChemEx uses `github <https://github.com>`_ for source code hosting.
+ChemEx uses `GitHub <https://github.com>`_ for source code hosting.
 For access to the source code, see the
-`ChemEx github site <https://github.com/gbouvignies/chemex>`_.
+`ChemEx GitHub site <https://github.com/gbouvignies/chemex>`_.
 To check out the latest version of ChemEx use :command:`git`:
 
 .. code-block:: console
@@ -44,18 +44,18 @@ Project layout
 
 The directory layout of the ChemEx project is as follows:
 
-* ``chemex/``: Contain source code for the project.
+* ``chemex/``: Contains the source code for the project.
 
-* ``docs/``: Contain the setup file and source code for building the
+* ``docs/``: Contains the setup file and source code for building the
   ChemEx documentation using `Sphinx`_.
 
 * ``examples/``: Contain numerous examples to demonstrate the application
   of each experiment module in ChemEx.
 
 * ``sandbox/`` (optional): Suggested location to store code, data and
-  other stuff which are not ready to be included in ChemEx. This directory
+  other stuff that is not ready to be included in ChemEx. This directory
   is not required and will be ignored by :command:`git` using the default
-  :file:`.gitignore` file, it is mainly created for developement purposes.
+  :file:`.gitignore` file; it is mainly created/used for development purposes.
 
 
 Chemex modules
@@ -159,7 +159,7 @@ making any updates.
   make any necessary changes to the Sphinx files in the ``docs/``
   directory.
 
-* Examples: Numerous example showing the real world use of ChemEx are
+* Examples: Numerous examples showing the real world use of ChemEx are
   provided in the ``examples/`` directory. Contributions of additional
   examples are welcome and appreciated.
 
@@ -168,7 +168,7 @@ Reporting bugs
 --------------
 
 The preferred location for submitting feature requests and reporting bugs
-is the `github issue tracker <https://github.com/gbouvignies/chemex/issues>`_.
+is the `GitHub issue tracker <https://github.com/gbouvignies/chemex/issues>`_.
 Reports are also welcomed on the
 `ChemEx mailing list <https://groups.io/g/chemex>`_ or by
 contacting `Guillaume Bouvignies <gbouvignies@gmail.com>`_ directly.
@@ -181,7 +181,7 @@ Contribution of source code or examples to ChemEx is welcomed provided that
 the contents can be distributed under the
 `New BSD License <https://opensource.org/licenses/BSD-3-Clause>`_. The
 preferred method for contributing is to create a feature branch on a
-github fork of ChemEx and submit a pull request, although patches
+GitHub fork of ChemEx and submit a pull request, although patches
 are also accepted. Refer to the
 `NumPy git workflow <https://docs.scipy.org/doc/numpy/dev/gitwash/index.html>`_
 for more details on how to submit a pull request or prepare a patch.

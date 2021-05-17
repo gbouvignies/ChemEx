@@ -5,19 +5,18 @@ Additional Functions
 ====================
 
 Aside from fitting input datasets to obtain chemical exchange parameters,
-ChemEx also has many other useful functions, several most important ones
-are summarized as below.
+ChemEx also has many other useful functions, which are summarized below.
 
 
-Simulate CPMG or CEST profiles based on a given sets of input parameters
-------------------------------------------------------------------------
+Simulate CPMG or CEST profiles for a given sets of input parameters
+-------------------------------------------------------------------
 
-ChemEx allows simulating CPMG or CEST profiles based on a given sets of
+ChemEx allows simulating CPMG or CEST profiles based on a given set of
 input parameters, which is useful to learn about the effects of each
 individual parameter on the final results. In order to make use of this
 function the first argument should be set to ``simulate``. Since all
 parameters are fixed to the initial input value, it is not necessary to
-provide the method file.  A typical command for simulation purpose with
+provide the method file. A typical command for simulation purposes with
 ChemEx is like this:
 
 .. code-block:: console
@@ -47,11 +46,11 @@ Example simulation results for CPMG and CEST experiments are shown below:
 
 
 Obtain initial estimates of Δϖ for CEST experiments
----------------------------------------------------------------------
+---------------------------------------------------
 
 In CEST (and also D-CEST/COS-CEST) experiments, in order to avoid
 getting trapped in a local minimum, it is necessary to choose suitable
-initial value of Δϖ.  ChemEx comes with a module :ref:`tools_pick_cest`
+initial value of Δϖ. ChemEx comes with a module :ref:`tools_pick_cest`
 for manually picking the major and minor dips of CEST profiles, which
 correspond to the ground and excited states, respectively. A typical
 command for such purpose is like this:
@@ -61,15 +60,15 @@ command for such purpose is like this:
    $ chemex pick_cest -e <FILE> -o <DIR>
 
 After typing this command, a window showing all CEST profiles will
-come out. For each profile first click on the major dip and then on the
-minor dip. Note that in certain profiles only one dip could be visible,
+appear. For each profile first click on the major dip and then on the
+minor dip(s). Note that in certain profiles only one dip could be visible,
 which indicates the minor dip is overlapped with the major dip, therefore
 the major dip should be clicked twice. When done with any profile, click
 the :guilabel:`Next` or :guilabel:`Previous` button to proceed to the
 next or previous profile. The :guilabel:`Swap` button allows switching
 between the major and minor states. The :guilabel:`Clear` button allows
 cleaning the selection in the current profile. Two separate files will be
-created at real-time during the dip picking process: :file:`cs_a.toml`
+created in real-time during the dip picking process: :file:`cs_a.toml`
 and :file:`dw_ab.toml` that contain chemical shifts of the major state
 and chemical shift difference between the major and minor states,
 respectively. Try to run the :file:`pick_cest.sh` script under
