@@ -62,42 +62,39 @@ class Fit:
             # Red grid search parameters
             grid = settings.get("grid")
 
+            path_sect = path / section.upper() if len(self._method) > 1 else path
+
             if grid:
                 self._experiments.verbose = False
-                g_params = self._run_grid(params_, grid, path, plot, section, fitmethod)
+                g_params = self._run_grid(params_, grid, path_sect, plot, fitmethod)
 
             else:
                 # Make cluster of data depending on indendent set of parameters
                 self._experiments.verbose = True
-                g_params = self._fit_groups(params_, path, plot, section, fitmethod)
+                g_params = self._fit_groups(params_, path_sect, plot, fitmethod)
 
             params_.update(g_params)
 
         return params_
 
-    def _run_grid(self, params, grid, path, plot, section, fitmethod):
-
-        if len(self._method) > 1:
-            path /= section.upper()
+    def _run_grid(self, params, grid, path, plot, fitmethod):
 
         path_grid = path / "Grid"
-
         path_grid.mkdir(parents=True, exist_ok=True)
 
         params_select = self._experiments.select_params(params)
 
-        grid_values, params = cps.read_grid(grid, params_select)
+        grid_values, params_grid = cps.read_grid(grid, params_select)
 
-        groups = self._create_groups(params)
+        groups = self._create_groups(params_grid)
 
         print("\nRunning the grid search...\n")
 
         best_chi2 = 1e32
         best_params = None
-        grid_shape = [len(values) for values in grid_values.values()]
-        grid_n = np.prod(grid_shape)
+        grid_n = np.prod([len(values) for values in grid_values.values()])
 
-        with open(path_grid / "grid.out", "w") as fileout:
+        with (path_grid / "grid.out").open("w") as fileout:
 
             names = [
                 "# ",
@@ -149,15 +146,12 @@ class Fit:
 
         return best_params
 
-    def _fit_groups(self, params, path, plot, section, fitmethod):
+    def _fit_groups(self, params, path, plot, fitmethod):
 
         groups = self._create_groups(params)
 
         multi_groups = len(groups) > 1
         plot_group_flg = plot == "all" or (not multi_groups and plot == "normal")
-
-        if len(self._method) > 1:
-            path /= section.upper()
 
         params_list = []
         for group in self._create_groups(params):
