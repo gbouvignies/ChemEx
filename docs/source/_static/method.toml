@@ -1,7 +1,7 @@
 [STEP1]
-INCLUDE    = ["L24HD2", "L25HD1", "V30HG1", "V30HG2", "M40HE", "I44HD1"]
-FIX        = ["PB", "KEX_AB"]
-RESTRAINTS = ["[R2_B] = [R2_A]", "[R1_B] = [R1_A]"]
+INCLUDE     = ["L24HD2", "L25HD1", "V30HG1", "V30HG2", "M40HE", "I44HD1"]
+FIX         = ["PB", "KEX_AB"]
+CONSTRAINTS = ["[R2_B] = [R2_A]", "[R1_B] = [R1_A]"]
 
 [STEP2]
 FIT = ["PB", "KEX_AB"]

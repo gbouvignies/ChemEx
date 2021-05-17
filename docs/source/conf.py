@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.abspath("."))
 # -- Project information -----------------------------------------------------
 
 project = "ChemEx"
-copyright = "2020, Guillaume Bouvignies"
+copyright = "2021, Guillaume Bouvignies"
 author = "Guillaume Bouvignies"
 
 # The full version, including alpha/beta/rc tags
