@@ -4,6 +4,7 @@ import argparse
 import pathlib
 import sys
 
+import chemex
 import chemex.chemex as cc
 import chemex.experiments as ce
 import chemex.helper as ch
@@ -32,7 +33,7 @@ def build_parser():
     parser = MyParser(description=description, prog="chemex")
 
     parser.add_argument(
-        "--version", action="version", version=f"{parser.prog} {'__version__'}"
+        "--version", action="version", version=f"{parser.prog} {chemex.__version__}"
     )
 
     commands = parser.add_subparsers(dest="commands")

@@ -18,7 +18,7 @@ for studying fully protonated proteins [Yuwen2018d]_.
 See :file:`COSCEST_1HN_IP_AP/` under :file:`examples/Experiments/`
 for this example. Note that since COS-CEST requires numerical
 integration for cos-shaped pulses with multiple time steps, the
-fitting speed could be much slower than other experment modules.
+fitting speed could be much slower than other experiment modules.
 The :confval:`cos_res` key in experiment files should not be set
 too large, and typically should be much smaller than actually used
 experimentally so long as reasonable fitting results can be achieved.

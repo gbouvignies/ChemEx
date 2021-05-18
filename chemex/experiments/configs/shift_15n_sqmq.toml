@@ -28,7 +28,7 @@ h_larmor_frq = 800.0
 # path = "./"
 
 ## Filename of the file containing the list of the shifts in ppb.
-## The file should be formated as follow:
+## The file should be formatted as follow:
 ##
 ## #     name   shift  error
 ##     G2N-HN    10.9    0.5

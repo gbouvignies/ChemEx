@@ -309,7 +309,7 @@ def make_settings_3st(conditions, spin_system):
 
 @ft.lru_cache()
 def make_settings_3st_eyring(conditions, spin_system):
-    celcius = conditions.temperature
+    celsius = conditions.temperature
     return {
         "dh_b": {"attributes": ("p_total", "l_total"), "value": 8e3, "vary": True},
         "dh_c": {"attributes": ("p_total", "l_total"), "value": 8e3, "vary": True},
@@ -324,50 +324,50 @@ def make_settings_3st_eyring(conditions, spin_system):
         "kab": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "expr": hs_to_k("ab", celcius),
+            "expr": hs_to_k("ab", celsius),
         },
         "kba": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "expr": hs_to_k("ba", celcius),
+            "expr": hs_to_k("ba", celsius),
         },
         "kac": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "expr": hs_to_k("ac", celcius),
+            "expr": hs_to_k("ac", celsius),
         },
         "kca": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "expr": hs_to_k("ca", celcius),
+            "expr": hs_to_k("ca", celsius),
         },
         "kbc": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "expr": hs_to_k("bc", celcius),
+            "expr": hs_to_k("bc", celsius),
         },
         "kcb": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
-            "expr": hs_to_k("cb", celcius),
+            "expr": hs_to_k("cb", celsius),
         },
         "pa": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
             "max": 1.0,
-            "expr": hs_to_p("a", "abc", celcius),
+            "expr": hs_to_p("a", "abc", celsius),
         },
         "pb": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
             "max": 1.0,
-            "expr": hs_to_p("b", "abc", celcius),
+            "expr": hs_to_p("b", "abc", celsius),
         },
         "pc": {
             "attributes": ("temperature", "p_total", "l_total"),
             "min": 0.0,
             "max": 1.0,
-            "expr": hs_to_p("c", "abc", celcius),
+            "expr": hs_to_p("c", "abc", celsius),
         },
     }
 
@@ -633,8 +633,8 @@ def kex_p_to_k(states):
     return f"{kex} * {p2} / max({p1} + {p2}, 1e-100)"
 
 
-def hs_to_k(states, celcius):
-    kelvin = celcius + 273.15
+def hs_to_k(states, celsius):
+    kelvin = celsius + 273.15
     kbt_h = cst.k * kelvin / cst.h
     rt = cst.R * kelvin
     expr_dh = f"{{dh_{min(states)}{max(states)}}}"
@@ -645,8 +645,8 @@ def hs_to_k(states, celcius):
     return f"{kbt_h} * exp(-(({expr_dh}) - {kelvin} * ({expr_ds})) / {rt})"
 
 
-def hs_to_p(state, states, celcius):
-    kelvin = celcius + 273.15
+def hs_to_p(state, states, celsius):
+    kelvin = celsius + 273.15
     rt = cst.R * kelvin
     dg = {}
     for a_state in states:
