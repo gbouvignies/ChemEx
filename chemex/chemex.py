@@ -12,7 +12,7 @@ import chemex.parameters.kinetics as cpk
 import chemex.parameters.settings as cps
 
 
-LOGO = r"""
+LOGO = fr"""
 * * * * * * * * * * * * * * * * * * * * * * * * *
 *      ________                   ______        *
 *     / ____/ /_  ___  ____ ___  / ____/  __    *
@@ -22,12 +22,10 @@ LOGO = r"""
 *                                               *
 *   Analysis of NMR Chemical Exchange data      *
 *                                               *
-*   Version: {:<34s} *
+*   Version: {chemex.__version__:<34s} *
 *                                               *
 * * * * * * * * * * * * * * * * * * * * * * * * *
-""".format(
-    chemex.__version__
-)
+"""
 
 
 def main():

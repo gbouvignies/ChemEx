@@ -233,11 +233,11 @@ class Buttons:
                 if cs_a is None:
                     continue
 
-                file1.write("{:10s} = {:8.3f}\n".format(str(name).upper(), cs_a))
+                file1.write(f"{str(name).upper():10s} = {cs_a:8.3f}\n")
 
                 if cs_b is not None:
                     dw_ab = cs_b - cs_a
-                    file2.write("{:10s} = {:8.3f}\n".format(str(name).upper(), dw_ab))
+                    file2.write(f"{str(name).upper():10s} = {dw_ab:8.3f}\n")
 
 
 class Curve:

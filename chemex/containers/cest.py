@@ -138,7 +138,7 @@ class CestProfile:
         return profile
 
     def bootstrap(self):
-        """Make a profile for boostrap analysis."""
+        """Make a profile for bootstrap analysis."""
         profile = copy.copy(self)
         profile.data = profile.data.bootstrap()
         return profile

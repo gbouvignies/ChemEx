@@ -98,7 +98,7 @@ def _settings_to_params(settings, conditions, spin_system):
 
 def _get_settings(settings_full, propagator):
     settings_min = {k: v for k, v in settings_full.items() if k in propagator.snames}
-    # Find the additional parameters that are used in the profile param constaints
+    # Find the additional parameters that are used in the profile param constraints
     remaining_names = set(settings_full) - set(settings_min)
     settings_expr = {
         name: settings_full[name]
