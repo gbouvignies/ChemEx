@@ -152,6 +152,7 @@ def set_status(params, settings=None, verbose=True):
     matches_fit = _set_vary(params, settings.get("fit"), vary=True)
     if verbose:
         _print_matches(matches_fit, params, "varied")
+    print("")
 
 
 def _set_vary(params, snames, vary=True):
@@ -211,6 +212,8 @@ def _get_fnames_right(right, params):
 
 
 def read_grid(grid, params):
+    if grid is None:
+        return None, params
     re_ = re.compile(
         fr"(lin[(]{cpn._RE_FLOAT},{cpn._RE_FLOAT},\d+[)]$)|"
         fr"(log[(]{cpn._RE_FLOAT},{cpn._RE_FLOAT},\d+[)]$)|"

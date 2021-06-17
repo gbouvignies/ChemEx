@@ -90,7 +90,7 @@ class PulseSeq:
         self.comp180_flg = settings["comp180_flg"]
         self.ipap_flg = settings["ipap_flg"]
         self.observed_state = settings["observed_state"]
-        self.prop.detection = f"iy_{self.observed_state}"
+        self.prop.detection = f"[iy_{self.observed_state}]"
         self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
     def _calculate(self, ncycs, params_local):

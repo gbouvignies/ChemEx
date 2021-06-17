@@ -18,13 +18,12 @@ class Experiments:
     def __init__(self):
         self._experiments = {}
         self._chisq_ref = 1e32
-        self.verbose = False
 
     def add(self, experiment: "Experiment"):
         self._experiments[experiment.filename] = experiment
 
-    def residuals(self, params, threshold=1e-3):
-        residuals = np.asarray(
+    def residuals(self, params):
+        return np.asarray(
             list(
                 it.chain.from_iterable(
                     experiment.residuals(params)
@@ -32,15 +31,6 @@ class Experiments:
                 )
             )
         )
-        if self.verbose:
-            chisq = (residuals ** 2).sum()
-            change = (chisq - self._chisq_ref) / self._chisq_ref
-            if change < -threshold:
-                nvarys = len([param for param in params.values() if param.vary])
-                redchi = chisq / (len(residuals) - nvarys)
-                print(f"  - {chisq:.3e} / {redchi:.3e}")
-                self._chisq_ref = chisq
-        return residuals
 
     def write(self, params, path):
         path_ = path / "Data"
@@ -119,7 +109,6 @@ class Experiments:
             subset = experiment.get_relevant_subset(pnames)
             if subset:
                 relevant_subset.add(subset)
-        relevant_subset.verbose = self.verbose
         return relevant_subset
 
     @property
@@ -130,13 +119,13 @@ class Experiments:
             )
         )
 
-    def get_cluster_name(self):
+    def get_group_name(self):
         experiments = iter(self._experiments.values())
         experiment = next(experiments)
-        spin_system = experiment.get_cluster_name()
+        spin_system = experiment.get_group_name()
         conditions = experiment.config["conditions"]
         for experiment in experiments:
-            spin_system &= experiment.get_cluster_name()
+            spin_system &= experiment.get_group_name()
             conditions &= experiment.config["conditions"]
         return cpn.ParamName(spin_system=spin_system, conditions=conditions)
 
@@ -270,7 +259,7 @@ class Experiment(abc.ABC):
         ]
         return type(self)(self.config, profiles=profiles, verbose=False)
 
-    def get_cluster_name(self):
+    def get_group_name(self):
         names = [profile.name for profile in self._profiles]
         return ft.reduce(lambda a, b: a & b, names)
 

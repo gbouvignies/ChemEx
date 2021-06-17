@@ -366,6 +366,6 @@ If the fittng method has multiple fitting steps, each step will create
 its own output subdirectory.  During any fitting step, if all global
 parameters (p\ :sub:`b`, k\ :sub:`ex`, etc.) are fixed or
 residue-specific fitting model is used (e.g. ``2st_rs``), then
-two separate subdirectories ``All/`` and ``Cluster/`` will be created,
+two separate subdirectories ``All/`` and ``Group/`` will be created,
 which contain fitting results for all residues and each individual
 residue, respectively.

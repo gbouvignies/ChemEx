@@ -1,10 +1,18 @@
 [STEP1]
-INCLUDE = [15, 30, 31, 32, 33, 34, 37]
-GRID    = ["[KEX_AB] = log(200.0, 1000.0, 10)", "[PB] = log(0.03, 0.1, 10)"]
+INCLUDE = [15, 31, 33, 34, 37]                                                                                              #, 33, 34, 37]
+GRID    = [
+    "[KEX_AB] = log(100.0, 600.0, 10)",
+    "[PB] = log(0.03, 0.15, 10)",
+    "[DW_AB] = lin(0.0, 10.0, 5)",
+]
 
 [STEP2]
-FIT = ["PB", "KEX_AB"]
+FIT = ["PB", "KEX_AB", "DW_AB"]
 
 [STEP3]
 INCLUDE = "ALL"
 FIX     = ["PB", "KEX_AB"]
+GRID    = ["[DW_AB] = lin(0.0, 10.0, 20)"]
+
+[STEP4]
+FIT = ["DW_AB"]

@@ -86,7 +86,7 @@ class PulseSeq:
         self.t_neg = -2.0 * self.pw90 / np.pi
         self.t_pos2 = +4.0 * self.pw90 / np.pi
         self.prop.b1_i = 1 / (4.0 * self.pw90)
-        self.prop.detection = f"iz_{settings['observed_state']}"
+        self.prop.detection = f"[iz_{settings['observed_state']}]"
         self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
     def _calculate(self, ncycs, params_local):

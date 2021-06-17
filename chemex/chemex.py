@@ -5,8 +5,8 @@ import chemex
 import chemex.cli as cc
 import chemex.containers.experiment as cce
 import chemex.containers.plot as ccp
-import chemex.fitting as cf
 import chemex.helper as ch
+import chemex.optimize.fitting as cf
 import chemex.parameters.helper as cph
 import chemex.parameters.kinetics as cpk
 import chemex.parameters.settings as cps
@@ -73,6 +73,7 @@ def fit(args):
     # Run Monte-Carlo simulations
     for mc_name in ("mc", "bs", "bsn"):
         n_iter = vars(args).get(mc_name)
+        cph.reset_status(params_fitted, params)
         fitter.mc_simulations(params_fitted, n_iter, mc_name)
 
 
@@ -105,6 +106,6 @@ def simulate(args):
     # Run the simulation
     ch.header1("Running the simulation")
     path = args.out_dir
-    print(f'\nWriting results -> "{path}/"')
+    print(f'Writing results -> "{path}/"\n')
     cps.write_par(params, path)
     ccp.write_plots(experiments, params, path, simulation=True)

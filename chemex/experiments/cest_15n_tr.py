@@ -113,9 +113,9 @@ class PulseSeq:
 
     def _get_detection(self, state):
         if self.antitrosy:
-            detection = f"2izsz_{state} + iz_{state}"
+            detection = f"[2izsz_{state}] + [iz_{state}]"
         else:
-            detection = f"2izsz_{state} - iz_{state}"
+            detection = f"[2izsz_{state}] - [iz_{state}]"
         return detection
 
     def offsets_to_ppms(self, offsets):
