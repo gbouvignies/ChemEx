@@ -71,6 +71,7 @@ def fit(args):
     # Run Monte-Carlo simulations
     for mc_name in ("mc", "bs", "bsn"):
         n_iter = vars(args).get(mc_name)
+        cph.reset_status(params_fitted, params)
         fitter.mc_simulations(params_fitted, n_iter, mc_name)
 
 
