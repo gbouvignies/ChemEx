@@ -180,7 +180,8 @@ def _set_expr(params, expr_list):
     for expr in reversed(expr_list):
         left, right, *somethingelse = expr.split("=")
         if somethingelse:
-            continue
+            print(f'\nError reading constraints:\n  -> "{expr}"\n\nProgram aborted\n')
+            exit()
         fnames_left = _get_fnames_left(left, params)
         fnames_right = _get_fnames_right(right, params)
         for fname in fnames_left:
@@ -224,7 +225,10 @@ def read_grid(grid, params):
     for entry in reversed(grid):
         left, right = entry.replace(" ", "").split("=")
         if not re_.match(right):
-            continue
+            print(
+                f'\nError reading grid settings:\n  -> "{entry}"\n\nProgram aborted\n'
+            )
+            exit()
         fnames_left = _get_fnames_left(left, fnames_all)
         expr = right.replace("lin", "np.linspace").replace("log", "np.geomspace")
         values = eval(expr)
