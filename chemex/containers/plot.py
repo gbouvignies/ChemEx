@@ -170,10 +170,11 @@ def get_grid(values, size=500, extension=0.0):
 
 def write_plots(experiments, params, path, simulation=False):
     """Plot the experimental and fitted data."""
-    print("\nPlotting data...")
+    print("Plotting data...")
     path_ = path / "Plots"
     path_.mkdir(parents=True, exist_ok=True)
     try:
         experiments.plot(path=path_, params=params, simulation=simulation)
     except KeyboardInterrupt:
-        print("  - Plotting cancelled")
+        print("  - Plotting cancelled\n")
+    print("")
