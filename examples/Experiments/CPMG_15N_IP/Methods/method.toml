@@ -1,5 +1,5 @@
 [STEP1]
-INCLUDE = [15, 30, 31, 32, 33, 34, 37]
+INCLUDE = [15, 31, 33, 34, 37]
 
 [STEP2]
 INCLUDE = "ALL"

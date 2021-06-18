@@ -5,8 +5,8 @@ import chemex
 import chemex.cli as cc
 import chemex.containers.experiment as cce
 import chemex.containers.plot as ccp
-import chemex.fitting as cf
 import chemex.helper as ch
+import chemex.optimize.fitting as cf
 import chemex.parameters.helper as cph
 import chemex.parameters.kinetics as cpk
 import chemex.parameters.settings as cps
