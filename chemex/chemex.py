@@ -104,6 +104,6 @@ def simulate(args):
     # Run the simulation
     ch.header1("Running the simulation")
     path = args.out_dir
-    print(f'\nWriting results -> "{path}/"')
+    print(f'Writing results -> "{path}/"\n')
     cps.write_par(params, path)
     ccp.write_plots(experiments, params, path, simulation=True)

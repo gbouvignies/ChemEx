@@ -130,13 +130,13 @@ class Experiments:
             )
         )
 
-    def get_cluster_name(self):
+    def get_group_name(self):
         experiments = iter(self._experiments.values())
         experiment = next(experiments)
-        spin_system = experiment.get_cluster_name()
+        spin_system = experiment.get_group_name()
         conditions = experiment.config["conditions"]
         for experiment in experiments:
-            spin_system &= experiment.get_cluster_name()
+            spin_system &= experiment.get_group_name()
             conditions &= experiment.config["conditions"]
         return cpn.ParamName(spin_system=spin_system, conditions=conditions)
 
@@ -270,7 +270,7 @@ class Experiment(abc.ABC):
         ]
         return type(self)(self.config, profiles=profiles, verbose=False)
 
-    def get_cluster_name(self):
+    def get_group_name(self):
         names = [profile.name for profile in self._profiles]
         return ft.reduce(lambda a, b: a & b, names)
 
