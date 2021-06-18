@@ -1,7 +1,11 @@
 import collections as co
 import itertools as it
 
+import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import cm
+from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.colors import LogNorm
 from tqdm.contrib import itertools as tqdmit
 
 import chemex.optimize.fitting as cof
@@ -162,10 +166,6 @@ def _plot_grid_1d(grids, params, path):
 
 
 def _plot_grid_2d(grids, params, path):
-    import matplotlib.pyplot as plt
-    from matplotlib.backends.backend_pdf import PdfPages
-    from matplotlib.colors import LogNorm
-    from matplotlib import cm
 
     with PdfPages(path / "grid_2d.pdf") as pdf:
         for grid_values, chisqr in grids:
