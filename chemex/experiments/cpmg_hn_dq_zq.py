@@ -151,10 +151,9 @@ class PulseSeq:
 
     def _get_detection(self, state):
         if self.dq_flg:
-            detection = f"2ixsx_{state} - 2iysy_{state}"
+            return f"[2ixsx_{state}] - [2iysy_{state}]"
         else:
-            detection = f"2ixsx_{state} + 2iysy_{state}"
-        return detection
+            return f"[2ixsx_{state}] + [2iysy_{state}]"
 
     def ncycs_to_nu_cpmgs(self, ncycs):
         ncycs_ = np.asarray(ncycs)

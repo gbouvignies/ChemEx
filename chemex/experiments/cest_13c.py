@@ -91,7 +91,7 @@ class PulseSeq:
             nucleus = spin_system.nuclei["i"]
             self.prop.jeff_i = cnc.get_multiplet(symbol, nucleus)
         self.observed_state = settings["observed_state"]
-        self.prop.detection = f"iz_{self.observed_state}"
+        self.prop.detection = f"[iz_{self.observed_state}]"
         self.dephased = settings["b1_inh_scale"] == np.inf
         self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 

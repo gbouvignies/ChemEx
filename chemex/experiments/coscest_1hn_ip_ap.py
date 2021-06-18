@@ -100,7 +100,7 @@ class PulseSeq:
         self.prop.b1_i_inh_scale = settings["b1_inh_scale"]
         self.prop.b1_i_inh_res = settings["b1_inh_res"]
         self.observed_state = settings["observed_state"]
-        self.prop.detection = f"2izsz_{self.observed_state}"
+        self.prop.detection = f"[2izsz_{self.observed_state}]"
         self.dephased = settings["b1_inh_scale"] == np.inf
         self.taud = self.d1
         self.p90_i = self.prop.perfect90_i

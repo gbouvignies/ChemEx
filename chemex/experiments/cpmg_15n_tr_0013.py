@@ -204,9 +204,9 @@ class PulseSeq:
 
     def _get_detection(self, state):
         if self.antitrosy:
-            detection = f"2izsz_{state} + iz_{state}"
+            detection = f"[2izsz_{state}] + [iz_{state}]"
         else:
-            detection = f"2izsz_{state} - iz_{state}"
+            detection = f"[2izsz_{state}] - [iz_{state}]"
         return detection
 
     def ncycs_to_nu_cpmgs(self, ncycs):

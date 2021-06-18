@@ -12,6 +12,7 @@
 """
 import dataclasses as dc
 import itertools as it
+import re
 
 import numpy as np
 import scipy.stats as ss
@@ -19,6 +20,7 @@ import scipy.stats as ss
 import chemex.nmr.constants as cnc
 import chemex.parameters.kinetics as cpk
 
+_RE_COMP = re.compile(r"\[(.+?)\]")
 
 _BASES = {
     "ixy": ["ix", "iy"],
@@ -493,9 +495,10 @@ class LiouvillianIS:
     @detection.setter
     def detection(self, value):
         self._detection = value
-        vector = self.vectors.get(value)
-        if vector is None:
+        if value in ("", None):
             return
+        expr = _RE_COMP.sub(r'self.vectors.get("\g<1>")', value)
+        vector = eval(expr)
         self._detect_vector = vector.reshape(1, -1)
 
     def detect(self, magnetization):
