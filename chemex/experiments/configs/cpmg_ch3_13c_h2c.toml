@@ -12,7 +12,7 @@ time_t2 = 0.04
 carrier = 20.0
 
 ## 13C 90 degree pulse width of CPMG pulses, in seconds
-pw90 = 15.0
+pw90 = 15.0e-6
 
 ## Equilibration delay at the end of the CPMG period, in seconds
 ## [optional, default: 0.0]

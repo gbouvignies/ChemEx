@@ -15,10 +15,10 @@ carrier_n = 118.0
 carrier_h = 8.3
 
 ## 15N 90 degree pulse width of CPMG pulses, in seconds
-pw90_n = 40.0
+pw90_n = 40.0e-6
 
 ## 1H 90 degree pulse width of CPMG pulses, in seconds
-pw90_h = 15.0
+pw90_h = 15.0e-6
 
 ## Perform DQ CPMG RD experiment, otherwise perform ZQ CPMG RD experiment
 dq_flg = true
