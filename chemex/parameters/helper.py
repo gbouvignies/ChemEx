@@ -11,6 +11,12 @@ import chemex.parameters.name as cpn
 import chemex.parameters.settings as cps
 
 
+def reset_status(params, params_ref):
+    for fname, param_ref in params_ref.items():
+        params[fname].vary = param_ref.vary
+        params[fname].expr = param_ref.expr
+
+
 def merge(params_list):
     params_ = {}
     for params in params_list:
