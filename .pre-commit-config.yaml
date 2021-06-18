@@ -22,19 +22,19 @@ repos:
       - id: reorder-python-imports
 
   - repo: https://github.com/asottile/pyupgrade
-    rev: v2.17.0
+    rev: v2.19.4
     hooks:
       - id: pyupgrade
         args: [--py38-plus]
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.0.0
+    rev: v2.1.0
     hooks:
       - id: codespell
         args: ['-L', 'reson,noe,2st,3st,ba']
 
   - repo: https://github.com/psf/black
-    rev: 21.5b1 # Replace by any tag/version: https://github.com/psf/black/tags
+    rev: 21.6b0 # Replace by any tag/version: https://github.com/psf/black/tags
     hooks:
       - id: black
         language_version: python3.8
