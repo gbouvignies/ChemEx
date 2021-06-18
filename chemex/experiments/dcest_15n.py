@@ -93,7 +93,7 @@ class PulseSeq:
         if "13C" in config["conditions"].label:
             self.prop.jeff_i = cnc.get_multiplet("", "n")
         self.observed_state = settings["observed_state"]
-        self.prop.detection = f"iz_{self.observed_state}"
+        self.prop.detection = f"[iz_{self.observed_state}]"
         self.start = None
         if config["model"].name == "2st_hd":
             self.start = ["iz_a"]

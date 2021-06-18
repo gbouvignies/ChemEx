@@ -82,7 +82,7 @@ class PulseSeq:
         self.time_t2 = settings["time_t2"]
         self.small_protein = settings["small_protein"]
         self.t_zeta = 1.0 / (8.0 * 125.3)
-        self.prop.detection = f"2iysx_{settings['observed_state']}"
+        self.prop.detection = f"[2iysx_{settings['observed_state']}]"
         self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
     def _calculate(self, ncycs, params_local):

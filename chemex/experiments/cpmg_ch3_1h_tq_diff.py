@@ -97,7 +97,7 @@ class PulseSeq:
         self.comp180_flg = settings["comp180_flg"]
         self.prop.carrier_i = settings["carrier"]
         self.prop.b1_i = 1 / (4.0 * self.pw90)
-        self.prop.detection = f"2ixsz_{settings['observed_state']}"
+        self.prop.detection = f"[2ixsz_{settings['observed_state']}]"
         self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
     def _calculate(self, ncycs, params_local):

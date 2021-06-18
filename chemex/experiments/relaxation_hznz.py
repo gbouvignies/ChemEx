@@ -67,7 +67,7 @@ class PulseSeq:
     def __init__(self, config, propagator):
         self.prop = propagator
         settings = config["experiment"]
-        self.prop.detection = f"2izsz_{settings['observed_state']}"
+        self.prop.detection = f"[2izsz_{settings['observed_state']}]"
         self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
     def _calculate(self, times, params_local):
