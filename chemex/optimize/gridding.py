@@ -147,8 +147,6 @@ def _plot_grid(grids, params, path):
 
 
 def _plot_grid_1d(grids, params, path):
-    import matplotlib.pyplot as plt
-    from matplotlib.backends.backend_pdf import PdfPages
 
     with PdfPages(path / "grid_1d.pdf") as pdf:
         for grid_values, chisqr in grids:
