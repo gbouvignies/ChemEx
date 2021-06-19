@@ -180,7 +180,7 @@ def build_parser():
     # parser for the positional argument "simulate"
     simulate_parser = commands.add_parser("simulate", help="Start a simulation")
 
-    simulate_parser.set_defaults(func=cc.simulate)
+    simulate_parser.set_defaults(func=cc.fit)
 
     simulate_parser.add_argument(
         "-e",
@@ -217,6 +217,14 @@ def build_parser():
         metavar="MODEL",
         default="2st",
         help="Exchange model used to fit the data",
+    )
+
+    simulate_parser.add_argument(
+        "--plot",
+        type=str,
+        help="Plotting level",
+        choices=["nothing", "normal"],
+        default="normal",
     )
 
     simulate_parser.add_argument(

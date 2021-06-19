@@ -313,27 +313,29 @@ class RelaxationExperiment(Experiment):
 class ShiftExperiment(Experiment):
     print_name = "Shifts"
 
+    def write(self, params, path):
+        filename = (path / self.filename.name).with_suffix(".dat")
+        with filename.open("w") as file_dat:
+            file_dat.write(
+                f"#\n"
+                f"# Unit: PPB\n"
+                f"#\n"
+                f"# {'NAME':>16s} {'SHIFT (EXP)':>17s}"
+                f" {'ERROR (EXP)':>17s} {'SHIFT (CALC)':>17s}\n"
+            )
+            for profile in sorted(self._profiles):
+                file_dat.write(profile.print(params))
+
     def plot(self, params, path, simulation=False):
         basename = path / self.filename.name
         name_pdf = basename.with_suffix(".pdf")
-        name_fit = basename.with_suffix(".fit")
-        print(f"  - {name_pdf} [.fit]")
-        nam, fit, exp, err = [], [], [], []
+        print(f"  - {name_pdf}")
+        fit, exp, err = [], [], []
         for profile in self._profiles:
-            nam.append(profile.name)
-            fit.append(profile.calculate(params))
             exp.append(profile.data["shift"])
             err.append(profile.data["error"])
+            fit.append(profile.calculate(params))
         ccp.shift(name_pdf, self.filename.name, fit, exp, err)
-
-        out = np.asarray(list(zip(nam, fit, exp, err)), dtype=None)
-
-        np.savetxt(
-            name_fit,
-            out,
-            fmt="%20s  %8.3f  %8.3f  %8.3f",
-            header=f"{'Name':>18s}  {'Fit':>8s}  {'Exp':>8s}  {'Err':>8s}",
-        )
 
     def bootstrap(self):
         profiles = np.random.choice(self._profiles, len(self._profiles))

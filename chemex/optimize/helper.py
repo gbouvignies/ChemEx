@@ -5,11 +5,11 @@ from chemex.containers import plot as ccp
 from chemex.parameters import settings as cps
 
 
-def post_fit(experiments, params, path, plot=False):
+def post_fit(experiments, params, path, plot=False, simulation=False):
     _print_chisqr(experiments, params)
     _write_files(experiments, params, path)
     if plot:
-        ccp.write_plots(experiments, params, path)
+        ccp.write_plots(experiments, params, path, simulation)
 
 
 def _write_files(experiments, params, path):

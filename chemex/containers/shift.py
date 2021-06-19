@@ -51,7 +51,7 @@ class ShiftProfile:
         shift = self.data["shift"]
         error = self.data["error"]
         value = self.calculate(params)
-        return f"{str(self.name):10s} {shift: 17.8e} {error: 17.8e} {value: 17.8e}\n"
+        return f"{str(self.name):>18s} {shift: 17.3f} {error: 17.3f} {value: 17.3f}\n"
 
     def filter(self, params):
         pass
