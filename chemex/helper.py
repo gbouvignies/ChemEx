@@ -40,6 +40,7 @@ def _check_case(config):
 
 
 def validate(config, schema):
+    """Validate the syntax of the configuration file."""
     try:
         Validator(schema).validate(config)
     except js.ValidationError as error:
@@ -106,13 +107,16 @@ Validator = _extend_with_default(js.Draft7Validator)
 
 
 def dict_merge(dct, merge_dct):
-    """Recursive dict merge. Inspired by :meth:``dict.update()``, instead of
-    updating only top-level keys, dict_merge recurses down into dicts nested
-    to an arbitrary depth, updating keys. The ``merge_dct`` is merged into
-    ``dct``.
+    """Recursive dictionary merge.
+
+    Inspired by :meth:``dict.update()``, instead of updating only top-level
+    keys, dict_merge recurses down into dicts nested to an arbitrary depth,
+    updating keys. The ``merge_dct`` is merged into ``dct``.
+
     :param dct: dict onto which the merge is executed
     :param merge_dct: dct merged into dct
     :return: None
+
     """
     for k, v in merge_dct.items():
         if (

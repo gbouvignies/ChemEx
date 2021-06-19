@@ -6,10 +6,12 @@ from scipy import stats
 
 
 def _variance_from_duplicates(data):
-    """Estimate the variance of duplicate points
+    """Estimate the variance of duplicate points.
 
-    Estimate the uncertainty using the pooled standard deviation
-    Ref: http://goldbook.iupac.org/html/P/P04758.html
+    Estimate the uncertainty using the pooled standard deviation.
+
+    Reference: https://goldbook.iupac.org/html/P/P04758.html
+
     """
     groups = {}
     x_name, y_name, e_name = data.dtype.names
@@ -31,6 +33,7 @@ def _variance_from_scatter(data):
 
     Adapted from:
     https://www.mathworks.com/matlabcentral/fileexchange/16683-estimatenoise
+
     """
     x_name, y_name, *_ = data.dtype.names
     data_sorted = np.sort(data, order=x_name)

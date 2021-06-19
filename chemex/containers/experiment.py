@@ -209,7 +209,7 @@ class Experiment(abc.ABC):
         pass
 
     def bootstrap_ns(self, groups):
-        """Residue-specific bootstrap"""
+        """Residue-specific bootstrap."""
         profiles = {}
         for profile in self._profiles:
             profiles.setdefault(profile.name.groups["i"], []).append(profile)

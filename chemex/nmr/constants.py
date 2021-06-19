@@ -3,6 +3,7 @@ constants.
 
 Define the gyromagnetic ratios in rad/s/T
 IUPAC values: Harris et al, Concepts in Magn. Reson., (2002) 14, p326
+
 """
 import collections
 

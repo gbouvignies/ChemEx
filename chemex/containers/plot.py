@@ -149,7 +149,7 @@ def _estimate_sigma(values):
 
     Up to 50% can be bad.
 
-    Ref :
+    Reference:
     Rousseeuw, Peter & Croux, Christophe. (1993). Alternatives to Median Absolute
     Deviation. Journal of the American Statistical Association. 88. 1273 - 1283.
     10.1080/01621459.1993.10476408.

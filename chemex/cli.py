@@ -285,16 +285,19 @@ def build_parser():
 
 
 def get_description_from_doc(doc):
+    """Get the experiment description from documentation."""
     return doc.strip().splitlines()[0]
 
 
 def print_info(args):
+    """Print information for experiment."""
     docs = ce.get_info()
     ch.header1(f'Description of the "{args.experiments}" experiment')
     print(docs[args.experiments])
 
 
 def write_config(args):
+    """Write default configuration file for experiment."""
     config = ce.get_config()
     args.output.write_text(config[args.experiments])
     print(

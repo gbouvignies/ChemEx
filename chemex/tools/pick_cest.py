@@ -10,6 +10,7 @@ import chemex.parameters.kinetics as cpk
 
 
 def pick_cest(args):
+    """Pick peak positions in CEST profiles."""
     import matplotlib.pyplot as plt
     import matplotlib.widgets as mw
 
@@ -91,12 +92,15 @@ class Buttons:
         self.next(None)
 
     def previous(self, event):
+        """Go to previous residue."""
         self._shift(-1)
 
     def next(self, event):
+        """Go to next residue."""
         self._shift(+1)
 
     def swap(self, event):
+        """Swap peak peak positions for major/minor states."""
         name = self.name
         if self.cs_b[name] is not None:
             self.cs_a[name], self.cs_b[name] = self.cs_b[name], self.cs_a[name]

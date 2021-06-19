@@ -10,6 +10,7 @@ def create_groups(experiments, params):
     For example, if the population of the minor state and the exchange
     rate are set to 'fix', chances are that the fit can be decomposed
     residue-specifically.
+
     """
     params_exp = experiments.select_params(params)
     pname_groups = group_pnames(experiments, params_exp)

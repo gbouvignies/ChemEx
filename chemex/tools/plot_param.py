@@ -6,6 +6,7 @@ import chemex.parameters.name as cpn
 
 
 def plot_param(args):
+    """Plot values of a parameter versus residue number."""
     import matplotlib.pyplot as plt
 
     params = configparser.ConfigParser()

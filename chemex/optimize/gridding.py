@@ -128,8 +128,8 @@ def _plot_grid(grids, params, path):
 
     The output file will display the chi-square value per parameter and contour
     plots for all combination of two parameters.
-    """
 
+    """
     path.mkdir(parents=True, exist_ok=True)
 
     _plot_grid_1d(grids, params, path)
