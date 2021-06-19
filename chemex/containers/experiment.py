@@ -297,7 +297,7 @@ class RelaxationExperiment(Experiment):
         name_pdf = basename.with_suffix(".pdf")
         name_exp = basename.with_suffix(".exp")
         name_fit = basename.with_suffix(".fit")
-        print(f"  - {name_pdf} [.fit, .exp]")
+        print(f"  - {name_pdf} [.fit{'' if simulation else ', .exp'}]")
         with cl.ExitStack() as stack:
             file_pdf = stack.enter_context(pdf.PdfPages(str(name_pdf)))
             file_fit = stack.enter_context(name_fit.open("w"))
@@ -316,13 +316,24 @@ class ShiftExperiment(Experiment):
     def plot(self, params, path, simulation=False):
         basename = path / self.filename.name
         name_pdf = basename.with_suffix(".pdf")
-        print(f"  - {name_pdf}")
-        fit, exp, err = [], [], []
+        name_fit = basename.with_suffix(".fit")
+        print(f"  - {name_pdf} [.fit]")
+        nam, fit, exp, err = [], [], [], []
         for profile in self._profiles:
+            nam.append(profile.name)
             fit.append(profile.calculate(params))
             exp.append(profile.data["shift"])
             err.append(profile.data["error"])
         ccp.shift(name_pdf, self.filename.name, fit, exp, err)
+
+        out = np.asarray(list(zip(nam, fit, exp, err)), dtype=None)
+
+        np.savetxt(
+            name_fit,
+            out,
+            fmt="%20s  %8.3f  %8.3f  %8.3f",
+            header=f"{'Name':>18s}  {'Fit':>8s}  {'Exp':>8s}  {'Err':>8s}",
+        )
 
     def bootstrap(self):
         profiles = np.random.choice(self._profiles, len(self._profiles))
