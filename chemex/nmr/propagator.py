@@ -252,8 +252,8 @@ class PropagatorIS:
     def p9024090_s_2(self):
         return self.p90_s[1, 2, 3, 0] @ self.p240_s @ self.p90_s[1, 2, 3, 0]
 
-    def p9024090_is(self, reversed=False):
-        p = 1 if reversed else 3
+    def p9024090_is(self, reverse=False):
+        p = 1 if reverse else 3
         pw240i, pw9024090i = np.array([8.0, 14.0]) * self._pw90_i / 3.0
         pw240s, pw9024090s = np.array([8.0, 14.0]) * self._pw90_s / 3.0
         t0, t1, t2, t3 = 0.5 * np.diff(
@@ -277,7 +277,7 @@ class PropagatorIS:
 
     @property
     def p9024090_is_2(self):
-        return self.p9024090_is(reversed=True)
+        return self.p9024090_is(reverse=True)
 
     def calculate_shifts(self):
         liouv = self.liouvillian.l_free.reshape(

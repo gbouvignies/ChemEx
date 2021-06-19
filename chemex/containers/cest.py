@@ -162,7 +162,7 @@ class CestProfile:
         return cs_values, aliased
 
     def _get_cs_offsets(self, params):
-        cs_values, aliased = self._get_cs_values(params)
+        cs_values, _aliased = self._get_cs_values(params)
         return self._pulse_seq.ppms_to_offsets(cs_values)
 
     def _get_plot_data_exp(self, simulation=False):

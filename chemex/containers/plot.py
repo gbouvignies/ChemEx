@@ -1,3 +1,5 @@
+import matplotlib.figure as mf
+import matplotlib.ticker as ticker
 import numpy as np
 import scipy.interpolate as ip
 
@@ -10,7 +12,6 @@ _RED700 = "#D32F2F"
 
 
 def profile(name, data_exp, data_fit):
-
     fig, ax1, ax2 = _create_fig(name)
 
     _plot_fit(data_fit, ax2)
@@ -25,8 +26,6 @@ def profile(name, data_exp, data_fit):
 
 
 def _create_fig(name):
-    import matplotlib.figure as mf
-
     fig = mf.Figure()
     ax1, ax2 = fig.subplots(2, 1, sharex="all", gridspec_kw={"height_ratios": [1, 4]})
     fig.align_labels()
@@ -46,7 +45,6 @@ def _plot_fit(data_fit, ax2):
 
 
 def _plot_exp(data_exp, data_fit, ax1, ax2):
-
     xname, yname, ename, *_ = data_exp.dtype.names
     exp_x, exp_y, exp_e = data_exp[xname], data_exp[yname], abs(data_exp[ename])
     res_y = _get_residuals(data_exp, data_fit)
@@ -95,8 +93,6 @@ def relaxation(file_pdf, name, data_exp, data_fit):
 
 
 def cest(file_pdf, name, data_exp, data_fit, cs_values, alias_values):
-    import matplotlib.ticker as ticker
-
     residuals = _get_residuals(data_exp, data_fit)
     sigma = _estimate_sigma(residuals)
     fig = profile(name, data_exp, data_fit)
@@ -122,8 +118,6 @@ def cest(file_pdf, name, data_exp, data_fit, cs_values, alias_values):
 
 
 def shift(name_pdf, name, fit, exp, err):
-    import matplotlib.figure as mf
-
     fig = mf.Figure()
     ax = fig.subplots(1, 1)
     fig.align_labels()

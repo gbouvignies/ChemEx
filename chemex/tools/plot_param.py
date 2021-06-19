@@ -1,14 +1,14 @@
 import configparser
 import sys
 
+import matplotlib.pyplot as plt
+
 import chemex.nmr.spin_system as cns
 import chemex.parameters.name as cpn
 
 
 def plot_param(args):
     """Plot values of a parameter versus residue number."""
-    import matplotlib.pyplot as plt
-
     params = configparser.ConfigParser()
 
     if len(args.parameters) > 1:
