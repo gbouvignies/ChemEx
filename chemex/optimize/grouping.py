@@ -1,6 +1,7 @@
+import functools as fn
+import itertools as it
+import operator
 import pathlib
-
-import chemex.parameters.name as cpn
 
 
 def create_groups(experiments, params):
@@ -20,15 +21,14 @@ def create_groups(experiments, params):
         path = pathlib.Path("")
         message = ""
     groups_dict = {}
-    for index, pnames in enumerate(pname_groups, start=1):
+    for index, (gname, pnames) in enumerate(pname_groups.items(), start=1):
         exps = experiments.get_relevant_subset(pnames)
-        name = exps.get_group_name() if number > 1 else cpn.ParamName()
         group = {
             "experiments": exps,
             "params": exps.select_params(params_exp),
-            "path": path / name.folder,
+            "path": path / gname.folder,
         }
-        groups_dict[name] = group
+        groups_dict[gname] = group
     groups = []
     for index, (name, group) in enumerate(sorted(groups_dict.items()), start=1):
         group["message"] = message.format(index=index, name=name)
@@ -37,18 +37,31 @@ def create_groups(experiments, params):
 
 
 def group_pnames(experiments, params):
+
     pnames_vary = {
-        name for name, param in params.items() if param.vary and not param.expr
+        param.name for param in params.values() if param.vary and not param.expr
     }
-    groups = []
-    for pnames in experiments.pname_sets:
-        varies = pnames & pnames_vary
-        found = False
-        for group in groups:
-            if varies & group:
-                group |= varies
-                found = True
+
+    groups = {
+        frozenset(pname_set & pnames_vary): frozenset(pname_set & pnames_vary)
+        for pname_set in experiments.pname_sets
+    }
+
+    grouped = True
+
+    while grouped:
+        grouped = False
+        for g1, g2 in it.combinations(groups, r=2):
+            intersection = g1 & g2
+            if intersection:
+                union = groups.pop(g1) | groups.pop(g2)
+                groups.setdefault(intersection, set()).update(union)
+                grouped = True
                 break
-        if not found and varies:
-            groups.append(varies)
-    return groups
+
+    return {fnames_to_pname(union, params): union for union in groups.values()}
+
+
+def fnames_to_pname(fnames, params):
+    pnames = (params[fname].user_data["pname"] for fname in fnames)
+    return fn.reduce(operator.and_, pnames)

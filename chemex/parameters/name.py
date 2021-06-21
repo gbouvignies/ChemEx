@@ -125,7 +125,7 @@ class ParamName:
             for name, value in self.to_dict().items()
             if value and name in formatters
         ]
-        return "_".join(components)
+        return "_".join(components).upper()
 
     def match(self, other):
         return self._re.match(other)
