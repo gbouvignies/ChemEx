@@ -104,7 +104,7 @@ class Fit:
 
     def _run_grid(self, grid, params, path, plot, fitmethod):
 
-        print("\nRunning the grid search...")
+        print("Running the grid search...\n")
 
         grid, params = cps.read_grid(grid, params)
 
@@ -113,12 +113,13 @@ class Fit:
 
         grid_results = []
         for group in groups:
-            g_mes = group["message"]
-            print(f"{g_mes}")
+            print(f"{group['message']}")
             grid_result = cog.run_grid(group, grid, path, fitmethod)
             grid_results.append(grid_result)
 
-        params = cog.combine_grids(experiments, params, grid_results, path / "Grid")
+        params = cog.combine_grids(
+            experiments, params, grid, grid_results, path / "Grid"
+        )
 
         if len(groups) > 1:
             print("\n\n-- All groups --")

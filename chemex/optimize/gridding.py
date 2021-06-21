@@ -21,8 +21,9 @@ def run_grid(group, grid, path, fitmethod):
     g_exp = group["experiments"]
     g_par = group["params"]
 
-    g_grid = {k: v for k, v in grid.items() if k in g_par}
-    fnames = set(g_grid)
+    g_grid = {fname: values for fname, values in grid.items() if fname in g_par}
+
+    fnames = tuple(g_grid)
     shape = tuple(len(values) for values in g_grid.values())
     grid_n = np.prod(shape)
 
@@ -41,6 +42,7 @@ def run_grid(group, grid, path, fitmethod):
             chisqr.append(coh.calculate_statistics(g_exp, params).get("chisqr"))
             fileout.write(_print_values(values, chisqr))
             fileout.flush()
+        print()
 
     chisqr = np.array(chisqr).reshape(shape)
 
@@ -63,11 +65,7 @@ def _print_values(values, chisqr):
     return f"  {body_values} {chisqr[-1]:>25.8e}\n"
 
 
-def combine_grids(experiments, params, grid_results, path):
-
-    grid = {}
-    for grid_result in grid_results:
-        grid.update(grid_result.grid)
+def combine_grids(experiments, params, grid, grid_results, path):
 
     for fname in grid:
         params[fname].vary = True
@@ -76,9 +74,11 @@ def combine_grids(experiments, params, grid_results, path):
 
     while grid_results:
 
-        for group in coc.group_pnames(experiments, params):
+        for fnames in coc.group_pnames(experiments, params).values():
 
-            g_names = get_common_names(grid_results, group)
+            fnames_select = tuple(fname for fname in grid if fname in fnames)
+
+            g_names = get_common_names(grid_results, fnames_select)
 
             g_grid = {name: grid.pop(name) for name in g_names}
 
@@ -111,11 +111,12 @@ def combine_grids(experiments, params, grid_results, path):
     return params
 
 
-def get_common_names(grid_results, group):
-    name_sets = (
-        set(grid) for grid, _ in grid_results if set(grid) and set(grid) <= group
+def get_common_names(grid_results, fnames):
+    fname_sets = (
+        set(grid) for grid, _ in grid_results if set(grid) and set(grid) <= set(fnames)
     )
-    return set.intersection(*name_sets)
+    common_fnames = set.intersection(*fname_sets)
+    return (fname for fname in fnames if fname in common_fnames)
 
 
 def trim_grid(grid_results, grid, argmin):

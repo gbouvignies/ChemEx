@@ -1,6 +1,5 @@
 import abc
 import contextlib as cl
-import functools as ft
 import itertools as it
 
 import lmfit as lf
@@ -11,7 +10,6 @@ import chemex.experiments as ce
 import chemex.helper as ch
 import chemex.nmr.rates as cnr
 import chemex.parameters.helper as cph
-import chemex.parameters.name as cpn
 
 
 class Experiments:
@@ -129,16 +127,6 @@ class Experiments:
                 experiment.pname_sets for experiment in self._experiments.values()
             )
         )
-
-    def get_group_name(self):
-        experiments = iter(self._experiments.values())
-        experiment = next(experiments)
-        spin_system = experiment.get_group_name()
-        conditions = experiment.config["conditions"]
-        for experiment in experiments:
-            spin_system &= experiment.get_group_name()
-            conditions &= experiment.config["conditions"]
-        return cpn.ParamName(spin_system=spin_system, conditions=conditions)
 
     def __len__(self):
         return sum(len(experiment) for experiment in self._experiments.values())
@@ -269,10 +257,6 @@ class Experiment(abc.ABC):
             profile for profile in self._profiles if set(profile.params) & set(pnames)
         ]
         return type(self)(self.config, profiles=profiles, verbose=False)
-
-    def get_group_name(self):
-        names = [profile.name for profile in self._profiles]
-        return ft.reduce(lambda a, b: a & b, names)
 
     def __len__(self):
         return len(self._profiles)
