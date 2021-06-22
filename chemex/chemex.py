@@ -41,8 +41,8 @@ def main():
         args.func(args)
 
 
-def fit(args):
-
+def run(args):
+    """Run the fit or simulation."""
     # Parse kinetics model
     model = cpk.parse_model(args.model)
 
@@ -77,7 +77,6 @@ def _run_fit(args, defaults, experiments, params):
 
 
 def _run_sim(args, experiments, params):
-
     ch.header1("Running the simulation")
 
     for param in params.values():

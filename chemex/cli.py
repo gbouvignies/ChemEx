@@ -88,7 +88,7 @@ def build_parser():
     # parser for the positional argument "fit"
     fit_parser = commands.add_parser("fit", help="Start a fit")
 
-    fit_parser.set_defaults(func=cc.fit)
+    fit_parser.set_defaults(func=cc.run)
 
     fit_parser.add_argument(
         "-e",
@@ -165,7 +165,7 @@ def build_parser():
     # parser for the positional argument "simulate"
     simulate_parser = commands.add_parser("simulate", help="Start a simulation")
 
-    simulate_parser.set_defaults(func=cc.fit)
+    simulate_parser.set_defaults(func=cc.run)
 
     simulate_parser.add_argument(
         "-e",
