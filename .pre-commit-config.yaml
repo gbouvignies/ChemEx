@@ -31,7 +31,7 @@ repos:
     rev: v2.1.0
     hooks:
       - id: codespell
-        args: ['-L', 'reson,noe,2st,3st,ba']
+        args: ['-L', 'reson,noe,2st,3st,ba,ser']
 
   - repo: https://github.com/psf/black
     rev: 21.6b0 # Replace by any tag/version: https://github.com/psf/black/tags

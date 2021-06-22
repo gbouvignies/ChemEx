@@ -35,7 +35,7 @@ def _read_profiles(config, pulse_seq_cls, profile_cls):
     paths = _get_profile_paths(config)
     profiles = []
     for path, spin_system in paths.items():
-        config["spin_system"] = spin_system
+        config["spin_system"] = spin_system.correct(config["basis"])
         pnames, params, params_mf = cph.create_profile_params(config, propagator)
         pulse_seq = pulse_seq_cls(config, propagator)
         profile = profile_cls.from_file(
