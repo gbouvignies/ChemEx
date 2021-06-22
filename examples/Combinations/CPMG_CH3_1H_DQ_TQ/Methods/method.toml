@@ -1,9 +1,5 @@
 [STEP1]
-FIX         = ["PB", "KEX_AB"]
 CONSTRAINTS = [
     "[R2ADQ_A] = [R2DQ_A] - [R1_A] / 3",
     "[R2ADQ_B] = [R2DQ_B] - [R1_B] / 3",
 ]
-
-[STEP2]
-FIT = ["PB", "KEX_AB"]

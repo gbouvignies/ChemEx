@@ -6,7 +6,7 @@ R2DQ_A = 20.0
 R1TQ_A = 1.5
 R2TQ_A = 10.0
 R1_A   = 1.5
-DW_AB  = 0.1
+DW_AB  = 0.05
 J_A    = 125
 
 [CS_A]
