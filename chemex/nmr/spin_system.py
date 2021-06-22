@@ -10,7 +10,7 @@ RE_NAME = re.compile(
     r"""
         (^\s*|-)
         (
-            (?P<symbol>\D?)              # one letter amino acid (optional)
+            (?P<symbol>(\D?|\D{3}?))              # one letter amino acid (optional)
             0*(?P<number>[0-9]+|[*])     # residue number
             (?P<suffix>[abd-gi-mopr-z]*) # suffix (optional)
         )?
@@ -21,6 +21,29 @@ RE_NAME = re.compile(
     """,
     re.IGNORECASE | re.VERBOSE,
 )
+
+_AA_CODE = {
+    "ALA": "A",
+    "ARG": "R",
+    "ASN": "N",
+    "ASP": "D",
+    "CYS": "C",
+    "GLN": "Q",
+    "GLU": "E",
+    "GLY": "G",
+    "HIS": "H",
+    "ILE": "I",
+    "LEU": "L",
+    "LYS": "K",
+    "MET": "M",
+    "PHE": "F",
+    "PRO": "P",
+    "SER": "S",
+    "THR": "T",
+    "TRP": "W",
+    "TYR": "Y",
+    "VAL": "V",
+}
 
 
 @ft.total_ordering
@@ -80,6 +103,28 @@ class SpinSystem:
         selection_ = (SpinSystem(item) for item in selection)
         return any(self & name == name for name in selection_)
 
+    def correct(self, basis):
+
+        if not self:
+            return self
+
+        atoms = {
+            letter: atom for letter, atom in basis.atoms.items() if letter in basis.type
+        }
+        spins = {}
+        for letter, atom in atoms.items():
+            for spin in self._spins.values():
+                if spin["atom"].upper() == atom.upper() and letter in basis.type:
+                    spins[letter] = spin
+                    break
+
+        for letter, atom in atoms.items():
+            if letter in basis.type and letter not in spins:
+                spins[letter] = spins["i"].copy()
+                spins[letter]["nucleus"] = f"{atom}{spins[letter]['nucleus'][1:]}"
+
+        return SpinSystem(_spins_to_name(spins.values()))
+
     def __and__(self, other):
         if isinstance(other, str):
             other = SpinSystem(other)
@@ -135,6 +180,10 @@ def _name_to_spins(name):
         spin = match.groupdict()
         if not any(spin.values()):
             continue
+        if spin["symbol"] is not None and spin["symbol"].upper() in _AA_CODE:
+            spin["symbol"] = _AA_CODE[spin["symbol"]]
+        if spin["nucleus"] is not None and spin["nucleus"].upper() == "HN":
+            spin["nucleus"] = "H"
         for key, value in spin.items():
             if value is None:
                 spin[key] = last_spin.get(key, "")
