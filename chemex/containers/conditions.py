@@ -65,7 +65,16 @@ def parse_conditions(config):
                         "type": "array",
                         "contains": {
                             "type": "string",
-                            "enum": ["1h", "2h", "13c", "15n"],
+                            "enum": [
+                                "1H",
+                                "2H",
+                                "13C",
+                                "15N",
+                                "1h",
+                                "2h",
+                                "13c",
+                                "15n",
+                            ],
                         },
                     },
                 },

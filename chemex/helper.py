@@ -17,7 +17,7 @@ def read_toml_multi(filenames=None, schema=None):
 def read_toml(filename=None, schema=None):
     """Read and parse the experiment configuration file with configparser."""
     try:
-        config = tomlkit.parse(filename.read_text().lower())
+        config = tomlkit.parse(filename.read_text())
         config = _check_case(config)
         if schema is not None:
             Validator(schema).validate(config)
