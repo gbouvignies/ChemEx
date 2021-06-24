@@ -3,7 +3,7 @@ import collections
 import sys
 
 import jsonschema as js
-import toml
+import tomlkit
 
 
 def read_toml_multi(filenames=None, schema=None):
@@ -17,13 +17,13 @@ def read_toml_multi(filenames=None, schema=None):
 def read_toml(filename=None, schema=None):
     """Read and parse the experiment configuration file with configparser."""
     try:
-        config = toml.load(filename)
+        config = tomlkit.parse(filename.read_text().lower())
         config = _check_case(config)
         if schema is not None:
             Validator(schema).validate(config)
     except FileNotFoundError:
         sys.exit(f"\nERROR: The file '{filename}' is empty or does not exist!\n")
-    except (toml.TomlDecodeError, TypeError) as error:
+    except (TypeError, tomlkit.exceptions.TOMLKitError) as error:
         sys.exit(f"\nERROR: '{filename}': {error}\n")
     except js.ValidationError as error:
         sys.exit(f"ERROR: '{filename}': {error.message}")
@@ -64,6 +64,12 @@ def header2(string_):
     """Print a formatted subheading."""
     if string_:
         print("\n".join(["", string_, "-" * len(string_)]))
+
+
+def header3(string_):
+    """Print a formatted subsubheading."""
+    if string_:
+        print(f"-- {string_} --\n")
 
 
 # Taken from: https://python-jsonschema.readthedocs.io/en/stable/faq/
