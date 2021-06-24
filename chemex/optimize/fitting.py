@@ -170,6 +170,9 @@ class Fit:
         fnames_vary = [param.name for param in params.values() if param.vary]
 
         for method_name, iter_nb in statistics.items():
+
+            method_name = method_name.lower()
+
             method = methods[method_name]
 
             ch.header3(f"Running {method['message']} simulations...")
