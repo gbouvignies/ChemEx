@@ -14,13 +14,13 @@ classifiers = [
 
     [tool.poetry.dependencies]
     python   = ">=3.8,<3.10"
-    numpy    = "^1.20.3"
-    scipy    = "^1.6.3"
+    numpy = "^1.21.0"
+    scipy = "^1.7.0"
     matplotlib = "^3.4.2"
-    lmfit    = "^1.0.2"
-    toml     = "^0.10.2"
+    lmfit = "^1.0.2"
     jsonschema = "^3.2.0"
-    tqdm     = "^4.61.1"
+    tqdm = "^4.61.1"
+    tomlkit = "^0.7.2"
 
     [tool.poetry.dev-dependencies]
     black                  = "^21.6b0"
