@@ -17,6 +17,11 @@ class Experiments:
         self._experiments = {}
         self._chisq_ref = 1e32
         self.verbose = False
+        self.statistics = {
+            "mc": self.monte_carlo,
+            "bs": self.bootstrap,
+            "bsn": self.bootstrap_ns,
+        }
 
     def add(self, experiment: "Experiment"):
         self._experiments[experiment.filename] = experiment
@@ -50,16 +55,18 @@ class Experiments:
         for experiment in self._experiments.values():
             experiment.plot(params, path, simulation)
 
-    def select(self, selection=None):
+    def select(self, selection=None, verbose=True):
         if selection is None:
             selection = {}
         include, exclude = (selection.get(key) for key in ("include", "exclude"))
         if include is None and exclude is None:
             return
-        print("\nSelecting profiles...")
+        if verbose:
+            print("\nSelecting profiles...")
         for experiment in self._experiments.values():
             experiment.select(include, exclude)
-        print(f"  - Profile(s): {len(self)}")
+        if verbose:
+            print(f"  - Profile(s): {len(self)}")
 
     def filter(self, params=None):
         for experiment in self._experiments.values():

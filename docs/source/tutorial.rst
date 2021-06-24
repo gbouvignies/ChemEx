@@ -70,8 +70,6 @@ Additional arguments can be one of the following:
 ``--plot``              Plotting level (``nothing``, ``normal`` (default), ``all``)
 ``--include`` ``<ID>``  Residue(s) to include in the fit
 ``--exclude`` ``<ID>``  Residue(s) to exclude from the fit
-``--mc`` ``<N>``        Number of Monte-Carlo simulations
-``--bs`` ``<N>``        Number of Bootstrap simulations
 ======================  ===============================================================
 
 Usually multiple arguments should be specified in order to provide

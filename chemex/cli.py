@@ -162,21 +162,6 @@ def build_parser():
         type=cns.SpinSystem,
     )
 
-    fit_parser.add_argument(
-        "--mc", metavar="N", type=int, help="Run N Monte-Carlo simulations"
-    )
-
-    fit_parser.add_argument(
-        "--bs", metavar="N", type=int, help="Run N bootstrap simulations"
-    )
-
-    fit_parser.add_argument(
-        "--bsn",
-        metavar="N",
-        type=int,
-        help="Run N nucleus-specific bootstrap simulations",
-    )
-
     # parser for the positional argument "simulate"
     simulate_parser = commands.add_parser("simulate", help="Start a simulation")
 
