@@ -16,7 +16,7 @@ def create_groups(experiments, params):
     number = len(pname_groups)
     if number > 1:
         path = pathlib.Path("Groups")
-        message = f"-- Group {{index}}/{number} ({{name}}) --\n"
+        message = f"Group {{index}}/{number}: {{name}}"
     else:
         path = pathlib.Path("")
         message = ""

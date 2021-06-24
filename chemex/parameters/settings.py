@@ -9,7 +9,6 @@ import numpy as np
 import chemex.helper as ch
 import chemex.parameters.name as cpn
 
-
 RE_GROUPNAME = re.compile(r"^[A-Za-z0-9_-]+$")
 
 _SCHEMA_CONFIG_PARAM = {
@@ -26,37 +25,6 @@ _SCHEMA_CONFIG_PARAM = {
                 },
                 {"type": "number"},
             ]
-        },
-    },
-}
-
-_SCHEMA_METHODS_PARAM = {
-    "type": "object",
-    "additionalProperties": {
-        "type": "object",
-        "properties": {
-            "include": {
-                "oneOf": [
-                    {
-                        "type": "array",
-                        "items": {"anyOf": [{"type": "integer"}, {"type": "string"}]},
-                    },
-                    {"type": "string"},
-                ]
-            },
-            "exclude": {
-                "oneOf": [
-                    {
-                        "type": "array",
-                        "items": {"anyOf": [{"type": "integer"}, {"type": "string"}]},
-                    },
-                    {"type": "string"},
-                ]
-            },
-            "fit": {"type": "array", "items": {"type": "string"}},
-            "fix": {"type": "array", "items": {"type": "string"}},
-            "constraints": {"type": "array", "items": {"type": "string"}},
-            "grid": {"type": "array", "items": {"type": "string"}},
         },
     },
 }
@@ -82,11 +50,6 @@ def _defaults_to_list(defaults):
             values_ = dict(zip(("value", "min", "max", "brute_step"), values))
             defaults_list.append((pname, values_))
     return defaults_list
-
-
-def read_methods(filenames):
-    print("\nReading methods...")
-    return ch.read_toml_multi(filenames, _SCHEMA_METHODS_PARAM)
 
 
 def set_values(params, defaults):
@@ -152,7 +115,7 @@ def set_status(params, settings=None, verbose=True):
     matches_fit = _set_vary(params, settings.get("fit"), vary=True)
     if verbose:
         _print_matches(matches_fit, params, "varied")
-    print("")
+        print("")
 
 
 def _set_vary(params, snames, vary=True):

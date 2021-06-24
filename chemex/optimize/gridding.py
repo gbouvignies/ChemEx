@@ -32,7 +32,7 @@ def run_grid(group, grid, path, fitmethod):
 
     with filename.open("w") as fileout:
 
-        fileout.write(_print_header(g_par, g_grid))
+        fileout.write(coh.print_header(g_par, g_grid))
 
         chisqr = []
 
@@ -40,7 +40,7 @@ def run_grid(group, grid, path, fitmethod):
             _set_param_values(g_par, fnames, values)
             params = cof.minimize(g_exp, g_par, fitmethod, verbose=False)
             chisqr.append(coh.calculate_statistics(g_exp, params).get("chisqr"))
-            fileout.write(_print_values(values, chisqr))
+            fileout.write(coh.print_values(values, chisqr[-1]))
             fileout.flush()
         print()
 
@@ -52,17 +52,6 @@ def run_grid(group, grid, path, fitmethod):
 def _set_param_values(params, fnames, values):
     for fname, value in zip(fnames, values):
         params[fname].value = value
-
-
-def _print_header(params, grid):
-    pnames = (str(params[fname].user_data["pname"]) for fname in grid)
-    header_pnames = " ".join(f"{pname:>25s}" for pname in pnames)
-    return f"# {header_pnames} {'chisqr':>25s}\n"
-
-
-def _print_values(values, chisqr):
-    body_values = " ".join(f"{value:>25.8e}" for value in values)
-    return f"  {body_values} {chisqr[-1]:>25.8e}\n"
 
 
 def combine_grids(experiments, params, grid, grid_results, path):

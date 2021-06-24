@@ -73,13 +73,7 @@ def _run_fit(args, defaults, experiments, params):
 
     fitter = cf.Fit(experiments, args.out_dir, args.plot, defaults)
     fitter.read_methods(args.method)
-    params_fitted = fitter.run_methods(params)
-
-    # Run Monte-Carlo simulations
-    for mc_name in ("mc", "bs", "bsn"):
-        n_iter = vars(args).get(mc_name)
-        cph.reset_status(params_fitted, params)
-        fitter.mc_simulations(params_fitted, n_iter, mc_name)
+    fitter.run_methods(params)
 
 
 def _run_sim(args, experiments, params):

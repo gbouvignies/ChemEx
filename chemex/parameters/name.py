@@ -99,7 +99,7 @@ class ParamName:
             and value not in [None, ""]
             and (name != "spin_system" or (show_spin_system and value))
         ]
-        return ", ".join(components).upper()
+        return ",".join(components).upper()
 
     @ft.cached_property
     def section(self):

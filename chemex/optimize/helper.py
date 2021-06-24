@@ -38,7 +38,6 @@ def _write_statistics(experiments, params, path):
 
 def _print_chisqr(experiments, params):
     statistics = calculate_statistics(experiments, params)
-    print("")
     print(f"Final Chi2        : {statistics['chisqr']:.3e}")
     print(f"Final Reduced Chi2: {statistics['redchi']:.3e}\n")
 
@@ -64,3 +63,25 @@ def calculate_statistics(experiments, params):
         "aic": aic,
         "bic": bic,
     }
+
+
+def print_header(params, grid):
+    pnames = (str(params[fname].user_data["pname"]) for fname in grid)
+    header_pnames = " ".join(f"{pname}" for pname in pnames)
+    return f"# {header_pnames} {'[χ²]'}\n"
+
+
+def print_values(values, chisqr):
+    body_values = " ".join(f"{value:.5e}" for value in values)
+    return f"  {body_values} {chisqr:.5e}\n"
+
+
+def print_values_stat(params, fnames, chisqr):
+    body_values_list = []
+    for fname in fnames:
+        if fname in params:
+            body_values_list.append(f"{params[fname].value:12.5e}")
+        else:
+            body_values_list.append(f"{'--':^12s}")
+    body_values = " ".join(body_values_list)
+    return f"  {body_values} {chisqr:.5e}\n"

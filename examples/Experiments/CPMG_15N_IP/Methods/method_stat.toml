@@ -1,0 +1,7 @@
+[STEP1]
+INCLUDE  = [15, 31, 33, 34, 37]
+STATISTICS = { "MC"=10, "BS"=10, "BSN"=10 }
+
+[STEP2]
+INCLUDE = "ALL"
+FIX   = ["PB", "KEX_AB"]

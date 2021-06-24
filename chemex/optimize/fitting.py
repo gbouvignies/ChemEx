@@ -2,7 +2,9 @@
 import sys
 
 import lmfit as lm
+import tqdm
 
+import chemex.optimize.methods
 from chemex import helper as ch
 from chemex.optimize import gridding as cog
 from chemex.optimize import grouping
@@ -22,7 +24,7 @@ class Fit:
     def read_methods(self, filenames=None):
         if filenames is None:
             return
-        self._method = cps.read_methods(filenames)
+        self._method = chemex.optimize.methods.read_methods(filenames)
 
     def run_methods(self, params, path=None, plot=None, set_default=True):
 
@@ -59,18 +61,30 @@ class Fit:
             # Read grid search parameters
             grid = settings.get("grid")
 
+            # Read statistics parameters
+            statistics = settings.get("statistics")
+
+            if grid and statistics:
+                print(
+                    'Warning: "GRID" and "STATISTICS" options are mutually '
+                    'exclusive. Only the "GRID" calculation will be run.'
+                )
+                statistics = None
+
             path_sect = path / section.upper() if len(self._method) > 1 else path
 
             if grid:
                 g_params = self._run_grid(grid, params_, path_sect, plot, fitmethod)
             else:
-                g_params = self._fit_groups(params_, path_sect, plot, fitmethod)
+                g_params = self._fit_groups(
+                    params_, path_sect, plot, fitmethod, statistics
+                )
 
             params_.update(g_params)
 
         return params_
 
-    def _fit_groups(self, params, path, plot, fitmethod):
+    def _fit_groups(self, params, path, plot, fitmethod, statistics=None):
 
         groups = grouping.create_groups(self._experiments, params)
 
@@ -84,20 +98,23 @@ class Fit:
 
             g_exp = group["experiments"]
             g_par = group["params"]
-            g_pat = group["path"]
+            g_pat = path / group["path"]
             g_mes = group["message"]
 
             if g_mes:
-                print(f"{g_mes}")
+                ch.header3(g_mes)
 
             best_par = minimize(g_exp, g_par, fitmethod, verbose=True)
-            coh.post_fit(g_exp, best_par, path / g_pat, plot_flg)
+            coh.post_fit(g_exp, best_par, g_pat, plot_flg)
             params_list.append(best_par)
+
+            # Run Monte Carlo and/or bootstrap analysis
+            self.run_statistics(best_par, g_pat, fitmethod, statistics)
 
         params = cph.merge(params_list)
 
         if len(groups) > 1:
-            print("\n\n-- All groups --")
+            ch.header3("All groups")
             coh.post_fit(self._experiments, params, path / "All", plot != "nothing")
 
         return params
@@ -122,53 +139,54 @@ class Fit:
         )
 
         if len(groups) > 1:
-            print("\n\n-- All groups --")
+            ch.header3("All groups")
             coh.post_fit(self._experiments, params, path / "All", plot != "nothing")
 
         return params
 
-    def mc_simulations(self, params, iter_nb, name=None):
+    def run_statistics(self, params, path, fitmethod, statistics):
 
-        if iter_nb is None:
+        if statistics is None:
             return
 
         methods = {
             "mc": {
                 "message": "Monte Carlo",
-                "folder": "MonteCarlo",
-                "attr": "monte_carlo",
+                "filename": "monte_carlo.out",
                 "args": [params],
             },
             "bs": {
                 "message": "bootstrap",
-                "folder": "Bootstrap",
-                "attr": "bootstrap",
+                "filename": "bootstrap.out",
                 "args": [],
             },
             "bsn": {
-                "message": "nucleus-specific",
-                "folder": "BootstrapNS",
-                "attr": "bootstrap_ns",
+                "message": "nucleus-based bootstrap",
+                "filename": "bootstrap_ns.out",
                 "args": [],
             },
         }
 
-        method = methods[name]
+        fnames_vary = [param.name for param in params.values() if param.vary]
 
-        ch.header1(f"Running {method['message']} simulations")
+        for method_name, iter_nb in statistics.items():
+            method = methods[method_name]
 
-        ndigits = len(str(iter_nb))
+            ch.header3(f"Running {method['message']} simulations...")
 
-        experiments = self._experiments
+            with open(path / method["filename"], "w") as fileout:
 
-        for index in range(1, iter_nb + 1):
-            params_mc = params.copy()
-            ch.header2(f"\nIteration {index} out of {iter_nb}")
-            path = self._path / method["folder"] / f"{index:0{ndigits}}"
-            self._experiments = getattr(experiments, method["attr"])(*method["args"])
-            self.run_methods(params_mc, path, plot="nothing", set_default=False)
+                fileout.write(coh.print_header(params, fnames_vary))
 
-        self._experiments = experiments
+                for _ in tqdm.tqdm(range(iter_nb)):
+                    exp_mc = self._experiments.statistics[method_name](*method["args"])
+                    params_mc = params.copy()
+                    params_mc = exp_mc.select_params(params)
+                    params_mc = minimize(exp_mc, params_mc, fitmethod, verbose=False)
+                    chisqr = coh.calculate_statistics(exp_mc, params_mc).get("chisqr")
+                    fileout.write(coh.print_values_stat(params_mc, fnames_vary, chisqr))
+
+            print()
 
 
 def minimize(experiments, params, fitmethod=None, verbose=True):
@@ -193,5 +211,8 @@ def minimize(experiments, params, fitmethod=None, verbose=True):
     except ValueError:
         result = minimizer.result
         sys.stderr.write("\n -- Got a ValueError: minimization stopped --\n")
+
+    if verbose:
+        print()
 
     return result.params
