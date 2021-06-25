@@ -88,7 +88,7 @@ class PulseSeq:
         self.t_neg = -2.0 * self.pw90 / np.pi
         self.prop.b1_i = 1 / (4.0 * self.pw90)
         self.taua = settings["taua"]
-        self.ncyc_max = settings["ncyc_max"]
+        self.ncyc_max = int(settings["ncyc_max"])
         self.ipap_flg = settings["ipap_flg"]
         self.eburp_flg = settings["eburp_flg"]
         self.reburp_flg = settings["reburp_flg"]
