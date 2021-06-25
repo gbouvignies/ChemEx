@@ -39,7 +39,7 @@ def _create_fig(name):
 def _plot_fit(data_fit, ax2):
     xname, yname, *_ = data_fit.dtype.names
     fit_x, fit_y = data_fit[xname], data_fit[yname]
-    range_x = get_grid(fit_x, 2, 0.02)
+    range_x = get_range(fit_x, 0.02)
     ax2.set_xlim(*range_x)
     ax2.plot(fit_x, fit_y, linestyle="-", color=_RED300)
 
@@ -134,7 +134,7 @@ def shift(name_pdf, name, fit, exp, err):
 def _get_residuals(data_exp, data_fit):
     xname, yname, *_ = data_exp.dtype.names
     data_fit_ = np.unique(np.sort(data_fit, order=xname))
-    data_fit_f = ip.interp1d(data_fit_[xname], data_fit_[yname], "cubic")
+    data_fit_f = ip.interp1d(data_fit_[xname], data_fit_[yname])
     return data_exp[yname] - data_fit_f(data_exp[xname])
 
 
@@ -155,11 +155,11 @@ def _estimate_sigma(values):
     return 1.1926 * np.median(np.median(abs(_values - _values.T), axis=0))
 
 
-def get_grid(values, size=500, extension=0.0):
+def get_range(values, extension=0.0):
     value_min = np.min(values)
     value_max = np.max(values)
     extra = (value_max - value_min) * extension
-    return np.linspace(value_min - extra, value_max + extra, size)
+    return value_min - extra, value_max + extra
 
 
 def write_plots(experiments, params, path, simulation=False):

@@ -156,7 +156,7 @@ class RelaxationProfile:
         else:
             points = self.data.points
             intst_ref = points["intensities"][np.argmax(np.abs(points["intensities"]))]
-        times_fit = ccp.get_grid(data["times"], 100, 0.02)
+        times_fit = cch.get_grid(data["times"], 100, 0.02)
         intensities = self.calculate(params, times_fit) / intst_ref
         data_fit = np.rec.array(
             [times_fit, intensities], names=["times", "intensities"]
