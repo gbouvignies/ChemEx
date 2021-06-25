@@ -1,5 +1,4 @@
-"""The parsing module contains the code for the parsing of command-line
-arguments."""
+"""The parsing module contains the code for the parsing of command-line arguments."""
 import argparse
 import pathlib
 import sys
@@ -41,16 +40,15 @@ def build_parser():
     # parser for the positional argument "info"
     info_parser = commands.add_parser(
         "info",
-        help="Show experiments that can be fit",
+        help="Show experiments that can be fit/simulated",
         description="Enter the name of an experiment to obtain more info about it.",
     )
 
     info_parser.set_defaults(func=print_info)
 
     experiments_parser = info_parser.add_subparsers(
-        dest="experiments", metavar="experiment_type"
+        dest="experiments", metavar="experiment_type", required=True
     )
-    experiments_parser.required = True
 
     docs = ce.get_info()
 
@@ -62,15 +60,14 @@ def build_parser():
     # parser for the positional argument "info"
     config_parser = commands.add_parser(
         "config",
-        help="Show sample configuration files of the modules",
+        help="Write sample configuration file for an experiment",
         description="Enter the name of an experiment to obtain the associated sample "
         "configuration file.",
     )
 
     config_parser.set_defaults(func=write_config)
 
-    config_exp_parser = config_parser.add_subparsers(dest="experiments")
-    config_exp_parser.required = True
+    config_exp_parser = config_parser.add_subparsers(dest="experiments", required=True)
 
     infos = ce.get_config()
 
@@ -82,7 +79,7 @@ def build_parser():
             type=pathlib.Path,
             metavar="FILE",
             default="./experiment.toml",
-            help="Name of the output file",
+            help="Name of the output file (default: './experiment.toml')",
         )
 
     # parser for the positional argument "fit"
@@ -125,7 +122,7 @@ def build_parser():
         type=pathlib.Path,
         metavar="DIR",
         default="./Output",
-        help="Directory for output files",
+        help="Directory for output files (default: './Output')",
     )
 
     fit_parser.add_argument(
@@ -133,15 +130,15 @@ def build_parser():
         dest="model",
         metavar="MODEL",
         default="2st",
-        help="Exchange model used to fit the data",
+        help="Exchange model used to fit the data (default: '2st')",
     )
 
     fit_parser.add_argument(
         "--plot",
         type=str,
-        help="Plotting level",
         choices=["nothing", "normal", "all"],
         default="normal",
+        help="Plotting level (default: 'normal')",
     )
 
     fit_parser.add_argument(
@@ -174,7 +171,7 @@ def build_parser():
         metavar="FILE",
         nargs="+",
         required=True,
-        help="Input files containing experimental setup and data location",
+        help="Input file(s) containing experimental setup and data location",
     )
 
     simulate_parser.add_argument(
@@ -184,7 +181,7 @@ def build_parser():
         metavar="FILE",
         nargs="+",
         required=True,
-        help="Input files containing the initial values of fitting parameters",
+        help="Input file(s) containing the values of parameters",
     )
 
     simulate_parser.add_argument(
@@ -193,7 +190,7 @@ def build_parser():
         type=pathlib.Path,
         metavar="DIR",
         default="./OutputSim",
-        help="Directory for output files",
+        help="Directory for output files (default: './OutputSim')",
     )
 
     simulate_parser.add_argument(
@@ -201,15 +198,15 @@ def build_parser():
         dest="model",
         metavar="MODEL",
         default="2st",
-        help="Exchange model used to fit the data",
+        help="Exchange model used to simulate the data (default: '2st')",
     )
 
     simulate_parser.add_argument(
         "--plot",
         type=str,
-        help="Plotting level",
         choices=["nothing", "normal"],
         default="normal",
+        help="Plotting level (default: 'normal')",
     )
 
     simulate_parser.add_argument(
@@ -217,7 +214,7 @@ def build_parser():
         dest="include",
         metavar="ID",
         nargs="+",
-        help="Residue(s) to include in the fit",
+        help="Residue(s) to include in the simulation",
         type=cns.SpinSystem,
     )
 
@@ -226,7 +223,7 @@ def build_parser():
         dest="exclude",
         metavar="ID",
         nargs="+",
-        help="Residue(s) to exclude from the fit",
+        help="Residue(s) to exclude from the simulation",
         type=cns.SpinSystem,
     )
 
@@ -244,7 +241,7 @@ def build_parser():
         metavar="FILE",
         nargs="+",
         required=True,
-        help="Input files containing experimental setup and data location",
+        help="Input file(s) containing experimental setup and data location",
     )
 
     pick_cest_parser.add_argument(
@@ -253,7 +250,7 @@ def build_parser():
         type=pathlib.Path,
         metavar="DIR",
         default="./Sandbox",
-        help="Directory for output files",
+        help="Directory for output files (default: './Sandbox')",
     )
 
     # parser for the positional argument "pick_cest"
@@ -270,7 +267,7 @@ def build_parser():
         metavar="FILE",
         nargs="+",
         required=True,
-        help="Output files containing the fitting parameters to be plotted",
+        help="Input file containing the fitted parameters to be plotted",
     )
 
     plot_param_parser.add_argument(
@@ -292,7 +289,7 @@ def get_description_from_doc(doc):
 def print_info(args):
     """Print information for experiment."""
     docs = ce.get_info()
-    ch.header1(f'Description of the "{args.experiments}" experiment')
+    ch.header1(f"Description of the '{args.experiments}' experiment")
     print(docs[args.experiments])
 
 
