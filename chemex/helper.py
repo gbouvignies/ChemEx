@@ -3,7 +3,7 @@ import collections
 import sys
 
 import jsonschema as js
-import tomlkit
+import toml
 
 
 def read_toml_multi(filenames=None, schema=None):
@@ -17,13 +17,13 @@ def read_toml_multi(filenames=None, schema=None):
 def read_toml(filename=None, schema=None):
     """Read and parse the experiment configuration file with configparser."""
     try:
-        config = tomlkit.parse(filename.read_text())
+        config = toml.load(filename)
         config = _check_case(config)
         if schema is not None:
             Validator(schema).validate(config)
     except FileNotFoundError:
         sys.exit(f"\nERROR: The file '{filename}' is empty or does not exist!\n")
-    except (TypeError, tomlkit.exceptions.TOMLKitError) as error:
+    except (toml.TomlDecodeError, TypeError) as error:
         sys.exit(f"\nERROR: '{filename}': {error}\n")
     except js.ValidationError as error:
         sys.exit(f"ERROR: '{filename}': {error.message}")
