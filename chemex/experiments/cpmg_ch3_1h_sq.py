@@ -83,7 +83,7 @@ class PulseSeq:
         settings = config["experiment"]
         self.time_t2 = settings["time_t2"]
         self.pw90 = settings["pw90"]
-        self.ncyc_max = int(settings["ncyc_max"])
+        self.ncyc_max = settings["ncyc_max"]
         self.prop.carrier_i = settings["carrier"]
         self.prop.b1_i = 1 / (4.0 * self.pw90)
         self.taua = settings["taua"]

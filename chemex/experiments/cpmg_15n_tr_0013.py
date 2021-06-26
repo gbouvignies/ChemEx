@@ -47,7 +47,6 @@ _SCHEMA = {
                 "time_t2": {"type": "number"},
                 "carrier": {"type": "number"},
                 "pw90": {"type": "number"},
-                "ncyc_max": {"type": "integer"},
                 "time_equil": {"type": "number", "default": 0.0},
                 "taub": {"type": "number", "default": 2.68e-3},
                 "antitrosy": {"type": "boolean", "default": False},
@@ -58,7 +57,7 @@ _SCHEMA = {
                     "default": "a",
                 },
             },
-            "required": ["time_t2", "carrier", "pw90", "ncyc_max"],
+            "required": ["time_t2", "carrier", "pw90"],
         }
     },
 }
@@ -88,7 +87,7 @@ class PulseSeq:
         settings = config["experiment"]
         self.time_t2 = settings["time_t2"]
         self.time_eq = settings["time_equil"]
-        self.ncyc_max = int(settings["ncyc_max"])
+        self.ncyc_max = settings["ncyc_max"]
         self.prop.carrier_i = settings["carrier"]
         self.pw90 = settings["pw90"]
         self.taub = settings["taub"] - 2.0 * self.pw90 - 2.0 * self.pw90 / np.pi
