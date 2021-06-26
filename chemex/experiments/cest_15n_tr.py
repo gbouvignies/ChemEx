@@ -86,9 +86,9 @@ class PulseSeq:
         self.observed_state = settings["observed_state"]
         self.prop.detection = self._get_detection(settings["observed_state"])
         self.dephased = settings["b1_inh_scale"] == np.inf
-        self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
-    def _calculate(self, offsets, params_local):
+    @ft.lru_cache(maxsize=10000)
+    def calculate(self, offsets, params_local):
         self.prop.update(params_local)
         start = self._get_start()
         intst = {}

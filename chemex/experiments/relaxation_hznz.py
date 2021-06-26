@@ -68,9 +68,9 @@ class PulseSeq:
         self.prop = propagator
         settings = config["experiment"]
         self.prop.detection = f"[2izsz_{settings['observed_state']}]"
-        self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
-    def _calculate(self, times, params_local):
+    @ft.lru_cache(maxsize=10000)
+    def calculate(self, times, params_local):
         self.prop.update(params_local)
         start = self.prop.get_start_magnetization(["2izsz"])
         delays = self.prop.delays(0.25 * np.array(times))

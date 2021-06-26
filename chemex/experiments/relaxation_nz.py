@@ -63,9 +63,9 @@ class PulseSeq:
         self.prop = propagator
         settings = config["experiment"]
         self.prop.detection = f"[iz_{settings['observed_state']}]"
-        self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
-    def _calculate(self, times, params_local):
+    @ft.lru_cache(maxsize=10000)
+    def calculate(self, times, params_local):
         self.prop.update(params_local)
         start = self.prop.get_equilibrium()
         delays = self.prop.delays(times)

@@ -106,9 +106,9 @@ class PulseSeq:
         self.p90_i = self.prop.perfect90_i
         self.p180_sx = self.prop.perfect180_s[0]
         self.p180_isx = self.prop.perfect180_i[0] @ self.prop.perfect180_s[0]
-        self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
-    def _calculate(self, offsets, params_local):
+    @ft.lru_cache(maxsize=10000)
+    def calculate(self, offsets, params_local):
         self.prop.update(params_local)
         self.prop.offset_i = 0.0
         d_taud, d_taua, d_t1 = self.prop.delays([self.taud, self.taua, self.time_t1])

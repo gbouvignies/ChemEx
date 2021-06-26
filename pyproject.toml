@@ -20,7 +20,7 @@ classifiers = [
     lmfit = "^1.0.2"
     jsonschema = "^3.2.0"
     tqdm = "^4.61.1"
-    tomlkit = "^0.7.2"
+    toml = "^0.10.2"
 
     [tool.poetry.dev-dependencies]
     black                  = "^21.6b0"

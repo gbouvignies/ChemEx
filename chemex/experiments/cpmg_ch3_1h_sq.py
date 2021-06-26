@@ -91,9 +91,9 @@ class PulseSeq:
         self.ipap_flg = settings["ipap_flg"]
         self.observed_state = settings["observed_state"]
         self.prop.detection = f"[iy_{self.observed_state}]"
-        self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
-    def _calculate(self, ncycs, params_local):
+    @ft.lru_cache(maxsize=10000)
+    def calculate(self, ncycs, params_local):
         self.prop.update(params_local)
 
         # Calculation of the propagators corresponding to all the delays

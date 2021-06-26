@@ -83,9 +83,9 @@ class PulseSeq:
         self.small_protein = settings["small_protein"]
         self.t_zeta = 1.0 / (8.0 * 125.3)
         self.prop.detection = f"[2iysx_{settings['observed_state']}]"
-        self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
-    def _calculate(self, ncycs, params_local):
+    @ft.lru_cache(maxsize=10000)
+    def calculate(self, ncycs, params_local):
         self.prop.update(params_local)
 
         # Calculation of the propagators corresponding to all the delays

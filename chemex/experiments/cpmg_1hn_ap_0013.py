@@ -98,9 +98,9 @@ class PulseSeq:
         self.prop.detection = f"[iz_{self.observed_state}]"
         self.p90_i = self.prop.perfect90_i
         self.p180_isx = self.prop.perfect180_i[0] @ self.prop.perfect180_s[0]
-        self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
-    def _calculate(self, ncycs, params_local):
+    @ft.lru_cache(maxsize=10000)
+    def calculate(self, ncycs, params_local):
         self.prop.update(params_local)
 
         # Calculation of the propagators corresponding to all the delays

@@ -96,9 +96,9 @@ class PulseSeq:
         self.antitrosy = settings["antitrosy"]
         self.s3e = settings["s3e"]
         self.prop.detection = self._get_detection(settings["observed_state"])
-        self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
-    def _calculate(self, ncycs, params_local):
+    @ft.lru_cache(maxsize=10000)
+    def calculate(self, ncycs, params_local):
         self.prop.update(params_local)
 
         # Calculation of the propagators corresponding to all the delays

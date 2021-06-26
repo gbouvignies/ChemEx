@@ -56,9 +56,9 @@ class PulseSeq:
         self.ppm_s = self.prop.ppm_s
         self.cs_i_state = f"cs_i_{settings['observed_state']}"
         self.cs_s_state = f"cs_s_{settings['observed_state']}"
-        self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
-    def _calculate(self, params_local):
+    @ft.lru_cache(maxsize=10000)
+    def calculate(self, params_local):
         self.prop.update(params_local)
         params_map = dict(params_local)
         ref_shift_i = params_map[self.cs_i_state] * self.ppm_i

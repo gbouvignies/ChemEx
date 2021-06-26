@@ -100,9 +100,9 @@ class PulseSeq:
         elif config["model"].name == "4st_hd":
             self.start = ["iz_a", "iz_b"]
         self.dephased = settings["b1_inh_scale"] == np.inf
-        self.calculate = ft.lru_cache(maxsize=5)(self._calculate)
 
-    def _calculate(self, offsets, params_local):
+    @ft.lru_cache(maxsize=10000)
+    def calculate(self, offsets, params_local):
         self.prop.update(params_local)
         if self.start is None:
             start = self.prop.get_equilibrium()
