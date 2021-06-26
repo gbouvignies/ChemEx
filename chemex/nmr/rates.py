@@ -37,8 +37,7 @@ class RatesIS:
         self.delta_i = self.csa_i[0:2] - self.csa_i[2]
         self.delta_s = self.csa_s[0:2] - self.csa_s[2]
 
-        self.__call__ = ft.lru_cache(1024)(self.__call__)
-
+    @ft.lru_cache(1024)
     def __call__(self, h_frq, tauc, s2):
 
         # B0 in Tesla
