@@ -47,6 +47,7 @@ _SCHEMA = {
                 "time_t2": {"type": "number"},
                 "carrier": {"type": "number"},
                 "pw90": {"type": "number"},
+                "ncyc_max": {"type": "integer"},
                 "time_equil": {"type": "number", "default": 0.0},
                 "taub": {"type": "number", "default": 2.68e-3},
                 "antitrosy": {"type": "boolean", "default": False},
@@ -57,7 +58,7 @@ _SCHEMA = {
                     "default": "a",
                 },
             },
-            "required": ["time_t2", "carrier", "pw90"],
+            "required": ["time_t2", "carrier", "pw90", "ncyc_max"],
         }
     },
 }
