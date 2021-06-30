@@ -44,13 +44,14 @@ CPMG_SCHEMA = {
 
 @ft.total_ordering
 class CpmgProfile:
-    def __init__(self, name, data, pulse_seq, pnames, params, params_mf):
+    def __init__(self, name, data, pulse_seq, pnames, params, params_mf, even_ncycs):
         self.name = name
         self.data = data
         self._pulse_seq = pulse_seq
         self._pnames = pnames
         self.params = params
         self.params_mf = params_mf
+        self.even_ncycs = even_ncycs
         self._plot = ccp.cpmg
 
     @classmethod
@@ -61,7 +62,15 @@ class CpmgProfile:
             filter_planes=config["data"]["filter_planes"],
             time_t2=config["experiment"]["time_t2"],
         )
-        return cls(name, data, pulse_seq, pnames, params, params_mf)
+        return cls(
+            name,
+            data,
+            pulse_seq,
+            pnames,
+            params,
+            params_mf,
+            config.get("even_ncycs", False),
+        )
 
     def residuals(self, params):
         data = self.data.points[self.data.mask]
@@ -103,8 +112,11 @@ class CpmgProfile:
 
     def plot(self, params, file_pdf, file_exp, file_fit, simulation=False):
         data_exp = self.data.get_r2_exp(simulation)
-        intst_fit = self.calculate(params)
-        data_fit = self.data.get_r2_fit(intst_fit, simulation)
+        step = 2 if self.even_ncycs else 1
+        ncycs = np.arange(0, max(self.data.points["ncycs"]) + 1, step)
+        ncycs = np.asarray(sorted(set(ncycs) | set(self.data.points["ncycs"])))
+        intst_fit = self.calculate(params, ncycs)
+        data_fit = self.data.get_r2_fit(ncycs, intst_fit, simulation)
         self._plot(file_pdf, self.name, data_exp, data_fit)
         output_fit = self._format_data_fit(data_fit)
         file_fit.write(output_fit + "\n\n")
@@ -249,11 +261,13 @@ class CpmgData:
         r2_exp = np.rec.array([nu_cpmgs, r2, errors, mask], dtype=dtype)
         return np.sort(r2_exp, order="nu_cpmgs")
 
-    def get_r2_fit(self, intst_fit, simulation=False):
-        refs = self.refs
+    def get_r2_fit(self, ncycs, intst_fit, simulation=False):
+        refs = ncycs == 0
         intst = intst_fit[~refs]
-        intst_ref = intst_fit[refs] if simulation else self.points[refs]["intensities"]
-        nu_cpmgs = self._ncycs_to_nu_cpmg(self.points[~refs]["ncycs"])
+        intst_ref = (
+            intst_fit[refs] if simulation else self.points[self.refs]["intensities"]
+        )
+        nu_cpmgs = self._ncycs_to_nu_cpmg(ncycs)
         r2 = self._intst_to_r2(intst, intst_ref)
         r2_fit = np.rec.array([nu_cpmgs, r2], names=["nu_cpmgs", "r2"])
         return np.sort(r2_fit, order="nu_cpmgs")

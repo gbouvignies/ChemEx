@@ -63,6 +63,7 @@ def read(config):
     ch.validate(config, _SCHEMA)
     config["basis"] = cnl.Basis(type="ixyzsz", spin_system="ch")
     config["fit"] = _fit_this()
+    config["even_ncycs"] = True
     return ceh.load_experiment(config=config, pulse_seq_cls=PulseSeq)
 
 
