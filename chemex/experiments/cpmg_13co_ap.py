@@ -68,6 +68,7 @@ _SCHEMA = {
 def read(config):
     ch.validate(config, _SCHEMA)
     config["basis"] = cnl.Basis(type="ixyzsz", spin_system="cn")
+    config["even_ncycs"] = config["experiment"]["refocusing"]
     config["fit"] = _fit_this()
     return ceh.load_experiment(config=config, pulse_seq_cls=PulseSeq)
 
