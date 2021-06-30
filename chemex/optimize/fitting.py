@@ -111,13 +111,15 @@ class Fit:
             # Run Monte Carlo and/or bootstrap analysis
             self.run_statistics(best_par, g_pat, fitmethod, statistics)
 
-        params = cph.merge(params_list)
+        params_merged = cph.merge(params_list)
 
         if len(groups) > 1:
             ch.header3("All groups")
-            coh.post_fit(self._experiments, params, path / "All", plot != "nothing")
+            coh.post_fit(
+                self._experiments, params_merged, path / "All", plot != "nothing"
+            )
 
-        return params
+        return params_merged
 
     def _run_grid(self, grid, params, path, plot, fitmethod):
 
@@ -204,6 +206,9 @@ def minimize(experiments, params, fitmethod=None, verbose=True):
         "basinhopping": {"disp": verbose},
     }
 
+    if fitmethod == "leastsq":
+        experiments.verbose = verbose
+
     minimizer = lm.Minimizer(experiments.residuals, params)
 
     try:
@@ -217,5 +222,7 @@ def minimize(experiments, params, fitmethod=None, verbose=True):
 
     if verbose:
         print()
+
+    experiments.verbose = False
 
     return result.params
