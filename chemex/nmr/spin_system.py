@@ -12,10 +12,10 @@ RE_NAME = re.compile(
         (
             (?P<symbol>(\D?|\D{3}?))              # one letter amino acid (optional)
             0*(?P<number>[0-9]+|[*])     # residue number
-            (?P<suffix>[abd-gi-mopr-z]*) # suffix (optional)
+            (?P<suffix>[abd-gi-mopr-wyz]*) # suffix (optional)
         )?
         (?P<nucleus>                     # nucleus name (e.g., CA, HG, ...)
-            (?P<atom>[hncq])             # nucleus type
+            (?P<atom>[hncqx])             # nucleus type
             [a-z0-9]*                    # nucleus name - nucleus type
         )?
     """,
@@ -69,6 +69,16 @@ class SpinSystem:
             if set(aliases).issubset(self._spins):
                 key = "".join(aliases)
                 name = _spins_to_name(self._spins[alias] for alias in aliases)
+                result[key] = name
+        return result
+
+    @property
+    def xnames(self):
+        result = {}
+        for aliases in _powerset(_ALIASES):
+            if set(aliases).issubset(self._spins):
+                key = "".join(aliases)
+                name = _spins_to_xname(self._spins[alias] for alias in aliases)
                 result[key] = name
         return result
 
@@ -133,6 +143,9 @@ class SpinSystem:
         names = set(self.names.values()) & set(other.names.values())
         if names:
             return SpinSystem("-".join(names))
+        xnames = set(self.xnames.values()) & set(other.xnames.values())
+        if xnames:
+            return SpinSystem("-".join(xnames))
         groups = set(self.groups.values()) & set(other.groups.values())
         if len(groups) == 1:
             return SpinSystem(groups.pop())
@@ -203,6 +216,21 @@ def _spins_to_name(spins):
             parts.append("{group}{nucleus}".format_map(spin))
         else:
             parts.append("{nucleus}".format_map(spin))
+        last_spin = spin
+    return "-".join(parts)
+
+
+def _spins_to_xname(spins):
+    """Get assignment from resonances."""
+    parts = []
+    last_spin = {}
+    for spin in spins:
+        nucleus = spin["nucleus"]
+        xnucleus = f"X{nucleus[1:]}" if nucleus[1:] else nucleus
+        if spin["group"] != last_spin.get("group", ""):
+            parts.append(f"{spin['group']}{xnucleus}")
+        else:
+            parts.append(f"{xnucleus}")
         last_spin = spin
     return "-".join(parts)
 
