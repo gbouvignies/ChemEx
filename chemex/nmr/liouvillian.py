@@ -468,7 +468,7 @@ class LiouvillianIS:
     @gradient_dephasing.setter
     def gradient_dephasing(self, value):
         self._gradient_dephasing = value
-        self._scale_matrix("d_{state}", value)
+        self._scale_matrix("d_{state}", value * 1e-12)
         self.update(self._parvals)
 
     @property

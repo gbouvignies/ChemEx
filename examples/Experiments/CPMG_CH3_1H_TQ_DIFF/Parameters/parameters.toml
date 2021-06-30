@@ -5,8 +5,8 @@ KEX_AB           = 100.0
 "R1TQ_A, NUC->H" = 1.5
 "R2TQ_A, NUC->H" = 10.0
 DW_AB            = 0.2
-D_A              = 1.0e-10
-D_B              = 1.0e-10
+D_A              = 100.0
+D_B              = 100.0
 
 [CS_A]
 L7HD1  = 0.565
