@@ -249,41 +249,41 @@ htmlhelp_basename = "chemexdoc"
 
 # -- Options for LaTeX output ---------------------------------------------
 
-latex_engine = "pdflatex"
+latex_engine = "xelatex"
 
-latex_elements = {
-    # The paper size ('letterpaper' or 'a4paper').
-    "papersize": "letterpaper",
-    # 'papersize': 'a4',
-    # The font size ('10pt', '11pt' or '12pt').
-    "pointsize": "10pt",
-    "releasename": " ",
-    # Sonny, Lenny, Glenn, Conny, Rejne, Bjarne and Bjornstrup
-    # 'fncychap': '\\usepackage[Lenny]{fncychap}',
-    "fncychap": "\\usepackage{fncychap}",
-    # Latex figure (float) alignment
-    "figure_align": "htbp",
-    # Start first page of each chapter on any page
-    "extraclassoptions": "openany, oneside",
-    # Additional stuff for the LaTeX preamble.
-    #
-    "preamble": r"""
-        \setcounter{tocdepth}{2}
-        \usepackage[depth=2]{bookmark}
-        \usepackage[notbib,notindex]{tocbibind}
+# latex_elements = {
+#     # The paper size ('letterpaper' or 'a4paper').
+#     "papersize": "letterpaper",
+#     # 'papersize': 'a4',
+#     # The font size ('10pt', '11pt' or '12pt').
+#     "pointsize": "10pt",
+#     "releasename": " ",
+#     # Sonny, Lenny, Glenn, Conny, Rejne, Bjarne and Bjornstrup
+#     # 'fncychap': '\\usepackage[Lenny]{fncychap}',
+#     "fncychap": "\\usepackage{fncychap}",
+#     # Latex figure (float) alignment
+#     "figure_align": "htbp",
+#     # Start first page of each chapter on any page
+#     "extraclassoptions": "openany, oneside",
+#     # Additional stuff for the LaTeX preamble.
+#     #
+#     "preamble": r"""
+#         \setcounter{tocdepth}{2}
+#         \usepackage[depth=2]{bookmark}
+#         \usepackage[notbib,notindex]{tocbibind}
 
-        \usepackage{charter}
-        %\usepackage{crimson}
-        \usepackage[defaultsans]{lato}
-        %\usepackage{DejaVuSans}
-        \usepackage{inconsolata}
-        %\usepackage{sourcecodepro}
-        %\usepackage{DejaVuSansMono}
+#         \usepackage{charter}
+#         %\usepackage{crimson}
+#         \usepackage[defaultsans]{lato}
+#         %\usepackage{DejaVuSans}
+#         \usepackage{inconsolata}
+#         %\usepackage{sourcecodepro}
+#         %\usepackage{DejaVuSansMono}
 
-        \usepackage[utf8]{inputenc}
-        \DeclareUnicodeCharacter{03D6}{\ensuremath{\varpi}}
-    """,
-}
+#         \usepackage[utf8]{inputenc}
+#         \DeclareUnicodeCharacter{03D6}{\ensuremath{\varpi}}
+#     """,
+# }
 
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title,

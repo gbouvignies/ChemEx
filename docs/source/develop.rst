@@ -66,7 +66,6 @@ Chemex modules
 
    modules/chemex/chemex
    modules/chemex/cli
-   modules/chemex/fitting
    modules/chemex/helper
 
 
@@ -101,7 +100,7 @@ experiment module. The ``config/`` subdirectory contains sample config
 files for each experiment.
 
 
-Nmr modules
+NMR modules
 -----------
 
 .. toctree::
@@ -112,6 +111,19 @@ Nmr modules
    modules/nmr/propagator
    modules/nmr/rates
    modules/nmr/spin_system
+
+
+Optimize modules
+----------------
+
+.. toctree::
+   :maxdepth: 1
+
+   modules/optimize/fitting
+   modules/optimize/gridding
+   modules/optimize/grouping
+   modules/optimize/helper
+   modules/optimize/methods
 
 
 Parameters modules

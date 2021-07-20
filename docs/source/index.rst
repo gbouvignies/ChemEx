@@ -30,8 +30,6 @@ ChemEx Documentation
     experiments
     examples
     additional
-    develop
-    citation
 
 .. only:: html
 
