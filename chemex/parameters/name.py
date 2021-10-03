@@ -160,6 +160,10 @@ class ParamName:
     def __lt__(self, other: object) -> bool:
         if not isinstance(other, ParamName):
             return NotImplemented
+        if not self._spin_system and other._spin_system:
+            return True
+        elif self._spin_system and not other._spin_system:
+            return False
         return self._members() < other._members()
 
     def __and__(self, other: object) -> "ParamName":
