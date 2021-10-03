@@ -52,10 +52,10 @@ def group_pnames(experiments, params):
 
     while grouped:
         grouped = False
-        for g1, g2 in it.combinations(groups, r=2):
-            intersection = g1 & g2
+        for (i1, u1), (i2, u2) in it.combinations(groups.items(), r=2):
+            intersection = frozenset(u1 & u2)
             if intersection:
-                union = groups.pop(g1) | groups.pop(g2)
+                union = groups.pop(i1) | groups.pop(i2)
                 groups.setdefault(intersection, set()).update(union)
                 grouped = True
                 break
