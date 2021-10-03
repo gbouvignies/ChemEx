@@ -136,9 +136,12 @@ class Fit:
             grid_result = cog.run_grid(group, grid, path, fitmethod)
             grid_results.append(grid_result)
 
-        params = cog.combine_grids(
-            experiments, params, grid, grid_results, path / "Grid"
-        )
+        grids_combined = cog.combine_grids(grid, grid_results)
+        grids_1d = cog.make_grids_nd(grid, grids_combined, params, 1)
+        grids_2d = cog.make_grids_nd(grid, grids_combined, params, 2)
+        cog.set_params_from_grid(grids_1d, params)
+        cog.plot_grid_1d(grids_1d, params, path / "Grid")
+        cog.plot_grid_2d(grids_2d, params, path / "Grid")
 
         if len(groups) > 1:
             ch.header3("All groups")

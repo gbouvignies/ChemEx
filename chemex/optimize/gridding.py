@@ -9,7 +9,6 @@ from matplotlib.colors import LogNorm
 from tqdm.contrib import itertools as tqdmit
 
 import chemex.optimize.fitting as cof
-import chemex.optimize.grouping as coc
 import chemex.optimize.helper as coh
 
 
@@ -54,132 +53,136 @@ def _set_param_values(params, fnames, values):
         params[fname].value = value
 
 
-def combine_grids(experiments, params, grid, grid_results, path):
+def combine_grids(grid, grid_results):
 
-    for fname in grid:
-        params[fname].vary = True
+    grids = _get_grids(grid, grid_results)
 
-    reduced_grids = []
+    results = []
 
-    while grid_results:
+    for grid_ref in grids:
 
-        for fnames in coc.group_pnames(experiments, params).values():
+        shape = tuple(len(values) for values in grid_ref.values())
 
-            fnames_select = tuple(fname for fname in grid if fname in fnames)
+        chisqr_sum = np.zeros(shape)
 
-            g_names = get_common_names(grid_results, fnames_select)
+        for a_grid, chisqr in grid_results:
+            chisqr_final = _reshape_chisqr(grid_ref, a_grid, chisqr)
+            chisqr_sum += chisqr_final
 
-            g_grid = {name: grid.pop(name) for name in g_names}
+        result = GridResult(grid_ref, chisqr_sum)
+        results.append(result)
 
-            chisqr_list = []
-            for grid_result in grid_results:
-                axis = tuple(
-                    index
-                    for index, name in enumerate(grid_result.grid)
-                    if name not in g_grid
-                )
-                chisqr_red = np.minimum.reduce(grid_result.chisqr, axis=axis)
-                chisqr_list.append(chisqr_red)
-
-            reduced_grid = GridResult(g_grid, sum(chisqr_list))
-
-            reduced_grids.append(reduced_grid)
-
-            argmin = np.unravel_index(
-                reduced_grid.chisqr.argmin(), reduced_grid.chisqr.shape
-            )
-
-            for index, fname in zip(argmin, g_grid):
-                params[fname].value = g_grid[fname][index]
-                params[fname].vary = False
-
-            grid_results = trim_grid(grid_results, g_grid, argmin)
-
-    _plot_grid(reduced_grids, params, path)
-
-    return params
+    return results
 
 
-def get_common_names(grid_results, fnames):
-    fname_sets = (
-        set(grid) for grid, _ in grid_results if set(grid) and set(grid) <= set(fnames)
-    )
-    common_fnames = set.intersection(*fname_sets)
-    return (fname for fname in fnames if fname in common_fnames)
+def _reshape_chisqr(grid_ref, grid, chisqr):
+    keys = list(grid)
+    order = [keys.index(key) for key in grid_ref if key in keys]
+    axes_to_reduce = tuple(sorted(set(range(len(keys))) - set(order)))
+    order.extend(axes_to_reduce)
+
+    # After transpose, axes are shuffled
+    axes_to_reduce = tuple(order.index(index) for index in axes_to_reduce)
+
+    chisqr_final = chisqr.transpose(order)
+    chisqr_final = np.minimum.reduce(chisqr_final, axis=axes_to_reduce)
+
+    shape = tuple(len(grid_ref[key]) if key in grid else 1 for key in grid_ref)
+    chisqr_final = chisqr_final.reshape(shape)
+    return chisqr_final
 
 
-def trim_grid(grid_results, grid, argmin):
-    grids_trimmed = []
-    for grid_, chisqr in grid_results:
-        axis = tuple(index for index, name in enumerate(grid_) if name in grid)
-        indexes = {ax: index for ax, index in zip(axis, argmin)}
-        ix = tuple(indexes.get(dim, slice(None)) for dim in range(chisqr.ndim))
-        grid_trimmed = {
-            name: values for name, values in grid_.items() if name not in grid
-        }
-        if grid_trimmed:
-            chisqr_trimmed = chisqr[ix]
-            grids_trimmed.append(GridResult(grid_trimmed, chisqr_trimmed))
-    return grids_trimmed
+def make_grids_1d(params, grid, grids_combined):
+    grids_2d = []
+    fnames = sorted(grid, key=lambda x: params[x].user_data["pname"])
+    for pair in it.combinations(fnames, 2):
+        for a_grid, chisqr in grids_combined:
+            if set(pair) <= set(a_grid):
+                grid_ref = {fname: grid[fname] for fname in pair}
+                chisqr_final = _reshape_chisqr(grid_ref, a_grid, chisqr)
+                grids_2d.append(GridResult(grid_ref, chisqr_final))
+    return grids_2d
 
 
-def _plot_grid(grids, params, path):
+def _get_grids(grid, grid_results):
+    grid_params = {tuple(sorted(grid_result.grid)) for grid_result in grid_results}
+    grid_params_tmp = grid_params.copy()
+    for params1, params2 in it.permutations(grid_params, 2):
+        if set(params1) <= set(params2):
+            grid_params_tmp.remove(params1)
+    return [{key: grid[key] for key in params} for params in grid_params_tmp]
+
+
+def set_params_from_grid(grids_1d, params):
+    for grid, chisqr in grids_1d:
+        fname, values = list(grid.items())[0]
+        params[fname].value = values[chisqr.argmin()]
+        params[fname].vary = False
+
+
+def make_grids_nd(grid, grids_combined, params, ndim):
+    grids = []
+    fnames = sorted(grid, key=lambda x: params[x].user_data["pname"])
+    for selection in it.combinations(fnames, ndim):
+        for a_grid, chisqr in grids_combined:
+            if set(selection) <= set(a_grid):
+                grid_ref = {fname: grid[fname] for fname in selection}
+                chisqr_final = _reshape_chisqr(grid_ref, a_grid, chisqr)
+                grids.append(GridResult(grid_ref, chisqr_final))
+                break
+    return grids
+
+
+def plot_grid_1d(grids_1d, params, path):
     """Visualize the result of the brute force grid search.
 
-    The output file will display the chi-square value per parameter and contour
+    The output file will display the chi-square values per parameter.
+
+    """
+
+    if not grids_1d:
+        return
+
+    with PdfPages(path / "grid_1d.pdf") as pdf:
+        for grid, chisqr in grids_1d:
+            fname, values = list(grid.items())[0]
+            _fig, ax = plt.subplots(1, 1)
+            ax.plot(values, chisqr, "o", ms=3)
+            ax.axvline(params[fname].value, ls="dashed", color=(0.5, 0.5, 0.5))
+            ax.set_xlabel(str(params[fname].user_data["pname"]))
+            ax.set_ylabel(r"$\chi^{2}$")
+            pdf.savefig()
+            plt.close()
+
+
+def plot_grid_2d(grids_2d, params, path):
+    """Visualize the result of the brute force grid search.
+
+    The output file will display the chi-square contour
     plots for all combination of two parameters.
 
     """
-    path.mkdir(parents=True, exist_ok=True)
 
-    _plot_grid_1d(grids, params, path)
-    _plot_grid_2d(grids, params, path)
-
-
-def _plot_grid_1d(grids, params, path):
-
-    with PdfPages(path / "grid_1d.pdf") as pdf:
-        for grid_values, chisqr in grids:
-            for i, (fname, values) in enumerate(grid_values.items()):
-                red_axis = tuple(a for a in range(len(grid_values)) if a != i)
-                chi2_vector = np.minimum.reduce(chisqr, axis=red_axis)
-                _fig, ax = plt.subplots(1, 1)
-                ax.plot(values, chi2_vector, "o", ms=3)
-                min_index = np.argmin(chi2_vector)
-                ax.axvline(values[min_index], ls="dashed", color=(0.5, 0.5, 0.5))
-                ax.set_xlabel(str(params[fname].user_data["pname"]))
-                ax.set_ylabel(r"$\chi^{2}$")
-                pdf.savefig()
-                plt.close()
-
-
-def _plot_grid_2d(grids, params, path):
+    if not grids_2d:
+        return
 
     with PdfPages(path / "grid_2d.pdf") as pdf:
-        for grid_values, chisqr in grids:
-            combinations = it.combinations(enumerate(grid_values.items()), 2)
-            for (i, (n1, v1)), (j, (n2, v2)) in combinations:
-                fig, ax = plt.subplots(1, 1)
-                grid_x, grid_y = np.meshgrid(v1, v2)
-                red_axis = tuple(a for a in range(len(grid_values)) if a not in (i, j))
-                chi2_matrix = np.minimum.reduce(chisqr, axis=red_axis).T
-                min_indexes = np.unravel_index(
-                    np.argmin(chi2_matrix), chi2_matrix.shape
-                )
-                min_x = grid_x[min_indexes]
-                min_y = grid_y[min_indexes]
-                ax.axvline(min_x, ls="dashed", color=(0.5, 0.5, 0.5), zorder=-1)
-                ax.axhline(min_y, ls="dashed", color=(0.5, 0.5, 0.5), zorder=-1)
-                cs = ax.scatter(
-                    grid_x,
-                    grid_y,
-                    c=chi2_matrix,
-                    norm=LogNorm(),
-                    cmap=cm.viridis_r,
-                )
-                cbar = fig.colorbar(cs)
-                cbar.set_label(r"$\chi^{2}$")
-                ax.set_xlabel(str(params[n1].user_data["pname"]))
-                ax.set_ylabel(str(params[n2].user_data["pname"]))
-                pdf.savefig()
-                plt.close()
+        for grid, chisqr in grids_2d:
+            (fname_x, values_x), (fname_y, values_y) = grid.items()
+            fig, ax = plt.subplots(1, 1)
+            grid_x, grid_y = np.meshgrid(values_x, values_y)
+            ax.axvline(
+                params[fname_x].value, ls="dashed", color=(0.5, 0.5, 0.5), zorder=-1
+            )
+            ax.axhline(
+                params[fname_y].value, ls="dashed", color=(0.5, 0.5, 0.5), zorder=-1
+            )
+            cs = ax.scatter(
+                grid_x, grid_y, c=chisqr.T, norm=LogNorm(), cmap=cm.viridis_r
+            )
+            cbar = fig.colorbar(cs)
+            cbar.set_label(r"$\chi^{2}$")
+            ax.set_xlabel(str(params[fname_x].user_data["pname"]))
+            ax.set_ylabel(str(params[fname_y].user_data["pname"]))
+            pdf.savefig()
+            plt.close()
