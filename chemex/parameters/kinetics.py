@@ -29,6 +29,19 @@ def _check_model_name(name):
 
 
 @ft.lru_cache()
+def make_settings_1st(conditions, spin_system):
+    return {
+        "pa": {
+            "attributes": (),
+            "value": 1.0,
+            "min": 0.99,
+            "max": 1.0,
+            "vary": False,
+        }
+    }
+
+
+@ft.lru_cache()
 def make_settings_2st(conditions, spin_system):
     return {
         "kex_ab": {
@@ -614,6 +627,7 @@ def make_settings_4st_hd(conditions, spin_system):
 
 
 make_settings = {
+    "1st": make_settings_1st,
     "2st": make_settings_2st,
     "3st": make_settings_3st,
     "4st": make_settings_4st,
@@ -648,12 +662,11 @@ def hs_to_k(states, celsius):
 def hs_to_p(state, states, celsius):
     kelvin = celsius + 273.15
     rt = cst.R * kelvin
-    dg = {}
-    for a_state in states:
-        if a_state != "a":
-            dg[a_state] = (
-                f"exp(" f"-({{dh_{a_state}}} - {kelvin} * {{ds_{a_state}}}) / {rt})"
-            )
-        else:
-            dg[a_state] = "1.0"
+    dg = {
+        a_state: f"exp(" f"-({{dh_{a_state}}} - {kelvin} * {{ds_{a_state}}}) / {rt})"
+        if a_state != "a"
+        else "1.0"
+        for a_state in states
+    }
+
     return f"{dg[state]} / ({' + '.join(dg.values())})"
