@@ -17,7 +17,19 @@ RE_NAME = re.compile(
         (?P<nucleus>                     # nucleus name (e.g., CA, HG, ...)
             (?P<atom>[hncqx])             # nucleus type
             [a-z0-9]*                    # nucleus name - nucleus type
-        )?
+        )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+RE_NAME_GROUP = re.compile(
+    r"""
+        (^\s*|-)
+        (
+            (?P<symbol>(\D?|\D{3}?))              # one letter amino acid (optional)
+            0*(?P<number>[0-9]+|[*])     # residue number
+            (?P<suffix>[abd-gi-mopr-wyz]*) # suffix (optional)
+        )
     """,
     re.IGNORECASE | re.VERBOSE,
 )
@@ -51,7 +63,7 @@ class SpinSystem:
     def __init__(self, name=None):
         if name is None:
             name = ""
-        self.name = str(name)
+        self.name = name
 
     @property
     def name(self):
@@ -189,8 +201,10 @@ def _name_to_spins(name):
     """Get spins from an assignment."""
     spins = []
     last_spin = {}
-    for match in re.finditer(RE_NAME, name):
-        spin = match.groupdict()
+    re_name = RE_NAME if re.match(RE_NAME, name) else RE_NAME_GROUP
+    for match in re.finditer(re_name, name):
+        spin = {k: "" for k in ("symbol", "number", "suffix", "nucleus")}
+        spin.update(match.groupdict())
         if not any(spin.values()):
             continue
         if spin["symbol"] is not None and spin["symbol"].upper() in _AA_CODE:
