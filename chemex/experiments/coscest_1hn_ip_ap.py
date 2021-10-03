@@ -118,7 +118,7 @@ class PulseSeq:
         for offset in set(offsets):
             self.prop.offset_i = offset
             if abs(offset) > 1e4:
-                inept = self.p90_i[3] @ d_taua @ self.p180_isx @ d_taua @ self.p90_i[0]
+                inept = self.p90_i[1] @ d_taua @ self.p180_isx @ d_taua @ self.p90_i[0]
                 cest = inept @ d_t1
             else:
                 cest = self._calc_cosine_shape()
