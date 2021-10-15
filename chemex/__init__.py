@@ -6,4 +6,6 @@ Exchange Saturation Transfer.
 
 """
 
-__version__ = "2021.4.0-dev3"
+import importlib.metadata as importlib_metadata
+
+__version__ = importlib_metadata.version(__name__)
