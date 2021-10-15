@@ -203,7 +203,7 @@ def _name_to_spins(name):
     last_spin = {}
     re_name = RE_NAME if re.match(RE_NAME, name) else RE_NAME_GROUP
     for match in re.finditer(re_name, name):
-        spin = {k: "" for k in ("symbol", "number", "suffix", "nucleus")}
+        spin = {k: "" for k in ("symbol", "number", "suffix", "nucleus", "atom")}
         spin.update(match.groupdict())
         if not any(spin.values()):
             continue
