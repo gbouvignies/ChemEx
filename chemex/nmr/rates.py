@@ -136,10 +136,13 @@ class RateNH(RatesIS):
     phi_i = np.deg2rad([109.6, 90.0, 19.6])
     phi_s = np.deg2rad([10.0, 80.0, 90.0])
 
+    @ft.lru_cache(1024)
     def __call__(self, h_frq, tauc, s2, khh=0.0):
         rates = super().__call__(h_frq, tauc, s2)
         if khh == 0.0:
             return rates
+        # Make a copy of rates before adding 'khh' due to lru_cache on 'super().__call__'
+        rates = rates.copy()
         rates["r2_s"] += khh
         rates["r1_s"] += khh
         rates["r2a_i"] += khh
@@ -165,10 +168,13 @@ class RateHN(RatesIS):
     phi_i = np.deg2rad([10.0, 80.0, 90.0])
     phi_s = np.deg2rad([109.6, 90.0, 19.6])
 
+    @ft.lru_cache(1024)
     def __call__(self, h_frq, tauc, s2, khh=0.0):
         rates = super().__call__(h_frq, tauc, s2)
         if khh == 0.0:
             return rates
+        # Make a copy of rates before adding 'khh' due to lru_cache on 'super().__call__'
+        rates = rates.copy()
         rates["r2_i"] += khh
         rates["r1_i"] += khh
         rates["r2a_i"] += khh
