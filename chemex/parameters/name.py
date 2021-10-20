@@ -79,7 +79,7 @@ class ParamName:
 
     @classmethod
     def from_section(cls, section: str = "") -> ParamName:
-        parsed = _re_to_dict(_RE_SECTION, section)
+        parsed = _re_to_dict(_RE_SECTION, section.strip(" []"))
         return cls.from_dict(parsed)
 
     @cached_property
