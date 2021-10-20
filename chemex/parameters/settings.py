@@ -29,7 +29,6 @@ _SCHEMA_CONFIG_PARAM = {
     },
 }
 
-
 def read_defaults(filenames):
     print("\nReading parameters default values...")
     config = ch.read_toml_multi(filenames, _SCHEMA_CONFIG_PARAM)
@@ -61,8 +60,9 @@ def set_values(params, defaults):
     for name, values in reversed(defaults):
         matches = set()
         for fname in fnames:
-            if name.match(fname):
-                params[fname].set(**values)
+            param = params[fname]
+            if name.match(param.user_data["pname"]):
+                param.set(**values)
                 matches.add(fname)
         fnames -= matches
     params.update_constraints()
@@ -76,7 +76,7 @@ def _check_params(params):
     for param in params.values():
         pname = param.user_data["pname"]
         sname = pname.name.upper()
-        atoms = set(pname.spin_system.atoms.values())
+        atoms = {atom.name for atom in pname.spin_system.atoms.values()}
         if sname.startswith("J_") and atoms == {"N", "H"} and param.value > 0.0:
             messages.append(
                 "Warning: Some 1J(NH) scalar couplings are set with positive values. \n"
@@ -127,8 +127,9 @@ def _set_vary(params, snames, vary=True):
     for sname in reversed(snames):
         pname = cpn.ParamName.from_section(sname.strip("[] "))
         for fname in fnames:
-            if pname.match(fname):
-                params[fname].set(vary=vary)
+            param = params[fname]
+            if pname.match(param.user_data["pname"]):
+                param.set(vary=vary)
                 matches.add(fname)
         fnames -= matches
     return matches
@@ -163,15 +164,23 @@ def _set_expr(params, expr_list):
 
 
 def _get_fnames_left(left, params):
-    pname_left = cpn.ParamName.from_section(left.strip("[] "))
-    return {fname for fname in params if pname_left.match(fname)}
+    pname = cpn.ParamName.from_section(left.strip("[] "))
+    return {
+        fname
+        for fname, param in params.items()
+        if pname.match(param.user_data["pname"])
+    }
 
 
 def _get_fnames_right(right, params):
     fnames_right = {}
     for match in re.finditer(r"\[(.+?)\]", right.strip()):
         pname = cpn.ParamName.from_section(match.group(1))
-        fnames_right[match.group(0)] = {fname for fname in params if pname.match(fname)}
+        fnames_right[match.group(0)] = {
+            fname
+            for fname, param in params.items()
+            if pname.match(param.user_data["pname"])
+        }
     return fnames_right
 
 
@@ -192,7 +201,8 @@ def read_grid(grid, params):
                 f'\nError reading grid settings:\n  -> "{entry}"\n\nProgram aborted\n'
             )
             exit()
-        fnames_left = _get_fnames_left(left, fnames_all)
+        params_remaining = {fname: params[fname] for fname in fnames_all}
+        fnames_left = _get_fnames_left(left, params_remaining)
         expr = right.replace("lin", "np.linspace").replace("log", "np.geomspace")
         values = eval(expr)
         grid_values.update({fname: values for fname in fnames_left})

@@ -1,40 +1,38 @@
-"""The peaks module contains the code for handling peak assignments and
-resonances."""
-import functools as ft
-import itertools as it
-import re
+from __future__ import annotations
+
+from enum import auto
+from enum import Enum
+from functools import total_ordering
+from itertools import chain
+from itertools import combinations
+from re import search
+from typing import Iterable
+
+from chemex.nmr.liouvillian import Basis
 
 
-_ALIASES = "isx"
-RE_NAME = re.compile(
-    r"""
-        (^\s*|-)
-        (
-            (?P<symbol>(\D?|\D{3}?))              # one letter amino acid (optional)
-            0*(?P<number>[0-9]+|[*])     # residue number
-            (?P<suffix>[abd-gi-mopr-wyz]*) # suffix (optional)
-        )?
-        (?P<nucleus>                     # nucleus name (e.g., CA, HG, ...)
-            (?P<atom>[hncqx])             # nucleus type
-            [a-z0-9]*                    # nucleus name - nucleus type
-        )
-    """,
-    re.IGNORECASE | re.VERBOSE,
-)
+ALIASES = "isx"
 
-RE_NAME_GROUP = re.compile(
-    r"""
-        (^\s*|-)
-        (
-            (?P<symbol>(\D?|\D{3}?))              # one letter amino acid (optional)
-            0*(?P<number>[0-9]+|[*])     # residue number
-            (?P<suffix>[abd-gi-mopr-wyz]*) # suffix (optional)
-        )
-    """,
-    re.IGNORECASE | re.VERBOSE,
-)
 
-_AA_CODE = {
+class Nucleus(Enum):
+    """Define all the different types of atoms"""
+
+    H1 = auto()
+    N15 = auto()
+    C13 = auto()
+
+
+# Conversion dictionary from atom letter to corresponding Nucleus
+STR_TO_NUCLEUS: dict[str, Nucleus] = {
+    "H": Nucleus.H1,
+    "Q": Nucleus.H1,
+    "M": Nucleus.H1,
+    "N": Nucleus.N15,
+    "C": Nucleus.C13,
+}
+
+# Conversion dictionary from 3-letter to 1-letter amino-acid convention
+AAA_TO_A = {
     "ALA": "A",
     "ARG": "R",
     "ASN": "N",
@@ -58,234 +56,254 @@ _AA_CODE = {
 }
 
 
-@ft.total_ordering
-class SpinSystem:
-    def __init__(self, name=None):
-        if name is None:
-            name = ""
-        self.name = name
+# Conversion dictionary to correct different ways to spell nuclei
+CORRECT_ATOM_NAME = {"HN": "H", "C'": "C", "CO": "C"}
 
-    @property
-    def name(self):
-        return self._name
+# fmt: off
+STANDARD_ATOM_NAMES = {
+    'C', 'CA', 'CB', 'CD', 'CD1', 'CD2', 'CE', 'CE1', 'CE2', 'CE3', 'CG', 'CG1', 'CG2',
+    'CH2', 'CQD', 'CQE', 'CQG', 'CZ', 'CZ2', 'CZ3', 'H', 'H2', 'H3', 'HA', 'HA2',
+    'HA3', 'HB', 'HB1', 'HB2', 'HB3', 'HD', 'HD1', 'HD11', 'HD12', 'HD13', 'HD2',
+    'HD21', 'HD22', 'HD23', 'HD3', 'HE', 'HE1', 'HE2', 'HE21', 'HE22', 'HE3', 'HG',
+    'HG1', 'HG11', 'HG12', 'HG13', 'HG2', 'HG21', 'HG22', 'HG23', 'HG3', 'HH', 'HH1',
+    'HH11', 'HH12', 'HH2', 'HH21', 'HH22', 'HZ', 'HZ1', 'HZ2', 'HZ3', 'MB', 'MD', 'MD1',
+    'MD2', 'ME', 'MG', 'MG1', 'MG2', 'MZ', 'N', 'ND1', 'ND2', 'NE', 'NE1', 'NE2', 'NH',
+    'NH1', 'NH2', 'NQH', 'NZ', 'QA', 'QB', 'QD', 'QD2', 'QE', 'QE2', 'QG', 'QG1', 'QH1',
+    'QH2', 'QMD', 'QMG', 'QQH', 'QR', 'QZ'}
+# fmt: on
 
-    @name.setter
-    def name(self, value):
-        self._spins = _name_to_spins(str(value).upper())
-        self._name = _spins_to_name(self._spins.values())
 
-    @property
-    def names(self):
-        result = {}
-        for aliases in _powerset(_ALIASES):
-            if set(aliases).issubset(self._spins):
-                key = "".join(aliases)
-                name = _spins_to_name(self._spins[alias] for alias in aliases)
-                result[key] = name
-        return result
+class Atom:
+    name: str
+    nucleus: Nucleus | None
 
-    @property
-    def xnames(self):
-        result = {}
-        for aliases in _powerset(_ALIASES):
-            if set(aliases).issubset(self._spins):
-                key = "".join(aliases)
-                name = _spins_to_xname(self._spins[alias] for alias in aliases)
-                result[key] = name
-        return result
+    def __init__(self, name: str) -> None:
+        name = name.strip().upper()
+        self.name = CORRECT_ATOM_NAME.get(name, name)
+        self.nucleus = STR_TO_NUCLEUS.get(self.name[:1])
 
-    @property
-    def groups(self):
-        return {key: spin["group"] for key, spin in self._spins.items()}
+    def match(self, other: Atom) -> bool:
+        return other.name.startswith(self.name)
 
-    @property
-    def symbols(self):
-        return {key: spin["symbol"] for key, spin in self._spins.items()}
+    def __eq__(self, other: Atom) -> bool:
+        return self.name == other.name
 
-    @property
-    def atoms(self):
-        return {key: spin["atom"] for key, spin in self._spins.items()}
+    def __lt__(self, other: Atom) -> bool:
+        return self.name < other.name
 
-    @property
-    def nuclei(self):
-        return {key: spin["nucleus"] for key, spin in self._spins.items()}
+    def __str__(self):
+        return self.name
 
-    @property
-    def numbers(self):
-        return {
-            key: int(spin["number"])
-            for key, spin in self._spins.items()
-            if spin["number"]
-        }
+    def __bool__(self) -> bool:
+        return bool(self.name)
 
-    def to_re(self):
-        return _spins_to_re(self._spins)
 
-    def part_of(self, selection):
-        selection_ = (SpinSystem(item) for item in selection)
-        return any(self & name == name for name in selection_)
+@total_ordering
+class Group:
+    name: str
+    symbol: str
+    number: int
+    suffix: str
+    NO_NUMBER: int = -100000000
 
-    def correct(self, basis):
+    def __init__(self, name: str) -> None:
+        self.symbol, self.number, self.suffix = self.parse_group(name)
+        self.symbol = AAA_TO_A.get(self.symbol, self.symbol)
+        self.name = self.get_name()
 
-        if not self:
-            return self
+    def parse_group(self, name: str) -> tuple[str, int, str]:
+        found = search("[0-9]+", name.strip().upper())
+        if found:
+            return name[: found.start()], int(found.group()), name[found.end() :]
+        return name, self.NO_NUMBER, ""
 
-        atoms = {
-            letter: atom for letter, atom in basis.atoms.items() if letter in basis.type
-        }
-        spins = {}
-        for letter, atom in atoms.items():
-            for spin in self._spins.values():
-                if spin["atom"].upper() == atom.upper() and letter in basis.type:
-                    spins[letter] = spin
-                    break
+    def get_name(self):
+        number = "" if self.number == self.NO_NUMBER else self.number
+        return f"{self.symbol}{number}{self.suffix}"
 
-        for letter, atom in atoms.items():
-            if letter in basis.type and letter not in spins:
-                spins[letter] = spins["i"].copy()
-                spins[letter]["nucleus"] = f"{atom}{spins[letter]['nucleus'][1:]}"
+    def match(self, other: Group) -> bool:
+        symbol = other.symbol == self.symbol or not self.symbol
+        number = other.number == self.number or self.number == self.NO_NUMBER
+        suffix = other.suffix == self.suffix or not self.suffix
+        return number and symbol and suffix
 
-        return SpinSystem(_spins_to_name(spins.values()))
+    def __eq__(self, other: Group) -> bool:
+        return self.name == other.name
 
-    def __and__(self, other):
-        if isinstance(other, str):
-            other = SpinSystem(other)
-        if self.name == other.name:
-            return SpinSystem(self.name)
-        names = set(self.names.values()) & set(other.names.values())
-        if names:
-            return SpinSystem("-".join(names))
-        xnames = set(self.xnames.values()) & set(other.xnames.values())
-        if xnames:
-            return SpinSystem("-".join(xnames))
-        groups = set(self.groups.values()) & set(other.groups.values())
-        if len(groups) == 1:
-            return SpinSystem(groups.pop())
-        numbers = set(self.numbers.values()) & set(other.numbers.values())
-        if len(numbers) == 1:
-            return SpinSystem(numbers.pop())
-        return SpinSystem()
+    def __lt__(self, other: Group) -> bool:
+        return self.number < other.number
 
-    def __repr__(self):
-        return str(self.name).upper()
+    def __str__(self) -> str:
+        return self.name
 
-    def __hash__(self):
+    def __bool__(self) -> bool:
+        return bool(self.name)
+
+    def __hash__(self) -> int:
         return hash(self.name)
 
-    def __eq__(self, other):
-        if isinstance(other, str):
-            other = SpinSystem(other)
+
+@total_ordering
+class Spin:
+    name: str
+    group: Group
+    atom: Atom
+
+    def __init__(self, name: str, group_for_completion: Group | None = None) -> None:
+        self.group, self.atom = self.split_group_atom(name.strip().upper())
+        if not self.group and group_for_completion:
+            self.group = group_for_completion
+        self.name = self.get_name()
+
+    @staticmethod
+    def split_group_atom(name: str) -> tuple[Group, Atom]:
+        if name == "?":
+            return Group(""), Atom("")
+        found_digit = search("[0-9]", name)
+        first_digit = found_digit.start() if found_digit else 0
+        found_atom = search("[HCNQM]", name[first_digit:])
+        if not found_atom:
+            if name in STANDARD_ATOM_NAMES:
+                return Group(""), Atom(name)
+            else:
+                return Group(name), Atom("")
+        atom_index = first_digit + found_atom.start()
+        return Group(name[:atom_index]), Atom(name[atom_index:])
+
+    def get_name(self) -> str:
+        return f"{self.group}{self.atom}"
+
+    def match(self, other: Spin):
+        return self.group.match(other.group) and self.atom.match(other.atom)
+
+    def __eq__(self, other: Spin) -> bool:
+        return self.name == other.name
+
+    def __lt__(self, other: Spin) -> bool:
+        return (self.group, self.atom) < (other.group, other.atom)
+
+    def __str__(self) -> str:
+        return self.name
+
+    def __bool__(self) -> bool:
+        return bool(self.name)
+
+    def __hash__(self) -> int:
+        return hash(self.name)
+
+
+@total_ordering
+class SpinSystem:
+    name: str
+    spins: dict[str, Spin]
+
+    def __init__(self, name: str | int | None):
+        if name is None:
+            name = ""
+        if isinstance(name, int):
+            name = str(name)
+        self.spins = self.parse_spin_system(name.strip().upper())
+        self.name = self.spins2name(self.spins.values())
+        self.names = self.spins2names()
+        self.groups = {alias: spin.group for alias, spin in self.spins.items()}
+        self.symbols = {alias: group.symbol for alias, group in self.groups.items()}
+        self.numbers = {alias: group.number for alias, group in self.groups.items()}
+        self.atoms = {alias: spin.atom for alias, spin in self.spins.items()}
+        self.nuclei = {alias: atom.nucleus for alias, atom in self.atoms.items()}
+
+    @staticmethod
+    def parse_spin_system(name: str) -> dict[str, Spin]:
+        if not name:
+            return {}
+        split = name.split("-")
+        spins = {}
+        last_group = None
+        for short_name, name_spin in zip(ALIASES, split):
+            spin = Spin(name_spin, last_group)
+            spins[short_name] = spin
+            last_group = spin.group
+        return spins
+
+    @staticmethod
+    def spins2name(spins: Iterable[Spin]) -> str:
+        spin_names = []
+        last_group: Group = Group("")
+        for spin in spins:
+            spin_name = str(spin.atom) if spin.group == last_group else str(spin)
+            spin_names.append(spin_name)
+            last_group = spin.group
+        return "-".join(spin_names)
+
+    def spins2names(self):
+        result = {}
+        for alias_set in powerset(ALIASES):
+            if set(alias_set).issubset(self.spins):
+                key = "".join(alias_set)
+                name = self.spins2name(self.spins[alias] for alias in alias_set)
+                result[key] = name
+        return result
+
+    def match(self, other: SpinSystem) -> bool:
+        return all(
+            spin.match(other_spin)
+            for spin, other_spin in zip(self.spins.values(), other.spins.values())
+        )
+
+    def part_of(self, selection: list[SpinSystem]) -> bool:
+        return any(item.match(self) for item in selection)
+
+    def complete(self, basis: Basis) -> SpinSystem:
+        spins = []
+        last_spin = Spin("")
+        for letter, atom in basis.atoms.items():
+            spin = self.spins.get(letter, last_spin)
+            if not spin.atom.name.startswith(atom.upper()):
+                spin.atom = Atom(f"{atom}{spin.atom.name[1:]}")
+            last_spin = spin
+            spins.append(spin)
+        return SpinSystem(self.spins2name(spins))
+
+    def __and__(self, other: SpinSystem) -> SpinSystem:
+        if self == other:
+            return SpinSystem(self.name)
+        spins = set(self.spins.values()) & set(other.spins.values())
+        if spins:
+            return SpinSystem("-".join(spin.name for spin in spins))
+        groups = set(self.groups.values()) & set(other.groups.values())
+        if len(groups) == 1:
+            return SpinSystem("-".join(group.name for group in groups))
+        return SpinSystem("")
+
+    def __eq__(self, other: SpinSystem) -> bool:
         if isinstance(other, SpinSystem):
             return self.name == other.name
         return NotImplemented
 
-    def __lt__(self, other):
-        if isinstance(other, str):
-            other = SpinSystem(other)
-        self_tuple = tuple(
-            zip(self.atoms.values(), self.numbers.values(), self.nuclei.values())
-        )
-        other_tuple = tuple(
-            zip(other.atoms.values(), other.numbers.values(), other.nuclei.values())
-        )
-        return self_tuple < other_tuple
+    def __lt__(self, other: SpinSystem) -> bool:
+        return tuple(self.spins.values()) < tuple(other.spins.values())
 
-    def __len__(self):
-        return len(self._spins)
+    def __str__(self):
+        return self.name
 
-    def __bool__(self):
-        return bool(self._spins)
+    def __bool__(self) -> bool:
+        return bool(self.name)
+
+    def __hash__(self) -> int:
+        return hash(self.name)
 
 
-def _name_to_spins(name):
-    """Get spins from an assignment."""
-    spins = []
-    last_spin = {}
-    re_name = RE_NAME if re.match(RE_NAME, name) else RE_NAME_GROUP
-    for match in re.finditer(re_name, name):
-        spin = {k: "" for k in ("symbol", "number", "suffix", "nucleus", "atom")}
-        spin.update(match.groupdict())
-        if not any(spin.values()):
-            continue
-        if spin["symbol"] is not None and spin["symbol"].upper() in _AA_CODE:
-            spin["symbol"] = _AA_CODE[spin["symbol"]]
-        if spin["nucleus"] is not None and spin["nucleus"].upper() == "HN":
-            spin["nucleus"] = "H"
-        for key, value in spin.items():
-            if value is None:
-                spin[key] = last_spin.get(key, "")
-        spin["group"] = "{symbol}{number}{suffix}".format_map(spin)
-        spin["name"] = "{group}{nucleus}".format_map(spin)
-        spins.append(spin)
-        last_spin = spin
-    return dict(zip(_ALIASES, spins))
-
-
-def _spins_to_name(spins):
-    """Get assignment from resonances."""
-    parts = []
-    last_spin = {}
-    for spin in spins:
-        if spin["group"] != last_spin.get("group", ""):
-            parts.append("{group}{nucleus}".format_map(spin))
-        else:
-            parts.append("{nucleus}".format_map(spin))
-        last_spin = spin
-    return "-".join(parts)
-
-
-def _spins_to_xname(spins):
-    """Get assignment from resonances."""
-    parts = []
-    last_spin = {}
-    for spin in spins:
-        nucleus = spin["nucleus"]
-        xnucleus = f"X{nucleus[1:]}" if nucleus[1:] else nucleus
-        if spin["group"] != last_spin.get("group", ""):
-            parts.append(f"{spin['group']}{xnucleus}")
-        else:
-            parts.append(f"{xnucleus}")
-        last_spin = spin
-    return "-".join(parts)
-
-
-def _spins_to_re(spins):
-    if _is_empty(spins):
-        return re.compile("")
-    last_spin = {}
-    re_expr = ""
-    for index, spin in enumerate(spins.values()):
-        if index > 0:
-            re_expr += "(-|__minus__)"
-        if spin["group"] == last_spin.get("group"):
-            re_expr += f"(?P=group{index-1})?"
-        else:
-            re_expr += f"(?P<group{index}>"
-            re_expr += _to_re(spin["symbol"], r"(\D?)")
-            re_expr += _to_re(spin["number"], r"([0-9]+)")
-            re_expr += _to_re(spin["suffix"], r"([abd-gi-mopr-z]*)")
-            re_expr += ")"
-        if spin["nucleus"] == spin["atom"]:
-            re_expr += _to_re(spin["atom"], r"[hncq]")
-            re_expr += r"[a-z0-9]*"
-        else:
-            re_expr += _to_re(spin["nucleus"], r"[hncq][a-z0-9]*")
-        last_spin = spin
-    return re.compile(re_expr, re.IGNORECASE)
-
-
-def _is_empty(spins):
-    values = {value for spin in spins.values() for value in spin.values()}
-    return len(values) == 1 and values.pop() == ""
-
-
-def _to_re(value, default):
-    if value in ("", "*"):
-        return default
-    return value
-
-
-def _powerset(iterable):
-    """powerset([1,2,3]) --> (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"""
+def powerset(iterable):
+    "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
     s = list(iterable)
-    return it.chain.from_iterable(it.combinations(s, r + 1) for r in range(len(s)))
+    return chain.from_iterable(combinations(s, r) for r in range(len(s) + 1))
+
+
+## Testing:
+# print(SpinSystem("G23N-G23HN"), SpinSystem("GLY023N-HN"))
+# print(SpinSystem("G23N-G23HN") == SpinSystem("GLY023N-HN"))
+# print(SpinSystem("G23N-G23HN").match(SpinSystem("GLY023N-HN")))
+# print(SpinSystem("G23N-G23HN") & SpinSystem("G23C"))
+# print(SpinSystem(""))
+# group = Group("L99")
+# spin = Spin("HD1", group)
+# print(f"spin = {spin}, spin.group = {spin.group}, spin.atom = {spin.atom}")

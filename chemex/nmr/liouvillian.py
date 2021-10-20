@@ -305,7 +305,11 @@ class Basis:
 
     @property
     def atoms(self):
-        return _ATOMS.get(self.spin_system)
+        return {
+            letter: atom
+            for letter, atom in _ATOMS.get(self.spin_system, {}).items()
+            if letter in self.type
+        }
 
     def __len__(self):
         return len(self.components)
@@ -324,10 +328,9 @@ class LiouvillianIS:
         self.h_frq = h_frq
         self.size = len(self.basis) * len(self.states)
         self.vectors = self._build_component_vectors()
-        self.matrices = {
-            **self._build_transition_matrices(basis),
-            **self._build_exchange_matrices(),
-        }
+        self.matrices = (
+            self._build_transition_matrices(basis) | self._build_exchange_matrices()
+        )
         self._matrices_ref = self.matrices.copy()
         scale = -2.0 * np.pi * h_frq
         self.ppm_i = scale * cnc.SIGNED_XI_RATIO.get(basis.atoms.get("i"), 1.0)

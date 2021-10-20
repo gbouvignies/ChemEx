@@ -9,6 +9,7 @@ import scipy.interpolate as si
 import chemex.containers.experiment as cce
 import chemex.nmr.spin_system as cns
 import chemex.parameters.kinetics as cpk
+from chemex.nmr.spin_system import Nucleus
 
 
 def pick_cest(args):
@@ -150,12 +151,12 @@ class Buttons:
 
     def _show_labels(self):
         self.axis.set_title(str(self.name).upper())
-        atom = cns.SpinSystem(self.name).atoms["i"]
-        if atom == "N":
+        atom = cns.SpinSystem(str(self.name)).atoms["i"]
+        if atom.nucleus == Nucleus.N15:
             self.axis.set_xlabel(r"$^{15}$N (ppm)")
-        elif atom == "C":
+        elif atom.nucleus == Nucleus.C13:
             self.axis.set_xlabel(r"$^{13}$C (ppm)")
-        elif atom == "H":
+        elif atom.nucleus == Nucleus.H1:
             self.axis.set_xlabel(r"$^{1}$H (ppm)")
         else:
             self.axis.set_xlabel(r"Chemical shift (ppm)")

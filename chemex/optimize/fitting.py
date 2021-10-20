@@ -1,11 +1,14 @@
 """The fitting module contains the code for fitting the experimental data."""
 import sys
+from typing import Any
+from typing import Union
 
 import lmfit as lm
 import tqdm
 
 import chemex.optimize.methods
 from chemex import helper as ch
+from chemex.nmr.spin_system import SpinSystem
 from chemex.optimize import gridding as cog
 from chemex.optimize import grouping
 from chemex.optimize import helper as coh
@@ -42,7 +45,7 @@ class Fit:
                 ch.header2(f"{section.upper()}")
 
             # Select a subset of profiles based on "INCLUDE" and "EXCLUDE"
-            selection = {key: settings.get(key) for key in ("include", "exclude")}
+            selection = _get_selection(settings)
             self._experiments.select(selection)
 
             if not self._experiments:
@@ -229,3 +232,16 @@ def minimize(experiments, params, fitmethod=None, verbose=True):
     experiments.verbose = False
 
     return result.params
+
+
+def _get_selection(
+    settings: dict[str, Any]
+) -> dict[str, Union[list[SpinSystem], str, None]]:
+    selection = {}
+    for option in ("include", "exclude"):
+        values = settings.get(option)
+        if values is None or isinstance(values, str):
+            selection[option] = values
+            continue
+        selection[option] = tuple(SpinSystem(value) for value in values)
+    return selection

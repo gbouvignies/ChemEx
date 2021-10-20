@@ -88,8 +88,8 @@ class PulseSeq:
         if "13C" in config["conditions"].label:
             spin_system = config["spin_system"]
             symbol = spin_system.symbols["i"]
-            nucleus = spin_system.nuclei["i"]
-            self.prop.jeff_i = cnc.get_multiplet(symbol, nucleus)
+            atom = spin_system.atoms["i"]
+            self.prop.jeff_i = cnc.get_multiplet(symbol, atom.name)
         self.observed_state = settings["observed_state"]
         self.prop.detection = f"[iz_{self.observed_state}]"
         self.dephased = settings["b1_inh_scale"] == np.inf

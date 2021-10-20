@@ -1,27 +1,30 @@
-import dataclasses as dc
+from __future__ import annotations
+
 import sys
-from typing import List
-from typing import Optional
+from dataclasses import asdict
+from dataclasses import dataclass
+from dataclasses import field
+from dataclasses import replace
 
 import jsonschema as js
 
 import chemex.helper as ch
 
 
-@dc.dataclass(frozen=True, eq=True)
+@dataclass(frozen=True, eq=True)
 class Conditions:
-    h_larmor_frq: Optional[float] = None
-    temperature: Optional[float] = None
-    p_total: Optional[float] = None
-    l_total: Optional[float] = None
-    d2o: Optional[float] = None
-    label: List[str] = dc.field(default_factory=list)
+    h_larmor_frq: float | None = None
+    temperature: float | None = None
+    p_total: float | None = None
+    l_total: float | None = None
+    d2o: float | None = None
+    label: list[str] = field(default_factory=list)
 
     def __post_init__(self):
-        for field in ("h_larmor_frq", "temperature", "p_total", "l_total", "d2o"):
-            value = getattr(self, field)
+        for name in ("h_larmor_frq", "temperature", "p_total", "l_total", "d2o"):
+            value = getattr(self, name)
             if value is not None:
-                super().__setattr__(field, float(value))
+                super().__setattr__(name, float(value))
         super().__setattr__("label", tuple(self.label))
 
     @classmethod
@@ -35,17 +38,21 @@ class Conditions:
             dict_.get("label", []),
         )
 
-    def rounded(self):
+    def rounded(self) -> Conditions:
         h_larmor_frq = round(self.h_larmor_frq, 1) if self.h_larmor_frq else None
         temperature = round(self.temperature, 1) if self.temperature else None
-        return dc.replace(self, h_larmor_frq=h_larmor_frq, temperature=temperature)
+        return replace(self, h_larmor_frq=h_larmor_frq, temperature=temperature)
 
-    def __and__(self, other):
-        both = [
-            value1 if value1 == value2 else None
-            for value1, value2 in zip(dc.astuple(self), dc.astuple(other))
-        ]
-        return Conditions(*both)
+    def match(self, other: Conditions) -> bool:
+        return self == self & other
+
+    def __and__(self, other: Conditions) -> Conditions:
+        self_dict = asdict(self)
+        other_dict = asdict(other)
+        intersection = {
+            key: value for key, value in self_dict.items() if other_dict[key] == value
+        }
+        return Conditions.from_dict(intersection)
 
 
 def parse_conditions(config):

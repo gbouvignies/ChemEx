@@ -1,9 +1,13 @@
-import dataclasses as dc
-import functools as ft
-import re
+from __future__ import annotations
 
-import chemex.containers.conditions as ccc
-import chemex.nmr.spin_system as cns
+import dataclasses as dc
+import re
+from functools import cached_property
+from functools import total_ordering
+from typing import Any
+
+from chemex.containers.conditions import Conditions
+from chemex.nmr.spin_system import SpinSystem
 
 
 _DECORATORS = {
@@ -34,34 +38,39 @@ _RE_SECTION = re.compile(
 )
 
 
-@ft.total_ordering
+@total_ordering
 class ParamName:
-    def __init__(self, name=None, spin_system=None, conditions=None):
+    name: str
+    spin_system: SpinSystem
+    conditions: Conditions
+
+    def __init__(
+        self,
+        name: str | None = None,
+        spin_system: SpinSystem | None = None,
+        conditions: Conditions | None = None,
+    ):
         if name is None:
             name = ""
-        self.name = name.lower()
-        self.spin_system = spin_system
+
+        if spin_system is None:
+            spin_system = SpinSystem("")
+
         if conditions is None:
-            conditions = ccc.Conditions()
+            conditions = Conditions()
+
+        self.name = name.strip().upper()
+        self.spin_system = spin_system
         self.conditions = conditions.rounded()
 
-    @property
-    def spin_system(self):
-        return self._spin_system
-
-    @spin_system.setter
-    def spin_system(self, value):
-        if isinstance(value, cns.SpinSystem):
-            self._spin_system = value
-        else:
-            self._spin_system = cns.SpinSystem(value)
-
     @classmethod
-    def from_dict(cls, dict_):
-        conditions = ccc.Conditions.from_dict(dict_)
-        return cls(dict_.get("name"), dict_.get("spin_system"), conditions)
+    def from_dict(cls, dict_: dict[str, Any]) -> ParamName:
+        name = dict_.get("name")
+        spin_system = SpinSystem(str(dict_.get("spin_system", "")))
+        conditions = Conditions.from_dict(dict_)
+        return cls(name, spin_system, conditions)
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "spin_system": self.spin_system,
@@ -69,12 +78,12 @@ class ParamName:
         }
 
     @classmethod
-    def from_section(cls, section=""):
+    def from_section(cls, section: str = "") -> ParamName:
         parsed = _re_to_dict(_RE_SECTION, section)
         return cls.from_dict(parsed)
 
-    @ft.cached_property
-    def full(self):
+    @cached_property
+    def full(self) -> str:
         full_name = "".join(
             _DECORATORS[name].format(value)
             for name, value in self.to_dict().items()
@@ -82,7 +91,7 @@ class ParamName:
         )
         return _expand(full_name)
 
-    def _to_section_name(self, show_spin_system=False):
+    def _to_section_name(self, show_spin_system: bool = False) -> str:
         formatters = {
             "name": "{}",
             "spin_system": "NUC->{}",
@@ -101,16 +110,16 @@ class ParamName:
         ]
         return ",".join(components).upper()
 
-    @ft.cached_property
-    def section(self):
+    @cached_property
+    def section(self) -> str:
         return self._to_section_name()
 
-    @ft.cached_property
-    def section_res(self):
+    @cached_property
+    def section_res(self) -> str:
         return self._to_section_name(show_spin_system=True)
 
-    @ft.cached_property
-    def folder(self):
+    @cached_property
+    def folder(self) -> str:
         formatters = {
             "name": "{}",
             "spin_system": "{}",
@@ -127,93 +136,60 @@ class ParamName:
         ]
         return "_".join(components).upper()
 
-    def match(self, other):
-        return self._re.match(other)
+    def match(self, other: ParamName) -> bool:
+        name_match = self.name == other.name or not self.name
+        spin_system_match = self.spin_system.match(other.spin_system)
+        conditions_match = self.conditions.match(other.conditions)
+        return name_match and spin_system_match and conditions_match
 
-    @ft.cached_property
-    def _re(self):
-        if self._spin_system is not None:
-            spin_system = self._spin_system.to_re().pattern
-        else:
-            spin_system = ""
-        pattern = _get_re_component(self.name, "name")
-        pattern += _get_re_component(spin_system, "spin_system")
-        pattern += _get_re_component(self.conditions.temperature, "temperature")
-        pattern += _get_re_component(self.conditions.h_larmor_frq, "h_larmor_frq")
-        pattern += _get_re_component(self.conditions.p_total, "p_total")
-        pattern += _get_re_component(self.conditions.l_total, "l_total")
-        pattern += _get_re_component(self.conditions.d2o, "d2o")
-        pattern = _clean_re(pattern)
-        return re.compile(pattern, re.IGNORECASE)
-
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"[{self.section_res}]"
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self._members())
 
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, ParamName):
-            return NotImplemented
+    def __eq__(self, other: ParamName) -> bool:
         return self._members() == other._members()
 
     def __lt__(self, other: object) -> bool:
         if not isinstance(other, ParamName):
             return NotImplemented
-        if not self._spin_system and other._spin_system:
+        if not self.spin_system and other.spin_system:
             return True
-        elif self._spin_system and not other._spin_system:
+        elif self.spin_system and not other.spin_system:
             return False
         return self._members() < other._members()
 
-    def __and__(self, other: object) -> "ParamName":
-        if not isinstance(other, ParamName):
-            return NotImplemented
+    def __and__(self, other: ParamName) -> ParamName:
         both = {
             "name": self.name if self.name == other.name else None,
-            "spin_system": self._spin_system & other._spin_system,
+            "spin_system": self.spin_system & other.spin_system,
             "conditions": self.conditions & other.conditions,
         }
         return ParamName(**both)
 
-    def __bool__(self):
-        return bool(str(self))
+    def __bool__(self) -> bool:
+        return bool(self.name) or bool(self.spin_system) or bool(self.conditions)
 
     def _members(self):
         temperature = h_larmor_frq = p_total = l_total = -1e16
-        if self.conditions.temperature is not None:
-            temperature = self.conditions.temperature
-        if self.conditions.h_larmor_frq is not None:
-            h_larmor_frq = self.conditions.h_larmor_frq
-        if self.conditions.p_total is not None:
-            p_total = self.conditions.p_total
+        conditions = self.conditions
+        if conditions.temperature is not None:
+            temperature = conditions.temperature
+        if conditions.h_larmor_frq is not None:
+            h_larmor_frq = conditions.h_larmor_frq
+        if conditions.p_total is not None:
+            p_total = conditions.p_total
         if self.conditions.l_total is not None:
-            l_total = self.conditions.l_total
+            l_total = conditions.l_total
         return (
             self.name,
             temperature,
             h_larmor_frq,
             p_total,
             l_total,
-            self._spin_system,
+            self.spin_system,
         )
-
-
-def _get_re_component(value, kind):
-    if not value:
-        return "([a-z_][a-z0-9_]*)?"
-    if kind != "spin_system":
-        value = _expand(value)
-    return _DECORATORS[kind].format(value)
-
-
-def _clean_re(value):
-    pattern1 = "([a-z_][a-z0-9_]*)?"
-    pattern2 = f"({re.escape(pattern1)})+$"
-    pattern3 = f"({re.escape(pattern1)})+"
-    value_ = re.sub(pattern2, "", value)
-    value_ = re.sub(pattern3, pattern1, value_)
-    return value_
 
 
 def _expand(string):
@@ -257,7 +233,7 @@ def get_pnames(settings, conditions=None, spin_system=None):
     for name, setting in settings.items():
         attributes = setting["attributes"]
         cdict_subset = {key: cdict[key] for key in cdict if key in attributes}
-        conditions_ = ccc.Conditions.from_dict(cdict_subset)
+        conditions_ = Conditions.from_dict(cdict_subset)
         name_ = _squeeze_name(name, setting.get("ext", ""))
         spin_system_ = None
         if "spin_system" in attributes:
@@ -273,11 +249,12 @@ def _squeeze_name(name, ext=""):
     return name
 
 
-def _name_to_spin_system(name, spin_system):
-    if spin_system is None:
-        return None
+def _name_to_spin_system(name: str, spin_system: SpinSystem) -> SpinSystem:
+    """TODO: Refactor this"""
+    if not spin_system:
+        return spin_system
     parsed = _re_to_dict(_RE_NAME, name)
     spin = parsed.get("spin")
     if spin is None:
-        return spin_system.names["i"]
-    return spin_system.names.get(spin)
+        return SpinSystem(spin_system.names.get("i", ""))
+    return SpinSystem(spin_system.names.get(spin, ""))
