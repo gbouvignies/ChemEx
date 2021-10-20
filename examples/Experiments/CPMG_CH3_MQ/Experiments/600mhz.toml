@@ -4,21 +4,21 @@ time_t2       = 18.0e-3
 small_protein = true
 
 [conditions]
-h_larmor_frq  = 600.25
+h_larmor_frq = 600.25
 # p_total     = 150e-6
 # sample = "NCP H2B double mutant (H3A98H/H4Y98H), pH 6.0"
 # temperature = 45.0
 
 [data]
-path = "../Data/600MHz/"
+path  = "../Data/600MHz/"
 error = "duplicates"
-profiles = [
-    ["V45CG2-HG2", "V45CG2-QG2.out"],
-    ["I58CD1-HD1", "I58CD1-QD1.out"],
-    ["I66CD1-HD1", "I66CD1-QD1.out"],
-    ["L77CD2-HD2", "L77CD2-QD2.out"],
-    ["L97CD2-HD2", "L97CD2-QD2.out"],
-    ["L98CD1-HD1", "L98CD1-QD1.out"],
-    ["L98CD2-HD2", "L98CD2-QD2.out"],
-    ["L99CD1-HD1", "L99CD1-QD1.out"],
-]
+
+  [data.profiles]
+  V45CG2-HG2 = "V45CG2-QG2.out"
+  I58CD1-HD1 = "I58CD1-QD1.out"
+  I66CD1-HD1 = "I66CD1-QD1.out"
+  L77CD2-HD2 = "L77CD2-QD2.out"
+  L97CD2-HD2 = "L97CD2-QD2.out"
+  L98CD1-HD1 = "L98CD1-QD1.out"
+  L98CD2-HD2 = "L98CD2-QD2.out"
+  L99CD1-HD1 = "L99CD1-QD1.out"

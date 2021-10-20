@@ -1,11 +1,11 @@
 [experiment]
-name         = "dcest_15n"
-time_t1      = 1.0
-carrier      = 118.000
-pw90         = 96.0e-6
-sw           = 150.0
-b1_frq       = 5.096
-b1_inh_res   = 5
+name       = "dcest_15n"
+time_t1    = 1.0
+carrier    = 118.000
+pw90       = 96.0e-6
+sw         = 150.0
+b1_frq     = 5.096
+b1_inh_res = 5
 
 [conditions]
 h_larmor_frq = 800.2
@@ -15,164 +15,164 @@ d2o          = 0.1
 # temperature = 30.0
 
 [data]
-path = "../Data/5Hz/"
-error = "scatter"
+path           = "../Data/5Hz/"
+error          = "scatter"
 filter_offsets = [[0.0, 5.0]]
-profiles = [
-    ["1N", "1N-HN.out"],
-    ["2N", "2N-HN.out"],
-    ["3N", "3N-HN.out"],
-    ["4N", "4N-HN.out"],
-    ["5N", "5N-HN.out"],
-    ["6N", "6N-HN.out"],
-    ["7N", "7N-HN.out"],
-    ["8N", "8N-HN.out"],
-    ["9N", "9N-HN.out"],
-    ["10N", "10N-HN.out"],
-    ["11N", "11N-HN.out"],
-    ["12N", "12N-HN.out"],
-    ["13N", "13N-HN.out"],
-    ["14N", "14N-HN.out"],
-    ["15N", "15N-HN.out"],
-    ["17N", "17N-HN.out"],
-#   ["18N", "18N-HN.out"],
-    ["20N", "20N-HN.out"],
-    ["21N", "21N-HN.out"],
-    ["22N", "22N-HN.out"],
-    ["23N", "23N-HN.out"],
-    ["24N", "24N-HN.out"],
-    ["25N", "25N-HN.out"],
-    ["26N", "26N-HN.out"],
-    ["27N", "27N-HN.out"],
-    ["28N", "28N-HN.out"],
-    ["29N", "29N-HN.out"],
-    ["30N", "30N-HN.out"],
-    ["31N", "31N-HN.out"],
-    ["33N", "33N-HN.out"],
-    ["34N", "34N-HN.out"],
-    ["35N", "35N-HN.out"],
-    ["36N", "36N-HN.out"],
-    ["37N", "37N-HN.out"],
-    ["38N", "38N-HN.out"],
-    ["39N", "39N-HN.out"],
-    ["40N", "40N-HN.out"],
-    ["41N", "41N-HN.out"],
-    ["42N", "42N-HN.out"],
-    ["43N", "43N-HN.out"],
-    ["44N", "44N-HN.out"],
-    ["45N", "45N-HN.out"],
-    ["46N", "46N-HN.out"],
-    ["47N", "47N-HN.out"],
-    ["48N", "48N-HN.out"],
-    ["49N", "49N-HN.out"],
-    ["50N", "50N-HN.out"],
-    ["51N", "51N-HN.out"],
-    ["52N", "52N-HN.out"],
-    ["53N", "53N-HN.out"],
-    ["54N", "54N-HN.out"],
-    ["55N", "55N-HN.out"],
-    ["56N", "56N-HN.out"],
-    ["57N", "57N-HN.out"],
-    ["58N", "58N-HN.out"],
-    ["59N", "59N-HN.out"],
-    ["60N", "60N-HN.out"],
-    ["61N", "61N-HN.out"],
-    ["62N", "62N-HN.out"],
-    ["63N", "63N-HN.out"],
-    ["64N", "64N-HN.out"],
-    ["65N", "65N-HN.out"],
-    ["66N", "66N-HN.out"],
-    ["67N", "67N-HN.out"],
-    ["68N", "68N-HN.out"],
-    ["69N", "69N-HN.out"],
-    ["70N", "70N-HN.out"],
-    ["71N", "71N-HN.out"],
-    ["72N", "72N-HN.out"],
-    ["73N", "73N-HN.out"],
-    ["74N", "74N-HN.out"],
-    ["75N", "75N-HN.out"],
-    ["76N", "76N-HN.out"],
-    ["77N", "77N-HN.out"],
-    ["78N", "78N-HN.out"],
-    ["79N", "79N-HN.out"],
-    ["80N", "80N-HN.out"],
-    ["81N", "81N-HN.out"],
-    ["82N", "82N-HN.out"],
-    ["83N", "83N-HN.out"],
-    ["84N", "84N-HN.out"],
-    ["85N", "85N-HN.out"],
-    ["86N", "86N-HN.out"],
-    ["87N", "87N-HN.out"],
-    ["88N", "88N-HN.out"],
-    ["89N", "89N-HN.out"],
-    ["90N", "90N-HN.out"],
-    ["91N", "91N-HN.out"],
-    ["92N", "92N-HN.out"],
-    ["93N", "93N-HN.out"],
-    ["94N", "94N-HN.out"],
-    ["95N", "95N-HN.out"],
-    ["96N", "96N-HN.out"],
-    ["97N", "97N-HN.out"],
-    ["98N", "98N-HN.out"],
-    ["99N", "99N-HN.out"],
-    ["100N", "100N-HN.out"],
-    ["101N", "101N-HN.out"],
-    ["102N", "102N-HN.out"],
-    ["103N", "103N-HN.out"],
-    ["104N", "104N-HN.out"],
-    ["105N", "105N-HN.out"],
-    ["106N", "106N-HN.out"],
-    ["107N", "107N-HN.out"],
-    ["108N", "108N-HN.out"],
-    ["109N", "109N-HN.out"],
-    ["110N", "110N-HN.out"],
-    ["111N", "111N-HN.out"],
-    ["112N", "112N-HN.out"],
-    ["113N", "113N-HN.out"],
-    ["114N", "114N-HN.out"],
-#   ["115N", "115N-HN.out"],
-    ["116N", "116N-HN.out"],
-    ["117N", "117N-HN.out"],
-    ["118N", "118N-HN.out"],
-    ["119N", "119N-HN.out"],
-    ["120N", "120N-HN.out"],
-    ["121N", "121N-HN.out"],
-    ["122N", "122N-HN.out"],
-    ["123N", "123N-HN.out"],
-    ["124N", "124N-HN.out"],
-    ["125N", "125N-HN.out"],
-    ["126N", "126N-HN.out"],
-    ["127N", "127N-HN.out"],
-    ["128N", "128N-HN.out"],
-    ["129N", "129N-HN.out"],
-    ["130N", "130N-HN.out"],
-    ["131N", "131N-HN.out"],
-    ["132N", "132N-HN.out"],
-    ["133N", "133N-HN.out"],
-    ["134N", "134N-HN.out"],
-    ["135N", "135N-HN.out"],
-    ["136N", "136N-HN.out"],
-    ["137N", "137N-HN.out"],
-    ["138N", "138N-HN.out"],
-    ["139N", "139N-HN.out"],
-    ["140N", "140N-HN.out"],
-    ["141N", "141N-HN.out"],
-    ["142N", "142N-HN.out"],
-    ["143N", "143N-HN.out"],
-    ["144N", "144N-HN.out"],
-    ["145N", "145N-HN.out"],
-    ["146N", "146N-HN.out"],
-    ["147N", "147N-HN.out"],
-    ["148N", "148N-HN.out"],
-    ["149N", "149N-HN.out"],
-    ["150N", "150N-HN.out"],
-    ["151N", "151N-HN.out"],
-    ["152N", "152N-HN.out"],
-    ["153N", "153N-HN.out"],
-    ["154N", "154N-HN.out"],
-    ["155N", "155N-HN.out"],
-    ["156N", "156N-HN.out"],
-    ["157N", "157N-HN.out"],
-    ["158N", "158N-HN.out"],
-    ["159N", "159N-HN.out"],
-]
+
+    [data.profiles]
+    1N  = "1N-HN.out"
+    2N  = "2N-HN.out"
+    3N  = "3N-HN.out"
+    4N  = "4N-HN.out"
+    5N  = "5N-HN.out"
+    6N  = "6N-HN.out"
+    7N  = "7N-HN.out"
+    8N  = "8N-HN.out"
+    9N  = "9N-HN.out"
+    10N = "10N-HN.out"
+    11N = "11N-HN.out"
+    12N = "12N-HN.out"
+    13N = "13N-HN.out"
+    14N = "14N-HN.out"
+    15N = "15N-HN.out"
+    17N = "17N-HN.out"
+    #  18N = "18N-HN.out"
+    20N  = "20N-HN.out"
+    21N  = "21N-HN.out"
+    22N  = "22N-HN.out"
+    23N  = "23N-HN.out"
+    24N  = "24N-HN.out"
+    25N  = "25N-HN.out"
+    26N  = "26N-HN.out"
+    27N  = "27N-HN.out"
+    28N  = "28N-HN.out"
+    29N  = "29N-HN.out"
+    30N  = "30N-HN.out"
+    31N  = "31N-HN.out"
+    33N  = "33N-HN.out"
+    34N  = "34N-HN.out"
+    35N  = "35N-HN.out"
+    36N  = "36N-HN.out"
+    37N  = "37N-HN.out"
+    38N  = "38N-HN.out"
+    39N  = "39N-HN.out"
+    40N  = "40N-HN.out"
+    41N  = "41N-HN.out"
+    42N  = "42N-HN.out"
+    43N  = "43N-HN.out"
+    44N  = "44N-HN.out"
+    45N  = "45N-HN.out"
+    46N  = "46N-HN.out"
+    47N  = "47N-HN.out"
+    48N  = "48N-HN.out"
+    49N  = "49N-HN.out"
+    50N  = "50N-HN.out"
+    51N  = "51N-HN.out"
+    52N  = "52N-HN.out"
+    53N  = "53N-HN.out"
+    54N  = "54N-HN.out"
+    55N  = "55N-HN.out"
+    56N  = "56N-HN.out"
+    57N  = "57N-HN.out"
+    58N  = "58N-HN.out"
+    59N  = "59N-HN.out"
+    60N  = "60N-HN.out"
+    61N  = "61N-HN.out"
+    62N  = "62N-HN.out"
+    63N  = "63N-HN.out"
+    64N  = "64N-HN.out"
+    65N  = "65N-HN.out"
+    66N  = "66N-HN.out"
+    67N  = "67N-HN.out"
+    68N  = "68N-HN.out"
+    69N  = "69N-HN.out"
+    70N  = "70N-HN.out"
+    71N  = "71N-HN.out"
+    72N  = "72N-HN.out"
+    73N  = "73N-HN.out"
+    74N  = "74N-HN.out"
+    75N  = "75N-HN.out"
+    76N  = "76N-HN.out"
+    77N  = "77N-HN.out"
+    78N  = "78N-HN.out"
+    79N  = "79N-HN.out"
+    80N  = "80N-HN.out"
+    81N  = "81N-HN.out"
+    82N  = "82N-HN.out"
+    83N  = "83N-HN.out"
+    84N  = "84N-HN.out"
+    85N  = "85N-HN.out"
+    86N  = "86N-HN.out"
+    87N  = "87N-HN.out"
+    88N  = "88N-HN.out"
+    89N  = "89N-HN.out"
+    90N  = "90N-HN.out"
+    91N  = "91N-HN.out"
+    92N  = "92N-HN.out"
+    93N  = "93N-HN.out"
+    94N  = "94N-HN.out"
+    95N  = "95N-HN.out"
+    96N  = "96N-HN.out"
+    97N  = "97N-HN.out"
+    98N  = "98N-HN.out"
+    99N  = "99N-HN.out"
+    100N = "100N-HN.out"
+    101N = "101N-HN.out"
+    102N = "102N-HN.out"
+    103N = "103N-HN.out"
+    104N = "104N-HN.out"
+    105N = "105N-HN.out"
+    106N = "106N-HN.out"
+    107N = "107N-HN.out"
+    108N = "108N-HN.out"
+    109N = "109N-HN.out"
+    110N = "110N-HN.out"
+    111N = "111N-HN.out"
+    112N = "112N-HN.out"
+    113N = "113N-HN.out"
+    114N = "114N-HN.out"
+    #  115N = "115N-HN.out"
+    116N = "116N-HN.out"
+    117N = "117N-HN.out"
+    118N = "118N-HN.out"
+    119N = "119N-HN.out"
+    120N = "120N-HN.out"
+    121N = "121N-HN.out"
+    122N = "122N-HN.out"
+    123N = "123N-HN.out"
+    124N = "124N-HN.out"
+    125N = "125N-HN.out"
+    126N = "126N-HN.out"
+    127N = "127N-HN.out"
+    128N = "128N-HN.out"
+    129N = "129N-HN.out"
+    130N = "130N-HN.out"
+    131N = "131N-HN.out"
+    132N = "132N-HN.out"
+    133N = "133N-HN.out"
+    134N = "134N-HN.out"
+    135N = "135N-HN.out"
+    136N = "136N-HN.out"
+    137N = "137N-HN.out"
+    138N = "138N-HN.out"
+    139N = "139N-HN.out"
+    140N = "140N-HN.out"
+    141N = "141N-HN.out"
+    142N = "142N-HN.out"
+    143N = "143N-HN.out"
+    144N = "144N-HN.out"
+    145N = "145N-HN.out"
+    146N = "146N-HN.out"
+    147N = "147N-HN.out"
+    148N = "148N-HN.out"
+    149N = "149N-HN.out"
+    150N = "150N-HN.out"
+    151N = "151N-HN.out"
+    152N = "152N-HN.out"
+    153N = "153N-HN.out"
+    154N = "154N-HN.out"
+    155N = "155N-HN.out"
+    156N = "156N-HN.out"
+    157N = "157N-HN.out"
+    158N = "158N-HN.out"
+    159N = "159N-HN.out"

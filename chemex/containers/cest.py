@@ -10,50 +10,6 @@ import chemex.containers.noise as ccn
 import chemex.containers.plot as ccp
 
 
-CEST_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "data": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string",
-                    "enum": ["file", "scatter"],
-                    "default": "file",
-                },
-                "filter_offsets": {
-                    "type": "array",
-                    "items": {
-                        "type": "array",
-                        "minItems": 2,
-                        "maxItems": 2,
-                        "items": {"type": "number"},
-                    },
-                    "default": [[0.0, 0.0]],
-                },
-                "filter_planes": {
-                    "type": "array",
-                    "items": {"type": "integer"},
-                    "default": [],
-                },
-                "filter_ref_planes": {"type": "boolean", "default": False},
-                "path": {"type": "string", "default": "./"},
-                "profiles": {
-                    "type": "array",
-                    "items": {
-                        "type": "array",
-                        "minItems": 2,
-                        "maxItems": 2,
-                        "items": {"type": "string"},
-                    },
-                },
-            },
-            "required": ["profiles"],
-        }
-    },
-}
-
-
 @ft.total_ordering
 class CestProfile:
     def __init__(self, name, data, pulse_seq, pnames, params, params_mf):

@@ -1,4 +1,5 @@
 import pathlib as pl
+from typing import Union
 
 import numpy as np
 
@@ -11,6 +12,10 @@ import chemex.helper as ch
 import chemex.nmr.propagator as cnp
 import chemex.nmr.spin_system as cns
 import chemex.parameters.helper as cph
+from chemex.containers.schema import CEST_SCHEMA
+from chemex.containers.schema import CPMG_SCHEMA
+from chemex.containers.schema import RELAXATION_SCHEMA
+from chemex.containers.schema import SHIFT_SCHEMA
 
 
 def load_experiment(config, pulse_seq_cls):
@@ -62,6 +67,7 @@ def _get_profile_paths(config):
     path = ch.normalize_path(config["filename"].parent, pl.Path(config["data"]["path"]))
     include = config["selection"]["include"]
     exclude = config["selection"]["exclude"]
+    config["data"]["profiles"] = _profiles_dict_to_list(config["data"]["profiles"])
     paths = {}
     for name, filename in config["data"]["profiles"]:
         spin_system = cns.SpinSystem(name)
@@ -70,6 +76,20 @@ def _get_profile_paths(config):
         if included and not excluded:
             paths[path / filename] = spin_system
     return paths
+
+
+def _profiles_dict_to_list(
+    profiles: Union[list[list[str]], dict[str, Union[str, list[str]]]]
+) -> list[list[str]]:
+    if isinstance(profiles, list):
+        return profiles
+    profile_list = []
+    for name, filenames in profiles.items():
+        if isinstance(filenames, str):
+            profile_list.append([name, filenames])
+        elif isinstance(filenames, list):
+            profile_list.extend([[name, filename] for filename in filenames])
+    return profile_list
 
 
 def _get_shifts(config):
@@ -95,36 +115,36 @@ _CONTAINERS = {
         "experiment": cce.RelaxationExperiment,
         "profile": ccr.RelaxationProfile,
         "read": _read_profiles,
-        "schema": ccr.RELAXATION_SCHEMA,
+        "schema": RELAXATION_SCHEMA,
     },
     "cest": {
         "experiment": cce.RelaxationExperiment,
         "profile": ccc.CestProfile,
         "read": _read_profiles,
-        "schema": ccc.CEST_SCHEMA,
+        "schema": CEST_SCHEMA,
     },
     "dcest": {
         "experiment": cce.RelaxationExperiment,
         "profile": ccc.CestProfile,
         "read": _read_profiles,
-        "schema": ccc.CEST_SCHEMA,
+        "schema": CEST_SCHEMA,
     },
     "coscest": {
         "experiment": cce.RelaxationExperiment,
         "profile": ccc.CestProfile,
         "read": _read_profiles,
-        "schema": ccc.CEST_SCHEMA,
+        "schema": CEST_SCHEMA,
     },
     "cpmg": {
         "experiment": cce.RelaxationExperiment,
         "profile": ccp.CpmgProfile,
         "read": _read_profiles,
-        "schema": ccp.CPMG_SCHEMA,
+        "schema": CPMG_SCHEMA,
     },
     "shift": {
         "experiment": cce.ShiftExperiment,
         "profile": ccs.ShiftProfile,
         "read": _read_shifts,
-        "schema": ccs.SHIFT_SCHEMA,
+        "schema": SHIFT_SCHEMA,
     },
 }

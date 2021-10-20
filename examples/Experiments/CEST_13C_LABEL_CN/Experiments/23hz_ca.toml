@@ -13,11 +13,11 @@ label        = ["13C"]
 # temperature = 25.0
 
 [data]
-path = "../Data/23Hz/"
-error = "scatter"
+path           = "../Data/23Hz/"
+error          = "scatter"
 filter_offsets = [[0.0, 50.0]]
-profiles = [
-    ["L18CA", "L18CA-HA.out"],
-    ["K25CA", "K25CA-HA.out"],
-    ["I28CA", "I28CA-HA.out"],
-]
+
+  [data.profiles]
+  L18CA = "L18CA-HA.out"
+  K25CA = "K25CA-HA.out"
+  I28CA = "I28CA-HA.out"

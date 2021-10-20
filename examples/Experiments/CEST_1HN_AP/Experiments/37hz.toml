@@ -13,43 +13,43 @@ label        = ["2H"]
 # temperature = 35.0
 
 [data]
-path = "../Data/37Hz/"
+path  = "../Data/37Hz/"
 error = "scatter"
-profiles = [
-    ["W6HN-N", "W6N-HN.out"],
-    ["L7HN-N", "L7N-HN.out"],
-    ["W8HN-N", "W8N-HN.out"],
-    ["E9HN-N", "E9N-HN.out"],
-    ["E10HN-N", "E10N-HN.out"],
-#   ["D11HN-N", "D11N-HN.out"],
-#   ["K12HN-N", "K12N-HN.out"],
-    ["N13HN-N", "N13N-HN.out"],
-    ["L14HN-N", "L14N-HN.out"],
-#   ["R15HN-N", "R15N-HN.out"],
-    ["S16HN-N", "S16N-HN.out"],
-#   ["G17HN-N", "G17N-HN.out"],
-    ["V18HN-N", "V18N-HN.out"],
-    ["R19HN-N", "R19N-HN.out"],
-    ["K20HN-N", "K20N-HN.out"],
-    ["Y21HN-N", "Y21N-HN.out"],
-#   ["G22HN-N", "G22N-HN.out"],
-#   ["E23HN-N", "E23N-HN.out"],
-#   ["N25HN-N", "N25N-HN.out"],
-    ["W26HN-N", "W26N-HN.out"],
-    ["K28HN-N", "K28N-HN.out"],
-#   ["I29HN-N", "I29N-HN.out"],
-#   ["L30HN-N", "L30N-HN.out"],
-    ["L31HN-N", "L31N-HN.out"],
-#   ["H32HN-N", "H32N-HN.out"],
-#   ["Y33HN-N", "Y33N-HN.out"],
-#   ["K34HN-N", "K34N-HN.out"],
-    ["F35HN-N", "F35N-HN.out"],
-#   ["N36HN-N", "N36N-HN.out"],
-#   ["N37HN-N", "N37N-HN.out"],
-#   ["R38HN-N", "R38N-HN.out"],
-    ["T39HN-N", "T39N-HN.out"],
-#   ["V41HN-N", "V41N-HN.out"],
-    ["M42HN-N", "M42N-HN.out"],
-    ["L43HN-N", "L43N-HN.out"],
-    ["K44HN-N", "K44N-HN.out"],
-]
+
+    [data.profiles]
+    W6HN-N  = "W6N-HN.out"
+    L7HN-N  = "L7N-HN.out"
+    W8HN-N  = "W8N-HN.out"
+    E9HN-N  = "E9N-HN.out"
+    E10HN-N = "E10N-HN.out"
+    #  D11HN-N = "D11N-HN.out"
+    #  K12HN-N = "K12N-HN.out"
+    N13HN-N = "N13N-HN.out"
+    L14HN-N = "L14N-HN.out"
+    #  R15HN-N = "R15N-HN.out"
+    S16HN-N = "S16N-HN.out"
+    #  G17HN-N = "G17N-HN.out"
+    V18HN-N = "V18N-HN.out"
+    R19HN-N = "R19N-HN.out"
+    K20HN-N = "K20N-HN.out"
+    Y21HN-N = "Y21N-HN.out"
+    #  G22HN-N = "G22N-HN.out"
+    #  E23HN-N = "E23N-HN.out"
+    #  N25HN-N = "N25N-HN.out"
+    W26HN-N = "W26N-HN.out"
+    K28HN-N = "K28N-HN.out"
+    #  I29HN-N = "I29N-HN.out"
+    #  L30HN-N = "L30N-HN.out"
+    L31HN-N = "L31N-HN.out"
+    #  H32HN-N = "H32N-HN.out"
+    #  Y33HN-N = "Y33N-HN.out"
+    #  K34HN-N = "K34N-HN.out"
+    F35HN-N = "F35N-HN.out"
+    #  N36HN-N = "N36N-HN.out"
+    #  N37HN-N = "N37N-HN.out"
+    #  R38HN-N = "R38N-HN.out"
+    T39HN-N = "T39N-HN.out"
+    #  V41HN-N = "V41N-HN.out"
+    M42HN-N = "M42N-HN.out"
+    L43HN-N = "L43N-HN.out"
+    K44HN-N = "K44N-HN.out"

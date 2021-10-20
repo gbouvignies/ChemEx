@@ -55,14 +55,13 @@ h_larmor_frq = 800.0
 ## [optional, default: "file"]
 # error = "file"
 
-## List of the profile names and their associated filenames.
-## The name of the spin systems should follow the Sparky-NMR
-## conventions.
-profiles = [
-    ["L3HD1-CD1", "L3CD1-QD1.out"],
-    ["L3HD2-CD2", "L3CD2-QD2.out"],
-    ["I12HD1-CD1", "I12CD1-QD1.out"],
-    ["V25HG1-CG1", "V25CG1-QG1.out"],
-    ["V25HG2-CG2", "V25CG2-QG2.out"],
-    ["M36HE-CE", "M36CE-QE.out"],
-]
+  ## List of the profile names and their associated filenames.
+  ## The name of the spin systems should follow the Sparky-NMR
+  ## conventions.
+  [data.profiles]
+  L3HD1-CD1  = "L3CD1-QD1.out"
+  L3HD2-CD2  = "L3CD2-QD2.out"
+  I12HD1-CD1 = "I12CD1-QD1.out"
+  V25HG1-CG1 = "V25CG1-QG1.out"
+  V25HG2-CG2 = "V25CG2-QG2.out"
+  M36HE-CE   = "M36CE-QE.out"

@@ -18,10 +18,10 @@ label        = ["2H"]
 path           = "../Data/700Hz/"
 error          = "file"
 filter_offsets = [[0.0, 20.0]]
-profiles       = [
-    ["G2N", "G2N-HN.out"],
-    ["H3N", "H3N-HN.out"],
-    ["K4N", "K4N-HN.out"],
-    ["S5N", "S5N-HN.out"],
-    ["L6N", "L6N-HN.out"],
-]
+
+  [data.profiles]
+  G2N = "G2N-HN.out"
+  H3N = "H3N-HN.out"
+  K4N = "K4N-HN.out"
+  S5N = "S5N-HN.out"
+  L6N = "L6N-HN.out"

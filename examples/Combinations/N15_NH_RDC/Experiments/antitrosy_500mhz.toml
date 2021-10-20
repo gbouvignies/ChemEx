@@ -1,10 +1,10 @@
 [experiment]
-name         = "cpmg_15n_tr"
-time_t2      = 30.0e-3
-carrier      = 118.559
-pw90         = 40.6625e-6
-time_equil   = 5.0e-3
-antitrosy    = true
+name       = "cpmg_15n_tr"
+time_t2    = 30.0e-3
+carrier    = 118.559
+pw90       = 40.6625e-6
+time_equil = 5.0e-3
+antitrosy  = true
 
 [conditions]
 h_larmor_frq = 500.0
@@ -14,32 +14,32 @@ label        = ["2H"]
 # temperature = 25.0
 
 [data]
-path = "../Data/AntiTROSY500MHz/"
+path  = "../Data/AntiTROSY500MHz/"
 error = "duplicates"
-profiles = [
-    ["3N-HN", "3N-HN.out"],
-    ["5N-HN", "5N-HN.out"],
-    ["8N-HN", "8N-HN.out"],
-    ["10N-HN", "10N-HN.out"],
-    ["11N-HN", "11N-HN.out"],
-    ["12N-HN", "12N-HN.out"],
-    ["13N-HN", "13N-HN.out"],
-    ["14N-HN", "14N-HN.out"],
-#   ["15N-HN", "15N-HN.out"],
-    ["16N-HN", "16N-HN.out"],
-    ["17N-HN", "17N-HN.out"],
-    ["18N-HN", "18N-HN.out"],
-    ["19N-HN", "19N-HN.out"],
-    ["29N-HN", "29N-HN.out"],
-    ["30N-HN", "30N-HN.out"],
-    ["31N-HN", "31N-HN.out"],
-#   ["32N-HN", "32N-HN.out"],
-    ["33N-HN", "33N-HN.out"],
-    ["34N-HN", "34N-HN.out"],
-    ["35N-HN", "35N-HN.out"],
-    ["36N-HN", "36N-HN.out"],
-    ["37N-HN", "37N-HN.out"],
-    ["49N-HN", "49N-HN.out"],
-    ["52N-HN", "52N-HN.out"],
-    ["53N-HN", "53N-HN.out"],
-]
+
+  [data.profiles]
+  3N-HN  = "3N-HN.out"
+  5N-HN  = "5N-HN.out"
+  8N-HN  = "8N-HN.out"
+  10N-HN = "10N-HN.out"
+  11N-HN = "11N-HN.out"
+  12N-HN = "12N-HN.out"
+  13N-HN = "13N-HN.out"
+  14N-HN = "14N-HN.out"
+  #  15N-HN = "15N-HN.out"
+  16N-HN = "16N-HN.out"
+  17N-HN = "17N-HN.out"
+  18N-HN = "18N-HN.out"
+  19N-HN = "19N-HN.out"
+  29N-HN = "29N-HN.out"
+  30N-HN = "30N-HN.out"
+  31N-HN = "31N-HN.out"
+  #  32N-HN = "32N-HN.out"
+  33N-HN = "33N-HN.out"
+  34N-HN = "34N-HN.out"
+  35N-HN = "35N-HN.out"
+  36N-HN = "36N-HN.out"
+  37N-HN = "37N-HN.out"
+  49N-HN = "49N-HN.out"
+  52N-HN = "52N-HN.out"
+  53N-HN = "53N-HN.out"

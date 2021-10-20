@@ -51,13 +51,12 @@ h_larmor_frq = 800.0
 ## [optional, default: "file"]
 # error = "file"
 
-## List of the profile names and their associated filenames.
-## The name of the spin systems should follow the Sparky-NMR
-## conventions.
-profiles = [
-    ["G2HN-N", "G2N-HN.out"],
-    ["H3HN-N", "H3N-HN.out"],
-    ["K4HN-N", "K4N-HN.out"],
-    ["S5HN-N", "S5N-HN.out"],
-    ["L6HN-N", "L6N-HN.out"],
-]
+  ## List of the profile names and their associated filenames.
+  ## The name of the spin systems should follow the Sparky-NMR
+  ## conventions.
+  [data.profiles]
+  G2HN-N = "G2N-HN.out"
+  H3HN-N = "H3N-HN.out"
+  K4HN-N = "K4N-HN.out"
+  S5HN-N = "S5N-HN.out"
+  L6HN-N = "L6N-HN.out"

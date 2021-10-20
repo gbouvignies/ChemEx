@@ -1,8 +1,8 @@
 [experiment]
-name         = "cest_15n"
-time_t1      = 0.5
-carrier      = 118.987
-b1_frq       = 26.3
+name    = "cest_15n"
+time_t1 = 0.5
+carrier = 118.987
+b1_frq  = 26.3
 
 [conditions]
 h_larmor_frq = 499.243
@@ -11,24 +11,24 @@ h_larmor_frq = 499.243
 # temperature = 1.0
 
 [data]
-path = "../Data/26Hz/"
-error = "scatter"
+path           = "../Data/26Hz/"
+error          = "scatter"
 filter_offsets = [[0.0, 26.0]]
-profiles = [
-    ["13N", "13N-HN.out"],
-    ["26N", "26N-HN.out"],
-    ["28N", "28N-HN.out"],
-    ["29N", "29N-HN.out"],
-    ["33N", "33N-HN.out"],
-    ["37N", "37N-HN.out"],
-    ["41N", "41N-HN.out"],
-    ["42N", "42N-HN.out"],
-    ["43N", "43N-HN.out"],
-    ["50N", "50N-HN.out"],
-    ["52N", "52N-HN.out"],
-    ["55N", "55N-HN.out"],
-    ["59N", "59N-HN.out"],
-    ["66N", "66N-HN.out"],
-    ["67N", "67N-HN.out"],
-    ["68N", "68N-HN.out"],
-]
+
+  [data.profiles]
+  13N = "13N-HN.out"
+  26N = "26N-HN.out"
+  28N = "28N-HN.out"
+  29N = "29N-HN.out"
+  33N = "33N-HN.out"
+  37N = "37N-HN.out"
+  41N = "41N-HN.out"
+  42N = "42N-HN.out"
+  43N = "43N-HN.out"
+  50N = "50N-HN.out"
+  52N = "52N-HN.out"
+  55N = "55N-HN.out"
+  59N = "59N-HN.out"
+  66N = "66N-HN.out"
+  67N = "67N-HN.out"
+  68N = "68N-HN.out"

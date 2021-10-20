@@ -1,11 +1,11 @@
 [experiment]
-name         = "cpmg_hn_dq_zq"
-time_t2      = 40.0e-3
-carrier_n    = 119.0
-carrier_h    = 8.22286
-pw90_n       = 45.00e-6
-pw90_h       = 11.75e-6
-dq_flg       = true
+name      = "cpmg_hn_dq_zq"
+time_t2   = 40.0e-3
+carrier_n = 119.0
+carrier_h = 8.22286
+pw90_n    = 45.00e-6
+pw90_h    = 11.75e-6
+dq_flg    = true
 
 [conditions]
 h_larmor_frq = 600.25
@@ -15,58 +15,58 @@ label        = ["2H"]
 # temperature = 25.0
 
 [data]
-path = "../Data/600MHzDQ/"
+path  = "../Data/600MHzDQ/"
 error = "duplicates"
-profiles = [
-    ["L3N-HN", "L3N-HN.out"],
-    ["F4N-HN", "F4N-HN.out"],
-    ["E5N-HN", "E5N-HN.out"],
-    ["L7N-HN", "L7N-HN.out"],
-    ["Y8N-HN", "Y8N-HN.out"],
-    ["D9N-HN", "D9N-HN.out"],
-    ["Y10N-HN", "Y10N-HN.out"],
-    ["E11N-HN", "E11N-HN.out"],
-    ["A12N-HN", "A12N-HN.out"],
-    ["R13N-HN", "R13N-HN.out"],
-    ["T14N-HN", "T14N-HN.out"],
-    ["E15N-HN", "E15N-HN.out"],
-    ["D16N-HN", "D16N-HN.out"],
-    ["D17N-HN", "D17N-HN.out"],
-    ["S19N-HN", "S19N-HN.out"],
-    ["F20N-HN", "F20N-HN.out"],
-    ["H21N-HN", "H21N-HN.out"],
-    ["K22N-HN", "K22N-HN.out"],
-    ["G23N-HN", "G23N-HN.out"],
-#   ["E24N-HN", "E24N-HN.out"],
-    ["K25N-HN", "K25N-HN.out"],
-    ["F26N-HN", "F26N-HN.out"],
-    ["Q27N-HN", "Q27N-HN.out"],
-    ["I28N-HN", "I28N-HN.out"],
-    ["L29N-HN", "L29N-HN.out"],
-    ["N30N-HN", "N30N-HN.out"],
-    ["S32N-HN", "S32N-HN.out"],
-    ["E33N-HN", "E33N-HN.out"],
-    ["G34N-HN", "G34N-HN.out"],
-    ["D35N-HN", "D35N-HN.out"],
-    ["W36N-HN", "W36N-HN.out"],
-    ["E38N-HN", "E38N-HN.out"],
-    ["A39N-HN", "A39N-HN.out"],
-    ["R40N-HN", "R40N-HN.out"],
-    ["S41N-HN", "S41N-HN.out"],
-    ["L42N-HN", "L42N-HN.out"],
-    ["T43N-HN", "T43N-HN.out"],
-    ["T44N-HN", "T44N-HN.out"],
-    ["G45N-HN", "G45N-HN.out"],
-    ["E46N-HN", "E46N-HN.out"],
-    ["T47N-HN", "T47N-HN.out"],
-    ["A48N-HN", "A48N-HN.out"],
-    ["Y49N-HN", "Y49N-HN.out"],
-    ["I50N-HN", "I50N-HN.out"],
-    ["S52N-HN", "S52N-HN.out"],
-#   ["N53N-HN", "N53N-HN.out"],
-    ["Y54N-HN", "Y54N-HN.out"],
-    ["V55N-HN", "V55N-HN.out"],
-    ["A56N-HN", "A56N-HN.out"],
-#   ["D59N-HN", "D59N-HN.out"],
-    ["R60N-HN", "R60N-HN.out"],
-]
+
+    [data.profiles]
+    L3N-HN  = "L3N-HN.out"
+    F4N-HN  = "F4N-HN.out"
+    E5N-HN  = "E5N-HN.out"
+    L7N-HN  = "L7N-HN.out"
+    Y8N-HN  = "Y8N-HN.out"
+    D9N-HN  = "D9N-HN.out"
+    Y10N-HN = "Y10N-HN.out"
+    E11N-HN = "E11N-HN.out"
+    A12N-HN = "A12N-HN.out"
+    R13N-HN = "R13N-HN.out"
+    T14N-HN = "T14N-HN.out"
+    E15N-HN = "E15N-HN.out"
+    D16N-HN = "D16N-HN.out"
+    D17N-HN = "D17N-HN.out"
+    S19N-HN = "S19N-HN.out"
+    F20N-HN = "F20N-HN.out"
+    H21N-HN = "H21N-HN.out"
+    K22N-HN = "K22N-HN.out"
+    G23N-HN = "G23N-HN.out"
+    #  E24N-HN = "E24N-HN.out"
+    K25N-HN = "K25N-HN.out"
+    F26N-HN = "F26N-HN.out"
+    Q27N-HN = "Q27N-HN.out"
+    I28N-HN = "I28N-HN.out"
+    L29N-HN = "L29N-HN.out"
+    N30N-HN = "N30N-HN.out"
+    S32N-HN = "S32N-HN.out"
+    E33N-HN = "E33N-HN.out"
+    G34N-HN = "G34N-HN.out"
+    D35N-HN = "D35N-HN.out"
+    W36N-HN = "W36N-HN.out"
+    E38N-HN = "E38N-HN.out"
+    A39N-HN = "A39N-HN.out"
+    R40N-HN = "R40N-HN.out"
+    S41N-HN = "S41N-HN.out"
+    L42N-HN = "L42N-HN.out"
+    T43N-HN = "T43N-HN.out"
+    T44N-HN = "T44N-HN.out"
+    G45N-HN = "G45N-HN.out"
+    E46N-HN = "E46N-HN.out"
+    T47N-HN = "T47N-HN.out"
+    A48N-HN = "A48N-HN.out"
+    Y49N-HN = "Y49N-HN.out"
+    I50N-HN = "I50N-HN.out"
+    S52N-HN = "S52N-HN.out"
+    #  N53N-HN = "N53N-HN.out"
+    Y54N-HN = "Y54N-HN.out"
+    V55N-HN = "V55N-HN.out"
+    A56N-HN = "A56N-HN.out"
+    #  D59N-HN = "D59N-HN.out"
+    R60N-HN = "R60N-HN.out"

@@ -9,42 +9,11 @@ import chemex.containers.noise as ccn
 import chemex.containers.plot as ccp
 
 
-CPMG_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "data": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string",
-                    "enum": ["file", "duplicates"],
-                    "default": "file",
-                },
-                "filter_planes": {
-                    "type": "array",
-                    "items": {"type": "integer"},
-                    "default": [],
-                },
-                "path": {"type": "string", "default": "./"},
-                "profiles": {
-                    "type": "array",
-                    "items": {
-                        "type": "array",
-                        "minItems": 2,
-                        "maxItems": 2,
-                        "items": {"type": "string"},
-                    },
-                },
-            },
-            "required": ["profiles"],
-        }
-    },
-}
-
-
 @ft.total_ordering
 class CpmgProfile:
-    def __init__(self, name, data, pulse_seq, pnames, params, params_mf, even_ncycs):
+    def __init__(
+        self, name, data, pulse_seq, pnames, params, params_mf, even_ncycs=False
+    ):
         self.name = name
         self.data = data
         self._pulse_seq = pulse_seq

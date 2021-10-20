@@ -4,25 +4,6 @@ import functools as ft
 import numpy as np
 
 
-SHIFT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "data": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string",
-                    "enum": ["file", "duplicates"],
-                    "default": "file",
-                },
-                "path": {"type": "string", "default": "./"},
-            },
-            "required": ["path"],
-        }
-    },
-}
-
-
 @ft.total_ordering
 class ShiftProfile:
     def __init__(self, name, data, pulse_seq, pnames, params, params_mf):

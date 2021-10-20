@@ -65,18 +65,13 @@ h_larmor_frq = 800.0
 #   [0.0, 0.0],
 # ]
 
-## List of the profile names and their associated filenames.
-## The name of the spin systems should follow the Sparky-NMR
-## conventions.
-profiles = [
-    ["G2CA-HA1", "G2CA-HA1.out"],
-    ["G2CA-HA2", "G2CA-HA2.out"],
-    ["H3CB-HB2", "H3CB-HB2.out"],
-    ["H3CB-HB3", "H3CB-HB3.out"],
-    ["K4CD", "K4CD-HD2.out"],
-    ["K4CD", "K4CD-HD3.out"],
-    ["S5CB", "S5CB-HB2.out"],
-    ["S5CB", "S5CB-HB3.out"],
-    ["L6CA", "L6CA-HA.out"],
-    ["L6CD1", "L6CD1-QD1.out"],
-]
+  ## List of the profile names and their associated filenames.
+  ## The name of the spin systems should follow the Sparky-NMR
+  ## conventions.
+  [data.profiles]
+  G2CA  = ["G2CA-HA1.out", "G2CA-HA2.out"]
+  H3CB  = ["H3CB-HB2.out", "H3CB-HB3.out"]
+  K4CD  = ["K4CD-HD2.out", "K4CD-HD3.out"]
+  S5CB  = ["S5CB-HB2.out", "S5CB-HB3.out"]
+  L6CA  = "L6CA-HA.out"
+  L6CD1 = "L6CD1-QD1.out"

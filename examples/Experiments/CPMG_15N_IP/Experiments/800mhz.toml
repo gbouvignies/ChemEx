@@ -1,9 +1,9 @@
 [experiment]
-name         = "cpmg_15n_ip"
-time_t2      = 30.0e-3
-carrier      = 119.013
-pw90         = 41.825e-6
-time_equil   = 2.0e-3
+name       = "cpmg_15n_ip"
+time_t2    = 30.0e-3
+carrier    = 119.013
+pw90       = 41.825e-6
+time_equil = 2.0e-3
 
 [conditions]
 h_larmor_frq = 800.0
@@ -13,62 +13,62 @@ label        = ["2H"]
 # temperature = 25.0
 
 [data]
-path = "../Data/800MHz/"
+path  = "../Data/800MHz/"
 error = "duplicates"
-profiles = [
-    ["1N", "1N-HN.out"],
-    ["3N", "3N-HN.out"],
-    ["4N", "4N-HN.out"],
-    ["5N", "5N-HN.out"],
-    ["6N", "6N-HN.out"],
-    ["7N", "7N-HN.out"],
-    ["8N", "8N-HN.out"],
-    ["9N", "9N-HN.out"],
-    ["10N", "10N-HN.out"],
-    ["11N", "11N-HN.out"],
-    ["12N", "12N-HN.out"],
-    ["13N", "13N-HN.out"],
-    ["14N", "14N-HN.out"],
-    ["15N", "15N-HN.out"],
-    ["16N", "16N-HN.out"],
-    ["17N", "17N-HN.out"],
-    ["18N", "18N-HN.out"],
-    ["19N", "19N-HN.out"],
-    ["20N", "20N-HN.out"],
-    ["21N", "21N-HN.out"],
-    ["22N", "22N-HN.out"],
-    ["23N", "23N-HN.out"],
-    ["24N", "24N-HN.out"],
-    ["25N", "25N-HN.out"],
-    ["26N", "26N-HN.out"],
-    ["27N", "27N-HN.out"],
-    ["28N", "28N-HN.out"],
-    ["29N", "29N-HN.out"],
-    ["30N", "30N-HN.out"],
-    ["31N", "31N-HN.out"],
-    ["32N", "32N-HN.out"],
-    ["33N", "33N-HN.out"],
-    ["34N", "34N-HN.out"],
-    ["35N", "35N-HN.out"],
-    ["36N", "36N-HN.out"],
-    ["37N", "37N-HN.out"],
-    ["38N", "38N-HN.out"],
-    ["40N", "40N-HN.out"],
-    ["41N", "41N-HN.out"],
-    ["42N", "42N-HN.out"],
-    ["43N", "43N-HN.out"],
-    ["44N", "44N-HN.out"],
-    ["45N", "45N-HN.out"],
-    ["46N", "46N-HN.out"],
-    ["47N", "47N-HN.out"],
-    ["49N", "49N-HN.out"],
-    ["50N", "50N-HN.out"],
-    ["52N", "52N-HN.out"],
-    ["53N", "53N-HN.out"],
-    ["54N", "54N-HN.out"],
-#   ["55N", "55N-HN.out"],
-    ["56N", "56N-HN.out"],
-    ["57N", "57N-HN.out"],
-    ["58N", "58N-HN.out"],
-    ["59N", "59N-HN.out"],
-]
+
+  [data.profiles]
+  1N  = "1N-HN.out"
+  3N  = "3N-HN.out"
+  4N  = "4N-HN.out"
+  5N  = "5N-HN.out"
+  6N  = "6N-HN.out"
+  7N  = "7N-HN.out"
+  8N  = "8N-HN.out"
+  9N  = "9N-HN.out"
+  10N = "10N-HN.out"
+  11N = "11N-HN.out"
+  12N = "12N-HN.out"
+  13N = "13N-HN.out"
+  14N = "14N-HN.out"
+  15N = "15N-HN.out"
+  16N = "16N-HN.out"
+  17N = "17N-HN.out"
+  18N = "18N-HN.out"
+  19N = "19N-HN.out"
+  20N = "20N-HN.out"
+  21N = "21N-HN.out"
+  22N = "22N-HN.out"
+  23N = "23N-HN.out"
+  24N = "24N-HN.out"
+  25N = "25N-HN.out"
+  26N = "26N-HN.out"
+  27N = "27N-HN.out"
+  28N = "28N-HN.out"
+  29N = "29N-HN.out"
+  30N = "30N-HN.out"
+  31N = "31N-HN.out"
+  32N = "32N-HN.out"
+  33N = "33N-HN.out"
+  34N = "34N-HN.out"
+  35N = "35N-HN.out"
+  36N = "36N-HN.out"
+  37N = "37N-HN.out"
+  38N = "38N-HN.out"
+  40N = "40N-HN.out"
+  41N = "41N-HN.out"
+  42N = "42N-HN.out"
+  43N = "43N-HN.out"
+  44N = "44N-HN.out"
+  45N = "45N-HN.out"
+  46N = "46N-HN.out"
+  47N = "47N-HN.out"
+  49N = "49N-HN.out"
+  50N = "50N-HN.out"
+  52N = "52N-HN.out"
+  53N = "53N-HN.out"
+  54N = "54N-HN.out"
+  # 55N = "55N-HN.out"
+  56N = "56N-HN.out"
+  57N = "57N-HN.out"
+  58N = "58N-HN.out"
+  59N = "59N-HN.out"
