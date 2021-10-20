@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import dataclasses as dc
 import itertools as it
 import re
+from typing import TYPE_CHECKING
 
 import lmfit as lf
 
@@ -9,6 +12,10 @@ import chemex.parameters.kinetics as cpk
 import chemex.parameters.liouvillian as cpl
 import chemex.parameters.name as cpn
 import chemex.parameters.settings as cps
+
+if TYPE_CHECKING:
+    from chemex.containers.experiment import Experiments
+    from chemex.parameters.name import ParamName
 
 
 def merge(params_list):
@@ -23,7 +30,7 @@ def merge(params_list):
     return params
 
 
-def create_params(experiments, defaults):
+def create_params(experiments: Experiments, defaults: list[tuple[ParamName, dict]]):
     params_mf = experiments.params_mf
     params = experiments.params
 
@@ -55,11 +62,11 @@ def create_profile_params(config, propagator):
     else:
         fitted = config["fit"]["rates"]
 
-    settings = {**settings_k, **settings_l}
+    settings = settings_k | settings_l
     _set_to_fit(settings, model, observed_state, fitted)
     settings_min, settings_max = _get_settings(settings, propagator)
     pnames = cpn.get_pnames(settings_min, conditions, spin_system)
-    pnames_ = {name: pname.full for name, pname in pnames.items()}
+    fnames = {name: pname.full for name, pname in pnames.items()}
 
     # Create standard parameters from settings
     params = _settings_to_params(settings_max, conditions, spin_system)
@@ -67,7 +74,7 @@ def create_profile_params(config, propagator):
     # Create the model free parameters
     params_mf = _settings_to_params(settings_l_mf, conditions, spin_system)
 
-    return pnames_, params, params_mf
+    return fnames, params, params_mf
 
 
 def _settings_to_params(settings, conditions, spin_system):
@@ -81,12 +88,10 @@ def _settings_to_params(settings, conditions, spin_system):
             min=setting.get("min"),
             max=setting.get("max"),
             vary=setting.get("vary"),
-            expr=setting.get("expr", "").format_map({**conditions_, **fnames}),
+            expr=setting.get("expr", "").format_map(conditions_ | fnames),
             user_data={
                 "pname": pnames[name],
-                "print_expr": setting.get("expr", "").format_map(
-                    {**conditions_, **pnames}
-                ),
+                "print_expr": setting.get("expr", "").format_map(conditions_ | pnames),
             },
         )
         for name, setting in settings.items()
@@ -106,7 +111,7 @@ def _get_settings(settings_full, propagator):
         for name in re.findall(r"\{(.+?)\}", setting.get("expr", ""))
         if name in remaining_names
     }
-    settings_max = {**settings_min, **settings_expr}
+    settings_max = settings_min | settings_expr
     return settings_min, settings_max
 
 
