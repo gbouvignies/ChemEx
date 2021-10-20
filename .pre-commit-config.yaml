@@ -12,20 +12,20 @@ repos:
       - id: forbid-new-submodules # Check for git submodules
 
   - repo: https://github.com/pycqa/flake8
-    rev: 3.9.2
+    rev: 4.0.1
     hooks:
       - id: flake8
 
   - repo: https://github.com/asottile/reorder_python_imports
-    rev: v2.5.0
+    rev: v2.6.0
     hooks:
       - id: reorder-python-imports
 
   - repo: https://github.com/asottile/pyupgrade
-    rev: v2.19.4
+    rev: v2.29.0
     hooks:
       - id: pyupgrade
-        args: [--py38-plus]
+        args: [--py39-plus]
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.1.0
@@ -34,7 +34,7 @@ repos:
         args: ['-L', 'reson,noe,2st,3st,ba,ser']
 
   - repo: https://github.com/psf/black
-    rev: 21.6b0 # Replace by any tag/version: https://github.com/psf/black/tags
+    rev: 21.9b0 # Replace by any tag/version: https://github.com/psf/black/tags
     hooks:
       - id: black
         language_version: python3.8
