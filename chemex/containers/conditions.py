@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from dataclasses import asdict
 from dataclasses import dataclass
 from dataclasses import field
 from dataclasses import replace
+from functools import cached_property
+from typing import Any
 
 import jsonschema as js
 
@@ -18,7 +21,7 @@ class Conditions:
     p_total: float | None = None
     l_total: float | None = None
     d2o: float | None = None
-    label: list[str] = field(default_factory=list)
+    label: Sequence[str] = field(default_factory=list)
 
     def __post_init__(self):
         for name in ("h_larmor_frq", "temperature", "p_total", "l_total", "d2o"):
@@ -28,14 +31,14 @@ class Conditions:
         super().__setattr__("label", tuple(self.label))
 
     @classmethod
-    def from_dict(cls, dict_):
+    def from_dict(cls, conditions_dict: dict[str, Any]):
         return cls(
-            dict_.get("h_larmor_frq"),
-            dict_.get("temperature"),
-            dict_.get("p_total"),
-            dict_.get("l_total"),
-            dict_.get("d2o"),
-            dict_.get("label", []),
+            conditions_dict.get("h_larmor_frq"),
+            conditions_dict.get("temperature"),
+            conditions_dict.get("p_total"),
+            conditions_dict.get("l_total"),
+            conditions_dict.get("d2o"),
+            conditions_dict.get("label", []),
         )
 
     def rounded(self) -> Conditions:
@@ -45,6 +48,16 @@ class Conditions:
 
     def match(self, other: Conditions) -> bool:
         return self == self & other
+
+    @cached_property
+    def search_keys(self) -> set[Conditions]:
+        return {
+            Conditions(h_larmor_frq=self.h_larmor_frq),
+            Conditions(temperature=self.temperature),
+            Conditions(p_total=self.p_total),
+            Conditions(l_total=self.l_total),
+            Conditions(d2o=self.d2o),
+        } - {Conditions()}
 
     def __and__(self, other: Conditions) -> Conditions:
         self_dict = asdict(self)

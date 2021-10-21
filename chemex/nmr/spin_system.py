@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from enum import auto
 from enum import Enum
 from functools import total_ordering
 from itertools import chain
 from itertools import combinations
 from re import search
-from typing import Iterable
 
 from chemex.nmr.liouvillian import Basis
 
@@ -76,19 +76,25 @@ STANDARD_ATOM_NAMES = {
 class Atom:
     name: str
     nucleus: Nucleus | None
+    search_keys: set[Atom | Nucleus]
 
     def __init__(self, name: str) -> None:
         name = name.strip().upper()
         self.name = CORRECT_ATOM_NAME.get(name, name)
         self.nucleus = STR_TO_NUCLEUS.get(self.name[:1])
+        self.search_keys = {self}
+        if self.nucleus is not None:
+            self.search_keys.add(self.nucleus)
 
     def match(self, other: Atom) -> bool:
         return other.name.startswith(self.name)
 
-    def __eq__(self, other: Atom) -> bool:
-        return self.name == other.name
+    def __eq__(self, other) -> bool:
+        return isinstance(other, Atom) and self.name == other.name
 
-    def __lt__(self, other: Atom) -> bool:
+    def __lt__(self, other) -> bool:
+        if not isinstance(other, Atom):
+            return NotImplemented
         return self.name < other.name
 
     def __str__(self):
@@ -96,6 +102,9 @@ class Atom:
 
     def __bool__(self) -> bool:
         return bool(self.name)
+
+    def __hash__(self) -> int:
+        return hash(self.name)
 
 
 @total_ordering
@@ -105,11 +114,13 @@ class Group:
     number: int
     suffix: str
     NO_NUMBER: int = -100000000
+    search_keys: set[Group]
 
     def __init__(self, name: str) -> None:
-        self.symbol, self.number, self.suffix = self.parse_group(name)
+        self.symbol, self.number, self.suffix = self.parse_group(name.strip().upper())
         self.symbol = AAA_TO_A.get(self.symbol, self.symbol)
         self.name = self.get_name()
+        self.search_keys = {self} if self else set()
 
     def parse_group(self, name: str) -> tuple[str, int, str]:
         found = search("[0-9]+", name.strip().upper())
@@ -127,10 +138,12 @@ class Group:
         suffix = other.suffix == self.suffix or not self.suffix
         return number and symbol and suffix
 
-    def __eq__(self, other: Group) -> bool:
-        return self.name == other.name
+    def __eq__(self, other) -> bool:
+        return isinstance(other, Group) and self.name == other.name
 
-    def __lt__(self, other: Group) -> bool:
+    def __lt__(self, other) -> bool:
+        if not isinstance(other, Group):
+            return NotImplemented
         return self.number < other.number
 
     def __str__(self) -> str:
@@ -148,12 +161,14 @@ class Spin:
     name: str
     group: Group
     atom: Atom
+    search_keys: set[Group | Atom | Nucleus]
 
     def __init__(self, name: str, group_for_completion: Group | None = None) -> None:
         self.group, self.atom = self.split_group_atom(name.strip().upper())
         if not self.group and group_for_completion:
             self.group = group_for_completion
         self.name = self.get_name()
+        self.search_keys = self.group.search_keys | self.atom.search_keys
 
     @staticmethod
     def split_group_atom(name: str) -> tuple[Group, Atom]:
@@ -176,13 +191,18 @@ class Spin:
     def match(self, other: Spin):
         return self.group.match(other.group) and self.atom.match(other.atom)
 
-    def __eq__(self, other: Spin) -> bool:
-        return self.name == other.name
+    def __eq__(self, other) -> bool:
+        return isinstance(other, Spin) and self.name == other.name
 
-    def __lt__(self, other: Spin) -> bool:
+    def __lt__(self, other) -> bool:
+        if not isinstance(other, Spin):
+            return NotImplemented
         return (self.group, self.atom) < (other.group, other.atom)
 
     def __str__(self) -> str:
+        return self.name
+
+    def __repr__(self) -> str:
         return self.name
 
     def __bool__(self) -> bool:
@@ -196,6 +216,7 @@ class Spin:
 class SpinSystem:
     name: str
     spins: dict[str, Spin]
+    search_keys: set[Group | Atom | Nucleus]
 
     def __init__(self, name: str | int | None):
         if name is None:
@@ -210,6 +231,9 @@ class SpinSystem:
         self.numbers = {alias: group.number for alias, group in self.groups.items()}
         self.atoms = {alias: spin.atom for alias, spin in self.spins.items()}
         self.nuclei = {alias: atom.nucleus for alias, atom in self.atoms.items()}
+        self.search_keys = set()
+        for spin in self.spins.values():
+            self.search_keys |= spin.search_keys
 
     @staticmethod
     def parse_spin_system(name: str) -> dict[str, Spin]:
@@ -274,15 +298,15 @@ class SpinSystem:
             return SpinSystem("-".join(group.name for group in groups))
         return SpinSystem("")
 
-    def __eq__(self, other: SpinSystem) -> bool:
-        if isinstance(other, SpinSystem):
-            return self.name == other.name
-        return NotImplemented
+    def __eq__(self, other) -> bool:
+        return isinstance(other, SpinSystem) and self.name == other.name
 
-    def __lt__(self, other: SpinSystem) -> bool:
+    def __lt__(self, other) -> bool:
+        if not isinstance(other, SpinSystem):
+            return NotImplemented
         return tuple(self.spins.values()) < tuple(other.spins.values())
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
     def __bool__(self) -> bool:
@@ -307,3 +331,4 @@ def powerset(iterable):
 # group = Group("L99")
 # spin = Spin("HD1", group)
 # print(f"spin = {spin}, spin.group = {spin.group}, spin.atom = {spin.atom}")
+# print(SpinSystem("GLY023N-HN").search_keys)

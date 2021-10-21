@@ -7,19 +7,22 @@ from functools import total_ordering
 from typing import Any
 
 from chemex.containers.conditions import Conditions
+from chemex.nmr.spin_system import Atom
+from chemex.nmr.spin_system import Group
+from chemex.nmr.spin_system import Nucleus
 from chemex.nmr.spin_system import SpinSystem
 
 
 _DECORATORS = {
-    "name": "__n_{}_n__",
-    "spin_system": "__r_{}_r__",
-    "temperature": "__t_{}_t__",
-    "h_larmor_frq": "__b_{}_b__",
-    "p_total": "__p_{}_p__",
-    "l_total": "__l_{}_l__",
-    "d2o": "__d_{}_d__",
+    "name": "__N_{}_N__",
+    "spin_system": "__R_{}_R__",
+    "temperature": "__T_{}_T__",
+    "h_larmor_frq": "__B_{}_B__",
+    "p_total": "__P_{}_P__",
+    "l_total": "__L_{}_L__",
+    "d2o": "__D_{}_D__",
 }
-_EXPAND = {"-": "__minus__", "+": "__plus__", ".": "__point__"}
+_EXPAND = {"-": "__MINUS__", "+": "__PLUS__", ".": "__POINT__"}
 _RE_FLOAT = r"[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?"
 _RE_NAME = re.compile(r"^(?P<name>.+?)(_(?P<spin>i|s|is))?(_(?P<state>[a-h]{1,2}))?$")
 _RE_SECTION = re.compile(
@@ -43,6 +46,7 @@ class ParamName:
     name: str
     spin_system: SpinSystem
     conditions: Conditions
+    search_keys: set[str | Group | Atom | Nucleus | Conditions]
 
     def __init__(
         self,
@@ -62,6 +66,9 @@ class ParamName:
         self.name = name.strip().upper()
         self.spin_system = spin_system
         self.conditions = conditions.rounded()
+        self.search_keys = (
+            {self.name} | self.spin_system.search_keys | self.conditions.search_keys
+        )
 
     @classmethod
     def from_dict(cls, dict_: dict[str, Any]) -> ParamName:
@@ -85,7 +92,7 @@ class ParamName:
     @cached_property
     def full(self) -> str:
         full_name = "".join(
-            _DECORATORS[name].format(value)
+            _DECORATORS[name].format(value).upper()
             for name, value in self.to_dict().items()
             if value
         )
@@ -258,3 +265,7 @@ def _name_to_spin_system(name: str, spin_system: SpinSystem) -> SpinSystem:
     if spin is None:
         return SpinSystem(spin_system.names.get("i", ""))
     return SpinSystem(spin_system.names.get(spin, ""))
+
+
+# For testing:
+# print(ParamName.from_section("[DW_AB, NUC->G23N, B0->800.0MHz]").search_keys)

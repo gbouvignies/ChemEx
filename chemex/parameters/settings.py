@@ -1,15 +1,25 @@
 """The parameters module contains the code for handling of the experimental and
 fitting parameters."""
-import collections as cl
-import difflib as dl
-import re
+from __future__ import annotations
+
+from collections.abc import Iterable
+from difflib import get_close_matches
+from re import compile
+from re import finditer
 
 import numpy as np
+from lmfit import Parameters
 
-import chemex.helper as ch
-import chemex.parameters.name as cpn
+from chemex.containers.conditions import Conditions
+from chemex.helper import read_toml_multi
+from chemex.nmr.spin_system import Atom
+from chemex.nmr.spin_system import Group
+from chemex.nmr.spin_system import Nucleus
+from chemex.parameters.name import _RE_FLOAT
+from chemex.parameters.name import ParamName
 
-RE_GROUPNAME = re.compile(r"^[A-Za-z0-9_-]+$")
+
+RE_GROUPNAME = compile(r"^[A-Za-z0-9_-]+$")
 
 _SCHEMA_CONFIG_PARAM = {
     "type": "object",
@@ -29,9 +39,30 @@ _SCHEMA_CONFIG_PARAM = {
     },
 }
 
+
+class ParamIndex:
+    index: dict[str | Group | Atom | Nucleus | Conditions, set[str]]
+
+    def __init__(self, params: Parameters) -> None:
+        self.index = self._index_params(params)
+
+    @staticmethod
+    def _index_params(params: Parameters) -> dict:
+        index: dict = {}
+        for fname, param in params.items():
+            search_keys: set = param.user_data["pname"].search_keys
+            for key in search_keys:
+                index.setdefault(key, set()).add(fname)
+        return index
+
+    def match(self, pname: ParamName) -> set[str]:
+        search_keys = pname.search_keys
+        return set.intersection(*(self.index.get(key, set()) for key in search_keys))
+
+
 def read_defaults(filenames):
     print("\nReading parameters default values...")
-    config = ch.read_toml_multi(filenames, _SCHEMA_CONFIG_PARAM)
+    config = read_toml_multi(filenames, _SCHEMA_CONFIG_PARAM)
     # This is to put the "GLOBAL" section first
     defaults = {"global": config.pop("global", {}), **config}
     return _defaults_to_list(defaults)
@@ -44,8 +75,8 @@ def _defaults_to_list(defaults):
     for section, settings in defaults.items():
         prefix = f"{section}, NUC->" if section != "global" else ""
         for key, values in settings.items():
-            pname = cpn.ParamName.from_section(f"{prefix}{key}")
-            values = values if isinstance(values, cl.abc.Iterable) else [values]
+            pname = ParamName.from_section(f"{prefix}{key}")
+            values = values if isinstance(values, Iterable) else [values]
             values_ = dict(zip(("value", "min", "max", "brute_step"), values))
             defaults_list.append((pname, values_))
     return defaults_list
@@ -57,13 +88,12 @@ def set_values(params, defaults):
 
     fnames = {param.name for param in params.values() if not param.expr}
 
-    for name, values in reversed(defaults):
-        matches = set()
-        for fname in fnames:
-            param = params[fname]
-            if name.match(param.user_data["pname"]):
-                param.set(**values)
-                matches.add(fname)
+    index = ParamIndex(params)
+
+    for pname, values in reversed(defaults):
+        matches = index.match(pname)
+        for fname in matches & fnames:
+            params[fname].set(**values)
         fnames -= matches
     params.update_constraints()
     _check_params(params)
@@ -120,77 +150,78 @@ def set_status(params, settings=None, verbose=True):
 
 def _set_vary(params, snames, vary=True):
     """Set wheither the parameters corresponding to snames vary or not"""
-    matches = set()
+    all_matches = set()
+
     if not snames:
-        return matches
+        return all_matches
+
     fnames = {param.name for param in params.values() if param.vary != vary}
+
+    index = ParamIndex(params)
+
     for sname in reversed(snames):
-        pname = cpn.ParamName.from_section(sname.strip("[] "))
-        for fname in fnames:
-            param = params[fname]
-            if pname.match(param.user_data["pname"]):
-                param.set(vary=vary)
-                matches.add(fname)
+        pname = ParamName.from_section(sname.strip("[] "))
+        matches = index.match(pname)
+        for fname in matches & fnames:
+            params[fname].set(vary=vary)
         fnames -= matches
-    return matches
+        all_matches.update(matches)
+    return all_matches
 
 
 def _set_expr(params, expr_list):
     """Set the constraints given in expr_list"""
-    matches = set()
+    all_matches = set()
+
     if not expr_list:
-        return matches
+        return all_matches
+
     fnames = set(params)
+
+    index = ParamIndex(params)
+
     for expr in reversed(expr_list):
         left, right, *somethingelse = expr.split("=")
         if somethingelse:
             print(f'\nError reading constraints:\n  -> "{expr}"\n\nProgram aborted\n')
             exit()
-        fnames_left = _get_fnames_left(left, params)
-        fnames_right = _get_fnames_right(right, params)
+        fnames_left = _get_fnames_left(left, index)
+        fnames_right = _get_fnames_right(right, index)
         for fname in fnames_left:
             expr_new = print_expr = right.strip()
             for sname, fname_set in fnames_right.items():
-                fname_replace = dl.get_close_matches(fname, fname_set, n=1).pop()
+                fname_replace = get_close_matches(fname, fname_set, n=1).pop()
                 sname_replace = str(params[fname_replace].user_data["pname"])
                 expr_new = expr_new.replace(sname, fname_replace)
                 print_expr = print_expr.replace(sname, sname_replace)
             if expr_new != params[fname].expr:
                 params[fname].expr = expr_new
                 params[fname].user_data["print_expr"] = print_expr
-                matches.add(fname)
-        fnames -= matches
-    return matches
+                all_matches.add(fname)
+        fnames -= all_matches
+    return all_matches
 
 
-def _get_fnames_left(left, params):
-    pname = cpn.ParamName.from_section(left.strip("[] "))
-    return {
-        fname
-        for fname, param in params.items()
-        if pname.match(param.user_data["pname"])
-    }
+def _get_fnames_left(left, index):
+    pname = ParamName.from_section(left.strip("[] "))
+    return index.match(pname)
 
 
-def _get_fnames_right(right, params):
+def _get_fnames_right(right, index):
     fnames_right = {}
-    for match in re.finditer(r"\[(.+?)\]", right.strip()):
-        pname = cpn.ParamName.from_section(match.group(1))
-        fnames_right[match.group(0)] = {
-            fname
-            for fname, param in params.items()
-            if pname.match(param.user_data["pname"])
-        }
+    for match in finditer(r"\[(.+?)\]", right.strip()):
+        pname = ParamName.from_section(match.group(1))
+        fnames_right[match.group(0)] = index.match(pname)
     return fnames_right
 
 
 def read_grid(grid, params):
     if grid is None:
         return None, params
-    re_ = re.compile(
-        fr"(lin[(]{cpn._RE_FLOAT},{cpn._RE_FLOAT},\d+[)]$)|"
-        fr"(log[(]{cpn._RE_FLOAT},{cpn._RE_FLOAT},\d+[)]$)|"
-        fr"([(](({cpn._RE_FLOAT})(,|[)]$))+)"
+    re_ = compile(
+        fr"(lin[(]{_RE_FLOAT},{_RE_FLOAT},\d+[)]$)|"
+        fr"(log[(]{_RE_FLOAT},{_RE_FLOAT},\d+[)]$)|"
+        fr"([(](({_RE_FLOAT})(,|[)]$))+)"
     )
     fnames_all = set(params)
     grid_values = {}
