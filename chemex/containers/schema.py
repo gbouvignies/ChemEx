@@ -77,25 +77,7 @@ CPMG_SCHEMA = {
     },
 }
 
-RELAXATION_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "data": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string",
-                    "enum": ["file", "duplicates"],
-                    "default": "file",
-                },
-                "filter_planes": FILTER_PLANES_SCHEMA,
-                "path": PATH_SCHEMA,
-                "profiles": {"oneOf": [PROFILES_LIST_SCHEMA, PROFILES_DICT_SCHEMA]},
-            },
-            "required": ["profiles"],
-        }
-    },
-}
+RELAXATION_SCHEMA = CPMG_SCHEMA
 
 SHIFT_SCHEMA = {
     "type": "object",
