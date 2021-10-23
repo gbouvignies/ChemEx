@@ -1,44 +1,42 @@
 [tool.poetry]
-name      = "chemex"
-version   = "2021.4.0-dev5"
+name        = "chemex"
+version     = "2021.4.0-dev6"
 description = "ChemEx is an analysis program for chemical exchange detected by NMR"
-authors   = ["Guillaume Bouvignies <gbouvignies@gmail.com>"]
-license   = "BSD-3-Clause"
-readme    = "README.md"
-repository = "https://github.com/gbouvignies/chemex"
-homepage  = "https://github.com/gbouvignies/chemex"
-classifiers = [
-  "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: BSD License",
-]
+authors     = ["Guillaume Bouvignies <gbouvignies@gmail.com>"]
+license     = "BSD-3-Clause"
+readme      = "README.md"
+repository  = "https://github.com/gbouvignies/chemex"
+homepage    = "https://github.com/gbouvignies/chemex"
+classifiers = ["Intended Audience :: Science/Research", "License :: OSI Approved :: BSD License"]
 
-    [tool.poetry.dependencies]
-    python   = "=3.9"
-    numpy = "^1.21.3"
-    scipy = "^1.7.1"
-    matplotlib = "^3.4.3"
-    lmfit = "^1.0.3"
-    jsonschema = "^4.1.2"
-    tqdm = "^4.62.3"
-    toml = "^0.10.2"
+  [tool.poetry.dependencies]
+  python      = "=3.9"
+  numpy       = "^1.21.3"
+  scipy       = "^1.7.1"
+  matplotlib  = "^3.4.3"
+  lmfit       = "^1.0.3"
+  jsonschema  = "^4.1.2"
+  tqdm        = "^4.62.3"
+  toml        = "^0.10.2"
+  Levenshtein = "^0.15.0"
 
-    [tool.poetry.dev-dependencies]
-    black = "^21.9b0"
-    pre-commit = "^2.15.0"
-    flake8 = "^4.0.1"
-    recommonmark           = "^0.7.1"
-    sphinx-rtd-theme       = "^0.5.2"
-    sphinxcontrib-httpdomain = "^1.7.0"
-    Sphinx                 = "^4.0.2"
+  [tool.poetry.dev-dependencies]
+  black                    = "^21.9b0"
+  pre-commit               = "^2.15.0"
+  flake8                   = "^4.0.1"
+  recommonmark             = "^0.7.1"
+  sphinx-rtd-theme         = "^0.5.2"
+  sphinxcontrib-httpdomain = "^1.7.0"
+  Sphinx                   = "^4.0.2"
 
-    [tool.poetry.scripts]
-    chemex = "chemex.chemex:main"
+  [tool.poetry.scripts]
+  chemex = "chemex.chemex:main"
 
 [tool.black]
-line-length  = 88
+line-length = 88
 target-version = ['py38']
-include      = '\.pyi?$'
-exclude      = '''
+include = '\.pyi?$'
+exclude = '''
 /(
     \.git
   | \.hg
@@ -53,5 +51,5 @@ exclude      = '''
 '''
 
 [build-system]
-requires    = ["poetry-core>=1.0.0"]
+requires      = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
