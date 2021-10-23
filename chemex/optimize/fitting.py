@@ -112,7 +112,7 @@ class Fit:
             params_list.append(best_par)
 
             # Run Monte Carlo and/or bootstrap analysis
-            self.run_statistics(best_par, g_pat, fitmethod, statistics)
+            self.run_statistics(g_exp, best_par, g_pat, fitmethod, statistics)
 
         params_merged = cph.merge(params_list)
 
@@ -152,7 +152,8 @@ class Fit:
 
         return params
 
-    def run_statistics(self, params, path, fitmethod, statistics):
+    @staticmethod
+    def run_statistics(experiments, params, path, fitmethod, statistics):
 
         if statistics is None:
             return
@@ -190,9 +191,9 @@ class Fit:
                 fileout.write(coh.print_header(params, fnames_vary))
 
                 for _ in tqdm.tqdm(range(iter_nb)):
-                    exp_mc = self._experiments.statistics[method_name](*method["args"])
+                    exp_mc = experiments.statistics[method_name](*method["args"])
                     params_mc = params.copy()
-                    params_mc = exp_mc.select_params(params)
+                    params_mc = exp_mc.select_params(params_mc)
                     params_mc = minimize(exp_mc, params_mc, fitmethod, verbose=False)
                     chisqr = coh.calculate_statistics(exp_mc, params_mc).get("chisqr")
                     fileout.write(coh.print_values_stat(params_mc, fnames_vary, chisqr))
