@@ -19,14 +19,14 @@ if TYPE_CHECKING:
 
 
 def merge(params_list):
-    params_ = {}
+    params_dict = {}
     for params in params_list:
-        for name, param in params.items():
-            if name in params_ and params_[name].vary:
+        for fname, param in params.items():
+            if fname in params_dict and params_dict[fname].vary:
                 continue
-            params_[name] = param
+            params_dict[fname] = param
     params = lf.Parameters(usersyms=cnr.rate_functions)
-    params.add_many(*params_.values())
+    params.add_many(*params_dict.values())
     return params
 
 
@@ -37,8 +37,8 @@ def create_params(experiments: Experiments, defaults: list[tuple[ParamName, dict
     cps.set_values(params_mf, defaults)
 
     # Set parameters values using the model-free values
-    for pname in set(params) & set(params_mf):
-        params[pname].value = params_mf[pname].value
+    for fname in set(params) & set(params_mf):
+        params[fname].value = params_mf[fname].value
 
     cps.set_values(params, defaults)
 
