@@ -243,6 +243,9 @@ def read_grid(grid, params):
         fr"([(](({_RE_FLOAT})(,|[)]$))+)"
     )
     fnames_all = set(params)
+
+    index = ParamIndex(params)
+
     grid_values = {}
     for entry in reversed(grid):
         left, right = entry.replace(" ", "").split("=")
@@ -251,11 +254,10 @@ def read_grid(grid, params):
                 f'\nError reading grid settings:\n  -> "{entry}"\n\nProgram aborted\n'
             )
             exit()
-        params_remaining = {fname: params[fname] for fname in fnames_all}
-        fnames_left = _get_fnames_left(left, params_remaining)
+        fnames_left = _get_fnames_left(left, index)
         expr = right.replace("lin", "np.linspace").replace("log", "np.geomspace")
         values = eval(expr)
-        grid_values.update({fname: values for fname in fnames_left})
+        grid_values.update({fname: values for fname in fnames_left & fnames_all})
         fnames_all -= fnames_left
     for fname in grid_values:
         params[fname].vary = False
