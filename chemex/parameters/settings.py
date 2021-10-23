@@ -9,6 +9,7 @@ from re import finditer
 
 import numpy as np
 from lmfit import Parameters
+from Levenshtein import distance
 
 from chemex.containers.conditions import Conditions
 from chemex.helper import read_toml_multi
@@ -109,14 +110,14 @@ def _check_params(params):
         atoms = {atom.name for atom in pname.spin_system.atoms.values()}
         if sname.startswith("J_") and atoms == {"N", "H"} and param.value > 0.0:
             messages.append(
-                "Warning: Some 1J(NH) scalar couplings are set with positive values. \n"
-                "This can cause the TROSY and anti-TROSY components to be switched in \n"
+                "Warning: Some 1J(NH) scalar couplings are set with positive values.\n"
+                "This can cause the TROSY and anti-TROSY components to be switched in\n"
                 "some experiments."
             )
         if sname.startswith("J_") and atoms == {"C", "H"} and param.value < 0.0:
             messages.append(
-                "Warning: Some 1J(CH) scalar couplings are set with negative values. \n"
-                "This can cause the TROSY and anti-TROSY components to be switched in \n"
+                "Warning: Some 1J(CH) scalar couplings are set with negative values.\n"
+                "This can cause the TROSY and anti-TROSY components to be switched in\n"
                 "some experiments."
             )
     if messages:
@@ -181,24 +182,42 @@ def _set_expr(params, expr_list):
     index = ParamIndex(params)
 
     for expr in reversed(expr_list):
+
         left, right, *somethingelse = expr.split("=")
+
         if somethingelse:
             print(f'\nError reading constraints:\n  -> "{expr}"\n\nProgram aborted\n')
             exit()
+
         fnames_left = _get_fnames_left(left, index)
         fnames_right = _get_fnames_right(right, index)
+
         for fname in fnames_left:
             expr_new = print_expr = right.strip()
             for sname, fname_set in fnames_right.items():
-                fname_replace = get_close_matches(fname, fname_set, n=1).pop()
+                # String matching was nitially implemented using `difflib` library,
+                # but using the `distance` function from the `Levenshtein` package is
+                # orders of magnitude faster.
+                #
+                # Other implementations:
+                # fname_replace = difflib.get_close_matches(fname, fname_set, n=1).pop()
+                # fname_replace, _ = fuzzywuzzy.process.extractOne(fname, fname_set)
+                # fname_replace, _ = thefuzz.process.extractOne(fname, fname_set)
+                #
+                fname_replace = min(
+                    fname_set, key=lambda a_fname: distance(a_fname, fname)
+                )
                 sname_replace = str(params[fname_replace].user_data["pname"])
                 expr_new = expr_new.replace(sname, fname_replace)
                 print_expr = print_expr.replace(sname, sname_replace)
+
             if expr_new != params[fname].expr:
                 params[fname].expr = expr_new
                 params[fname].user_data["print_expr"] = print_expr
                 all_matches.add(fname)
+
         fnames -= all_matches
+
     return all_matches
 
 
