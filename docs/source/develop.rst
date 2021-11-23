@@ -108,7 +108,7 @@ NMR modules
 
    modules/nmr/constants
    modules/nmr/liouvillian
-   modules/nmr/propagator
+   modules/nmr/spectrometer
    modules/nmr/rates
    modules/nmr/spin_system
 

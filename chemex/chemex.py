@@ -1,89 +1,89 @@
 """The chemex module provides the entry point for the chemex script."""
+from __future__ import annotations
+
 import sys
+from argparse import Namespace
 
-import chemex
-import chemex.cli as cc
-import chemex.containers.experiment as cce
-import chemex.helper as ch
-import chemex.optimize.fitting as cf
-import chemex.optimize.helper as coh
-import chemex.parameters.helper as cph
-import chemex.parameters.kinetics as cpk
-import chemex.parameters.settings as cps
+from chemex import model
+from chemex.cli import build_parser
+from chemex.configuration.methods import Method
+from chemex.configuration.methods import read_methods
+from chemex.configuration.methods import Selection
+from chemex.configuration.parameters import read_defaults
+from chemex.containers.experiments import Experiments
+from chemex.experiments.builder import build_experiments
+from chemex.experiments.loader import register_experiments
+from chemex.messages import print_logo
+from chemex.messages import print_no_data
+from chemex.messages import print_reading_defaults
+from chemex.messages import print_reading_methods
+from chemex.messages import print_running_simulations
+from chemex.messages import print_start_fit
+from chemex.optimize.fitting import run_methods
+from chemex.optimize.helper import execute_post_fit
+from chemex.parameters import database
 
 
-LOGO = fr"""
-* * * * * * * * * * * * * * * * * * * * * * * * *
-*      ________                   ______        *
-*     / ____/ /_  ___  ____ ___  / ____/  __    *
-*    / /   / __ \/ _ \/ __ `__ \/ __/ | |/_/    *
-*   / /___/ / / /  __/ / / / / / /____>  <      *
-*   \____/_/ /_/\___/_/ /_/ /_/_____/_/|_|      *
-*                                               *
-*   Analysis of NMR Chemical Exchange data      *
-*                                               *
-*   Version: {chemex.__version__:<34s} *
-*                                               *
-* * * * * * * * * * * * * * * * * * * * * * * * *
-"""
+def run_fit(args: Namespace, experiments: Experiments):
+    # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
+    experiments.filter()
+
+    if args.method is not None:
+        print_reading_methods()
+        methods = read_methods(args.method)
+    else:
+        methods = {"": Method()}
+
+    print_start_fit()
+    run_methods(experiments, methods, args.out_dir, args.plot)
+
+
+def run_sim(args: Namespace, experiments: Experiments):
+    print_running_simulations()
+
+    path = args.out_dir
+    plot = args.plot == "normal"
+
+    database.fix_all_parameters()
+
+    execute_post_fit(experiments, path, plot=plot)
+
+
+def run(args: Namespace):
+    """Run the fit or simulation."""
+
+    # Parse kinetics model
+    model.set_model(args.model)
+
+    # Read experimental setup and data
+    selection = Selection(args.include, args.exclude)
+    experiments = build_experiments(args.experiments, selection)
+
+    if not experiments:
+        print_no_data()
+        sys.exit()
+
+    # Read initial values of fitting/fixed parameters
+    print_reading_defaults()
+    defaults = read_defaults(args.parameters)
+    database.set_param_defaults(defaults)
+
+    if args.commands == "simulate":
+        run_sim(args, experiments)
+    else:
+        run_fit(args, experiments)
 
 
 def main():
     """Do all the magic."""
-    print(LOGO)
+    print_logo()
 
-    parser = cc.build_parser()
+    register_experiments()
+
+    parser = build_parser()
     args = parser.parse_args()
 
     if args.commands is None:
         parser.print_help()
     else:
         args.func(args)
-
-
-def run(args):
-    """Run the fit or simulation."""
-    # Parse kinetics model
-    model = cpk.parse_model(args.model)
-
-    # Read initial values of fitting/fixed parameters
-    defaults = cps.read_defaults(args.parameters)
-
-    # Read experimental setup and data
-    selection = {"include": args.include, "exclude": args.exclude}
-    experiments = cce.read(args.experiments, model, selection, defaults)
-
-    if not experiments:
-        sys.exit("\nerror: No data to fit")
-
-    # Create parameters
-    params = cph.create_params(experiments, defaults)
-
-    # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
-    experiments.filter(params)
-
-    if args.commands == "simulate":
-        _run_sim(args, experiments, params)
-    else:
-        _run_fit(args, defaults, experiments, params)
-
-
-def _run_fit(args, defaults, experiments, params):
-    ch.header1("Running the main fit")
-
-    fitter = cf.Fit(experiments, args.out_dir, args.plot, defaults)
-    fitter.read_methods(args.method)
-    fitter.run_methods(params)
-
-
-def _run_sim(args, experiments, params):
-    ch.header1("Running the simulation")
-
-    for param in params.values():
-        if param.vary:
-            param.vary = False
-
-    path = args.out_dir
-    plot = args.plot == "normal"
-
-    coh.post_fit(experiments, params, path, plot=plot, simulation=True)

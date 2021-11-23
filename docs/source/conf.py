@@ -15,7 +15,6 @@ from sphinx.locale import _
 
 import chemex
 
-
 sys.path.insert(0, os.path.abspath("."))
 
 # -- Project information -----------------------------------------------------

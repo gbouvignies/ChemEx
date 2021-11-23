@@ -1,4 +1,5 @@
 [STEP1]
+FIT = ["ETAXY_A, B0->800.3"] # Necessary when trosy and antitrosy are fitter together
 FIX = ["PB", "KEX_AB"]
 
 [STEP2]
