@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "chemex"
-version = "2021.4.0-dev6"
+version = "2022.0.0-alpha.0"
 description = "ChemEx is an analysis program for chemical exchange detected by NMR"
 authors = ["Guillaume Bouvignies <gbouvignies@gmail.com>"]
 license = "BSD-3-Clause"
@@ -36,8 +36,8 @@ classifiers = [
   rich                     = "^10.15.2"
   wily                     = "^1.20.0"
   vulture                  = "^2.3"
-  types-toml = "^0.10.4"
-  types-cachetools = "^4.2.9"
+  types-toml               = "^0.10.4"
+  types-cachetools         = "^4.2.9"
 
   [tool.poetry.scripts]
   chemex = "chemex.chemex:main"
