@@ -6,7 +6,7 @@ from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any
 
-import toml
+import tomli as tomllib  # Will be part of standard library in Python 3.11
 
 from chemex.messages import print_file_not_found
 from chemex.messages import print_toml_error
@@ -14,34 +14,35 @@ from chemex.messages import print_toml_error
 
 def read_toml(filename: Path) -> MutableMapping[str, Any]:
     """Read and parse the experiment configuration file with 'toml."""
-    try:
-        config = toml.load(filename)
-    except FileNotFoundError:
-        print_file_not_found(filename)
-        sys.exit(1)
-    except (toml.TomlDecodeError, TypeError) as error:
-        print_toml_error(filename, error)
-        sys.exit(1)
 
-    else:
-        return config
+    with open(filename, "rb") as file:
+        try:
+            config = tomllib.load(file)
+        except FileNotFoundError:
+            print_file_not_found(filename)
+            sys.exit(1)
+        except (tomllib.TOMLDecodeError, TypeError) as error:
+            print_toml_error(filename, error)
+            sys.exit(1)
 
+        else:
+            return config
 
-# Recursive dictionary merge
-# Copyright (C) 2016 Paul Durivage <pauldurivage+github@gmail.com>
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+    # Recursive dictionary merge
+    # Copyright (C) 2016 Paul Durivage <pauldurivage+github@gmail.com>
+    #
+    # This program is free software: you can redistribute it and/or modify
+    # it under the terms of the GNU General Public License as published by
+    # the Free Software Foundation, either version 3 of the License, or
+    # (at your option) any later version.
+    #
+    # This program is distributed in the hope that it will be useful,
+    # but WITHOUT ANY WARRANTY; without even the implied warranty of
+    # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    # GNU General Public License for more details.
+    #
+    # You should have received a copy of the GNU General Public License
+    # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
 def _dict_merge(
