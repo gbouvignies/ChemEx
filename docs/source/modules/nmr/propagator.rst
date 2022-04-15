@@ -1,10 +1,10 @@
-.. _nmr_propagator:
+.. _nmr_spectrometer:
 
 =====================
-chemex.nmr.propagator
+chemex.nmr.spectrometer
 =====================
 
-.. automodule:: chemex.nmr.propagator
+.. automodule:: chemex.nmr.spectrometer
    :members:
    :undoc-members:
    :special-members:

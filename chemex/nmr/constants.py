@@ -5,10 +5,10 @@ Define the gyromagnetic ratios in rad/s/T
 IUPAC values: Harris et al, Concepts in Magn. Reson., (2002) 14, p326
 
 """
-import collections
+from collections import Counter
+from dataclasses import dataclass
 
 import numpy as np
-
 
 GAMMA = {
     "h": 26.752_212_8e07,
@@ -29,7 +29,9 @@ XI_RATIO = {
     "f": 40.480_863_6e-02,
 }
 
-SIGNED_XI_RATIO = {key: np.sign(GAMMA[key]) * val for key, val in XI_RATIO.items()}
+SIGNED_XI_RATIO: dict[str, float] = {
+    key: np.sign(GAMMA[key]) * val for key, val in XI_RATIO.items()
+}
 
 # Generic scalar couplings used as starting values in IS systems (in Hz)
 J_COUPLINGS = {
@@ -41,7 +43,7 @@ J_COUPLINGS = {
 }
 
 # Residue-specific scalar coupling values with neighbouring carbons (in Hz)
-J_EFF = {
+J_EFF: dict[str, dict[str, tuple[float, ...]]] = {
     "a": {
         "n": (-7.7, -10.7, -14.4),
         "c": (52.5, -14.4),
@@ -201,15 +203,19 @@ J_EFF = {
     },
 }
 
-Distribution = collections.namedtuple("Distribution", ["values", "weights"])
+
+@dataclass()
+class Distribution:
+    values: np.ndarray
+    weights: np.ndarray
 
 
-def get_multiplet(symbol, nucleus):
+def get_multiplet(symbol: str, nucleus: str) -> Distribution:
     """Calculate the multiplet pattern."""
     multiplet = np.array([0.0])
     for coupling in J_EFF[symbol.lower()][nucleus.lower()]:
-        doublet = coupling * 0.5 * np.array([-1.0, 1.0]).reshape(-1, 1)
-        multiplet = (multiplet + doublet).reshape(-1)
-    counter = collections.Counter(multiplet)
+        doublet = coupling * 0.5 * np.array([[-1.0], [1.0]])
+        multiplet = (multiplet + doublet).flatten()
+    counter = Counter(multiplet)
     values, weights = zip(*counter.items())
     return Distribution(np.array(values), np.array(weights))

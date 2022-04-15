@@ -1,12 +1,22 @@
-import functools as ft
+from __future__ import annotations
+
+from itertools import product
+from typing import TypeVar
 
 import numpy as np
-import scipy.constants as sc
+from scipy.constants import hbar
+from scipy.constants import mu_0
 
-import chemex.nmr.constants as cnc
+from chemex.configuration.conditions import Conditions
+from chemex.model import model
+from chemex.nmr.basis import Basis
+from chemex.nmr.constants import GAMMA
+
+# Type definition
+T = TypeVar("T", float, np.ndarray)
 
 
-def _calculate_jw(tauc, s2, w):
+def _calculate_jw(tauc: float, s2: float, w: T) -> T:
     tauc_ = tauc * 1e-9
     return 2.0 / 5.0 * tauc_ * s2 / (1.0 + (w * tauc_) ** 2)
 
@@ -23,22 +33,21 @@ class RatesIS:
     phi_s: np.ndarray
 
     def __init__(self):
-        self.gh = cnc.GAMMA["h"]
+        self.gh = GAMMA["h"]
 
         # Dipolar factors
-        self.dis = -sc.mu_0 * sc.hbar * self.gi * self.gs / (8.0 * np.pi * self.ris3)
-        dih = -sc.mu_0 * sc.hbar * self.gi * self.gh / (8.0 * np.pi * self.rih3)
-        dsh = -sc.mu_0 * sc.hbar * self.gs * self.gh / (8.0 * np.pi * self.rsh3)
+        self.dis = -mu_0 * hbar * self.gi * self.gs / (8.0 * np.pi * self.ris3)
+        dih = -mu_0 * hbar * self.gi * self.gh / (8.0 * np.pi * self.rih3)
+        dsh = -mu_0 * hbar * self.gs * self.gh / (8.0 * np.pi * self.rsh3)
         self.dis2 = self.dis * self.dis
         self.dih2 = dih * dih
         self.dsh2 = dsh * dsh
 
         # CSA factors
-        self.delta_i = self.csa_i[0:2] - self.csa_i[2]
-        self.delta_s = self.csa_s[0:2] - self.csa_s[2]
+        self.delta_i = self.csa_i[:2] - self.csa_i[2]
+        self.delta_s = self.csa_s[:2] - self.csa_s[2]
 
-    @ft.lru_cache(1024)
-    def __call__(self, h_frq, tauc, s2):
+    def __call__(self, h_frq: float, tauc: float, s2: float) -> dict[str, float]:
 
         # B0 in Tesla
         b0 = 2.0 * np.pi * 1e6 * h_frq / self.gh
@@ -51,8 +60,8 @@ class RatesIS:
         cs_ = -ws * self.delta_s / 3.0
         ci2 = ci_[0] ** 2 + ci_[1] ** 2 - ci_[0] * ci_[1]
         cs2 = cs_[0] ** 2 + cs_[1] ** 2 - cs_[0] * cs_[1]
-        p2i = 0.5 * (3.0 * np.cos(self.phi_i[0:2]) ** 2 - 1.0)
-        p2s = 0.5 * (3.0 * np.cos(self.phi_s[0:2]) ** 2 - 1.0)
+        p2i = 0.5 * (3.0 * np.cos(self.phi_i[:2]) ** 2 - 1.0)
+        p2s = 0.5 * (3.0 * np.cos(self.phi_s[:2]) ** 2 - 1.0)
         ci = (ci_ * p2i).sum()
         cs = (cs_ * p2s).sum()
 
@@ -126,18 +135,19 @@ class RatesIS:
 
 
 class RateNH(RatesIS):
-    gi = cnc.GAMMA["n"]
-    gs = cnc.GAMMA["h"]
-    ris3 = 1.04e-10 ** 3
-    rih3 = 1.79e-10 ** 3
-    rsh3 = 1.85e-10 ** 3
+    gi = GAMMA["n"]
+    gs = GAMMA["h"]
+    ris3 = 1.04e-10**3
+    rih3 = 1.79e-10**3
+    rsh3 = 1.85e-10**3
     csa_i = np.array([69.0, 42.0, -111.0]) * 1e-6
     csa_s = np.array([5.7, 0.5, -6.2]) * 1e-6
     phi_i = np.deg2rad([109.6, 90.0, 19.6])
     phi_s = np.deg2rad([10.0, 80.0, 90.0])
 
-    @ft.lru_cache(1024)
-    def __call__(self, h_frq, tauc, s2, khh=0.0):
+    def __call__(
+        self, h_frq: float, tauc: float, s2: float, khh: float = 0.0
+    ) -> dict[str, float]:
         rates = super().__call__(h_frq, tauc, s2)
         if khh == 0.0:
             return rates
@@ -153,23 +163,24 @@ class RateNH(RatesIS):
 
 
 class RateNH_D(RateNH):
-    rih3 = 2.50e-10 ** 3
-    rsh3 = 2.48e-10 ** 3
+    rih3 = 2.50e-10**3
+    rsh3 = 2.48e-10**3
 
 
 class RateHN(RatesIS):
-    gi = cnc.GAMMA["h"]
-    gs = cnc.GAMMA["n"]
-    ris3 = 1.04e-10 ** 3
-    rih3 = 1.85e-10 ** 3
-    rsh3 = 1.79e-10 ** 3
+    gi = GAMMA["h"]
+    gs = GAMMA["n"]
+    ris3 = 1.04e-10**3
+    rih3 = 1.85e-10**3
+    rsh3 = 1.79e-10**3
     csa_i = np.array([5.7, 0.5, -6.2]) * 1e-6
     csa_s = np.array([69.0, 42.0, -111.0]) * 1e-6
     phi_i = np.deg2rad([10.0, 80.0, 90.0])
     phi_s = np.deg2rad([109.6, 90.0, 19.6])
 
-    @ft.lru_cache(1024)
-    def __call__(self, h_frq, tauc, s2, khh=0.0):
+    def __call__(
+        self, h_frq: float, tauc: float, s2: float, khh: float = 0.0
+    ) -> dict[str, float]:
         rates = super().__call__(h_frq, tauc, s2)
         if khh == 0.0:
             return rates
@@ -185,16 +196,16 @@ class RateHN(RatesIS):
 
 
 class RateHN_D(RateHN):
-    rih3 = 2.48e-10 ** 3
-    rsh3 = 2.50e-10 ** 3
+    rih3 = 2.48e-10**3
+    rsh3 = 2.50e-10**3
 
 
 class RateCH(RatesIS):
-    gi = cnc.GAMMA["c"]
-    gs = cnc.GAMMA["h"]
-    ris3 = 1.09e-10 ** 3
-    rih3 = 1.70e-10 ** 3
-    rsh3 = 1.85e-10 ** 3
+    gi = GAMMA["c"]
+    gs = GAMMA["h"]
+    ris3 = 1.09e-10**3
+    rih3 = 1.70e-10**3
+    rsh3 = 1.85e-10**3
     csa_i = np.array([-5.3, -5.3, 10.7]) / 3.0 * 1e-6
     csa_s = np.array([0.0, 0.0, 0.0]) * 1e-6
     phi_i = np.deg2rad([109.6, 90.0, 19.6])
@@ -202,16 +213,16 @@ class RateCH(RatesIS):
 
 
 class RateCH_D(RateCH):
-    rih3 = 2.03e-10 ** 3
-    rsh3 = 2.52e-10 ** 3
+    rih3 = 2.03e-10**3
+    rsh3 = 2.52e-10**3
 
 
 class RateHC(RatesIS):
-    gi = cnc.GAMMA["h"]
-    gs = cnc.GAMMA["c"]
-    ris3 = 1.09e-10 ** 3
-    rih3 = 1.85e-10 ** 3
-    rsh3 = 1.70e-10 ** 3
+    gi = GAMMA["h"]
+    gs = GAMMA["c"]
+    ris3 = 1.09e-10**3
+    rih3 = 1.85e-10**3
+    rsh3 = 1.70e-10**3
     csa_i = np.array([0.0, 0.0, 0.0]) * 1e-6
     csa_s = np.array([-5.3, -5.3, 10.7]) / 3.0 * 1e-6
     phi_i = np.deg2rad([0.0, 0.0, 0.0])
@@ -219,11 +230,11 @@ class RateHC(RatesIS):
 
 
 class RateHC_D(RateHC):
-    rih3 = 2.52e-10 ** 3
-    rsh3 = 2.03e-10 ** 3
+    rih3 = 2.52e-10**3
+    rsh3 = 2.03e-10**3
 
 
-rate_functions = {
+rate_functions: dict[str, RatesIS] = {
     "nh": RateNH(),
     "nh_d": RateNH_D(),
     "hn": RateHN(),
@@ -253,13 +264,20 @@ _RATE_NAMES = [
 ]
 
 
-RATE_CONSTRAINTS = {
-    ss: {
-        f"{name}_{state}": f"{ss}({{h_larmor_frq}}, {{tauc_{state}}}, {{s2_{state}}}"
-        + (f", {{khh_{state}}})" if ss.startswith(("nh", "hn")) else ")")
-        + (f"['{name}']")
-        for name in _RATE_NAMES
-        for state in "abcd"
-    }
-    for ss in rate_functions
-}
+def get_model_free_expresions(basis: Basis, conditions: Conditions) -> dict[str, str]:
+
+    deuterated_extension = "_d" if conditions.is_deuterated else ""
+    rate_function_name = f"{basis.spin_system}{deuterated_extension}"
+
+    h_frq_str = f"{conditions.h_larmor_frq}"
+    has_h_exchange = basis.spin_system in {"nh", "hn"}
+
+    model_free_expr = {}
+    for state, name in product(model.states, _RATE_NAMES):
+        rate_name = f"{name}_{state}"
+        khh = f", {{khh_{state}}}" if has_h_exchange else ""
+        arguments = f"{h_frq_str}, {{tauc_{state}}}, {{s2_{state}}}{khh}"
+        expr = f"{rate_function_name}({arguments})['{name}']"
+        model_free_expr[rate_name] = expr
+
+    return model_free_expr

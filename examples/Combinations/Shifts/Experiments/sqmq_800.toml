@@ -8,5 +8,4 @@ h_larmor_frq = 799.708
 # temperature  = 20.5
 
 [data]
-path = "../Data/"
-shifts = "sqmq_800.txt"
+path = "../Data/sqmq_800.txt"

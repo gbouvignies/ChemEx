@@ -1,3 +1,6 @@
-[DEFAULT]
+[1_FIX_R1]
 FIT = ["CS_A"]
-FIX = ["KEX_AB"]
+FIX = ["KEX_AB", "R1_A"]
+
+[2_FIT_R1]
+FIT = ["R1_A"]

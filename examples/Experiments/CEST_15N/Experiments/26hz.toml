@@ -1,8 +1,9 @@
 [experiment]
-name    = "cest_15n"
-time_t1 = 0.5
-carrier = 118.987
-b1_frq  = 26.3
+name         = "cest_15n"
+time_t1      = 0.5
+carrier      = 118.987
+b1_frq       = 26.3
+b1_inh_scale = inf
 
 [conditions]
 h_larmor_frq = 499.243

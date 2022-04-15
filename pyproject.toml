@@ -1,40 +1,48 @@
 [tool.poetry]
-name        = "chemex"
-version     = "2021.4.0-dev6"
+name = "chemex"
+version = "2022.0.0-alpha.0"
 description = "ChemEx is an analysis program for chemical exchange detected by NMR"
-authors     = ["Guillaume Bouvignies <gbouvignies@gmail.com>"]
-license     = "BSD-3-Clause"
-readme      = "README.md"
-repository  = "https://github.com/gbouvignies/chemex"
-homepage    = "https://github.com/gbouvignies/chemex"
-classifiers = ["Intended Audience :: Science/Research", "License :: OSI Approved :: BSD License"]
+authors = ["Guillaume Bouvignies <gbouvignies@gmail.com>"]
+license = "BSD-3-Clause"
+readme = "README.md"
+repository = "https://github.com/gbouvignies/chemex"
+homepage = "https://github.com/gbouvignies/chemex"
+classifiers = [
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: BSD License",
+]
 
   [tool.poetry.dependencies]
   python      = "=3.9"
-  numpy       = "^1.21.3"
-  scipy       = "^1.7.1"
-  matplotlib  = "^3.4.3"
-  lmfit       = "^1.0.3"
-  jsonschema  = "^4.1.2"
-  tqdm        = "^4.62.3"
-  toml        = "^0.10.2"
-  Levenshtein = "^0.15.0"
+  numpy = "^1.22.2"
+  scipy = "^1.8.0"
+  matplotlib = "^3.5.1"
+  lmfit = "^1.0.3"
+  Levenshtein = "^0.18.1"
+  pydantic = "^1.9.0"
+  cachetools = "^5.0.0"
+  rich = "^11.2.0"
+  tomli = "^2.0.1"
 
   [tool.poetry.dev-dependencies]
-  black                    = "^21.9b0"
-  pre-commit               = "^2.15.0"
-  flake8                   = "^4.0.1"
-  recommonmark             = "^0.7.1"
-  sphinx-rtd-theme         = "^0.5.2"
-  sphinxcontrib-httpdomain = "^1.7.0"
-  Sphinx                   = "^4.0.2"
+  black = "^22.1.0"
+  pre-commit = "^2.17.0"
+  flake8 = "^4.0.1"
+  recommonmark = "^0.7.1"
+  sphinx-rtd-theme = "^1.0.0"
+  sphinxcontrib-httpdomain = "^1.8.0"
+  Sphinx = "^4.4.0"
+  mypy = "^0.931"
+  devtools = "^0.8.0"
+  types-toml               = "^0.10.4"
+  types-cachetools         = "^4.2.9"
 
   [tool.poetry.scripts]
   chemex = "chemex.chemex:main"
 
 [tool.black]
 line-length = 88
-target-version = ['py38']
+target-version = ['py39']
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -49,6 +57,9 @@ exclude = '''
   | dist
 )/
 '''
+
+[tool.mypy]
+plugins = ["pydantic.mypy", "numpy.typing.mypy_plugin"]
 
 [build-system]
 requires      = ["poetry-core>=1.0.0"]
