@@ -1,39 +1,20 @@
 """The parsing module contains the code for the parsing of command-line arguments."""
-import sys
 from argparse import ArgumentParser
-from argparse import Namespace
 from pathlib import Path
 
 from chemex import __version__
 from chemex import chemex
 from chemex import tools
-from chemex.experiments.configurations import configurations
-from chemex.experiments.descriptions import descriptions
-from chemex.messages import console
 from chemex.parameters.spin_system import SpinSystem
 
 
-class MyParser(ArgumentParser):
-    """Subclass of ArgumentParser to override the error method."""
+# class MyParser(ArgumentParser):
+#     """Subclass of ArgumentParser to override the error method."""
 
-    def error(self, message: str):
-        console.print(f"[red]\nError: {message}\n")
-        self.print_help()
-        sys.exit(1)
-
-
-def print_info(args: Namespace):
-    """Print information for experiment."""
-    descriptions.print(args.experiments)
-
-
-def write_config(args: Namespace):
-    """Write default configuration file for experiment."""
-    configurations.write(args.experiments, args.output)
-    print(
-        f"\nSample configuration file for '{args.experiments}' written to "
-        f"'{args.output}'.\n"
-    )
+#     def error(self, message: str):
+#         console.print(f"[red]\nError: {message}\n")
+#         self.print_help()
+#         sys.exit(1)
 
 
 def build_parser():
@@ -45,63 +26,24 @@ def build_parser():
         "dispersion and Chemical Exchange Saturation Transfer."
     )
 
-    parser = MyParser(description=description, prog="chemex")
+    parser = ArgumentParser(description=description, prog="chemex")
+
+    parser.set_defaults(func=lambda x: parser.print_usage())
 
     parser.add_argument(
         "--version", action="version", version=f"{parser.prog} {__version__}"
     )
 
-    commands = parser.add_subparsers(dest="commands")
-
-    # parser for the positional argument "info"
-    info_parser = commands.add_parser(
-        "info",
-        help="Show experiments that can be fit/simulated",
-        description="Enter the name of an experiment to obtain more info about it.",
-    )
-
-    info_parser.set_defaults(func=print_info)
-
-    experiments_parser = info_parser.add_subparsers(
-        dest="experiments", metavar="experiment_type", required=True
-    )
-
-    for exp_name in descriptions.experiment_names():
-        experiments_parser.add_parser(
-            exp_name, help=descriptions.first_line(exp_name), add_help=False
-        )
-
-    # parser for the positional argument "info"
-    config_parser = commands.add_parser(
-        "config",
-        help="Write sample configuration file for an experiment",
-        description="Enter the name of an experiment to obtain the associated sample "
-        "configuration file.",
-    )
-
-    config_parser.set_defaults(func=write_config)
-
-    config_exp_parser = config_parser.add_subparsers(dest="experiments", required=True)
-
-    for exp_name in descriptions.experiment_names():
-        parser_ = config_exp_parser.add_parser(exp_name)
-        parser_.add_argument(
-            "-o",
-            dest="output",
-            type=Path,
-            metavar="FILE",
-            default="./experiment.toml",
-            help="Name of the output file (default: './experiment.toml')",
-        )
+    subparsers = parser.add_subparsers(dest="commands")
 
     # parser for the positional argument "fit"
-    fit_parser = commands.add_parser("fit", help="Start a fit")
+    fit_parser = subparsers.add_parser("fit", help="Start a fit")
 
     fit_parser.set_defaults(func=chemex.run)
 
     fit_parser.add_argument(
         "-e",
-        dest="experiments",
+        "--experiments",
         type=Path,
         metavar="FILE",
         nargs="+",
@@ -111,7 +53,7 @@ def build_parser():
 
     fit_parser.add_argument(
         "-p",
-        dest="parameters",
+        "--parameters",
         type=Path,
         metavar="FILE",
         nargs="+",
@@ -121,7 +63,7 @@ def build_parser():
 
     fit_parser.add_argument(
         "-m",
-        dest="method",
+        "--method",
         type=Path,
         metavar="FILE",
         nargs="+",
@@ -130,7 +72,7 @@ def build_parser():
 
     fit_parser.add_argument(
         "-o",
-        dest="out_dir",
+        "--output",
         type=Path,
         metavar="DIR",
         default="./Output",
@@ -139,7 +81,7 @@ def build_parser():
 
     fit_parser.add_argument(
         "-d",
-        dest="model",
+        "--model",
         metavar="MODEL",
         default="2st",
         help="Exchange model used to fit the data (default: '2st')",
@@ -172,13 +114,13 @@ def build_parser():
     )
 
     # parser for the positional argument "simulate"
-    simulate_parser = commands.add_parser("simulate", help="Start a simulation")
+    simulate_parser = subparsers.add_parser("simulate", help="Start a simulation")
 
     simulate_parser.set_defaults(func=chemex.run)
 
     simulate_parser.add_argument(
         "-e",
-        dest="experiments",
+        "--experiments",
         type=Path,
         metavar="FILE",
         nargs="+",
@@ -188,7 +130,7 @@ def build_parser():
 
     simulate_parser.add_argument(
         "-p",
-        dest="parameters",
+        "--parameters",
         type=Path,
         metavar="FILE",
         nargs="+",
@@ -198,7 +140,7 @@ def build_parser():
 
     simulate_parser.add_argument(
         "-o",
-        dest="out_dir",
+        "--output",
         type=Path,
         metavar="DIR",
         default="./OutputSim",
@@ -207,7 +149,7 @@ def build_parser():
 
     simulate_parser.add_argument(
         "-d",
-        dest="model",
+        "--model",
         metavar="MODEL",
         default="2st",
         help="Exchange model used to simulate the data (default: '2st')",
@@ -240,7 +182,7 @@ def build_parser():
     )
 
     # parser for the positional argument "pick_cest"
-    pick_cest_parser = commands.add_parser(
+    pick_cest_parser = subparsers.add_parser(
         "pick_cest", help="Plot CEST profiles for dip picking"
     )
 
@@ -248,7 +190,7 @@ def build_parser():
 
     pick_cest_parser.add_argument(
         "-e",
-        dest="experiments",
+        "--experiments",
         type=Path,
         metavar="FILE",
         nargs="+",
@@ -258,7 +200,7 @@ def build_parser():
 
     pick_cest_parser.add_argument(
         "-o",
-        dest="out_dir",
+        "--output",
         type=Path,
         metavar="DIR",
         default="./Sandbox",
@@ -266,7 +208,7 @@ def build_parser():
     )
 
     # parser for the positional argument "pick_cest"
-    plot_param_parser = commands.add_parser(
+    plot_param_parser = subparsers.add_parser(
         "plot_param", help="Plot one selected parameter from a 'parameters.fit' file"
     )
 
@@ -274,7 +216,7 @@ def build_parser():
 
     plot_param_parser.add_argument(
         "-p",
-        dest="parameters",
+        "--parameters",
         type=Path,
         metavar="FILE",
         nargs="+",
@@ -284,7 +226,7 @@ def build_parser():
 
     plot_param_parser.add_argument(
         "-n",
-        dest="parname",
+        "--parname",
         metavar="NAME",
         required=True,
         help="Name of the parameter to plot",

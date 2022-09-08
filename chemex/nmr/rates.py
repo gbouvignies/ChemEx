@@ -264,7 +264,22 @@ _RATE_NAMES = [
 ]
 
 
-def get_model_free_expresions(basis: Basis, conditions: Conditions) -> dict[str, str]:
+def get_model_free_expressions(basis: Basis, conditions: Conditions) -> dict[str, str]:
+    """It takes a basis and a set of conditions,
+    and returns a dictionary of rate expressions
+
+    Parameters
+    ----------
+    basis : Basis
+        The basis set to use for the model-free analysis.
+    conditions : Conditions
+        The conditions for the fitting.
+
+    Returns
+    -------
+        A dictionary of rate names and their corresponding expressions.
+
+    """
 
     deuterated_extension = "_d" if conditions.is_deuterated else ""
     rate_function_name = f"{basis.spin_system}{deuterated_extension}"

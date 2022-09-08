@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
@@ -33,7 +34,7 @@ def _variance_from_duplicates(data: Data) -> float:
             variances.append(np.var(group, ddof=1))
             weights.append(group_size - 1)
     if not variances:
-        return np.mean(data.err)
+        return float(np.mean(data.err))
     return float(np.average(variances, weights=weights))
 
 
@@ -55,8 +56,8 @@ def _variance_from_scatter(data: Data) -> float:
         [1, -6, 15, -20, 15, -6, 1],
     ]
     fda = [np.array(a_fda) / norm(a_fda) for a_fda in fda]
-    percents = np.array([0.05] + list(np.arange(0.1, 0.40, 0.025)))
-    percent_points = stats.norm.ppf(1.0 - percents)  # type: ignore
+    percents = np.array([0.05] + list(np.arange(0.1, 0.4, 0.025)))
+    percent_points = stats.norm.ppf(1.0 - percents)
     sigma_est = []
     for fdai in fda:
         noisedata = sorted(signal.convolve(exp, fdai, mode="valid"))
@@ -66,11 +67,9 @@ def _variance_from_scatter(data: Data) -> float:
             sigmas = []
             function = interpolate.interp1d(xaxis, noisedata, "linear")
             for a_perc, a_z in zip(percents, percent_points):
-                try:
+                with contextlib.suppress(ValueError):
                     val = (function(1.0 - a_perc) - function(a_perc)) / (2.0 * a_z)
                     sigmas.append(val)
-                except ValueError:
-                    pass
             sigma_est.append(np.median(sigmas))
     variance = np.median(sigma_est) ** 2 / (1.0 + 15.0 * (size + 1.225) ** -1.245)
     return np.max([variance, 1e-8])

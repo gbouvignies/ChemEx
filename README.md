@@ -18,10 +18,10 @@ The easiest way to install `chemex` is via [conda](http://conda.pydata.org):
 conda install -c conda-forge chemex
 ```
 
-If your version of python is less than 3.8, you can also install `chemex` in a separate conda environment enforcing the use of python 3.8:
+If your version of python is less than 3.9, you can also install `chemex` in a separate conda environment enforcing the use of python 3.9+:
 
 ```bash
-conda create -c conda-forge -n chemex python=3.8 chemex
+conda create -c conda-forge -n chemex python=3.10 chemex
 conda activate chemex
 ```
 

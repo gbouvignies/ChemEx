@@ -6,7 +6,6 @@ from pathlib import Path
 
 from pydantic import ValidationError
 from rich import box
-from rich.align import Align
 from rich.console import Console
 from rich.padding import Padding
 from rich.panel import Panel
@@ -93,8 +92,7 @@ def print_step_name(name: str, index: int, total: int) -> None:
         (f"{name}", "magenta"),
         f" ({index}/{total})\n",
     )
-    console.print()
-    console.print(Padding.indent(Align(Rule(text, end="\n\n"), width=50), level=1))
+    console.print(Padding(Rule(text, end="\n\n"), (1, 0, 0, 1)), width=51)
 
 
 def print_selecting_profiles(selected_nb: int) -> None:
@@ -187,18 +185,13 @@ def print_plot_filename(filename: Path, extra: bool = True) -> None:
     text = f"    ‣ [green]{filename}[/]"
 
     if extra:
-        text += " [[green].fit[/], [green].pdf[/]]"
+        text += " [[green].fit[/], [green].exp[/]]"
 
     console.print(Text.from_markup(text))
 
 
 def print_group_name(text: str) -> None:
-    console.print(
-        Padding(
-            Align(Rule(Text.from_markup(text), characters="⋅"), width=46),
-            (1, 0, 0, 3),
-        )
-    )
+    console.print(Padding(Rule(text, characters="⋅"), (1, 0, 0, 3)), width=49)
 
 
 def print_file_not_found(filename: Path) -> None:

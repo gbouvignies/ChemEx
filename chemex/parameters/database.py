@@ -145,7 +145,9 @@ class ParameterCatalog:
 
         ids_modified = set()
         ids_pool = {
-            param_id for param_id, setting in parameters.items() if setting.vary != vary
+            param_id
+            for param_id, setting in parameters.items()
+            if setting.vary != vary or setting.expr
         }
 
         for section_name in reversed(section_names):
@@ -226,14 +228,14 @@ class ParameterCatalog:
             ids_left = self.get_matching_ids(ParamName.from_section(name))
             values = _convert_grid_expression_to_values(expression)
 
-            grid_values.update({param_id: values for param_id in ids_left & ids_pool})
+            grid_values |= {param_id: values for param_id in ids_left & ids_pool}
 
             self.set_vary([name], False)
 
         return grid_values
 
     def check_params(self):
-        """Check wheither the J couplings have the right sign"""
+        """Check whether the J couplings have the right sign"""
         messages = []
         for setting in self.__parameters.values():
             param_name = setting.param_name
@@ -345,7 +347,7 @@ fix_all_parameters = _manager.fix_all
 
 
 def set_parameter_status(method: Method):
-    """Set whether or not to vary a fitting parameter or to use a mathemetical
+    """Set whether or not to vary a fitting parameter or to use a mathematical
     expression."""
 
     matches_con = set_param_expressions(method.constraints)

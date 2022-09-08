@@ -1,0 +1,122 @@
+---
+sidebar_position: 4
+---
+
+# Additional modules
+
+## Simulating CPMG and CEST profiles
+
+ChemEx allows simulating CPMG or CEST profiles based on a given set of input
+parameters. Such simulations may be useful to learn about the effects of each
+individual parameter on the final results.
+
+A typical command for simulation purposes with ChemEx is like this:
+
+```bash
+
+   chemex simulate -e <FILE> \
+                   -p <FILE> \
+                   -d <MODEL> \
+                   -o <DIR>
+
+```
+
+Example simulation results for CPMG and CEST experiments are shown below:
+
+import CestProfile from '@site/static/img/cest_26hz_simu.png'; import
+CpmgProfile from '@site/static/img/cpmg_800mhz_simu.png';
+
+<figure>
+  <img src={CestProfile} alt="CEST profile" width="50%"/>
+  <img src={CpmgProfile} alt="CPMG profile" width="50%"/>
+  <figcaption align="center"><b>Examples of CEST and CPMG simulation results</b></figcaption>
+</figure>
+
+### Options
+
+| Option                    | Description                                                           |
+| ------------------------- | --------------------------------------------------------------------- |
+| `-e`, `--experiments`     | Specify the files containing experimental setup and data location     |
+| `-p`, `--parameters`      | Specify the files containing the initial values of fitting parameters |
+| `-d`, `--model`           | Specify the exchange model used to fit the datasets (default: `2st`)  |
+| `-o`, `--output`          | Specify the output directory (default: `./Output`)                    |
+| `--plot {nothing,normal}` | Plotting level (default: `normal`)                                    |
+| `--include`               | Residue(s) to include in the fit (optional)                           |
+| `--exclude`               | Residue(s) to exclude from the fit (optional)                         |
+
+### Example
+
+An example use of the module is available
+[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_15N/)
+with the script `simulate.sh`.
+
+## Plotting best-fit parameters
+
+ChemEx comes with a module `plot_param` that allows visualizing the fitting
+results interactively.
+
+### Options
+
+| Option               | Description                                                      |
+| -------------------- | ---------------------------------------------------------------- |
+| `-p`, `--parameters` | Specify the files containing the fitted parameters to be plotted |
+| `-n`, `--parname`    | Specify the name of the parameter to plot                        |
+
+### Example
+
+An example use of the module is given in the
+[protein-ligand binding example](../examples/binding.md). After finish running
+`run.sh`, the chemical shift differences between the free and bound states can
+be displayed with:
+
+```shell
+chemex plot_param -p Output/STEP2/All/Parameters/fitted.toml -n DW_AB
+```
+
+and the transverse relaxation rates of both states can be compared with:
+
+```bash
+chemex plot_param -p Output/STEP2/All/Parameters/fitted.toml -n R2
+```
+
+These two commands are saved in the `plot_param.sh` script in
+[this example](../examples/binding.md). From these two observables, the core
+region of the interaction site can be clearly located. Aside from the core
+region, there is also a tail with increased R<sub>2</sub> rates located at
+C-terminal end of the interaction site and with very little chemical shift
+perturbation. This region is likely involved in the transient interactions with
+the binding partner, which causes certain degree of steric restriction to this
+region.
+
+## Getting initial estimates of Δϖ for CEST experiments
+
+In CEST (and also D-CEST/COS-CEST) experiments, it is necessary to choose
+suitable initial value of Δϖ to avoid getting trapped in a local minimum. ChemEx
+comes with a module `pick_cest` for manually picking the major and minor dips of
+CEST profiles, which correspond to the ground and excited states, respectively.
+A typical command for such purpose is like this:
+
+```bash
+chemex pick_cest -e <FILE> -o <DIR>
+```
+
+After typing this command, a window showing all CEST profiles will appear. For
+each profile first click on the major dip and then on the minor dip(s). Note
+that in certain profiles only one dip could be visible, which indicates the
+minor dip is overlapped with the major dip, therefore the major dip should be
+clicked twice. When done with any profile, click the `Next` or `Previous` button
+to proceed to the next or previous profile. The `Swap` button allows switching
+between the major and minor states. The `Clear` button allows cleaning the
+selection in the current profile. Two separate files will be created in
+real-time during the dip picking process: `cs_a.toml` and `dw_ab.toml` that
+contain chemical shifts of the major state and chemical shift difference between
+the major and minor states, respectively.
+
+### Example
+
+Try to run the `pick_cest.sh` script under
+[`CEST_15N/` example](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_15N/)
+and `pick_dcest.sh` script under
+[`DCEST_15N/` example](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/DCEST_15N/)
+to learn how to make use of this function for CEST and D-CEST experiments,
+respectively.

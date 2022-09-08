@@ -1,0 +1,80 @@
+/**
+ * CSS files with the .module.css suffix will be treated as CSS modules
+ * and scoped locally.
+ */
+
+.heroBanner {
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+  min-height: 40vh;
+}
+
+.heroLeft {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.heroRight {
+  margin-left: 50%;
+  margin-top: 7vh;
+}
+
+.buttonContainer {
+  margin-bottom: 7vh;
+  text-align: center;
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+}
+
+.buttons > * {
+  margin: 10px 0;
+}
+
+.imageLogo {
+  margin-top: 5vh;
+  width: 40vw;
+  margin: 5vh auto;
+  max-width: 400px;
+  min-width: 300px;
+}
+
+[data-theme="light"] .imageLogo [color="#000"] {
+  color: var(--ifm-color-white);
+}
+
+[data-theme="dark"] .imageLogo [color="#000"] {
+  color: var(--ifm-color-black);
+}
+
+.getStarted {
+  margin-right: 20px;
+}
+
+@media screen and (max-width: 768px) {
+  .heroBanner {
+    text-align: center;
+  }
+
+  .heroLeft {
+    position: relative;
+  }
+
+  .heroRight {
+    margin-left: 0;
+    margin-top: -15px;
+  }
+
+  .buttons {
+    flex-direction: column;
+  }
+}

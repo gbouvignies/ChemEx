@@ -49,14 +49,26 @@ def _write_statistics(experiments: Experiments, path: Path):
     statistics = calculate_statistics(experiments, params_lf)
     filename = path / "statistics.toml"
     with open(filename, "w") as f:
-        f.write(f"number of data points          = {statistics['ndata']}\n")
-        f.write(f"number of variables            = {statistics['nvarys']}\n")
-        f.write(f"chi-square                     = {statistics['chisqr']: .5e}\n")
-        f.write(f"reduced-chi-square             = {statistics['redchi']: .5e}\n")
-        f.write(f"chi-squared test               = {statistics['pvalue']: .5e}\n")
-        f.write(f"Kolmogorov-Smirnov test        = {statistics['ks_pvalue']: .5e}\n")
-        f.write(f"Akaike Information Criterion   = {statistics['aic']: .5e}\n")
-        f.write(f"Bayesian Information Criterion = {statistics['bic']: .5e}\n")
+        f.write(f"\"number of data points\"                = {statistics['ndata']}\n")
+        f.write(f"\"number of variables\"                  = {statistics['nvarys']}\n")
+        f.write(
+            f"\"chi-square\"                           = {statistics['chisqr']: .5e}\n"
+        )
+        f.write(
+            f"\"reduced-chi-square\"                   = {statistics['redchi']: .5e}\n"
+        )
+        f.write(
+            f"\"chi-squared test\"                     = {statistics['pvalue']: .5e}\n"
+        )
+        f.write(
+            f"\"Kolmogorov-Smirnov test\"              = {statistics['ks_pvalue']: .5e}\n"
+        )
+        f.write(
+            f"\"Akaike Information Criterion (AIC)\"   = {statistics['aic']: .5e}\n"
+        )
+        f.write(
+            f"\"Bayesian Information Criterion (BIC)\" = {statistics['bic']: .5e}\n"
+        )
 
 
 def _write_files(experiments: Experiments, path: Path):
