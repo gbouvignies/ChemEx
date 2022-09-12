@@ -1,6 +1,0 @@
-{
-  "name": "ChemEx",
-  "tagline": "Analysis of chemical exchange phenomena in NMR spectroscopy",
-  "body": "###Quick install\r\n\r\nIn a clean directory run:\r\n\r\n    git clone https://github.com/gbouvignies/chemex\r\n\r\nNavigate to the chemex directory and run:\r\n\r\n    python setup.py install --user\r\n\r\n###Quick update\r\n\r\nTo get the latest code using git:\r\n\r\n    git pull\r\n\r\nThen simply re-run the install command above.\r\n\r\n\r\n###Prerequisites\r\n\r\nYou should have installed on your system:\r\n\r\n  * [Python 2.7.x](https://www.python.org/download/releases/2.7/)\r\n  * [SciPy 0.11.x](http://www.scipy.org/install.html)\r\n  * [MatPlotLib 1.1.x](http://matplotlib.org/users/installing.html)\r\n\r\nNewer versions of the above should be fine, as will be some older versions. However, Python\r\n2.6 or earlier will not work. Please report any compatibility issues that you run into.",
-  "note": "Don't delete this file! It's used internally to help with page regeneration."
-}
