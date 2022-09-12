@@ -7,7 +7,7 @@ sidebar_position: 4
 
 This section describes several representative examples in ChemEx. All examples
 are placed under `examples/` directory, each experiment module (see
-[`chemex_experiments`](chemex_experiments) section) typically has at least one
+[`Experiments`](../experiments/) section) typically has at least one
 example to demonstrate its application.
 
 import DocCardList from '@theme/DocCardList';

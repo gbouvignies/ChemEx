@@ -17,21 +17,25 @@ sites.
 
 This example demonstrates the analysis of datasets from in-phase/anti-phase ¹H
 CEST experiments, such scheme has been implemented for studying both backbone
-([`cest_1hn_ip_ap`](cest_1hn_ip_ap)) and methyl side-chain
-([`cest_ch3_1h_ip_ap`](cest_ch3_1h_ip_ap)) sites, which has the advantage of
-fully suppressing artifacts due to NOE effects. The in-phase/anti-phase CEST
-scheme requires measuring two sets of CEST profiles for two separate spin states
-and then take subtraction,[^1]<sup>,</sup>[^2] an alternative scheme is to start
-from in-phase magnetization and detect anti-phase magnetization at the end of
-CEST period.[^3] These two schemes are equivalent while the latter scheme
-achieves higher sensitivity and much time-saving, therefore should be preferred.
+([`cest_1hn_ip_ap`](../experiments/cest/cest_1hn_ip_ap)) and methyl side-chain
+([`cest_ch3_1h_ip_ap`](../experiments/cest/cest_ch3_1h_ip_ap)) sites, which has the
+advantage of fully suppressing artifacts due to NOE effects. The
+in-phase/anti-phase CEST scheme requires measuring two sets of CEST profiles for
+two separate spin states and then take subtraction,[^1]<sup>,</sup>[^2] an
+alternative scheme is to start from in-phase magnetization and detect anti-phase
+magnetization at the end of CEST period.[^3] These two schemes are equivalent
+while the latter scheme achieves higher sensitivity and much time-saving,
+therefore should be preferred.
 
-See `CEST_1HN_IP_AP/` and `CEST_CH3_1H_IP_AP/` under `examples/Experiments/` as
-example for backbone and methyl side-chain study, respectively. Note that ¹H
-chemical shifts provided in parameter files should correspond to the "actual"
-value in the absence of 1JHN or 1JHC, therefore a separate experiment that fully
-suppresses 1JHN or 1JHC during final detection might be required to obtain the
-correct value.
+:::info
+
+Note that ¹H chemical shifts provided in parameter files should correspond to
+the "actual" value in the absence of ¹J<sub>HN</sub> or ¹J<sub>HC</sub>,
+therefore a separate experiment that fully suppresses ¹J<sub>HN</sub> or
+¹J<sub>HC</sub> during final detection might be required to obtain the correct
+value.
+
+:::
 
 [^1]:
     T. Yuwen, A. Sekhar, and L. E. Kay. Separating Dipolar and Chemical Exchange

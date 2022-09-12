@@ -13,8 +13,8 @@ You can get
 :::
 
 This example demonstrates the analysis of datasets from ¹⁵N TROSY CEST
-experiment ([`cest_15n_tr`](cest_15n_tr)). Compared with ¹⁵N pure in-phase CEST
-experiment ([`cest_15n`](cest_15n)), the TROSY version benefits from TROSY
+experiment ([`cest_15n_tr`](../experiments/cest/cest_15n_tr)). Compared with ¹⁵N pure in-phase CEST
+experiment ([`cest_15n`](../experiments/cest/cest_15n)), the TROSY version benefits from TROSY
 effects therefore the relaxation property is more favorable. From this
 experiment it is possible to measure certain parameters about excited state that
 are difficult to obtain from other experiments, such as solvent exchange

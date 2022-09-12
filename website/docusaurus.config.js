@@ -12,7 +12,7 @@ const config = {
     title: 'ChemEx',
     tagline: 'ChemEx is an analysis program for characterizing chemical exchange detected by NMR.',
     url: 'https://gbouvignies.github.io',
-    baseUrl: '/chemex/',
+    baseUrl: '/ChemEx/',
     onBrokenLinks: 'throw',
     onBrokenMarkdownLinks: 'warn',
     favicon: 'img/favicon.ico',
