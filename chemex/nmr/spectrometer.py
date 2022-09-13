@@ -16,12 +16,12 @@ from chemex.nmr.constants import Distribution
 from chemex.nmr.liouvillian import LiouvillianIS
 
 
-def calculate_spectrometers(
+def calculate_propagators(
     liouv: np.ndarray, delays: float | Iterable[float], dephasing: bool = False
 ) -> np.ndarray:
     delays_ = np.asarray(delays).reshape(-1)
     shape = liouv.shape
-    spectrometer_list = []
+    propagator_list = []
     for a_liouvillian in liouv.reshape(-1, *shape[-2:]):
         s, vr = eig(a_liouvillian)  # type: ignore
         vri = inv(vr)
@@ -29,18 +29,18 @@ def calculate_spectrometers(
             indexes = np.where(abs(s.imag) < 1e-6)[0]  # type: ignore
             vr, s, vri = vr[:, indexes], s[indexes], vri[indexes, :]
         d = np.asarray([np.diag(np.exp(s * t)) for t in delays_])
-        spectrometer_list.append((vr @ d @ vri).real)
-    spectrometers = np.asarray(spectrometer_list).swapaxes(0, 1).reshape(-1, *shape)
-    if spectrometers.shape[0] == 1:
-        spectrometers = spectrometers[0]
-    return spectrometers
+        propagator_list.append((vr @ d @ vri).real)
+    propagators = np.asarray(propagator_list).swapaxes(0, 1).reshape(-1, *shape)
+    if propagators.shape[0] == 1:
+        propagators = propagators[0]
+    return propagators
 
 
 def _get_key(liouvillian: LiouvillianIS, *args, **kwargs):
     return hashkey(liouvillian.basis, *args, **kwargs)
 
 
-@cached(cache=dict(), key=_get_key)
+@cached(cache={}, key=_get_key)
 def _make_perfect180(liouvillian: LiouvillianIS, spin: str) -> np.ndarray:
     size = liouvillian.size
     identity = np.eye(size).reshape((1, 1, size, size))
@@ -56,7 +56,7 @@ def _make_perfect180(liouvillian: LiouvillianIS, spin: str) -> np.ndarray:
     return np.array(p180)
 
 
-@cached(cache=dict(), key=_get_key)
+@cached(cache={}, key=_get_key)
 def _make_perfect90(liouvillian: LiouvillianIS, spin: str) -> np.ndarray:
     size = liouvillian.size
     zeros = np.zeros((size, size))
@@ -64,7 +64,7 @@ def _make_perfect90(liouvillian: LiouvillianIS, spin: str) -> np.ndarray:
     return np.asarray(expm(0.25 * rot)).reshape((1, 1, size, size))
 
 
-@cached(cache=dict(), key=_get_key)
+@cached(cache={}, key=_get_key)
 def _get_phases(liouvillian: LiouvillianIS) -> dict[str, np.ndarray]:
     phases = {}
     size = liouvillian.size
@@ -76,9 +76,6 @@ def _get_phases(liouvillian: LiouvillianIS) -> dict[str, np.ndarray]:
 
 
 class Spectrometer:
-    def keep(self, magnetization: np.ndarray, components: Iterable[str]) -> np.ndarray:
-        return self.liouvillian.keep(magnetization, components)
-
     def _add_phases(self, propagator: np.ndarray, spin: str = "i") -> np.ndarray:
         phases = self._phases[spin]
         return np.array([phases[i] @ propagator @ phases[-i] for i in range(4)])
@@ -104,6 +101,9 @@ class Spectrometer:
         self._p180_i = np.array(0.0)
         self._p240_i = np.array(0.0)
         self._p180_s = np.array(0.0)
+
+    def keep(self, magnetization: np.ndarray, components: Iterable[str]) -> np.ndarray:
+        return self.liouvillian.keep(magnetization, components)
 
     def update(self, par_values: dict[str, float]) -> None:
         self.liouvillian.update(par_values)
@@ -236,7 +236,7 @@ class Spectrometer:
         self.calculate_s_flag = True
 
     def delays(self, times: float | Iterable[float]) -> np.ndarray:
-        return calculate_spectrometers(self.liouvillian.l_free, times)
+        return calculate_propagators(self.liouvillian.l_free, times)
 
     def pulse_i(
         self,
@@ -251,7 +251,7 @@ class Spectrometer:
             + scale * np.cos(rad) * self.liouvillian.l_b1x_i
             + scale * np.sin(rad) * self.liouvillian.l_b1y_i
         )
-        return calculate_spectrometers(liouv, times, dephased)
+        return calculate_propagators(liouv, times, dephased)
 
     def pulse_s(
         self,
@@ -265,7 +265,7 @@ class Spectrometer:
             + scale * np.cos(rad) * self.liouvillian.l_b1x_s
             + scale * np.sin(rad) * self.liouvillian.l_b1y_s
         )
-        return calculate_spectrometers(liouv, times)
+        return calculate_propagators(liouv, times)
 
     def pulse_is(
         self, times: float | Iterable[float], phase_i: float, phase_s: float
@@ -278,7 +278,7 @@ class Spectrometer:
             + np.cos(phase_s * np.pi * 0.5) * self.liouvillian.l_b1x_s
             + np.sin(phase_s * np.pi * 0.5) * self.liouvillian.l_b1y_s
         )
-        return calculate_spectrometers(liouv, times, dephased)
+        return calculate_propagators(liouv, times, dephased)
 
     def shaped_pulse_i(
         self, pw: float, amplitudes: Sequence[float], phases: Iterable[float]
@@ -288,7 +288,8 @@ class Spectrometer:
         pulses = {
             (amp, ph): self.pulse_i(time, ph, scale=amp) for amp, ph in set(pairs)
         }
-        return reduce(np.matmul, (pulses[pair] for pair in reversed(pairs)))
+        base = reduce(np.matmul, (pulses[pair] for pair in reversed(pairs)))
+        return self._add_phases(base, "i")
 
     def _calculate_base_pulses_i(self) -> None:
         if self.calculate_i_flag:

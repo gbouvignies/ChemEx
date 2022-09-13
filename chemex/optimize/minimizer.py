@@ -57,7 +57,7 @@ def minimize(
 
     kws = {
         "brute": {"keep": "all"},
-        "basinhopping": {"disp": verbose},
+        "basinhopping": {"niter_success": 10},
     }
 
     iter_cb = None
@@ -68,7 +68,11 @@ def minimize(
         reporter = Reporter()
         iter_cb = reporter.iter_cb
         indented_table = Padding.indent(reporter.table, 3)
-        live = Live(indented_table, console=console, refresh_per_second=20)
+        live = Live(
+            indented_table,
+            console=console,
+            refresh_per_second=20,
+        )
 
     minimizer = Minimizer(experiments.residuals, params, iter_cb=iter_cb)
 

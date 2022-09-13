@@ -72,6 +72,7 @@ CORRECT_ATOM_NAME = {"HN": "H", "C'": "C", "CO": "C"}
 
 # fmt: off
 STANDARD_ATOM_NAMES = {
+    # Protein
     'C', 'CA', 'CB', 'CD', 'CD1', 'CD2', 'CE', 'CE1', 'CE2', 'CE3', 'CG', 'CG1', 'CG2',
     'CH2', 'CQD', 'CQE', 'CQG', 'CZ', 'CZ2', 'CZ3', 'H', 'H2', 'H3', 'HA', 'HA2',
     'HA3', 'HB', 'HB1', 'HB2', 'HB3', 'HD', 'HD1', 'HD11', 'HD12', 'HD13', 'HD2',
@@ -80,7 +81,11 @@ STANDARD_ATOM_NAMES = {
     'HH11', 'HH12', 'HH2', 'HH21', 'HH22', 'HZ', 'HZ1', 'HZ2', 'HZ3', 'MB', 'MD', 'MD1',
     'MD2', 'ME', 'MG', 'MG1', 'MG2', 'MZ', 'N', 'ND1', 'ND2', 'NE', 'NE1', 'NE2', 'NH',
     'NH1', 'NH2', 'NQH', 'NZ', 'QA', 'QB', 'QD', 'QD2', 'QE', 'QE2', 'QG', 'QG1', 'QH1',
-    'QH2', 'QMD', 'QMG', 'QQH', 'QR', 'QZ'}
+    'QH2', 'QMD', 'QMG', 'QQH', 'QR', 'QZ',
+    # DNA/RNA
+    "C1'", 'C2', "C2'", "C3'", 'C4', "C4'", 'C5', "C5'", 'C6', 'C7', 'C8',
+    'H1', "H1'", 'H2', "H2'", "H2'1", "H2'2", 'H21', 'H22', 'H3', "H3'", "H4'", 'H41', 'H42', 'H5', "H5'1", "H5'2", 'H6', 'H61', 'H62', 'H71', 'H72', 'H73', 'H8',
+    'M7', 'N1', 'N2', 'N3', 'N4', 'N6', 'N7', 'N9'}
 # fmt: on
 
 
@@ -113,6 +118,12 @@ class Atom:
 class Group:
     NO_NUMBER: int = -100000000
 
+    def __init__(self, name: str) -> None:
+        self.symbol, self.number, self.suffix = self.parse_group(name.strip().upper())
+        self.symbol = AAA_TO_A.get(self.symbol, self.symbol)
+        self.name = self.get_name()
+        self.search_keys: set = {self} if self else set()
+
     def parse_group(self, name: str) -> tuple[str, int, str]:
         if found := search("[0-9]+", name.strip().upper()):
             return name[: found.start()], int(found.group()), name[found.end() :]
@@ -121,12 +132,6 @@ class Group:
     def get_name(self) -> str:
         number = "" if self.number == self.NO_NUMBER else self.number
         return f"{self.symbol}{number}{self.suffix}"
-
-    def __init__(self, name: str) -> None:
-        self.symbol, self.number, self.suffix = self.parse_group(name.strip().upper())
-        self.symbol = AAA_TO_A.get(self.symbol, self.symbol)
-        self.name = self.get_name()
-        self.search_keys: set = {self} if self else set()
 
     def match(self, other: Group) -> bool:
         symbol = other.symbol == self.symbol or not self.symbol
@@ -156,6 +161,13 @@ class Group:
 
 @total_ordering
 class Spin:
+    def __init__(self, name: str, group_for_completion: Group | None = None) -> None:
+        self.group, self.atom = self.split_group_atom(name.strip().upper())
+        if not self.group and group_for_completion:
+            self.group = group_for_completion
+        self.name = self.get_name()
+        self.search_keys = self.group.search_keys | self.atom.search_keys
+
     @staticmethod
     def split_group_atom(name: str) -> tuple[Group, Atom]:
         if name == "?":
@@ -172,13 +184,6 @@ class Spin:
 
     def get_name(self) -> str:
         return f"{self.group}{self.atom}"
-
-    def __init__(self, name: str, group_for_completion: Group | None = None) -> None:
-        self.group, self.atom = self.split_group_atom(name.strip().upper())
-        if not self.group and group_for_completion:
-            self.group = group_for_completion
-        self.name = self.get_name()
-        self.search_keys = self.group.search_keys | self.atom.search_keys
 
     def match(self, other: Spin):
         return self.group.match(other.group) and self.atom.match(other.atom)
@@ -207,9 +212,9 @@ class Spin:
 
 
 def powerset(iterable):
-    "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
+    "powerset([1,2,3]) --> (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
     s = list(iterable)
-    return chain.from_iterable(combinations(s, r) for r in range(len(s) + 1))
+    return chain.from_iterable(combinations(s, r) for r in range(1, len(s) + 1))
 
 
 @total_ordering
@@ -372,3 +377,5 @@ if __name__ == "__main__":
     spin = Spin("HD1", group)
     print(f"spin = {spin}, spin.group = {spin.group}, spin.atom = {spin.atom}")
     print(SpinSystem("GLY023N-HN").search_keys)
+    print(SpinSystem("GLY023N-HN").names)
+    print(SpinSystem("G23C1'").names)

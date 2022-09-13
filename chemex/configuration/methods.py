@@ -34,6 +34,9 @@ class Selection:
 
 
 class Method(BaseModelLowerCase):
+    class Config:
+        anystr_lower = True
+
     fitmethod: str = "leastsq"
     include: SelectionType = None
     exclude: SelectionType = None
@@ -42,9 +45,6 @@ class Method(BaseModelLowerCase):
     constraints: list[str] = Field(default_factory=list)
     grid: list[str] = Field(default_factory=list)
     statistics: Optional[Statistics] = None
-
-    class Config:
-        anystr_lower = True
 
     @property
     def selection(self) -> Selection:

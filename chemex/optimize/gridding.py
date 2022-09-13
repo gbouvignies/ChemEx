@@ -66,7 +66,7 @@ def run_group_grid(
         chisqr = []
 
         for values in track(
-            product(*group_grid.values()), total=grid_size, description="   "
+            product(*group_grid.values()), total=float(grid_size), description="   "
         ):
             _set_param_values(group_params, grid_ids, values)
             group_params = minimize(

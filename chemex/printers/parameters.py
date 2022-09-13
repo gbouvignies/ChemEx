@@ -73,13 +73,19 @@ def _params_to_strings(
     return result
 
 
+def _quote(text: str) -> str:
+    text = text.strip(" ,")
+    return text if RE_GROUPNAME.match(text) else f'"{text}"'
+
+
 def _format_strings(par_strings: dict[str, dict[str, str]]) -> str:
     result = []
     for section, key_values in par_strings.items():
         result.append(f"[{_quote(section)}]")
         width = len(max(key_values, key=len))
-        for key, value in key_values.items():
-            result.append(f"{_quote(key):<{width}} = {value}")
+        result.extend(
+            f"{_quote(key):<{width}} = {value}" for key, value in key_values.items()
+        )
         result.append("")
     return "\n".join(result)
 
@@ -115,8 +121,12 @@ def classify_parameters(experiments: Experiments) -> ClassifiedParameters:
         param.param_name: param for param in database.get_parameters(param_ids).values()
     }
 
-    fitted = {pname: param for pname, param in parameters.items() if param.vary}
     constrained = {pname: param for pname, param in parameters.items() if param.expr}
+    fitted = {
+        pname: param
+        for pname, param in parameters.items()
+        if param.vary and pname not in constrained
+    }
 
     fixed_ids = set(parameters) - set(fitted) - set(constrained)
     fixed = {
@@ -139,8 +149,3 @@ def write_parameters(experiments: Experiments, path: Path):
     write_file(classified_parameters.fitted, "fitted", path_par)
     write_file(classified_parameters.fixed, "fixed", path_par)
     write_file(classified_parameters.constrained, "constrained", path_par)
-
-
-def _quote(text: str) -> str:
-    text = text.strip(" ,")
-    return text if RE_GROUPNAME.match(text) else f'"{text}"'

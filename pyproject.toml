@@ -1,62 +1,43 @@
 [tool.poetry]
 name = "chemex"
-version = "2022.0.0-alpha.0"
+version = "2022.0.0"
 description = "ChemEx is an analysis program for chemical exchange detected by NMR"
 authors = ["Guillaume Bouvignies <gbouvignies@gmail.com>"]
-license = "BSD-3-Clause"
+license = "GPL-3.0-only"
 readme = "README.md"
 repository = "https://github.com/gbouvignies/chemex"
-homepage = "https://github.com/gbouvignies/chemex"
+homepage = "http://gbouvignies.github.io/ChemEx/"
 classifiers = [
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: BSD License",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
 ]
 
   [tool.poetry.dependencies]
-  python      = "=3.9"
-  numpy = "^1.22.2"
-  scipy = "^1.8.0"
-  matplotlib = "^3.5.1"
-  lmfit = "^1.0.3"
-  Levenshtein = "^0.18.1"
-  pydantic = "^1.9.0"
-  cachetools = "^5.0.0"
-  rich = "^11.2.0"
-  tomli = "^2.0.1"
+  python     = ">=3.9,<3.11"
+  numpy      = "^1.23.3"
+  scipy      = "^1.9.1"
+  matplotlib = "^3.5.3"
+  lmfit      = "^1.0.3"
+  pydantic   = "^1.10.2"
+  cachetools = "^5.2.0"
+  rich       = "^12.5.1"
+  tomli      = "^2.0.1"
+  rapidfuzz  = "^2.8.0"
 
   [tool.poetry.dev-dependencies]
-  black = "^22.1.0"
-  pre-commit = "^2.17.0"
-  flake8 = "^4.0.1"
-  recommonmark = "^0.7.1"
-  sphinx-rtd-theme = "^1.0.0"
-  sphinxcontrib-httpdomain = "^1.8.0"
-  Sphinx = "^4.4.0"
-  mypy = "^0.931"
-  devtools = "^0.8.0"
-  types-toml               = "^0.10.4"
-  types-cachetools         = "^4.2.9"
+  pre-commit       = "^2.17.0"
+  flake8           = "^4.0.1"
+  recommonmark     = "^0.7.1"
+  mypy             = "^0.931"
+  devtools         = "^0.8.0"
+  types-toml       = "^0.10.4"
+  types-cachetools = "^4.2.9"
 
   [tool.poetry.scripts]
   chemex = "chemex.chemex:main"
 
 [tool.black]
-line-length = 88
 target-version = ['py39']
-include = '\.pyi?$'
-exclude = '''
-/(
-    \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | _build
-  | buck-out
-  | build
-  | dist
-)/
-'''
 
 [tool.mypy]
 plugins = ["pydantic.mypy", "numpy.typing.mypy_plugin"]

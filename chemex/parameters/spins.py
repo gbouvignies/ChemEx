@@ -6,7 +6,7 @@ from chemex.configuration.conditions import Conditions
 from chemex.model import model
 from chemex.nmr.constants import J_COUPLINGS
 from chemex.nmr.liouvillian import Basis
-from chemex.nmr.rates import get_model_free_expresions
+from chemex.nmr.rates import get_model_free_expressions
 from chemex.parameters.setting import LocalSettings
 from chemex.parameters.setting import NameSetting
 from chemex.parameters.setting import ParamLocalSetting
@@ -187,10 +187,11 @@ def create_base_param_settings(
 def _build_model_free_settings(
     settings: LocalSettings, basis: Basis, conditions: Conditions
 ) -> LocalSettings:
-    model_free_expressions = get_model_free_expresions(basis, conditions)
+    model_free_expressions = get_model_free_expressions(basis, conditions)
     settings_mf = deepcopy(settings)
     for name, setting in settings_mf.items():
-        setting.expr = model_free_expressions.get(name, setting.expr)
+        if name in model_free_expressions:
+            setting.expr = model_free_expressions[name]
 
     return settings_mf
 

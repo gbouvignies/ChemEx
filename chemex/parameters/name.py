@@ -8,7 +8,7 @@ from dataclasses import field
 from functools import cached_property
 from re import Pattern
 
-from Levenshtein import distance
+from rapidfuzz.process import extractOne
 
 from chemex.configuration.conditions import Conditions
 from chemex.parameters.spin_system import SpinSystem
@@ -40,6 +40,32 @@ def _parse(re_to_match: Pattern, text: str) -> dict[str, str]:
     }
 
 
+def _multireplace(string: str, replacements: dict[str, str]) -> str:
+    """
+    Given a string and a replacement map, it returns the replaced string.
+
+    :param str string: string to execute replacements on
+    :param dict replacements: replacement dictionary {value to find: value to replace}
+    :rtype: str
+
+    """
+    # Place longer ones first to keep shorter substrings from matching where the longer
+    # ones should take place. For instance given the replacements
+    # {'ab': 'AB', 'abc': 'ABC'} against the string 'hey abc', it should produce
+    # 'hey ABC' and not 'hey ABc'
+    substrings = sorted(replacements, key=len, reverse=True)
+
+    # Create a big OR regex that matches any of the substrings to replace
+    regexp = re.compile("|".join(re.escape(substring) for substring in substrings))
+
+    # For each match, look up the new string in the replacements
+    return regexp.sub(lambda match: replacements[match.group(0)], string)
+
+
+def _expand(string: str) -> str:
+    return _multireplace(string, _EXPAND)
+
+
 @dataclass(order=True, unsafe_hash=True)
 class ParamName:
     name: str = ""
@@ -51,7 +77,7 @@ class ParamName:
         self.name = self.name.strip().upper()
         self.conditions = self.conditions.rounded()
         self.search_keys = (
-            {self.name} | self.spin_system.search_keys | self.conditions.search_keys
+            self.spin_system.search_keys | self.conditions.search_keys | {self.name}
         )
 
     @classmethod
@@ -96,16 +122,8 @@ class ParamName:
         return True
 
     def get_closest_id(self, ids: Iterable[str]) -> str:
-        # String matching was nitially implemented using `difflib` library,
-        # but using the `distance` function from the `Levenshtein` package is
-        # orders of magnitude faster.
-        #
-        # Other implementations:
-        # fname_replace = difflib.get_close_matches(fname, fname_set, n=1).pop()
-        # fname_replace, _ = fuzzywuzzy.process.extractOne(fname, fname_set)
-        # fname_replace, _ = thefuzz.process.extractOne(fname, fname_set)
-        #
-        return min(ids, key=lambda id_right: distance(id_right, self.id))
+        best_match, _, _ = extractOne(self.id, ids)
+        return best_match
 
     def __and__(self, other: ParamName) -> ParamName:
         name = self.name if self.name == other.name else ""
@@ -118,29 +136,3 @@ class ParamName:
 
     def __str__(self) -> str:
         return f"[{self.section_res}]"
-
-
-def _multireplace(string: str, replacements: dict[str, str]) -> str:
-    """
-    Given a string and a replacement map, it returns the replaced string.
-
-    :param str string: string to execute replacements on
-    :param dict replacements: replacement dictionary {value to find: value to replace}
-    :rtype: str
-
-    """
-    # Place longer ones first to keep shorter substrings from matching where the longer
-    # ones should take place. For instance given the replacements
-    # {'ab': 'AB', 'abc': 'ABC'} against the string 'hey abc', it should produce
-    # 'hey ABC' and not 'hey ABc'
-    substrings = sorted(replacements, key=len, reverse=True)
-
-    # Create a big OR regex that matches any of the substrings to replace
-    regexp = re.compile("|".join(re.escape(substring) for substring in substrings))
-
-    # For each match, look up the new string in the replacements
-    return regexp.sub(lambda match: replacements[match.group(0)], string)
-
-
-def _expand(string: str) -> str:
-    return _multireplace(str(string), _EXPAND)

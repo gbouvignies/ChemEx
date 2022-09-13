@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from contextlib import ExitStack
+from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 from typing import Any
 from typing import Generic
@@ -8,6 +10,8 @@ from typing import Protocol
 from typing import TypeVar
 
 import numpy as np
+import numpy.typing as npt
+from matplotlib.axes import Axes
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import MaxNLocator
 
@@ -35,7 +39,7 @@ class CestExperimentConfig(Protocol):
 T = TypeVar("T", bound=CestExperimentConfig)
 
 
-def estimate_sigma(values):
+def estimate_sigma(values: npt.NDArray[np.float64]) -> float:
     """Estimates standard deviation using median to exclude outliers.
 
     Up to 50% can be bad.
@@ -49,24 +53,64 @@ def estimate_sigma(values):
     if not all(values):
         return 0.0
     _values = values.reshape(1, -1)
-    return 1.1926 * np.median(np.median(abs(_values - _values.T), axis=0))
+    return float(1.1926 * np.median(np.median(abs(_values - _values.T), axis=0)))
 
 
-def plot_cest(
+@dataclass
+class CircularShift:
+    spectrometer: Spectrometer
+    sw: float
+    sw_ppm: float = field(init=False)
+
+    def __post_init__(self) -> None:
+        sw_ppm, sw_ref = self.spectrometer.offsets_to_ppms(np.array([self.sw, 0.0]))
+        self.sw_ppm = sw_ppm - sw_ref
+
+    def centre(self, array: np.ndarray, position: float) -> np.ndarray:
+        if self.sw == np.inf:
+            return array
+        cs_min = position - self.sw_ppm / 2.0
+        return (array - cs_min) % self.sw_ppm + cs_min
+
+
+def add_resonance_positions(
+    ax1: Axes,
+    ax2: Axes,
+    cs_values: np.ndarray,
+    centre: float,
+    circular_shift: CircularShift,
+) -> tuple[Axes, Axes]:
+    kwargs2 = {"color": _GREY400, "linewidth": 0.75, "zorder": -1}
+    cs_shifted = circular_shift.centre(cs_values, centre)
+    for a_cs, a_cs_shifted, lstyle in zip(cs_values, cs_shifted, _LSTYLES):
+        ax1.axvline(a_cs_shifted, linestyle=lstyle, **kwargs2)
+        ax2.axvline(a_cs_shifted, linestyle=lstyle, **kwargs2)
+        if a_cs != a_cs_shifted:
+            x, _ = ax2.transLimits.transform((a_cs_shifted, 0))
+            ax2.text(x - 0.02, 0.95, "*", transform=ax2.transAxes)
+    return ax1, ax2
+
+
+def plot_dcest(
     file_pdf: PdfPages,
     name: str,
     data_exp: Data,
     data_calc: Data,
     cs_values: np.ndarray,
-    alias_values: np.ndarray,
+    circular_shift: CircularShift,
 ):
     residuals = data_exp.exp - data_exp.calc
     sigma = estimate_sigma(residuals)
+    centre = float(np.mean(cs_values))
+    data_exp.metadata = circular_shift.centre(data_exp.metadata, centre)
+    data_calc.metadata = circular_shift.centre(data_calc.metadata, centre)
+    data_exp.sort()
+    data_calc.sort()
     fig = plot_profile(name, data_exp, data_calc)
     ax1, ax2 = fig.axes
-    lim = sorted(ax2.get_xlim(), reverse=True)
-    ax1.set_xlim(lim)
-    ax2.set_xlim(lim)
+    xmin, xmax = sorted(ax2.get_xlim())
+    ax1.set_xlim(xmax, xmin)
+    ax2.set_xlim(xmax, xmin)
     ax1.xaxis.set_major_locator(MaxNLocator(6))
     ax2.xaxis.set_major_locator(MaxNLocator(6))
     ax2.set_xlabel(r"$B_1$ position (ppm)")
@@ -74,13 +118,9 @@ def plot_cest(
     kwargs1 = {"facecolor": (0, 0, 0, 0.1), "edgecolor": "none"}
     ax1.fill_between(ax1.get_xlim(), -1.0 * sigma, 1.0 * sigma, **kwargs1)
     ax1.fill_between(ax1.get_xlim(), -2.0 * sigma, 2.0 * sigma, **kwargs1)
-    kwargs2 = {"color": _GREY400, "linewidth": 0.75, "zorder": -1}
-    for a_cs, alias, lstyle in zip(cs_values, alias_values, _LSTYLES):
-        ax1.axvline(a_cs, linestyle=lstyle, **kwargs2)
-        ax2.axvline(a_cs, linestyle=lstyle, **kwargs2)
-        if alias:
-            x, _ = ax2.transLimits.transform((a_cs, 0))
-            ax2.text(x - 0.02, 0.95, "*", transform=ax2.transAxes)
+
+    ax1, ax2 = add_resonance_positions(ax1, ax2, cs_values, centre, circular_shift)
+
     file_pdf.savefig(fig)
 
 
@@ -128,32 +168,16 @@ def create_plot_data_calc(profile: Profile) -> Data:
     return data_fit
 
 
-def get_state_positions(
-    data: Data, spectrometer: Spectrometer, sw: float
-) -> tuple[np.ndarray, np.ndarray]:
+def get_state_positions(spectrometer: Spectrometer) -> np.ndarray:
 
     names = (f"cs_i_{state}" for state in "abcd")
-    dip_ppms = np.array(
+    return np.array(
         [
             spectrometer.par_values[name]
             for name in names
             if name in spectrometer.par_values
         ]
     )
-
-    offset_min = min(data.metadata[~data.refs])
-    cs_min, sw_ppm, sw_ref = spectrometer.offsets_to_ppms(
-        np.array([offset_min, sw, 0.0])
-    )
-    sw_ppm -= sw_ref
-    dip_positions = (dip_ppms - cs_min) % sw_ppm + cs_min
-
-    if sw_ppm < np.inf:
-        aliased = (dip_ppms - cs_min) // sw_ppm
-    else:
-        aliased = np.zeros_like(dip_ppms)
-
-    return dip_positions, aliased
 
 
 class CestPlotter(Generic[T]):
@@ -171,8 +195,11 @@ class CestPlotter(Generic[T]):
     ) -> None:
         spectrometer = profile.spectrometer
         sw = self.config.experiment.sw
-        dip_positions, aliased = get_state_positions(profile.data, spectrometer, sw)
-        plot_cest(pdf, str(profile.name), data_exp, data_calc, dip_positions, aliased)
+        dip_positions = get_state_positions(spectrometer)
+        circular_shift = CircularShift(spectrometer, sw)
+        plot_dcest(
+            pdf, str(profile.name), data_exp, data_calc, dip_positions, circular_shift
+        )
 
     def plot(self, path: Path, profiles: list[Profile]) -> None:
 

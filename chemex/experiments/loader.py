@@ -24,7 +24,7 @@ def import_module(name: str) -> ExperimentModuleInterface:
 
 def register_experiments() -> None:
     """Loads the plugins defined in the plugins list."""
-    for package in iter_modules(catalog.__path__):
-        full_package_name = f"{catalog.__name__}.{package.name}"
-        experiment_module = import_module(f"{full_package_name}.experiment")
+    for module in iter_modules(catalog.__path__):
+        module_name = f"{catalog.__name__}.{module.name}"
+        experiment_module = import_module(module_name)
         experiment_module.register()

@@ -51,6 +51,35 @@ class Buttons:
     LSTYLE = {"a": "-", "b": ":"}
     TEXT_Y = {"a": 0.8, "b": 0.75}
 
+    def __init__(self, experiments, path, sw):
+
+        self.data = {}
+        names = set()
+
+        for experiment in experiments:
+            for profile in experiment:
+                name = SpinSystem(profile.name.names["i"])
+                names.add(name)
+                self.data.setdefault(name, []).append(Curve(profile, sw))
+
+        self.names = sorted(names)
+        self.out = path
+
+        self.name = None
+        self.curves = None
+        self.cs_a, self.cs_b = {}, {}
+        self.lines = []
+        self.cid = None
+        self.sw = sw
+
+        self.fig, self.axis = plt.subplots(figsize=(12, 5))
+        self.fig.subplots_adjust(left=0.07, bottom=0.1, right=0.8, top=0.9)
+
+        self.cursor = Cursor(self.axis, horizOn=False, useblit=True)
+
+        self.index = -1
+        self.next(None)
+
     def _clear_lines(self):
         while self.lines:
             self.lines.pop().remove()
@@ -178,35 +207,6 @@ class Buttons:
         """Go to next residue."""
         self._shift(+1)
 
-    def __init__(self, experiments, path, sw):
-
-        self.data = {}
-        names = set()
-
-        for experiment in experiments:
-            for profile in experiment:
-                name = SpinSystem(profile.name.names["i"])
-                names.add(name)
-                self.data.setdefault(name, []).append(Curve(profile, sw))
-
-        self.names = sorted(names)
-        self.out = path
-
-        self.name = None
-        self.curves = None
-        self.cs_a, self.cs_b = {}, {}
-        self.lines = []
-        self.cid = None
-        self.sw = sw
-
-        self.fig, self.axis = plt.subplots(figsize=(12, 5))
-        self.fig.subplots_adjust(left=0.07, bottom=0.1, right=0.8, top=0.9)
-
-        self.cursor = Cursor(self.axis, horizOn=False, useblit=True)
-
-        self.index = -1
-        self.next(None)
-
     def previous(self, event):
         """Go to previous residue."""
         self._shift(-1)
@@ -247,15 +247,15 @@ def pick_cest(args: Namespace):
     sw = None
 
     for experiment in experiments:
-        if not experiment.name.startswith(("cest", "dcest")):
+        if not experiment.name.startswith(("cest", "dcest", "coscest")):
             sys.exit(
                 f"\nError: '{experiment.name}' experiment not supported. "
                 "The command 'chemex pick_cest' only works with CEST experiments.\n"
             )
-        if experiment.name.startswith("dcest"):
+        if experiment.name.startswith("dcest") or experiment.name.startswith("coscest"):
             sw = 3.0
 
-    callback = Buttons(experiments, args.out_dir, sw)
+    callback = Buttons(experiments, args.output, sw)
 
     if sw is not None:
         axsw = plt.axes((0.855, 0.425, 0.1, 0.02))

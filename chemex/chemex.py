@@ -35,13 +35,13 @@ def run_fit(args: Namespace, experiments: Experiments):
         methods = {"": Method()}
 
     print_start_fit()
-    run_methods(experiments, methods, args.out_dir, args.plot)
+    run_methods(experiments, methods, args.output, args.plot)
 
 
 def run_sim(args: Namespace, experiments: Experiments):
     print_running_simulations()
 
-    path = args.out_dir
+    path = args.output
     plot = args.plot == "normal"
 
     database.fix_all_parameters()
@@ -82,8 +82,4 @@ def main():
 
     parser = build_parser()
     args = parser.parse_args()
-
-    if args.commands is None:
-        parser.print_help()
-    else:
-        args.func(args)
+    args.func(args)
