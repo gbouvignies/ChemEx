@@ -20,13 +20,15 @@ GAMMA = {
 }
 
 # Define nuclide frequency ratios wrt proton
-# IUPAC values for bio NMR: Markley et al, Pure & Appl. Chem., (1998) 70, p117
+# IUPAC values for bio NMR: Markley et al. Pure Appl. Chem. (1998) 70, 117.
+# 19F value comes from: Harris et al. Pure Appl. Chem. (2001) 73, 1795.
 XI_RATIO = {
     "h": 100.000_000_0e-02,
     "q": 100.000_000_0e-02,
     "n": 10.132_911_8e-02,
     "c": 25.144_953_0e-02,
-    "f": 40.480_863_6e-02,
+    "f": 94.094_011e-02,
+    "p": 40.480_863_6e-02,
 }
 
 SIGNED_XI_RATIO: dict[str, float] = {
