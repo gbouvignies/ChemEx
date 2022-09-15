@@ -15,7 +15,7 @@ def _create_fig(name: str) -> tuple[Figure, Axes, Axes]:
     fig = Figure()
     ax1, ax2 = fig.subplots(2, 1, sharex="all", gridspec_kw={"height_ratios": [1, 4]})
     fig.align_labels()
-    fig.suptitle(f"{str(name).upper()}")
+    fig.suptitle(f"{name.upper()}")
     ax1.set_ylabel("Residuals")
     ax1.ticklabel_format(style="sci", scilimits=(0, 0), axis="y", useMathText=True)
 
@@ -62,8 +62,8 @@ def _plot_exp(data_exp: Data, ax1: Axes, ax2: Axes):
     ax1.errorbar(exp_x[s2], res_y[s2], exp_e[s2].T, fmt=".", color=_RED700, zorder=3)
     ax2.errorbar(exp_x[s2], exp_y[s2], exp_e[s2].T, fmt=".", color=_RED700, zorder=3)
 
-    ax1.set_ylim(range1_y)
-    ax2.set_ylim(range2_y)
+    ax1.set_ylim(*range1_y)
+    ax2.set_ylim(*range2_y)
 
 
 def plot_profile(name: str, data_exp: Data, data_calc: Data) -> Figure:

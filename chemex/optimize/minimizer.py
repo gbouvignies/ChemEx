@@ -1,28 +1,24 @@
 from __future__ import annotations
 
-import sys
-from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass
-from dataclasses import field
 
 import numpy as np
 from lmfit import Minimizer
 from lmfit import Parameters
-from rich.live import Live
-from rich.padding import Padding
-from rich.table import Table
 
 from chemex.containers.experiments import Experiments
-from chemex.messages import console
-from chemex.messages import create_chi2_table
+from chemex.messages import print_calculation_stopped_error
+from chemex.messages import print_chi2_table_footer
+from chemex.messages import print_chi2_table_header
+from chemex.messages import print_chi2_table_line
+from chemex.messages import print_value_error
 
 
 @dataclass
 class Reporter:
     last_chisqr: float = 1e32
     threshold: float = -1.0e-3
-    table: Table = field(default_factory=create_chi2_table)
 
     def iter_cb(
         self, params: Parameters, iteration: int, residuals: np.ndarray
@@ -42,14 +38,20 @@ class Reporter:
         )
         redchi = chisqr / max(1, ndata - nvarys)
 
-        self.table.add_row(f"{iteration:d}", f"{chisqr:.1f}", f"{redchi:.3f}")
+        self.print_line(iteration, chisqr, redchi)
+
+    def print_line(self, iteration: int, chisqr: float, redchi: float) -> None:
+        print_chi2_table_line(iteration, chisqr, redchi)
+
+    def print_header(self) -> None:
+        print_chi2_table_header()
+
+    def print_footer(self, iteration: int, chisqr: float, redchi: float) -> None:
+        print_chi2_table_footer(iteration, chisqr, redchi)
 
 
 def minimize(
-    experiments: Experiments,
-    params: Parameters,
-    fitmethod: str | None = None,
-    verbose: bool = True,
+    experiments: Experiments, params: Parameters, fitmethod: str | None = None
 ) -> Parameters:
 
     if fitmethod is None:
@@ -60,35 +62,37 @@ def minimize(
         "basinhopping": {"niter_success": 10},
     }
 
-    iter_cb = None
-    reporter = None
-    live = nullcontext()
+    minimizer = Minimizer(experiments.residuals, params)
+    minimizer.minimize(method=fitmethod, **(kws.get(fitmethod, {})))
+    return deepcopy(minimizer.result.params)  # type: ignore
 
-    if verbose:
-        reporter = Reporter()
-        iter_cb = reporter.iter_cb
-        indented_table = Padding.indent(reporter.table, 3)
-        live = Live(
-            indented_table,
-            console=console,
-            refresh_per_second=20,
+
+def minimize_with_report(
+    experiments: Experiments, params: Parameters, fitmethod: str | None = None
+) -> Parameters:
+
+    if fitmethod is None:
+        fitmethod = "leastsq"
+
+    kws = {
+        "brute": {"keep": "all"},
+        "basinhopping": {"niter_success": 10},
+    }
+
+    reporter = Reporter()
+
+    minimizer = Minimizer(experiments.residuals, params, iter_cb=reporter.iter_cb)
+
+    reporter.print_header()
+
+    try:
+        minimizer.minimize(method=fitmethod, **(kws.get(fitmethod, {})))
+        reporter.print_footer(
+            minimizer.result.nfev, minimizer.result.chisqr, minimizer.result.redchi
         )
+    except KeyboardInterrupt:
+        print_calculation_stopped_error()
+    except ValueError:
+        print_value_error()
 
-    minimizer = Minimizer(experiments.residuals, params, iter_cb=iter_cb)
-
-    with live:
-        try:
-            result = minimizer.minimize(method=fitmethod, **(kws.get(fitmethod, {})))
-            if verbose and reporter is not None:
-                reporter.table.columns[0].footer = f"{result.nfev:d}"
-                reporter.table.columns[1].footer = f"{result.chisqr:.1f}"
-                reporter.table.columns[2].footer = f"{result.redchi:.3f}"
-                reporter.table.show_footer = True
-        except KeyboardInterrupt:
-            sys.stderr.write("\n -- Keyboard Interrupt: minimization stopped --\n")
-            result = minimizer.result
-        except ValueError:
-            result = minimizer.result
-            sys.stderr.write("\n -- Got a ValueError: minimization stopped --\n")
-
-    return deepcopy(result.params)  # type: ignore
+    return deepcopy(minimizer.result.params)  # type: ignore

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections import Counter
-from inspect import cleandoc
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -153,13 +152,23 @@ def print_section(name: str) -> None:
     console.print(Text(f"  • Section {name}"))
 
 
-def create_chi2_table() -> Table:
-    table = Table()
-    table.add_column("Iteration", justify="right")
-    table.add_column("χ²", justify="right")
-    table.add_column("Reduced χ²", justify="right")
-    table.box = box.SIMPLE
-    return table
+def print_chi2_table_header() -> None:
+    header = Text(f"{'Iteration':>9s}  {'χ²':>12s}  {'Reduced χ²':>12s}")
+    console.print()
+    console.print(Padding.indent(header, 5), style="bold")
+    console.print(Padding.indent("─" * 39, 4))
+
+
+def print_chi2_table_line(iteration: int, chisqr: float, redchi: float) -> None:
+    line = Text(f"{iteration:>9d}  {chisqr:>12.1f}  {redchi:>12.3f}")
+    console.print(Padding.indent(line, 5))
+
+
+def print_chi2_table_footer(iteration: int, chisqr: float, redchi: float) -> None:
+    footer = Text(f"{iteration:>9d}  {chisqr:>12.1f}  {redchi:>12.3f}")
+    console.print(Padding.indent("─" * 39, 4))
+    console.print(Padding.indent(footer, 5), style="bold")
+    console.print()
 
 
 def print_chi2(chisqr: float, redchi: float) -> None:
@@ -235,10 +244,13 @@ def print_pydantic_parsing_error(filename: Path, error: ValidationError) -> None
         console.print("  • ", location, ":", err["msg"], style="red")
 
 
-EXPERIMENT_NOT_FOUND = cleandoc(
-    """[red bold]EXPERIMENT LOADING FAILED [/]
+def print_calculation_stopped_error() -> None:
+    console.print()
+    console.print("[red] -- Keyboard Interrupt: Calculation stopped --")
+    console.print()
 
-    '{name}' is not part of our experiment collection!
-    Run 'chemex info' to obtain the full list of the available experiments.
-"""
-)
+
+def print_value_error() -> None:
+    console.print()
+    console.print("[red] -- Got a ValueError: Calculation stopped --")
+    console.print()

@@ -27,7 +27,7 @@ const config = {
             ({
                 docs: {
                     sidebarPath: require.resolve('./sidebars.js'),
-                    editUrl: 'https://github.com/gbouvignies/chemex/tree/master/',
+                    editUrl: 'https://github.com/gbouvignies/chemex/tree/main/website/',
                     remarkPlugins: [math],
                     rehypePlugins: [katex],
                 },
