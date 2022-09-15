@@ -24,7 +24,7 @@ def plot_shift(name_pdf: Path, data: Data):
     ax.plot([val_min, val_max], [val_min, val_max], color="k", linewidth=0.5, zorder=1)
     ax.set_xlabel(r"$Δδ_\mathregular{fit}$ (ppb)")
     ax.set_ylabel(r"$Δδ_\mathregular{exp}$ (ppb)")
-    fig.savefig(name_pdf)
+    fig.savefig(str(name_pdf))
 
 
 def create_plot_data(profiles: list[Profile]) -> Data:

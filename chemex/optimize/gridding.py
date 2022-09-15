@@ -63,24 +63,21 @@ def run_group_grid(
 
         fileout.write(print_header(group_grid))
 
-        chisqr = []
+        chisqr_list = []
 
-        for values in track(
-            product(*group_grid.values()), total=float(grid_size), description="   "
-        ):
+        grid_values = product(*group_grid.values())
+
+        for values in track(grid_values, total=float(grid_size), description="   "):
             _set_param_values(group_params, grid_ids, values)
-            group_params = minimize(
-                group.experiments, group_params, fitmethod, verbose=False
-            )
-            chisqr.append(
-                calculate_statistics(group.experiments, group_params).get("chisqr")
-            )
-            fileout.write(print_values(values, chisqr[-1]))
+            group_params = minimize(group.experiments, group_params, fitmethod)
+            stats = calculate_statistics(group.experiments, group_params)
+            chisqr_list.append(stats.get("chisqr"))
+            fileout.write(print_values(values, chisqr_list[-1]))
             fileout.flush()
 
-    chisqr = np.array(chisqr).reshape(shape)
+    chisqr_array = np.array(chisqr_list).reshape(shape)
 
-    return GridResult(group_grid, chisqr)
+    return GridResult(group_grid, chisqr_array)
 
 
 def _reshape_chisqr(
@@ -175,7 +172,7 @@ def plot_grid_1d(grids_1d: list[GridResult], path: Path):
     if not grids_1d:
         return
 
-    with PdfPages(path / "grid_1d.pdf") as pdf:
+    with PdfPages(str(path / "grid_1d.pdf")) as pdf:
         for grid_result in grids_1d:
             parameters = database.get_parameters(grid_result.grid)
             ((id_, values),) = list(grid_result.grid.items())
@@ -201,7 +198,7 @@ def plot_grid_2d(grids_2d: list[GridResult], path: Path):
     if not grids_2d:
         return
 
-    with PdfPages(path / "grid_2d.pdf") as pdf:
+    with PdfPages(str(path / "grid_2d.pdf")) as pdf:
         for grid_result in grids_2d:
             parameters = database.get_parameters(grid_result.grid)
             (id_x, values_x), (id_y, values_y) = grid_result.grid.items()
@@ -211,7 +208,7 @@ def plot_grid_2d(grids_2d: list[GridResult], path: Path):
             best_value_y = parameters[id_y].value
             if best_value_x is not None:
                 ax.axvline(best_value_x, ls="dashed", color=(0.5, 0.5, 0.5), zorder=-1)
-            if best_value_x is not None:
+            if best_value_y is not None:
                 ax.axhline(best_value_y, ls="dashed", color=(0.5, 0.5, 0.5), zorder=-1)
             cs = ax.scatter(
                 grid_x,

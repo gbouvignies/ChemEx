@@ -9,12 +9,14 @@ from chemex.configuration.methods import Methods
 from chemex.configuration.methods import Statistics
 from chemex.containers.experiments import Experiments
 from chemex.containers.experiments import generate_exp_for_statistics
+from chemex.messages import print_calculation_stopped_error
 from chemex.messages import print_fitmethod
 from chemex.messages import print_group_name
 from chemex.messages import print_minimizing
 from chemex.messages import print_no_data
 from chemex.messages import print_running_statistics
 from chemex.messages import print_step_name
+from chemex.messages import print_value_error
 from chemex.optimize.gridding import run_grid
 from chemex.optimize.grouping import create_groups
 from chemex.optimize.helper import calculate_statistics
@@ -23,6 +25,7 @@ from chemex.optimize.helper import execute_post_fit_groups
 from chemex.optimize.helper import print_header
 from chemex.optimize.helper import print_values_stat
 from chemex.optimize.minimizer import minimize
+from chemex.optimize.minimizer import minimize_with_report
 from chemex.parameters import database
 
 
@@ -57,12 +60,20 @@ def _run_statistics(
 
             fileout.write(print_header(ids_vary))
 
-            for _ in track(range(iter_nb), total=iter_nb, description="   "):
-                exp_stat = generate_exp_for_statistics(experiments, statistic_name)
-                params_lf = database.build_lmfit_params(exp_stat.param_ids)
-                params_fit = minimize(exp_stat, params_lf, fitmethod, verbose=False)
-                chisqr = calculate_statistics(exp_stat, params_fit).get("chisqr", 1e32)
-                fileout.write(print_values_stat(params_fit, ids_vary, chisqr))
+            try:
+                for _ in track(range(iter_nb), total=iter_nb, description="   "):
+                    exp_stat = generate_exp_for_statistics(experiments, statistic_name)
+                    params_lf = database.build_lmfit_params(exp_stat.param_ids)
+                    params_fit = minimize(exp_stat, params_lf, fitmethod)
+                    stats = calculate_statistics(exp_stat, params_fit)
+                    chisqr = stats.get("chisqr", 1e32)
+                    fileout.write(print_values_stat(params_fit, ids_vary, chisqr))
+            except KeyboardInterrupt:
+                print_calculation_stopped_error()
+            except ValueError:
+                print_value_error()
+            finally:
+                fileout.flush()
 
 
 def _fit_groups(
@@ -86,8 +97,8 @@ def _fit_groups(
         if message := group.message:
             print_group_name(message)
 
-        best_lmfit_params = minimize(
-            group.experiments, group_lmfit_params, fitmethod, verbose=True
+        best_lmfit_params = minimize_with_report(
+            group.experiments, group_lmfit_params, fitmethod
         )
 
         database.update_from_parameters(best_lmfit_params)
@@ -135,7 +146,12 @@ def run_methods(
         path_sect = path / section if len(methods) > 1 else path
 
         if method.grid:
-            run_grid(experiments, method.grid, path_sect, plot_level, method.fitmethod)
+            try:
+                run_grid(
+                    experiments, method.grid, path_sect, plot_level, method.fitmethod
+                )
+            except KeyboardInterrupt:
+                print_calculation_stopped_error()
         else:
             _fit_groups(
                 experiments, path_sect, plot_level, method.fitmethod, method.statistics

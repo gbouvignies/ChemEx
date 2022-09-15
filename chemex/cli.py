@@ -8,15 +8,6 @@ from chemex import tools
 from chemex.parameters.spin_system import SpinSystem
 
 
-# class MyParser(ArgumentParser):
-#     """Subclass of ArgumentParser to override the error method."""
-
-#     def error(self, message: str):
-#         console.print(f"[red]\nError: {message}\n")
-#         self.print_help()
-#         sys.exit(1)
-
-
 def build_parser():
     """Parse the command-line arguments."""
     description = (
