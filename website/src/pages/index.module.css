@@ -78,11 +78,3 @@
     flex-direction: column;
   }
 }
-
-.indexCtasGitHubButtonWrapper {
-  display: flex;
-}
-
-.indexCtasGitHubButton {
-  overflow: hidden;
-}
