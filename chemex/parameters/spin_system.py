@@ -17,7 +17,7 @@ from typing import Literal
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from chemex.nmr.liouvillian import Basis
+    from chemex.nmr.basis import Basis
 
 
 SPIN_ALIASES = "isx"

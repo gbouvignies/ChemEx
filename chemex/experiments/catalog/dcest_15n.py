@@ -17,8 +17,8 @@ from chemex.experiments.factories import Creators
 from chemex.experiments.factories import factories
 from chemex.filterers import CestFilterer
 from chemex.model import model
+from chemex.nmr.basis import Basis
 from chemex.nmr.constants import get_multiplet
-from chemex.nmr.liouvillian import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
@@ -141,7 +141,7 @@ class DCest15NSequence:
         )
 
 
-def register():
+def register() -> None:
     creators = Creators(
         config_creator=DCest15NConfig,
         spectrometer_creator=build_spectrometer,

@@ -5,7 +5,7 @@ from functools import cache
 from chemex.configuration.conditions import Conditions
 from chemex.configuration.experiment import ExperimentConfig
 from chemex.model import model
-from chemex.nmr.liouvillian import Basis
+from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.parameters import database
 from chemex.parameters.kinetics import build_kinetic_param_settings

@@ -15,7 +15,7 @@ from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators
 from chemex.experiments.factories import factories
 from chemex.filterers import CestFilterer
-from chemex.nmr.liouvillian import Basis
+from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
@@ -112,7 +112,7 @@ class Cest1HnApSequence:
         )
 
 
-def register():
+def register() -> None:
     creators = Creators(
         config_creator=Cest1HnApConfig,
         spectrometer_creator=build_spectrometer,

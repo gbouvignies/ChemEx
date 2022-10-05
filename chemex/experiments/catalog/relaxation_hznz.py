@@ -15,7 +15,7 @@ from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators
 from chemex.experiments.factories import factories
 from chemex.filterers import PlanesFilterer
-from chemex.nmr.liouvillian import Basis
+from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
@@ -95,7 +95,7 @@ class RelaxationHzNzSequence:
         return np.full_like(metadata, False, dtype=np.bool_)
 
 
-def register():
+def register() -> None:
     creators = Creators(
         config_creator=RelaxationHzNzConfig,
         spectrometer_creator=build_spectrometer,

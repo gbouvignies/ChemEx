@@ -4,8 +4,8 @@ from copy import deepcopy
 
 from chemex.configuration.conditions import Conditions
 from chemex.model import model
+from chemex.nmr.basis import Basis
 from chemex.nmr.constants import J_COUPLINGS
-from chemex.nmr.liouvillian import Basis
 from chemex.nmr.rates import get_model_free_expressions
 from chemex.parameters.setting import LocalSettings
 from chemex.parameters.setting import NameSetting
