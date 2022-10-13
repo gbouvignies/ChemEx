@@ -1,5 +1,0 @@
-[STEP1]
-FIX = ["PB", "PC", "KEX_AB", "KEX_AC", "KEX_BC"]
-
-[STEP2]
-FIT = ["PB", "PC", "KEX_AB", "KEX_AC"]

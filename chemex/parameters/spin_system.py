@@ -325,9 +325,9 @@ class SpinSystem:
 
     @classmethod
     def validate(cls, v) -> SpinSystem:
-        if not isinstance(v, str) and not isinstance(v, int) and v is not None:
-            raise TypeError("string required")
-        return cls(v)
+        if isinstance(v, (str, int)) or v is None:
+            return cls(v)
+        raise TypeError("string required")
 
     @classmethod
     def __get_validators__(cls):

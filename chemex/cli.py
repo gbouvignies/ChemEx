@@ -1,4 +1,6 @@
 """The parsing module contains the code for the parsing of command-line arguments."""
+from __future__ import annotations
+
 from argparse import ArgumentParser
 from pathlib import Path
 

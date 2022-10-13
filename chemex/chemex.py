@@ -19,6 +19,7 @@ from chemex.messages import print_reading_defaults
 from chemex.messages import print_reading_methods
 from chemex.messages import print_running_simulations
 from chemex.messages import print_start_fit
+from chemex.models.loader import register_kinetic_settings
 from chemex.optimize.fitting import run_methods
 from chemex.optimize.helper import execute_post_fit
 from chemex.parameters import database
@@ -78,6 +79,7 @@ def main():
     """Do all the magic."""
     print_logo()
 
+    register_kinetic_settings()
     register_experiments()
 
     parser = build_parser()

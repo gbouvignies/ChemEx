@@ -5,10 +5,10 @@ from functools import cache
 from chemex.configuration.conditions import Conditions
 from chemex.configuration.experiment import ExperimentConfig
 from chemex.model import model
+from chemex.models.factory import model_factory
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.parameters import database
-from chemex.parameters.kinetics import build_kinetic_param_settings
 from chemex.parameters.setting import LocalSettings
 from chemex.parameters.setting import Parameters
 from chemex.parameters.setting import ParamSetting
@@ -21,7 +21,7 @@ def _build_settings(
     basis: Basis, conditions: Conditions
 ) -> tuple[LocalSettings, LocalSettings]:
     settings_spins, settings_spins_mf = build_spin_param_settings(basis, conditions)
-    settings_kinetics = build_kinetic_param_settings(model.name, conditions)
+    settings_kinetics = model_factory.create(model.name, conditions)
     settings = settings_kinetics | settings_spins
     settings_mf = settings_kinetics | settings_spins_mf
     return settings, settings_mf

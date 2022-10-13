@@ -5,6 +5,8 @@ Define the gyromagnetic ratios in rad/s/T
 IUPAC values: Harris et al, Concepts in Magn. Reson., (2002) 14, p326
 
 """
+from __future__ import annotations
+
 from collections import Counter
 from dataclasses import dataclass
 

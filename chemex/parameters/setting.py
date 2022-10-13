@@ -5,13 +5,16 @@ from dataclasses import dataclass
 from dataclasses import field
 from re import Pattern
 from typing import Literal
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from chemex.configuration.conditions import Conditions
-from chemex.configuration.parameters import DefaultSetting
 from chemex.parameters.name import ParamName
 from chemex.parameters.spin_system import SpinSystem
+
+if TYPE_CHECKING:
+    from chemex.configuration.conditions import Conditions
+    from chemex.configuration.parameters import DefaultSetting
 
 _RE_IDS = re.compile(r"__[a-zA-Z_][a-zA-Z0-9_]*")
 _RE_NAMES = re.compile(r"\{([a-zA-Z0-9_]+)\}")

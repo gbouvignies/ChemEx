@@ -1,4 +1,6 @@
 """A simple plugin loader."""
+from __future__ import annotations
+
 import importlib
 from pkgutil import iter_modules
 from typing import cast

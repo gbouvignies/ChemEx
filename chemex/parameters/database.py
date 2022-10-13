@@ -21,6 +21,7 @@ from chemex.nmr.rates import rate_functions
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import Parameters
 from chemex.parameters.setting import ParamSetting
+from chemex.parameters.userfunctions import user_function_registry
 
 _FLOAT = r"[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?"
 _RE_PARAM_NAME = compile(r"\[(.+?)\]")
@@ -101,7 +102,8 @@ class ParameterCatalog:
 
         parameter_args = (parameter.args for parameter in parameters.values())
 
-        lmfit_params = ParametersLF(usersyms=rate_functions)
+        usersyms = rate_functions | user_function_registry.get(model.name)
+        lmfit_params = ParametersLF(usersyms=usersyms)
         lmfit_params.add_many(*parameter_args)
         lmfit_params.update_constraints()
 
