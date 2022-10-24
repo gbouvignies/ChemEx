@@ -4,7 +4,6 @@ from __future__ import annotations
 import sys
 from argparse import Namespace
 
-from chemex import model
 from chemex.cli import build_parser
 from chemex.configuration.methods import Method
 from chemex.configuration.methods import read_methods
@@ -19,6 +18,7 @@ from chemex.messages import print_reading_defaults
 from chemex.messages import print_reading_methods
 from chemex.messages import print_running_simulations
 from chemex.messages import print_start_fit
+from chemex.models import model
 from chemex.models.loader import register_kinetic_settings
 from chemex.optimize.fitting import run_methods
 from chemex.optimize.helper import execute_post_fit

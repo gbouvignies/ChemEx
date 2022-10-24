@@ -14,33 +14,25 @@ classifiers = [
 
   [tool.poetry.dependencies]
   python     = ">=3.9,<3.11"
-  numpy      = "^1.23.3"
-  scipy      = "^1.9.1"
-  matplotlib = "^3.5.3"
+  numpy      = "^1.23.4"
+  scipy      = "^1.9.3"
+  matplotlib = "^3.6.1"
   lmfit      = "^1.0.3"
   pydantic   = "^1.10.2"
   cachetools = "^5.2.0"
-  rich       = "^12.5.1"
+  rich       = "^12.6.0"
   tomli      = "^2.0.1"
-  rapidfuzz  = "^2.8.0"
+  rapidfuzz  = "^2.11.1"
 
-  [tool.poetry.dev-dependencies]
+  [tool.poetry.group.dev.dependencies]
   pre-commit       = "^2.17.0"
-  flake8           = "^4.0.1"
-  recommonmark     = "^0.7.1"
-  mypy             = "^0.931"
-  devtools         = "^0.8.0"
-  types-toml       = "^0.10.4"
   types-cachetools = "^4.2.9"
 
-  [tool.poetry.scripts]
-  chemex = "chemex.chemex:main"
+[tool.poetry.scripts]
+chemex = "chemex.chemex:main"
 
 [tool.black]
 target-version = ['py39']
-
-[tool.mypy]
-plugins = ["pydantic.mypy", "numpy.typing.mypy_plugin"]
 
 [build-system]
 requires      = ["poetry-core>=1.0.0"]

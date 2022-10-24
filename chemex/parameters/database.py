@@ -16,7 +16,7 @@ from lmfit import Parameters as ParametersLF
 from chemex.configuration.methods import Method
 from chemex.configuration.parameters import DefaultListType
 from chemex.messages import print_status_changes
-from chemex.model import model
+from chemex.models.model import model
 from chemex.nmr.rates import rate_functions
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import Parameters
@@ -308,12 +308,9 @@ class ParamManager:
             return
 
         params_mf = self.__database_mf.build_lmfit_params()
-        self.__database_mf.set_values(params_mf.valuesdict())
+        self.database.set_values(params_mf.valuesdict())
 
         self.database.set_defaults(defaults)
-
-        params = self.database.build_lmfit_params()
-        self.database.set_values(params.valuesdict())
 
         self.database.check_params()
 

@@ -4,8 +4,8 @@ from functools import cache
 
 from chemex.configuration.conditions import Conditions
 from chemex.configuration.experiment import ExperimentConfig
-from chemex.model import model
 from chemex.models.factory import model_factory
+from chemex.models.model import model
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.parameters import database
@@ -78,6 +78,7 @@ def create_parameters(
     name_map, parameters = _build_parameters(
         settings, liouvillian.spin_system, config.conditions
     )
+
     name_map_mf, parameters_mf = _build_parameters(
         settings_mf, liouvillian.spin_system, config.conditions
     )

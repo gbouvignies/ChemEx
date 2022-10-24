@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from chemex.models.factory import model_factory
+from chemex.parameters.setting import NameSetting
+from chemex.parameters.setting import ParamLocalSetting
 
 if TYPE_CHECKING:
     from chemex.configuration.conditions import Conditions
-    from chemex.parameters.setting import NameSetting
-    from chemex.parameters.setting import ParamLocalSetting
 
 NAME = "1st"
 

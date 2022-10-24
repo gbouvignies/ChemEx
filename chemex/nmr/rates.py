@@ -8,7 +8,7 @@ from scipy.constants import hbar
 from scipy.constants import mu_0
 
 from chemex.configuration.conditions import Conditions
-from chemex.model import model
+from chemex.models.model import model
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import GAMMA
 
@@ -48,7 +48,6 @@ class RatesIS:
         self.delta_s = self.csa_s[:2] - self.csa_s[2]
 
     def __call__(self, h_frq: float, tauc: float, s2: float) -> dict[str, float]:
-
         # B0 in Tesla
         b0 = 2.0 * np.pi * 1e6 * h_frq / self.gh
 
@@ -244,7 +243,6 @@ rate_functions: dict[str, RatesIS] = {
     "hc": RateHC(),
     "hc_d": RateHC_D(),
 }
-
 
 _RATE_NAMES = [
     "r2_i",

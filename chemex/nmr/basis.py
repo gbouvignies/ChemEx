@@ -9,7 +9,7 @@ from typing import Literal
 
 import numpy as np
 
-from chemex.model import model
+from chemex.models.model import model
 
 _BASES = {
     "ixy": ["ix", "iy"],

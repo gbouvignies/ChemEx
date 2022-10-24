@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import sys
 from argparse import Namespace
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,11 +12,12 @@ from matplotlib.widgets import Cursor
 from matplotlib.widgets import Slider
 from scipy.interpolate import CubicSpline
 
-from chemex import model
 from chemex.configuration.methods import Selection
+from chemex.containers.experiments import Experiments
 from chemex.containers.profile import Profile
 from chemex.experiments.builder import build_experiments
 from chemex.experiments.loader import register_experiments
+from chemex.models import model
 from chemex.parameters.spin_system import Nucleus
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cest import create_plot_data_exp
@@ -24,7 +26,18 @@ from chemex.plotters.cest import create_plot_data_exp
 class Curve:
     def __init__(self, profile: Profile, sw: float | None = None):
         data = create_plot_data_exp(profile)
-        ppms = data.metadata
+        settings = getattr(profile.pulse_sequence, "settings")
+
+        delta_ppm = 0.0
+        if settings is not None:
+            spectrometer = profile.spectrometer
+            cos_n = getattr(settings, "cos_n")
+            sw = getattr(settings, "sw")
+            if cos_n is not None and cos_n % 2 == 0 and sw is not None:
+                shifts_ppm = spectrometer.offsets_to_ppms(np.array([sw / 2.0, 0.0]))
+                delta_ppm = shifts_ppm[0] - shifts_ppm[1]
+
+        ppms = data.metadata - delta_ppm
         xmin, xmax = min(ppms), max(ppms)
         self.xrange = xmax - xmin
         self.xcentre = 0.5 * (xmin + xmax)
@@ -46,12 +59,11 @@ class Curve:
 
 
 class Buttons:
-
     KWARGS = {"color": "0.74", "linewidth": 1.0}
     LSTYLE = {"a": "-", "b": ":"}
     TEXT_Y = {"a": 0.8, "b": 0.75}
 
-    def __init__(self, experiments, path, sw):
+    def __init__(self, experiments: Experiments, path: Path, sw: float) -> None:
 
         self.data = {}
         names = set()
@@ -253,7 +265,7 @@ def pick_cest(args: Namespace):
                 "The command 'chemex pick_cest' only works with CEST experiments.\n"
             )
         if experiment.name.startswith("dcest") or experiment.name.startswith("coscest"):
-            sw = 3.0
+            sw = 4.0
 
     callback = Buttons(experiments, args.output, sw)
 

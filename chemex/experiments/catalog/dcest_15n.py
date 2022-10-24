@@ -16,7 +16,7 @@ from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators
 from chemex.experiments.factories import factories
 from chemex.filterers import CestFilterer
-from chemex.model import model
+from chemex.models.model import model
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import get_multiplet
 from chemex.nmr.liouvillian import LiouvillianIS

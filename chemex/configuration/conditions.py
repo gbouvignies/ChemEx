@@ -14,7 +14,7 @@ from pydantic import PositiveFloat
 from pydantic import root_validator
 from pydantic import validator
 
-from chemex.model import model
+from chemex.models.model import model
 
 
 @total_ordering

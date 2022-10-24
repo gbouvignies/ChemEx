@@ -21,7 +21,7 @@ import numpy as np
 from scipy import stats
 
 from chemex.configuration.conditions import Conditions
-from chemex.model import model
+from chemex.models.model import model
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import Distribution
 from chemex.nmr.constants import SIGNED_XI_RATIO
@@ -29,7 +29,6 @@ from chemex.nmr.constants import XI_RATIO
 
 if TYPE_CHECKING:
     from chemex.parameters.spin_system import SpinSystem
-
 
 _RE_COMP = re.compile(r"\[(.+?)\]")
 

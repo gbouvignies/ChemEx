@@ -23,10 +23,10 @@ def calculate_propagators(
     shape = liouv.shape
     propagator_list = []
     for a_liouvillian in liouv.reshape(-1, *shape[-2:]):
-        s, vr = eig(a_liouvillian)  # type: ignore
+        s, vr = eig(a_liouvillian)
         vri = inv(vr)
         if dephasing:
-            indexes = np.where(abs(s.imag) < 1e-6)[0]  # type: ignore
+            indexes = np.where(abs(s.imag) < 1e-6)[0]
             vr, s, vri = vr[:, indexes], s[indexes], vri[indexes, :]
         d = np.asarray([np.diag(np.exp(s * t)) for t in delays_])
         propagator_list.append((vr @ d @ vri).real)
