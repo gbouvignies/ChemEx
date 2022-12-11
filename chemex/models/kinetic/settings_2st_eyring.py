@@ -45,7 +45,7 @@ def make_settings_2st_eyring(conditions: Conditions) -> dict[str, ParamLocalSett
         "ds_b": ParamLocalSetting(
             name_setting=NameSetting("ds_b", "", PL),
             value=0.0,
-            vary=False,
+            vary=True,
         ),
         "dh_ab": ParamLocalSetting(
             name_setting=NameSetting("dh_ab", "", PL),
@@ -55,17 +55,17 @@ def make_settings_2st_eyring(conditions: Conditions) -> dict[str, ParamLocalSett
         "ds_ab": ParamLocalSetting(
             name_setting=NameSetting("ds_ab", "", PL),
             value=0.0,
-            vary=False,
+            vary=True,
         ),
         "kab": ParamLocalSetting(
             name_setting=NameSetting("kab", "", TPL),
             min=0.0,
-            expr=f"kij_2st_eyring({{dh_b}}, {{ds_b}}, {{dh_ab}}, {{dh_ab}}, {celsius})['kab']",
+            expr=f"kij_2st_eyring({{dh_b}}, {{ds_b}}, {{dh_ab}}, {{ds_ab}}, {celsius})['kab']",
         ),
         "kba": ParamLocalSetting(
             name_setting=NameSetting("kba", "", TPL),
             min=0.0,
-            expr=f"kij_2st_eyring({{dh_b}}, {{ds_b}}, {{dh_ab}}, {{dh_ab}}, {celsius})['kba']",
+            expr=f"kij_2st_eyring({{dh_b}}, {{ds_b}}, {{dh_ab}}, {{ds_ab}}, {celsius})['kba']",
         ),
         "pa": ParamLocalSetting(
             name_setting=NameSetting("pa", "", TPL),
