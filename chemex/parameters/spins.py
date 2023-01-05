@@ -26,19 +26,68 @@ def _update_expr_for_proton_exchange(
         settings[f"r1a_is_{state}"].expr = ""
 
 
-def _add_dw_param_settings(settings: dict[str, ParamLocalSetting], state: str) -> None:
-    settings[f"dw_i_a{state}"] = ParamLocalSetting(
-        name_setting=NameSetting(f"dw_a{state}", "i"),
+def _add_temp_coef_param_settings(
+    settings: dict[str, ParamLocalSetting], state: str, conditions: Conditions
+) -> None:
+    settings[f"dwm_i_a{state}"] = ParamLocalSetting(
+        name_setting=NameSetting(f"dwm_a{state}", "i"),
         value=0.0,
+        min=-1.0,
+        max=1.0,
+        vary=True,
+    )
+    settings[f"dwp_i_a{state}"] = ParamLocalSetting(
+        name_setting=NameSetting(f"dwp_a{state}", "i"),
+        value=0.0,
+        min=-100.0,
+        max=100.0,
+        vary=True,
+    )
+    settings[f"dwm_s_a{state}"] = ParamLocalSetting(
+        name_setting=NameSetting(f"dwm_a{state}", "s"),
+        value=0.0,
+        min=-1.0,
+        max=1.0,
+        vary=True,
+    )
+    settings[f"dwp_s_a{state}"] = ParamLocalSetting(
+        name_setting=NameSetting(f"dwp_a{state}", "s"),
+        value=0.0,
+        min=-100.0,
+        max=100.0,
+        vary=True,
+    )
+    temp = conditions.temperature
+    setting_dw_i = settings[f"dw_i_a{state}"]
+    setting_dw_i.vary = False
+    setting_dw_i.expr = f"{{dwp_i_a{state}}} + {temp} * {{dwm_i_a{state}}}"
+    setting_dw_s = settings[f"dw_s_a{state}"]
+    setting_dw_s.vary = False
+    setting_dw_s.expr = f"{{dwp_s_a{state}}} + {temp} * {{dwm_s_a{state}}}"
+
+
+def _add_dw_param_settings(
+    settings: dict[str, ParamLocalSetting], state: str, conditions: Conditions
+) -> None:
+    settings[f"dw_i_a{state}"] = ParamLocalSetting(
+        name_setting=NameSetting(f"dw_a{state}", "i", ("temperature",)),
+        value=0.0,
+        min=-100.0,
+        max=100.0,
         vary=True,
     )
     settings[f"dw_s_a{state}"] = ParamLocalSetting(
-        name_setting=NameSetting(f"dw_a{state}", "s"),
+        name_setting=NameSetting(f"dw_a{state}", "s", ("temperature",)),
         value=0.0,
+        min=-100.0,
+        max=100.0,
         vary=True,
     )
     settings[f"cs_i_{state}"].expr = f"{{cs_i_a}} + {{dw_i_a{state}}}"
     settings[f"cs_s_{state}"].expr = f"{{cs_s_a}} + {{dw_s_a{state}}}"
+
+    if model.temp_coef:
+        _add_temp_coef_param_settings(settings, state, conditions)
 
 
 def _set_equal_to_a(settings: dict[str, ParamLocalSetting]) -> None:
@@ -48,7 +97,7 @@ def _set_equal_to_a(settings: dict[str, ParamLocalSetting]) -> None:
 
 
 def create_base_param_settings(
-    basis: Basis, state: str
+    basis: Basis, state: str, conditions: Conditions
 ) -> dict[str, ParamLocalSetting]:
     ext = basis.extension
     settings = {
@@ -161,10 +210,10 @@ def create_base_param_settings(
             value=0.0,
         ),
         f"cs_i_{state}": ParamLocalSetting(
-            name_setting=NameSetting(f"cs_{state}", "i"), value=0.0
+            name_setting=NameSetting(f"cs_{state}", "i", ("temperature",)), value=0.0
         ),
         f"cs_s_{state}": ParamLocalSetting(
-            name_setting=NameSetting(f"cs_{state}", "s"), value=0.0
+            name_setting=NameSetting(f"cs_{state}", "s", ("temperature",)), value=0.0
         ),
         f"j_is_{state}": ParamLocalSetting(
             name_setting=NameSetting(f"j_{state}", "is"),
@@ -179,7 +228,7 @@ def create_base_param_settings(
 
     if state != "a":
         _set_equal_to_a(settings)
-        _add_dw_param_settings(settings, state)
+        _add_dw_param_settings(settings, state, conditions)
 
     return settings
 
@@ -200,9 +249,12 @@ def _select_relevant_settings(
     all_settings: LocalSettings, basis: Basis
 ) -> LocalSettings:
 
+    pool = set(all_settings) & set(basis.matrices)
     selection = set()
-    for name in set(all_settings) & set(basis.matrices):
-        selection.update({name, *all_settings[name].dependencies})
+    while pool:
+        name = pool.pop()
+        selection.add(name)
+        pool |= all_settings[name].dependencies
 
     return {name: all_settings[name] for name in selection}
 
@@ -213,7 +265,7 @@ def build_spin_param_settings(
 
     all_settings: LocalSettings = {}
     for state in model.states:
-        all_settings.update(create_base_param_settings(basis, state))
+        all_settings.update(create_base_param_settings(basis, state, conditions))
 
     all_settings_mf = _build_model_free_settings(all_settings, basis, conditions)
 

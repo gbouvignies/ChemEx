@@ -11,6 +11,7 @@ class _Model:
     __name: str = "2st"
     __states: str = "ab"
     __model_free: bool = False
+    __temp_coef: bool = False
 
     @staticmethod
     def validate_model_name(name: str) -> str:
@@ -27,7 +28,8 @@ class _Model:
         self.__name = self.validate_model_name(kinetic_model_name)
         state_nb = int(kinetic_model_name[0])
         self.__states = ascii_lowercase[:state_nb]
-        self.__model_free = ext[0] == "mf" if ext else False
+        self.__model_free = "mf" in ext if ext else False
+        self.__temp_coef = "tc" in ext if ext else False
 
     @property
     def name(self) -> str:
@@ -40,6 +42,10 @@ class _Model:
     @property
     def model_free(self) -> bool:
         return self.__model_free
+
+    @property
+    def temp_coef(self) -> bool:
+        return self.__temp_coef
 
 
 model = _Model()
