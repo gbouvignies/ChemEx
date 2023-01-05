@@ -38,6 +38,9 @@ class Experiment:
     def plot(self, path: Path):
         self.plotter.plot(path, self.profiles)
 
+    def plot_simulation(self, path: Path):
+        self.plotter.plot_simulation(path, self.profiles)
+
     def write(self, path: Path):
         filename = (path / self.filename.name).with_suffix(".dat")
         with filename.open("w") as file_dat:
@@ -92,6 +95,10 @@ class Experiment:
         noise_mean = np.sqrt(np.mean(noise_variance_values))
         for profile in self.profiles:
             profile.set_noise(noise_mean)
+
+    def prepare_for_simulation(self) -> None:
+        for profile in self.profiles:
+            profile.prepare_for_simulation()
 
     def monte_carlo(self) -> Experiment:
         profiles = [profile.monte_carlo() for profile in self.profiles]

@@ -31,7 +31,7 @@ class DataPlotPrinter:
             start = " " if mask else "#"
             end = "" if mask else " # NOT USED IN THE FIT"
             output.append(
-                f"{start} {metadata: {self.first_column_fmt}}  {exp: 17.8e} {err[0]: 17.8e}{end}"
+                f"{start} {metadata: {self.first_column_fmt}} {exp: 17.8e} {err[0]: 17.8e}{end}"
             )
         return "\n".join(output) + "\n\n"
 
@@ -42,7 +42,7 @@ class DataPlotPrinter:
         ]
 
         for metadata, calc in zip(data.metadata, data.calc):
-            output.append(f"  {metadata: {self.first_column_fmt}}  {calc: 17.8e}")
+            output.append(f"  {metadata: {self.first_column_fmt}} {calc: 17.8e}")
 
         return "\n".join(output) + "\n\n"
 
@@ -64,7 +64,7 @@ class CpmgDataPlotPrinter(DataPlotPrinter):
             start = " " if mask else "#"
             end = "" if mask else " # NOT USED IN THE FIT"
             output.append(
-                f"{start} {metadata: {self.first_column_fmt}}  {exp: 17.8e} {err[0]: 17.8e} {err[1]: 17.8e}{end}"
+                f"{start} {metadata: {self.first_column_fmt}} {exp: 17.8e} {err[0]: 17.8e} {err[1]: 17.8e}{end}"
             )
         return "\n".join(output) + "\n\n"
 
@@ -72,7 +72,7 @@ class CpmgDataPlotPrinter(DataPlotPrinter):
         output = [f"[{name}]", f"# {self.first_column_name:>12s} {'R2 (CALC)':>17s}"]
 
         for metadata, calc in zip(data.metadata, data.calc):
-            output.append(f"  {metadata: {self.first_column_fmt}}  {calc: 17.8e}")
+            output.append(f"  {metadata: {self.first_column_fmt}} {calc: 17.8e}")
 
         return "\n".join(output) + "\n\n"
 

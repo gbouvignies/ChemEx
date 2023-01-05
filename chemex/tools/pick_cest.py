@@ -31,7 +31,7 @@ class Curve:
         delta_ppm = 0.0
         if settings is not None:
             spectrometer = profile.spectrometer
-            cos_n = getattr(settings, "cos_n")
+            cos_n = getattr(settings, "cos_n", None)
             sw = getattr(settings, "sw")
             if cos_n is not None and cos_n % 2 == 0 and sw is not None:
                 shifts_ppm = spectrometer.offsets_to_ppms(np.array([sw / 2.0, 0.0]))

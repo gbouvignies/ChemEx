@@ -42,6 +42,7 @@ def create_plot_data(profiles: list[Profile]) -> Data:
 class ShiftPlotter:
     def __init__(self, filename: Path, **_extra: Any):
         self.filename = filename
+        self.plot_simulation = self.plot
 
     def plot(self, path: Path, profiles: list[Profile]) -> None:
 

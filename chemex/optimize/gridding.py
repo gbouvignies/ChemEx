@@ -21,6 +21,7 @@ from chemex.messages import print_running_grid
 from chemex.optimize.grouping import create_groups
 from chemex.optimize.grouping import Group
 from chemex.optimize.helper import calculate_statistics
+from chemex.optimize.helper import execute_post_fit
 from chemex.optimize.helper import execute_post_fit_groups
 from chemex.optimize.helper import print_header
 from chemex.optimize.helper import print_values
@@ -56,7 +57,8 @@ def run_group_grid(
     shape = tuple(len(values) for values in group_grid.values())
     grid_size = np.prod(shape)
 
-    filename = path / "Grid" / f"{group.path}.out"
+    basename = group.path if group.path != Path(".") else Path("grid")
+    filename = path / "Grid" / f"{basename}.out"
     filename.parent.mkdir(parents=True, exist_ok=True)
 
     with filename.open("w") as fileout:
@@ -256,3 +258,5 @@ def run_grid(
 
     if len(groups) > 1:
         execute_post_fit_groups(experiments, path, plot)
+    else:
+        execute_post_fit(experiments, path, plot != "nothing")

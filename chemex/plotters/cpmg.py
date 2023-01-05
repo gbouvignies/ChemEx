@@ -65,10 +65,8 @@ def calculate_exp_rates(data: Data, time_t2: float) -> np.ndarray:
 
 
 def calculate_calc_rates(data: Data, time_t2: float) -> np.ndarray:
-
     intensities = data.calc[~data.refs]
     intensities0 = data.exp[data.refs]
-
     return intensities_to_rates(intensities, intensities0, time_t2)
 
 
@@ -174,3 +172,20 @@ class CpmgPlotter(Generic[T]):
                 plot_cpmg(file_pdf, str(profile.name), data_exp, data_calc)
                 file_exp.write(self.printer.print_exp(str(profile.name), data_exp))
                 file_calc.write(self.printer.print_calc(str(profile.name), data_calc))
+
+    def plot_simulation(self, path: Path, profiles: list[Profile]) -> None:
+
+        basename = path / self.filename.name
+        name_pdf = basename.with_suffix(".pdf")
+        name_sim = basename.with_suffix(".sim")
+
+        print_plot_filename(name_pdf, extra=False)
+
+        with ExitStack() as stack:
+            file_pdf = stack.enter_context(PdfPages(str(name_pdf)))
+            file_sim = stack.enter_context(name_sim.open("w"))
+            for profile in sorted(profiles):
+                data_exp = create_plot_data_exp(profile, self.config)
+                data_calc = create_plot_data_calc(profile, self.config)
+                plot_cpmg(file_pdf, str(profile.name), data_exp, data_calc)
+                file_sim.write(self.printer.print_calc(str(profile.name), data_calc))

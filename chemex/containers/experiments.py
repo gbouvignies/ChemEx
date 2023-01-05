@@ -39,6 +39,15 @@ class Experiments:
             )
         )
 
+    def back_calculate(self) -> None:
+        params_lf = database.build_lmfit_params(self.param_ids)
+        self.residuals(params_lf)
+
+    def prepare_for_simulation(self) -> None:
+        self.back_calculate()
+        for experiment in self:
+            experiment.prepare_for_simulation()
+
     def write(self, path: Path):
         path_dat = path / "Data"
         path_dat.mkdir(parents=True, exist_ok=True)
@@ -48,6 +57,10 @@ class Experiments:
     def plot(self, path: Path):
         for experiment in self:
             experiment.plot(path)
+
+    def plot_simulation(self, path: Path):
+        for experiment in self:
+            experiment.plot_simulation(path)
 
     def select(self, selection: Selection):
         if selection.include is None and selection.exclude is None:

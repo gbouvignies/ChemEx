@@ -21,7 +21,7 @@ from chemex.messages import print_start_fit
 from chemex.models import model
 from chemex.models.loader import register_kinetic_settings
 from chemex.optimize.fitting import run_methods
-from chemex.optimize.helper import execute_post_fit
+from chemex.optimize.helper import execute_simulation
 from chemex.parameters import database
 
 
@@ -46,8 +46,9 @@ def run_sim(args: Namespace, experiments: Experiments):
     plot = args.plot == "normal"
 
     database.fix_all_parameters()
+    experiments.back_calculate()
 
-    execute_post_fit(experiments, path, plot=plot)
+    execute_simulation(experiments, path, plot=plot)
 
 
 def run(args: Namespace):

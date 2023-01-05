@@ -94,6 +94,9 @@ class Profile:
     def set_noise(self, value: float):
         self.data.err[:] = value
 
+    def prepare_for_simulation(self) -> None:
+        self.data.prepare_for_simulation()
+
     def monte_carlo(self) -> Profile:
         profile = deepcopy(self)
         profile.data = profile.data.monte_carlo()

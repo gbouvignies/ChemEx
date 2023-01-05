@@ -45,6 +45,15 @@ class Data:
         self.calc *= scale
         self.scale = scale
 
+    def prepare_for_simulation(self) -> None:
+        self.exp = self.calc.copy()
+        self.err *= 0.0
+        if any(self.refs):
+            scale = float(100.0 / np.mean(self.exp[self.refs]))
+            self.exp *= scale
+            self.calc *= scale
+            self.scale *= scale
+
     def monte_carlo(self) -> Data:
         """Generate a data set to run Monte-Carlo simulation"""
         data = deepcopy(self)

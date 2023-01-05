@@ -80,6 +80,14 @@ def _write_files(experiments: Experiments, path: Path):
     _write_statistics(experiments, path=path)
 
 
+def _write_simulation_files(experiments: Experiments, path: Path):
+    """Write the results of the simulation to output files."""
+    print_writing_results(path)
+    path.mkdir(parents=True, exist_ok=True)
+    write_parameters(experiments, path)
+    experiments.write(path)
+
+
 def _write_plots(experiments: Experiments, path: Path):
     """Plot the experimental and fitted data."""
 
@@ -94,6 +102,20 @@ def _write_plots(experiments: Experiments, path: Path):
     print("")
 
 
+def _write_simulation_plots(experiments: Experiments, path: Path):
+    """Plot the experimental and fitted data."""
+
+    print_making_plots()
+
+    path_ = path / "Plots"
+    path_.mkdir(parents=True, exist_ok=True)
+    try:
+        experiments.plot_simulation(path=path_)
+    except KeyboardInterrupt:
+        print("  - Plotting cancelled\n")
+    print("")
+
+
 def execute_post_fit(
     experiments: Experiments,
     path: Path,
@@ -102,6 +124,17 @@ def execute_post_fit(
     _write_files(experiments, path)
     if plot:
         _write_plots(experiments, path)
+
+
+def execute_simulation(
+    experiments: Experiments,
+    path: Path,
+    plot: bool = False,
+):
+    experiments.prepare_for_simulation()
+    _write_simulation_files(experiments, path)
+    if plot:
+        _write_simulation_plots(experiments, path)
 
 
 def execute_post_fit_groups(experiments: Experiments, path: Path, plot: str) -> None:
