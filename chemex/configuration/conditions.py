@@ -99,10 +99,10 @@ class Conditions(BaseModel, frozen=True):
 
     def __lt__(self, other: Conditions) -> bool:
         tuple_self = tuple(
-            value if value is not None else -1e16 for value in self.dict().items()
+            value if value is not None else -1e16 for value in self.dict().values()
         )
         tuple_other = tuple(
-            value if value is not None else -1e16 for value in other.dict().items()
+            value if value is not None else -1e16 for value in other.dict().values()
         )
         return tuple_self < tuple_other
 
