@@ -322,14 +322,14 @@ files = [
 
 [[package]]
 name = "lmfit"
-version = "1.1.0"
+version = "1.2.0"
 description = "Least-Squares Minimization with Bounds and Constraints"
 category = "main"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "lmfit-1.1.0-py3-none-any.whl", hash = "sha256:29f0540f94b3969a23db2b51abf309f327af8ea3667443ac4cd93d07fdfdb14f"},
-    {file = "lmfit-1.1.0.tar.gz", hash = "sha256:a2755b708ad7bad010178da28f082f55cbee7a084a625b452632e2d77b5391fb"},
+    {file = "lmfit-1.2.0-py3-none-any.whl", hash = "sha256:b2423791960bd2f32d1009649e33ce61ed00e5e537f1ace3b93be14c07f028b7"},
+    {file = "lmfit-1.2.0.tar.gz", hash = "sha256:bc1bb6ea1dfea1db0489e400ca6b722f261f12a324a703b6e614877ca6ed0d38"},
 ]
 
 [package.dependencies]
@@ -339,9 +339,9 @@ scipy = ">=1.6"
 uncertainties = ">=3.1.4"
 
 [package.extras]
-all = ["Pillow", "Sphinx", "build", "cairosvg", "check-wheel-contents", "codecov", "corner", "coverage", "dill", "emcee (>=3.0.0)", "flaky", "jupyter-sphinx (>=0.2.4)", "matplotlib", "numdifftools", "pandas", "pre-commit", "pycairo", "pytest", "pytest-cov", "sphinx-gallery (>=0.10)", "sphinxcontrib-svg2pdfconverter", "sympy", "twine"]
+all = ["Pillow", "Sphinx", "build", "cairosvg", "check-wheel-contents", "codecov", "corner", "coverage", "dill", "emcee (>=3.0.0)", "flaky", "ipykernel", "jupyter-sphinx (>=0.2.4)", "matplotlib", "numdifftools", "pandas", "pre-commit", "pycairo", "pytest", "pytest-cov", "sphinx-gallery (>=0.10)", "sphinxcontrib-svg2pdfconverter", "sympy", "twine"]
 dev = ["build", "check-wheel-contents", "pre-commit", "twine"]
-doc = ["Pillow", "Sphinx", "cairosvg", "corner", "dill", "emcee (>=3.0.0)", "jupyter-sphinx (>=0.2.4)", "matplotlib", "numdifftools", "pandas", "pycairo", "sphinx-gallery (>=0.10)", "sphinxcontrib-svg2pdfconverter", "sympy"]
+doc = ["Pillow", "Sphinx", "cairosvg", "corner", "dill", "emcee (>=3.0.0)", "ipykernel", "jupyter-sphinx (>=0.2.4)", "matplotlib", "numdifftools", "pandas", "pycairo", "sphinx-gallery (>=0.10)", "sphinxcontrib-svg2pdfconverter", "sympy"]
 test = ["codecov", "coverage", "flaky", "pytest", "pytest-cov"]
 
 [[package]]
