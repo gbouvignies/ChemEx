@@ -248,7 +248,6 @@ def _build_model_free_settings(
 def _select_relevant_settings(
     all_settings: LocalSettings, basis: Basis
 ) -> LocalSettings:
-
     pool = set(all_settings) & set(basis.matrices)
     selection = set()
     while pool:
@@ -262,7 +261,6 @@ def _select_relevant_settings(
 def build_spin_param_settings(
     basis: Basis, conditions: Conditions
 ) -> tuple[LocalSettings, LocalSettings]:
-
     all_settings: LocalSettings = {}
     for state in model.states:
         all_settings.update(create_base_param_settings(basis, state, conditions))
@@ -271,5 +269,13 @@ def build_spin_param_settings(
 
     settings = _select_relevant_settings(all_settings, basis)
     settings_mf = _select_relevant_settings(all_settings_mf, basis)
+
+    # Add back to `settings_mf` the parameters that were selected in `settings`,
+    # but not in settings_mf. This can happen when a constraint require parameters
+    # that are not in the basis. This way the starting value of these parameters
+    # can be calculated using the model free parameters.
+    if not model.model_free:
+        names = set(settings) - set(settings_mf)
+        settings_mf |= {name: all_settings_mf[name] for name in names}
 
     return settings, settings_mf
