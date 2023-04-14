@@ -55,48 +55,45 @@ def _convert_grid_expression_to_values(grid_expression: str) -> np.ndarray:
 
 @dataclass
 class ParameterCatalog:
-    __parameters: Parameters = field(default_factory=dict)
-    __index: ParameterIndex = ParameterIndex()
+    _parameters: Parameters = field(default_factory=dict)
+    _index: ParameterIndex = ParameterIndex()
 
     def _add(self, parameter: ParamSetting) -> None:
-
-        if parameter.id not in self.__parameters:
-            self.__parameters[parameter.id] = parameter
-            self.__index.add(parameter.param_name)
+        if parameter.id not in self._parameters:
+            self._parameters[parameter.id] = parameter
+            self._index.add(parameter.param_name)
 
         if parameter.vary:
-            self.__parameters[parameter.id].vary = True
-            self.__parameters[parameter.id].expr = ""
+            self._parameters[parameter.id].vary = True
+            self._parameters[parameter.id].expr = ""
 
     def add_multiple(self, parameters: Parameters) -> None:
         for parameter in parameters.values():
             self._add(parameter)
 
     def get_parameters(self, param_ids: Iterable[str]) -> Parameters:
-
         relevant_ids = set()
 
-        pool_ids = set(self.__parameters) & set(param_ids)
+        pool_ids = set(self._parameters) & set(param_ids)
 
         while pool_ids:
             for param_id in pool_ids.copy():
                 relevant_ids.add(param_id)
                 pool_ids.discard(param_id)
-                pool_ids.update(self.__parameters[param_id].dependencies)
+                pool_ids.update(self._parameters[param_id].dependencies)
             pool_ids -= relevant_ids
 
         return {
             param_id: parameter
-            for param_id, parameter in self.__parameters.items()
+            for param_id, parameter in self._parameters.items()
             if param_id in relevant_ids
         }
 
     def build_lmfit_params(
         self, param_ids: Iterable[str] | None = None
     ) -> ParametersLF:
-
         if param_ids is None:
-            param_ids = set(self.__parameters)
+            param_ids = set(self._parameters)
 
         parameters = self.get_parameters(param_ids)
 
@@ -114,36 +111,35 @@ class ParameterCatalog:
 
     def update_from_lmfit_params(self, parameters: ParametersLF) -> None:
         for param_id, parameter in parameters.items():
-            self.__parameters[param_id].value = parameter.value
-            self.__parameters[param_id].stderr = parameter.stderr
+            self._parameters[param_id].value = parameter.value
+            self._parameters[param_id].stderr = parameter.stderr
 
     def get_matching_ids(self, param_name: ParamName) -> set[str]:
-        return self.__index.get_matching_ids(param_name)
+        return self._index.get_matching_ids(param_name)
 
     def get_value(self, id_: str) -> float | None:
-        return self.__parameters[id_].value
+        return self._parameters[id_].value
 
     def set_values(self, par_values: dict[str, float]) -> None:
         for id_, value in par_values.items():
-            if id_ in self.__parameters:
-                self.__parameters[id_].value = value
+            if id_ in self._parameters:
+                self._parameters[id_].value = value
 
     def set_defaults(self, defaults: DefaultListType) -> None:
-        id_pool = set(self.__parameters)
+        id_pool = set(self._parameters)
         for name_to_set, setting in reversed(defaults):
             matching_ids = self.get_matching_ids(name_to_set) & id_pool
             id_pool -= matching_ids
             for matching_id in matching_ids:
-                self.__parameters[matching_id].set(setting)
+                self._parameters[matching_id].set(setting)
 
     def _count_per_section(self, param_ids: set[str]) -> Counter[str]:
         return Counter(
-            self.__parameters[param_id].param_name.section for param_id in param_ids
+            self._parameters[param_id].param_name.section for param_id in param_ids
         )
 
     def set_vary(self, section_names: Sequence[str], vary: bool) -> Counter[str]:
-
-        parameters = self.__parameters
+        parameters = self._parameters
 
         ids_modified = set()
         ids_pool = {
@@ -164,7 +160,7 @@ class ParameterCatalog:
         return self._count_per_section(ids_modified)
 
     def fix_all(self) -> None:
-        for parameter in self.__parameters.values():
+        for parameter in self._parameters.values():
             parameter.vary = False
 
     def _get_ids_left(self, expression: str) -> set[str]:
@@ -178,7 +174,6 @@ class ParameterCatalog:
         return ids_right
 
     def _set_expression(self, expression: str, ids_pool: set[str]) -> set[str]:
-
         left, right, *something_else = expression.split("=")
 
         if something_else:
@@ -193,17 +188,16 @@ class ParameterCatalog:
         for id_left in ids_left:
             new_expression = right.strip()
             for section_name, ids_right in ids_right_dict.items():
-                name = self.__parameters[id_left].param_name
+                name = self._parameters[id_left].param_name
                 id_replace = name.get_closest_id(ids_right)
                 new_expression = new_expression.replace(section_name, id_replace)
-            self.__parameters[id_left].expr = new_expression
+            self._parameters[id_left].expr = new_expression
 
         return ids_left
 
     def set_expressions(self, expression_list: Sequence[str]) -> Counter[str]:
-
         ids_modified = set()
-        ids_pool = set(self.__parameters)
+        ids_pool = set(self._parameters)
 
         for expression in reversed(expression_list):
             ids_changed = self._set_expression(expression, ids_pool)
@@ -213,8 +207,7 @@ class ParameterCatalog:
         return self._count_per_section(ids_modified)
 
     def parse_grid(self, grid_entries: list[str]) -> dict[str, np.ndarray]:
-
-        ids_pool = set(self.__parameters)
+        ids_pool = set(self._parameters)
 
         grid_values: dict[str, np.ndarray] = {}
 
@@ -239,7 +232,7 @@ class ParameterCatalog:
     def check_params(self):
         """Check whether the J couplings have the right sign"""
         messages = []
-        for setting in self.__parameters.values():
+        for setting in self._parameters.values():
             param_name = setting.param_name
             if not param_name.name.startswith("J_") or setting.value is None:
                 continue
@@ -262,25 +255,25 @@ class ParameterCatalog:
 
     def sort(self) -> None:
         sorted_items = sorted(
-            self.__parameters.items(), key=lambda item: item[1].param_name
+            self._parameters.items(), key=lambda item: item[1].param_name
         )
-        self.__parameters = dict(sorted_items)
+        self._parameters = dict(sorted_items)
 
 
 @dataclass
 class ParamManager:
-    __database: ParameterCatalog
-    __database_mf: ParameterCatalog
+    _database: ParameterCatalog
+    _database_mf: ParameterCatalog
 
     @property
     def database(self) -> ParameterCatalog:
-        return self.__database_mf if model.model_free else self.__database
+        return self._database_mf if model.model_free else self._database
 
     def add_multiple(self, parameters: Parameters) -> None:
-        self.__database.add_multiple(parameters)
+        self._database.add_multiple(parameters)
 
     def add_multiple_mf(self, parameters: Parameters) -> None:
-        self.__database_mf.add_multiple(parameters)
+        self._database_mf.add_multiple(parameters)
 
     def get_parameters(self, param_ids: Iterable[str]) -> Parameters:
         return self.database.get_parameters(param_ids)
@@ -301,13 +294,12 @@ class ParamManager:
         return self.database.set_values(par_values)
 
     def set_defaults(self, defaults: DefaultListType) -> None:
-
-        self.__database_mf.set_defaults(defaults)
+        self._database_mf.set_defaults(defaults)
 
         if model.model_free:
             return
 
-        params_mf = self.__database_mf.build_lmfit_params()
+        params_mf = self._database_mf.build_lmfit_params()
         self.database.set_values(params_mf.valuesdict())
 
         self.database.set_defaults(defaults)
