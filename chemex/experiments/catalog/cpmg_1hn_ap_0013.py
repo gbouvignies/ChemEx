@@ -71,7 +71,6 @@ class Cpmg1HnAp0013Config(
 def build_spectrometer(
     config: Cpmg1HnAp0013Config, spin_system: SpinSystem
 ) -> Spectrometer:
-
     settings = config.experiment
     conditions = config.conditions
 
@@ -132,7 +131,6 @@ class Cpmg1HnAp0013Sequence:
         return phases1, phases2
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
-
         ncycs = data.metadata
 
         # Calculation of the spectrometers corresponding to all the delays
@@ -151,7 +149,7 @@ class Cpmg1HnAp0013Sequence:
         pp90_i = spectrometer.perfect90_i
         pp180_isx = spectrometer.perfect180_i[0] @ spectrometer.perfect180_s[0]
 
-        # Calculation of the spectrometers for INEPT and purge elements
+        # Calculation of the propagators for INEPT and purge elements
         inept = pp90_i[1] @ d_taua @ pp180_isx @ d_taua @ pp90_i[0]
         zfilter = spectrometer.zfilter
 
@@ -163,15 +161,14 @@ class Cpmg1HnAp0013Sequence:
             p180pmy = p180[[1, 3]]
             pp90pmy = spectrometer.perfect90_i[[1, 3]]
             e180e_pmy = pp90pmy @ d_eburp @ p180pmy @ d_eburp @ pp90pmy
-            middle = [p180pmy @ e180e_pmy, e180e_pmy @ p180pmy]
+            middle = np.stack([p180pmy @ e180e_pmy, e180e_pmy @ p180pmy])
         elif self.settings.reburp_flg:
             pp180pmy = spectrometer.perfect180_i[[1, 3]]
             middle = d_reburp @ pp180pmy @ d_reburp
         else:
             middle = p180[[1, 3]]
-        middle = np.mean(middle, axis=0)
 
-        # Calculating the instensities as a function of ncyc
+        # Calculating the intensities as a function of ncyc
         centre = {0.0: d_delta[0] @ p90[0] @ middle @ p90[0]}
 
         for ncyc in set(ncycs) - {0.0}:
