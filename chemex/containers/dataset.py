@@ -21,7 +21,7 @@ def load_relaxation_dataset(base_path: Path, settings: ExperimentConfig) -> Data
     dataset: Dataset = []
     for spin_system, filepaths in settings.data.profiles.items():
         for filepath in filepaths:
-            raw_data = np.loadtxt(data_path / filepath, dtype=dtype)
+            raw_data = np.loadtxt(data_path / filepath, dtype=dtype, usecols=[0, 1, 2])
             dataset.append(
                 (
                     spin_system,
