@@ -44,6 +44,8 @@ class Cpmg1HnAp0013Settings(CpmgSettings):
     reburp_flg: bool = False
     pw_eburp: float = 1.4e-3
     pw_reburp: float = 1.52e-3
+    time_equil_1: float = 0.0
+    time_equil_2: float = 0.0
     observed_state: Literal["a", "b", "c", "d"] = "a"
 
     @property
@@ -107,6 +109,8 @@ class Cpmg1HnAp0013Sequence:
             self.settings.t_neg,
             self.settings.pw_eburp,
             0.5 * self.settings.pw_reburp,
+            self.settings.time_equil_1,
+            self.settings.time_equil_2,
             *tau_cps.values(),
             *deltas.values(),
         ]
@@ -140,6 +144,8 @@ class Cpmg1HnAp0013Sequence:
         d_taua = delays[self.settings.taua]
         d_eburp = delays[self.settings.pw_eburp]
         d_reburp = delays[0.5 * self.settings.pw_reburp]
+        d_eq_1 = delays[self.settings.time_equil_1]
+        d_eq_2 = delays[self.settings.time_equil_2]
         d_delta = {ncyc: delays[delay] for ncyc, delay in deltas.items()}
         d_cp = {ncyc: delays[delay] for ncyc, delay in tau_cps.items()}
 
@@ -169,7 +175,7 @@ class Cpmg1HnAp0013Sequence:
             middle = p180[[1, 3]]
 
         # Calculating the intensities as a function of ncyc
-        centre = {0.0: d_delta[0] @ p90[0] @ middle @ p90[0]}
+        centre = {0.0: d_eq_2 @ d_delta[0] @ p90[0] @ middle @ p90[0] @ d_eq_1}
 
         for ncyc in set(ncycs) - {0.0}:
             phases1, phases2 = self._get_phases(ncyc)
@@ -177,7 +183,16 @@ class Cpmg1HnAp0013Sequence:
             cpmg1 = reduce(np.matmul, echo[phases1.T])
             cpmg2 = reduce(np.matmul, echo[phases2.T])
             centre[ncyc] = (
-                d_delta[ncyc] @ p90[0] @ d_neg @ cpmg2 @ middle @ cpmg1 @ d_neg @ p90[0]
+                d_eq_2
+                @ d_delta[ncyc]
+                @ p90[0]
+                @ d_neg
+                @ cpmg2
+                @ middle
+                @ cpmg1
+                @ d_neg
+                @ p90[0]
+                @ d_eq_1
             )
 
         intst = {

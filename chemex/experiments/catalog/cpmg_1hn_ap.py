@@ -36,7 +36,8 @@ class Cpmg1HnApSettings(CpmgSettings):
     time_t2: float
     carrier: float
     pw90: float
-    time_equil: float = 0.0
+    time_equil_1: float = 0.0
+    time_equil_2: float = 0.0
     observed_state: Literal["a", "b", "c", "d"] = "a"
 
     @property
@@ -62,7 +63,6 @@ class Cpmg1HnApConfig(ExperimentConfig[Cpmg1HnApSettings, RelaxationDataSettings
 def build_spectrometer(
     config: Cpmg1HnApConfig, spin_system: SpinSystem
 ) -> Spectrometer:
-
     settings = config.experiment
     conditions = config.conditions
 
@@ -90,18 +90,23 @@ class Cpmg1HnApSequence:
         # An ncyc of -1 corresponds to the experiment without the CPMG
         # refocusisng pulses
         tau_cps[-1.0] = 0.5 * self.settings.time_t2
-        delays = [self.settings.t_neg, self.settings.time_equil, *tau_cps.values()]
+        delays = [
+            self.settings.t_neg,
+            self.settings.time_equil_1,
+            self.settings.time_equil_2,
+            *tau_cps.values(),
+        ]
         return tau_cps, delays
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
-
         ncycs = data.metadata
 
         # Calculation of the spectrometers corresponding to all the delays
         tau_cps, all_delays = self._get_delays(ncycs)
         delays = dict(zip(all_delays, spectrometer.delays(all_delays)))
         d_neg = delays[self.settings.t_neg]
-        d_eq = delays[self.settings.time_equil]
+        d_eq_1 = delays[self.settings.time_equil_1]
+        d_eq_2 = delays[self.settings.time_equil_2]
         d_cp = {ncyc: delays[delay] for ncyc, delay in tau_cps.items()}
 
         # Calculation of the spectrometers corresponding to all the pulses
@@ -113,10 +118,12 @@ class Cpmg1HnApSequence:
         start = spectrometer.get_start_magnetization(terms=self.settings.start)
 
         # Calculating the instensities as a function of ncyc
-        part1 = d_neg @ p90[0] @ start
-        part2 = d_eq @ p90[0] @ d_neg
+        part1 = d_neg @ p90[0] @ d_eq_1 @ start
+        part2 = d_eq_2 @ p90[0] @ d_neg
         intensities = {
-            0.0: spectrometer.detect(d_eq @ p90[0] @ p180pmx @ p90[0] @ start),
+            0.0: spectrometer.detect(
+                d_eq_2 @ p90[0] @ p180pmx @ p90[0] @ d_eq_1 @ start
+            ),
             -1.0: spectrometer.detect(part2 @ d_cp[-1] @ p180pmx @ d_cp[-1] @ part1),
         }
         for ncyc in set(ncycs) - {0.0, -1.0}:
