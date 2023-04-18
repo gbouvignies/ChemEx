@@ -121,7 +121,6 @@ class Group:
     def __init__(self, name: str) -> None:
         self.symbol, self.number, self.suffix = self.parse_group(name.strip().upper())
         self.symbol = AAA_TO_A.get(self.symbol, self.symbol)
-        self.name = self.get_name()
         self.search_keys: set = {self} if self else set()
 
     def parse_group(self, name: str) -> tuple[str, int, str]:
@@ -129,7 +128,8 @@ class Group:
             return name[: found.start()], int(found.group()), name[found.end() :]
         return name, self.NO_NUMBER, ""
 
-    def get_name(self) -> str:
+    @property
+    def name(self) -> str:
         number = "" if self.number == self.NO_NUMBER else self.number
         return f"{self.symbol}{number}{self.suffix}"
 
@@ -165,7 +165,6 @@ class Spin:
         self.group, self.atom = self.split_group_atom(name.strip().upper())
         if not self.group and group_for_completion:
             self.group = group_for_completion
-        self.name = self.get_name()
         self.search_keys = self.group.search_keys | self.atom.search_keys
 
     @staticmethod
@@ -182,7 +181,8 @@ class Spin:
         atom_index = first_digit + found_atom.start()
         return Group(name[:atom_index]), Atom(name[atom_index:])
 
-    def get_name(self) -> str:
+    @property
+    def name(self) -> str:
         return f"{self.group}{self.atom}"
 
     def match(self, other: Spin):
