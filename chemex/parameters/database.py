@@ -162,6 +162,7 @@ class ParameterCatalog:
     def fix_all(self) -> None:
         for parameter in self._parameters.values():
             parameter.vary = False
+            parameter.expr = ""
 
     def _get_ids_left(self, expression: str) -> set[str]:
         return self.get_matching_ids(ParamName.from_section(expression))
