@@ -1,6 +1,6 @@
 {
     "name": "website",
-    "version": "2022.3.2",
+    "version": "2022.3.3",
     "private": true,
     "scripts": {
         "docusaurus": "docusaurus",
@@ -14,7 +14,7 @@
         "write-heading-ids": "docusaurus write-heading-ids"
     },
     "dependencies": {
-        "@docusaurus/core": "^2.3.1",
+        "@docusaurus/core": "^2.4.0",
         "@docusaurus/preset-classic": "^2.4.0",
         "@mdx-js/react": "^1.6.22",
         "clsx": "^1.1.1",
