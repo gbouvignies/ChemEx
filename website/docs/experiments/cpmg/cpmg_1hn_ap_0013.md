@@ -75,6 +75,14 @@ ncyc_max = 40
 ## 1H REBURP pulse width of CPMG pulses, in seconds [optional, default: 1.52e-3]
 # pw_reburp = 1.52e-3
 
+## Equilibration delay at the beginning of the CPMG period, in seconds
+## [optional, default: 0.0]
+# time_equil_1 = 0.0
+
+## Equilibration delay at the end of the CPMG period, in seconds
+## [optional, default: 0.0]
+# time_equil_2 = 0.0
+
 ## State of the observed resonance [optional, default: "a"]
 # observed_state = "a"
 

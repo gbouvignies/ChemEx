@@ -50,9 +50,13 @@ carrier = 8.3
 ## 1H 90 degree pulse width of CPMG pulses, in seconds
 pw90 = 10.0e-6
 
+## Equilibration delay at the beginning of the CPMG period, in seconds
+## [optional, default: 0.0]
+# time_equil_1 = 0.0
+
 ## Equilibration delay at the end of the CPMG period, in seconds
 ## [optional, default: 0.0]
-# time_equil = 0.0
+# time_equil_2 = 0.0
 
 ## State of the observed resonance [optional, default: "a"]
 # observed_state = "a"
