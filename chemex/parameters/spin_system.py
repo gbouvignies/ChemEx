@@ -303,7 +303,7 @@ class SpinSystem:
         spins = []
         last_spin = Spin("")
         for letter, atom in basis.atoms.items():
-            spin = self.spins.get(letter, last_spin)
+            spin = Spin(self.spins.get(letter, last_spin).name)
             if not spin.atom.name.startswith(atom.upper()):
                 spin.atom = Atom(f"{atom}{spin.atom.name[1:]}")
             last_spin = spin
