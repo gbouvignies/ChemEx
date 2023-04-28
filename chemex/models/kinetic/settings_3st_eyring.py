@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from itertools import combinations
+from itertools import permutations
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -43,21 +43,21 @@ def calculate_kij_3st_eyring(
     ddg_ij = np.array(
         (
             dh_ab - dh_a - kelvin * (ds_ab - ds_a),
-            dh_ab - dh_b - kelvin * (ds_ab - ds_b),
             dh_ac - dh_a - kelvin * (ds_ac - ds_a),
-            dh_ac - dh_c - kelvin * (ds_ac - ds_c),
+            dh_ab - dh_b - kelvin * (ds_ab - ds_b),
             dh_bc - dh_b - kelvin * (ds_bc - ds_b),
+            dh_ac - dh_c - kelvin * (ds_ac - ds_c),
             dh_bc - dh_c - kelvin * (ds_bc - ds_c),
         )
     )
     kij_values = kbt_h * np.exp(-ddg_ij / rt)
-    kij_names = (f"k{i}{j}" for i, j in combinations("abc", 2))
+    kij_names = (f"k{i}{j}" for i, j in permutations("abc", 2))
     return dict(zip(kij_names, kij_values))
 
 
 def create_kij_3st_eyring_settings(temperature: float) -> dict[str, ParamLocalSetting]:
     return {
-        f"{i}{j}": ParamLocalSetting(
+        f"k{i}{j}": ParamLocalSetting(
             name_setting=NameSetting(f"k{i}{j}", "", TPL),
             expr=(
                 f"calculate_kij_3st_eyring({{dh_b}}, {{ds_b}}, {{dh_c}}, {{ds_c}}, "
@@ -65,7 +65,7 @@ def create_kij_3st_eyring_settings(temperature: float) -> dict[str, ParamLocalSe
                 f" {temperature})['k{i}{j}']"
             ),
         )
-        for i, j in combinations("abc", 2)
+        for i, j in permutations("abc", 2)
     }
 
 
@@ -73,7 +73,7 @@ def create_pop_3st_eyring_settings() -> dict[str, ParamLocalSetting]:
     return {
         f"p{state}": ParamLocalSetting(
             name_setting=NameSetting(f"p{state}", "", TPL),
-            expr=f"pop_2st({{kab}}, {{kba}}, {{kac}}, {{kca}}, {{kbc}}, {{kcb}})['p{state}']",
+            expr=f"pop_3st({{kab}}, {{kba}}, {{kac}}, {{kca}}, {{kbc}}, {{kcb}})['p{state}']",
         )
         for state in "abc"
     }
@@ -141,5 +141,8 @@ def make_settings_3st_eyring(conditions: Conditions) -> dict[str, ParamLocalSett
 
 def register() -> None:
     model_factory.register(name=NAME, setting_maker=make_settings_3st_eyring)
-    user_functions = {"kij_2st_eyring": calculate_kij_3st_eyring, "pop_3st": pop_3st}
+    user_functions = {
+        "calculate_kij_3st_eyring": calculate_kij_3st_eyring,
+        "pop_3st": pop_3st,
+    }
     user_function_registry.register(name=NAME, user_functions=user_functions)

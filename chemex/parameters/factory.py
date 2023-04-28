@@ -41,7 +41,6 @@ def _set_to_fit(parameters: Parameters, name_map: dict[str, str], fitted: list[s
 def _build_parameters(
     settings: LocalSettings, spin_system: SpinSystem, conditions: Conditions
 ) -> tuple[dict[str, str], Parameters]:
-
     param_names = {
         local_name: setting.name_setting.get_param_name(spin_system, conditions)
         for local_name, setting in settings.items()
@@ -71,7 +70,6 @@ def _build_parameters(
 def create_parameters(
     config: ExperimentConfig, liouvillian: LiouvillianIS
 ) -> dict[str, str]:
-
     # A copy is done because the output of '_build_settings' is cached
     settings, settings_mf = _build_settings(liouvillian.basis, config.conditions)
 
