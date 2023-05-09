@@ -308,14 +308,14 @@ files = [
 
 [[package]]
 name = "lmfit"
-version = "1.2.0"
+version = "1.2.1"
 description = "Least-Squares Minimization with Bounds and Constraints"
 category = "main"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "lmfit-1.2.0-py3-none-any.whl", hash = "sha256:b2423791960bd2f32d1009649e33ce61ed00e5e537f1ace3b93be14c07f028b7"},
-    {file = "lmfit-1.2.0.tar.gz", hash = "sha256:bc1bb6ea1dfea1db0489e400ca6b722f261f12a324a703b6e614877ca6ed0d38"},
+    {file = "lmfit-1.2.1-py3-none-any.whl", hash = "sha256:26d7ea65c056500dbe2da6fd58b2301a722c59c4549b22ab533165cd8e364233"},
+    {file = "lmfit-1.2.1.tar.gz", hash = "sha256:00cef5bd145bf81b73630b78926af24b24f1805421e6211ca585588aa7cc415b"},
 ]
 
 [package.dependencies]
@@ -325,10 +325,10 @@ scipy = ">=1.6"
 uncertainties = ">=3.1.4"
 
 [package.extras]
-all = ["Pillow", "Sphinx", "build", "cairosvg", "check-wheel-contents", "codecov", "corner", "coverage", "dill", "emcee (>=3.0.0)", "flaky", "ipykernel", "jupyter-sphinx (>=0.2.4)", "matplotlib", "numdifftools", "pandas", "pre-commit", "pycairo", "pytest", "pytest-cov", "sphinx-gallery (>=0.10)", "sphinxcontrib-svg2pdfconverter", "sympy", "twine"]
+all = ["Pillow", "Sphinx", "build", "cairosvg", "check-wheel-contents", "corner", "coverage", "dill", "emcee (>=3.0.0)", "flaky", "ipykernel", "jupyter-sphinx (>=0.2.4)", "matplotlib", "numdifftools", "pandas", "pre-commit", "pycairo", "pytest", "pytest-cov", "sphinx-gallery (>=0.10)", "sphinxcontrib-svg2pdfconverter", "sympy", "twine"]
 dev = ["build", "check-wheel-contents", "pre-commit", "twine"]
 doc = ["Pillow", "Sphinx", "cairosvg", "corner", "dill", "emcee (>=3.0.0)", "ipykernel", "jupyter-sphinx (>=0.2.4)", "matplotlib", "numdifftools", "pandas", "pycairo", "sphinx-gallery (>=0.10)", "sphinxcontrib-svg2pdfconverter", "sympy"]
-test = ["codecov", "coverage", "flaky", "pytest", "pytest-cov"]
+test = ["coverage", "flaky", "pytest", "pytest-cov"]
 
 [[package]]
 name = "markdown-it-py"
