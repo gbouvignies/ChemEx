@@ -117,9 +117,8 @@ class CpmgHNDqZqSequence:
 
         # Calculation of the spectrometers corresponding to all the delays
         tau_cps = self._get_tau_cps(ncycs)
-        d_cp = dict(
-            zip(tau_cps.keys(), spectrometer.delays(tau_cps.values()), strict=True)
-        )
+        ncyc_list, delay_list = zip(*tau_cps.items(), strict=True)
+        d_cp = dict(zip(ncyc_list, spectrometer.delays(delay_list), strict=True))
 
         # Calculation of the spectrometers corresponding to all the pulses
         p9024090_1 = spectrometer.p9024090_nh_1[[0, 1], [0, 1]]
