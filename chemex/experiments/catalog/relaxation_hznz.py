@@ -7,19 +7,20 @@ import numpy as np
 from numpy.typing import NDArray
 
 from chemex.configuration.data import RelaxationDataSettings
-from chemex.configuration.experiment import ExperimentConfig
-from chemex.configuration.experiment import RelaxationSettings
-from chemex.configuration.experiment import ToBeFitted
+from chemex.configuration.experiment import (
+    ExperimentConfig,
+    RelaxationSettings,
+    ToBeFitted,
+)
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
-from chemex.experiments.factories import Creators
-from chemex.experiments.factories import factories
+from chemex.experiments.factories import Creators, factories
 from chemex.filterers import PlanesFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
-from chemex.plotters import RelaxationPlotter
+from chemex.plotters.relaxation import RelaxationPlotter
 from chemex.printers.data import RelaxationPrinter
 
 # Type definitions
@@ -54,7 +55,6 @@ class RelaxationHzNzConfig(
 def build_spectrometer(
     config: RelaxationHzNzConfig, spin_system: SpinSystem
 ) -> Spectrometer:
-
     settings = config.experiment
     conditions = config.conditions
 
@@ -72,7 +72,6 @@ class RelaxationHzNzSequence:
     settings: RelaxationHzNzSettings
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
-
         times = data.metadata
 
         # Getting the starting magnetization

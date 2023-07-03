@@ -11,7 +11,7 @@ def pop_2st(kab: float = 0.0, kba: float = 0.0) -> dict[str, float]:
     mat = np.array([[kab, -kba], [1.0, 1.0]])
     vec = np.array([0.0, 1.0])
     res = linalg.solve(mat, vec)
-    return dict(zip(("pa", "pb"), res))
+    return dict(zip(("pa", "pb"), res, strict=True))
 
 
 @lru_cache(maxsize=100)
@@ -45,7 +45,7 @@ def pop_3st(
     vec = np.array([0.0, 0.0, 1.0])
     res = linalg.solve(mat, vec)
 
-    return dict(zip(("pa", "pb", "pc"), res))
+    return dict(zip(("pa", "pb", "pc"), res, strict=True))
 
 
 @lru_cache(maxsize=100)
@@ -90,4 +90,4 @@ def pop_4st(
     vec = np.array([0.0, 0.0, 0.0, 1.0])
     res = linalg.solve(mat, vec)
 
-    return dict(zip(("pa", "pb", "pc", "pd"), res))
+    return dict(zip(("pa", "pb", "pc", "pd"), res, strict=True))

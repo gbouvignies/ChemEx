@@ -4,15 +4,16 @@ from copy import deepcopy
 from dataclasses import dataclass
 
 import numpy as np
-from lmfit import Minimizer
-from lmfit import Parameters
+from lmfit import Minimizer, Parameters
 
 from chemex.containers.experiments import Experiments
-from chemex.messages import print_calculation_stopped_error
-from chemex.messages import print_chi2_table_footer
-from chemex.messages import print_chi2_table_header
-from chemex.messages import print_chi2_table_line
-from chemex.messages import print_value_error
+from chemex.messages import (
+    print_calculation_stopped_error,
+    print_chi2_table_footer,
+    print_chi2_table_header,
+    print_chi2_table_line,
+    print_value_error,
+)
 
 
 @dataclass
@@ -23,7 +24,6 @@ class Reporter:
     def iter_cb(
         self, params: Parameters, iteration: int, residuals: np.ndarray
     ) -> None:
-
         chisqr = (residuals**2).sum()
         change = (chisqr - self.last_chisqr) / self.last_chisqr
 
@@ -53,7 +53,6 @@ class Reporter:
 def minimize(
     experiments: Experiments, params: Parameters, fitmethod: str | None = None
 ) -> Parameters:
-
     if fitmethod is None:
         fitmethod = "leastsq"
 
@@ -64,13 +63,12 @@ def minimize(
 
     minimizer = Minimizer(experiments.residuals, params)
     minimizer.minimize(method=fitmethod, **(kws.get(fitmethod, {})))
-    return deepcopy(minimizer.result.params)  # type: ignore
+    return deepcopy(minimizer.result.params)
 
 
 def minimize_with_report(
     experiments: Experiments, params: Parameters, fitmethod: str | None = None
 ) -> Parameters:
-
     if fitmethod is None:
         fitmethod = "leastsq"
 
@@ -95,4 +93,4 @@ def minimize_with_report(
     except ValueError:
         print_value_error()
 
-    return deepcopy(minimizer.result.params)  # type: ignore
+    return deepcopy(minimizer.result.params)

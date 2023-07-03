@@ -4,7 +4,6 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from re import compile
-from typing import DefaultDict
 
 from chemex.containers.experiments import Experiments
 from chemex.parameters import database
@@ -63,8 +62,7 @@ _format_param = {
 def _params_to_strings(
     parameters: GlobalLocalParameters, status: str
 ) -> dict[str, dict[str, str]]:
-
-    result: DefaultDict[str, dict[str, str]] = defaultdict(dict)
+    result: defaultdict[str, dict[str, str]] = defaultdict(dict)
 
     for pname, param in parameters.global_.items():
         result["GLOBAL"][pname.section_res] = _format_param[status](param)
@@ -93,7 +91,6 @@ def _format_strings(par_strings: dict[str, dict[str, str]]) -> str:
 
 
 def write_file(parameters: GlobalLocalParameters, status: str, path: Path) -> None:
-
     if not parameters:
         return
 
@@ -117,7 +114,6 @@ def classify_global(parameters: Parameters) -> GlobalLocalParameters:
 
 
 def classify_parameters(experiments: Experiments) -> ClassifiedParameters:
-
     param_ids = experiments.param_ids
     parameters = {
         param.param_name: param for param in database.get_parameters(param_ids).values()
@@ -143,7 +139,7 @@ def classify_parameters(experiments: Experiments) -> ClassifiedParameters:
 
 
 def write_parameters(experiments: Experiments, path: Path):
-    """Write the model parameter values and their uncertainties to a file"""
+    """Write the model parameter values and their uncertainties to a file."""
     path_par = path / "Parameters"
     path_par.mkdir(parents=True, exist_ok=True)
     classified_parameters = classify_parameters(experiments)

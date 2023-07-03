@@ -7,9 +7,7 @@ from chemex.models.model import model
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import J_COUPLINGS
 from chemex.nmr.rates import get_model_free_expressions
-from chemex.parameters.setting import LocalSettings
-from chemex.parameters.setting import NameSetting
-from chemex.parameters.setting import ParamLocalSetting
+from chemex.parameters.setting import LocalSettings, NameSetting, ParamLocalSetting
 
 
 def _update_expr_for_proton_exchange(

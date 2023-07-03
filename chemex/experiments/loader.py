@@ -3,15 +3,15 @@ from __future__ import annotations
 
 import importlib
 from pkgutil import iter_modules
-from typing import cast
-from typing import Protocol
+from typing import Protocol, cast
 
 from chemex.experiments import catalog
 
 
 class ExperimentModuleInterface(Protocol):
     """Represents an experiment module interface.
-    An experiment module plugin has a single register function."""
+    An experiment module plugin has a single register function.
+    """
 
     @staticmethod
     def register() -> None:

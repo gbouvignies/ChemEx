@@ -1,40 +1,40 @@
 from __future__ import annotations
 
-from collections import Counter
-from collections import defaultdict
-from collections.abc import Hashable
-from collections.abc import Iterable
-from collections.abc import Sequence
-from dataclasses import dataclass
-from dataclasses import field
-from re import compile
-from typing import DefaultDict
+import re
+import sys
+from collections import Counter, defaultdict
+from collections.abc import Hashable, Iterable, Sequence
+from dataclasses import dataclass, field
 
 import numpy as np
 from lmfit import Parameters as ParametersLF
 
 from chemex.configuration.methods import Method
 from chemex.configuration.parameters import DefaultListType
-from chemex.messages import print_status_changes
+from chemex.messages import (
+    print_error_constraints,
+    print_error_grid_settings,
+    print_status_changes,
+    print_warning_negative_jch,
+    print_warning_positive_jnh,
+)
 from chemex.models.model import model
 from chemex.nmr.rates import rate_functions
 from chemex.parameters.name import ParamName
-from chemex.parameters.setting import Parameters
-from chemex.parameters.setting import ParamSetting
+from chemex.parameters.setting import Parameters, ParamSetting
 from chemex.parameters.userfunctions import user_function_registry
 
+_PARAM_NAME = r"\[(.+?)\]"
 _FLOAT = r"[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?"
-_RE_PARAM_NAME = compile(r"\[(.+?)\]")
-_RE_GRID_DEFINITION = compile(
-    rf"(lin[(]{_FLOAT},{_FLOAT},\d+[)]$)|"
-    rf"(log[(]{_FLOAT},{_FLOAT},\d+[)]$)|"
-    rf"([(](({_FLOAT})(,|[)]$))+)"
-)
+_LINEAR = rf"lin[(](?P<start>{_FLOAT}),(?P<end>{_FLOAT}),(?P<num>\d+)[)]$"
+_GEOMETRIC = rf"log[(](?P<start>{_FLOAT}),(?P<end>{_FLOAT}),(?P<num>\d+)[)]$"
+_LIST = rf"([(](({_FLOAT})(,|[)]$))+)"
+_GRID_DEFINTION = (_LINEAR, _GEOMETRIC, _LIST)
 
 
 class ParameterIndex:
     def __init__(self) -> None:
-        self._index: DefaultDict[Hashable, set[str]] = defaultdict(set)
+        self._index: defaultdict[Hashable, set[str]] = defaultdict(set)
 
     def add(self, param_name: ParamName) -> None:
         for search_key in param_name.search_keys:
@@ -48,15 +48,25 @@ class ParameterIndex:
 
 
 def _convert_grid_expression_to_values(grid_expression: str) -> np.ndarray:
-    to_be_evaluated = grid_expression.replace("lin", "np.linspace")
-    to_be_evaluated = to_be_evaluated.replace("log", "np.geomspace")
-    return np.asarray(eval(to_be_evaluated))
+    if match := re.match(_LINEAR, grid_expression):
+        return np.linspace(
+            float(match.group("start")),
+            float(match.group("end")),
+            int(match.group("num")),
+        )
+    if match := re.match(_GEOMETRIC, grid_expression):
+        return np.geomspace(
+            float(match.group("start")),
+            float(match.group("end")),
+            int(match.group("num")),
+        )
+    return np.fromstring(grid_expression.strip("(){}[]"), sep=",")
 
 
 @dataclass
 class ParameterCatalog:
     _parameters: Parameters = field(default_factory=dict)
-    _index: ParameterIndex = ParameterIndex()
+    _index: ParameterIndex = field(default_factory=ParameterIndex)
 
     def _add(self, parameter: ParamSetting) -> None:
         if parameter.id not in self._parameters:
@@ -169,7 +179,7 @@ class ParameterCatalog:
 
     def _get_ids_right(self, expression: str) -> dict[str, set[str]]:
         ids_right = {}
-        for match in _RE_PARAM_NAME.finditer(expression):
+        for match in re.finditer(_PARAM_NAME, expression):
             param_name = ParamName.from_section(match.group(1))
             ids_right[match.group(0)] = self.get_matching_ids(param_name)
         return ids_right
@@ -178,10 +188,8 @@ class ParameterCatalog:
         left, right, *something_else = expression.split("=")
 
         if something_else:
-            print(
-                f'\nError reading constraints:\n  -> "{expression}"\n\nProgram aborted\n'
-            )
-            exit()
+            print_error_constraints(expression)
+            sys.exit()
 
         ids_left = self._get_ids_left(left) & ids_pool
         ids_right_dict = self._get_ids_right(right)
@@ -215,11 +223,13 @@ class ParameterCatalog:
         for entry in reversed(grid_entries):
             name, expression, *something_else = entry.replace(" ", "").split("=")
 
-            if something_else or not _RE_GRID_DEFINITION.match(expression):
-                print(
-                    f'\nError reading grid settings:\n  -> "{entry}"\n\nProgram aborted\n'
-                )
-                exit()
+            valid_definition = any(
+                re.match(regex, expression) for regex in _GRID_DEFINTION
+            )
+
+            if something_else or not valid_definition:
+                print_error_grid_settings(entry)
+                sys.exit()
 
             ids_left = self.get_matching_ids(ParamName.from_section(name))
             values = _convert_grid_expression_to_values(expression)
@@ -231,28 +241,22 @@ class ParameterCatalog:
         return grid_values
 
     def check_params(self):
-        """Check whether the J couplings have the right sign"""
-        messages = []
+        """Check whether the J couplings have the right sign."""
+        positive_jnh = False
+        negative_jch = False
         for setting in self._parameters.values():
             param_name = setting.param_name
             if not param_name.name.startswith("J_") or setting.value is None:
                 continue
             atoms = {atom.name for atom in param_name.spin_system.atoms.values()}
-            if atoms == {"N", "H"} and setting.value > 0.0:
-                messages.append(
-                    "Warning: Some 1J(NH) scalar couplings are set with positive values.\n"
-                    "This can cause the TROSY and anti-TROSY components to be switched in\n"
-                    "some experiments."
-                )
-            if atoms == {"C", "H"} and setting.value < 0.0:
-                messages.append(
-                    "Warning: Some 1J(CH) scalar couplings are set with negative values.\n"
-                    "This can cause the TROSY and anti-TROSY components to be switched in\n"
-                    "some experiments."
-                )
-        if messages:
-            print("")
-            print("\n\n".join(np.unique(messages)))
+            if atoms == {"N", "H"} and setting.value > 0:
+                positive_jnh = True
+            if atoms == {"C", "H"} and setting.value < 0:
+                negative_jch = True
+        if positive_jnh:
+            print_warning_positive_jnh()
+        if negative_jch:
+            print_warning_negative_jch()
 
     def sort(self) -> None:
         sorted_items = sorted(
@@ -340,8 +344,8 @@ fix_all_parameters = _manager.fix_all
 
 def set_parameter_status(method: Method):
     """Set whether or not to vary a fitting parameter or to use a mathematical
-    expression."""
-
+    expression.
+    """
     matches_con = set_param_expressions(method.constraints)
     matches_fix = set_param_vary(method.fix, vary=False)
     matches_fit = set_param_vary(method.fit, vary=True)

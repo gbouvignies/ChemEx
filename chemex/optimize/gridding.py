@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from itertools import combinations
-from itertools import permutations
-from itertools import product
+from itertools import combinations, permutations, product
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -16,15 +14,15 @@ from matplotlib.colors import LogNorm
 from rich.progress import track
 
 from chemex.containers.experiments import Experiments
-from chemex.messages import print_group_name
-from chemex.messages import print_running_grid
-from chemex.optimize.grouping import create_groups
-from chemex.optimize.grouping import Group
-from chemex.optimize.helper import calculate_statistics
-from chemex.optimize.helper import execute_post_fit
-from chemex.optimize.helper import execute_post_fit_groups
-from chemex.optimize.helper import print_header
-from chemex.optimize.helper import print_values
+from chemex.messages import print_group_name, print_running_grid
+from chemex.optimize.grouping import Group, create_groups
+from chemex.optimize.helper import (
+    calculate_statistics,
+    execute_post_fit,
+    execute_post_fit_groups,
+    print_header,
+    print_values,
+)
 from chemex.optimize.minimizer import minimize
 from chemex.parameters import database
 
@@ -36,7 +34,7 @@ class GridResult:
 
 
 def _set_param_values(params: Parameters, fnames: Iterable[str], values: tuple):
-    for fname, value in zip(fnames, values):
+    for fname, value in zip(fnames, values, strict=True):
         params[fname].value = value
 
 
@@ -46,7 +44,6 @@ def run_group_grid(
     path: Path,
     fitmethod: str | None,
 ) -> GridResult:
-
     group_ids = group.experiments.param_ids
     group_params = database.build_lmfit_params(group_ids)
     group_grid = {
@@ -62,7 +59,6 @@ def run_group_grid(
     filename.parent.mkdir(parents=True, exist_ok=True)
 
     with filename.open("w") as fileout:
-
         fileout.write(print_header(group_grid))
 
         chisqr_list = []
@@ -99,8 +95,7 @@ def _reshape_chisqr(
     shape = tuple(
         len(grid_ref[key]) if key in grid_result.grid else 1 for key in grid_ref
     )
-    chisqr_final = chisqr_final.reshape(shape)
-    return chisqr_final
+    return chisqr_final.reshape(shape)
 
 
 def _get_grids(
@@ -117,13 +112,11 @@ def _get_grids(
 def combine_grids(
     grid: dict[str, np.ndarray], grid_results: list[GridResult]
 ) -> list[GridResult]:
-
     grids = _get_grids(grid, grid_results)
 
     results = []
 
     for grid_ref in grids:
-
         shape = tuple(len(values) for values in grid_ref.values())
 
         chisqr_sum = np.zeros(shape)
@@ -170,7 +163,6 @@ def plot_grid_1d(grids_1d: list[GridResult], path: Path):
     The output file will display the chi-square values per parameter.
 
     """
-
     if not grids_1d:
         return
 
@@ -196,7 +188,6 @@ def plot_grid_2d(grids_2d: list[GridResult], path: Path):
     plots for all combination of two parameters.
 
     """
-
     if not grids_2d:
         return
 
@@ -215,7 +206,7 @@ def plot_grid_2d(grids_2d: list[GridResult], path: Path):
             cs = ax.scatter(
                 grid_x,
                 grid_y,
-                c=grid_result.chisqr.T,  # type: ignore
+                c=grid_result.chisqr.T,
                 norm=LogNorm(),
                 cmap=get_cmap("viridis_r"),
             )

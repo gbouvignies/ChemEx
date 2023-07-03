@@ -8,19 +8,20 @@ import numpy as np
 from numpy.typing import NDArray
 
 from chemex.configuration.data import RelaxationDataSettings
-from chemex.configuration.experiment import CpmgSettingsEvenNcycs
-from chemex.configuration.experiment import ExperimentConfig
-from chemex.configuration.experiment import ToBeFitted
+from chemex.configuration.experiment import (
+    CpmgSettingsEvenNcycs,
+    ExperimentConfig,
+    ToBeFitted,
+)
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
-from chemex.experiments.factories import Creators
-from chemex.experiments.factories import factories
+from chemex.experiments.factories import Creators, factories
 from chemex.filterers import PlanesFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
-from chemex.plotters import CpmgPlotter
+from chemex.plotters.cpmg import CpmgPlotter
 from chemex.printers.data import CpmgPrinter
 
 # Type definitions
@@ -29,6 +30,9 @@ NDArrayBool = NDArray[np.bool_]
 
 
 EXPERIMENT_NAME = "cpmg_hn_dq_zq"
+
+NU_CPMG_LIMIT_1 = 51.0
+NU_CPMG_LIMIT_2 = 255.0
 
 
 class CpmgHNDqZqSettings(CpmgSettingsEvenNcycs):
@@ -45,8 +49,7 @@ class CpmgHNDqZqSettings(CpmgSettingsEvenNcycs):
     def detection(self) -> str:
         if self.dq_flg:
             return f"[2ixsx_{self.observed_state}] - [2iysy_{self.observed_state}]"
-        else:
-            return f"[2ixsx_{self.observed_state}] + [2iysy_{self.observed_state}]"
+        return f"[2ixsx_{self.observed_state}] + [2iysy_{self.observed_state}]"
 
 
 class CpmgHNDqZqConfig(ExperimentConfig[CpmgHNDqZqSettings, RelaxationDataSettings]):
@@ -62,7 +65,6 @@ class CpmgHNDqZqConfig(ExperimentConfig[CpmgHNDqZqSettings, RelaxationDataSettin
 def build_spectrometer(
     config: CpmgHNDqZqConfig, spin_system: SpinSystem
 ) -> Spectrometer:
-
     settings = config.experiment
     conditions = config.conditions
 
@@ -84,21 +86,22 @@ class CpmgHNDqZqSequence:
     settings: CpmgHNDqZqSettings
 
     def _get_tau_cps(self, ncycs: np.ndarray) -> dict[float, float]:
-        ncycs_no_ref = ncycs[ncycs > 0.0]
+        ncycs_no_ref = ncycs[ncycs > 0]
         return dict(
             zip(
                 ncycs_no_ref,
                 self.settings.time_t2 / (4.0 * ncycs_no_ref)
                 - 7.0 / 3.0 * self.settings.pw90_n,
+                strict=True,
             )
         )
 
     def _get_phases(self, ncyc: float) -> tuple[np.ndarray, np.ndarray]:
         nu_cpmg = ncyc / self.settings.time_t2
-        if nu_cpmg < 51.0:
+        if nu_cpmg < NU_CPMG_LIMIT_1:
             cp_phases1 = [0, 1, 0, 1]
             cp_phases2 = [1, 0, 1, 0]
-        elif nu_cpmg < 255.0:
+        elif nu_cpmg < NU_CPMG_LIMIT_2:
             cp_phases1 = [0]
             cp_phases2 = [1]
         else:
@@ -110,12 +113,13 @@ class CpmgHNDqZqSequence:
         return phases1, phases2
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
-
         ncycs = data.metadata
 
         # Calculation of the spectrometers corresponding to all the delays
         tau_cps = self._get_tau_cps(ncycs)
-        d_cp = dict(zip(tau_cps.keys(), spectrometer.delays(list(tau_cps.values()))))
+        d_cp = dict(
+            zip(tau_cps.keys(), spectrometer.delays(tau_cps.values()), strict=True)
+        )
 
         # Calculation of the spectrometers corresponding to all the pulses
         p9024090_1 = spectrometer.p9024090_nh_1[[0, 1], [0, 1]]
@@ -139,7 +143,7 @@ class CpmgHNDqZqSequence:
 
     @staticmethod
     def is_reference(metadata: NDArrayFloat) -> NDArrayBool:
-        return metadata == 0.0
+        return metadata == 0
 
 
 def register() -> None:

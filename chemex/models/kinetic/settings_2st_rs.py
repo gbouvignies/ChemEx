@@ -3,8 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from chemex.models.factory import model_factory
-from chemex.parameters.setting import NameSetting
-from chemex.parameters.setting import ParamLocalSetting
+from chemex.parameters.setting import NameSetting, ParamLocalSetting
 
 if TYPE_CHECKING:
     from chemex.configuration.conditions import Conditions
@@ -12,7 +11,7 @@ if TYPE_CHECKING:
 TPL = ("temperature", "p_total", "l_total")
 
 
-def make_settings_2st_rs(conditions: Conditions) -> dict[str, ParamLocalSetting]:
+def make_settings_2st_rs(_conditions: Conditions) -> dict[str, ParamLocalSetting]:
     return {
         "kex_ab": ParamLocalSetting(
             name_setting=NameSetting("kex_ab", "g", TPL),

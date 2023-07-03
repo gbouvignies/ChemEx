@@ -1,30 +1,29 @@
 from __future__ import annotations
 
-from collections.abc import Hashable
-from collections.abc import MutableMapping
+from collections.abc import Hashable, MutableMapping
 from functools import total_ordering
-from typing import Any
-from typing import Literal
-from typing import Optional
+from typing import Any, Literal
 
-from pydantic import BaseModel
-from pydantic import Field
-from pydantic import MissingError
-from pydantic import PositiveFloat
-from pydantic import root_validator
-from pydantic import validator
+from pydantic import (
+    BaseModel,
+    Field,
+    MissingError,
+    PositiveFloat,
+    root_validator,
+    validator,
+)
 
 from chemex.models.model import model
 
 
 @total_ordering
 class Conditions(BaseModel, frozen=True):
-    h_larmor_frq: Optional[PositiveFloat]
-    temperature: Optional[float] = None
-    p_total: Optional[PositiveFloat] = Field(default=None)
-    l_total: Optional[PositiveFloat] = Field(default=None)
-    d2o: Optional[float] = Field(gt=0.0, lt=1.0, default=None)
-    label: tuple[Literal["1h", "2h", "13c", "15n"], ...] = tuple()
+    h_larmor_frq: PositiveFloat | None
+    temperature: float | None = None
+    p_total: PositiveFloat | None = Field(default=None)
+    l_total: PositiveFloat | None = Field(default=None)
+    d2o: float | None = Field(gt=0.0, lt=1.0, default=None)
+    label: tuple[Literal["1h", "2h", "13c", "15n"], ...] = ()
 
     def rounded(self) -> Conditions:
         h_larmor_frq = round(self.h_larmor_frq, 1) if self.h_larmor_frq else None
@@ -129,7 +128,8 @@ class ConditionsFromFile(Conditions, frozen=True):
     def validate_p_total_l_total(cls, values):
         are_not_both_set = values["p_total"] is None or values["l_total"] is None
         if "binding" in model.name and are_not_both_set:
-            raise ValueError("Either p_total or l_total must be provided")
+            msg = "Either p_total or l_total must be provided"
+            raise ValueError(msg)
         return values
 
     @root_validator(pre=True)

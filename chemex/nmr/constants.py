@@ -227,7 +227,7 @@ J_EFF: dict[str, dict[str, tuple[float, ...]]] = {
 }
 
 
-@dataclass()
+@dataclass
 class Distribution:
     values: np.ndarray
     weights: np.ndarray
@@ -240,5 +240,5 @@ def get_multiplet(symbol: str, nucleus: str) -> Distribution:
         doublet = coupling * 0.5 * np.array([[-1.0], [1.0]])
         multiplet = (multiplet + doublet).flatten()
     counter = Counter(multiplet)
-    values, weights = zip(*counter.items())
+    values, weights = zip(*counter.items(), strict=True)
     return Distribution(np.array(values), np.array(weights))

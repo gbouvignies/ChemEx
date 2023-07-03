@@ -8,8 +8,7 @@ from scipy.optimize import root
 
 from chemex.models.constraints import pop_3st
 from chemex.models.factory import model_factory
-from chemex.parameters.setting import NameSetting
-from chemex.parameters.setting import ParamLocalSetting
+from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
 
 if TYPE_CHECKING:
@@ -49,7 +48,7 @@ def calculate_concentrations(
         concentrations_start,
         args=(p_total, l_total, kd_ab, kbc, kcb),
     )
-    return dict(zip(("pfree", "pl1", "pl2"), results["x"]))
+    return dict(zip(("pfree", "pl1", "pl2"), results["x"], strict=True))
 
 
 def make_settings_3st_induced_fit(
@@ -58,9 +57,11 @@ def make_settings_3st_induced_fit(
     p_total = conditions.p_total
     l_total = conditions.l_total
     if p_total is None:
-        raise ValueError(f"'p_total' must be specified to use the '{NAME}' model")
+        msg = f"'p_total' must be specified to use the '{NAME}' model"
+        raise ValueError(msg)
     if l_total is None:
-        raise ValueError(f"'l_total' must be specified to use the '{NAME}' model")
+        msg = f"'l_total' must be specified to use the '{NAME}' model"
+        raise ValueError(msg)
     return {
         "koff_ab": ParamLocalSetting(
             name_setting=NameSetting("koff_ab", "", ("temperature",)),
@@ -92,7 +93,7 @@ def make_settings_3st_induced_fit(
         ),
         "pfree": ParamLocalSetting(
             name_setting=NameSetting("pfree", "", TPL),
-            expr=f"calc_conc({p_total}, {l_total}, {{kd_ab}}, {{kbc}}, {{kcb}})['pfree']",
+            expr=(f"calc_conc({p_total},{l_total},{{kd_ab}},{{kbc}},{{kcb}})['pfree']"),
         ),
         "l_free": ParamLocalSetting(
             name_setting=NameSetting("l_free", "", TPL),

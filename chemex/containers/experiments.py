@@ -5,7 +5,6 @@ from itertools import chain
 from pathlib import Path
 from random import choices
 from typing import Literal
-from typing import Union
 
 import numpy as np
 from lmfit.parameter import Parameters
@@ -14,11 +13,10 @@ from chemex.configuration.methods import Selection
 from chemex.containers.experiment import Experiment
 from chemex.messages import print_selecting_profiles
 from chemex.parameters import database
-from chemex.parameters.spin_system import Group
-from chemex.parameters.spin_system import SpinSystem
+from chemex.parameters.spin_system import Group, SpinSystem
 
 # Type definitions
-SelectionType = Union[list[SpinSystem], Literal["*", "all"], None]
+SelectionType = list[SpinSystem] | Literal["*", "all"], None
 
 
 class Experiments:

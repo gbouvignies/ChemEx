@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
-from dataclasses import field
+from dataclasses import dataclass, field
 from random import choices
 
 import numpy as np
@@ -12,6 +11,9 @@ from numpy.typing import NDArray
 NDArrayFloat = NDArray[np.float_]
 NDArrayInt = NDArray[np.int_]
 NDArrayBool = NDArray[np.bool_]
+
+
+rng = np.random.default_rng()
 
 
 def get_scale(exp: np.ndarray, err: np.ndarray, calc: np.ndarray) -> float:
@@ -55,13 +57,13 @@ class Data:
             self.scale *= scale
 
     def monte_carlo(self) -> Data:
-        """Generate a data set to run Monte-Carlo simulation"""
+        """Generate a data set to run Monte-Carlo simulation."""
         data = deepcopy(self)
-        data.exp = np.random.normal(self.calc, self.err)
+        data.exp = rng.normal(self.calc, self.err)
         return data
 
     def bootstrap(self: Data) -> Data:
-        """Generate a data set to run Bootstrap simulation"""
+        """Generate a data set to run Bootstrap simulation."""
         indexes = np.arange(self.metadata.size)
         pool1 = indexes[self.refs & self.mask]
         pool2 = indexes[~self.refs & self.mask]

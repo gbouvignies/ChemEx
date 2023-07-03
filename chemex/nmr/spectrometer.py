@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from functools import reduce
 
 import numpy as np
 from cachetools import cached
 from cachetools.keys import hashkey
-from scipy.linalg import eig
-from scipy.linalg import eigvals
-from scipy.linalg import expm
-from scipy.linalg import inv
+from scipy.linalg import eig, eigvals, expm, inv
 
 from chemex.nmr.constants import Distribution
 from chemex.nmr.liouvillian import LiouvillianIS
+
+SMALL_VALUE = 1e-6
 
 
 def calculate_propagators(
@@ -26,7 +24,7 @@ def calculate_propagators(
         s, vr = eig(a_liouvillian)
         vri = inv(vr)
         if dephasing:
-            indexes = np.where(abs(s.imag) < 1e-6)[0]
+            indexes = np.where(abs(s.imag) < SMALL_VALUE)[0]
             vr, s, vri = vr[:, indexes], s[indexes], vri[indexes, :]
         d = np.asarray([np.diag(np.exp(s * t)) for t in delays_])
         propagator_list.append((vr @ d @ vri).real)
@@ -284,7 +282,7 @@ class Spectrometer:
         self, pw: float, amplitudes: Sequence[float], phases: Iterable[float]
     ) -> np.ndarray:
         time = pw / len(amplitudes)
-        pairs = list(zip(amplitudes, phases))
+        pairs = list(zip(amplitudes, phases, strict=True))
         pulses = {
             (amp, ph): self.pulse_i(time, ph, scale=amp) for amp, ph in set(pairs)
         }

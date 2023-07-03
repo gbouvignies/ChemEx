@@ -8,20 +8,17 @@ import numpy as np
 from numpy.typing import NDArray
 
 from chemex.configuration.data import RelaxationDataSettings
-from chemex.configuration.experiment import CpmgSettings
-from chemex.configuration.experiment import ExperimentConfig
-from chemex.configuration.experiment import ToBeFitted
+from chemex.configuration.experiment import CpmgSettings, ExperimentConfig, ToBeFitted
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
-from chemex.experiments.factories import Creators
-from chemex.experiments.factories import factories
+from chemex.experiments.factories import Creators, factories
 from chemex.filterers import PlanesFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import GAMMA
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
-from chemex.plotters import CpmgPlotter
+from chemex.plotters.cpmg import CpmgPlotter
 from chemex.printers.data import CpmgPrinter
 
 # Type definitions
@@ -75,7 +72,6 @@ class CpmgCh31HTqDiffConfig(
 def build_spectrometer(
     config: CpmgCh31HTqDiffConfig, spin_system: SpinSystem
 ) -> Spectrometer:
-
     settings = config.experiment
     conditions = config.conditions
 
@@ -95,7 +91,7 @@ class CpmgCh31HTqDiffSequence:
     settings: CpmgCh31HTqDiffSettings
 
     def _get_delays(self, ncycs: np.ndarray) -> tuple[dict[float, float], list[float]]:
-        ncyc_no_ref = ncycs[ncycs > 0.0]
+        ncyc_no_ref = ncycs[ncycs > 0]
         factor = 2.0 if self.settings.comp180_flg else 1.0
         tau_cps = {
             ncyc: self.settings.time_t2 / (4.0 * ncyc) - factor * self.settings.pw90
@@ -113,7 +109,6 @@ class CpmgCh31HTqDiffSequence:
         return phases1, phases2
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
-
         ncycs = data.metadata
 
         # Getting the starting magnetization
@@ -141,7 +136,7 @@ class CpmgCh31HTqDiffSequence:
         # Calculation of the spectrometers with gradient 4
         spectrometer.gradient_dephasing = 4.0 * self.settings.k2_factor
         tau_cps, all_delays = self._get_delays(ncycs)
-        delays_4 = dict(zip(all_delays, spectrometer.delays(all_delays)))
+        delays_4 = dict(zip(all_delays, spectrometer.delays(all_delays), strict=True))
         d_cp_4 = {ncyc: delays_4[delay] for ncyc, delay in tau_cps.items()}
         d_tau_4 = delays_4[self.settings.tau]
         p180_4 = spectrometer.p180_i
@@ -186,7 +181,7 @@ class CpmgCh31HTqDiffSequence:
 
     @staticmethod
     def is_reference(metadata: NDArrayFloat) -> NDArrayBool:
-        return metadata == 0.0
+        return metadata == 0
 
 
 def register() -> None:

@@ -8,8 +8,7 @@ from scipy.constants import constants
 
 from chemex.models.constraints import pop_2st
 from chemex.models.factory import model_factory
-from chemex.parameters.setting import NameSetting
-from chemex.parameters.setting import ParamLocalSetting
+from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
 
 if TYPE_CHECKING:
@@ -60,24 +59,24 @@ def make_settings_2st_eyring(conditions: Conditions) -> dict[str, ParamLocalSett
         "kab": ParamLocalSetting(
             name_setting=NameSetting("kab", "", TPL),
             min=0.0,
-            expr=f"kij_2st_eyring({{dh_b}}, {{ds_b}}, {{dh_ab}}, {{ds_ab}}, {celsius})['kab']",
+            expr=f"kij_2st_eyring({{dh_b}},{{ds_b}},{{dh_ab}},{{ds_ab}},{celsius})['kab']",
         ),
         "kba": ParamLocalSetting(
             name_setting=NameSetting("kba", "", TPL),
             min=0.0,
-            expr=f"kij_2st_eyring({{dh_b}}, {{ds_b}}, {{dh_ab}}, {{ds_ab}}, {celsius})['kba']",
+            expr=f"kij_2st_eyring({{dh_b}},{{ds_b}},{{dh_ab}},{{ds_ab}},{celsius})['kba']",
         ),
         "pa": ParamLocalSetting(
             name_setting=NameSetting("pa", "", TPL),
             min=0.0,
             max=1.0,
-            expr="pop_2st({kab}, {kba})['pa']",
+            expr="pop_2st({kab},{kba})['pa']",
         ),
         "pb": ParamLocalSetting(
             name_setting=NameSetting("pb", "", TPL),
             min=0.0,
             max=1.0,
-            expr="pop_2st({kab}, {kba})['pb']",
+            expr="pop_2st({kab},{kba})['pb']",
         ),
     }
 

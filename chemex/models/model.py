@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from string import ascii_lowercase
 
+from chemex.messages import print_model_error
 from chemex.models.factory import model_factory
 
 
@@ -16,11 +18,8 @@ class _Model:
     @staticmethod
     def validate_model_name(name: str) -> str:
         if name not in model_factory.set:
-            print("Warning: The 'model' option should either be:")
-            for model_name in sorted(model_factory.set):
-                print(f"    - '{model_name}'")
-            print("Set to the default value: '2st'.")
-            return "2st"
+            print_model_error(name)
+            sys.exit()
         return name
 
     def set_model(self, name: str) -> None:

@@ -20,12 +20,18 @@ class ShiftPrinter:
             "#",
             "# Unit: PPB",
             "#",
-            f"# {'NAME':>16s} {'SHIFT (EXP)':>17s} {'ERROR (EXP)':>17s} {'SHIFT (CALC)':>17s}\n",
+            (
+                f"# {'NAME':>16s} {'SHIFT (EXP)':>17s}"
+                f" {'ERROR (EXP)':>17s} {'SHIFT (CALC)':>17s}\n"
+            ),
         ]
     )
 
     def print(self, name: str, data: Data) -> str:
-        return f"{name:>18s} {data.exp[0]: 17.3f} {data.err[0]: 17.3f} {data.calc[0]: 17.3f}\n"
+        return (
+            f"{name:>18s} {data.exp[0]: 17.3f} {data.err[0]: 17.3f}"
+            f" {data.calc[0]: 17.3f}\n"
+        )
 
 
 @dataclass
@@ -37,16 +43,20 @@ class ProfilePrinter:
     def print(self, name: str, data: Data) -> str:
         output = [
             f"[{name}]",
-            f"# {self.first_column_name:>12s} {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s} {'INTENSITY (CALC)':>17s}",
+            (
+                f"# {self.first_column_name:>12s} {'INTENSITY (EXP)':>17s}"
+                f" {'ERROR (EXP)':>17s} {'INTENSITY (CALC)':>17s}"
+            ),
         ]
 
         for metadata, exp, err, calc, mask in zip(
-            data.metadata, data.exp, data.err, data.calc, data.mask
+            data.metadata, data.exp, data.err, data.calc, data.mask, strict=True
         ):
             start = " " if mask else "#"
             end = "" if mask else " # NOT USED IN THE FIT"
             output.append(
-                f"{start} {metadata: {self.first_column_fmt}} {exp: 17.8e} {err: 17.8e} {calc: 17.8e}{end}"
+                f"{start} {metadata: {self.first_column_fmt}} {exp: 17.8e}"
+                f" {err: 17.8e} {calc: 17.8e}{end}"
             )
         return "\n".join(output) + "\n\n"
 

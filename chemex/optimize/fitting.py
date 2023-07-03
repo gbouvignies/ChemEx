@@ -5,27 +5,29 @@ from pathlib import Path
 
 from rich.progress import track
 
-from chemex.configuration.methods import Methods
-from chemex.configuration.methods import Statistics
-from chemex.containers.experiments import Experiments
-from chemex.containers.experiments import generate_exp_for_statistics
-from chemex.messages import print_calculation_stopped_error
-from chemex.messages import print_fitmethod
-from chemex.messages import print_group_name
-from chemex.messages import print_minimizing
-from chemex.messages import print_no_data
-from chemex.messages import print_running_statistics
-from chemex.messages import print_step_name
-from chemex.messages import print_value_error
+from chemex.configuration.methods import Methods, Statistics
+from chemex.containers.experiments import Experiments, generate_exp_for_statistics
+from chemex.messages import (
+    print_calculation_stopped_error,
+    print_fitmethod,
+    print_grid_statistic_warning,
+    print_group_name,
+    print_minimizing,
+    print_no_data,
+    print_running_statistics,
+    print_step_name,
+    print_value_error,
+)
 from chemex.optimize.gridding import run_grid
 from chemex.optimize.grouping import create_groups
-from chemex.optimize.helper import calculate_statistics
-from chemex.optimize.helper import execute_post_fit
-from chemex.optimize.helper import execute_post_fit_groups
-from chemex.optimize.helper import print_header
-from chemex.optimize.helper import print_values_stat
-from chemex.optimize.minimizer import minimize
-from chemex.optimize.minimizer import minimize_with_report
+from chemex.optimize.helper import (
+    calculate_statistics,
+    execute_post_fit,
+    execute_post_fit_groups,
+    print_header,
+    print_values_stat,
+)
+from chemex.optimize.minimizer import minimize, minimize_with_report
 from chemex.parameters import database
 
 
@@ -48,7 +50,6 @@ def _run_statistics(
     ids_vary = [param.name for param in params_lf.values() if param.vary]
 
     for statistic_name, iter_nb in statistics.dict().items():
-
         if iter_nb is None:
             continue
 
@@ -56,8 +57,7 @@ def _run_statistics(
 
         print_running_statistics(method["message"])
 
-        with open(path / method["filename"], "w") as fileout:
-
+        with (path / method["filename"]).open(mode="w") as fileout:
             fileout.write(print_header(ids_vary))
 
             try:
@@ -90,7 +90,6 @@ def _fit_groups(
     print_minimizing()
 
     for group in groups:
-
         group_lmfit_params = database.build_lmfit_params(group.experiments.param_ids)
         group_path = path / group.path
 
@@ -120,7 +119,6 @@ def run_methods(
     experiments: Experiments, methods: Methods, path: Path, plot_level: str
 ) -> None:
     for index, (section, method) in enumerate(methods.items(), start=1):
-
         if section:
             print_step_name(section, index, len(methods))
 
@@ -137,10 +135,7 @@ def run_methods(
         database.set_parameter_status(method)
 
         if method.grid and method.statistics:
-            print(
-                'Warning: "GRID" and "STATISTICS" options are mutually '
-                'exclusive. Only the "GRID" calculation will be run.'
-            )
+            print_grid_statistic_warning()
             method.statistics = None
 
         path_sect = path / section if len(methods) > 1 else path

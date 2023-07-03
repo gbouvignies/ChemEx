@@ -3,8 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import cache
-from itertools import permutations
-from itertools import product
+from itertools import permutations, product
 from typing import Literal
 
 import numpy as np

@@ -52,7 +52,6 @@ def print_loading_experiments() -> None:
 
 
 def get_reading_exp_text(filename: Path, type: str = "", total_nb: int = 0) -> Text:
-
     parts = (
         "  • Reading ",
         (f"{filename}", "green"),
@@ -111,7 +110,6 @@ def print_fitmethod(fit_method: str) -> None:
 def print_status_changes(
     vary: Counter[str], fixed: Counter[str], constrained: Counter[str]
 ) -> None:
-
     if not any([vary, fixed, constrained]):
         return
 
@@ -208,7 +206,7 @@ def print_file_not_found(filename: Path) -> None:
     console.print(f"[red]The file '{filename}' is empty or does not exist!")
 
 
-def print_error(error: FileNotFoundError) -> None:
+def print_file_not_found_error(error: FileNotFoundError) -> None:
     console.print()
     console.print(f"[red]Error: {error}")
 
@@ -220,7 +218,8 @@ def print_toml_error(filename: Path, error_message: Exception) -> None:
         Text.from_markup(f"[red]-> {error_message}\n"),
     )
     console.print(
-        "Please check the website [link]https://toml.io[/] for a complete description of the TOML format."
+        "Please check the website [link]https://toml.io[/]"
+        " for a complete description of the TOML format."
     )
 
 
@@ -250,7 +249,191 @@ def print_calculation_stopped_error() -> None:
     console.print()
 
 
+def print_plotting_canceled() -> None:
+    console.print()
+    console.print("[red] -- Keyboard Interrupt: Plotting cancelled --")
+    console.print()
+
+
 def print_value_error() -> None:
     console.print()
     console.print("[red] -- Got a ValueError: Calculation stopped --")
+    console.print()
+
+
+def print_warning_positive_jnh() -> None:
+    console.print()
+    console.print(
+        "[yellow] -- WARNING: Some 1J(NH) couplings are set with positive values --"
+    )
+    console.print(
+        "This can cause the TROSY and anti-TROSY components to be switched in some"
+        " experiments."
+    )
+    console.print()
+
+
+def print_warning_negative_jch() -> None:
+    console.print()
+    console.print(
+        "[yellow] -- WARNING: Some 1J(CH) couplings are set with negative values --"
+    )
+    console.print(
+        "This can cause the TROSY and anti-TROSY components to be switched in some"
+        " experiments."
+    )
+    console.print()
+
+
+def print_error_grid_settings(entry: str) -> None:
+    console.print()
+    console.print("[red] -- ERROR: Error reading grid settings:")
+    console.print(Text(f'    "{entry}"', style="red"))
+    console.print()
+    console.print(
+        "Please make sure that the grid settings are provided in the correct format"
+    )
+    console.print(Text("    [PB] = lin(<min>, <max>, <nb of points>)"))
+    console.print(Text("    [PB] = log(<min>, <max>, <nb of points>)"))
+    console.print(Text("    [PB] = (<value1>, <value2>, ..., <valuen>)"))
+    console.print()
+
+
+def print_error_constraints(expression: str) -> None:
+    console.print()
+    console.print(f'[red] -- ERROR: Error reading constraints -> "{expression}" --')
+    console.print()
+
+
+def print_grid_statistic_warning() -> None:
+    console.print()
+    console.print(
+        "[yellow] -- WARNING: The 'GRID' and 'STATISTICS' options are mutually "
+        "exclusive. Only the 'GRID' calculation will be run."
+    )
+    console.print()
+
+
+def print_model_error(name: str) -> None:
+    from chemex.models.factory import model_factory
+
+    console.print()
+    console.print(f"[red] -- ERROR: The model '{name}' is not available.")
+    console.print()
+    console.print("The available models are:")
+    for model_name in sorted(model_factory.set):
+        console.print(f"    - '{model_name}'")
+    console.print()
+
+
+def print_not_implemented_noise_method_warning(
+    filename: Path, kind: str, implemented: tuple[str, ...]
+) -> None:
+    warning_message = (
+        f"[yellow] -- WARNING: Experiment {filename.name}[/yellow]: "
+        f"The '{kind}' method is not implemented. "
+        f"Please choose one of the following methods: {', '.join(implemented)}. "
+        f"Defaulting to 'file' method."
+    )
+    console.print()
+    console.print(warning_message)
+    console.print()
+
+
+def print_no_duplicate_warning(filename: Path) -> None:
+    warning_message = (
+        f"[yellow] -- WARNING: Experiment {filename.name}[/yellow]: "
+        f"Some profiles do not have duplicate points. "
+        f"Uncertainties cannot be estimated and will be directly taken from the files. "
+        f"Defaulting to 'file' method."
+    )
+    console.print()
+    console.print(warning_message)
+    console.print()
+
+
+FITMETHOD_ERROR_MESSAGE = """\
+  - "FITMETHOD" must be one of:
+        "leastsq": Levenberg-Marquardt (default)
+        "least_squares": least-squares minimization (Trust Region Reflective method)
+        "differential_evolution": differential evolution
+        "brute": brute force method
+        "basinhopping": basinhopping
+        "ampgo": Adaptive Memory Programming for Global Optimization
+        "nelder": Nelder-Mead
+        "lbfgsb": L-BFGS-B
+        "powell": Powell
+        "cg": Conjugate-Gradient
+        "newton": Newton-CG
+        "cobyla": Cobyla
+        "bfgs": BFGS
+        "tnc": Truncated Newton
+        "trust-ncg": Newton-CG trust-region
+        "trust-exact": nearly exact trust-region
+        "trust-krylov": Newton GLTR trust-region
+        "trust-constr": trust-region for constrained optimization
+        "dogleg": Dog-leg trust-region
+        "slsqp": Sequential Linear Squares Programming
+        "emcee": Maximum likelihood via Monte-Carlo Markov Chain
+        "shgo": Simplicial Homology Global Optimization
+        "dual_annealing": Dual Annealing optimization"""
+
+INCLUDE_ERROR_MESSAGE = """\
+  - "INCLUDE" must be a list of nuclei to be included or '*' to select all the profiles.
+    Example: ['G3H', 'S4H', 'W5H'] or [3, 4, 5]"""
+
+EXCLUDE_ERROR_MESSAGE = """\
+  - "EXCLUDE" must be a list of nuclei to be excluded.
+
+    Example: ['G3H', 'S4H', 'W5H'] or [3, 4, 5]"""
+
+FIT_ERROR_MESSAGE = """\
+  - "FIT" must be a list of parameters to be fitted.
+
+    Example: ["PB", "KEX_AB"]"""
+
+FIX_ERROR_MESSAGE = """\
+  - "FIX" must be a list of parameters to be fixed.
+
+    Example: ["PB", "KEX_AB"]"""
+
+CONSTRAINTS_ERROR_MESSAGE = """\
+  - "CONSTRAINTS" must be a list of expressions.
+
+    Example: ["[R2_B] = [R2_A] / 2", "[R1_B] = [R1_A]"]"""
+
+GRID_ERROR_MESSAGE = """\
+  - "GRID" must be a list of parameters to be gridded with the associated grid
+    definition.
+
+    Example: GRID    = [
+        "[KEX_AB] = log(100.0, 600.0, 10)",
+        "[PB] = log(0.03, 0.15, 10)",
+        "[DW_AB] = lin(0.0, 10.0, 5)",
+    ]"""
+
+STATISTICS_ERROR_MESSAGE = """\
+  - "STATISTICS" must be a dictionary with keys 'MC', 'BS', 'BSN'
+
+    Example: { "MC"=10 } or { "MC"=10, "BS"=10 }"""
+
+METHOD_ERROR_MESSAGES = {
+    "fitmethod": FITMETHOD_ERROR_MESSAGE,
+    "include": INCLUDE_ERROR_MESSAGE,
+    "exclude": EXCLUDE_ERROR_MESSAGE,
+    "fit": FIT_ERROR_MESSAGE,
+    "fix": FIX_ERROR_MESSAGE,
+    "constraints": CONSTRAINTS_ERROR_MESSAGE,
+    "grid": GRID_ERROR_MESSAGE,
+    "statistics": STATISTICS_ERROR_MESSAGE,
+}
+
+
+def print_method_error(filename: Path, section: str, options: set[int | str]) -> None:
+    console.print()
+    console.print(
+        f"[red] -- ERROR: Error reading section '[{section}]' of '{filename}' --"
+    )
+    for option in options:
+        console.print(METHOD_ERROR_MESSAGES.get(str(option)))
     console.print()

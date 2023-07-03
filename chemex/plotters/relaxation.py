@@ -10,10 +10,8 @@ from matplotlib.backends.backend_pdf import PdfPages
 from chemex.containers.data import Data
 from chemex.containers.profile import Profile
 from chemex.messages import print_plot_filename
-from chemex.plotters.plot import get_grid
-from chemex.plotters.plot import plot_profile
-from chemex.printers.plot import data_plot_printers
-from chemex.printers.plot import PlotPrinter
+from chemex.plotters.plot import get_grid, plot_profile
+from chemex.printers.plot import PlotPrinter, data_plot_printers
 
 
 def plot_relaxation(file_pdf: PdfPages, name: str, data_exp: Data, data_calc: Data):
@@ -67,7 +65,6 @@ class RelaxationPlotter:
         self.printer: PlotPrinter = data_plot_printers["relaxation"]
 
     def plot(self, path: Path, profiles: list[Profile]) -> None:
-
         basename = path / self.filename.name
         name_pdf = basename.with_suffix(".pdf")
         name_exp = basename.with_suffix(".exp")
@@ -87,7 +84,6 @@ class RelaxationPlotter:
                 file_calc.write(self.printer.print_calc(str(profile.name), data_calc))
 
     def plot_simulation(self, path: Path, profiles: list[Profile]) -> None:
-
         basename = path / self.filename.name
         name_pdf = basename.with_suffix(".pdf")
         name_sim = basename.with_suffix(".sim")

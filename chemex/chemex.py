@@ -5,19 +5,19 @@ import sys
 from argparse import Namespace
 
 from chemex.cli import build_parser
-from chemex.configuration.methods import Method
-from chemex.configuration.methods import read_methods
-from chemex.configuration.methods import Selection
+from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
 from chemex.experiments.builder import build_experiments
 from chemex.experiments.loader import register_experiments
-from chemex.messages import print_logo
-from chemex.messages import print_no_data
-from chemex.messages import print_reading_defaults
-from chemex.messages import print_reading_methods
-from chemex.messages import print_running_simulations
-from chemex.messages import print_start_fit
+from chemex.messages import (
+    print_logo,
+    print_no_data,
+    print_reading_defaults,
+    print_reading_methods,
+    print_running_simulations,
+    print_start_fit,
+)
 from chemex.models import model
 from chemex.models.loader import register_kinetic_settings
 from chemex.optimize.fitting import run_methods
@@ -53,7 +53,6 @@ def run_sim(args: Namespace, experiments: Experiments):
 
 def run(args: Namespace):
     """Run the fit or simulation."""
-
     # Parse kinetics model
     model.set_model(args.model)
 

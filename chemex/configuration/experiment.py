@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from dataclasses import field
-from typing import Generic
-from typing import TypeVar
+from dataclasses import dataclass, field
+from typing import Generic, TypeVar
 
 import numpy as np
 from pydantic.generics import GenericModel

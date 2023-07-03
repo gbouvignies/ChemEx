@@ -8,10 +8,13 @@ from lmfit import Parameters as ParametersLF
 from scipy import stats
 
 from chemex.containers.experiments import Experiments
-from chemex.messages import print_chi2
-from chemex.messages import print_group_name
-from chemex.messages import print_making_plots
-from chemex.messages import print_writing_results
+from chemex.messages import (
+    print_chi2,
+    print_group_name,
+    print_making_plots,
+    print_plotting_canceled,
+    print_writing_results,
+)
 from chemex.parameters import database
 from chemex.printers.parameters import write_parameters
 
@@ -30,7 +33,7 @@ def calculate_statistics(
     aic = _neg2_log_likel + 2 * nvarys
     bic = _neg2_log_likel + np.log(ndata) * nvarys
     _, ks_p_value = stats.kstest(residuals, "norm")
-    pvalue: float = 1.0 - stats.chi2.cdf(chisqr, ndata - nvarys)  # type: ignore
+    pvalue: float = 1.0 - stats.chi2.cdf(chisqr, ndata - nvarys)
     return {
         "ndata": ndata,
         "nvarys": nvarys,
@@ -46,29 +49,19 @@ def calculate_statistics(
 def _write_statistics(experiments: Experiments, path: Path):
     """Write fitting statistics to a file."""
     params_lf = database.build_lmfit_params(experiments.param_ids)
-    statistics = calculate_statistics(experiments, params_lf)
+    stats = calculate_statistics(experiments, params_lf)
     filename = path / "statistics.toml"
-    with open(filename, "w") as f:
-        f.write(f"\"number of data points\"                = {statistics['ndata']}\n")
-        f.write(f"\"number of variables\"                  = {statistics['nvarys']}\n")
+    with filename.open(mode="w") as f:
+        f.write(f"\"number of data points\"                = {stats['ndata']}\n")
+        f.write(f"\"number of variables\"                  = {stats['nvarys']}\n")
+        f.write(f"\"chi-square\"                           = {stats['chisqr']: .5e}\n")
+        f.write(f"\"reduced-chi-square\"                   = {stats['redchi']: .5e}\n")
+        f.write(f"\"chi-squared test\"                     = {stats['pvalue']: .5e}\n")
         f.write(
-            f"\"chi-square\"                           = {statistics['chisqr']: .5e}\n"
+            f"\"Kolmogorov-Smirnov test\"              = {stats['ks_pvalue']: .5e}\n"
         )
-        f.write(
-            f"\"reduced-chi-square\"                   = {statistics['redchi']: .5e}\n"
-        )
-        f.write(
-            f"\"chi-squared test\"                     = {statistics['pvalue']: .5e}\n"
-        )
-        f.write(
-            f"\"Kolmogorov-Smirnov test\"              = {statistics['ks_pvalue']: .5e}\n"
-        )
-        f.write(
-            f"\"Akaike Information Criterion (AIC)\"   = {statistics['aic']: .5e}\n"
-        )
-        f.write(
-            f"\"Bayesian Information Criterion (BIC)\" = {statistics['bic']: .5e}\n"
-        )
+        f.write(f"\"Akaike Information Criterion (AIC)\"   = {stats['aic']: .5e}\n")
+        f.write(f"\"Bayesian Information Criterion (BIC)\" = {stats['bic']: .5e}\n")
 
 
 def _write_files(experiments: Experiments, path: Path):
@@ -90,7 +83,6 @@ def _write_simulation_files(experiments: Experiments, path: Path):
 
 def _write_plots(experiments: Experiments, path: Path):
     """Plot the experimental and fitted data."""
-
     print_making_plots()
 
     path_ = path / "Plots"
@@ -98,13 +90,11 @@ def _write_plots(experiments: Experiments, path: Path):
     try:
         experiments.plot(path=path_)
     except KeyboardInterrupt:
-        print("  - Plotting cancelled\n")
-    print("")
+        print_plotting_canceled()
 
 
 def _write_simulation_plots(experiments: Experiments, path: Path):
     """Plot the experimental and fitted data."""
-
     print_making_plots()
 
     path_ = path / "Plots"
@@ -112,8 +102,7 @@ def _write_simulation_plots(experiments: Experiments, path: Path):
     try:
         experiments.plot_simulation(path=path_)
     except KeyboardInterrupt:
-        print("  - Plotting cancelled\n")
-    print("")
+        print_plotting_canceled()
 
 
 def execute_post_fit(

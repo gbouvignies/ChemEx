@@ -4,10 +4,10 @@ from __future__ import annotations
 from argparse import ArgumentParser
 from pathlib import Path
 
-from chemex import __version__
-from chemex import chemex
-from chemex import tools
+from chemex import __version__, chemex
 from chemex.parameters.spin_system import SpinSystem
+from chemex.tools.pick_cest import pick_cest
+from chemex.tools.plot_param import plot_param
 
 
 def build_parser():
@@ -21,7 +21,7 @@ def build_parser():
 
     parser = ArgumentParser(description=description, prog="chemex")
 
-    parser.set_defaults(func=lambda x: parser.print_usage())
+    parser.set_defaults(func=lambda _: parser.print_usage())
 
     parser.add_argument(
         "--version", action="version", version=f"{parser.prog} {__version__}"
@@ -179,7 +179,7 @@ def build_parser():
         "pick_cest", help="Plot CEST profiles for dip picking"
     )
 
-    pick_cest_parser.set_defaults(func=tools.pick_cest.pick_cest)
+    pick_cest_parser.set_defaults(func=pick_cest)
 
     pick_cest_parser.add_argument(
         "-e",
@@ -205,7 +205,7 @@ def build_parser():
         "plot_param", help="Plot one selected parameter from a 'parameters.fit' file"
     )
 
-    plot_param_parser.set_defaults(func=tools.plot_param.plot_param)
+    plot_param_parser.set_defaults(func=plot_param)
 
     plot_param_parser.add_argument(
         "-p",

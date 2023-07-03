@@ -97,5 +97,10 @@ Sandbox/
 *.swp
 *.*~
 
-# Documentation intermediates
-docs/source/modules/*/_autosummary/
+# Python bytecode and cache files
+.cache/
+/.ghtopdep_cache/
+.hypothesis
+.mypy_cache/
+.pytest_cache/
+/.ruff_cache/

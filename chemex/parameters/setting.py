@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from dataclasses import field
+from dataclasses import dataclass, field
 from re import Pattern
-from typing import Literal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
@@ -98,7 +96,6 @@ class ParamSetting:
         expr: str = "",
         brute_step: float | None = None,
     ) -> None:
-
         self.__expr: ExpressionSetting = ExpressionSetting(_RE_IDS)
         self.param_name = param_name
         self.value = value

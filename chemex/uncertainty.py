@@ -6,9 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 import numpy as np
-from scipy import interpolate
-from scipy import signal
-from scipy import stats
+from scipy import interpolate, signal, stats
 from scipy.linalg import norm
 
 from chemex.containers.data import Data
@@ -25,7 +23,7 @@ def _variance_from_duplicates(data: Data) -> float:
 
     """
     groups: defaultdict[Any, list[float]] = defaultdict(list)
-    for x, y in zip(data.metadata, data.exp):
+    for x, y in zip(data.metadata, data.exp, strict=True):
         groups[x].append(y)
     variances, weights = [], []
     for group in groups.values():
@@ -45,8 +43,6 @@ def _variance_from_scatter(data: Data) -> float:
     https://www.mathworks.com/matlabcentral/fileexchange/16683-estimatenoise
 
     """
-    _, exp, _ = zip(*sorted(zip(data.metadata, data.exp, data.err)))
-    size = len(exp)
     fda = [
         [1, -1],
         [1, -2, 1],
@@ -56,22 +52,25 @@ def _variance_from_scatter(data: Data) -> float:
         [1, -6, 15, -20, 15, -6, 1],
     ]
     fda = [np.array(a_fda) / norm(a_fda) for a_fda in fda]
-    percents = np.array([0.05] + list(np.arange(0.1, 0.4, 0.025)))
+    percents = np.array([0.05, *list(np.arange(0.1, 0.4, 0.025))])
     percent_points = stats.norm.ppf(1.0 - percents)
     sigma_est = []
     for fdai in fda:
-        noisedata = sorted(signal.convolve(exp, fdai, mode="valid"))
+        noisedata = sorted(signal.convolve(data.exp, fdai, mode="valid"))
         ntrim = len(noisedata)
-        if ntrim >= 2:
-            xaxis = (0.5 + np.arange(1, ntrim + 1)) / (ntrim + 0.5)
-            sigmas = []
-            function = interpolate.interp1d(xaxis, noisedata, "linear")
-            for a_perc, a_z in zip(percents, percent_points):
-                with contextlib.suppress(ValueError):
-                    val = (function(1.0 - a_perc) - function(a_perc)) / (2.0 * a_z)
-                    sigmas.append(val)
-            sigma_est.append(np.median(sigmas))
-    variance = np.median(sigma_est) ** 2 / (1.0 + 15.0 * (size + 1.225) ** -1.245)
+        if ntrim <= 1:
+            continue
+        xaxis = (0.5 + np.arange(1, ntrim + 1)) / (ntrim + 0.5)
+        sigmas = []
+        function = interpolate.interp1d(xaxis, noisedata, "linear")
+        for a_perc, a_z in zip(percents, percent_points, strict=True):
+            with contextlib.suppress(ValueError):
+                val = (function(1.0 - a_perc) - function(a_perc)) / (2.0 * a_z)
+                sigmas.append(val)
+        sigma_est.append(np.median(sigmas))
+    variance = np.median(sigma_est) ** 2 / (
+        1.0 + 15.0 * (data.exp.size + 1.225) ** -1.245
+    )
     return np.max([variance, 1e-8])
 
 

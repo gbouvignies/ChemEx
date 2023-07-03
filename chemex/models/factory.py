@@ -1,9 +1,8 @@
 """Factories for creating parameter settings."""
 from __future__ import annotations
 
-from typing import Callable
-from typing import TYPE_CHECKING
-
+from collections.abc import Callable
+from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
     from chemex.configuration.conditions import Conditions
@@ -16,7 +15,7 @@ if TYPE_CHECKING:
 class Factory:
     """Factory for creating all parts of an experiment."""
 
-    setting_makers_registry: dict[str, SettingMakerType] = {}
+    setting_makers_registry: ClassVar[dict[str, SettingMakerType]] = {}
 
     def register(self, name: str, setting_maker: SettingMakerType):
         """Register a new setting maker."""
@@ -26,7 +25,8 @@ class Factory:
         try:
             return self.setting_makers_registry[name](conditions)
         except KeyError:
-            raise ValueError(f"Unknown type {name!r}") from None
+            msg = f"Unknown type {name!r}"
+            raise ValueError(msg) from None
 
     @property
     def set(self) -> set[str]:

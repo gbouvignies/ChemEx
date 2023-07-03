@@ -1,13 +1,13 @@
-""" The ref module contains the reference matrices and code for calculating the
-    Liouvillian.
+"""The ref module contains the reference matrices and code for calculating the
+Liouvillian.
 
-    Operator basis::
+Operator basis::
 
-       { Eq,
-         Ix, Iy, Iz, Sx, Sy, Sz,
-         2IxSz, 2IySz, 2IzSx, 2IzSy,
-         2IxSx, 2IxSy, 2IySx, 2IySy,
-         2IzSz }
+{ Eq,
+Ix, Iy, Iz, Sx, Sy, Sz,
+2IxSz, 2IySz, 2IzSx, 2IzSy,
+2IxSx, 2IxSy, 2IySx, 2IySy,
+2IzSz }
 
 """
 from __future__ import annotations
@@ -23,9 +23,7 @@ from scipy import stats
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import model
 from chemex.nmr.basis import Basis
-from chemex.nmr.constants import Distribution
-from chemex.nmr.constants import SIGNED_XI_RATIO
-from chemex.nmr.constants import XI_RATIO
+from chemex.nmr.constants import SIGNED_XI_RATIO, XI_RATIO, Distribution
 
 if TYPE_CHECKING:
     from chemex.parameters.spin_system import SpinSystem
@@ -44,7 +42,7 @@ def _make_gaussian(
     else:
         grid = np.array([0.0])
         dist = np.array([1.0])
-    weights = stats.norm.pdf(grid)  # type: ignore
+    weights = stats.norm.pdf(grid)
     weights /= weights.sum()
     return dist * value, weights
 
@@ -204,11 +202,11 @@ class LiouvillianIS:
         return self._jeff_i
 
     @jeff_i.setter
-    def jeff_i(self, value: Distribution):
-        self._jeff_i = value
-        values = value.values.reshape((-1, 1, 1, 1))
+    def jeff_i(self, distribution: Distribution):
+        self._jeff_i = distribution
+        values = distribution.values.reshape((-1, 1, 1, 1))
         self._l_jeff_i = self.matrices.get("jeff_i", np.array(0.0)) * values
-        self._jeff_i_weights = value.weights.reshape((-1, 1, 1, 1))
+        self._jeff_i_weights = distribution.weights.reshape((-1, 1, 1, 1))
 
     @property
     def gradient_dephasing(self) -> float:
@@ -282,7 +280,7 @@ class LiouvillianIS:
         keep = sum(
             (self.vectors[name] for name in components), start=np.zeros((self.size, 1))
         )
-        keep[keep > 0.0] = 1.0
+        keep[keep > 0] = 1.0
         return keep * magnetization
 
     def offsets_to_ppms(self, offsets: np.ndarray) -> np.ndarray:

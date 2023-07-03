@@ -3,8 +3,7 @@ from __future__ import annotations
 from collections.abc import MutableMapping
 from typing import Any
 
-from pydantic import BaseModel
-from pydantic import root_validator
+from pydantic import BaseModel, root_validator
 
 
 class BaseModelLowerCase(BaseModel):

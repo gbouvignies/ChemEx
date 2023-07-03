@@ -1,13 +1,9 @@
 from __future__ import annotations
 
 from contextlib import ExitStack
-from dataclasses import dataclass
-from dataclasses import field
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
-from typing import Generic
-from typing import Protocol
-from typing import TypeVar
+from typing import Any, Generic, Protocol, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -19,10 +15,8 @@ from chemex.containers.data import Data
 from chemex.containers.profile import Profile
 from chemex.messages import print_plot_filename
 from chemex.nmr.spectrometer import Spectrometer
-from chemex.plotters.plot import get_grid
-from chemex.plotters.plot import plot_profile
-from chemex.printers.plot import data_plot_printers
-from chemex.printers.plot import PlotPrinter
+from chemex.plotters.plot import get_grid, plot_profile
+from chemex.printers.plot import PlotPrinter, data_plot_printers
 
 _GREY400 = "#BDBDBD"
 _LSTYLES = ("-", "--", "-.", ":")
@@ -82,7 +76,9 @@ def add_resonance_positions(
 ) -> tuple[Axes, Axes]:
     kwargs2 = {"color": _GREY400, "linewidth": 0.75, "zorder": -1}
     cs_shifted = circular_shift.centre(cs_values, centre)
-    for a_cs, a_cs_shifted, lstyle in zip(cs_values, cs_shifted, _LSTYLES):
+    for a_cs, a_cs_shifted, lstyle in zip(
+        cs_values, cs_shifted, _LSTYLES, strict=False
+    ):
         ax1.axvline(a_cs_shifted, linestyle=lstyle, **kwargs2)
         ax2.axvline(a_cs_shifted, linestyle=lstyle, **kwargs2)
         if a_cs != a_cs_shifted:
@@ -169,7 +165,6 @@ def create_plot_data_calc(profile: Profile) -> Data:
 
 
 def get_state_positions(spectrometer: Spectrometer) -> np.ndarray:
-
     names = (f"cs_i_{state}" for state in "abcd")
     return np.array(
         [
@@ -202,7 +197,6 @@ class CestPlotter(Generic[T]):
         )
 
     def plot(self, path: Path, profiles: list[Profile]) -> None:
-
         basename = path / self.filename.name
         name_pdf = basename.with_suffix(".pdf")
         name_exp = basename.with_suffix(".exp")
@@ -222,7 +216,6 @@ class CestPlotter(Generic[T]):
                 file_calc.write(self.printer.print_calc(str(profile.name), data_calc))
 
     def plot_simulation(self, path: Path, profiles: list[Profile]) -> None:
-
         basename = path / self.filename.name
         name_pdf = basename.with_suffix(".pdf")
         name_sim = basename.with_suffix(".sim")

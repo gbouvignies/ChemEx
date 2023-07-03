@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 from pathlib import Path
-from typing import Any
-from typing import Generic
-from typing import Protocol
-from typing import TypeVar
+from typing import Any, Generic, Protocol, TypeVar
 
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
@@ -15,11 +12,15 @@ from chemex.containers.data import Data
 from chemex.containers.profile import Profile
 from chemex.messages import print_plot_filename
 from chemex.plotters.plot import plot_profile
-from chemex.printers.plot import data_plot_printers
-from chemex.printers.plot import PlotPrinter
+from chemex.printers.plot import PlotPrinter, data_plot_printers
 
 # Types
 NDArrayFloat = NDArray[np.float_]
+
+LARGE_ERROR = 1e15
+
+
+rng = np.random.default_rng()
 
 
 class CpmgExperimentSettings(Protocol):
@@ -46,13 +47,12 @@ def plot_cpmg(file_pdf: PdfPages, name: str, data_exp: Data, data_calc: Data):
 def intensities_to_rates(
     intensities: np.ndarray, intensities0: np.ndarray, time_t2: float
 ) -> np.ndarray:
-
     normalized_intensities = intensities / np.mean(intensities0, axis=-1, keepdims=True)
 
     # If the normalized intensity is negative, no rate can be estimated.
     # The rate is then set to infinity by default.
     rates = np.full_like(intensities, np.inf)
-    neg = normalized_intensities <= 0.0
+    neg = normalized_intensities <= 0
     rates[~neg] = -np.log(normalized_intensities[~neg]) / time_t2
 
     return rates
@@ -71,9 +71,8 @@ def calculate_calc_rates(data: Data, time_t2: float) -> np.ndarray:
 
 
 def calculate_errorbars(data: Data, rates: np.ndarray, time_t2: float) -> np.ndarray:
-
-    randn = np.random.randn(10000, 1)
-    randn0 = np.random.randn(10000, 1)
+    randn = rng.standard_normal(size=(10000, 1))
+    randn0 = rng.standard_normal(size=(10000, 1))
 
     intensities = data.exp[~data.refs]
     intensities0 = data.exp[data.refs]
@@ -94,15 +93,15 @@ def calculate_errorbars(data: Data, rates: np.ndarray, time_t2: float) -> np.nda
     errors = np.percentile(rates_ensemble - rates, [15.9, 84.1], axis=0).transpose()
 
     # Set back large errors to infinity
-    errors[errors > 1e15] = np.inf
+    errors[errors > LARGE_ERROR] = np.inf
 
     return np.abs(errors)
 
 
 def ncycs_to_nu_cpmgs(ncycs: np.ndarray, time_t2: float) -> np.ndarray:
     modified_ncycs = ncycs.copy()
-    modified_ncycs[modified_ncycs == -1.0] = 0.5
-    return modified_ncycs[modified_ncycs != 0.0] / time_t2
+    modified_ncycs[modified_ncycs == -1] = 0.5
+    return modified_ncycs[modified_ncycs != 0] / time_t2
 
 
 def create_plot_data_exp(profile: Profile, config: CpmgExperimentConfig) -> Data:
@@ -154,7 +153,6 @@ class CpmgPlotter(Generic[T]):
         self.printer: PlotPrinter = data_plot_printers["cpmg"]
 
     def plot(self, path: Path, profiles: list[Profile]) -> None:
-
         basename = path / self.filename.name
         name_pdf = basename.with_suffix(".pdf")
         name_exp = basename.with_suffix(".exp")
@@ -174,7 +172,6 @@ class CpmgPlotter(Generic[T]):
                 file_calc.write(self.printer.print_calc(str(profile.name), data_calc))
 
     def plot_simulation(self, path: Path, profiles: list[Profile]) -> None:
-
         basename = path / self.filename.name
         name_pdf = basename.with_suffix(".pdf")
         name_sim = basename.with_suffix(".sim")

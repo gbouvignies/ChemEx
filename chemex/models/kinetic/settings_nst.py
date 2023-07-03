@@ -4,8 +4,7 @@ from itertools import permutations
 from typing import TYPE_CHECKING
 
 from chemex.models.factory import model_factory
-from chemex.parameters.setting import NameSetting
-from chemex.parameters.setting import ParamLocalSetting
+from chemex.parameters.setting import NameSetting, ParamLocalSetting
 
 if TYPE_CHECKING:
     from chemex.configuration.conditions import Conditions
@@ -22,8 +21,9 @@ def kex_p_to_k(states: str) -> str:
 
 
 def create_kij_settings(states: str = "abc") -> dict[str, ParamLocalSetting]:
-    if len(states) < 2:
-        raise ValueError("'state_nb' should be larger than 2")
+    if len(states) <= 1:
+        msg = "'state_nb' should be larger than 2"
+        raise ValueError(msg)
     return {
         f"k{i}{j}": ParamLocalSetting(
             name_setting=NameSetting(f"k{i}{j}", "", TPL),
@@ -33,7 +33,7 @@ def create_kij_settings(states: str = "abc") -> dict[str, ParamLocalSetting]:
     }
 
 
-def make_settings_3st_linear(conditions: Conditions) -> dict[str, ParamLocalSetting]:
+def make_settings_3st_linear(_conditions: Conditions) -> dict[str, ParamLocalSetting]:
     kij_settings = create_kij_settings("abc")
     del kij_settings["kac"]
     del kij_settings["kca"]
@@ -72,7 +72,7 @@ def make_settings_3st_linear(conditions: Conditions) -> dict[str, ParamLocalSett
     }
 
 
-def make_settings_3st_fork(conditions: Conditions) -> dict[str, ParamLocalSetting]:
+def make_settings_3st_fork(_conditions: Conditions) -> dict[str, ParamLocalSetting]:
     kij_settings = create_kij_settings("abc")
     del kij_settings["kbc"]
     del kij_settings["kcb"]

@@ -8,8 +8,7 @@ from scipy.optimize import root
 
 from chemex.models.constraints import pop_3st
 from chemex.models.factory import model_factory
-from chemex.parameters.setting import NameSetting
-from chemex.parameters.setting import ParamLocalSetting
+from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
 
 if TYPE_CHECKING:
@@ -37,13 +36,14 @@ def calculate_residuals(
 def calculate_concentrations(p_total: float, k1: float, k2: float) -> dict[str, float]:
     concentrations_start = (p_total, 0.0, 0.0)
     results = root(calculate_residuals, concentrations_start, args=(p_total, k1, k2))
-    return dict(zip(("p_monomer", "p_dimer", "p_trimer", results["x"])))
+    return dict(zip(("p_monomer", "p_dimer", "p_trimer"), results["x"], strict=True))
 
 
 def make_settings_3st_a_a2_a3(conditions: Conditions) -> dict[str, ParamLocalSetting]:
     p_total = conditions.p_total
     if p_total is None:
-        raise ValueError(f"'p_total' must be specified to use the '{NAME}' model")
+        msg = f"'p_total' must be specified to use the '{NAME}' model"
+        raise ValueError(msg)
     return {
         "k1": ParamLocalSetting(
             name_setting=NameSetting("k1", "", ("temperature",)),

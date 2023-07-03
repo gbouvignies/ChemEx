@@ -7,20 +7,17 @@ import numpy as np
 from numpy.typing import NDArray
 
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import CestSettings
-from chemex.configuration.experiment import ExperimentConfig
-from chemex.configuration.experiment import ToBeFitted
+from chemex.configuration.experiment import CestSettings, ExperimentConfig, ToBeFitted
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
-from chemex.experiments.factories import Creators
-from chemex.experiments.factories import factories
+from chemex.experiments.factories import Creators, factories
 from chemex.filterers import CestFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import get_multiplet
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
-from chemex.plotters import CestPlotter
+from chemex.plotters.cest import CestPlotter
 from chemex.printers.data import CestPrinter
 
 # Type definitions
@@ -29,6 +26,8 @@ NDArrayBool = NDArray[np.bool_]
 
 
 EXPERIMENT_NAME = "cest_15n_tr"
+
+OFFSET_REF = 1e4
 
 
 class Cest15NTrSettings(CestSettings):
@@ -45,8 +44,7 @@ class Cest15NTrSettings(CestSettings):
     def detection(self) -> str:
         if self.antitrosy:
             return f"[2izsz_{self.observed_state}] + [iz_{self.observed_state}]"
-        else:
-            return f"[2izsz_{self.observed_state}] - [iz_{self.observed_state}]"
+        return f"[2izsz_{self.observed_state}] - [iz_{self.observed_state}]"
 
 
 class Cest15NTrConfig(ExperimentConfig[Cest15NTrSettings, CestDataSettings]):
@@ -68,7 +66,6 @@ class Cest15NTrConfig(ExperimentConfig[Cest15NTrSettings, CestDataSettings]):
 def build_spectrometer(
     config: Cest15NTrConfig, spin_system: SpinSystem
 ) -> Spectrometer:
-
     settings = config.experiment
     conditions = config.conditions
 
@@ -95,12 +92,11 @@ class Cest15NTrSequence:
 
     @staticmethod
     def is_reference(metadata: NDArrayFloat) -> NDArrayBool:
-        return np.abs(metadata) > 1e4
+        return np.abs(metadata) > OFFSET_REF
 
     def _get_start(self, spectrometer: Spectrometer) -> np.ndarray:
-        """
-        TROSY: (2IzSz - Iz) / 2
-        ANTITROSY: (2IzSz + Iz) / 2
+        """TROSY: (2IzSz - Iz) / 2
+        ANTITROSY: (2IzSz + Iz) / 2.
         """
         start = 0.5 * spectrometer.get_start_magnetization(["2izsz", "iz"])
         if not self.settings.antitrosy:
@@ -108,7 +104,6 @@ class Cest15NTrSequence:
         return start
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
-
         offsets = data.metadata
 
         start = self._get_start(spectrometer)
@@ -116,7 +111,6 @@ class Cest15NTrSequence:
         intensities = {}
 
         for offset in set(offsets):
-
             intensities[offset] = start
 
             if self.is_reference(offset):
