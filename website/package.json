@@ -40,7 +40,7 @@
     },
     "devDependencies": {
         "@docusaurus/eslint-plugin": "^2.4.1",
-        "eslint": "^8.41.0",
+        "eslint": "^8.44.0",
         "eslint-plugin-react": "^7.32.2"
     }
 }
