@@ -1,16 +1,14 @@
 """Factories for creating different parts of an experiment."""
 from __future__ import annotations
 
-from collections.abc import Callable
-from collections.abc import MutableMapping
+from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from chemex.configuration.experiment import ExperimentConfig
 from chemex.containers.dataset import Dataset
-from chemex.containers.profile import Filterer
-from chemex.containers.profile import PulseSequence
+from chemex.containers.profile import Filterer, PulseSequence
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.plotter import Plotter
@@ -71,7 +69,7 @@ class Creators:
 class Factories:
     """Factory for creating all parts of an experiment."""
 
-    creators_registry: dict[str, Creators] = {}
+    creators_registry: ClassVar[dict[str, Creators]] = {}
 
     def register(self, type: str, creators: Creators):
         """Register a new propagtor type."""
@@ -81,7 +79,8 @@ class Factories:
         try:
             return self.creators_registry[type]
         except KeyError:
-            raise ValueError(f"Unknown  type {type!r}") from None
+            msg = f"Unknown  type {type!r}"
+            raise ValueError(msg) from None
 
 
 factories = Factories()

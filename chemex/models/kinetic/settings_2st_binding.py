@@ -7,8 +7,7 @@ import numpy as np
 
 from chemex.models.constraints import pop_2st
 from chemex.models.factory import model_factory
-from chemex.parameters.setting import NameSetting
-from chemex.parameters.setting import ParamLocalSetting
+from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
 
 if TYPE_CHECKING:
@@ -31,9 +30,8 @@ def make_settings_2st_binding(conditions: Conditions) -> dict[str, ParamLocalSet
     p_total = conditions.p_total
     l_total = conditions.l_total
     if p_total is None or l_total is None:
-        raise ValueError(
-            "'p_total' and 'l_total' must be specified to use the '2st_binding' model"
-        )
+        msg = "'p_total' and 'l_total' must be specified to use the '2st_binding' model"
+        raise ValueError(msg)
     return {
         "koff": ParamLocalSetting(
             name_setting=NameSetting("koff", "", ("temperature",)),

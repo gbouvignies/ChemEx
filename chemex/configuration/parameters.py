@@ -4,9 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import BaseModel
-from pydantic import conlist
-from pydantic import validator
+from pydantic import BaseModel, conlist, validator
 
 from chemex.parameters.name import ParamName
 from chemex.toml import read_toml_multi

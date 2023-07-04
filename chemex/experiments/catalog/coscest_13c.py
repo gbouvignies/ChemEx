@@ -8,20 +8,17 @@ from numpy.linalg import matrix_power
 from numpy.typing import NDArray
 
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import CestSettings
-from chemex.configuration.experiment import ExperimentConfig
-from chemex.configuration.experiment import ToBeFitted
+from chemex.configuration.experiment import CestSettings, ExperimentConfig, ToBeFitted
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
-from chemex.experiments.factories import Creators
-from chemex.experiments.factories import factories
+from chemex.experiments.factories import Creators, factories
 from chemex.filterers import CestFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import get_multiplet
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
-from chemex.plotters import CestPlotter
+from chemex.plotters.cest import CestPlotter
 from chemex.printers.data import CestPrinter
 
 # Type definitions
@@ -30,6 +27,8 @@ NDArrayBool = NDArray[np.bool_]
 
 
 EXPERIMENT_NAME = "coscest_13c"
+
+OFFSET_REF = 1e4
 
 
 class CosCest13CSettings(CestSettings):
@@ -62,7 +61,6 @@ class CosCest13CConfig(ExperimentConfig[CosCest13CSettings, CestDataSettings]):
 def build_spectrometer(
     config: CosCest13CConfig, spin_system: SpinSystem
 ) -> Spectrometer:
-
     settings = config.experiment
     conditions = config.conditions
 
@@ -90,7 +88,7 @@ class CosCest13CSequence:
 
     @staticmethod
     def is_reference(metadata: NDArrayFloat) -> NDArrayBool:
-        return np.abs(metadata) > 1e4
+        return np.abs(metadata) > OFFSET_REF
 
     def _calc_cosine_shape(self, spectrometer: Spectrometer) -> np.ndarray:
         time_t1 = self.settings.time_t1
@@ -128,21 +126,19 @@ class CosCest13CSequence:
         return pulse
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
-
         offsets = data.metadata
 
         start = spectrometer.get_equilibrium()
 
         d_eq = (
             spectrometer.delays(self.settings.time_equil)
-            if self.settings.time_equil > 0.0
+            if self.settings.time_equil > 0
             else spectrometer.identity
         )
 
         intensities = {}
 
         for offset in set(offsets):
-
             if self.is_reference(offset):
                 intensities[offset] = d_eq @ start
                 continue

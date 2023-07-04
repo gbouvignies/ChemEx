@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
-from typing import Union
 
 from pydantic import validator
 
@@ -18,7 +17,7 @@ class DataSettings(BaseModelLowerCase):
 class RelaxationDataSettings(DataSettings):
     error: Literal["file", "duplicates"] = "file"
     filter_planes: list[int] = []
-    profiles: dict[SpinSystem, Union[Path, list[Path]]] = {}
+    profiles: dict[SpinSystem, Path | list[Path]] = {}
 
     @validator("profiles", pre=True)
     def make_list(cls, v):

@@ -4,8 +4,7 @@ from itertools import product
 from typing import TypeVar
 
 import numpy as np
-from scipy.constants import hbar
-from scipy.constants import mu_0
+from scipy.constants import hbar, mu_0
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import model
@@ -148,9 +147,10 @@ class RateNH(RatesIS):
         self, h_frq: float, tauc: float, s2: float, khh: float = 0.0
     ) -> dict[str, float]:
         rates = super().__call__(h_frq, tauc, s2)
-        if khh == 0.0:
+        if khh == 0:
             return rates
-        # Make a copy of rates before adding 'khh' due to lru_cache on 'super().__call__'
+        # Make a copy of rates before adding 'khh' due to lru_cache"
+        # on 'super().__call__'
         rates = rates.copy()
         rates["r2_s"] += khh
         rates["r1_s"] += khh
@@ -181,9 +181,10 @@ class RateHN(RatesIS):
         self, h_frq: float, tauc: float, s2: float, khh: float = 0.0
     ) -> dict[str, float]:
         rates = super().__call__(h_frq, tauc, s2)
-        if khh == 0.0:
+        if khh == 0:
             return rates
-        # Make a copy of rates before adding 'khh' due to lru_cache on 'super().__call__'
+        # Make a copy of rates before adding 'khh' due to lru_cache
+        # on 'super().__call__'
         rates = rates.copy()
         rates["r2_i"] += khh
         rates["r1_i"] += khh
@@ -264,7 +265,7 @@ _RATE_NAMES = [
 
 def get_model_free_expressions(basis: Basis, conditions: Conditions) -> dict[str, str]:
     """It takes a basis and a set of conditions,
-    and returns a dictionary of rate expressions
+    and returns a dictionary of rate expressions.
 
     Parameters
     ----------
@@ -278,7 +279,6 @@ def get_model_free_expressions(basis: Basis, conditions: Conditions) -> dict[str
         A dictionary of rate names and their corresponding expressions.
 
     """
-
     deuterated_extension = "_d" if conditions.is_deuterated else ""
     rate_function_name = f"{basis.spin_system}{deuterated_extension}"
 

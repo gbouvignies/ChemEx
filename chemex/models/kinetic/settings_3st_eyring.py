@@ -9,8 +9,7 @@ from scipy.constants import constants
 
 from chemex.models.constraints import pop_3st
 from chemex.models.factory import model_factory
-from chemex.parameters.setting import NameSetting
-from chemex.parameters.setting import ParamLocalSetting
+from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
 
 if TYPE_CHECKING:
@@ -52,7 +51,7 @@ def calculate_kij_3st_eyring(
     )
     kij_values = kbt_h * np.exp(-ddg_ij / rt)
     kij_names = (f"k{i}{j}" for i, j in permutations("abc", 2))
-    return dict(zip(kij_names, kij_values))
+    return dict(zip(kij_names, kij_values, strict=True))
 
 
 def create_kij_3st_eyring_settings(temperature: float) -> dict[str, ParamLocalSetting]:
@@ -73,7 +72,7 @@ def create_pop_3st_eyring_settings() -> dict[str, ParamLocalSetting]:
     return {
         f"p{state}": ParamLocalSetting(
             name_setting=NameSetting(f"p{state}", "", TPL),
-            expr=f"pop_3st({{kab}}, {{kba}}, {{kac}}, {{kca}}, {{kbc}}, {{kcb}})['p{state}']",
+            expr=f"pop_3st({{kab}},{{kba}},{{kac}},{{kca}},{{kbc}},{{kcb}})['p{state}']",
         )
         for state in "abc"
     }
@@ -82,7 +81,8 @@ def create_pop_3st_eyring_settings() -> dict[str, ParamLocalSetting]:
 def make_settings_3st_eyring(conditions: Conditions) -> dict[str, ParamLocalSetting]:
     celsius = conditions.temperature
     if celsius is None:
-        raise ValueError("The 'temperature' is None")
+        msg = "The 'temperature' is None"
+        raise ValueError(msg)
     return {
         "dh_b": ParamLocalSetting(
             name_setting=NameSetting("dh_b", "", PL),

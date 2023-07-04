@@ -7,20 +7,17 @@ import numpy as np
 from numpy.typing import NDArray
 
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import CestSettings
-from chemex.configuration.experiment import ExperimentConfig
-from chemex.configuration.experiment import ToBeFitted
+from chemex.configuration.experiment import CestSettings, ExperimentConfig, ToBeFitted
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
-from chemex.experiments.factories import Creators
-from chemex.experiments.factories import factories
+from chemex.experiments.factories import Creators, factories
 from chemex.filterers import CestFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import get_multiplet
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
-from chemex.plotters import CestPlotter
+from chemex.plotters.cest import CestPlotter
 from chemex.printers.data import CestPrinter
 
 # Type definitions
@@ -29,6 +26,7 @@ NDArrayBool = NDArray[np.bool_]
 
 
 EXPERIMENT_NAME = "cest_13c"
+OFFSET_REF = 1e4
 
 
 class Cest13CSettings(CestSettings):
@@ -55,7 +53,6 @@ class Cest13CConfig(ExperimentConfig[Cest13CSettings, CestDataSettings]):
 
 
 def build_spectrometer(config: Cest13CConfig, spin_system: SpinSystem) -> Spectrometer:
-
     settings = config.experiment
     conditions = config.conditions
 
@@ -84,10 +81,9 @@ class Cest13CSequence:
 
     @staticmethod
     def is_reference(metadata: NDArrayFloat) -> NDArrayBool:
-        return np.abs(metadata) > 1e4
+        return np.abs(metadata) > OFFSET_REF
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
-
         offsets = data.metadata
 
         start = spectrometer.get_equilibrium()
@@ -95,7 +91,6 @@ class Cest13CSequence:
         intensities = {}
 
         for offset in set(offsets):
-
             intensities[offset] = start
 
             if self.is_reference(offset):

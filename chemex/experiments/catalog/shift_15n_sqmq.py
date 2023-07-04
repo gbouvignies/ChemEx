@@ -7,18 +7,16 @@ import numpy as np
 from numpy.typing import NDArray
 
 from chemex.configuration.data import ShiftDataSettings
-from chemex.configuration.experiment import ExperimentConfig
-from chemex.configuration.experiment import ShiftSettings
+from chemex.configuration.experiment import ExperimentConfig, ShiftSettings
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_shift_dataset
-from chemex.experiments.factories import Creators
-from chemex.experiments.factories import factories
+from chemex.experiments.factories import Creators, factories
 from chemex.filterers import NoFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
-from chemex.plotters import ShiftPlotter
+from chemex.plotters.shift import ShiftPlotter
 from chemex.printers.data import ShiftPrinter
 
 # Type definitions
@@ -49,7 +47,6 @@ class Shift15NSqMqConfig(ExperimentConfig[Shift15NSqMqSettings, ShiftDataSetting
 def build_spectrometer(
     config: Shift15NSqMqConfig, spin_system: SpinSystem
 ) -> Spectrometer:
-
     conditions = config.conditions
 
     basis = Basis(type="ixy_ixysxy", spin_system="nh")
@@ -67,8 +64,7 @@ def _find_nearest(array, value):
 class Shift15NSqMqSequence:
     settings: Shift15NSqMqSettings
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
-
+    def calculate(self, spectrometer: Spectrometer, _data: Data) -> np.ndarray:
         ref_shift_i = (
             spectrometer.par_values[self.settings.cs_i_name]
             * spectrometer.liouvillian.ppm_i

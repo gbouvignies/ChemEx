@@ -25,7 +25,6 @@ def ids_to_param_name(param_ids: set[str]) -> ParamName:
 
 
 def group_ids(experiments: Experiments) -> list[tuple[ParamName, set[str]]]:
-
     parameters = database.get_parameters(experiments.param_ids)
 
     ids_vary: set[str] = {
@@ -83,8 +82,8 @@ def create_groups(experiments: Experiments) -> list[Group]:
     for index, (pname, param_ids) in enumerate(id_groups, start=1):
         group_name = group_name_template.format(index=index, pname=pname)
         group_path = Path(path_name_template.format(group_name=group_name))
-        param_ids = set(database.get_parameters(param_ids))
-        group_experiments = experiments.get_relevant_subset(param_ids)
+        group_param_ids = set(database.get_parameters(param_ids))
+        group_experiments = experiments.get_relevant_subset(group_param_ids)
         group_message = group_message_template.format(
             index=index, group_name=group_name
         )

@@ -7,9 +7,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.widgets import Button
-from matplotlib.widgets import Cursor
-from matplotlib.widgets import Slider
+from matplotlib.widgets import Button, Cursor, Slider
 from scipy.interpolate import CubicSpline
 
 from chemex.configuration.methods import Selection
@@ -18,21 +16,24 @@ from chemex.containers.profile import Profile
 from chemex.experiments.builder import build_experiments
 from chemex.experiments.loader import register_experiments
 from chemex.models import model
-from chemex.parameters.spin_system import Nucleus
-from chemex.parameters.spin_system import SpinSystem
+from chemex.parameters.spin_system import Nucleus, SpinSystem
 from chemex.plotters.cest import create_plot_data_exp
+
+KWARGS = {"color": "0.74", "linewidth": 1.0}
+LSTYLE = {"a": "-", "b": ":"}
+TEXT_Y = {"a": 0.8, "b": 0.75}
 
 
 class Curve:
     def __init__(self, profile: Profile, sw: float | None = None):
         data = create_plot_data_exp(profile)
-        settings = getattr(profile.pulse_sequence, "settings")
+        settings = profile.pulse_sequence.settings
 
         delta_ppm = 0.0
         if settings is not None:
             spectrometer = profile.spectrometer
             cos_n = getattr(settings, "cos_n", None)
-            sw = getattr(settings, "sw")
+            sw = settings.sw
             if cos_n is not None and cos_n % 2 == 0 and sw is not None:
                 shifts_ppm = spectrometer.offsets_to_ppms(np.array([sw / 2.0, 0.0]))
                 delta_ppm = shifts_ppm[0] - shifts_ppm[1]
@@ -59,12 +60,7 @@ class Curve:
 
 
 class Buttons:
-    KWARGS = {"color": "0.74", "linewidth": 1.0}
-    LSTYLE = {"a": "-", "b": ":"}
-    TEXT_Y = {"a": 0.8, "b": 0.75}
-
     def __init__(self, experiments: Experiments, path: Path, sw: float) -> None:
-
         self.data = {}
         names = set()
 
@@ -132,8 +128,8 @@ class Buttons:
 
     def _add_line(self, position, state):
         text_ = rf"$\varpi_{state}$ = {position:.3f} ppm"
-        text = self.fig.text(0.82, self.TEXT_Y[state], text_)
-        line = self.axis.axvline(position, linestyle=self.LSTYLE[state], **self.KWARGS)
+        text = self.fig.text(0.82, TEXT_Y[state], text_)
+        line = self.axis.axvline(position, linestyle=LSTYLE[state], **KWARGS)
         self.lines.extend([line, text])
 
     def _add_text_dw(self, dw_ab):
@@ -142,21 +138,18 @@ class Buttons:
         self.lines.append(text)
 
     def _save(self):
-
         self.out.mkdir(parents=True, exist_ok=True)
 
         fname1 = self.out / "cs_a.toml"
         fname2 = self.out / "dw_ab.toml"
 
         with contextlib.ExitStack() as stack:
-
             file1 = stack.enter_context(fname1.open("w"))
             file2 = stack.enter_context(fname2.open("w"))
             file1.write("[CS_A]\n")
             file2.write("[DW_AB]\n")
 
             for name in self.names:
-
                 cs_a = self.cs_a.get(name)
                 cs_b = self.cs_b.get(name)
 
@@ -170,7 +163,6 @@ class Buttons:
                     file2.write(f"{str(name).upper():10s} = {dw_ab:8.3f}\n")
 
     def _plot_lines(self, event=None):
-
         cs_a = self.cs_a.get(self.name)
         cs_b = self.cs_b.get(self.name)
 
@@ -200,7 +192,7 @@ class Buttons:
         self.fig.canvas.draw_idle()
         self.fig.canvas.flush_events()
 
-    def _plot(self, event=None):
+    def _plot(self, _event=None):
         self.cid = self.fig.canvas.mpl_connect("button_press_event", self._plot_lines)
         self._clear_axis()
         self._plot_lines()
@@ -215,38 +207,36 @@ class Buttons:
         self._clear_axis()
         self._plot()
 
-    def next(self, event):
+    def next(self, _event=None):
         """Go to next residue."""
         self._shift(+1)
 
-    def previous(self, event):
+    def previous(self, _event=None):
         """Go to previous residue."""
         self._shift(-1)
 
-    def swap(self, event):
+    def swap(self, _event=None):
         """Swap peak peak positions for major/minor states."""
         name = self.name
         if self.cs_b[name] is not None:
             self.cs_a[name], self.cs_b[name] = self.cs_b[name], self.cs_a[name]
         self._plot_lines()
 
-    def clear(self, event):
+    def clear(self, _event=None):
         name = self.name
         self.cs_a[name], self.cs_b[name] = None, None
         self._plot_lines()
 
     def set_sw(self, text):
-        try:
+        with contextlib.suppress(ValueError):
             self.sw = float(text)
-        except ValueError:
-            pass
+
         self._clear_axis()
         self._plot()
 
 
 def pick_cest(args: Namespace):
     """Pick peak positions in CEST profiles."""
-
     register_experiments()
 
     # Read experimental setup and data

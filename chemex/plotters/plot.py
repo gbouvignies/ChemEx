@@ -10,6 +10,8 @@ _RED100 = "#FFCDD2"
 _RED300 = "#E57373"
 _RED700 = "#D32F2F"
 
+LARGE_VALUE = 1e16
+
 
 def _create_fig(name: str) -> tuple[Figure, Axes, Axes]:
     fig = Figure()
@@ -44,7 +46,7 @@ def _plot_exp(data_exp: Data, ax1: Axes, ax2: Axes):
     res_y = data_exp.exp - data_exp.calc
 
     m_sel = data_exp.mask
-    m_inf = exp_e.sum(axis=1) > 1e16
+    m_inf = exp_e.sum(axis=1) > LARGE_VALUE
 
     s1 = m_sel & ~m_inf
     ax1.errorbar(exp_x[s1], res_y[s1], exp_e[s1].T, fmt=".", color=_RED700, zorder=3)

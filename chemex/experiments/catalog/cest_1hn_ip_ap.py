@@ -8,19 +8,16 @@ from numpy.linalg import matrix_power
 from numpy.typing import NDArray
 
 from chemex.configuration.data import CestDataSettingsNoRef
-from chemex.configuration.experiment import CestSettings
-from chemex.configuration.experiment import ExperimentConfig
-from chemex.configuration.experiment import ToBeFitted
+from chemex.configuration.experiment import CestSettings, ExperimentConfig, ToBeFitted
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
-from chemex.experiments.factories import Creators
-from chemex.experiments.factories import factories
+from chemex.experiments.factories import Creators, factories
 from chemex.filterers import CestFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
-from chemex.plotters import CestPlotter
+from chemex.plotters.cest import CestPlotter
 from chemex.printers.data import CestPrinter
 
 # Type definitions
@@ -29,6 +26,8 @@ NDArrayBool = NDArray[np.bool_]
 
 
 EXPERIMENT_NAME = "cest_1hn_ip_ap"
+
+OFFSET_REF = 1e4
 
 
 class Cest1HnIpApSettings(CestSettings):
@@ -75,7 +74,6 @@ class Cest1HnIpApConfig(ExperimentConfig[Cest1HnIpApSettings, CestDataSettingsNo
 def build_spectrometer(
     config: Cest1HnIpApConfig, spin_system: SpinSystem
 ) -> Spectrometer:
-
     settings = config.experiment
     conditions = config.conditions
 
@@ -99,10 +97,9 @@ class Cest1HnIpApSequence:
 
     @staticmethod
     def is_reference(metadata: NDArrayFloat) -> NDArrayBool:
-        return np.abs(metadata) > 1e4
+        return np.abs(metadata) > OFFSET_REF
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
-
         offsets = data.metadata
         spectrometer.offset_i = 0.0
 

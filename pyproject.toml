@@ -1,39 +1,81 @@
 [tool.poetry]
-name = "chemex"
-version = "2022.3.5"
-description = "ChemEx is an analysis program for chemical exchange detected by NMR"
-authors = ["Guillaume Bouvignies <gbouvignies@gmail.com>"]
-license = "GPL-3.0-only"
-readme = "README.md"
-repository = "https://github.com/gbouvignies/chemex"
-homepage = "http://gbouvignies.github.io/ChemEx/"
-classifiers = [
-  "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
-]
+  name = "chemex"
+  version = "2022.3.5"
+  description = "ChemEx is an analysis program for chemical exchange detected by NMR"
+  authors = [ "Guillaume Bouvignies <gbouvignies@gmail.com>" ]
+  license = "GPL-3.0-only"
+  readme = "README.md"
+  repository = "https://github.com/gbouvignies/chemex"
+  homepage = "http://gbouvignies.github.io/ChemEx/"
+  classifiers = [
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  ]
 
   [tool.poetry.dependencies]
-  python     = ">=3.9,<3.12"
-  numpy      = "^1.24.2"
-  scipy      = "^1.10.1"
-  matplotlib = "^3.7.1"
-  lmfit      = "^1.2.0"
-  pydantic   = "^1.10.7"
-  cachetools = "^5.3.0"
-  rich       = "^13.3.4"
-  tomli      = "^2.0.1"
-  rapidfuzz  = "^3.0.0"
+    python     = ">=3.10,<3.12"
+    numpy      = "^1.25.0"
+    scipy      = "^1.10.1"
+    matplotlib = "^3.7.1"
+    lmfit      = "^1.2.1"
+    pydantic   = "^1.10.9"
+    cachetools = "^5.3.1"
+    rich       = "^13.4.2"
+    tomli      = "^2.0.1"
+    rapidfuzz  = "^3.1.1"
 
   [tool.poetry.group.dev.dependencies]
-  pre-commit       = ">=2.17,<4.0"
-  types-cachetools = ">=4.2.9,<6.0.0"
+    pre-commit       = ">=2.17,<4.0"
+    types-cachetools = ">=4.2.9,<6.0.0"
+    ruff             = "*"
 
 [tool.poetry.scripts]
-chemex = "chemex.chemex:main"
+  chemex = "chemex.chemex:main"
 
 [tool.black]
-target-version = ['py39']
+  target-version = [ "py310" ]
+
+[tool.ruff]
+  select = [
+    "E",
+    "F",
+    "W",   # flake8
+    "B",   # flake8-bugbear
+    "I",   # isort
+    "ARG", # flake8-unused-arguments
+    "C4",  # flake8-comprehensions
+    "EM",  # flake8-errmsg
+    "ICN", # flake8-import-conventions
+    "ISC", # flake8-implicit-str-concat
+    "G",   # flake8-logging-format
+    "PGH", # pygrep-hooks
+    "PIE", # flake8-pie
+    "PL",  # pylint
+    "PT",  # flake8-pytest-style
+    "PTH", # flake8-use-pathlib
+    "RET", # flake8-return
+    "RUF", # Ruff-specific
+    "SIM", # flake8-simplify
+    "T20", # flake8-print
+    "UP",  # pyupgrade
+    "YTT", # flake8-2020
+    "EXE", # flake8-executable
+    "NPY", # NumPy specific rules
+    "PD",  # pandas-vet
+  ]
+  ignore = [ "PLR0913", "PD011", "RUF012", "PGH001" ] # Temporary ignore
+  target-version = "py310"
+
+  [tool.ruff.isort]
+    known-first-party = [ "chemex" ]
+
+  [tool.ruff.flake8-type-checking]
+    runtime-evaluated-base-classes = [ "pydantic.BaseModel" ]
+
+  [tool.ruff.pep8-naming]
+    # Allow Pydantic's `@validator` decorator to trigger class method treatment.
+    classmethod-decorators = [ "pydantic.validator", "root_validator" ]
 
 [build-system]
-requires      = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+  requires      = [ "poetry-core>=1.0.0" ]
+  build-backend = "poetry.core.masonry.api"

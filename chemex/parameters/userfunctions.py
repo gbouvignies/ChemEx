@@ -1,8 +1,8 @@
 """Pace where user functions used by lmfit are stored."""
 from __future__ import annotations
 
-from typing import Any
-from typing import Callable
+from collections.abc import Callable
+from typing import Any, ClassVar
 
 from chemex.configuration.conditions import Conditions
 from chemex.parameters.setting import ParamLocalSetting
@@ -14,7 +14,7 @@ SettingMakerType = Callable[[Conditions], SettingsType]
 class Registry:
     """Registry for storing all the user functions for lmfit constraints."""
 
-    user_function_registry: dict[str, Any] = {}
+    user_function_registry: ClassVar[dict[str, Any]] = {}
 
     def register(self, name: str, user_functions: dict[str, Callable]):
         """Register a new set of user functions."""

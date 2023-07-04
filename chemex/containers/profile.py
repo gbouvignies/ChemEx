@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
-from dataclasses import field
+from dataclasses import dataclass, field
 from functools import cached_property
 from operator import attrgetter
 from typing import Protocol
 
 import numpy as np
-from cachetools import cachedmethod
-from cachetools import LRUCache
+from cachetools import LRUCache, cachedmethod
 from lmfit import Parameters as ParametersLF
 from numpy.typing import NDArray
 

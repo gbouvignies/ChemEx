@@ -8,8 +8,7 @@ from scipy.optimize import root
 
 from chemex.models.constraints import pop_2st
 from chemex.models.factory import model_factory
-from chemex.parameters.setting import NameSetting
-from chemex.parameters.setting import ParamLocalSetting
+from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
 
 if TYPE_CHECKING:
@@ -23,6 +22,7 @@ TPL = ("temperature", "p_total", "l_total")
 def calculate_concentrations(
     concentrations: np.ndarray, p_total: float, k1: float
 ) -> np.ndarray:
+    """Calculate the concentrations of monomer and trimer."""
     p_monomer, p_trimer = concentrations
     return np.array(
         [
@@ -43,7 +43,8 @@ def calculate_monomer_concentration(p_total: float, k1: float) -> float:
 def make_settings_2st_binding(conditions: Conditions) -> dict[str, ParamLocalSetting]:
     p_total = conditions.p_total
     if p_total is None:
-        raise ValueError("'p_total' must be specified to use the '2st_a_a2' model")
+        msg = "'p_total' must be specified to use the '2st_a_a2' model"
+        raise ValueError(msg)
     return {
         "k1": ParamLocalSetting(
             name_setting=NameSetting("k1", "", ("temperature",)),

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass
-from dataclasses import field
+from dataclasses import dataclass, field
 from itertools import chain
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -11,9 +10,13 @@ import numpy as np
 from lmfit.parameter import Parameters as ParametersLF
 
 from chemex.containers.profile import Profile
+from chemex.messages import (
+    print_no_duplicate_warning,
+    print_not_implemented_noise_method_warning,
+)
 from chemex.parameters import database
 from chemex.parameters.spin_system import Group
-from chemex.plotters import Plotter
+from chemex.plotters.plotter import Plotter
 from chemex.printers.data import Printer
 from chemex.uncertainty import estimate_noise_variance
 
@@ -74,18 +77,10 @@ class Experiment:
         # TODO: Validation should be moved to the configuration file module
         implemented = ("file", "scatter", "duplicates")
         if kind not in implemented:
-            print(
-                f"Warning: Experiment {self.filename.name}: The method '{kind}' is not "
-                f"implemented. Please choose one of the following methods: "
-                f"{implemented}"
-            )
+            print_not_implemented_noise_method_warning(self.filename, kind, implemented)
             kind = "file"
         if kind == "duplicates" and not self._any_duplicate():
-            print(
-                f"Warning: Experiment {self.filename.name}: Some profiles have no "
-                f"duplicate points: Uncertainties are not estimated and directly taken "
-                f"from the files."
-            )
+            print_no_duplicate_warning(self.filename)
             kind = "file"
         if kind == "file" or not self.profiles:
             return

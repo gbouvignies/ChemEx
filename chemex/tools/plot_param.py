@@ -8,8 +8,7 @@ import matplotlib.pyplot as plt
 
 import chemex.parameters.name as cpn
 import chemex.parameters.spin_system as cns
-from chemex.messages import print_making_plots
-from chemex.messages import print_section
+from chemex.messages import print_making_plots, print_section
 
 
 def plot_param(args: Namespace):

@@ -1,22 +1,18 @@
 from __future__ import annotations
 
-from typing import Any
-from typing import Generic
-from typing import Literal
-from typing import Protocol
-from typing import TypeVar
+from typing import Any, Generic, Literal, Protocol, TypeVar
 
 from chemex.containers.data import Data
 from chemex.nmr.spectrometer import Spectrometer
 
 
 class NoFilterer:
-    """Filterer that does no filtering"""
+    """Filterer that does no filtering."""
 
     def __init__(self, **_extra: Any) -> None:
         return
 
-    def filter(self, data: Data) -> None:
+    def filter(self, _data: Data) -> None:
         return
 
 
@@ -69,7 +65,6 @@ def _filter_offsets(
     config: CestExperimentConfig,
     spectrometer: Spectrometer,
 ) -> None:
-
     state = config.experiment.observed_state
     state_ppm = spectrometer.par_values[f"cs_i_{state}"]
     state_offset = spectrometer.ppms_to_offsets(state_ppm)
@@ -93,7 +88,6 @@ class CestFilterer(Generic[T]):
         self.spectrometer = spectrometer
 
     def filter(self, data: Data):
-
         _filter_planes(data, self.config.data.filter_planes)
 
         if self.config.data.filter_ref_planes:

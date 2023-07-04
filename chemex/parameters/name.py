@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Hashable
-from collections.abc import Iterable
-from dataclasses import dataclass
-from dataclasses import field
+from collections.abc import Hashable, Iterable
+from dataclasses import dataclass, field
 from functools import cached_property
 from re import Pattern
 
@@ -41,8 +39,7 @@ def _parse(re_to_match: Pattern, text: str) -> dict[str, str]:
 
 
 def _multireplace(string: str, replacements: dict[str, str]) -> str:
-    """
-    Given a string and a replacement map, it returns the replaced string.
+    """Given a string and a replacement map, it returns the replaced string.
 
     :param str string: string to execute replacements on
     :param dict replacements: replacement dictionary {value to find: value to replace}

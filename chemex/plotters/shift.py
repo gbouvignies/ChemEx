@@ -28,7 +28,6 @@ def plot_shift(name_pdf: Path, data: Data):
 
 
 def create_plot_data(profiles: list[Profile]) -> Data:
-
     exp = np.array([profile.data.exp for profile in profiles]).flatten()
     err = np.array([profile.data.err for profile in profiles]).flatten()
     calc = np.array([profile.data.calc for profile in profiles]).flatten()
@@ -45,7 +44,6 @@ class ShiftPlotter:
         self.plot_simulation = self.plot
 
     def plot(self, path: Path, profiles: list[Profile]) -> None:
-
         basename = path / self.filename.name
         name_pdf = basename.with_suffix(".pdf")
 

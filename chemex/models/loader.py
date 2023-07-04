@@ -3,15 +3,15 @@ from __future__ import annotations
 
 import importlib
 from pkgutil import iter_modules
-from typing import cast
-from typing import Protocol
+from typing import Protocol, cast
 
 from chemex.models import kinetic
 
 
 class SettingModuleInterface(Protocol):
     """Represents a setting module interface.
-    A setting module plugin has a single register function."""
+    A setting module plugin has a single register function.
+    """
 
     @staticmethod
     def register() -> None:

@@ -22,16 +22,20 @@ class DataPlotPrinter:
     def print_exp(self, name: str, data: Data) -> str:
         output = [
             f"[{name}]",
-            f"# {self.first_column_name:>12s} {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s}",
+            (
+                f"# {self.first_column_name:>12s} {'INTENSITY (EXP)':>17s}"
+                f" {'ERROR (EXP)':>17s}"
+            ),
         ]
 
         for metadata, exp, err, mask in zip(
-            data.metadata, data.exp, data.err, data.mask
+            data.metadata, data.exp, data.err, data.mask, strict=True
         ):
             start = " " if mask else "#"
             end = "" if mask else " # NOT USED IN THE FIT"
             output.append(
-                f"{start} {metadata: {self.first_column_fmt}} {exp: 17.8e} {err[0]: 17.8e}{end}"
+                f"{start} {metadata: {self.first_column_fmt}} {exp: 17.8e}"
+                f" {err[0]: 17.8e}{end}"
             )
         return "\n".join(output) + "\n\n"
 
@@ -41,7 +45,7 @@ class DataPlotPrinter:
             f"# {self.first_column_name:>12s} {'INTENSITY (CALC)':>17s}",
         ]
 
-        for metadata, calc in zip(data.metadata, data.calc):
+        for metadata, calc in zip(data.metadata, data.calc, strict=True):
             output.append(f"  {metadata: {self.first_column_fmt}} {calc: 17.8e}")
 
         return "\n".join(output) + "\n\n"
@@ -55,23 +59,27 @@ class CpmgDataPlotPrinter(DataPlotPrinter):
     def print_exp(self, name: str, data: Data) -> str:
         output = [
             f"[{name}]",
-            f"# {self.first_column_name:>12s} {'R2 (EXP)':>17s} {'ERROR DOWN (EXP)':>17s} {'ERROR UP (EXP)':>17s}",
+            (
+                f"# {self.first_column_name:>12s} {'R2 (EXP)':>17s}"
+                f" {'ERROR DOWN (EXP)':>17s} {'ERROR UP (EXP)':>17s}"
+            ),
         ]
 
         for metadata, exp, err, mask in zip(
-            data.metadata, data.exp, data.err, data.mask
+            data.metadata, data.exp, data.err, data.mask, strict=True
         ):
             start = " " if mask else "#"
             end = "" if mask else " # NOT USED IN THE FIT"
             output.append(
-                f"{start} {metadata: {self.first_column_fmt}} {exp: 17.8e} {err[0]: 17.8e} {err[1]: 17.8e}{end}"
+                f"{start} {metadata: {self.first_column_fmt}} {exp: 17.8e}"
+                f" {err[0]: 17.8e} {err[1]: 17.8e}{end}"
             )
         return "\n".join(output) + "\n\n"
 
     def print_calc(self, name: str, data: Data) -> str:
         output = [f"[{name}]", f"# {self.first_column_name:>12s} {'R2 (CALC)':>17s}"]
 
-        for metadata, calc in zip(data.metadata, data.calc):
+        for metadata, calc in zip(data.metadata, data.calc, strict=True):
             output.append(f"  {metadata: {self.first_column_fmt}} {calc: 17.8e}")
 
         return "\n".join(output) + "\n\n"

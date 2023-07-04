@@ -8,19 +8,20 @@ from numpy.linalg import matrix_power
 from numpy.typing import NDArray
 
 from chemex.configuration.data import RelaxationDataSettings
-from chemex.configuration.experiment import CpmgSettingsEvenNcycs
-from chemex.configuration.experiment import ExperimentConfig
-from chemex.configuration.experiment import ToBeFitted
+from chemex.configuration.experiment import (
+    CpmgSettingsEvenNcycs,
+    ExperimentConfig,
+    ToBeFitted,
+)
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
-from chemex.experiments.factories import Creators
-from chemex.experiments.factories import factories
+from chemex.experiments.factories import Creators, factories
 from chemex.filterers import PlanesFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
-from chemex.plotters import CpmgPlotter
+from chemex.plotters.cpmg import CpmgPlotter
 from chemex.printers.data import CpmgPrinter
 
 # Type definitions
@@ -65,7 +66,6 @@ class CpmgCh313CH2cConfig(
 def build_spectrometer(
     config: CpmgCh313CH2cConfig, spin_system: SpinSystem
 ) -> Spectrometer:
-
     settings = config.experiment
     conditions = config.conditions
 
@@ -85,7 +85,7 @@ class CpmgCh313CH2cSequence:
     settings: CpmgCh313CH2cSettings
 
     def _get_delays(self, ncycs: np.ndarray) -> tuple[dict[float, float], list[float]]:
-        ncycs_no_ref = ncycs[ncycs > 0.0]
+        ncycs_no_ref = ncycs[ncycs > 0]
         tau_cps = {
             ncyc: self.settings.time_t2 / (4.0 * ncyc) - self.settings.pw90
             for ncyc in ncycs_no_ref
@@ -99,12 +99,11 @@ class CpmgCh313CH2cSequence:
         return tau_cps, delays
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
-
         ncycs = data.metadata
 
         # Calculation of the spectrometers corresponding to all the delays
         tau_cps, all_delays = self._get_delays(ncycs)
-        delays = dict(zip(all_delays, spectrometer.delays(all_delays)))
+        delays = dict(zip(all_delays, spectrometer.delays(all_delays), strict=True))
         d_neg = delays[self.settings.t_neg]
         d_eq = delays[self.settings.time_equil]
         d_taub = delays[self.settings.taub]
@@ -138,7 +137,7 @@ class CpmgCh313CH2cSequence:
 
     @staticmethod
     def is_reference(metadata: NDArrayFloat) -> NDArrayBool:
-        return metadata == 0.0
+        return metadata == 0
 
 
 def register() -> None:

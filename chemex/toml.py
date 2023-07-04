@@ -1,21 +1,18 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Iterable
-from collections.abc import MutableMapping
+from collections.abc import Iterable, MutableMapping
 from pathlib import Path
 from typing import Any
 
 import tomli as tomllib  # Will be part of standard library in Python 3.11
 
-from chemex.messages import print_file_not_found
-from chemex.messages import print_toml_error
+from chemex.messages import print_file_not_found, print_toml_error
 
 
 def read_toml(filename: Path) -> MutableMapping[str, Any]:
     """Read and parse the experiment configuration file with 'toml."""
-
-    with open(filename, "rb") as file:
+    with filename.open(mode="rb") as file:
         try:
             config = tomllib.load(file)
         except FileNotFoundError:

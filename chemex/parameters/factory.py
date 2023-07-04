@@ -9,9 +9,7 @@ from chemex.models.model import model
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.parameters import database
-from chemex.parameters.setting import LocalSettings
-from chemex.parameters.setting import Parameters
-from chemex.parameters.setting import ParamSetting
+from chemex.parameters.setting import LocalSettings, Parameters, ParamSetting
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.spins import build_spin_param_settings
 

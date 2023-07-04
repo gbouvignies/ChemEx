@@ -14,7 +14,6 @@ Dataset = list[tuple[SpinSystem, Data]]
 
 
 def load_relaxation_dataset(base_path: Path, settings: ExperimentConfig) -> Dataset:
-
     data_path = normalize_path(base_path, settings.data.path)
     dtype = [("metadata", "f8"), ("exp", "f8"), ("err", "f8")]
 
@@ -37,7 +36,6 @@ def load_relaxation_dataset(base_path: Path, settings: ExperimentConfig) -> Data
 
 
 def load_shift_dataset(base_path: Path, settings: ExperimentConfig) -> Dataset:
-
     data_path = normalize_path(base_path, settings.data.path)
 
     shifts = np.loadtxt(
