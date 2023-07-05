@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 from itertools import product
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
 from scipy.constants import hbar, mu_0
 
-from chemex.configuration.conditions import Conditions
 from chemex.models.model import model
-from chemex.nmr.basis import Basis
 from chemex.nmr.constants import GAMMA
+
+if TYPE_CHECKING:
+    from chemex.configuration.conditions import Conditions
+    from chemex.nmr.basis import Basis
 
 # Type definition
 T = TypeVar("T", float, np.ndarray)

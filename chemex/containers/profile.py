@@ -4,17 +4,19 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import cached_property
 from operator import attrgetter
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 from cachetools import LRUCache, cachedmethod
-from lmfit import Parameters as ParametersLF
 from numpy.typing import NDArray
 
-from chemex.containers.data import Data
-from chemex.nmr.spectrometer import Spectrometer
-from chemex.parameters.spin_system import SpinSystem
-from chemex.printers.data import Printer
+if TYPE_CHECKING:
+    from lmfit import Parameters as ParametersLF
+
+    from chemex.containers.data import Data
+    from chemex.nmr.spectrometer import Spectrometer
+    from chemex.parameters.spin_system import SpinSystem
+    from chemex.printers.data import Printer
 
 NDArrayFloat = NDArray[np.float_]
 NDArrayBool = NDArray[np.bool_]

@@ -6,14 +6,14 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.optimize import root
 
-from chemex.configuration.conditions import Conditions
 from chemex.models.constraints import pop_3st
 from chemex.models.factory import model_factory
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
 
 if TYPE_CHECKING:
-    pass
+    from chemex.configuration.conditions import Conditions
+
 
 NAME = "3st_binding_partner_2st"
 

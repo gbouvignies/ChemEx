@@ -1,23 +1,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from chemex.configuration.data import ShiftDataSettings
 from chemex.configuration.experiment import ExperimentConfig, ShiftSettings, ToBeFitted
-from chemex.containers.data import Data
 from chemex.containers.dataset import load_shift_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import NoFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
-from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.shift import ShiftPlotter
 from chemex.printers.data import ShiftPrinter
+
+if TYPE_CHECKING:
+    from chemex.containers.data import Data
+    from chemex.parameters.spin_system import SpinSystem
 
 # Type definitions
 NDArrayFloat = NDArray[np.float_]

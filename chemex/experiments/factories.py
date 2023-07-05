@@ -4,15 +4,17 @@ from __future__ import annotations
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from chemex.configuration.experiment import ExperimentConfig
 from chemex.containers.dataset import Dataset
 from chemex.containers.profile import Filterer, PulseSequence
 from chemex.nmr.spectrometer import Spectrometer
-from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.plotter import Plotter
 from chemex.printers.data import Printer
+
+if TYPE_CHECKING:
+    from chemex.parameters.spin_system import SpinSystem
 
 ConfigCreator = Callable[..., ExperimentConfig]
 PropagatorCreator = Callable[..., Spectrometer]

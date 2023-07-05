@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Generic, Literal, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Literal, Protocol, TypeVar
 
-from chemex.containers.data import Data
-from chemex.nmr.spectrometer import Spectrometer
+if TYPE_CHECKING:
+    from chemex.containers.data import Data
+    from chemex.nmr.spectrometer import Spectrometer
 
 
 class NoFilterer:

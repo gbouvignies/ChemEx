@@ -2,21 +2,25 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Generic, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
 
 import numpy as np
 import numpy.typing as npt
-from matplotlib.axes import Axes
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import MaxNLocator
 
 from chemex.containers.data import Data
-from chemex.containers.profile import Profile
 from chemex.messages import print_plot_filename
-from chemex.nmr.spectrometer import Spectrometer
 from chemex.plotters.plot import get_grid, plot_profile
 from chemex.printers.plot import PlotPrinter, data_plot_printers
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from matplotlib.axes import Axes
+
+    from chemex.containers.profile import Profile
+    from chemex.nmr.spectrometer import Spectrometer
 
 _GREY400 = "#BDBDBD"
 _LSTYLES = ("-", "--", "-.", ":")

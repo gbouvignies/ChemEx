@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import validator
+from pydantic import field_validator
 
 from chemex.configuration.base import BaseModelLowerCase
-from chemex.parameters.spin_system import SpinSystem
+from chemex.parameters.spin_system import PydanticSpinSystem
 
 
 class DataSettings(BaseModelLowerCase):
@@ -17,9 +17,10 @@ class DataSettings(BaseModelLowerCase):
 class RelaxationDataSettings(DataSettings):
     error: Literal["file", "duplicates"] = "file"
     filter_planes: list[int] = []
-    profiles: dict[SpinSystem, Path | list[Path]] = {}
+    profiles: dict[PydanticSpinSystem, Path | list[Path]] = {}
 
-    @validator("profiles", pre=True)
+    @field_validator("profiles", mode="before")
+    @classmethod
     def make_list(cls, v):
         if isinstance(v, dict):
             for key, value in v.items():
@@ -33,9 +34,10 @@ class CestDataSettings(DataSettings):
     filter_planes: list[int] = []
     filter_offsets: list[tuple[float, float]] = [(0.0, 0.0)]
     filter_ref_planes: bool = False
-    profiles: dict[SpinSystem, list[Path]] = {}
+    profiles: dict[PydanticSpinSystem, list[Path]] = {}
 
-    @validator("profiles", pre=True)
+    @field_validator("profiles", mode="before")
+    @classmethod
     def make_list(cls, v):
         if isinstance(v, dict):
             for key, value in v.items():

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import sys
-from argparse import Namespace
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,13 +10,18 @@ from matplotlib.widgets import Button, Cursor, Slider
 from scipy.interpolate import CubicSpline
 
 from chemex.configuration.methods import Selection
-from chemex.containers.experiments import Experiments
-from chemex.containers.profile import Profile
 from chemex.experiments.builder import build_experiments
 from chemex.experiments.loader import register_experiments
 from chemex.models import model
 from chemex.parameters.spin_system import Nucleus, SpinSystem
 from chemex.plotters.cest import create_plot_data_exp
+
+if TYPE_CHECKING:
+    from argparse import Namespace
+    from pathlib import Path
+
+    from chemex.containers.experiments import Experiments
+    from chemex.containers.profile import Profile
 
 KWARGS = {"color": "0.74", "linewidth": 1.0}
 LSTYLE = {"a": "-", "b": ":"}

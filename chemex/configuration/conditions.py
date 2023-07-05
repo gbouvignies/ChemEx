@@ -1,24 +1,26 @@
 from __future__ import annotations
 
-from collections.abc import Hashable, MutableMapping
 from functools import total_ordering
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import (
     BaseModel,
     Field,
-    MissingError,
     PositiveFloat,
-    root_validator,
-    validator,
+    ValidationError,
+    field_validator,
+    model_validator,
 )
 
 from chemex.models.model import model
 
+if TYPE_CHECKING:
+    from collections.abc import Hashable, MutableMapping
+
 
 @total_ordering
 class Conditions(BaseModel, frozen=True):
-    h_larmor_frq: PositiveFloat | None
+    h_larmor_frq: PositiveFloat | None = None
     temperature: float | None = None
     p_total: PositiveFloat | None = Field(default=None)
     l_total: PositiveFloat | None = Field(default=None)
@@ -28,7 +30,7 @@ class Conditions(BaseModel, frozen=True):
     def rounded(self) -> Conditions:
         h_larmor_frq = round(self.h_larmor_frq, 1) if self.h_larmor_frq else None
         temperature = round(self.temperature, 1) if self.temperature else None
-        return self.copy(
+        return self.model_copy(
             update={"h_larmor_frq": h_larmor_frq, "temperature": temperature}
         )
 
@@ -80,59 +82,68 @@ class Conditions(BaseModel, frozen=True):
         return "2h" in self.label
 
     def select_conditions(self, conditions_selection: tuple[str, ...]) -> Conditions:
-        return Conditions.construct(
+        return Conditions.model_construct(
             **{
                 key: value
-                for key, value in self.dict().items()
+                for key, value in self.model_dump().items()
                 if key in conditions_selection
             }
         )
 
     def __and__(self, other: Conditions) -> Conditions:
-        self_dict = self.dict()
-        other_dict = other.dict()
+        self_dict = self.model_dump()
+        other_dict = other.model_dump()
         intersection = {
             key: value for key, value in self_dict.items() if other_dict[key] == value
         }
-        return Conditions.construct(**intersection)
+        return Conditions.model_construct(**intersection)
 
     def __lt__(self, other: Conditions) -> bool:
         tuple_self = tuple(
-            value if value is not None else -1e16 for value in self.dict().values()
+            value if value is not None else -1e16
+            for value in self.model_dump().values()
         )
         tuple_other = tuple(
-            value if value is not None else -1e16 for value in other.dict().values()
+            value if value is not None else -1e16
+            for value in other.model_dump().values()
         )
         return tuple_self < tuple_other
 
 
 @total_ordering
 class ConditionsFromFile(Conditions, frozen=True):
-    @validator("d2o")
+    @field_validator("d2o")
+    @classmethod
     def validate_d2o(cls, d2o):
         if "hd" in model.name and d2o is None:
-            raise MissingError
+            raise ValidationError()
         return d2o
 
-    @validator("temperature")
+    @field_validator("temperature")
+    @classmethod
     def validate_temperature(cls, temperature):
         if "eyring" in model.name and temperature is None:
-            raise MissingError
+            raise ValidationError()
         return temperature
 
-    @validator("label", pre=True)
+    @field_validator("label", mode="before")
+    @classmethod
     def set_to_lower_case(cls, label):
         return tuple(value.lower() for value in label)
 
-    @root_validator()
-    def validate_p_total_l_total(cls, values):
-        are_not_both_set = values["p_total"] is None or values["l_total"] is None
+    @model_validator(mode="after")
+    @classmethod
+    def validate_p_total_l_total(
+        cls, conditions: ConditionsFromFile
+    ) -> ConditionsFromFile:
+        are_not_both_set = conditions.p_total is None or conditions.l_total is None
         if "binding" in model.name and are_not_both_set:
             msg = "Either p_total or l_total must be provided"
             raise ValueError(msg)
-        return values
+        return conditions
 
-    @root_validator(pre=True)
+    @model_validator(mode="before")
+    @classmethod
     def set_keys_to_lower_case(
         cls, values: MutableMapping[str, Any]
     ) -> MutableMapping[str, Any]:

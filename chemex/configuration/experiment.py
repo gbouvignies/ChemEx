@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Generic, TypeVar
 
 import numpy as np
-from pydantic.generics import GenericModel
+from pydantic import BaseModel
 
 from chemex.configuration.base import BaseModelLowerCase
 from chemex.configuration.conditions import ConditionsFromFile
@@ -42,7 +42,7 @@ class ShiftSettings(BaseModelLowerCase):
     name: str
 
 
-class ExperimentNameConfig(GenericModel):
+class ExperimentNameConfig(BaseModel):
     experiment: ExperimentNameSettings
 
 
@@ -50,7 +50,7 @@ ExperimentSettingsType = TypeVar("ExperimentSettingsType", bound=BaseModelLowerC
 DataSettingsType = TypeVar("DataSettingsType", bound=BaseModelLowerCase)
 
 
-class ExperimentConfig(GenericModel, Generic[ExperimentSettingsType, DataSettingsType]):
+class ExperimentConfig(BaseModel, Generic[ExperimentSettingsType, DataSettingsType]):
     experiment: ExperimentSettingsType
     conditions: ConditionsFromFile
     data: DataSettingsType

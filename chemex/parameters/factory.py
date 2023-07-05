@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from functools import cache
+from typing import TYPE_CHECKING
 
-from chemex.configuration.conditions import Conditions
-from chemex.configuration.experiment import ExperimentConfig
 from chemex.models.factory import model_factory
 from chemex.models.model import model
-from chemex.nmr.basis import Basis
-from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.parameters import database
 from chemex.parameters.setting import LocalSettings, Parameters, ParamSetting
-from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.spins import build_spin_param_settings
+
+if TYPE_CHECKING:
+    from chemex.configuration.conditions import Conditions
+    from chemex.configuration.experiment import ExperimentConfig
+    from chemex.nmr.basis import Basis
+    from chemex.nmr.liouvillian import LiouvillianIS
+    from chemex.parameters.spin_system import SpinSystem
 
 
 @cache

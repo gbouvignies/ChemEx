@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from pathlib import Path
 from re import compile
+from typing import TYPE_CHECKING
 
-from chemex.containers.experiments import Experiments
 from chemex.parameters import database
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import ParamSetting
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from chemex.containers.experiments import Experiments
 
 Parameters = dict[ParamName, ParamSetting]
 

@@ -2,15 +2,19 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING, Annotated
 
-from pydantic import BaseModel, conlist, validator
+from annotated_types import Len
+from pydantic import RootModel, field_validator
 
 from chemex.parameters.name import ParamName
 from chemex.toml import read_toml_multi
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 # Type definitions
-ValueListType = conlist(float, min_items=1, max_items=4)
+ValueListType = Annotated[list[float], Len(min_length=1, max_length=4)]
 DefaultType = tuple[ParamName, "DefaultSetting"]
 DefaultListType = list[DefaultType]
 
@@ -23,17 +27,19 @@ class DefaultSetting:
     brute_step: float | None = None
 
 
-class ParamsConfig(BaseModel):
-    __root__: dict[str, dict[str, ValueListType]]
+class ParamsConfig(RootModel):
+    root: dict[str, dict[str, ValueListType]]
 
-    @validator("__root__", pre=True)
+    @field_validator("root", mode="before")
+    @classmethod
     def to_lower(cls, values):
         return {
             k1.lower(): {k2.lower(): v2 for k2, v2 in v1.items()}
             for k1, v1 in values.items()
         }
 
-    @validator("__root__", pre=True)
+    @field_validator("root", mode="before")
+    @classmethod
     def to_list(cls, values):
         for values1 in values.values():
             for key2, values2 in values1.items():
@@ -41,13 +47,14 @@ class ParamsConfig(BaseModel):
                     values1[key2] = [values2]
         return values
 
-    @validator("__root__")
+    @field_validator("root")
+    @classmethod
     def reorder(cls, values):
         return {"global": values.pop("global", {}), **values}
 
     def to_defaults_list(self) -> DefaultListType:
         defaults_list: DefaultListType = []
-        for section, settings in self.__root__.items():
+        for section, settings in self.root.items():
             prefix = f"{section}, NUC->" if section != "global" else ""
             for key, values in settings.items():
                 pname = ParamName.from_section(f"{prefix}{key}")
@@ -58,4 +65,4 @@ class ParamsConfig(BaseModel):
 
 def read_defaults(filenames: Iterable[Path]) -> DefaultListType:
     config = read_toml_multi(filenames)
-    return ParamsConfig.parse_obj(config).to_defaults_list()
+    return ParamsConfig.model_validate(config).to_defaults_list()

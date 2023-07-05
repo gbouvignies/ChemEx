@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import sys
-from argparse import Namespace
+from typing import TYPE_CHECKING
 
 from chemex.cli import build_parser
 from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
-from chemex.containers.experiments import Experiments
 from chemex.experiments.builder import build_experiments
 from chemex.experiments.loader import register_experiments
 from chemex.messages import (
@@ -23,6 +22,11 @@ from chemex.models.loader import register_kinetic_settings
 from chemex.optimize.fitting import run_methods
 from chemex.optimize.helper import execute_simulation
 from chemex.parameters import database
+
+if TYPE_CHECKING:
+    from argparse import Namespace
+
+    from chemex.containers.experiments import Experiments
 
 
 def run_fit(args: Namespace, experiments: Experiments):

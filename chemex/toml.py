@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Iterable, MutableMapping
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import tomli as tomllib  # Will be part of standard library in Python 3.11
 
 from chemex.messages import print_file_not_found, print_toml_error
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def read_toml(filename: Path) -> MutableMapping[str, Any]:
