@@ -104,3 +104,6 @@ Sandbox/
 .mypy_cache/
 .pytest_cache/
 /.ruff_cache/
+
+# PDM
+.pdm-python

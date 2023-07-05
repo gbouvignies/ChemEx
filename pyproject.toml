@@ -1,37 +1,41 @@
-[tool.poetry]
+[build-system]
+  requires      = [ "pdm-backend" ]
+  build-backend = "pdm.backend"
+
+[project]
   name = "chemex"
-  version = "2022.3.5"
-  description = "ChemEx is an analysis program for chemical exchange detected by NMR"
-  authors = [ "Guillaume Bouvignies <gbouvignies@gmail.com>" ]
-  license = "GPL-3.0-only"
-  readme = "README.md"
-  repository = "https://github.com/gbouvignies/chemex"
-  homepage = "http://gbouvignies.github.io/ChemEx/"
-  classifiers = [
-    "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  description = "An analysis program for chemical exchange detected by NMR"
+  authors = [ { name = "Guillaume Bouvignies", email = "guillaume.bouvignies@ens.psl.eu" } ]
+  dependencies = [
+    "numpy>=1.25.0",
+    "scipy>=1.9.3",
+    "matplotlib>=3.7.1",
+    "lmfit>=1.2.1",
+    "pydantic>=2.0.1",
+    "cachetools>=5.3.1",
+    "rich>=13.4.2",
+    "tomli>=2.0.1",
+    "rapidfuzz>=3.1.1",
   ]
+  requires-python = ">=3.10"
+  readme = "README.md"
+  license = { text = "GPL-3.0-or-later" }
+  dynamic = [ "version" ]
 
-  [tool.poetry.dependencies]
-    python     = ">=3.10,<3.12"
-    numpy      = "^1.25.0"
-    scipy      = "^1.10.1"
-    matplotlib = "^3.7.1"
-    lmfit      = "^1.2.1"
-    pydantic   = "^2.0"
-    cachetools = "^5.3.1"
-    rich       = "^13.4.2"
-    tomli      = "^2.0.1"
-    rapidfuzz  = "^3.1.1"
+  [project.urls]
+    Homepage      = "http://gbouvignies.github.io/ChemEx/"
+    Documentation = "http://gbouvignies.github.io/ChemEx/"
+    Repository    = "https://github.com/gbouvignies/chemex"
+    Changelog     = "https://github.com/gbouvignies/chemex/releases"
 
-  [tool.poetry.group.dev.dependencies]
-    pre-commit       = ">=2.17,<4.0"
-    types-cachetools = ">=4.2.9,<6.0.0"
-    ruff             = "*"
-    bump-pydantic    = "^0.1.0"
+  [project.scripts]
+    chemex = "chemex.chemex:main"
 
-[tool.poetry.scripts]
-  chemex = "chemex.chemex:main"
+[tool.pdm.version]
+  source = "scm"
+
+[tool.pdm.dev-dependencies]
+  linting = [ "black>=23.3.0", "ruff>=0.0.277" ]
 
 [tool.black]
   target-version = [ "py310" ]
@@ -75,7 +79,3 @@
 
   [tool.ruff.pep8-naming]
     classmethod-decorators = [ "pydantic.field_validator", "pydantic.model_validator" ]
-
-[build-system]
-  requires      = [ "poetry-core>=1.0.0" ]
-  build-backend = "poetry.core.masonry.api"
