@@ -1,16 +1,12 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import MutableMapping
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 from rich.live import Live
 
 from chemex.configuration.experiment import ExperimentConfig, ExperimentNameConfig
-from chemex.configuration.methods import Selection
-from chemex.containers.dataset import Dataset
 from chemex.containers.experiment import Experiment
 from chemex.containers.experiments import Experiments
 from chemex.containers.profile import Profile
@@ -26,6 +22,13 @@ from chemex.messages import (
 from chemex.parameters import database
 from chemex.parameters.factory import create_parameters
 from chemex.toml import read_toml
+
+if TYPE_CHECKING:
+    from collections.abc import MutableMapping
+    from pathlib import Path
+
+    from chemex.configuration.methods import Selection
+    from chemex.containers.dataset import Dataset
 
 
 def _get_experiment_name(config, filename: Path):

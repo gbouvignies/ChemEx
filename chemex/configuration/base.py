@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import MutableMapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, root_validator
+from pydantic import BaseModel, ConfigDict, model_validator
+
+if TYPE_CHECKING:
+    from collections.abc import MutableMapping
 
 
 class BaseModelLowerCase(BaseModel):
-    class Config:
-        anystr_lower = True
+    model_config = ConfigDict(str_to_lower=True)
 
-    @root_validator(pre=True)
+    @model_validator(mode="before")
+    @classmethod
     def to_lower_case(
         cls, values: MutableMapping[str, Any]
     ) -> MutableMapping[str, Any]:

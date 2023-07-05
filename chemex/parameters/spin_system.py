@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from collections.abc import Hashable, Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from functools import cache, cached_property, total_ordering
 from itertools import chain, combinations
 from re import search
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
+
+from pydantic import PlainValidator
 
 if TYPE_CHECKING:
+    from collections.abc import Hashable, Iterable, Sequence
+
     from chemex.nmr.basis import Basis
 
 
@@ -319,20 +322,6 @@ class SpinSystem:
             return self
         return SpinSystem()
 
-    @classmethod
-    def validate(cls, v) -> SpinSystem:
-        if isinstance(v, str | int) or v is None:
-            return cls(v)
-        msg = "string required"
-        raise TypeError(msg)
-
-    @classmethod
-    def __get_validators__(cls):
-        """Method that allows `pydantic` to validate and convert list
-        of strings to list of SpinSystem objects.
-        """
-        yield cls.validate
-
     def __and__(self, other) -> SpinSystem:
         if not isinstance(other, SpinSystem):
             return NotImplemented
@@ -363,6 +352,11 @@ class SpinSystem:
 
     def __str__(self) -> str:
         return self.name
+
+
+# We now create an `Annotated` wrapper that we'll use as the annotation for
+# fields on `BaseModel`
+PydanticSpinSystem = Annotated[SpinSystem, PlainValidator(lambda x: SpinSystem(x))]
 
 
 # if __name__ == "__main__":

@@ -1,22 +1,25 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Iterable
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from pydantic import Field, ValidationError
+from pydantic import ConfigDict, Field, ValidationError
 from pydantic.types import PositiveInt
 
 from chemex.configuration.base import BaseModelLowerCase
 from chemex.messages import print_method_error
-from chemex.parameters.name import SpinSystem
+from chemex.parameters.spin_system import PydanticSpinSystem
 from chemex.toml import read_toml
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
+
 
 # Type definitions
 AllType = Literal["*", "all", "ALL", "All", "ALl", "AlL"]
-SelectionType = list[SpinSystem] | AllType | None
+SelectionType = list[PydanticSpinSystem] | AllType | None
 
 
 class Statistics(BaseModelLowerCase):
@@ -32,8 +35,7 @@ class Selection:
 
 
 class Method(BaseModelLowerCase):
-    class Config:
-        anystr_lower = True
+    model_config = ConfigDict(str_to_lower=True)
 
     fitmethod: str = "leastsq"
     include: SelectionType = None
