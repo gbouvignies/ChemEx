@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
 from functools import reduce
+from typing import TYPE_CHECKING
 
 import numpy as np
 from cachetools import cached
 from cachetools.keys import hashkey
 from scipy.linalg import eig, eigvals, expm, inv
 
-from chemex.nmr.constants import Distribution
-from chemex.nmr.liouvillian import LiouvillianIS
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    from chemex.nmr.constants import Distribution
+    from chemex.nmr.liouvillian import LiouvillianIS
 
 SMALL_VALUE = 1e-6
 

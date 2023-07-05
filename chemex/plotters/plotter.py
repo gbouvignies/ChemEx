@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from chemex.containers.profile import Profile
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from chemex.containers.profile import Profile
 
 
 class Plotter(Protocol):

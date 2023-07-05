@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
-from lmfit import Parameters as ParametersLF
 from scipy import stats
 
-from chemex.containers.experiments import Experiments
 from chemex.messages import (
     print_chi2,
     print_group_name,
@@ -17,6 +14,14 @@ from chemex.messages import (
 )
 from chemex.parameters import database
 from chemex.printers.parameters import write_parameters
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
+
+    from lmfit import Parameters as ParametersLF
+
+    from chemex.containers.experiments import Experiments
 
 
 def calculate_statistics(

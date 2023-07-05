@@ -1,10 +1,11 @@
 """Factories for creating parameter settings."""
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from chemex.configuration.conditions import Conditions
     from chemex.parameters.setting import ParamLocalSetting
 

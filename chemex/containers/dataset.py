@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from chemex.configuration.experiment import ExperimentConfig
 from chemex.containers.data import Data
 from chemex.parameters.spin_system import SpinSystem
 from chemex.toml import normalize_path
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from chemex.configuration.experiment import ExperimentConfig
 
 # Type aliases
 Dataset = list[tuple[SpinSystem, Data]]

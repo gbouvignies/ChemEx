@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-import numpy as np
 from lmfit import Minimizer, Parameters
 
-from chemex.containers.experiments import Experiments
 from chemex.messages import (
     print_calculation_stopped_error,
     print_chi2_table_footer,
@@ -14,6 +13,11 @@ from chemex.messages import (
     print_chi2_table_line,
     print_value_error,
 )
+
+if TYPE_CHECKING:
+    import numpy as np
+
+    from chemex.containers.experiments import Experiments
 
 
 @dataclass

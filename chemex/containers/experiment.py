@@ -1,27 +1,29 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import dataclass, field
 from itertools import chain
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
-from lmfit.parameter import Parameters as ParametersLF
 
-from chemex.containers.profile import Profile
 from chemex.messages import (
     print_no_duplicate_warning,
     print_not_implemented_noise_method_warning,
 )
 from chemex.parameters import database
-from chemex.parameters.spin_system import Group
-from chemex.plotters.plotter import Plotter
-from chemex.printers.data import Printer
 from chemex.uncertainty import estimate_noise_variance
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from lmfit.parameter import Parameters as ParametersLF
+
     from chemex.configuration.methods import Selection
+    from chemex.containers.profile import Profile
+    from chemex.parameters.spin_system import Group
+    from chemex.plotters.plotter import Plotter
+    from chemex.printers.data import Printer
 
 
 @dataclass

@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import contextlib
 from collections import defaultdict
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from scipy import interpolate, signal, stats
 from scipy.linalg import norm
 
-from chemex.containers.data import Data
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from chemex.containers.data import Data
 
 
 def _variance_from_duplicates(data: Data) -> float:

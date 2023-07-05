@@ -1,11 +1,10 @@
 """The fitting module contains the code for fitting the experimental data."""
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rich.progress import track
 
-from chemex.configuration.methods import Methods, Statistics
 from chemex.containers.experiments import Experiments, generate_exp_for_statistics
 from chemex.messages import (
     print_calculation_stopped_error,
@@ -29,6 +28,11 @@ from chemex.optimize.helper import (
 )
 from chemex.optimize.minimizer import minimize, minimize_with_report
 from chemex.parameters import database
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from chemex.configuration.methods import Methods, Statistics
 
 
 def _run_statistics(

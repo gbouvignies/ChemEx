@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
-from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
-from chemex.containers.data import Data
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+
+    from chemex.containers.data import Data
 
 _RED100 = "#FFCDD2"
 _RED300 = "#E57373"

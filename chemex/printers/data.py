@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from chemex.containers.data import Data
+if TYPE_CHECKING:
+    from chemex.containers.data import Data
 
 
 class Printer(Protocol):

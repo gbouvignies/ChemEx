@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 
 from chemex.parameters.name import ParamName
-from chemex.parameters.spin_system import SpinSystem
 
 if TYPE_CHECKING:
     from chemex.configuration.conditions import Conditions
     from chemex.configuration.parameters import DefaultSetting
+    from chemex.parameters.spin_system import SpinSystem
 
 _RE_IDS = re.compile(r"__[a-zA-Z_][a-zA-Z0-9_]*")
 _RE_NAMES = re.compile(r"\{([a-zA-Z0-9_]+)\}")

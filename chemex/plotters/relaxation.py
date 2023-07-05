@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from contextlib import ExitStack
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
 
 from chemex.containers.data import Data
-from chemex.containers.profile import Profile
 from chemex.messages import print_plot_filename
 from chemex.plotters.plot import get_grid, plot_profile
 from chemex.printers.plot import PlotPrinter, data_plot_printers
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from chemex.containers.profile import Profile
 
 
 def plot_relaxation(file_pdf: PdfPages, name: str, data_exp: Data, data_calc: Data):

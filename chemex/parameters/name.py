@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Hashable, Iterable
 from dataclasses import dataclass, field
 from functools import cached_property
 from re import Pattern
+from typing import TYPE_CHECKING
 
 from rapidfuzz.process import extractOne
 
 from chemex.configuration.conditions import Conditions
 from chemex.parameters.spin_system import SpinSystem
+
+if TYPE_CHECKING:
+    from collections.abc import Hashable, Iterable
 
 _EXPAND = {"-": "_", "+": "_", ".": "_"}
 
