@@ -9,8 +9,12 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from chemex.typing import ArrayFloat
 
 GAMMA = {
     "h": 26.752_212_8e07,
@@ -229,8 +233,8 @@ J_EFF: dict[str, dict[str, tuple[float, ...]]] = {
 
 @dataclass
 class Distribution:
-    values: np.ndarray
-    weights: np.ndarray
+    values: ArrayFloat
+    weights: ArrayFloat
 
 
 def get_multiplet(symbol: str, nucleus: str) -> Distribution:

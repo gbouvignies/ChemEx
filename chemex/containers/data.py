@@ -3,20 +3,18 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field
 from random import choices
+from typing import TYPE_CHECKING
 
 import numpy as np
-from numpy.typing import NDArray
 
-# Type definitions
-NDArrayFloat = NDArray[np.float_]
-NDArrayInt = NDArray[np.int_]
-NDArrayBool = NDArray[np.bool_]
+if TYPE_CHECKING:
+    from chemex.typing import ArrayBool, ArrayFloat
 
 
 rng = np.random.default_rng()
 
 
-def get_scale(exp: np.ndarray, err: np.ndarray, calc: np.ndarray) -> float:
+def get_scale(exp: ArrayFloat, err: ArrayFloat, calc: ArrayFloat) -> float:
     try:
         calc_err2 = calc / err**2
         return sum(exp * calc_err2) / sum(calc * calc_err2)
@@ -26,14 +24,14 @@ def get_scale(exp: np.ndarray, err: np.ndarray, calc: np.ndarray) -> float:
 
 @dataclass
 class Data:
-    exp: NDArrayFloat
-    err: NDArrayFloat
-    metadata: np.ndarray = field(default_factory=lambda: np.array([]))
+    exp: ArrayFloat
+    err: ArrayFloat
+    metadata: ArrayFloat = field(default_factory=lambda: np.array([]))
     scale: float = 1.0
     size: int = field(init=False)
-    calc: NDArrayFloat = field(init=False)
-    mask: NDArrayBool = field(init=False)
-    refs: NDArrayBool = field(init=False)
+    calc: ArrayFloat = field(init=False)
+    mask: ArrayBool = field(init=False)
+    refs: ArrayBool = field(init=False)
 
     def __post_init__(self):
         self.size = self.exp.size

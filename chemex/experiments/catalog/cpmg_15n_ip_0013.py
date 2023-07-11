@@ -5,7 +5,6 @@ from functools import reduce
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
-from numpy.typing import NDArray
 
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings, ExperimentConfig, ToBeFitted
@@ -21,11 +20,9 @@ from chemex.printers.data import CpmgPrinter
 if TYPE_CHECKING:
     from chemex.containers.data import Data
     from chemex.parameters.spin_system import SpinSystem
+    from chemex.typing import ArrayBool, ArrayFloat, ArrayInt
 
-# Type definitions
-NDArrayFloat = NDArray[np.float_]
-NDArrayBool = NDArray[np.bool_]
-Delays = tuple[dict[float, float], dict[float, float], list[float]]
+    Delays = tuple[dict[float, float], dict[float, float], list[float]]
 
 
 EXPERIMENT_NAME = "cpmg_15n_ip_0013"
@@ -83,7 +80,7 @@ def build_spectrometer(
 class Cpmg15N0013IpSequence:
     settings: Cpmg15N0013IpSettings
 
-    def _get_delays(self, ncycs: np.ndarray) -> Delays:
+    def _get_delays(self, ncycs: ArrayFloat) -> Delays:
         ncycs_no_ref = ncycs[ncycs > 0]
         tau_cps = {
             ncyc: self.settings.time_t2 / (4.0 * ncyc) - 0.75 * self.settings.pw90
@@ -106,7 +103,7 @@ class Cpmg15N0013IpSequence:
         ]
         return tau_cps, deltas, delays
 
-    def _get_phases(self, ncyc):
+    def _get_phases(self, ncyc: ArrayFloat) -> ArrayInt:
         cp_phases = np.array(
             [
                 [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3],
@@ -116,7 +113,7 @@ class Cpmg15N0013IpSequence:
         indexes = np.flip(np.arange(2 * int(ncyc)))
         return np.take(cp_phases, indexes, mode="wrap", axis=1)
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
         ncycs = data.metadata
 
         # Calculation of the spectrometers corresponding to all the delays
@@ -158,7 +155,7 @@ class Cpmg15N0013IpSequence:
         return np.array([intensities[ncyc] for ncyc in ncycs])
 
     @staticmethod
-    def is_reference(metadata: NDArrayFloat) -> NDArrayBool:
+    def is_reference(metadata: ArrayFloat) -> ArrayBool:
         return metadata == 0
 
 

@@ -13,6 +13,7 @@ from chemex.parameters.userfunctions import user_function_registry
 
 if TYPE_CHECKING:
     from chemex.configuration.conditions import Conditions
+    from chemex.typing import ArrayFloat
 
 
 NAME = "3st_binding_partner_2st"
@@ -21,13 +22,13 @@ TPL = ("temperature", "p_total", "l_total")
 
 
 def calculate_residuals(
-    concentrations: np.ndarray,
+    concentrations: ArrayFloat,
     p_total: float,
     l_total: float,
     kd1: float,
     kd2: float,
     keq: float,
-) -> np.ndarray:
+) -> ArrayFloat:
     p, l1, l2, pl1, pl2 = concentrations
     return np.array(
         [

@@ -15,9 +15,8 @@ from chemex.messages import (
 )
 
 if TYPE_CHECKING:
-    import numpy as np
-
     from chemex.containers.experiments import Experiments
+    from chemex.typing import ArrayFloat
 
 
 @dataclass
@@ -26,7 +25,7 @@ class Reporter:
     threshold: float = -1.0e-3
 
     def iter_cb(
-        self, params: Parameters, iteration: int, residuals: np.ndarray
+        self, params: Parameters, iteration: int, residuals: ArrayFloat
     ) -> None:
         chisqr = (residuals**2).sum()
         change = (chisqr - self.last_chisqr) / self.last_chisqr

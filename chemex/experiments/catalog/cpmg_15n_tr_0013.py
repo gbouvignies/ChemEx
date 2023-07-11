@@ -5,7 +5,6 @@ from functools import reduce
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
-from numpy.typing import NDArray
 
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings, ExperimentConfig, ToBeFitted
@@ -21,10 +20,9 @@ from chemex.printers.data import CpmgPrinter
 if TYPE_CHECKING:
     from chemex.containers.data import Data
     from chemex.parameters.spin_system import SpinSystem
+    from chemex.typing import ArrayBool, ArrayFloat, ArrayInt
 
-# Type definitions
-NDArrayFloat = NDArray[np.float_]
-NDArrayBool = NDArray[np.bool_]
+
 Delays = tuple[dict[float, float], dict[float, float], list[float]]
 
 
@@ -95,7 +93,7 @@ def build_spectrometer(
 class Cpmg15NTr0013Sequence:
     settings: Cpmg15NTr0013Settings
 
-    def _get_delays(self, ncycs: np.ndarray) -> Delays:
+    def _get_delays(self, ncycs: ArrayFloat) -> Delays:
         ncycs_no_ref = ncycs[ncycs > 0]
         tau_cps = {
             ncyc: self.settings.time_t2 / (4.0 * ncyc) - 0.75 * self.settings.pw90
@@ -115,7 +113,7 @@ class Cpmg15NTr0013Sequence:
         ]
         return tau_cps, deltas, delays
 
-    def _get_phases(self, ncyc: float) -> tuple[np.ndarray, np.ndarray]:
+    def _get_phases(self, ncyc: float) -> tuple[ArrayInt, ArrayInt]:
         cp_phases1 = np.array(
             [
                 [1, 1, 0, 2, 1, 1, 2, 0, 1, 1, 2, 0, 1, 1, 0, 2],
@@ -133,7 +131,7 @@ class Cpmg15NTr0013Sequence:
         phases2 = np.take(cp_phases2, indexes, mode="wrap", axis=1)
         return phases1, phases2
 
-    def _get_start(self, spectrometer: Spectrometer) -> np.ndarray:
+    def _get_start(self, spectrometer: Spectrometer) -> ArrayFloat:
         start = spectrometer.get_start_magnetization(["2izsz"])
         if self.settings.s3e:
             if self.settings.antitrosy:
@@ -143,7 +141,7 @@ class Cpmg15NTr0013Sequence:
             start *= 0.5
         return start
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
         ncycs = data.metadata
 
         # Calculation of the spectrometers corresponding to all the delays
@@ -207,7 +205,7 @@ class Cpmg15NTr0013Sequence:
         return np.array([intst[ncyc] for ncyc in ncycs])
 
     @staticmethod
-    def is_reference(metadata: NDArrayFloat) -> NDArrayBool:
+    def is_reference(metadata: ArrayFloat) -> ArrayBool:
         return metadata == 0
 
 

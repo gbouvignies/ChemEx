@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import field_validator
+from pydantic import BeforeValidator, field_validator
 
-from chemex.configuration.base import BaseModelLowerCase
+from chemex.configuration.base import BaseModelLowerCase, ensure_list
 from chemex.parameters.spin_system import PydanticSpinSystem
 
 
@@ -14,19 +14,19 @@ class DataSettings(BaseModelLowerCase):
     scaled: bool = True
 
 
+PathList = Annotated[list[Path], BeforeValidator(ensure_list)]
+
+
 class RelaxationDataSettings(DataSettings):
     error: Literal["file", "duplicates"] = "file"
     filter_planes: list[int] = []
-    profiles: dict[PydanticSpinSystem, Path | list[Path]] = {}
+    profiles: dict[PydanticSpinSystem, PathList] = {}
 
-    @field_validator("profiles", mode="before")
-    @classmethod
-    def make_list(cls, v):
-        if isinstance(v, dict):
-            for key, value in v.items():
-                if isinstance(value, str):
-                    v[key] = [value]
-        return v
+    @field_validator("error", mode="before")
+    def to_lower(cls, error: Any) -> str:
+        if isinstance(error, str):
+            return error.lower()
+        return error
 
 
 class CestDataSettings(DataSettings):
@@ -34,16 +34,13 @@ class CestDataSettings(DataSettings):
     filter_planes: list[int] = []
     filter_offsets: list[tuple[float, float]] = [(0.0, 0.0)]
     filter_ref_planes: bool = False
-    profiles: dict[PydanticSpinSystem, list[Path]] = {}
+    profiles: dict[PydanticSpinSystem, PathList] = {}
 
-    @field_validator("profiles", mode="before")
-    @classmethod
-    def make_list(cls, v):
-        if isinstance(v, dict):
-            for key, value in v.items():
-                if isinstance(value, str):
-                    v[key] = [value]
-        return v
+    @field_validator("error", mode="before")
+    def to_lower(cls, error: Any) -> str:
+        if isinstance(error, str):
+            return error.lower()
+        return error
 
 
 class CestDataSettingsNoRef(CestDataSettings):
@@ -53,3 +50,9 @@ class CestDataSettingsNoRef(CestDataSettings):
 class ShiftDataSettings(DataSettings):
     error: Literal["file", "duplicates"] = "file"
     scaled: bool = False
+
+    @field_validator("error", mode="before")
+    def to_lower(cls, error: Any) -> str:
+        if isinstance(error, str):
+            return error.lower()
+        return error

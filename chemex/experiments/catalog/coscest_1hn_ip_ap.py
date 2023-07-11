@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.linalg import matrix_power
-from numpy.typing import NDArray
 
 from chemex.configuration.data import CestDataSettingsNoRef
 from chemex.configuration.experiment import CestSettings, ExperimentConfig, ToBeFitted
@@ -21,10 +20,7 @@ from chemex.printers.data import CestPrinter
 if TYPE_CHECKING:
     from chemex.containers.data import Data
     from chemex.parameters.spin_system import SpinSystem
-
-# Type definitions
-NDArrayFloat = NDArray[np.float_]
-NDArrayBool = NDArray[np.bool_]
+    from chemex.typing import ArrayBool, ArrayFloat
 
 
 EXPERIMENT_NAME = "coscest_1hn_ip_ap"
@@ -94,10 +90,10 @@ class CosCest1HnIpApSequence:
     settings: CosCest1HnIpApSettings
 
     @staticmethod
-    def is_reference(metadata: NDArrayFloat) -> NDArrayBool:
+    def is_reference(metadata: ArrayFloat) -> ArrayBool:
         return np.abs(metadata) > OFFSET_REF
 
-    def _calc_cosine_shape(self, spectrometer: Spectrometer) -> np.ndarray:
+    def _calc_cosine_shape(self, spectrometer: Spectrometer) -> ArrayFloat:
         time_t1 = self.settings.time_t1
         sw = self.settings.sw
         cos_n = self.settings.cos_n
@@ -131,7 +127,7 @@ class CosCest1HnIpApSequence:
 
         return pulse
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
         offsets = data.metadata
         spectrometer.offset_i = 0.0
 
@@ -145,7 +141,8 @@ class CosCest1HnIpApSequence:
         start = d_d1 @ spectrometer.get_start_magnetization(terms=["ie"])
         start = spectrometer.keep(start, components=["ie", "iz"])
 
-        intensities = {}
+        intensities: dict[float, float] = {}
+
         for offset in set(offsets):
             spectrometer.offset_i = offset
             if self.is_reference(offset):
@@ -154,6 +151,7 @@ class CosCest1HnIpApSequence:
             else:
                 cest = self._calc_cosine_shape(spectrometer)
             intensities[offset] = spectrometer.detect(cest @ start)
+
         return np.array([intensities[offset] for offset in offsets])
 
 

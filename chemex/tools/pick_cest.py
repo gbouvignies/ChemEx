@@ -31,13 +31,13 @@ TEXT_Y = {"a": 0.8, "b": 0.75}
 class Curve:
     def __init__(self, profile: Profile, sw: float | None = None):
         data = create_plot_data_exp(profile)
-        settings = profile.pulse_sequence.settings
+        settings = getattr(profile.pulse_sequence, "settings", None)
 
         delta_ppm = 0.0
         if settings is not None:
             spectrometer = profile.spectrometer
             cos_n = getattr(settings, "cos_n", None)
-            sw = settings.sw
+            sw = getattr(settings, "sw", None)
             if cos_n is not None and cos_n % 2 == 0 and sw is not None:
                 shifts_ppm = spectrometer.offsets_to_ppms(np.array([sw / 2.0, 0.0]))
                 delta_ppm = shifts_ppm[0] - shifts_ppm[1]
@@ -57,16 +57,16 @@ class Curve:
         else:
             self.spline = CubicSpline(x, y)
 
-    def get_xrange(self, sw=None):
+    def get_xrange(self, sw: float | None = None):
         if sw is None:
             sw = 1.0
         return self.xcentre + sw * self.xrange * np.array([-0.5, 0.5])
 
 
 class Buttons:
-    def __init__(self, experiments: Experiments, path: Path, sw: float) -> None:
-        self.data = {}
-        names = set()
+    def __init__(self, experiments: Experiments, path: Path, sw: float | None) -> None:
+        self.data: dict[SpinSystem, list[Curve]] = {}
+        names: set[SpinSystem] = set()
 
         for experiment in experiments:
             for profile in experiment:

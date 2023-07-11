@@ -250,7 +250,7 @@ def _select_relevant_settings(
     all_settings: LocalSettings, basis: Basis
 ) -> LocalSettings:
     pool = set(all_settings) & set(basis.matrices)
-    selection = set()
+    selection: set[str] = set()
     while pool:
         name = pool.pop()
         selection.add(name)

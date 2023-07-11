@@ -4,11 +4,16 @@ from collections import defaultdict
 from dataclasses import dataclass
 from functools import cache
 from itertools import permutations, product
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
 from chemex.models.model import model
+
+if TYPE_CHECKING:
+    from chemex.typing import ArrayFloat
+
+    DictArrayFloat = dict[str, ArrayFloat]
 
 _BASES = {
     "ixy": ["ix", "iy"],
@@ -59,7 +64,7 @@ _BASES = {
         "2izsz",
     ],
 }
-_TRANSITIONS: dict[str, tuple[tuple[str, str, float], ...]] = {
+_TRANSITIONS = {
     "r2_i_{state}": (("ix", "ix", -1.0), ("iy", "iy", -1.0)),
     "r2_s_{state}": (("sx", "sx", -1.0), ("sy", "sy", -1.0)),
     "r1_i_{state}": (("iz", "iz", -1.0), ("iz", "ie", +1.0)),
@@ -271,9 +276,9 @@ _ATOMS = {
 
 
 @cache
-def _build_vectors(basis: Basis) -> dict[str, np.ndarray]:
+def _build_vectors(basis: Basis) -> DictArrayFloat:
     size = len(basis) * len(model.states)
-    vectors: defaultdict[str, np.ndarray] = defaultdict(lambda: np.zeros((size, 1)))
+    vectors: defaultdict[str, ArrayFloat] = defaultdict(lambda: np.zeros((size, 1)))
     for index, (state, name) in enumerate(product(model.states, basis.components)):
         vectors[f"{name}_{state}"][index] = 1.0
         vectors[name][index] = 1.0
@@ -295,9 +300,9 @@ def _get_indices(
     return (rows, cols), vals
 
 
-def _build_spin_matrices(basis: Basis) -> dict[str, np.ndarray]:
+def _build_spin_matrices(basis: Basis) -> DictArrayFloat:
     size = len(basis) * len(model.states)
-    matrices: dict[str, np.ndarray] = defaultdict(lambda: np.zeros((size, size)))
+    matrices: DictArrayFloat = defaultdict(lambda: np.zeros((size, size)))
     for transition_name, state in product(_TRANSITIONS, model.states):
         if not basis.type.endswith("_diff") and transition_name.startswith("d_"):
             continue
@@ -308,8 +313,8 @@ def _build_spin_matrices(basis: Basis) -> dict[str, np.ndarray]:
     return matrices
 
 
-def _build_exchange_matrices(basis: Basis) -> dict[str, np.ndarray]:
-    matrices: dict[str, np.ndarray] = {}
+def _build_exchange_matrices(basis: Basis) -> DictArrayFloat:
+    matrices: DictArrayFloat = {}
     for (i1, s1), (i2, s2) in permutations(enumerate(model.states), r=2):
         name = f"k{s1}{s2}"
         matrix = np.zeros((len(model.states), len(model.states)))
@@ -319,7 +324,7 @@ def _build_exchange_matrices(basis: Basis) -> dict[str, np.ndarray]:
 
 
 @cache
-def _build_matrices(basis: Basis) -> dict[str, np.ndarray]:
+def _build_matrices(basis: Basis) -> DictArrayFloat:
     return _build_exchange_matrices(basis) | _build_spin_matrices(basis)
 
 
@@ -346,11 +351,11 @@ class Basis:
         }
 
     @property
-    def vectors(self) -> dict[str, np.ndarray]:
+    def vectors(self) -> DictArrayFloat:
         return dict(_build_vectors(self))
 
     @property
-    def matrices(self) -> dict[str, np.ndarray]:
+    def matrices(self) -> DictArrayFloat:
         return _build_matrices(self)
 
     @property

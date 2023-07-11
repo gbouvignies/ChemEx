@@ -13,6 +13,7 @@ from chemex.parameters.userfunctions import user_function_registry
 
 if TYPE_CHECKING:
     from chemex.configuration.conditions import Conditions
+    from chemex.typing import ArrayFloat
 
 NAME = "2st_a_a2"
 
@@ -20,8 +21,8 @@ TPL = ("temperature", "p_total", "l_total")
 
 
 def calculate_concentrations(
-    concentrations: np.ndarray, p_total: float, k1: float
-) -> np.ndarray:
+    concentrations: ArrayFloat, p_total: float, k1: float
+) -> ArrayFloat:
     p_monomer, p_dimer = concentrations
     return np.array(
         [

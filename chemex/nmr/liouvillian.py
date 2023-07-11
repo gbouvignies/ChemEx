@@ -28,6 +28,8 @@ if TYPE_CHECKING:
     from chemex.configuration.conditions import Conditions
     from chemex.nmr.basis import Basis
     from chemex.parameters.spin_system import SpinSystem
+    from chemex.typing import ArrayFloat
+
 
 _RE_COMP = re.compile(r"\[(.+?)\]")
 
@@ -36,7 +38,7 @@ _Q_ORDER_I = {"sq": 1.0, "dq": 2.0, "tq": 3.0}
 
 def _make_gaussian(
     value: float, scale: float, res: int
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[ArrayFloat, ArrayFloat]:
     if scale not in (0.0, np.inf) and res > 1:
         grid = np.linspace(-2.0, 2.0, res)
         dist = grid * scale + 1.0
@@ -64,7 +66,7 @@ class LiouvillianIS:
         self.matrices = basis.matrices.copy()
         self._matrices_ref = self.matrices.copy()
         self._detection: str = ""
-        self._detect_vector: np.ndarray = np.array([])
+        self._detect_vector: ArrayFloat = np.array([])
         self._q_order_i = _Q_ORDER_I.get(self.basis.extension, 1.0)
         scale = -2.0 * np.pi * self.h_frq
         self.ppm_i = scale * SIGNED_XI_RATIO.get(basis.atoms.get("i", ""), 1.0)
@@ -220,7 +222,7 @@ class LiouvillianIS:
         self._build_base_liouvillian()
 
     @property
-    def l_free(self) -> np.ndarray:
+    def l_free(self) -> ArrayFloat:
         return sum(
             (
                 self._l_base,
@@ -234,7 +236,7 @@ class LiouvillianIS:
         )
 
     @property
-    def weights(self) -> np.ndarray:
+    def weights(self) -> ArrayFloat:
         return self._b1_i_weights * self._jeff_i_weights
 
     @property
@@ -245,10 +247,10 @@ class LiouvillianIS:
     def detection(self, value: str):
         self._detection = value
         expr = _RE_COMP.sub(r'self.vectors.get("\g<1>")', value)
-        vector: np.ndarray = eval(expr)
+        vector: ArrayFloat = eval(expr)
         self._detect_vector = vector.transpose()
 
-    def detect(self, magnetization: np.ndarray) -> float:
+    def detect(self, magnetization: ArrayFloat) -> float:
         shape = -1, *magnetization.shape[-2:]
         mag_weighted = self.weights * magnetization
         mag = mag_weighted.reshape(shape).sum(axis=0)
@@ -257,7 +259,7 @@ class LiouvillianIS:
             detected = np.sign(detected.real) * np.abs(detected)
         return float(detected)
 
-    def get_equilibrium(self) -> np.ndarray:
+    def get_equilibrium(self) -> ArrayFloat:
         mag = np.zeros((self.size, 1))
         for state, (name, atom) in product(model.states, self.basis.atoms.items()):
             scale = self.par_values.get(f"p{state}", 0.0) * XI_RATIO.get(atom, 1.0)
@@ -267,7 +269,7 @@ class LiouvillianIS:
 
     def get_start_magnetization(
         self, terms: Iterable[str], atom: str = "h"
-    ) -> np.ndarray:
+    ) -> ArrayFloat:
         ratio = XI_RATIO.get(atom, 1.0)
         mag = np.zeros((self.size, 1))
         for term, state, (comp, vector) in product(
@@ -277,15 +279,15 @@ class LiouvillianIS:
                 mag += self.par_values[f"p{state}"] * ratio * vector
         return mag
 
-    def keep(self, magnetization: np.ndarray, components: Iterable[str]) -> np.ndarray:
+    def keep(self, magnetization: ArrayFloat, components: Iterable[str]) -> ArrayFloat:
         keep = sum(
             (self.vectors[name] for name in components), start=np.zeros((self.size, 1))
         )
         keep[keep > 0] = 1.0
         return keep * magnetization
 
-    def offsets_to_ppms(self, offsets: np.ndarray) -> np.ndarray:
+    def offsets_to_ppms(self, offsets: ArrayFloat) -> ArrayFloat:
         return self.carrier_i + 2.0 * np.pi * offsets / abs(self.ppm_i)
 
-    def ppms_to_offsets(self, ppms: np.ndarray | float) -> np.ndarray | float:
+    def ppms_to_offsets(self, ppms: ArrayFloat | float) -> ArrayFloat | float:
         return (ppms - self.carrier_i) * abs(self.ppm_i) / (2.0 * np.pi)

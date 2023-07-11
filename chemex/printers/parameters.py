@@ -83,7 +83,7 @@ def _quote(text: str) -> str:
 
 
 def _format_strings(par_strings: dict[str, dict[str, str]]) -> str:
-    result = []
+    result: list[str] = []
     for section, key_values in par_strings.items():
         result.append(f"[{_quote(section)}]")
         width = len(max(key_values, key=len))

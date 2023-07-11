@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
-from numpy.typing import NDArray
 
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import (
@@ -24,10 +23,7 @@ from chemex.printers.data import RelaxationPrinter
 if TYPE_CHECKING:
     from chemex.containers.data import Data
     from chemex.parameters.spin_system import SpinSystem
-
-# Type definitions
-NDArrayFloat = NDArray[np.float_]
-NDArrayBool = NDArray[np.bool_]
+    from chemex.typing import ArrayBool, ArrayFloat
 
 
 EXPERIMENT_NAME = "relaxation_nz"
@@ -72,7 +68,7 @@ def build_spectrometer(
 class RelaxationNzSequence:
     settings: RelaxationNzSettings
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
         times = data.metadata
 
         # Getting the starting magnetization
@@ -82,7 +78,7 @@ class RelaxationNzSequence:
         delays = spectrometer.delays(times)
         return np.array([spectrometer.detect(delay @ start) for delay in delays])
 
-    def is_reference(self, metadata: NDArrayFloat) -> NDArrayBool:
+    def is_reference(self, metadata: ArrayFloat) -> ArrayBool:
         return np.full_like(metadata, False, dtype=np.bool_)
 
 

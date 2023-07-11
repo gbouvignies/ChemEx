@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
     from chemex.configuration.methods import Selection
     from chemex.containers.experiment import Experiment
+    from chemex.typing import ArrayFloat
+
 
 # Type definitions
 SelectionType = list[SpinSystem] | Literal["*", "all"], None
@@ -29,12 +31,13 @@ class Experiments:
 
     @property
     def groups(self) -> set[Group]:
-        return set.union(*(experiment.groups for experiment in self))
+        groups: set[Group] = set()
+        return groups.union(*(experiment.groups for experiment in self))
 
     def add(self, experiment: Experiment):
         self._experiments[experiment.filename] = experiment
 
-    def residuals(self, params: Parameters) -> np.ndarray:
+    def residuals(self, params: Parameters) -> ArrayFloat:
         return np.asarray(
             list(
                 chain.from_iterable(experiment.residuals(params) for experiment in self)
@@ -79,15 +82,15 @@ class Experiments:
 
     @property
     def param_ids(self) -> set[str]:
-        result = set()
+        result: set[str] = set()
         return result.union(*(self.param_id_sets))
 
-    def filter(self):
+    def filter(self) -> None:
         params = database.build_lmfit_params(self.param_ids)
         for experiment in self:
             experiment.filter(params)
 
-    def get_relevant_subset(self, param_ids) -> Experiments:
+    def get_relevant_subset(self, param_ids: set[str]) -> Experiments:
         relevant_subset = Experiments()
         for experiment in self:
             if subset := experiment.get_relevant_subset(param_ids):

@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from chemex.configuration.methods import Method
     from chemex.configuration.parameters import DefaultListType
     from chemex.parameters.setting import Parameters, ParamSetting
+    from chemex.typing import ArrayFloat
+
 
 _PARAM_NAME = r"\[(.+?)\]"
 _FLOAT = r"[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?"
@@ -46,12 +48,12 @@ class ParameterIndex:
 
     def get_matching_ids(self, param_name: ParamName) -> set[str]:
         search_keys = param_name.search_keys
-        return set.intersection(
+        return set[str].intersection(
             *(self._index.get(search_key, set()) for search_key in search_keys)
         )
 
 
-def _convert_grid_expression_to_values(grid_expression: str) -> np.ndarray:
+def _convert_grid_expression_to_values(grid_expression: str) -> ArrayFloat:
     if match := re.match(_LINEAR, grid_expression):
         return np.linspace(
             float(match.group("start")),
@@ -86,7 +88,7 @@ class ParameterCatalog:
             self._add(parameter)
 
     def get_parameters(self, param_ids: Iterable[str]) -> Parameters:
-        relevant_ids = set()
+        relevant_ids: set[str] = set()
 
         pool_ids = set(self._parameters) & set(param_ids)
 
@@ -155,7 +157,7 @@ class ParameterCatalog:
     def set_vary(self, section_names: Sequence[str], vary: bool) -> Counter[str]:
         parameters = self._parameters
 
-        ids_modified = set()
+        ids_modified: set[str] = set()
         ids_pool = {
             param_id
             for param_id, setting in parameters.items()
@@ -182,7 +184,7 @@ class ParameterCatalog:
         return self.get_matching_ids(ParamName.from_section(expression))
 
     def _get_ids_right(self, expression: str) -> dict[str, set[str]]:
-        ids_right = {}
+        ids_right: dict[str, set[str]] = {}
         for match in re.finditer(_PARAM_NAME, expression):
             param_name = ParamName.from_section(match.group(1))
             ids_right[match.group(0)] = self.get_matching_ids(param_name)
@@ -209,7 +211,7 @@ class ParameterCatalog:
         return ids_left
 
     def set_expressions(self, expression_list: Sequence[str]) -> Counter[str]:
-        ids_modified = set()
+        ids_modified: set[str] = set()
         ids_pool = set(self._parameters)
 
         for expression in reversed(expression_list):
@@ -219,10 +221,10 @@ class ParameterCatalog:
 
         return self._count_per_section(ids_modified)
 
-    def parse_grid(self, grid_entries: list[str]) -> dict[str, np.ndarray]:
+    def parse_grid(self, grid_entries: list[str]) -> dict[str, ArrayFloat]:
         ids_pool = set(self._parameters)
 
-        grid_values: dict[str, np.ndarray] = {}
+        grid_values: dict[str, ArrayFloat] = {}
 
         for entry in reversed(grid_entries):
             name, expression, *something_else = entry.replace(" ", "").split("=")
@@ -293,7 +295,7 @@ class ParamManager:
     def build_lmfit_params(self, param_ids: Iterable[str]) -> ParametersLF:
         return self.database.build_lmfit_params(param_ids)
 
-    def sort(self):
+    def sort(self) -> None:
         self.database.sort()
 
     def update_from_parameters(self, parameters: ParametersLF) -> None:
@@ -324,7 +326,7 @@ class ParamManager:
     def set_expressions(self, expression_list: Sequence[str]) -> Counter[str]:
         return self.database.set_expressions(expression_list)
 
-    def parse_grid(self, grid_entries: list[str]) -> dict[str, np.ndarray]:
+    def parse_grid(self, grid_entries: list[str]) -> dict[str, ArrayFloat]:
         return self.database.parse_grid(grid_entries)
 
 

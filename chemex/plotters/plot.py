@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
     from chemex.containers.data import Data
+    from chemex.typing import ArrayFloat
 
 _RED100 = "#FFCDD2"
 _RED300 = "#E57373"
@@ -28,7 +29,7 @@ def _create_fig(name: str) -> tuple[Figure, Axes, Axes]:
     return fig, ax1, ax2
 
 
-def get_grid(values: np.ndarray, size: int = 400, extension: float = 0.0) -> np.ndarray:
+def get_grid(values: ArrayFloat, size: int = 400, extension: float = 0.0) -> ArrayFloat:
     value_min = np.min(values)
     value_max = np.max(values)
     extra = (value_max - value_min) * extension

@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.linalg import matrix_power
-from numpy.typing import NDArray
 
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import (
@@ -25,10 +24,7 @@ from chemex.printers.data import CpmgPrinter
 if TYPE_CHECKING:
     from chemex.containers.data import Data
     from chemex.parameters.spin_system import SpinSystem
-
-# Type definitions
-NDArrayFloat = NDArray[np.float_]
-NDArrayBool = NDArray[np.bool_]
+    from chemex.typing import ArrayBool, ArrayFloat
 
 
 EXPERIMENT_NAME = "cpmg_ch3_13c_h2c"
@@ -86,7 +82,7 @@ def build_spectrometer(
 class CpmgCh313CH2cSequence:
     settings: CpmgCh313CH2cSettings
 
-    def _get_delays(self, ncycs: np.ndarray) -> tuple[dict[float, float], list[float]]:
+    def _get_delays(self, ncycs: ArrayFloat) -> tuple[dict[float, float], list[float]]:
         ncycs_no_ref = ncycs[ncycs > 0]
         tau_cps = {
             ncyc: self.settings.time_t2 / (4.0 * ncyc) - self.settings.pw90
@@ -100,7 +96,7 @@ class CpmgCh313CH2cSequence:
         ]
         return tau_cps, delays
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
         ncycs = data.metadata
 
         # Calculation of the spectrometers corresponding to all the delays
@@ -138,7 +134,7 @@ class CpmgCh313CH2cSequence:
         return np.array([intensities[ncyc] for ncyc in ncycs])
 
     @staticmethod
-    def is_reference(metadata: NDArrayFloat) -> NDArrayBool:
+    def is_reference(metadata: ArrayFloat) -> ArrayBool:
         return metadata == 0
 
 
