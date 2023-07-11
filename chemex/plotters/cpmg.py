@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
 
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
-from numpy.typing import NDArray
 
 from chemex.containers.data import Data
 from chemex.messages import print_plot_filename
@@ -16,9 +15,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from chemex.containers.profile import Profile
+    from chemex.typing import ArrayFloat
 
-# Types
-NDArrayFloat = NDArray[np.float_]
 
 LARGE_ERROR = 1e15
 
@@ -48,8 +46,8 @@ def plot_cpmg(file_pdf: PdfPages, name: str, data_exp: Data, data_calc: Data):
 
 
 def intensities_to_rates(
-    intensities: np.ndarray, intensities0: np.ndarray, time_t2: float
-) -> np.ndarray:
+    intensities: ArrayFloat, intensities0: ArrayFloat, time_t2: float
+) -> ArrayFloat:
     normalized_intensities = intensities / np.mean(intensities0, axis=-1, keepdims=True)
 
     # If the normalized intensity is negative, no rate can be estimated.
@@ -61,19 +59,19 @@ def intensities_to_rates(
     return rates
 
 
-def calculate_exp_rates(data: Data, time_t2: float) -> np.ndarray:
+def calculate_exp_rates(data: Data, time_t2: float) -> ArrayFloat:
     intensities = data.exp[~data.refs]
     intensities0 = data.exp[data.refs]
     return intensities_to_rates(intensities, intensities0, time_t2)
 
 
-def calculate_calc_rates(data: Data, time_t2: float) -> np.ndarray:
+def calculate_calc_rates(data: Data, time_t2: float) -> ArrayFloat:
     intensities = data.calc[~data.refs]
     intensities0 = data.exp[data.refs]
     return intensities_to_rates(intensities, intensities0, time_t2)
 
 
-def calculate_errorbars(data: Data, rates: np.ndarray, time_t2: float) -> np.ndarray:
+def calculate_errorbars(data: Data, rates: ArrayFloat, time_t2: float) -> ArrayFloat:
     randn = rng.standard_normal(size=(10000, 1))
     randn0 = rng.standard_normal(size=(10000, 1))
 
@@ -86,7 +84,7 @@ def calculate_errorbars(data: Data, rates: np.ndarray, time_t2: float) -> np.nda
     intensities_ensemble = intensities + intensities_err * randn
     intensities0_ensemble = intensities0 + intensities0_err * randn0
 
-    rates_ensemble: NDArrayFloat = intensities_to_rates(
+    rates_ensemble: ArrayFloat = intensities_to_rates(
         intensities_ensemble, intensities0_ensemble, time_t2
     )
 
@@ -101,7 +99,7 @@ def calculate_errorbars(data: Data, rates: np.ndarray, time_t2: float) -> np.nda
     return np.abs(errors)
 
 
-def ncycs_to_nu_cpmgs(ncycs: np.ndarray, time_t2: float) -> np.ndarray:
+def ncycs_to_nu_cpmgs(ncycs: ArrayFloat, time_t2: float) -> ArrayFloat:
     modified_ncycs = ncycs.copy()
     modified_ncycs[modified_ncycs == -1] = 0.5
     return modified_ncycs[modified_ncycs != 0] / time_t2
@@ -132,7 +130,7 @@ def create_plot_data_calc(profile: Profile, config: CpmgExperimentConfig) -> Dat
     refs = data.refs
 
     step = 2 if config.experiment.even_ncycs else 1
-    ncycs = np.arange(2, max(data.metadata) + 1, step)
+    ncycs = np.arange(2, max(data.metadata) + 1, step, dtype=np.float_)
     ncycs = np.asarray(sorted(set(ncycs) | set(data.metadata[~refs])))
 
     filler = np.zeros_like(ncycs)

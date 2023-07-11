@@ -32,7 +32,7 @@ _RE_SECTION = re.compile(
 )
 
 
-def _parse(re_to_match: Pattern, text: str) -> dict[str, str]:
+def _parse(re_to_match: Pattern[str], text: str) -> dict[str, str]:
     return {
         key: value
         for match in re_to_match.finditer(text)
@@ -70,7 +70,7 @@ def _expand(string: str) -> str:
 class ParamName:
     name: str = ""
     spin_system: SpinSystem = field(default_factory=SpinSystem)
-    conditions: Conditions = field(default_factory=Conditions.construct)
+    conditions: Conditions = field(default_factory=Conditions.model_construct)
     search_keys: set[Hashable] = field(init=False, compare=False)
 
     def __post_init__(self):
@@ -87,7 +87,7 @@ class ParamName:
         if name is None:
             name = ""
         spin_system = SpinSystem(parsed.get("spin_system"))
-        conditions = Conditions.parse_obj(parsed)
+        conditions = Conditions.model_validate(parsed)
         return ParamName(name, spin_system, conditions)
 
     @cached_property

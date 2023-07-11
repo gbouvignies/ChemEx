@@ -12,9 +12,10 @@ from chemex.nmr.constants import GAMMA
 if TYPE_CHECKING:
     from chemex.configuration.conditions import Conditions
     from chemex.nmr.basis import Basis
+    from chemex.typing import ArrayFloat
 
-# Type definition
-T = TypeVar("T", float, np.ndarray)
+    # Type definition
+    T = TypeVar("T", float, ArrayFloat)
 
 
 def _calculate_jw(tauc: float, s2: float, w: T) -> T:
@@ -28,10 +29,10 @@ class RatesIS:
     ris3: float
     rih3: float
     rsh3: float
-    csa_i: np.ndarray
-    csa_s: np.ndarray
-    phi_i: np.ndarray
-    phi_s: np.ndarray
+    csa_i: ArrayFloat
+    csa_s: ArrayFloat
+    phi_i: ArrayFloat
+    phi_s: ArrayFloat
 
     def __init__(self):
         self.gh = GAMMA["h"]
@@ -287,7 +288,7 @@ def get_model_free_expressions(basis: Basis, conditions: Conditions) -> dict[str
     h_frq_str = f"{conditions.h_larmor_frq}"
     has_h_exchange = basis.spin_system in {"nh", "hn"}
 
-    model_free_expr = {}
+    model_free_expr: dict[str, str] = {}
     for state, name in product(model.states, _RATE_NAMES):
         rate_name = f"{name}_{state}"
         khh = f", {{khh_{state}}}" if has_h_exchange else ""

@@ -1,22 +1,32 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated
 
 from annotated_types import Len
-from pydantic import RootModel, field_validator
+from pydantic import AfterValidator, BeforeValidator, RootModel
 
+from chemex.configuration.base import ensure_list
 from chemex.parameters.name import ParamName
 from chemex.toml import read_toml_multi
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from pathlib import Path
 
-# Type definitions
-ValueListType = Annotated[list[float], Len(min_length=1, max_length=4)]
-DefaultType = tuple[ParamName, "DefaultSetting"]
-DefaultListType = list[DefaultType]
+
+def rename_section(section_name: str) -> str:
+    if section_name == "global":
+        return ""
+    return f"{section_name},nuc->"
+
+
+ValuesType = Annotated[list[float], Len(max_length=4), BeforeValidator(ensure_list)]
+LowerCaseString = Annotated[str, BeforeValidator(str.lower)]
+ValuesDictType = dict[LowerCaseString, ValuesType]
+SectionType = Annotated[LowerCaseString, AfterValidator(rename_section)]
+ParamsConfigType = dict[SectionType, ValuesDictType]
+ParamsConfigModel = RootModel[ParamsConfigType]
 
 
 @dataclass(frozen=True)
@@ -27,42 +37,21 @@ class DefaultSetting:
     brute_step: float | None = None
 
 
-class ParamsConfig(RootModel):
-    root: dict[str, dict[str, ValueListType]]
+DefaultType = tuple[ParamName, DefaultSetting]
+DefaultListType = list[DefaultType]
 
-    @field_validator("root", mode="before")
-    @classmethod
-    def to_lower(cls, values):
-        return {
-            k1.lower(): {k2.lower(): v2 for k2, v2 in v1.items()}
-            for k1, v1 in values.items()
-        }
 
-    @field_validator("root", mode="before")
-    @classmethod
-    def to_list(cls, values):
-        for values1 in values.values():
-            for key2, values2 in values1.items():
-                if not isinstance(values2, Iterable):
-                    values1[key2] = [values2]
-        return values
-
-    @field_validator("root")
-    @classmethod
-    def reorder(cls, values):
-        return {"global": values.pop("global", {}), **values}
-
-    def to_defaults_list(self) -> DefaultListType:
-        defaults_list: DefaultListType = []
-        for section, settings in self.root.items():
-            prefix = f"{section}, NUC->" if section != "global" else ""
-            for key, values in settings.items():
-                pname = ParamName.from_section(f"{prefix}{key}")
-                default_values = DefaultSetting(*values)
-                defaults_list.append((pname, default_values))
-        return defaults_list
+def build_default_list(params_config: ParamsConfigModel) -> DefaultListType:
+    defaults: DefaultListType = []
+    for section, params in params_config.root.items():
+        for key, values in params.items():
+            pname = ParamName.from_section(f"{section}{key}")
+            default_values = DefaultSetting(*values)
+            defaults.append((pname, default_values))
+    return defaults
 
 
 def read_defaults(filenames: Iterable[Path]) -> DefaultListType:
     config = read_toml_multi(filenames)
-    return ParamsConfig.model_validate(config).to_defaults_list()
+    param_config = ParamsConfigModel.model_validate(config)
+    return build_default_list(param_config)

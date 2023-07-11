@@ -11,13 +11,16 @@ from chemex.toml import normalize_path
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from chemex.configuration.experiment import ExperimentConfig
+    from chemex.configuration.data import RelaxationDataSettings, ShiftDataSettings
+    from chemex.configuration.experiment import ExperimentConfig, ExperimentNameSettings
 
-# Type aliases
-Dataset = list[tuple[SpinSystem, Data]]
+    # Type aliases
+    Dataset = list[tuple[SpinSystem, Data]]
+    RelaxationConfig = ExperimentConfig[ExperimentNameSettings, RelaxationDataSettings]
+    ShiftConfig = ExperimentConfig[ExperimentNameSettings, ShiftDataSettings]
 
 
-def load_relaxation_dataset(base_path: Path, settings: ExperimentConfig) -> Dataset:
+def load_relaxation_dataset(base_path: Path, settings: RelaxationConfig) -> Dataset:
     data_path = normalize_path(base_path, settings.data.path)
     dtype = [("metadata", "f8"), ("exp", "f8"), ("err", "f8")]
 
@@ -39,7 +42,7 @@ def load_relaxation_dataset(base_path: Path, settings: ExperimentConfig) -> Data
     return dataset
 
 
-def load_shift_dataset(base_path: Path, settings: ExperimentConfig) -> Dataset:
+def load_shift_dataset(base_path: Path, settings: ShiftConfig) -> Dataset:
     data_path = normalize_path(base_path, settings.data.path)
 
     shifts = np.loadtxt(

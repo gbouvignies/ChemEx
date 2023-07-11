@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
 
 import numpy as np
-import numpy.typing as npt
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import MaxNLocator
 
@@ -21,6 +20,7 @@ if TYPE_CHECKING:
 
     from chemex.containers.profile import Profile
     from chemex.nmr.spectrometer import Spectrometer
+    from chemex.typing import ArrayFloat
 
 _GREY400 = "#BDBDBD"
 _LSTYLES = ("-", "--", "-.", ":")
@@ -37,7 +37,7 @@ class CestExperimentConfig(Protocol):
 T = TypeVar("T", bound=CestExperimentConfig)
 
 
-def estimate_sigma(values: npt.NDArray[np.float64]) -> float:
+def estimate_sigma(values: ArrayFloat) -> float:
     """Estimates standard deviation using median to exclude outliers.
 
     Up to 50% can be bad.
@@ -64,7 +64,7 @@ class CircularShift:
         sw_ppm, sw_ref = self.spectrometer.offsets_to_ppms(np.array([self.sw, 0.0]))
         self.sw_ppm = sw_ppm - sw_ref
 
-    def centre(self, array: np.ndarray, position: float) -> np.ndarray:
+    def centre(self, array: ArrayFloat, position: float) -> ArrayFloat:
         if self.sw == np.inf:
             return array
         cs_min = position - self.sw_ppm / 2.0
@@ -74,7 +74,7 @@ class CircularShift:
 def add_resonance_positions(
     ax1: Axes,
     ax2: Axes,
-    cs_values: np.ndarray,
+    cs_values: ArrayFloat,
     centre: float,
     circular_shift: CircularShift,
 ) -> tuple[Axes, Axes]:
@@ -96,7 +96,7 @@ def plot_dcest(
     name: str,
     data_exp: Data,
     data_calc: Data,
-    cs_values: np.ndarray,
+    cs_values: ArrayFloat,
     circular_shift: CircularShift,
 ):
     residuals = data_exp.exp - data_exp.calc
@@ -168,7 +168,7 @@ def create_plot_data_calc(profile: Profile) -> Data:
     return data_fit
 
 
-def get_state_positions(spectrometer: Spectrometer) -> np.ndarray:
+def get_state_positions(spectrometer: Spectrometer) -> ArrayFloat:
     names = (f"cs_i_{state}" for state in "abcd")
     return np.array(
         [

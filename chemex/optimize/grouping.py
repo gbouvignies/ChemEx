@@ -81,7 +81,7 @@ def create_groups(experiments: Experiments) -> list[Group]:
             f"Group [magenta]{{group_name}}[/] ({{index}}/{len(id_groups)})"
         )
 
-    groups = []
+    groups: list[Group] = []
     for index, (pname, param_ids) in enumerate(id_groups, start=1):
         group_name = group_name_template.format(index=index, pname=pname)
         group_path = Path(path_name_template.format(group_name=group_name))

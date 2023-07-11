@@ -30,22 +30,25 @@ if TYPE_CHECKING:
     from lmfit.parameter import Parameters
 
     from chemex.containers.experiments import Experiments
+    from chemex.typing import ArrayFloat
 
 
 @dataclass
 class GridResult:
-    grid: dict[str, np.ndarray]
-    chisqr: np.ndarray
+    grid: dict[str, ArrayFloat]
+    chisqr: ArrayFloat
 
 
-def _set_param_values(params: Parameters, fnames: Iterable[str], values: tuple):
+def _set_param_values(
+    params: Parameters, fnames: Iterable[str], values: tuple[float, ...]
+):
     for fname, value in zip(fnames, values, strict=True):
         params[fname].value = value
 
 
 def run_group_grid(
     group: Group,
-    grid: dict[str, np.ndarray],
+    grid: dict[str, ArrayFloat],
     path: Path,
     fitmethod: str | None,
 ) -> GridResult:
@@ -66,7 +69,7 @@ def run_group_grid(
     with filename.open("w") as fileout:
         fileout.write(print_header(group_grid))
 
-        chisqr_list = []
+        chisqr_list: list[float] = []
 
         grid_values = product(*group_grid.values())
 
@@ -84,8 +87,8 @@ def run_group_grid(
 
 
 def _reshape_chisqr(
-    grid_ref: dict[str, np.ndarray], grid_result: GridResult
-) -> np.ndarray:
+    grid_ref: dict[str, ArrayFloat], grid_result: GridResult
+) -> ArrayFloat:
     keys = list(grid_result.grid)
     order = [keys.index(key) for key in grid_ref if key in keys]
     axes_to_reduce = tuple(sorted(set(range(len(keys))) - set(order)))
@@ -104,8 +107,8 @@ def _reshape_chisqr(
 
 
 def _get_grids(
-    grid: dict[str, np.ndarray], grid_results: list[GridResult]
-) -> list[dict[str, np.ndarray]]:
+    grid: dict[str, ArrayFloat], grid_results: list[GridResult]
+) -> list[dict[str, ArrayFloat]]:
     grid_params = {tuple(sorted(grid_result.grid)) for grid_result in grid_results}
     grid_params_tmp = grid_params.copy()
     for params1, params2 in permutations(grid_params, 2):
@@ -115,11 +118,11 @@ def _get_grids(
 
 
 def combine_grids(
-    grid: dict[str, np.ndarray], grid_results: list[GridResult]
+    grid: dict[str, ArrayFloat], grid_results: list[GridResult]
 ) -> list[GridResult]:
     grids = _get_grids(grid, grid_results)
 
-    results = []
+    results: list[GridResult] = []
 
     for grid_ref in grids:
         shape = tuple(len(values) for values in grid_ref.values())
@@ -145,11 +148,11 @@ def set_params_from_grid(grids_1d: Iterable[GridResult]):
 
 
 def make_grids_nd(
-    grid: dict[str, np.ndarray],
+    grid: dict[str, ArrayFloat],
     grids_combined: list[GridResult],
     ndim: int,
 ) -> list[GridResult]:
-    grids = []
+    grids: list[GridResult] = []
     parameters = database.get_parameters(grid)
     ids = sorted(grid, key=lambda x: parameters[x].param_name)
     for selection in combinations(ids, ndim):

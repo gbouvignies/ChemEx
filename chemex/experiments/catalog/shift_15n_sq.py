@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
-from numpy.typing import NDArray
 
 from chemex.configuration.data import ShiftDataSettings
 from chemex.configuration.experiment import ExperimentConfig, ShiftSettings, ToBeFitted
@@ -20,10 +19,7 @@ from chemex.printers.data import ShiftPrinter
 if TYPE_CHECKING:
     from chemex.containers.data import Data
     from chemex.parameters.spin_system import SpinSystem
-
-# Type definitions
-NDArrayFloat = NDArray[np.float_]
-NDArrayBool = NDArray[np.bool_]
+    from chemex.typing import ArrayBool, ArrayFloat
 
 
 EXPERIMENT_NAME = "shift_15n_sq"
@@ -58,7 +54,7 @@ def build_spectrometer(
     return Spectrometer(liouvillian)
 
 
-def _find_nearest(array, value):
+def _find_nearest(array: ArrayFloat, value: float) -> float:
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return array[idx]
@@ -68,14 +64,14 @@ def _find_nearest(array, value):
 class Shift15NSqSequence:
     settings: Shift15NSqSettings
 
-    def calculate(self, spectrometer: Spectrometer, _data: Data) -> np.ndarray:
+    def calculate(self, spectrometer: Spectrometer, _data: Data) -> ArrayFloat:
         ppm_i = spectrometer.liouvillian.ppm_i
         ref_shift_i = spectrometer.par_values[self.settings.cs_i_name] * ppm_i
         shifts = spectrometer.calculate_shifts()
         shift_sq = _find_nearest(shifts, ref_shift_i)
         return np.array([shift_sq / ppm_i])
 
-    def is_reference(self, metadata: NDArrayFloat) -> NDArrayBool:
+    def is_reference(self, metadata: ArrayFloat) -> ArrayBool:
         return np.full_like(metadata, False, dtype=np.bool_)
 
 

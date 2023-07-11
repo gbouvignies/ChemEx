@@ -13,6 +13,7 @@ from chemex.parameters.userfunctions import user_function_registry
 
 if TYPE_CHECKING:
     from chemex.configuration.conditions import Conditions
+    from chemex.typing import ArrayFloat
 
 NAME = "3st_a_a2_a3"
 
@@ -20,8 +21,8 @@ TPL = ("temperature", "p_total", "l_total")
 
 
 def calculate_residuals(
-    concentrations: np.ndarray, p_total: float, k1: float, k2: float
-) -> np.ndarray:
+    concentrations: ArrayFloat, p_total: float, k1: float, k2: float
+) -> ArrayFloat:
     p_monomer, p_dimer, p_trimer = concentrations
     return np.array(
         [

@@ -5,7 +5,6 @@ from functools import reduce
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
-from numpy.typing import NDArray
 
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import (
@@ -25,10 +24,7 @@ from chemex.printers.data import CpmgPrinter
 if TYPE_CHECKING:
     from chemex.containers.data import Data
     from chemex.parameters.spin_system import SpinSystem
-
-# Type definitions
-NDArrayFloat = NDArray[np.float_]
-NDArrayBool = NDArray[np.bool_]
+    from chemex.typing import ArrayBool, ArrayFloat, ArrayInt
 
 
 EXPERIMENT_NAME = "cpmg_hn_dq_zq"
@@ -87,7 +83,7 @@ def build_spectrometer(
 class CpmgHNDqZqSequence:
     settings: CpmgHNDqZqSettings
 
-    def _get_tau_cps(self, ncycs: np.ndarray) -> dict[float, float]:
+    def _get_tau_cps(self, ncycs: ArrayFloat) -> dict[float, float]:
         ncycs_no_ref = ncycs[ncycs > 0]
         return dict(
             zip(
@@ -98,7 +94,7 @@ class CpmgHNDqZqSequence:
             )
         )
 
-    def _get_phases(self, ncyc: float) -> tuple[np.ndarray, np.ndarray]:
+    def _get_phases(self, ncyc: float) -> tuple[ArrayInt, ArrayInt]:
         nu_cpmg = ncyc / self.settings.time_t2
         if nu_cpmg < NU_CPMG_LIMIT_1:
             cp_phases1 = [0, 1, 0, 1]
@@ -114,7 +110,7 @@ class CpmgHNDqZqSequence:
         phases2 = np.take(cp_phases2, np.flip(indexes), mode="wrap")
         return phases1, phases2
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
         ncycs = data.metadata
 
         # Calculation of the spectrometers corresponding to all the delays
@@ -143,7 +139,7 @@ class CpmgHNDqZqSequence:
         return np.array([intensities[ncyc] for ncyc in ncycs])
 
     @staticmethod
-    def is_reference(metadata: NDArrayFloat) -> NDArrayBool:
+    def is_reference(metadata: ArrayFloat) -> ArrayBool:
         return metadata == 0
 
 

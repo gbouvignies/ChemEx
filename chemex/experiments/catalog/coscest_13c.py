@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.linalg import matrix_power
-from numpy.typing import NDArray
 
 from chemex.configuration.data import CestDataSettings
 from chemex.configuration.experiment import CestSettings, ExperimentConfig, ToBeFitted
@@ -22,10 +21,7 @@ from chemex.printers.data import CestPrinter
 if TYPE_CHECKING:
     from chemex.containers.data import Data
     from chemex.parameters.spin_system import SpinSystem
-
-# Type definitions
-NDArrayFloat = NDArray[np.float_]
-NDArrayBool = NDArray[np.bool_]
+    from chemex.typing import ArrayBool, ArrayFloat
 
 
 EXPERIMENT_NAME = "coscest_13c"
@@ -89,10 +85,10 @@ class CosCest13CSequence:
     settings: CosCest13CSettings
 
     @staticmethod
-    def is_reference(metadata: NDArrayFloat) -> NDArrayBool:
+    def is_reference(metadata: ArrayFloat) -> ArrayBool:
         return np.abs(metadata) > OFFSET_REF
 
-    def _calc_cosine_shape(self, spectrometer: Spectrometer) -> np.ndarray:
+    def _calc_cosine_shape(self, spectrometer: Spectrometer) -> ArrayFloat:
         time_t1 = self.settings.time_t1
         sw = self.settings.sw
         cos_n = self.settings.cos_n
@@ -127,7 +123,7 @@ class CosCest13CSequence:
 
         return pulse
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
         offsets = data.metadata
 
         start = spectrometer.get_equilibrium()
@@ -138,7 +134,7 @@ class CosCest13CSequence:
             else spectrometer.identity
         )
 
-        intensities = {}
+        intensities: dict[float, ArrayFloat] = {}
 
         for offset in set(offsets):
             if self.is_reference(offset):

@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
-from numpy.typing import NDArray
 
 from chemex.configuration.data import CestDataSettings
 from chemex.configuration.experiment import CestSettings, ExperimentConfig, ToBeFitted
@@ -20,10 +19,7 @@ from chemex.printers.data import CestPrinter
 if TYPE_CHECKING:
     from chemex.containers.data import Data
     from chemex.parameters.spin_system import SpinSystem
-
-# Type definitions
-NDArrayFloat = NDArray[np.float_]
-NDArrayBool = NDArray[np.bool_]
+    from chemex.typing import ArrayBool, ArrayFloat
 
 
 EXPERIMENT_NAME = "cest_1hn_ap"
@@ -84,15 +80,16 @@ class Cest1HnApSequence:
     settings: Cest1HnApSettings
 
     @staticmethod
-    def is_reference(metadata: NDArrayFloat) -> NDArrayBool:
+    def is_reference(metadata: ArrayFloat) -> ArrayBool:
         return np.abs(metadata) > OFFSET_REF
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
         offsets = data.metadata
 
         start = spectrometer.get_start_magnetization(terms=self.settings.start)
 
-        intensities = {}
+        intensities: dict[float, ArrayFloat] = {}
+
         for offset in set(offsets):
             intensities[offset] = start
 

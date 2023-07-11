@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 from rich.live import Live
@@ -26,14 +26,17 @@ from chemex.toml import read_toml
 if TYPE_CHECKING:
     from collections.abc import MutableMapping
     from pathlib import Path
+    from typing import Any
 
     from chemex.configuration.methods import Selection
     from chemex.containers.dataset import Dataset
 
+    ConfigType = ExperimentConfig[Any, Any]
 
-def _get_experiment_name(config, filename: Path):
+
+def _get_experiment_name(config: MutableMapping[str, Any], filename: Path):
     try:
-        return ExperimentNameConfig.parse_obj(config).experiment.name
+        return ExperimentNameConfig.model_validate(config).experiment.name
     except ValidationError:
         print_experiment_name_error(filename)
         sys.exit()
@@ -58,7 +61,7 @@ def _apply_selection(dataset: Dataset, selection: Selection) -> Dataset:
 
 
 def _create_dataset(
-    filename: Path, live: Live, factory: Creators, config: ExperimentConfig
+    filename: Path, live: Live, factory: Creators, config: ConfigType
 ) -> Dataset:
     try:
         dataset = factory.create_dataset(filename.parent, config)
@@ -70,8 +73,8 @@ def _create_dataset(
 
 
 def _create_config(
-    filename: Path, live: Live, factory: Creators, config_dict: MutableMapping
-) -> ExperimentConfig:
+    filename: Path, live: Live, factory: Creators, config_dict: MutableMapping[str, Any]
+) -> ConfigType:
     try:
         config = factory.create_config(config_dict)
     except ValidationError as e:

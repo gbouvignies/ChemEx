@@ -6,9 +6,7 @@ from functools import cached_property
 from operator import attrgetter
 from typing import TYPE_CHECKING, Protocol
 
-import numpy as np
 from cachetools import LRUCache, cachedmethod
-from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from lmfit import Parameters as ParametersLF
@@ -17,29 +15,20 @@ if TYPE_CHECKING:
     from chemex.nmr.spectrometer import Spectrometer
     from chemex.parameters.spin_system import SpinSystem
     from chemex.printers.data import Printer
-
-NDArrayFloat = NDArray[np.float_]
-NDArrayBool = NDArray[np.bool_]
+    from chemex.typing import ArrayBool, ArrayFloat
 
 
 class PulseSequence(Protocol):
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
         ...
 
-    def is_reference(self, metadata: NDArrayFloat) -> NDArrayBool:
+    def is_reference(self, metadata: ArrayFloat) -> ArrayBool:
         ...
 
 
 class Filterer(Protocol):
     def filter(self, data: Data) -> None:
         ...
-
-
-def _cache_key(self, params: ParametersLF) -> tuple[float, ...]:
-    return (
-        *(params[param_id].value for param_id in self.param_ids),
-        *self.data.metadata,
-    )
 
 
 @dataclass(order=True)
@@ -53,6 +42,12 @@ class Profile:
     is_scaled: bool = field(compare=False, default=True)
     name: SpinSystem = field(compare=True, init=False)
     cache: LRUCache = field(compare=False, init=False)
+
+    def _cache_key(self, params: ParametersLF) -> tuple[float, ...]:
+        return (
+            *(params[param_id].value for param_id in self.param_ids),
+            *self.data.metadata,
+        )
 
     def __post_init__(self):
         self.name = self.spectrometer.liouvillian.spin_system
@@ -73,7 +68,7 @@ class Profile:
         par_values = self._get_par_values(params)
         self.spectrometer.update(par_values)
 
-    def calculate(self, params: ParametersLF) -> np.ndarray:
+    def calculate(self, params: ParametersLF) -> ArrayFloat:
         self.update_spectrometer(params)
         self.data.calc = self.pulse_sequence.calculate(self.spectrometer, self.data)
         if self.is_scaled:
@@ -81,7 +76,7 @@ class Profile:
         return self.data.calc
 
     @cachedmethod(attrgetter("cache"), key=_cache_key)
-    def residuals(self, params: ParametersLF) -> np.ndarray:
+    def residuals(self, params: ParametersLF) -> ArrayFloat:
         residuals = (self.calculate(params) - self.data.exp) / self.data.err
         return residuals[self.data.mask]
 

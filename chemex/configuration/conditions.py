@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from functools import total_ordering
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     Field,
     PositiveFloat,
     ValidationError,
@@ -12,20 +13,23 @@ from pydantic import (
     model_validator,
 )
 
+from chemex.configuration.base import to_lower
 from chemex.models.model import model
 
 if TYPE_CHECKING:
-    from collections.abc import Hashable, MutableMapping
+    from collections.abc import Hashable
+
+LabelType = Annotated[Literal["1h", "2h", "13c", "15n"], BeforeValidator(to_lower)]
 
 
 @total_ordering
 class Conditions(BaseModel, frozen=True):
     h_larmor_frq: PositiveFloat | None = None
     temperature: float | None = None
-    p_total: PositiveFloat | None = Field(default=None)
-    l_total: PositiveFloat | None = Field(default=None)
+    p_total: PositiveFloat | None = None
+    l_total: PositiveFloat | None = None
     d2o: float | None = Field(gt=0.0, lt=1.0, default=None)
-    label: tuple[Literal["1h", "2h", "13c", "15n"], ...] = ()
+    label: tuple[LabelType, ...] = ()
 
     def rounded(self) -> Conditions:
         h_larmor_frq = round(self.h_larmor_frq, 1) if self.h_larmor_frq else None
@@ -49,7 +53,7 @@ class Conditions(BaseModel, frozen=True):
 
     @property
     def section(self) -> str:
-        parts = []
+        parts: list[str] = []
         if self.temperature is not None:
             parts.append(f"T->{self.temperature:.1f}C")
         if self.h_larmor_frq is not None:
@@ -64,7 +68,7 @@ class Conditions(BaseModel, frozen=True):
 
     @property
     def folder(self):
-        parts = []
+        parts: list[str] = []
         if self.temperature is not None:
             parts.append(f"{self.temperature:.1f}C")
         if self.h_larmor_frq is not None:
@@ -112,39 +116,30 @@ class Conditions(BaseModel, frozen=True):
 
 @total_ordering
 class ConditionsFromFile(Conditions, frozen=True):
+    @model_validator(mode="before")
+    def key_to_lower(cls, model: dict[str, Any]) -> dict[str, Any]:
+        return {to_lower(k): v for k, v in model.items()}
+
     @field_validator("d2o")
-    @classmethod
-    def validate_d2o(cls, d2o):
+    def validate_d2o(cls, d2o: float | None) -> float | None:
         if "hd" in model.name and d2o is None:
-            raise ValidationError()
+            msg = 'To use the "hd" model, d2o must be provided'
+            raise ValidationError(msg)
         return d2o
 
     @field_validator("temperature")
-    @classmethod
-    def validate_temperature(cls, temperature):
+    def validate_temperature(cls, temperature: float | None) -> float | None:
         if "eyring" in model.name and temperature is None:
-            raise ValidationError()
+            msg = 'To use the "eyring" model, "temperature" must be provided'
+            raise ValidationError(msg)
         return temperature
 
-    @field_validator("label", mode="before")
-    @classmethod
-    def set_to_lower_case(cls, label):
-        return tuple(value.lower() for value in label)
-
     @model_validator(mode="after")
-    @classmethod
     def validate_p_total_l_total(
         cls, conditions: ConditionsFromFile
     ) -> ConditionsFromFile:
         are_not_both_set = conditions.p_total is None or conditions.l_total is None
         if "binding" in model.name and are_not_both_set:
-            msg = "Either p_total or l_total must be provided"
-            raise ValueError(msg)
+            msg = 'To use the "binding" model, "p_total" and "l_total" must be provided'
+            raise ValidationError(msg)
         return conditions
-
-    @model_validator(mode="before")
-    @classmethod
-    def set_keys_to_lower_case(
-        cls, values: MutableMapping[str, Any]
-    ) -> MutableMapping[str, Any]:
-        return {k.lower(): v for k, v in values.items()}

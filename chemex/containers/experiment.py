@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from lmfit.parameter import Parameters as ParametersLF
+    from lmfit import Parameters as ParametersLF
 
     from chemex.configuration.methods import Selection
     from chemex.containers.profile import Profile
@@ -57,7 +57,8 @@ class Experiment:
         include = selection.include
         exclude = selection.exclude
         profiles_all = [*self.profiles, *self.filtered_profiles]
-        profiles, filtered = [], []
+        profiles: list[Profile] = []
+        filtered: list[Profile] = []
         for profile in profiles_all:
             included = include is None or profile.name.part_of(include)
             excluded = exclude is not None and profile.name.part_of(exclude)
@@ -111,10 +112,10 @@ class Experiment:
 
     def bootstrap_ns(self, groups: list[Group]) -> Experiment:
         """Residue-specific bootstrap."""
-        profiles = {}
+        profiles: dict[Group, list[Profile]] = {}
         for profile in self.profiles:
             profiles.setdefault(profile.name.groups["i"], []).append(profile)
-        profiles_bs_ns = []
+        profiles_bs_ns: list[Profile] = []
         for group in groups:
             profiles_bs_ns.extend(profiles.get(group, []))
         return Experiment(

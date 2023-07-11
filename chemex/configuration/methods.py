@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
-from pydantic import ConfigDict, Field, ValidationError
+from pydantic import BeforeValidator, Field, ValidationError
 from pydantic.types import PositiveInt
 
 from chemex.configuration.base import BaseModelLowerCase
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 # Type definitions
-AllType = Literal["*", "all", "ALL", "All", "ALl", "AlL"]
+AllType = Annotated[Literal["*", "all"], BeforeValidator(str.lower)]
 SelectionType = list[PydanticSpinSystem] | AllType | None
 
 
@@ -35,8 +35,6 @@ class Selection:
 
 
 class Method(BaseModelLowerCase):
-    model_config = ConfigDict(str_to_lower=True)
-
     fitmethod: str = "leastsq"
     include: SelectionType = None
     exclude: SelectionType = None
@@ -55,7 +53,7 @@ Methods = dict[str, Method]
 
 
 def read_methods(filenames: Iterable[Path]) -> Methods:
-    methods = {}
+    methods: Methods = {}
 
     for filename in filenames:
         methods_dict = read_toml(filename)

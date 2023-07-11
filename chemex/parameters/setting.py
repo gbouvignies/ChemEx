@@ -123,7 +123,7 @@ class ParamSetting:
         return self.param_name.id
 
     @property
-    def args(self) -> tuple:
+    def args(self) -> tuple[str, float | None, bool | None, float, float, str]:
         return self.id, self.value, self.vary, self.min, self.max, self.expr
 
     def set(self, default_setting: DefaultSetting) -> None:

@@ -53,7 +53,7 @@ def _run_statistics(
     params_lf = database.build_lmfit_params(experiments.param_ids)
     ids_vary = [param.name for param in params_lf.values() if param.vary]
 
-    for statistic_name, iter_nb in statistics.dict().items():
+    for statistic_name, iter_nb in statistics.model_dump().items():
         if iter_nb is None:
             continue
 

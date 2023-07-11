@@ -7,22 +7,25 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from chemex.configuration.experiment import ExperimentConfig
-from chemex.containers.dataset import Dataset
 from chemex.containers.profile import Filterer, PulseSequence
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.plotters.plotter import Plotter
 from chemex.printers.data import Printer
 
 if TYPE_CHECKING:
+    from chemex.containers.data import Data
     from chemex.parameters.spin_system import SpinSystem
 
-ConfigCreator = Callable[..., ExperimentConfig]
-PropagatorCreator = Callable[..., Spectrometer]
-SequenceCreator = Callable[..., PulseSequence]
-DatasetCreator = Callable[[Path, ExperimentConfig], Dataset]
-FiltererCreator = Callable[..., Filterer]
-PrinterCreator = Callable[[], Printer]
-PlotterCreator = Callable[..., Plotter]
+    Dataset = list[tuple[SpinSystem, Data]]
+    ConfigType = ExperimentConfig[Any, Any]
+
+    ConfigCreator = Callable[..., ConfigType]
+    PropagatorCreator = Callable[..., Spectrometer]
+    SequenceCreator = Callable[..., PulseSequence]
+    DatasetCreator = Callable[[Path, ConfigType], Dataset]
+    FiltererCreator = Callable[..., Filterer]
+    PrinterCreator = Callable[[], Printer]
+    PlotterCreator = Callable[..., Plotter]
 
 
 @dataclass
@@ -35,26 +38,26 @@ class Creators:
     printer_creator: PrinterCreator
     plotter_creator: PlotterCreator
 
-    def create_config(self, config_dict: MutableMapping[str, Any]) -> ExperimentConfig:
+    def create_config(self, config_dict: MutableMapping[str, Any]) -> ConfigType:
         """Create a configuration object of a specific type."""
         return self.config_creator(**config_dict)
 
     def create_spectrometer(
-        self, config: ExperimentConfig, spin_system: SpinSystem
+        self, config: ConfigType, spin_system: SpinSystem
     ) -> Spectrometer:
         """Create and initialize a spectrometer of a specific type."""
         return self.spectrometer_creator(config, spin_system)
 
-    def create_sequence(self, config: ExperimentConfig) -> PulseSequence:
+    def create_sequence(self, config: ConfigType) -> PulseSequence:
         """Create a sequence of a specific type."""
         return self.sequence_creator(config.experiment)
 
-    def create_dataset(self, base_path: Path, settings: ExperimentConfig) -> Dataset:
+    def create_dataset(self, base_path: Path, settings: ConfigType) -> Dataset:
         """Create a dataset of a specific type."""
         return self.dataset_creator(base_path, settings)
 
     def create_filterer(
-        self, config: ExperimentConfig, spectrometer: Spectrometer
+        self, config: ConfigType, spectrometer: Spectrometer
     ) -> Filterer:
         """Create a filterer used to remove undesired data points."""
         return self.filterer_creator(config=config, spectrometer=spectrometer)
@@ -63,7 +66,7 @@ class Creators:
         """Create a filterer used to remove undesired data points."""
         return self.printer_creator()
 
-    def create_plotter(self, filename: Path, config: ExperimentConfig) -> Plotter:
+    def create_plotter(self, filename: Path, config: ConfigType) -> Plotter:
         """Create a filterer used to remove undesired data points."""
         return self.plotter_creator(filename=filename, config=config)
 

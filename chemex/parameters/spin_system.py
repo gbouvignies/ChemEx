@@ -5,7 +5,7 @@ from enum import Enum, auto
 from functools import cache, cached_property, total_ordering
 from itertools import chain, combinations
 from re import search
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import PlainValidator
 
@@ -120,7 +120,7 @@ class Group:
     def __init__(self, name: str) -> None:
         self.symbol, self.number, self.suffix = self.parse_group(name.strip().upper())
         self.symbol = AAA_TO_A.get(self.symbol, self.symbol)
-        self.search_keys: set = {self} if self else set()
+        self.search_keys: set[Hashable] = {self} if self else set()
 
     def parse_group(self, name: str) -> tuple[str, int, str]:
         if found := search("[0-9]+", name.strip().upper()):
@@ -210,7 +210,7 @@ class Spin:
         return self.name
 
 
-def powerset(iterable):
+def powerset(iterable: Iterable[Any]) -> Iterable[Any]:
     "powerset([1,2,3]) --> (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)."
     s = list(iterable)
     return chain.from_iterable(combinations(s, r) for r in range(1, len(s) + 1))
@@ -224,7 +224,7 @@ class SpinSystem:
         if not name:
             return {}
         split = name.split("-")
-        spins = {}
+        spins: dict[str, Spin] = {}
         last_group = None
         for short_name, name_spin in zip(SPIN_ALIASES, split, strict=False):
             spin = Spin(name_spin, last_group)
@@ -234,7 +234,7 @@ class SpinSystem:
 
     @staticmethod
     def _spins2name(spins: Iterable[Spin]) -> str:
-        spin_names = []
+        spin_names: list[str] = []
         last_group: Group = Group("")
         for spin in spins:
             spin_name = str(spin.atom) if spin.group == last_group else str(spin)
@@ -254,12 +254,12 @@ class SpinSystem:
             *(spin.search_keys for spin in self.spins.values())
         )
 
-    def __deepcopy__(self, memo) -> SpinSystem:
+    def __deepcopy__(self, memo: dict[Any, Any]) -> SpinSystem:
         return SpinSystem(self.name)
 
     @cached_property
     def names(self) -> dict[str, str]:
-        result = {}
+        result: dict[str, str] = {}
         for alias_set in powerset(SPIN_ALIASES):
             if set(alias_set).issubset(self.spins):
                 key = "".join(alias_set)
@@ -288,9 +288,7 @@ class SpinSystem:
         return {alias: atom.nucleus for alias, atom in self.atoms.items()}
 
     def match(self, other: SpinSystem) -> bool:
-        if len(self.spins) != len(other.spins):
-            return False
-        spin_pairs = zip(self.spins.values(), other.spins.values(), strict=True)
+        spin_pairs = zip(self.spins.values(), other.spins.values(), strict=False)
         return all(spin.match(other_spin) for spin, other_spin in spin_pairs)
 
     def part_of(self, selection: Sequence[SpinSystem] | str) -> bool:
@@ -299,7 +297,7 @@ class SpinSystem:
         return any(item.match(self) for item in selection)
 
     def correct(self, basis: Basis) -> SpinSystem:
-        spins = []
+        spins: list[Spin] = []
         last_spin = Spin("")
         for letter, atom in basis.atoms.items():
             spin = Spin(self.spins.get(letter, last_spin).name)
@@ -322,7 +320,7 @@ class SpinSystem:
             return self
         return SpinSystem()
 
-    def __and__(self, other) -> SpinSystem:
+    def __and__(self, other: Any) -> SpinSystem:
         if not isinstance(other, SpinSystem):
             return NotImplemented
         if self == other:
