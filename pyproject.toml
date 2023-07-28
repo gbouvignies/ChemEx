@@ -7,15 +7,16 @@
   description = "An analysis program for chemical exchange detected by NMR"
   authors = [ { name = "Guillaume Bouvignies", email = "guillaume.bouvignies@ens.psl.eu" } ]
   dependencies = [
-    "numpy>=1.25.0",
-    "scipy>=1.9.3",
-    "matplotlib>=3.7.1",
-    "lmfit>=1.2.1",
-    "pydantic>=2.0.1",
-    "cachetools>=5.3.1",
-    "rich>=13.4.2",
-    "tomli>=2.0.1",
-    "rapidfuzz>=3.1.1",
+      "numpy>=1.25.0",
+      "scipy>=1.9.3",
+      "matplotlib>=3.7.1",
+      "lmfit>=1.2.1",
+      "pydantic>=2.0.1",
+      "cachetools>=5.3.1",
+      "rich>=13.4.2",
+      "tomli>=2.0.1",
+      "rapidfuzz>=3.1.1",
+      "emcee>=3.1.4",
   ]
   requires-python = ">=3.10"
   readme = "README.md"
@@ -35,7 +36,8 @@
   source = "scm"
 
 [tool.pdm.dev-dependencies]
-  linting = [ "black>=23.3.0", "ruff>=0.0.277" ]
+  test = [ "pytest>=7.4.0" ]
+  lint = [ "black>=23.7.0", "ruff>=0.0.278" ]
 
 [tool.black]
   target-version = [ "py310" ]
