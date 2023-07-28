@@ -4,26 +4,43 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import numpy as np
+from scipy.optimize import root
 
-from chemex.models.constraints import pop_2st
 from chemex.models.factory import model_factory
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
 
 if TYPE_CHECKING:
     from chemex.configuration.conditions import Conditions
+    from chemex.typing import ArrayFloat
 
 NAME = "2st_binding"
 
 TPL = ("temperature", "p_total", "l_total")
 
 
+def calculate_residuals(
+    concentrations: ArrayFloat, p_total: float, l_total: float, kd: float
+) -> ArrayFloat:
+    p_free, l_free, pl = concentrations
+    return np.array(
+        [
+            l_total - l_free - pl,
+            p_total - p_free - pl,
+            kd * pl - p_free * l_free,
+        ]
+    )
+
+
 @lru_cache(maxsize=100)
-def calculate_l_free_2st_binding(kd: float, p_total: float, l_total: float) -> float:
-    coefficients = (p_total * l_total, -(l_total + p_total + kd), 1.0)
-    polynomial = np.polynomial.polynomial.Polynomial(coefficients)
-    p_bound = min(polynomial.roots())
-    return l_total - p_bound
+def calculate_concentrations(
+    p_total: float, l_total: float, kd: float
+) -> dict[str, float]:
+    concentrations_start = (p_total, l_total, 0.0)
+    results = root(
+        calculate_residuals, concentrations_start, args=(p_total, l_total, kd)
+    )
+    return dict(zip(("p_free", "l_free", "pl"), results["x"], strict=True))
 
 
 def make_settings_2st_binding(conditions: Conditions) -> dict[str, ParamLocalSetting]:
@@ -49,9 +66,17 @@ def make_settings_2st_binding(conditions: Conditions) -> dict[str, ParamLocalSet
             name_setting=NameSetting("kon", "", ("temperature",)),
             expr="{koff} / max({kd}, 1e-100)",
         ),
+        "p_free": ParamLocalSetting(
+            name_setting=NameSetting("p_free", "", TPL),
+            expr=f"calc_conc({p_total}, {l_total}, {{kd}})['p_free']",
+        ),
         "l_free": ParamLocalSetting(
             name_setting=NameSetting("l_free", "", TPL),
-            expr=f"l_free_2st({{kd}}, {p_total}, {l_total})",
+            expr=f"calc_conc({p_total}, {l_total}, {{kd}})['l_free']",
+        ),
+        "pl": ParamLocalSetting(
+            name_setting=NameSetting("pl", "", TPL),
+            expr=f"calc_conc({p_total}, {l_total}, {{kd}})['pl']",
         ),
         "kab": ParamLocalSetting(
             name_setting=NameSetting("kab", "", TPL),
@@ -63,19 +88,16 @@ def make_settings_2st_binding(conditions: Conditions) -> dict[str, ParamLocalSet
         ),
         "pa": ParamLocalSetting(
             name_setting=NameSetting("pa", "", TPL),
-            expr="pop_2st({kab}, {kba})['pa']",
+            expr=f"{{p_free}} / {p_total}",
         ),
         "pb": ParamLocalSetting(
             name_setting=NameSetting("pb", "", TPL),
-            expr="pop_2st({kab}, {kba})['pb']",
+            expr=f"{{pl}} / {p_total}",
         ),
     }
 
 
 def register() -> None:
     model_factory.register(name=NAME, setting_maker=make_settings_2st_binding)
-    user_functions = {
-        "l_free_2st": calculate_l_free_2st_binding,
-        "pop_2st": pop_2st,
-    }
+    user_functions = {"calc_conc": calculate_concentrations}
     user_function_registry.register(name=NAME, user_functions=user_functions)
