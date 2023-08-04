@@ -15,6 +15,8 @@ rng = np.random.default_rng()
 
 
 def get_scale(exp: ArrayFloat, err: ArrayFloat, calc: ArrayFloat) -> float:
+    if (calc == 0).all():
+        return 1.0
     try:
         calc_err2 = calc / err**2
         return sum(exp * calc_err2) / sum(calc * calc_err2)

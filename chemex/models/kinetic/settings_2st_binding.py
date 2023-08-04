@@ -40,7 +40,8 @@ def calculate_concentrations(
     results = root(
         calculate_residuals, concentrations_start, args=(p_total, l_total, kd)
     )
-    return dict(zip(("p_free", "l_free", "pl"), results["x"], strict=True))
+    p_free, l_free, pl = results["x"]
+    return {"p_free": p_free, "l_free": l_free, "pl": pl}
 
 
 def make_settings_2st_binding(conditions: Conditions) -> dict[str, ParamLocalSetting]:

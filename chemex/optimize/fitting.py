@@ -26,7 +26,10 @@ from chemex.optimize.helper import (
     print_header,
     print_values_stat,
 )
-from chemex.optimize.minimizer import minimize, minimize_with_report
+from chemex.optimize.minimizer import (
+    minimize,
+    minimize_with_report,
+)
 from chemex.parameters import database
 
 if TYPE_CHECKING:
@@ -103,6 +106,9 @@ def _fit_groups(
         best_lmfit_params = minimize_with_report(
             group.experiments, group_lmfit_params, fitmethod
         )
+        # best_lmfit_params = minimize_hierarchical(
+        #     group.experiments, group_lmfit_params, fitmethod
+        # )
 
         database.update_from_parameters(best_lmfit_params)
         execute_post_fit(group.experiments, group_path, plot_flg)

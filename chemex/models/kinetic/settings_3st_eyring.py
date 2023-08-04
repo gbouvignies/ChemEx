@@ -11,6 +11,7 @@ from chemex.models.constraints import pop_3st
 from chemex.models.factory import model_factory
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
+from chemex.typing import ArrayFloat
 
 if TYPE_CHECKING:
     from chemex.configuration.conditions import Conditions
@@ -49,7 +50,8 @@ def calculate_kij_3st_eyring(
             dh_bc - dh_c - kelvin * (ds_bc - ds_c),
         )
     )
-    kij_values = kbt_h * np.exp(-ddg_ij / rt)
+    kij_values: ArrayFloat = kbt_h * np.exp(-ddg_ij / rt)
+    kij_values = np.clip(kij_values, 0.0, 1e16)
     kij_names = (f"k{i}{j}" for i, j in permutations("abc", 2))
     return dict(zip(kij_names, kij_values, strict=True))
 
