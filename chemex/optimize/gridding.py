@@ -62,9 +62,12 @@ def run_group_grid(
     shape = tuple(len(values) for values in group_grid.values())
     grid_size = np.prod(shape)
 
-    basename = group.path if group.path != Path(".") else Path("grid")
+    basename = group.path if group.path != Path() else Path("grid")
     filename = path / "Grid" / f"{basename}.out"
     filename.parent.mkdir(parents=True, exist_ok=True)
+
+    best_chisqr = np.inf
+    best_params = group_params
 
     with filename.open("w") as fileout:
         fileout.write(print_header(group_grid))
@@ -75,13 +78,19 @@ def run_group_grid(
 
         for values in track(grid_values, total=float(grid_size), description="   "):
             _set_param_values(group_params, grid_ids, values)
-            group_params = minimize(group.experiments, group_params, fitmethod)
-            stats = calculate_statistics(group.experiments, group_params)
-            chisqr_list.append(stats.get("chisqr"))
-            fileout.write(print_values(values, chisqr_list[-1]))
+            optimized_params = minimize(group.experiments, group_params, fitmethod)
+            stats = calculate_statistics(group.experiments, optimized_params)
+            chisqr: float = stats.get("chisqr", np.inf)
+            chisqr_list.append(chisqr)
+            fileout.write(print_values(values, chisqr))
             fileout.flush()
 
+            if chisqr < best_chisqr:
+                best_chisqr = chisqr
+                best_params = optimized_params
+
     chisqr_array = np.array(chisqr_list).reshape(shape)
+    database.update_from_parameters(best_params)
 
     return GridResult(group_grid, chisqr_array)
 
@@ -142,7 +151,7 @@ def combine_grids(
 def set_params_from_grid(grids_1d: Iterable[GridResult]):
     par_values = {}
     for grid_result in grids_1d:
-        id_, values = list(grid_result.grid.items())[0]
+        id_, values = next(iter(grid_result.grid.items()))
         par_values[id_] = values[grid_result.chisqr.argmin()]
     database.set_param_values(par_values)
 
@@ -239,7 +248,7 @@ def run_grid(
 
     groups = create_groups(experiments)
 
-    grid_results = []
+    grid_results: list[GridResult] = []
     for group in groups:
         if message := group.message:
             print_group_name(message)
@@ -250,8 +259,6 @@ def run_grid(
     grids_1d = make_grids_nd(grid, grids_combined, 1)
     grids_2d = make_grids_nd(grid, grids_combined, 2)
     set_params_from_grid(grids_1d)
-    params = database.build_lmfit_params(experiments.param_ids)
-    database.update_from_parameters(params)
     plot_grid_1d(grids_1d, path / "Grid")
     plot_grid_2d(grids_2d, path / "Grid")
 

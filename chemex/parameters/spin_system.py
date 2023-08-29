@@ -134,7 +134,7 @@ class Group:
 
     def match(self, other: Group) -> bool:
         symbol = other.symbol == self.symbol or not self.symbol
-        number = other.number == self.number or self.number == self.NO_NUMBER
+        number = self.number in (other.number, self.NO_NUMBER)
         suffix = other.suffix == self.suffix or not self.suffix
         return number and symbol and suffix
 
