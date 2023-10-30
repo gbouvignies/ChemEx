@@ -7,7 +7,7 @@ from pydantic import (
     BaseModel,
     BeforeValidator,
     Field,
-    PositiveFloat,
+    NonNegativeFloat,
     ValidationError,
     field_validator,
     model_validator,
@@ -24,10 +24,10 @@ LabelType = Annotated[Literal["1h", "2h", "13c", "15n"], BeforeValidator(to_lowe
 
 @total_ordering
 class Conditions(BaseModel, frozen=True):
-    h_larmor_frq: PositiveFloat | None = None
+    h_larmor_frq: NonNegativeFloat | None = None
     temperature: float | None = None
-    p_total: PositiveFloat | None = None
-    l_total: PositiveFloat | None = None
+    p_total: NonNegativeFloat | None = None
+    l_total: NonNegativeFloat | None = None
     d2o: float | None = Field(gt=0.0, lt=1.0, default=None)
     label: tuple[LabelType, ...] = ()
 
