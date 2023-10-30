@@ -14,14 +14,9 @@ def pop_2st(kab: float = 0.0, kba: float = 0.0) -> dict[str, float]:
     if np.isclose(kba, 0.0):
         return {"pa": 0.0, "pb": 1.0}
 
-    mat = np.array([[kab, -kba], [1.0, 1.0]])
+    kex = kab + kba
 
-    if np.isclose(np.linalg.det(mat), 0.0):
-        return {"pa": 1.0, "pb": 0.0}
-
-    vec = np.array([0.0, 1.0])
-    res = linalg.solve(mat, vec)
-    return {"pa": res[0], "pb": res[1]}
+    return {"pa": kba / kex, "pb": kab / kex}
 
 
 @lru_cache(maxsize=100)
@@ -57,9 +52,9 @@ def pop_3st(
         return {"pa": 1.0, "pb": 0.0, "pc": 0.0}
 
     vec = np.array([0.0, 0.0, 1.0])
-    res = linalg.solve(mat, vec)
+    pa, pb, pc = linalg.solve(mat, vec)
 
-    return {"pa": res[0], "pb": res[1], "pc": res[2]}
+    return {"pa": pa, "pb": pb, "pc": pc}
 
 
 @lru_cache(maxsize=100)
@@ -106,6 +101,6 @@ def pop_4st(
         return {"pa": 1.0, "pb": 0.0, "pc": 0.0, "pd": 0.0}
 
     vec = np.array([0.0, 0.0, 0.0, 1.0])
-    res = linalg.solve(mat, vec)
+    pa, pb, pc, pd = linalg.solve(mat, vec)
 
-    return {"pa": res[0], "pb": res[1], "pc": res[2], "pd": res[3]}
+    return {"pa": pa, "pb": pb, "pc": pc, "pd": pd}
