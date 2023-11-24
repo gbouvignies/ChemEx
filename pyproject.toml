@@ -7,16 +7,16 @@
   description = "An analysis program for chemical exchange detected by NMR"
   authors = [ { name = "Guillaume Bouvignies", email = "guillaume.bouvignies@ens.psl.eu" } ]
   dependencies = [
-      "numpy>=1.26.1",
-      "scipy>=1.11.3",
-      "matplotlib>=3.8.0",
-      "lmfit>=1.2.2",
-      "pydantic>=2.4.2",
-      "cachetools>=5.3.2",
-      "rich>=13.6.0",
-      "tomli>=2.0.1",
-      "rapidfuzz>=3.4.0",
-      "emcee>=3.1.4",
+    "numpy>=1.26.1",
+    "scipy>=1.11.3",
+    "matplotlib>=3.8.0",
+    "lmfit>=1.2.2",
+    "pydantic>=2.4.2",
+    "cachetools>=5.3.2",
+    "rich>=13.6.0",
+    "tomli>=2.0.1",
+    "rapidfuzz>=3.4.0",
+    "emcee>=3.1.4",
   ]
   requires-python = ">=3.10,<3.13"
   readme = "README.md"
@@ -36,43 +36,12 @@
   source = "scm"
 
 [tool.pdm.dev-dependencies]
-  test = [ "pytest>=7.4.0" ]
-  lint = [ "black>=23.7.0", "ruff>=0.0.278" ]
-
-[tool.black]
-  target-version = [ "py310" ]
+  test = [ "pytest>=7.4.3" ]
+  lint = [ "ruff>=0.1.3" ]
 
 [tool.ruff]
-  select = [
-    "E",
-    "F",
-    "W",   # flake8
-    "B",   # flake8-bugbear
-    "I",   # isort
-    "ARG", # flake8-unused-arguments
-    "C4",  # flake8-comprehensions
-    "EM",  # flake8-errmsg
-    "ICN", # flake8-import-conventions
-    "ISC", # flake8-implicit-str-concat
-    "G",   # flake8-logging-format
-    "PGH", # pygrep-hooks
-    "PIE", # flake8-pie
-    "PL",  # pylint
-    "PT",  # flake8-pytest-style
-    "PTH", # flake8-use-pathlib
-    "RET", # flake8-return
-    "RUF", # Ruff-specific
-    "SIM", # flake8-simplify
-    "T20", # flake8-print
-    # "TCH", # flake8-type-checking
-    "UP",  # pyupgrade
-    "YTT", # flake8-2020
-    "EXE", # flake8-executable
-    "NPY", # NumPy specific rules
-    "PD",  # pandas-vet
-  ]
-  ignore = [ "PLR0913", "PD011", "RUF012", "PGH001" ] # Temporary ignore
-  target-version = "py310"
+  select = [ "ALL" ]
+  ignore = [ "ANN101", "ANN102" ]
 
   [tool.ruff.isort]
     known-first-party = [ "chemex" ]
@@ -82,3 +51,6 @@
 
   [tool.ruff.pep8-naming]
     classmethod-decorators = [ "pydantic.field_validator", "pydantic.model_validator" ]
+
+  [tool.ruff.lint.pydocstyle]
+    convention = "google"
