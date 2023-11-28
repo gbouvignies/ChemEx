@@ -14,14 +14,14 @@ if TYPE_CHECKING:
     from argparse import Namespace
 
 
-def plot_param(args: Namespace):
+def plot_param(args: Namespace) -> None:
     """Plot values of a parameter versus residue number."""
     params = configparser.ConfigParser()
 
     if len(args.parameters) > 1:
         sys.exit(
             "\nError: Multiple parameter files were given. 'chemex plot_param' "
-            "should only be run with a single parameter file.\n"
+            "should only be run with a single parameter file.\n",
         )
 
     params.read(str(args.parameters.pop()))
@@ -53,7 +53,12 @@ def plot_param(args: Namespace):
 
     for section, (residues, values, errors) in curves.items():
         axis.errorbar(
-            residues, values, yerr=errors, label=section, fmt=".", barsabove=True
+            residues,
+            values,
+            yerr=errors,
+            label=section,
+            fmt=".",
+            barsabove=True,
         )
 
     plt.legend()
