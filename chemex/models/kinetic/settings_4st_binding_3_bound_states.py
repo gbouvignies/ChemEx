@@ -36,13 +36,17 @@ def calculate_residuals(
             kd_ab * pl1 - p_ * l_,
             keq_bc * pl1 - pl2,
             keq_cd * pl2 - pl3,
-        ]
+        ],
     )
 
 
 @lru_cache(maxsize=100)
 def calculate_concentrations(
-    p_total: float, l_total: float, kd_ab: float, keq_bc: float, keq_cd: float
+    p_total: float,
+    l_total: float,
+    kd_ab: float,
+    keq_bc: float,
+    keq_cd: float,
 ) -> dict[str, float]:
     concentrations_start = (p_total, l_total, 0.0, 0.0, 0.0)
     results = root(
@@ -185,7 +189,8 @@ def make_settings_4st_binding_3_bound_states(
 
 def register() -> None:
     model_factory.register(
-        name=NAME, setting_maker=make_settings_4st_binding_3_bound_states
+        name=NAME,
+        setting_maker=make_settings_4st_binding_3_bound_states,
     )
     user_functions = {
         "concentrations": calculate_concentrations,

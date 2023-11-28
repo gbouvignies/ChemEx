@@ -286,7 +286,9 @@ def _build_vectors(basis: Basis) -> DictArrayFloat:
 
 
 def _get_indices(
-    basis: Basis, transition_name: str, state: str
+    basis: Basis,
+    transition_name: str,
+    state: str,
 ) -> tuple[tuple[list[int], list[int]], list[float]]:
     rows: list[int] = []
     cols: list[int] = []
@@ -335,15 +337,15 @@ class Basis:
     spin_system: str = ""
 
     @property
-    def name(self):
-        return ".".join([self.type, self.extension, self.spin_system])
+    def name(self) -> str:
+        return f"{self.type}.{self.extension}.{self.spin_system}"
 
     @property
-    def components(self):
+    def components(self) -> list[str]:
         return _BASES[self.type]
 
     @property
-    def atoms(self):
+    def atoms(self) -> dict[str, str]:
         return {
             letter: atom
             for letter, atom in _ATOMS.get(self.spin_system, {}).items()
@@ -364,5 +366,5 @@ class Basis:
         required_names |= {f"p{state}" for state in model.states}
         return required_names
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.components)

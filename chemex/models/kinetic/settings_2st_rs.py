@@ -27,13 +27,16 @@ def make_settings_2st_rs(_conditions: Conditions) -> dict[str, ParamLocalSetting
             vary=True,
         ),
         "pa": ParamLocalSetting(
-            name_setting=NameSetting("pa", "g", TPL), expr="1.0 - {pb}"
+            name_setting=NameSetting("pa", "g", TPL),
+            expr="1.0 - {pb}",
         ),
         "kab": ParamLocalSetting(
-            name_setting=NameSetting("kab", "g", TPL), expr="{kex_ab} * {pb}"
+            name_setting=NameSetting("kab", "g", TPL),
+            expr="{kex_ab} * {pb}",
         ),
         "kba": ParamLocalSetting(
-            name_setting=NameSetting("kba", "g", TPL), expr="{kex_ab} * {pa}"
+            name_setting=NameSetting("kba", "g", TPL),
+            expr="{kex_ab} * {pa}",
         ),
     }
 

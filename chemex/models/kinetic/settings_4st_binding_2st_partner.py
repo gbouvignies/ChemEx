@@ -38,13 +38,18 @@ def calculate_residuals(
             kd2 * pl2 - p * l2,
             keq_l * l1 - l2,
             keq_pl * pl2 - pl3,
-        ]
+        ],
     )
 
 
 @lru_cache(maxsize=100)
 def calculate_concentrations(
-    p_total: float, l_total: float, kd1: float, kd2: float, keq_l: float, keq_pl: float
+    p_total: float,
+    l_total: float,
+    kd1: float,
+    kd2: float,
+    keq_l: float,
+    keq_pl: float,
 ) -> dict[str, float]:
     concentrations_start = (p_total, l_total / 2, l_total / 2, 0.0, 0.0, 0.0)
     results = root(
@@ -200,7 +205,8 @@ def make_settings_4st_binding_partner_2st(
 
 def register() -> None:
     model_factory.register(
-        name=NAME, setting_maker=make_settings_4st_binding_partner_2st
+        name=NAME,
+        setting_maker=make_settings_4st_binding_partner_2st,
     )
     user_functions = {
         "calc_conc": calculate_concentrations,

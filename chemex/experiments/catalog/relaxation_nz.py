@@ -39,18 +39,20 @@ class RelaxationNzSettings(RelaxationSettings):
 
 
 class RelaxationNzConfig(
-    ExperimentConfig[RelaxationNzSettings, RelaxationDataSettings]
+    ExperimentConfig[RelaxationNzSettings, RelaxationDataSettings],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
         state = self.experiment.observed_state
         return ToBeFitted(
-            rates=[f"r1_i_{state}"], model_free=[f"tauc_{state}", f"s2_{state}"]
+            rates=[f"r1_i_{state}"],
+            model_free=[f"tauc_{state}", f"s2_{state}"],
         )
 
 
 def build_spectrometer(
-    config: RelaxationNzConfig, spin_system: SpinSystem
+    config: RelaxationNzConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions

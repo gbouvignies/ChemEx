@@ -45,7 +45,7 @@ class Reporter:
 
         ndata = len(residuals)
         nvarys = len(
-            [param for param in params.values() if param.vary and not param.expr]
+            [param for param in params.values() if param.vary and not param.expr],
         )
         redchi = chisqr / max(1, ndata - nvarys)
 
@@ -62,7 +62,9 @@ class Reporter:
 
 
 def minimize(
-    experiments: Experiments, params: Parameters, fitmethod: str
+    experiments: Experiments,
+    params: Parameters,
+    fitmethod: str,
 ) -> Parameters:
     kws = {
         "brute": {"keep": "all"},
@@ -75,7 +77,9 @@ def minimize(
 
 
 def minimize_with_report(
-    experiments: Experiments, params: Parameters, fitmethod: str
+    experiments: Experiments,
+    params: Parameters,
+    fitmethod: str,
 ) -> Parameters:
     kws = {
         "brute": {"keep": "all"},
@@ -113,7 +117,10 @@ def residuals_hierarchical(params: Parameters, param_tree: ParamTree) -> ArrayFl
 
     for branch in param_tree.branches:
         branch_results = lmfit.minimize(
-            residuals_hierarchical, params, args=(branch,), method="leastsq"
+            residuals_hierarchical,
+            params,
+            args=(branch,),
+            method="leastsq",
         )
         residuals_list.append(branch_results.residual)
 
@@ -143,7 +150,10 @@ def minimize_hierarchical(experiments: Experiments, params: Parameters, fitmetho
             param.vary = False
 
     minimizer = Minimizer(
-        residuals_hierarchical, params, fcn_args=(param_tree,), iter_cb=reporter.iter_cb
+        residuals_hierarchical,
+        params,
+        fcn_args=(param_tree,),
+        iter_cb=reporter.iter_cb,
     )
 
     reporter.print_header()

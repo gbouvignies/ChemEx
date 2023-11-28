@@ -35,13 +35,17 @@ def calculate_residuals(
             pfree + pl1 + pl2 - p_total,
             lfree * pfree - kd_ab * pl1,
             kbc * pl1 - kcb * pl2,
-        ]
+        ],
     )
 
 
 @lru_cache(maxsize=100)
 def calculate_concentrations(
-    p_total: float, l_total: float, kd_ab: float, kbc: float, kcb: float
+    p_total: float,
+    l_total: float,
+    kd_ab: float,
+    kbc: float,
+    kcb: float,
 ) -> dict[str, float]:
     concentrations_start = (p_total, 0.0, 0.0)
     results = root(

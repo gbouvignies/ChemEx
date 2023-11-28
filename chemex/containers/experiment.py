@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from itertools import chain
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
 
@@ -25,6 +25,8 @@ if TYPE_CHECKING:
     from chemex.plotters.plotter import Plotter
     from chemex.printers.data import Printer
 
+Self = TypeVar("Self", bound="Experiment")
+
 
 @dataclass
 class Experiment:
@@ -37,7 +39,7 @@ class Experiment:
 
     def residuals(self, params: ParametersLF) -> list[float]:
         return list(
-            chain.from_iterable(profile.residuals(params) for profile in self.profiles)
+            chain.from_iterable(profile.residuals(params) for profile in self.profiles),
         )
 
     def plot(self, path: Path):
@@ -60,8 +62,8 @@ class Experiment:
         profiles: list[Profile] = []
         filtered: list[Profile] = []
         for profile in profiles_all:
-            included = include is None or profile.name.part_of(include)
-            excluded = exclude is not None and profile.name.part_of(exclude)
+            included = include is None or profile.spin_system.part_of(include)
+            excluded = exclude is not None and profile.spin_system.part_of(exclude)
             if included and not excluded:
                 profiles.append(profile)
             else:
@@ -76,7 +78,7 @@ class Experiment:
     def _any_duplicate(self):
         return any(profile.any_duplicate() for profile in self.profiles)
 
-    def estimate_noise(self, kind: str):
+    def estimate_noise(self, kind: str) -> None:
         # TODO: Validation should be moved to the configuration file module
         implemented = ("file", "scatter", "duplicates")
         if kind not in implemented:
@@ -98,33 +100,45 @@ class Experiment:
         for profile in self.profiles:
             profile.prepare_for_simulation()
 
-    def monte_carlo(self) -> Experiment:
+    def monte_carlo(self: Self) -> Self:
         profiles = [profile.monte_carlo() for profile in self.profiles]
-        return Experiment(
-            self.filename, self.name, profiles, self.printer, self.plotter
+        return type(self)(
+            self.filename,
+            self.name,
+            profiles,
+            self.printer,
+            self.plotter,
         )
 
-    def bootstrap(self) -> Experiment:
+    def bootstrap(self: Self) -> Self:
         profiles = [profile.bootstrap() for profile in self.profiles]
-        return Experiment(
-            self.filename, self.name, profiles, self.printer, self.plotter
+        return type(self)(
+            self.filename,
+            self.name,
+            profiles,
+            self.printer,
+            self.plotter,
         )
 
-    def bootstrap_ns(self, groups: list[Group]) -> Experiment:
+    def bootstrap_ns(self: Self, groups: list[Group]) -> Self:
         """Residue-specific bootstrap."""
         profiles: dict[Group, list[Profile]] = {}
         for profile in self.profiles:
-            profiles.setdefault(profile.name.groups["i"], []).append(profile)
+            profiles.setdefault(profile.spin_system.groups["i"], []).append(profile)
         profiles_bs_ns: list[Profile] = []
         for group in groups:
             profiles_bs_ns.extend(profiles.get(group, []))
-        return Experiment(
-            self.filename, self.name, profiles_bs_ns, self.printer, self.plotter
+        return type(self)(
+            self.filename,
+            self.name,
+            profiles_bs_ns,
+            self.printer,
+            self.plotter,
         )
 
     @property
     def groups(self) -> set[Group]:
-        return {profile.name.groups["i"] for profile in self.profiles}
+        return {profile.spin_system.groups["i"] for profile in self.profiles}
 
     @property
     def param_id_sets(self) -> list[set[str]]:
@@ -132,15 +146,19 @@ class Experiment:
             set(database.get_parameters(profile.param_ids)) for profile in self.profiles
         ]
 
-    def get_relevant_subset(self, param_ids: set[str]) -> Experiment:
+    def get_relevant_subset(self: Self, param_ids: set[str]) -> Self:
         profiles = [
             profile
             for profile in self.profiles
             if set(database.get_parameters(profile.param_ids)) & param_ids
         ]
 
-        return Experiment(
-            self.filename, self.name, profiles, self.printer, self.plotter
+        return type(self)(
+            self.filename,
+            self.name,
+            profiles,
+            self.printer,
+            self.plotter,
         )
 
     def __iter__(self) -> Iterator[Profile]:

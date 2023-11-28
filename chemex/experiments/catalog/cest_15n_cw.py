@@ -63,7 +63,8 @@ class Cest15NCwConfig(ExperimentConfig[Cest15NCwSettings, CestDataSettings]):
 
 
 def build_spectrometer(
-    config: Cest15NCwConfig, spin_system: SpinSystem
+    config: Cest15NCwConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions
@@ -116,7 +117,7 @@ class Cest15NCwSequence:
             )
 
         return np.array(
-            [spectrometer.detect(intensities[offset]) for offset in offsets]
+            [spectrometer.detect(intensities[offset]) for offset in offsets],
         )
 
 

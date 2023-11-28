@@ -25,12 +25,13 @@ if TYPE_CHECKING:
 
 
 def calculate_statistics(
-    experiments: Experiments, params_lf: ParametersLF
+    experiments: Experiments,
+    params_lf: ParametersLF,
 ) -> dict[str, int | float]:
     residuals = experiments.residuals(params_lf)
     ndata = len(residuals)
     nvarys = len(
-        [param for param in params_lf.values() if param.vary and not param.expr]
+        [param for param in params_lf.values() if param.vary and not param.expr],
     )
     chisqr = sum(residuals**2)
     redchi = chisqr / max(1, ndata - nvarys)
@@ -63,7 +64,7 @@ def _write_statistics(experiments: Experiments, path: Path):
         f.write(f"\"reduced-chi-square\"                   = {stats['redchi']: .5e}\n")
         f.write(f"\"chi-squared test\"                     = {stats['pvalue']: .5e}\n")
         f.write(
-            f"\"Kolmogorov-Smirnov test\"              = {stats['ks_pvalue']: .5e}\n"
+            f"\"Kolmogorov-Smirnov test\"              = {stats['ks_pvalue']: .5e}\n",
         )
         f.write(f"\"Akaike Information Criterion (AIC)\"   = {stats['aic']: .5e}\n")
         f.write(f"\"Bayesian Information Criterion (BIC)\" = {stats['bic']: .5e}\n")
@@ -151,7 +152,9 @@ def print_values(values: Iterable[float], chisqr: float) -> str:
 
 
 def print_values_stat(
-    params_lf: ParametersLF, fnames: Iterable[str], chisqr: float
+    params_lf: ParametersLF,
+    fnames: Iterable[str],
+    chisqr: float,
 ) -> str:
     body_values_list = []
     for fname in fnames:

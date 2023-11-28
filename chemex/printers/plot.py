@@ -30,13 +30,17 @@ class DataPlotPrinter:
         ]
 
         for metadata, exp, err, mask in zip(
-            data.metadata, data.exp, data.err, data.mask, strict=True
+            data.metadata,
+            data.exp,
+            data.err,
+            data.mask,
+            strict=True,
         ):
             start = " " if mask else "#"
             end = "" if mask else " # NOT USED IN THE FIT"
             output.append(
                 f"{start} {metadata: {self.first_column_fmt}} {exp: 17.8e}"
-                f" {err[0]: 17.8e}{end}"
+                f" {err[0]: 17.8e}{end}",
             )
         return "\n".join(output) + "\n\n"
 
@@ -67,13 +71,17 @@ class CpmgDataPlotPrinter(DataPlotPrinter):
         ]
 
         for metadata, exp, err, mask in zip(
-            data.metadata, data.exp, data.err, data.mask, strict=True
+            data.metadata,
+            data.exp,
+            data.err,
+            data.mask,
+            strict=True,
         ):
             start = " " if mask else "#"
             end = "" if mask else " # NOT USED IN THE FIT"
             output.append(
                 f"{start} {metadata: {self.first_column_fmt}} {exp: 17.8e}"
-                f" {err[0]: 17.8e} {err[1]: 17.8e}{end}"
+                f" {err[0]: 17.8e} {err[1]: 17.8e}{end}",
             )
         return "\n".join(output) + "\n\n"
 
@@ -89,5 +97,5 @@ class CpmgDataPlotPrinter(DataPlotPrinter):
 data_plot_printers: dict[str, PlotPrinter] = {
     "cest": DataPlotPrinter("OFFSET (PPM)", "12.2f"),
     "cpmg": CpmgDataPlotPrinter(),
-    "relaxation": DataPlotPrinter("TIME (S)", "12.2f"),
+    "relaxation": DataPlotPrinter("TIME (S)", "12.6f"),
 }

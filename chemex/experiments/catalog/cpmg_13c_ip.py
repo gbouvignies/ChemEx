@@ -51,7 +51,8 @@ class Cpmg13CIpConfig(ExperimentConfig[Cpmg13CIpSettings, RelaxationDataSettings
 
 
 def build_spectrometer(
-    config: Cpmg13CIpConfig, spin_system: SpinSystem
+    config: Cpmg13CIpConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions

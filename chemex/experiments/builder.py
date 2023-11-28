@@ -61,7 +61,10 @@ def _apply_selection(dataset: Dataset, selection: Selection) -> Dataset:
 
 
 def _create_dataset(
-    filename: Path, live: Live, factory: Creators, config: ConfigType
+    filename: Path,
+    live: Live,
+    factory: Creators,
+    config: ConfigType,
 ) -> Dataset:
     try:
         dataset = factory.create_dataset(filename.parent, config)
@@ -73,7 +76,10 @@ def _create_dataset(
 
 
 def _create_config(
-    filename: Path, live: Live, factory: Creators, config_dict: MutableMapping[str, Any]
+    filename: Path,
+    live: Live,
+    factory: Creators,
+    config_dict: MutableMapping[str, Any],
 ) -> ConfigType:
     try:
         config = factory.create_config(config_dict)
@@ -116,7 +122,7 @@ def build_experiment(filename: Path, selection: Selection) -> Experiment:
                     printer,
                     filterer,
                     config.data.scaled,
-                )
+                ),
             )
 
         live.update(get_reading_exp_text(filename, experiment_name, len(profiles)))

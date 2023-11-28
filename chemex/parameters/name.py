@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass, field
 from functools import cached_property
 from re import Pattern
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 from rapidfuzz.process import extractOne
 
@@ -13,6 +13,8 @@ from chemex.parameters.spin_system import SpinSystem
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Iterable
+
+Self = TypeVar("Self", bound="ParamName")
 
 _EXPAND = {"-": "_", "+": "_", ".": "_"}
 
@@ -73,7 +75,7 @@ class ParamName:
     conditions: Conditions = field(default_factory=Conditions.model_construct)
     search_keys: set[Hashable] = field(init=False, compare=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.name = self.name.strip().upper()
         self.conditions = self.conditions.rounded()
         self.search_keys = (
@@ -81,14 +83,14 @@ class ParamName:
         )
 
     @classmethod
-    def from_section(cls, section: str = "") -> ParamName:
+    def from_section(cls: type[Self], section: str = "") -> Self:
         parsed = _parse(_RE_SECTION, section.strip(' []"'))
         name = parsed.get("name")
         if name is None:
             name = ""
         spin_system = SpinSystem(parsed.get("spin_system"))
         conditions = Conditions.model_validate(parsed)
-        return ParamName(name, spin_system, conditions)
+        return cls(name, spin_system, conditions)
 
     @cached_property
     def section(self) -> str:
@@ -109,10 +111,10 @@ class ParamName:
         return "_".join(parts).strip("_").upper()
 
     @cached_property
-    def id(self) -> str:
+    def id_(self) -> str:
         return f"__{_expand(self.folder)}"
 
-    def match(self, other: ParamName) -> bool:
+    def match(self: Self, other: Self) -> bool:
         if self.name and self.name not in other.name:
             return False
         if not self.spin_system.match(other.spin_system):
@@ -122,14 +124,16 @@ class ParamName:
         return True
 
     def get_closest_id(self, ids: Iterable[str]) -> str:
-        best_match, _, _ = extractOne(self.id, ids)
+        best_match, _, _ = extractOne(self.id_, ids)
         return best_match
 
-    def __and__(self, other: ParamName) -> ParamName:
+    def __and__(self: Self, other: object) -> Self:
+        if not isinstance(other, type(self)):
+            return NotImplemented
         name = self.name if self.name == other.name else ""
         spin_system = self.spin_system & other.spin_system
         conditions = self.conditions & other.conditions
-        return ParamName(name, spin_system, conditions)
+        return type(self)(name, spin_system, conditions)
 
     def __bool__(self) -> bool:
         return bool(self.name) or bool(self.spin_system) or bool(self.conditions)

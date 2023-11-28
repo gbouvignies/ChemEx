@@ -46,7 +46,9 @@ def plot_cpmg(file_pdf: PdfPages, name: str, data_exp: Data, data_calc: Data):
 
 
 def intensities_to_rates(
-    intensities: ArrayFloat, intensities0: ArrayFloat, time_t2: float
+    intensities: ArrayFloat,
+    intensities0: ArrayFloat,
+    time_t2: float,
 ) -> ArrayFloat:
     normalized_intensities = intensities / np.mean(intensities0, axis=-1, keepdims=True)
 
@@ -85,7 +87,9 @@ def calculate_errorbars(data: Data, rates: ArrayFloat, time_t2: float) -> ArrayF
     intensities0_ensemble = intensities0 + intensities0_err * randn0
 
     rates_ensemble: ArrayFloat = intensities_to_rates(
-        intensities_ensemble, intensities0_ensemble, time_t2
+        intensities_ensemble,
+        intensities0_ensemble,
+        time_t2,
     )
 
     # Set infinity rates to high values as `np.percentile` does not take infinity
@@ -137,7 +141,8 @@ def create_plot_data_calc(profile: Profile, config: CpmgExperimentConfig) -> Dat
     data_for_calculation = Data(exp=filler, err=filler, metadata=ncycs)
 
     intensities = profile.data.scale * profile.pulse_sequence.calculate(
-        spectrometer, data_for_calculation
+        spectrometer,
+        data_for_calculation,
     )
 
     nu_cpmgs = ncycs_to_nu_cpmgs(ncycs, time_t2)
@@ -148,7 +153,7 @@ def create_plot_data_calc(profile: Profile, config: CpmgExperimentConfig) -> Dat
 
 
 class CpmgPlotter(Generic[T]):
-    def __init__(self, filename: Path, config: T, **_extra: Any):
+    def __init__(self, filename: Path, config: T, **_extra: Any) -> None:
         self.filename = filename
         self.config = config
         self.printer: PlotPrinter = data_plot_printers["cpmg"]
@@ -168,9 +173,13 @@ class CpmgPlotter(Generic[T]):
             for profile in sorted(profiles):
                 data_exp = create_plot_data_exp(profile, self.config)
                 data_calc = create_plot_data_calc(profile, self.config)
-                plot_cpmg(file_pdf, str(profile.name), data_exp, data_calc)
-                file_exp.write(self.printer.print_exp(str(profile.name), data_exp))
-                file_calc.write(self.printer.print_calc(str(profile.name), data_calc))
+                plot_cpmg(file_pdf, str(profile.spin_system), data_exp, data_calc)
+                file_exp.write(
+                    self.printer.print_exp(str(profile.spin_system), data_exp)
+                )
+                file_calc.write(
+                    self.printer.print_calc(str(profile.spin_system), data_calc)
+                )
 
     def plot_simulation(self, path: Path, profiles: list[Profile]) -> None:
         basename = path / self.filename.name
@@ -185,5 +194,7 @@ class CpmgPlotter(Generic[T]):
             for profile in sorted(profiles):
                 data_exp = create_plot_data_exp(profile, self.config)
                 data_calc = create_plot_data_calc(profile, self.config)
-                plot_cpmg(file_pdf, str(profile.name), data_exp, data_calc)
-                file_sim.write(self.printer.print_calc(str(profile.name), data_calc))
+                plot_cpmg(file_pdf, str(profile.spin_system), data_exp, data_calc)
+                file_sim.write(
+                    self.printer.print_calc(str(profile.spin_system), data_calc)
+                )

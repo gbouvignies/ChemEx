@@ -23,7 +23,8 @@ if TYPE_CHECKING:
 
 @cache
 def _build_settings(
-    basis: Basis, conditions: Conditions
+    basis: Basis,
+    conditions: Conditions,
 ) -> tuple[LocalSettings, LocalSettings]:
     settings_spins, settings_spins_mf = build_spin_param_settings(basis, conditions)
     settings_kinetics = model_factory.create(model.name, conditions)
@@ -32,7 +33,11 @@ def _build_settings(
     return settings, settings_mf
 
 
-def _set_to_fit(parameters: Parameters, name_map: dict[str, str], fitted: list[str]):
+def _set_to_fit(
+    parameters: Parameters,
+    name_map: dict[str, str],
+    fitted: list[str],
+) -> None:
     pool = set(name_map)
     for fitted_name in fitted:
         selection = {name for name in pool if name.startswith(fitted_name)}
@@ -44,7 +49,9 @@ def _set_to_fit(parameters: Parameters, name_map: dict[str, str], fitted: list[s
 
 
 def _build_parameters(
-    settings: LocalSettings, spin_system: SpinSystem, conditions: Conditions
+    settings: LocalSettings,
+    spin_system: SpinSystem,
+    conditions: Conditions,
 ) -> tuple[dict[str, str], Parameters]:
     param_names = {
         local_name: setting.name_setting.get_param_name(spin_system, conditions)
@@ -52,7 +59,7 @@ def _build_parameters(
     }
 
     name_map = {
-        local_name: param_name.id for local_name, param_name in param_names.items()
+        local_name: param_name.id_ for local_name, param_name in param_names.items()
     }
 
     parameters: Parameters = {}
@@ -77,11 +84,15 @@ def create_parameters(config: ConfigType, liouvillian: LiouvillianIS) -> dict[st
     settings, settings_mf = _build_settings(liouvillian.basis, config.conditions)
 
     name_map, parameters = _build_parameters(
-        settings, liouvillian.spin_system, config.conditions
+        settings,
+        liouvillian.spin_system,
+        config.conditions,
     )
 
     name_map_mf, parameters_mf = _build_parameters(
-        settings_mf, liouvillian.spin_system, config.conditions
+        settings_mf,
+        liouvillian.spin_system,
+        config.conditions,
     )
 
     _set_to_fit(parameters, name_map, config.to_be_fitted.rates)

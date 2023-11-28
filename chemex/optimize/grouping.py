@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING
 
 from chemex.parameters import database
 from chemex.parameters.name import ParamName
-from chemex.parameters.setting import Parameters
 
 if TYPE_CHECKING:
     from chemex.containers.experiments import Experiments
+    from chemex.parameters.setting import Parameters
 
 
 @dataclass
@@ -31,7 +31,8 @@ def ids_to_param_name(param_ids: set[str]) -> ParamName:
 
 
 def group_ids(
-    experiments: Experiments, parameters: Parameters | None = None
+    experiments: Experiments,
+    parameters: Parameters | None = None,
 ) -> list[tuple[ParamName, set[str]]]:
     if parameters is None:
         parameters = database.get_parameters(experiments.param_ids)
@@ -94,7 +95,8 @@ def create_groups(experiments: Experiments) -> list[Group]:
         group_param_ids = set(database.get_parameters(param_ids))
         group_experiments = experiments.get_relevant_subset(group_param_ids)
         group_message = group_message_template.format(
-            index=index, group_name=group_name
+            index=index,
+            group_name=group_name,
         )
         groups.append(Group(group_path, group_message, group_experiments))
 
@@ -109,7 +111,8 @@ class ParamTree:
 
 
 def create_group_tree(
-    experiments: Experiments, parameters: Parameters | None = None
+    experiments: Experiments,
+    parameters: Parameters | None = None,
 ) -> ParamTree:
     if parameters is None:
         parameters = database.get_parameters(experiments.param_ids)

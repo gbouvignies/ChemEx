@@ -10,10 +10,10 @@ from chemex.models.constraints import pop_3st
 from chemex.models.factory import model_factory
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
-from chemex.typing import ArrayFloat
 
 if TYPE_CHECKING:
     from chemex.configuration.conditions import Conditions
+    from chemex.typing import ArrayFloat
 
 NAME = "3st_binding_cs"
 
@@ -35,13 +35,17 @@ def calculate_residuals(
             l_total - l_ - pl,
             kab * p1 - kba * p2,
             kd * pl - p2 * l_,
-        ]
+        ],
     )
 
 
 @lru_cache(maxsize=100)
 def calculate_concentrations(
-    p_total: float, l_total: float, kd: float, kab: float, kba: float
+    p_total: float,
+    l_total: float,
+    kd: float,
+    kab: float,
+    kba: float,
 ) -> dict[str, float]:
     concentrations_start = (p_total, 0.0, 0.0, l_total)
     results = root(

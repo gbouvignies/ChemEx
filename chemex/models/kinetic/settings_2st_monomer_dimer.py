@@ -21,14 +21,16 @@ TP = ("temperature", "p_total")
 
 
 def calculate_residuals(
-    concentrations: ArrayFloat, p_total: float, kd: float
+    concentrations: ArrayFloat,
+    p_total: float,
+    kd: float,
 ) -> ArrayFloat:
     monomer, dimer = concentrations
     return np.array(
         [
             monomer + 2.0 * dimer - p_total,
             kd * dimer - monomer**2,
-        ]
+        ],
     )
 
 

@@ -39,7 +39,7 @@ class RelaxationHzNzSettings(RelaxationSettings):
 
 
 class RelaxationHzNzConfig(
-    ExperimentConfig[RelaxationHzNzSettings, RelaxationDataSettings]
+    ExperimentConfig[RelaxationHzNzSettings, RelaxationDataSettings],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
@@ -51,7 +51,8 @@ class RelaxationHzNzConfig(
 
 
 def build_spectrometer(
-    config: RelaxationHzNzConfig, spin_system: SpinSystem
+    config: RelaxationHzNzConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions
@@ -82,10 +83,10 @@ class RelaxationHzNzSequence:
         return np.array(
             [
                 spectrometer.detect(
-                    delay @ p180_s @ delay @ p180_i @ delay @ p180_s @ delay @ start
+                    delay @ p180_s @ delay @ p180_i @ delay @ p180_s @ delay @ start,
                 )
                 for delay in delays
-            ]
+            ],
         )
 
     def is_reference(self, metadata: ArrayFloat) -> ArrayBool:

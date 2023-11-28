@@ -32,13 +32,15 @@ def calculate_residuals(
             monomer + 2.0 * dimer + 4.0 * tetramer - p_total,
             kd1 * dimer - monomer**2,
             kd2 * tetramer - dimer**2,
-        ]
+        ],
     )
 
 
 @lru_cache(maxsize=100)
 def calculate_concentrations(
-    p_total: float, kd1: float, kd2: float
+    p_total: float,
+    kd1: float,
+    kd2: float,
 ) -> dict[str, float]:
     concentrations_start = (p_total, 0.0, 0.0)
     results = root(calculate_residuals, concentrations_start, args=(p_total, kd1, kd2))
@@ -132,7 +134,8 @@ def make_settings_3st_monomer_dimer_tetramer(
 
 def register() -> None:
     model_factory.register(
-        name=NAME, setting_maker=make_settings_3st_monomer_dimer_tetramer
+        name=NAME,
+        setting_maker=make_settings_3st_monomer_dimer_tetramer,
     )
     user_functions = {
         "concentrations": calculate_concentrations,

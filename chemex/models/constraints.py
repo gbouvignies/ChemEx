@@ -45,7 +45,7 @@ def pop_3st(
             [-kab - kac, kba, kca],
             [kab, -kba - kbc, kcb],
             [1.0, 1.0, 1.0],
-        ]
+        ],
     )
 
     if np.isclose(np.linalg.det(mat), 0.0):
@@ -94,7 +94,7 @@ def pop_4st(
             [kab, -kba - kbc - kbd, kcb, kdb],
             [kac, kbc, -kca - kcb - kcd, kdc],
             [1.0, 1.0, 1.0, 1.0],
-        ]
+        ],
     )
 
     if np.isclose(np.linalg.det(mat), 0.0):

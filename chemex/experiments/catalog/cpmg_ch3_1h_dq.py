@@ -56,7 +56,8 @@ class CpmgCh31HDqConfig(ExperimentConfig[CpmgCh31HDqSettings, RelaxationDataSett
 
 
 def build_spectrometer(
-    config: CpmgCh31HDqConfig, spin_system: SpinSystem
+    config: CpmgCh31HDqConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions

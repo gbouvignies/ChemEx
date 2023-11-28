@@ -34,7 +34,7 @@ class RatesIS:
     phi_i: ArrayFloat
     phi_s: ArrayFloat
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.gh = GAMMA["h"]
 
         # Dipolar factors
@@ -70,7 +70,7 @@ class RatesIS:
             tauc,
             s2,
             np.array(
-                [0.0, wi, ws, wh, wi - ws, wi + ws, wi - wh, wi + wh, ws - wh, ws + wh]
+                [0.0, wi, ws, wh, wi - ws, wi + ws, wi - wh, wi + wh, ws - wh, ws + wh],
             ),
         )
 
@@ -147,7 +147,11 @@ class RateNH(RatesIS):
     phi_s = np.deg2rad([10.0, 80.0, 90.0])
 
     def __call__(
-        self, h_frq: float, tauc: float, s2: float, khh: float = 0.0
+        self,
+        h_frq: float,
+        tauc: float,
+        s2: float,
+        khh: float = 0.0,
     ) -> dict[str, float]:
         rates = super().__call__(h_frq, tauc, s2)
         if khh == 0:
@@ -181,7 +185,11 @@ class RateHN(RatesIS):
     phi_s = np.deg2rad([109.6, 90.0, 19.6])
 
     def __call__(
-        self, h_frq: float, tauc: float, s2: float, khh: float = 0.0
+        self,
+        h_frq: float,
+        tauc: float,
+        s2: float,
+        khh: float = 0.0,
     ) -> dict[str, float]:
         rates = super().__call__(h_frq, tauc, s2)
         if khh == 0:
@@ -277,7 +285,7 @@ def get_model_free_expressions(basis: Basis, conditions: Conditions) -> dict[str
     conditions : Conditions
         The conditions for the fitting.
 
-    Returns
+    Returns:
     -------
         A dictionary of rate names and their corresponding expressions.
 

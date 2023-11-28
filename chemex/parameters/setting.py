@@ -24,14 +24,18 @@ class NameSetting:
     spin_system_part: Literal["i", "s", "is", "g", ""] = ""
     conditions_part: tuple[str, ...] = field(default_factory=tuple)
 
-    def get_param_name(self, spin_system: SpinSystem, conditions: Conditions):
+    def get_param_name(
+        self,
+        spin_system: SpinSystem,
+        conditions: Conditions,
+    ) -> ParamName:
         param_spin_system = spin_system.build_sub_spin_system(self.spin_system_part)
         param_conditions = conditions.select_conditions(self.conditions_part)
         return ParamName(self.name, param_spin_system, param_conditions)
 
 
 class ExpressionSetting:
-    def __init__(self, re_dependencies: Pattern[str]):
+    def __init__(self, re_dependencies: Pattern[str]) -> None:
         self.re_dependencies = re_dependencies
         self.__expr: str = ""
         self.__dependencies: set[str] = set()
@@ -119,12 +123,12 @@ class ParamSetting:
         return self.__expr.dependencies
 
     @property
-    def id(self) -> str:
-        return self.param_name.id
+    def id_(self) -> str:
+        return self.param_name.id_
 
     @property
     def args(self) -> tuple[str, float | None, bool | None, float, float, str]:
-        return self.id, self.value, self.vary, self.min, self.max, self.expr
+        return self.id_, self.value, self.vary, self.min, self.max, self.expr
 
     def set(self, default_setting: DefaultSetting) -> None:
         self.value = default_setting.value

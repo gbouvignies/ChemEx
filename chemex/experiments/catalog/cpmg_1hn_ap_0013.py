@@ -56,7 +56,7 @@ class Cpmg1HnAp0013Settings(CpmgSettings):
 
 
 class Cpmg1HnAp0013Config(
-    ExperimentConfig[Cpmg1HnAp0013Settings, RelaxationDataSettings]
+    ExperimentConfig[Cpmg1HnAp0013Settings, RelaxationDataSettings],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
@@ -65,7 +65,8 @@ class Cpmg1HnAp0013Config(
 
 
 def build_spectrometer(
-    config: Cpmg1HnAp0013Config, spin_system: SpinSystem
+    config: Cpmg1HnAp0013Config,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions
@@ -86,7 +87,8 @@ class Cpmg1HnAp0013Sequence:
     settings: Cpmg1HnAp0013Settings
 
     def _get_delays(
-        self, ncycs: ArrayFloat
+        self,
+        ncycs: ArrayFloat,
     ) -> tuple[dict[float, float], dict[float, float], list[float]]:
         ncycs_no_ref = ncycs[ncycs > 0]
         tau_cps = {
@@ -115,13 +117,13 @@ class Cpmg1HnAp0013Sequence:
             [
                 [1, 1, 2, 0, 1, 1, 0, 2, 1, 1, 0, 2, 1, 1, 2, 0],
                 [2, 0, 3, 3, 0, 2, 3, 3, 0, 2, 3, 3, 2, 0, 3, 3],
-            ]
+            ],
         )
         cp_phases2 = np.array(
             [
                 [3, 3, 2, 0, 3, 3, 0, 2, 3, 3, 0, 2, 3, 3, 2, 0],
                 [2, 0, 1, 1, 0, 2, 1, 1, 0, 2, 1, 1, 2, 0, 1, 1],
-            ]
+            ],
         )
         indexes = np.arange(int(ncyc))
         phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap", axis=1)

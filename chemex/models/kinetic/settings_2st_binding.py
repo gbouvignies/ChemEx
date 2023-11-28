@@ -20,7 +20,10 @@ TPL = ("temperature", "p_total", "l_total")
 
 
 def calculate_residuals(
-    concentrations: ArrayFloat, p_total: float, l_total: float, kd: float
+    concentrations: ArrayFloat,
+    p_total: float,
+    l_total: float,
+    kd: float,
 ) -> ArrayFloat:
     p_free, l_free, pl = concentrations
     return np.array(
@@ -28,17 +31,21 @@ def calculate_residuals(
             l_total - l_free - pl,
             p_total - p_free - pl,
             kd * pl - p_free * l_free,
-        ]
+        ],
     )
 
 
 @lru_cache(maxsize=100)
 def calculate_concentrations(
-    p_total: float, l_total: float, kd: float
+    p_total: float,
+    l_total: float,
+    kd: float,
 ) -> dict[str, float]:
     concentrations_start = (p_total, l_total, 0.0)
     results = root(
-        calculate_residuals, concentrations_start, args=(p_total, l_total, kd)
+        calculate_residuals,
+        concentrations_start,
+        args=(p_total, l_total, kd),
     )
     p_free, l_free, pl = results["x"]
     return {"p_free": p_free, "l_free": l_free, "pl": pl}

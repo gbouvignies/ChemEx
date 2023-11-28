@@ -17,7 +17,10 @@ TPL = ("temperature", "p_total", "l_total")
 def make_settings_2st(_conditions: Conditions) -> dict[str, ParamLocalSetting]:
     return {
         "kex_ab": ParamLocalSetting(
-            name_setting=NameSetting("kex_ab", "", TPL), value=200.0, min=0.0, vary=True
+            name_setting=NameSetting("kex_ab", "", TPL),
+            value=200.0,
+            min=0.0,
+            vary=True,
         ),
         "pb": ParamLocalSetting(
             name_setting=NameSetting("pb", "", TPL),
@@ -27,13 +30,16 @@ def make_settings_2st(_conditions: Conditions) -> dict[str, ParamLocalSetting]:
             vary=True,
         ),
         "pa": ParamLocalSetting(
-            name_setting=NameSetting("pa", "", TPL), expr="1.0 - {pb}"
+            name_setting=NameSetting("pa", "", TPL),
+            expr="1.0 - {pb}",
         ),
         "kab": ParamLocalSetting(
-            name_setting=NameSetting("kab", "", TPL), expr="{kex_ab} * {pb}"
+            name_setting=NameSetting("kab", "", TPL),
+            expr="{kex_ab} * {pb}",
         ),
         "kba": ParamLocalSetting(
-            name_setting=NameSetting("kba", "", TPL), expr="{kex_ab} * {pa}"
+            name_setting=NameSetting("kba", "", TPL),
+            expr="{kex_ab} * {pa}",
         ),
     }
 

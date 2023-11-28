@@ -44,7 +44,7 @@ class CestCh31HIpApSettings(CestSettings):
 
 
 class CestCh31HIpApConfig(
-    ExperimentConfig[CestCh31HIpApSettings, CestDataSettingsNoRef]
+    ExperimentConfig[CestCh31HIpApSettings, CestDataSettingsNoRef],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
@@ -62,7 +62,8 @@ class CestCh31HIpApConfig(
 
 
 def build_spectrometer(
-    config: CestCh31HIpApConfig, spin_system: SpinSystem
+    config: CestCh31HIpApConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions

@@ -45,7 +45,8 @@ class Shift15NSqConfig(ExperimentConfig[Shift15NSqSettings, ShiftDataSettings]):
 
 
 def build_spectrometer(
-    config: Shift15NSqConfig, spin_system: SpinSystem
+    config: Shift15NSqConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     conditions = config.conditions
 

@@ -1,3 +1,18 @@
+"""Module for command-line interface functionalities in ChemEx software package.
+
+This module is an integral part of the ChemEx software, dedicated to enhancing user
+interaction with a command-line interface for analyzing NMR chemical exchange data.
+It leverages the 'rich' Python library to provide rich text and table formatting,
+making the data presentation more readable and engaging. The module includes various
+functions for displaying progress, handling errors, and showing results of data
+analysis steps such as dataset loading, fitting processes, simulations, and plotting.
+
+Typical usage example:
+
+  from your_module import print_logo, print_loading_experiments
+  print_logo()
+  print_loading_experiments()
+"""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -22,26 +37,27 @@ if TYPE_CHECKING:
 console = Console()
 
 
-LOGO = "\n".join(
-    [
-        r"   ________                   ______",
-        r"  / ____/ /_  ___  ____ ___  / ____/  __",
-        r" / /   / __ \/ _ \/ __ `__ \/ __/ | |/_/",
-        r"/ /___/ / / /  __/ / / / / / /____>  <",
-        r"\____/_/ /_/\___/_/ /_/ /_/_____/_/|_|",
-        "",
-        "",
-    ]
-)
+LOGO = r"""
+    ________                   ______
+  / ____/ /_  ___  ____ ___  / ____/  __
+ / /   / __ \/ _ \/ __ `__ \/ __/ | |/_/
+/ /___/ / / /  __/ / / / / / /____>  <
+\____/_/ /_/\___/_/ /_/ /_/_____/_/|_|
+
+
+"""
+"""ASCII art logo of the ChemEx software."""
 
 EXPERIMENT_NAME = """
 [experiment]
 name = "experiment_name"
 ...
 """
+"""Template for the experiment name in configuration files."""
 
 
 def print_logo() -> None:
+    """Print the ChemEx software logo with version information."""
     logo = Text(LOGO, style="blue")
     description = "Analysis of NMR chemical exchange data\n\n"
     version = "Version: "
@@ -52,15 +68,26 @@ def print_logo() -> None:
 
 
 def print_loading_experiments() -> None:
+    """Display a loading message for datasets."""
     console.print("\nLoading datasets...", style="bold yellow")
 
 
-def get_reading_exp_text(filename: Path, type: str = "", total_nb: int = 0) -> Text:
+def get_reading_exp_text(filename: Path, name: str = "", total_nb: int = 0) -> Text:
+    """Generate a formatted message for reading an experiment file.
+
+    Args:
+        filename (Path): The path of the file being read.
+        name (str, optional): The experiment name. Defaults to an empty string.
+        total_nb (int, optional): The total number of profiles. Defaults to 0.
+
+    Returns:
+        Text: A formatted message indicating the file name, type, and profile count.
+    """
     parts = (
         "  • Reading ",
         (f"{filename}", "green"),
         " (",
-        (f"{type}", "blue"),
+        (f"{name}", "blue"),
         ")",
     )
 
@@ -73,22 +100,33 @@ def get_reading_exp_text(filename: Path, type: str = "", total_nb: int = 0) -> T
 
 
 def print_reading_defaults() -> None:
+    """Print a message indicating the reading of default parameters."""
     console.print("\nReading default parameters...", style="bold yellow")
 
 
 def print_reading_methods() -> None:
+    """Display a message indicating that methods are being read."""
     console.print("\nReading methods...", style="bold yellow")
 
 
 def print_start_fit() -> None:
+    """Display a message indicating the start of the fitting process."""
     console.print("\nStarting the fits...", style="bold yellow")
 
 
 def print_running_simulations() -> None:
+    """Display a message indicating that simulations are running."""
     console.print("\nRunning simulations...", style="bold yellow")
 
 
 def print_step_name(name: str, index: int, total: int) -> None:
+    """Print the name of the current step in the analysis process.
+
+    Args:
+        name (str): Name of the step.
+        index (int): Current step index.
+        total (int): Total number of steps.
+    """
     text = Text.assemble(
         "Running ",
         (f"{name}", "magenta"),
@@ -98,22 +136,42 @@ def print_step_name(name: str, index: int, total: int) -> None:
 
 
 def print_selecting_profiles(selected_nb: int) -> None:
+    """Display a message indicating the number of profiles selected.
+
+    Args:
+        selected_nb (int): The number of selected profiles.
+    """
     console.print(
-        Text.from_markup(f"  • Selecting profiles -> [blue]{selected_nb}[/] profiles")
+        Text.from_markup(f"  • Selecting profiles -> [blue]{selected_nb}[/] profiles"),
     )
 
 
 def print_no_data() -> None:
+    """Inform the user that no data is available for fitting."""
     console.print("  • No data to fit")
 
 
 def print_fitmethod(fit_method: str) -> None:
+    """Display the chosen method for fitting.
+
+    Args:
+        fit_method (str): The method being used for fitting.
+    """
     console.print(Text.assemble("  • Fit method -> ", (f"{fit_method}", "blue")))
 
 
 def print_status_changes(
-    vary: Counter[str], fixed: Counter[str], constrained: Counter[str]
+    vary: Counter[str],
+    fixed: Counter[str],
+    constrained: Counter[str],
 ) -> None:
+    """Print changes in parameter status like varied, fixed, or constrained.
+
+    Args:
+        vary (Counter[str]): Parameters varied during fitting.
+        fixed (Counter[str]): Parameters fixed during fitting.
+        constrained (Counter[str]): Parameters constrained during fitting.
+    """
     if not any([vary, fixed, constrained]):
         return
 
@@ -139,22 +197,35 @@ def print_status_changes(
 
 
 def print_minimizing() -> None:
+    """Display a message indicating that the minimization process is running."""
     console.print(Text("  • Running the minimization..."))
 
 
 def print_running_grid() -> None:
+    """Inform the user that the grid search is in progress."""
     console.print(Text("  • Running the grid search..."))
 
 
 def print_running_statistics(name: str) -> None:
+    """Display a message indicating that statistical simulations are running.
+
+    Args:
+        name (str): The name of the statistical simulation.
+    """
     console.print(Text(f"  • Running {name} simulations..."))
 
 
 def print_section(name: str) -> None:
+    """Print the name of the current section in the analysis process.
+
+    Args:
+        name (str): Name of the section.
+    """
     console.print(Text(f"  • Section {name}"))
 
 
 def print_chi2_table_header() -> None:
+    """Print the header for the chi-squared table."""
     header = Text(f"{'Iteration':>9s}  {'χ²':>12s}  {'Reduced χ²':>12s}")
     console.print()
     console.print(Padding.indent(header, 5), style="bold")
@@ -162,11 +233,25 @@ def print_chi2_table_header() -> None:
 
 
 def print_chi2_table_line(iteration: int, chisqr: float, redchi: float) -> None:
+    """Print a line in the chi-squared table with iteration and chi-squared values.
+
+    Args:
+        iteration (int): Iteration number.
+        chisqr (float): Chi-squared value.
+        redchi (float): Reduced chi-squared value.
+    """
     line = Text(f"{iteration:>9d}  {chisqr:>12.1f}  {redchi:>12.3f}")
     console.print(Padding.indent(line, 5))
 
 
 def print_chi2_table_footer(iteration: int, chisqr: float, redchi: float) -> None:
+    """Print the footer for the chi-squared table.
+
+    Args:
+        iteration (int): Iteration number.
+        chisqr (float): Chi-squared value.
+        redchi (float): Reduced chi-squared value.
+    """
     footer = Text(f"{iteration:>9d}  {chisqr:>12.1f}  {redchi:>12.3f}")
     console.print(Padding.indent("─" * 39, 4))
     console.print(Padding.indent(footer, 5), style="bold")
@@ -174,25 +259,44 @@ def print_chi2_table_footer(iteration: int, chisqr: float, redchi: float) -> Non
 
 
 def print_chi2(chisqr: float, redchi: float) -> None:
+    """Display the chi-squared and reduced chi-squared values.
+
+    Args:
+        chisqr (float): Chi-squared value.
+        redchi (float): Reduced chi-squared value.
+    """
     console.print()
     console.print(
-        Padding.indent(Text.from_markup(f"        χ²: [bold]{chisqr:15.1f}[/]"), 3)
+        Padding.indent(Text.from_markup(f"        χ²: [bold]{chisqr:15.1f}[/]"), 3),
     )
     console.print(
-        Padding.indent(Text.from_markup(f"Reduced χ²: [bold]{redchi:15.3f}[/]"), 3)
+        Padding.indent(Text.from_markup(f"Reduced χ²: [bold]{redchi:15.3f}[/]"), 3),
     )
     console.print()
 
 
 def print_writing_results(path: Path) -> None:
+    """Inform the user about the location where results are being written.
+
+    Args:
+        path (Path): Path to the file or directory where results are saved.
+    """
     console.print(f"  • Writing results in [green]{path}")
 
 
 def print_making_plots() -> None:
+    """Display a message indicating that plots are being generated."""
     console.print(Text("  • Making plots..."))
 
 
-def print_plot_filename(filename: Path, extra: bool = True) -> None:
+def print_plot_filename(filename: Path, *, extra: bool = True) -> None:
+    """Display the filename of the plot being generated.
+
+    Args:
+        filename (Path): The path of the plot file.
+        extra (bool, optional): Indicates if extra information is included.
+                                Defaults to True.
+    """
     text = f"    ‣ [green]{filename}[/]"
 
     if extra:
@@ -202,20 +306,41 @@ def print_plot_filename(filename: Path, extra: bool = True) -> None:
 
 
 def print_group_name(text: str) -> None:
+    """Print the name of the group in the analysis process.
+
+    Args:
+        text (str): Name of the group.
+    """
     console.print(Padding(Rule(text, characters="⋅"), (1, 0, 0, 3)), width=49)
 
 
 def print_file_not_found(filename: Path) -> None:
+    """Inform the user that a specified file was not found.
+
+    Args:
+        filename (Path): The path of the file that was not found.
+    """
     console.print()
     console.print(f"[red]The file '{filename}' is empty or does not exist!")
 
 
 def print_file_not_found_error(error: FileNotFoundError) -> None:
+    """Display the file not found error message.
+
+    Args:
+        error (FileNotFoundError): The FileNotFoundError exception instance.
+    """
     console.print()
     console.print(f"[red]Error: {error}")
 
 
 def print_toml_error(filename: Path, error_message: Exception) -> None:
+    """Display an error related to TOML file parsing.
+
+    Args:
+        filename (Path): Path of the TOML file.
+        error_message (Exception): The exception instance with the error message.
+    """
     console.print()
     console.print(Text.from_markup(f"[red]Error in the TOML file '{filename}'"))
     console.print(
@@ -223,15 +348,20 @@ def print_toml_error(filename: Path, error_message: Exception) -> None:
     )
     console.print(
         "Please check the website [link]https://toml.io[/]"
-        " for a complete description of the TOML format."
+        " for a complete description of the TOML format.",
     )
 
 
 def print_experiment_name_error(filename: Path) -> None:
+    """Display an error message when the experiment name is missing from a file.
+
+    Args:
+        filename (Path): Path of the file with the missing experiment name.
+    """
     console.print()
     console.print(f"[red]The experiment name is missing from the file '{filename}'\n")
     console.print(
-        f"Please make sure that the 'name' field is provided in '{filename}':\n"
+        f"Please make sure that the 'name' field is provided in '{filename}':\n",
     )
     console.print(
         Syntax(EXPERIMENT_NAME, "toml"),
@@ -240,6 +370,12 @@ def print_experiment_name_error(filename: Path) -> None:
 
 
 def print_pydantic_parsing_error(filename: Path, error: ValidationError) -> None:
+    """Display errors encountered while parsing a file using Pydantic.
+
+    Args:
+        filename (Path): Path of the file being parsed.
+        error (ValidationError): Instance detailing parsing errors.
+    """
     console.print()
     console.print(Text.from_markup(f"[red]Error(s) while parsing '{filename}'"))
     for err in error.errors():
@@ -248,54 +384,64 @@ def print_pydantic_parsing_error(filename: Path, error: ValidationError) -> None
 
 
 def print_calculation_stopped_error() -> None:
+    """Inform the user that the calculation was manually stopped."""
     console.print()
     console.print("[red] -- Keyboard Interrupt: Calculation stopped --")
     console.print()
 
 
 def print_plotting_canceled() -> None:
+    """Display a message indicating that the plotting process was cancelled."""
     console.print()
     console.print("[red] -- Keyboard Interrupt: Plotting cancelled --")
     console.print()
 
 
 def print_value_error() -> None:
+    """Inform the user that a ValueError occurred, stopping the calculation."""
     console.print()
     console.print("[red] -- Got a ValueError: Calculation stopped --")
     console.print()
 
 
 def print_warning_positive_jnh() -> None:
+    """Warn about positive 1J(NH) coupling values."""
     console.print()
     console.print(
-        "[yellow] -- WARNING: Some 1J(NH) couplings are set with positive values --"
+        "[yellow] -- WARNING: Some 1J(NH) couplings are set with positive values --",
     )
     console.print(
         "This can cause the TROSY and anti-TROSY components to be switched in some"
-        " experiments."
+        " experiments.",
     )
     console.print()
 
 
 def print_warning_negative_jch() -> None:
+    """Warn about negative 1J(CH) coupling values."""
     console.print()
     console.print(
-        "[yellow] -- WARNING: Some 1J(CH) couplings are set with negative values --"
+        "[yellow] -- WARNING: Some 1J(CH) couplings are set with negative values --",
     )
     console.print(
         "This can cause the TROSY and anti-TROSY components to be switched in some"
-        " experiments."
+        " experiments.",
     )
     console.print()
 
 
 def print_error_grid_settings(entry: str) -> None:
+    """Display an error related to grid settings.
+
+    Args:
+        entry (str): The problematic entry in the grid settings.
+    """
     console.print()
     console.print("[red] -- ERROR: Error reading grid settings:")
     console.print(Text(f'    "{entry}"', style="red"))
     console.print()
     console.print(
-        "Please make sure that the grid settings are provided in the correct format"
+        "Please make sure that the grid settings are provided in the correct format",
     )
     console.print(Text("    [PB] = lin(<min>, <max>, <nb of points>)"))
     console.print(Text("    [PB] = log(<min>, <max>, <nb of points>)"))
@@ -304,21 +450,32 @@ def print_error_grid_settings(entry: str) -> None:
 
 
 def print_error_constraints(expression: str) -> None:
+    """Display an error message for issues with constraints expressions.
+
+    Args:
+        expression (str): The problematic constraint expression.
+    """
     console.print()
     console.print(f'[red] -- ERROR: Error reading constraints -> "{expression}" --')
     console.print()
 
 
 def print_grid_statistic_warning() -> None:
+    """Warn that 'GRID' and 'STATISTICS' options are mutually exclusive."""
     console.print()
     console.print(
         "[yellow] -- WARNING: The 'GRID' and 'STATISTICS' options are mutually "
-        "exclusive. Only the 'GRID' calculation will be run."
+        "exclusive. Only the 'GRID' calculation will be run.",
     )
     console.print()
 
 
 def print_model_error(name: str) -> None:
+    """Display an error message for unavailable models.
+
+    Args:
+        name (str): The name of the model that is not available.
+    """
     from chemex.models.factory import model_factory
 
     console.print()
@@ -331,8 +488,17 @@ def print_model_error(name: str) -> None:
 
 
 def print_not_implemented_noise_method_warning(
-    filename: Path, kind: str, implemented: tuple[str, ...]
+    filename: Path,
+    kind: str,
+    implemented: tuple[str, ...],
 ) -> None:
+    """Warn about unimplemented noise methods for an experiment.
+
+    Args:
+        filename (Path): Path of the experiment file.
+        kind (str): The kind of noise method that is not implemented.
+        implemented (tuple[str, ...]): Tuple of implemented methods.
+    """
     warning_message = (
         f"[yellow] -- WARNING: Experiment {filename.name}[/yellow]: "
         f"The '{kind}' method is not implemented. "
@@ -345,6 +511,11 @@ def print_not_implemented_noise_method_warning(
 
 
 def print_no_duplicate_warning(filename: Path) -> None:
+    """Warn about the absence of duplicate points in some profiles.
+
+    Args:
+        filename (Path): Path of the experiment file.
+    """
     warning_message = (
         f"[yellow] -- WARNING: Experiment {filename.name}[/yellow]: "
         f"Some profiles do not have duplicate points. "
@@ -433,11 +604,39 @@ METHOD_ERROR_MESSAGES = {
 }
 
 
+def print_wrong_option(option: str) -> str:
+    """Display a message for an invalid option in configuration files.
+
+    Args:
+        option (str): The option that is invalid or incorrectly formatted.
+
+    Returns:
+        str: A message indicating the error with the specific option.
+    """
+    return (
+        f"\n  - '{option.upper()}' is not a valid option.\n"
+        "\nPlease check the website "
+        "[link]"
+        "https://gbouvignies.github.io/ChemEx/docs/user_guide/fitting/method_files"
+        "[/] "
+        "for a complete list of valid options."
+    )
+
+
 def print_method_error(filename: Path, section: str, options: set[int | str]) -> None:
+    """Display errors for invalid methods or options in a specific section of a file.
+
+    Args:
+        filename (Path): The file containing the error.
+        section (str): The section of the file with the erroneous method or option.
+        options (set[int | str]): Set of options or methods that are incorrect.
+    """
     console.print()
     console.print(
-        f"[red] -- ERROR: Error reading section '[{section}]' of '{filename}' --"
+        f"[red] -- ERROR: Error reading section '[{section}]' of '{filename}' --",
     )
     for option in options:
-        console.print(METHOD_ERROR_MESSAGES.get(str(option)))
+        console.print(
+            METHOD_ERROR_MESSAGES.get(str(option), print_wrong_option(str(option))),
+        )
     console.print()

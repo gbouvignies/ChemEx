@@ -24,10 +24,11 @@ SMALL_VALUE = 1e-6
 
 
 def calculate_propagators(
-    liouv: ArrayFloat, delays: float | Iterable[float], dephasing: bool = False
+    liouv: ArrayFloat,
+    delays: float | Iterable[float],
+    dephasing: bool = False,
 ) -> ArrayFloat:
-    """
-    Calculate the propagators for the given delays.
+    """Calculate the propagators for the given delays.
 
     Parameters
     ----------
@@ -38,12 +39,11 @@ def calculate_propagators(
     dephasing : bool, optional
         Whether to apply dephasing, by default False
 
-    Returns
+    Returns:
     -------
     ArrayFloat
         The propagators
     """
-
     # Ensure delays is a 1D NumPy array
     delays = np.asarray(delays).flatten()
 
@@ -58,7 +58,9 @@ def calculate_propagators(
     if dephasing:
         # If dephasing is requested, adjust eigenvalues
         eigenvalues = np.where(
-            abs(eigenvalues.imag) < SMALL_VALUE, eigenvalues, eigenvalues * 1e9
+            abs(eigenvalues.imag) < SMALL_VALUE,
+            eigenvalues,
+            eigenvalues * 1e9,
         )
 
     # Calculate the exponentiated eigenvalues for each delay
@@ -256,7 +258,9 @@ class Spectrometer:
         return self.liouvillian.get_equilibrium()
 
     def get_start_magnetization(
-        self, terms: Iterable[str], atom: str = "h"
+        self,
+        terms: Iterable[str],
+        atom: str = "h",
     ) -> ArrayFloat:
         return self.liouvillian.get_start_magnetization(terms=terms, atom=atom)
 
@@ -314,7 +318,10 @@ class Spectrometer:
         return calculate_propagators(liouv, times)
 
     def pulse_is(
-        self, times: float | Iterable[float], phase_i: float, phase_s: float
+        self,
+        times: float | Iterable[float],
+        phase_i: float,
+        phase_s: float,
     ) -> ArrayFloat:
         dephased = self.b1_i_inh_scale == np.inf
         liouv = (
@@ -327,7 +334,10 @@ class Spectrometer:
         return calculate_propagators(liouv, times, dephased)
 
     def shaped_pulse_i(
-        self, pw: float, amplitudes: Sequence[float], phases: Iterable[float]
+        self,
+        pw: float,
+        amplitudes: Sequence[float],
+        phases: Iterable[float],
     ) -> ArrayFloat:
         time = pw / len(amplitudes)
         pairs = list(zip(amplitudes, phases, strict=True))
@@ -393,7 +403,8 @@ class Spectrometer:
         pw240i, pw9024090i = np.array([8.0, 14.0]) * self._pw90_i / 3.0
         pw240s, pw9024090s = np.array([8.0, 14.0]) * self._pw90_s / 3.0
         t0, t1, t2, t3 = 0.5 * np.diff(
-            np.sort([pw240i, pw240s, pw9024090i, pw9024090s]), prepend=0.0
+            np.sort([pw240i, pw240s, pw9024090i, pw9024090s]),
+            prepend=0.0,
         )
         p0 = self.pulse_is(2.0 * t0, 0, 0)
         if pw9024090i <= pw9024090s:
@@ -425,7 +436,7 @@ class Spectrometer:
 
     def calculate_shifts(self) -> ArrayFloat:
         liouv = self.liouvillian.l_free.reshape(
-            (self.liouvillian.size, self.liouvillian.size)
+            (self.liouvillian.size, self.liouvillian.size),
         )
         return np.linalg.eigvals(liouv).imag
 

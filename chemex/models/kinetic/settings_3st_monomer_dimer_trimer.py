@@ -21,7 +21,10 @@ TP = ("temperature", "p_total")
 
 
 def calculate_residuals(
-    concentrations: ArrayFloat, p_total: float, kd1: float, kd2: float
+    concentrations: ArrayFloat,
+    p_total: float,
+    kd1: float,
+    kd2: float,
 ) -> ArrayFloat:
     monomer, dimer, trimer = concentrations
     return np.array(
@@ -29,13 +32,15 @@ def calculate_residuals(
             monomer + 2.0 * dimer + 3.0 * trimer - p_total,
             kd1 * dimer - monomer**2,
             kd2 * trimer - monomer * dimer,
-        ]
+        ],
     )
 
 
 @lru_cache(maxsize=100)
 def calculate_concentrations(
-    p_total: float, kd1: float, kd2: float
+    p_total: float,
+    kd1: float,
+    kd2: float,
 ) -> dict[str, float]:
     concentrations_start = (p_total, 0.0, 0.0)
     results = root(calculate_residuals, concentrations_start, args=(p_total, kd1, kd2))
@@ -141,7 +146,8 @@ def make_settings_3st_monomer_dimer_trimer(
 
 def register() -> None:
     model_factory.register(
-        name=NAME, setting_maker=make_settings_3st_monomer_dimer_trimer
+        name=NAME,
+        setting_maker=make_settings_3st_monomer_dimer_trimer,
     )
     user_functions = {
         "concetrations": calculate_concentrations,

@@ -1,3 +1,4 @@
+"""The module provides functions for estimating the noise variance in data."""
 from __future__ import annotations
 
 import contextlib
@@ -15,19 +16,28 @@ if TYPE_CHECKING:
 
 
 def _variance_from_duplicates(data: Data) -> float:
-    """Estimate the variance of duplicate points.
+    """Estimates variance from duplicate data points in a dataset.
 
-    Estimate the uncertainty using the pooled standard deviation.
-    Reference: https://goldbook.iupac.org/html/P/P04758.html
+    This function calculates the variance using the pooled standard deviation method.
+    It groups the data points by their metadata and computes the variance for each
+    group. If no duplicates are found, the average of the experimental error values is
+    returned.
 
-    If no duplicates are found, the average of the experimental error
-    values is returned
+    Args:
+        data (Data): The data containing experimental values and associated metadata.
 
+    Returns:
+        float: The estimated variance of the dataset.
+
+    Reference:
+        IUPAC Gold Book definition of pooled standard deviation.
+        URL: https://goldbook.iupac.org/html/P/P04758.html
     """
     groups: defaultdict[Any, list[float]] = defaultdict(list)
     for x, y in zip(data.metadata, data.exp, strict=True):
         groups[x].append(y)
-    variances, weights = [], []
+    variances: list[float] = []
+    weights: list[float] = []
     for group in groups.values():
         group_size = len(group)
         if group_size > 1:
@@ -39,11 +49,22 @@ def _variance_from_duplicates(data: Data) -> float:
 
 
 def _variance_from_scatter(data: Data) -> float:
-    """Estimate the uncertainty in the CEST profile.
+    """Estimates the uncertainty in the CEST profile or similar data.
 
-    Adapted from:
-    https://www.mathworks.com/matlabcentral/fileexchange/16683-estimatenoise
+    The function uses numerical methods to estimate the variance. It applies finite
+    difference approximation and interpolates the sorted experimental data to estimate
+    the standard deviation at different percentages of the data. The final variance is
+    calculated as the median of these estimates, adjusted for the size of the data.
 
+    Args:
+        data (Data): The data containing experimental values.
+
+    Returns:
+        float: The estimated variance of the dataset.
+
+    Reference:
+        MATLAB Central File Exchange, 'EstimateNoise' function.
+        URL: https://www.mathworks.com/matlabcentral/fileexchange/16683-estimatenoise
     """
     fda = [
         [1, -1],
@@ -63,7 +84,7 @@ def _variance_from_scatter(data: Data) -> float:
         if ntrim <= 1:
             continue
         xaxis = (0.5 + np.arange(1, ntrim + 1)) / (ntrim + 0.5)
-        sigmas = []
+        sigmas: list[float] = []
         function = interpolate.interp1d(xaxis, noisedata, "linear")
         for a_perc, a_z in zip(percents, percent_points, strict=True):
             with contextlib.suppress(ValueError):
