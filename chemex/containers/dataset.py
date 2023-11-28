@@ -36,7 +36,35 @@ def load_relaxation_dataset(base_path: Path, settings: RelaxationConfig) -> Data
                         err=raw_data["err"],
                         metadata=raw_data["metadata"],
                     ),
-                )
+                ),
+            )
+
+    return dataset
+
+
+def load_exsy_dataset(base_path: Path, settings: RelaxationConfig) -> Dataset:
+    data_path = normalize_path(base_path, settings.data.path)
+    dtype = [
+        ("times", "f8"),
+        ("states1", "U1"),
+        ("states2", "U1"),
+        ("exp", "f8"),
+        ("err", "f8"),
+    ]
+
+    dataset: Dataset = []
+    for spin_system, filepaths in settings.data.profiles.items():
+        for filepath in filepaths:
+            raw_data = np.loadtxt(data_path / filepath, dtype=dtype)
+            dataset.append(
+                (
+                    spin_system,
+                    Data(
+                        exp=raw_data["exp"],
+                        err=raw_data["err"],
+                        metadata=raw_data[["times", "states1", "states2"]],
+                    ),
+                ),
             )
 
     return dataset
