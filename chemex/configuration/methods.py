@@ -35,7 +35,7 @@ class Selection:
 
 
 class Method(BaseModelLowerCase):
-    model_config = ConfigDict(str_to_lower=True)
+    model_config = ConfigDict(str_to_lower=True, extra="forbid")
     fitmethod: str = "leastsq"
     include: SelectionType = None
     exclude: SelectionType = None
