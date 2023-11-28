@@ -43,7 +43,8 @@ class Shift15NSqMqConfig(ExperimentConfig[Shift15NSqMqSettings, ShiftDataSetting
 
 
 def build_spectrometer(
-    config: Shift15NSqMqConfig, spin_system: SpinSystem
+    config: Shift15NSqMqConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     conditions = config.conditions
 
@@ -81,8 +82,8 @@ class Shift15NSqMqSequence:
             [
                 1e3
                 * (shift_sq - 0.5 * (shift_dq + shift_zq))
-                / spectrometer.liouvillian.ppm_i
-            ]
+                / spectrometer.liouvillian.ppm_i,
+            ],
         )
 
     def is_reference(self, metadata: ArrayFloat) -> ArrayBool:

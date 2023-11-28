@@ -26,7 +26,10 @@ from chemex.optimize.helper import (
     print_header,
     print_values_stat,
 )
-from chemex.optimize.minimizer import minimize, minimize_with_report
+from chemex.optimize.minimizer import (
+    minimize,
+    minimize_with_report,
+)
 from chemex.parameters import database
 
 if TYPE_CHECKING:
@@ -40,7 +43,7 @@ def _run_statistics(
     path: Path,
     fitmethod: str | None = None,
     statistics: Statistics | None = None,
-):
+) -> None:
     if statistics is None:
         return
 
@@ -101,8 +104,13 @@ def _fit_groups(
             print_group_name(message)
 
         best_lmfit_params = minimize_with_report(
-            group.experiments, group_lmfit_params, fitmethod
+            group.experiments,
+            group_lmfit_params,
+            fitmethod,
         )
+        # best_lmfit_params = minimize_hierarchical(
+        #     group.experiments, group_lmfit_params, fitmethod
+        # )
 
         database.update_from_parameters(best_lmfit_params)
         execute_post_fit(group.experiments, group_path, plot_flg)
@@ -120,7 +128,10 @@ def _fit_groups(
 
 
 def run_methods(
-    experiments: Experiments, methods: Methods, path: Path, plot_level: str
+    experiments: Experiments,
+    methods: Methods,
+    path: Path,
+    plot_level: str,
 ) -> None:
     for index, (section, method) in enumerate(methods.items(), start=1):
         if section:
@@ -147,11 +158,19 @@ def run_methods(
         if method.grid:
             try:
                 run_grid(
-                    experiments, method.grid, path_sect, plot_level, method.fitmethod
+                    experiments,
+                    method.grid,
+                    path_sect,
+                    plot_level,
+                    method.fitmethod,
                 )
             except KeyboardInterrupt:
                 print_calculation_stopped_error()
         else:
             _fit_groups(
-                experiments, path_sect, plot_level, method.fitmethod, method.statistics
+                experiments,
+                path_sect,
+                plot_level,
+                method.fitmethod,
+                method.statistics,
             )

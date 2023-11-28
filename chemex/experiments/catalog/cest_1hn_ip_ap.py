@@ -70,7 +70,8 @@ class Cest1HnIpApConfig(ExperimentConfig[Cest1HnIpApSettings, CestDataSettingsNo
 
 
 def build_spectrometer(
-    config: Cest1HnIpApConfig, spin_system: SpinSystem
+    config: Cest1HnIpApConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions

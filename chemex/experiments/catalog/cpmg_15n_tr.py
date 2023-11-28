@@ -66,7 +66,8 @@ class Cpmg15NTrConfig(ExperimentConfig[Cpmg15NTrSettings, RelaxationDataSettings
 
 
 def build_spectrometer(
-    config: Cpmg15NTrConfig, spin_system: SpinSystem
+    config: Cpmg15NTrConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions

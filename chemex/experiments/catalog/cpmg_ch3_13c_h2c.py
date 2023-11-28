@@ -53,7 +53,7 @@ class CpmgCh313CH2cSettings(CpmgSettingsEvenNcycs):
 
 
 class CpmgCh313CH2cConfig(
-    ExperimentConfig[CpmgCh313CH2cSettings, RelaxationDataSettings]
+    ExperimentConfig[CpmgCh313CH2cSettings, RelaxationDataSettings],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
@@ -62,7 +62,8 @@ class CpmgCh313CH2cConfig(
 
 
 def build_spectrometer(
-    config: CpmgCh313CH2cConfig, spin_system: SpinSystem
+    config: CpmgCh313CH2cConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions
@@ -120,7 +121,7 @@ class CpmgCh313CH2cSequence:
 
         # Calculating the instensities as a function of ncyc
         intensities = {
-            0.0: spectrometer.detect(d_eq @ p90[1] @ palmer @ p90[0] @ start)
+            0.0: spectrometer.detect(d_eq @ p90[1] @ palmer @ p90[0] @ start),
         }
         part1 = d_neg @ p90[0] @ start
         part2 = d_eq @ p90[1] @ d_neg

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from functools import reduce
+from itertools import product
 from typing import TYPE_CHECKING
 
 import numpy as np
 from cachetools import cached
 from cachetools.keys import hashkey
-from scipy.linalg import eig, eigvals, expm, inv
+from scipy.linalg import expm
 
 if TYPE_CHECKING:
+    # Imports related to type checking and annotations
     from collections.abc import Iterable, Sequence
 
     from chemex.nmr.constants import Distribution
@@ -17,28 +19,69 @@ if TYPE_CHECKING:
 
     DictArrayFloat = dict[str, ArrayFloat]
 
-
+# A small value used for numerical stability
 SMALL_VALUE = 1e-6
 
 
 def calculate_propagators(
-    liouv: ArrayFloat, delays: float | Iterable[float], dephasing: bool = False
+    liouv: ArrayFloat,
+    delays: float | Iterable[float],
+    dephasing: bool = False,
 ) -> ArrayFloat:
-    delays_ = np.asarray(delays).reshape(-1)
-    shape = liouv.shape
-    propagator_list = []
-    for a_liouvillian in liouv.reshape(-1, *shape[-2:]):
-        s, vr = eig(a_liouvillian)
-        vri = inv(vr)
-        if dephasing:
-            indexes = np.where(abs(s.imag) < SMALL_VALUE)[0]
-            vr, s, vri = vr[:, indexes], s[indexes], vri[indexes, :]
-        d = np.asarray([np.diag(np.exp(s * t)) for t in delays_])
-        propagator_list.append((vr @ d @ vri).real)
-    propagators = np.asarray(propagator_list).swapaxes(0, 1).reshape(-1, *shape)
+    """Calculate the propagators for the given delays.
+
+    Parameters
+    ----------
+    liouv : ArrayFloat
+        The Liouvillians of the system
+    delays : float | Iterable[float]
+        The delays to calculate the propagators for
+    dephasing : bool, optional
+        Whether to apply dephasing, by default False
+
+    Returns:
+    -------
+    ArrayFloat
+        The propagators
+    """
+    # Ensure delays is a 1D NumPy array
+    delays = np.asarray(delays).flatten()
+
+    if delays.size == 1 and not dephasing:
+        # If there's only one delay and no dephasing, calculate the propagator directly
+        # using scipy expm function
+        return expm(liouv * delays[0])
+
+    # Calculate eigenvalues and eigenvectors of the Liouvillian matrices
+    eigenvalues, eigenvectors = np.linalg.eig(liouv)
+
+    if dephasing:
+        # If dephasing is requested, adjust eigenvalues
+        eigenvalues = np.where(
+            abs(eigenvalues.imag) < SMALL_VALUE,
+            eigenvalues,
+            eigenvalues * 1e9,
+        )
+
+    # Calculate the exponentiated eigenvalues for each delay
+    evt = np.exp(np.multiply.outer(delays, eigenvalues))
+
+    # Create an empty array for diagonal matrices
+    diag = np.empty((*delays.shape, *liouv.shape), dtype=np.complex128)
+
+    # Calculate diagonal matrices for each delay
+    for index in product(*(range(x) for x in evt.shape[:-1])):
+        diag[index] = np.diag(evt[index])
+
+    # Calculate the propagators using matrix multiplication
+    propagators = eigenvectors @ diag @ np.linalg.inv(eigenvectors)
+
     if propagators.shape[0] == 1:
+        # If there's only one propagator, return it with no extra time dimension
         propagators = propagators[0]
-    return propagators
+
+    # Return the real part of the propagators
+    return propagators.real
 
 
 def _get_key(liouvillian: LiouvillianIS, *args, **kwargs):
@@ -215,7 +258,9 @@ class Spectrometer:
         return self.liouvillian.get_equilibrium()
 
     def get_start_magnetization(
-        self, terms: Iterable[str], atom: str = "h"
+        self,
+        terms: Iterable[str],
+        atom: str = "h",
     ) -> ArrayFloat:
         return self.liouvillian.get_start_magnetization(terms=terms, atom=atom)
 
@@ -273,7 +318,10 @@ class Spectrometer:
         return calculate_propagators(liouv, times)
 
     def pulse_is(
-        self, times: float | Iterable[float], phase_i: float, phase_s: float
+        self,
+        times: float | Iterable[float],
+        phase_i: float,
+        phase_s: float,
     ) -> ArrayFloat:
         dephased = self.b1_i_inh_scale == np.inf
         liouv = (
@@ -286,7 +334,10 @@ class Spectrometer:
         return calculate_propagators(liouv, times, dephased)
 
     def shaped_pulse_i(
-        self, pw: float, amplitudes: Sequence[float], phases: Iterable[float]
+        self,
+        pw: float,
+        amplitudes: Sequence[float],
+        phases: Iterable[float],
     ) -> ArrayFloat:
         time = pw / len(amplitudes)
         pairs = list(zip(amplitudes, phases, strict=True))
@@ -352,7 +403,8 @@ class Spectrometer:
         pw240i, pw9024090i = np.array([8.0, 14.0]) * self._pw90_i / 3.0
         pw240s, pw9024090s = np.array([8.0, 14.0]) * self._pw90_s / 3.0
         t0, t1, t2, t3 = 0.5 * np.diff(
-            np.sort([pw240i, pw240s, pw9024090i, pw9024090s]), prepend=0.0
+            np.sort([pw240i, pw240s, pw9024090i, pw9024090s]),
+            prepend=0.0,
         )
         p0 = self.pulse_is(2.0 * t0, 0, 0)
         if pw9024090i <= pw9024090s:
@@ -384,9 +436,9 @@ class Spectrometer:
 
     def calculate_shifts(self) -> ArrayFloat:
         liouv = self.liouvillian.l_free.reshape(
-            (self.liouvillian.size, self.liouvillian.size)
+            (self.liouvillian.size, self.liouvillian.size),
         )
-        return eigvals(liouv).imag
+        return np.linalg.eigvals(liouv).imag
 
     def offsets_to_ppms(self, offsets: ArrayFloat) -> ArrayFloat:
         return self.liouvillian.offsets_to_ppms(offsets)

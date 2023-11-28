@@ -57,7 +57,7 @@ class Cpmg15NTr0013Settings(CpmgSettings):
 
 
 class Cpmg15NTr0013Config(
-    ExperimentConfig[Cpmg15NTr0013Settings, RelaxationDataSettings]
+    ExperimentConfig[Cpmg15NTr0013Settings, RelaxationDataSettings],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
@@ -73,7 +73,8 @@ class Cpmg15NTr0013Config(
 
 
 def build_spectrometer(
-    config: Cpmg15NTr0013Config, spin_system: SpinSystem
+    config: Cpmg15NTr0013Config,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions
@@ -118,13 +119,13 @@ class Cpmg15NTr0013Sequence:
             [
                 [1, 1, 0, 2, 1, 1, 2, 0, 1, 1, 2, 0, 1, 1, 0, 2],
                 [0, 2, 3, 3, 2, 0, 3, 3, 2, 0, 3, 3, 0, 2, 3, 3],
-            ]
+            ],
         )
         cp_phases2 = np.array(
             [
                 [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3],
                 [1, 3, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 1, 3, 2, 2],
-            ]
+            ],
         )
         indexes = np.arange(int(ncyc))
         phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap", axis=1)
@@ -167,7 +168,8 @@ class Cpmg15NTr0013Sequence:
         else:
             p180_is = p90[0] @ p90[1] @ p180_sx @ p90[1] @ p90[0]
         palmer = np.mean(
-            p90[[0, 2]] @ d_taub @ p180_is @ d_taub @ p180_sx @ p90[[1, 3]], axis=0
+            p90[[0, 2]] @ d_taub @ p180_is @ d_taub @ p180_sx @ p90[[1, 3]],
+            axis=0,
         )
 
         # Calculating the instensities as a function of ncyc
@@ -181,8 +183,8 @@ class Cpmg15NTr0013Sequence:
                 @ p180[[0, 1]]
                 @ p90[0]
                 @ d_delta[0]
-                @ start
-            )
+                @ start,
+            ),
         }
         for ncyc in set(ncycs) - {0.0}:
             phases1, phases2 = self._get_phases(ncyc)
@@ -198,7 +200,7 @@ class Cpmg15NTr0013Sequence:
                 @ cpmg1
                 @ p90[0]
                 @ d_delta[ncyc]
-                @ start
+                @ start,
             )
 
         # Return profile

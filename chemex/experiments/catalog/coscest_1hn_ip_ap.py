@@ -48,7 +48,7 @@ class CosCest1HnIpApSettings(CestSettings):
 
 
 class CosCest1HnIpApConfig(
-    ExperimentConfig[CosCest1HnIpApSettings, CestDataSettingsNoRef]
+    ExperimentConfig[CosCest1HnIpApSettings, CestDataSettingsNoRef],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
@@ -66,7 +66,8 @@ class CosCest1HnIpApConfig(
 
 
 def build_spectrometer(
-    config: CosCest1HnIpApConfig, spin_system: SpinSystem
+    config: CosCest1HnIpApConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions
@@ -121,7 +122,9 @@ class CosCest1HnIpApSequence:
 
         if n_left:
             pulse_left = spectrometer.shaped_pulse_i(
-                n_left * dt, amplitudes[:n_left], phases[:n_left]
+                n_left * dt,
+                amplitudes[:n_left],
+                phases[:n_left],
             )
             pulse = pulse_left[phase_left] @ pulse
 
@@ -132,7 +135,7 @@ class CosCest1HnIpApSequence:
         spectrometer.offset_i = 0.0
 
         d_d1, d_taua, d_t1 = spectrometer.delays(
-            [self.settings.d1, self.settings.taua, self.settings.time_t1]
+            [self.settings.d1, self.settings.taua, self.settings.time_t1],
         )
 
         pp90_i = spectrometer.perfect90_i

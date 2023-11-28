@@ -81,7 +81,10 @@ def add_resonance_positions(
     kwargs2 = {"color": _GREY400, "linewidth": 0.75, "zorder": -1}
     cs_shifted = circular_shift.centre(cs_values, centre)
     for a_cs, a_cs_shifted, lstyle in zip(
-        cs_values, cs_shifted, _LSTYLES, strict=False
+        cs_values,
+        cs_shifted,
+        _LSTYLES,
+        strict=False,
     ):
         ax1.axvline(a_cs_shifted, linestyle=lstyle, **kwargs2)
         ax2.axvline(a_cs_shifted, linestyle=lstyle, **kwargs2)
@@ -158,7 +161,8 @@ def create_plot_data_calc(profile: Profile) -> Data:
     data_for_calculation = Data(exp=filler, err=filler, metadata=offsets_plot)
     scale = profile.data.scale / np.mean(data.exp[refs])
     data_for_calculation.calc = scale * profile.pulse_sequence.calculate(
-        spectrometer, data_for_calculation
+        spectrometer,
+        data_for_calculation,
     )
 
     ppms = spectrometer.offsets_to_ppms(offsets_plot)
@@ -175,12 +179,12 @@ def get_state_positions(spectrometer: Spectrometer) -> ArrayFloat:
             spectrometer.par_values[name]
             for name in names
             if name in spectrometer.par_values
-        ]
+        ],
     )
 
 
 class CestPlotter(Generic[T]):
-    def __init__(self, filename: Path, config: T, **_extra: Any):
+    def __init__(self, filename: Path, config: T, **_extra: Any) -> None:
         self.filename = filename
         self.config = config
         self.printer: PlotPrinter = data_plot_printers["cest"]
@@ -197,7 +201,12 @@ class CestPlotter(Generic[T]):
         dip_positions = get_state_positions(spectrometer)
         circular_shift = CircularShift(spectrometer, sw)
         plot_dcest(
-            pdf, str(profile.name), data_exp, data_calc, dip_positions, circular_shift
+            pdf,
+            str(profile.spin_system),
+            data_exp,
+            data_calc,
+            dip_positions,
+            circular_shift,
         )
 
     def plot(self, path: Path, profiles: list[Profile]) -> None:
@@ -216,8 +225,12 @@ class CestPlotter(Generic[T]):
                 data_exp = create_plot_data_exp(profile)
                 data_calc = create_plot_data_calc(profile)
                 self._plot_profile(file_pdf, profile, data_exp, data_calc)
-                file_exp.write(self.printer.print_exp(str(profile.name), data_exp))
-                file_calc.write(self.printer.print_calc(str(profile.name), data_calc))
+                file_exp.write(
+                    self.printer.print_exp(str(profile.spin_system), data_exp)
+                )
+                file_calc.write(
+                    self.printer.print_calc(str(profile.spin_system), data_calc)
+                )
 
     def plot_simulation(self, path: Path, profiles: list[Profile]) -> None:
         basename = path / self.filename.name
@@ -233,4 +246,6 @@ class CestPlotter(Generic[T]):
                 data_exp = create_plot_data_exp(profile)
                 data_calc = create_plot_data_calc(profile)
                 self._plot_profile(file_pdf, profile, data_exp, data_calc)
-                file_sim.write(self.printer.print_calc(str(profile.name), data_calc))
+                file_sim.write(
+                    self.printer.print_calc(str(profile.spin_system), data_calc)
+                )

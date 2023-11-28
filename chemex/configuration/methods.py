@@ -4,7 +4,7 @@ import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Literal
 
-from pydantic import BeforeValidator, Field, ValidationError
+from pydantic import BeforeValidator, ConfigDict, Field, ValidationError
 from pydantic.types import PositiveInt
 
 from chemex.configuration.base import BaseModelLowerCase
@@ -35,6 +35,7 @@ class Selection:
 
 
 class Method(BaseModelLowerCase):
+    model_config = ConfigDict(str_to_lower=True, extra="forbid")
     fitmethod: str = "leastsq"
     include: SelectionType = None
     exclude: SelectionType = None

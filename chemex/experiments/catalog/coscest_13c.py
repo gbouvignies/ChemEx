@@ -52,12 +52,14 @@ class CosCest13CConfig(ExperimentConfig[CosCest13CSettings, CestDataSettings]):
     def to_be_fitted(self) -> ToBeFitted:
         state = self.experiment.observed_state
         return ToBeFitted(
-            rates=["r2_i", f"r1_i_{state}"], model_free=[f"tauc_{state}", f"s2_{state}"]
+            rates=["r2_i", f"r1_i_{state}"],
+            model_free=[f"tauc_{state}", f"s2_{state}"],
         )
 
 
 def build_spectrometer(
-    config: CosCest13CConfig, spin_system: SpinSystem
+    config: CosCest13CConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions
@@ -117,7 +119,9 @@ class CosCest13CSequence:
 
         if n_left:
             pulse_left = spectrometer.shaped_pulse_i(
-                n_left * dt, amplitudes[:n_left], phases[:n_left]
+                n_left * dt,
+                amplitudes[:n_left],
+                phases[:n_left],
             )
             pulse = pulse_left[phase_left] @ pulse
 
@@ -146,7 +150,7 @@ class CosCest13CSequence:
             intensities[offset] = d_eq @ self._calc_cosine_shape(spectrometer) @ start
 
         return np.array(
-            [spectrometer.detect(intensities[offset]) for offset in offsets]
+            [spectrometer.detect(intensities[offset]) for offset in offsets],
         )
 
 

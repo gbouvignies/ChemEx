@@ -57,7 +57,8 @@ class CpmgCh31HSqConfig(ExperimentConfig[CpmgCh31HSqSettings, RelaxationDataSett
 
 
 def build_spectrometer(
-    config: CpmgCh31HSqConfig, spin_system: SpinSystem
+    config: CpmgCh31HSqConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions
@@ -129,12 +130,12 @@ class CpmgCh31HSqSequence:
         if self.settings.ipap_flg:
             intensities = {
                 0.0: spectrometer.detect(
-                    d_taua @ (p180pmy @ p180c_py + p180c_my @ p180pmy) @ d_taua @ start
-                )
+                    d_taua @ (p180pmy @ p180c_py + p180c_my @ p180pmy) @ d_taua @ start,
+                ),
             }
         else:
             intensities = {
-                0.0: spectrometer.detect(d_taua @ d_taua @ p180pmy @ p180c_py @ start)
+                0.0: spectrometer.detect(d_taua @ d_taua @ p180pmy @ p180c_py @ start),
             }
 
         phases1, phases2 = self._get_phases()
@@ -153,11 +154,11 @@ class CpmgCh31HSqSequence:
             centre = cpmg2 @ p180pmy @ cpmg1
             if self.settings.ipap_flg:
                 intensities[ncyc] = spectrometer.detect(
-                    d_taua @ (centre @ p180c_py + p180c_my @ centre) @ d_taua @ start
+                    d_taua @ (centre @ p180c_py + p180c_my @ centre) @ d_taua @ start,
                 )
             else:
                 intensities[ncyc] = spectrometer.detect(
-                    d_taua @ d_taua @ centre @ p180c_py @ start
+                    d_taua @ d_taua @ centre @ p180c_py @ start,
                 )
 
         # Return profile

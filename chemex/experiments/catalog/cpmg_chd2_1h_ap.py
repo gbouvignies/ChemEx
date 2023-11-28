@@ -44,7 +44,7 @@ class CpmgChd21HApSettings(CpmgSettings):
 
 
 class CpmgChd21HApConfig(
-    ExperimentConfig[CpmgChd21HApSettings, RelaxationDataSettings]
+    ExperimentConfig[CpmgChd21HApSettings, RelaxationDataSettings],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
@@ -53,7 +53,8 @@ class CpmgChd21HApConfig(
 
 
 def build_spectrometer(
-    config: CpmgChd21HApConfig, spin_system: SpinSystem
+    config: CpmgChd21HApConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions
@@ -114,7 +115,7 @@ class CpmgChd21HApSequence:
             echo = d_cp[ncyc] @ p180[1] @ d_cp[ncyc]
             cpmg = matrix_power(echo, int(ncyc))
             intensities[ncyc] = spectrometer.detect(
-                part2 @ cpmg @ p180pmx @ cpmg @ part1
+                part2 @ cpmg @ p180pmx @ cpmg @ part1,
             )
 
         # Return profile

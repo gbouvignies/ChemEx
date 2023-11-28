@@ -25,7 +25,7 @@ class ShiftPrinter:
                 f"# {'NAME':>16s} {'SHIFT (EXP)':>17s}"
                 f" {'ERROR (EXP)':>17s} {'SHIFT (CALC)':>17s}\n"
             ),
-        ]
+        ],
     )
 
     def print(self, name: str, data: Data) -> str:
@@ -51,13 +51,18 @@ class ProfilePrinter:
         ]
 
         for metadata, exp, err, calc, mask in zip(
-            data.metadata, data.exp, data.err, data.calc, data.mask, strict=True
+            data.metadata,
+            data.exp,
+            data.err,
+            data.calc,
+            data.mask,
+            strict=True,
         ):
             start = " " if mask else "#"
             end = "" if mask else " # NOT USED IN THE FIT"
             output.append(
                 f"{start} {metadata: {self.first_column_fmt}} {exp: 17.8e}"
-                f" {err: 17.8e} {calc: 17.8e}{end}"
+                f" {err: 17.8e} {calc: 17.8e}{end}",
             )
         return "\n".join(output) + "\n\n"
 
@@ -78,3 +83,33 @@ class CpmgPrinter(ProfilePrinter):
 class RelaxationPrinter(ProfilePrinter):
     first_column_name: str = "TIME (S)"
     first_column_fmt: str = "12.2f"
+
+
+@dataclass
+class EXSYPrinter(ProfilePrinter):
+    first_column_name: str = "TIME (S)"
+    first_column_fmt: str = "12.6f"
+    header = ""
+
+    def print(self, name: str, data: Data) -> str:
+        output = [
+            f"[{name}]",
+            f"# {self.first_column_name:>12s} {'STATE1':>12s} {'STATE2':>12s} {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s} {'INTENSITY (CALC)':>17s}",
+        ]
+
+        for metadata, exp, err, calc, mask in zip(
+            data.metadata,
+            data.exp,
+            data.err,
+            data.calc,
+            data.mask,
+        ):
+            start = " " if mask else "#"
+            end = "" if mask else " # NOT USED IN THE FIT"
+            time = metadata["times"]
+            state1 = metadata["states1"]
+            state2 = metadata["states1"]
+            output.append(
+                f"{start} {time: {self.first_column_fmt}} {state1} {state2} {exp: 17.8e} {err: 17.8e} {calc: 17.8e}{end}",
+            )
+        return "\n".join(output) + "\n\n"

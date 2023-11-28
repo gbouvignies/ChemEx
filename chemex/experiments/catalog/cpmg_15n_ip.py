@@ -51,7 +51,8 @@ class Cpmg15NIpConfig(ExperimentConfig[Cpmg15NIpSettings, RelaxationDataSettings
 
 
 def build_spectrometer(
-    config: Cpmg15NIpConfig, spin_system: SpinSystem
+    config: Cpmg15NIpConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions
@@ -107,14 +108,14 @@ class Cpmg15NIpSequence:
         intensities = {
             0.0: spectrometer.detect(d_eq @ p90[0] @ p180pmx @ p90[0] @ start),
             -1.0: spectrometer.detect(
-                part2 @ d_cp[-1.0] @ p180pmx @ d_cp[-1.0] @ part1
+                part2 @ d_cp[-1.0] @ p180pmx @ d_cp[-1.0] @ part1,
             ),
         }
         for ncyc in set(ncycs) - {0.0, -1.0}:
             echo = d_cp[ncyc] @ p180[1] @ d_cp[ncyc]
             cpmg = matrix_power(echo, int(ncyc))
             intensities[ncyc] = spectrometer.detect(
-                part2 @ cpmg @ p180pmx @ cpmg @ part1
+                part2 @ cpmg @ p180pmx @ cpmg @ part1,
             )
 
         # Return profile

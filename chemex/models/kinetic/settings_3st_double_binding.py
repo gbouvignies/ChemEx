@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """This code imports the necessary modules and functions to define a 3-state
 double binding model. The model is named "3st_double_binding" and it is
 registered in the model factory. The model requires two parameters,
@@ -7,7 +9,6 @@ the concentrations of free protein and protein bound to each ligand
 given the total protein and ligand concentrations, as well as the
 dissociation constants for each binding site.
 """
-from __future__ import annotations
 
 from functools import lru_cache
 from typing import TYPE_CHECKING
@@ -43,17 +44,22 @@ def calculate_residuals(
             pfree + pl1 + pl2 - p_total,
             lfree * pfree - kd_ab * pl1,
             lfree * pfree - kd_ac * pl2,
-        ]
+        ],
     )
 
 
 @lru_cache(maxsize=100)
 def calculate_concentrations(
-    p_total: float, l_total: float, kd_ab: float, kd_ac: float
+    p_total: float,
+    l_total: float,
+    kd_ab: float,
+    kd_ac: float,
 ) -> dict[str, float]:
     concentrations_start = (p_total, 0.0, 0.0)
     results = root(
-        calculate_residuals, concentrations_start, args=(p_total, l_total, kd_ab, kd_ac)
+        calculate_residuals,
+        concentrations_start,
+        args=(p_total, l_total, kd_ab, kd_ac),
     )
     return dict(zip(("pfree", "pl1", "pl2"), results["x"], strict=True))
 

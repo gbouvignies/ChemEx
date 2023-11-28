@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from chemex.parameters import database
+from chemex.parameters.name import ParamName
 
 if TYPE_CHECKING:
     from chemex.containers.experiments import Experiments
-    from chemex.parameters.name import ParamName
+    from chemex.parameters.setting import Parameters
 
 
 @dataclass
@@ -22,13 +23,19 @@ class Group:
 
 
 def ids_to_param_name(param_ids: set[str]) -> ParamName:
+    if not param_ids:
+        return ParamName()
     parameters = database.get_parameters(param_ids)
     param_names = (parameter.param_name for parameter in parameters.values())
     return reduce(and_, param_names)
 
 
-def group_ids(experiments: Experiments) -> list[tuple[ParamName, set[str]]]:
-    parameters = database.get_parameters(experiments.param_ids)
+def group_ids(
+    experiments: Experiments,
+    parameters: Parameters | None = None,
+) -> list[tuple[ParamName, set[str]]]:
+    if parameters is None:
+        parameters = database.get_parameters(experiments.param_ids)
 
     ids_vary: set[str] = {
         param_id
@@ -88,8 +95,53 @@ def create_groups(experiments: Experiments) -> list[Group]:
         group_param_ids = set(database.get_parameters(param_ids))
         group_experiments = experiments.get_relevant_subset(group_param_ids)
         group_message = group_message_template.format(
-            index=index, group_name=group_name
+            index=index,
+            group_name=group_name,
         )
         groups.append(Group(group_path, group_message, group_experiments))
 
     return groups
+
+
+@dataclass
+class ParamTree:
+    ids_to_fit: set[str]
+    experiments: Experiments
+    branches: list[ParamTree]
+
+
+def create_group_tree(
+    experiments: Experiments,
+    parameters: Parameters | None = None,
+) -> ParamTree:
+    if parameters is None:
+        parameters = database.get_parameters(experiments.param_ids)
+
+    ids_vary: set[str] = {
+        param_id
+        for param_id, param in parameters.items()
+        if param.vary and not param.expr
+    }
+
+    ids_global = {
+        param_id
+        for param_id in ids_vary
+        if len(experiments.get_relevant_subset({param_id})) == len(experiments)
+    }
+
+    for param_id in ids_global:
+        parameters[param_id].vary = False
+
+    id_groups = group_ids(experiments, parameters)
+
+    branches: list[ParamTree] = []
+
+    if len(id_groups) > 1:
+        for _, ids in id_groups:
+            sub_experiments = experiments.get_relevant_subset(ids)
+            branches.append(create_group_tree(sub_experiments))
+
+    for param_id in ids_global:
+        parameters[param_id].vary = True
+
+    return ParamTree(ids_to_fit=ids_global, experiments=experiments, branches=branches)

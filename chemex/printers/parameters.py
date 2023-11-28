@@ -64,7 +64,8 @@ _format_param = {
 
 
 def _params_to_strings(
-    parameters: GlobalLocalParameters, status: str
+    parameters: GlobalLocalParameters,
+    status: str,
 ) -> dict[str, dict[str, str]]:
     result: defaultdict[str, dict[str, str]] = defaultdict(dict)
 
@@ -138,7 +139,9 @@ def classify_parameters(experiments: Experiments) -> ClassifiedParameters:
     }
 
     return ClassifiedParameters(
-        classify_global(fitted), classify_global(fixed), classify_global(constrained)
+        classify_global(fitted),
+        classify_global(fixed),
+        classify_global(constrained),
     )
 
 

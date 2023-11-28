@@ -50,14 +50,15 @@ class CpmgCh31HTqDiffSettings(CpmgSettings):
 
 
 class CpmgCh31HTqDiffConfig(
-    ExperimentConfig[CpmgCh31HTqDiffSettings, RelaxationDataSettings]
+    ExperimentConfig[CpmgCh31HTqDiffSettings, RelaxationDataSettings],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
         state = self.experiment.observed_state
 
         to_be_fitted = ToBeFitted(
-            rates=[f"r2_i_{state}", "d_"], model_free=[f"tauc_{state}", "d_"]
+            rates=[f"r2_i_{state}", "d_"],
+            model_free=[f"tauc_{state}", "d_"],
         )
 
         if self.experiment.ipap_flg:
@@ -68,7 +69,8 @@ class CpmgCh31HTqDiffConfig(
 
 
 def build_spectrometer(
-    config: CpmgCh31HTqDiffConfig, spin_system: SpinSystem
+    config: CpmgCh31HTqDiffConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions

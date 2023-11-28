@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Generic, TypeVar
 
 import numpy as np
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from chemex.configuration.base import BaseModelLowerCase
 from chemex.configuration.conditions import ConditionsFromFile
@@ -17,14 +17,17 @@ class ToBeFitted:
 
 
 class ExperimentNameSettings(BaseModelLowerCase):
+    model_config = ConfigDict(str_to_lower=True)
     name: str
 
 
 class RelaxationSettings(BaseModelLowerCase):
+    model_config = ConfigDict(str_to_lower=True)
     name: str
 
 
 class CpmgSettings(BaseModelLowerCase):
+    model_config = ConfigDict(str_to_lower=True)
     name: str
     even_ncycs: bool = False
 
@@ -34,11 +37,13 @@ class CpmgSettingsEvenNcycs(CpmgSettings):
 
 
 class CestSettings(BaseModelLowerCase):
+    model_config = ConfigDict(str_to_lower=True)
     name: str
     sw: float = np.inf
 
 
 class ShiftSettings(BaseModelLowerCase):
+    model_config = ConfigDict(str_to_lower=True)
     name: str
 
 

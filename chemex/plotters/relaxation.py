@@ -63,7 +63,7 @@ def create_plot_data_calc(profile: Profile) -> Data:
 
 
 class RelaxationPlotter:
-    def __init__(self, filename: Path, **_extra: Any):
+    def __init__(self, filename: Path, **_extra: Any) -> None:
         self.filename = filename
         self.printer: PlotPrinter = data_plot_printers["relaxation"]
 
@@ -82,9 +82,13 @@ class RelaxationPlotter:
             for profile in sorted(profiles):
                 data_exp = create_plot_data_exp(profile)
                 data_calc = create_plot_data_calc(profile)
-                plot_relaxation(file_pdf, str(profile.name), data_exp, data_calc)
-                file_exp.write(self.printer.print_exp(str(profile.name), data_exp))
-                file_calc.write(self.printer.print_calc(str(profile.name), data_calc))
+                plot_relaxation(file_pdf, str(profile.spin_system), data_exp, data_calc)
+                file_exp.write(
+                    self.printer.print_exp(str(profile.spin_system), data_exp)
+                )
+                file_calc.write(
+                    self.printer.print_calc(str(profile.spin_system), data_calc)
+                )
 
     def plot_simulation(self, path: Path, profiles: list[Profile]) -> None:
         basename = path / self.filename.name
@@ -99,5 +103,7 @@ class RelaxationPlotter:
             for profile in sorted(profiles):
                 data_exp = create_plot_data_exp(profile)
                 data_calc = create_plot_data_calc(profile)
-                plot_relaxation(file_pdf, str(profile.name), data_exp, data_calc)
-                file_sim.write(self.printer.print_calc(str(profile.name), data_calc))
+                plot_relaxation(file_pdf, str(profile.spin_system), data_exp, data_calc)
+                file_sim.write(
+                    self.printer.print_calc(str(profile.spin_system), data_calc)
+                )

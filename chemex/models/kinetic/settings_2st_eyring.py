@@ -22,7 +22,11 @@ TPL = ("temperature", "p_total", "l_total")
 
 @lru_cache(maxsize=100)
 def calculate_kij_2st_eyring(
-    dh_b: float, ds_b: float, dh_ab: float, ds_ab: float, temperature: float
+    dh_b: float,
+    ds_b: float,
+    dh_ab: float,
+    ds_ab: float,
+    temperature: float,
 ) -> dict[str, float]:
     kelvin = temperature + 273.15
     kbt_h = constants.k * kelvin / constants.h

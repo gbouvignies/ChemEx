@@ -61,7 +61,8 @@ class CpmgHNDqZqConfig(ExperimentConfig[CpmgHNDqZqSettings, RelaxationDataSettin
 
 
 def build_spectrometer(
-    config: CpmgHNDqZqConfig, spin_system: SpinSystem
+    config: CpmgHNDqZqConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions
@@ -91,7 +92,7 @@ class CpmgHNDqZqSequence:
                 self.settings.time_t2 / (4.0 * ncycs_no_ref)
                 - 7.0 / 3.0 * self.settings.pw90_n,
                 strict=True,
-            )
+            ),
         )
 
     def _get_phases(self, ncyc: float) -> tuple[ArrayInt, ArrayInt]:

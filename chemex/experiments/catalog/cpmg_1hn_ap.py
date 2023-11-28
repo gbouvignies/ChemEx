@@ -56,7 +56,8 @@ class Cpmg1HnApConfig(ExperimentConfig[Cpmg1HnApSettings, RelaxationDataSettings
 
 
 def build_spectrometer(
-    config: Cpmg1HnApConfig, spin_system: SpinSystem
+    config: Cpmg1HnApConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions
@@ -117,7 +118,7 @@ class Cpmg1HnApSequence:
         part2 = d_eq_2 @ p90[0] @ d_neg
         intensities = {
             0.0: spectrometer.detect(
-                d_eq_2 @ p90[0] @ p180pmx @ p90[0] @ d_eq_1 @ start
+                d_eq_2 @ p90[0] @ p180pmx @ p90[0] @ d_eq_1 @ start,
             ),
             -1.0: spectrometer.detect(part2 @ d_cp[-1] @ p180pmx @ d_cp[-1] @ part1),
         }
@@ -125,7 +126,7 @@ class Cpmg1HnApSequence:
             echo = d_cp[ncyc] @ p180[1] @ d_cp[ncyc]
             cpmg = matrix_power(echo, int(ncyc))
             intensities[ncyc] = spectrometer.detect(
-                part2 @ cpmg @ p180pmx @ cpmg @ part1
+                part2 @ cpmg @ p180pmx @ cpmg @ part1,
             )
 
         # Return profile

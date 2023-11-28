@@ -57,7 +57,8 @@ class Cpmg13CoApConfig(ExperimentConfig[Cpmg13CoApSettings, RelaxationDataSettin
 
 
 def build_spectrometer(
-    config: Cpmg13CoApConfig, spin_system: SpinSystem
+    config: Cpmg13CoApConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions
@@ -120,7 +121,7 @@ class Cpmg13CoApSequence:
 
         # Calculating the instensities as a function of ncyc
         intensities = {
-            0.0: spectrometer.detect(d_eq @ p90[1] @ p_flip0 @ p90[1] @ start)
+            0.0: spectrometer.detect(d_eq @ p90[1] @ p_flip0 @ p90[1] @ start),
         }
 
         part1 = d_neg @ p90[1] @ start
@@ -130,7 +131,7 @@ class Cpmg13CoApSequence:
             echo = d_cp[ncyc] @ perfect180x @ d_cp[ncyc]
             cpmg = matrix_power(echo, int(ncyc))
             intensities[ncyc] = spectrometer.detect(
-                part2 @ cpmg @ p_flip @ cpmg @ part1
+                part2 @ cpmg @ p_flip @ cpmg @ part1,
             )
 
         # Return profile

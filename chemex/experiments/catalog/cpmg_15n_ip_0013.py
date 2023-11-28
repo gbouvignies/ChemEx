@@ -51,7 +51,7 @@ class Cpmg15N0013IpSettings(CpmgSettings):
 
 
 class Cpmg15N0013IpConfig(
-    ExperimentConfig[Cpmg15N0013IpSettings, RelaxationDataSettings]
+    ExperimentConfig[Cpmg15N0013IpSettings, RelaxationDataSettings],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
@@ -60,7 +60,8 @@ class Cpmg15N0013IpConfig(
 
 
 def build_spectrometer(
-    config: Cpmg15N0013IpConfig, spin_system: SpinSystem
+    config: Cpmg15N0013IpConfig,
+    spin_system: SpinSystem,
 ) -> Spectrometer:
     settings = config.experiment
     conditions = config.conditions
@@ -108,7 +109,7 @@ class Cpmg15N0013IpSequence:
             [
                 [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3],
                 [1, 3, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 1, 3, 2, 2],
-            ]
+            ],
         )
         indexes = np.flip(np.arange(2 * int(ncyc)))
         return np.take(cp_phases, indexes, mode="wrap", axis=1)
@@ -140,15 +141,15 @@ class Cpmg15N0013IpSequence:
                 @ d_pos
                 @ p180[[0, 1]]
                 @ p90[1]
-                @ start
-            )
+                @ start,
+            ),
         }
         for ncyc in set(ncycs) - {0.0}:
             phases = self._get_phases(ncyc)
             echo = d_cp[ncyc] @ p180 @ d_cp[ncyc]
             cpmg = reduce(np.matmul, echo[phases.T])
             intensities[ncyc] = spectrometer.detect(
-                d_delta[ncyc] @ p90[3] @ d_neg @ cpmg @ d_neg @ p90[1] @ start
+                d_delta[ncyc] @ p90[3] @ d_neg @ cpmg @ d_neg @ p90[1] @ start,
             )
 
         # Return profile

@@ -1,7 +1,6 @@
-"""The ref module contains the reference matrices and code for calculating the
-Liouvillian.
+"""The ref module contains the code for calculating the Liouvillians.
 
-Operator basis::
+Operator basis:
 
 { Eq,
 Ix, Iy, Iz, Sx, Sy, Sz,
@@ -37,7 +36,9 @@ _Q_ORDER_I = {"sq": 1.0, "dq": 2.0, "tq": 3.0}
 
 
 def _make_gaussian(
-    value: float, scale: float, res: int
+    value: float,
+    scale: float,
+    res: int,
 ) -> tuple[ArrayFloat, ArrayFloat]:
     if scale not in (0.0, np.inf) and res > 1:
         grid = np.linspace(-2.0, 2.0, res)
@@ -56,7 +57,12 @@ class LiouvillianIS:
         for state_name in state_names & set(self.matrices):
             self.matrices[state_name] = np.sign(self._matrices_ref[state_name]) * value
 
-    def __init__(self, spin_system: SpinSystem, basis: Basis, conditions: Conditions):
+    def __init__(
+        self,
+        spin_system: SpinSystem,
+        basis: Basis,
+        conditions: Conditions,
+    ) -> None:
         self.spin_system = spin_system.correct(basis)
         self.basis = basis
         self.h_frq = 0.0 if conditions.h_larmor_frq is None else conditions.h_larmor_frq
@@ -183,7 +189,9 @@ class LiouvillianIS:
     def b1_i(self, value: float):
         self._b1_i = value
         self._b1_i_dist, self._b1_i_weights = _make_gaussian(
-            self.b1_i, self.b1_i_inh_scale, self.b1_i_inh_res
+            self.b1_i,
+            self.b1_i_inh_scale,
+            self.b1_i_inh_res,
         )
         self._b1_i_dist = self._b1_i_dist.reshape((-1, 1, 1))
         self._b1_i_weights = self._b1_i_weights.reshape((-1, 1, 1))
@@ -268,12 +276,16 @@ class LiouvillianIS:
         return mag
 
     def get_start_magnetization(
-        self, terms: Iterable[str], atom: str = "h"
+        self,
+        terms: Iterable[str],
+        atom: str = "h",
     ) -> ArrayFloat:
         ratio = XI_RATIO.get(atom, 1.0)
         mag = np.zeros((self.size, 1))
         for term, state, (comp, vector) in product(
-            terms, model.states, self.vectors.items()
+            terms,
+            model.states,
+            self.vectors.items(),
         ):
             if comp.startswith(term) and comp.endswith(f"_{state}"):
                 mag += self.par_values[f"p{state}"] * ratio * vector
@@ -281,7 +293,8 @@ class LiouvillianIS:
 
     def keep(self, magnetization: ArrayFloat, components: Iterable[str]) -> ArrayFloat:
         keep = sum(
-            (self.vectors[name] for name in components), start=np.zeros((self.size, 1))
+            (self.vectors[name] for name in components),
+            start=np.zeros((self.size, 1)),
         )
         keep[keep > 0] = 1.0
         return keep * magnetization

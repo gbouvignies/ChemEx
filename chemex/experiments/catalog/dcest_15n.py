@@ -69,7 +69,8 @@ class DCest15NConfig(ExperimentConfig[DCest15NSettings, CestDataSettings]):
     def to_be_fitted(self) -> ToBeFitted:
         state = self.experiment.observed_state
         return ToBeFitted(
-            rates=["r2_i", f"r1_i_{state}"], model_free=[f"tauc_{state}", f"s2_{state}"]
+            rates=["r2_i", f"r1_i_{state}"],
+            model_free=[f"tauc_{state}", f"s2_{state}"],
         )
 
 
@@ -131,7 +132,7 @@ class DCest15NSequence:
             )
 
         return np.array(
-            [spectrometer.detect(intensities[offset]) for offset in offsets]
+            [spectrometer.detect(intensities[offset]) for offset in offsets],
         )
 
 

@@ -40,7 +40,9 @@ class GridResult:
 
 
 def _set_param_values(
-    params: Parameters, fnames: Iterable[str], values: tuple[float, ...]
+    params: Parameters,
+    fnames: Iterable[str],
+    values: tuple[float, ...],
 ):
     for fname, value in zip(fnames, values, strict=True):
         params[fname].value = value
@@ -96,7 +98,8 @@ def run_group_grid(
 
 
 def _reshape_chisqr(
-    grid_ref: dict[str, ArrayFloat], grid_result: GridResult
+    grid_ref: dict[str, ArrayFloat],
+    grid_result: GridResult,
 ) -> ArrayFloat:
     keys = list(grid_result.grid)
     order = [keys.index(key) for key in grid_ref if key in keys]
@@ -116,7 +119,8 @@ def _reshape_chisqr(
 
 
 def _get_grids(
-    grid: dict[str, ArrayFloat], grid_results: list[GridResult]
+    grid: dict[str, ArrayFloat],
+    grid_results: list[GridResult],
 ) -> list[dict[str, ArrayFloat]]:
     grid_params = {tuple(sorted(grid_result.grid)) for grid_result in grid_results}
     grid_params_tmp = grid_params.copy()
@@ -127,7 +131,8 @@ def _get_grids(
 
 
 def combine_grids(
-    grid: dict[str, ArrayFloat], grid_results: list[GridResult]
+    grid: dict[str, ArrayFloat],
+    grid_results: list[GridResult],
 ) -> list[GridResult]:
     grids = _get_grids(grid, grid_results)
 
@@ -174,7 +179,7 @@ def make_grids_nd(
     return grids
 
 
-def plot_grid_1d(grids_1d: list[GridResult], path: Path):
+def plot_grid_1d(grids_1d: list[GridResult], path: Path) -> None:
     """Visualize the result of the brute force grid search.
 
     The output file will display the chi-square values per parameter.
@@ -198,7 +203,7 @@ def plot_grid_1d(grids_1d: list[GridResult], path: Path):
             plt.close()
 
 
-def plot_grid_2d(grids_2d: list[GridResult], path: Path):
+def plot_grid_2d(grids_2d: list[GridResult], path: Path) -> None:
     """Visualize the result of the brute force grid search.
 
     The output file will display the chi-square contour
