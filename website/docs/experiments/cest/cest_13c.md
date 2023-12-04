@@ -17,32 +17,32 @@ CEST block. This keeps the spin system purely in-phase throughout, and is
 calculated using the (3n)×(3n), single-spin matrix, where n is the number of
 states:
 
-    { Ix(a), Iy(a), Iz(a),
-      Ix(b), Iy(b), Iz(b), ... }
+    \{ Ix(a), Iy(a), Iz(a),
+      Ix(b), Iy(b), Iz(b), ... \}
 
 ## References
 
-- P. Vallurupalli, G. Bouvignies, and L.E. Kay. _ChemBioChem_ **14**, 1709-1713
-  (2014)
-- G. Bouvignies, P. Vallurupalli, and L.E. Kay. _J. Mol. Biol._ **426**, 763-774
-  (2014)
-- P. Vallurupalli, and L.E. Kay. _Angew. Chem. Int. Ed._ **52**, 4156-4159
-  (2013)
-- D.F. Hansen, G. Bouvignies, and L.E. Kay. _J. Biomol. NMR_ **55**, 279-289
-  (2013)
-- G. Bouvignies, and L.E. Kay. _J. Biomol. NMR_ **53**, 303-310 (2012)
-- E. Rennella, R. Huang, A. Velyvis, and L.E. Kay. _J. Biomol. NMR_ **63**,
-  187-199 (2015)
+-   P. Vallurupalli, G. Bouvignies, and L.E. Kay. _ChemBioChem_ **14**, 1709-1713
+    (2014)
+-   G. Bouvignies, P. Vallurupalli, and L.E. Kay. _J. Mol. Biol._ **426**, 763-774
+    (2014)
+-   P. Vallurupalli, and L.E. Kay. _Angew. Chem. Int. Ed._ **52**, 4156-4159
+    (2013)
+-   D.F. Hansen, G. Bouvignies, and L.E. Kay. _J. Biomol. NMR_ **55**, 279-289
+    (2013)
+-   G. Bouvignies, and L.E. Kay. _J. Biomol. NMR_ **53**, 303-310 (2012)
+-   E. Rennella, R. Huang, A. Velyvis, and L.E. Kay. _J. Biomol. NMR_ **63**,
+    187-199 (2015)
 
 ## Example
 
-- An example for studying side-chain methyl groups in selectively ¹³C-labeled
-  sample is available
-  [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_13C/).
-- An example for studying
-  [uniformly ¹³C, ¹⁵N-labeled sample](../../examples/cest_13c_15n.md) is
-  available
-  [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_13C_LABEL_CN/).
+-   An example for studying side-chain methyl groups in selectively ¹³C-labeled
+    sample is available
+    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_13C/).
+-   An example for studying
+    [uniformly ¹³C, ¹⁵N-labeled sample](../../examples/cest_13c_15n.md) is
+    available
+    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_13C_LABEL_CN/).
 
 ## Sample configuration file
 

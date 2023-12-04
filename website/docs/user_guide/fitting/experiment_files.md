@@ -16,10 +16,10 @@ chemex fit -e <experiment_file1> <experiment_file2> [...]
 
 Experiment files are divided in 3 different sections:
 
-- `[experiment]` includes the information about the experiment.
-- `[conditions]` provides the sample conditions.
-- `[data]` contains the details about the data location, spin system assignment
-  as well as methods to estimate uncertainties or filter out some measurements.
+-   `[experiment]` includes the information about the experiment.
+-   `[conditions]` provides the sample conditions.
+-   `[data]` contains the details about the data location, spin system assignment
+    as well as methods to estimate uncertainties or filter out some measurements.
 
 ## Example
 
@@ -100,10 +100,10 @@ sample. The labeling information is used in some experiments to take into
 account some isotopic effects that may affect relaxation rates or the presence
 of scalar couplings.
 
-- Use `"2H"` for deuterated samples to obtain accurate initial estimates of
-  relaxation rates based on model-free parameters.
-- Use `"13C"` for uniformly <sup>13</sup>C-labeled samples to account for scalar
-  couplings in CEST experiments properly.
+-   Use `"2H"` for deuterated samples to obtain accurate initial estimates of
+    relaxation rates based on model-free parameters.
+-   Use `"13C"` for uniformly <sup>13</sup>C-labeled samples to account for scalar
+    couplings in CEST experiments properly.
 
 For example, for a uniformly <sup>13</sup>C-labeled, perdeuterated sample, use
 the following configuration:
@@ -191,4 +191,97 @@ two-spin system, etc. Although ChemEx has a built-in mechanism to correct
 user-supplied spin system names automatically, we recommend that you be as
 accurate as possible when choosing them.
 
+:::
+
+---
+sidebar_position: 3
+---
+
+# Experiment Files
+
+## Overview
+
+Experiment files in ChemEx are used to provide detailed information about datasets and file locations for analysis. These files are accessible through the `-e` or `--experiments` command line option as shown below:
+
+```shell
+chemex fit -e <experiment_file1> <experiment_file2> [...]
+```
+
+## Structure of Experiment Files
+
+Experiment files consist of three primary sections:
+
+1. **`[experiment]`**: Contains experiment-related information.
+2. **`[conditions]`**: Details sample conditions.
+3. **`[data]`**: Includes data location, spin system assignments, and methods for uncertainty estimation or filtering measurements.
+
+### Example of an Experiment File
+
+```toml title="experiment.toml"
+[experiment]
+name         = "cest_15n"
+time_t1      = 0.5
+carrier      = 118.987
+b1_frq       = 26.3
+
+[conditions]
+h_larmor_frq = 499.243
+# p_total     = 2.0e-3
+# sample      = "A39G FF domain"
+# temperature = 1.0
+
+[data]
+path           = "../Data/26Hz/"
+error          = "scatter"
+filter_offsets = [[0.0, 26.0]]
+
+  [data.profiles]
+  13N = "13N-HN.out"
+  26N = "26N-HN.out"
+  28N = "28N-HN.out"
+  29N = "29N-HN.out"
+```
+
+:::note
+Each experiment in ChemEx comes with a sample configuration file. These files, accessible in the [Experiments](/docs/experiments) section, include detailed key-value pair descriptions.
+:::
+
+## Detailed Sections
+
+### `[experiment]`
+
+This section includes pulse sequence type and settings. Common keys found here are:
+
+- `name`: Name of the pulse sequence.
+- `carrier`: Carrier position in ppm.
+- `time_t1`, `time_t2`: Relaxation delays in seconds.
+- `pw90`: 90 degree pulse width in seconds.
+- `b1_frq`: B1 field strength in Hz.
+- `observed_state`: Observed state ID (a, b, c, d).
+
+### `[conditions]`
+
+Provides experimental and sample conditions like Larmor frequency, sample temperature, protein concentration, and labeling. While `h_larmor_frq` (Larmor frequency) is always required, `temperature`, `p_total`, and `l_total` depend on the kinetic model used.
+
+#### `label`
+The `label` key, specifying the sample's labeling scheme, is crucial for certain experiments. Examples include `"2H"` for deuterated samples and `"13C"` for <sup>13</sup>C-labeled samples. 
+
+### `[data]`
+
+Details data location, spin system assignments, and methods for error estimation and data filtering.
+
+#### `error`
+Methods for error estimation include:
+- `"file"`: Direct from file.
+- `"duplicates"`: Pooled standard deviation or average error values.
+- `"scatter"`: Gaussian noise estimation on CEST profiles.
+
+#### `filter_offsets`
+Used to exclude specific offsets from CEST profiles, typically provided as pairs of values indicating offset and bandwidth.
+
+#### `[data.profiles]`
+Lists filenames of experimental profiles and their spin-system assignments. Names should follow Sparky-NMR peak label conventions.
+
+:::note
+Ensure accuracy in naming spin-systems, as it impacts experiment specificity.
 :::

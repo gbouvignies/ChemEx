@@ -21,13 +21,13 @@ Magnetization is initially anti-phase and is read out as anti-phase. The
 calculation uses a simplified scheme that includes only (6n)×(6n) basis set,
 two-spin matrix, where n is the number of states:
 
-    { 2HTQxCz(a), 2HTQyCz(a), 2HzCz(a), HTQx(a), HTQy(a), Hz(a),
-      2HTQxCz(b), 2HTQyCz(b), 2HzCz(b), HTQx(b), HTQy(b), Hz(b), ... }
+    \{ 2HTQxCz(a), 2HTQyCz(a), 2HzCz(a), HTQx(a), HTQy(a), Hz(a),
+      2HTQxCz(b), 2HTQyCz(b), 2HzCz(b), HTQx(b), HTQy(b), Hz(b), ... \}
 
 ## Reference
 
-- T. Yuwen, A. Sekhar, A.J. Baldwin, P. Vallurupalli, and L.E. Kay. _Angew.
-  Chem. Int. Ed._ (2018) 57, 16777-16780
+-   T. Yuwen, A. Sekhar, A.J. Baldwin, P. Vallurupalli, and L.E. Kay. _Angew.
+    Chem. Int. Ed._ (2018) 57, 16777-16780
 
 ## Example
 

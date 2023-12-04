@@ -32,7 +32,7 @@ step, the major purpose is to obtain residue-specific parameters.
 
 Further analysis of the fitting results can be carried out with the aid of
 additional functions in ChemEx (refer to
-[`Plotting best-fit parameters`](user_guide/additional_modules.md#plotting-best-fit-parameters)
+[`Plotting best-fit parameters`](user_guide/additional_modules.mdx#plotting-best-fit-parameters)
 subsection). During the whole fitting process K<sub>d</sub> is fixed to the
 value obtained from ITC experiments, more details about this example can be
 found in the reference.[^1]

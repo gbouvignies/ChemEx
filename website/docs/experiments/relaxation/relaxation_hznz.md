@@ -16,13 +16,13 @@ Analyzes ¹H-¹⁵N longitudinal two-spin order relaxation experiments. Decay is
 calculated using the (2n)×(2n), two-spin matrix, where n is the number of
 states:
 
-    { Iz(a), 2IzSz(a),
-      Iz(b), 2IzSz(b), ... }
+    \{ Iz(a), 2IzSz(a),
+      Iz(b), 2IzSz(b), ... \}
 
 ## Reference
 
-- D.F. Hansen, D. Yang, H. Feng, Z. Zhou, S. Wiesner, Y. Bai, and L.E. Kay. _J.
-  Am. Chem. Soc._ **129**, 11468-11479 (2007)
+-   D.F. Hansen, D. Yang, H. Feng, Z. Zhou, S. Wiesner, Y. Bai, and L.E. Kay. _J.
+    Am. Chem. Soc._ **129**, 11468-11479 (2007)
 
 ## Example
 

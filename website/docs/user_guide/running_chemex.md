@@ -1,40 +1,31 @@
 ---
-sidebar_position: 2
-lastmod: 2022-04-19T20:14:49.735Z
+sidebar_position: 1
 ---
 
 # Running ChemEx
 
-ChemEx is a command-line application. After the installation, you can run the
-program directly from the shell prompt using the command `chemex`:
+ChemEx operates as a command-line tool. Once installed, execute it from the shell prompt with the `chemex` command:
 
 ```shell
 chemex <subcommand> <options>
 ```
 
-Four **sub-commands** are available, each corresponding to a specific task:
+It offers four **sub-commands**, each dedicated to a distinct functionality:
 
-- [`fit`](fitting/chemex_fit.md) starts the fits of experimental datasets: if
-  you are interested in ChemEx, this is likely the sub-command you are looking
-  for.
-- `simulate` executes the module, which allows to calculate synthetic profiles
-  from a given experiment and a given model.
-- `pick_cest` is a small GUI application, which plots CEST, cos-CEST and D-CEST
-  profiles for interactive dip picking and obtaining starting minor state
-  position values.
-- `plot_param` produces plots of selected parameters based on fitting output
-  results.
+- [`fit`](fitting/chemex_fit.md): Initiates the fitting of experimental data. This is the primary sub-command for most ChemEx users.
+- `simulate`: Runs the module to generate synthetic profiles using specified experiments and models.
+- `pick_cest`: Provides a small GUI for plotting CEST, cos-CEST, and D-CEST profiles. It facilitates interactive dip picking and initial estimation of minor state positions.
+- `plot_param`: Generates plots for selected parameters derived from fitting results.
 
 :::tip
 
-You can obtain the list of available sub-commands using the `--help` option.
+Retrieve a list of all sub-commands by using the `--help` option:
 
 ```bash
 chemex --help
 ```
 
-You can display the list of options associated with each sub-command using the
-sub-command name followed by the `--help` option.
+For details on each sub-command's options, append `--help` after the sub-command:
 
 ```bash
 chemex <subcommand> --help

@@ -17,14 +17,14 @@ magnetization throughout the CPMG block. This results in lower intrinsic
 relaxation rates and therefore better sensitivity. The calculations use a
 (6n)×(6n), two-spin matrix, where n is the number of states:
 
-    { Hx(a), Hy(a), Hz(a), 2HxNz(a), 2HyNz(a), 2HzNz(a),
-      Hx(b), Hy(b), Hz(b), 2HxNz(b), 2HyNz(b), 2HzNz(b), ... }
+    \{ Hx(a), Hy(a), Hz(a), 2HxNz(a), 2HyNz(a), 2HzNz(a),
+      Hx(b), Hy(b), Hz(b), 2HxNz(b), 2HyNz(b), 2HzNz(b), ... \}
 
 ## Reference
 
 Adapted from:
 
-- Ishima, and Torshia. _J. Biomol. NMR_ **25**, 243-248 (2003)
+-   Ishima, and Torshia. _J. Biomol. NMR_ **25**, 243-248 (2003)
 
 ## Example
 

@@ -21,7 +21,7 @@ Parameter files are divided in multiple sections:
   parameter name, such as `[CS_A]`. Multiple parameter files can be provided if
   necessary.
 
-:::caution
+:::warning
 
 Due to the multidimensional searching feature of $χ^2$ minimization process, it
 is essential to set a suitable initial value for each parameter to avoid getting
