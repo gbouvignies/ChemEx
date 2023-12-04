@@ -1,8 +1,7 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
-const lightCodeTheme = require('prism-react-renderer/themes/github');
-const darkCodeTheme = require('prism-react-renderer/themes/dracula');
+import { themes as prismThemes } from 'prism-react-renderer';
 
 const math = require('remark-math');
 const katex = require('rehype-katex');
@@ -26,13 +25,13 @@ const config = {
             /** @type {import('@docusaurus/preset-classic').Options} */
             ({
                 docs: {
-                    sidebarPath: require.resolve('./sidebars.js'),
+                    sidebarPath: './sidebars.js',
                     editUrl: 'https://github.com/gbouvignies/chemex/tree/main/website/',
                     remarkPlugins: [math],
                     rehypePlugins: [katex],
                 },
                 theme: {
-                    customCss: require.resolve('./src/css/custom.css'),
+                    customCss: './src/css/custom.css',
                 },
             }),
         ],
@@ -61,7 +60,7 @@ const config = {
                 items: [
                     {
                         type: 'doc',
-                        docId: 'getting_started',
+                        docId: 'welcome_to_chemex',
                         position: 'left',
                         label: 'Docs',
                     },
@@ -86,7 +85,7 @@ const config = {
                         items: [
                             {
                                 label: 'Installation',
-                                to: '/docs/getting_started#Installation',
+                                to: '/docs/welcome_to_chemex#installation',
                             },
                             {
                                 label: 'User Guide',
@@ -132,8 +131,8 @@ const config = {
                 copyright: `Copyright © ${new Date().getFullYear()} Guillaume Bouvignies, Inc. Built with Docusaurus.`,
             },
             prism: {
-                theme: lightCodeTheme,
-                darkTheme: darkCodeTheme,
+                theme: prismThemes.github,
+                darkTheme: prismThemes.dracula,
                 additionalLanguages: ['toml', "markdown"],
             },
             algolia: {
@@ -162,4 +161,4 @@ const config = {
         }),
 };
 
-module.exports = config;
+export default config;

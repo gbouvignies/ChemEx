@@ -17,13 +17,13 @@ D-CEST block. This keeps the spin system purely in-phase throughout, and is
 calculated using the (3n)×(3n), single-spin matrix, where n is the number of
 states:
 
-    { Ix(a), Iy(a), Iz(a),
-      Ix(b), Iy(b), Iz(b), ... }
+    \{ Ix(a), Iy(a), Iz(a),
+      Ix(b), Iy(b), Iz(b), ... \}
 
 ## References
 
-- T. Yuwen, L.E. Kay, and G. Bouvignies. _ChemPhysChem_ **19**, 1707-1710 (2018)
-- T. Yuwen, G. Bouvignies, and L.E. Kay. _J. Mag. Reson._ **292**, 1-7 (2018)
+-   T. Yuwen, L.E. Kay, and G. Bouvignies. _ChemPhysChem_ **19**, 1707-1710 (2018)
+-   T. Yuwen, G. Bouvignies, and L.E. Kay. _J. Mag. Reson._ **292**, 1-7 (2018)
 
 ## Sample configuration file
 

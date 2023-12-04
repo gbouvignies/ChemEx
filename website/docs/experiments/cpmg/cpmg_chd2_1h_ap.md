@@ -18,13 +18,13 @@ initially anti-phase and is read out as anti-phase prior to ¹³C evolution.
 Resulting magnetization intensity after the CPMG block is calculated using the
 (6n)×(6n), two-spin matrix, where n is the number of states:
 
-    { Ix(a), Iy(a), Iz(a), IxSz(a), IySz(a), IzSz(a),
-      Ix(b), Iy(b), Iz(b), IxSz(b), IySz(b), IzSz(b), ... }
+    \{ Ix(a), Iy(a), Iz(a), IxSz(a), IySz(a), IzSz(a),
+      Ix(b), Iy(b), Iz(b), IxSz(b), IySz(b), IzSz(b), ... \}
 
 ## Reference
 
-- A.J. Baldwin, T.M. Religa, D.F. Hansen, G. Bouvignies, and L.E. Kay. _J. Am.
-  Chem. Soc._ **132**, 10992-10995 (2010)
+-   A.J. Baldwin, T.M. Religa, D.F. Hansen, G. Bouvignies, and L.E. Kay. _J. Am.
+    Chem. Soc._ **132**, 10992-10995 (2010)
 
 ## Example
 

@@ -9,10 +9,10 @@ sidebar_position: 6
 The method file contains the fitting methods to be used during the fitting
 process. This is where you can:
 
-- define which parameters are fit, fixed, or constrained,
-- select the profiles to include in the calculation,
-- activate additional calculations, such as grid search, Monte Carlo or
-  bootstrap analyses.
+-   define which parameters are fit, fixed, or constrained,
+-   select the profiles to include in the calculation,
+-   activate additional calculations, such as grid search, Monte Carlo or
+    bootstrap analyses.
 
 This file is provided to ChemEx using the `-m` or `--method` option.
 
@@ -105,13 +105,13 @@ FIT = [
 
 In this example:
 
-- `"R2_A, NUC->G23N, B0->800.13MHz, T->23C"` corresponds to the amide nitrogen
-  R<sub>2</sub> of state A of Gly23 measured at 23 ºC, 800.13 MHz.
-- `"R1_A, B0->800.13MHz"` selects all the state A R<sub>1</sub> values measured
-  at 800.13 MHz, independently of the residue number and temperature.
-- `"DW_AB, NUC->N"` corresponds to all the amide nitrogen chemical shift
-  differences between states A and B .
-- `"R2_B"` selects all R<sub>2</sub> values os state B.
+-   `"R2_A, NUC->G23N, B0->800.13MHz, T->23C"` corresponds to the amide nitrogen
+    R<sub>2</sub> of state A of Gly23 measured at 23 ºC, 800.13 MHz.
+-   `"R1_A, B0->800.13MHz"` selects all the state A R<sub>1</sub> values measured
+    at 800.13 MHz, independently of the residue number and temperature.
+-   `"DW_AB, NUC->N"` corresponds to all the amide nitrogen chemical shift
+    differences between states A and B .
+-   `"R2_B"` selects all R<sub>2</sub> values os state B.
 
 ### `FIX`
 
@@ -189,23 +189,23 @@ are fixed to the value of the grid that is evaluated, while the other parameters
 are set as defined by the `FIX`, `FIT` and `CONSTRAINTS` options. Points of the
 grid can be defined using a linear scale, a log scale or point by point:
 
-- Linear scale:
+-   Linear scale:
 
-  ```toml
-  "[PB] = lin(<min>, <max>, <nb of points>)"
-  ```
+    ```toml
+    "[PB] = lin(<min>, <max>, <nb of points>)"
+    ```
 
-- Log scale:
+-   Log scale:
 
-  ```toml
-  "[PB] = log(<min>, <max>, <nb of points>)"
-  ```
+    ```toml
+    "[PB] = log(<min>, <max>, <nb of points>)"
+    ```
 
-- Point by point:
+-   Point by point:
 
-  ```toml
-  "[PB] = (<value1>, <value2>, ..., <valuen>)"
-  ```
+    ```toml
+    "[PB] = (<value1>, <value2>, ..., <valuen>)"
+    ```
 
 Example:
 
@@ -277,9 +277,9 @@ profile to generate new ones with the same number of points as the original.
 
 For the nucleus-specific bootstrap analysis, full profiles are randomly selected
 based on their associated nucleus to generate the synthetic datasets. In other
-words, if we have a dataset that depends on the nuclei {G2N, H8N, R9N, R9H},
+words, if we have a dataset that depends on the nuclei \{G2N, H8N, R9N, R9H\},
 potential new datasets could include the profiles of the following sets of
-nuclei {H8N, H8N, R9N, R9H} or {G2N, G2N, G2N, R9H}.
+nuclei \{H8N, H8N, R9N, R9H\} or \{G2N, G2N, G2N, R9H\}.
 
 :::note
 
@@ -309,9 +309,9 @@ where MC is the type of simulation and 100 is the number of simulations.
 
 Types can be:
 
-- "MC" for Monte Carlo
-- "BS" for bootstrap
-- "BSN" for nucleus-specific bootstrap
+-   "MC" for Monte Carlo
+-   "BS" for bootstrap
+-   "BSN" for nucleus-specific bootstrap
 
 To run two or more types of simulation just add additional pairs of values:
 

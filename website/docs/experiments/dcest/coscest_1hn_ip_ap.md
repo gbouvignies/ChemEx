@@ -16,12 +16,12 @@ Analyzes chemical exchange during the COS-CEST block. Magnetization evolution is
 calculated using the (6n)×(6n), two-spin matrix, where n is the number of
 states:
 
-    { Ix(a), Iy(a), Iz(a), IxSz(a), IySz(a), IzSz(a),
-      Ix(b), Iy(b), Iz(b), IxSz(b), IySz(b), IzSz(b), ... }
+    \{ Ix(a), Iy(a), Iz(a), IxSz(a), IySz(a), IzSz(a),
+      Ix(b), Iy(b), Iz(b), IxSz(b), IySz(b), IzSz(b), ... \}
 
 ## References
 
-- T. Yuwen, G. Bouvignies, and L.E. Kay. _J. Mag. Reson._ **292**, 1-7 (2018)
+-   T. Yuwen, G. Bouvignies, and L.E. Kay. _J. Mag. Reson._ **292**, 1-7 (2018)
 
 ## Example
 

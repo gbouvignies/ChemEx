@@ -17,22 +17,22 @@ CEST block. This keeps the spin system purely in-phase throughout, and is
 calculated using the (3n)×(3n), single-spin matrix, where n is the number of
 states:
 
-    { Ix(a), Iy(a), Iz(a),
-      Ix(b), Iy(b), Iz(b), ... }
+    \{ Ix(a), Iy(a), Iz(a),
+      Ix(b), Iy(b), Iz(b), ... \}
 
 ## Reference
 
-- P. Vallurupalli, G. Bouvignies, and L.E. Kay. _J. Am. Chem. Soc._ **134**,
-  8148-8161 (2012)
+-   P. Vallurupalli, G. Bouvignies, and L.E. Kay. _J. Am. Chem. Soc._ **134**,
+    8148-8161 (2012)
 
 ## Examples
 
-- An example for studying ¹⁵N-labeled sample is available
-  [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_15N/).
-- An example for studying
-  [uniformly ¹³C, ¹⁵N-labeled sample](../../examples/cest_13c_15n.md) is
-  available
-  [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_15N_LABEL_CN/).
+-   An example for studying ¹⁵N-labeled sample is available
+    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_15N/).
+-   An example for studying
+    [uniformly ¹³C, ¹⁵N-labeled sample](../../examples/cest_13c_15n.md) is
+    available
+    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_15N_LABEL_CN/).
 
 ## Sample configuration file
 

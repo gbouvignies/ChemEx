@@ -17,8 +17,8 @@ during the CPMG block. This keeps the spin system purely in-phase throughout,
 and is calculated using the (3n)×(3n), single-spin matrix, where n is the number
 of states:
 
-    { Ix(a), Iy(a), Iz(a),
-      Ix(b), Iy(b), Iz(b), ... }
+    \{ Ix(a), Iy(a), Iz(a),
+      Ix(b), Iy(b), Iz(b), ... \}
 
 This version is modified such that CPMG pulses are applied with [0013] phase
 cycle as shown in Daiwen's paper. The CW decoupling on ¹H is assumed to be
@@ -26,8 +26,8 @@ strong enough (> 15 kHz) such that perfect ¹H decoupling can be achieved.
 
 ## Reference
 
-- B. Jiang, B. Yu, X. Zhang, M. Liu, and D. Yang. _J. Magn. Reson._ **257**, 1-7
-  (2015)
+-   B. Jiang, B. Yu, X. Zhang, M. Liu, and D. Yang. _J. Magn. Reson._ **257**, 1-7
+    (2015)
 
 ## Example
 
