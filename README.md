@@ -8,12 +8,11 @@
 -   [Quick Overview](#quick-overview)
 -   [Prerequisites](#prerequisites)
 -   [Installation](#installation)
--   [Usage](#usage)
 -   [Performance Optimization](#performance-optimization)
 -   [Contributing](#contributing)
 -   [Support and Documentation](#support-and-documentation)
 -   [License](#license)
--   [Citing ChemEx](#citing-chemex)
+<!-- -   [Citing ChemEx](#citing-chemex) -->
 
 ## About ChemEx
 
@@ -49,10 +48,6 @@ pip install chemex
 pip install git+https://github.com/gbouvignies/ChemEx.git
 ```
 
-## Usage
-
-To get started with using ChemEx, please refer to our comprehensive [User Guide](https://gbouvignies.github.io/ChemEx/). This guide covers everything from basic commands to advanced features, ensuring you can effectively analyze your NMR data using ChemEx. The guide includes step-by-step instructions, examples, and tips for efficient data analysis.
-
 ## Performance Optimization
 
 For the best performance, install [NumPy](https://numpy.org) and [SciPy](https://scipy.org) with Intel® Math Kernel Library (Intel® MKL), available via [Anaconda](https://www.anaconda.com/distribution/) or the [Intel® Distribution for Python](https://software.intel.com/en-us/distribution-for-python).
@@ -67,7 +62,7 @@ For additional support, tutorials, and detailed documentation, visit the [ChemEx
 
 ## License
 
-ChemEx is licensed under the [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.en.html). See the [LICENSE](LICENSE) file for more details.
+ChemEx is licensed under the [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.en.html). See the [LICENSE](LICENSE.md) file for more details.
 
 <!-- ## Citing ChemEx
 
