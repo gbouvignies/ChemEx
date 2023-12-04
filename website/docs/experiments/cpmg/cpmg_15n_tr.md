@@ -18,22 +18,22 @@ exchange dynamics. Resulting magnetization intensity after the CPMG block is
 calculated using the (6n)×(6n), two-spin matrix, where n is the number of
 states:
 
-    { Nx(a), Ny(a), Nz(a), 2HzNx(a), 2HzNy(a), 2HzNz(a),
-      Nx(b), Ny(b), Nz(b), 2HzNx(b), 2HzNy(b), 2HzNz(b), ... }
+    \{ Nx(a), Ny(a), Nz(a), 2HzNx(a), 2HzNy(a), 2HzNz(a),
+      Nx(b), Ny(b), Nz(b), 2HzNx(b), 2HzNy(b), 2HzNz(b), ... \}
 
 ## Reference
 
-- P. Vallurupalli, D.F. Hansen, E. Stollar, E. Meirovitch, and L.E. Kay. _Proc.
-  Natl. Acad. Sci. USA_ **104**, 18473-18477 (2007)
+-   P. Vallurupalli, D.F. Hansen, E. Stollar, E. Meirovitch, and L.E. Kay. _Proc.
+    Natl. Acad. Sci. USA_ **104**, 18473-18477 (2007)
 
 ## Examples
 
-- An example use of the module is given
-  [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_15N_TR/).
-- An example use of the module in the context of
-  [RDC measurement of a protein minor, short-lived state](../../examples/trosy_cpmg_rdc.md)
-  can be found
-  [here](https://github.com/gbouvignies/chemex/tree/master/examples/Combinations/N15_NH_RDC/).
+-   An example use of the module is given
+    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_15N_TR/).
+-   An example use of the module in the context of
+    [RDC measurement of a protein minor, short-lived state](../../examples/trosy_cpmg_rdc.md)
+    can be found
+    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Combinations/N15_NH_RDC/).
 
 ## Sample configuration file
 

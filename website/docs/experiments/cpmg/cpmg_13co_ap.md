@@ -17,8 +17,8 @@ magnetization throughout the CPMG block. This results in lower intrinsic
 relaxation rates and therefore better sensitivity. The calculations use a
 (6n)×(6n), two-spin matrix, where n is the number of states:
 
-    { COx(a), COy(a), COz(a), 2COxNz(a), 2COyNz(a), 2COzNz(a),
-      COx(b), COy(b), COz(b), 2COxNz(b), 2COyNz(b), 2COzNz(b), ... }
+    \{ COx(a), COy(a), COz(a), 2COxNz(a), 2COyNz(a), 2COzNz(a),
+      COx(b), COy(b), COz(b), 2COxNz(b), 2COyNz(b), 2COzNz(b), ... \}
 
 Because of the length of the shaped pulses used during the CPMG blocks,
 off-resonance effects are taken into account only for the 90-degree pulses that
@@ -29,7 +29,7 @@ the "refocusing" flag, with such option ncyc_cp should be set as even.
 
 # Reference:
 
-- Lundström, D.F. Hansen, and L.E. Kay. _J. Biomol. NMR_ **42**, 35-47 (2008)
+-   Lundström, D.F. Hansen, and L.E. Kay. _J. Biomol. NMR_ **42**, 35-47 (2008)
 
 ## Example
 

@@ -18,17 +18,17 @@ exchange dynamics. Resulting magnetization intensity after the CPMG block is
 calculated using the (6n)×(6n), two-spin matrix, where n is the number of
 states:
 
-    { Nx(a), Ny(a), Nz(a), 2HzNx(a), 2HzNy(a), 2HzNz(a),
-      Nx(b), Ny(b), Nz(b), 2HzNx(b), 2HzNy(b), 2HzNz(b), ... }
+    \{ Nx(a), Ny(a), Nz(a), 2HzNx(a), 2HzNy(a), 2HzNz(a),
+      Nx(b), Ny(b), Nz(b), 2HzNx(b), 2HzNy(b), 2HzNz(b), ... \}
 
 This version is modified such that CPMG pulses are applied with [0013] phase
 cycle as used in ¹⁵N pure in-phase experiments.
 
 ## References
 
-- Jiang, Yu, Zhang, Liu, and Yang. J Magn Reson **257**, 1-7 (2015)
-- P. Vallurupalli, D.F. Hansen, E. Stollar, E. Meirovitch, and L.E. Kay. _Proc.
-  Natl. Acad. Sci. USA_ **104**, 18473-18477 (2007)
+-   Jiang, Yu, Zhang, Liu, and Yang. J Magn Reson **257**, 1-7 (2015)
+-   P. Vallurupalli, D.F. Hansen, E. Stollar, E. Meirovitch, and L.E. Kay. _Proc.
+    Natl. Acad. Sci. USA_ **104**, 18473-18477 (2007)
 
 ## Example
 

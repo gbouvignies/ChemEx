@@ -17,16 +17,16 @@ during the CPMG block. This keeps the spin system purely in-phase throughout,
 and is calculated using the (3n)×(3n), single-spin matrix, where n is the number
 of states:
 
-    { Ix(a), Iy(a), Iz(a),
-      Ix(b), Iy(b), Iz(b), ... }
+    \{ Ix(a), Iy(a), Iz(a),
+      Ix(b), Iy(b), Iz(b), ... \}
 
 The CW decoupling on ¹H is assumed to be strong enough (> 15 kHz) such that
 perfect ¹H decoupling can be achieved.
 
 ## Reference
 
-- D.F. Hansen, P. Vallurupalli, and L.E. Kay. **J. Phys. Chem. B** **112**,
-  5898-5904 (2008)
+-   D.F. Hansen, P. Vallurupalli, and L.E. Kay. **J. Phys. Chem. B** **112**,
+    5898-5904 (2008)
 
 ## Example
 

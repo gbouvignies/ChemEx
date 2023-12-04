@@ -18,13 +18,13 @@ initially anti-phase and is read out as anti-phase prior to ¹H detection.
 Resulting magnetization intensity after the CPMG block is calculated using the
 (6n)×(6n), two-spin matrix, where n is the number of states:
 
-    { Ix(a), Iy(a), Iz(a), IxSz(a), IySz(a), IzSz(a),
-      Ix(b), Iy(b), Iz(b), IxSz(b), IySz(b), IzSz(b), ... }
+    \{ Ix(a), Iy(a), Iz(a), IxSz(a), IySz(a), IzSz(a),
+      Ix(b), Iy(b), Iz(b), IxSz(b), IySz(b), IzSz(b), ... \}
 
 ## Reference
 
-- T. Yuwen, R. Huang, P. Vallurupalli, and L.E. Kay. _Angew. Chem. Int. Ed._
-  **58**, 6250-6254 (2019)
+-   T. Yuwen, R. Huang, P. Vallurupalli, and L.E. Kay. _Angew. Chem. Int. Ed._
+    **58**, 6250-6254 (2019)
 
 ## Example
 

@@ -16,12 +16,12 @@ Analyzes ¹⁵N T1 experiments. This keeps the spin system purely in-phase
 throughout, and is calculated using the (1n)×(1n), single-spin matrix, where n
 is the number of states:
 
-    { Iz(a), Iz(b), ... }
+    \{ Iz(a), Iz(b), ... \}
 
 ## Reference
 
-- L.E. Kay, L.K. Nicholson, F. Delaglio, A. Bax, and D.A. Torchia. _J. Mag.
-  Reson._ **97**, 359-375 (1992)
+-   L.E. Kay, L.K. Nicholson, F. Delaglio, A. Bax, and D.A. Torchia. _J. Mag.
+    Reson._ **97**, 359-375 (1992)
 
 ## Example
 

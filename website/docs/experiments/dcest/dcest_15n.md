@@ -17,23 +17,23 @@ D-CEST block. This keeps the spin system purely in-phase throughout, and is
 calculated using the (3n)×(3n), single-spin matrix, where n is the number of
 states:
 
-    { Ix(a), Iy(a), Iz(a),
-      Ix(b), Iy(b), Iz(b), ... }
+    \{ Ix(a), Iy(a), Iz(a),
+      Ix(b), Iy(b), Iz(b), ... \}
 
 ## References
 
-- T. Yuwen, L.E. Kay, and G. Bouvignies. _ChemPhysChem_ **19**, 1707-1710 (2018)
-- T. Yuwen, A. Bah, Brady, F. Ferrage, G. Bouvignies, and L.E. Kay. _J. Phys.
-  Chem. B_ **122**, 11206-11217 (2018)
+-   T. Yuwen, L.E. Kay, and G. Bouvignies. _ChemPhysChem_ **19**, 1707-1710 (2018)
+-   T. Yuwen, A. Bah, Brady, F. Ferrage, G. Bouvignies, and L.E. Kay. _J. Phys.
+    Chem. B_ **122**, 11206-11217 (2018)
 
 ## Examples
 
-- An example for studying a two-state exchange system is given
-  [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/DCEST_15N/).
-- An example for studying a three-state exchange system is given
-  [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/DCEST_15N_3States/).
-- An example for H/D solvent exchange measurement using ¹⁵N D-CEST can be found
-  [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/DCEST_15N_HD_EXCH/).
+-   An example for studying a two-state exchange system is given
+    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/DCEST_15N/).
+-   An example for studying a three-state exchange system is given
+    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/DCEST_15N_3States/).
+-   An example for H/D solvent exchange measurement using ¹⁵N D-CEST can be found
+    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/DCEST_15N_HD_EXCH/).
 
 ## Sample configuration file
 

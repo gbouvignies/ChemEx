@@ -17,15 +17,15 @@ magnetization throughout the CPMG block. This results in lower intrinsic
 relaxation rates and therefore better sensitivity. The calculations use the
 (6n)×(6n), two-spin matrix, where n is the number of states:
 
-    { Hx(a), Hy(a), Hz(a), 2HxNz(a), 2HyNz(a), 2HzNz(a),
-      Hx(b), Hy(b), Hz(b), 2HxNz(b), 2HyNz(b), 2HzNz(b), ... }
+    \{ Hx(a), Hy(a), Hz(a), 2HxNz(a), 2HyNz(a), 2HzNz(a),
+      Hx(b), Hy(b), Hz(b), 2HxNz(b), 2HyNz(b), 2HzNz(b), ... \}
 
 This version is modified such that CPMG pulses are applied with [0013] phase
 cycle to help better overcome off-resonance effects.
 
 ## Reference
 
-- T. Yuwen, and L.E. Kay. _J. Biomol. NMR_ **73**, 641-650 (2019)
+-   T. Yuwen, and L.E. Kay. _J. Biomol. NMR_ **73**, 641-650 (2019)
 
 ## Example
 

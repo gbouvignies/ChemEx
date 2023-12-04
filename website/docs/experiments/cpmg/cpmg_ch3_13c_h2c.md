@@ -19,13 +19,13 @@ even ncyc should be recorded. Resulting magnetization intensity after the CPMG
 block is calculated using the (6n)×(6n), two-spin matrix, where n is the number
 of states:
 
-    { Ix(a), Iy(a), Iz(a), IxSz(a), IySz(a), IzSz(a),
-      Ix(b), Iy(b), Iz(b), IxSz(b), IySz(b), IzSz(b), ... }
+    \{ Ix(a), Iy(a), Iz(a), IxSz(a), IySz(a), IzSz(a),
+      Ix(b), Iy(b), Iz(b), IxSz(b), IySz(b), IzSz(b), ... \}
 
 ## Reference
 
-- P. Lundström, P. Vallurupalli, T.M. Religa, F.W. Dahlquist, and L.E. Kay. _J.
-  Biomol. NMR_ **38**, 79-88 (2007)
+-   P. Lundström, P. Vallurupalli, T.M. Religa, F.W. Dahlquist, and L.E. Kay. _J.
+    Biomol. NMR_ **38**, 79-88 (2007)
 
 ## Example
 

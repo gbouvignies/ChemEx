@@ -17,8 +17,8 @@ Analyzes HyCx methyl group multiple quantum CPMG measured on site-specific
 magnetization intensity after the CPMG block is calculated using the (4n)×(4n),
 two-spin matrix, where n is the number of states:
 
-    { HxCx(a), HyCx(a), HxCy(a), HyCy(a),
-      HxCx(b), HyCx(b), HxCy(b), HyCy(b), ... }
+    \{ HxCx(a), HyCx(a), HxCy(a), HyCy(a),
+      HxCx(b), HyCx(b), HxCy(b), HyCy(b), ... \}
 
 This is a simplified basis set, which assumes ¹³C is on-resonance (i.e.,
 off-resonance effects are not taken into account).
@@ -29,8 +29,8 @@ found in the reference and can be run with either small_protein_flag = "y" or
 
 ## Reference
 
-- D.M. Korzhnev, K. Kloiber, V. Kanelis, V. Tugarinov and L.E. Kay _J. Am. Chem.
-  Soc._ **126**, 3964-3973 (2004)
+-   D.M. Korzhnev, K. Kloiber, V. Kanelis, V. Tugarinov and L.E. Kay _J. Am. Chem.
+    Soc._ **126**, 3964-3973 (2004)
 
 ## Example
 

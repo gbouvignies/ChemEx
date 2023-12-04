@@ -18,23 +18,23 @@ initially anti-phase and is read out as anti-phase. The calculation uses a
 simplified scheme that includes only (6n)×(6n) basis set, two-spin matrix, where
 n is the number of states:
 
-    { 2HTQxCz(a), 2HTQyCz(a), 2HzCz(a), HTQx(a), HTQy(a), Hz(a),
-      2HTQxCz(b), 2HTQyCz(b), 2HzCz(b), HTQx(b), HTQy(b), Hz(b), ... }
+    \{ 2HTQxCz(a), 2HTQyCz(a), 2HzCz(a), HTQx(a), HTQy(a), Hz(a),
+      2HTQxCz(b), 2HTQyCz(b), 2HzCz(b), HTQx(b), HTQy(b), Hz(b), ... \}
 
 ## Reference
 
-- T. Yuwen, P. Vallurupalli, and L.E. Kay. _Angew. Chem. Int. Ed._ (2016) 55,
-  11490-11494
+-   T. Yuwen, P. Vallurupalli, and L.E. Kay. _Angew. Chem. Int. Ed._ (2016) 55,
+    11490-11494
 
 ## Examples
 
-- An example use of the module is given
-  [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_CH3_1H_SQ/).
-- An example, where joint fit of
-  [methyl ¹H double quantum CPMG (cpmg_ch3_1h_dq)](cpmg_ch3_1h_dq.md) and
-  [methyl ¹H triple quantum CPMG (cpmg_ch3_1h_tq)](cpmg_ch3_1h_tq.md)
-  experiments is performed, is available
-  [here](https://github.com/gbouvignies/chemex/tree/master/examples/Combinations/CPMG_CH3_1H_DQ_TQ/).
+-   An example use of the module is given
+    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_CH3_1H_SQ/).
+-   An example, where joint fit of
+    [methyl ¹H double quantum CPMG (cpmg_ch3_1h_dq)](cpmg_ch3_1h_dq.md) and
+    [methyl ¹H triple quantum CPMG (cpmg_ch3_1h_tq)](cpmg_ch3_1h_tq.md)
+    experiments is performed, is available
+    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Combinations/CPMG_CH3_1H_DQ_TQ/).
 
 ## Sample configuration file
 
