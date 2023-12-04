@@ -1,52 +1,78 @@
-# ChemEx
+# ChemEx: NMR Chemical Exchange Analysis Tool
 
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/ambv/black)
 
-## Overview
+## Table of Contents
 
-ChemEx is an analysis program for chemical exchange detected by NMR. It is designed to analyze various types of NMR data, with a focus on CPMG relaxation dispersion and Chemical Exchange Saturation Transfer techniques.
+-   [About ChemEx](#about-chemex)
+-   [Quick Overview](#quick-overview)
+-   [Prerequisites](#prerequisites)
+-   [Installation](#installation)
+-   [Usage](#usage)
+-   [Performance Optimization](#performance-optimization)
+-   [Contributing](#contributing)
+-   [Support and Documentation](#support-and-documentation)
+-   [License](#license)
+-   [Citing ChemEx](#citing-chemex)
+
+## About ChemEx
+
+ChemEx is an advanced, open-source software specifically designed for analyzing NMR experimental data to characterize chemical exchange processes. Ideal for researchers and scientists in the field of biochemistry and molecular biology, ChemEx aids in the analysis of NMR experiments like Carr-Purcell-Meiboom-Gill (CPMG) relaxation dispersion and Chemical Exchange Saturation Transfer (CEST).
+
+## Prerequisites
+
+Before installing ChemEx, ensure you have Python installed on your system. For beginners and for a seamless setup, we recommend using the [Anaconda Distribution](https://www.anaconda.com/distribution/), which includes Python, Numpy, and other essential scientific computing tools.
 
 ## Installation
 
-You can install `chemex` using different methods:
+ChemEx offers several installation methods to suit your specific setup:
 
-### Conda
+### Using conda
 
-The recommended way to install `chemex` is via [conda](http://conda.pydata.org):
-
-```bash
-conda install -c conda-forge chemex
-```
-
-If your version of Python is less than 3.9, you can create a separate conda environment and enforce the use of Python 3.9+:
-
-```bash
-conda create -c conda-forge -n chemex python=3.10 chemex
+```shell
+conda create -n chemex
 conda activate chemex
+conda install python=3.11
+conda config --env --add channels conda-forge
+conda install chemex
 ```
 
-### PyPI (Python Package Index)
+### Using pip
 
-`chemex` is also available on the [Python Package Index](https://pypi.python.org/pypi/chemex) and can be installed using `pip`:
-
-```bash
+```shell
 pip install chemex
 ```
 
-### Development Version
+### From source
 
-To install the development version directly from GitHub, you can use `pip`:
-
-```bash
-pip install git+https://github.com/gbouvignies/chemex.git
+```shell
+pip install git+https://github.com/gbouvignies/ChemEx.git
 ```
 
-Make sure you have Git installed and configured on your system before running this command.
+## Usage
+
+To get started with using ChemEx, please refer to our comprehensive [User Guide](https://gbouvignies.github.io/ChemEx/). This guide covers everything from basic commands to advanced features, ensuring you can effectively analyze your NMR data using ChemEx. The guide includes step-by-step instructions, examples, and tips for efficient data analysis.
+
+## Performance Optimization
+
+For the best performance, install [NumPy](https://numpy.org) and [SciPy](https://scipy.org) with Intel® Math Kernel Library (Intel® MKL), available via [Anaconda](https://www.anaconda.com/distribution/) or the [Intel® Distribution for Python](https://software.intel.com/en-us/distribution-for-python).
 
 ## Contributing
 
-Contributions are welcome! If you find any issues or have suggestions for improvements, please open an issue or a discussion on the [GitHub repository](https://github.com/gbouvignies/chemex). We appreciate your feedback and involvement in making ChemEx better.
+We encourage contributions from the community. Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to make ChemEx better. For any issues or suggestions, please open an issue or a discussion on our [GitHub repository](https://github.com/gbouvignies/ChemEx).
+
+## Support and Documentation
+
+For additional support, tutorials, and detailed documentation, visit the [ChemEx Documentation](https://gbouvignies.github.io/ChemEx/).
 
 ## License
 
-ChemEx is released under the [MIT License](https://github.com/gbouvignies/chemex/blob/master/LICENSE). Please see the LICENSE file for more details.
+ChemEx is licensed under the [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.en.html). See the [LICENSE](LICENSE) file for more details.
+
+<!-- ## Citing ChemEx
+
+If you use ChemEx in your research, please cite it as follows: [Citation details](#). -->
+
+---
+
+Developed with ❤️ by the [ChemEx Contributors](https://github.com/gbouvignies/ChemEx/graphs/contributors)
