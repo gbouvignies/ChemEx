@@ -2,16 +2,13 @@ from __future__ import annotations
 
 import configparser
 import sys
-from typing import TYPE_CHECKING
+from argparse import Namespace
 
 import matplotlib.pyplot as plt
 
 import chemex.parameters.name as cpn
 import chemex.parameters.spin_system as cns
 from chemex.messages import print_making_plots, print_section
-
-if TYPE_CHECKING:
-    from argparse import Namespace
 
 
 def plot_param(args: Namespace) -> None:

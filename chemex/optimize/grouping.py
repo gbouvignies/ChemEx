@@ -5,14 +5,11 @@ from functools import reduce
 from itertools import combinations
 from operator import and_
 from pathlib import Path
-from typing import TYPE_CHECKING
 
+from chemex.containers.experiments import Experiments
 from chemex.parameters import database
 from chemex.parameters.name import ParamName
-
-if TYPE_CHECKING:
-    from chemex.containers.experiments import Experiments
-    from chemex.parameters.setting import Parameters
+from chemex.parameters.setting import Parameters
 
 
 @dataclass

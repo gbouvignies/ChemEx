@@ -2,42 +2,17 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field
+from functools import cached_property
 from random import choices
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
+from typing_extensions import Self
 
-if TYPE_CHECKING:
-    from numpy.typing import NDArray
-
-    from chemex.typing import ArrayBool, ArrayFloat
-
-Self = TypeVar("Self", bound="Data")
+from chemex.typing import ArrayBool, ArrayFloat
 
 rng = np.random.default_rng()
-
-
-def get_scale(exp: ArrayFloat, err: ArrayFloat, calc: ArrayFloat) -> float:
-    """Calculate and return the scale factor for the calculated data.
-
-    Args:
-        exp (ArrayFloat): The experimental data array.
-        err (ArrayFloat): The error associated with the experimental data.
-        calc (ArrayFloat): The calculated data array.
-
-    Returns:
-        float: The calculated scale factor.
-
-    Raises:
-        ZeroDivisionError: If division by zero occurs in the scale calculation.
-    """
-    if (calc == 0).all():
-        return 1.0
-    try:
-        calc_err2 = calc / err**2
-        return sum(exp * calc_err2) / sum(calc * calc_err2)
-    except ZeroDivisionError:
-        return 1.0
 
 
 @dataclass
@@ -45,53 +20,62 @@ class Data:
     """Dataset with experimental, calculated data and metadata.
 
     Attributes:
-        exp (ArrayFloat): Experimental data.
-        err (ArrayFloat): Error in experimental data.
-        metadata (NDArray[Any]): Data metadata.
-        scale (float): Scale factor for calculated data.
-        size (int): Data points count, set post-instantiation.
-        calc (ArrayFloat): Calculated data, set post-instantiation.
-        mask (ArrayBool): Mask array, set post-instantiation.
-        refs (ArrayBool): Reference points array, set post-instantiation.
+        exp (ArrayFloat): Experimental data array.
+        err (ArrayFloat): Error array for experimental data.
+        metadata (NDArray[Any]): Metadata for data points.
+        calc (ArrayFloat): Calculated data, set after instantiation.
+        calc (ArrayFloat): Unscaled calculated data, set after instantiation.
+        mask (ArrayBool): Mask array for data selection, set after instantiation.
+        refs (ArrayBool): Array of reference points, set after instantiation.
     """
 
     exp: ArrayFloat
     err: ArrayFloat
     metadata: NDArray[Any] = field(default_factory=lambda: np.array([]))
-    scale: float = 1.0
-    size: int = field(init=False)
     calc: ArrayFloat = field(init=False)
+    calc_unscaled: ArrayFloat = field(init=False)
     mask: ArrayBool = field(init=False)
     refs: ArrayBool = field(init=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Initialize computed attributes of the Data class."""
-        self.size = self.exp.size
-        self.calc = np.full_like(self.exp, 1e32)
-        self.mask = np.full_like(self.exp, True, dtype=np.bool_)
-        self.refs = np.full_like(self.exp, False, dtype=np.bool_)
+        self.calc = np.full_like(self.exp, fill_value=1e32, dtype=np.float_)
+        self.calc_unscaled = np.full_like(self.exp, fill_value=1e32, dtype=np.float_)
+        self.mask = np.full_like(self.exp, fill_value=True, dtype=np.bool_)
+        self.refs = np.full_like(self.exp, fill_value=False, dtype=np.bool_)
 
-    def scale_calc(self) -> None:
-        """Scale the calculated data based on the experimental data and mask."""
-        mask = self.mask
-        scale = get_scale(self.exp[mask], self.err[mask], self.calc[mask])
-        self.calc *= scale
-        self.scale = scale
+    @cached_property
+    def size(self) -> int:
+        """Return the number of data points."""
+        return self.exp.size
 
-    def prepare_for_simulation(self) -> None:
-        """Prepare the dataset for simulation.
+    @property
+    def scale(self) -> float:
+        """Calculates the scale factor between experimental and calculated data.
 
-        Set experimental data to calculated values and errors to zero.
+        This method computes the scale factor to align calculated data with experimental
+        data, considering associated errors. Includes safeguards for numerical
+        stability.
+
+        Returns:
+            float: Scale factor for aligning calculated and experimental data.
         """
-        self.exp = self.calc.copy()
-        self.err *= 0.0
-        if any(self.refs):
-            scale = float(100.0 / np.mean(self.exp[self.refs]))
-            self.exp *= scale
-            self.calc *= scale
-            self.scale *= scale
+        expe = self.exp[self.mask]
+        calc = self.calc_unscaled[self.mask]
+        error = self.err[self.mask]
 
-    def monte_carlo(self: Self) -> Self:
+        # Adding a small constant to avoid division by zero or very small numbers
+        error_safe = error + np.finfo(float).eps
+
+        expe_norm = expe / error_safe
+        calc_norm = calc / error_safe
+
+        dot_product_num = np.dot(expe_norm, calc_norm)
+        dot_product_den = np.dot(calc_norm, calc_norm)
+
+        return dot_product_num / dot_product_den
+
+    def monte_carlo(self) -> Self:
         """Generate Data instance for Monte-Carlo simulation.
 
         Returns:
@@ -101,7 +85,7 @@ class Data:
         data.exp = rng.normal(self.calc, self.err)
         return data
 
-    def bootstrap(self: Self) -> Self:
+    def bootstrap(self) -> Self:
         """Generate Data instance using Bootstrap resampling.
 
         Returns:
@@ -129,7 +113,7 @@ class Data:
         self.refs = self.refs[sorted_indexes]
         self.mask = self.mask[sorted_indexes]
 
-    def any_duplicate(self):
+    def any_duplicate(self) -> bool:
         """Check for duplicate entries in metadata.
 
         Returns:
@@ -137,7 +121,7 @@ class Data:
         """
         return np.unique(self.metadata).size != self.metadata.size
 
-    def __add__(self: Self, other: Self) -> Self:
+    def __add__(self, other: Self) -> Self:
         """Add two Data instances, combining their experimental data and errors.
 
         Both Data instances must have the same number of points.

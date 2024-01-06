@@ -1,46 +1,45 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal, TypeVar
 
-from pydantic import BeforeValidator, field_validator
+from pydantic import BaseModel, BeforeValidator, Field, PlainValidator, model_validator
 
-from chemex.configuration.base import BaseModelLowerCase, ensure_list
-from chemex.parameters.spin_system import PydanticSpinSystem
+from chemex.configuration.utils import ensure_list, to_lower
+from chemex.parameters.spin_system import SpinSystem
+
+T = TypeVar("T")
+ErrorType = Annotated[
+    Literal["file", "duplicates", "scatter"],
+    BeforeValidator(to_lower),
+]
+PathList = Annotated[list[Path], BeforeValidator(ensure_list)]
+ProfilesType = dict[
+    Annotated[SpinSystem, PlainValidator(lambda x: SpinSystem(x))],
+    PathList,
+]
 
 
-class DataSettings(BaseModelLowerCase):
+class DataSettings(BaseModel):
+    error: ErrorType = "file"
+    global_error: bool = True
     path: Path = Path("./")
     scaled: bool = True
 
-
-PathList = Annotated[list[Path], BeforeValidator(ensure_list)]
+    @model_validator(mode="before")
+    def key_to_lower(cls, model: dict[str, T]) -> dict[str, T]:
+        """Model validator to convert all dictionary keys to lowercase."""
+        return {to_lower(k): v for k, v in model.items()}
 
 
 class RelaxationDataSettings(DataSettings):
-    error: Literal["file", "duplicates"] = "file"
-    filter_planes: list[int] = []
-    profiles: dict[PydanticSpinSystem, PathList] = {}
-
-    @field_validator("error", mode="before")
-    def to_lower(cls, error: Any) -> str:
-        if isinstance(error, str):
-            return error.lower()
-        return error
+    filter_planes: list[int] = Field(default_factory=list)
+    profiles: ProfilesType = Field(default_factory=dict)
 
 
-class CestDataSettings(DataSettings):
-    error: Literal["file", "duplicates", "scatter"] = "file"
-    filter_planes: list[int] = []
-    filter_offsets: list[tuple[float, float]] = [(0.0, 0.0)]
+class CestDataSettings(RelaxationDataSettings):
+    filter_offsets: list[tuple[float, float]] = Field(default_factory=list)
     filter_ref_planes: bool = False
-    profiles: dict[PydanticSpinSystem, PathList] = {}
-
-    @field_validator("error", mode="before")
-    def to_lower(cls, error: Any) -> str:
-        if isinstance(error, str):
-            return error.lower()
-        return error
 
 
 class CestDataSettingsNoRef(CestDataSettings):
@@ -48,11 +47,4 @@ class CestDataSettingsNoRef(CestDataSettings):
 
 
 class ShiftDataSettings(DataSettings):
-    error: Literal["file", "duplicates"] = "file"
     scaled: bool = False
-
-    @field_validator("error", mode="before")
-    def to_lower(cls, error: Any) -> str:
-        if isinstance(error, str):
-            return error.lower()
-        return error

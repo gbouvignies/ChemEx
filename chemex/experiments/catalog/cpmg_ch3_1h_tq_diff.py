@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import reduce
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import numpy as np
 
+from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
+from chemex.configuration.conditions import Conditions
 from chemex.configuration.data import RelaxationDataSettings
-from chemex.configuration.experiment import CpmgSettings, ExperimentConfig, ToBeFitted
+from chemex.configuration.experiment import CpmgSettings
+from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import PlanesFilterer
@@ -15,14 +18,10 @@ from chemex.nmr.basis import Basis
 from chemex.nmr.constants import GAMMA
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
+from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cpmg import CpmgPlotter
 from chemex.printers.data import CpmgPrinter
-
-if TYPE_CHECKING:
-    from chemex.containers.data import Data
-    from chemex.parameters.spin_system import SpinSystem
-    from chemex.typing import ArrayBool, ArrayFloat, ArrayInt
-
+from chemex.typing import ArrayBool, ArrayFloat, ArrayInt
 
 EXPERIMENT_NAME = "cpmg_ch3_1h_tq_diff"
 
@@ -38,7 +37,6 @@ class CpmgCh31HTqDiffSettings(CpmgSettings):
     tauc: float = 0.67e-3  # ~ 1/(12*J[HC])
     comp180_flg: bool = True
     ipap_flg: bool = False
-    observed_state: Literal["a", "b", "c", "d"] = "a"
 
     @property
     def k2_factor(self) -> float:
@@ -50,7 +48,11 @@ class CpmgCh31HTqDiffSettings(CpmgSettings):
 
 
 class CpmgCh31HTqDiffConfig(
-    ExperimentConfig[CpmgCh31HTqDiffSettings, RelaxationDataSettings],
+    ExperimentConfiguration[
+        CpmgCh31HTqDiffSettings,
+        Conditions,
+        RelaxationDataSettings,
+    ],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:

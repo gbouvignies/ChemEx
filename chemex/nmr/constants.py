@@ -1,20 +1,18 @@
-"""The constants module defines the gyromagnetic ratios and scalar coupling
-constants.
+"""Module for NMR spectroscopy constants and multiplet pattern calculations.
 
-Define the gyromagnetic ratios in rad/s/T
-IUPAC values: Harris et al, Concepts in Magn. Reson., (2002) 14, p326
-
+This module defines essential constants and functions for Nuclear Magnetic Resonance
+(NMR) spectroscopy, focusing on gyromagnetic ratios and scalar coupling constants.
 """
+
+
 from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import numpy as np
 
-if TYPE_CHECKING:
-    from chemex.typing import ArrayFloat
+from chemex.typing import ArrayFloat
 
 GAMMA = {
     "h": 26.752_212_8e07,

@@ -1,67 +1,63 @@
 from __future__ import annotations
 
+from collections.abc import Hashable, Iterable, Sequence
 from functools import cache, cached_property, total_ordering
-from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import PlainValidator
+from typing_extensions import Self
 
 from .atom import Atom
 from .group import Group
+from .nucleus import Nucleus
 from .spin import Spin
 from .utilities import powerset
 
 if TYPE_CHECKING:
-    from collections.abc import Hashable, Iterable, Sequence
-
     from chemex.nmr.basis import Basis
-
-    from .nucleus import Nucleus
-
-
-Self = TypeVar("Self", bound="SpinSystem")
 
 SPIN_ALIASES = "isx"
 
 
+@cache
+def _parse_spin_system(name: str) -> dict[str, Spin]:
+    if not name:
+        return {}
+    split = name.split("-")
+    spins: dict[str, Spin] = {}
+    last_group = None
+    for short_name, name_spin in zip(SPIN_ALIASES, split, strict=False):
+        spin = Spin(name_spin, last_group)
+        spins[short_name] = spin
+        last_group = spin.group
+    return spins
+
+
+
+def _spins2name(spins: Iterable[Spin]) -> str:
+    spin_names: list[str] = []
+    last_group: Group = Group("")
+    for spin in spins:
+        spin_name = str(spin.atom) if spin.group == last_group else str(spin)
+        spin_names.append(spin_name)
+        last_group = spin.group
+    return "-".join(spin_names)
+
+
 @total_ordering
 class SpinSystem:
-    @staticmethod
-    @cache
-    def _parse_spin_system(name: str) -> dict[str, Spin]:
-        if not name:
-            return {}
-        split = name.split("-")
-        spins: dict[str, Spin] = {}
-        last_group = None
-        for short_name, name_spin in zip(SPIN_ALIASES, split, strict=False):
-            spin = Spin(name_spin, last_group)
-            spins[short_name] = spin
-            last_group = spin.group
-        return spins
-
-    @staticmethod
-    def _spins2name(spins: Iterable[Spin]) -> str:
-        spin_names: list[str] = []
-        last_group: Group = Group("")
-        for spin in spins:
-            spin_name = str(spin.atom) if spin.group == last_group else str(spin)
-            spin_names.append(spin_name)
-            last_group = spin.group
-        return "-".join(spin_names)
-
     def __init__(self, name: str | int | None = None) -> None:
         if name is None:
             name = ""
         if isinstance(name, int):
             name = str(name)
-        self.spins = self._parse_spin_system(name.strip().upper())
-        self.name = self._spins2name(self.spins.values())
+        self.spins = _parse_spin_system(name.strip().upper())
+        self.name = _spins2name(self.spins.values())
         self.search_keys: set[Hashable] = set()
         self.search_keys = self.search_keys.union(
             *(spin.search_keys for spin in self.spins.values()),
         )
 
-    def __deepcopy__(self: Self, memo: dict[Any, Any]) -> Self:
+    def __deepcopy__(self, memo: dict[Any, Any]) -> Self:
         return type(self)(self.name)
 
     @cached_property
@@ -70,7 +66,7 @@ class SpinSystem:
         for alias_set in powerset(SPIN_ALIASES):
             if set(alias_set).issubset(self.spins):
                 key = "".join(alias_set)
-                name = self._spins2name(self.spins[alias] for alias in alias_set)
+                name = _spins2name(self.spins[alias] for alias in alias_set)
                 result[key] = name
         return result
 
@@ -94,16 +90,16 @@ class SpinSystem:
     def nuclei(self) -> dict[str, Nucleus]:
         return {alias: atom.nucleus for alias, atom in self.atoms.items()}
 
-    def match(self: Self, other: Self) -> bool:
+    def match(self, other: Self) -> bool:
         spin_pairs = zip(self.spins.values(), other.spins.values(), strict=False)
         return all(spin.match(other_spin) for spin, other_spin in spin_pairs)
 
-    def part_of(self: Self, selection: Sequence[Self] | str) -> bool:
+    def part_of(self, selection: Sequence[Self] | str) -> bool:
         if isinstance(selection, str):
             return selection.lower() in ("all", "*")
         return any(item.match(self) for item in selection)
 
-    def correct(self: Self, basis: Basis) -> Self:
+    def correct(self, basis: Basis) -> Self:
         spins: list[Spin] = []
         last_spin = Spin("")
         for letter, atom in basis.atoms.items():
@@ -112,10 +108,10 @@ class SpinSystem:
                 spin.atom = Atom(f"{atom}{spin.atom.name[1:]}")
             last_spin = spin
             spins.append(spin)
-        return type(self)(self._spins2name(spins))
+        return type(self)(_spins2name(spins))
 
     def build_sub_spin_system(
-        self: Self,
+        self,
         spin_system_part: Literal["i", "s", "is", "g", ""],
     ) -> Self:
         if spin_system_part == "g":
@@ -128,7 +124,7 @@ class SpinSystem:
             return self
         return type(self)()
 
-    def __and__(self: Self, other: object) -> Self:
+    def __and__(self, other: object) -> Self:
         if not isinstance(other, type(self)):
             return NotImplemented
         if self == other:
@@ -158,11 +154,6 @@ class SpinSystem:
 
     def __str__(self) -> str:
         return self.name
-
-
-# We now create an `Annotated` wrapper that we'll use as the annotation for
-# fields on `BaseModel`
-PydanticSpinSystem = Annotated[SpinSystem, PlainValidator(lambda x: SpinSystem(x))]
 
 
 # if __name__ == "__main__":

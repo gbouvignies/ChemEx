@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import numpy as np
 from numpy.linalg import matrix_power
 
+from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
+from chemex.configuration.conditions import Conditions
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import CestSettings, ExperimentConfig, ToBeFitted
+from chemex.configuration.experiment import CestSettings
+from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import CestFilterer
@@ -15,14 +18,10 @@ from chemex.nmr.basis import Basis
 from chemex.nmr.constants import get_multiplet
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
+from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cest import CestPlotter
 from chemex.printers.data import CestPrinter
-
-if TYPE_CHECKING:
-    from chemex.containers.data import Data
-    from chemex.parameters.spin_system import SpinSystem
-    from chemex.typing import ArrayBool, ArrayFloat
-
+from chemex.typing import ArrayBool, ArrayFloat
 
 EXPERIMENT_NAME = "coscest_13c"
 
@@ -40,14 +39,15 @@ class CosCest13CSettings(CestSettings):
     b1_frq: float
     b1_inh_scale: float = 0.1
     b1_inh_res: int = 11
-    observed_state: Literal["a", "b", "c", "d"] = "a"
 
     @property
     def detection(self) -> str:
         return f"[iz_{self.observed_state}]"
 
 
-class CosCest13CConfig(ExperimentConfig[CosCest13CSettings, CestDataSettings]):
+class CosCest13CConfig(
+    ExperimentConfiguration[CosCest13CSettings, Conditions, CestDataSettings],
+):
     @property
     def to_be_fitted(self) -> ToBeFitted:
         state = self.experiment.observed_state

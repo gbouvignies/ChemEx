@@ -1,31 +1,28 @@
 """Factories for creating different parts of an experiment."""
 from __future__ import annotations
 
+from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from pathlib import Path
+from typing import Any, ClassVar
 
-if TYPE_CHECKING:
-    from collections.abc import Callable, MutableMapping
-    from pathlib import Path
+from chemex.configuration.base import ExperimentConfiguration
+from chemex.containers.data import Data
+from chemex.containers.profile import Filterer, PulseSequence
+from chemex.nmr.spectrometer import Spectrometer
+from chemex.parameters.spin_system import SpinSystem
+from chemex.plotters.plotter import Plotter
+from chemex.printers.data import Printer
 
-    from chemex.configuration.experiment import ExperimentConfig
-    from chemex.containers.data import Data
-    from chemex.containers.profile import Filterer, PulseSequence
-    from chemex.nmr.spectrometer import Spectrometer
-    from chemex.parameters.spin_system import SpinSystem
-    from chemex.plotters.plotter import Plotter
-    from chemex.printers.data import Printer
-
-    Dataset = list[tuple[SpinSystem, Data]]
-    ConfigType = ExperimentConfig[Any, Any]
-
-    ConfigCreator = Callable[..., ConfigType]
-    PropagatorCreator = Callable[..., Spectrometer]
-    SequenceCreator = Callable[..., PulseSequence]
-    DatasetCreator = Callable[[Path, ConfigType], Dataset]
-    FiltererCreator = Callable[..., Filterer]
-    PrinterCreator = Callable[[], Printer]
-    PlotterCreator = Callable[..., Plotter]
+Dataset = list[tuple[SpinSystem, Data]]
+GenericConfig = ExperimentConfiguration[Any, Any, Any]
+ConfigCreator = Callable[..., GenericConfig]
+PropagatorCreator = Callable[..., Spectrometer]
+SequenceCreator = Callable[..., PulseSequence]
+DatasetCreator = Callable[..., Dataset]
+FiltererCreator = Callable[..., Filterer]
+PrinterCreator = Callable[[], Printer]
+PlotterCreator = Callable[..., Plotter]
 
 
 @dataclass
@@ -38,29 +35,32 @@ class Creators:
     printer_creator: PrinterCreator
     plotter_creator: PlotterCreator
 
-    def create_config(self, config_dict: MutableMapping[str, Any]) -> ConfigType:
+    def create_config(
+        self,
+        config_dict: MutableMapping[str, Any],
+    ) -> GenericConfig:
         """Create a configuration object of a specific type."""
         return self.config_creator(**config_dict)
 
     def create_spectrometer(
         self,
-        config: ConfigType,
+        config: GenericConfig,
         spin_system: SpinSystem,
     ) -> Spectrometer:
         """Create and initialize a spectrometer of a specific type."""
         return self.spectrometer_creator(config, spin_system)
 
-    def create_sequence(self, config: ConfigType) -> PulseSequence:
+    def create_sequence(self, config: GenericConfig) -> PulseSequence:
         """Create a sequence of a specific type."""
         return self.sequence_creator(config.experiment)
 
-    def create_dataset(self, base_path: Path, settings: ConfigType) -> Dataset:
+    def create_dataset(self, base_path: Path, settings: GenericConfig) -> Dataset:
         """Create a dataset of a specific type."""
         return self.dataset_creator(base_path, settings)
 
     def create_filterer(
         self,
-        config: ConfigType,
+        config: GenericConfig,
         spectrometer: Spectrometer,
     ) -> Filterer:
         """Create a filterer used to remove undesired data points."""
@@ -70,7 +70,7 @@ class Creators:
         """Create a filterer used to remove undesired data points."""
         return self.printer_creator()
 
-    def create_plotter(self, filename: Path, config: ConfigType) -> Plotter:
+    def create_plotter(self, filename: Path, config: GenericConfig) -> Plotter:
         """Create a filterer used to remove undesired data points."""
         return self.plotter_creator(filename=filename, config=config)
 

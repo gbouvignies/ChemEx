@@ -1,29 +1,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
+from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
+from chemex.configuration.conditions import Conditions
 from chemex.configuration.data import RelaxationDataSettings
-from chemex.configuration.experiment import (
-    ExperimentConfig,
-    RelaxationSettings,
-    ToBeFitted,
-)
+from chemex.configuration.experiment import ExperimentSettings
+from chemex.containers.data import Data
 from chemex.containers.dataset import load_exsy_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import PlanesFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
+from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.exsy import EXSYPlotter
 from chemex.printers.data import EXSYPrinter
-
-if TYPE_CHECKING:
-    from chemex.containers.data import Data
-    from chemex.parameters.spin_system import SpinSystem
 
 # Type definitions
 NDArrayFloat = NDArray[np.float_]
@@ -33,12 +29,16 @@ NDArrayBool = NDArray[np.bool_]
 EXPERIMENT_NAME = "noesyfpgpph19"
 
 
-class Noesyfpgpph19Settings(RelaxationSettings):
+class Noesyfpgpph19Settings(ExperimentSettings):
     name: Literal["noesyfpgpph19"]
 
 
 class Noesyfpgpph19Config(
-    ExperimentConfig[Noesyfpgpph19Settings, RelaxationDataSettings],
+    ExperimentConfiguration[
+        Noesyfpgpph19Settings,
+        Conditions,
+        RelaxationDataSettings,
+    ],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
@@ -61,7 +61,7 @@ def build_spectrometer(
 class Noesyfpgpph19Sequence:
     settings: Noesyfpgpph19Settings
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> np.ndarray:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> NDArrayFloat:
         times = data.metadata["times"]
         states1 = data.metadata["states1"]
         states2 = data.metadata["states2"]
@@ -72,8 +72,8 @@ class Noesyfpgpph19Sequence:
         # Calculate delay propagators
         delays = spectrometer.delays(times)
 
-        intensities = []
-        for state1, state2, delay in zip(states1, states2, delays):
+        intensities: list[float] = []
+        for state1, state2, delay in zip(states1, states2, delays, strict=False):
             start = spectrometer.keep(equilibrium, [f"iz_{state1}"])
             spectrometer.detection = f"[iz_{state2}]"
             intensities.append(spectrometer.detect(delay @ start))
@@ -81,7 +81,7 @@ class Noesyfpgpph19Sequence:
         return np.array(intensities)
 
     def is_reference(self, metadata: NDArrayFloat) -> NDArrayBool:
-        return np.full_like(metadata, False, dtype=np.bool_)
+        return np.full_like(metadata, fill_value=False, dtype=np.bool_)
 
 
 def register() -> None:

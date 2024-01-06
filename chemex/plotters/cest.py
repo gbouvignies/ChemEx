@@ -2,25 +2,21 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
+from pathlib import Path
+from typing import Any, Generic, Protocol, TypeVar
 
 import numpy as np
+from matplotlib.axes import Axes
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import MaxNLocator
 
 from chemex.containers.data import Data
+from chemex.containers.profile import Profile
 from chemex.messages import print_plot_filename
+from chemex.nmr.spectrometer import Spectrometer
 from chemex.plotters.plot import get_grid, plot_profile
 from chemex.printers.plot import PlotPrinter, data_plot_printers
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from matplotlib.axes import Axes
-
-    from chemex.containers.profile import Profile
-    from chemex.nmr.spectrometer import Spectrometer
-    from chemex.typing import ArrayFloat
+from chemex.typing import ArrayFloat
 
 _GREY400 = "#BDBDBD"
 _LSTYLES = ("-", "--", "-.", ":")
@@ -102,8 +98,11 @@ def plot_dcest(
     cs_values: ArrayFloat,
     circular_shift: CircularShift,
 ):
-    residuals = data_exp.exp - data_exp.calc
-    sigma = estimate_sigma(residuals)
+    if data_exp.size > 0:
+        residuals = data_exp.exp - data_exp.calc
+        sigma = estimate_sigma(residuals)
+    else:
+        sigma = 0.0
     centre = float(np.mean(cs_values))
     data_exp.metadata = circular_shift.centre(data_exp.metadata, centre)
     data_calc.metadata = circular_shift.centre(data_calc.metadata, centre)
@@ -123,6 +122,9 @@ def plot_dcest(
     ax1.fill_between(ax1.get_xlim(), -2.0 * sigma, 2.0 * sigma, **kwargs1)
 
     ax1, ax2 = add_resonance_positions(ax1, ax2, cs_values, centre, circular_shift)
+
+    if data_exp.size == 0:
+        fig.delaxes(ax1)
 
     file_pdf.savefig(fig)
 
@@ -159,15 +161,15 @@ def create_plot_data_calc(profile: Profile) -> Data:
     filler = np.full_like(offsets_plot, 0.0)
 
     data_for_calculation = Data(exp=filler, err=filler, metadata=offsets_plot)
-    scale = profile.data.scale / np.mean(data.exp[refs])
-    data_for_calculation.calc = scale * profile.pulse_sequence.calculate(
+    data_for_calculation.calc = data.scale * profile.pulse_sequence.calculate(
         spectrometer,
         data_for_calculation,
     )
 
     ppms = spectrometer.offsets_to_ppms(offsets_plot)
+    intensity0 = np.mean(data.exp[refs])
     data_fit = Data(exp=filler, err=filler, metadata=ppms)
-    data_fit.calc = data_for_calculation.calc
+    data_fit.calc = data_for_calculation.calc / intensity0
 
     return data_fit
 
@@ -226,10 +228,10 @@ class CestPlotter(Generic[T]):
                 data_calc = create_plot_data_calc(profile)
                 self._plot_profile(file_pdf, profile, data_exp, data_calc)
                 file_exp.write(
-                    self.printer.print_exp(str(profile.spin_system), data_exp)
+                    self.printer.print_exp(str(profile.spin_system), data_exp),
                 )
                 file_calc.write(
-                    self.printer.print_calc(str(profile.spin_system), data_calc)
+                    self.printer.print_calc(str(profile.spin_system), data_calc),
                 )
 
     def plot_simulation(self, path: Path, profiles: list[Profile]) -> None:
@@ -243,9 +245,9 @@ class CestPlotter(Generic[T]):
             file_pdf = stack.enter_context(PdfPages(str(name_pdf)))
             file_sim = stack.enter_context(name_sim.open("w"))
             for profile in sorted(profiles):
-                data_exp = create_plot_data_exp(profile)
+                data_exp = Data(np.array([]), np.array([]), np.array([]))
                 data_calc = create_plot_data_calc(profile)
                 self._plot_profile(file_pdf, profile, data_exp, data_calc)
                 file_sim.write(
-                    self.printer.print_calc(str(profile.spin_system), data_calc)
+                    self.printer.print_calc(str(profile.spin_system), data_calc),
                 )

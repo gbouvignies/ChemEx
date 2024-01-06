@@ -1,20 +1,16 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Hashable, Iterable
 from dataclasses import dataclass, field
 from functools import cached_property
 from re import Pattern
-from typing import TYPE_CHECKING, TypeVar
 
 from rapidfuzz.process import extractOne
+from typing_extensions import Self
 
 from chemex.configuration.conditions import Conditions
 from chemex.parameters.spin_system import SpinSystem
-
-if TYPE_CHECKING:
-    from collections.abc import Hashable, Iterable
-
-Self = TypeVar("Self", bound="ParamName")
 
 _EXPAND = {"-": "_", "+": "_", ".": "_"}
 
@@ -114,7 +110,7 @@ class ParamName:
     def id_(self) -> str:
         return f"__{_expand(self.folder)}"
 
-    def match(self: Self, other: Self) -> bool:
+    def match(self, other: Self) -> bool:
         if self.name and self.name not in other.name:
             return False
         if not self.spin_system.match(other.spin_system):
@@ -127,7 +123,7 @@ class ParamName:
         best_match, _, _ = extractOne(self.id_, ids)
         return best_match
 
-    def __and__(self: Self, other: object) -> Self:
+    def __and__(self, other: object) -> Self:
         if not isinstance(other, type(self)):
             return NotImplemented
         name = self.name if self.name == other.name else ""

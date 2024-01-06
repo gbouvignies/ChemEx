@@ -1,10 +1,11 @@
 """The fitting module contains the code for fitting the experimental data."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from rich.progress import track
 
+from chemex.configuration.methods import Methods, Statistics
 from chemex.containers.experiments import Experiments, generate_exp_for_statistics
 from chemex.messages import (
     print_calculation_stopped_error,
@@ -31,11 +32,6 @@ from chemex.optimize.minimizer import (
     minimize_with_report,
 )
 from chemex.parameters import database
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from chemex.configuration.methods import Methods, Statistics
 
 
 def _run_statistics(
@@ -113,7 +109,7 @@ def _fit_groups(
         # )
 
         database.update_from_parameters(best_lmfit_params)
-        execute_post_fit(group.experiments, group_path, plot_flg)
+        execute_post_fit(group.experiments, group_path, plot=plot_flg)
 
         # Run Monte Carlo and/or bootstrap analysis
         _run_statistics(

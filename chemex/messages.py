@@ -15,8 +15,10 @@ Typical usage example:
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections import Counter
+from pathlib import Path
 
+from pydantic import ValidationError
 from rich import box
 from rich.console import Console
 from rich.padding import Padding
@@ -27,12 +29,6 @@ from rich.table import Table
 from rich.text import Text
 
 from chemex import __version__
-
-if TYPE_CHECKING:
-    from collections import Counter
-    from pathlib import Path
-
-    from pydantic import ValidationError
 
 console = Console()
 

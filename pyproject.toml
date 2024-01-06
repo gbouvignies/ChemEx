@@ -17,6 +17,7 @@
     "tomli>=2.0.1",
     "rapidfuzz>=3.4.0",
     "emcee>=3.1.4",
+    "typing-extensions>=4.9.0",
   ]
   requires-python = ">=3.10,<3.13"
   readme = "README.md"
@@ -41,16 +42,26 @@
 
 [tool.ruff]
   select = [ "ALL" ]
-  ignore = [ "ANN101", "ANN102" ]
+  ignore = [
+    "ANN101",
+    "ANN102",
+    "COM812",
+    "ISC001",
+    "TCH001",
+    "TCH002",
+    "TCH003",
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "D105",
+    "D107",
+    "S311",
+  ]
 
   [tool.ruff.isort]
     known-first-party = [ "chemex" ]
-
-  [tool.ruff.flake8-type-checking]
-    runtime-evaluated-base-classes = [ "pydantic.BaseModel", "pydantic.RootModel" ]
-
-  [tool.ruff.pep8-naming]
-    classmethod-decorators = [ "pydantic.field_validator", "pydantic.model_validator" ]
 
   [tool.ruff.lint.pydocstyle]
     convention = "google"

@@ -1,16 +1,31 @@
 from __future__ import annotations
 
-from functools import total_ordering
+from collections.abc import Hashable
+from functools import cache, total_ordering
 from re import search
-from typing import TYPE_CHECKING
 
 from .constants import AAA_TO_A
 
-if TYPE_CHECKING:
-    from collections.abc import Hashable
-
-
 NO_NUMBER = -100000000
+
+
+@cache
+def parse_group(name: str) -> tuple[str, int, str]:
+    """Parses the group name into symbol, number, and suffix.
+
+    Args:
+        name (str): The name of the group to be parsed.
+
+    Returns:
+        tuple[str, int, str]: A tuple containing the symbol, number, and suffix.
+    """
+    if found := search("[0-9]+", name.strip().upper()):
+        symbol = name[: found.start()]
+        corrected_symbol = AAA_TO_A.get(symbol, symbol)
+        number = int(found.group())
+        suffix = name[found.end() :]
+        return corrected_symbol, number, suffix
+    return name, NO_NUMBER, ""
 
 
 @total_ordering
@@ -39,22 +54,8 @@ class Group:
         Args:
             name (str): The name of the group to be parsed.
         """
-        self.symbol, self.number, self.suffix = self.parse_group(name.strip().upper())
-        self.symbol = AAA_TO_A.get(self.symbol, self.symbol)
+        self.symbol, self.number, self.suffix = parse_group(name.strip().upper())
         self.search_keys: set[Hashable] = {self} if self else set()
-
-    def parse_group(self, name: str) -> tuple[str, int, str]:
-        """Parses the group name into symbol, number, and suffix.
-
-        Args:
-            name (str): The name of the group to be parsed.
-
-        Returns:
-            tuple[str, int, str]: A tuple containing the symbol, number, and suffix.
-        """
-        if found := search("[0-9]+", name.strip().upper()):
-            return name[: found.start()], int(found.group()), name[found.end() :]
-        return name, NO_NUMBER, ""
 
     @property
     def name(self) -> str:

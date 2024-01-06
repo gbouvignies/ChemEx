@@ -17,9 +17,9 @@ class Registry:
 
     user_function_registry: ClassVar[dict[str, Any]] = {}
 
-    def register(self, name: str, user_functions: dict[str, Callable[[Any], Any]]):
-        """Register a new set of user functions."""
-        self.user_function_registry[name] = user_functions
+    def register(
+        self, name: str, user_functions: dict[str, Callable[[Any], Any]]
+    ) -> None:
         """Register a new set of user functions."""
         self.user_function_registry[name] = user_functions
 

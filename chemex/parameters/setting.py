@@ -3,16 +3,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from re import Pattern
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import numpy as np
 
+from chemex.configuration.conditions import Conditions
+from chemex.configuration.parameters import DefaultSetting
 from chemex.parameters.name import ParamName
-
-if TYPE_CHECKING:
-    from chemex.configuration.conditions import Conditions
-    from chemex.configuration.parameters import DefaultSetting
-    from chemex.parameters.spin_system import SpinSystem
+from chemex.parameters.spin_system import SpinSystem
 
 _RE_IDS = re.compile(r"__[a-zA-Z_][a-zA-Z0-9_]*")
 _RE_NAMES = re.compile(r"\{([a-zA-Z0-9_]+)\}")

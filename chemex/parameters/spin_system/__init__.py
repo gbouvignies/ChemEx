@@ -1,3 +1,3 @@
-from .spin_system import Group, PydanticSpinSystem, SpinSystem
+from .spin_system import Group, SpinSystem
 
-__all__ = ["SpinSystem", "PydanticSpinSystem", "Group"]
+__all__ = ["SpinSystem", "Group"]

@@ -1,65 +1,33 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Generic, TypeVar
+import math
+from typing import Literal, TypeVar
 
-import numpy as np
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
-from chemex.configuration.base import BaseModelLowerCase
-from chemex.configuration.conditions import ConditionsFromFile
+from chemex.configuration.utils import to_lower
 
-
-@dataclass
-class ToBeFitted:
-    rates: list[str] = field(default_factory=list)
-    model_free: list[str] = field(default_factory=list)
+T = TypeVar("T")
 
 
-class ExperimentNameSettings(BaseModelLowerCase):
+class ExperimentSettings(BaseModel):
+    observed_state: Literal["a", "b", "c", "d"] = "a"
+
     model_config = ConfigDict(str_to_lower=True)
-    name: str
+
+    @model_validator(mode="before")
+    def key_to_lower(cls, model: dict[str, T]) -> dict[str, T]:
+        """Model validator to convert all dictionary keys to lowercase."""
+        return {to_lower(k): v for k, v in model.items()}
 
 
-class RelaxationSettings(BaseModelLowerCase):
-    model_config = ConfigDict(str_to_lower=True)
-    name: str
-
-
-class CpmgSettings(BaseModelLowerCase):
-    model_config = ConfigDict(str_to_lower=True)
-    name: str
+class CpmgSettings(ExperimentSettings):
     even_ncycs: bool = False
 
 
-class CpmgSettingsEvenNcycs(CpmgSettings):
+class CpmgSettingsEvenNcycs(ExperimentSettings):
     even_ncycs: bool = True
 
 
-class CestSettings(BaseModelLowerCase):
-    model_config = ConfigDict(str_to_lower=True)
-    name: str
-    sw: float = np.inf
-
-
-class ShiftSettings(BaseModelLowerCase):
-    model_config = ConfigDict(str_to_lower=True)
-    name: str
-
-
-class ExperimentNameConfig(BaseModel):
-    experiment: ExperimentNameSettings
-
-
-ExperimentSettingsType = TypeVar("ExperimentSettingsType", bound=BaseModelLowerCase)
-DataSettingsType = TypeVar("DataSettingsType", bound=BaseModelLowerCase)
-
-
-class ExperimentConfig(BaseModel, Generic[ExperimentSettingsType, DataSettingsType]):
-    experiment: ExperimentSettingsType
-    conditions: ConditionsFromFile
-    data: DataSettingsType
-
-    @property
-    def to_be_fitted(self) -> ToBeFitted:
-        return ToBeFitted()
+class CestSettings(ExperimentSettings):
+    sw: float = math.inf

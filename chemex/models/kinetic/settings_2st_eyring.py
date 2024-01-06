@@ -1,18 +1,15 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING
 
 import numpy as np
 from scipy.constants import constants
 
+from chemex.configuration.conditions import Conditions
 from chemex.models.constraints import pop_2st
 from chemex.models.factory import model_factory
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
-
-if TYPE_CHECKING:
-    from chemex.configuration.conditions import Conditions
 
 NAME = "2st_eyring"
 

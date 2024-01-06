@@ -10,12 +10,14 @@ from __future__ import annotations
 import re
 import sys
 from collections import Counter, defaultdict
+from collections.abc import Hashable, Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 import numpy as np
 from lmfit import Parameters as ParametersLF
 
+from chemex.configuration.methods import Method
+from chemex.configuration.parameters import DefaultListType
 from chemex.messages import (
     print_error_constraints,
     print_error_grid_settings,
@@ -26,16 +28,9 @@ from chemex.messages import (
 from chemex.models.model import model
 from chemex.nmr.rates import rate_functions
 from chemex.parameters.name import ParamName
+from chemex.parameters.setting import Parameters, ParamSetting
 from chemex.parameters.userfunctions import user_function_registry
-
-if TYPE_CHECKING:
-    from collections.abc import Hashable, Iterable, Sequence
-
-    from chemex.configuration.methods import Method
-    from chemex.configuration.parameters import DefaultListType
-    from chemex.parameters.setting import Parameters, ParamSetting
-    from chemex.typing import ArrayFloat
-
+from chemex.typing import ArrayFloat
 
 _PARAM_NAME = r"\[(.+?)\]"
 _FLOAT = r"[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?"
@@ -416,11 +411,11 @@ class ParameterCatalog:
 
             grid_values |= {param_id: values for param_id in ids_left & ids_pool}
 
-            self.set_vary([name], False)
+            self.set_vary([name], vary=False)
 
         return grid_values
 
-    def check_params(self):
+    def check_params(self) -> None:
         """Checks and warns about the physical validity of J couplings."""
         positive_jnh = False
         negative_jch = False
@@ -616,7 +611,7 @@ sort_parameters = _manager.sort
 fix_all_parameters = _manager.fix_all
 
 
-def set_parameter_status(method: Method):
+def set_parameter_status(method: Method) -> None:
     """Sets parameter status based on a given method configuration.
 
     This function configures parameters to vary, be fixed, or follow certain

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
-if TYPE_CHECKING:
-    from chemex.containers.data import Data
+from chemex.containers.data import Data
 
 
 class Printer(Protocol):
-    header: str = ""
+    header: str
+    simulation: bool
 
     def print(self, name: str, data: Data) -> str:
         ...
@@ -39,16 +39,24 @@ class ShiftPrinter:
 class ProfilePrinter:
     first_column_name: str = ""
     first_column_fmt: str = "12.2f"
-    header = ""
+    header: str = ""
+    simulation: bool = False
 
     def print(self, name: str, data: Data) -> str:
-        output = [
-            f"[{name}]",
-            (
-                f"# {self.first_column_name:>12s} {'INTENSITY (EXP)':>17s}"
-                f" {'ERROR (EXP)':>17s} {'INTENSITY (CALC)':>17s}"
-            ),
+        output: list[list[str]] = []
+
+        output.append([f"[{name}]"])
+
+        header: list[str] = [
+            "#",
+            f"{self.first_column_name:>12s}",
+            f"{'INTENSITY (EXP)':>17s}",
+            f"{'ERROR (EXP)':>17s}",
+            f"{'INTENSITY (CALC)':>17s}",
         ]
+        if self.simulation:
+            del header[2:4]
+        output.append(header)
 
         for metadata, exp, err, calc, mask in zip(
             data.metadata,
@@ -60,11 +68,22 @@ class ProfilePrinter:
         ):
             start = " " if mask else "#"
             end = "" if mask else " # NOT USED IN THE FIT"
-            output.append(
-                f"{start} {metadata: {self.first_column_fmt}} {exp: 17.8e}"
-                f" {err: 17.8e} {calc: 17.8e}{end}",
+            line: list[str] = []
+            line.extend(
+                [
+                    f"{start}",
+                    f"{metadata:{self.first_column_fmt}}",
+                    f"{exp: 17.8e}",
+                    f"{err: 17.8e}",
+                    f"{calc: 17.8e}",
+                    f"{end}",
+                ]
             )
-        return "\n".join(output) + "\n\n"
+            if self.simulation:
+                del line[2:4]
+            output.append(line)
+
+        return "\n".join(" ".join(line) for line in output) + "\n\n"
 
 
 @dataclass
@@ -90,12 +109,25 @@ class EXSYPrinter(ProfilePrinter):
     first_column_name: str = "TIME (S)"
     first_column_fmt: str = "12.6f"
     header = ""
+    simulation: bool = False
 
     def print(self, name: str, data: Data) -> str:
-        output = [
-            f"[{name}]",
-            f"# {self.first_column_name:>12s} {'STATE1':>12s} {'STATE2':>12s} {'INTENSITY (EXP)':>17s} {'ERROR (EXP)':>17s} {'INTENSITY (CALC)':>17s}",
+        output: list[list[str]] = []
+
+        output.append([f"[{name}]"])
+
+        header: list[str] = [
+            "#",
+            f"{self.first_column_name:>12s}",
+            f"{'STATE1':>12s}",
+            f"{'STATE2':>12s}",
+            f"{'INTENSITY (EXP)':>17s}",
+            f"{'ERROR (EXP)':>17s}",
+            f"{'INTENSITY (CALC)':>17s}",
         ]
+        if self.simulation:
+            del header[4:6]
+        output.append(header)
 
         for metadata, exp, err, calc, mask in zip(
             data.metadata,
@@ -103,13 +135,28 @@ class EXSYPrinter(ProfilePrinter):
             data.err,
             data.calc,
             data.mask,
+            strict=True,
         ):
             start = " " if mask else "#"
             end = "" if mask else " # NOT USED IN THE FIT"
             time = metadata["times"]
             state1 = metadata["states1"]
             state2 = metadata["states1"]
-            output.append(
-                f"{start} {time: {self.first_column_fmt}} {state1} {state2} {exp: 17.8e} {err: 17.8e} {calc: 17.8e}{end}",
+            line: list[str] = []
+            line.extend(
+                [
+                    f"{start}",
+                    f"{time: {self.first_column_fmt}}",
+                    f"{state1:>12s}",
+                    f"{state2:>12s}",
+                    f"{exp: 17.8e}",
+                    f"{err: 17.8e}",
+                    f"{calc: 17.8e}",
+                    f"{end}",
+                ]
             )
-        return "\n".join(output) + "\n\n"
+            if self.simulation:
+                del line[4:6]
+            output.append(line)
+
+        return "\n".join(" ".join(line) for line in output) + "\n\n"

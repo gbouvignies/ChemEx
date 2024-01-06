@@ -1,24 +1,20 @@
 from __future__ import annotations
 
 from functools import cache
-from typing import TYPE_CHECKING
+from typing import Any
 
+from chemex.configuration.base import ExperimentConfiguration
+from chemex.configuration.conditions import Conditions
 from chemex.models.factory import model_factory
 from chemex.models.model import model
+from chemex.nmr.basis import Basis
+from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.parameters import database
 from chemex.parameters.setting import LocalSettings, Parameters, ParamSetting
+from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.spins import build_spin_param_settings
 
-if TYPE_CHECKING:
-    from typing import Any
-
-    from chemex.configuration.conditions import Conditions
-    from chemex.configuration.experiment import ExperimentConfig
-    from chemex.nmr.basis import Basis
-    from chemex.nmr.liouvillian import LiouvillianIS
-    from chemex.parameters.spin_system import SpinSystem
-
-    ConfigType = ExperimentConfig[Any, Any]
+ConfigConditionsType = ExperimentConfiguration[Any, Conditions, Any]
 
 
 @cache
@@ -79,7 +75,10 @@ def _build_parameters(
     return name_map, parameters
 
 
-def create_parameters(config: ConfigType, liouvillian: LiouvillianIS) -> dict[str, str]:
+def create_parameters(
+    config: ConfigConditionsType,
+    liouvillian: LiouvillianIS,
+) -> dict[str, str]:
     # A copy is done because the output of '_build_settings' is cached
     settings, settings_mf = _build_settings(liouvillian.basis, config.conditions)
 

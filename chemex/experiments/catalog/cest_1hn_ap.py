@@ -1,26 +1,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import numpy as np
 
+from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
+from chemex.configuration.conditions import Conditions
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import CestSettings, ExperimentConfig, ToBeFitted
+from chemex.configuration.experiment import CestSettings
+from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import CestFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
+from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cest import CestPlotter
 from chemex.printers.data import CestPrinter
-
-if TYPE_CHECKING:
-    from chemex.containers.data import Data
-    from chemex.parameters.spin_system import SpinSystem
-    from chemex.typing import ArrayBool, ArrayFloat
-
+from chemex.typing import ArrayBool, ArrayFloat
 
 EXPERIMENT_NAME = "cest_1hn_ap"
 
@@ -45,7 +44,9 @@ class Cest1HnApSettings(CestSettings):
         return f"[2izsz_{self.observed_state}]"
 
 
-class Cest1HnApConfig(ExperimentConfig[Cest1HnApSettings, CestDataSettings]):
+class Cest1HnApConfig(
+    ExperimentConfiguration[Cest1HnApSettings, Conditions, CestDataSettings],
+):
     @property
     def to_be_fitted(self) -> ToBeFitted:
         state = self.experiment.observed_state

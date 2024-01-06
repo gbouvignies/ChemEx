@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 from matplotlib.figure import Figure
 
 from chemex.containers.data import Data
+from chemex.containers.profile import Profile
 from chemex.messages import print_plot_filename
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from chemex.containers.profile import Profile
 
 _RED700 = "#D32F2F"
 

@@ -1,27 +1,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import numpy as np
 from numpy.linalg import matrix_power
 
+from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
+from chemex.configuration.conditions import Conditions
 from chemex.configuration.data import CestDataSettingsNoRef
-from chemex.configuration.experiment import CestSettings, ExperimentConfig, ToBeFitted
+from chemex.configuration.experiment import CestSettings
+from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import CestFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
+from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cest import CestPlotter
 from chemex.printers.data import CestPrinter
-
-if TYPE_CHECKING:
-    from chemex.containers.data import Data
-    from chemex.parameters.spin_system import SpinSystem
-    from chemex.typing import ArrayBool, ArrayFloat
-
+from chemex.typing import ArrayBool, ArrayFloat
 
 EXPERIMENT_NAME = "cest_1hn_ip_ap"
 
@@ -38,7 +37,6 @@ class Cest1HnIpApSettings(CestSettings):
     b1_inh_scale: float = 0.1
     b1_inh_res: int = 11
     eta_block: int = 0
-    observed_state: Literal["a", "b", "c", "d"] = "a"
 
     @property
     def detection(self) -> str:
@@ -53,7 +51,13 @@ class Cest1HnIpApSettings(CestSettings):
         return 0.5 * self.time_t1 / self.eta_block
 
 
-class Cest1HnIpApConfig(ExperimentConfig[Cest1HnIpApSettings, CestDataSettingsNoRef]):
+class Cest1HnIpApConfig(
+    ExperimentConfiguration[
+        Cest1HnIpApSettings,
+        Conditions,
+        CestDataSettingsNoRef,
+    ],
+):
     @property
     def to_be_fitted(self) -> ToBeFitted:
         state = self.experiment.observed_state

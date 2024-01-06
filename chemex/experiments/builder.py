@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING
+from collections.abc import MutableMapping
+from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError
 from rich.live import Live
 
-from chemex.configuration.experiment import ExperimentConfig, ExperimentNameConfig
+from chemex.configuration.base import BaseSettings, ExperimentConfiguration
+from chemex.configuration.methods import Selection
+from chemex.containers.dataset import Dataset
 from chemex.containers.experiment import Experiment
 from chemex.containers.experiments import Experiments
 from chemex.containers.profile import Profile
@@ -23,23 +27,25 @@ from chemex.parameters import database
 from chemex.parameters.factory import create_parameters
 from chemex.toml import read_toml
 
-if TYPE_CHECKING:
-    from collections.abc import MutableMapping
-    from pathlib import Path
-    from typing import Any
-
-    from chemex.configuration.methods import Selection
-    from chemex.containers.dataset import Dataset
-
-    ConfigType = ExperimentConfig[Any, Any]
+GenericConfig = ExperimentConfiguration[Any, Any, Any]
 
 
-def _get_experiment_name(config: MutableMapping[str, Any], filename: Path):
+class NameConfig(BaseSettings):
+    name: str
+
+
+class ExperimentConfig(BaseSettings):
+    experiment: NameConfig
+
+
+def _get_experiment_name(config: MutableMapping[str, Any], filename: Path) -> str:
     try:
-        return ExperimentNameConfig.model_validate(config).experiment.name
+        model = ExperimentConfig(**config)
     except ValidationError:
         print_experiment_name_error(filename)
         sys.exit()
+
+    return model.experiment.name
 
 
 def _apply_selection(dataset: Dataset, selection: Selection) -> Dataset:
@@ -64,7 +70,7 @@ def _create_dataset(
     filename: Path,
     live: Live,
     factory: Creators,
-    config: ConfigType,
+    config: GenericConfig,
 ) -> Dataset:
     try:
         dataset = factory.create_dataset(filename.parent, config)
@@ -80,7 +86,7 @@ def _create_config(
     live: Live,
     factory: Creators,
     config_dict: MutableMapping[str, Any],
-) -> ConfigType:
+) -> GenericConfig:
     try:
         config = factory.create_config(config_dict)
     except ValidationError as e:
@@ -128,7 +134,7 @@ def build_experiment(filename: Path, selection: Selection) -> Experiment:
         live.update(get_reading_exp_text(filename, experiment_name, len(profiles)))
 
     experiment = Experiment(filename, experiment_name, profiles, printer, plotter)
-    experiment.estimate_noise(config.data.error)
+    experiment.estimate_noise(config.data.error, config.data.global_error)
 
     return experiment
 

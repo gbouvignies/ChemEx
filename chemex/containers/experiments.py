@@ -5,31 +5,25 @@ types of simulated experiment datasets for statistical analysis.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from itertools import chain
+from pathlib import Path
 from random import choices
-from typing import TYPE_CHECKING, Literal, TypeVar
+from typing import Literal
 
 import numpy as np
+from lmfit.parameter import Parameters
+from typing_extensions import Self
 
+from chemex.configuration.methods import Selection
+from chemex.containers.experiment import Experiment
 from chemex.messages import print_selecting_profiles
 from chemex.parameters import database
 from chemex.parameters.spin_system import Group, SpinSystem
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-    from pathlib import Path
-
-    from lmfit.parameter import Parameters
-
-    from chemex.configuration.methods import Selection
-    from chemex.containers.experiment import Experiment
-    from chemex.typing import ArrayFloat
-
+from chemex.typing import ArrayFloat
 
 # Type definitions
 SelectionType = list[SpinSystem] | Literal["*", "all"], None
-
-Self = TypeVar("Self", bound="Experiments")
 
 
 class Experiments:
@@ -164,7 +158,7 @@ class Experiments:
         for experiment in self:
             experiment.filter(params)
 
-    def get_relevant_subset(self: Self, param_ids: set[str]) -> Self:
+    def get_relevant_subset(self, param_ids: set[str]) -> Self:
         """Get a subset of experiments relevant to specified parameter IDs.
 
         Args:

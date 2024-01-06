@@ -1,23 +1,22 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 
+from chemex.configuration.base import ExperimentConfiguration
+from chemex.configuration.data import RelaxationDataSettings, ShiftDataSettings
 from chemex.containers.data import Data
 from chemex.parameters.spin_system import SpinSystem
 from chemex.toml import normalize_path
 
-if TYPE_CHECKING:
-    from pathlib import Path
+# Type aliases
+Dataset = list[tuple[SpinSystem, Data]]
+ProfilesType = dict[SpinSystem, list[Path]]
 
-    from chemex.configuration.data import RelaxationDataSettings, ShiftDataSettings
-    from chemex.configuration.experiment import ExperimentConfig, ExperimentNameSettings
-
-    # Type aliases
-    Dataset = list[tuple[SpinSystem, Data]]
-    RelaxationConfig = ExperimentConfig[ExperimentNameSettings, RelaxationDataSettings]
-    ShiftConfig = ExperimentConfig[ExperimentNameSettings, ShiftDataSettings]
+RelaxationConfig = ExperimentConfiguration[Any, Any, RelaxationDataSettings]
+ShiftConfig = ExperimentConfiguration[Any, Any, ShiftDataSettings]
 
 
 def load_relaxation_dataset(base_path: Path, settings: RelaxationConfig) -> Dataset:

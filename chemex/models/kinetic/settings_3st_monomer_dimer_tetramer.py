@@ -1,19 +1,16 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING
 
 import numpy as np
 from scipy.optimize import root
 
+from chemex.configuration.conditions import Conditions
 from chemex.models.constraints import pop_3st
 from chemex.models.factory import model_factory
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
-
-if TYPE_CHECKING:
-    from chemex.configuration.conditions import Conditions
-    from chemex.typing import ArrayFloat
+from chemex.typing import ArrayFloat
 
 NAME = "3st_monomer_dimer_tetramer"
 

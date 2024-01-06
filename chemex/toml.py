@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Iterable, MutableMapping
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 import tomli as tomllib  # Will be part of standard library in Python 3.11
 
 from chemex.messages import print_file_not_found, print_toml_error
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def read_toml(filename: Path) -> MutableMapping[str, Any]:
@@ -45,7 +43,8 @@ def read_toml(filename: Path) -> MutableMapping[str, Any]:
 
 
 def _dict_merge(
-    dct: MutableMapping[str, Any], merge_dct: MutableMapping[str, Any]
+    dct: MutableMapping[str, Any],
+    merge_dct: MutableMapping[str, Any],
 ) -> None:
     """Recursive dictionary merge.
 

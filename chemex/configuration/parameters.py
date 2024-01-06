@@ -1,18 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated
+from pathlib import Path
+from typing import Annotated
 
 from annotated_types import Len
 from pydantic import AfterValidator, BeforeValidator, RootModel
 
-from chemex.configuration.base import ensure_list
+from chemex.configuration.utils import ensure_list
 from chemex.parameters.name import ParamName
 from chemex.toml import read_toml_multi
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
-    from pathlib import Path
 
 
 def rename_section(section_name: str) -> str:

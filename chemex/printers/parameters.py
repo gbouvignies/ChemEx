@@ -2,17 +2,13 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 from re import compile
-from typing import TYPE_CHECKING
 
+from chemex.containers.experiments import Experiments
 from chemex.parameters import database
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import ParamSetting
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from chemex.containers.experiments import Experiments
 
 Parameters = dict[ParamName, ParamSetting]
 
@@ -145,7 +141,7 @@ def classify_parameters(experiments: Experiments) -> ClassifiedParameters:
     )
 
 
-def write_parameters(experiments: Experiments, path: Path):
+def write_parameters(experiments: Experiments, path: Path) -> None:
     """Write the model parameter values and their uncertainties to a file."""
     path_par = path / "Parameters"
     path_par.mkdir(parents=True, exist_ok=True)

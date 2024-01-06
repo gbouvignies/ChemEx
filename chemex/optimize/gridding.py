@@ -1,17 +1,19 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from itertools import combinations, permutations, product
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
+from lmfit.parameter import Parameters
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.cm import get_cmap
 from matplotlib.colors import LogNorm
 from rich.progress import track
 
+from chemex.containers.experiments import Experiments
 from chemex.messages import print_group_name, print_running_grid
 from chemex.optimize.grouping import Group, create_groups
 from chemex.optimize.helper import (
@@ -23,14 +25,7 @@ from chemex.optimize.helper import (
 )
 from chemex.optimize.minimizer import minimize
 from chemex.parameters import database
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
-
-    from lmfit.parameter import Parameters
-
-    from chemex.containers.experiments import Experiments
-    from chemex.typing import ArrayFloat
+from chemex.typing import ArrayFloat
 
 
 @dataclass

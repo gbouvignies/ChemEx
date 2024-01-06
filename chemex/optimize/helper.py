@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Iterable
+from pathlib import Path
 
 import numpy as np
+from lmfit import Parameters as ParametersLF
 from scipy import stats
 
+from chemex.containers.experiments import Experiments
 from chemex.messages import (
     print_chi2,
     print_group_name,
@@ -14,14 +17,6 @@ from chemex.messages import (
 )
 from chemex.parameters import database
 from chemex.printers.parameters import write_parameters
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
-    from pathlib import Path
-
-    from lmfit import Parameters as ParametersLF
-
-    from chemex.containers.experiments import Experiments
 
 
 def calculate_statistics(
@@ -52,7 +47,7 @@ def calculate_statistics(
     }
 
 
-def _write_statistics(experiments: Experiments, path: Path):
+def _write_statistics(experiments: Experiments, path: Path) -> None:
     """Write fitting statistics to a file."""
     params_lf = database.build_lmfit_params(experiments.param_ids)
     stats = calculate_statistics(experiments, params_lf)
@@ -70,7 +65,7 @@ def _write_statistics(experiments: Experiments, path: Path):
         f.write(f"\"Bayesian Information Criterion (BIC)\" = {stats['bic']: .5e}\n")
 
 
-def _write_files(experiments: Experiments, path: Path):
+def _write_files(experiments: Experiments, path: Path) -> None:
     """Write the results of the fit to output files."""
     print_writing_results(path)
     path.mkdir(parents=True, exist_ok=True)
@@ -79,7 +74,7 @@ def _write_files(experiments: Experiments, path: Path):
     _write_statistics(experiments, path=path)
 
 
-def _write_simulation_files(experiments: Experiments, path: Path):
+def _write_simulation_files(experiments: Experiments, path: Path) -> None:
     """Write the results of the simulation to output files."""
     print_writing_results(path)
     path.mkdir(parents=True, exist_ok=True)
@@ -87,7 +82,7 @@ def _write_simulation_files(experiments: Experiments, path: Path):
     experiments.write(path)
 
 
-def _write_plots(experiments: Experiments, path: Path):
+def _write_plots(experiments: Experiments, path: Path) -> None:
     """Plot the experimental and fitted data."""
     print_making_plots()
 
@@ -99,7 +94,7 @@ def _write_plots(experiments: Experiments, path: Path):
         print_plotting_canceled()
 
 
-def _write_simulation_plots(experiments: Experiments, path: Path):
+def _write_simulation_plots(experiments: Experiments, path: Path) -> None:
     """Plot the experimental and fitted data."""
     print_making_plots()
 
@@ -114,8 +109,9 @@ def _write_simulation_plots(experiments: Experiments, path: Path):
 def execute_post_fit(
     experiments: Experiments,
     path: Path,
+    *,
     plot: bool = False,
-):
+) -> None:
     _write_files(experiments, path)
     if plot:
         _write_plots(experiments, path)
@@ -124,8 +120,9 @@ def execute_post_fit(
 def execute_simulation(
     experiments: Experiments,
     path: Path,
+    *,
     plot: bool = False,
-):
+) -> None:
     experiments.prepare_for_simulation()
     _write_simulation_files(experiments, path)
     if plot:
@@ -137,7 +134,7 @@ def execute_post_fit_groups(experiments: Experiments, path: Path, plot: str) -> 
     params_lf = database.build_lmfit_params(experiments.param_ids)
     statistics = calculate_statistics(experiments, params_lf)
     print_chi2(statistics["chisqr"], statistics["redchi"])
-    execute_post_fit(experiments, path / "All", plot != "nothing")
+    execute_post_fit(experiments, path / "All", plot=(plot != "nothing"))
 
 
 def print_header(grid: Iterable[str]) -> str:
@@ -156,7 +153,7 @@ def print_values_stat(
     fnames: Iterable[str],
     chisqr: float,
 ) -> str:
-    body_values_list = []
+    body_values_list: list[str] = []
     for fname in fnames:
         if fname in params_lf:
             body_values_list.append(f"{params_lf[fname].value:12.5e}")

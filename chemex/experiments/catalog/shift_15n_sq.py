@@ -1,40 +1,40 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import numpy as np
 
+from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
+from chemex.configuration.conditions import Conditions
 from chemex.configuration.data import ShiftDataSettings
-from chemex.configuration.experiment import ExperimentConfig, ShiftSettings, ToBeFitted
+from chemex.configuration.experiment import ExperimentSettings
+from chemex.containers.data import Data
 from chemex.containers.dataset import load_shift_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import NoFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
+from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.shift import ShiftPlotter
 from chemex.printers.data import ShiftPrinter
-
-if TYPE_CHECKING:
-    from chemex.containers.data import Data
-    from chemex.parameters.spin_system import SpinSystem
-    from chemex.typing import ArrayBool, ArrayFloat
-
+from chemex.typing import ArrayBool, ArrayFloat
 
 EXPERIMENT_NAME = "shift_15n_sq"
 
 
-class Shift15NSqSettings(ShiftSettings):
+class Shift15NSqSettings(ExperimentSettings):
     name: Literal["shift_15n_sq"]
-    observed_state: Literal["a", "b", "c", "d"] = "a"
 
     @property
     def cs_i_name(self) -> str:
         return f"cs_i_{self.observed_state}"
 
 
-class Shift15NSqConfig(ExperimentConfig[Shift15NSqSettings, ShiftDataSettings]):
+class Shift15NSqConfig(
+    ExperimentConfiguration[Shift15NSqSettings, Conditions, ShiftDataSettings],
+):
     @property
     def to_be_fitted(self) -> ToBeFitted:
         state = self.experiment.observed_state
@@ -73,7 +73,7 @@ class Shift15NSqSequence:
         return np.array([shift_sq / ppm_i])
 
     def is_reference(self, metadata: ArrayFloat) -> ArrayBool:
-        return np.full_like(metadata, False, dtype=np.bool_)
+        return np.full_like(metadata, fill_value=False, dtype=np.bool_)
 
 
 def register() -> None:

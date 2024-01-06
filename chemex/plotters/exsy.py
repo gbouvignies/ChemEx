@@ -3,20 +3,17 @@ from __future__ import annotations
 from collections import defaultdict
 from contextlib import ExitStack
 from itertools import product
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
 
 from chemex.containers.data import Data
+from chemex.containers.profile import Profile
 from chemex.messages import print_plot_filename
 from chemex.plotters.plot import get_grid, plot_profile
 from chemex.printers.plot import PlotPrinter, data_plot_printers
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from chemex.containers.profile import Profile
 
 
 def plot_exsy(file_pdf: PdfPages, name: str, data_exp: Data, data_calc: Data):
@@ -94,7 +91,7 @@ def create_plot_data_calc(profile: Profile) -> dict[tuple[str, str], Data]:
     data_fit.calc = scale * profile.pulse_sequence.calculate(spectrometer, data_fit)
 
     data_values = defaultdict(list)
-    for metadata, calc in zip(data_fit.metadata, data_fit.calc):
+    for metadata, calc in zip(data_fit.metadata, data_fit.calc, strict=False):
         states = tuple(metadata[["states1", "states2"]])
         data_values[states].append((metadata["times"], calc))
 

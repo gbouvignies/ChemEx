@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import lmfit
 import numpy as np
 from lmfit import Minimizer, Parameters
 
+from chemex.containers.experiments import Experiments
 from chemex.messages import (
     print_calculation_stopped_error,
     print_chi2_table_footer,
@@ -16,10 +16,7 @@ from chemex.messages import (
     print_value_error,
 )
 from chemex.optimize.grouping import ParamTree, create_group_tree
-
-if TYPE_CHECKING:
-    from chemex.containers.experiments import Experiments
-    from chemex.typing import ArrayFloat
+from chemex.typing import ArrayFloat
 
 
 @dataclass

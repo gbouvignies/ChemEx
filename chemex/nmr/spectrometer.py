@@ -1,23 +1,19 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from functools import reduce
 from itertools import product
-from typing import TYPE_CHECKING
 
 import numpy as np
 from cachetools import cached
 from cachetools.keys import hashkey
 from scipy.linalg import expm
 
-if TYPE_CHECKING:
-    # Imports related to type checking and annotations
-    from collections.abc import Iterable, Sequence
+from chemex.nmr.constants import Distribution
+from chemex.nmr.liouvillian import LiouvillianIS
+from chemex.typing import ArrayFloat
 
-    from chemex.nmr.constants import Distribution
-    from chemex.nmr.liouvillian import LiouvillianIS
-    from chemex.typing import ArrayFloat
-
-    DictArrayFloat = dict[str, ArrayFloat]
+DictArrayFloat = dict[str, ArrayFloat]
 
 # A small value used for numerical stability
 SMALL_VALUE = 1e-6
@@ -167,7 +163,7 @@ class Spectrometer:
         return self.liouvillian.carrier_i
 
     @carrier_i.setter
-    def carrier_i(self, value: float):
+    def carrier_i(self, value: float) -> None:
         self.liouvillian.carrier_i = value
         self.calculate_i_flag = True
         self.calculate_s_flag = True
@@ -177,7 +173,7 @@ class Spectrometer:
         return self.liouvillian.carrier_s
 
     @carrier_s.setter
-    def carrier_s(self, value: float):
+    def carrier_s(self, value: float) -> None:
         self.liouvillian.carrier_s = value
         self.calculate_i_flag = True
         self.calculate_s_flag = True
@@ -187,7 +183,7 @@ class Spectrometer:
         return self.liouvillian.offset_i
 
     @offset_i.setter
-    def offset_i(self, value: float):
+    def offset_i(self, value: float) -> None:
         self.liouvillian.offset_i = value
         self.calculate_i_flag = True
         self.calculate_s_flag = True
@@ -197,7 +193,7 @@ class Spectrometer:
         return self.liouvillian.offset_s
 
     @offset_s.setter
-    def offset_s(self, value: float):
+    def offset_s(self, value: float) -> None:
         self.liouvillian.offset_s = value
         self.calculate_i_flag = True
         self.calculate_s_flag = True
@@ -207,7 +203,7 @@ class Spectrometer:
         return self.liouvillian.b1_i
 
     @b1_i.setter
-    def b1_i(self, value: float):
+    def b1_i(self, value: float) -> None:
         self._pw90_i = 1.0 / (4.0 * value) if value else 0.0
         self.liouvillian.b1_i = value
         self.calculate_i_flag = True
@@ -218,7 +214,7 @@ class Spectrometer:
         return self.liouvillian.b1_s
 
     @b1_s.setter
-    def b1_s(self, value: float):
+    def b1_s(self, value: float) -> None:
         self._pw90_s = 1.0 / (4.0 * value) if value else 0.0
         self.liouvillian.b1_s = value
         self.calculate_i_flag = True
@@ -229,7 +225,7 @@ class Spectrometer:
         return self.liouvillian.b1_i_inh_scale
 
     @b1_i_inh_scale.setter
-    def b1_i_inh_scale(self, value: float):
+    def b1_i_inh_scale(self, value: float) -> None:
         self.liouvillian.b1_i_inh_scale = value
         self.calculate_i_flag = True
         self.calculate_s_flag = True
@@ -239,7 +235,7 @@ class Spectrometer:
         return self.liouvillian.b1_i_inh_res
 
     @b1_i_inh_res.setter
-    def b1_i_inh_res(self, value: int):
+    def b1_i_inh_res(self, value: int) -> None:
         self.liouvillian.b1_i_inh_res = value
         self.calculate_i_flag = True
         self.calculate_s_flag = True
@@ -249,7 +245,7 @@ class Spectrometer:
         return self.liouvillian.jeff_i
 
     @jeff_i.setter
-    def jeff_i(self, value: Distribution):
+    def jeff_i(self, value: Distribution) -> None:
         self.liouvillian.jeff_i = value
         self.calculate_i_flag = True
         self.calculate_s_flag = True
@@ -269,7 +265,7 @@ class Spectrometer:
         return self.liouvillian.detection
 
     @detection.setter
-    def detection(self, value: str):
+    def detection(self, value: str) -> None:
         self.liouvillian.detection = value
 
     def detect(self, magnetization: ArrayFloat) -> float:
@@ -280,7 +276,7 @@ class Spectrometer:
         return self.liouvillian.gradient_dephasing
 
     @gradient_dephasing.setter
-    def gradient_dephasing(self, value: float):
+    def gradient_dephasing(self, value: float) -> None:
         self.liouvillian.gradient_dephasing = value
         self.calculate_i_flag = True
         self.calculate_s_flag = True

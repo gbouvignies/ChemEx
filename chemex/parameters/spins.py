@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import TYPE_CHECKING
 
+from chemex.configuration.conditions import Conditions
 from chemex.models.model import model
+from chemex.nmr.basis import Basis
 from chemex.nmr.constants import J_COUPLINGS
 from chemex.nmr.rates import get_model_free_expressions
 from chemex.parameters.setting import LocalSettings, NameSetting, ParamLocalSetting
-
-if TYPE_CHECKING:
-    from chemex.configuration.conditions import Conditions
-    from chemex.nmr.basis import Basis
 
 
 def _update_expr_for_proton_exchange(

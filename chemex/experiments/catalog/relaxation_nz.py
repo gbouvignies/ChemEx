@@ -1,37 +1,31 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import numpy as np
 
+from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
+from chemex.configuration.conditions import Conditions
 from chemex.configuration.data import RelaxationDataSettings
-from chemex.configuration.experiment import (
-    ExperimentConfig,
-    RelaxationSettings,
-    ToBeFitted,
-)
+from chemex.configuration.experiment import ExperimentSettings
+from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import PlanesFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
+from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.relaxation import RelaxationPlotter
 from chemex.printers.data import RelaxationPrinter
-
-if TYPE_CHECKING:
-    from chemex.containers.data import Data
-    from chemex.parameters.spin_system import SpinSystem
-    from chemex.typing import ArrayBool, ArrayFloat
-
+from chemex.typing import ArrayBool, ArrayFloat
 
 EXPERIMENT_NAME = "relaxation_nz"
 
 
-class RelaxationNzSettings(RelaxationSettings):
+class RelaxationNzSettings(ExperimentSettings):
     name: Literal["relaxation_nz"]
-    observed_state: Literal["a", "b", "c", "d"] = "a"
 
     @property
     def detection(self) -> str:
@@ -39,7 +33,11 @@ class RelaxationNzSettings(RelaxationSettings):
 
 
 class RelaxationNzConfig(
-    ExperimentConfig[RelaxationNzSettings, RelaxationDataSettings],
+    ExperimentConfiguration[
+        RelaxationNzSettings,
+        Conditions,
+        RelaxationDataSettings,
+    ],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
@@ -81,7 +79,7 @@ class RelaxationNzSequence:
         return np.array([spectrometer.detect(delay @ start) for delay in delays])
 
     def is_reference(self, metadata: ArrayFloat) -> ArrayBool:
-        return np.full_like(metadata, False, dtype=np.bool_)
+        return np.full_like(metadata, fill_value=False, dtype=np.bool_)
 
 
 def register() -> None:

@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
+from chemex.configuration.conditions import Conditions
 from chemex.models.factory import model_factory
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
-
-if TYPE_CHECKING:
-    from chemex.configuration.conditions import Conditions
-
 
 NAME = "2st"
 

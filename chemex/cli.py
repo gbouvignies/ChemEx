@@ -24,7 +24,9 @@ def build_parser():
     parser.set_defaults(func=lambda _: parser.print_usage())
 
     parser.add_argument(
-        "--version", action="version", version=f"{parser.prog} {__version__}"
+        "--version",
+        action="version",
+        version=f"{parser.prog} {__version__}",
     )
 
     subparsers = parser.add_subparsers(dest="commands")
@@ -176,7 +178,8 @@ def build_parser():
 
     # parser for the positional argument "pick_cest"
     pick_cest_parser = subparsers.add_parser(
-        "pick_cest", help="Plot CEST profiles for dip picking"
+        "pick_cest",
+        help="Plot CEST profiles for dip picking",
     )
 
     pick_cest_parser.set_defaults(func=pick_cest)
@@ -202,7 +205,8 @@ def build_parser():
 
     # parser for the positional argument "pick_cest"
     plot_param_parser = subparsers.add_parser(
-        "plot_param", help="Plot one selected parameter from a 'parameters.fit' file"
+        "plot_param",
+        help="Plot one selected parameter from a 'parameters.fit' file",
     )
 
     plot_param_parser.set_defaults(func=plot_param)

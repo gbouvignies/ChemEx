@@ -4,16 +4,14 @@ from collections import defaultdict
 from dataclasses import dataclass
 from functools import cache
 from itertools import permutations, product
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import numpy as np
 
 from chemex.models.model import model
+from chemex.typing import ArrayFloat
 
-if TYPE_CHECKING:
-    from chemex.typing import ArrayFloat
-
-    DictArrayFloat = dict[str, ArrayFloat]
+DictArrayFloat = dict[str, ArrayFloat]
 
 _BASES = {
     "ixy": ["ix", "iy"],

@@ -12,23 +12,18 @@ Ix, Iy, Iz, Sx, Sy, Sz,
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from itertools import product
-from typing import TYPE_CHECKING
 
 import numpy as np
 from scipy import stats
 
+from chemex.configuration.conditions import Conditions
 from chemex.models.model import model
+from chemex.nmr.basis import Basis
 from chemex.nmr.constants import SIGNED_XI_RATIO, XI_RATIO, Distribution
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
-
-    from chemex.configuration.conditions import Conditions
-    from chemex.nmr.basis import Basis
-    from chemex.parameters.spin_system import SpinSystem
-    from chemex.typing import ArrayFloat
-
+from chemex.parameters.spin_system import SpinSystem
+from chemex.typing import ArrayFloat
 
 _RE_COMP = re.compile(r"\[(.+?)\]")
 

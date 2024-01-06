@@ -1,16 +1,14 @@
 """Factories for creating parameter settings."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from collections.abc import Callable
+from typing import ClassVar
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
+from chemex.configuration.conditions import Conditions
+from chemex.parameters.setting import ParamLocalSetting
 
-    from chemex.configuration.conditions import Conditions
-    from chemex.parameters.setting import ParamLocalSetting
-
-    SettingsType = dict[str, ParamLocalSetting]
-    SettingMakerType = Callable[[Conditions], SettingsType]
+SettingsType = dict[str, ParamLocalSetting]
+SettingMakerType = Callable[[Conditions], SettingsType]
 
 
 class Factory:

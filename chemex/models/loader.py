@@ -10,6 +10,7 @@ from chemex.models import kinetic
 
 class SettingModuleInterface(Protocol):
     """Represents a setting module interface.
+
     A setting module plugin has a single register function.
     """
 

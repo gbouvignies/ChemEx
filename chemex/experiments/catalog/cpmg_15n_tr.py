@@ -1,27 +1,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import numpy as np
 from numpy.linalg import matrix_power
 
+from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
+from chemex.configuration.conditions import Conditions
 from chemex.configuration.data import RelaxationDataSettings
-from chemex.configuration.experiment import CpmgSettings, ExperimentConfig, ToBeFitted
+from chemex.configuration.experiment import CpmgSettings
+from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import PlanesFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
+from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cpmg import CpmgPlotter
 from chemex.printers.data import CpmgPrinter
-
-if TYPE_CHECKING:
-    from chemex.containers.data import Data
-    from chemex.parameters.spin_system import SpinSystem
-    from chemex.typing import ArrayBool, ArrayFloat
-
+from chemex.typing import ArrayBool, ArrayFloat
 
 EXPERIMENT_NAME = "cpmg_15n_tr"
 
@@ -34,7 +33,6 @@ class Cpmg15NTrSettings(CpmgSettings):
     time_equil: float = 0.0
     taub: float = 2.68e-3
     antitrosy: bool = False
-    observed_state: Literal["a", "b", "c", "d"] = "a"
 
     @property
     def t_neg(self) -> float:
@@ -51,7 +49,13 @@ class Cpmg15NTrSettings(CpmgSettings):
         return f"[2izsz_{self.observed_state}] - [iz_{self.observed_state}]"
 
 
-class Cpmg15NTrConfig(ExperimentConfig[Cpmg15NTrSettings, RelaxationDataSettings]):
+class Cpmg15NTrConfig(
+    ExperimentConfiguration[
+        Cpmg15NTrSettings,
+        Conditions,
+        RelaxationDataSettings,
+    ],
+):
     @property
     def to_be_fitted(self) -> ToBeFitted:
         state = self.experiment.observed_state

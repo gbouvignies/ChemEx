@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING
+from argparse import Namespace
 
 from chemex.cli import build_parser
 from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
+from chemex.containers.experiments import Experiments
 from chemex.experiments.builder import build_experiments
 from chemex.experiments.loader import register_experiments
 from chemex.messages import (
@@ -23,13 +24,8 @@ from chemex.optimize.fitting import run_methods
 from chemex.optimize.helper import execute_simulation
 from chemex.parameters import database
 
-if TYPE_CHECKING:
-    from argparse import Namespace
 
-    from chemex.containers.experiments import Experiments
-
-
-def run_fit(args: Namespace, experiments: Experiments):
+def run_fit(args: Namespace, experiments: Experiments) -> None:
     # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
     experiments.filter()
 
@@ -43,19 +39,18 @@ def run_fit(args: Namespace, experiments: Experiments):
     run_methods(experiments, methods, args.output, args.plot)
 
 
-def run_sim(args: Namespace, experiments: Experiments):
+def run_sim(args: Namespace, experiments: Experiments) -> None:
     print_running_simulations()
 
     path = args.output
     plot = args.plot == "normal"
 
     database.fix_all_parameters()
-    experiments.back_calculate()
 
     execute_simulation(experiments, path, plot=plot)
 
 
-def run(args: Namespace):
+def run(args: Namespace) -> None:
     """Run the fit or simulation."""
     # Parse kinetics model
     model.set_model(args.model)
@@ -79,7 +74,7 @@ def run(args: Namespace):
         run_fit(args, experiments)
 
 
-def main():
+def main() -> None:
     """Do all the magic."""
     print_logo()
 

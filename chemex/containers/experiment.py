@@ -1,31 +1,25 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from itertools import chain
-from typing import TYPE_CHECKING, TypeVar
+from pathlib import Path
 
 import numpy as np
+from lmfit import Parameters as ParametersLF
+from typing_extensions import Self
 
+from chemex.configuration.methods import Selection
+from chemex.containers.profile import Profile
 from chemex.messages import (
     print_no_duplicate_warning,
     print_not_implemented_noise_method_warning,
 )
 from chemex.parameters import database
+from chemex.parameters.spin_system import Group
+from chemex.plotters.plotter import Plotter
+from chemex.printers.data import Printer
 from chemex.uncertainty import estimate_noise_variance
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-    from pathlib import Path
-
-    from lmfit import Parameters as ParametersLF
-
-    from chemex.configuration.methods import Selection
-    from chemex.containers.profile import Profile
-    from chemex.parameters.spin_system import Group
-    from chemex.plotters.plotter import Plotter
-    from chemex.printers.data import Printer
-
-Self = TypeVar("Self", bound="Experiment")
 
 
 @dataclass
@@ -78,7 +72,7 @@ class Experiment:
     def _any_duplicate(self):
         return any(profile.any_duplicate() for profile in self.profiles)
 
-    def estimate_noise(self, kind: str) -> None:
+    def estimate_noise(self, kind: str, global_error: bool = True) -> None:
         # TODO: Validation should be moved to the configuration file module
         implemented = ("file", "scatter", "duplicates")
         if kind not in implemented:
@@ -89,18 +83,22 @@ class Experiment:
             kind = "file"
         if kind == "file" or not self.profiles:
             return
-        noise_variance_values = [
-            estimate_noise_variance[kind](profile.data) for profile in self.profiles
-        ]
-        noise_mean = np.sqrt(np.mean(noise_variance_values))
-        for profile in self.profiles:
-            profile.set_noise(noise_mean)
+        if global_error:
+            noise_variance_values = [
+                estimate_noise_variance[kind](profile.data) for profile in self.profiles
+            ]
+            noise_mean = np.sqrt(np.mean(noise_variance_values))
+            for profile in self.profiles:
+                profile.set_noise(noise_mean)
+        else:
+            for profile in self.profiles:
+                profile.set_noise(np.sqrt(estimate_noise_variance[kind](profile.data)))
 
     def prepare_for_simulation(self) -> None:
         for profile in self.profiles:
             profile.prepare_for_simulation()
 
-    def monte_carlo(self: Self) -> Self:
+    def monte_carlo(self) -> Self:
         profiles = [profile.monte_carlo() for profile in self.profiles]
         return type(self)(
             self.filename,
@@ -110,7 +108,7 @@ class Experiment:
             self.plotter,
         )
 
-    def bootstrap(self: Self) -> Self:
+    def bootstrap(self) -> Self:
         profiles = [profile.bootstrap() for profile in self.profiles]
         return type(self)(
             self.filename,
@@ -120,7 +118,7 @@ class Experiment:
             self.plotter,
         )
 
-    def bootstrap_ns(self: Self, groups: list[Group]) -> Self:
+    def bootstrap_ns(self, groups: list[Group]) -> Self:
         """Residue-specific bootstrap."""
         profiles: dict[Group, list[Profile]] = {}
         for profile in self.profiles:
@@ -146,7 +144,7 @@ class Experiment:
             set(database.get_parameters(profile.param_ids)) for profile in self.profiles
         ]
 
-    def get_relevant_subset(self: Self, param_ids: set[str]) -> Self:
+    def get_relevant_subset(self, param_ids: set[str]) -> Self:
         profiles = [
             profile
             for profile in self.profiles

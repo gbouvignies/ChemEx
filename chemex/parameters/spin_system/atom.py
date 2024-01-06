@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Hashable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from .constants import CORRECT_ATOM_NAME
 from .nucleus import Nucleus, str2nucleus
-
-if TYPE_CHECKING:
-    from collections.abc import Hashable
 
 
 @dataclass(order=True)
@@ -21,8 +18,10 @@ class Atom:
 
     Attributes:
         name (str): The name of the atom.
-        nucleus (Nucleus): The type of nucleus associated with the atom, determined automatically.
-        search_keys (set[Hashable]): Set of keys used for searching or matching the atom.
+        nucleus (Nucleus): The type of nucleus associated with the atom, determined
+                           automatically.
+        search_keys (set[Hashable]): Set of keys used for searching or matching the
+                                     atom.
     """
 
     name: str

@@ -1,25 +1,21 @@
 from __future__ import annotations
 
+from collections.abc import Hashable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import cached_property
 from operator import attrgetter
-from typing import TYPE_CHECKING, Protocol, TypeVar
+from typing import Protocol
 
 from cachetools import LRUCache, cachedmethod
+from lmfit import Parameters as ParametersLF
+from typing_extensions import Self
 
-if TYPE_CHECKING:
-    from collections.abc import Hashable
-
-    from lmfit import Parameters as ParametersLF
-
-    from chemex.containers.data import Data
-    from chemex.nmr.spectrometer import Spectrometer
-    from chemex.parameters.spin_system import SpinSystem
-    from chemex.printers.data import Printer
-    from chemex.typing import ArrayBool, ArrayFloat
-
-Self = TypeVar("Self", bound="Profile")
+from chemex.containers.data import Data
+from chemex.nmr.spectrometer import Spectrometer
+from chemex.parameters.spin_system import SpinSystem
+from chemex.printers.data import Printer
+from chemex.typing import ArrayBool, ArrayFloat
 
 
 class PulseSequence(Protocol):
@@ -88,9 +84,13 @@ class Profile:
     def calculate(self, params: ParametersLF) -> ArrayFloat:
         """Calculate and return the ArrayFloat."""
         self.update_spectrometer(params)
-        self.data.calc = self.pulse_sequence.calculate(self.spectrometer, self.data)
+        self.data.calc_unscaled = self.pulse_sequence.calculate(
+            self.spectrometer, self.data
+        )
         if self.is_scaled:
-            self.data.scale_calc()
+            self.data.calc = self.data.scale * self.data.calc_unscaled
+        else:
+            self.data.calc = self.data.calc_unscaled
         return self.data.calc
 
     @cachedmethod(attrgetter("cache"), key=_cache_key)
@@ -105,13 +105,14 @@ class Profile:
             self.update_spectrometer(params)
             self.filterer.filter(self.data)
 
-    def set_noise(self, value: float):
+    def set_noise(self, value: float) -> None:
         """Set the noise value."""
         self.data.err[:] = value
 
     def prepare_for_simulation(self) -> None:
         """Prepare data for simulation."""
-        self.data.prepare_for_simulation()
+        self.data.exp = self.data.calc
+        self.printer.simulation = True
 
     def monte_carlo(self: Self) -> Self:
         """Generate a Monte Carlo variant of the profile."""
@@ -119,7 +120,7 @@ class Profile:
         profile.data = profile.data.monte_carlo()
         return profile
 
-    def bootstrap(self: Self) -> Self:
+    def bootstrap(self) -> Self:
         """Generate a bootstrap variant of the profile."""
         profile = deepcopy(self)
         profile.data = profile.data.bootstrap()
@@ -129,7 +130,7 @@ class Profile:
         """Check for duplicate data points."""
         return self.data.any_duplicate()
 
-    def __add__(self: Self, other: Self) -> Self:
+    def __add__(self, other: Self) -> Self:
         """Combine two profiles."""
         profile = deepcopy(self)
         profile.data = self.data + other.data

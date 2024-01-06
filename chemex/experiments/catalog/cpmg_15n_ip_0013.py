@@ -2,27 +2,27 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import reduce
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import numpy as np
 
+from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
+from chemex.configuration.conditions import Conditions
 from chemex.configuration.data import RelaxationDataSettings
-from chemex.configuration.experiment import CpmgSettings, ExperimentConfig, ToBeFitted
+from chemex.configuration.experiment import CpmgSettings
+from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import PlanesFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
+from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cpmg import CpmgPlotter
 from chemex.printers.data import CpmgPrinter
+from chemex.typing import ArrayBool, ArrayFloat, ArrayInt
 
-if TYPE_CHECKING:
-    from chemex.containers.data import Data
-    from chemex.parameters.spin_system import SpinSystem
-    from chemex.typing import ArrayBool, ArrayFloat, ArrayInt
-
-    Delays = tuple[dict[float, float], dict[float, float], list[float]]
+Delays = tuple[dict[float, float], dict[float, float], list[float]]
 
 
 EXPERIMENT_NAME = "cpmg_15n_ip_0013"
@@ -35,7 +35,6 @@ class Cpmg15N0013IpSettings(CpmgSettings):
     pw90: float
     time_equil: float = 0.0
     ncyc_max: int
-    observed_state: Literal["a", "b", "c", "d"] = "a"
 
     @property
     def t_neg(self) -> float:
@@ -51,7 +50,11 @@ class Cpmg15N0013IpSettings(CpmgSettings):
 
 
 class Cpmg15N0013IpConfig(
-    ExperimentConfig[Cpmg15N0013IpSettings, RelaxationDataSettings],
+    ExperimentConfiguration[
+        Cpmg15N0013IpSettings,
+        Conditions,
+        RelaxationDataSettings,
+    ],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
