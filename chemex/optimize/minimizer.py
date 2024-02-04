@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 import lmfit
 import numpy as np
-from lmfit import Minimizer, Parameters
 
 from chemex.containers.experiments import Experiments
 from chemex.messages import (
@@ -21,12 +20,12 @@ from chemex.typing import ArrayFloat
 
 @dataclass
 class Reporter:
-    last_chisqr: float = 1e32
+    last_chisqr: float = +1.0e32
     threshold: float = -1.0e-3
 
     def iter_cb(
         self,
-        params: Parameters,
+        params: lmfit.Parameters,
         iteration: int,
         residuals: ArrayFloat,
         *_args,
@@ -60,34 +59,37 @@ class Reporter:
 
 def minimize(
     experiments: Experiments,
-    params: Parameters,
+    params: lmfit.Parameters,
     fitmethod: str,
-) -> Parameters:
+) -> lmfit.Parameters:
     kws = {
         "brute": {"keep": "all"},
-        "basinhopping": {"niter_success": 10},
     }
 
-    minimizer = Minimizer(experiments.residuals, params)
+    minimizer = lmfit.Minimizer(experiments.residuals, params)
     minimizer.minimize(method=fitmethod, **(kws.get(fitmethod, {})))
     return deepcopy(minimizer.result.params)
 
 
 def minimize_with_report(
     experiments: Experiments,
-    params: Parameters,
+    params: lmfit.Parameters,
     fitmethod: str,
-) -> Parameters:
+) -> lmfit.Parameters:
     kws = {
         "brute": {"keep": "all"},
-        "basinhopping": {"niter_success": 10},
-        "differential_evolution": {"polish": True, "disp": True, "init": "sobol"},
+        "differential_evolution": {"disp": True},
+        "basinhopping": {
+            "disp": True,
+            "niter_success": 10,
+            "minimizer_kwargs": {"method": "L-BFGS-B"},
+        },
         "ampgo": {"disp": True},
     }
 
     reporter = Reporter()
 
-    minimizer = Minimizer(experiments.residuals, params, iter_cb=reporter.iter_cb)
+    minimizer = lmfit.Minimizer(experiments.residuals, params, iter_cb=reporter.iter_cb)
 
     reporter.print_header()
 
@@ -102,8 +104,9 @@ def minimize_with_report(
     return deepcopy(minimizer.result.params)
 
 
-def residuals_hierarchical(params: Parameters, param_tree: ParamTree) -> ArrayFloat:
-    # print(param_tree.ids_to_fit)
+def residuals_hierarchical(
+    params: lmfit.Parameters, param_tree: ParamTree
+) -> ArrayFloat:
     if not param_tree.branches:
         return param_tree.experiments.residuals(params)
 
@@ -129,11 +132,11 @@ def residuals_hierarchical(params: Parameters, param_tree: ParamTree) -> ArrayFl
     return residuals
 
 
-def minimize_hierarchical(experiments: Experiments, params: Parameters, fitmethod: str):
+def minimize_hierarchical(
+    experiments: Experiments, params: lmfit.Parameters, fitmethod: str
+):
     kws = {
         "brute": {"keep": "all"},
-        "basinhopping": {"niter_success": 10},
-        "differential_evolution": {"polish": True, "disp": True, "init": "sobol"},
         "ampgo": {"disp": True},
     }
 
@@ -146,7 +149,7 @@ def minimize_hierarchical(experiments: Experiments, params: Parameters, fitmetho
         if param.name not in param_tree.ids_to_fit:
             param.vary = False
 
-    minimizer = Minimizer(
+    minimizer = lmfit.Minimizer(
         residuals_hierarchical,
         params,
         fcn_args=(param_tree,),
