@@ -193,7 +193,7 @@ def make_settings_4st_binding_partner_2st(
             expr=f"{{pl2}} / {p_total}",
         ),
         "pd": ParamLocalSetting(
-            name_setting=NameSetting("pc", "", TPL),
+            name_setting=NameSetting("pd", "", TPL),
             expr=f"{{pl3}} / {p_total}",
         ),
     }

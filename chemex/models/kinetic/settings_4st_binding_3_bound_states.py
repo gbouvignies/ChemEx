@@ -66,18 +66,18 @@ def make_settings_4st_binding_3_bound_states(
         msg = f"'l_total' must be specified to use the '{NAME}' model"
         raise ValueError(msg)
     return {
+        "kd_app": ParamLocalSetting(
+            name_setting=NameSetting("kd_app", "", ("temperature",)),
+            value=1e-6,
+            min=0.0,
+            max=1.0,
+            vary=True,
+        ),
         "koff_ab": ParamLocalSetting(
             name_setting=NameSetting("koff_ab", "", ("temperature",)),
             value=100.0,
             min=0.0,
             max=1e6,
-            vary=True,
-        ),
-        "kd_ab": ParamLocalSetting(
-            name_setting=NameSetting("kd_ab", "", ("temperature",)),
-            value=1e-6,
-            min=0.0,
-            max=1.0,
             vary=True,
         ),
         "kex_bc": ParamLocalSetting(
@@ -107,6 +107,10 @@ def make_settings_4st_binding_3_bound_states(
             min=0.0,
             max=100.0,
             vary=True,
+        ),
+        "kd_ab": ParamLocalSetting(
+            name_setting=NameSetting("kd_ab", "", ("temperature",)),
+            expr="{kd_app} * (1 + {keq_bc} + {keq_bc} * {keq_cd})",
         ),
         "kon_ab": ParamLocalSetting(
             name_setting=NameSetting("kon_ab", "", ("temperature",)),
@@ -177,7 +181,7 @@ def make_settings_4st_binding_3_bound_states(
             expr=f"{{c_pl2}} / {p_total}",
         ),
         "pd": ParamLocalSetting(
-            name_setting=NameSetting("pc", "", TPL),
+            name_setting=NameSetting("pd", "", TPL),
             expr=f"{{c_pl3}} / {p_total}",
         ),
     }

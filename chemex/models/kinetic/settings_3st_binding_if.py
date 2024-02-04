@@ -12,7 +12,7 @@ from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
 from chemex.typing import ArrayFloat
 
-NAME = "3st_induced_fit"
+NAME = "3st_binding_if"
 
 TPL = ("temperature", "p_total", "l_total")
 
@@ -65,15 +65,15 @@ def make_settings_3st_induced_fit(
         msg = f"'l_total' must be specified to use the '{NAME}' model"
         raise ValueError(msg)
     return {
-        "koff_ab": ParamLocalSetting(
-            name_setting=NameSetting("koff_ab", "", ("temperature",)),
-            value=100.0,
+        "kd_app": ParamLocalSetting(
+            name_setting=NameSetting("kd_app", "", ("temperature",)),
+            value=1e-3,
             min=0.0,
             vary=True,
         ),
-        "kd_ab": ParamLocalSetting(
-            name_setting=NameSetting("kd_ab", "", ("temperature",)),
-            value=1e-3,
+        "koff_ab": ParamLocalSetting(
+            name_setting=NameSetting("koff_ab", "", ("temperature",)),
+            value=100.0,
             min=0.0,
             vary=True,
         ),
@@ -88,6 +88,10 @@ def make_settings_3st_induced_fit(
             value=100.0,
             min=0.0,
             vary=True,
+        ),
+        "kd_ab": ParamLocalSetting(
+            name_setting=NameSetting("kd_ab", "", ("temperature",)),
+            expr="{kd_app} * (1 + {kbc} / {kcb})",
         ),
         "kon": ParamLocalSetting(
             name_setting=NameSetting("kon", "", ("temperature",)),
