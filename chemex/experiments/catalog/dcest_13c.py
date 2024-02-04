@@ -7,7 +7,7 @@ import numpy as np
 from numpy.linalg import matrix_power
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
-from chemex.configuration.conditions import Conditions
+from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
 from chemex.configuration.experiment import CestSettings
 from chemex.containers.data import Data
@@ -57,7 +57,9 @@ class DCest13CSettings(CestSettings):
 
 
 class DCest13CConfig(
-    ExperimentConfiguration[DCest13CSettings, Conditions, CestDataSettings],
+    ExperimentConfiguration[
+        DCest13CSettings, ConditionsWithValidations, CestDataSettings
+    ],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:

@@ -39,8 +39,8 @@ class Data:
 
     def __post_init__(self) -> None:
         """Initialize computed attributes of the Data class."""
-        self.calc = np.full_like(self.exp, fill_value=1e32, dtype=np.float_)
-        self.calc_unscaled = np.full_like(self.exp, fill_value=1e32, dtype=np.float_)
+        self.calc = np.full_like(self.exp, fill_value=1e32, dtype=np.float64)
+        self.calc_unscaled = np.full_like(self.exp, fill_value=1e32, dtype=np.float64)
         self.mask = np.full_like(self.exp, fill_value=True, dtype=np.bool_)
         self.refs = np.full_like(self.exp, fill_value=False, dtype=np.bool_)
 

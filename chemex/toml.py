@@ -5,12 +5,12 @@ from collections.abc import Iterable, MutableMapping
 from pathlib import Path
 from typing import Any
 
-import tomli as tomllib  # Will be part of standard library in Python 3.11
+import tomllib
 
 from chemex.messages import print_file_not_found, print_toml_error
 
 
-def read_toml(filename: Path) -> MutableMapping[str, Any]:
+def read_toml(filename: Path) -> dict[str, Any]:
     """Read and parse the experiment configuration file with 'toml."""
     with filename.open(mode="rb") as file:
         try:
@@ -22,8 +22,7 @@ def read_toml(filename: Path) -> MutableMapping[str, Any]:
             print_toml_error(filename, error)
             sys.exit(1)
 
-        else:
-            return config
+        return config
 
     # Recursive dictionary merge
     # Copyright (C) 2016 Paul Durivage <pauldurivage+github@gmail.com>

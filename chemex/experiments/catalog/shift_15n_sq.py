@@ -6,7 +6,7 @@ from typing import Literal
 import numpy as np
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
-from chemex.configuration.conditions import Conditions
+from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import ShiftDataSettings
 from chemex.configuration.experiment import ExperimentSettings
 from chemex.containers.data import Data
@@ -33,7 +33,9 @@ class Shift15NSqSettings(ExperimentSettings):
 
 
 class Shift15NSqConfig(
-    ExperimentConfiguration[Shift15NSqSettings, Conditions, ShiftDataSettings],
+    ExperimentConfiguration[
+        Shift15NSqSettings, ConditionsWithValidations, ShiftDataSettings
+    ],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:

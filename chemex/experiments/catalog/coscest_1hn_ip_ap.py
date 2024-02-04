@@ -7,7 +7,7 @@ import numpy as np
 from numpy.linalg import matrix_power
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
-from chemex.configuration.conditions import Conditions
+from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettingsNoRef
 from chemex.configuration.experiment import CestSettings
 from chemex.containers.data import Data
@@ -48,7 +48,7 @@ class CosCest1HnIpApSettings(CestSettings):
 class CosCest1HnIpApConfig(
     ExperimentConfiguration[
         CosCest1HnIpApSettings,
-        Conditions,
+        ConditionsWithValidations,
         CestDataSettingsNoRef,
     ],
 ):

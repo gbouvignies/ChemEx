@@ -6,7 +6,7 @@ from typing import Literal
 import numpy as np
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
-from chemex.configuration.conditions import Conditions
+from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import ExperimentSettings
 from chemex.containers.data import Data
@@ -35,7 +35,7 @@ class RelaxationHzNzSettings(ExperimentSettings):
 class RelaxationHzNzConfig(
     ExperimentConfiguration[
         RelaxationHzNzSettings,
-        Conditions,
+        ConditionsWithValidations,
         RelaxationDataSettings,
     ],
 ):

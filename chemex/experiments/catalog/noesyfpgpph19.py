@@ -7,7 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
-from chemex.configuration.conditions import Conditions
+from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import ExperimentSettings
 from chemex.containers.data import Data
@@ -22,7 +22,7 @@ from chemex.plotters.exsy import EXSYPlotter
 from chemex.printers.data import EXSYPrinter
 
 # Type definitions
-NDArrayFloat = NDArray[np.float_]
+NDArrayFloat = NDArray[np.float64]
 NDArrayBool = NDArray[np.bool_]
 
 
@@ -36,7 +36,7 @@ class Noesyfpgpph19Settings(ExperimentSettings):
 class Noesyfpgpph19Config(
     ExperimentConfiguration[
         Noesyfpgpph19Settings,
-        Conditions,
+        ConditionsWithValidations,
         RelaxationDataSettings,
     ],
 ):

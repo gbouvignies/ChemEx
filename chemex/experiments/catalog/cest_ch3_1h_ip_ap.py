@@ -6,7 +6,7 @@ from typing import Literal
 import numpy as np
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
-from chemex.configuration.conditions import Conditions
+from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettingsNoRef
 from chemex.configuration.experiment import CestSettings
 from chemex.containers.data import Data
@@ -44,7 +44,7 @@ class CestCh31HIpApSettings(CestSettings):
 class CestCh31HIpApConfig(
     ExperimentConfiguration[
         CestCh31HIpApSettings,
-        Conditions,
+        ConditionsWithValidations,
         CestDataSettingsNoRef,
     ],
 ):

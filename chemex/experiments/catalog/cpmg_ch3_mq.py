@@ -7,7 +7,7 @@ import numpy as np
 from numpy.linalg import matrix_power
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
-from chemex.configuration.conditions import Conditions
+from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings
 from chemex.containers.data import Data
@@ -39,7 +39,7 @@ class CpmgCh3MqSettings(CpmgSettings):
 class CpmgCh3MqConfig(
     ExperimentConfiguration[
         CpmgCh3MqSettings,
-        Conditions,
+        ConditionsWithValidations,
         RelaxationDataSettings,
     ],
 ):

@@ -138,10 +138,12 @@ class Conditions(BaseModel, frozen=True):
         )
         return tuple_self < tuple_other
 
+
+class ConditionsWithValidations(Conditions, frozen=True):
     @model_validator(mode="before")
     def key_to_lower(cls, model: dict[str, T]) -> dict[str, T]:
         """Converts keys of the model dictionary to lowercase."""
-        return {to_lower(k): v for k, v in model.items()}
+        return {k.lower(): v for k, v in model.items()}
 
     @field_validator("d2o")
     def validate_d2o(cls, d2o: float | None) -> float | None:
@@ -171,5 +173,5 @@ class Conditions(BaseModel, frozen=True):
         are_not_both_set = self.p_total is None or self.l_total is None
         if "binding" in model.name and are_not_both_set:
             msg = 'To use the "binding" model, "p_total" and "l_total" must be provided'
-            raise ValidationError(msg)
+            raise ValueError(msg)
         return self

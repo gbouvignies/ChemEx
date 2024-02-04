@@ -6,7 +6,7 @@ from typing import Literal
 import numpy as np
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
-from chemex.configuration.conditions import Conditions
+from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
 from chemex.configuration.experiment import CestSettings
 from chemex.containers.data import Data
@@ -41,7 +41,9 @@ class Cest13CSettings(CestSettings):
 
 
 class Cest13CConfig(
-    ExperimentConfiguration[Cest13CSettings, Conditions, CestDataSettings],
+    ExperimentConfiguration[
+        Cest13CSettings, ConditionsWithValidations, CestDataSettings
+    ],
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:

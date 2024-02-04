@@ -7,7 +7,7 @@ from typing import Literal
 import numpy as np
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
-from chemex.configuration.conditions import Conditions
+from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings
 from chemex.containers.data import Data
@@ -57,7 +57,7 @@ class Cpmg15NTr0013Settings(CpmgSettings):
 class Cpmg15NTr0013Config(
     ExperimentConfiguration[
         Cpmg15NTr0013Settings,
-        Conditions,
+        ConditionsWithValidations,
         RelaxationDataSettings,
     ],
 ):

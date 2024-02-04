@@ -132,7 +132,7 @@ def create_plot_data_calc(profile: Profile, config: CpmgExperimentConfig) -> Dat
     refs = data.refs
 
     step = 2 if config.experiment.even_ncycs else 1
-    ncycs = np.arange(2, max(data.metadata) + 1, step, dtype=np.float_)
+    ncycs = np.arange(2, max(data.metadata) + 1, step, dtype=np.float64)
     ncycs = np.asarray(sorted(set(ncycs) | set(data.metadata[~refs])))
 
     filler = np.zeros_like(ncycs)

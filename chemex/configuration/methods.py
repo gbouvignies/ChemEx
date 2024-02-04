@@ -17,7 +17,6 @@ from pydantic import (
 )
 from pydantic.types import PositiveInt
 
-from chemex.configuration.utils import to_lower
 from chemex.messages import print_method_error
 from chemex.parameters.spin_system import SpinSystem
 from chemex.toml import read_toml
@@ -37,7 +36,7 @@ class Statistics(BaseModel):
     @model_validator(mode="before")
     def key_to_lower(cls, model: dict[str, T]) -> dict[str, T]:
         """Model validator to convert all dictionary keys to lowercase."""
-        return {to_lower(k): v for k, v in model.items()}
+        return {k.lower(): v for k, v in model.items()}
 
 
 @dataclass
@@ -64,7 +63,7 @@ class Method(BaseModel):
     @model_validator(mode="before")
     def key_to_lower(cls, model: dict[str, T]) -> dict[str, T]:
         """Model validator to convert all dictionary keys to lowercase."""
-        return {to_lower(k): v for k, v in model.items()}
+        return {k.lower(): v for k, v in model.items()}
 
 
 Methods = dict[str, Method]
