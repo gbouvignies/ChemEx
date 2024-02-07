@@ -4,7 +4,7 @@ import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal, TypeVar
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
@@ -13,19 +13,20 @@ from pydantic import (
     Field,
     PlainValidator,
     ValidationError,
+    field_validator,
     model_validator,
 )
 from pydantic.types import PositiveInt
 
+from chemex.configuration.utils import key_to_lower
 from chemex.messages import print_method_error
 from chemex.parameters.spin_system import SpinSystem
 from chemex.toml import read_toml
 
 # Type definitions
 AllType = Annotated[Literal["*", "all"], BeforeValidator(str.lower)]
-PydanticSpinSystem = Annotated[SpinSystem, PlainValidator(lambda x: SpinSystem(x))]
-SelectionType = list[PydanticSpinSystem | AllType] | AllType | None
-T = TypeVar("T")
+CoercedSpinSystem = Annotated[SpinSystem, PlainValidator(SpinSystem.from_name)]
+SelectionType = list[SpinSystem] | Literal["*"] | None
 
 
 class Statistics(BaseModel):
@@ -33,10 +34,7 @@ class Statistics(BaseModel):
     bs: PositiveInt | None = None
     bsn: PositiveInt | None = None
 
-    @model_validator(mode="before")
-    def key_to_lower(cls, model: dict[str, T]) -> dict[str, T]:
-        """Model validator to convert all dictionary keys to lowercase."""
-        return {k.lower(): v for k, v in model.items()}
+    _key_to_lower = model_validator(mode="before")(key_to_lower)
 
 
 @dataclass
@@ -56,14 +54,25 @@ class Method(BaseModel):
     grid: list[str] = Field(default_factory=list)
     statistics: Statistics | None = None
 
+    _key_to_lower = model_validator(mode="before")(key_to_lower)
+
+    @field_validator("include", "exclude", mode="before")
+    @classmethod
+    def parse_residue_list(
+        cls, value: list[str | int] | str | None
+    ) -> list[SpinSystem] | Literal["*"] | None:
+        if isinstance(value, list):
+            for residue in value:
+                if isinstance(residue, str) and residue.lower() in ("*", "all"):
+                    return "*"
+            return [SpinSystem.from_name(residue) for residue in value]
+        if isinstance(value, str) and value.lower() in ("*", "all"):
+            return "*"
+        raise ValueError(f"Invalid residue list: {value}")
+
     @property
     def selection(self) -> Selection:
         return Selection(include=self.include, exclude=self.exclude)
-
-    @model_validator(mode="before")
-    def key_to_lower(cls, model: dict[str, T]) -> dict[str, T]:
-        """Model validator to convert all dictionary keys to lowercase."""
-        return {k.lower(): v for k, v in model.items()}
 
 
 Methods = dict[str, Method]

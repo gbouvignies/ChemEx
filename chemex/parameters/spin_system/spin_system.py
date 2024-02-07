@@ -4,13 +4,14 @@ from collections.abc import Hashable, Iterable, Sequence
 from functools import cache, cached_property, total_ordering
 from typing import TYPE_CHECKING, Any, Literal
 
+from pydantic import BaseModel, Field, InstanceOf, computed_field, model_validator
 from typing_extensions import Self
 
-from .atom import Atom
-from .group import Group
-from .nucleus import Nucleus
-from .spin import Spin
-from .utilities import powerset
+from chemex.parameters.spin_system.atom import Atom
+from chemex.parameters.spin_system.group import Group
+from chemex.parameters.spin_system.nucleus import Nucleus
+from chemex.parameters.spin_system.spin import Spin
+from chemex.parameters.spin_system.utilities import powerset
 
 if TYPE_CHECKING:
     from chemex.nmr.basis import Basis
@@ -32,7 +33,6 @@ def _parse_spin_system(name: str) -> dict[str, Spin]:
     return spins
 
 
-
 def _spins2name(spins: Iterable[Spin]) -> str:
     spin_names: list[str] = []
     last_group: Group = Group("")
@@ -44,21 +44,30 @@ def _spins2name(spins: Iterable[Spin]) -> str:
 
 
 @total_ordering
-class SpinSystem:
-    def __init__(self, name: str | int | None = None) -> None:
-        if name is None:
-            name = ""
+class SpinSystem(BaseModel):
+    name: str = ""
+    spins: dict[str, InstanceOf[Spin]] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_name(cls, model: Any) -> Any:
+        if isinstance(model, dict) and "name" in model:
+            name = str(model["name"]).strip().upper()
+            model["spins"] = _parse_spin_system(name)
+            model["name"] = _spins2name(model["spins"].values())
+        return model
+
+    @classmethod
+    def from_name(cls, name: int | str) -> Self:
         if isinstance(name, int):
             name = str(name)
-        self.spins = _parse_spin_system(name.strip().upper())
-        self.name = _spins2name(self.spins.values())
-        self.search_keys: set[Hashable] = set()
-        self.search_keys = self.search_keys.union(
-            *(spin.search_keys for spin in self.spins.values()),
-        )
+        return cls(name=name)
 
-    def __deepcopy__(self, memo: dict[Any, Any]) -> Self:
-        return type(self)(self.name)
+    @computed_field
+    @cached_property
+    def search_keys(self) -> set[Hashable]:
+        search_keys: set[Hashable] = set()
+        return search_keys.union(*(spin.search_keys for spin in self.spins.values()))
 
     @cached_property
     def names(self) -> dict[str, str]:
@@ -108,18 +117,18 @@ class SpinSystem:
                 spin.atom = Atom(f"{atom}{spin.atom.name[1:]}")
             last_spin = spin
             spins.append(spin)
-        return type(self)(_spins2name(spins))
+        return type(self)(name=_spins2name(spins))
 
     def build_sub_spin_system(
         self,
         spin_system_part: Literal["i", "s", "is", "g", ""],
     ) -> Self:
         if spin_system_part == "g":
-            return type(self)(str(self.groups.get("i", "")))
+            return type(self)(name=str(self.groups.get("i", "")))
         if spin_system_part == "i":
-            return type(self)(str(self.spins.get("i", "")))
+            return type(self)(name=str(self.spins.get("i", "")))
         if spin_system_part == "s":
-            return type(self)(str(self.spins.get("s", "")))
+            return type(self)(name=str(self.spins.get("s", "")))
         if spin_system_part == "is":
             return self
         return type(self)()
@@ -128,13 +137,13 @@ class SpinSystem:
         if not isinstance(other, type(self)):
             return NotImplemented
         if self == other:
-            return type(self)(self.name)
+            return type(self)(name=self.name)
         if spins := set(self.spins.values()) & set(other.spins.values()):
-            return type(self)("-".join(spin.name for spin in spins))
+            return type(self)(name="-".join(spin.name for spin in spins))
         groups = set(self.groups.values()) & set(other.groups.values())
         if len(groups) == 1:
-            return type(self)("-".join(group.name for group in groups))
-        return type(self)("")
+            return type(self)(name="-".join(group.name for group in groups))
+        return type(self)()
 
     def __lt__(self, other: object) -> bool:
         if not isinstance(other, type(self)):
@@ -157,14 +166,18 @@ class SpinSystem:
 
 
 # if __name__ == "__main__":
-#     print(SpinSystem("G23N-G23HN"), SpinSystem("GLY023N-HN"), SpinSystem("g23N-hN"))
-#     print(SpinSystem("G23N-G23HN") == SpinSystem("GLY023N-HN"))
-#     print(SpinSystem("G23N-G23HN").match(SpinSystem("GLY023N-HN")))
-#     print(SpinSystem("G23N-G23HN") & SpinSystem("G23C"))
-#     print(SpinSystem("") == SpinSystem())
+#     print(
+#         SpinSystem(name="G23N-G23HN"),
+#         SpinSystem(name="GLY023N-HN"),
+#         SpinSystem(name="g23N-hN"),
+#     )
+#     print(SpinSystem(name="G23N-G23HN") == SpinSystem(name="GLY023N-HN"))
+#     print(SpinSystem(name="G23N-G23HN").match(SpinSystem(name="GLY023N-HN")))
+#     print(SpinSystem(name="G23N-G23HN") & SpinSystem(name="G23C"))
+#     print(SpinSystem(name="") == SpinSystem())
 #     group = Group("L99")
 #     spin = Spin("HD1", group)
 #     print(f"spin = {spin}, spin.group = {spin.group}, spin.atom = {spin.atom}")
-#     print(SpinSystem("GLY023N-HN").search_keys)
-#     print(SpinSystem("GLY023N-HN").names)
-#     print(SpinSystem("G23C1'").names)
+#     print(SpinSystem(name="GLY023N-HN").search_keys)
+#     print(SpinSystem(name="GLY023N-HN").names)
+#     print(SpinSystem(name="G23C1'").names)

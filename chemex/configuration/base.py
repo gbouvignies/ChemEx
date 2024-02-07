@@ -14,6 +14,8 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from chemex.configuration.utils import key_to_lower
+
 T = TypeVar("T")
 ExperimentSettings = TypeVar("ExperimentSettings", bound=BaseModel)
 ConditionsSettings = TypeVar("ConditionsSettings", bound=BaseModel)
@@ -29,10 +31,7 @@ class ToBeFitted:
 class BaseSettings(BaseModel):
     model_config = ConfigDict(str_to_lower=True)
 
-    @model_validator(mode="before")
-    def key_to_lower(cls, model: dict[str, T]) -> dict[str, T]:
-        """Model validator to convert all dictionary keys to lowercase."""
-        return {k.lower(): v for k, v in model.items()}
+    _key_to_lower = model_validator(mode="before")(key_to_lower)
 
 
 class ExperimentConfiguration(

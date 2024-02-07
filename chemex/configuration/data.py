@@ -5,7 +5,7 @@ from typing import Annotated, Literal, TypeVar
 
 from pydantic import BaseModel, BeforeValidator, Field, PlainValidator, model_validator
 
-from chemex.configuration.utils import ensure_list, to_lower
+from chemex.configuration.utils import ensure_list, key_to_lower, to_lower
 from chemex.parameters.spin_system import SpinSystem
 
 T = TypeVar("T")
@@ -15,8 +15,7 @@ ErrorType = Annotated[
 ]
 PathList = Annotated[list[Path], BeforeValidator(ensure_list)]
 ProfilesType = dict[
-    Annotated[SpinSystem, PlainValidator(lambda x: SpinSystem(x))],
-    PathList,
+    Annotated[SpinSystem, PlainValidator(SpinSystem.from_name)], PathList
 ]
 
 
@@ -26,10 +25,7 @@ class DataSettings(BaseModel):
     path: Path = Path("./")
     scaled: bool = True
 
-    @model_validator(mode="before")
-    def key_to_lower(cls, model: dict[str, T]) -> dict[str, T]:
-        """Model validator to convert all dictionary keys to lowercase."""
-        return {k.lower(): v for k, v in model.items()}
+    _key_to_lower = model_validator(mode="before")(key_to_lower)
 
 
 class RelaxationDataSettings(DataSettings):

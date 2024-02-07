@@ -84,7 +84,7 @@ class ParamName:
         name = parsed.get("name")
         if name is None:
             name = ""
-        spin_system = SpinSystem(parsed.get("spin_system"))
+        spin_system = SpinSystem.from_name(parsed.get("spin_system", ""))
         conditions = Conditions.model_validate(parsed)
         return cls(name, spin_system, conditions)
 
