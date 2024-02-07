@@ -13,7 +13,7 @@ Typical usage example:
 """
 from __future__ import annotations
 
-from typing import TypeVar, cast
+from typing import Any, TypeVar, cast
 
 T = TypeVar("T")
 
@@ -52,3 +52,8 @@ def to_lower(string: T) -> T:
     if isinstance(string, str):
         return string.lower()
     return string
+
+
+def key_to_lower(model: dict[str, Any]) -> dict[str, Any]:
+    """Converts keys of the model dictionary to lowercase."""
+    return {k.lower(): v for k, v in model.items()}

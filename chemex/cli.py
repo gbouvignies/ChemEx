@@ -96,7 +96,7 @@ def build_parser():
         metavar="ID",
         nargs="+",
         help="Residue(s) to include in the fit",
-        type=SpinSystem,
+        type=SpinSystem.from_name,
     )
 
     fit_parser.add_argument(
@@ -105,7 +105,7 @@ def build_parser():
         metavar="ID",
         nargs="+",
         help="Residue(s) to exclude from the fit",
-        type=SpinSystem,
+        type=SpinSystem.from_name,
     )
 
     # parser for the positional argument "simulate"

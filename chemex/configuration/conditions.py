@@ -15,7 +15,7 @@ from pydantic import (
 )
 from typing_extensions import Self
 
-from chemex.configuration.utils import to_lower
+from chemex.configuration.utils import key_to_lower, to_lower
 
 T = TypeVar("T")
 LabelType = Annotated[Literal["1h", "2h", "13c", "15n"], BeforeValidator(to_lower)]
@@ -140,12 +140,10 @@ class Conditions(BaseModel, frozen=True):
 
 
 class ConditionsWithValidations(Conditions, frozen=True):
-    @model_validator(mode="before")
-    def key_to_lower(cls, model: dict[str, T]) -> dict[str, T]:
-        """Converts keys of the model dictionary to lowercase."""
-        return {k.lower(): v for k, v in model.items()}
+    _key_to_lower = model_validator(mode="before")(key_to_lower)
 
     @field_validator("d2o")
+    @classmethod
     def validate_d2o(cls, d2o: float | None) -> float | None:
         """Validates the d2o field for specific model requirements."""
         from chemex.models.model import model
@@ -156,6 +154,7 @@ class ConditionsWithValidations(Conditions, frozen=True):
         return d2o
 
     @field_validator("temperature")
+    @classmethod
     def validate_temperature(cls, temperature: float | None) -> float | None:
         """Validates temperature field for specific model requirements."""
         from chemex.models.model import model
