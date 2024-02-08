@@ -44,7 +44,7 @@ class Experiment:
 
     def write(self, path: Path):
         filename = (path / self.filename.name).with_suffix(".dat")
-        with filename.open("w") as file_dat:
+        with filename.open("w", encoding="utf-8") as file_dat:
             file_dat.write(self.printer.header)
             for profile in sorted(self.profiles):
                 file_dat.write(str(profile))
