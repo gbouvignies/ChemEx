@@ -125,8 +125,8 @@ class EXSYPlotter:
 
         with ExitStack() as stack:
             file_pdf = stack.enter_context(PdfPages(str(name_pdf)))
-            file_calc = stack.enter_context(name_fit.open("w"))
-            file_exp = stack.enter_context(name_exp.open("w"))
+            file_calc = stack.enter_context(name_fit.open("w", encoding="utf-8"))
+            file_exp = stack.enter_context(name_exp.open("w", encoding="utf-8"))
             for profile in sorted(profiles):
                 data_exp_dict = create_plot_data_exp(profile)
                 data_calc_dict = create_plot_data_calc(profile)

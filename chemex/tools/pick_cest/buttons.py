@@ -118,8 +118,8 @@ class Buttons:
         fname2 = self.out / "dw_ab.toml"
 
         with contextlib.ExitStack() as stack:
-            file1 = stack.enter_context(fname1.open("w"))
-            file2 = stack.enter_context(fname2.open("w"))
+            file1 = stack.enter_context(fname1.open("w", encoding="utf-8"))
+            file2 = stack.enter_context(fname2.open("w", encoding="utf-8"))
             file1.write("[CS_A]\n")
             file2.write("[DW_AB]\n")
 

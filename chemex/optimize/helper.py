@@ -52,7 +52,7 @@ def _write_statistics(experiments: Experiments, path: Path) -> None:
     params_lf = database.build_lmfit_params(experiments.param_ids)
     stats = calculate_statistics(experiments, params_lf)
     filename = path / "statistics.toml"
-    with filename.open(mode="w") as f:
+    with filename.open("w", encoding="utf-8") as f:
         f.write(f"\"number of data points\"                = {stats['ndata']}\n")
         f.write(f"\"number of variables\"                  = {stats['nvarys']}\n")
         f.write(f"\"chi-square\"                           = {stats['chisqr']: .5e}\n")

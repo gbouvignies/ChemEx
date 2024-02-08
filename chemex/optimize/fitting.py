@@ -37,7 +37,7 @@ from chemex.parameters import database
 def _run_statistics(
     experiments: Experiments,
     path: Path,
-    fitmethod: str | None = None,
+    fitmethod: str,
     statistics: Statistics | None = None,
 ) -> None:
     if statistics is None:
@@ -60,7 +60,7 @@ def _run_statistics(
 
         print_running_statistics(method["message"])
 
-        with (path / method["filename"]).open(mode="w") as fileout:
+        with (path / method["filename"]).open(mode="w", encoding="utf-8") as fileout:
             fileout.write(print_header(ids_vary))
 
             try:

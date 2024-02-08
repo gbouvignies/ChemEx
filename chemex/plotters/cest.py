@@ -221,8 +221,8 @@ class CestPlotter(Generic[T]):
 
         with ExitStack() as stack:
             file_pdf = stack.enter_context(PdfPages(str(name_pdf)))
-            file_calc = stack.enter_context(name_fit.open("w"))
-            file_exp = stack.enter_context(name_exp.open("w"))
+            file_calc = stack.enter_context(name_fit.open("w", encoding="utf-8"))
+            file_exp = stack.enter_context(name_exp.open("w", encoding="utf-8"))
             for profile in sorted(profiles):
                 data_exp = create_plot_data_exp(profile)
                 data_calc = create_plot_data_calc(profile)
@@ -243,7 +243,7 @@ class CestPlotter(Generic[T]):
 
         with ExitStack() as stack:
             file_pdf = stack.enter_context(PdfPages(str(name_pdf)))
-            file_sim = stack.enter_context(name_sim.open("w"))
+            file_sim = stack.enter_context(name_sim.open("w", encoding="utf-8"))
             for profile in sorted(profiles):
                 data_exp = Data(np.array([]), np.array([]), np.array([]))
                 data_calc = create_plot_data_calc(profile)

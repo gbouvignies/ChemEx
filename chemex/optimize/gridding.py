@@ -47,7 +47,7 @@ def run_group_grid(
     group: Group,
     grid: dict[str, ArrayFloat],
     path: Path,
-    fitmethod: str | None,
+    fitmethod: str,
 ) -> GridResult:
     group_ids = group.experiments.param_ids
     group_params = database.build_lmfit_params(group_ids)
@@ -66,7 +66,7 @@ def run_group_grid(
     best_chisqr = np.inf
     best_params = group_params
 
-    with filename.open("w") as fileout:
+    with filename.open("w", encoding="utf-8") as fileout:
         fileout.write(print_header(group_grid))
 
         chisqr_list: list[float] = []
