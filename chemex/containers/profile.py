@@ -9,7 +9,7 @@ from typing import Protocol
 
 from cachetools import LRUCache, cachedmethod
 from lmfit import Parameters as ParametersLF
-from typing_extensions import Self
+from typing import Self
 
 from chemex.containers.data import Data
 from chemex.nmr.spectrometer import Spectrometer

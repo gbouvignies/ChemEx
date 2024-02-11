@@ -4,10 +4,10 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from itertools import chain
 from pathlib import Path
+from typing import Self
 
 import numpy as np
 from lmfit import Parameters as ParametersLF
-from typing_extensions import Self
 
 from chemex.configuration.methods import Selection
 from chemex.containers.profile import Profile

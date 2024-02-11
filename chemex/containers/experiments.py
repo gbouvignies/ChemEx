@@ -9,11 +9,10 @@ from collections.abc import Iterator
 from itertools import chain
 from pathlib import Path
 from random import choices
-from typing import Literal
+from typing import Literal, Self
 
 import numpy as np
 from lmfit.parameter import Parameters
-from typing_extensions import Self
 
 from chemex.configuration.methods import Selection
 from chemex.containers.experiment import Experiment

@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Hashable, Iterable, Sequence
 from functools import cache, cached_property, total_ordering
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Self
 
 from pydantic import BaseModel, Field, InstanceOf, computed_field, model_validator
-from typing_extensions import Self
 
 from chemex.parameters.spin_system.atom import Atom
 from chemex.parameters.spin_system.group import Group

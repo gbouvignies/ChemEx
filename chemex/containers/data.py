@@ -4,11 +4,10 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import cached_property
 from random import choices
-from typing import Any
+from typing import Any, Self
 
 import numpy as np
 from numpy.typing import NDArray
-from typing_extensions import Self
 
 from chemex.typing import ArrayBool, ArrayFloat
 

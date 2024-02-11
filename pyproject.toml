@@ -14,13 +14,12 @@
       "pydantic>=2.4.2",
       "cachetools>=5.3.2",
       "rich>=13.6.0",
-      "tomli>=2.0.1",
       "rapidfuzz>=3.4.0",
       "emcee>=3.1.4",
-      "typing-extensions>=4.9.0",
       "numdifftools>=0.9.41",
+      "annotated-types>=0.6.0",
   ]
-  requires-python = ">=3.10,<3.13"
+  requires-python = ">=3.11,<3.13"
   readme = "README.md"
   license = { text = "GPL-3.0-or-later" }
   dynamic = [ "version" ]

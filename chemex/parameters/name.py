@@ -5,9 +5,9 @@ from collections.abc import Hashable, Iterable
 from dataclasses import dataclass, field
 from functools import cached_property
 from re import Pattern
+from typing import Self
 
 from rapidfuzz.process import extractOne
-from typing_extensions import Self
 
 from chemex.configuration.conditions import Conditions
 from chemex.parameters.spin_system import SpinSystem

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Hashable
 from functools import total_ordering
-from typing import Annotated, Literal, TypeVar
+from typing import Annotated, Literal, Self, TypeVar
 
 from pydantic import (
     BaseModel,
@@ -13,7 +13,6 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from typing_extensions import Self
 
 from chemex.configuration.utils import key_to_lower, to_lower
 
