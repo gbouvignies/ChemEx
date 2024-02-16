@@ -17,11 +17,28 @@ T = TypeVar("T", float, ArrayFloat)
 
 
 def _calculate_jw(tauc: float, s2: float, w: T) -> T:
+    """Calculates J(w) for given tau_c, s2, and angular frequency w.
+
+    Args:
+        tauc (float): Correlation time in seconds.
+        s2 (float): Order parameter squared, amplitude of motion measure.
+        w (T): Angular frequency/frequencies for J(w) calculation. Can be float or
+               ArrayFloat.
+
+    Returns:
+        T: Spectral density function(s) J(w).
+    """
     tauc_ = tauc * 1e-9
     return 2.0 / 5.0 * tauc_ * s2 / (1.0 + (w * tauc_) ** 2)
 
 
 class RatesIS:
+    """Base class for calculating relaxation rates in IS spin systems.
+
+    Attributes describe gyromagnetic ratios, distances, CSA parameters, and Euler angles
+    for nuclei I and S.
+    """
+
     gi: float
     gs: float
     ris3: float
@@ -33,6 +50,7 @@ class RatesIS:
     phi_s: ArrayFloat
 
     def __init__(self) -> None:
+        """Initializes RatesIS object with default gyromagnetic ratios and distances."""
         self.gh = GAMMA["h"]
 
         # Dipolar factors
@@ -48,6 +66,16 @@ class RatesIS:
         self.delta_s = self.csa_s[:2] - self.csa_s[2]
 
     def __call__(self, h_frq: float, tauc: float, s2: float) -> dict[str, float]:
+        """Calculates relaxation rates for given Larmor frequency, tau_c, and s2.
+
+        Args:
+            h_frq (float): Proton Larmor frequency in MHz.
+            tauc (float): Correlation time in seconds.
+            s2 (float): Order parameter squared.
+
+        Returns:
+            dict[str, float]: Dictionary of relaxation rates (R2, R1 for I and S).
+        """
         # B0 in Tesla
         b0 = 2.0 * np.pi * 1e6 * h_frq / self.gh
 
@@ -134,6 +162,8 @@ class RatesIS:
 
 
 class RateNH(RatesIS):
+    """Class for calculating relaxation rates in NH systems using model-free approach."""
+
     gi = GAMMA["n"]
     gs = GAMMA["h"]
     ris3 = 1.04e-10**3
@@ -151,6 +181,17 @@ class RateNH(RatesIS):
         s2: float,
         khh: float = 0.0,
     ) -> dict[str, float]:
+        """Calculates rates for NH systems, including exchange contributions if any.
+
+        Args:
+            h_frq (float): Proton Larmor frequency in MHz.
+            tauc (float): Correlation time in seconds.
+            s2 (float): Order parameter squared.
+            khh (float, optional): Exchange rate between H atoms. Defaults to 0.
+
+        Returns:
+            dict[str, float]: Relaxation rates for NH systems, including exchanges.
+        """
         rates = super().__call__(h_frq, tauc, s2)
         if khh == 0:
             return rates
@@ -252,6 +293,8 @@ rate_functions: dict[str, RatesIS] = {
     "ch_d": RateCH_D(),
     "hc": RateHC(),
     "hc_d": RateHC_D(),
+    "cn": RateCH(),
+    "cn_d": RateCH_D(),
 }
 
 _RATE_NAMES = [
@@ -273,20 +316,14 @@ _RATE_NAMES = [
 
 
 def get_model_free_expressions(basis: Basis, conditions: Conditions) -> dict[str, str]:
-    """It takes a basis and a set of conditions,
-    and returns a dictionary of rate expressions.
+    """Generates expressions for model-free analysis based on basis and conditions.
 
-    Parameters
-    ----------
-    basis : Basis
-        The basis set to use for the model-free analysis.
-    conditions : Conditions
-        The conditions for the fitting.
+    Args:
+        basis (Basis): Basis set for model-free analysis.
+        conditions (Conditions): Conditions including Larmor frequency and deuteration.
 
     Returns:
-    -------
-        A dictionary of rate names and their corresponding expressions.
-
+        dict[str, str]: Mapping of rate names to expressions for model-free analysis.
     """
     deuterated_extension = "_d" if conditions.is_deuterated else ""
     rate_function_name = f"{basis.spin_system}{deuterated_extension}"
