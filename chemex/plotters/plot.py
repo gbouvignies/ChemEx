@@ -32,7 +32,7 @@ def get_grid(values: ArrayFloat, size: int = 400, extension: float = 0.0) -> Arr
     return np.linspace(value_min - extra, value_max + extra, size)
 
 
-def _plot_fit(data_calc: Data, ax2: Axes):
+def _plot_fit(data_calc: Data, ax2: Axes) -> None:
     fit_x = data_calc.metadata
     fit_y = data_calc.calc
     range_x = get_grid(fit_x, 2, 0.02)
@@ -40,7 +40,7 @@ def _plot_fit(data_calc: Data, ax2: Axes):
     ax2.plot(fit_x, fit_y, linestyle="-", color=_RED300)
 
 
-def _plot_exp(data_exp: Data, ax1: Axes, ax2: Axes):
+def _plot_exp(data_exp: Data, ax1: Axes, ax2: Axes) -> None:
     exp_x = data_exp.metadata
     exp_y = data_exp.exp
     exp_e = abs(data_exp.err)
@@ -77,7 +77,13 @@ def plot_profile(name: str, data_exp: Data, data_calc: Data) -> Figure:
     if data_exp.size:
         _plot_exp(data_exp, ax1, ax2)
 
+    range1_y = ax1.get_ylim()
+    range2_y = ax2.get_ylim()
+
     for axis in (ax1, ax2):
         axis.axhline(0, color="k", linewidth=0.5, zorder=1)
+
+    ax1.set_ylim(*range1_y)
+    ax2.set_ylim(*range2_y)
 
     return fig
