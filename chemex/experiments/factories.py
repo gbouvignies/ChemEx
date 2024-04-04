@@ -1,4 +1,5 @@
 """Factories for creating different parts of an experiment."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, MutableMapping
@@ -80,15 +81,15 @@ class Factories:
 
     creators_registry: ClassVar[dict[str, Creators]] = {}
 
-    def register(self, type: str, creators: Creators):
+    def register(self, name: str, creators: Creators) -> None:
         """Register a new propagtor type."""
-        self.creators_registry[type] = creators
+        self.creators_registry[name] = creators
 
-    def get(self, type: str) -> Creators:
+    def get(self, name: str) -> Creators:
         try:
-            return self.creators_registry[type]
+            return self.creators_registry[name]
         except KeyError:
-            msg = f"Unknown  type {type!r}"
+            msg = f"Unknown  type {name!r}"
             raise ValueError(msg) from None
 
 

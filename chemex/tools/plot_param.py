@@ -35,7 +35,7 @@ def plot_param(args: Namespace) -> None:
             values: list[float] = []
             errors: list[float] = []
             for key, entry in params.items(section):
-                residues.append(int(cns.SpinSystem(key).numbers["i"]))
+                residues.append(int(cns.SpinSystem(name=key).numbers["i"]))
                 split = entry.split()
                 values.append(float(split[0]))
                 try:

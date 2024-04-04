@@ -16,7 +16,7 @@ class Factory:
 
     setting_makers_registry: ClassVar[dict[str, SettingMakerType]] = {}
 
-    def register(self, name: str, setting_maker: SettingMakerType):
+    def register(self, name: str, setting_maker: SettingMakerType) -> None:
         """Register a new setting maker."""
         self.setting_makers_registry[name] = setting_maker
 

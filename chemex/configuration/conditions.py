@@ -72,9 +72,9 @@ class Conditions(BaseModel, frozen=True):
         if self.h_larmor_frq is not None:
             conditions.append(("B0", f"{self.h_larmor_frq:.1f}MHz"))
         if self.p_total is not None:
-            conditions.append(("[P]", f"{self.p_total:e}M"))
+            conditions.append(("[P]", f"{self.p_total:.3e}M"))
         if self.l_total is not None:
-            conditions.append(("[L]", f"{self.l_total:e}M"))
+            conditions.append(("[L]", f"{self.l_total:.3e}M"))
         if self.d2o is not None:
             conditions.append(("D2O", f"{self.d2o:.4f}"))
 

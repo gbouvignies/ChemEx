@@ -10,8 +10,7 @@ class Printer(Protocol):
     header: str
     simulation: bool
 
-    def print(self, name: str, data: Data) -> str:
-        ...
+    def print(self, name: str, data: Data) -> str: ...
 
 
 @dataclass
@@ -27,6 +26,7 @@ class ShiftPrinter:
             ),
         ],
     )
+    simulation: bool = False
 
     def print(self, name: str, data: Data) -> str:
         return (

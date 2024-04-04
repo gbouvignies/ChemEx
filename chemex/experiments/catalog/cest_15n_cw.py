@@ -133,4 +133,4 @@ def register() -> None:
         printer_creator=CestPrinter,
         plotter_creator=CestPlotter,
     )
-    factories.register(type=EXPERIMENT_NAME, creators=creators)
+    factories.register(name=EXPERIMENT_NAME, creators=creators)

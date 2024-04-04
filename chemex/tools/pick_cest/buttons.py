@@ -48,7 +48,7 @@ class Buttons:
         self.spin_systems = sorted(spin_systems)
         self.out = path
 
-        self.spin_system = SpinSystem("")
+        self.spin_system = SpinSystem(name="")
         self.curves: list[Curve] = []
         self.cs_a: dict[SpinSystem, float | None] = {}
         self.cs_b: dict[SpinSystem, float | None] = {}
@@ -95,7 +95,7 @@ class Buttons:
             return None
         return event.xdata
 
-    def _add_line(self, position: float, state: Literal["a", "b"]):
+    def _add_line(self, position: float, state: Literal["a", "b"]) -> None:
         text_ = rf"$\varpi_{state}$ = {position:.3f} ppm"
         text = self.fig.text(0.82, TEXT_Y[state], text_)
         line = self.axis.axvline(
@@ -111,7 +111,7 @@ class Buttons:
         text = self.fig.text(0.82, 0.7, text_)
         self.artists.append(text)
 
-    def _save(self):
+    def _save(self) -> None:
         self.out.mkdir(parents=True, exist_ok=True)
 
         fname1 = self.out / "cs_a.toml"
@@ -179,7 +179,7 @@ class Buttons:
         self._plot_profiles()
         self.fig.canvas.draw_idle()
 
-    def _shift(self, step: int):
+    def _shift(self, step: int) -> None:
         self.index += step
         self.index %= len(self.spin_systems)
         self.spin_system = self.spin_systems[self.index]

@@ -16,7 +16,7 @@ from chemex.plotters.plot import get_grid, plot_profile
 from chemex.printers.plot import PlotPrinter, data_plot_printers
 
 
-def plot_exsy(file_pdf: PdfPages, name: str, data_exp: Data, data_calc: Data):
+def plot_exsy(file_pdf: PdfPages, name: str, data_exp: Data, data_calc: Data) -> None:
     fig = plot_profile(name, data_exp, data_calc)
     ax2 = fig.axes[1]
     ax2.set_xlabel(r"Time (s)")

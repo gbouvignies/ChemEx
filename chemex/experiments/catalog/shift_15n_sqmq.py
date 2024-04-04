@@ -42,8 +42,7 @@ class Shift15NSqMqConfig(
         ConditionsWithValidations,
         ShiftDataSettings,
     ],
-):
-    ...
+): ...
 
 
 def build_spectrometer(
@@ -104,4 +103,4 @@ def register() -> None:
         printer_creator=ShiftPrinter,
         plotter_creator=ShiftPlotter,
     )
-    factories.register(type=EXPERIMENT_NAME, creators=creators)
+    factories.register(name=EXPERIMENT_NAME, creators=creators)
