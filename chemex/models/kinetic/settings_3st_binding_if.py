@@ -25,12 +25,12 @@ def calculate_residuals(
     kbc: float,
     kcb: float,
 ) -> ArrayFloat:
-    pfree, pl1, pl2 = populations
-    lfree = l_total - p_total + pfree
+    p_, pl1, pl2, l_ = populations
     return np.array(
         [
-            pfree + pl1 + pl2 - p_total,
-            lfree * pfree - kd_ab * pl1,
+            p_ + pl1 + pl2 - p_total,
+            l_ + pl1 + pl2 - l_total,
+            l_ * p_ - kd_ab * pl1,
             kbc * pl1 - kcb * pl2,
         ],
     )
@@ -44,13 +44,16 @@ def calculate_concentrations(
     kbc: float,
     kcb: float,
 ) -> dict[str, float]:
-    concentrations_start = (p_total, 0.0, 0.0)
+    p_ = p_total - 0.5 * l_total
+    pl1 = pl2 = 0.5 * (p_total - p_)
+    l_ = 0.5 * l_total
+    concentrations_start = (p_, pl1, pl2, l_)
     results = root(
         calculate_residuals,
         concentrations_start,
         args=(p_total, l_total, kd_ab, kbc, kcb),
     )
-    return dict(zip(("pfree", "pl1", "pl2"), results["x"], strict=True))
+    return dict(zip(("p", "pl1", "pl2", "l"), results["x"], strict=True))
 
 
 def make_settings_3st_induced_fit(
@@ -93,21 +96,17 @@ def make_settings_3st_induced_fit(
             name_setting=NameSetting("kd_ab", "", ("temperature",)),
             expr="{kd_app} * (1 + {kbc} / {kcb})",
         ),
-        "kon": ParamLocalSetting(
-            name_setting=NameSetting("kon", "", ("temperature",)),
+        "kon_ab": ParamLocalSetting(
+            name_setting=NameSetting("kon_ab", "", ("temperature",)),
             expr="{koff_ab} / max({kd_ab}, 1e-100)",
         ),
-        "pfree": ParamLocalSetting(
-            name_setting=NameSetting("pfree", "", TPL),
-            expr=(f"calc_conc({p_total},{l_total},{{kd_ab}},{{kbc}},{{kcb}})['pfree']"),
-        ),
-        "l_free": ParamLocalSetting(
-            name_setting=NameSetting("l_free", "", TPL),
-            expr=f"{l_total} - {p_total} + {{pfree}}",
+        "c_l": ParamLocalSetting(
+            name_setting=NameSetting("c_l", "", TPL),
+            expr=(f"calc_conc({p_total},{l_total},{{kd_ab}},{{kbc}},{{kcb}})['l']"),
         ),
         "kab": ParamLocalSetting(
             name_setting=NameSetting("kab", "", TPL),
-            expr="{kon} * {l_free}",
+            expr="{kon_ab} * {c_l}",
         ),
         "kba": ParamLocalSetting(
             name_setting=NameSetting("kba", "", TPL),

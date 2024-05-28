@@ -23,7 +23,7 @@ def calculate_residuals(
     l_total: float,
     kab: float,
     kba: float,
-    kd: float,
+    kd_bc: float,
 ) -> ArrayFloat:
     p1, p2, pl, l_ = concentrations
     return np.array(
@@ -31,7 +31,7 @@ def calculate_residuals(
             p_total - p1 - p2 - pl,
             l_total - l_ - pl,
             kab * p1 - kba * p2,
-            kd * pl - p2 * l_,
+            kd_bc * pl - p2 * l_,
         ],
     )
 
@@ -40,15 +40,17 @@ def calculate_residuals(
 def calculate_concentrations(
     p_total: float,
     l_total: float,
-    kd: float,
     kab: float,
     kba: float,
+    kd_bc: float,
 ) -> dict[str, float]:
-    concentrations_start = (p_total, 0.0, 0.0, l_total)
+    p1 = p2 = 0.5 * (p_total - 0.5 * l_total)
+    pl = l_ = 0.5 * l_total
+    concentrations_start = (p1, p2, pl, l_)
     results = root(
         calculate_residuals,
         concentrations_start,
-        args=(p_total, l_total, kab, kba, kd),
+        args=(p_total, l_total, kab, kba, kd_bc),
     )
     p1, p2, pl, l_ = results["x"]
     return {"p1": p1, "p2": p2, "pl": pl, "l": l_}
@@ -57,14 +59,17 @@ def calculate_concentrations(
 def make_settings_3st_binding_cs(
     conditions: Conditions,
 ) -> dict[str, ParamLocalSetting]:
-    p0 = conditions.p_total
-    l0 = conditions.l_total
-    if p0 is None:
+    p_total = conditions.p_total
+    l_total = conditions.l_total
+    if p_total is None:
         msg = f"'p_total' must be specified to use the '{NAME}' model"
         raise ValueError(msg)
-    if l0 is None:
+    if l_total is None:
         msg = f"'l_total' must be specified to use the '{NAME}' model"
         raise ValueError(msg)
+    concentrations_string = (
+        f"concentrations({p_total}, {l_total}, {{kab}}, {{kba}}, {{kd_bc}})"
+    )
     return {
         "kab": ParamLocalSetting(
             name_setting=NameSetting("kab", "", ("temperature",)),
@@ -78,45 +83,37 @@ def make_settings_3st_binding_cs(
             min=0.0,
             vary=True,
         ),
-        "koff": ParamLocalSetting(
-            name_setting=NameSetting("koff", "", ("temperature",)),
+        "koff_bc": ParamLocalSetting(
+            name_setting=NameSetting("koff_bc", "", ("temperature",)),
             value=100.0,
             min=0.0,
             vary=True,
         ),
-        "kd": ParamLocalSetting(
-            name_setting=NameSetting("kd", "", ("temperature",)),
-            value=1e-3,
+        "kd_app": ParamLocalSetting(
+            name_setting=NameSetting("kd_app", "", ("temperature",)),
+            value=1e-6,
             min=0.0,
             vary=True,
         ),
-        "kon": ParamLocalSetting(
-            name_setting=NameSetting("kon", "", ("temperature",)),
-            expr="{koff} / max({kd}, 1e-100)",
+        "kd_bc": ParamLocalSetting(
+            name_setting=NameSetting("kd_bc", "", ("temperature",)),
+            expr="{kd_app} * {kab} / max({kab} + {kba}, 1e-16)",
+        ),
+        "kon_bc": ParamLocalSetting(
+            name_setting=NameSetting("kon_bc", "", ("temperature",)),
+            expr="{koff_bc} / max({kd_bc}, 1e-16)",
         ),
         "c_l": ParamLocalSetting(
             name_setting=NameSetting("c_l", "", TPL),
-            expr=f"concentrations({p0}, {l0}, {{kab}}, {{kba}}, {{kd}})['l']",
-        ),
-        "c_p1": ParamLocalSetting(
-            name_setting=NameSetting("c_p1", "", TPL),
-            expr=f"concentrations({p0}, {l0}, {{kab}}, {{kba}}, {{kd}})['p1']",
-        ),
-        "c_p2": ParamLocalSetting(
-            name_setting=NameSetting("c_p2", "", TPL),
-            expr=f"concentrations({p0}, {l0}, {{kab}}, {{kba}}, {{kd}})['p2']",
-        ),
-        "c_pl": ParamLocalSetting(
-            name_setting=NameSetting("c_pl", "", TPL),
-            expr=f"concentrations({p0}, {l0}, {{kab}}, {{kba}}, {{kd}})['pl']",
+            expr=f"{concentrations_string}['l']",
         ),
         "kbc": ParamLocalSetting(
             name_setting=NameSetting("kbc", "", TPL),
-            expr="{kon} * {c_l}",
+            expr="{kon_bc} * {c_l}",
         ),
         "kcb": ParamLocalSetting(
             name_setting=NameSetting("kcb", "", TPL),
-            expr="{koff}",
+            expr="{koff_bc}",
         ),
         "pa": ParamLocalSetting(
             name_setting=NameSetting("pa", "", TPL),
