@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -23,7 +21,7 @@ class Data:
         err (ArrayFloat): Error array for experimental data.
         metadata (NDArray[Any]): Metadata for data points.
         calc (ArrayFloat): Calculated data, set after instantiation.
-        calc (ArrayFloat): Unscaled calculated data, set after instantiation.
+        calc_unscaled (ArrayFloat): Unscaled calculated data, set after instantiation.
         mask (ArrayBool): Mask array for data selection, set after instantiation.
         refs (ArrayBool): Array of reference points, set after instantiation.
     """

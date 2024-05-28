@@ -162,7 +162,7 @@ class RatesIS:
 
 
 class RateNH(RatesIS):
-    """Class for calculating relaxation rates in NH systems using model-free approach."""
+    """Class for calculating relaxation rates in NH group using model-free approach."""
 
     gi = GAMMA["n"]
     gs = GAMMA["h"]

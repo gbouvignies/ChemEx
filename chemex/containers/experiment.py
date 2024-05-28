@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from itertools import chain
 from pathlib import Path
 from typing import Self
 
@@ -19,6 +18,7 @@ from chemex.parameters import database
 from chemex.parameters.spin_system import Group
 from chemex.plotters.plotter import Plotter
 from chemex.printers.data import Printer
+from chemex.typing import ArrayFloat
 from chemex.uncertainty import estimate_noise_variance
 
 
@@ -31,10 +31,8 @@ class Experiment:
     printer: Printer
     plotter: Plotter
 
-    def residuals(self, params: ParametersLF) -> list[float]:
-        return list(
-            chain.from_iterable(profile.residuals(params) for profile in self.profiles),
-        )
+    def residuals(self, params: ParametersLF) -> ArrayFloat:
+        return np.concatenate([profile.residuals(params) for profile in self.profiles])
 
     def plot(self, path: Path) -> None:
         self.plotter.plot(path, self.profiles)
@@ -69,10 +67,10 @@ class Experiment:
         for profile in self.profiles:
             profile.filter(params)
 
-    def _any_duplicate(self):
+    def _any_duplicate(self) -> bool:
         return any(profile.any_duplicate() for profile in self.profiles)
 
-    def estimate_noise(self, kind: str, global_error: bool = True) -> None:
+    def estimate_noise(self, kind: str, *, global_error: bool = True) -> None:
         # TODO: Validation should be moved to the configuration file module
         implemented = ("file", "scatter", "duplicates")
         if kind not in implemented:

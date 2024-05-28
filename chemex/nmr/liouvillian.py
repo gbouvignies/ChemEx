@@ -9,6 +9,7 @@ Ix, Iy, Iz, Sx, Sy, Sz,
 2IzSz }
 
 """
+
 from __future__ import annotations
 
 import re
@@ -243,7 +244,7 @@ class LiouvillianIS:
         return self._b1_i_weights * self._jeff_i_weights
 
     @property
-    def detection(self):
+    def detection(self) -> str:
         return self._detection
 
     @detection.setter

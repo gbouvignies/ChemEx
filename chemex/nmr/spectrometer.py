@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Hashable, Iterable, Sequence
 from functools import reduce
 from itertools import product
 
@@ -22,6 +22,7 @@ SMALL_VALUE = 1e-6
 def calculate_propagators(
     liouv: ArrayFloat,
     delays: float | Iterable[float],
+    *,
     dephasing: bool = False,
 ) -> ArrayFloat:
     """Calculate the propagators for the given delays.
@@ -46,7 +47,7 @@ def calculate_propagators(
     if delays.size == 1 and not dephasing:
         # If there's only one delay and no dephasing, calculate the propagator directly
         # using scipy expm function
-        return expm(liouv * delays[0])
+        return expm(liouv * delays[0]).astype(np.float64)
 
     # Calculate eigenvalues and eigenvectors of the Liouvillian matrices
     eigenvalues, eigenvectors = np.linalg.eig(liouv)
@@ -80,7 +81,9 @@ def calculate_propagators(
     return propagators.real
 
 
-def _get_key(liouvillian: LiouvillianIS, *args, **kwargs):
+def _get_key(
+    liouvillian: LiouvillianIS, *args: Hashable, **kwargs: Hashable
+) -> tuple[Hashable, ...]:
     return hashkey(liouvillian.basis, *args, **kwargs)
 
 
@@ -105,7 +108,7 @@ def _make_perfect90(liouvillian: LiouvillianIS, spin: str) -> ArrayFloat:
     size = liouvillian.size
     zeros = np.zeros((size, size))
     rot = liouvillian.matrices.get(f"b1x_{spin}", zeros)
-    return np.asarray(expm(0.25 * rot)).reshape((1, 1, size, size))
+    return expm(0.25 * rot).reshape(1, 1, size, size).astype(np.float64)
 
 
 @cached(cache={}, key=_get_key)
@@ -297,7 +300,7 @@ class Spectrometer:
             + scale * np.cos(rad) * self.liouvillian.l_b1x_i
             + scale * np.sin(rad) * self.liouvillian.l_b1y_i
         )
-        return calculate_propagators(liouv, times, dephased)
+        return calculate_propagators(liouv, times, dephasing=dephased)
 
     def pulse_s(
         self,
@@ -327,7 +330,7 @@ class Spectrometer:
             + np.cos(phase_s * np.pi * 0.5) * self.liouvillian.l_b1x_s
             + np.sin(phase_s * np.pi * 0.5) * self.liouvillian.l_b1y_s
         )
-        return calculate_propagators(liouv, times, dephased)
+        return calculate_propagators(liouv, times, dephasing=dephased)
 
     def shaped_pulse_i(
         self,
@@ -393,7 +396,7 @@ class Spectrometer:
         self._calculate_base_pulses_s()
         return self._p180_s
 
-    def p9024090_nh(self, reverse: bool = False) -> ArrayFloat:
+    def p9024090_nh(self, *, reverse: bool = False) -> ArrayFloat:
         ph_n = 1 if reverse else 3
         ph_h = 3 if reverse else 1
         pw240i, pw9024090i = np.array([8.0, 14.0]) * self._pw90_i / 3.0

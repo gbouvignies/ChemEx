@@ -3,6 +3,7 @@
 This module contains the Experiments class and functions for generating different
 types of simulated experiment datasets for statistical analysis.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -66,13 +67,7 @@ class Experiments:
         Returns:
             ArrayFloat: Residuals as a NumPy array.
         """
-        return np.asarray(
-            list(
-                chain.from_iterable(
-                    experiment.residuals(params) for experiment in self
-                ),
-            ),
-        )
+        return np.concatenate([experiment.residuals(params) for experiment in self])
 
     def back_calculate(self) -> None:
         """Back calculate experiments' parameters from the database."""

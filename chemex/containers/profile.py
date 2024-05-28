@@ -54,10 +54,10 @@ class Profile:
     def _cache_key(self, params: ParametersLF) -> tuple[Hashable, ...]:
         return (
             *(params[param_id].value for param_id in self.param_ids),
-            self.data.metadata.tostring(),
+            self.data.metadata.tobytes(),
         )
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Initialize derived attributes."""
         self.spin_system = self.spectrometer.liouvillian.spin_system
         self.data.refs = self.pulse_sequence.is_reference(self.data.metadata)
@@ -125,7 +125,7 @@ class Profile:
         profile.data = profile.data.bootstrap()
         return profile
 
-    def any_duplicate(self):
+    def any_duplicate(self) -> bool:
         """Check for duplicate data points."""
         return self.data.any_duplicate()
 
@@ -138,3 +138,4 @@ class Profile:
     def __str__(self) -> str:
         """String representation of the Profile."""
         return self.printer.print(str(self.spin_system), self.data)
+
