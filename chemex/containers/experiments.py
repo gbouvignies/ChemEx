@@ -3,6 +3,7 @@
 This module contains the Experiments class and functions for generating different
 types of simulated experiment datasets for statistical analysis.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -66,13 +67,7 @@ class Experiments:
         Returns:
             ArrayFloat: Residuals as a NumPy array.
         """
-        return np.asarray(
-            list(
-                chain.from_iterable(
-                    experiment.residuals(params) for experiment in self
-                ),
-            ),
-        )
+        return np.concatenate([experiment.residuals(params) for experiment in self])
 
     def back_calculate(self) -> None:
         """Back calculate experiments' parameters from the database."""
@@ -85,7 +80,7 @@ class Experiments:
         for experiment in self:
             experiment.prepare_for_simulation()
 
-    def write(self, path: Path):
+    def write(self, path: Path) -> None:
         """Write experiment data to a specified path.
 
         Args:
@@ -96,7 +91,7 @@ class Experiments:
         for experiment in self:
             experiment.write(path_dat)
 
-    def plot(self, path: Path):
+    def plot(self, path: Path) -> None:
         """Plot each experiment in the collection.
 
         Args:
@@ -105,7 +100,7 @@ class Experiments:
         for experiment in self:
             experiment.plot(path)
 
-    def plot_simulation(self, path: Path):
+    def plot_simulation(self, path: Path) -> None:
         """Plot simulations for each experiment.
 
         Args:

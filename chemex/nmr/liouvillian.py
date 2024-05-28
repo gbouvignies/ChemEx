@@ -9,6 +9,7 @@ Ix, Iy, Iz, Sx, Sy, Sz,
 2IzSz }
 
 """
+
 from __future__ import annotations
 
 import re
@@ -47,7 +48,7 @@ def _make_gaussian(
 
 
 class LiouvillianIS:
-    def _scale_matrix(self, name: str, value: float):
+    def _scale_matrix(self, name: str, value: float) -> None:
         state_names = {name.format(state=state) for state in model.states}
         for state_name in state_names & set(self.matrices):
             self.matrices[state_name] = np.sign(self._matrices_ref[state_name]) * value
@@ -103,7 +104,7 @@ class LiouvillianIS:
         return self._ppm_i
 
     @ppm_i.setter
-    def ppm_i(self, value: float):
+    def ppm_i(self, value: float) -> None:
         self._ppm_i = value
         self._scale_matrix("cs_i_{state}", self._q_order_i * value)
         self._scale_matrix("carrier_i", self._q_order_i * value)
@@ -113,7 +114,7 @@ class LiouvillianIS:
         return self._ppm_s
 
     @ppm_s.setter
-    def ppm_s(self, value: float):
+    def ppm_s(self, value: float) -> None:
         self._ppm_s = value
         self._scale_matrix("cs_s_{state}", value)
         self._scale_matrix("carrier_s", value)
@@ -123,7 +124,7 @@ class LiouvillianIS:
         return float(self._carrier_i)
 
     @carrier_i.setter
-    def carrier_i(self, value: float):
+    def carrier_i(self, value: float) -> None:
         self._carrier_i = np.array(value)
         self._l_carrier_i = self.matrices.get("carrier_i", np.array(0.0)) * value
 
@@ -132,7 +133,7 @@ class LiouvillianIS:
         return float(self._carrier_s)
 
     @carrier_s.setter
-    def carrier_s(self, value: float):
+    def carrier_s(self, value: float) -> None:
         self._carrier_s = np.array(value)
         self._l_carrier_s = self.matrices.get("carrier_s", np.array(0.0)) * value
 
@@ -141,7 +142,7 @@ class LiouvillianIS:
         return float(self._offset_i)
 
     @offset_i.setter
-    def offset_i(self, value: float):
+    def offset_i(self, value: float) -> None:
         self._offset_i = np.array(value)
         self._l_offset_i = (
             self.matrices.get("offset_i", np.array(0.0)) * value * np.sign(self.ppm_i)
@@ -152,7 +153,7 @@ class LiouvillianIS:
         return float(self._offset_s)
 
     @offset_s.setter
-    def offset_s(self, value: float):
+    def offset_s(self, value: float) -> None:
         self._offset_s = np.array(value)
         self._l_offset_s = (
             self.matrices.get("offset_s", 0.0) * value * np.sign(self.ppm_s)
@@ -163,7 +164,7 @@ class LiouvillianIS:
         return self._b1_i_inh_scale
 
     @b1_i_inh_scale.setter
-    def b1_i_inh_scale(self, value: float):
+    def b1_i_inh_scale(self, value: float) -> None:
         self._b1_i_inh_scale = value
         self.b1_i = self._b1_i
 
@@ -172,7 +173,7 @@ class LiouvillianIS:
         return self._b1_i_inh_res
 
     @b1_i_inh_res.setter
-    def b1_i_inh_res(self, value: int):
+    def b1_i_inh_res(self, value: int) -> None:
         self._b1_i_inh_res = value
         self.b1_i = self._b1_i
 
@@ -181,7 +182,7 @@ class LiouvillianIS:
         return self._b1_i
 
     @b1_i.setter
-    def b1_i(self, value: float):
+    def b1_i(self, value: float) -> None:
         self._b1_i = value
         self._b1_i_dist, self._b1_i_weights = _make_gaussian(
             self.b1_i,
@@ -198,7 +199,7 @@ class LiouvillianIS:
         return self._b1_s
 
     @b1_s.setter
-    def b1_s(self, value: float):
+    def b1_s(self, value: float) -> None:
         self._b1_s = value
         self.l_b1x_s = self.matrices.get("b1x_s", 0.0) * value
         self.l_b1y_s = self.matrices.get("b1y_s", 0.0) * value
@@ -208,7 +209,7 @@ class LiouvillianIS:
         return self._jeff_i
 
     @jeff_i.setter
-    def jeff_i(self, distribution: Distribution):
+    def jeff_i(self, distribution: Distribution) -> None:
         self._jeff_i = distribution
         values = distribution.values.reshape((-1, 1, 1, 1))
         self._l_jeff_i = self.matrices.get("jeff_i", np.array(0.0)) * values
@@ -219,7 +220,7 @@ class LiouvillianIS:
         return self._gradient_dephasing
 
     @gradient_dephasing.setter
-    def gradient_dephasing(self, value: float):
+    def gradient_dephasing(self, value: float) -> None:
         self._gradient_dephasing = value
         self._scale_matrix("d_{state}", value * 1e-12)
         self._build_base_liouvillian()
@@ -243,11 +244,11 @@ class LiouvillianIS:
         return self._b1_i_weights * self._jeff_i_weights
 
     @property
-    def detection(self):
+    def detection(self) -> str:
         return self._detection
 
     @detection.setter
-    def detection(self, value: str):
+    def detection(self, value: str) -> None:
         self._detection = value
         expr = _RE_COMP.sub(r'self.vectors.get("\g<1>")', value)
         vector: ArrayFloat = eval(expr)

@@ -134,12 +134,14 @@ def build_experiment(filename: Path, selection: Selection) -> Experiment:
         live.update(get_reading_exp_text(filename, experiment_name, len(profiles)))
 
     experiment = Experiment(filename, experiment_name, profiles, printer, plotter)
-    experiment.estimate_noise(config.data.error, config.data.global_error)
+    experiment.estimate_noise(config.data.error, global_error=config.data.global_error)
 
     return experiment
 
 
-def build_experiments(filenames: list[Path] | None, selection: Selection):
+def build_experiments(
+    filenames: list[Path] | None, selection: Selection
+) -> Experiments:
     if not filenames:
         return Experiments()
 

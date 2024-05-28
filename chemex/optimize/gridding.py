@@ -38,7 +38,7 @@ def _set_param_values(
     params: Parameters,
     fnames: Iterable[str],
     values: tuple[float, ...],
-):
+) -> None:
     for fname, value in zip(fnames, values, strict=True):
         params[fname].value = value
 
@@ -148,7 +148,7 @@ def combine_grids(
     return results
 
 
-def set_params_from_grid(grids_1d: Iterable[GridResult]):
+def set_params_from_grid(grids_1d: Iterable[GridResult]) -> None:
     par_values = {}
     for grid_result in grids_1d:
         id_, values = next(iter(grid_result.grid.items()))

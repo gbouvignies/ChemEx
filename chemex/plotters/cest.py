@@ -97,7 +97,7 @@ def plot_dcest(
     data_calc: Data,
     cs_values: ArrayFloat,
     circular_shift: CircularShift,
-):
+) -> None:
     if data_exp.size > 0:
         residuals = data_exp.exp - data_exp.calc
         sigma = estimate_sigma(residuals)

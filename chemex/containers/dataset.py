@@ -78,6 +78,6 @@ def load_shift_dataset(base_path: Path, settings: ShiftConfig) -> Dataset:
     )
 
     return [
-        (SpinSystem(spin_system), Data(exp=np.array([exp]), err=np.array([err])))
+        (SpinSystem(name=spin_system), Data(exp=np.array([exp]), err=np.array([err])))
         for spin_system, exp, err in shifts
     ]

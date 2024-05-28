@@ -32,7 +32,7 @@ class CpmgExperimentConfig(Protocol):
 T = TypeVar("T", bound=CpmgExperimentConfig)
 
 
-def plot_cpmg(file_pdf: PdfPages, name: str, data_exp: Data, data_calc: Data):
+def plot_cpmg(file_pdf: PdfPages, name: str, data_exp: Data, data_calc: Data) -> None:
     fig = plot_profile(name, data_exp, data_calc)
     ax2 = fig.axes[1]
     ax2.set_xlabel(r"$\nu_\mathregular{CPMG}$ (Hz)")

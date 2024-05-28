@@ -67,7 +67,7 @@ def _find_nearest(array: ArrayFloat, value: float) -> float:
 class Shift15NSqSequence:
     settings: Shift15NSqSettings
 
-    def calculate(self, spectrometer: Spectrometer, _data: Data) -> ArrayFloat:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
         ppm_i = spectrometer.liouvillian.ppm_i
         ref_shift_i = spectrometer.par_values[self.settings.cs_i_name] * ppm_i
         shifts = spectrometer.calculate_shifts()
@@ -88,4 +88,4 @@ def register() -> None:
         printer_creator=ShiftPrinter,
         plotter_creator=ShiftPlotter,
     )
-    factories.register(type=EXPERIMENT_NAME, creators=creators)
+    factories.register(name=EXPERIMENT_NAME, creators=creators)

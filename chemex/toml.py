@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import sys
+import tomllib
 from collections.abc import Iterable, MutableMapping
 from pathlib import Path
 from typing import Any
-
-import tomllib
 
 from chemex.messages import print_file_not_found, print_toml_error
 

@@ -68,7 +68,8 @@ class Method(BaseModel):
             return [SpinSystem.from_name(residue) for residue in value]
         if isinstance(value, str) and value.lower() in ("*", "all"):
             return "*"
-        raise ValueError(f"Invalid residue list: {value}")
+        msg = f"Invalid residue list: {value}"
+        raise ValueError(msg)
 
     @property
     def selection(self) -> Selection:

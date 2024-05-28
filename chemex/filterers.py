@@ -12,7 +12,7 @@ class NoFilterer:
     def __init__(self, **_extra: Any) -> None:
         return
 
-    def filter(self, _data: Data) -> None:
+    def filter(self, data: Data) -> None:
         return
 
 
@@ -87,7 +87,7 @@ class CestFilterer(Generic[T]):
         self.config = config
         self.spectrometer = spectrometer
 
-    def filter(self, data: Data):
+    def filter(self, data: Data) -> None:
         _filter_planes(data, self.config.data.filter_planes)
 
         if self.config.data.filter_ref_planes:

@@ -13,7 +13,7 @@ from chemex.messages import print_plot_filename
 _RED700 = "#D32F2F"
 
 
-def plot_shift(name_pdf: Path, data: Data):
+def plot_shift(name_pdf: Path, data: Data) -> None:
     fig = Figure()
     ax = fig.subplots(1, 1)
     fig.align_labels()
