@@ -13,6 +13,7 @@ Typical usage example:
   print_logo()
   print_loading_experiments()
 """
+
 from __future__ import annotations
 
 from collections import Counter
@@ -34,7 +35,7 @@ console = Console()
 
 
 LOGO = r"""
-    ________                   ______
+   ________                   ______
   / ____/ /_  ___  ____ ___  / ____/  __
  / /   / __ \/ _ \/ __ `__ \/ __/ | |/_/
 / /___/ / / /  __/ / / / / / /____>  <
