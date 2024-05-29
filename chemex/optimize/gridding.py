@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from lmfit.parameter import Parameters
 from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.cm import get_cmap
 from matplotlib.colors import LogNorm
+from matplotlib.pyplot import get_cmap
 from rich.progress import track
 
 from chemex.containers.experiments import Experiments
