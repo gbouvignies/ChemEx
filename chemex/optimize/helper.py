@@ -30,9 +30,8 @@ def calculate_statistics(
     )
     chisqr = sum(residuals**2)
     redchi = chisqr / max(1, ndata - nvarys)
-    _neg2_log_likel = ndata * np.log(chisqr / ndata)
-    aic = _neg2_log_likel + 2 * nvarys
-    bic = _neg2_log_likel + np.log(ndata) * nvarys
+    aic = chisqr + 2 * nvarys
+    bic = chisqr + np.log(ndata) * nvarys
     _, ks_p_value = stats.kstest(residuals, "norm")
     pvalue: float = 1.0 - stats.chi2.cdf(chisqr, ndata - nvarys)
     return {
