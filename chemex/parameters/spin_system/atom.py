@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Hashable
+from copy import deepcopy
 from dataclasses import dataclass, field
+from typing import Self
 
 from .constants import CORRECT_ATOM_NAME
 from .nucleus import Nucleus, str2nucleus
@@ -69,3 +71,37 @@ class Atom:
             str: The name of the atom.
         """
         return self.name
+
+    def __deepcopy__(self, memo: dict[int, Self]) -> Self:
+        """Creates a deep copy of the Atom instance.
+
+        Args:
+            memo (dict[int, Self]): A dictionary of memoized objects.
+
+        Returns:
+            Self: A deep copy of the Atom instance.
+        """
+        if id(self) in memo:
+            return memo[id(self)]
+
+        # Create a new instance of Atom without calling __init__
+        cls = self.__class__
+        new_atom = cls.__new__(cls)
+
+        # Copy all attributes to the new instance
+        new_atom.name = deepcopy(self.name, memo)
+        new_atom.nucleus = deepcopy(self.nucleus, memo)
+
+        # Copy search_keys excluding self
+        new_search_keys = deepcopy(
+            {key for key in self.search_keys if key is not self}, memo
+        )
+        new_atom.search_keys = new_search_keys
+
+        # Add the new_atom to its own search_keys set
+        new_atom.search_keys.add(new_atom)
+
+        # Memoize the new instance
+        memo[id(self)] = new_atom
+
+        return new_atom

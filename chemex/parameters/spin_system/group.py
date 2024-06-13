@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Hashable
+from copy import deepcopy
 from functools import cache, total_ordering
 from re import search
+from typing import Self
 
 from .constants import AAA_TO_A
 
@@ -113,7 +115,7 @@ class Group:
         Returns:
             int: The hash value of the group.
         """
-        return hash(self.name)
+        return hash((self.symbol, self.number, self.suffix))
 
     def __bool__(self) -> bool:
         """Boolean representation of the Group object.
@@ -130,3 +132,38 @@ class Group:
             str: The full name of the group.
         """
         return self.name
+
+    def __deepcopy__(self, memo: dict[int, Self]) -> Self:
+        """Deep copy of the Group object.
+
+        Args:
+            memo (dict[int, object]): A dictionary for tracking copied objects.
+
+        Returns:
+            Group: A deep copy of the group.
+        """
+        if id(self) in memo:
+            return memo[id(self)]
+
+        # Create a new instance of Group without calling __init__
+        cls = self.__class__
+        new_group = cls.__new__(cls)
+
+        # Deep copy all attributes to the new instance
+        new_group.symbol = deepcopy(self.symbol, memo)
+        new_group.number = deepcopy(self.number, memo)
+        new_group.suffix = deepcopy(self.suffix, memo)
+
+        # Copy search_keys excluding self
+        new_search_keys = deepcopy(
+            {key for key in self.search_keys if key is not self}, memo
+        )
+        new_group.search_keys = new_search_keys
+
+        # Add the new_group to its own search_keys set
+        new_group.search_keys.add(new_group)
+
+        # Memoize the new instance
+        memo[id(self)] = new_group
+
+        return new_group
