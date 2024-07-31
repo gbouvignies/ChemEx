@@ -14,7 +14,9 @@ from chemex.plotters.plot import get_grid, plot_profile
 from chemex.printers.plot import PlotPrinter, data_plot_printers
 
 
-def plot_relaxation(file_pdf: PdfPages, name: str, data_exp: Data, data_calc: Data) -> None:
+def plot_relaxation(
+    file_pdf: PdfPages, name: str, data_exp: Data, data_calc: Data
+) -> None:
     fig = plot_profile(name, data_exp, data_calc)
     ax2 = fig.axes[1]
     ax2.set_xlabel(r"Time (s)")
@@ -48,6 +50,7 @@ def create_plot_data_calc(profile: Profile) -> Data:
     data = profile.data
 
     times = get_grid(data.metadata, 100, 0.02)
+    times = times[times > 0.0]
 
     filler = np.zeros_like(times)
     data_fit = Data(exp=filler, err=filler, metadata=times)

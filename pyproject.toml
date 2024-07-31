@@ -1,48 +1,50 @@
 [build-system]
-  requires      = [ "pdm-backend" ]
-  build-backend = "pdm.backend"
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
 
 [project]
-  name = "chemex"
-  description = "An analysis program for chemical exchange detected by NMR"
-  authors = [ { name = "Guillaume Bouvignies", email = "guillaume.bouvignies@ens.psl.eu" } ]
-  dependencies = [
-      "numpy>=1.26.4",
-      "scipy>=1.13.0",
-      "matplotlib>=3.8.4",
-      "lmfit>=1.2.2",
-      "pydantic>=2.6.4",
-      "cachetools>=5.3.3",
-      "rich>=13.7.1",
-      "rapidfuzz>=3.7.0",
-      "emcee>=3.1.4",
-      "numdifftools>=0.9.41",
-      "annotated-types>=0.6.0",
-  ]
-  requires-python = ">=3.11,<3.13"
-  readme = "README.md"
-  license = { text = "GPL-3.0-or-later" }
-  dynamic = [ "version" ]
+name = "chemex"
+description = "An analysis program for chemical exchange detected by NMR"
+authors = [
+    { name = "Guillaume Bouvignies", email = "guillaume.bouvignies@ens.psl.eu" },
+]
+dependencies = [
+    "numpy>=1.26.4",
+    "scipy>=1.13.0",
+    "matplotlib>=3.8.4",
+    "lmfit>=1.2.2",
+    "pydantic>=2.6.4",
+    "cachetools>=5.3.3",
+    "rich>=13.7.1",
+    "rapidfuzz>=3.7.0",
+    "emcee>=3.1.4",
+    "numdifftools>=0.9.41",
+    "annotated-types>=0.6.0",
+]
+requires-python = ">=3.11,<3.13"
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+dynamic = ["version"]
 
-  [project.urls]
-    Homepage      = "http://gbouvignies.github.io/ChemEx/"
-    Documentation = "http://gbouvignies.github.io/ChemEx/"
-    Repository    = "https://github.com/gbouvignies/chemex"
-    Changelog     = "https://github.com/gbouvignies/chemex/releases"
+[project.urls]
+Homepage = "http://gbouvignies.github.io/ChemEx/"
+Documentation = "http://gbouvignies.github.io/ChemEx/"
+Repository = "https://github.com/gbouvignies/chemex"
+Changelog = "https://github.com/gbouvignies/chemex/releases"
 
-  [project.scripts]
-    chemex = "chemex.chemex:main"
+[project.scripts]
+chemex = "chemex.chemex:main"
 
 [tool.pdm.version]
-  source = "scm"
+source = "scm"
 
 [tool.pdm.dev-dependencies]
-  test = [ "pytest>=7.4.3" ]
-  lint = [ "ruff>=0.1.3" ]
+test = ["pytest>=7.4.3"]
+lint = ["ruff>=0.1.3"]
 
 [tool.ruff]
-  select = [ "ALL" ]
-  ignore = [
+select = ["ALL"]
+ignore = [
     "ANN101",
     "ANN102",
     "COM812",
@@ -58,10 +60,14 @@
     "D105",
     "D107",
     "S311",
-  ]
+]
 
-  [tool.ruff.isort]
-    known-first-party = [ "chemex" ]
+[tool.ruff.isort]
+known-first-party = ["chemex"]
 
-  [tool.ruff.lint.pydocstyle]
-    convention = "google"
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"

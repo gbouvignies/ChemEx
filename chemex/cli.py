@@ -1,4 +1,5 @@
 """The parsing module contains the code for the parsing of command-line arguments."""
+
 from __future__ import annotations
 
 from argparse import ArgumentParser
@@ -10,7 +11,7 @@ from chemex.tools.pick_cest import pick_cest
 from chemex.tools.plot_param import plot_param
 
 
-def build_parser():
+def build_parser() -> None:
     """Parse the command-line arguments."""
     description = (
         "ChemEx is an analysis program for chemical exchange detected by "
@@ -164,7 +165,7 @@ def build_parser():
         metavar="ID",
         nargs="+",
         help="Residue(s) to include in the simulation",
-        type=SpinSystem,
+        type=SpinSystem.from_name,
     )
 
     simulate_parser.add_argument(
@@ -173,7 +174,7 @@ def build_parser():
         metavar="ID",
         nargs="+",
         help="Residue(s) to exclude from the simulation",
-        type=SpinSystem,
+        type=SpinSystem.from_name,
     )
 
     # parser for the positional argument "pick_cest"
