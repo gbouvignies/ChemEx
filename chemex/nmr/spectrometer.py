@@ -263,6 +263,11 @@ class Spectrometer:
     ) -> ArrayFloat:
         return self.liouvillian.get_start_magnetization(terms=terms, atom=atom)
 
+    def tilt_mag_along_weff_i(
+        self, magnetization: ArrayFloat, *, back: bool = False
+    ) -> ArrayFloat:
+        return self.liouvillian.tilt_mag_along_weff_i(magnetization, back=back)
+
     @property
     def detection(self) -> str:
         return self.liouvillian.detection

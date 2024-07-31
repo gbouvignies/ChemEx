@@ -343,6 +343,12 @@ class Basis:
         return _BASES[self.type]
 
     @property
+    def components_states(self) -> list[str]:
+        return [
+            f"{comp}_{state}" for state, comp in product(model.states, self.components)
+        ]
+
+    @property
     def atoms(self) -> dict[str, str]:
         return {
             letter: atom

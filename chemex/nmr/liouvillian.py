@@ -30,6 +30,9 @@ _RE_COMP = re.compile(r"\[(.+?)\]")
 
 _Q_ORDER_I = {"sq": 1.0, "dq": 2.0, "tq": 3.0}
 
+# A small value used for numerical stability
+SMALL_VALUE = 1e-6
+
 
 def _make_gaussian(
     value: float,
@@ -271,6 +274,37 @@ class LiouvillianIS:
             mag += self.vectors.get(f"{name}z_{state}", 0.0) * scale
         return mag
 
+    def tilt_mag_along_weff_i(
+        self, magnetization: ArrayFloat, *, back: bool = False
+    ) -> ArrayFloat:
+        basis = self.basis
+
+        w1 = self.b1_i * 2.0 * np.pi
+
+        for state in model.states:
+            index_x, index_z = (
+                basis.components_states.index(f"ix_{state}"),
+                basis.components_states.index(f"iz_{state}"),
+            )
+            components = magnetization[..., [index_x, index_z], :]
+
+            cs = self.par_values[f"cs_i_{state}"]
+            wi = -(
+                cs * self.ppm_i
+                - self.carrier_i * self.ppm_i
+                - self.offset_i * 2.0 * np.pi * np.sign(self.ppm_i)
+            )
+            theta = np.arctan2(w1, wi)
+            if back:
+                theta = -theta
+            rotation_matrix = np.array(
+                [[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]]
+            )
+            components_tilted = rotation_matrix @ components
+            magnetization[..., [index_x, index_z], :] = components_tilted
+
+        return magnetization
+
     def get_start_magnetization(
         self,
         terms: Iterable[str],
@@ -300,3 +334,10 @@ class LiouvillianIS:
 
     def ppms_to_offsets(self, ppms: ArrayFloat | float) -> ArrayFloat | float:
         return (ppms - self.carrier_i) * abs(self.ppm_i) / (2.0 * np.pi)
+
+    def calculate_r1rho(self) -> float:
+        liouv = self.l_free + self.l_b1x_i
+        liouv = liouv.reshape((self.size, self.size))
+        eigenvalues = np.linalg.eigvals(liouv)
+        real_eigenvalues = eigenvalues[abs(eigenvalues.imag) < SMALL_VALUE].real
+        return -np.max(real_eigenvalues)
