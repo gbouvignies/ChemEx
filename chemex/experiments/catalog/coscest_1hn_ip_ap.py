@@ -9,7 +9,7 @@ from numpy.linalg import matrix_power
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettingsNoRef
-from chemex.configuration.experiment import CestSettings
+from chemex.configuration.experiment import MFCestSettings
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -27,11 +27,10 @@ EXPERIMENT_NAME = "coscest_1hn_ip_ap"
 OFFSET_REF = 1e4
 
 
-class CosCest1HnIpApSettings(CestSettings):
+class CosCest1HnIpApSettings(MFCestSettings):
     name: Literal["coscest_1hn_ip_ap"]
     time_t1: float
     carrier: float
-    sw: float
     cos_n: int
     cos_res: int = 10
     d1: float

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Literal
 
 import numpy as np
@@ -34,15 +35,19 @@ class Cpmg13CoApSettings(CpmgSettings):
     refocusing: bool = False
     taucc: float = 9.09e-3
 
-    @property
+    @cached_property
     def t_neg(self) -> float:
         return -2.0 * self.pw90 / np.pi
 
-    @property
+    @cached_property
+    def start_terms(self) -> list[str]:
+        return [f"2izsz{self.suffix}"]
+
+    @cached_property
     def detection(self) -> str:
         return f"[2izsz_{self.observed_state}]"
 
-    @property
+    @cached_property
     def even_ncycs(self) -> bool:
         return self.refocusing
 
@@ -114,7 +119,7 @@ class Cpmg13CoApSequence:
         perfect180x = spectrometer.perfect180_i[0]
 
         # Getting the starting magnetization
-        start = spectrometer.get_start_magnetization(["2izsz"])
+        start = spectrometer.get_start_magnetization(self.settings.start_terms)
 
         # Calculate the flip block
         if self.settings.refocusing:

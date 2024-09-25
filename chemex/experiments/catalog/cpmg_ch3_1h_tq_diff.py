@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import reduce
+from functools import cached_property, reduce
 from typing import Literal
 
 import numpy as np
@@ -38,11 +38,15 @@ class CpmgCh31HTqDiffSettings(CpmgSettings):
     comp180_flg: bool = True
     ipap_flg: bool = False
 
-    @property
+    @cached_property
     def k2_factor(self) -> float:
         return (3.0 * GAMMA["h"] * self.gradient * self.delta) ** 2
 
-    @property
+    @cached_property
+    def start_terms(self) -> list[str]:
+        return [f"2ixsz{self.suffix}"]
+
+    @cached_property
     def detection(self) -> str:
         return f"[2ixsz_{self.observed_state}]"
 
@@ -114,7 +118,9 @@ class CpmgCh31HTqDiffSequence:
         ncycs = data.metadata
 
         # Getting the starting magnetization
-        start = spectrometer.get_start_magnetization(["2ixsz"], atom="h")
+        start = spectrometer.get_start_magnetization(
+            self.settings.start_terms, atom="h"
+        )
 
         # Calculation of the spectrometers with gradient 0
         spectrometer.gradient_dephasing = 0.0

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Literal
 
 import numpy as np
@@ -31,7 +32,11 @@ class CpmgCh3MqSettings(CpmgSettings):
     t_zeta: float = 1.0 / (8.0 * 125.3)
     small_protein: bool = False
 
-    @property
+    @cached_property
+    def start_terms(self) -> list[str]:
+        return [f"2iysx{self.suffix}"]
+
+    @cached_property
     def detection(self) -> str:
         return f"[2iysx_{self.observed_state}]"
 
@@ -90,7 +95,7 @@ class CpmgCh3MqSequence:
         p180_iy = spectrometer.perfect180_i[1]
 
         # Getting the starting magnetization
-        start = spectrometer.get_start_magnetization(terms=["2iysx"])
+        start = spectrometer.get_start_magnetization(self.settings.start_terms)
 
         # Calculating the instensities as a function of ncyc
         part1 = start

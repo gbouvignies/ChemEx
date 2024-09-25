@@ -34,20 +34,22 @@ _Q_ORDER_I = {"sq": 1.0, "dq": 2.0, "tq": 3.0}
 SMALL_VALUE = 1e-6
 
 
-def _make_gaussian(
+def _generate_gaussian_distribution(
     value: float,
     scale: float,
     res: int,
 ) -> tuple[ArrayFloat, ArrayFloat]:
     if scale not in (0.0, np.inf) and res > 1:
         grid = np.linspace(-2.0, 2.0, res)
-        dist = grid * scale + 1.0
+        distribution = grid * scale + 1.0
     else:
         grid = np.array([0.0])
-        dist = np.array([1.0])
+        distribution = np.array([1.0])
+
     weights = stats.norm.pdf(grid)
     weights /= weights.sum()
-    return dist * value, weights
+
+    return distribution * value, weights
 
 
 class LiouvillianIS:
@@ -187,7 +189,7 @@ class LiouvillianIS:
     @b1_i.setter
     def b1_i(self, value: float) -> None:
         self._b1_i = value
-        self._b1_i_dist, self._b1_i_weights = _make_gaussian(
+        self._b1_i_dist, self._b1_i_weights = _generate_gaussian_distribution(
             self.b1_i,
             self.b1_i_inh_scale,
             self.b1_i_inh_res,
@@ -250,6 +252,11 @@ class LiouvillianIS:
     def detection(self) -> str:
         return self._detection
 
+    def _collapse(self, magnetization: ArrayFloat) -> float:
+        shape = -1, *magnetization.shape[-2:]
+        magnetization_weighted = self.weights * magnetization
+        return magnetization_weighted.reshape(shape).sum(axis=0)
+
     @detection.setter
     def detection(self, value: str) -> None:
         self._detection = value
@@ -258,13 +265,21 @@ class LiouvillianIS:
         self._detect_vector = vector.transpose()
 
     def detect(self, magnetization: ArrayFloat) -> float:
-        shape = -1, *magnetization.shape[-2:]
-        mag_weighted = self.weights * magnetization
-        mag = mag_weighted.reshape(shape).sum(axis=0)
-        detected = self._detect_vector @ mag
+        collapsed_magnetization = self._collapse(magnetization)
+        detected = self._detect_vector @ collapsed_magnetization
         if np.iscomplexobj(detected):
             detected = np.sign(detected.real) * np.abs(detected)
         return float(detected)
+
+    # def detect_spectrum(self, magnetization: ArrayFloat) -> ArrayFloat:
+    #     collapsed_magnetization = self._collapse(magnetization)
+    #     i_minus = self.vectors.get("ix", 0.0) - 1j * self.vectors.get("iy", 0.0)
+    #     eigen_values, eigen_vectors = np.linalg.eig(self._l_base)
+    #     relaxations = eigen_values.real
+    #     frequencies = eigen_values.imag
+
+    #     detected = self._detect_vector @ collapsed_magnetization
+    #     return detected
 
     def get_equilibrium(self) -> ArrayFloat:
         mag = np.zeros((self.size, 1))
@@ -272,6 +287,27 @@ class LiouvillianIS:
             scale = self.par_values.get(f"p{state}", 0.0) * XI_RATIO.get(atom, 1.0)
             mag += self.vectors.get(f"{name}e_{state}", 0.0) * scale
             mag += self.vectors.get(f"{name}z_{state}", 0.0) * scale
+        return mag
+
+    def get_start_magnetization(
+        self, terms: Iterable[str], atom: str = "h"
+    ) -> ArrayFloat:
+        ratio = XI_RATIO.get(atom, 1.0)
+        terms_set = set(terms)
+        mag = np.zeros((self.size, 1))
+
+        for component, vector in self.vectors.items():
+            state_specific = "_" in component
+            if not state_specific:
+                continue
+            state = component[-1]
+            for term in terms_set:
+                match = component.startswith(term.strip("+-"))
+                if match:
+                    sign = -1.0 if term.startswith("-") else 1.0
+                    population = self.par_values.get(f"p{state}", 0.0)
+                    mag += sign * population * ratio * vector
+
         return mag
 
     def tilt_mag_along_weff_i(
@@ -305,22 +341,6 @@ class LiouvillianIS:
 
         return magnetization
 
-    def get_start_magnetization(
-        self,
-        terms: Iterable[str],
-        atom: str = "h",
-    ) -> ArrayFloat:
-        ratio = XI_RATIO.get(atom, 1.0)
-        mag = np.zeros((self.size, 1))
-        for term, state, (comp, vector) in product(
-            terms,
-            model.states,
-            self.vectors.items(),
-        ):
-            if comp.startswith(term) and comp.endswith(f"_{state}"):
-                mag += self.par_values[f"p{state}"] * ratio * vector
-        return mag
-
     def keep(self, magnetization: ArrayFloat, components: Iterable[str]) -> ArrayFloat:
         keep = sum(
             (self.vectors[name] for name in components),
@@ -340,4 +360,4 @@ class LiouvillianIS:
         liouv = liouv.reshape((self.size, self.size))
         eigenvalues = np.linalg.eigvals(liouv)
         real_eigenvalues = eigenvalues[abs(eigenvalues.imag) < SMALL_VALUE].real
-        return -np.max(real_eigenvalues)
+        return -float(np.max(real_eigenvalues))

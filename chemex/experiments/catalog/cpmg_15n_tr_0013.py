@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import reduce
+from functools import cached_property, reduce
 from typing import Literal
 
 import numpy as np
@@ -39,15 +39,23 @@ class Cpmg15NTr0013Settings(CpmgSettings):
     antitrosy: bool = False
     s3e: bool = True
 
-    @property
+    @cached_property
     def t_neg(self) -> float:
         return -2.0 * self.pw90 / np.pi
 
-    @property
+    @cached_property
     def taub_eff(self) -> float:
         return self.taub - 2.0 * self.pw90 - 2.0 * self.pw90 / np.pi
 
-    @property
+    @cached_property
+    def start_terms(self) -> list[str]:
+        if self.s3e:
+            if self.antitrosy:
+                return [f"2izsz{self.suffix}", f"iz{self.suffix}"]
+            return [f"2izsz{self.suffix}", f"-iz{self.suffix}"]
+        return [f"2izsz{self.suffix}"]
+
+    @cached_property
     def detection(self) -> str:
         if self.antitrosy:
             return f"[2izsz_{self.observed_state}] + [iz_{self.observed_state}]"
@@ -134,16 +142,6 @@ class Cpmg15NTr0013Sequence:
         phases2 = np.take(cp_phases2, indexes, mode="wrap", axis=1)
         return phases1, phases2
 
-    def _get_start(self, spectrometer: Spectrometer) -> ArrayFloat:
-        start = spectrometer.get_start_magnetization(["2izsz"])
-        if self.settings.s3e:
-            if self.settings.antitrosy:
-                start += spectrometer.get_start_magnetization(["iz"])
-            else:
-                start -= spectrometer.get_start_magnetization(["iz"])
-            start *= 0.5
-        return start
-
     def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
         ncycs = data.metadata
 
@@ -162,7 +160,7 @@ class Cpmg15NTr0013Sequence:
         p180_sx = spectrometer.perfect180_s[0]
 
         # Getting the starting magnetization
-        start = self._get_start(spectrometer)
+        start = spectrometer.get_start_magnetization(self.settings.start_terms)
 
         # Calculating the p-element
         if self.settings.antitrosy:

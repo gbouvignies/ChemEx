@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Literal
 
 import numpy as np
@@ -9,9 +10,7 @@ from numpy.linalg import matrix_power
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
-from chemex.configuration.experiment import (
-    CpmgSettingsEvenNcycs,
-)
+from chemex.configuration.experiment import CpmgSettingsEvenNcycs
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -34,16 +33,17 @@ class CpmgCh313CH2cSettings(CpmgSettingsEvenNcycs):
     pw90: float
     taub: float = 2.0e-3
     time_equil: float = 0.0
+    cs_evolution_prior: bool = True
 
-    @property
+    @cached_property
     def t_neg(self) -> float:
         return -2.0 * self.pw90 / np.pi
 
-    @property
-    def start(self) -> list[str]:
-        return [f"2izsz_{self.observed_state}"]
+    @cached_property
+    def start_terms(self) -> list[str]:
+        return [f"2izsz{self.suffix}"]
 
-    @property
+    @cached_property
     def detection(self) -> str:
         return f"[iz_{self.observed_state}]"
 
@@ -114,7 +114,7 @@ class CpmgCh313CH2cSequence:
         p180_sx = spectrometer.perfect180_s[0]
 
         # Getting the starting magnetization
-        start = spectrometer.get_start_magnetization(terms=self.settings.start)
+        start = spectrometer.get_start_magnetization(terms=self.settings.start_terms)
 
         # Calculating the p-element
         palmer = d_taub @ p90[0] @ p180_sx @ p90[0] @ d_taub

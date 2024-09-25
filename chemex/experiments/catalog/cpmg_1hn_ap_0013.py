@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import reduce
+from functools import cached_property, reduce
 from typing import Literal
 
 import numpy as np
@@ -39,16 +39,17 @@ class Cpmg1HnAp0013Settings(CpmgSettings):
     pw_reburp: float = 1.52e-3
     time_equil_1: float = 0.0
     time_equil_2: float = 0.0
+    cs_evolution_prior: bool = True
 
-    @property
+    @cached_property
     def t_neg(self) -> float:
         return -2.0 * self.pw90 / np.pi
 
-    @property
-    def start(self) -> list[str]:
-        return [f"2izsz_{self.observed_state}"]
+    @cached_property
+    def start_terms(self) -> list[str]:
+        return [f"2izsz{self.suffix}"]
 
-    @property
+    @cached_property
     def detection(self) -> str:
         return f"[iz_{self.observed_state}]"
 
@@ -158,7 +159,7 @@ class Cpmg1HnAp0013Sequence:
         zfilter = spectrometer.zfilter
 
         # Getting the starting magnetization
-        start = spectrometer.get_start_magnetization(terms=self.settings.start)
+        start = spectrometer.get_start_magnetization(terms=self.settings.start_terms)
 
         # Calculating the central refocusing block
         if self.settings.eburp_flg:
