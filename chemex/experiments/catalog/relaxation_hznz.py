@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Literal
 
 import numpy as np
@@ -8,7 +9,7 @@ import numpy as np
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
-from chemex.configuration.experiment import ExperimentSettings
+from chemex.configuration.experiment import RelaxationSettings
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -24,10 +25,14 @@ from chemex.typing import ArrayBool, ArrayFloat
 EXPERIMENT_NAME = "relaxation_hznz"
 
 
-class RelaxationHzNzSettings(ExperimentSettings):
+class RelaxationHzNzSettings(RelaxationSettings):
     name: Literal["relaxation_hznz"]
 
-    @property
+    @cached_property
+    def start_terms(self) -> list[str]:
+        return [f"2izsz{self.suffix}"]
+
+    @cached_property
     def detection(self) -> str:
         return f"[2izsz_{self.observed_state}]"
 
@@ -72,7 +77,7 @@ class RelaxationHzNzSequence:
         times = data.metadata
 
         # Getting the starting magnetization
-        start = spectrometer.get_start_magnetization(["2izsz"])
+        start = spectrometer.get_start_magnetization(self.settings.start_terms)
 
         # Return profile
         delays = spectrometer.delays(0.25 * np.array(times))

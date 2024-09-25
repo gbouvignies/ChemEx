@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Literal
 
 import numpy as np
@@ -36,7 +37,19 @@ class Cest15NTrSettings(CestSettings):
     b1_inh_res: int = 11
     antitrosy: bool = False
 
-    @property
+    @cached_property
+    def start_terms(self) -> list[str]:
+        """Start from the TROSY or ANTI-TROSY component.
+
+        TROSY: (2IzSz + Iz) / 2
+        ANTITROSY: (2IzSz - Iz) / 2.
+        """
+        if not self.antitrosy:
+            return [f"2izsz{self.suffix}", f"-iz{self.suffix}"]
+
+        return [f"2izsz{self.suffix}", f"iz{self.suffix}"]
+
+    @cached_property
     def detection(self) -> str:
         if self.antitrosy:
             return f"[2izsz_{self.observed_state}] + [iz_{self.observed_state}]"
@@ -95,21 +108,10 @@ class Cest15NTrSequence:
     def is_reference(metadata: ArrayFloat) -> ArrayBool:
         return np.abs(metadata) > OFFSET_REF
 
-    def _get_start(self, spectrometer: Spectrometer) -> ArrayFloat:
-        """Start from the TROSY or ANTI-TROSY component.
-
-        TROSY: (2IzSz - Iz) / 2
-        ANTITROSY: (2IzSz + Iz) / 2.
-        """
-        start = 0.5 * spectrometer.get_start_magnetization(["2izsz", "iz"])
-        if not self.settings.antitrosy:
-            start -= spectrometer.get_start_magnetization(["iz"])
-        return start
-
     def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
         offsets = data.metadata
 
-        start = self._get_start(spectrometer)
+        start = spectrometer.get_start_magnetization(self.settings.start_terms)
 
         intensities: dict[float, ArrayFloat] = {}
 

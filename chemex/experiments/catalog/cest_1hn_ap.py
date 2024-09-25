@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Literal
 
 import numpy as np
@@ -33,13 +34,13 @@ class Cest1HnApSettings(CestSettings):
     b1_frq: float
     b1_inh_scale: float = 0.1
     b1_inh_res: int = 11
-    observed_state: Literal["a", "b", "c", "d"] = "a"
+    cs_evolution_prior: bool = True
 
-    @property
-    def start(self) -> list[str]:
-        return [f"2izsz_{self.observed_state}"]
+    @cached_property
+    def start_terms(self) -> list[str]:
+        return [f"2izsz{self.suffix}"]
 
-    @property
+    @cached_property
     def detection(self) -> str:
         return f"[2izsz_{self.observed_state}]"
 
@@ -90,7 +91,7 @@ class Cest1HnApSequence:
     def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
         offsets = data.metadata
 
-        start = spectrometer.get_start_magnetization(terms=self.settings.start)
+        start = spectrometer.get_start_magnetization(self.settings.start_terms)
 
         intensities: dict[float, ArrayFloat] = {}
 

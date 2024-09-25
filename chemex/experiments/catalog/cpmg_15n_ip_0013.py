@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import reduce
+from functools import cached_property, reduce
 from typing import Literal
 
 import numpy as np
@@ -36,15 +36,19 @@ class Cpmg15N0013IpSettings(CpmgSettings):
     time_equil: float = 0.0
     ncyc_max: int
 
-    @property
+    @cached_property
     def t_neg(self) -> float:
         return -2.0 * self.pw90 / np.pi
 
-    @property
+    @cached_property
     def t_pos(self) -> float:
         return 4.0 * self.pw90 / np.pi
 
-    @property
+    @cached_property
+    def start_terms(self) -> list[str]:
+        return [f"iz{self.suffix}"]
+
+    @cached_property
     def detection(self) -> str:
         return f"[iz_{self.observed_state}]"
 
@@ -133,7 +137,7 @@ class Cpmg15N0013IpSequence:
         p180 = spectrometer.p180_i
 
         # Getting the starting magnetization
-        start = spectrometer.get_equilibrium()
+        start = spectrometer.get_start_magnetization(self.settings.start_terms)
 
         # Calculating the instensities as a function of ncyc
         intensities = {

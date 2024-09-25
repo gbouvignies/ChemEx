@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from functools import cached_property
 from typing import Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -18,13 +19,25 @@ class ExperimentSettings(BaseModel):
     _key_to_lower = model_validator(mode="before")(key_to_lower)
 
 
-class CpmgSettings(ExperimentSettings):
+class RelaxationSettings(ExperimentSettings):
+    cs_evolution_prior: bool = False
+
+    @cached_property
+    def suffix(self) -> str:
+        return f"_{self.observed_state}" if self.cs_evolution_prior else ""
+
+
+class CpmgSettings(RelaxationSettings):
     even_ncycs: bool = False
 
 
-class CpmgSettingsEvenNcycs(ExperimentSettings):
+class CpmgSettingsEvenNcycs(RelaxationSettings):
     even_ncycs: bool = True
 
 
-class CestSettings(ExperimentSettings):
+class CestSettings(RelaxationSettings):
     sw: float = math.inf
+
+
+class MFCestSettings(RelaxationSettings):
+    sw: float

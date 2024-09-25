@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Literal
 
 import numpy as np
@@ -34,13 +35,17 @@ class Cpmg15NTrSettings(CpmgSettings):
     taub: float = 2.68e-3
     antitrosy: bool = False
 
-    @property
+    @cached_property
     def t_neg(self) -> float:
         return -2.0 * self.pw90 / np.pi
 
     @property
     def taub_eff(self) -> float:
         return self.taub - 2.0 * self.pw90 - 2.0 * self.pw90 / np.pi
+
+    @cached_property
+    def start_terms(self) -> list[str]:
+        return [f"2izsz{self.suffix}"]
 
     @property
     def detection(self) -> str:
@@ -122,7 +127,7 @@ class Cpmg15NTrSequence:
         p180_sx = spectrometer.perfect180_s[0]
 
         # Getting the starting magnetization
-        start = spectrometer.get_start_magnetization(["2izsz"])
+        start = spectrometer.get_start_magnetization(self.settings.start_terms)
 
         # Calculating the p-element
         p1, p2 = (2, 1) if self.settings.antitrosy else (1, 0)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import reduce
+from functools import cached_property, reduce
 from typing import Literal
 
 import numpy as np
@@ -34,8 +34,13 @@ class CpmgCh31HSqSettings(CpmgSettings):
     taua: float = 2.0e-3
     comp180_flg: bool = True
     ipap_flg: bool = False
+    cs_evolution_prior: bool = True
 
-    @property
+    @cached_property
+    def start_terms(self) -> list[str]:
+        return [f"2ixsz{self.suffix}", f"2iysz{self.suffix}"]
+
+    @cached_property
     def detection(self) -> str:
         return f"[iy_{self.observed_state}]"
 
@@ -128,7 +133,7 @@ class CpmgCh31HSqSequence:
         # Getting the starting magnetization
         start = spectrometer.get_start_magnetization(terms=["iy"])
         start = perfect180y @ d_taua @ d_taua @ start
-        start = spectrometer.keep(start, ["2ixsz_a", "2iysz_a"])
+        start = spectrometer.keep(start, self.settings.start_terms)
 
         # Calculating the intensities as a function of ncyc
         if self.settings.ipap_flg:

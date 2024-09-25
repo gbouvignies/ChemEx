@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import reduce
+from functools import cached_property, reduce
 from typing import Literal
 
 import numpy as np
@@ -39,7 +39,11 @@ class CpmgHNDqZqSettings(CpmgSettingsEvenNcycs):
     pw90_n: float
     dq_flg: bool
 
-    @property
+    @cached_property
+    def start_terms(self) -> list[str]:
+        return [f"2ixsx{self.suffix}"]
+
+    @cached_property
     def detection(self) -> str:
         if self.dq_flg:
             return f"[2ixsx_{self.observed_state}] - [2iysy_{self.observed_state}]"
@@ -48,9 +52,7 @@ class CpmgHNDqZqSettings(CpmgSettingsEvenNcycs):
 
 class CpmgHNDqZqConfig(
     ExperimentConfiguration[
-        CpmgHNDqZqSettings,
-        ConditionsWithValidations,
-        RelaxationDataSettings,
+        CpmgHNDqZqSettings, ConditionsWithValidations, RelaxationDataSettings
     ],
 ):
     @property
@@ -126,7 +128,7 @@ class CpmgHNDqZqSequence:
         p9024090_2 = spectrometer.p9024090_nh_2[[0, 1], [0, 1]]
 
         # Getting the starting magnetization
-        start = spectrometer.get_start_magnetization(["2ixsx"])
+        start = spectrometer.get_start_magnetization(self.settings.start_terms)
 
         # Calculating the cpmg trains
         intensities = {0.0: spectrometer.detect(start)}

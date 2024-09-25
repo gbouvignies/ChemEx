@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import reduce
+from functools import cached_property, reduce
 from typing import Literal
 
 import numpy as np
@@ -33,6 +33,10 @@ class CpmgCh31HTqSettings(CpmgSettings):
     tauc: float = 0.67e-3  # ~ 1/(12*J[HC])
     comp180_flg: bool = True
     ipap_flg: bool = False
+
+    @cached_property
+    def start_terms(self) -> list[str]:
+        return [f"2ixsz{self.suffix}"]
 
     @property
     def detection(self) -> str:
@@ -103,7 +107,9 @@ class CpmgCh31HTqSequence:
         ncycs = data.metadata
 
         # Getting the starting magnetization
-        start = spectrometer.get_start_magnetization(["2ixsz"], atom="h")
+        start = spectrometer.get_start_magnetization(
+            self.settings.start_terms, atom="h"
+        )
 
         # Calculation of the spectrometers corresponding to all the delays
         tau_cps, all_delays = self._get_delays(ncycs)

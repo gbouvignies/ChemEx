@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Literal
 
 import numpy as np
@@ -9,7 +10,7 @@ from numpy.linalg import matrix_power
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import CestSettings
+from chemex.configuration.experiment import MFCestSettings
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -28,30 +29,33 @@ EXPERIMENT_NAME = "dcest_13c"
 OFFSET_REF = 1e4
 
 
-class DCest13CSettings(CestSettings):
+class DCest13CSettings(MFCestSettings):
     name: Literal["dcest_13c"]
     time_t1: float
     time_equil: float = 0.0
     carrier: float
     pw90: float
-    sw: float
     b1_frq: float
     b1_inh_scale: float = 0.1
     b1_inh_res: int = 11
 
-    @property
+    @cached_property
     def pw_dante(self) -> float:
         return 4.0 * self.pw90 * self.b1_frq / self.sw
 
-    @property
+    @cached_property
     def tau_dante(self) -> float:
         return 1.0 / self.sw - self.pw_dante
 
-    @property
+    @cached_property
     def ncyc_dante(self) -> int:
         return int(self.time_t1 * self.sw + 0.1)
 
-    @property
+    @cached_property
+    def start_terms(self) -> list[str]:
+        return [f"iz{self.suffix}"]
+
+    @cached_property
     def detection(self) -> str:
         return f"[iz_{self.observed_state}]"
 
@@ -103,7 +107,7 @@ class DCest13CSequence:
     def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
         offsets = data.metadata
 
-        start = spectrometer.get_equilibrium()
+        start = spectrometer.get_start_magnetization(terms=self.settings.start_terms)
 
         d_eq = (
             spectrometer.delays(self.settings.time_equil)

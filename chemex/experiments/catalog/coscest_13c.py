@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Literal
 
 import numpy as np
@@ -9,7 +10,7 @@ from numpy.linalg import matrix_power
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import CestSettings
+from chemex.configuration.experiment import MFCestSettings
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -28,19 +29,22 @@ EXPERIMENT_NAME = "coscest_13c"
 OFFSET_REF = 1e4
 
 
-class CosCest13CSettings(CestSettings):
+class CosCest13CSettings(MFCestSettings):
     name: Literal["coscest_13c"]
     time_t1: float
     time_equil: float = 0.0
     carrier: float
-    sw: float
     cos_n: int
     cos_res: int = 10
     b1_frq: float
     b1_inh_scale: float = 0.1
     b1_inh_res: int = 11
 
-    @property
+    @cached_property
+    def start_terms(self) -> list[str]:
+        return [f"iz{self.suffix}"]
+
+    @cached_property
     def detection(self) -> str:
         return f"[iz_{self.observed_state}]"
 
