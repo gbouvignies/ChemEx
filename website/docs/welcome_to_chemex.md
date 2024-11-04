@@ -6,56 +6,61 @@ sidebar_position: 1
 
 ## Quick Overview
 
-ChemEx is a comprehensive tool for analyzing NMR experimental data to characterize chemical exchange processes. This guide will help you get started with ChemEx, covering everything from installation to initial usage. Primarily, ChemEx facilitates analysis of experiments like Carr-Purcell-Meiboom-Gill (CPMG) relaxation dispersion and Chemical Exchange Saturation Transfer (CEST).
+ChemEx is a powerful tool for analyzing NMR experimental data to characterize chemical exchange processes. This guide will help you get started with ChemEx, from installation to initial usage. ChemEx is designed to support experiments like Carr-Purcell-Meiboom-Gill (CPMG) relaxation dispersion and Chemical Exchange Saturation Transfer (CEST).
 
 ## Prerequisites
 
-Before installing ChemEx, ensure you have Python installed. For a hassle-free setup, especially for beginners, we recommend the [Anaconda Distribution](https://www.anaconda.com/distribution/). It comes bundled with Python, Numpy, and a suite of scientific computing tools.
+Before installing ChemEx, ensure Python 3.11 or 3.12 is installed on your system. It’s recommended to create an isolated environment for a clean and conflict-free setup.
 
-## Installation Methods{#installation}
+## Installation Options {#installation}
 
-ChemEx offers flexible installation options: through **conda**, **pip**, or directly [from the source](https://github.com/gbouvignies/ChemEx/). Choose the method that best suits your setup.
+ChemEx can be installed through **pip** or **mamba/conda** from the **conda-forge** channel. Choose the method that best suits your setup.
 
-### Using conda
+### Using pip with a Virtual Environment
 
-For an optimal experience, install ChemEx using **conda**. This method is ideal as it handles dependencies efficiently and is available in all versions of [Anaconda](https://www.anaconda.com/distribution/) and [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
+1. **Create and activate a virtual environment:**
 
-```shell
-# Create and activate a new environment for ChemEx
-conda create -n chemex
-conda activate chemex
+   ```shell
+   # Create a virtual environment (replace "chemex_env" with your preferred name)
+   python -m venv chemex_env
+   source chemex_env/bin/activate  # On Windows, use `chemex_env\Scripts\activate`
+   ```
 
-# Ensure Python 3.11 is installed
-conda install python=3.11
+2. **Install ChemEx using pip:**
 
-# Add conda-forge channel and install ChemEx
-conda config --env --add channels conda-forge
-conda install chemex
-```
+   ```shell
+   pip install chemex
+   ```
 
-### Using pip
+### Using mamba or conda
 
-Alternatively, you can install ChemEx using pip, available via the [Python Package Index](https://pypi.org/project/chemex/).
+For users who prefer `conda` environments, **mamba** is a faster alternative to `conda` for package management but is optional.
 
-```shell
-pip install chemex
-```
+1. **Install mamba (optional but recommended):**
 
-:::tip
+   ```shell
+   conda install mamba -n base -c conda-forge
+   ```
 
-Utilize a virtual environment when installing with pip. [Here's a helpful guide](https://dev.to/bowmanjd/python-tools-for-managing-virtual-environments-3bko#howto).
+2. **Create and activate a new environment:**
 
-:::
+   ```shell
+   mamba create -n chemex python=3.11
+   conda activate chemex
+   ```
 
-### From source
+3. **Install ChemEx via conda-forge channel:**
 
-For those interested in the latest features and updates, install the development version of ChemEx directly from [GitHub](https://github.com/gbouvignies/ChemEx/).
+   ```shell
+   mamba install -c conda-forge chemex
+   ```
+
+### Installing from GitHub
+
+To install the latest development version of ChemEx directly from GitHub, use the following command:
 
 ```shell
 pip install git+https://github.com/gbouvignies/ChemEx.git
 ```
 
-
-## Performance Optimization
-
-ChemEx performance is significantly enhanced by using numerically optimized modules. We recommend installing [NumPy](https://numpy.org) and [SciPy](https://scipy.org) with Intel® Math Kernel Library (Intel® MKL) for the best performance. These optimized modules are available via [Anaconda](https://www.anaconda.com/distribution/) or the [Intel® Distribution for Python](https://software.intel.com/en-us/distribution-for-python). Note that the standard pip installations of these modules might not offer the same level of optimization.
+This method provides access to the latest features and updates that may not yet be included in the pip or conda-forge releases.

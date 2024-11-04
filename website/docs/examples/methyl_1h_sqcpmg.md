@@ -14,7 +14,7 @@ You can get
 
 This example demonstrates the application of methyl ¹H SQ-CPMG experiment
 ([`cpmg_ch3_1h_sq`](experiments/cpmg/cpmg_ch3_1h_sq.md)) for studying
-¹³CH₃-labeled methyl groups. It allows measuring ¹H Δϖ while still preserving
+<sup>13</sup>CH<sub>3</sub>-labeled methyl groups. It allows measuring ¹H Δϖ while still preserving
 the methyl-TROSY effects.[^1] The sensitivity is much higher than older
 experiments for similar purposes.[^2] This experiment can be combined with
 MQ-CPMG experiment ([`cpmg_ch3_mq`](experiments/cpmg/cpmg_ch3_mq.md)) such that

@@ -2,43 +2,32 @@
 sidebar_position: 5
 ---
 
-# Parameter files
+# Parameter Files
 
-## Description
+## Overview
 
-The parameter files contain initial estimates of the parameters to be used
-during the fitting process. These files are provided to ChemEx using the `-p` or
-`--parameters` option.
+Parameter files contain initial estimates for the parameters used in the fitting process. These files are specified in ChemEx using the `-p` or `--parameters` option:
 
 ```shell
 chemex fit [...] -p <parameter_file> [...]
 ```
 
-Parameter files are divided in multiple sections:
+Parameter files are organized into sections:
 
-- The parameter values under the section `[GLOBAL]` apply to all residues.
-- Residue-specific parameters are specified under sections named after the
-  parameter name, such as `[CS_A]`. Multiple parameter files can be provided if
-  necessary.
+-   The `[GLOBAL]` section applies parameters universally to all residues.
+-   Residue-specific parameters are defined in sections named after each parameter, such as `[CS_A]`. Multiple parameter files can be provided if needed.
 
 :::warning
-
-Due to the multidimensional searching feature of $χ^2$ minimization process, it
-is essential to set a suitable initial value for each parameter to avoid getting
-trapped in a local minimum.
-
+To ensure accurate results and avoid local minima, set appropriate initial values for each parameter, as the χ<sup>2</sup> minimization process involves multidimensional searching.
 :::
 
 :::info
-
-When no starting value is provided in the parameter files, a default value is
-assigned as the initial value.
-
+If no initial value is provided in the parameter files, a default value will be assigned.
 :::
 
-## Example
+## Example Parameter File
 
-Here is an example parameter file:
+Below is an example of a parameter file:
 
 ```toml title="parameters.toml"
 [GLOBAL]
@@ -84,28 +73,16 @@ TAUC_A = 10.0
 ```
 
 :::tip
-
-Setting model-free parameters (e.g. `TAUC_A`) is a simple way to obtain initial
-estimates of relaxation parameters (e.g., `R1_A`, `R2_A`, etc.). For every 2.6
-kDa molecular weight, the overall tumbling time is approximately 1 ns at T = 300
-K for biomolecules in H<sub>2</sub>O. Assuming similar molecular structure at
-different conditions, the overall tumbling time is proportional to η/T, where η
-is solution viscosity and T is temperature in Kelvin.
-
+Setting model-free parameters (e.g., `TAUC_A`) can provide a good initial estimate for relaxation parameters (e.g., `R1_A`, `R2_A`). For biomolecules in H<sub>2</sub>O at T = 300 K, the overall tumbling time is roughly 1 ns per 2.6 kDa of molecular weight. Tumbling time is proportional to η/T, where η is solution viscosity and T is temperature in Kelvin.
 :::
 
-## Setting bounds
+## Setting Parameter Bounds
 
-You can set upper and lower bounds to any fitting parameters by replacing the
-initial value by a list of three elements:
+To set upper and lower bounds for any fitting parameter, replace the initial value with a list of three elements:
 
 ```toml title="parameters.toml"
 PARAMETER_WITH_NO_BOUNDS = <initial_value>
 PARAMETER_WITH_BOUNDS = [<initial_value>, <lower_bound>, <upper_bound>]
 ```
 
-Such boundaries can help to prevent parameters wandering off to unrealistic
-values to minimize $χ^2$. However, one should be careful not to set too
-stringent boundaries either, as this can result in convergence problems. Certain
-minimization algorithms (e.g. `differential_evolution`) require finite bounds on
-all fitted parameters.
+Setting bounds helps prevent parameters from reaching unrealistic values during χ<sup>2</sup> minimization. However, avoid overly strict bounds as they can hinder convergence. Some minimization algorithms, such as `differential_evolution`, require finite bounds for all fitted parameters.

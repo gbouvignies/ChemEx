@@ -8,10 +8,9 @@ const FeatureList = [
         Svg: require('@site/static/img/pulse_sequence.svg').default,
         description: (
             <>
-                ChemEx simulates the spin evolution over the pulse sequence,
-                which makes it easy to include experimental details, such as pulse
-                imperfections, off-resonance effects, or phase cycling,
-                into the analysis.
+                ChemEx accurately simulates spin evolution across the entire pulse sequence,
+                enabling precise modeling of experimental factors like pulse imperfections,
+                off-resonance effects, and phase cycling.
             </>
         ),
     },
@@ -20,9 +19,7 @@ const FeatureList = [
         Svg: require('@site/static/img/combined_experiments.svg').default,
         description: (
             <>
-                Choose from a large set of experiments and kinetic models. ChemEx
-                lets you analyze multiple experiments jointly to extract the
-                exchange parameters.
+                Supporting diverse experiments and kinetic models, ChemEx allows joint analysis for high-precision exchange parameter extraction, making it essential for complex kinetics studies.
             </>
         ),
     },
@@ -31,9 +28,8 @@ const FeatureList = [
         Svg: require('@site/static/img/open-source-logos.svg').default,
         description: (
             <>
-                ChemEx is an open source python (BSD licensed) application that
-                builds upon well established packages, including Numpy, Scipy,
-                Matplotlib, Pydantic, Rich.
+                ChemEx is a GPLv3-licensed open-source Python application,
+                built on established packages like Numpy, Scipy, Matplotlib, Pydantic, and Rich.
             </>
         ),
     },

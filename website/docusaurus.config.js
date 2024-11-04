@@ -159,6 +159,9 @@ const config = {
                 //... other Algolia params
             },
         }),
+    future: {
+        experimental_faster: true,
+    },
 };
 
 export default config;

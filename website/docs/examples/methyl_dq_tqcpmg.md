@@ -15,7 +15,7 @@ You can get
 This example demonstrates the application of methyl ¹H DQ-CPMG
 ([`cpmg_ch3_1h_dq`](experiments/cpmg/cpmg_ch3_1h_dq.md)) and TQ-CPMG
 ([`cpmg_ch3_1h_tq`](experiments/cpmg/cpmg_ch3_1h_tq.md)) experiments for
-studying ¹³CH₃-labeled methyl groups. Both experiments are carried out on the
+studying <sup>13</sup>CH<sub>3</sub>-labeled methyl groups. Both experiments are carried out on the
 same sample at single magnetic field. The major advantage of combining these two
 types of experiments is that accurate exchange parameters can already be
 obtained at single magnetic field. Typically it is necessary to carry out CPMG
