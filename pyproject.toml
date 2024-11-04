@@ -1,13 +1,11 @@
 [build-system]
-requires = ["pdm-backend"]
-build-backend = "pdm.backend"
+requires      = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
 
 [project]
 name = "chemex"
 description = "An analysis program for chemical exchange detected by NMR"
-authors = [
-    { name = "Guillaume Bouvignies", email = "guillaume.bouvignies@ens.psl.eu" },
-]
+authors = [{ name = "Guillaume Bouvignies", email = "guillaume.bouvignies@ens.psl.eu" }]
 dependencies = [
     "numpy>=1.26.4",
     "scipy>=1.13.0",
@@ -27,20 +25,16 @@ license = { text = "GPL-3.0-or-later" }
 dynamic = ["version"]
 
 [project.urls]
-Homepage = "http://gbouvignies.github.io/ChemEx/"
+Homepage      = "http://gbouvignies.github.io/ChemEx/"
 Documentation = "http://gbouvignies.github.io/ChemEx/"
-Repository = "https://github.com/gbouvignies/chemex"
-Changelog = "https://github.com/gbouvignies/chemex/releases"
+Repository    = "https://github.com/gbouvignies/chemex"
+Changelog     = "https://github.com/gbouvignies/chemex/releases"
 
 [project.scripts]
 chemex = "chemex.chemex:main"
 
-[tool.pdm.version]
-source = "scm"
-
-[tool.pdm.dev-dependencies]
-test = ["pytest>=7.4.3"]
-lint = ["ruff>=0.1.3"]
+[tool.hatch.version]
+source = "vcs"
 
 [tool.ruff]
 select = ["ALL"]
@@ -70,4 +64,4 @@ convention = "google"
 
 [tool.pyright]
 venvPath = "."
-venv = ".venv"
+venv     = ".venv"
