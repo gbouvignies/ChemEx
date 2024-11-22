@@ -31,25 +31,36 @@ class ClassifiedParameters:
     constrained: GlobalLocalParameters
 
 
-def _format_fitted(param: ParamSetting) -> str:
-    error = f"±{param.stderr:.5e}" if param.stderr else "(error not calculated)"
-    return f"{param.value: .5e} # {error}"
-
-
-def _format_constrained(param: ParamSetting) -> str:
+def _format_fitted(param: ParamSetting, error_type="SD") -> str:
     if param.value is None:
-        return ""
+        return "{}"
 
-    error = f"±{param.stderr:.5e} " if param.stderr else ""
+    error = f"{param.stderr:.5e}" if param.stderr else "(error not calculated)"
+    return  r"{ " + f'value = {param.value:.5e}, error = {error}, error_type = "{error_type}"' + r" }"
+
+
+def _format_constrained(param: ParamSetting, error_type="SD") -> str:
+    if param.value is None:
+        return "{}"
+
+    error = f"{param.stderr:.5e}" if param.stderr else None
+    error_type = f"{error_type}" if param.stderr else None
     constraint = param.expr
     parameters = database.get_parameters(param.dependencies)
     for param_id, parameter in parameters.items():
         constraint = constraint.replace(param_id, str(parameter.param_name))
-    return f"{param.value: .5e} # {error}({constraint})"
+
+    if error and error_type:
+        return r"{ " + f'value = {param.value:.5e}, error = {error}, error_type = "{error_type}", constraint = "({constraint})"' + r" }"
+    else:
+        return r"{ " + f'value = {param.value:.5e}, constraint = "({constraint})"' + r" }"
 
 
 def _format_fixed(param: ParamSetting) -> str:
-    return f"{param.value: .5e} # (fixed)"
+    if param.value is None:
+        return "{}"
+
+    return r"{ " + f'value = {param.value:.5e}, constraint = "FIXED"' + r" }"
 
 
 _format_param = {

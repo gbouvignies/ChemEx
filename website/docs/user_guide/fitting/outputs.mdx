@@ -60,7 +60,8 @@ The fitting output typically contains the following files and directories:
 
 Contains fitting results as three separate files `fitted.toml`, `fixed.toml` and
 `constrained.toml`, which contain output parameters that are fitted, fixed and
-constrained during the fitting process, respectively.
+constrained during the fitting process, respectively. Parameters are reported using
+the TOML `Inline Tables` syntax for downstream programmatic access.
 
 #### Example files
 
@@ -71,29 +72,29 @@ import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
 
 ```toml
 [GLOBAL]
-KEX_AB =  3.81511e+02 # ±8.90870e+00
-PB     =  7.02971e-02 # ±1.14784e-03
+KEX_AB =  { value = 3.81511e+02, error = 8.90870e+00, error_type = "SD" }
+PB     =  { value = 7.02971e-02, error = 1.14784e-03, error_type = "SD" }
 
 [DW_AB]
-15N =  2.00075e+00 # ±2.30817e-02
-31N =  1.98968e+00 # ±1.90842e-02
-33N =  1.82003e+00 # ±2.44821e-02
-34N =  3.63170e+00 # ±3.62801e-02
-37N =  1.69183e+00 # ±2.41070e-02
+15N =  { value = 2.00075e+00, error = 2.30817e-02, error_type = "SD" }
+31N =  { value = 1.98968e+00, error = 1.90842e-02, error_type = "SD" }
+33N =  { value = 1.82003e+00, error = 2.44821e-02, error_type = "SD" }
+34N =  { value = 3.63170e+00, error = 3.62801e-02, error_type = "SD" }
+37N =  { value = 1.69183e+00, error = 2.41070e-02, error_type = "SD" }
 
 ["R2_A, B0->500.0MHZ"]
-15N =  3.98674e+00 # ±2.55793e-01
-31N =  5.85923e+00 # ±1.94734e-01
-33N =  4.02099e+00 # ±2.78003e-01
-34N =  4.16615e+00 # ±2.05190e-01
-37N =  3.67705e+00 # ±3.04621e-01
+15N =  { value = 3.98674e+00, error = 2.55793e-01, error_type = "SD" }
+31N =  { value = 5.85923e+00, error = 1.94734e-01, error_type = "SD" }
+33N =  { value = 4.02099e+00, error = 2.78003e-01, error_type = "SD" }
+34N =  { value = 4.16615e+00, error = 2.05190e-01, error_type = "SD" }
+37N =  { value = 3.67705e+00, error = 3.04621e-01, error_type = "SD" }
 
 ["R2_A, B0->800.0MHZ"]
-15N =  6.33712e+00 # ±3.86894e-01
-31N =  7.99927e+00 # ±2.81972e-01
-33N =  6.23967e+00 # ±5.82366e-01
-34N =  5.99535e+00 # ±3.17832e-01
-37N =  5.37295e+00 # ±5.69929e-01
+15N =  { value = 6.33712e+00, error = 3.86894e-01, error_type = "SD" }
+31N =  { value = 7.99927e+00, error = 2.81972e-01, error_type = "SD" }
+33N =  { value = 6.23967e+00, error = 5.82366e-01, error_type = "SD" }
+34N =  { value = 5.99535e+00, error = 3.17832e-01, error_type = "SD" }
+37N =  { value = 5.37295e+00, error = 5.69929e-01, error_type = "SD" }
 ```
 
 :::note
@@ -111,25 +112,25 @@ Levenberg-Marquardt optimization.
 
 ```toml
 [CS_A]
-15N =  1.19849e+02 # (fixed)
-31N =  1.26388e+02 # (fixed)
-33N =  1.18762e+02 # (fixed)
-34N =  1.14897e+02 # (fixed)
-37N =  1.21618e+02 # (fixed)
+15N =  { value = 1.19849e+02, constraint = "FIXED" }
+31N =  { value = 1.26388e+02, constraint = "FIXED" }
+33N =  { value = 1.18762e+02, constraint = "FIXED" }
+34N =  { value = 1.14897e+02, constraint = "FIXED" }
+37N =  { value = 1.21618e+02, constraint = "FIXED" }
 
 ["R1_A, B0->500.0MHZ"]
-15N =  1.50000e+00 # (fixed)
-31N =  1.50000e+00 # (fixed)
-33N =  1.50000e+00 # (fixed)
-34N =  1.50000e+00 # (fixed)
-37N =  1.50000e+00 # (fixed)
+15N =  { value = 1.50000e+00, constraint = "FIXED" }
+31N =  { value = 1.50000e+00, constraint = "FIXED" }
+33N =  { value = 1.50000e+00, constraint = "FIXED" }
+34N =  { value = 1.50000e+00, constraint = "FIXED" }
+37N =  { value = 1.50000e+00, constraint = "FIXED" }
 
 ["R1_A, B0->800.0MHZ"]
-15N =  1.50000e+00 # (fixed)
-31N =  1.50000e+00 # (fixed)
-33N =  1.50000e+00 # (fixed)
-34N =  1.50000e+00 # (fixed)
-37N =  1.50000e+00 # (fixed)
+15N =  { value = 1.50000e+00, constraint = "FIXED" }
+31N =  { value = 1.50000e+00, constraint = "FIXED" }
+33N =  { value = 1.50000e+00, constraint = "FIXED" }
+34N =  { value = 1.50000e+00, constraint = "FIXED" }
+37N =  { value = 1.50000e+00, constraint = "FIXED" }
 ```
 
 </TabItem>
@@ -137,44 +138,44 @@ Levenberg-Marquardt optimization.
 
 ```toml
 [GLOBAL]
-KAB =  2.68192e+01 # ±3.06068e-01 ([KEX_AB] * [PB])
-KBA =  3.54692e+02 # ±8.28245e+00 ([KEX_AB] * [PA])
-PA  =  9.29703e-01 # ±1.14784e-03 (1.0 - [PB])
+KAB =  { value = 2.68192e+01, error = 3.06068e-01, error_type = "SD", constraint = "([KEX_AB] * [PB])"}
+KBA =  { value = 3.54692e+02, error = 8.28245e+00, error_type = "SD", constraint = "([KEX_AB] * [PA])"}
+PA  =  { value = 9.29703e-01, error = 1.14784e-03, error_type = "SD", constraint = "(1.0 - [PB])"}
 
 [CS_B]
-15N =  1.21850e+02 # ±2.30817e-02 ([CS_A, NUC->15N] + [DW_AB, NUC->15N])
-31N =  1.28378e+02 # ±1.90842e-02 ([CS_A, NUC->31N] + [DW_AB, NUC->31N])
-33N =  1.20582e+02 # ±2.44821e-02 ([CS_A, NUC->33N] + [DW_AB, NUC->33N])
-34N =  1.18529e+02 # ±3.62801e-02 ([CS_A, NUC->34N] + [DW_AB, NUC->34N])
-37N =  1.23310e+02 # ±2.41070e-02 ([CS_A, NUC->37N] + [DW_AB, NUC->37N])
+15N =  { value = 1.21850e+02, error = 2.30817e-02, error_type = "SD", constraint = "([CS_A, NUC->15N] + [DW_AB, NUC->15N])"}
+31N =  { value = 1.28378e+02, error = 1.90842e-02, error_type = "SD", constraint = "([CS_A, NUC->31N] + [DW_AB, NUC->31N])"}
+33N =  { value = 1.20582e+02, error = 2.44821e-02, error_type = "SD", constraint = "([CS_A, NUC->33N] + [DW_AB, NUC->33N])"}
+34N =  { value = 1.18529e+02, error = 3.62801e-02, error_type = "SD", constraint = "([CS_A, NUC->34N] + [DW_AB, NUC->34N])"}
+37N =  { value = 1.23310e+02, error = 2.41070e-02, error_type = "SD", constraint = "([CS_A, NUC->37N] + [DW_AB, NUC->37N])"}
 
 ["R1_B, B0->500.0MHZ"]
-15N =  1.50000e+00 # ([R1_A, NUC->15N, B0->500.0MHZ])
-31N =  1.50000e+00 # ([R1_A, NUC->31N, B0->500.0MHZ])
-33N =  1.50000e+00 # ([R1_A, NUC->33N, B0->500.0MHZ])
-34N =  1.50000e+00 # ([R1_A, NUC->34N, B0->500.0MHZ])
-37N =  1.50000e+00 # ([R1_A, NUC->37N, B0->500.0MHZ])
+15N =  { value = 1.50000e+00, constraint = "([R1_A, NUC->15N, B0->500.0MHZ])"}
+31N =  { value = 1.50000e+00, constraint = "([R1_A, NUC->31N, B0->500.0MHZ])"}
+33N =  { value = 1.50000e+00, constraint = "([R1_A, NUC->33N, B0->500.0MHZ])"}
+34N =  { value = 1.50000e+00, constraint = "([R1_A, NUC->34N, B0->500.0MHZ])"}
+37N =  { value = 1.50000e+00, constraint = "([R1_A, NUC->37N, B0->500.0MHZ])"}
 
 ["R1_B, B0->800.0MHZ"]
-15N =  1.50000e+00 # ([R1_A, NUC->15N, B0->800.0MHZ])
-31N =  1.50000e+00 # ([R1_A, NUC->31N, B0->800.0MHZ])
-33N =  1.50000e+00 # ([R1_A, NUC->33N, B0->800.0MHZ])
-34N =  1.50000e+00 # ([R1_A, NUC->34N, B0->800.0MHZ])
-37N =  1.50000e+00 # ([R1_A, NUC->37N, B0->800.0MHZ])
+15N =  { value = 1.50000e+00, constraint = "([R1_A, NUC->15N, B0->800.0MHZ])"}
+31N =  { value = 1.50000e+00, constraint = "([R1_A, NUC->31N, B0->800.0MHZ])"}
+33N =  { value = 1.50000e+00, constraint = "([R1_A, NUC->33N, B0->800.0MHZ])"}
+34N =  { value = 1.50000e+00, constraint = "([R1_A, NUC->34N, B0->800.0MHZ])"}
+37N =  { value = 1.50000e+00, constraint = "([R1_A, NUC->37N, B0->800.0MHZ])"}
 
 ["R2_B, B0->500.0MHZ"]
-15N =  3.98674e+00 # ±2.55793e-01 ([R2_A, NUC->15N, B0->500.0MHZ])
-31N =  5.85923e+00 # ±1.94734e-01 ([R2_A, NUC->31N, B0->500.0MHZ])
-33N =  4.02099e+00 # ±2.78003e-01 ([R2_A, NUC->33N, B0->500.0MHZ])
-34N =  4.16615e+00 # ±2.05190e-01 ([R2_A, NUC->34N, B0->500.0MHZ])
-37N =  3.67705e+00 # ±3.04621e-01 ([R2_A, NUC->37N, B0->500.0MHZ])
+15N =  { value = 3.98674e+00, error = 2.55793e-01, error_type = "SD", constraint = "([R2_A, NUC->15N, B0->500.0MHZ])"}
+31N =  { value = 5.85923e+00, error = 1.94734e-01, error_type = "SD", constraint = "([R2_A, NUC->31N, B0->500.0MHZ])"}
+33N =  { value = 4.02099e+00, error = 2.78003e-01, error_type = "SD", constraint = "([R2_A, NUC->33N, B0->500.0MHZ])"}
+34N =  { value = 4.16615e+00, error = 2.05190e-01, error_type = "SD", constraint = "([R2_A, NUC->34N, B0->500.0MHZ])"}
+37N =  { value = 3.67705e+00, error = 3.04621e-01, error_type = "SD", constraint = "([R2_A, NUC->37N, B0->500.0MHZ])"}
 
 ["R2_B, B0->800.0MHZ"]
-15N =  6.33712e+00 # ±3.86894e-01 ([R2_A, NUC->15N, B0->800.0MHZ])
-31N =  7.99927e+00 # ±2.81972e-01 ([R2_A, NUC->31N, B0->800.0MHZ])
-33N =  6.23967e+00 # ±5.82366e-01 ([R2_A, NUC->33N, B0->800.0MHZ])
-34N =  5.99535e+00 # ±3.17832e-01 ([R2_A, NUC->34N, B0->800.0MHZ])
-37N =  5.37295e+00 # ±5.69929e-01 ([R2_A, NUC->37N, B0->800.0MHZ])
+15N =  { value = 6.33712e+00, error = 3.86894e-01, error_type = "SD", constraint = "([R2_A, NUC->15N, B0->800.0MHZ])"}
+31N =  { value = 7.99927e+00, error = 2.81972e-01, error_type = "SD", constraint = "([R2_A, NUC->31N, B0->800.0MHZ])"}
+33N =  { value = 6.23967e+00, error = 5.82366e-01, error_type = "SD", constraint = "([R2_A, NUC->33N, B0->800.0MHZ])"}
+34N =  { value = 5.99535e+00, error = 3.17832e-01, error_type = "SD", constraint = "([R2_A, NUC->34N, B0->800.0MHZ])"}
+37N =  { value = 5.37295e+00, error = 5.69929e-01, error_type = "SD", constraint = "([R2_A, NUC->37N, B0->800.0MHZ])"}
 ```
 
 :::note
