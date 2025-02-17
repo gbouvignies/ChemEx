@@ -27,7 +27,7 @@
     "devDependencies": {
         "@docusaurus/module-type-aliases": "^3.7.0",
         "@docusaurus/types": "^3.5.2",
-        "eslint": "^9.15.0",
+        "eslint": "^9.20.1",
         "eslint-plugin-react": "^7.37.1",
         "prettier": "^3.3.3"
     },
