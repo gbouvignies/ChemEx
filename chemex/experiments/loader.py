@@ -1,7 +1,5 @@
 """A simple plugin loader for experiment modules."""
 
-from __future__ import annotations
-
 import importlib
 from collections.abc import Iterator
 from importlib.util import find_spec
@@ -47,7 +45,7 @@ def register_experiments() -> None:
             experiment_module = import_module(module_name)
             experiment_module.register()
         else:
-            print(f"Warning: Module {module_name} not found")
+            pass
 
 
 if __name__ == "__main__":

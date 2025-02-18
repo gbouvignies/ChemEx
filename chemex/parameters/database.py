@@ -5,7 +5,6 @@ handling parameter constraints, and integration with the lmfit library for
 optimization. Additionally, it supports grid definition for parameter exploration and
 ensures physical validity of J couplings.
 """
-from __future__ import annotations
 
 import re
 import sys
@@ -49,6 +48,7 @@ class ParameterIndex:
 
     Attributes:
         _index (defaultdict[Hashable, set[str]]): Maps search keys to parameter IDs.
+
     """
 
     def __init__(self) -> None:
@@ -60,6 +60,7 @@ class ParameterIndex:
 
         Args:
             param_name (ParamName): The parameter name to be indexed.
+
         """
         for search_key in param_name.search_keys:
             self._index[search_key].add(param_name.id_)
@@ -72,6 +73,7 @@ class ParameterIndex:
 
         Returns:
             set[str]: Set of matching parameter IDs.
+
         """
         search_keys = param_name.search_keys
         return set[str].intersection(
@@ -90,6 +92,7 @@ def _convert_grid_expression_to_values(grid_expression: str) -> ArrayFloat:
 
     Returns:
         ArrayFloat: Array of floating-point values from the grid expression.
+
     """
     if match := re.match(_LINEAR, grid_expression):
         return np.linspace(
@@ -117,6 +120,7 @@ class ParameterCatalog:
     Attributes:
         _parameters (Parameters): The parameters managed by the catalog.
         _index (ParameterIndex): An index for efficient parameter lookup.
+
     """
 
     _parameters: Parameters = field(default_factory=dict)
@@ -127,6 +131,7 @@ class ParameterCatalog:
 
         Args:
             parameter (ParamSetting): The parameter to be added.
+
         """
         if parameter.id_ not in self._parameters:
             self._parameters[parameter.id_] = parameter
@@ -141,6 +146,7 @@ class ParameterCatalog:
 
         Args:
             parameters (Parameters): Dictionary of parameters to be added.
+
         """
         for parameter in parameters.values():
             self._add(parameter)
@@ -153,6 +159,7 @@ class ParameterCatalog:
 
         Returns:
             Parameters: Subset of parameters matching the provided IDs.
+
         """
         relevant_ids: set[str] = set()
 
@@ -186,6 +193,7 @@ class ParameterCatalog:
 
         Returns:
             ParametersLF: lmfit-compatible parameter collection.
+
         """
         if param_ids is None:
             param_ids = set(self._parameters)
@@ -209,6 +217,7 @@ class ParameterCatalog:
 
         Args:
             parameters (ParametersLF): lmfit Parameters to update from.
+
         """
         for param_id, parameter in parameters.items():
             self._parameters[param_id].value = parameter.value
@@ -222,6 +231,7 @@ class ParameterCatalog:
 
         Returns:
             set[str]: Set of IDs matching the parameter name.
+
         """
         return self._index.get_matching_ids(param_name)
 
@@ -233,6 +243,7 @@ class ParameterCatalog:
 
         Returns:
             float | None: The value of the parameter, or None if not found.
+
         """
         return self._parameters[id_].value
 
@@ -241,6 +252,7 @@ class ParameterCatalog:
 
         Args:
             par_values (dict[str, float]): Dictionary of parameter IDs and values.
+
         """
         for id_, value in par_values.items():
             if id_ in self._parameters:
@@ -251,6 +263,7 @@ class ParameterCatalog:
 
         Args:
             defaults (DefaultListType): Defaults to apply.
+
         """
         id_pool = set(self._parameters)
         for name_to_set, setting in reversed(defaults):
@@ -267,6 +280,7 @@ class ParameterCatalog:
 
         Returns:
             Counter[str]: Counts of parameters per section.
+
         """
         return Counter(
             self._parameters[param_id].param_name.section for param_id in param_ids
@@ -281,6 +295,7 @@ class ParameterCatalog:
 
         Returns:
             Counter[str]: Counts of parameters updated per section.
+
         """
         parameters = self._parameters
 
@@ -316,6 +331,7 @@ class ParameterCatalog:
 
         Returns:
             set[str]: Set of parameter IDs extracted.
+
         """
         return self.get_matching_ids(ParamName.from_section(expression))
 
@@ -327,6 +343,7 @@ class ParameterCatalog:
 
         Returns:
             dict[str, set[str]]: Mapping of section names to parameter IDs.
+
         """
         ids_right: dict[str, set[str]] = {}
         for match in re.finditer(_PARAM_NAME, expression):
@@ -343,6 +360,7 @@ class ParameterCatalog:
 
         Returns:
             set[str]: Set of parameter IDs updated.
+
         """
         left, right, *something_else = expression.split("=")
 
@@ -371,6 +389,7 @@ class ParameterCatalog:
 
         Returns:
             Counter[str]: Counts of parameters updated per section.
+
         """
         ids_modified: set[str] = set()
         ids_pool = set(self._parameters)
@@ -390,6 +409,7 @@ class ParameterCatalog:
 
         Returns:
             dict[str, ArrayFloat]: Mapping of parameter IDs to grid values.
+
         """
         ids_pool = set(self._parameters)
 
@@ -453,6 +473,7 @@ class ParamManager:
     Attributes:
         _database (ParameterCatalog): The primary parameter catalog.
         _database_mf (ParameterCatalog): The model-free parameter catalog.
+
     """
 
     _database: ParameterCatalog
@@ -464,6 +485,7 @@ class ParamManager:
 
         Returns:
             ParameterCatalog: The active parameter catalog.
+
         """
         return self._database_mf if model.model_free else self._database
 
@@ -472,6 +494,7 @@ class ParamManager:
 
         Args:
             parameters (Parameters): Parameters to be added.
+
         """
         self._database.add_multiple(parameters)
 
@@ -480,6 +503,7 @@ class ParamManager:
 
         Args:
             parameters (Parameters): Parameters to be added.
+
         """
         self._database_mf.add_multiple(parameters)
 
@@ -491,6 +515,7 @@ class ParamManager:
 
         Returns:
             Parameters: Retrieved parameters.
+
         """
         return self.database.get_parameters(param_ids)
 
@@ -502,6 +527,7 @@ class ParamManager:
 
         Returns:
             float | None: The value of the parameter or None if not found.
+
         """
         return self.database.get_value(param_id)
 
@@ -513,6 +539,7 @@ class ParamManager:
 
         Returns:
             ParametersLF: lmfit-compatible parameters.
+
         """
         return self.database.build_lmfit_params(param_ids)
 
@@ -525,6 +552,7 @@ class ParamManager:
 
         Args:
             parameters (ParametersLF): lmfit Parameters to update from.
+
         """
         self.database.update_from_lmfit_params(parameters)
 
@@ -533,6 +561,7 @@ class ParamManager:
 
         Args:
             par_values (dict[str, float]): Parameter values to set.
+
         """
         return self.database.set_values(par_values)
 
@@ -541,6 +570,7 @@ class ParamManager:
 
         Args:
             defaults (DefaultListType): Default settings to apply.
+
         """
         self._database_mf.set_defaults(defaults)
 
@@ -563,6 +593,7 @@ class ParamManager:
 
         Returns:
             Counter[str]: Counts of updated parameters per section.
+
         """
         return self.database.set_vary(section_names, vary)
 
@@ -578,6 +609,7 @@ class ParamManager:
 
         Returns:
             Counter[str]: Counts of updated parameters per section.
+
         """
         return self.database.set_expressions(expression_list)
 
@@ -589,6 +621,7 @@ class ParamManager:
 
         Returns:
             dict[str, ArrayFloat]: Parameters mapped to grid values.
+
         """
         return self.database.parse_grid(grid_entries)
 
@@ -619,6 +652,7 @@ def set_parameter_status(method: Method) -> None:
 
     Args:
         method (Method): Method configuration to apply.
+
     """
     matches_con = set_param_expressions(method.constraints)
     matches_fix = set_param_vary(method.fix, vary=False)

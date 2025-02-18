@@ -46,7 +46,7 @@ def plot_param(args: Namespace) -> None:
             curves[section] = (residues, values, errors)
 
     _, axis = plt.subplots(figsize=(12, 5))
-    axis.yaxis.grid(True)
+    axis.yaxis.grid(visible=True)
 
     for section, (residues, values, errors) in curves.items():
         axis.errorbar(

@@ -1,7 +1,5 @@
 """The parsing module contains the code for the parsing of command-line arguments."""
 
-from __future__ import annotations
-
 from argparse import ArgumentParser
 from pathlib import Path
 
@@ -11,7 +9,7 @@ from chemex.tools.pick_cest import pick_cest
 from chemex.tools.plot_param import plot_param
 
 
-def build_parser() -> None:
+def build_parser() -> ArgumentParser:
     """Parse the command-line arguments."""
     description = (
         "ChemEx is an analysis program for chemical exchange detected by "

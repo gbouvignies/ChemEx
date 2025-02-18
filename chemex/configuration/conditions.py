@@ -22,7 +22,7 @@ LabelType = Annotated[Literal["1h", "2h", "13c", "15n"], BeforeValidator(to_lowe
 
 @total_ordering
 class Conditions(BaseModel, frozen=True):
-    """Represents experimental conditions for NMR measurements.
+    """Represent experimental conditions for NMR measurements.
 
     Attributes:
         h_larmor_frq (NonNegativeFloat | None): Larmor frequency of Hydrogen in MHz.
@@ -32,6 +32,7 @@ class Conditions(BaseModel, frozen=True):
         d2o (float | None): Fraction of D2O in the solvent, between 0 and 1.
         label (tuple[LabelType, ...]): Tuple of NMR active isotopes used in the
                                        experiment.
+
     """
 
     h_larmor_frq: NonNegativeFloat | None = None
@@ -42,7 +43,7 @@ class Conditions(BaseModel, frozen=True):
     label: tuple[LabelType, ...] = ()
 
     def rounded(self) -> Self:
-        """Returns a new instance with rounded h_larmor_frq and temperature."""
+        """Return a new instance with rounded h_larmor_frq and temperature."""
         h_larmor_frq = round(self.h_larmor_frq, 1) if self.h_larmor_frq else None
         temperature = round(self.temperature, 1) if self.temperature else None
         return self.model_copy(
@@ -50,12 +51,12 @@ class Conditions(BaseModel, frozen=True):
         )
 
     def match(self, other: Self) -> bool:
-        """Checks if the current instance is equivalent to another."""
+        """Check if the current instance is equivalent to another."""
         return self == self & other
 
     @property
     def search_keys(self) -> set[Hashable]:
-        """Creates a set of hashable search keys based on conditions."""
+        """Create a set of hashable search keys based on conditions."""
         return {
             self.h_larmor_frq,
             self.temperature,
@@ -65,7 +66,7 @@ class Conditions(BaseModel, frozen=True):
         }
 
     def _conditions_list(self) -> list[tuple[str, str]]:
-        """Helper method to create a list of condition keys and values."""
+        """Create a list of condition keys and values."""
         conditions: list[tuple[str, str]] = []
         if self.temperature is not None:
             conditions.append(("T", f"{self.temperature:.1f}C"))
@@ -82,27 +83,28 @@ class Conditions(BaseModel, frozen=True):
 
     @property
     def section(self) -> str:
-        """Generates a string representation of the conditions."""
+        """Generate a string representation of the conditions."""
         return ", ".join(f"{key}->{value}" for key, value in self._conditions_list())
 
     @property
     def folder(self) -> str:
-        """Generates a folder name representation of the conditions."""
+        """Generate a folder name representation of the conditions."""
         return "_".join(value for _, value in self._conditions_list())
 
     @property
     def is_deuterated(self) -> bool:
-        """Checks if the conditions include deuterium."""
+        """Check if the conditions include deuterium."""
         return "2h" in self.label
 
     def select_conditions(self, conditions_selection: tuple[str, ...]) -> Self:
-        """Selects specific conditions based on given keys.
+        """Select specific conditions based on given keys.
 
         Args:
             conditions_selection (tuple[str, ...]): Keys to select conditions by.
 
         Returns:
             A new instance of Conditions with selected conditions.
+
         """
         return type(self).model_construct(
             **{
@@ -113,7 +115,7 @@ class Conditions(BaseModel, frozen=True):
         )
 
     def __and__(self, other: object) -> Self:
-        """Defines bitwise AND operation for Conditions instances."""
+        """Define bitwise AND operation for Conditions instances."""
         if not isinstance(other, type(self)):
             return NotImplemented
         self_dict = self.model_dump()
@@ -123,19 +125,17 @@ class Conditions(BaseModel, frozen=True):
         }
         return type(self).model_construct(**intersection)
 
-    def __lt__(self, other: object) -> bool:
-        """Defines less than operation for Conditions instances."""
-        if not isinstance(other, type(self)):
-            return NotImplemented
-        tuple_self = tuple(
+    def _sort_values(self) -> tuple[float | tuple[LabelType, ...], ...]:
+        return tuple(
             value if value is not None else -1e16
             for value in self.model_dump().values()
         )
-        tuple_other = tuple(
-            value if value is not None else -1e16
-            for value in other.model_dump().values()
-        )
-        return tuple_self < tuple_other
+
+    def __lt__(self, other: object) -> bool:
+        """Define less than operation for Conditions instances."""
+        if not isinstance(other, type(self)):
+            return NotImplemented
+        return self._sort_values() < other._sort_values()
 
 
 class ConditionsWithValidations(Conditions, frozen=True):
@@ -144,7 +144,7 @@ class ConditionsWithValidations(Conditions, frozen=True):
     @field_validator("d2o")
     @classmethod
     def validate_d2o(cls, d2o: float | None) -> float | None:
-        """Validates the d2o field for specific model requirements."""
+        """Validate the d2o field for specific model requirements."""
         from chemex.models.model import model
 
         if "hd" in model.name and d2o is None:
@@ -155,7 +155,7 @@ class ConditionsWithValidations(Conditions, frozen=True):
     @field_validator("temperature")
     @classmethod
     def validate_temperature(cls, temperature: float | None) -> float | None:
-        """Validates temperature field for specific model requirements."""
+        """Validate temperature field for specific model requirements."""
         from chemex.models.model import model
 
         if "eyring" in model.name and temperature is None:
@@ -165,7 +165,7 @@ class ConditionsWithValidations(Conditions, frozen=True):
 
     @model_validator(mode="after")
     def validate_p_total_l_total(self) -> Self:
-        """Validates both p_total and l_total for specific model requirements."""
+        """Validate both p_total and l_total for specific model requirements."""
         from chemex.models.model import model
 
         are_not_both_set = self.p_total is None or self.l_total is None

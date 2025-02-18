@@ -14,8 +14,6 @@ Typical usage example:
   print_loading_experiments()
 """
 
-from __future__ import annotations
-
 from collections import Counter
 from pathlib import Path
 
@@ -79,6 +77,7 @@ def get_reading_exp_text(filename: Path, name: str = "", total_nb: int = 0) -> T
 
     Returns:
         Text: A formatted message indicating the file name, type, and profile count.
+
     """
     parts = (
         "  • Reading ",
@@ -123,6 +122,7 @@ def print_step_name(name: str, index: int, total: int) -> None:
         name (str): Name of the step.
         index (int): Current step index.
         total (int): Total number of steps.
+
     """
     text = Text.assemble(
         "Running ",
@@ -137,6 +137,7 @@ def print_selecting_profiles(selected_nb: int) -> None:
 
     Args:
         selected_nb (int): The number of selected profiles.
+
     """
     console.print(
         Text.from_markup(f"  • Selecting profiles -> [blue]{selected_nb}[/] profiles"),
@@ -153,6 +154,7 @@ def print_fitmethod(fit_method: str) -> None:
 
     Args:
         fit_method (str): The method being used for fitting.
+
     """
     console.print(Text.assemble("  • Fit method -> ", (f"{fit_method}", "blue")))
 
@@ -168,6 +170,7 @@ def print_status_changes(
         vary (Counter[str]): Parameters varied during fitting.
         fixed (Counter[str]): Parameters fixed during fitting.
         constrained (Counter[str]): Parameters constrained during fitting.
+
     """
     if not any([vary, fixed, constrained]):
         return
@@ -208,6 +211,7 @@ def print_running_statistics(name: str) -> None:
 
     Args:
         name (str): The name of the statistical simulation.
+
     """
     console.print(Text(f"  • Running {name} simulations..."))
 
@@ -217,6 +221,7 @@ def print_section(name: str) -> None:
 
     Args:
         name (str): Name of the section.
+
     """
     console.print(Text(f"  • Section {name}"))
 
@@ -236,6 +241,7 @@ def print_chi2_table_line(iteration: int, chisqr: float, redchi: float) -> None:
         iteration (int): Iteration number.
         chisqr (float): Chi-squared value.
         redchi (float): Reduced chi-squared value.
+
     """
     line = Text(f"{iteration:>9d}  {chisqr:>12.1f}  {redchi:>12.3f}")
     console.print(Padding.indent(line, 5))
@@ -248,6 +254,7 @@ def print_chi2_table_footer(iteration: int, chisqr: float, redchi: float) -> Non
         iteration (int): Iteration number.
         chisqr (float): Chi-squared value.
         redchi (float): Reduced chi-squared value.
+
     """
     footer = Text(f"{iteration:>9d}  {chisqr:>12.1f}  {redchi:>12.3f}")
     console.print(Padding.indent("─" * 39, 4))
@@ -261,6 +268,7 @@ def print_chi2(chisqr: float, redchi: float) -> None:
     Args:
         chisqr (float): Chi-squared value.
         redchi (float): Reduced chi-squared value.
+
     """
     console.print()
     console.print(
@@ -277,6 +285,7 @@ def print_writing_results(path: Path) -> None:
 
     Args:
         path (Path): Path to the file or directory where results are saved.
+
     """
     console.print(f"  • Writing results in [green]{path}")
 
@@ -293,6 +302,7 @@ def print_plot_filename(filename: Path, *, extra: bool = True) -> None:
         filename (Path): The path of the plot file.
         extra (bool, optional): Indicates if extra information is included.
                                 Defaults to True.
+
     """
     text = f"    ‣ [green]{filename}[/]"
 
@@ -307,6 +317,7 @@ def print_group_name(text: str) -> None:
 
     Args:
         text (str): Name of the group.
+
     """
     console.print(Padding(Rule(text, characters="⋅"), (1, 0, 0, 3)), width=49)
 
@@ -316,6 +327,7 @@ def print_file_not_found(filename: Path) -> None:
 
     Args:
         filename (Path): The path of the file that was not found.
+
     """
     console.print()
     console.print(f"[red]The file '{filename}' is empty or does not exist!")
@@ -326,6 +338,7 @@ def print_file_not_found_error(error: FileNotFoundError) -> None:
 
     Args:
         error (FileNotFoundError): The FileNotFoundError exception instance.
+
     """
     console.print()
     console.print(f"[red]Error: {error}")
@@ -337,6 +350,7 @@ def print_toml_error(filename: Path, error_message: Exception) -> None:
     Args:
         filename (Path): Path of the TOML file.
         error_message (Exception): The exception instance with the error message.
+
     """
     console.print()
     console.print(Text.from_markup(f"[red]Error in the TOML file '{filename}'"))
@@ -354,6 +368,7 @@ def print_experiment_name_error(filename: Path) -> None:
 
     Args:
         filename (Path): Path of the file with the missing experiment name.
+
     """
     console.print()
     console.print(f"[red]The experiment name is missing from the file '{filename}'\n")
@@ -372,6 +387,7 @@ def print_pydantic_parsing_error(filename: Path, error: ValidationError) -> None
     Args:
         filename (Path): Path of the file being parsed.
         error (ValidationError): Instance detailing parsing errors.
+
     """
     console.print()
     console.print(Text.from_markup(f"[red]Error(s) while parsing '{filename}'"))
@@ -432,6 +448,7 @@ def print_error_grid_settings(entry: str) -> None:
 
     Args:
         entry (str): The problematic entry in the grid settings.
+
     """
     console.print()
     console.print("[red] -- ERROR: Error reading grid settings:")
@@ -451,6 +468,7 @@ def print_error_constraints(expression: str) -> None:
 
     Args:
         expression (str): The problematic constraint expression.
+
     """
     console.print()
     console.print(f'[red] -- ERROR: Error reading constraints -> "{expression}" --')
@@ -472,6 +490,7 @@ def print_model_error(name: str) -> None:
 
     Args:
         name (str): The name of the model that is not available.
+
     """
     from chemex.models.factory import model_factory
 
@@ -495,6 +514,7 @@ def print_not_implemented_noise_method_warning(
         filename (Path): Path of the experiment file.
         kind (str): The kind of noise method that is not implemented.
         implemented (tuple[str, ...]): Tuple of implemented methods.
+
     """
     warning_message = (
         f"[yellow] -- WARNING: Experiment {filename.name}[/yellow]: "
@@ -512,6 +532,7 @@ def print_no_duplicate_warning(filename: Path) -> None:
 
     Args:
         filename (Path): Path of the experiment file.
+
     """
     warning_message = (
         f"[yellow] -- WARNING: Experiment {filename.name}[/yellow]: "
@@ -609,6 +630,7 @@ def print_wrong_option(option: str) -> str:
 
     Returns:
         str: A message indicating the error with the specific option.
+
     """
     return (
         f"\n  - '{option.upper()}' is not a valid option.\n"
@@ -627,6 +649,7 @@ def print_method_error(filename: Path, section: str, options: set[int | str]) ->
         filename (Path): The file containing the error.
         section (str): The section of the file with the erroneous method or option.
         options (set[int | str]): Set of options or methods that are incorrect.
+
     """
     console.print()
     console.print(

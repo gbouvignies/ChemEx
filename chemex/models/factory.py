@@ -1,5 +1,4 @@
 """Factories for creating parameter settings."""
-from __future__ import annotations
 
 from collections.abc import Callable
 from typing import ClassVar

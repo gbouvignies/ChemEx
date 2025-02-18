@@ -1,5 +1,4 @@
 """The fitting module contains the code for fitting the experimental data."""
-from __future__ import annotations
 
 from pathlib import Path
 

@@ -1,5 +1,4 @@
 """The module provides functions for estimating the noise variance in data."""
-from __future__ import annotations
 
 import contextlib
 from collections import defaultdict
@@ -30,11 +29,12 @@ def _variance_from_duplicates(data: Data) -> float:
     Reference:
         IUPAC Gold Book definition of pooled standard deviation.
         URL: https://goldbook.iupac.org/html/P/P04758.html
+
     """
     groups: defaultdict[Any, list[float]] = defaultdict(list)
     for x, y in zip(data.metadata, data.exp, strict=True):
         groups[x].append(y)
-    variances: list[float] = []
+    variances: list[np.floating] = []
     weights: list[float] = []
     for group in groups.values():
         group_size = len(group)
@@ -63,6 +63,7 @@ def _variance_from_scatter(data: Data) -> float:
     Reference:
         MATLAB Central File Exchange, 'EstimateNoise' function.
         URL: https://www.mathworks.com/matlabcentral/fileexchange/16683-estimatenoise
+
     """
     fda = [
         [1, -1],

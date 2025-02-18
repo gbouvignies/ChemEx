@@ -11,7 +11,6 @@ Typical usage example:
   lower_variable = to_lower("HELLO")
   model_instance = BaseModelLowerCase.parse_obj({"Name": "Alice"})
 """
-from __future__ import annotations
 
 from typing import Any, TypeVar, cast
 
@@ -25,11 +24,14 @@ def ensure_list(variable: T | list[T] | None) -> T | list[T]:
     If the variable is None, an empty list is returned.
     Otherwise, the variable is wrapped in a list and returned.
 
-    Parameters:
+    Parameters
+    ----------
     variable (T | list[T] | None): The variable to be ensured as a list.
 
-    Returns:
+    Returns
+    -------
     T | list[T]: The input variable as a list.
+
     """
     if isinstance(variable, list):
         return cast(list[T], variable)
@@ -43,11 +45,14 @@ def to_lower(string: T) -> T:
 
     If the input is not a string, it is returned unchanged.
 
-    Parameters:
+    Parameters
+    ----------
     string (T): The string to be converted to lowercase.
 
-    Returns:
+    Returns
+    -------
     T: The lowercase string if input is a string; otherwise, the original input.
+
     """
     if isinstance(string, str):
         return string.lower()

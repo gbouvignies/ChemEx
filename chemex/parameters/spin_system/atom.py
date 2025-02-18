@@ -24,6 +24,7 @@ class Atom:
                            automatically.
         search_keys (set[Hashable]): Set of keys used for searching or matching the
                                      atom.
+
     """
 
     name: str
@@ -37,7 +38,7 @@ class Atom:
         self.nucleus = str2nucleus(self.name[:1])
         self.search_keys.update({self, self.nucleus})
 
-    def match(self, other: Atom) -> bool:
+    def match(self, other: Self) -> bool:
         """Checks if this atom matches another atom based on the name.
 
         Args:
@@ -45,6 +46,7 @@ class Atom:
 
         Returns:
             bool: True if the other atom's name starts with the name of this atom, False otherwise.
+
         """
         return other.name.startswith(self.name)
 
@@ -53,6 +55,7 @@ class Atom:
 
         Returns:
             int: The hash value of the atom.
+
         """
         return hash(self.name)
 
@@ -61,6 +64,7 @@ class Atom:
 
         Returns:
             bool: True if the atom has a valid name, False otherwise.
+
         """
         return bool(self.name)
 
@@ -69,6 +73,7 @@ class Atom:
 
         Returns:
             str: The name of the atom.
+
         """
         return self.name
 
@@ -80,6 +85,7 @@ class Atom:
 
         Returns:
             Self: A deep copy of the Atom instance.
+
         """
         if id(self) in memo:
             return memo[id(self)]

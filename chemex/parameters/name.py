@@ -115,9 +115,7 @@ class ParamName:
             return False
         if not self.spin_system.match(other.spin_system):
             return False
-        if not self.conditions.match(other.conditions):
-            return False
-        return True
+        return self.conditions.match(other.conditions)
 
     def get_closest_id(self, ids: Iterable[str]) -> str:
         best_match, _, _ = extractOne(self.id_, ids)

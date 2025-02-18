@@ -1,7 +1,5 @@
 """Factories for creating different parts of an experiment."""
 
-from __future__ import annotations
-
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path

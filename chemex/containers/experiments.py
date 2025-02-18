@@ -4,8 +4,6 @@ This module contains the Experiments class and functions for generating differen
 types of simulated experiment datasets for statistical analysis.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterator
 from itertools import chain
 from pathlib import Path
@@ -44,6 +42,7 @@ class Experiments:
 
         Returns:
             set[Group]: A set of unique groups.
+
         """
         return {group for experiment in self for group in experiment.groups}
 
@@ -52,6 +51,7 @@ class Experiments:
 
         Args:
             experiment (Experiment): The experiment to be added.
+
         """
         if experiment.filename in self._experiments:
             msg = "Experiment already exists."
@@ -66,6 +66,7 @@ class Experiments:
 
         Returns:
             ArrayFloat: Residuals as a NumPy array.
+
         """
         return np.concatenate([experiment.residuals(params) for experiment in self])
 
@@ -85,6 +86,7 @@ class Experiments:
 
         Args:
             path (Path): Directory path to write data.
+
         """
         path_dat = path / "Data"
         path_dat.mkdir(parents=True, exist_ok=True)
@@ -96,6 +98,7 @@ class Experiments:
 
         Args:
             path (Path): Directory path for saving plots.
+
         """
         for experiment in self:
             experiment.plot(path)
@@ -105,6 +108,7 @@ class Experiments:
 
         Args:
             path (Path): Directory path for saving simulation plots.
+
         """
         for experiment in self:
             experiment.plot_simulation(path)
@@ -114,6 +118,7 @@ class Experiments:
 
         Args:
             selection (Selection): Criteria for selecting experiments.
+
         """
         if selection.include is None and selection.exclude is None:
             return
@@ -127,6 +132,7 @@ class Experiments:
 
         Returns:
             list[set[str]]: List of sets containing parameter IDs.
+
         """
         return list(
             chain.from_iterable(experiment.param_id_sets for experiment in self),
@@ -138,6 +144,7 @@ class Experiments:
 
         Returns:
             set[str]: Set of unique parameter IDs.
+
         """
         result: set[str] = set()
         return result.union(*(self.param_id_sets))
@@ -147,6 +154,7 @@ class Experiments:
 
         Returns:
             set[str]: Set of unique parameter IDs.
+
         """
         params = database.build_lmfit_params(self.param_ids)
         for experiment in self:
@@ -160,6 +168,7 @@ class Experiments:
 
         Returns:
             Self: Subset of Experiments relevant to given parameter IDs.
+
         """
         relevant_subset = type(self)()
         for experiment in self:
@@ -172,6 +181,7 @@ class Experiments:
 
         Returns:
             Iterator[Experiment]: An iterator over experiments.
+
         """
         return iter(self._experiments.values())
 
@@ -180,6 +190,7 @@ class Experiments:
 
         Returns:
             int: Total number of data points.
+
         """
         return sum(len(experiment) for experiment in self)
 
@@ -188,6 +199,7 @@ class Experiments:
 
         Returns:
             bool: True if collection is non-empty, False otherwise.
+
         """
         return bool(self._experiments)
 
@@ -200,6 +212,7 @@ def generate_monte_carlo_experiments(experiments: Experiments) -> Experiments:
 
     Returns:
         Experiments: Collection with Monte Carlo simulated data.
+
     """
     experiments_mc = Experiments()
     for experiment in experiments:
@@ -215,6 +228,7 @@ def generate_bootstrap_experiments(experiments: Experiments) -> Experiments:
 
     Returns:
         Experiments: Collection with Bootstrap simulated data.
+
     """
     experiments_mc = Experiments()
     for experiment in experiments:
@@ -230,6 +244,7 @@ def generate_bootstrap_ns_experiments(experiments: Experiments) -> Experiments:
 
     Returns:
         Experiments: Collection with Bootstrap NS simulated data.
+
     """
     groups = experiments.groups
     groups_bs = choices(tuple(groups), k=len(groups))
@@ -251,6 +266,7 @@ def generate_exp_for_statistics(
 
     Returns:
         Experiments: Collection with simulated data for statistics.
+
     """
     generators = {
         "mc": generate_monte_carlo_experiments,

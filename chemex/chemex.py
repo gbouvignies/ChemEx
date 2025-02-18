@@ -1,5 +1,4 @@
 """The chemex module provides the entry point for the chemex script."""
-from __future__ import annotations
 
 import sys
 from argparse import Namespace

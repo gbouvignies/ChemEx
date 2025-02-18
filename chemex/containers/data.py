@@ -24,6 +24,7 @@ class Data:
         calc_unscaled (ArrayFloat): Unscaled calculated data, set after instantiation.
         mask (ArrayBool): Mask array for data selection, set after instantiation.
         refs (ArrayBool): Array of reference points, set after instantiation.
+
     """
 
     exp: ArrayFloat
@@ -56,6 +57,7 @@ class Data:
 
         Returns:
             float: Scale factor for aligning calculated and experimental data.
+
         """
         expe = self.exp[self.mask]
         calc = self.calc_unscaled[self.mask]
@@ -77,6 +79,7 @@ class Data:
 
         Returns:
             Self: New Data instance for Monte-Carlo simulation.
+
         """
         data = deepcopy(self)
         data.exp = rng.normal(self.calc, self.err)
@@ -87,6 +90,7 @@ class Data:
 
         Returns:
             Self: New Data instance for Bootstrap simulation.
+
         """
         indexes = np.arange(self.metadata.size)
         pool1 = indexes[self.refs & self.mask]
@@ -115,6 +119,7 @@ class Data:
 
         Returns:
             bool: True if duplicates exist, False otherwise.
+
         """
         return np.unique(self.metadata).size != self.metadata.size
 
@@ -131,6 +136,7 @@ class Data:
 
         Raises:
             ValueError: If the sizes of the datasets do not match.
+
         """
         # Check if the sizes of the datasets match
         if self.size != other.size:

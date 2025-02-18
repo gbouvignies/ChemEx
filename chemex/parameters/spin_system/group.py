@@ -20,6 +20,7 @@ def parse_group(name: str) -> tuple[str, int, str]:
 
     Returns:
         tuple[str, int, str]: A tuple containing the symbol, number, and suffix.
+
     """
     if found := search("[0-9]+", name.strip().upper()):
         symbol = name[: found.start()]
@@ -45,6 +46,7 @@ class Group:
         suffix (str): Any suffix associated with the group name.
         search_keys (set[Hashable]): A set of keys used for searching or matching the
                                      group.
+
     """
 
     def __init__(self, name: str) -> None:
@@ -55,6 +57,7 @@ class Group:
 
         Args:
             name (str): The name of the group to be parsed.
+
         """
         self.symbol, self.number, self.suffix = parse_group(name.strip().upper())
         self.search_keys: set[Hashable] = {self} if self else set()
@@ -65,6 +68,7 @@ class Group:
 
         Returns:
             str: The full name of the group, combining symbol, number, and suffix.
+
         """
         number = "" if self.number == NO_NUMBER else self.number
         return f"{self.symbol}{number}{self.suffix}"
@@ -77,6 +81,7 @@ class Group:
 
         Returns:
             bool: True if the groups match, False otherwise.
+
         """
         symbol = other.symbol == self.symbol or not self.symbol
         number = self.number in (other.number, NO_NUMBER)
@@ -91,6 +96,7 @@ class Group:
 
         Returns:
             bool: True if this group is considered less than the other, False otherwise.
+
         """
         if not isinstance(other, type(self)):
             return NotImplemented
@@ -104,6 +110,7 @@ class Group:
 
         Returns:
             bool: True if the groups are equal, False otherwise.
+
         """
         if not isinstance(other, type(self)):
             return NotImplemented
@@ -114,6 +121,7 @@ class Group:
 
         Returns:
             int: The hash value of the group.
+
         """
         return hash((self.symbol, self.number, self.suffix))
 
@@ -122,6 +130,7 @@ class Group:
 
         Returns:
             bool: True if the group has a valid name, False otherwise.
+
         """
         return bool(self.name)
 
@@ -130,6 +139,7 @@ class Group:
 
         Returns:
             str: The full name of the group.
+
         """
         return self.name
 
@@ -141,6 +151,7 @@ class Group:
 
         Returns:
             Group: A deep copy of the group.
+
         """
         if id(self) in memo:
             return memo[id(self)]
