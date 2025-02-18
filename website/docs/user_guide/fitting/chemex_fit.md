@@ -23,7 +23,7 @@ The table below lists the available options for `chemex fit`. Each option links 
 | [`-m`](method_files.md) or [`--methods`](method_files.md) | Indicate the fitting method file (optional). |
 | [`-d`](kinetic_models.md) or [`--model`](kinetic_models.md) | Specify the kinetic model for fitting (optional, default: `2st`). |
 | [`-o`](outputs.mdx) or [`--output`](outputs.mdx) | Set the output directory (optional, default: `./Output`). |
-| [`--plot {nothing, normal, all}`](method_files.md#plotting) | Select the plotting level (optional, default: `normal`). |
+| `--plot {nothing, normal, all}` | Select the plotting level (optional, default: `normal`). |
 | `--include` | Define residues to include in the fit (optional). |
 | `--exclude` | Define residues to exclude from the fit (optional). |
 
