@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal
+
+import numpy as np
+
+from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
+from chemex.configuration.conditions import ConditionsWithValidations
+from chemex.configuration.data import ShiftDataSettings
+from chemex.configuration.experiment import ExperimentSettings
+from chemex.containers.data import Data
+from chemex.containers.dataset import load_shift_dataset
+from chemex.experiments.factories import Creators, factories
+from chemex.filterers import NoFilterer
+from chemex.nmr.basis import Basis
+from chemex.nmr.liouvillian import LiouvillianIS
+from chemex.nmr.spectrometer import Spectrometer
+from chemex.parameters.spin_system import SpinSystem
+from chemex.plotters.shift import ShiftPlotter
+from chemex.printers.data import ShiftPrinter
+from chemex.typing import ArrayBool, ArrayFloat
+
+EXPERIMENT_NAME = "shift_13c_sq"
+
+
+class Shift13CSqSettings(ExperimentSettings):
+    name: Literal["shift_13c_sq"]
+
+    @property
+    def cs_i_name(self) -> str:
+        return f"cs_i_{self.observed_state}"
+
+
+class Shift13CSqConfig(
+    ExperimentConfiguration[
+        Shift13CSqSettings, ConditionsWithValidations, ShiftDataSettings
+    ],
+):
+    @property
+    def to_be_fitted(self) -> ToBeFitted:
+        state = self.experiment.observed_state
+        return ToBeFitted(
+            rates=[f"cs_i_{state}"],
+            model_free=[f"cs_i_{state}"],
+        )
+
+
+def build_spectrometer(
+    config: Shift13CSqConfig,
+    spin_system: SpinSystem,
+) -> Spectrometer:
+    conditions = config.conditions
+
+    basis = Basis(type="ixy", spin_system="ch")
+    liouvillian = LiouvillianIS(spin_system, basis, conditions)
+    return Spectrometer(liouvillian)
+
+
+def _find_nearest(array: ArrayFloat, value: float) -> float:
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return array[idx]
+
+
+@dataclass
+class Shift13CSqSequence:
+    settings: Shift13CSqSettings
+
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
+        ppm_i = spectrometer.liouvillian.ppm_i
+        ref_shift_i = spectrometer.par_values[self.settings.cs_i_name] * ppm_i
+        shifts = spectrometer.calculate_shifts()
+        shift_sq = _find_nearest(shifts, ref_shift_i)
+        return np.array([shift_sq / ppm_i])
+
+    def is_reference(self, metadata: ArrayFloat) -> ArrayBool:
+        return np.full_like(metadata, fill_value=False, dtype=np.bool_)
+
+
+def register() -> None:
+    creators = Creators(
+        config_creator=Shift13CSqConfig,
+        spectrometer_creator=build_spectrometer,
+        sequence_creator=Shift13CSqSequence,
+        dataset_creator=load_shift_dataset,
+        filterer_creator=NoFilterer,
+        printer_creator=ShiftPrinter,
+        plotter_creator=ShiftPlotter,
+    )
+    factories.register(name=EXPERIMENT_NAME, creators=creators)
