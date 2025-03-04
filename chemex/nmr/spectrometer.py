@@ -11,7 +11,7 @@ from scipy.linalg import expm
 
 from chemex.nmr.constants import Distribution
 from chemex.nmr.liouvillian import LiouvillianIS
-from chemex.typing import ArrayFloat
+from chemex.typing import ArrayFloat, ArrayNumber
 
 DictArrayFloat = dict[str, ArrayFloat]
 
@@ -20,11 +20,11 @@ SMALL_VALUE = 1e-6
 
 
 def calculate_propagators(
-    liouv: ArrayFloat,
+    liouv: ArrayNumber,
     delays: float | Iterable[float],
     *,
     dephasing: bool = False,
-) -> ArrayFloat:
+) -> ArrayNumber:
     """Calculate the propagators for the given delays.
 
     Parameters
@@ -36,10 +36,11 @@ def calculate_propagators(
     dephasing : bool, optional
         Whether to apply dephasing, by default False
 
-    Returns:
+    Returns
     -------
     ArrayFloat
         The propagators
+
     """
     # Ensure delays is a 1D NumPy array
     delays = np.asarray(delays).flatten()
@@ -88,13 +89,15 @@ def _get_key(
 
 
 @cached(cache={}, key=_get_key)
-def _make_perfect180(liouvillian: LiouvillianIS, spin: str) -> ArrayFloat:
+def _make_perfect180(liouvillian: LiouvillianIS, spin: str) -> ArrayNumber:
     size = liouvillian.size
     identity = np.eye(size).reshape((1, 1, size, size))
     compx, compy, compz = (f"{spin}{axis}" for axis in "xyz")
-    perfect180 = {comp: identity.copy() for comp in (compx, compy)}
+    perfect180: dict[str, ArrayNumber] = {
+        comp: identity.copy() for comp in (compx, compy)
+    }
     for comp in liouvillian.basis.components:
-        vect = liouvillian.vectors[comp].ravel()
+        vect = liouvillian.basis.vectors[comp].ravel()
         if compx in comp or compz in comp:
             perfect180[compy] -= 2 * np.diag(vect)
         if compy in comp or compz in comp:
@@ -107,7 +110,7 @@ def _make_perfect180(liouvillian: LiouvillianIS, spin: str) -> ArrayFloat:
 def _make_perfect90(liouvillian: LiouvillianIS, spin: str) -> ArrayFloat:
     size = liouvillian.size
     zeros = np.zeros((size, size))
-    rot = liouvillian.matrices.get(f"b1x_{spin}", zeros)
+    rot = liouvillian.basis.matrices.get(f"b1x_{spin}", zeros)
     return expm(0.25 * rot).reshape(1, 1, size, size).astype(np.float64)
 
 
@@ -117,7 +120,7 @@ def _get_phases(liouvillian: LiouvillianIS) -> DictArrayFloat:
     size = liouvillian.size
     zeros = np.zeros((size, size))
     for spin in "is":
-        l_rotz = liouvillian.matrices.get(f"rotz_{spin}", zeros)
+        l_rotz = liouvillian.basis.matrices.get(f"rotz_{spin}", zeros)
         phases[spin] = np.array([expm(n * 0.5 * np.pi * l_rotz) for n in range(4)])
     return phases
 
@@ -149,7 +152,7 @@ class Spectrometer:
         self._p240_i = np.array(0.0)
         self._p180_s = np.array(0.0)
 
-    def keep(self, magnetization: ArrayFloat, components: Iterable[str]) -> ArrayFloat:
+    def keep(self, magnetization: ArrayFloat, components: Iterable[str]) -> ArrayNumber:
         return self.liouvillian.keep(magnetization, components)
 
     def update(self, par_values: dict[str, float]) -> None:
@@ -265,7 +268,7 @@ class Spectrometer:
 
     def tilt_mag_along_weff_i(
         self, magnetization: ArrayFloat, *, back: bool = False
-    ) -> ArrayFloat:
+    ) -> ArrayNumber:
         return self.liouvillian.tilt_mag_along_weff_i(magnetization, back=back)
 
     @property

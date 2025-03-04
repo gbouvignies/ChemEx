@@ -7,12 +7,13 @@ from itertools import permutations, product
 from typing import Literal
 
 import numpy as np
+from numpy.typing import NDArray
 
 from chemex.models.model import model
 from chemex.parameters.spin_system.nucleus import Nucleus, str2nucleus
-from chemex.typing import ArrayFloat, ArrayNumber
+from chemex.typing import ArrayFloat
 
-DictArray = dict[str, ArrayNumber]
+DictArray = dict[str, NDArray[np.number]]
 
 _BASES = {
     "i-": ["i-"],
@@ -279,14 +280,22 @@ _NUCLEI = {
     for pair in ("hn", "hc", "nh", "ch", "cn")
 }
 
-
 @cache
 def _build_vectors(basis: Basis) -> DictArray:
+    """Build vector representations for basis components."""
     size = len(basis) * len(model.states)
-    vectors: defaultdict[str, ArrayFloat] = defaultdict(lambda: np.zeros((size, 1)))
-    for index, (state, name) in enumerate(product(model.states, basis.components)):
-        vectors[f"{name}_{state}"][index] = 1.0
-        vectors[name][index] = 1.0
+
+    # Initialize empty vectors dictionary with zero arrays
+    vectors: defaultdict[str, ArrayFloat] = defaultdict(
+        lambda: np.zeros((size, 1))
+    )
+
+    # Populate vectors for each state/component combination
+    for idx, (state, component) in enumerate(product(model.states, basis.components)):
+        state_component = f"{component}_{state}"
+        vectors[state_component][idx] = 1.0
+        vectors[component][idx] = 1.0
+
     return dict(vectors)
 
 

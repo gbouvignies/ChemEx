@@ -271,23 +271,19 @@ class LiouvillianIS:
             detected = np.sign(detected.real) * np.abs(detected)
         return float(detected)
 
-    def detect_spectrum(
-        self, magnetization: ArrayNumber, observed_state: str = "a"
-    ) -> ArrayNumber:
-        collapsed_magnetization = self._collapse(magnetization)
-        component, _state = self.detection.split("_")
-        i_minus = self.basis.vectors.get("ix", 0.0) - 1j * self.basis.vectors.get(
-            "iy", 0.0
-        )
+    # def detect_spectrum(
+    #     self, magnetization: ArrayNumber, observed_state: str = "a"
+    # ) -> ArrayNumber:
+    #     collapsed_magnetization = self._collapse(magnetization)
+    #     component, _state = self.detection.split("_")
+    #     self.basis.vectors.get("ix", 0.0) - 1j * self.basis.vectors.get(
+    #         "iy", 0.0
+    #     )
 
-        # Getting the eigenvalues and eigenvectors of the Liouvillian
-        eigen_values, eigen_vectors = np.linalg.eig(self._l_base)
+    #     # Getting the eigenvalues and eigenvectors of the Liouvillian
+    #     eigen_values, eigen_vectors = np.linalg.eig(self._l_base)
 
-        relaxations = eigen_values.real
-        frequencies = eigen_values.imag
-
-        detected = self._detect_vector @ collapsed_magnetization
-        return detected
+    #     return self._detect_vector @ collapsed_magnetization
 
     def calculate_r1rho(self) -> float:
         liouv = self.l_free + self.l_b1x_i

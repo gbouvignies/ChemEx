@@ -1,8 +1,11 @@
 import numpy as np
+import numpy.typing as npt
 from scipy.interpolate import CubicSpline
 
 from chemex.containers.profile import Profile
 from chemex.plotters.cest import create_plot_data_exp
+
+FloatArray = npt.NDArray[np.float64]
 
 
 class Curve:
@@ -34,7 +37,7 @@ class Curve:
         else:
             self.spline = CubicSpline(x, y)
 
-    def get_xrange(self, sw: float | None = None):
+    def get_xrange(self, sw: float | None = None) -> FloatArray:
         if sw is None:
             sw = 1.0
         return self.xcentre + sw * self.xrange * np.array([-0.5, 0.5])
