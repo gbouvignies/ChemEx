@@ -42,6 +42,7 @@ class Buttons:
         sw (Optional[float]): Sweep width for the curves.
         cursor (Cursor): Matplotlib cursor object for interaction.
         index (int): Index to track the current spin system.
+
     """
 
     def __init__(
@@ -79,6 +80,7 @@ class Buttons:
 
         Returns:
             dict: Data structure with spin systems and their corresponding curves.
+
         """
         data = {}
         for experiment in experiments:
@@ -129,6 +131,7 @@ class Buttons:
 
         Returns:
             Optional[float]: The x-coordinate of the click, or None if invalid.
+
         """
         if isinstance(event, LocationEvent) and event.inaxes == self.axis:
             return event.xdata

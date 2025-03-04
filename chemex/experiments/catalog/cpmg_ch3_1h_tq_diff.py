@@ -19,6 +19,7 @@ from chemex.nmr.constants import GAMMA
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
+from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.plotters.cpmg import CpmgPlotter
 from chemex.printers.data import CpmgPrinter
 from chemex.typing import ArrayBool, ArrayFloat, ArrayInt
@@ -40,7 +41,7 @@ class CpmgCh31HTqDiffSettings(CpmgSettings):
 
     @cached_property
     def k2_factor(self) -> float:
-        return (3.0 * GAMMA["h"] * self.gradient * self.delta) ** 2
+        return (3.0 * GAMMA[Nucleus.H1] * self.gradient * self.delta) ** 2
 
     @cached_property
     def start_terms(self) -> list[str]:

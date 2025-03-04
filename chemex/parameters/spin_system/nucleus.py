@@ -1,7 +1,7 @@
-from enum import Enum, auto
+from enum import StrEnum, auto
 
 
-class Nucleus(Enum):
+class Nucleus(StrEnum):
     """Enumeration of different types of atomic nuclei.
 
     This Enum class represents different types of atomic nuclei commonly
@@ -11,12 +11,17 @@ class Nucleus(Enum):
         H1: Represents Hydrogen-1 nucleus.
         N15: Represents Nitrogen-15 nucleus.
         C13: Represents Carbon-13 nucleus.
+        F19: Represents Fluorine-19 nucleus.
+        P31: Represents Phosphorus-31 nucleus.
         X: Placeholder for unknown or unspecified nucleus type.
+
     """
 
     H1 = auto()
     N15 = auto()
     C13 = auto()
+    F19 = auto()
+    P31 = auto()
     X = auto()
 
 
@@ -27,12 +32,13 @@ STR_TO_NUCLEUS: dict[str, Nucleus] = {
     "M": Nucleus.H1,
     "N": Nucleus.N15,
     "C": Nucleus.C13,
+    "F": Nucleus.F19,
     "X": Nucleus.X,
 }
 
 
 def str2nucleus(atom_letter: str) -> Nucleus:
-    """Converts a single-letter atom name to the corresponding Nucleus enum.
+    """Convert a single-letter atom name to the corresponding Nucleus enum.
 
     This function maps a single-letter abbreviation for an atom (e.g., 'H', 'C')
     to the corresponding Nucleus enumeration member. If the atom letter is not
@@ -51,5 +57,6 @@ def str2nucleus(atom_letter: str) -> Nucleus:
         <Nucleus.C13: 3>
         >>> str2nucleus('Z')  # Not recognized
         <Nucleus.X: 4>
+
     """
-    return STR_TO_NUCLEUS.get(atom_letter, Nucleus.X)
+    return STR_TO_NUCLEUS.get(atom_letter.upper(), Nucleus.X)

@@ -4,38 +4,34 @@ This module defines essential constants and functions for Nuclear Magnetic Reson
 (NMR) spectroscopy, focusing on gyromagnetic ratios and scalar coupling constants.
 """
 
-
-from __future__ import annotations
-
 from collections import Counter
 from dataclasses import dataclass
 
 import numpy as np
 
+from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.typing import ArrayFloat
 
 GAMMA = {
-    "h": 26.752_212_8e07,
-    "q": 26.752_212_8e07,
-    "n": -2.712_618_04e07,
-    "c": 6.728_284e07,
-    "f": 25.18148e07,
-    "p": 10.8394e07,
+    Nucleus.H1: 26.752_212_8e07,
+    Nucleus.N15: -2.712_618_04e07,
+    Nucleus.C13: 6.728_284e07,
+    Nucleus.F19: 25.18148e07,
+    Nucleus.P31: 10.8394e07,
 }
 
 # Define nuclide frequency ratios wrt proton
 # IUPAC values for bio NMR: Markley et al. Pure Appl. Chem. (1998) 70, 117.
 # 19F value comes from: Harris et al. Pure Appl. Chem. (2001) 73, 1795.
 XI_RATIO = {
-    "h": 100.000_000_0e-02,
-    "q": 100.000_000_0e-02,
-    "n": 10.132_911_8e-02,
-    "c": 25.144_953_0e-02,
-    "f": 94.094_011e-02,
-    "p": 40.480_863_6e-02,
+    Nucleus.H1: 100.000_000_0e-02,
+    Nucleus.N15: 10.132_911_8e-02,
+    Nucleus.C13: 25.144_953_0e-02,
+    Nucleus.F19: 94.094_011e-02,
+    Nucleus.P31: 40.480_863_6e-02,
 }
 
-SIGNED_XI_RATIO: dict[str, float] = {
+SIGNED_XI_RATIO: dict[Nucleus, float] = {
     key: np.sign(GAMMA[key]) * val for key, val in XI_RATIO.items()
 }
 
@@ -237,10 +233,12 @@ class Distribution:
 
 def get_multiplet(symbol: str, nucleus: str) -> Distribution:
     """Calculate the multiplet pattern."""
-    multiplet = np.array([0.0])
+    multiplet = [0.0]
     for coupling in J_EFF[symbol.lower()][nucleus.lower()]:
-        doublet = coupling * 0.5 * np.array([[-1.0], [1.0]])
+        doublet = coupling * 0.5 * np.array([[-1.0], [1.0]], dtype=np.float64)
         multiplet = (multiplet + doublet).flatten()
     counter = Counter(multiplet)
     values, weights = zip(*counter.items(), strict=True)
-    return Distribution(np.array(values), np.array(weights))
+    return Distribution(
+        np.array(values, dtype=np.float64), np.array(weights, dtype=np.float64)
+    )

@@ -1,7 +1,7 @@
 import numpy as np
-from numpy.typing import NDArray
+import numpy.typing as npt
 
-ArrayNumber = NDArray[np.number]
-ArrayFloat = NDArray[np.float64]
-ArrayBool = NDArray[np.bool_]
-ArrayInt = NDArray[np.int_]
+ArrayNumber = npt.NDArray[np.number]
+ArrayFloat = npt.NDArray[np.floating]
+ArrayBool = npt.NDArray[np.bool_]
+ArrayInt = npt.NDArray[np.integer]

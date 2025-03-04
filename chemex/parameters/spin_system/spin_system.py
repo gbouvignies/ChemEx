@@ -110,10 +110,10 @@ class SpinSystem(BaseModel):
     def correct(self, basis: Basis) -> Self:
         spins: list[Spin] = []
         last_spin = Spin("")
-        for letter, atom in basis.atoms.items():
+        for letter, nucleus in basis.nuclei.items():
             spin = Spin(self.spins.get(letter, last_spin).name)
-            if not spin.atom.name.startswith(atom.upper()):
-                spin.atom = Atom(f"{atom}{spin.atom.name[1:]}")
+            if not spin.atom.name.startswith(nucleus[0].upper()):
+                spin.atom = Atom(f"{nucleus[0]}{spin.atom.name[1:]}")
             last_spin = spin
             spins.append(spin)
         return type(self)(name=_spins2name(spins))

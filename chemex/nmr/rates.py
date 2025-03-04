@@ -10,14 +10,15 @@ from chemex.configuration.conditions import Conditions
 from chemex.models.model import model
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import GAMMA
+from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.typing import ArrayFloat
 
 # Type definition
-T = TypeVar("T", float, ArrayFloat)
+T = TypeVar("T", np.floating, ArrayFloat)
 
 
-def _calculate_jw(tauc: float, s2: float, w: T) -> T:
-    """Calculates J(w) for given tau_c, s2, and angular frequency w.
+def _calculate_jw(tauc: np.floating, s2: np.floating, w: T) -> T:
+    """Calculate J(w) for given tau_c, s2, and angular frequency w.
 
     Args:
         tauc (float): Correlation time in seconds.
@@ -27,6 +28,7 @@ def _calculate_jw(tauc: float, s2: float, w: T) -> T:
 
     Returns:
         T: Spectral density function(s) J(w).
+
     """
     tauc_ = tauc * 1e-9
     return 2.0 / 5.0 * tauc_ * s2 / (1.0 + (w * tauc_) ** 2)
@@ -50,8 +52,8 @@ class RatesIS:
     phi_s: ArrayFloat
 
     def __init__(self) -> None:
-        """Initializes RatesIS object with default gyromagnetic ratios and distances."""
-        self.gh = GAMMA["h"]
+        """Initialize RatesIS object with default gyromagnetic ratios and distances."""
+        self.gh = GAMMA[Nucleus.H1]
 
         # Dipolar factors
         self.dis = -mu_0 * hbar * self.gi * self.gs / (8.0 * np.pi * self.ris3)
@@ -65,8 +67,10 @@ class RatesIS:
         self.delta_i = self.csa_i[:2] - self.csa_i[2]
         self.delta_s = self.csa_s[:2] - self.csa_s[2]
 
-    def __call__(self, h_frq: float, tauc: float, s2: float) -> dict[str, float]:
-        """Calculates relaxation rates for given Larmor frequency, tau_c, and s2.
+    def __call__(
+        self, h_frq: np.floating, tauc: np.floating, s2: np.floating
+    ) -> dict[str, np.floating]:
+        """Calculate relaxation rates for given Larmor frequency, tau_c, and s2.
 
         Args:
             h_frq (float): Proton Larmor frequency in MHz.
@@ -74,7 +78,8 @@ class RatesIS:
             s2 (float): Order parameter squared.
 
         Returns:
-            dict[str, float]: Dictionary of relaxation rates (R2, R1 for I and S).
+            dict[str, np.floating]: Dictionary of relaxation rates (R2, R1 for I and S).
+
         """
         # B0 in Tesla
         b0 = 2.0 * np.pi * 1e6 * h_frq / self.gh
@@ -164,11 +169,11 @@ class RatesIS:
 class RateNH(RatesIS):
     """Class for calculating relaxation rates in NH group using model-free approach."""
 
-    gi = GAMMA["n"]
-    gs = GAMMA["h"]
-    ris3 = 1.04e-10**3
-    rih3 = 1.79e-10**3
-    rsh3 = 1.85e-10**3
+    gi = GAMMA[Nucleus.N15]
+    gs = GAMMA[Nucleus.H1]
+    ris3 = (1.04e-10) ** 3
+    rih3 = (1.79e-10) ** 3
+    rsh3 = (1.85e-10) ** 3
     csa_i = np.array([69.0, 42.0, -111.0]) * 1e-6
     csa_s = np.array([5.7, 0.5, -6.2]) * 1e-6
     phi_i = np.deg2rad([109.6, 90.0, 19.6])
@@ -176,24 +181,25 @@ class RateNH(RatesIS):
 
     def __call__(
         self,
-        h_frq: float,
-        tauc: float,
-        s2: float,
-        khh: float = 0.0,
-    ) -> dict[str, float]:
-        """Calculates rates for NH systems, including exchange contributions if any.
+        h_frq: np.floating,
+        tauc: np.floating,
+        s2: np.floating,
+        khh: np.floating | None = None,
+    ) -> dict[str, np.floating]:
+        """Calculate rates for NH systems, including exchange contributions if any.
 
         Args:
             h_frq (float): Proton Larmor frequency in MHz.
             tauc (float): Correlation time in seconds.
             s2 (float): Order parameter squared.
-            khh (float, optional): Exchange rate between H atoms. Defaults to 0.
+            khh (float, optional): Exchange rate between H atoms. Defaults to None.
 
         Returns:
             dict[str, float]: Relaxation rates for NH systems, including exchanges.
+
         """
         rates = super().__call__(h_frq, tauc, s2)
-        if khh == 0:
+        if khh is None:
             return rates
         # Make a copy of rates before adding 'khh' due to lru_cache"
         # on 'super().__call__'
@@ -207,14 +213,14 @@ class RateNH(RatesIS):
         return rates
 
 
-class RateNH_D(RateNH):
+class RateNHDeuterated(RateNH):
     rih3 = 2.50e-10**3
     rsh3 = 2.48e-10**3
 
 
 class RateHN(RatesIS):
-    gi = GAMMA["h"]
-    gs = GAMMA["n"]
+    gi = GAMMA[Nucleus.H1]
+    gs = GAMMA[Nucleus.N15]
     ris3 = 1.04e-10**3
     rih3 = 1.85e-10**3
     rsh3 = 1.79e-10**3
@@ -225,13 +231,13 @@ class RateHN(RatesIS):
 
     def __call__(
         self,
-        h_frq: float,
-        tauc: float,
-        s2: float,
-        khh: float = 0.0,
-    ) -> dict[str, float]:
+        h_frq: np.floating,
+        tauc: np.floating,
+        s2: np.floating,
+        khh: np.floating | None = None,
+    ) -> dict[str, np.floating]:
         rates = super().__call__(h_frq, tauc, s2)
-        if khh == 0:
+        if khh is None:
             return rates
         # Make a copy of rates before adding 'khh' due to lru_cache
         # on 'super().__call__'
@@ -245,14 +251,14 @@ class RateHN(RatesIS):
         return rates
 
 
-class RateHN_D(RateHN):
+class RateHNDeuterated(RateHN):
     rih3 = 2.48e-10**3
     rsh3 = 2.50e-10**3
 
 
 class RateCH(RatesIS):
-    gi = GAMMA["c"]
-    gs = GAMMA["h"]
+    gi = GAMMA[Nucleus.C13]
+    gs = GAMMA[Nucleus.H1]
     ris3 = 1.09e-10**3
     rih3 = 1.70e-10**3
     rsh3 = 1.85e-10**3
@@ -262,14 +268,14 @@ class RateCH(RatesIS):
     phi_s = np.deg2rad([0.0, 0.0, 0.0])
 
 
-class RateCH_D(RateCH):
+class RateCHDeuterated(RateCH):
     rih3 = 2.03e-10**3
     rsh3 = 2.52e-10**3
 
 
 class RateHC(RatesIS):
-    gi = GAMMA["h"]
-    gs = GAMMA["c"]
+    gi = GAMMA[Nucleus.H1]
+    gs = GAMMA[Nucleus.C13]
     ris3 = 1.09e-10**3
     rih3 = 1.85e-10**3
     rsh3 = 1.70e-10**3
@@ -279,22 +285,22 @@ class RateHC(RatesIS):
     phi_s = np.deg2rad([109.6, 90.0, 19.6])
 
 
-class RateHC_D(RateHC):
+class RateHCDeuterated(RateHC):
     rih3 = 2.52e-10**3
     rsh3 = 2.03e-10**3
 
 
 rate_functions: dict[str, RatesIS] = {
     "nh": RateNH(),
-    "nh_d": RateNH_D(),
+    "nh_d": RateNHDeuterated(),
     "hn": RateHN(),
-    "hn_d": RateHN_D(),
+    "hn_d": RateHNDeuterated(),
     "ch": RateCH(),
-    "ch_d": RateCH_D(),
+    "ch_d": RateCHDeuterated(),
     "hc": RateHC(),
-    "hc_d": RateHC_D(),
+    "hc_d": RateHCDeuterated(),
     "cn": RateCH(),
-    "cn_d": RateCH_D(),
+    "cn_d": RateCHDeuterated(),
 }
 
 _RATE_NAMES = [
@@ -316,7 +322,7 @@ _RATE_NAMES = [
 
 
 def get_model_free_expressions(basis: Basis, conditions: Conditions) -> dict[str, str]:
-    """Generates expressions for model-free analysis based on basis and conditions.
+    """Generate expressions for model-free analysis based on basis and conditions.
 
     Args:
         basis (Basis): Basis set for model-free analysis.
@@ -324,6 +330,7 @@ def get_model_free_expressions(basis: Basis, conditions: Conditions) -> dict[str
 
     Returns:
         dict[str, str]: Mapping of rate names to expressions for model-free analysis.
+
     """
     deuterated_extension = "_d" if conditions.is_deuterated else ""
     rate_function_name = f"{basis.spin_system}{deuterated_extension}"
