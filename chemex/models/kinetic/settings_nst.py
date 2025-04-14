@@ -150,9 +150,105 @@ def make_settings_4st(conditions: Conditions) -> dict[str, ParamLocalSetting]:
     }
 
 
+def make_settings_5st(conditions: Conditions) -> dict[str, ParamLocalSetting]:
+    return {
+        **make_settings_4st(conditions),
+        "pe": ParamLocalSetting(
+            name_setting=NameSetting("pe", "", TPL),
+            value=0.02,
+            min=0.0,
+            max=1.0,
+            vary=True,
+        ),
+        "kex_ae": ParamLocalSetting(
+            name_setting=NameSetting("kex_ae", "", TPL),
+            min=0.0,
+            value=200.0,
+            vary=True,
+        ),
+        "kex_be": ParamLocalSetting(
+            name_setting=NameSetting("kex_be", "", TPL),
+            min=0.0,
+            value=200.0,
+            vary=True,
+        ),
+        "kex_ce": ParamLocalSetting(
+            name_setting=NameSetting("kex_ce", "", TPL),
+            min=0.0,
+            value=200.0,
+            vary=True,
+        ),
+        "kex_de": ParamLocalSetting(
+            name_setting=NameSetting("kex_de", "", TPL),
+            min=0.0,
+            value=200.0,
+            vary=True,
+        ),
+        "pa": ParamLocalSetting(
+            name_setting=NameSetting("pa", "", TPL),
+            min=0.0,
+            max=1.0,
+            expr="1.0 - {pb} - {pc} - {pd} - {pe}",
+        ),
+        **create_kij_settings("abcde"),
+    }
+
+
+def make_settings_6st(conditions: Conditions) -> dict[str, ParamLocalSetting]:
+    return {
+        **make_settings_5st(conditions),
+        "pf": ParamLocalSetting(
+            name_setting=NameSetting("pf", "", TPL),
+            value=0.02,
+            min=0.0,
+            max=1.0,
+            vary=True,
+        ),
+        "kex_af": ParamLocalSetting(
+            name_setting=NameSetting("kex_af", "", TPL),
+            min=0.0,
+            value=200.0,
+            vary=True,
+        ),
+        "kex_bf": ParamLocalSetting(
+            name_setting=NameSetting("kex_bf", "", TPL),
+            min=0.0,
+            value=200.0,
+            vary=True,
+        ),
+        "kex_cf": ParamLocalSetting(
+            name_setting=NameSetting("kex_cf", "", TPL),
+            min=0.0,
+            value=200.0,
+            vary=True,
+        ),
+        "kex_df": ParamLocalSetting(
+            name_setting=NameSetting("kex_df", "", TPL),
+            min=0.0,
+            value=200.0,
+            vary=True,
+        ),
+        "kex_ef": ParamLocalSetting(
+            name_setting=NameSetting("kex_ef", "", TPL),
+            min=0.0,
+            value=200.0,
+            vary=True,
+        ),
+        "pa": ParamLocalSetting(
+            name_setting=NameSetting("pa", "", TPL),
+            min=0.0,
+            max=1.0,
+            expr="1.0 - {pb} - {pc} - {pd} - {pe} - {pf}",
+        ),
+        **create_kij_settings("abcdef"),
+    }
+
+
 def register() -> None:
     model_factory.register(name="3st", setting_maker=make_settings_3st)
     model_factory.register(name="3st_triangle", setting_maker=make_settings_3st)
     model_factory.register(name="3st_linear", setting_maker=make_settings_3st_linear)
     model_factory.register(name="3st_fork", setting_maker=make_settings_3st_fork)
     model_factory.register(name="4st", setting_maker=make_settings_4st)
+    model_factory.register(name="5st", setting_maker=make_settings_5st)
+    model_factory.register(name="6st", setting_maker=make_settings_6st)

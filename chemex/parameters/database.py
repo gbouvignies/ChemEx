@@ -1,4 +1,4 @@
-"""This module offers a framework for managing NMR analysis parameters.
+"""Module offering a framework for managing NMR analysis parameters.
 
 It includes classes and methods for indexing, updating, and retrieving parameters,
 handling parameter constraints, and integration with the lmfit library for
@@ -52,11 +52,11 @@ class ParameterIndex:
     """
 
     def __init__(self) -> None:
-        """Initializes an empty parameter index."""
+        """Initialize an empty parameter index."""
         self._index: defaultdict[Hashable, set[str]] = defaultdict(set)
 
     def add(self, param_name: ParamName) -> None:
-        """Adds a parameter name to the index.
+        """Add a parameter name to the index.
 
         Args:
             param_name (ParamName): The parameter name to be indexed.
@@ -66,7 +66,7 @@ class ParameterIndex:
             self._index[search_key].add(param_name.id_)
 
     def get_matching_ids(self, param_name: ParamName) -> set[str]:
-        """Retrieves parameter IDs matching a given parameter name.
+        """Retrieve parameter IDs matching a given parameter name.
 
         Args:
             param_name (ParamName): Parameter name to match in the index.
@@ -82,7 +82,7 @@ class ParameterIndex:
 
 
 def _convert_grid_expression_to_values(grid_expression: str) -> ArrayFloat:
-    """Converts grid expression to floating-point values.
+    """Convert grid expression to floating-point values.
 
     Parses grid expressions used for parameter exploration and converts them into
     an array of floating-point values for further processing.
@@ -127,7 +127,7 @@ class ParameterCatalog:
     _index: ParameterIndex = field(default_factory=ParameterIndex)
 
     def _add(self, parameter: ParamSetting) -> None:
-        """Adds a single parameter to the catalog.
+        """Add a single parameter to the catalog.
 
         Args:
             parameter (ParamSetting): The parameter to be added.
@@ -142,7 +142,7 @@ class ParameterCatalog:
             self._parameters[parameter.id_].expr = ""
 
     def add_multiple(self, parameters: Parameters) -> None:
-        """Adds multiple parameters to the catalog.
+        """Add multiple parameters to the catalog.
 
         Args:
             parameters (Parameters): Dictionary of parameters to be added.
@@ -152,7 +152,7 @@ class ParameterCatalog:
             self._add(parameter)
 
     def get_parameters(self, param_ids: Iterable[str]) -> Parameters:
-        """Retrieves a subset of parameters based on their IDs.
+        """Retrieve a subset of parameters based on their IDs.
 
         Args:
             param_ids (Iterable[str]): IDs of the parameters to retrieve.
@@ -182,7 +182,7 @@ class ParameterCatalog:
         self,
         param_ids: Iterable[str] | None = None,
     ) -> ParametersLF:
-        """Constructs lmfit Parameters from the catalog's parameters.
+        """Construct lmfit Parameters from the catalog's parameters.
 
         This method converts the internal parameter representation to the format
         required by the lmfit library for optimization.
@@ -213,7 +213,7 @@ class ParameterCatalog:
         return lmfit_params
 
     def update_from_lmfit_params(self, parameters: ParametersLF) -> None:
-        """Updates catalog parameters from lmfit Parameters.
+        """Update catalog parameters from lmfit Parameters.
 
         Args:
             parameters (ParametersLF): lmfit Parameters to update from.
@@ -224,7 +224,7 @@ class ParameterCatalog:
             self._parameters[param_id].stderr = parameter.stderr
 
     def get_matching_ids(self, param_name: ParamName) -> set[str]:
-        """Finds parameter IDs matching a specified parameter name.
+        """Find parameter IDs matching a specified parameter name.
 
         Args:
             param_name (ParamName): Name of the parameter to match.
@@ -236,7 +236,7 @@ class ParameterCatalog:
         return self._index.get_matching_ids(param_name)
 
     def get_value(self, id_: str) -> float | None:
-        """Retrieves the value of a parameter by its ID.
+        """Retrieve the value of a parameter by its ID.
 
         Args:
             id_ (str): The ID of the parameter.
@@ -248,7 +248,7 @@ class ParameterCatalog:
         return self._parameters[id_].value
 
     def set_values(self, par_values: dict[str, float]) -> None:
-        """Sets the values of specified parameters.
+        """Set the values of specified parameters.
 
         Args:
             par_values (dict[str, float]): Dictionary of parameter IDs and values.
@@ -259,7 +259,7 @@ class ParameterCatalog:
                 self._parameters[id_].value = value
 
     def set_defaults(self, defaults: DefaultListType) -> None:
-        """Sets default settings for a group of parameters.
+        """Set default settings for a group of parameters.
 
         Args:
             defaults (DefaultListType): Defaults to apply.
@@ -273,7 +273,7 @@ class ParameterCatalog:
                 self._parameters[matching_id].set(setting)
 
     def _count_per_section(self, param_ids: set[str]) -> Counter[str]:
-        """Counts parameters per section for a given set of IDs.
+        """Count parameters per section for a given set of IDs.
 
         Args:
             param_ids (set[str]): Set of parameter IDs to count.
@@ -287,7 +287,7 @@ class ParameterCatalog:
         )
 
     def set_vary(self, section_names: Sequence[str], vary: bool) -> Counter[str]:
-        """Sets the variability of parameters by section name.
+        """Set the variability of parameters by section name.
 
         Args:
             section_names (Sequence[str]): Names of the sections to update.
@@ -318,13 +318,13 @@ class ParameterCatalog:
         return self._count_per_section(ids_modified)
 
     def fix_all(self) -> None:
-        """Fixes all parameters, preventing them from varying during fitting."""
+        """Fix all parameters, preventing them from varying during fitting."""
         for parameter in self._parameters.values():
             parameter.vary = False
             parameter.expr = ""
 
     def _get_ids_left(self, expression: str) -> set[str]:
-        """Extracts parameter IDs from the left side of an expression.
+        """Extract parameter IDs from the left side of an expression.
 
         Args:
             expression (str): The expression to parse.
@@ -336,7 +336,7 @@ class ParameterCatalog:
         return self.get_matching_ids(ParamName.from_section(expression))
 
     def _get_ids_right(self, expression: str) -> dict[str, set[str]]:
-        """Extracts parameter IDs from the right side of an expression.
+        """Extract parameter IDs from the right side of an expression.
 
         Args:
             expression (str): The expression to parse.
@@ -352,7 +352,7 @@ class ParameterCatalog:
         return ids_right
 
     def _set_expression(self, expression: str, ids_pool: set[str]) -> set[str]:
-        """Sets expressions for parameters based on an input expression.
+        """Set expressions for parameters based on an input expression.
 
         Args:
             expression (str): The expression to apply.
@@ -382,7 +382,7 @@ class ParameterCatalog:
         return ids_left
 
     def set_expressions(self, expression_list: Sequence[str]) -> Counter[str]:
-        """Applies a list of expressions to parameters.
+        """Apply a list of expressions to parameters.
 
         Args:
             expression_list (Sequence[str]): Expressions to apply.
@@ -402,7 +402,7 @@ class ParameterCatalog:
         return self._count_per_section(ids_modified)
 
     def parse_grid(self, grid_entries: list[str]) -> dict[str, ArrayFloat]:
-        """Parses grid definitions and sets up parameters accordingly.
+        """Parse grid definitions and sets up parameters accordingly.
 
         Args:
             grid_entries (list[str]): List of grid definitions.
@@ -429,14 +429,14 @@ class ParameterCatalog:
             ids_left = self.get_matching_ids(ParamName.from_section(name))
             values = _convert_grid_expression_to_values(expression)
 
-            grid_values |= {param_id: values for param_id in ids_left & ids_pool}
+            grid_values |= dict.fromkeys(ids_left & ids_pool, values)
 
             self.set_vary([name], vary=False)
 
         return grid_values
 
     def check_params(self) -> None:
-        """Checks and warns about the physical validity of J couplings."""
+        """Check and warns about the physical validity of J couplings."""
         positive_jnh = False
         negative_jch = False
         for setting in self._parameters.values():
@@ -490,7 +490,7 @@ class ParamManager:
         return self._database_mf if model.model_free else self._database
 
     def add_multiple(self, parameters: Parameters) -> None:
-        """Adds multiple parameters to the primary catalog.
+        """Add multiple parameters to the primary catalog.
 
         Args:
             parameters (Parameters): Parameters to be added.
@@ -499,7 +499,7 @@ class ParamManager:
         self._database.add_multiple(parameters)
 
     def add_multiple_mf(self, parameters: Parameters) -> None:
-        """Adds multiple parameters to the model-free catalog.
+        """Add multiple parameters to the model-free catalog.
 
         Args:
             parameters (Parameters): Parameters to be added.
@@ -508,7 +508,7 @@ class ParamManager:
         self._database_mf.add_multiple(parameters)
 
     def get_parameters(self, param_ids: Iterable[str]) -> Parameters:
-        """Retrieves parameters from the active catalog by IDs.
+        """Retrieve parameters from the active catalog by IDs.
 
         Args:
             param_ids (Iterable[str]): IDs of the parameters to retrieve.
@@ -520,7 +520,7 @@ class ParamManager:
         return self.database.get_parameters(param_ids)
 
     def get_value(self, param_id: str) -> float | None:
-        """Gets the value of a parameter by its ID from the active catalog.
+        """Retrieve the value of a parameter by its ID from the active catalog.
 
         Args:
             param_id (str): ID of the parameter.
@@ -532,7 +532,7 @@ class ParamManager:
         return self.database.get_value(param_id)
 
     def build_lmfit_params(self, param_ids: Iterable[str]) -> ParametersLF:
-        """Builds lmfit Parameters from the active catalog.
+        """Build lmfit Parameters from the active catalog.
 
         Args:
             param_ids (Iterable[str]): IDs of parameters to include.
@@ -544,11 +544,11 @@ class ParamManager:
         return self.database.build_lmfit_params(param_ids)
 
     def sort(self) -> None:
-        """Sorts parameters in the active catalog."""
+        """Sort parameters in the active catalog."""
         self.database.sort()
 
     def update_from_parameters(self, parameters: ParametersLF) -> None:
-        """Updates the active catalog from lmfit Parameters.
+        """Update the active catalog from lmfit Parameters.
 
         Args:
             parameters (ParametersLF): lmfit Parameters to update from.
@@ -557,7 +557,7 @@ class ParamManager:
         self.database.update_from_lmfit_params(parameters)
 
     def set_values(self, par_values: dict[str, float]) -> None:
-        """Sets the values of specific parameters in the active catalog.
+        """Set the values of specific parameters in the active catalog.
 
         Args:
             par_values (dict[str, float]): Parameter values to set.
@@ -566,7 +566,7 @@ class ParamManager:
         return self.database.set_values(par_values)
 
     def set_defaults(self, defaults: DefaultListType) -> None:
-        """Sets defaults for parameters in both catalogs.
+        """Set defaults for parameters in both catalogs.
 
         Args:
             defaults (DefaultListType): Default settings to apply.
@@ -585,7 +585,7 @@ class ParamManager:
         self.database.check_params()
 
     def set_vary(self, section_names: Sequence[str], vary: bool) -> Counter[str]:
-        """Sets variability of parameters in the active catalog by section name.
+        """Set variability of parameters in the active catalog by section name.
 
         Args:
             section_names (Sequence[str]): Section names to update.
@@ -598,11 +598,11 @@ class ParamManager:
         return self.database.set_vary(section_names, vary)
 
     def fix_all(self) -> None:
-        """Fixes all parameters in the active catalog, preventing them from varying."""
+        """Fix all parameters in the active catalog, preventing them from varying."""
         self.database.fix_all()
 
     def set_expressions(self, expression_list: Sequence[str]) -> Counter[str]:
-        """Applies expressions to parameters in the active catalog.
+        """Apply expressions to parameters in the active catalog.
 
         Args:
             expression_list (Sequence[str]): Expressions to apply.
@@ -614,7 +614,7 @@ class ParamManager:
         return self.database.set_expressions(expression_list)
 
     def parse_grid(self, grid_entries: list[str]) -> dict[str, ArrayFloat]:
-        """Parses grid definitions and sets up parameters in the active catalog.
+        """Parse grid definitions and sets up parameters in the active catalog.
 
         Args:
             grid_entries (list[str]): Grid definitions to parse.
@@ -645,7 +645,7 @@ fix_all_parameters = _manager.fix_all
 
 
 def set_parameter_status(method: Method) -> None:
-    """Sets parameter status based on a given method configuration.
+    """Set parameter status based on a given method configuration.
 
     This function configures parameters to vary, be fixed, or follow certain
     expressions based on the provided method configuration.

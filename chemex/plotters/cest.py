@@ -19,7 +19,15 @@ from chemex.printers.plot import PlotPrinter, data_plot_printers
 from chemex.typing import ArrayFloat
 
 _GREY400 = "#BDBDBD"
-_LSTYLES = ("-", "--", "-.", ":")
+_LINESTYLES = [
+    (0, ()),  # solid
+    (0, (5, 1)),  # densely dashed
+    (0, (5, 5)),  # dashed
+    (0, (5, 10)),  # loosely dashed
+    (0, (1, 1)),  # densely dotted
+    (0, (1, 5)),  # dotted
+    (0, (1, 10)),  # loosely dotted
+]
 
 
 class CestExperimentSettings(Protocol):
@@ -79,7 +87,7 @@ def add_resonance_positions(
     for a_cs, a_cs_shifted, lstyle in zip(
         cs_values,
         cs_shifted,
-        _LSTYLES,
+        _LINESTYLES,
         strict=False,
     ):
         ax1.axvline(a_cs_shifted, linestyle=lstyle, **kwargs2)
@@ -175,7 +183,7 @@ def create_plot_data_calc(profile: Profile) -> Data:
 
 
 def get_state_positions(spectrometer: Spectrometer) -> ArrayFloat:
-    names = (f"cs_i_{state}" for state in "abcd")
+    names = (f"cs_i_{state}" for state in "abcdef")
     return np.array(
         [
             spectrometer.par_values[name]

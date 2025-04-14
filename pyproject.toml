@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling", "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
 [project]
@@ -45,7 +45,13 @@ Changelog = "https://github.com/gbouvignies/chemex/releases"
 chemex = "chemex.chemex:main"
 
 [tool.hatch.version]
-source = "vcs"
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "semver"
+fallback-version = "0.0.0"
+bump = true
 
 [tool.ruff.lint]
 select = ["ALL"]
