@@ -318,7 +318,7 @@ class ParameterCatalog:
         return self._count_per_section(ids_modified)
 
     def fix_all(self) -> None:
-        """Fixe all parameters, preventing them from varying during fitting."""
+        """Fix all parameters, preventing them from varying during fitting."""
         for parameter in self._parameters.values():
             parameter.vary = False
             parameter.expr = ""
