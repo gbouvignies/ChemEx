@@ -1,9 +1,10 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
 name = "chemex"
+version = "2025.4.1.dev0"
 description = "An analysis program for chemical exchange detected by NMR"
 authors = [
   { name = "Guillaume Bouvignies", email = "guillaume.bouvignies@ens.psl.eu" },
@@ -23,7 +24,6 @@ dependencies = [
 ]
 requires-python = ">=3.12"
 readme = "README.md"
-dynamic = ["version"]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Science/Research",
@@ -33,8 +33,8 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Chemistry",
 ]
 keywords = ["NMR", "chemical exchange", "spectroscopy", "analysis"]
-license = "GPL-3.0-or-later"        # SPDX expression
-license-files = ["LICENSE.md"]     # list of paths or globs
+license = "GPL-3.0-or-later" # SPDX expression
+license-files = ["LICENSE.md"] # list of paths or globs
 
 [project.urls]
 Homepage = "http://gbouvignies.github.io/ChemEx/"
@@ -44,10 +44,6 @@ Changelog = "https://github.com/gbouvignies/chemex/releases"
 
 [project.scripts]
 chemex = "chemex.chemex:main"
-
-[tool.hatch.version]
-source = "vcs"
-fallback-version = "0.0.0"
 
 [tool.ruff.lint]
 select = ["ALL"]
