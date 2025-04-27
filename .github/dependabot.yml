@@ -4,6 +4,8 @@ updates:
       directory: "/"
       schedule:
           interval: "weekly"
+      fetch-depth: 0 # Fetch all Git history
+
 
     - package-ecosystem: "github-actions"
       directory: "/"
