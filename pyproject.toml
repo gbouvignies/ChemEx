@@ -33,7 +33,8 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Chemistry",
 ]
 keywords = ["NMR", "chemical exchange", "spectroscopy", "analysis"]
-license = { file = "LICENSE.md" }
+license = "GPL-3.0-or-later"        # SPDX expression
+license-files = ["LICENSE.md"]     # list of paths or globs
 
 [project.urls]
 Homepage = "http://gbouvignies.github.io/ChemEx/"
