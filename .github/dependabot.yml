@@ -1,16 +1,95 @@
 version: 2
 updates:
-    - package-ecosystem: "uv"
-      directory: "/"
-      schedule:
-          interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    versioning-strategy: "increase-if-necessary"
+    rebase-strategy: "auto"
+    reviewers:
+      - gbouvignies
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      chemex-core:
+        patterns:
+          - "numpy*"
+          - "scipy*"
+          - "lmfit*"
+      chemex-aux:
+        patterns:
+          - "matplotlib*"
+          - "cachetools*"
+          - "emcee*"
 
-    - package-ecosystem: "github-actions"
-      directory: "/"
-      schedule:
-          interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    security-updates-only: true
+    reviewers:
+      - gbouvignies
 
-    - package-ecosystem: "npm"
-      directory: "/website/"
-      schedule:
-          interval: "weekly"
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2
+    rebase-strategy: "auto"
+    reviewers:
+      - gbouvignies
+    groups:
+      core:
+        dependency-type: "production"
+        patterns:
+          - "*"
+      dev:
+        dependency-type: "development"
+        patterns:
+          - "dev"
+      extras:
+        patterns:
+          - "docs"
+          - "test"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    reviewers:
+      - gbouvignies
+
+  - package-ecosystem: "npm"
+    directory: "/website/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2
+    reviewers:
+      - gbouvignies
+    groups:
+      runtime-deps:
+        dependency-type: "production"
+        patterns:
+          - "react*"
+          - "@docusaurus/*"
+          - "clsx"
+          - "prism-react-renderer"
+      dev-deps:
+        dependency-type: "development"
+        patterns:
+          - "eslint*"
+          - "prettier*"
+          - "@docusaurus/types"
+          - "@docusaurus/module-type-aliases"
+      docusaurus-core:
+        patterns:
+          - "@docusaurus/core"
+          - "@docusaurus/preset-classic"
+          - "@mdx-js/react"
+      docusaurus-plugins:
+        patterns:
+          - "rehype-katex"
+          - "remark-math"
