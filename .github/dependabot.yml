@@ -24,14 +24,6 @@ updates:
           - "cachetools*"
           - "emcee*"
 
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "daily"
-    security-updates-only: true
-    reviewers:
-      - gbouvignies
-
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
