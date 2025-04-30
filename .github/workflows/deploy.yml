@@ -6,7 +6,7 @@ on:
       - main
     # Review gh actions docs if you want to further define triggers, paths, etc
     # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on
-    # paths: [website/**]
+    paths: [website/**]
 
 jobs:
   build:
@@ -30,9 +30,6 @@ jobs:
 
       - name: Build website
         run: npm run build
-
-      - name: List website directory after build
-        run: ls -l
 
       - name: Upload Build Artifact
         uses: actions/upload-pages-artifact@v3
