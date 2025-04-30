@@ -1,9 +1,5 @@
 name: Deploy to GitHub Pages
 
-defaults:
-  run:
-    working-directory: ./website
-
 on:
   push:
     branches:
@@ -15,6 +11,9 @@ jobs:
   build:
     name: Build Docusaurus
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./website
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,6 +22,7 @@ jobs:
         with:
           node-version: 18
           cache: npm
+          cache-dependency-path: website/package-lock.json
 
       - name: Install dependencies
         run: npm ci
