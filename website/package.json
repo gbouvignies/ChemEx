@@ -26,9 +26,9 @@
     "remark-math": "^6.0.0"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "^3.7.0",
-    "@docusaurus/types": "^3.7.0",
-    "eslint": "^9.26.0",
+    "@docusaurus/module-type-aliases": "^3.8.0",
+    "@docusaurus/types": "^3.8.0",
+    "eslint": "^9.28.0",
     "eslint-plugin-react": "^7.37.5",
     "prettier": "^3.5.3"
   },
