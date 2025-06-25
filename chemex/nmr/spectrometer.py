@@ -29,7 +29,7 @@ def calculate_propagators(
 
     Parameters
     ----------
-    liouv : ArrayFloat
+    liouv : ArrayNumber
         The Liouvillians of the system
     delays : float | Iterable[float]
         The delays to calculate the propagators for
@@ -38,34 +38,37 @@ def calculate_propagators(
 
     Returns
     -------
-    ArrayFloat
+    ArrayNumber
         The propagators
 
     """
     # Ensure delays is a 1D NumPy array
-    delays = np.asarray(delays).flatten()
+    delays_array = np.asarray(delays).flatten()
 
-    if delays.size == 1 and not dephasing:
+    if delays_array.size == 1 and not dephasing:
         # If there's only one delay and no dephasing, calculate the propagator directly
         # using scipy expm function
-        return expm(liouv * delays[0]).astype(np.float64)
+        return expm(liouv * delays_array[0]).astype(np.float64)
 
     # Calculate eigenvalues and eigenvectors of the Liouvillian matrices
     eigenvalues, eigenvectors = np.linalg.eig(liouv)
+    eigenvalues = eigenvalues.astype(
+        np.complex128
+    )  # Ensure eigenvalues are complex, mainly for type checking
 
     if dephasing:
         # If dephasing is requested, adjust eigenvalues
         eigenvalues = np.where(
-            abs(eigenvalues.imag) < SMALL_VALUE,
+            np.abs(eigenvalues.imag) < SMALL_VALUE,
             eigenvalues,
             eigenvalues * 1e9,
         )
 
     # Calculate the exponentiated eigenvalues for each delay
-    evt = np.exp(np.multiply.outer(delays, eigenvalues))
+    evt = np.exp(np.multiply.outer(delays_array, eigenvalues))
 
     # Create an empty array for diagonal matrices
-    diag = np.empty((*delays.shape, *liouv.shape), dtype=np.complex128)
+    diag = np.empty((*delays_array.shape, *liouv.shape), dtype=np.complex128)
 
     # Calculate diagonal matrices for each delay
     for index in product(*(range(x) for x in evt.shape[:-1])):
@@ -79,13 +82,13 @@ def calculate_propagators(
         propagators = propagators[0]
 
     # Return the real part of the propagators
-    return propagators.real
+    return propagators.real.astype(np.float64)
 
 
 def _get_key(
     liouvillian: LiouvillianIS, *args: Hashable, **kwargs: Hashable
 ) -> tuple[Hashable, ...]:
-    return hashkey(liouvillian.basis, *args, **kwargs)
+    return tuple(hashkey(liouvillian.basis, *args, **kwargs))
 
 
 @cached(cache={}, key=_get_key)
@@ -126,7 +129,7 @@ def _get_phases(liouvillian: LiouvillianIS) -> DictArrayFloat:
 
 
 class Spectrometer:
-    def _add_phases(self, propagator: ArrayFloat, spin: str = "i") -> ArrayFloat:
+    def _add_phases(self, propagator: ArrayNumber, spin: str = "i") -> ArrayNumber:
         phases = self._phases[spin]
         return np.array([phases[i] @ propagator @ phases[-i] for i in range(4)])
 
@@ -292,7 +295,7 @@ class Spectrometer:
         self.calculate_i_flag = True
         self.calculate_s_flag = True
 
-    def delays(self, times: float | Iterable[float]) -> ArrayFloat:
+    def delays(self, times: float | Iterable[float]) -> ArrayNumber:
         return calculate_propagators(self.liouvillian.l_free, times)
 
     def pulse_i(
@@ -300,7 +303,7 @@ class Spectrometer:
         times: float | Iterable[float],
         phase: float,
         scale: float = 1.0,
-    ) -> ArrayFloat:
+    ) -> ArrayNumber:
         dephased = self.b1_i_inh_scale == np.inf
         rad = phase * np.pi * 0.5
         liouv = (
@@ -315,7 +318,7 @@ class Spectrometer:
         times: float | Iterable[float],
         phase: float,
         scale: float = 1.0,
-    ) -> ArrayFloat:
+    ) -> ArrayNumber:
         rad = phase * np.pi * 0.5
         liouv = (
             self.liouvillian.l_free
@@ -329,7 +332,7 @@ class Spectrometer:
         times: float | Iterable[float],
         phase_i: float,
         phase_s: float,
-    ) -> ArrayFloat:
+    ) -> ArrayNumber:
         dephased = self.b1_i_inh_scale == np.inf
         liouv = (
             self.liouvillian.l_free
@@ -345,7 +348,7 @@ class Spectrometer:
         pw: float,
         amplitudes: Sequence[float],
         phases: Iterable[float],
-    ) -> ArrayFloat:
+    ) -> ArrayNumber:
         time = pw / len(amplitudes)
         pairs = list(zip(amplitudes, phases, strict=True))
         pulses = {
@@ -360,6 +363,7 @@ class Spectrometer:
             base = self.pulse_i(pws, 0.0)
             pulses = self._add_phases(base, "i")
             self._p90_i, self._p180_i, self._p240_i = pulses.swapaxes(0, 1)
+            self.calculate_i_flag = False
 
     @property
     def p90_i(self) -> ArrayFloat:
@@ -398,13 +402,14 @@ class Spectrometer:
             base = self.pulse_s(pws, 0.0)
             pulses = self._add_phases(base, "s")
             self._p180_s = pulses.swapaxes(0, 1)
+            self.calculate_s_flag = False
 
     @property
-    def p180_s(self) -> ArrayFloat:
+    def p180_s(self) -> ArrayNumber:
         self._calculate_base_pulses_s()
         return self._p180_s
 
-    def p9024090_nh(self, *, reverse: bool = False) -> ArrayFloat:
+    def p9024090_nh(self, *, reverse: bool = False) -> ArrayNumber:
         ph_n = 1 if reverse else 3
         ph_h = 3 if reverse else 1
         pw240i, pw9024090i = np.array([8.0, 14.0]) * self._pw90_i / 3.0
@@ -434,18 +439,18 @@ class Spectrometer:
         return self._add_phases(self._add_phases(pw9024090is_xx, "s"), "i")
 
     @property
-    def p9024090_nh_1(self) -> ArrayFloat:
+    def p9024090_nh_1(self) -> ArrayNumber:
         return self.p9024090_nh()
 
     @property
-    def p9024090_nh_2(self) -> ArrayFloat:
+    def p9024090_nh_2(self) -> ArrayNumber:
         return self.p9024090_nh(reverse=True)
 
-    def calculate_shifts(self) -> ArrayFloat:
+    def calculate_shifts(self) -> ArrayNumber:
         liouv = self.liouvillian.l_free.reshape(
             (self.liouvillian.size, self.liouvillian.size),
         )
-        return np.linalg.eigvals(liouv).imag
+        return np.linalg.eigvals(liouv.astype(np.complex128)).imag
 
     def offsets_to_ppms(self, offsets: ArrayFloat) -> ArrayFloat:
         return self.liouvillian.offsets_to_ppms(offsets)

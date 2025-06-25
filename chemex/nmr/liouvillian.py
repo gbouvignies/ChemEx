@@ -325,8 +325,8 @@ class LiouvillianIS:
 
     def get_equilibrium(self) -> ArrayFloat:
         mag = np.zeros((self.size, 1))
-        for state, (name, atom) in product(model.states, self.basis.atoms.items()):
-            scale = self.par_values.get(f"p{state}", 0.0) * XI_RATIO.get(atom, 1.0)
+        for state, (name, nucleus) in product(model.states, self.basis.nuclei.items()):
+            scale = self.par_values.get(f"p{state}", 0.0) * XI_RATIO.get(nucleus, 1.0)
             mag += self.basis.vectors.get(f"{name}e_{state}", 0.0) * scale
             mag += self.basis.vectors.get(f"{name}z_{state}", 0.0) * scale
         return mag

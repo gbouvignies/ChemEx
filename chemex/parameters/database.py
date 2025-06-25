@@ -271,6 +271,7 @@ class ParameterCatalog:
             id_pool -= matching_ids
             for matching_id in matching_ids:
                 self._parameters[matching_id].set(setting)
+                self._parameters[matching_id].expr = ""
 
     def _count_per_section(self, param_ids: set[str]) -> Counter[str]:
         """Count parameters per section for a given set of IDs.
@@ -321,7 +322,7 @@ class ParameterCatalog:
         """Fix all parameters, preventing them from varying during fitting."""
         for parameter in self._parameters.values():
             parameter.vary = False
-            parameter.expr = ""
+            # parameter.expr = ""
 
     def _get_ids_left(self, expression: str) -> set[str]:
         """Extract parameter IDs from the left side of an expression.
