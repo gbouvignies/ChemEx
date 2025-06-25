@@ -160,7 +160,12 @@ const config = {
             },
         }),
     future: {
-        experimental_faster: true,
+        v4: {
+            removeLegacyPostBuildHeadAttribute: true,
+        },
+        experimental_faster: {
+            ssgWorkerThreads: true,
+        },
     },
 };
 
