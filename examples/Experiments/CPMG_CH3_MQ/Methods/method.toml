@@ -1,5 +1,5 @@
 [STEP1]
-FIX = ["PB", "KEX_AB", "DW_AB,NUC->H"]
+FIX = ["PB", "KEX_AB", "DW_AB,NUC->HD1", "DW_AB,NUC->HD2", "DW_AB,NUC->HG2"]
 
 [STEP2]
 FIT = ["PB", "KEX_AB"]
