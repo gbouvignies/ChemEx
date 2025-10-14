@@ -106,7 +106,7 @@ class TestEyring4stIntegration:
 
                     # Check that the expression is properly formatted
                     expr = settings[rate_key].expr
-                    assert "calculate_kij_4st_eyring" in expr
+                    assert "kij_4st_eyring" in expr
                     assert f"['k{i}{j}']" in expr
                     assert "30.0" in expr  # Temperature should be embedded
 

@@ -154,8 +154,9 @@ def create_kij_4st_eyring_settings(temperature: float) -> dict[str, ParamLocalSe
     return {
         f"k{i}{j}": ParamLocalSetting(
             name_setting=NameSetting(f"k{i}{j}", "", TPL),
+            min=0.0,
             expr=(
-                f"calculate_kij_4st_eyring("
+                f"kij_4st_eyring("
                 f"{{dh_b}}, {{ds_b}}, "
                 f"{{dh_c}}, {{ds_c}}, "
                 f"{{dh_d}}, {{ds_d}},"
@@ -177,6 +178,8 @@ def create_pop_4st_eyring_settings() -> dict[str, ParamLocalSetting]:
     return {
         f"p{state}": ParamLocalSetting(
             name_setting=NameSetting(f"p{state}", "", TPL),
+            min=0.0,
+            max=1.0,
             expr=f"pop_4st("
             f"{{kab}},{{kba}},"
             f"{{kac}},{{kca}},"
@@ -211,6 +214,13 @@ def make_settings_4st_eyring(conditions: Conditions) -> dict[str, ParamLocalSett
     celsius = conditions.temperature
     if celsius is None:
         msg = "The 'temperature' is None"
+        raise ValueError(msg)
+    # Early validation of temperature range (same policy as in calculator)
+    if not MIN_TEMPERATURE <= celsius <= MAX_TEMPERATURE:
+        msg = (
+            f"Temperature {celsius}°C is outside the valid range "
+            f"[{MIN_TEMPERATURE}, {MAX_TEMPERATURE}]°C"
+        )
         raise ValueError(msg)
     return {
         "dh_b": ParamLocalSetting(
@@ -311,7 +321,7 @@ def make_settings_4st_eyring(conditions: Conditions) -> dict[str, ParamLocalSett
 def register() -> None:
     model_factory.register(name=NAME, setting_maker=make_settings_4st_eyring)
     user_functions = {
-        "calculate_kij_4st_eyring": calculate_kij_4st_eyring,
+        "kij_4st_eyring": calculate_kij_4st_eyring,
         "pop_4st": pop_4st,
     }
     user_function_registry.register(name=NAME, user_functions=user_functions)

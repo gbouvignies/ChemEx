@@ -62,13 +62,13 @@ class TestCalculateKij4stEyring:
     def test_temperature_validation(self, default_params):
         """Test temperature range validation."""
         # Test too low temperature
-        with pytest.raises(ValueError, match="Temperature.*outside reasonable range"):
+        with pytest.raises(ValueError, match=r"Temperature.*outside the valid range"):
             params = default_params.copy()
             params["temperature"] = MIN_TEMPERATURE - 10
             calculate_kij_4st_eyring(**params)
 
         # Test too high temperature
-        with pytest.raises(ValueError, match="Temperature.*outside reasonable range"):
+        with pytest.raises(ValueError, match=r"Temperature.*outside the valid range"):
             params = default_params.copy()
             params["temperature"] = MAX_TEMPERATURE + 10
             calculate_kij_4st_eyring(**params)
