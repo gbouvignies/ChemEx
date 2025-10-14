@@ -1,0 +1,1 @@
+# Tests models package initialization

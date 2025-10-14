@@ -11,7 +11,7 @@ from functools import lru_cache
 from itertools import permutations
 
 import numpy as np
-from scipy.constants import constants
+from scipy.constants import R, h, k
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.constraints import pop_4st
@@ -28,8 +28,8 @@ TPL = ("temperature", "p_total", "l_total")
 # Physical constants
 CELSIUS_TO_KELVIN = 273.15  # Temperature conversion from Celsius to Kelvin
 MAX_RATE_CONSTANT = 1e16  # Maximum rate constant (s⁻¹) for numerical stability
-MIN_TEMPERATURE = -100.0  # Minimum temperature (°C) for validation
-MAX_TEMPERATURE = 200.0  # Maximum temperature (°C) for validation
+MIN_TEMPERATURE = -20.0  # Minimum temperature (°C) for validation
+MAX_TEMPERATURE = 100.0  # Maximum temperature (°C) for validation
 
 
 @lru_cache(maxsize=100)
@@ -108,14 +108,14 @@ def calculate_kij_4st_eyring(
     # Validate temperature range
     if not MIN_TEMPERATURE <= temperature <= MAX_TEMPERATURE:
         msg = (
-            f"Temperature {temperature}°C is outside reasonable range "
+            f"Temperature {temperature}°C is outside the valid range "
             f"[{MIN_TEMPERATURE}, {MAX_TEMPERATURE}]°C"
         )
         raise ValueError(msg)
 
     kelvin = temperature + CELSIUS_TO_KELVIN
-    kbt_h = constants.k * kelvin / constants.h
-    rt = constants.R * kelvin
+    kbt_h = k * kelvin / h
+    rt = R * kelvin
 
     # Reference state A has zero enthalpy and entropy
     dh_a = ds_a = 0.0
