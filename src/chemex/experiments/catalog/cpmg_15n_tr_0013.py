@@ -49,17 +49,19 @@ class Cpmg15NTr0013Settings(CpmgSettings):
 
     @cached_property
     def start_terms(self) -> list[str]:
+        suffix = self.suffix_start
         if self.s3e:
             if self.antitrosy:
-                return [f"2izsz{self.suffix}", f"iz{self.suffix}"]
-            return [f"2izsz{self.suffix}", f"-iz{self.suffix}"]
-        return [f"2izsz{self.suffix}"]
+                return [f"2izsz{suffix}", f"iz{suffix}"]
+            return [f"2izsz{suffix}", f"-iz{suffix}"]
+        return [f"2izsz{suffix}"]
 
     @cached_property
     def detection(self) -> str:
+        suffix = self.suffix_detect
         if self.antitrosy:
-            return f"[2izsz_{self.observed_state}] + [iz_{self.observed_state}]"
-        return f"[2izsz_{self.observed_state}] - [iz_{self.observed_state}]"
+            return f"[2izsz{suffix}] + [iz{suffix}]"
+        return f"[2izsz{suffix}] - [iz{suffix}]"
 
 
 class Cpmg15NTr0013Config(

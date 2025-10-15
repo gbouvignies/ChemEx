@@ -40,7 +40,7 @@ class Cest1HnIpApSettings(CestSettings):
 
     @property
     def detection(self) -> str:
-        return f"[2izsz_{self.observed_state}]"
+        return f"[2izsz{self.suffix_detect}]"
 
     @property
     def taud(self) -> float:

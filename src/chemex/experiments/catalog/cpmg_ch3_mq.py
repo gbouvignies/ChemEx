@@ -34,11 +34,11 @@ class CpmgCh3MqSettings(CpmgSettings):
 
     @cached_property
     def start_terms(self) -> list[str]:
-        return [f"2iysx{self.suffix}"]
+        return [f"2iysx{self.suffix_start}"]
 
     @cached_property
     def detection(self) -> str:
-        return f"[2iysx_{self.observed_state}]"
+        return f"[2iysx{self.suffix_detect}]"
 
 
 class CpmgCh3MqConfig(

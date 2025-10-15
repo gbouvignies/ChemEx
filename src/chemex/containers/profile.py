@@ -138,4 +138,3 @@ class Profile:
     def __str__(self) -> str:
         """String representation of the Profile."""
         return self.printer.print(str(self.spin_system), self.data)
-

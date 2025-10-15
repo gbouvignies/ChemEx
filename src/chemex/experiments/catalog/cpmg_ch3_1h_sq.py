@@ -38,11 +38,11 @@ class CpmgCh31HSqSettings(CpmgSettings):
 
     @cached_property
     def start_terms(self) -> list[str]:
-        return [f"2ixsz{self.suffix}", f"2iysz{self.suffix}"]
+        return [f"2ixsz{self.suffix_start}", f"2iysz{self.suffix_start}"]
 
     @cached_property
     def detection(self) -> str:
-        return f"[iy_{self.observed_state}]"
+        return f"[iy{self.suffix_detect}]"
 
 
 class CpmgCh31HSqConfig(

@@ -9,6 +9,7 @@ Defines:
 - BaseSettings: BaseModel with validator to lowercase dict keys.
 - ExperimentConfiguration: Main config class composing experiment, conditions, data.
 """
+
 from dataclasses import dataclass, field
 from typing import Generic, TypeVar
 

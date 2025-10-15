@@ -45,11 +45,11 @@ class CpmgCh31HTqDiffSettings(CpmgSettings):
 
     @cached_property
     def start_terms(self) -> list[str]:
-        return [f"2ixsz{self.suffix}"]
+        return [f"2ixsz{self.suffix_start}"]
 
     @cached_property
     def detection(self) -> str:
-        return f"[2ixsz_{self.observed_state}]"
+        return f"[2ixsz{self.suffix_detect}]"
 
 
 class CpmgCh31HTqDiffConfig(

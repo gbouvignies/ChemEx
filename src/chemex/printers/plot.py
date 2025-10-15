@@ -7,11 +7,9 @@ from chemex.containers.data import Data
 
 
 class PlotPrinter(Protocol):
-    def print_exp(self, name: str, data: Data) -> str:
-        ...
+    def print_exp(self, name: str, data: Data) -> str: ...
 
-    def print_calc(self, name: str, data: Data) -> str:
-        ...
+    def print_calc(self, name: str, data: Data) -> str: ...
 
 
 @dataclass

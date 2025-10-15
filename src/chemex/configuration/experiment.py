@@ -21,10 +21,15 @@ class ExperimentSettings(BaseModel):
 
 class RelaxationSettings(ExperimentSettings):
     cs_evolution_prior: bool = False
+    detect_all_states: bool = False
 
     @cached_property
-    def suffix(self) -> str:
+    def suffix_start(self) -> str:
         return f"_{self.observed_state}" if self.cs_evolution_prior else ""
+
+    @cached_property
+    def suffix_detect(self) -> str:
+        return "" if self.detect_all_states else f"_{self.observed_state}"
 
 
 class CpmgSettings(RelaxationSettings):

@@ -41,7 +41,7 @@ class CosCest1HnIpApSettings(MFCestSettings):
 
     @property
     def detection(self) -> str:
-        return f"[2izsz_{self.observed_state}]"
+        return f"[2izsz{self.suffix_detect}]"
 
 
 class CosCest1HnIpApConfig(
