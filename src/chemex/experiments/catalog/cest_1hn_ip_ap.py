@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Literal
 
 import numpy as np
@@ -38,7 +39,7 @@ class Cest1HnIpApSettings(CestSettings):
     b1_inh_res: int = 11
     eta_block: int = 0
 
-    @property
+    @cached_property
     def detection(self) -> str:
         return f"[2izsz{self.suffix_detect}]"
 
