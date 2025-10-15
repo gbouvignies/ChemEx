@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 import numpy as np
-from scipy.constants import constants
+from scipy import constants
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.constraints import pop_2st
@@ -16,6 +16,9 @@ NAME = "2st_eyring"
 PL = ("p_total", "l_total")
 TPL = ("temperature", "p_total", "l_total")
 
+# Physical constants
+MAX_RATE_CONSTANT = 1e16  # Maximum rate constant (s⁻¹) for numerical stability
+
 
 @lru_cache(maxsize=100)
 def calculate_kij_2st_eyring(
@@ -25,17 +28,23 @@ def calculate_kij_2st_eyring(
     ds_ab: float,
     temperature: float,
 ) -> dict[str, float]:
-    kelvin = temperature + 273.15
+    kelvin = constants.convert_temperature(temperature, "C", "K")
     kbt_h = constants.k * kelvin / constants.h
     rt = constants.R * kelvin
     dh_a = ds_a = 0.0
     kab = kbt_h * np.exp(-(dh_ab - dh_a - kelvin * (ds_ab - ds_a)) / rt)
     kba = kbt_h * np.exp(-(dh_ab - dh_b - kelvin * (ds_ab - ds_b)) / rt)
+    # Clip values for numerical stability
+    kab = np.clip(kab, 0.0, MAX_RATE_CONSTANT)
+    kba = np.clip(kba, 0.0, MAX_RATE_CONSTANT)
     return {"kab": kab, "kba": kba}
 
 
 def make_settings_2st_eyring(conditions: Conditions) -> dict[str, ParamLocalSetting]:
     celsius = conditions.temperature
+    if celsius is None:
+        msg = "The 'temperature' is None"
+        raise ValueError(msg)
     return {
         "dh_b": ParamLocalSetting(
             name_setting=NameSetting("dh_b", "", PL),

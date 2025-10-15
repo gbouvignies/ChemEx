@@ -6,9 +6,17 @@ from collections.abc import Iterable, MutableMapping
 from pathlib import Path
 from typing import Any
 
-from pydantic.v1.utils import deep_update
-
 from chemex.messages import print_file_not_found, print_toml_error
+
+
+def _deep_update(target: dict, src: dict) -> dict:
+    """Recursively update target dict with src dict (deep merge)."""
+    for key, value in src.items():
+        if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+            target[key] = _deep_update(target[key], value)
+        else:
+            target[key] = value
+    return target
 
 
 def read_toml(filename: Path) -> dict[str, Any]:
@@ -30,7 +38,7 @@ def read_toml_multi(filenames: Iterable[Path]) -> MutableMapping[str, Any]:
     """Read and parse multiple experiment configuration files with 'toml'."""
     config: dict[str, Any] = {}
     for filename in filenames:
-        config = deep_update(config, read_toml(filename))
+        config = _deep_update(config, read_toml(filename))
     return config
 
 
