@@ -11,7 +11,7 @@ from functools import lru_cache
 from itertools import permutations
 
 import numpy as np
-from scipy.constants import R, h, k
+from scipy import constants
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.constraints import pop_4st
@@ -26,10 +26,7 @@ PL = ("p_total", "l_total")
 TPL = ("temperature", "p_total", "l_total")
 
 # Physical constants
-CELSIUS_TO_KELVIN = 273.15  # Temperature conversion from Celsius to Kelvin
 MAX_RATE_CONSTANT = 1e16  # Maximum rate constant (s⁻¹) for numerical stability
-MIN_TEMPERATURE = -20.0  # Minimum temperature (°C) for validation
-MAX_TEMPERATURE = 100.0  # Maximum temperature (°C) for validation
 
 
 @lru_cache(maxsize=100)
@@ -105,17 +102,9 @@ def calculate_kij_4st_eyring(
     >>> print(f"k_ab = {rates['kab']:.2e} s⁻¹")
 
     """
-    # Validate temperature range
-    if not MIN_TEMPERATURE <= temperature <= MAX_TEMPERATURE:
-        msg = (
-            f"Temperature {temperature}°C is outside the valid range "
-            f"[{MIN_TEMPERATURE}, {MAX_TEMPERATURE}]°C"
-        )
-        raise ValueError(msg)
-
-    kelvin = temperature + CELSIUS_TO_KELVIN
-    kbt_h = k * kelvin / h
-    rt = R * kelvin
+    kelvin = constants.convert_temperature(temperature, "C", "K")
+    kbt_h = constants.k * kelvin / constants.h
+    rt = constants.R * kelvin
 
     # Reference state A has zero enthalpy and entropy
     dh_a = ds_a = 0.0
@@ -214,13 +203,6 @@ def make_settings_4st_eyring(conditions: Conditions) -> dict[str, ParamLocalSett
     celsius = conditions.temperature
     if celsius is None:
         msg = "The 'temperature' is None"
-        raise ValueError(msg)
-    # Early validation of temperature range (same policy as in calculator)
-    if not MIN_TEMPERATURE <= celsius <= MAX_TEMPERATURE:
-        msg = (
-            f"Temperature {celsius}°C is outside the valid range "
-            f"[{MIN_TEMPERATURE}, {MAX_TEMPERATURE}]°C"
-        )
         raise ValueError(msg)
     return {
         "dh_b": ParamLocalSetting(

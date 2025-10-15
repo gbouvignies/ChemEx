@@ -4,7 +4,7 @@ from functools import lru_cache
 from itertools import permutations
 
 import numpy as np
-from scipy.constants import constants
+from scipy import constants
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.constraints import pop_3st
@@ -17,6 +17,9 @@ NAME = "3st_eyring"
 
 PL = ("p_total", "l_total")
 TPL = ("temperature", "p_total", "l_total")
+
+# Physical constants
+MAX_RATE_CONSTANT = 1e16  # Maximum rate constant (s⁻¹) for numerical stability
 
 
 @lru_cache(maxsize=100)
@@ -33,7 +36,7 @@ def calculate_kij_3st_eyring(
     ds_bc: float,
     temperature: float,
 ) -> dict[str, float]:
-    kelvin = temperature + 273.15
+    kelvin = constants.convert_temperature(temperature, "C", "K")
     kbt_h = constants.k * kelvin / constants.h
     rt = constants.R * kelvin
     dh_a = ds_a = 0.0
@@ -48,7 +51,7 @@ def calculate_kij_3st_eyring(
         ),
     )
     kij_values: ArrayFloat = kbt_h * np.exp(-ddg_ij / rt)
-    kij_values = np.clip(kij_values, 0.0, 1e16)
+    kij_values = np.clip(kij_values, 0.0, MAX_RATE_CONSTANT)
     kij_names = (f"k{i}{j}" for i, j in permutations("abc", 2))
     return dict(zip(kij_names, kij_values, strict=True))
 
@@ -57,8 +60,9 @@ def create_kij_3st_eyring_settings(temperature: float) -> dict[str, ParamLocalSe
     return {
         f"k{i}{j}": ParamLocalSetting(
             name_setting=NameSetting(f"k{i}{j}", "", TPL),
+            min=0.0,
             expr=(
-                f"calculate_kij_3st_eyring({{dh_b}}, {{ds_b}}, {{dh_c}}, {{ds_c}}, "
+                f"kij_3st_eyring({{dh_b}}, {{ds_b}}, {{dh_c}}, {{ds_c}}, "
                 f"{{dh_ab}}, {{ds_ab}}, {{dh_ac}}, {{ds_ac}}, {{dh_bc}}, {{ds_bc}},"
                 f" {temperature})['k{i}{j}']"
             ),
@@ -71,6 +75,8 @@ def create_pop_3st_eyring_settings() -> dict[str, ParamLocalSetting]:
     return {
         f"p{state}": ParamLocalSetting(
             name_setting=NameSetting(f"p{state}", "", TPL),
+            min=0.0,
+            max=1.0,
             expr=f"pop_3st({{kab}},{{kba}},{{kac}},{{kca}},{{kbc}},{{kcb}})['p{state}']",
         )
         for state in "abc"
@@ -141,7 +147,7 @@ def make_settings_3st_eyring(conditions: Conditions) -> dict[str, ParamLocalSett
 def register() -> None:
     model_factory.register(name=NAME, setting_maker=make_settings_3st_eyring)
     user_functions = {
-        "calculate_kij_3st_eyring": calculate_kij_3st_eyring,
+        "kij_3st_eyring": calculate_kij_3st_eyring,
         "pop_3st": pop_3st,
     }
     user_function_registry.register(name=NAME, user_functions=user_functions)
