@@ -5,7 +5,6 @@ from functools import cached_property, reduce
 from typing import Literal
 
 import numpy as np
-from numpy.linalg import matrix_power
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
@@ -21,7 +20,7 @@ from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cpmg import CpmgPlotter
 from chemex.printers.data import CpmgPrinter
-from chemex.typing import ArrayBool, ArrayFloat
+from chemex.typing import ArrayBool, ArrayFloat, ArrayInt
 
 EXPERIMENT_NAME = "cpmg_ch3_13c_h2c_0013"
 
@@ -50,7 +49,7 @@ class CpmgCh313CH2c0013Settings(CpmgSettingsEvenNcycs):
 
     @cached_property
     def start_terms(self) -> list[str]:
-        return [f"2izsz"]
+        return ["2izsz"]
 
     @cached_property
     def detection(self) -> str:
@@ -92,22 +91,25 @@ def build_spectrometer(
 class CpmgCh313CH2c0013Sequence:
     settings: CpmgCh313CH2c0013Settings
 
-    def _get_delays(self, ncycs: ArrayFloat) -> tuple[dict[float, float], list[float]]:
+    def _get_delays(
+        self, ncycs: ArrayFloat
+    ) -> tuple[dict[float, float], dict[float, float], list[float]]:
         ncycs_above_one = ncycs[ncycs > 1]
         ncyc_max = max(ncycs)
         tau_cps = {
             ncyc: self.settings.time_t2 / (4.0 * ncyc) - 0.75 * self.settings.pw90
             for ncyc in ncycs_above_one
         }
-        tau_cps[1.0] = self.settings.time_t2 / 4.0  - (2.0/np.pi + 1.5) * self.settings.pw90
+        tau_cps[1.0] = (
+            self.settings.time_t2 / 4.0 - (2.0 / np.pi + 1.5) * self.settings.pw90
+        )
 
-        ncycs_1 = np.floor(np.floor(ncycs*0.5)*2 + 0.1)
-        ncycs_2 = np.floor(np.floor((ncycs+1)*0.5)*2 + 0.1)
+        ncycs_1 = np.floor(np.floor(ncycs * 0.5) * 2 + 0.1)
+        ncycs_2 = np.floor(np.floor((ncycs + 1) * 0.5) * 2 + 0.1)
         ncycs_3 = np.unique(np.concatenate((ncycs_1, ncycs_2)))
         ncycs_4 = ncycs_3[ncycs_3 > 0]
         deltas = {
-            ncyc: 0.5 * self.settings.pw90 * (ncyc_max + 1 - ncyc)
-            for ncyc in ncycs_4
+            ncyc: 0.5 * self.settings.pw90 * (ncyc_max + 1 - ncyc) for ncyc in ncycs_4
         }
         deltas[0.0] = 0.5 * self.settings.pw90 * (ncyc_max - 1)
 
@@ -165,33 +167,48 @@ class CpmgCh313CH2c0013Sequence:
 
         # Calculating the p-element with additional purge gradients
         zfilter = spectrometer.zfilter
-        p_element = d_grad @ zfilter @ p90[1] @ d_taub @ p90[0] @ p180_sx @ p90[0] @ d_taub @ p90[0] @ p180_sx @ d_grad @ zfilter
+        p_element = (
+            d_grad
+            @ zfilter
+            @ p90[1]
+            @ d_taub
+            @ p90[0]
+            @ p180_sx
+            @ p90[0]
+            @ d_taub
+            @ p90[0]
+            @ p180_sx
+            @ d_grad
+            @ zfilter
+        )
 
         # Calculating the instensities as a function of ncyc
         intensities = {
-                0.0: spectrometer.detect(
+            0.0: spectrometer.detect(
                 d_eq
                 @ d_delta[0]
                 @ p90[0]
                 @ p180[[0, 3]]
                 @ d_pos
                 @ p180[[2, 3]]
-                @ (p90[0] - p90[2])*0.5
+                @ (p90[0] - p90[2])
+                * 0.5
                 @ p_element
                 @ d_delta[0]
                 @ p90[0]
                 @ p180[[1, 0]]
                 @ d_pos
                 @ p180[[1, 2]]
-                @ (p90[0] - p90[2])*0.5
+                @ (p90[0] - p90[2])
+                * 0.5
                 @ d_eq
                 @ start,
             ),
         }
 
         for ncyc in set(ncycs) - {0.0}:
-            ncyc_1 = np.floor(np.floor(ncyc*0.5)*2 + 0.1)
-            ncyc_2 = np.floor(np.floor((ncyc+1)*0.5)*2 + 0.1)
+            ncyc_1 = np.floor(np.floor(ncyc * 0.5) * 2 + 0.1)
+            ncyc_2 = np.floor(np.floor((ncyc + 1) * 0.5) * 2 + 0.1)
             phases1, phases2 = self._get_phases(ncyc_1)
             phases3, phases4 = self._get_phases(ncyc_2)
 
@@ -205,19 +222,21 @@ class CpmgCh313CH2c0013Sequence:
             cpmg3 = d_neg @ reduce(np.matmul, echo[phases3.T]) @ d_neg
             cpmg4 = d_neg @ reduce(np.matmul, echo[phases4.T]) @ d_neg
 
-            if int(ncyc)%2 == 0:
-                if int(ncyc_1)%4 == 0:
+            if int(ncyc) % 2 == 0:
+                if int(ncyc_1) % 4 == 0:
                     intst1 = spectrometer.detect(
                         d_eq
                         @ d_delta[ncyc_1]
                         @ p90[0]
                         @ cpmg1
-                        @ (p90[0] - p90[2])*0.5
+                        @ (p90[0] - p90[2])
+                        * 0.5
                         @ p_element
                         @ d_delta[ncyc_1]
                         @ p90[0]
                         @ cpmg1
-                        @ (p90[0] - p90[2])*0.5
+                        @ (p90[0] - p90[2])
+                        * 0.5
                         @ d_eq
                         @ start
                     )
@@ -227,80 +246,89 @@ class CpmgCh313CH2c0013Sequence:
                         @ d_delta[ncyc_1]
                         @ p90[0]
                         @ cpmg2
-                        @ (p90[0] - p90[2])*0.5
+                        @ (p90[0] - p90[2])
+                        * 0.5
                         @ p_element
                         @ d_delta[ncyc_1]
                         @ p90[0]
                         @ cpmg1
-                        @ (p90[0] - p90[2])*0.5
+                        @ (p90[0] - p90[2])
+                        * 0.5
                         @ d_eq
                         @ start
                     )
 
                 intst2 = intst1
+            elif int(ncyc_1) % 4 == 0:
+                intst1 = spectrometer.detect(
+                    d_eq
+                    @ d_delta[ncyc_2]
+                    @ p90[0]
+                    @ cpmg3
+                    @ (p90[0] - p90[2])
+                    * 0.5
+                    @ p_element
+                    @ d_delta[ncyc_1]
+                    @ p90[0]
+                    @ cpmg1
+                    @ (p90[0] - p90[2])
+                    * 0.5
+                    @ d_eq
+                    @ start
+                )
+
+                intst2 = spectrometer.detect(
+                    d_eq
+                    @ d_delta[ncyc_1]
+                    @ p90[0]
+                    @ cpmg2
+                    @ (p90[0] - p90[2])
+                    * 0.5
+                    @ p_element
+                    @ d_delta[ncyc_2]
+                    @ p90[0]
+                    @ cpmg3
+                    @ (p90[0] - p90[2])
+                    * 0.5
+                    @ d_eq
+                    @ start
+                )
             else:
-                if int(ncyc_1)%4 == 0:
-                    intst1 = spectrometer.detect(
-                        d_eq
-                        @ d_delta[ncyc_2]
-                        @ p90[0]
-                        @ cpmg3
-                        @ (p90[0] - p90[2])*0.5
-                        @ p_element
-                        @ d_delta[ncyc_1]
-                        @ p90[0]
-                        @ cpmg1
-                        @ (p90[0] - p90[2])*0.5
-                        @ d_eq
-                        @ start
-                    )
+                intst1 = spectrometer.detect(
+                    d_eq
+                    @ d_delta[ncyc_2]
+                    @ p90[0]
+                    @ cpmg4
+                    @ (p90[0] - p90[2])
+                    * 0.5
+                    @ p_element
+                    @ d_delta[ncyc_1]
+                    @ p90[0]
+                    @ cpmg1
+                    @ (p90[0] - p90[2])
+                    * 0.5
+                    @ d_eq
+                    @ start
+                )
 
-                    intst2 = spectrometer.detect(
-                        d_eq
-                        @ d_delta[ncyc_1]
-                        @ p90[0]
-                        @ cpmg2
-                        @ (p90[0] - p90[2])*0.5
-                        @ p_element
-                        @ d_delta[ncyc_2]
-                        @ p90[0]
-                        @ cpmg3
-                        @ (p90[0] - p90[2])*0.5
-                        @ d_eq
-                        @ start
-                    )
-                else:
-                    intst1 = spectrometer.detect(
-                        d_eq
-                        @ d_delta[ncyc_2]
-                        @ p90[0]
-                        @ cpmg4
-                        @ (p90[0] - p90[2])*0.5
-                        @ p_element
-                        @ d_delta[ncyc_1]
-                        @ p90[0]
-                        @ cpmg1
-                        @ (p90[0] - p90[2])*0.5
-                        @ d_eq
-                        @ start
-                    )
+                intst2 = spectrometer.detect(
+                    d_eq
+                    @ d_delta[ncyc_1]
+                    @ p90[0]
+                    @ cpmg1
+                    @ (p90[0] - p90[2])
+                    * 0.5
+                    @ p_element
+                    @ d_delta[ncyc_2]
+                    @ p90[0]
+                    @ cpmg3
+                    @ (p90[0] - p90[2])
+                    * 0.5
+                    @ d_eq
+                    @ start
+                )
 
-                    intst2 = spectrometer.detect(
-                        d_eq
-                        @ d_delta[ncyc_1]
-                        @ p90[0]
-                        @ cpmg1
-                        @ (p90[0] - p90[2])*0.5
-                        @ p_element
-                        @ d_delta[ncyc_2]
-                        @ p90[0]
-                        @ cpmg3
-                        @ (p90[0] - p90[2])*0.5
-                        @ d_eq
-                        @ start
-                    )
-
-            intensities[ncyc] = (intst1 + intst2)*0.5
+            intensities[ncyc] = (intst1 + intst2) * 0.5
 
         # Return profile
         return np.array([intensities[ncyc] for ncyc in ncycs])

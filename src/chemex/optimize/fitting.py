@@ -103,9 +103,6 @@ def _fit_groups(
             group_lmfit_params,
             fitmethod,
         )
-        # best_lmfit_params = minimize_hierarchical(
-        #     group.experiments, group_lmfit_params, fitmethod
-        # )
 
         database.update_from_parameters(best_lmfit_params)
         execute_post_fit(group.experiments, group_path, plot=plot_flg)

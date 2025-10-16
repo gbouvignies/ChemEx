@@ -282,7 +282,7 @@ class Spectrometer:
     def detection(self, value: str) -> None:
         self.liouvillian.detection = value
 
-    def detect(self, magnetization: ArrayFloat) -> float:
+    def detect(self, magnetization: ArrayNumber) -> float:
         return self.liouvillian.detect(magnetization)
 
     @property
