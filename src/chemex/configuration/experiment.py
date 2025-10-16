@@ -20,11 +20,40 @@ class ExperimentSettings(BaseModel):
 
 
 class RelaxationSettings(ExperimentSettings):
+    """Base settings for relaxation-based experiments (CEST, DCEST, CPMG, etc).
+
+    Attributes:
+        cs_evolution_prior (bool):
+            If True, use chemical shift evolution for the starting terms.
+        detect_all_states (bool):
+            If True, detection will use all states (e.g., '[iz]'),
+            otherwise only the observed state (e.g., '[iz_a]').
+
+    Properties:
+        suffix_start: Suffix for starting terms, respects cs_evolution_prior.
+        suffix_detect: Suffix for detection, respects detect_all_states.
+            Returns '' if detect_all_states is True, else '_{observed_state}'.
+
+    """
+
     cs_evolution_prior: bool = False
+    detect_all_states: bool = False
 
     @cached_property
-    def suffix(self) -> str:
+    def suffix_start(self) -> str:
+        """Suffix for starting terms.
+
+        Returns '_{observed_state}' if cs_evolution_prior is True, else ''.
+        """
         return f"_{self.observed_state}" if self.cs_evolution_prior else ""
+
+    @cached_property
+    def suffix_detect(self) -> str:
+        """Suffix for detection.
+
+        Returns '' if detect_all_states is True, else '_{observed_state}'.
+        """
+        return "" if self.detect_all_states else f"_{self.observed_state}"
 
 
 class CpmgSettings(RelaxationSettings):

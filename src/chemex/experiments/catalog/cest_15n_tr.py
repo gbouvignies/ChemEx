@@ -44,16 +44,17 @@ class Cest15NTrSettings(CestSettings):
         TROSY: (2IzSz + Iz) / 2
         ANTITROSY: (2IzSz - Iz) / 2.
         """
+        suffix = self.suffix_start
         if not self.antitrosy:
-            return [f"2izsz{self.suffix}", f"-iz{self.suffix}"]
-
-        return [f"2izsz{self.suffix}", f"iz{self.suffix}"]
+            return [f"2izsz{suffix}", f"-iz{suffix}"]
+        return [f"2izsz{suffix}", f"iz{suffix}"]
 
     @cached_property
     def detection(self) -> str:
+        suffix = self.suffix_detect
         if self.antitrosy:
-            return f"[2izsz_{self.observed_state}] + [iz_{self.observed_state}]"
-        return f"[2izsz_{self.observed_state}] - [iz_{self.observed_state}]"
+            return f"[2izsz{suffix}] + [iz{suffix}]"
+        return f"[2izsz{suffix}] - [iz{suffix}]"
 
 
 class Cest15NTrConfig(
@@ -125,7 +126,7 @@ class Cest15NTrSequence:
 
             intensities[offset] = (
                 spectrometer.pulse_i(self.settings.time_t1, 0.0) @ intensities[offset]
-            )
+            ).real.astype(float)
 
         return np.array(
             [spectrometer.detect(intensities[offset]) for offset in offsets],

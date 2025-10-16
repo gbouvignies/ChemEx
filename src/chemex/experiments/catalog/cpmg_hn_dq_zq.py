@@ -41,13 +41,14 @@ class CpmgHNDqZqSettings(CpmgSettingsEvenNcycs):
 
     @cached_property
     def start_terms(self) -> list[str]:
-        return [f"2ixsx{self.suffix}"]
+        return [f"2ixsx{self.suffix_start}"]
 
     @cached_property
     def detection(self) -> str:
+        suffix = self.suffix_detect
         if self.dq_flg:
-            return f"[2ixsx_{self.observed_state}] - [2iysy_{self.observed_state}]"
-        return f"[2ixsx_{self.observed_state}] + [2iysy_{self.observed_state}]"
+            return f"[2ixsx{suffix}] - [2iysy{suffix}]"
+        return f"[2ixsx{suffix}] + [2iysy{suffix}]"
 
 
 class CpmgHNDqZqConfig(

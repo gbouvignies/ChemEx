@@ -38,7 +38,7 @@ class CestCh31HIpApSettings(CestSettings):
 
     @property
     def detection(self) -> str:
-        return f"[2izsz_{self.observed_state}]"
+        return f"[2izsz{self.suffix_detect}]"
 
 
 class CestCh31HIpApConfig(
@@ -112,7 +112,7 @@ class CestCh31HIpApSequence:
             if self.is_reference(offset):
                 inept = pp90_i[3] @ d_taua @ pp180_isx @ d_taua @ pp90_i[0]
                 mag = inept @ mag
-            intensities[offset] = spectrometer.detect(mag)
+            intensities[offset] = spectrometer.detect(mag.real.astype(float))
 
         return np.array([intensities[offset] for offset in offsets])
 

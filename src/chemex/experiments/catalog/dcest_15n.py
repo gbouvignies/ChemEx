@@ -57,11 +57,11 @@ class DCest15NSettings(MFCestSettings):
     @cached_property
     def start_terms(self) -> list[str]:
         starts = {"2st_hd": ["iz_a"], "4st_hd": ["iz_a", "iz_b"]}
-        return starts.get(model.name, [f"iz{self.suffix}"])
+        return starts.get(model.name, [f"iz{self.suffix_start}"])
 
     @cached_property
     def detection(self) -> str:
-        return f"[iz_{self.observed_state}]"
+        return f"[iz{self.suffix_detect}]"
 
 
 class DCest15NConfig(
@@ -123,7 +123,7 @@ class DCest15NSequence:
 
         for offset in set(offsets):
             if self.is_reference(offset):
-                intensities[offset] = d_eq @ start
+                intensities[offset] = (d_eq @ start).real.astype(float)
                 continue
 
             spectrometer.offset_i = offset
@@ -133,7 +133,7 @@ class DCest15NSequence:
 
             intensities[offset] = (
                 d_eq @ matrix_power(p_delay @ p_pulse, self.settings.ncyc_dante) @ start
-            )
+            ).real.astype(float)
 
         return np.array(
             [spectrometer.detect(intensities[offset]) for offset in offsets],

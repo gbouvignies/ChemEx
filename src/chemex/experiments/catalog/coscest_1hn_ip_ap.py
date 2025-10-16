@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Literal
 
 import numpy as np
@@ -39,9 +40,9 @@ class CosCest1HnIpApSettings(MFCestSettings):
     b1_inh_scale: float = 0.1
     b1_inh_res: int = 11
 
-    @property
+    @cached_property
     def detection(self) -> str:
-        return f"[2izsz_{self.observed_state}]"
+        return f"[2izsz{self.suffix_detect}]"
 
 
 class CosCest1HnIpApConfig(

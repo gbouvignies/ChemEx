@@ -38,11 +38,11 @@ class Cest1HnApSettings(CestSettings):
 
     @cached_property
     def start_terms(self) -> list[str]:
-        return [f"2izsz{self.suffix}"]
+        return [f"2izsz{self.suffix_start}"]
 
     @cached_property
     def detection(self) -> str:
-        return f"[2izsz_{self.observed_state}]"
+        return f"[2izsz{self.suffix_detect}]"
 
 
 class Cest1HnApConfig(

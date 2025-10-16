@@ -280,15 +280,14 @@ _NUCLEI = {
     for pair in ("hn", "hc", "nh", "ch", "cn")
 }
 
+
 @cache
 def _build_vectors(basis: Basis) -> DictArray:
     """Build vector representations for basis components."""
     size = len(basis) * len(model.states)
 
     # Initialize empty vectors dictionary with zero arrays
-    vectors: defaultdict[str, ArrayFloat] = defaultdict(
-        lambda: np.zeros((size, 1))
-    )
+    vectors: defaultdict[str, ArrayFloat] = defaultdict(lambda: np.zeros((size, 1)))
 
     # Populate vectors for each state/component combination
     for idx, (state, component) in enumerate(product(model.states, basis.components)):

@@ -46,11 +46,11 @@ class Cpmg15N0013IpSettings(CpmgSettings):
 
     @cached_property
     def start_terms(self) -> list[str]:
-        return [f"iz{self.suffix}"]
+        return [f"iz{self.suffix_start}"]
 
     @cached_property
     def detection(self) -> str:
-        return f"[iz_{self.observed_state}]"
+        return f"[iz{self.suffix_detect}]"
 
 
 class Cpmg15N0013IpConfig(

@@ -38,11 +38,11 @@ class Cest15NSettings(CestSettings):
 
     @cached_property
     def start_terms(self) -> list[str]:
-        return [f"iz{self.suffix}"]
+        return [f"iz{self.suffix_start}"]
 
     @cached_property
     def detection(self) -> str:
-        return f"[iz_{self.observed_state}]"
+        return f"[iz{self.suffix_detect}]"
 
 
 class Cest15NConfig(
@@ -102,10 +102,9 @@ class Cest15NSequence:
                 continue
 
             spectrometer.offset_i = offset
-
             intensities[offset] = (
                 spectrometer.pulse_i(self.settings.time_t1, 0.0) @ intensities[offset]
-            )
+            ).real.astype(float)
 
         return np.array(
             [spectrometer.detect(intensities[offset]) for offset in offsets],
