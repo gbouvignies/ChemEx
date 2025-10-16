@@ -155,7 +155,9 @@ class Spectrometer:
         self._p240_i = np.array(0.0)
         self._p180_s = np.array(0.0)
 
-    def keep(self, magnetization: ArrayFloat, components: Iterable[str]) -> ArrayNumber:
+    def keep(
+        self, magnetization: ArrayNumber, components: Iterable[str]
+    ) -> ArrayNumber:
         return self.liouvillian.keep(magnetization, components)
 
     def update(self, par_values: dict[str, float]) -> None:
@@ -270,7 +272,7 @@ class Spectrometer:
         return self.liouvillian.get_start_magnetization(terms=terms, atom=atom)
 
     def tilt_mag_along_weff_i(
-        self, magnetization: ArrayFloat, *, back: bool = False
+        self, magnetization: ArrayNumber, *, back: bool = False
     ) -> ArrayNumber:
         return self.liouvillian.tilt_mag_along_weff_i(magnetization, back=back)
 

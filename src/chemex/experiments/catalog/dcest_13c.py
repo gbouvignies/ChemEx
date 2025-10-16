@@ -22,7 +22,7 @@ from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cest import CestPlotter
 from chemex.printers.data import CestPrinter
-from chemex.typing import ArrayBool, ArrayFloat
+from chemex.typing import ArrayBool, ArrayFloat, ArrayNumber
 
 EXPERIMENT_NAME = "dcest_13c"
 
@@ -115,7 +115,7 @@ class DCest13CSequence:
             else spectrometer.identity
         )
 
-        intensities: dict[float, ArrayFloat] = {}
+        intensities: dict[float, ArrayNumber] = {}
 
         for offset in set(offsets):
             if self.is_reference(offset):
@@ -132,7 +132,7 @@ class DCest13CSequence:
             )
 
         return np.array(
-            [spectrometer.detect(intensities[offset]) for offset in offsets],
+            [spectrometer.detect(intensities[offset]) for offset in offsets]
         )
 
 

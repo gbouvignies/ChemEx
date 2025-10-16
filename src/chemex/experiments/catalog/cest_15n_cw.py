@@ -21,7 +21,7 @@ from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cest import CestPlotter
 from chemex.printers.data import CestPrinter
-from chemex.typing import ArrayBool, ArrayFloat
+from chemex.typing import ArrayBool, ArrayFloat, ArrayNumber
 
 EXPERIMENT_NAME = "cest_15n_cw"
 
@@ -110,7 +110,7 @@ class Cest15NCwSequence:
             terms=self.settings.start_terms, atom="n"
         )
 
-        intensities: dict[float, ArrayFloat] = {}
+        intensities: dict[float, ArrayNumber] = {}
 
         for offset in set(offsets):
             intensities[offset] = start
