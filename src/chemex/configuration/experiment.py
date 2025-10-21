@@ -24,7 +24,15 @@ class RelaxationSettings(ExperimentSettings):
 
     Attributes:
         cs_evolution_prior (bool):
-            If True, use chemical shift evolution for the starting terms.
+            Controls the initial condition (equilibrium vs non-equilibrium).
+            If False (default), the initial magnetization assumes thermal
+            equilibrium with all states populated according to their equilibrium
+            populations. If True, only the observed state is initially populated
+            (non-equilibrium condition), which is appropriate when chemical shift
+            evolution occurs before the CEST/CPMG element in the pulse sequence,
+            breaking the equilibrium assumption. This can affect the accuracy of
+            extracted kinetic parameters, especially for slow exchange rates
+            (see Yuwen et al., J. Biomol. NMR 2016, 65:143-156).
         detect_all_states (bool):
             If True, detection will use all states (e.g., '[iz]'),
             otherwise only the observed state (e.g., '[iz_a]').
@@ -43,7 +51,9 @@ class RelaxationSettings(ExperimentSettings):
     def suffix_start(self) -> str:
         """Suffix for starting terms.
 
-        Returns '_{observed_state}' if cs_evolution_prior is True, else ''.
+        Returns '_{observed_state}' if cs_evolution_prior is True (non-equilibrium
+        initial condition with only the observed state populated), else ''
+        (equilibrium initial condition with all states populated).
         """
         return f"_{self.observed_state}" if self.cs_evolution_prior else ""
 

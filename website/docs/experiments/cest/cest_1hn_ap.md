@@ -58,6 +58,13 @@ b1_frq = 25.0
 ## the longer the calculation. [optional, default: 11]
 # b1_inh_res = 11
 
+## Initial condition: non-equilibrium (only observed state populated).
+## This is appropriate when chemical shift evolution occurs before the CEST
+## element. Set to false for equilibrium initial condition if your pulse
+## sequence differs (see Yuwen et al., J. Biomol. NMR 2016, 65:143-156).
+## [optional, default: true]
+# cs_evolution_prior = true
+
 ## State of the observed resonance [optional, default: "a"]
 # observed_state = "a"
 

@@ -65,6 +65,26 @@ The `[experiment]` section defines the type and settings of the pulse sequence. 
 | `pw90`            | 90-degree pulse width, in seconds.                                                                    |
 | `b1_frq`          | B1 radio-frequency field strength, in Hz.                                                             |
 | `observed_state`  | ID of the observed state (e.g., `a`, `b`, `c`, or `d`).                                              |
+| `cs_evolution_prior` | Controls initial condition: equilibrium (False, default) vs non-equilibrium (True). See below.     |
+
+#### `cs_evolution_prior`
+
+The `cs_evolution_prior` key controls whether the initial magnetization assumes thermal equilibrium or a non-equilibrium condition:
+
+- **`False` (default)**: Equilibrium initial condition where all states are populated according to their equilibrium populations. Use this when the CEST/CPMG element starts immediately after magnetization preparation.
+
+- **`True`**: Non-equilibrium initial condition where only the observed state is initially populated. Use this when chemical shift evolution occurs **before** the CEST/CPMG element, as this breaks the equilibrium assumption.
+
+The choice can significantly affect extracted kinetic parameters, especially for slow exchange rates (see Yuwen et al., _J. Biomol. NMR_ **2016**, 65:143-156). Most experiments use the default (`False`), but some pulse sequences (e.g., `cpmg_1hn_ap`, `cest_1hn_ap`) set this to `True` by default based on their typical pulse sequence implementations. You can override the default in your experiment configuration file if your specific pulse sequence differs.
+
+Example:
+
+```toml
+[experiment]
+name = "cpmg_1hn_ap"
+# Override the default if needed for your pulse sequence
+cs_evolution_prior = false
+```
 
 ### `[conditions]`
 

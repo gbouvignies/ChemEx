@@ -69,6 +69,13 @@ gradient = 30.0e-2
 ## AP TQ magnetizations [optional, default: false]
 # ipap_flg = false
 
+## Initial condition: equilibrium (all states populated according to their
+## equilibrium populations). Set to true for non-equilibrium initial condition
+## if chemical shift evolution occurs before the CPMG element in your pulse
+## sequence (see Yuwen et al., J. Biomol. NMR 2016, 65:143-156).
+## [optional, default: false]
+# cs_evolution_prior = false
+
 ## State of the observed resonance [optional, default: "a"]
 # observed_state = "a"
 
