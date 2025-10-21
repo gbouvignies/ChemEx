@@ -14,17 +14,17 @@ from chemex.containers.data import Data
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.printers.data import Printer
-from chemex.typing import ArrayBool, ArrayFloat
+from chemex.typing import Array
 
 
 class PulseSequence(Protocol):
     """Defines a protocol for pulse sequence classes."""
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
-        """Calculate the ArrayFloat given a Spectrometer and Data."""
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
+        """Calculate the Array given a Spectrometer and Data."""
         ...
 
-    def is_reference(self, metadata: ArrayFloat) -> ArrayBool:
+    def is_reference(self, metadata: Array) -> Array:
         """Check if the metadata is a reference."""
         ...
 
@@ -80,8 +80,8 @@ class Profile:
         parameter_values = self._get_parameter_values(params)
         self.spectrometer.update(parameter_values)
 
-    def calculate(self, params: ParametersLF) -> ArrayFloat:
-        """Calculate and return the ArrayFloat."""
+    def calculate(self, params: ParametersLF) -> Array:
+        """Calculate and return the Array."""
         self.update_spectrometer(params)
         self.data.calc_unscaled = self.pulse_sequence.calculate(
             self.spectrometer, self.data
@@ -93,7 +93,7 @@ class Profile:
         return self.data.calc
 
     @cachedmethod(attrgetter("cache"), key=_cache_key)
-    def residuals(self, params: ParametersLF) -> ArrayFloat:
+    def residuals(self, params: ParametersLF) -> Array:
         """Calculate and return residuals."""
         residuals = (self.calculate(params) - self.data.exp) / self.data.err
         return residuals[self.data.mask]
@@ -136,5 +136,5 @@ class Profile:
         return profile
 
     def __str__(self) -> str:
-        """String representation of the Profile."""
+        """Return string representation of the Profile."""
         return self.printer.print(str(self.spin_system), self.data)

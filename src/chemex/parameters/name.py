@@ -118,7 +118,10 @@ class ParamName:
         return self.conditions.match(other.conditions)
 
     def get_closest_id(self, ids: Iterable[str]) -> str:
-        best_match, _, _ = extractOne(self.id_, ids)
+        result = extractOne(self.id_, ids)
+        if result is None:
+            return self.id_
+        best_match, _, _ = result
         return best_match
 
     def __and__(self, other: object) -> Self:

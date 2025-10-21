@@ -12,7 +12,7 @@ from chemex.containers.profile import Profile
 from chemex.messages import print_plot_filename
 from chemex.plotters.plot import plot_profile
 from chemex.printers.plot import PlotPrinter, data_plot_printers
-from chemex.typing import ArrayFloat
+from chemex.typing import Array
 
 LARGE_ERROR = 1e15
 
@@ -44,10 +44,10 @@ def plot_cpmg(file_pdf: PdfPages, name: str, data_exp: Data, data_calc: Data) ->
 
 
 def intensities_to_rates(
-    intensities: ArrayFloat,
-    intensities0: ArrayFloat,
+    intensities: Array,
+    intensities0: Array,
     time_t2: float,
-) -> ArrayFloat:
+) -> Array:
     normalized_intensities = intensities / np.mean(intensities0, axis=-1, keepdims=True)
 
     # If the normalized intensity is negative, no rate can be estimated.
@@ -59,19 +59,19 @@ def intensities_to_rates(
     return rates
 
 
-def calculate_exp_rates(data: Data, time_t2: float) -> ArrayFloat:
+def calculate_exp_rates(data: Data, time_t2: float) -> Array:
     intensities = data.exp[~data.refs]
     intensities0 = data.exp[data.refs]
     return intensities_to_rates(intensities, intensities0, time_t2)
 
 
-def calculate_calc_rates(data: Data, time_t2: float) -> ArrayFloat:
+def calculate_calc_rates(data: Data, time_t2: float) -> Array:
     intensities = data.calc[~data.refs]
     intensities0 = data.exp[data.refs]
     return intensities_to_rates(intensities, intensities0, time_t2)
 
 
-def calculate_errorbars(data: Data, rates: ArrayFloat, time_t2: float) -> ArrayFloat:
+def calculate_errorbars(data: Data, rates: Array, time_t2: float) -> Array:
     randn = rng.standard_normal(size=(10000, 1))
     randn0 = rng.standard_normal(size=(10000, 1))
 
@@ -84,7 +84,7 @@ def calculate_errorbars(data: Data, rates: ArrayFloat, time_t2: float) -> ArrayF
     intensities_ensemble = intensities + intensities_err * randn
     intensities0_ensemble = intensities0 + intensities0_err * randn0
 
-    rates_ensemble: ArrayFloat = intensities_to_rates(
+    rates_ensemble: Array = intensities_to_rates(
         intensities_ensemble,
         intensities0_ensemble,
         time_t2,
@@ -101,7 +101,7 @@ def calculate_errorbars(data: Data, rates: ArrayFloat, time_t2: float) -> ArrayF
     return np.abs(errors)
 
 
-def ncycs_to_nu_cpmgs(ncycs: ArrayFloat, time_t2: float) -> ArrayFloat:
+def ncycs_to_nu_cpmgs(ncycs: Array, time_t2: float) -> Array:
     modified_ncycs = ncycs.copy()
     modified_ncycs[modified_ncycs == -1] = 0.5
     return modified_ncycs[modified_ncycs != 0] / time_t2

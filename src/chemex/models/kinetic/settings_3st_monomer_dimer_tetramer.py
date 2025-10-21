@@ -10,7 +10,7 @@ from chemex.models.constraints import pop_3st
 from chemex.models.factory import model_factory
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
-from chemex.typing import ArrayFloat
+from chemex.typing import Array
 
 NAME = "3st_monomer_dimer_tetramer"
 
@@ -18,11 +18,11 @@ TP = ("temperature", "p_total")
 
 
 def calculate_residuals(
-    concentrations: ArrayFloat,
+    concentrations: Array,
     p_total: float,
     kd1: float,
     kd2: float,
-) -> ArrayFloat:
+) -> Array:
     monomer, dimer, tetramer = concentrations
     return np.array(
         [

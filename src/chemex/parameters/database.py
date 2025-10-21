@@ -29,7 +29,7 @@ from chemex.nmr.rates import rate_functions
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import Parameters, ParamSetting
 from chemex.parameters.userfunctions import user_function_registry
-from chemex.typing import ArrayFloat
+from chemex.typing import Array
 
 _PARAM_NAME = r"\[(.+?)\]"
 _FLOAT = r"[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?"
@@ -81,7 +81,7 @@ class ParameterIndex:
         )
 
 
-def _convert_grid_expression_to_values(grid_expression: str) -> ArrayFloat:
+def _convert_grid_expression_to_values(grid_expression: str) -> Array:
     """Convert grid expression to floating-point values.
 
     Parses grid expressions used for parameter exploration and converts them into
@@ -91,7 +91,7 @@ def _convert_grid_expression_to_values(grid_expression: str) -> ArrayFloat:
         grid_expression (str): Grid expression to be converted.
 
     Returns:
-        ArrayFloat: Array of floating-point values from the grid expression.
+        Array: Array of floating-point values from the grid expression.
 
     """
     if match := re.match(_LINEAR, grid_expression):
@@ -402,19 +402,19 @@ class ParameterCatalog:
 
         return self._count_per_section(ids_modified)
 
-    def parse_grid(self, grid_entries: list[str]) -> dict[str, ArrayFloat]:
+    def parse_grid(self, grid_entries: list[str]) -> dict[str, Array]:
         """Parse grid definitions and sets up parameters accordingly.
 
         Args:
             grid_entries (list[str]): List of grid definitions.
 
         Returns:
-            dict[str, ArrayFloat]: Mapping of parameter IDs to grid values.
+            dict[str, Array]: Mapping of parameter IDs to grid values.
 
         """
         ids_pool = set(self._parameters)
 
-        grid_values: dict[str, ArrayFloat] = {}
+        grid_values: dict[str, Array] = {}
 
         for entry in reversed(grid_entries):
             name, expression, *something_else = entry.replace(" ", "").split("=")
@@ -614,14 +614,14 @@ class ParamManager:
         """
         return self.database.set_expressions(expression_list)
 
-    def parse_grid(self, grid_entries: list[str]) -> dict[str, ArrayFloat]:
+    def parse_grid(self, grid_entries: list[str]) -> dict[str, Array]:
         """Parse grid definitions and sets up parameters in the active catalog.
 
         Args:
             grid_entries (list[str]): Grid definitions to parse.
 
         Returns:
-            dict[str, ArrayFloat]: Parameters mapped to grid values.
+            dict[str, Array]: Parameters mapped to grid values.
 
         """
         return self.database.parse_grid(grid_entries)

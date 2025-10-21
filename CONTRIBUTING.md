@@ -26,6 +26,7 @@ We welcome contributions to the ChemEx project! Whether you're interested in fix
 
 -   **Small and Focused**: Keep your pull requests small and focused on a single issue or feature.
 -   **Code Standards**: Follow the coding style of the project (PEP 8 for Python, for example).
+-   **Type Hints**: Import `Array` from `chemex.typing` for NumPy arrays.
 -   **Documentation**: Update the documentation accordingly.
 -   **Testing**: Add tests for new features or bug fixes.
 -   **Describe Your Changes**: In your pull request, clearly describe what you have done.

@@ -18,7 +18,7 @@ from chemex.models.constraints import pop_4st
 from chemex.models.factory import model_factory
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
-from chemex.typing import ArrayFloat
+from chemex.typing import Array
 
 NAME = "4st_eyring"
 
@@ -128,7 +128,7 @@ def calculate_kij_4st_eyring(
     )
 
     # Apply Eyring equation
-    kij_values: ArrayFloat = kbt_h * np.exp(-ddg_ij / rt)
+    kij_values: Array = kbt_h * np.exp(-ddg_ij / rt)
 
     # Clip values for numerical stability
     kij_values = np.clip(kij_values, 0.0, MAX_RATE_CONSTANT)

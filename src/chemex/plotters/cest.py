@@ -16,7 +16,7 @@ from chemex.messages import print_plot_filename
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.plotters.plot import get_grid, plot_profile
 from chemex.printers.plot import PlotPrinter, data_plot_printers
-from chemex.typing import ArrayFloat
+from chemex.typing import Array
 
 _GREY400 = "#BDBDBD"
 _LINESTYLES = [
@@ -41,7 +41,7 @@ class CestExperimentConfig(Protocol):
 T = TypeVar("T", bound=CestExperimentConfig)
 
 
-def estimate_sigma(values: ArrayFloat) -> float:
+def estimate_sigma(values: Array) -> float:
     """Estimates standard deviation using median to exclude outliers.
 
     Up to 50% can be bad.
@@ -68,7 +68,7 @@ class CircularShift:
         sw_ppm, sw_ref = self.spectrometer.offsets_to_ppms(np.array([self.sw, 0.0]))
         self.sw_ppm = sw_ppm - sw_ref
 
-    def centre(self, array: ArrayFloat, position: float) -> ArrayFloat:
+    def centre(self, array: Array, position: float) -> Array:
         if self.sw == np.inf:
             return array
         cs_min = position - self.sw_ppm / 2.0
@@ -78,11 +78,10 @@ class CircularShift:
 def add_resonance_positions(
     ax1: Axes,
     ax2: Axes,
-    cs_values: ArrayFloat,
+    cs_values: Array,
     centre: float,
     circular_shift: CircularShift,
 ) -> tuple[Axes, Axes]:
-    kwargs2 = {"color": _GREY400, "linewidth": 0.75, "zorder": -1}
     cs_shifted = circular_shift.centre(cs_values, centre)
     for a_cs, a_cs_shifted, lstyle in zip(
         cs_values,
@@ -90,8 +89,12 @@ def add_resonance_positions(
         _LINESTYLES,
         strict=False,
     ):
-        ax1.axvline(a_cs_shifted, linestyle=lstyle, **kwargs2)
-        ax2.axvline(a_cs_shifted, linestyle=lstyle, **kwargs2)
+        ax1.axvline(
+            a_cs_shifted, linestyle=lstyle, color=_GREY400, linewidth=0.75, zorder=-1
+        )
+        ax2.axvline(
+            a_cs_shifted, linestyle=lstyle, color=_GREY400, linewidth=0.75, zorder=-1
+        )
         if a_cs != a_cs_shifted:
             x, _ = ax2.transLimits.transform((a_cs_shifted, 0))
             ax2.text(x - 0.02, 0.95, "*", transform=ax2.transAxes)
@@ -103,7 +106,7 @@ def plot_dcest(
     name: str,
     data_exp: Data,
     data_calc: Data,
-    cs_values: ArrayFloat,
+    cs_values: Array,
     circular_shift: CircularShift,
 ) -> None:
     if data_exp.size > 0:
@@ -125,9 +128,20 @@ def plot_dcest(
     ax2.xaxis.set_major_locator(MaxNLocator(6))
     ax2.set_xlabel(r"$B_1$ position (ppm)")
     ax2.set_ylabel(r"$I/I_0$")
-    kwargs1 = {"facecolor": (0, 0, 0, 0.1), "edgecolor": "none"}
-    ax1.fill_between(ax1.get_xlim(), -1.0 * sigma, 1.0 * sigma, **kwargs1)
-    ax1.fill_between(ax1.get_xlim(), -2.0 * sigma, 2.0 * sigma, **kwargs1)
+    ax1.fill_between(
+        ax1.get_xlim(),
+        -1.0 * sigma,
+        1.0 * sigma,
+        facecolor=(0, 0, 0, 0.1),
+        edgecolor="none",
+    )
+    ax1.fill_between(
+        ax1.get_xlim(),
+        -2.0 * sigma,
+        2.0 * sigma,
+        facecolor=(0, 0, 0, 0.1),
+        edgecolor="none",
+    )
 
     ax1, ax2 = add_resonance_positions(ax1, ax2, cs_values, centre, circular_shift)
 
@@ -182,7 +196,7 @@ def create_plot_data_calc(profile: Profile) -> Data:
     return data_fit
 
 
-def get_state_positions(spectrometer: Spectrometer) -> ArrayFloat:
+def get_state_positions(spectrometer: Spectrometer) -> Array:
     names = (f"cs_i_{state}" for state in "abcdef")
     return np.array(
         [

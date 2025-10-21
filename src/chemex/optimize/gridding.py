@@ -25,13 +25,13 @@ from chemex.optimize.helper import (
 )
 from chemex.optimize.minimizer import minimize
 from chemex.parameters import database
-from chemex.typing import ArrayFloat
+from chemex.typing import Array
 
 
 @dataclass
 class GridResult:
-    grid: dict[str, ArrayFloat]
-    chisqr: ArrayFloat
+    grid: dict[str, Array]
+    chisqr: Array
 
 
 def _set_param_values(
@@ -45,7 +45,7 @@ def _set_param_values(
 
 def run_group_grid(
     group: Group,
-    grid: dict[str, ArrayFloat],
+    grid: dict[str, Array],
     path: Path,
     fitmethod: str,
 ) -> GridResult:
@@ -93,9 +93,9 @@ def run_group_grid(
 
 
 def _reshape_chisqr(
-    grid_ref: dict[str, ArrayFloat],
+    grid_ref: dict[str, Array],
     grid_result: GridResult,
-) -> ArrayFloat:
+) -> Array:
     keys = list(grid_result.grid)
     order = [keys.index(key) for key in grid_ref if key in keys]
     axes_to_reduce = tuple(sorted(set(range(len(keys))) - set(order)))
@@ -114,9 +114,9 @@ def _reshape_chisqr(
 
 
 def _get_grids(
-    grid: dict[str, ArrayFloat],
+    grid: dict[str, Array],
     grid_results: list[GridResult],
-) -> list[dict[str, ArrayFloat]]:
+) -> list[dict[str, Array]]:
     grid_params = {tuple(sorted(grid_result.grid)) for grid_result in grid_results}
     grid_params_tmp = grid_params.copy()
     for params1, params2 in permutations(grid_params, 2):
@@ -126,7 +126,7 @@ def _get_grids(
 
 
 def combine_grids(
-    grid: dict[str, ArrayFloat],
+    grid: dict[str, Array],
     grid_results: list[GridResult],
 ) -> list[GridResult]:
     grids = _get_grids(grid, grid_results)
@@ -157,7 +157,7 @@ def set_params_from_grid(grids_1d: Iterable[GridResult]) -> None:
 
 
 def make_grids_nd(
-    grid: dict[str, ArrayFloat],
+    grid: dict[str, Array],
     grids_combined: list[GridResult],
     ndim: int,
 ) -> list[GridResult]:
@@ -265,4 +265,4 @@ def run_grid(
     if len(groups) > 1:
         execute_post_fit_groups(experiments, path, plot)
     else:
-        execute_post_fit(experiments, path, plot != "nothing")
+        execute_post_fit(experiments, path, plot=plot != "nothing")

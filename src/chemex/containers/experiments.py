@@ -18,7 +18,7 @@ from chemex.containers.experiment import Experiment
 from chemex.messages import print_selecting_profiles
 from chemex.parameters import database
 from chemex.parameters.spin_system import Group, SpinSystem
-from chemex.typing import ArrayFloat
+from chemex.typing import Array
 
 # Type definitions
 SelectionType = list[SpinSystem] | Literal["*", "all"], None
@@ -58,14 +58,14 @@ class Experiments:
             raise ValueError(msg)
         self._experiments[experiment.filename] = experiment
 
-    def residuals(self, params: Parameters) -> ArrayFloat:
+    def residuals(self, params: Parameters) -> Array:
         """Calculate the residuals for all experiments in the collection.
 
         Args:
             params (Parameters): Parameters for residual calculation.
 
         Returns:
-            ArrayFloat: Residuals as a NumPy array.
+            Array: Residuals as a NumPy array.
 
         """
         return np.concatenate([experiment.residuals(params) for experiment in self])

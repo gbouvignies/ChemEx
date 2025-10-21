@@ -1,11 +1,11 @@
 import numpy as np
-import numpy.typing as npt
 from scipy.interpolate import CubicSpline
 
 from chemex.containers.profile import Profile
 from chemex.plotters.cest import create_plot_data_exp
+from chemex.typing import Array
 
-FloatArray = npt.NDArray[np.float64]
+FloatArray = Array
 
 
 class Curve:

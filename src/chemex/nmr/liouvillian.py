@@ -23,7 +23,7 @@ from chemex.nmr.basis import Basis
 from chemex.nmr.constants import SIGNED_XI_RATIO, XI_RATIO, Distribution
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.spin_system.nucleus import Nucleus
-from chemex.typing import ArrayFloat, ArrayNumber
+from chemex.typing import Array
 
 _RE_COMP = re.compile(r"\[(.+?)\]")
 
@@ -65,7 +65,7 @@ class LiouvillianIS:
         self.par_values: dict[str, float] = {}
         self.size = len(model.states) * len(basis)
         self._detection: str = ""
-        self._detect_vector: ArrayNumber = np.array([])
+        self._detect_vector: Array = np.array([])
         self._q_order_i = _Q_ORDER_I.get(self.basis.extension, 1.0)
         scale = -2.0 * np.pi * self.h_frq
         self.ppm_i = scale * SIGNED_XI_RATIO.get(basis.nuclei.get("i", Nucleus.X), 1.0)
@@ -92,7 +92,7 @@ class LiouvillianIS:
             start=np.array(0.0),
         )
 
-    def _collapse(self, magnetization: ArrayNumber) -> ArrayNumber:
+    def _collapse(self, magnetization: Array) -> Array:
         """Collapse the distribution of magnetization into an average."""
         if (ndim := magnetization.ndim) < 3:
             return magnetization
@@ -232,7 +232,7 @@ class LiouvillianIS:
         self._build_base_liouvillian()
 
     @property
-    def l_free(self) -> ArrayNumber:
+    def l_free(self) -> Array:
         return sum(
             (
                 self._l_base,
@@ -246,7 +246,7 @@ class LiouvillianIS:
         )
 
     @property
-    def weights(self) -> ArrayNumber:
+    def weights(self) -> Array:
         return self._b1_i_dist.weights * self._jeff_i_weights
 
     @property
@@ -257,14 +257,14 @@ class LiouvillianIS:
     def detection(self, value: str) -> None:
         self._detection = value
         expr = _RE_COMP.sub(r'self.basis.vectors.get("\1")', value)
-        vector: ArrayNumber = eval(expr)
+        vector: Array = eval(expr)
         self._detect_vector = vector.transpose()
 
     def update(self, par_values: dict[str, float]) -> None:
         self.par_values = par_values
         self._build_base_liouvillian()
 
-    def detect(self, magnetization: ArrayNumber) -> float:
+    def detect(self, magnetization: Array) -> float:
         collapsed_magnetization = self._collapse(magnetization)
         detected = self._detect_vector @ collapsed_magnetization
         if np.iscomplexobj(detected):
@@ -272,8 +272,8 @@ class LiouvillianIS:
         return float(detected)
 
     # def detect_spectrum(
-    #     self, magnetization: ArrayNumber, observed_state: str = "a"
-    # ) -> ArrayNumber:
+    #     self, magnetization: Array, observed_state: str = "a"
+    # ) -> Array:
     #     collapsed_magnetization = self._collapse(magnetization)
     #     component, _state = self.detection.split("_")
     #     self.basis.vectors.get("ix", 0.0) - 1j * self.basis.vectors.get(
@@ -293,8 +293,8 @@ class LiouvillianIS:
         return -float(np.max(real_eigenvalues))
 
     def tilt_mag_along_weff_i(
-        self, magnetization: ArrayNumber, *, back: bool = False
-    ) -> ArrayNumber:
+        self, magnetization: Array, *, back: bool = False
+    ) -> Array:
         basis = self.basis
 
         w1 = self.b1_i * 2.0 * np.pi
@@ -323,7 +323,7 @@ class LiouvillianIS:
 
         return magnetization
 
-    def get_equilibrium(self) -> ArrayFloat:
+    def get_equilibrium(self) -> Array:
         mag = np.zeros((self.size, 1))
         for state, (name, nucleus) in product(model.states, self.basis.nuclei.items()):
             scale = self.par_values.get(f"p{state}", 0.0) * XI_RATIO.get(nucleus, 1.0)
@@ -331,9 +331,7 @@ class LiouvillianIS:
             mag += self.basis.vectors.get(f"{name}z_{state}", 0.0) * scale
         return mag
 
-    def get_start_magnetization(
-        self, terms: Iterable[str], atom: str = "h"
-    ) -> ArrayFloat:
+    def get_start_magnetization(self, terms: Iterable[str], atom: str = "h") -> Array:
         ratio = XI_RATIO.get(atom, 1.0)
         terms_set = set(terms)
         mag = np.zeros((self.size, 1))
@@ -352,9 +350,7 @@ class LiouvillianIS:
 
         return mag
 
-    def keep(
-        self, magnetization: ArrayNumber, components: Iterable[str]
-    ) -> ArrayNumber:
+    def keep(self, magnetization: Array, components: Iterable[str]) -> Array:
         keep = sum(
             (self.basis.vectors[name] for name in components),
             start=np.zeros((self.size, 1)),
@@ -362,8 +358,8 @@ class LiouvillianIS:
         keep[keep > 0] = 1.0
         return keep * magnetization
 
-    def offsets_to_ppms(self, offsets: ArrayFloat) -> ArrayFloat:
+    def offsets_to_ppms(self, offsets: Array) -> Array:
         return self.carrier_i + 2.0 * np.pi * offsets / abs(self.ppm_i)
 
-    def ppms_to_offsets(self, ppms: ArrayFloat | float) -> ArrayFloat | float:
+    def ppms_to_offsets(self, ppms: Array | float) -> Array | float:
         return (ppms - self.carrier_i) * abs(self.ppm_i) / (2.0 * np.pi)

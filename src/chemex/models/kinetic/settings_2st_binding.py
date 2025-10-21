@@ -9,7 +9,7 @@ from chemex.configuration.conditions import Conditions
 from chemex.models.factory import model_factory
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
-from chemex.typing import ArrayFloat
+from chemex.typing import Array
 
 NAME = "2st_binding"
 
@@ -17,11 +17,11 @@ TPL = ("temperature", "p_total", "l_total")
 
 
 def calculate_residuals(
-    concentrations: ArrayFloat,
+    concentrations: Array,
     p_total: float,
     l_total: float,
     kd: float,
-) -> ArrayFloat:
+) -> Array:
     p_free, l_free, pl = concentrations
     return np.array(
         [

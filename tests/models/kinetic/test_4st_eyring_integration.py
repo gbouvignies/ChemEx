@@ -63,17 +63,19 @@ class TestEyring4stIntegration:
         # Check enthalpy parameters
         dh_params = ["dh_b", "dh_c", "dh_d"]
         for param in dh_params:
-            assert settings[param].value > 0  # Should be positive
-            assert settings[param].value < 100000  # Should be reasonable (< 100 kJ/mol)
+            value = settings[param].value
+            assert value is not None
+            assert value > 0  # Should be positive
+            assert value < 100000  # Should be reasonable (< 100 kJ/mol)
             assert settings[param].vary is True  # Should be variable
 
         # Check activation enthalpies
         activation_params = ["dh_ab", "dh_ac", "dh_ad", "dh_bc", "dh_bd", "dh_cd"]
         for param in activation_params:
-            assert (
-                settings[param].value > 50000
-            )  # Should be reasonable activation energy
-            assert settings[param].value < 200000  # Should not be too high
+            value = settings[param].value
+            assert value is not None
+            assert value > 50000  # Should be reasonable activation energy
+            assert value < 200000  # Should not be too high
 
         # Check entropy parameters (typically zero by default)
         entropy_params = [
