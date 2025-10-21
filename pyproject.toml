@@ -18,14 +18,16 @@ dependencies = [
   "rich>=13.9.4",
   "scipy>=1.15.2",
 ]
-requires-python = ">=3.12"
+# Python 3.13 is the recommended and tested version
+# Python 3.14 support is experimental (tested in CI but may have ecosystem issues)
+requires-python = ">=3.13"
 readme = "README.md"
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
-  "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",  # Experimental - ecosystem catching up
   "Topic :: Scientific/Engineering :: Chemistry",
 ]
 keywords = ["NMR", "chemical exchange", "spectroscopy", "analysis"]
@@ -60,12 +62,16 @@ ignore = [
   "PD011",
 ]
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["chemex"]
 
-[tool.pyright]
-venvPath = "."
-venv = ".venv"
+[tool.ty.src]
+# Exclude work-in-progress experimental code
+exclude = ["src/chemex/experiments/catalog/wip/"]
+
+[tool.ty.rules]
+# Downgrade warnings to avoid failing CI
+possibly-missing-attribute = "warn"
 
 [build-system]
 requires = ["uv_build>=0.8.14,<0.10.0"]
@@ -74,4 +80,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=8.4.2",
+    "scipy-stubs>=1.16.2.3",
+    "ty>=0.0.1a22",
+    "types-cachetools>=6.2.0.20250827",
 ]
