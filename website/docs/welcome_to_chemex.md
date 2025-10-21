@@ -10,20 +10,36 @@ ChemEx is a powerful tool for analyzing NMR experimental data to characterize ch
 
 ## Prerequisites
 
-Before installing ChemEx, ensure Python 3.11 or 3.12 is installed on your system. It’s recommended to create an isolated environment for a clean and conflict-free setup.
+Before installing ChemEx, ensure Python 3.13 (recommended) or later is installed on your system. It's recommended to create an isolated environment for a clean and conflict-free setup.
 
 ## Installation Options {#installation}
 
-ChemEx can be installed through **pip** or **mamba/conda** from the **conda-forge** channel. Choose the method that best suits your setup.
+ChemEx can be installed using various methods. Choose the one that best suits your workflow.
+
+### Quick Start with uv (Recommended)
+
+The fastest way to try ChemEx without installation using [uv](https://docs.astral.sh/uv/):
+
+```shell
+uvx chemex --help
+```
+
+Or install it as a tool for repeated use:
+
+```shell
+uv tool install chemex
+chemex --help
+```
 
 ### Using pip with a Virtual Environment
+
+The standard Python approach for an isolated installation:
 
 1. **Create and activate a virtual environment:**
 
    ```shell
-   # Create a virtual environment (replace "chemex_env" with your preferred name)
-   python -m venv chemex_env
-   source chemex_env/bin/activate  # On Windows, use `chemex_env\Scripts\activate`
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    ```
 
 2. **Install ChemEx using pip:**
@@ -32,28 +48,32 @@ ChemEx can be installed through **pip** or **mamba/conda** from the **conda-forg
    pip install chemex
    ```
 
+### Using pip (global installation)
+
+For a system-wide installation:
+
+```shell
+pip install chemex
+```
+
 ### Using mamba or conda
 
-For users who prefer `conda` environments, **mamba** is a faster alternative to `conda` for package management but is optional.
+If you prefer conda environments:
 
-1. **Install mamba (optional but recommended):**
-
-   ```shell
-   conda install mamba -n base -c conda-forge
-   ```
-
-2. **Create and activate a new environment:**
+1. **Create and activate a new environment:**
 
    ```shell
-   mamba create -n chemex python=3.11
+   conda create -n chemex python=3.13
    conda activate chemex
    ```
 
-3. **Install ChemEx via conda-forge channel:**
+2. **Install ChemEx via conda-forge channel:**
 
    ```shell
-   mamba install -c conda-forge chemex
+   conda install -c conda-forge chemex
    ```
+
+   > **Tip**: For faster package management, consider using [mamba](https://mamba.readthedocs.io/) instead of conda: `mamba install -c conda-forge chemex`
 
 ### Installing from GitHub
 
