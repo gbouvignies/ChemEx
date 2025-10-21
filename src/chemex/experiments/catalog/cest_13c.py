@@ -21,7 +21,7 @@ from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cest import CestPlotter
 from chemex.printers.data import CestPrinter
-from chemex.typing import ArrayBool, ArrayFloat, ArrayNumber
+from chemex.typing import Array
 
 EXPERIMENT_NAME = "cest_13c"
 OFFSET_REF = 1e4
@@ -86,15 +86,15 @@ class Cest13CSequence:
     settings: Cest13CSettings
 
     @staticmethod
-    def is_reference(metadata: ArrayFloat) -> ArrayBool:
+    def is_reference(metadata: Array) -> Array:
         return np.abs(metadata) > OFFSET_REF
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         offsets = data.metadata
 
         start = spectrometer.get_start_magnetization(self.settings.start_terms)
 
-        intensities: dict[float, ArrayNumber] = {}
+        intensities: dict[float, Array] = {}
 
         for offset in set(offsets):
             intensities[offset] = start

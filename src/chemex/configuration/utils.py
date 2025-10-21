@@ -34,7 +34,7 @@ def ensure_list(variable: T | list[T] | None) -> T | list[T]:
 
     """
     if isinstance(variable, list):
-        return cast(list[T], variable)
+        return cast("list[T]", variable)
     if variable is None:
         return []
     return [variable]
@@ -55,7 +55,7 @@ def to_lower(string: T) -> T:
 
     """
     if isinstance(string, str):
-        return string.lower()
+        return string.lower()  # type: ignore[return-value]
     return string
 
 

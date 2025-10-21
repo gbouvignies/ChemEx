@@ -22,7 +22,7 @@ from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.plotters.cpmg import CpmgPlotter
 from chemex.printers.data import CpmgPrinter
-from chemex.typing import ArrayBool, ArrayFloat, ArrayInt
+from chemex.typing import Array
 
 EXPERIMENT_NAME = "cpmg_ch3_1h_tq_diff"
 
@@ -97,7 +97,7 @@ def build_spectrometer(
 class CpmgCh31HTqDiffSequence:
     settings: CpmgCh31HTqDiffSettings
 
-    def _get_delays(self, ncycs: ArrayFloat) -> tuple[dict[float, float], list[float]]:
+    def _get_delays(self, ncycs: Array) -> tuple[dict[float, float], list[float]]:
         ncyc_no_ref = ncycs[ncycs > 0]
         factor = 2.0 if self.settings.comp180_flg else 1.0
         tau_cps = {
@@ -107,7 +107,7 @@ class CpmgCh31HTqDiffSequence:
         delays = [self.settings.tau, *tau_cps.values()]
         return tau_cps, delays
 
-    def _get_phases(self, ncyc: float) -> tuple[ArrayInt, ArrayInt]:
+    def _get_phases(self, ncyc: float) -> tuple[Array, Array]:
         cp_phases1 = [0, 1, 0, 1, 1, 0, 1, 0, 2, 3, 2, 3, 3, 2, 3, 2]
         cp_phases2 = [0, 3, 0, 3, 3, 0, 3, 0, 2, 1, 2, 1, 1, 2, 1, 2]
         indexes = np.arange(int(ncyc))
@@ -115,7 +115,7 @@ class CpmgCh31HTqDiffSequence:
         phases2 = np.take(cp_phases2, indexes, mode="wrap")
         return phases1, phases2
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata
 
         # Getting the starting magnetization
@@ -189,7 +189,7 @@ class CpmgCh31HTqDiffSequence:
         return np.array([intst[ncyc] for ncyc in ncycs])
 
     @staticmethod
-    def is_reference(metadata: ArrayFloat) -> ArrayBool:
+    def is_reference(metadata: Array) -> Array:
         return metadata == 0
 
 

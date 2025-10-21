@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
-from numpy.typing import NDArray
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
@@ -20,11 +19,7 @@ from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.exsy import EXSYPlotter
 from chemex.printers.data import EXSYPrinter
-
-# Type definitions
-NDArrayFloat = NDArray[np.float64]
-NDArrayBool = NDArray[np.bool_]
-
+from chemex.typing import Array
 
 EXPERIMENT_NAME = "noesyfpgpph19"
 
@@ -61,7 +56,7 @@ def build_spectrometer(
 class Noesyfpgpph19Sequence:
     settings: Noesyfpgpph19Settings
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> NDArrayFloat:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         times = data.metadata["times"]
         states1 = data.metadata["states1"]
         states2 = data.metadata["states2"]
@@ -80,7 +75,7 @@ class Noesyfpgpph19Sequence:
 
         return np.array(intensities)
 
-    def is_reference(self, metadata: NDArrayFloat) -> NDArrayBool:
+    def is_reference(self, metadata: Array) -> Array:
         return np.full_like(metadata, fill_value=False, dtype=np.bool_)
 
 

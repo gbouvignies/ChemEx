@@ -15,7 +15,7 @@ from chemex.messages import (
     print_value_error,
 )
 from chemex.optimize.grouping import ParamTree, create_group_tree
-from chemex.typing import ArrayFloat
+from chemex.typing import Array
 
 
 @dataclass
@@ -27,7 +27,7 @@ class Reporter:
         self,
         params: lmfit.Parameters,
         iteration: int,
-        residuals: ArrayFloat,
+        residuals: Array,
         *_args,
         **_kwargs,
     ) -> None:
@@ -104,16 +104,14 @@ def minimize_with_report(
     return deepcopy(minimizer.result.params)
 
 
-def residuals_hierarchical(
-    params: lmfit.Parameters, param_tree: ParamTree
-) -> ArrayFloat:
+def residuals_hierarchical(params: lmfit.Parameters, param_tree: ParamTree) -> Array:
     if not param_tree.branches:
         return param_tree.experiments.residuals(params)
 
     for param_id in param_tree.ids_to_fit:
         params[param_id].vary = False
 
-    residuals_list: list[ArrayFloat] = []
+    residuals_list: list[Array] = []
 
     for branch in param_tree.branches:
         branch_results = lmfit.minimize(

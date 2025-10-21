@@ -21,7 +21,7 @@ from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cpmg import CpmgPlotter
 from chemex.printers.data import CpmgPrinter
-from chemex.typing import ArrayBool, ArrayFloat
+from chemex.typing import Array
 
 EXPERIMENT_NAME = "cpmg_13co_ap"
 
@@ -87,7 +87,7 @@ def build_spectrometer(
 class Cpmg13CoApSequence:
     settings: Cpmg13CoApSettings
 
-    def _get_delays(self, ncycs: ArrayFloat) -> tuple[dict[float, float], list[float]]:
+    def _get_delays(self, ncycs: Array) -> tuple[dict[float, float], list[float]]:
         ncycs_no_ref = ncycs[ncycs > 0]
         tau_cps = {
             ncyc: self.settings.time_t2 / (4.0 * ncyc) - self.settings.pw90
@@ -101,7 +101,7 @@ class Cpmg13CoApSequence:
         ]
         return tau_cps, delays
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata
 
         # Calculation of the spectrometers corresponding to all the delays
@@ -147,7 +147,7 @@ class Cpmg13CoApSequence:
         return np.array([intensities[ncyc] for ncyc in ncycs])
 
     @staticmethod
-    def is_reference(metadata: ArrayFloat) -> ArrayBool:
+    def is_reference(metadata: Array) -> Array:
         return metadata == 0
 
 

@@ -19,7 +19,7 @@ from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.relaxation import RelaxationPlotter
 from chemex.printers.data import RelaxationPrinter
-from chemex.typing import ArrayBool, ArrayFloat
+from chemex.typing import Array
 
 EXPERIMENT_NAME = "wip.relaxation_15n_r1rho"
 
@@ -79,7 +79,7 @@ def build_spectrometer(
 class Relaxation15NR1RhoSequence:
     settings: Relaxation15NR1RhoSettings
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         times = data.metadata
 
         # Getting the starting magnetization
@@ -92,7 +92,7 @@ class Relaxation15NR1RhoSequence:
         # Return profile
         return np.array([spectrometer.detect(mag) for mag in magnetization])
 
-    def is_reference(self, metadata: ArrayFloat) -> ArrayBool:
+    def is_reference(self, metadata: Array) -> Array:
         return np.full_like(metadata, fill_value=False, dtype=np.bool_)
 
 

@@ -19,7 +19,7 @@ from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.shift import ShiftPlotter
 from chemex.printers.data import ShiftPrinter
-from chemex.typing import ArrayBool, ArrayFloat
+from chemex.typing import Array
 
 EXPERIMENT_NAME = "shift_15n_sq"
 
@@ -57,7 +57,7 @@ def build_spectrometer(
     return Spectrometer(liouvillian)
 
 
-def _find_nearest(array: ArrayFloat, value: float) -> float:
+def _find_nearest(array: Array, value: float) -> float:
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return array[idx]
@@ -67,14 +67,14 @@ def _find_nearest(array: ArrayFloat, value: float) -> float:
 class Shift15NSqSequence:
     settings: Shift15NSqSettings
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ppm_i = spectrometer.liouvillian.ppm_i
         ref_shift_i = spectrometer.par_values[self.settings.cs_i_name] * ppm_i
         shifts = spectrometer.calculate_shifts()
         shift_sq = _find_nearest(shifts, ref_shift_i)
         return np.array([shift_sq / ppm_i])
 
-    def is_reference(self, metadata: ArrayFloat) -> ArrayBool:
+    def is_reference(self, metadata: Array) -> Array:
         return np.full_like(metadata, fill_value=False, dtype=np.bool_)
 
 

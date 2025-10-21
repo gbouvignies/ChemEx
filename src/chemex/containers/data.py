@@ -2,12 +2,11 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import cached_property
 from random import choices
-from typing import Any, Self
+from typing import Self
 
 import numpy as np
-from numpy.typing import NDArray
 
-from chemex.typing import ArrayBool, ArrayFloat
+from chemex.typing import Array
 
 rng = np.random.default_rng()
 
@@ -17,23 +16,23 @@ class Data:
     """Dataset with experimental, calculated data and metadata.
 
     Attributes:
-        exp (ArrayFloat): Experimental data array.
-        err (ArrayFloat): Error array for experimental data.
-        metadata (NDArray[Any]): Metadata for data points.
-        calc (ArrayFloat): Calculated data, set after instantiation.
-        calc_unscaled (ArrayFloat): Unscaled calculated data, set after instantiation.
-        mask (ArrayBool): Mask array for data selection, set after instantiation.
-        refs (ArrayBool): Array of reference points, set after instantiation.
+        exp (Array): Experimental data array.
+        err (Array): Error array for experimental data.
+        metadata (Array): Metadata for data points.
+        calc (Array): Calculated data, set after instantiation.
+        calc_unscaled (Array): Unscaled calculated data, set after instantiation.
+        mask (Array): Mask array for data selection, set after instantiation.
+        refs (Array): Array of reference points, set after instantiation.
 
     """
 
-    exp: ArrayFloat
-    err: ArrayFloat
-    metadata: NDArray[Any] = field(default_factory=lambda: np.array([]))
-    calc: ArrayFloat = field(init=False)
-    calc_unscaled: ArrayFloat = field(init=False)
-    mask: ArrayBool = field(init=False)
-    refs: ArrayBool = field(init=False)
+    exp: Array
+    err: Array
+    metadata: Array = field(default_factory=lambda: np.array([]))
+    calc: Array = field(init=False)
+    calc_unscaled: Array = field(init=False)
+    mask: Array = field(init=False)
+    refs: Array = field(init=False)
 
     def __post_init__(self) -> None:
         """Initialize computed attributes of the Data class."""

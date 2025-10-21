@@ -19,7 +19,7 @@ from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cest import CestPlotter
 from chemex.printers.data import CestPrinter
-from chemex.typing import ArrayBool, ArrayFloat
+from chemex.typing import Array
 
 EXPERIMENT_NAME = "cest_ch3_1h_ip_ap"
 
@@ -89,10 +89,10 @@ class CestCh31HIpApSequence:
     settings: CestCh31HIpApSettings
 
     @staticmethod
-    def is_reference(metadata: ArrayFloat) -> ArrayBool:
+    def is_reference(metadata: Array) -> Array:
         return np.abs(metadata) > OFFSET_REF
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         offsets = data.metadata
         spectrometer.offset_i = 0.0
 

@@ -20,7 +20,7 @@ from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cpmg import CpmgPlotter
 from chemex.printers.data import CpmgPrinter
-from chemex.typing import ArrayBool, ArrayFloat, ArrayInt
+from chemex.typing import Array
 
 EXPERIMENT_NAME = "cpmg_ch3_13c_h2c_0013"
 
@@ -92,7 +92,7 @@ class CpmgCh313CH2c0013Sequence:
     settings: CpmgCh313CH2c0013Settings
 
     def _get_delays(
-        self, ncycs: ArrayFloat
+        self, ncycs: Array
     ) -> tuple[dict[float, float], dict[float, float], list[float]]:
         ncycs_above_one = ncycs[ncycs > 1]
         ncyc_max = max(ncycs)
@@ -125,7 +125,7 @@ class CpmgCh313CH2c0013Sequence:
         return tau_cps, deltas, delays
 
     # Define [0013] phase cycle for CPMG pulses
-    def _get_phases(self, ncyc: float) -> tuple[ArrayInt, ArrayInt]:
+    def _get_phases(self, ncyc: float) -> tuple[Array, Array]:
         cp_phases1 = np.array(
             [
                 [1, 1, 2, 0],
@@ -143,7 +143,7 @@ class CpmgCh313CH2c0013Sequence:
         phases2 = np.take(cp_phases2, np.flip(indexes), mode="wrap", axis=1)
         return phases1, phases2
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata
 
         # Calculation of the spectrometers corresponding to all the delays
@@ -334,7 +334,7 @@ class CpmgCh313CH2c0013Sequence:
         return np.array([intensities[ncyc] for ncyc in ncycs])
 
     @staticmethod
-    def is_reference(metadata: ArrayFloat) -> ArrayBool:
+    def is_reference(metadata: Array) -> Array:
         return metadata == 0
 
 

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from chemex.parameters.spin_system.nucleus import Nucleus
-from chemex.typing import ArrayFloat
+from chemex.typing import Array
 
 GAMMA = {
     Nucleus.H1: 26.752_212_8e07,
@@ -227,8 +227,8 @@ J_EFF: dict[str, dict[str, tuple[float, ...]]] = {
 
 @dataclass
 class Distribution:
-    values: ArrayFloat
-    weights: ArrayFloat
+    values: Array
+    weights: Array
 
 
 def get_multiplet(symbol: str, nucleus: str) -> Distribution:

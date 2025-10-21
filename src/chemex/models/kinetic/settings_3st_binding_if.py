@@ -10,7 +10,7 @@ from chemex.models.constraints import pop_3st
 from chemex.models.factory import model_factory
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
-from chemex.typing import ArrayFloat
+from chemex.typing import Array
 
 NAME = "3st_binding_if"
 
@@ -18,13 +18,13 @@ TPL = ("temperature", "p_total", "l_total")
 
 
 def calculate_residuals(
-    populations: ArrayFloat,
+    populations: Array,
     p_total: float,
     l_total: float,
     kd_ab: float,
     kbc: float,
     kcb: float,
-) -> ArrayFloat:
+) -> Array:
     p_, pl1, pl2, l_ = populations
     return np.array(
         [

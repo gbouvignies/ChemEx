@@ -20,7 +20,7 @@ from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.relaxation import RelaxationPlotter
 from chemex.printers.data import RelaxationPrinter
-from chemex.typing import ArrayBool, ArrayFloat
+from chemex.typing import Array
 
 EXPERIMENT_NAME = "relaxation_nz"
 
@@ -73,7 +73,7 @@ def build_spectrometer(
 class RelaxationNzSequence:
     settings: RelaxationNzSettings
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         times = data.metadata
 
         # Getting the starting magnetization
@@ -83,7 +83,7 @@ class RelaxationNzSequence:
         delays = spectrometer.delays(times)
         return np.array([spectrometer.detect(delay @ start) for delay in delays])
 
-    def is_reference(self, metadata: ArrayFloat) -> ArrayBool:
+    def is_reference(self, metadata: Array) -> Array:
         return np.full_like(metadata, fill_value=False, dtype=np.bool_)
 
 

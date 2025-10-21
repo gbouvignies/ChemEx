@@ -18,7 +18,7 @@ from chemex.parameters import database
 from chemex.parameters.spin_system import Group
 from chemex.plotters.plotter import Plotter
 from chemex.printers.data import Printer
-from chemex.typing import ArrayFloat
+from chemex.typing import Array
 from chemex.uncertainty import estimate_noise_variance
 
 
@@ -31,7 +31,7 @@ class Experiment:
     printer: Printer
     plotter: Plotter
 
-    def residuals(self, params: ParametersLF) -> ArrayFloat:
+    def residuals(self, params: ParametersLF) -> Array:
         return np.concatenate([profile.residuals(params) for profile in self.profiles])
 
     def plot(self, path: Path) -> None:

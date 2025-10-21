@@ -20,7 +20,7 @@ from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cpmg import CpmgPlotter
 from chemex.printers.data import CpmgPrinter
-from chemex.typing import ArrayBool, ArrayFloat, ArrayInt
+from chemex.typing import Array
 
 Delays = tuple[dict[float, float], dict[float, float], list[float]]
 
@@ -88,7 +88,7 @@ def build_spectrometer(
 class Cpmg15N0013IpSequence:
     settings: Cpmg15N0013IpSettings
 
-    def _get_delays(self, ncycs: ArrayFloat) -> Delays:
+    def _get_delays(self, ncycs: Array) -> Delays:
         ncycs_no_ref = ncycs[ncycs > 0]
         tau_cps = {
             ncyc: self.settings.time_t2 / (4.0 * ncyc) - 0.75 * self.settings.pw90
@@ -111,7 +111,7 @@ class Cpmg15N0013IpSequence:
         ]
         return tau_cps, deltas, delays
 
-    def _get_phases(self, ncyc: ArrayFloat) -> ArrayInt:
+    def _get_phases(self, ncyc: Array) -> Array:
         cp_phases = np.array(
             [
                 [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3],
@@ -121,7 +121,7 @@ class Cpmg15N0013IpSequence:
         indexes = np.flip(np.arange(2 * int(ncyc)))
         return np.take(cp_phases, indexes, mode="wrap", axis=1)
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata
 
         # Calculation of the spectrometers corresponding to all the delays
@@ -163,7 +163,7 @@ class Cpmg15N0013IpSequence:
         return np.array([intensities[ncyc] for ncyc in ncycs])
 
     @staticmethod
-    def is_reference(metadata: ArrayFloat) -> ArrayBool:
+    def is_reference(metadata: Array) -> Array:
         return metadata == 0
 
 

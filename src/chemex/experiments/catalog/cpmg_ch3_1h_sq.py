@@ -20,7 +20,7 @@ from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cpmg import CpmgPlotter
 from chemex.printers.data import CpmgPrinter
-from chemex.typing import ArrayBool, ArrayFloat, ArrayInt
+from chemex.typing import Array
 
 EXPERIMENT_NAME = "cpmg_ch3_1h_sq"
 
@@ -87,7 +87,7 @@ def build_spectrometer(
 class CpmgCh31HSqSequence:
     settings: CpmgCh31HSqSettings
 
-    def _get_delays(self, ncycs: ArrayFloat) -> tuple[dict[float, float], list[float]]:
+    def _get_delays(self, ncycs: Array) -> tuple[dict[float, float], list[float]]:
         frac = 7.0 / 3.0 if self.settings.comp180_flg else 1.0
         ncyc_no_ref = ncycs[ncycs > 0]
         tau_cps = {
@@ -101,7 +101,7 @@ class CpmgCh31HSqSequence:
         delays = [self.settings.taua, *tau_cps.values()]
         return tau_cps, delays
 
-    def _get_phases(self) -> tuple[ArrayInt, ArrayInt]:
+    def _get_phases(self) -> tuple[Array, Array]:
         cp_phases1 = np.array([[0, 1], [1, 0]])
         cp_phases2 = np.array([[0, 3], [3, 0]])
         indexes = np.arange(int(self.settings.ncyc_max))
@@ -109,7 +109,7 @@ class CpmgCh31HSqSequence:
         phases2 = np.take(cp_phases2, indexes, mode="wrap", axis=1)
         return phases1, phases2
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata
 
         # Calculation of the spectrometers corresponding to all the delays
@@ -174,7 +174,7 @@ class CpmgCh31HSqSequence:
         return np.array([intensities[ncyc] for ncyc in ncycs])
 
     @staticmethod
-    def is_reference(metadata: ArrayFloat) -> ArrayBool:
+    def is_reference(metadata: Array) -> Array:
         return metadata == 0
 
 

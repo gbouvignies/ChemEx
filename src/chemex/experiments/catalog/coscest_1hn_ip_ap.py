@@ -21,7 +21,7 @@ from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cest import CestPlotter
 from chemex.printers.data import CestPrinter
-from chemex.typing import ArrayBool, ArrayFloat
+from chemex.typing import Array
 
 EXPERIMENT_NAME = "coscest_1hn_ip_ap"
 
@@ -93,10 +93,10 @@ class CosCest1HnIpApSequence:
     settings: CosCest1HnIpApSettings
 
     @staticmethod
-    def is_reference(metadata: ArrayFloat) -> ArrayBool:
+    def is_reference(metadata: Array) -> Array:
         return np.abs(metadata) > OFFSET_REF
 
-    def _calc_cosine_shape(self, spectrometer: Spectrometer) -> ArrayFloat:
+    def _calc_cosine_shape(self, spectrometer: Spectrometer) -> Array:
         time_t1 = self.settings.time_t1
         sw = self.settings.sw
         cos_n = self.settings.cos_n
@@ -132,7 +132,7 @@ class CosCest1HnIpApSequence:
 
         return pulse
 
-    def calculate(self, spectrometer: Spectrometer, data: Data) -> ArrayFloat:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         offsets = data.metadata
         spectrometer.offset_i = 0.0
 

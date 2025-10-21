@@ -11,10 +11,10 @@ from chemex.models.model import model
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import GAMMA
 from chemex.parameters.spin_system.nucleus import Nucleus
-from chemex.typing import ArrayFloat
+from chemex.typing import Array
 
 # Type definition
-T = TypeVar("T", np.floating, ArrayFloat)
+T = TypeVar("T", np.floating, Array)
 
 
 def _calculate_jw(tauc: np.floating, s2: np.floating, w: T) -> T:
@@ -24,7 +24,7 @@ def _calculate_jw(tauc: np.floating, s2: np.floating, w: T) -> T:
         tauc (float): Correlation time in seconds.
         s2 (float): Order parameter squared, amplitude of motion measure.
         w (T): Angular frequency/frequencies for J(w) calculation. Can be float or
-               ArrayFloat.
+               Array.
 
     Returns:
         T: Spectral density function(s) J(w).
@@ -46,10 +46,10 @@ class RatesIS:
     ris3: float
     rih3: float
     rsh3: float
-    csa_i: ArrayFloat
-    csa_s: ArrayFloat
-    phi_i: ArrayFloat
-    phi_s: ArrayFloat
+    csa_i: Array
+    csa_s: Array
+    phi_i: Array
+    phi_s: Array
 
     def __init__(self) -> None:
         """Initialize RatesIS object with default gyromagnetic ratios and distances."""
@@ -97,13 +97,14 @@ class RatesIS:
         ci = (ci_ * p2i).sum()
         cs = (cs_ * p2s).sum()
 
-        j0, ji, js, jh, jmis, jpis, jmih, jpih, jmsh, jpsh = _calculate_jw(
+        jw_values = _calculate_jw(
             tauc,
             s2,
             np.array(
                 [0.0, wi, ws, wh, wi - ws, wi + ws, wi - wh, wi + wh, ws - wh, ws + wh],
             ),
         )
+        j0, ji, js, jh, jmis, jpis, jmih, jpih, jmsh, jpsh = jw_values  # type: ignore[misc]
 
         return {
             "r2_i": 0.5

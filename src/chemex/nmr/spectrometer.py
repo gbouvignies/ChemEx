@@ -11,25 +11,25 @@ from scipy.linalg import expm
 
 from chemex.nmr.constants import Distribution
 from chemex.nmr.liouvillian import LiouvillianIS
-from chemex.typing import ArrayFloat, ArrayNumber
+from chemex.typing import Array
 
-DictArrayFloat = dict[str, ArrayFloat]
+DictArray = dict[str, Array]
 
 # A small value used for numerical stability
 SMALL_VALUE = 1e-6
 
 
 def calculate_propagators(
-    liouv: ArrayNumber,
+    liouv: Array,
     delays: float | Iterable[float],
     *,
     dephasing: bool = False,
-) -> ArrayNumber:
+) -> Array:
     """Calculate the propagators for the given delays.
 
     Parameters
     ----------
-    liouv : ArrayNumber
+    liouv : Array
         The Liouvillians of the system
     delays : float | Iterable[float]
         The delays to calculate the propagators for
@@ -38,7 +38,7 @@ def calculate_propagators(
 
     Returns
     -------
-    ArrayNumber
+    Array
         The propagators
 
     """
@@ -92,13 +92,11 @@ def _get_key(
 
 
 @cached(cache={}, key=_get_key)
-def _make_perfect180(liouvillian: LiouvillianIS, spin: str) -> ArrayNumber:
+def _make_perfect180(liouvillian: LiouvillianIS, spin: str) -> Array:
     size = liouvillian.size
     identity = np.eye(size).reshape((1, 1, size, size))
     compx, compy, compz = (f"{spin}{axis}" for axis in "xyz")
-    perfect180: dict[str, ArrayNumber] = {
-        comp: identity.copy() for comp in (compx, compy)
-    }
+    perfect180: dict[str, Array] = {comp: identity.copy() for comp in (compx, compy)}
     for comp in liouvillian.basis.components:
         vect = liouvillian.basis.vectors[comp].ravel()
         if compx in comp or compz in comp:
@@ -110,7 +108,7 @@ def _make_perfect180(liouvillian: LiouvillianIS, spin: str) -> ArrayNumber:
 
 
 @cached(cache={}, key=_get_key)
-def _make_perfect90(liouvillian: LiouvillianIS, spin: str) -> ArrayFloat:
+def _make_perfect90(liouvillian: LiouvillianIS, spin: str) -> Array:
     size = liouvillian.size
     zeros = np.zeros((size, size))
     rot = liouvillian.basis.matrices.get(f"b1x_{spin}", zeros)
@@ -118,7 +116,7 @@ def _make_perfect90(liouvillian: LiouvillianIS, spin: str) -> ArrayFloat:
 
 
 @cached(cache={}, key=_get_key)
-def _get_phases(liouvillian: LiouvillianIS) -> DictArrayFloat:
+def _get_phases(liouvillian: LiouvillianIS) -> DictArray:
     phases = {}
     size = liouvillian.size
     zeros = np.zeros((size, size))
@@ -129,7 +127,7 @@ def _get_phases(liouvillian: LiouvillianIS) -> DictArrayFloat:
 
 
 class Spectrometer:
-    def _add_phases(self, propagator: ArrayNumber, spin: str = "i") -> ArrayNumber:
+    def _add_phases(self, propagator: Array, spin: str = "i") -> Array:
         phases = self._phases[spin]
         return np.array([phases[i] @ propagator @ phases[-i] for i in range(4)])
 
@@ -155,9 +153,7 @@ class Spectrometer:
         self._p240_i = np.array(0.0)
         self._p180_s = np.array(0.0)
 
-    def keep(
-        self, magnetization: ArrayNumber, components: Iterable[str]
-    ) -> ArrayNumber:
+    def keep(self, magnetization: Array, components: Iterable[str]) -> Array:
         return self.liouvillian.keep(magnetization, components)
 
     def update(self, par_values: dict[str, float]) -> None:
@@ -261,19 +257,19 @@ class Spectrometer:
         self.calculate_i_flag = True
         self.calculate_s_flag = True
 
-    def get_equilibrium(self) -> ArrayFloat:
+    def get_equilibrium(self) -> Array:
         return self.liouvillian.get_equilibrium()
 
     def get_start_magnetization(
         self,
         terms: Iterable[str],
         atom: str = "h",
-    ) -> ArrayFloat:
+    ) -> Array:
         return self.liouvillian.get_start_magnetization(terms=terms, atom=atom)
 
     def tilt_mag_along_weff_i(
-        self, magnetization: ArrayNumber, *, back: bool = False
-    ) -> ArrayNumber:
+        self, magnetization: Array, *, back: bool = False
+    ) -> Array:
         return self.liouvillian.tilt_mag_along_weff_i(magnetization, back=back)
 
     @property
@@ -284,7 +280,7 @@ class Spectrometer:
     def detection(self, value: str) -> None:
         self.liouvillian.detection = value
 
-    def detect(self, magnetization: ArrayNumber) -> float:
+    def detect(self, magnetization: Array) -> float:
         return self.liouvillian.detect(magnetization)
 
     @property
@@ -297,7 +293,7 @@ class Spectrometer:
         self.calculate_i_flag = True
         self.calculate_s_flag = True
 
-    def delays(self, times: float | Iterable[float]) -> ArrayNumber:
+    def delays(self, times: float | Iterable[float]) -> Array:
         return calculate_propagators(self.liouvillian.l_free, times)
 
     def pulse_i(
@@ -305,7 +301,7 @@ class Spectrometer:
         times: float | Iterable[float],
         phase: float,
         scale: float = 1.0,
-    ) -> ArrayNumber:
+    ) -> Array:
         dephased = self.b1_i_inh_scale == np.inf
         rad = phase * np.pi * 0.5
         liouv = (
@@ -320,7 +316,7 @@ class Spectrometer:
         times: float | Iterable[float],
         phase: float,
         scale: float = 1.0,
-    ) -> ArrayNumber:
+    ) -> Array:
         rad = phase * np.pi * 0.5
         liouv = (
             self.liouvillian.l_free
@@ -334,7 +330,7 @@ class Spectrometer:
         times: float | Iterable[float],
         phase_i: float,
         phase_s: float,
-    ) -> ArrayNumber:
+    ) -> Array:
         dephased = self.b1_i_inh_scale == np.inf
         liouv = (
             self.liouvillian.l_free
@@ -350,7 +346,7 @@ class Spectrometer:
         pw: float,
         amplitudes: Sequence[float],
         phases: Iterable[float],
-    ) -> ArrayNumber:
+    ) -> Array:
         time = pw / len(amplitudes)
         pairs = list(zip(amplitudes, phases, strict=True))
         pulses = {
@@ -368,34 +364,34 @@ class Spectrometer:
             self.calculate_i_flag = False
 
     @property
-    def p90_i(self) -> ArrayFloat:
+    def p90_i(self) -> Array:
         self._calculate_base_pulses_i()
         return self._p90_i
 
     @property
-    def p180_i(self) -> ArrayFloat:
+    def p180_i(self) -> Array:
         self._calculate_base_pulses_i()
         return self._p180_i
 
     @property
-    def p240_i(self) -> ArrayFloat:
+    def p240_i(self) -> Array:
         self._calculate_base_pulses_i()
         return self._p240_i
 
     @property
-    def p9018090_i_1(self) -> ArrayFloat:
+    def p9018090_i_1(self) -> Array:
         return self.p90_i[[3, 0, 1, 2]] @ self.p180_i @ self.p90_i[[3, 0, 1, 2]]
 
     @property
-    def p9018090_i_2(self) -> ArrayFloat:
+    def p9018090_i_2(self) -> Array:
         return self.p90_i[[1, 2, 3, 0]] @ self.p180_i @ self.p90_i[[1, 2, 3, 0]]
 
     @property
-    def p9024090_i_1(self) -> ArrayFloat:
+    def p9024090_i_1(self) -> Array:
         return self.p90_i[[3, 0, 1, 2]] @ self.p240_i @ self.p90_i[[3, 0, 1, 2]]
 
     @property
-    def p9024090_i_2(self) -> ArrayFloat:
+    def p9024090_i_2(self) -> Array:
         return self.p90_i[[1, 2, 3, 0]] @ self.p240_i @ self.p90_i[[1, 2, 3, 0]]
 
     def _calculate_base_pulses_s(self) -> None:
@@ -407,11 +403,11 @@ class Spectrometer:
             self.calculate_s_flag = False
 
     @property
-    def p180_s(self) -> ArrayNumber:
+    def p180_s(self) -> Array:
         self._calculate_base_pulses_s()
         return self._p180_s
 
-    def p9024090_nh(self, *, reverse: bool = False) -> ArrayNumber:
+    def p9024090_nh(self, *, reverse: bool = False) -> Array:
         ph_n = 1 if reverse else 3
         ph_h = 3 if reverse else 1
         pw240i, pw9024090i = np.array([8.0, 14.0]) * self._pw90_i / 3.0
@@ -441,21 +437,21 @@ class Spectrometer:
         return self._add_phases(self._add_phases(pw9024090is_xx, "s"), "i")
 
     @property
-    def p9024090_nh_1(self) -> ArrayNumber:
+    def p9024090_nh_1(self) -> Array:
         return self.p9024090_nh()
 
     @property
-    def p9024090_nh_2(self) -> ArrayNumber:
+    def p9024090_nh_2(self) -> Array:
         return self.p9024090_nh(reverse=True)
 
-    def calculate_shifts(self) -> ArrayNumber:
+    def calculate_shifts(self) -> Array:
         liouv = self.liouvillian.l_free.reshape(
             (self.liouvillian.size, self.liouvillian.size),
         )
         return np.linalg.eigvals(liouv.astype(np.complex128)).imag
 
-    def offsets_to_ppms(self, offsets: ArrayFloat) -> ArrayFloat:
+    def offsets_to_ppms(self, offsets: Array) -> Array:
         return self.liouvillian.offsets_to_ppms(offsets)
 
-    def ppms_to_offsets(self, ppms: ArrayFloat | float) -> ArrayFloat | float:
+    def ppms_to_offsets(self, ppms: Array | float) -> Array | float:
         return self.liouvillian.ppms_to_offsets(ppms)
