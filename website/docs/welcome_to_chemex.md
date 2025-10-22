@@ -18,7 +18,21 @@ ChemEx can be installed using various methods. Choose the one that best suits yo
 
 ### Quick Start with uv (Recommended)
 
-The fastest way to try ChemEx without installation using [uv](https://docs.astral.sh/uv/):
+[uv](https://docs.astral.sh/uv/) is a fast Python package and project manager written in Rust. It's significantly faster than pip and handles virtual environments automatically.
+
+**Installing uv:**
+
+```shell
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+**Using ChemEx with uv:**
+
+The fastest way to try ChemEx without installation:
 
 ```shell
 uvx chemex --help

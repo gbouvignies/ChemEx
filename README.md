@@ -36,6 +36,16 @@ ChemEx offers several installation methods to suit your specific setup:
 
 ### Quick Start with uv (Recommended)
 
+[uv](https://docs.astral.sh/uv/) is a fast Python package and project manager. If you don't have it installed:
+
+```shell
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
 The fastest way to try ChemEx without installation:
 
 ```shell
