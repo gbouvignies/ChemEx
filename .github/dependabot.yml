@@ -58,30 +58,31 @@ updates:
     directory: "/website/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 3
     reviewers:
       - gbouvignies
     groups:
-      runtime-deps:
+      # All Docusaurus-related packages together to avoid conflicts
+      docusaurus:
+        patterns:
+          - "@docusaurus/*"
+          - "@mdx-js/react"
+          - "rehype-katex"
+          - "remark-math"
+      # React ecosystem separate from Docusaurus
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+      # Other runtime dependencies
+      runtime:
         dependency-type: "production"
         patterns:
-          - "react*"
-          - "@docusaurus/*"
           - "clsx"
           - "prism-react-renderer"
-      dev-deps:
+      # Development tools
+      dev-tools:
         dependency-type: "development"
         patterns:
           - "eslint*"
           - "prettier*"
-          - "@docusaurus/types"
-          - "@docusaurus/module-type-aliases"
-      docusaurus-core:
-        patterns:
-          - "@docusaurus/core"
-          - "@docusaurus/preset-classic"
-          - "@mdx-js/react"
-      docusaurus-plugins:
-        patterns:
-          - "rehype-katex"
-          - "remark-math"
