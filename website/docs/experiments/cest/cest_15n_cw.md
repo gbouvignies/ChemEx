@@ -65,6 +65,13 @@ carrier_dec = 8.3
 ## B1 radio-frequency field strength of the ¹H CW decoupling, in Hz
 b1_frq_dec = 1000.0
 
+## Initial condition: equilibrium (all states populated according to their
+## equilibrium populations). Set to true for non-equilibrium initial condition
+## if chemical shift evolution occurs before the CEST element in your pulse
+## sequence (see Yuwen et al., J. Biomol. NMR 2016, 65:143-156).
+## [optional, default: false]
+# cs_evolution_prior = false
+
 ## State of the observed resonance [optional, default: "a"]
 # observed_state = "a"
 

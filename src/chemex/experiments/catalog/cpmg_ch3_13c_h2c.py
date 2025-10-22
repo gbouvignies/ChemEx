@@ -33,7 +33,6 @@ class CpmgCh313CH2cSettings(CpmgSettingsEvenNcycs):
     pw90: float
     taub: float = 2.0e-3
     time_equil: float = 0.0
-    cs_evolution_prior: bool = True
 
     @cached_property
     def t_neg(self) -> float:
