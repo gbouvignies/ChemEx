@@ -1,18 +1,16 @@
 from copy import deepcopy
-from dataclasses import dataclass, field
-from functools import cached_property
 from random import choices
-from typing import Self
+from typing import Any, Self
 
 import numpy as np
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
 
 from chemex.typing import Array
 
 rng = np.random.default_rng()
 
 
-@dataclass
-class Data:
+class Data(BaseModel):
     """Dataset with experimental, calculated data and metadata.
 
     Attributes:
@@ -26,22 +24,37 @@ class Data:
 
     """
 
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,  # Allow numpy arrays
+        validate_assignment=True,  # Validate on assignment
+    )
+
     exp: Array
     err: Array
-    metadata: Array = field(default_factory=lambda: np.array([]))
-    calc: Array = field(init=False)
-    calc_unscaled: Array = field(init=False)
-    mask: Array = field(init=False)
-    refs: Array = field(init=False)
+    metadata: Array = Field(default_factory=lambda: np.array([]))
+    calc: Array = Field(init=False, default=None)  # type: ignore[call-arg]
+    calc_unscaled: Array = Field(init=False, default=None)  # type: ignore[call-arg]
+    mask: Array = Field(init=False, default=None)  # type: ignore[call-arg]
+    refs: Array = Field(init=False, default=None)  # type: ignore[call-arg]
 
-    def __post_init__(self) -> None:
-        """Initialize computed attributes of the Data class."""
+    def __init__(self, **data: Array) -> None:
+        """Initialize the Data instance and set computed arrays."""
+        super().__init__(**data)
         self.calc = np.full_like(self.exp, fill_value=1e32, dtype=np.float64)
         self.calc_unscaled = np.full_like(self.exp, fill_value=1e32, dtype=np.float64)
         self.mask = np.full_like(self.exp, fill_value=True, dtype=np.bool_)
         self.refs = np.full_like(self.exp, fill_value=False, dtype=np.bool_)
 
-    @cached_property
+    # Serialize numpy arrays to lists for JSON output
+    @field_serializer("exp", "err", "metadata", "calc", "calc_unscaled", "mask", "refs")
+    def serialize_array(self, value: Array, _info: Any) -> list:  # noqa: ANN401
+        """Convert numpy arrays to lists for JSON serialization."""
+        if value is None:
+            return []
+        return value.tolist()
+
+    @computed_field  # type: ignore[misc]
+    @property
     def size(self) -> int:
         """Return the number of data points."""
         return self.exp.size

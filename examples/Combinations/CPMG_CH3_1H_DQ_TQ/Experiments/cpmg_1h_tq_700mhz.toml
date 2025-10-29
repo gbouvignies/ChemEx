@@ -1,10 +1,10 @@
 [experiment]
-name        = "cpmg_ch3_1h_tq"
-time_t2     = 20.0e-3
-carrier     = 0.658
-pw90        = 10.838e-6
+name = "cpmg_ch3_1h_tq"
+time_t2 = 20.0e-3
+carrier = 0.658
+pw90 = 10.838e-6
 comp180_flg = true
-ipap_flg    = false
+ipap_flg = false
 
 [conditions]
 h_larmor_frq = 700.193
@@ -16,19 +16,19 @@ h_larmor_frq = 700.193
 path = "../Data/CPMG_1H_TQ_700MHz/"
 # error = "duplicates"
 
-  [data.profiles]
-  I3HD1-CD1   = "I3CD1-QD1.out"
-  L7HD2-CD2   = "L7CD2-QD2.out"
-  I29HD1-CD1  = "I29CD1-QD1.out"
-  L32HD2-CD2  = "L32CD2-QD2.out"
-  V71HG2-CG2  = "V71CG2-QG2.out"
-  V75HG1-CG1  = "V75CG1-QG1.out"
-  V75HG2-CG2  = "V75CG2-QG2.out"
-  I78HD1-CD1  = "I78CD1-QD1.out"
-  L79HD2-CD2  = "L79CD2-QD2.out"
-  L84HD2-CD2  = "L84CD2-QD2.out"
-  I100HD1-CD1 = "I100CD1-QD1.out"
-  L118HD2-CD2 = "L118CD2-QD2.out"
-  L121HD1-CD1 = "L121CD1-QD1.out"
-  L133HD2-CD2 = "L133CD2-QD2.out"
-  I150HD1-CD1 = "I150CD1-QD1.out"
+[data.profiles]
+I3HD1-CD1 = "I3CD1-QD1.out"
+L7HD2-CD2 = "L7CD2-QD2.out"
+I29HD1-CD1 = "I29CD1-QD1.out"
+L32HD2-CD2 = "L32CD2-QD2.out"
+V71HG2-CG2 = "V71CG2-QG2.out"
+V75HG1-CG1 = "V75CG1-QG1.out"
+V75HG2-CG2 = "V75CG2-QG2.out"
+I78HD1-CD1 = "I78CD1-QD1.out"
+L79HD2-CD2 = "L79CD2-QD2.out"
+L84HD2-CD2 = "L84CD2-QD2.out"
+I100HD1-CD1 = "I100CD1-QD1.out"
+L118HD2-CD2 = "L118CD2-QD2.out"
+L121HD1-CD1 = "L121CD1-QD1.out"
+L133HD2-CD2 = "L133CD2-QD2.out"
+I150HD1-CD1 = "I150CD1-QD1.out"

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property, reduce
+from functools import reduce
 from typing import Literal
 
 import numpy as np
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings
+from chemex.configuration.types import Delay, Frequency, PulseWidth
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -29,27 +30,61 @@ EXPERIMENT_NAME = "cpmg_15n_ip_0013"
 
 
 class Cpmg15N0013IpSettings(CpmgSettings):
-    name: Literal["cpmg_15n_ip_0013"]
-    time_t2: float
-    carrier: float
-    pw90: float
-    time_equil: float = 0.0
-    ncyc_max: int
+    """Settings for 15N in-phase CPMG experiment with 0013 variant."""
 
-    @cached_property
+    name: Literal["cpmg_15n_ip_0013"]
+    time_t2: Delay = Field(description="Total CPMG relaxation delay (seconds)")
+    carrier: Frequency = Field(description="15N carrier frequency (Hz)")
+    pw90: PulseWidth = Field(description="15N 90-degree pulse width (seconds)")
+    time_equil: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Equilibration delay (seconds)",
+    )
+    ncyc_max: int = Field(gt=0, description="Maximum number of CPMG cycles")
+
+    @computed_field  # type: ignore[misc]
+    @property
     def t_neg(self) -> float:
+        """Calculate negative delay compensation for pulse imperfections.
+
+        Returns:
+            Negative delay time in seconds.
+
+        """
         return -2.0 * self.pw90 / np.pi
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def t_pos(self) -> float:
+        """Calculate positive delay compensation for pulse imperfections.
+
+        Returns:
+            Positive delay time in seconds.
+
+        """
         return 4.0 * self.pw90 / np.pi
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def start_terms(self) -> list[str]:
+        """Initial magnetization terms for the experiment.
+
+        Returns:
+            List of initial state terms for the Liouvillian calculation.
+
+        """
         return [f"iz{self.suffix_start}"]
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def detection(self) -> str:
+        """Detection mode for the observable magnetization.
+
+        Returns:
+            Detection term for the Liouvillian calculation.
+
+        """
         return f"[iz{self.suffix_detect}]"
 
 
@@ -84,9 +119,11 @@ def build_spectrometer(
     return spectrometer
 
 
-@dataclass
 class Cpmg15N0013IpSequence:
-    settings: Cpmg15N0013IpSettings
+    """Sequence for 15N in-phase CPMG experiment with 0013 variant."""
+
+    def __init__(self, settings: Cpmg15N0013IpSettings) -> None:
+        self.settings = settings
 
     def _get_delays(self, ncycs: Array) -> Delays:
         ncycs_no_ref = ncycs[ncycs > 0]

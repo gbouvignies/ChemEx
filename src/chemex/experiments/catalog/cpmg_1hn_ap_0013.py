@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property, reduce
+from functools import reduce
 from typing import Literal
 
 import numpy as np
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings
+from chemex.configuration.types import Delay, Frequency, PulseWidth
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -26,31 +27,77 @@ EXPERIMENT_NAME = "cpmg_1hn_ap_0013"
 
 
 class Cpmg1HnAp0013Settings(CpmgSettings):
-    name: Literal["cpmg_1hn_ap_0013"]
-    time_t2: float
-    carrier: float
-    pw90: float
-    ncyc_max: int
-    taua: float = 2.38e-3
-    ipap_flg: bool = False
-    eburp_flg: bool = False
-    reburp_flg: bool = False
-    pw_eburp: float = 1.4e-3
-    pw_reburp: float = 1.52e-3
-    time_equil_1: float = 0.0
-    time_equil_2: float = 0.0
-    cs_evolution_prior: bool = True
+    """Settings for 1HN anti-phase CPMG experiment with 0013 variant."""
 
-    @cached_property
+    name: Literal["cpmg_1hn_ap_0013"]
+    time_t2: Delay = Field(description="Total CPMG relaxation delay (seconds)")
+    carrier: Frequency = Field(description="1H carrier frequency (Hz)")
+    pw90: PulseWidth = Field(description="1H 90-degree pulse width (seconds)")
+    ncyc_max: int = Field(gt=0, description="Maximum number of CPMG cycles")
+    taua: float = Field(
+        default=2.38e-3,
+        gt=0.0,
+        description="Delay for coherence evolution (seconds)",
+    )
+    ipap_flg: bool = Field(default=False, description="IPAP experiment flag")
+    eburp_flg: bool = Field(default=False, description="E-BURP pulse flag")
+    reburp_flg: bool = Field(default=False, description="RE-BURP pulse flag")
+    pw_eburp: float = Field(
+        default=1.4e-3,
+        gt=0.0,
+        description="E-BURP pulse width (seconds)",
+    )
+    pw_reburp: float = Field(
+        default=1.52e-3,
+        gt=0.0,
+        description="RE-BURP pulse width (seconds)",
+    )
+    time_equil_1: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="First equilibration delay (seconds)",
+    )
+    time_equil_2: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Second equilibration delay (seconds)",
+    )
+    cs_evolution_prior: bool = Field(
+        default=True,
+        description="Flag for chemical shift evolution prior to CPMG",
+    )
+
+    @computed_field  # type: ignore[misc]
+    @property
     def t_neg(self) -> float:
+        """Calculate negative delay compensation for pulse imperfections.
+
+        Returns:
+            Negative delay time in seconds.
+
+        """
         return -2.0 * self.pw90 / np.pi
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def start_terms(self) -> list[str]:
+        """Initial magnetization terms for the experiment.
+
+        Returns:
+            List of initial state terms for the Liouvillian calculation.
+
+        """
         return [f"2izsz{self.suffix_start}"]
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def detection(self) -> str:
+        """Detection mode for the observable magnetization.
+
+        Returns:
+            Detection term for the Liouvillian calculation.
+
+        """
         return f"[iz{self.suffix_detect}]"
 
 
@@ -85,9 +132,11 @@ def build_spectrometer(
     return spectrometer
 
 
-@dataclass
 class Cpmg1HnAp0013Sequence:
-    settings: Cpmg1HnAp0013Settings
+    """Sequence for 1HN anti-phase CPMG experiment with 0013 variant."""
+
+    def __init__(self, settings: Cpmg1HnAp0013Settings) -> None:
+        self.settings = settings
 
     def _get_delays(
         self,

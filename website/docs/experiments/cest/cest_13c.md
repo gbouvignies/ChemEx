@@ -63,15 +63,11 @@ carrier = 45.0
 ## B1 radio-frequency field strength, in Hz
 b1_frq = 25.0
 
-## B1 inhomogeneity expressed as a fraction of 'b1_frq'. If set to "inf",
-## a faster calculation takes place assuming full dephasing of the
-## magnetization components orthogonal to the effective field.
-## [optional, default: 0.1]
-# b1_inh_scale = 0.1
-
-## Number of points used to simulate B1 inhomogeneity, the larger
-## the longer the calculation. [optional, default: 11]
-# b1_inh_res = 11
+## B1 inhomogeneity distribution (replaces b1_inh_scale/b1_inh_res)
+[experiment.b1_distribution]
+type = "gaussian"
+scale = 0.1
+res = 11
 
 ## Initial condition: equilibrium (all states populated according to their
 ## equilibrium populations). Set to true for non-equilibrium initial condition

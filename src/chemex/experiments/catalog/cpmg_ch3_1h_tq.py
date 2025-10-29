@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property, reduce
+from functools import reduce
 from typing import Literal
 
 import numpy as np
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings
+from chemex.configuration.types import Delay, Frequency, PulseWidth
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -26,20 +27,26 @@ EXPERIMENT_NAME = "cpmg_ch3_1h_tq"
 
 
 class CpmgCh31HTqSettings(CpmgSettings):
+    """Settings for CH3 1H triple-quantum CPMG relaxation dispersion experiment."""
+
     name: Literal["cpmg_ch3_1h_tq"]
-    time_t2: float
-    carrier: float
-    pw90: float
+    time_t2: Delay = Field(description="Total CPMG relaxation delay in seconds")
+    carrier: Frequency = Field(description="1H carrier position in Hz")
+    pw90: PulseWidth = Field(description="90-degree pulse width in seconds")
     tauc: float = 0.67e-3  # ~ 1/(12*J[HC])
     comp180_flg: bool = True
     ipap_flg: bool = False
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def start_terms(self) -> list[str]:
+        """Starting magnetization terms (triple-quantum)."""
         return [f"2ixsz{self.suffix_start}"]
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def detection(self) -> str:
+        """Detection operator (triple-quantum)."""
         return f"[2ixsz{self.suffix_detect}]"
 
 
@@ -81,9 +88,11 @@ def build_spectrometer(
     return spectrometer
 
 
-@dataclass
 class CpmgCh31HTqSequence:
-    settings: CpmgCh31HTqSettings
+    """Sequence for CH3 1H triple-quantum CPMG relaxation dispersion experiment."""
+
+    def __init__(self, settings: CpmgCh31HTqSettings) -> None:
+        self.settings = settings
 
     def _get_delays(self, ncycs: Array) -> tuple[dict[float, float], list[float]]:
         ncyc_no_ref = ncycs[ncycs > 0]

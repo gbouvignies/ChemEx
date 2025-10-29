@@ -1,11 +1,11 @@
 [experiment]
-name         = "cest_15n_cw"
-time_t1      = 0.5
-carrier      = 119.776
-carrier_dec  = 8.502
-b1_frq       = 18.9
-b1_frq_dec   = 0.0
-b1_inh_scale = inf
+name = "cest_15n_cw"
+time_t1 = 0.5
+carrier = 119.776
+carrier_dec = 8.502
+b1_frq = 18.9
+b1_frq_dec = 0.0
+b1_distribution = { type = "dephasing" }
 
 [conditions]
 h_larmor_frq = 598.8165859
@@ -14,10 +14,10 @@ h_larmor_frq = 598.8165859
 # temperature  = 1.0
 
 [data]
-path  = "../Data/undec/"
+path = "../Data/undec/"
 error = "scatter"
 
-  [data.profiles]
-  52N-H = "52N-HN.out"
-  55N-H = "55N-HN.out"
-  67N-H = "67N-HN.out"
+[data.profiles]
+52N-H = "52N-HN.out"
+55N-H = "55N-HN.out"
+67N-H = "67N-HN.out"

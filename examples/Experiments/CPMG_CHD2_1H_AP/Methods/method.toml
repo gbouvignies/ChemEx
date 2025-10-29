@@ -1,13 +1,13 @@
 [DEFAULT]
-    INCLUDE = [
-        "L24HD2-CD2",
-        "L25HD1-CD1",
-        "V30HG1-CG1",
-        "V30HG2-CG2",
-        "M40HE-CE",
-        "I44HD1-CD1",
-        "L52HD1-CD1",
-        "L52HD2-CD2",
-        "L55HD1-CD1",
-        "L55HD2-CD2",
-    ]
+INCLUDE = [
+  "L24HD2-CD2",
+  "L25HD1-CD1",
+  "V30HG1-CG1",
+  "V30HG2-CG2",
+  "M40HE-CE",
+  "I44HD1-CD1",
+  "L52HD1-CD1",
+  "L52HD2-CD2",
+  "L55HD1-CD1",
+  "L55HD2-CD2",
+]
