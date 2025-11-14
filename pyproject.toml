@@ -18,9 +18,11 @@ dependencies = [
   "rich>=13.9.4",
   "scipy>=1.15.2",
 ]
-# Python 3.13 is the recommended and tested version
+# Python 3.11+ supported for broader compatibility (development/testing)
+# Python 3.13 is the recommended version for best performance in production
 # Python 3.14 support is experimental (tested in CI but may have ecosystem issues)
-requires-python = ">=3.13"
+# TODO: Evaluate minimum version requirements during optimization work
+requires-python = ">=3.11"
 readme = "README.md"
 classifiers = [
   "Development Status :: 5 - Production/Stable",
