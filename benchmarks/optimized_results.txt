@@ -1,0 +1,112 @@
+ChemEx Benchmark Results - 2025-11-14 22:45:48.678659
+======================================================================
+
+======================================================================
+BOTTLENECK BENCHMARKS
+======================================================================
+
+======================================================================
+ChemEx Performance Bottleneck Analysis
+======================================================================
+
+This benchmark suite profiles the critical bottlenecks identified:
+1. Eigenvalue decomposition in calculate_propagators()
+2. Matrix operations (eig vs eigh)
+3. CPMG matrix_power operations
+4. Liouvillian construction with sum()
+
+======================================================================
+Matrix Operations with Realistic ChemEx Sizes
+======================================================================
+
+──────────────────────────────────────────────────────────────────────
+Testing size: 8x8
+──────────────────────────────────────────────────────────────────────
+  eig:  0.057 ms
+  eigh: 0.021 ms
+  Speedup: 2.68x
+
+──────────────────────────────────────────────────────────────────────
+Testing size: 12x12
+──────────────────────────────────────────────────────────────────────
+  eig:  0.093 ms
+  eigh: 0.035 ms
+  Speedup: 2.67x
+
+──────────────────────────────────────────────────────────────────────
+Testing size: 16x16
+──────────────────────────────────────────────────────────────────────
+  eig:  0.171 ms
+  eigh: 0.059 ms
+  Speedup: 2.88x
+
+──────────────────────────────────────────────────────────────────────
+Testing size: 20x20
+──────────────────────────────────────────────────────────────────────
+  eig:  0.268 ms
+  eigh: 0.103 ms
+  Speedup: 2.60x
+
+──────────────────────────────────────────────────────────────────────
+Testing size: 24x24
+──────────────────────────────────────────────────────────────────────
+  eig:  0.390 ms
+  eigh: 0.148 ms
+  Speedup: 2.64x
+
+======================================================================
+SUMMARY: Eigenvalue Decomposition Performance
+======================================================================
+Size       eig (ms)        eigh (ms)       Speedup   
+──────────────────────────────────────────────────────────────────────
+8          0.057           0.021           2.68      x
+12         0.093           0.035           2.67      x
+16         0.171           0.059           2.88      x
+20         0.268           0.103           2.60      x
+24         0.390           0.148           2.64      x
+
+======================================================================
+BOTTLENECK #3: CPMG Calculation Loop
+======================================================================
+Testing matrix_power vs repeated multiplication
+
+Matrix size: 16x16
+ncyc       matrix_power (ms)    repeated @ (ms)      Better    
+──────────────────────────────────────────────────────────────────────
+5          0.011                0.017                matrix_power
+10         0.014                0.030                matrix_power
+20         0.017                0.057                matrix_power
+50         0.023                0.146                matrix_power
+100        0.026                0.322                matrix_power
+
+Conclusion: For small ncyc (<20), repeated @ may be faster
+For large ncyc (>50), matrix_power uses eigendecomposition
+
+======================================================================
+BOTTLENECK #1: Propagator Calculation
+======================================================================
+Liouvillian size: 16x16
+Number of delays: 5
+This is called for every CPMG offset/ncyc and CEST offset
+
+======================================================================
+Benchmark: Current calculate_propagators
+======================================================================
+Total time: 0.0196 seconds
+Iterations: 100
+Time per iteration: 0.0002 seconds
+
+Warning: Could not run Liouvillian benchmark: cannot import name 'Liouvillian' from 'chemex.nmr.liouvillian' (/home/user/ChemEx/src/chemex/nmr/liouvillian.py)
+
+======================================================================
+Benchmark suite complete!
+======================================================================
+
+Key findings will be saved to: benchmarks/baseline_results.txt
+
+======================================================================
+BENCHMARK SUITE COMPLETE
+======================================================================
+Finished: 2025-11-14 22:45:50
+
+Results saved to: optimized_results.txt
