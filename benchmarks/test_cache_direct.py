@@ -26,9 +26,9 @@ def test_cache_with_multiple_delays():
     print("=" * 70)
 
     # Create a realistic Liouvillian (16x16 complex matrix)
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
     size = 16
-    liouv = np.random.randn(size, size) + 1j * np.random.randn(size, size)
+    liouv = rng.standard_normal((size, size)) + 1j * rng.standard_normal((size, size))
 
     # Create different delay arrays
     delays1 = np.array([0.001, 0.002, 0.005, 0.010])  # 4 delays
@@ -92,9 +92,9 @@ def test_cache_performance():
     print("Performance Test: Cached vs Uncached")
     print("=" * 70)
 
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
     size = 16
-    liouv = np.random.randn(size, size) + 1j * np.random.randn(size, size)
+    liouv = rng.standard_normal((size, size)) + 1j * rng.standard_normal((size, size))
 
     # Test with many different delay arrays (simulating CPMG experiment)
     delay_arrays = [

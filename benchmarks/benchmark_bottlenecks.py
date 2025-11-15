@@ -17,20 +17,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from benchmark_framework import (
     Benchmark,
-    BenchmarkResult,
-    ProfilerContext,
     benchmark_matrix_operations,
 )
 
 
 def benchmark_propagator_calculation() -> None:
     """Benchmark the calculate_propagators function (Bottleneck #1)."""
-    from chemex.nmr.spectrometer import calculate_propagators
+    from chemex.nmr.spectrometer import calculate_propagators  # noqa: PLC0415
 
     # Create a realistic Liouvillian matrix (size ~12-20 for 15N systems)
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
     size = 16
-    liouv = np.random.randn(size, size) + 1j * np.random.randn(size, size)
+    liouv = rng.standard_normal((size, size)) + 1j * rng.standard_normal((size, size))
     liouv = liouv + liouv.conj().T  # Make Hermitian
 
     # Typical delays in CPMG experiments (seconds)
@@ -132,8 +130,8 @@ def benchmark_matrix_operations_realistic() -> None:
         print(f"Testing size: {size}x{size}")
         print(f"{'─' * 70}")
 
-        np.random.seed(42)
-        matrix = np.random.randn(size, size) + 1j * np.random.randn(size, size)
+        rng = np.random.default_rng(42)
+        matrix = rng.standard_normal((size, size)) + 1j * rng.standard_normal((size, size))
         matrix = matrix + matrix.conj().T  # Hermitian
 
         # Eigenvalue decomposition (current method)
@@ -178,8 +176,8 @@ def benchmark_cpmg_calculation() -> None:
 
     # Simulate CPMG echo matrix
     size = 16
-    np.random.seed(42)
-    echo = np.random.randn(size, size) + 1j * np.random.randn(size, size)
+    rng = np.random.default_rng(42)
+    echo = rng.standard_normal((size, size)) + 1j * rng.standard_normal((size, size))
     echo = echo / np.linalg.norm(echo)  # Normalize
 
     # Test different ncyc values (typical in CPMG experiments)

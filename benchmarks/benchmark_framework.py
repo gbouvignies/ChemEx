@@ -230,8 +230,8 @@ def benchmark_matrix_operations(size: int = 10, iterations: int = 1000) -> None:
     print(f"{'=' * 70}")
 
     # Create a random complex matrix similar to Liouvillian
-    np.random.seed(42)
-    matrix = np.random.randn(size, size) + 1j * np.random.randn(size, size)
+    rng = np.random.default_rng(42)
+    matrix = rng.standard_normal((size, size)) + 1j * rng.standard_normal((size, size))
     matrix = matrix + matrix.conj().T  # Make Hermitian
 
     # Benchmark eigenvalue decomposition (current bottleneck)
