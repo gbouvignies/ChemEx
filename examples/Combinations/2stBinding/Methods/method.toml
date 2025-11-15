@@ -1,7 +1,7 @@
 [STEP1]
 INCLUDE = [486, 488, 489, 490, 491, 492, 493, 494, 495, 496, 497, 498, 499]
-FIX     = ["KD"]
+FIX = ["KD"]
 
 [STEP2]
 INCLUDE = "ALL"
-FIX     = ["KOFF"]
+FIX = ["KOFF"]

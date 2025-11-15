@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property, reduce
+from functools import reduce
 from typing import Literal
 
 import numpy as np
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
-from chemex.configuration.experiment import (
-    CpmgSettingsEvenNcycs,
-)
+from chemex.configuration.experiment import CpmgSettingsEvenNcycs
+from chemex.configuration.types import Delay, Frequency, PulseWidth
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -31,20 +30,38 @@ NU_CPMG_LIMIT_2 = 255.0
 
 
 class CpmgHNDqZqSettings(CpmgSettingsEvenNcycs):
-    name: Literal["cpmg_hn_dq_zq"]
-    time_t2: float
-    carrier_h: float
-    carrier_n: float
-    pw90_h: float
-    pw90_n: float
-    dq_flg: bool
+    """Settings for HN DQ/ZQ CPMG relaxation dispersion experiment."""
 
-    @cached_property
+    name: Literal["cpmg_hn_dq_zq"]
+    time_t2: Delay = Field(description="Total CPMG relaxation delay (seconds)")
+    carrier_h: Frequency = Field(description="1H carrier frequency (Hz)")
+    carrier_n: Frequency = Field(description="15N carrier frequency (Hz)")
+    pw90_h: PulseWidth = Field(description="1H 90-degree pulse width (seconds)")
+    pw90_n: PulseWidth = Field(description="15N 90-degree pulse width (seconds)")
+    dq_flg: bool = Field(
+        description="Flag for double-quantum (True) vs zero-quantum (False)"
+    )
+
+    @computed_field  # type: ignore[misc]
+    @property
     def start_terms(self) -> list[str]:
+        """Initial magnetization terms for the experiment.
+
+        Returns:
+            List of initial state terms for the Liouvillian calculation.
+
+        """
         return [f"2ixsx{self.suffix_start}"]
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def detection(self) -> str:
+        """Detection mode for the observable magnetization.
+
+        Returns:
+            Detection term for the Liouvillian calculation.
+
+        """
         suffix = self.suffix_detect
         if self.dq_flg:
             return f"[2ixsx{suffix}] - [2iysy{suffix}]"
@@ -85,9 +102,11 @@ def build_spectrometer(
     return spectrometer
 
 
-@dataclass
 class CpmgHNDqZqSequence:
-    settings: CpmgHNDqZqSettings
+    """Sequence for HN DQ/ZQ CPMG relaxation dispersion experiment."""
+
+    def __init__(self, settings: CpmgHNDqZqSettings) -> None:
+        self.settings = settings
 
     def _get_tau_cps(self, ncycs: Array) -> dict[float, float]:
         ncycs_no_ref = ncycs[ncycs > 0]

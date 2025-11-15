@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
+from pydantic import Field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettingsNoRef
-from chemex.configuration.experiment import CestSettings
+from chemex.configuration.experiment import B1InhomogeneityMixin, CestSettings
+from chemex.configuration.types import Frequency
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -26,15 +27,14 @@ EXPERIMENT_NAME = "cest_ch3_1h_ip_ap"
 OFFSET_REF = 1e4
 
 
-class CestCh31HIpApSettings(CestSettings):
+class CestCh31HIpApSettings(CestSettings, B1InhomogeneityMixin):
+    """Settings for in-phase/anti-phase CH3 1H CEST experiment."""
+
     name: Literal["cest_ch3_1h_ip_ap"]
-    time_t1: float
-    d1: float
-    carrier: float
+    time_t1: float = Field(description="Length of the CEST block in seconds")
+    d1: float = Field(description="Relaxation delay in seconds")
+    carrier: Frequency = Field(description="1H carrier position in Hz")
     taua: float = 2.00e-3
-    b1_frq: float
-    b1_inh_scale: float = 0.1
-    b1_inh_res: int = 11
 
     @property
     def detection(self) -> str:
@@ -75,18 +75,21 @@ def build_spectrometer(
     spectrometer = Spectrometer(liouvillian)
 
     spectrometer.carrier_i = settings.carrier
-    spectrometer.b1_i = settings.b1_frq
-    spectrometer.b1_i_inh_scale = settings.b1_inh_scale
-    spectrometer.b1_i_inh_res = settings.b1_inh_res
+
+    # Set the B1 inhomogeneity distribution
+    distribution = settings.get_b1_distribution()
+    liouvillian.set_b1_i_distribution(distribution)
 
     spectrometer.detection = settings.detection
 
     return spectrometer
 
 
-@dataclass
 class CestCh31HIpApSequence:
-    settings: CestCh31HIpApSettings
+    """Sequence for in-phase/anti-phase CH3 1H CEST experiment."""
+
+    def __init__(self, settings: CestCh31HIpApSettings) -> None:
+        self.settings = settings
 
     @staticmethod
     def is_reference(metadata: Array) -> Array:

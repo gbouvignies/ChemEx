@@ -3,4 +3,4 @@ INCLUDE = [4, 8, 15, 29, 74, 104, 108, 110, 111, 154]
 
 [STEP2]
 INCLUDE = "ALL"
-FIX     = ["PB", "KEX_AB"]
+FIX = ["PB", "KEX_AB"]

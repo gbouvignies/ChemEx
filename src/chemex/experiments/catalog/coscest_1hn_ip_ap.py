@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property
 from typing import Literal
 
 import numpy as np
 from numpy.linalg import matrix_power
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettingsNoRef
-from chemex.configuration.experiment import MFCestSettings
+from chemex.configuration.experiment import B1InhomogeneityMixin, MFCestSettings
+from chemex.configuration.types import Frequency
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -28,20 +28,21 @@ EXPERIMENT_NAME = "coscest_1hn_ip_ap"
 OFFSET_REF = 1e4
 
 
-class CosCest1HnIpApSettings(MFCestSettings):
-    name: Literal["coscest_1hn_ip_ap"]
-    time_t1: float
-    carrier: float
-    cos_n: int
-    cos_res: int = 10
-    d1: float
-    taua: float = 2.38e-3
-    b1_frq: float
-    b1_inh_scale: float = 0.1
-    b1_inh_res: int = 11
+class CosCest1HnIpApSettings(MFCestSettings, B1InhomogeneityMixin):
+    """Settings for cosine-modulated 1H-15N in-phase/anti-phase CEST experiment."""
 
-    @cached_property
+    name: Literal["coscest_1hn_ip_ap"]
+    time_t1: float = Field(description="Length of the CEST block in seconds")
+    carrier: Frequency = Field(description="1H carrier position in Hz")
+    cos_n: int = Field(description="Number of cosine cycles")
+    cos_res: int = 10
+    d1: float = Field(description="Relaxation delay in seconds")
+    taua: float = 2.38e-3
+
+    @computed_field  # type: ignore[misc]
+    @property
     def detection(self) -> str:
+        """Detection operator (anti-phase)."""
         return f"[2izsz{self.suffix_detect}]"
 
 
@@ -79,18 +80,21 @@ def build_spectrometer(
     spectrometer = Spectrometer(liouvillian)
 
     spectrometer.carrier_i = settings.carrier
-    spectrometer.b1_i = settings.b1_frq
-    spectrometer.b1_i_inh_scale = settings.b1_inh_scale
-    spectrometer.b1_i_inh_res = settings.b1_inh_res
+
+    # Set the B1 inhomogeneity distribution
+    distribution = settings.get_b1_distribution()
+    liouvillian.set_b1_i_distribution(distribution)
 
     spectrometer.detection = settings.detection
 
     return spectrometer
 
 
-@dataclass
 class CosCest1HnIpApSequence:
-    settings: CosCest1HnIpApSettings
+    """Sequence for cosine-modulated 1H-15N in-phase/anti-phase CEST experiment."""
+
+    def __init__(self, settings: CosCest1HnIpApSettings) -> None:
+        self.settings = settings
 
     @staticmethod
     def is_reference(metadata: Array) -> Array:

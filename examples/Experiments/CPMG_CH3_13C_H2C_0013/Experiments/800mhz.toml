@@ -1,9 +1,9 @@
 [experiment]
-name       = "cpmg_ch3_13c_h2c_0013"
-time_t2    = 40.0e-3
-taub       = 2.0e-3
-carrier    = 16.000
-pw90       = 16.67e-6
+name = "cpmg_ch3_13c_h2c_0013"
+time_t2 = 40.0e-3
+taub = 2.0e-3
+carrier = 16.000
+pw90 = 16.67e-6
 time_equil = 5.0e-3
 
 [conditions]
@@ -13,21 +13,21 @@ h_larmor_frq = 800.28
 # temperature = 25.0
 
 [data]
-path  = "../Data/800MHz/"
+path = "../Data/800MHz/"
 error = "file"
 
-  [data.profiles]
-  L7CD1-HD1 = "L7CD1-QD1.out"
-  L7CD2-HD2 = "L7CD2-QD2.out"
-  L18CD1-HD1 = "L18CD1-QD1.out"
-  L18CD2-HD2 = "L18CD2-QD2.out"
-  I28CD1-HD1 = "I28CD1-QD1.out"
-  L29CD1-HD1 = "L29CD1-QD1.out"
-  L29CD2-HD2 = "L29CD2-QD2.out"
-  L42CD1-HD1 = "L42CD1-QD1.out"
-  I50CD1-HD1 = "I50CD1-QD1.out"
-  V55CG1-HG1 = "V55CG1-QG1.out"
-  V55CG2-HG2 = "V55CG2-QG2.out"
-  V58CG1-HG1 = "V58CG1-QG1.out"
-  V58CG2-HG1 = "V58CG2-QG2.out"
-  L61CD2-HD2 = "L61CD2-QD2.out"
+[data.profiles]
+L7CD1-HD1 = "L7CD1-QD1.out"
+L7CD2-HD2 = "L7CD2-QD2.out"
+L18CD1-HD1 = "L18CD1-QD1.out"
+L18CD2-HD2 = "L18CD2-QD2.out"
+I28CD1-HD1 = "I28CD1-QD1.out"
+L29CD1-HD1 = "L29CD1-QD1.out"
+L29CD2-HD2 = "L29CD2-QD2.out"
+L42CD1-HD1 = "L42CD1-QD1.out"
+I50CD1-HD1 = "I50CD1-QD1.out"
+V55CG1-HG1 = "V55CG1-QG1.out"
+V55CG2-HG2 = "V55CG2-QG2.out"
+V58CG1-HG1 = "V58CG1-QG1.out"
+V58CG2-HG1 = "V58CG2-QG2.out"
+L61CD2-HD2 = "L61CD2-QD2.out"

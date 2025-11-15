@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property
 from typing import Literal
 
 import numpy as np
 from numpy.linalg import matrix_power
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings
+from chemex.configuration.types import Delay, Frequency, PulseWidth
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -27,24 +27,30 @@ EXPERIMENT_NAME = "cpmg_15n_tr"
 
 
 class Cpmg15NTrSettings(CpmgSettings):
+    """Settings for TROSY-based 15N CPMG relaxation dispersion experiment."""
+
     name: Literal["cpmg_15n_tr"]
-    time_t2: float
-    carrier: float
-    pw90: float
-    time_equil: float = 0.0
+    time_t2: Delay = Field(description="Total CPMG relaxation delay in seconds")
+    carrier: Frequency = Field(description="15N carrier position in Hz")
+    pw90: PulseWidth = Field(description="90-degree pulse width in seconds")
+    time_equil: Delay = 0.0
     taub: float = 2.68e-3
     antitrosy: bool = False
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def t_neg(self) -> float:
+        """Negative time delay for CPMG element."""
         return -2.0 * self.pw90 / np.pi
 
     @property
     def taub_eff(self) -> float:
         return self.taub - 2.0 * self.pw90 - 2.0 * self.pw90 / np.pi
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def start_terms(self) -> list[str]:
+        """Starting magnetization terms (TROSY component)."""
         return [f"2izsz{self.suffix_start}"]
 
     @property
@@ -93,9 +99,11 @@ def build_spectrometer(
     return spectrometer
 
 
-@dataclass
 class Cpmg15NTrSequence:
-    settings: Cpmg15NTrSettings
+    """Sequence for TROSY-based 15N CPMG relaxation dispersion experiment."""
+
+    def __init__(self, settings: Cpmg15NTrSettings) -> None:
+        self.settings = settings
 
     def _get_delays(self, ncycs: Array) -> tuple[dict[float, float], list[float]]:
         ncycs_no_ref = ncycs[ncycs > 0]

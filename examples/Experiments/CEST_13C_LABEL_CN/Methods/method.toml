@@ -1,8 +1,17 @@
 [STEP1]
-INCLUDE     = ["L18CB", "L18CD2", "K25CA", "K25CB", "K25CG", "I28CA", "I28CB", "I28CD1"]
-FIT         = ["PB", "KEX_AB", "CS_A"]
+INCLUDE = [
+  "L18CB",
+  "L18CD2",
+  "K25CA",
+  "K25CB",
+  "K25CG",
+  "I28CA",
+  "I28CB",
+  "I28CD1"
+]
+FIT = ["PB", "KEX_AB", "CS_A"]
 CONSTRAINTS = ["[R2_B] = [R2_A]"]
 
 [STEP2]
 INCLUDE = "all"
-FIX     = ["PB", "KEX_AB"]
+FIX = ["PB", "KEX_AB"]

@@ -1,31 +1,32 @@
 [experiment]
-name         = "cest_ch3_1h_ip_ap"
-d1           = 0.5
-time_t1      = 0.5
-carrier      = 0.500
-b1_frq       = 30.386
-b1_inh_scale = inf
+name = "cest_ch3_1h_ip_ap"
+d1 = 0.5
+time_t1 = 0.5
+carrier = 0.500
+b1_frq = 30.386
+
+b1_distribution = { type = "dephasing" }
 
 [conditions]
 h_larmor_frq = 800.3
-label        = ["2H"]
+label = ["2H"]
 # p_total    = 1.7e-3
 # sample = "L99A T4 lysozyme"
 # temperature = 9.0
 
 [data]
-path  = "../Data/30Hz/"
+path = "../Data/30Hz/"
 error = "scatter"
 
-  [data.profiles]
-  L7HD1-CD1   = "L7CD1-QD1.out"
-  L7HD2-CD2   = "L7CD2-QD2.out"
-  I29HD1-CD1  = "I29CD1-QD1.out"
-  V71HG1-CG1  = "V71CG1-QG1.out"
-  I100HD1-CD1 = "I100CD1-QD1.out"
-  M102HE-CE   = "M102CE-QE.out"
-  V103HG1-CG1 = "V103CG1-QG1.out"
-  M106HE-CE   = "M106CE-QE.out"
-  L118HD2-CD2 = "L118CD2-QD2.out"
-  L121HD1-CD1 = "L121CD1-QD1.out"
-  L121HD2-CD2 = "L121CD2-QD2.out"
+[data.profiles]
+L7HD1-CD1 = "L7CD1-QD1.out"
+L7HD2-CD2 = "L7CD2-QD2.out"
+I29HD1-CD1 = "I29CD1-QD1.out"
+V71HG1-CG1 = "V71CG1-QG1.out"
+I100HD1-CD1 = "I100CD1-QD1.out"
+M102HE-CE = "M102CE-QE.out"
+V103HG1-CG1 = "V103CG1-QG1.out"
+M106HE-CE = "M106CE-QE.out"
+L118HD2-CD2 = "L118CD2-QD2.out"
+L121HD1-CD1 = "L121CD1-QD1.out"
+L121HD2-CD2 = "L121CD2-QD2.out"

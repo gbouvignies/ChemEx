@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property
 from typing import Literal
 
 import numpy as np
+from pydantic import computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
@@ -26,14 +25,30 @@ EXPERIMENT_NAME = "relaxation_nz"
 
 
 class RelaxationNzSettings(RelaxationSettings):
+    """Settings for longitudinal 15N relaxation (Nz) experiment."""
+
     name: Literal["relaxation_nz"]
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def start_terms(self) -> list[str]:
+        """Initial magnetization terms for the experiment.
+
+        Returns:
+            List of initial state terms for the Liouvillian calculation.
+
+        """
         return [f"iz{self.suffix_start}"]
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def detection(self) -> str:
+        """Detection mode for the observable magnetization.
+
+        Returns:
+            Detection term for the Liouvillian calculation.
+
+        """
         return f"[iz{self.suffix_detect}]"
 
 
@@ -69,9 +84,11 @@ def build_spectrometer(
     return spectrometer
 
 
-@dataclass
 class RelaxationNzSequence:
-    settings: RelaxationNzSettings
+    """Sequence for longitudinal 15N relaxation (Nz) experiment."""
+
+    def __init__(self, settings: RelaxationNzSettings) -> None:
+        self.settings = settings
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         times = data.metadata

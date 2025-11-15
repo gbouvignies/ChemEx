@@ -57,18 +57,29 @@ pw90 = 45e-6
 ## DANTE "spectral width", in Hz
 sw = 800.0
 
-## B1 radio-frequency field strength, in Hz
-b1_frq = 25.0
+## Effective B1 field for the equivalent continuous-wave CEST irradiation, in Hz
+b1_eff = 25.0  # alias: b1_frq (still supported)
 
-## B1 inhomogeneity expressed as a fraction of 'b1_frq'. If set to "inf",
-## a faster calculation takes place assuming full dephasing of the
-## magnetization components orthogonal to the effective field.
-## [optional, default: 0.1]
-# b1_inh_scale = 0.1
+## Notes on pw90 vs b1_eff (D-CEST specific):
+## - pw90 defines the hardware B1 amplitude; the B1 inhomogeneity distribution
+##   is centered on the nominal B1 derived from pw90 (1/(4*pw90)).
+## - b1_eff sets the effective B1 used to time the DANTE pulses (pw_dante).
+## You must provide both for D-CEST: pw90 (hardware) and b1_eff (effective).
+## Backward-compatibility: the key 'b1_frq' is accepted as an alias for 'b1_eff'.
 
-## Number of points used to simulate B1 inhomogeneity, the larger
-## the longer the calculation. [optional, default: 11]
-# b1_inh_res = 11
+## D-CEST timing relationships (from Supporting Information):
+## Let T be the total D-CEST duration, k the number of pulses, τp the pulse
+## width, and τ' the inter-pulse interval. With spectral width sw = 1/τ',
+## Eq. [S12] gives: τp = (b1_eff / b1_D-CEST) * τ'.
+
+## B1 inhomogeneity distribution (replaces b1_inh_scale/b1_inh_res)
+## type:  distribution family (e.g., "gaussian")
+## scale: relative standard deviation (e.g., 0.1 means 10% width)
+## res:   number of quadrature points used in the distribution
+[experiment.b1_distribution]
+type = "gaussian"
+scale = 0.1
+res = 11
 
 ## Equilibration delay at the end of the CEST period, in seconds
 ## [optional, default: 0.0]

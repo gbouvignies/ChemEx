@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property
 from typing import Literal
 
 import numpy as np
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import CestSettings
+from chemex.configuration.experiment import B1InhomogeneityMixin, CestSettings
+from chemex.configuration.types import Frequency
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -28,16 +28,16 @@ EXPERIMENT_NAME = "cest_15n_tr"
 OFFSET_REF = 1e4
 
 
-class Cest15NTrSettings(CestSettings):
+class Cest15NTrSettings(CestSettings, B1InhomogeneityMixin):
+    """Settings for TROSY-based 15N CEST experiment."""
+
     name: Literal["cest_15n_tr"]
-    time_t1: float
-    carrier: float
-    b1_frq: float
-    b1_inh_scale: float = 0.1
-    b1_inh_res: int = 11
+    time_t1: float = Field(description="Length of the CEST block in seconds")
+    carrier: Frequency = Field(description="15N carrier position in Hz")
     antitrosy: bool = False
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def start_terms(self) -> list[str]:
         """Start from the TROSY or ANTI-TROSY component.
 
@@ -49,8 +49,10 @@ class Cest15NTrSettings(CestSettings):
             return [f"2izsz{suffix}", f"-iz{suffix}"]
         return [f"2izsz{suffix}", f"iz{suffix}"]
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def detection(self) -> str:
+        """Detection operator for TROSY or ANTI-TROSY component."""
         suffix = self.suffix_detect
         if self.antitrosy:
             return f"[2izsz{suffix}] + [iz{suffix}]"
@@ -89,9 +91,10 @@ def build_spectrometer(
     spectrometer = Spectrometer(liouvillian)
 
     spectrometer.carrier_i = settings.carrier
-    spectrometer.b1_i = settings.b1_frq
-    spectrometer.b1_i_inh_scale = settings.b1_inh_scale
-    spectrometer.b1_i_inh_res = settings.b1_inh_res
+
+    # Set the B1 inhomogeneity distribution
+    distribution = settings.get_b1_distribution()
+    liouvillian.set_b1_i_distribution(distribution)
 
     spectrometer.detection = settings.detection
 
@@ -101,9 +104,11 @@ def build_spectrometer(
     return spectrometer
 
 
-@dataclass
 class Cest15NTrSequence:
-    settings: Cest15NTrSettings
+    """Sequence for TROSY-based 15N CEST experiment."""
+
+    def __init__(self, settings: Cest15NTrSettings) -> None:
+        self.settings = settings
 
     @staticmethod
     def is_reference(metadata: Array) -> Array:

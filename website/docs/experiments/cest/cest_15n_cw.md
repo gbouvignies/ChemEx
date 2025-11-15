@@ -49,15 +49,11 @@ carrier = 118.0
 ## B1 radio-frequency field strength, in Hz
 b1_frq = 25.0
 
-## B1 inhomogeneity expressed as a fraction of 'b1_frq'. If set to "inf",
-## a faster calculation takes place assuming full dephasing of the
-## magnetization components orthogonal to the effective field.
-## [optional, default: 0.1]
-# b1_inh_scale = 0.1
-
-## Number of points used to simulate B1 inhomogeneity, the larger
-## the longer the calculation. [optional, default: 11]
-# b1_inh_res = 11
+## B1 inhomogeneity distribution (replaces b1_inh_scale/b1_inh_res)
+[experiment.b1_distribution]
+type = "gaussian"
+scale = 0.1
+res = 11
 
 ## Position of the ¹H carrier during the ¹H CW decoupling, in ppm
 carrier_dec = 8.3

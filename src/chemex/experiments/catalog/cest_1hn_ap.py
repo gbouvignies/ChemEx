@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property
 from typing import Literal
 
 import numpy as np
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import CestSettings
+from chemex.configuration.experiment import B1InhomogeneityMixin, CestSettings
+from chemex.configuration.types import Frequency
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -27,21 +27,24 @@ EXPERIMENT_NAME = "cest_1hn_ap"
 OFFSET_REF = 1e4
 
 
-class Cest1HnApSettings(CestSettings):
+class Cest1HnApSettings(CestSettings, B1InhomogeneityMixin):
+    """Settings for anti-phase 1H-15N CEST experiment."""
+
     name: Literal["cest_1hn_ap"]
-    time_t1: float
-    carrier: float
-    b1_frq: float
-    b1_inh_scale: float = 0.1
-    b1_inh_res: int = 11
+    time_t1: float = Field(description="Length of the CEST block in seconds")
+    carrier: Frequency = Field(description="1H carrier position in Hz")
     cs_evolution_prior: bool = True
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def start_terms(self) -> list[str]:
+        """Starting magnetization term (anti-phase)."""
         return [f"2izsz{self.suffix_start}"]
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def detection(self) -> str:
+        """Detection operator (anti-phase)."""
         return f"[2izsz{self.suffix_detect}]"
 
 
@@ -71,18 +74,21 @@ def build_spectrometer(
     spectrometer = Spectrometer(liouvillian)
 
     spectrometer.carrier_i = settings.carrier
-    spectrometer.b1_i = settings.b1_frq
-    spectrometer.b1_i_inh_scale = settings.b1_inh_scale
-    spectrometer.b1_i_inh_res = settings.b1_inh_res
+
+    # Set the B1 inhomogeneity distribution
+    distribution = settings.get_b1_distribution()
+    liouvillian.set_b1_i_distribution(distribution)
 
     spectrometer.detection = settings.detection
 
     return spectrometer
 
 
-@dataclass
 class Cest1HnApSequence:
-    settings: Cest1HnApSettings
+    """Sequence for anti-phase 1H-15N CEST experiment."""
+
+    def __init__(self, settings: Cest1HnApSettings) -> None:
+        self.settings = settings
 
     @staticmethod
     def is_reference(metadata: Array) -> Array:

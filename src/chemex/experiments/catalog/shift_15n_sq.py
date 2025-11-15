@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
@@ -63,9 +62,11 @@ def _find_nearest(array: Array, value: float) -> float:
     return array[idx]
 
 
-@dataclass
 class Shift15NSqSequence:
-    settings: Shift15NSqSettings
+    """Sequence for 15N single-quantum chemical shift measurement."""
+
+    def __init__(self, settings: Shift15NSqSettings) -> None:
+        self.settings = settings
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ppm_i = spectrometer.liouvillian.ppm_i

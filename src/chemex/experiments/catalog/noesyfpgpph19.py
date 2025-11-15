@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
@@ -52,9 +51,11 @@ def build_spectrometer(
     return Spectrometer(liouvillian)
 
 
-@dataclass
 class Noesyfpgpph19Sequence:
-    settings: Noesyfpgpph19Settings
+    """Sequence for NOESY-FPGP-PH19 experiment."""
+
+    def __init__(self, settings: Noesyfpgpph19Settings) -> None:
+        self.settings = settings
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         times = data.metadata["times"]

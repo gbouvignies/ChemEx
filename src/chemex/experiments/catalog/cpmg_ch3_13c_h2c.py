@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property
 from typing import Literal
 
 import numpy as np
 from numpy.linalg import matrix_power
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettingsEvenNcycs
+from chemex.configuration.types import Delay, Frequency, PulseWidth
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -27,23 +27,31 @@ EXPERIMENT_NAME = "cpmg_ch3_13c_h2c"
 
 
 class CpmgCh313CH2cSettings(CpmgSettingsEvenNcycs):
-    name: Literal["cpmg_ch3_13c_h2c"]
-    time_t2: float
-    carrier: float
-    pw90: float
-    taub: float = 2.0e-3
-    time_equil: float = 0.0
+    """Settings for CH3 13C H2C CPMG relaxation dispersion experiment."""
 
-    @cached_property
+    name: Literal["cpmg_ch3_13c_h2c"]
+    time_t2: Delay = Field(description="Total CPMG relaxation delay in seconds")
+    carrier: Frequency = Field(description="13C carrier position in Hz")
+    pw90: PulseWidth = Field(description="90-degree pulse width in seconds")
+    taub: float = 2.0e-3
+    time_equil: Delay = 0.0
+
+    @computed_field  # type: ignore[misc]
+    @property
     def t_neg(self) -> float:
+        """Negative time delay for CPMG element."""
         return -2.0 * self.pw90 / np.pi
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def start_terms(self) -> list[str]:
+        """Starting magnetization terms (anti-phase)."""
         return [f"2izsz{self.suffix_start}"]
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def detection(self) -> str:
+        """Detection operator (in-phase)."""
         return f"[iz{self.suffix_detect}]"
 
 
@@ -78,9 +86,11 @@ def build_spectrometer(
     return spectrometer
 
 
-@dataclass
 class CpmgCh313CH2cSequence:
-    settings: CpmgCh313CH2cSettings
+    """Sequence for CH3 13C H2C CPMG relaxation dispersion experiment."""
+
+    def __init__(self, settings: CpmgCh313CH2cSettings) -> None:
+        self.settings = settings
 
     def _get_delays(self, ncycs: Array) -> tuple[dict[float, float], list[float]]:
         ncycs_no_ref = ncycs[ncycs > 0]

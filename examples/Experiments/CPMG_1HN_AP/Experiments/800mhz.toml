@@ -1,28 +1,28 @@
 [experiment]
-name    = "cpmg_1hn_ap"
+name = "cpmg_1hn_ap"
 time_t2 = 20.0e-3
 carrier = 8.072
-pw90    = 11.425e-6
+pw90 = 11.425e-6
 
 [conditions]
 h_larmor_frq = 799.727
-label        = ["2H"]
+label = ["2H"]
 # p_total    = 1.5e-3
 # sample = "L99A T4 lysozyme"
 # temperature = 25.0
 
 [data]
-path  = "../Data/800MHz/"
+path = "../Data/800MHz/"
 error = "duplicates"
 
-  [data.profiles]
-  3HN-N   = "3N-HN.out"
-  8HN-N   = "8N-HN.out"
-  29HN-N  = "29N-HN.out"
-  70HN-N  = "70N-HN.out"
-  75HN-N  = "75N-HN.out"
-  103HN-N = "103N-HN.out"
-  104HN-N = "104N-HN.out"
-  105HN-N = "105N-HN.out"
-  115HN-N = "115N-HN.out"
-  121HN-N = "121N-HN.out"
+[data.profiles]
+3HN-N = "3N-HN.out"
+8HN-N = "8N-HN.out"
+29HN-N = "29N-HN.out"
+70HN-N = "70N-HN.out"
+75HN-N = "75N-HN.out"
+103HN-N = "103N-HN.out"
+104HN-N = "104N-HN.out"
+105HN-N = "105N-HN.out"
+115HN-N = "115N-HN.out"
+121HN-N = "121N-HN.out"

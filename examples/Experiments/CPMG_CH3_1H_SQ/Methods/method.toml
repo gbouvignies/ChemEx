@@ -1,21 +1,21 @@
 [STEP1]
 INCLUDE = [
-    "L24HD2",
-    "L25HD1",
-    "V30HG1",
-    "V30HG2",
-    "M40HE",
-    "I44HD1",
-    "L52HD1",
-    "L52HD2",
-    "L55HD1",
-    "L55HD2",
+  "L24HD2",
+  "L25HD1",
+  "V30HG1",
+  "V30HG2",
+  "M40HE",
+  "I44HD1",
+  "L52HD1",
+  "L52HD2",
+  "L55HD1",
+  "L55HD2",
 ]
-FIX     = ["PB", "KEX_AB"]
+FIX = ["PB", "KEX_AB"]
 
 [STEP2]
 FIT = ["PB", "KEX_AB"]
 
 [STEP3]
 INCLUDE = "ALL"
-FIX     = ["PB", "KEX_AB"]
+FIX = ["PB", "KEX_AB"]
