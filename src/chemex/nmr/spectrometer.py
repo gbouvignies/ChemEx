@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Hashable, Iterable, Sequence
 from functools import reduce
 from itertools import product
 
 import numpy as np
-from cachetools import LRUCache
 from cachetools import cached
 from cachetools.keys import hashkey
 from scipy.linalg import expm
@@ -20,75 +18,6 @@ DictArray = dict[str, Array]
 # A small value used for numerical stability
 SMALL_VALUE = 1e-6
 
-# Feature flag: Enable eigenvalue decomposition caching
-# Set CHEMEX_CACHE_EIGEN=0 to disable caching (for debugging/validation)
-_CACHE_ENABLED = os.environ.get("CHEMEX_CACHE_EIGEN", "1") != "0"
-
-# Cache for eigenvalue decompositions: key=(liouv_hash, dephasing) -> (eigenvalues, eigenvectors)
-# Using LRUCache with max 256 entries (~ 2MB for typical 16x16 matrices)
-_eigen_cache: LRUCache = LRUCache(maxsize=256)
-
-# Cache statistics for validation and debugging
-_cache_stats = {"hits": 0, "misses": 0, "enabled": _CACHE_ENABLED}
-
-
-def _compute_eigen_decomposition(
-    liouv: Array, dephasing: bool
-) -> tuple[Array, Array]:
-    """Compute eigenvalue decomposition of Liouvillian matrix.
-
-    This is the expensive O(n³) operation that we cache.
-
-    Parameters
-    ----------
-    liouv : Array
-        The Liouvillian matrix
-    dephasing : bool
-        Whether to apply dephasing to eigenvalues
-
-    Returns
-    -------
-    tuple[Array, Array]
-        (eigenvalues, eigenvectors) tuple
-
-    """
-    # Calculate eigenvalues and eigenvectors of the Liouvillian matrices
-    eigenvalues, eigenvectors = np.linalg.eig(liouv)
-    eigenvalues = eigenvalues.astype(
-        np.complex128
-    )  # Ensure eigenvalues are complex, mainly for type checking
-
-    if dephasing:
-        # If dephasing is requested, adjust eigenvalues
-        eigenvalues = np.where(
-            np.abs(eigenvalues.imag) < SMALL_VALUE,
-            eigenvalues,
-            eigenvalues * 1e9,
-        )
-
-    return eigenvalues, eigenvectors
-
-
-def get_cache_stats() -> dict[str, int | bool]:
-    """Get current cache statistics for monitoring and debugging.
-
-    Returns
-    -------
-    dict
-        Dictionary with 'hits', 'misses', 'enabled', 'size', and 'hit_rate' keys
-
-    """
-    total = _cache_stats["hits"] + _cache_stats["misses"]
-    hit_rate = _cache_stats["hits"] / total if total > 0 else 0.0
-    return {
-        "hits": _cache_stats["hits"],
-        "misses": _cache_stats["misses"],
-        "total": total,
-        "hit_rate": hit_rate,
-        "cache_size": len(_eigen_cache),
-        "enabled": _CACHE_ENABLED,
-    }
-
 
 def calculate_propagators(
     liouv: Array,
@@ -97,9 +26,6 @@ def calculate_propagators(
     dephasing: bool = False,
 ) -> Array:
     """Calculate the propagators for the given delays.
-
-    Uses caching to avoid redundant eigenvalue decompositions when the same
-    Liouvillian is used with different delays.
 
     Parameters
     ----------
@@ -121,37 +47,22 @@ def calculate_propagators(
 
     if delays_array.size == 1 and not dephasing:
         # If there's only one delay and no dephasing, calculate the propagator directly
-        # using scipy expm function (faster for single delay)
-        # Track fast path usage for debugging
-        _cache_stats.setdefault("fast_path", 0)
-        _cache_stats["fast_path"] += 1
+        # using scipy expm function
         return expm(liouv * delays_array[0]).astype(np.float64)
 
-    # Calculate or retrieve cached eigenvalues and eigenvectors
-    # Cache key: hash of Liouvillian matrix + dephasing flag
-    if _CACHE_ENABLED:
-        try:
-            # Create a hashable cache key from the Liouvillian array
-            cache_key = (liouv.tobytes(), dephasing)
+    # Calculate eigenvalues and eigenvectors of the Liouvillian matrices
+    eigenvalues, eigenvectors = np.linalg.eig(liouv)
+    eigenvalues = eigenvalues.astype(
+        np.complex128
+    )  # Ensure eigenvalues are complex, mainly for type checking
 
-            # Try to get from cache
-            if cache_key in _eigen_cache:
-                eigenvalues, eigenvectors = _eigen_cache[cache_key]
-                _cache_stats["hits"] += 1
-            else:
-                # Cache miss - compute eigendecomposition
-                eigenvalues, eigenvectors = _compute_eigen_decomposition(
-                    liouv, dephasing
-                )
-                # Store in cache
-                _eigen_cache[cache_key] = (eigenvalues, eigenvectors)
-                _cache_stats["misses"] += 1
-        except (TypeError, ValueError):
-            # Fallback if caching fails (e.g., unusual array types)
-            eigenvalues, eigenvectors = _compute_eigen_decomposition(liouv, dephasing)
-    else:
-        # Caching disabled - compute directly
-        eigenvalues, eigenvectors = _compute_eigen_decomposition(liouv, dephasing)
+    if dephasing:
+        # If dephasing is requested, adjust eigenvalues
+        eigenvalues = np.where(
+            np.abs(eigenvalues.imag) < SMALL_VALUE,
+            eigenvalues,
+            eigenvalues * 1e9,
+        )
 
     # Calculate the exponentiated eigenvalues for each delay
     evt = np.exp(np.multiply.outer(delays_array, eigenvalues))
