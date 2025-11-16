@@ -137,6 +137,7 @@ class Cpmg1HnAp0013Sequence:
 
     def __init__(self, settings: Cpmg1HnAp0013Settings) -> None:
         self.settings = settings
+        self._phase_cache: dict[float, tuple[Array, Array]] = {}
 
     def _get_delays(
         self,
@@ -165,22 +166,25 @@ class Cpmg1HnAp0013Sequence:
         return tau_cps, deltas, delays
 
     def _get_phases(self, ncyc: Array) -> tuple[Array, Array]:
-        cp_phases1 = np.array(
-            [
-                [1, 1, 2, 0, 1, 1, 0, 2, 1, 1, 0, 2, 1, 1, 2, 0],
-                [2, 0, 3, 3, 0, 2, 3, 3, 0, 2, 3, 3, 2, 0, 3, 3],
-            ],
-        )
-        cp_phases2 = np.array(
-            [
-                [3, 3, 2, 0, 3, 3, 0, 2, 3, 3, 0, 2, 3, 3, 2, 0],
-                [2, 0, 1, 1, 0, 2, 1, 1, 0, 2, 1, 1, 2, 0, 1, 1],
-            ],
-        )
-        indexes = np.arange(int(ncyc))
-        phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap", axis=1)
-        phases2 = np.take(cp_phases2, indexes, mode="wrap", axis=1)
-        return phases1, phases2
+        ncyc_key = float(ncyc)
+        if ncyc_key not in self._phase_cache:
+            cp_phases1 = np.array(
+                [
+                    [1, 1, 2, 0, 1, 1, 0, 2, 1, 1, 0, 2, 1, 1, 2, 0],
+                    [2, 0, 3, 3, 0, 2, 3, 3, 0, 2, 3, 3, 2, 0, 3, 3],
+                ],
+            )
+            cp_phases2 = np.array(
+                [
+                    [3, 3, 2, 0, 3, 3, 0, 2, 3, 3, 0, 2, 3, 3, 2, 0],
+                    [2, 0, 1, 1, 0, 2, 1, 1, 0, 2, 1, 1, 2, 0, 1, 1],
+                ],
+            )
+            indexes = np.arange(int(ncyc))
+            phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap", axis=1)
+            phases2 = np.take(cp_phases2, indexes, mode="wrap", axis=1)
+            self._phase_cache[ncyc_key] = (phases1, phases2)
+        return self._phase_cache[ncyc_key]
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata

@@ -95,6 +95,7 @@ class CpmgCh31HSqSequence:
 
     def __init__(self, settings: CpmgCh31HSqSettings) -> None:
         self.settings = settings
+        self._phase_cache: tuple[Array, Array] | None = None
 
     def _get_delays(self, ncycs: Array) -> tuple[dict[float, float], list[float]]:
         frac = 7.0 / 3.0 if self.settings.comp180_flg else 1.0
@@ -111,12 +112,14 @@ class CpmgCh31HSqSequence:
         return tau_cps, delays
 
     def _get_phases(self) -> tuple[Array, Array]:
-        cp_phases1 = np.array([[0, 1], [1, 0]])
-        cp_phases2 = np.array([[0, 3], [3, 0]])
-        indexes = np.arange(int(self.settings.ncyc_max))
-        phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap", axis=1)
-        phases2 = np.take(cp_phases2, indexes, mode="wrap", axis=1)
-        return phases1, phases2
+        if self._phase_cache is None:
+            cp_phases1 = np.array([[0, 1], [1, 0]])
+            cp_phases2 = np.array([[0, 3], [3, 0]])
+            indexes = np.arange(int(self.settings.ncyc_max))
+            phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap", axis=1)
+            phases2 = np.take(cp_phases2, indexes, mode="wrap", axis=1)
+            self._phase_cache = (phases1, phases2)
+        return self._phase_cache
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata

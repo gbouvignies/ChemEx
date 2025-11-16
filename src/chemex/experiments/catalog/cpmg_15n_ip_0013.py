@@ -124,6 +124,7 @@ class Cpmg15N0013IpSequence:
 
     def __init__(self, settings: Cpmg15N0013IpSettings) -> None:
         self.settings = settings
+        self._phase_cache: dict[float, Array] = {}
 
     def _get_delays(self, ncycs: Array) -> Delays:
         ncycs_no_ref = ncycs[ncycs > 0]
@@ -149,14 +150,20 @@ class Cpmg15N0013IpSequence:
         return tau_cps, deltas, delays
 
     def _get_phases(self, ncyc: Array) -> Array:
-        cp_phases = np.array(
-            [
-                [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3],
-                [1, 3, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 1, 3, 2, 2],
-            ],
-        )
-        indexes = np.flip(np.arange(2 * int(ncyc)))
-        return np.take(cp_phases, indexes, mode="wrap", axis=1)
+        # Cache phases since they only depend on ncyc value, not parameters
+        ncyc_key = float(ncyc)
+        if ncyc_key not in self._phase_cache:
+            cp_phases = np.array(
+                [
+                    [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3],
+                    [1, 3, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 1, 3, 2, 2],
+                ],
+            )
+            indexes = np.flip(np.arange(2 * int(ncyc)))
+            self._phase_cache[ncyc_key] = np.take(
+                cp_phases, indexes, mode="wrap", axis=1
+            )
+        return self._phase_cache[ncyc_key]
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata

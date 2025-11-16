@@ -107,6 +107,7 @@ class CpmgHNDqZqSequence:
 
     def __init__(self, settings: CpmgHNDqZqSettings) -> None:
         self.settings = settings
+        self._phase_cache: dict[float, tuple[Array, Array]] = {}
 
     def _get_tau_cps(self, ncycs: Array) -> dict[float, float]:
         ncycs_no_ref = ncycs[ncycs > 0]
@@ -120,20 +121,23 @@ class CpmgHNDqZqSequence:
         )
 
     def _get_phases(self, ncyc: float) -> tuple[Array, Array]:
-        nu_cpmg = ncyc / self.settings.time_t2
-        if nu_cpmg < NU_CPMG_LIMIT_1:
-            cp_phases1 = [0, 1, 0, 1]
-            cp_phases2 = [1, 0, 1, 0]
-        elif nu_cpmg < NU_CPMG_LIMIT_2:
-            cp_phases1 = [0]
-            cp_phases2 = [1]
-        else:
-            cp_phases1 = [0, 1, 0, 1, 1, 0, 1, 0]
-            cp_phases2 = [1, 0, 1, 0, 0, 1, 0, 1]
-        indexes = np.arange(2 * int(ncyc))
-        phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap")
-        phases2 = np.take(cp_phases2, np.flip(indexes), mode="wrap")
-        return phases1, phases2
+        ncyc_key = float(ncyc)
+        if ncyc_key not in self._phase_cache:
+            nu_cpmg = ncyc / self.settings.time_t2
+            if nu_cpmg < NU_CPMG_LIMIT_1:
+                cp_phases1 = [0, 1, 0, 1]
+                cp_phases2 = [1, 0, 1, 0]
+            elif nu_cpmg < NU_CPMG_LIMIT_2:
+                cp_phases1 = [0]
+                cp_phases2 = [1]
+            else:
+                cp_phases1 = [0, 1, 0, 1, 1, 0, 1, 0]
+                cp_phases2 = [1, 0, 1, 0, 0, 1, 0, 1]
+            indexes = np.arange(2 * int(ncyc))
+            phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap")
+            phases2 = np.take(cp_phases2, np.flip(indexes), mode="wrap")
+            self._phase_cache[ncyc_key] = (phases1, phases2)
+        return self._phase_cache[ncyc_key]
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata

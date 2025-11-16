@@ -141,6 +141,7 @@ class CpmgCh313CH2c0013Sequence:
 
     def __init__(self, settings: CpmgCh313CH2c0013Settings) -> None:
         self.settings = settings
+        self._phase_cache: dict[float, tuple[Array, Array]] = {}
 
     def _get_delays(
         self, ncycs: Array
@@ -177,22 +178,25 @@ class CpmgCh313CH2c0013Sequence:
 
     # Define [0013] phase cycle for CPMG pulses
     def _get_phases(self, ncyc: float) -> tuple[Array, Array]:
-        cp_phases1 = np.array(
-            [
-                [1, 1, 2, 0],
-                [2, 0, 3, 3],
-            ],
-        )
-        cp_phases2 = np.array(
-            [
-                [2, 0, 1, 1],
-                [3, 3, 2, 0],
-            ],
-        )
-        indexes = np.arange(int(ncyc))
-        phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap", axis=1)
-        phases2 = np.take(cp_phases2, np.flip(indexes), mode="wrap", axis=1)
-        return phases1, phases2
+        ncyc_key = float(ncyc)
+        if ncyc_key not in self._phase_cache:
+            cp_phases1 = np.array(
+                [
+                    [1, 1, 2, 0],
+                    [2, 0, 3, 3],
+                ],
+            )
+            cp_phases2 = np.array(
+                [
+                    [2, 0, 1, 1],
+                    [3, 3, 2, 0],
+                ],
+            )
+            indexes = np.arange(int(ncyc))
+            phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap", axis=1)
+            phases2 = np.take(cp_phases2, np.flip(indexes), mode="wrap", axis=1)
+            self._phase_cache[ncyc_key] = (phases1, phases2)
+        return self._phase_cache[ncyc_key]
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata

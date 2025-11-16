@@ -50,17 +50,13 @@ class LiouvillianIS:
         self._detect_vector: Array = np.array([])
         self._q_order_i = _Q_ORDER_I.get(self.basis.extension, 1.0)
         scale = -2.0 * np.pi * self.h_frq
-        # Vectorized Liouvillian construction cache (lazily initialized)
-        # Must be initialized before any setter that calls _build_base_liouvillian
-        self._matrix_names: list[str] | None = None
-        self._stacked_matrices: Array | None = None
-        self._l_base = np.array(0.0)
         self.ppm_i = scale * SIGNED_XI_RATIO.get(basis.nuclei.get("i", Nucleus.X), 1.0)
         self.ppm_s = scale * SIGNED_XI_RATIO.get(basis.nuclei.get("s", Nucleus.X), 1.0)
         self.carrier_i = 0.0
         self.carrier_s = 0.0
         self.offset_i = 0.0
         self.offset_s = 0.0
+        self._l_base = np.array(0.0)
         self._b1_i_inh_scale = 0.0
         self._b1_i_inh_res = 11
         self.b1_i = 1e32
@@ -69,27 +65,14 @@ class LiouvillianIS:
         self.gradient_dephasing = 0.0
         self.basis.scale_matrices("j_is_{state}", self._q_order_i * np.pi)
 
-    def _ensure_vectorized_cache(self) -> None:
-        """Initialize vectorized matrices cache on first use.
-
-        Pre-computes stacked matrices for efficient einsum-based construction.
-        This provides ~3x speedup over the generator-based sum approach.
-        """
-        if self._stacked_matrices is None:
-            self._matrix_names = list(self.basis.matrices.keys())
-            self._stacked_matrices = np.stack(
-                [self.basis.matrices[name] for name in self._matrix_names], axis=0
-            )
-
     def _build_base_liouvillian(self) -> None:
-        # Ensure vectorized cache is initialized
-        self._ensure_vectorized_cache()
-
-        # Vectorized computation using einsum (3x faster than sum with generator)
-        param_array = np.array(
-            [self.par_values.get(name, 0.0) for name in self._matrix_names]
+        self._l_base = sum(
+            (
+                self.basis.matrices[name] * self.par_values.get(name, 0.0)
+                for name in self.basis.matrices
+            ),
+            start=np.array(0.0),
         )
-        self._l_base = np.einsum("i,ijk->jk", param_array, self._stacked_matrices)
 
     def _collapse(self, magnetization: Array) -> Array:
         """Collapse the distribution of magnetization into an average."""

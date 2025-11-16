@@ -113,6 +113,7 @@ class CpmgCh31HDqSequence:
 
     def __init__(self, settings: CpmgCh31HDqSettings) -> None:
         self.settings = settings
+        self._phase_cache: dict[float, tuple[Array, Array]] = {}
 
     def _get_delays(self, ncycs: Array) -> tuple[dict[float, float], list[float]]:
         ncyc_no_ref = ncycs[ncycs > 0]
@@ -125,12 +126,15 @@ class CpmgCh31HDqSequence:
         return tau_cps, delays
 
     def _get_phases(self, ncyc: float) -> tuple[Array, Array]:
-        cp_phases1 = [0, 1, 0, 1, 1, 0, 1, 0, 2, 3, 2, 3, 3, 2, 3, 2]
-        cp_phases2 = [0, 3, 0, 3, 3, 0, 3, 0, 2, 1, 2, 1, 1, 2, 1, 2]
-        indexes = np.arange(int(ncyc))
-        phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap")
-        phases2 = np.take(cp_phases2, indexes, mode="wrap")
-        return phases1, phases2
+        ncyc_key = float(ncyc)
+        if ncyc_key not in self._phase_cache:
+            cp_phases1 = [0, 1, 0, 1, 1, 0, 1, 0, 2, 3, 2, 3, 3, 2, 3, 2]
+            cp_phases2 = [0, 3, 0, 3, 3, 0, 3, 0, 2, 1, 2, 1, 1, 2, 1, 2]
+            indexes = np.arange(int(ncyc))
+            phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap")
+            phases2 = np.take(cp_phases2, indexes, mode="wrap")
+            self._phase_cache[ncyc_key] = (phases1, phases2)
+        return self._phase_cache[ncyc_key]
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata
