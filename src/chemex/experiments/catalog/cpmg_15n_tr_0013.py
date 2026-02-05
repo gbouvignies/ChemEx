@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property, reduce
+from functools import reduce
 from typing import Literal
 
 import numpy as np
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings
+from chemex.configuration.types import Delay, Frequency, PulseWidth
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -29,26 +30,63 @@ EXPERIMENT_NAME = "cpmg_15n_tr_0013"
 
 
 class Cpmg15NTr0013Settings(CpmgSettings):
-    name: Literal["cpmg_15n_tr_0013"]
-    time_t2: float
-    carrier: float
-    pw90: float
-    ncyc_max: int
-    time_equil: float = 0.0
-    taub: float = 2.68e-3
-    antitrosy: bool = False
-    s3e: bool = True
+    """Settings for 15N TROSY-based CPMG experiment with 0013 variant."""
 
-    @cached_property
+    name: Literal["cpmg_15n_tr_0013"]
+    time_t2: Delay = Field(description="Total CPMG relaxation delay (seconds)")
+    carrier: Frequency = Field(description="15N carrier frequency (Hz)")
+    pw90: PulseWidth = Field(description="15N 90-degree pulse width (seconds)")
+    ncyc_max: int = Field(gt=0, description="Maximum number of CPMG cycles")
+    time_equil: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Equilibration delay (seconds)",
+    )
+    taub: float = Field(
+        default=2.68e-3,
+        gt=0.0,
+        description="Delay for TROSY evolution (seconds)",
+    )
+    antitrosy: bool = Field(
+        default=False,
+        description="Flag for antitrosy component selection",
+    )
+    s3e: bool = Field(
+        default=True,
+        description="Flag for sensitivity-enhanced version",
+    )
+
+    @computed_field  # type: ignore[misc]
+    @property
     def t_neg(self) -> float:
+        """Calculate negative delay compensation for pulse imperfections.
+
+        Returns:
+            Negative delay time in seconds.
+
+        """
         return -2.0 * self.pw90 / np.pi
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def taub_eff(self) -> float:
+        """Calculate effective taub delay accounting for pulse widths.
+
+        Returns:
+            Effective delay time in seconds.
+
+        """
         return self.taub - 2.0 * self.pw90 - 2.0 * self.pw90 / np.pi
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def start_terms(self) -> list[str]:
+        """Initial magnetization terms for the experiment.
+
+        Returns:
+            List of initial state terms for the Liouvillian calculation.
+
+        """
         suffix = self.suffix_start
         if self.s3e:
             if self.antitrosy:
@@ -56,8 +94,15 @@ class Cpmg15NTr0013Settings(CpmgSettings):
             return [f"2izsz{suffix}", f"-iz{suffix}"]
         return [f"2izsz{suffix}"]
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def detection(self) -> str:
+        """Detection mode for the observable magnetization.
+
+        Returns:
+            Detection term for the Liouvillian calculation.
+
+        """
         suffix = self.suffix_detect
         if self.antitrosy:
             return f"[2izsz{suffix}] + [iz{suffix}]"
@@ -102,9 +147,12 @@ def build_spectrometer(
     return spectrometer
 
 
-@dataclass
 class Cpmg15NTr0013Sequence:
-    settings: Cpmg15NTr0013Settings
+    """Sequence for 15N TROSY-based CPMG experiment with 0013 variant."""
+
+    def __init__(self, settings: Cpmg15NTr0013Settings) -> None:
+        self.settings = settings
+        self._phase_cache: dict[float, tuple[Array, Array]] = {}
 
     def _get_delays(self, ncycs: Array) -> Delays:
         ncycs_no_ref = ncycs[ncycs > 0]
@@ -127,22 +175,25 @@ class Cpmg15NTr0013Sequence:
         return tau_cps, deltas, delays
 
     def _get_phases(self, ncyc: float) -> tuple[Array, Array]:
-        cp_phases1 = np.array(
-            [
-                [1, 1, 0, 2, 1, 1, 2, 0, 1, 1, 2, 0, 1, 1, 0, 2],
-                [0, 2, 3, 3, 2, 0, 3, 3, 2, 0, 3, 3, 0, 2, 3, 3],
-            ],
-        )
-        cp_phases2 = np.array(
-            [
-                [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3],
-                [1, 3, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 1, 3, 2, 2],
-            ],
-        )
-        indexes = np.arange(int(ncyc))
-        phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap", axis=1)
-        phases2 = np.take(cp_phases2, indexes, mode="wrap", axis=1)
-        return phases1, phases2
+        ncyc_key = float(ncyc)
+        if ncyc_key not in self._phase_cache:
+            cp_phases1 = np.array(
+                [
+                    [1, 1, 0, 2, 1, 1, 2, 0, 1, 1, 2, 0, 1, 1, 0, 2],
+                    [0, 2, 3, 3, 2, 0, 3, 3, 2, 0, 3, 3, 0, 2, 3, 3],
+                ],
+            )
+            cp_phases2 = np.array(
+                [
+                    [0, 0, 1, 3, 0, 0, 3, 1, 0, 0, 3, 1, 0, 0, 1, 3],
+                    [1, 3, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 1, 3, 2, 2],
+                ],
+            )
+            indexes = np.arange(int(ncyc))
+            phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap", axis=1)
+            phases2 = np.take(cp_phases2, indexes, mode="wrap", axis=1)
+            self._phase_cache[ncyc_key] = (phases1, phases2)
+        return self._phase_cache[ncyc_key]
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata

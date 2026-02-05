@@ -3,4 +3,4 @@ INCLUDE = ["Y10", "K25", "Q27", "E33", "W36", "S41", "E46", "S52", "A56"]
 
 [STEP2]
 INCLUDE = "ALL"
-FIX     = ["PB", "KEX_AB"]
+FIX = ["PB", "KEX_AB"]

@@ -1,0 +1,273 @@
+ChemEx Benchmark Results - 2025-11-14 22:40:13.218011
+======================================================================
+
+======================================================================
+QUICK BENCHMARKS: Matrix Operations
+======================================================================
+
+======================================================================
+Matrix Operations Benchmark (size=16, iterations=1000)
+======================================================================
+
+======================================================================
+Benchmark: Eigenvalue Decomposition (np.linalg.eig)
+======================================================================
+Total time: 0.1752 seconds
+Iterations: 1000
+Time per iteration: 0.0002 seconds
+
+======================================================================
+Benchmark: Hermitian Eigenvalue (np.linalg.eigh)
+======================================================================
+Total time: 0.0567 seconds
+Iterations: 1000
+Time per iteration: 0.0001 seconds
+
+======================================================================
+Benchmark: Matrix Inversion (np.linalg.inv)
+======================================================================
+Total time: 0.0151 seconds
+Iterations: 1000
+Time per iteration: 0.0000 seconds
+
+======================================================================
+Benchmark: Matrix Power (matrix_power, n=10)
+======================================================================
+Total time: 0.0014 seconds
+Iterations: 100
+Time per iteration: 0.0000 seconds
+
+======================================================================
+Benchmark: Matrix Power (repeated @, n=10)
+======================================================================
+Total time: 0.0026 seconds
+Iterations: 100
+Time per iteration: 0.0000 seconds
+
+======================================================================
+BOTTLENECK BENCHMARKS
+======================================================================
+
+======================================================================
+ChemEx Performance Bottleneck Analysis
+======================================================================
+
+This benchmark suite profiles the critical bottlenecks identified:
+1. Eigenvalue decomposition in calculate_propagators()
+2. Matrix operations (eig vs eigh)
+3. CPMG matrix_power operations
+4. Liouvillian construction with sum()
+
+======================================================================
+Matrix Operations with Realistic ChemEx Sizes
+======================================================================
+
+──────────────────────────────────────────────────────────────────────
+Testing size: 8x8
+──────────────────────────────────────────────────────────────────────
+  eig:  0.051 ms
+  eigh: 0.020 ms
+  Speedup: 2.55x
+
+──────────────────────────────────────────────────────────────────────
+Testing size: 12x12
+──────────────────────────────────────────────────────────────────────
+  eig:  0.098 ms
+  eigh: 0.038 ms
+  Speedup: 2.59x
+
+──────────────────────────────────────────────────────────────────────
+Testing size: 16x16
+──────────────────────────────────────────────────────────────────────
+  eig:  0.182 ms
+  eigh: 0.059 ms
+  Speedup: 3.10x
+
+──────────────────────────────────────────────────────────────────────
+Testing size: 20x20
+──────────────────────────────────────────────────────────────────────
+  eig:  0.269 ms
+  eigh: 0.104 ms
+  Speedup: 2.59x
+
+──────────────────────────────────────────────────────────────────────
+Testing size: 24x24
+──────────────────────────────────────────────────────────────────────
+  eig:  0.380 ms
+  eigh: 0.147 ms
+  Speedup: 2.59x
+
+======================================================================
+SUMMARY: Eigenvalue Decomposition Performance
+======================================================================
+Size       eig (ms)        eigh (ms)       Speedup   
+──────────────────────────────────────────────────────────────────────
+8          0.051           0.020           2.55      x
+12         0.098           0.038           2.59      x
+16         0.182           0.059           3.10      x
+20         0.269           0.104           2.59      x
+24         0.380           0.147           2.59      x
+
+======================================================================
+BOTTLENECK #3: CPMG Calculation Loop
+======================================================================
+Testing matrix_power vs repeated multiplication
+
+Matrix size: 16x16
+ncyc       matrix_power (ms)    repeated @ (ms)      Better    
+──────────────────────────────────────────────────────────────────────
+5          0.011                0.017                matrix_power
+10         0.014                0.030                matrix_power
+20         0.017                0.057                matrix_power
+50         0.023                0.142                matrix_power
+100        0.026                0.273                matrix_power
+
+Conclusion: For small ncyc (<20), repeated @ may be faster
+For large ncyc (>50), matrix_power uses eigendecomposition
+
+======================================================================
+BOTTLENECK #1: Propagator Calculation
+======================================================================
+Liouvillian size: 16x16
+Number of delays: 5
+This is called for every CPMG offset/ncyc and CEST offset
+
+======================================================================
+Benchmark: Current calculate_propagators
+======================================================================
+Total time: 0.0254 seconds
+Iterations: 100
+Time per iteration: 0.0003 seconds
+
+Warning: Could not run Liouvillian benchmark: cannot import name 'Liouvillian' from 'chemex.nmr.liouvillian' (/home/user/ChemEx/src/chemex/nmr/liouvillian.py)
+
+======================================================================
+Benchmark suite complete!
+======================================================================
+
+Key findings will be saved to: benchmarks/baseline_results.txt
+
+======================================================================
+END-TO-END WORKFLOW BENCHMARKS
+======================================================================
+======================================================================
+ChemEx End-to-End Performance Benchmarks
+======================================================================
+
+Examples directory: /home/user/ChemEx/examples
+
+These benchmarks run complete ChemEx workflows with real data
+to measure actual performance in realistic scenarios.
+
+──────────────────────────────────────────────────────────────────────
+Running benchmarks (this may take several minutes)...
+──────────────────────────────────────────────────────────────────────
+
+======================================================================
+END-TO-END BENCHMARK: CPMG Simulation
+======================================================================
+Example: /home/user/ChemEx/examples/Experiments/CPMG_15N_IP_0013
+
+Command: chemex simulate -e /home/user/ChemEx/examples/Experiments/CPMG_15N_IP_0013/Experiments/*.toml -p /home/user/ChemEx/examples/Experiments/CPMG_15N_IP_0013/Parameters/parameters.toml -o /tmp/tmp4ev0zmzp/output
+
+Error running chemex simulate:
+Traceback (most recent call last):
+  File "/usr/local/bin/chemex", line 8, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/user/ChemEx/src/chemex/chemex.py", line 85, in main
+    args.func(args)
+  File "/home/user/ChemEx/src/chemex/chemex.py", line 59, in run
+    experiments = build_experiments(args.experiments, selection)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/ChemEx/src/chemex/experiments/builder.py", line 153, in build_experiments
+    experiment = build_experiment(filename, selection)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/ChemEx/src/chemex/experiments/builder.py", line 100, in build_experiment
+    config_dict: MutableMapping[str, Any] = read_toml(filename)
+                                            ^^^^^^^^^^^^^^^^^^^
+  File "/home/user/ChemEx/src/chemex/toml.py", line 24, in read_toml
+    with filename.open(mode="rb") as file:
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/pathlib.py", line 1044, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/user/ChemEx/examples/Experiments/CPMG_15N_IP_0013/Experiments/*.toml'
+
+
+======================================================================
+END-TO-END BENCHMARK: CPMG 15N IP Fitting
+======================================================================
+Example: /home/user/ChemEx/examples/Experiments/CPMG_15N_IP_0013
+
+Command: chemex fit -e /home/user/ChemEx/examples/Experiments/CPMG_15N_IP_0013/Experiments/*.toml -p /home/user/ChemEx/examples/Experiments/CPMG_15N_IP_0013/Parameters/parameters.toml -o /tmp/tmpruzb1jo2/output
+
+Error running chemex:
+Traceback (most recent call last):
+  File "/usr/local/bin/chemex", line 8, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/user/ChemEx/src/chemex/chemex.py", line 85, in main
+    args.func(args)
+  File "/home/user/ChemEx/src/chemex/chemex.py", line 59, in run
+    experiments = build_experiments(args.experiments, selection)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/ChemEx/src/chemex/experiments/builder.py", line 153, in build_experiments
+    experiment = build_experiment(filename, selection)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/ChemEx/src/chemex/experiments/builder.py", line 100, in build_experiment
+    config_dict: MutableMapping[str, Any] = read_toml(filename)
+                                            ^^^^^^^^^^^^^^^^^^^
+  File "/home/user/ChemEx/src/chemex/toml.py", line 24, in read_toml
+    with filename.open(mode="rb") as file:
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/pathlib.py", line 1044, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/user/ChemEx/examples/Experiments/CPMG_15N_IP_0013/Experiments/*.toml'
+
+
+======================================================================
+END-TO-END BENCHMARK: CEST 15N TR Fitting
+======================================================================
+Example: /home/user/ChemEx/examples/Experiments/CEST_15N_TR
+
+Command: chemex fit -e /home/user/ChemEx/examples/Experiments/CEST_15N_TR/Experiments/*.toml -p /home/user/ChemEx/examples/Experiments/CEST_15N_TR/Parameters/parameters.toml -m /home/user/ChemEx/examples/Experiments/CEST_15N_TR/Methods/method.toml -d 2st.mf -o /tmp/tmpo8k9bva4/output
+
+Error running chemex:
+Traceback (most recent call last):
+  File "/usr/local/bin/chemex", line 8, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/user/ChemEx/src/chemex/chemex.py", line 85, in main
+    args.func(args)
+  File "/home/user/ChemEx/src/chemex/chemex.py", line 59, in run
+    experiments = build_experiments(args.experiments, selection)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/ChemEx/src/chemex/experiments/builder.py", line 153, in build_experiments
+    experiment = build_experiment(filename, selection)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/ChemEx/src/chemex/experiments/builder.py", line 100, in build_experiment
+    config_dict: MutableMapping[str, Any] = read_toml(filename)
+                                            ^^^^^^^^^^^^^^^^^^^
+  File "/home/user/ChemEx/src/chemex/toml.py", line 24, in read_toml
+    with filename.open(mode="rb") as file:
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/pathlib.py", line 1044, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/user/ChemEx/examples/Experiments/CEST_15N_TR/Experiments/*.toml'
+
+
+No benchmark results to display
+
+======================================================================
+End-to-end benchmarks complete!
+======================================================================
+
+======================================================================
+BENCHMARK SUITE COMPLETE
+======================================================================
+Finished: 2025-11-14 22:40:24
+
+Results saved to: baseline_results.txt

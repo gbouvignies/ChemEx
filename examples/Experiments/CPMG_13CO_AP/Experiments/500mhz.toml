@@ -1,8 +1,8 @@
 [experiment]
-name       = "cpmg_13co_ap"
-time_t2    = 30.0e-3
-carrier    = 176.819
-pw90       = 38.813e-6
+name = "cpmg_13co_ap"
+time_t2 = 30.0e-3
+carrier = 176.819
+pw90 = 38.813e-6
 time_equil = 0.003
 
 [conditions]
@@ -12,17 +12,17 @@ h_larmor_frq = 500.0
 # temperature = 25.0
 
 [data]
-path  = "../Data/500MHz/"
+path = "../Data/500MHz/"
 error = "duplicates"
 
-  [data.profiles]
-  22CO-23N = "23N-HN.out"
-  23CO-24N = "24N-HN.out"
-  24CO-25N = "25N-HN.out"
-  25CO-26N = "26N-HN.out"
-  36CO-37N = "37N-HN.out"
-  39CO-40N = "40N-HN.out"
-  41CO-42N = "42N-HN.out"
-  42CO-43N = "43N-HN.out"
-  46CO-47N = "47N-HN.out"
-  51CO-52N = "52N-HN.out"
+[data.profiles]
+22CO-23N = "23N-HN.out"
+23CO-24N = "24N-HN.out"
+24CO-25N = "25N-HN.out"
+25CO-26N = "26N-HN.out"
+36CO-37N = "37N-HN.out"
+39CO-40N = "40N-HN.out"
+41CO-42N = "42N-HN.out"
+42CO-43N = "43N-HN.out"
+46CO-47N = "47N-HN.out"
+51CO-52N = "52N-HN.out"

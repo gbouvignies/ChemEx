@@ -302,7 +302,7 @@ class Spectrometer:
         phase: float,
         scale: float = 1.0,
     ) -> Array:
-        dephased = self.b1_i_inh_scale == np.inf
+        dephased = self.liouvillian.b1_i_dist.dephasing
         rad = phase * np.pi * 0.5
         liouv = (
             self.liouvillian.l_free
@@ -331,7 +331,7 @@ class Spectrometer:
         phase_i: float,
         phase_s: float,
     ) -> Array:
-        dephased = self.b1_i_inh_scale == np.inf
+        dephased = self.liouvillian.b1_i_dist.dephasing
         liouv = (
             self.liouvillian.l_free
             + np.cos(phase_i * np.pi * 0.5) * self.liouvillian.l_b1x_i

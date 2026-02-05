@@ -7,12 +7,12 @@ h_larmor_frq = 800.0
 # temperature = 25.0
 
 [data]
-path  = "../Data/800MHz/"
+path = "../Data/800MHz/"
 error = "file"
 
-  [data.profiles]
-  G2N = "G2N-HN.out"
-  H3N = "H3N-HN.out"
-  K4N = "K4N-HN.out"
-  S5N = "S5N-HN.out"
-  L6N = "L6N-HN.out"
+[data.profiles]
+G2N = "G2N-HN.out"
+H3N = "H3N-HN.out"
+K4N = "K4N-HN.out"
+S5N = "S5N-HN.out"
+L6N = "L6N-HN.out"

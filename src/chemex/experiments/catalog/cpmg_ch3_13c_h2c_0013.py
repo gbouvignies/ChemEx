@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property, reduce
+from functools import reduce
 from typing import Literal
 
 import numpy as np
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettingsEvenNcycs
+from chemex.configuration.types import Delay, Frequency, PulseWidth
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -26,32 +27,81 @@ EXPERIMENT_NAME = "cpmg_ch3_13c_h2c_0013"
 
 
 class CpmgCh313CH2c0013Settings(CpmgSettingsEvenNcycs):
-    name: Literal["cpmg_ch3_13c_h2c_0013"]
-    time_t2: float
-    carrier: float
-    pw90: float
-    taub: float = 2.0e-3
-    time_equil: float = 5.0e-3
-    time_grad: float = 1.2e-3
+    """Settings for CH3 13C H2C CPMG experiment with 0013 variant."""
 
-    @cached_property
+    name: Literal["cpmg_ch3_13c_h2c_0013"]
+    time_t2: Delay = Field(description="Total CPMG relaxation delay (seconds)")
+    carrier: Frequency = Field(description="13C carrier frequency (Hz)")
+    pw90: PulseWidth = Field(description="13C 90-degree pulse width (seconds)")
+    taub: float = Field(
+        default=2.0e-3,
+        gt=0.0,
+        description="Delay for coherence evolution (seconds)",
+    )
+    time_equil: float = Field(
+        default=5.0e-3,
+        ge=0.0,
+        description="Equilibration delay (seconds)",
+    )
+    time_grad: float = Field(
+        default=1.2e-3,
+        ge=0.0,
+        description="Gradient duration (seconds)",
+    )
+
+    @computed_field  # type: ignore[misc]
+    @property
     def t_neg(self) -> float:
+        """Calculate negative delay compensation for pulse imperfections.
+
+        Returns:
+            Negative delay time in seconds.
+
+        """
         return -2.0 * self.pw90 / np.pi
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def t_pos(self) -> float:
+        """Calculate positive delay compensation for pulse imperfections.
+
+        Returns:
+            Positive delay time in seconds.
+
+        """
         return 4.0 * self.pw90 / np.pi
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def taub_eff(self) -> float:
+        """Calculate effective taub delay accounting for pulse width.
+
+        Returns:
+            Effective delay time in seconds.
+
+        """
         return self.taub - 2.0 * self.pw90 / np.pi
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def start_terms(self) -> list[str]:
+        """Initial magnetization terms for the experiment.
+
+        Returns:
+            List of initial state terms for the Liouvillian calculation.
+
+        """
         return [f"2izsz{self.suffix_start}"]
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def detection(self) -> str:
+        """Detection mode for the observable magnetization.
+
+        Returns:
+            Detection term for the Liouvillian calculation.
+
+        """
         return f"[iz{self.suffix_detect}]"
 
 
@@ -86,9 +136,12 @@ def build_spectrometer(
     return spectrometer
 
 
-@dataclass
 class CpmgCh313CH2c0013Sequence:
-    settings: CpmgCh313CH2c0013Settings
+    """Sequence for CH3 13C H2C CPMG experiment with 0013 variant."""
+
+    def __init__(self, settings: CpmgCh313CH2c0013Settings) -> None:
+        self.settings = settings
+        self._phase_cache: dict[float, tuple[Array, Array]] = {}
 
     def _get_delays(
         self, ncycs: Array
@@ -125,22 +178,25 @@ class CpmgCh313CH2c0013Sequence:
 
     # Define [0013] phase cycle for CPMG pulses
     def _get_phases(self, ncyc: float) -> tuple[Array, Array]:
-        cp_phases1 = np.array(
-            [
-                [1, 1, 2, 0],
-                [2, 0, 3, 3],
-            ],
-        )
-        cp_phases2 = np.array(
-            [
-                [2, 0, 1, 1],
-                [3, 3, 2, 0],
-            ],
-        )
-        indexes = np.arange(int(ncyc))
-        phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap", axis=1)
-        phases2 = np.take(cp_phases2, np.flip(indexes), mode="wrap", axis=1)
-        return phases1, phases2
+        ncyc_key = float(ncyc)
+        if ncyc_key not in self._phase_cache:
+            cp_phases1 = np.array(
+                [
+                    [1, 1, 2, 0],
+                    [2, 0, 3, 3],
+                ],
+            )
+            cp_phases2 = np.array(
+                [
+                    [2, 0, 1, 1],
+                    [3, 3, 2, 0],
+                ],
+            )
+            indexes = np.arange(int(ncyc))
+            phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap", axis=1)
+            phases2 = np.take(cp_phases2, np.flip(indexes), mode="wrap", axis=1)
+            self._phase_cache[ncyc_key] = (phases1, phases2)
+        return self._phase_cache[ncyc_key]
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property, reduce
+from functools import reduce
 from typing import Literal
 
 import numpy as np
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings
+from chemex.configuration.types import Delay, Frequency, PulseWidth
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -26,22 +27,28 @@ EXPERIMENT_NAME = "cpmg_ch3_1h_sq"
 
 
 class CpmgCh31HSqSettings(CpmgSettings):
+    """Settings for CH3 1H single-quantum CPMG relaxation dispersion experiment."""
+
     name: Literal["cpmg_ch3_1h_sq"]
-    time_t2: float
-    carrier: float
-    pw90: float
-    ncyc_max: int
+    time_t2: Delay = Field(description="Total CPMG relaxation delay in seconds")
+    carrier: Frequency = Field(description="1H carrier position in Hz")
+    pw90: PulseWidth = Field(description="90-degree pulse width in seconds")
+    ncyc_max: int = Field(description="Maximum number of CPMG cycles")
     taua: float = 2.0e-3
     comp180_flg: bool = True
     ipap_flg: bool = False
     cs_evolution_prior: bool = True
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def start_terms(self) -> list[str]:
+        """Starting magnetization terms (transverse components)."""
         return [f"2ixsz{self.suffix_start}", f"2iysz{self.suffix_start}"]
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def detection(self) -> str:
+        """Detection operator."""
         return f"[iy{self.suffix_detect}]"
 
 
@@ -83,9 +90,12 @@ def build_spectrometer(
     return spectrometer
 
 
-@dataclass
 class CpmgCh31HSqSequence:
-    settings: CpmgCh31HSqSettings
+    """Sequence for CH3 1H single-quantum CPMG relaxation dispersion experiment."""
+
+    def __init__(self, settings: CpmgCh31HSqSettings) -> None:
+        self.settings = settings
+        self._phase_cache: tuple[Array, Array] | None = None
 
     def _get_delays(self, ncycs: Array) -> tuple[dict[float, float], list[float]]:
         frac = 7.0 / 3.0 if self.settings.comp180_flg else 1.0
@@ -102,12 +112,14 @@ class CpmgCh31HSqSequence:
         return tau_cps, delays
 
     def _get_phases(self) -> tuple[Array, Array]:
-        cp_phases1 = np.array([[0, 1], [1, 0]])
-        cp_phases2 = np.array([[0, 3], [3, 0]])
-        indexes = np.arange(int(self.settings.ncyc_max))
-        phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap", axis=1)
-        phases2 = np.take(cp_phases2, indexes, mode="wrap", axis=1)
-        return phases1, phases2
+        if self._phase_cache is None:
+            cp_phases1 = np.array([[0, 1], [1, 0]])
+            cp_phases2 = np.array([[0, 3], [3, 0]])
+            indexes = np.arange(int(self.settings.ncyc_max))
+            phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap", axis=1)
+            phases2 = np.take(cp_phases2, indexes, mode="wrap", axis=1)
+            self._phase_cache = (phases1, phases2)
+        return self._phase_cache
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata

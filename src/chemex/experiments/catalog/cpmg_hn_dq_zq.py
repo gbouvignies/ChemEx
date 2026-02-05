@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property, reduce
+from functools import reduce
 from typing import Literal
 
 import numpy as np
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
-from chemex.configuration.experiment import (
-    CpmgSettingsEvenNcycs,
-)
+from chemex.configuration.experiment import CpmgSettingsEvenNcycs
+from chemex.configuration.types import Delay, Frequency, PulseWidth
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -31,20 +30,38 @@ NU_CPMG_LIMIT_2 = 255.0
 
 
 class CpmgHNDqZqSettings(CpmgSettingsEvenNcycs):
-    name: Literal["cpmg_hn_dq_zq"]
-    time_t2: float
-    carrier_h: float
-    carrier_n: float
-    pw90_h: float
-    pw90_n: float
-    dq_flg: bool
+    """Settings for HN DQ/ZQ CPMG relaxation dispersion experiment."""
 
-    @cached_property
+    name: Literal["cpmg_hn_dq_zq"]
+    time_t2: Delay = Field(description="Total CPMG relaxation delay (seconds)")
+    carrier_h: Frequency = Field(description="1H carrier frequency (Hz)")
+    carrier_n: Frequency = Field(description="15N carrier frequency (Hz)")
+    pw90_h: PulseWidth = Field(description="1H 90-degree pulse width (seconds)")
+    pw90_n: PulseWidth = Field(description="15N 90-degree pulse width (seconds)")
+    dq_flg: bool = Field(
+        description="Flag for double-quantum (True) vs zero-quantum (False)"
+    )
+
+    @computed_field  # type: ignore[misc]
+    @property
     def start_terms(self) -> list[str]:
+        """Initial magnetization terms for the experiment.
+
+        Returns:
+            List of initial state terms for the Liouvillian calculation.
+
+        """
         return [f"2ixsx{self.suffix_start}"]
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def detection(self) -> str:
+        """Detection mode for the observable magnetization.
+
+        Returns:
+            Detection term for the Liouvillian calculation.
+
+        """
         suffix = self.suffix_detect
         if self.dq_flg:
             return f"[2ixsx{suffix}] - [2iysy{suffix}]"
@@ -85,9 +102,12 @@ def build_spectrometer(
     return spectrometer
 
 
-@dataclass
 class CpmgHNDqZqSequence:
-    settings: CpmgHNDqZqSettings
+    """Sequence for HN DQ/ZQ CPMG relaxation dispersion experiment."""
+
+    def __init__(self, settings: CpmgHNDqZqSettings) -> None:
+        self.settings = settings
+        self._phase_cache: dict[float, tuple[Array, Array]] = {}
 
     def _get_tau_cps(self, ncycs: Array) -> dict[float, float]:
         ncycs_no_ref = ncycs[ncycs > 0]
@@ -101,20 +121,23 @@ class CpmgHNDqZqSequence:
         )
 
     def _get_phases(self, ncyc: float) -> tuple[Array, Array]:
-        nu_cpmg = ncyc / self.settings.time_t2
-        if nu_cpmg < NU_CPMG_LIMIT_1:
-            cp_phases1 = [0, 1, 0, 1]
-            cp_phases2 = [1, 0, 1, 0]
-        elif nu_cpmg < NU_CPMG_LIMIT_2:
-            cp_phases1 = [0]
-            cp_phases2 = [1]
-        else:
-            cp_phases1 = [0, 1, 0, 1, 1, 0, 1, 0]
-            cp_phases2 = [1, 0, 1, 0, 0, 1, 0, 1]
-        indexes = np.arange(2 * int(ncyc))
-        phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap")
-        phases2 = np.take(cp_phases2, np.flip(indexes), mode="wrap")
-        return phases1, phases2
+        ncyc_key = float(ncyc)
+        if ncyc_key not in self._phase_cache:
+            nu_cpmg = ncyc / self.settings.time_t2
+            if nu_cpmg < NU_CPMG_LIMIT_1:
+                cp_phases1 = [0, 1, 0, 1]
+                cp_phases2 = [1, 0, 1, 0]
+            elif nu_cpmg < NU_CPMG_LIMIT_2:
+                cp_phases1 = [0]
+                cp_phases2 = [1]
+            else:
+                cp_phases1 = [0, 1, 0, 1, 1, 0, 1, 0]
+                cp_phases2 = [1, 0, 1, 0, 0, 1, 0, 1]
+            indexes = np.arange(2 * int(ncyc))
+            phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap")
+            phases2 = np.take(cp_phases2, np.flip(indexes), mode="wrap")
+            self._phase_cache[ncyc_key] = (phases1, phases2)
+        return self._phase_cache[ncyc_key]
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata

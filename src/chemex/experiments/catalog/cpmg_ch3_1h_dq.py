@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property, reduce
+from functools import reduce
 from typing import Literal
 
 import numpy as np
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings
+from chemex.configuration.types import Delay, Frequency, PulseWidth
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -26,20 +27,46 @@ EXPERIMENT_NAME = "cpmg_ch3_1h_dq"
 
 
 class CpmgCh31HDqSettings(CpmgSettings):
-    name: Literal["cpmg_ch3_1h_dq"]
-    time_t2: float
-    carrier: float
-    pw90: float
-    tauc: float = 1.0e-3  # ~ 1/(8*J[HC])
-    comp180_flg: bool = True
-    ipap_flg: bool = False
+    """Settings for CH3 1H double-quantum CPMG relaxation dispersion experiment."""
 
-    @cached_property
+    name: Literal["cpmg_ch3_1h_dq"]
+    time_t2: Delay = Field(description="Total CPMG relaxation delay (seconds)")
+    carrier: Frequency = Field(description="1H carrier frequency (Hz)")
+    pw90: PulseWidth = Field(description="1H 90-degree pulse width (seconds)")
+    tauc: float = Field(
+        default=1.0e-3,
+        gt=0.0,
+        description="Delay for DQ coherence evolution, ~1/(8*J[HC]) (seconds)",
+    )
+    comp180_flg: bool = Field(
+        default=True,
+        description="Flag for composite 180-degree pulses",
+    )
+    ipap_flg: bool = Field(
+        default=False,
+        description="Flag for IPAP (in-phase/anti-phase) experiment",
+    )
+
+    @computed_field  # type: ignore[misc]
+    @property
     def start_terms(self) -> list[str]:
+        """Initial magnetization terms for the experiment.
+
+        Returns:
+            List of initial state terms for the Liouvillian calculation.
+
+        """
         return [f"2ixsz{self.suffix_start}"]
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def detection(self) -> str:
+        """Detection mode for the observable magnetization.
+
+        Returns:
+            Detection term for the Liouvillian calculation.
+
+        """
         return f"[2ixsz{self.suffix_detect}]"
 
 
@@ -81,9 +108,12 @@ def build_spectrometer(
     return spectrometer
 
 
-@dataclass
 class CpmgCh31HDqSequence:
-    settings: CpmgCh31HDqSettings
+    """Sequence for CH3 1H double-quantum CPMG relaxation dispersion experiment."""
+
+    def __init__(self, settings: CpmgCh31HDqSettings) -> None:
+        self.settings = settings
+        self._phase_cache: dict[float, tuple[Array, Array]] = {}
 
     def _get_delays(self, ncycs: Array) -> tuple[dict[float, float], list[float]]:
         ncyc_no_ref = ncycs[ncycs > 0]
@@ -96,12 +126,15 @@ class CpmgCh31HDqSequence:
         return tau_cps, delays
 
     def _get_phases(self, ncyc: float) -> tuple[Array, Array]:
-        cp_phases1 = [0, 1, 0, 1, 1, 0, 1, 0, 2, 3, 2, 3, 3, 2, 3, 2]
-        cp_phases2 = [0, 3, 0, 3, 3, 0, 3, 0, 2, 1, 2, 1, 1, 2, 1, 2]
-        indexes = np.arange(int(ncyc))
-        phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap")
-        phases2 = np.take(cp_phases2, indexes, mode="wrap")
-        return phases1, phases2
+        ncyc_key = float(ncyc)
+        if ncyc_key not in self._phase_cache:
+            cp_phases1 = [0, 1, 0, 1, 1, 0, 1, 0, 2, 3, 2, 3, 3, 2, 3, 2]
+            cp_phases2 = [0, 3, 0, 3, 3, 0, 3, 0, 2, 1, 2, 1, 1, 2, 1, 2]
+            indexes = np.arange(int(ncyc))
+            phases1 = np.take(cp_phases1, np.flip(indexes), mode="wrap")
+            phases2 = np.take(cp_phases2, indexes, mode="wrap")
+            self._phase_cache[ncyc_key] = (phases1, phases2)
+        return self._phase_cache[ncyc_key]
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         ncycs = data.metadata

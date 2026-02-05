@@ -1,34 +1,34 @@
 [experiment]
-name    = "cpmg_chd2_1h_ap"
+name = "cpmg_chd2_1h_ap"
 time_t2 = 30.0e-3
 carrier = 1.0
-pw90    = 11.65e-6
+pw90 = 11.65e-6
 
 [conditions]
 h_larmor_frq = 598.8
-label        = ["2H"]
+label = ["2H"]
 # p_total    = 1.0e-3
 # sample = "wild-type FF domain"
 # temperature = 30.0
 
 [data]
-path  = "../Data/600MHz/"
+path = "../Data/600MHz/"
 error = "duplicates"
 
-  [data.profiles]
-  L24HD1-CD1 = "L24CD1-QD1.out"
-  L24HD2-CD2 = "L24CD2-QD2.out"
-  L25HD1-CD1 = "L25CD1-QD1.out"
-  L25HD2-CD2 = "L25CD2-QD2.out"
-  V30HG1-CG1 = "V30CG1-QG1.out"
-  V30HG2-CG2 = "V30CG2-QG2.out"
-  M40HE-CE   = "M40CE-QE.out"
-  M42HE-CE   = "M42CE-QE.out"
-  I43HD1-CD1 = "I43CD1-QD1.out"
-  I44HD1-CD1 = "I44CD1-QD1.out"
-  L52HD1-CD1 = "L52CD1-QD1.out"
-  L52HD2-CD2 = "L52CD2-QD2.out"
-  L55HD1-CD1 = "L55CD1-QD1.out"
-  L55HD2-CD2 = "L55CD2-QD2.out"
-  V67HG1-CG1 = "V67CG1-QG1.out"
-  V67HG2-CG2 = "V67CG2-QG2.out"
+[data.profiles]
+L24HD1-CD1 = "L24CD1-QD1.out"
+L24HD2-CD2 = "L24CD2-QD2.out"
+L25HD1-CD1 = "L25CD1-QD1.out"
+L25HD2-CD2 = "L25CD2-QD2.out"
+V30HG1-CG1 = "V30CG1-QG1.out"
+V30HG2-CG2 = "V30CG2-QG2.out"
+M40HE-CE = "M40CE-QE.out"
+M42HE-CE = "M42CE-QE.out"
+I43HD1-CD1 = "I43CD1-QD1.out"
+I44HD1-CD1 = "I44CD1-QD1.out"
+L52HD1-CD1 = "L52CD1-QD1.out"
+L52HD2-CD2 = "L52CD2-QD2.out"
+L55HD1-CD1 = "L55CD1-QD1.out"
+L55HD2-CD2 = "L55CD2-QD2.out"
+V67HG1-CG1 = "V67CG1-QG1.out"
+V67HG2-CG2 = "V67CG2-QG2.out"

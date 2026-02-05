@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cached_property
 from typing import Literal
 
 import numpy as np
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import CestSettings
+from chemex.configuration.experiment import B1InhomogeneityMixin, CestSettings
+from chemex.configuration.types import ChemicalShift, Delay
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -27,20 +27,23 @@ EXPERIMENT_NAME = "cest_13c"
 OFFSET_REF = 1e4
 
 
-class Cest13CSettings(CestSettings):
-    name: Literal["cest_13c"]
-    time_t1: float
-    carrier: float
-    b1_frq: float
-    b1_inh_scale: float = 0.1
-    b1_inh_res: int = 11
+class Cest13CSettings(CestSettings, B1InhomogeneityMixin):
+    """Pure in-phase 13C CEST experiment settings."""
 
-    @cached_property
+    name: Literal["cest_13c"]
+    time_t1: Delay = Field(description="CEST relaxation delay (seconds)")
+    carrier: ChemicalShift = Field(description="13C carrier position during CEST (ppm)")
+
+    @computed_field  # type: ignore[misc]
+    @property
     def start_terms(self) -> list[str]:
+        """Starting magnetization terms."""
         return [f"iz{self.suffix_start}"]
 
-    @cached_property
+    @computed_field  # type: ignore[misc]
+    @property
     def detection(self) -> str:
+        """Detection operator."""
         return f"[iz{self.suffix_detect}]"
 
 
@@ -67,9 +70,10 @@ def build_spectrometer(config: Cest13CConfig, spin_system: SpinSystem) -> Spectr
     spectrometer = Spectrometer(liouvillian)
 
     spectrometer.carrier_i = settings.carrier
-    spectrometer.b1_i = settings.b1_frq
-    spectrometer.b1_i_inh_scale = settings.b1_inh_scale
-    spectrometer.b1_i_inh_res = settings.b1_inh_res
+
+    # Set the B1 inhomogeneity distribution
+    distribution = settings.get_b1_distribution()
+    liouvillian.set_b1_i_distribution(distribution)
 
     spectrometer.detection = settings.detection
 
@@ -81,9 +85,11 @@ def build_spectrometer(config: Cest13CConfig, spin_system: SpinSystem) -> Spectr
     return spectrometer
 
 
-@dataclass
 class Cest13CSequence:
-    settings: Cest13CSettings
+    """Sequence for CEST 13C experiment."""
+
+    def __init__(self, settings: Cest13CSettings) -> None:
+        self.settings = settings
 
     @staticmethod
     def is_reference(metadata: Array) -> Array:

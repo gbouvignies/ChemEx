@@ -1,32 +1,39 @@
 [experiment]
-name         = "cest_13c"
-time_t1      = 0.25
-carrier      = 36.2105778372
-b1_frq       = 23.4
-b1_inh_scale = inf
+name = "cest_13c"
+time_t1 = 0.25
+carrier = 36.2105778372
+b1_frq = 23.4
+
+b1_distribution = { type = "dephasing" }
 
 [conditions]
 h_larmor_frq = 598.813731811
-label        = ["13C"]
+label = ["13C"]
 # p_total    = 2.0e-3
 # sample = "G48A Fyn SH3"
 # temperature = 25.0
 
 [data]
-path           = "../Data/23Hz/"
-error          = "scatter"
-filter_offsets = [[-2500.0, 200.0], [-1250.0, 200.0], [0.0, 50.0], [1250.0, 200.0], [2500.0, 200.0]]
+path = "../Data/23Hz/"
+error = "scatter"
+filter_offsets = [
+  [-2500.0, 200.0],
+  [-1250.0, 200.0],
+  [0.0, 50.0],
+  [1250.0, 200.0],
+  [2500.0, 200.0]
+]
 
-  [data.profiles]
-  L18CB  = ["L18CB-HB2.out", "L18CB-HB3.out"]
-  L18CG  = "L18CG-HG.out"
-  L18CD1 = "L18CD1-QD1.out"
-  L18CD2 = "L18CD2-QD2.out"
-  K25CB  = ["K25CB-HB2.out", "K25CB-HB3.out"]
-  K25CG  = ["K25CG-HG2.out", "K25CG-HG3.out"]
-  K25CD  = ["K25CD-HD2.out", "K25CD-HD3.out"]
-  K25CE  = "K25CE-QE.out"
-  I28CB  = "I28CB-HB.out"
-  I28CG1 = ["I28CG1-HG12.out", "I28CG1-HG13.out"]
-  I28CG2 = "I28CG2-QG2.out"
-  I28CD1 = "I28CD1-QD1.out"
+[data.profiles]
+L18CB = ["L18CB-HB2.out", "L18CB-HB3.out"]
+L18CG = "L18CG-HG.out"
+L18CD1 = "L18CD1-QD1.out"
+L18CD2 = "L18CD2-QD2.out"
+K25CB = ["K25CB-HB2.out", "K25CB-HB3.out"]
+K25CG = ["K25CG-HG2.out", "K25CG-HG3.out"]
+K25CD = ["K25CD-HD2.out", "K25CD-HD3.out"]
+K25CE = "K25CE-QE.out"
+I28CB = "I28CB-HB.out"
+I28CG1 = ["I28CG1-HG12.out", "I28CG1-HG13.out"]
+I28CG2 = "I28CG2-QG2.out"
+I28CD1 = "I28CD1-QD1.out"

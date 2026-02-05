@@ -229,6 +229,7 @@ J_EFF: dict[str, dict[str, tuple[float, ...]]] = {
 class Distribution:
     values: Array
     weights: Array
+    dephasing: bool = False
 
 
 def get_multiplet(symbol: str, nucleus: str) -> Distribution:
