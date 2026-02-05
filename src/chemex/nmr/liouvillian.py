@@ -277,7 +277,7 @@ class LiouvillianIS:
         detected = self._detect_vector @ collapsed_magnetization
         if np.iscomplexobj(detected):
             detected = np.sign(detected.real) * np.abs(detected)
-        return float(detected)
+        return float(detected.item())
 
     # def detect_spectrum(
     #     self, magnetization: Array, observed_state: str = "a"
