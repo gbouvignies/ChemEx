@@ -1,6 +1,6 @@
 [project]
 name = "chemex"
-version = "2025.10.0"
+version = "2026.01.0"
 description = "An analysis program for chemical exchange detected by NMR"
 authors = [
   { name = "Guillaume Bouvignies", email = "guillaume.bouvignies@ens.psl.eu" },
