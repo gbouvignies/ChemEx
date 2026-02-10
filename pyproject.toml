@@ -76,7 +76,7 @@ exclude = ["src/chemex/experiments/catalog/wip/"]
 possibly-missing-attribute = "warn"
 
 [build-system]
-requires = ["uv_build>=0.8.14,<0.10.0"]
+requires = ["uv_build>=0.8.14,<0.11.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
