@@ -406,3 +406,14 @@ def test_execute_post_fit_writes_parameters_from_session_store(
     helper_module.execute_post_fit(experiments, tmp_path, session=session)
 
     np.testing.assert_equal(int((tmp_path / "Parameters" / "fixed.toml").exists()), 1)
+
+
+def test_write_file_rejects_unknown_parameter_status(tmp_path: Path) -> None:
+    parameter = ParamSetting(ParamName("PB"), value=0.15, vary=False)
+    parameters = parameter_printer_module.GlobalLocalParameters(
+        {parameter.param_name: parameter},
+        {},
+    )
+
+    with pytest.raises(ValueError, match="Unknown parameter status"):
+        parameter_printer_module.write_file(parameters, "typo", tmp_path)

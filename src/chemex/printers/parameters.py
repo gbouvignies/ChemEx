@@ -95,7 +95,13 @@ def _format_parameter(
         return _format_fitted(param)
     if status == "fixed":
         return _format_fixed(param)
-    return _format_constrained(param, parameter_store)
+    if status == "constrained":
+        return _format_constrained(param, parameter_store)
+    msg = (
+        f"Unknown parameter status: {status!r}. Expected 'fitted', 'fixed', "
+        "or 'constrained'."
+    )
+    raise ValueError(msg)
 
 
 def _quote(text: str) -> str:
