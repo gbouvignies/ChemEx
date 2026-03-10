@@ -25,6 +25,8 @@ from chemex.optimize.helper import (
 )
 from chemex.optimize.minimizer import minimize
 from chemex.parameters import database
+from chemex.runtime import AnalysisSession
+from chemex.runtime.session import ParameterStore
 from chemex.typing import Array
 
 
@@ -32,6 +34,10 @@ from chemex.typing import Array
 class GridResult:
     grid: dict[str, Array]
     chisqr: Array
+
+
+def _get_parameter_store(session: AnalysisSession | None) -> ParameterStore:
+    return session.parameters if session is not None else database
 
 
 def _set_param_values(
@@ -48,9 +54,12 @@ def run_group_grid(
     grid: dict[str, Array],
     path: Path,
     fitmethod: str,
+    *,
+    session: AnalysisSession | None = None,
 ) -> GridResult:
+    parameter_store = _get_parameter_store(session)
     group_ids = group.experiments.param_ids
-    group_params = database.build_lmfit_params(group_ids)
+    group_params = parameter_store.build_lmfit_params(group_ids)
     group_grid = {
         param_id: values for param_id, values in grid.items() if param_id in group_ids
     }
@@ -67,7 +76,7 @@ def run_group_grid(
     best_params = group_params
 
     with filename.open("w", encoding="utf-8") as fileout:
-        fileout.write(print_header(group_grid))
+        fileout.write(print_header(group_grid, session=session))
 
         chisqr_list: list[float] = []
 
@@ -87,7 +96,7 @@ def run_group_grid(
                 best_params = optimized_params
 
     chisqr_array = np.array(chisqr_list).reshape(shape)
-    database.update_from_parameters(best_params)
+    parameter_store.update_from_parameters(best_params)
 
     return GridResult(group_grid, chisqr_array)
 
@@ -148,21 +157,29 @@ def combine_grids(
     return results
 
 
-def set_params_from_grid(grids_1d: Iterable[GridResult]) -> None:
+def set_params_from_grid(
+    grids_1d: Iterable[GridResult],
+    *,
+    session: AnalysisSession | None = None,
+) -> None:
+    parameter_store = _get_parameter_store(session)
     par_values = {}
     for grid_result in grids_1d:
         id_, values = next(iter(grid_result.grid.items()))
         par_values[id_] = values[grid_result.chisqr.argmin()]
-    database.set_param_values(par_values)
+    parameter_store.set_param_values(par_values)
 
 
 def make_grids_nd(
     grid: dict[str, Array],
     grids_combined: list[GridResult],
     ndim: int,
+    *,
+    session: AnalysisSession | None = None,
 ) -> list[GridResult]:
     grids: list[GridResult] = []
-    parameters = database.get_parameters(grid)
+    parameter_store = _get_parameter_store(session)
+    parameters = parameter_store.get_parameters(grid)
     ids = sorted(grid, key=lambda x: parameters[x].param_name)
     for selection in combinations(ids, ndim):
         for grid_result in grids_combined:
@@ -174,7 +191,12 @@ def make_grids_nd(
     return grids
 
 
-def plot_grid_1d(grids_1d: list[GridResult], path: Path) -> None:
+def plot_grid_1d(
+    grids_1d: list[GridResult],
+    path: Path,
+    *,
+    session: AnalysisSession | None = None,
+) -> None:
     """Visualize the result of the brute force grid search.
 
     The output file will display the chi-square values per parameter.
@@ -185,7 +207,8 @@ def plot_grid_1d(grids_1d: list[GridResult], path: Path) -> None:
 
     with PdfPages(str(path / "grid_1d.pdf")) as pdf:
         for grid_result in grids_1d:
-            parameters = database.get_parameters(grid_result.grid)
+            parameter_store = _get_parameter_store(session)
+            parameters = parameter_store.get_parameters(grid_result.grid)
             ((id_, values),) = list(grid_result.grid.items())
             _fig, ax = plt.subplots(1, 1)
             ax.plot(values, grid_result.chisqr, "o", ms=3)
@@ -198,7 +221,12 @@ def plot_grid_1d(grids_1d: list[GridResult], path: Path) -> None:
             plt.close()
 
 
-def plot_grid_2d(grids_2d: list[GridResult], path: Path) -> None:
+def plot_grid_2d(
+    grids_2d: list[GridResult],
+    path: Path,
+    *,
+    session: AnalysisSession | None = None,
+) -> None:
     """Visualize the result of the brute force grid search.
 
     The output file will display the chi-square contour
@@ -210,7 +238,8 @@ def plot_grid_2d(grids_2d: list[GridResult], path: Path) -> None:
 
     with PdfPages(str(path / "grid_2d.pdf")) as pdf:
         for grid_result in grids_2d:
-            parameters = database.get_parameters(grid_result.grid)
+            parameter_store = _get_parameter_store(session)
+            parameters = parameter_store.get_parameters(grid_result.grid)
             (id_x, values_x), (id_y, values_y) = grid_result.grid.items()
             fig, ax = plt.subplots(1, 1)
             grid_x, grid_y = np.meshgrid(values_x, values_y)
@@ -235,34 +264,37 @@ def plot_grid_2d(grids_2d: list[GridResult], path: Path) -> None:
             plt.close()
 
 
-def run_grid(
+def run_grid(  # noqa: PLR0913
     experiments: Experiments,
     grid_raw: list[str],
     path: Path,
     plot: str,
     fitmethod: str,
+    *,
+    session: AnalysisSession | None = None,
 ) -> None:
     print_running_grid()
 
-    grid = database.parse_grid(grid_raw)
+    parameter_store = _get_parameter_store(session)
+    grid = parameter_store.parse_grid(grid_raw)
 
-    groups = create_groups(experiments)
+    groups = create_groups(experiments, session=session)
 
     grid_results: list[GridResult] = []
     for group in groups:
         if message := group.message:
             print_group_name(message)
-        grid_result = run_group_grid(group, grid, path, fitmethod)
+        grid_result = run_group_grid(group, grid, path, fitmethod, session=session)
         grid_results.append(grid_result)
 
     grids_combined = combine_grids(grid, grid_results)
-    grids_1d = make_grids_nd(grid, grids_combined, 1)
-    grids_2d = make_grids_nd(grid, grids_combined, 2)
-    set_params_from_grid(grids_1d)
-    plot_grid_1d(grids_1d, path / "Grid")
-    plot_grid_2d(grids_2d, path / "Grid")
+    grids_1d = make_grids_nd(grid, grids_combined, 1, session=session)
+    grids_2d = make_grids_nd(grid, grids_combined, 2, session=session)
+    set_params_from_grid(grids_1d, session=session)
+    plot_grid_1d(grids_1d, path / "Grid", session=session)
+    plot_grid_2d(grids_2d, path / "Grid", session=session)
 
     if len(groups) > 1:
-        execute_post_fit_groups(experiments, path, plot)
+        execute_post_fit_groups(experiments, path, plot, session=session)
     else:
-        execute_post_fit(experiments, path, plot=plot != "nothing")
+        execute_post_fit(experiments, path, plot=plot != "nothing", session=session)

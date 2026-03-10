@@ -31,6 +31,12 @@ from chemex.optimize.minimizer import (
     minimize_with_report,
 )
 from chemex.parameters import database
+from chemex.runtime import AnalysisSession
+from chemex.runtime.session import ParameterStore
+
+
+def _get_parameter_store(session: AnalysisSession | None) -> ParameterStore:
+    return session.parameters if session is not None else database
 
 
 def _run_statistics(
@@ -38,6 +44,8 @@ def _run_statistics(
     path: Path,
     fitmethod: str,
     statistics: Statistics | None = None,
+    *,
+    session: AnalysisSession | None = None,
 ) -> None:
     if statistics is None:
         return
@@ -48,7 +56,8 @@ def _run_statistics(
         "bsn": {"message": "nucleus-based bootstrap", "filename": "bootstrap_ns.out"},
     }
 
-    params_lf = database.build_lmfit_params(experiments.param_ids)
+    parameter_store = _get_parameter_store(session)
+    params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
     ids_vary = [param.name for param in params_lf.values() if param.vary]
 
     for statistic_name, iter_nb in statistics.model_dump().items():
@@ -60,16 +69,18 @@ def _run_statistics(
         print_running_statistics(method["message"])
 
         with (path / method["filename"]).open(mode="w", encoding="utf-8") as fileout:
-            fileout.write(print_header(ids_vary))
+            fileout.write(print_header(ids_vary, session=session))
 
             try:
                 for _ in track(range(iter_nb), total=iter_nb, description="   "):
                     exp_stat = generate_exp_for_statistics(experiments, statistic_name)
-                    params_lf = database.build_lmfit_params(exp_stat.param_ids)
+                    params_lf = parameter_store.build_lmfit_params(exp_stat.param_ids)
                     params_fit = minimize(exp_stat, params_lf, fitmethod)
                     stats = calculate_statistics(exp_stat, params_fit)
                     chisqr = stats.get("chisqr", 1e32)
-                    fileout.write(print_values_stat(params_fit, ids_vary, chisqr))
+                    fileout.write(
+                        print_values_stat(params_fit, ids_vary, chisqr),
+                    )
             except KeyboardInterrupt:
                 print_calculation_stopped_error()
             except ValueError:
@@ -78,21 +89,26 @@ def _run_statistics(
                 fileout.flush()
 
 
-def _fit_groups(
+def _fit_groups(  # noqa: PLR0913
     experiments: Experiments,
     path: Path,
     plot: str,
     fitmethod: str,
     statistics: Statistics | None,
+    *,
+    session: AnalysisSession | None = None,
 ) -> None:
-    groups = create_groups(experiments)
+    parameter_store = _get_parameter_store(session)
+    groups = create_groups(experiments, session=session)
 
     plot_flg = (plot == "normal" and len(groups) == 1) or plot == "all"
 
     print_minimizing()
 
     for group in groups:
-        group_lmfit_params = database.build_lmfit_params(group.experiments.param_ids)
+        group_lmfit_params = parameter_store.build_lmfit_params(
+            group.experiments.param_ids,
+        )
         group_path = path / group.path
 
         if message := group.message:
@@ -104,8 +120,13 @@ def _fit_groups(
             fitmethod,
         )
 
-        database.update_from_parameters(best_lmfit_params)
-        execute_post_fit(group.experiments, group_path, plot=plot_flg)
+        parameter_store.update_from_parameters(best_lmfit_params)
+        execute_post_fit(
+            group.experiments,
+            group_path,
+            plot=plot_flg,
+            session=session,
+        )
 
         # Run Monte Carlo and/or bootstrap analysis
         _run_statistics(
@@ -113,10 +134,11 @@ def _fit_groups(
             group_path,
             fitmethod,
             statistics,
+            session=session,
         )
 
     if len(groups) > 1:
-        execute_post_fit_groups(experiments, path, plot)
+        execute_post_fit_groups(experiments, path, plot, session=session)
 
 
 def run_methods(
@@ -124,7 +146,11 @@ def run_methods(
     methods: Methods,
     path: Path,
     plot_level: str,
+    *,
+    session: AnalysisSession | None = None,
 ) -> None:
+    parameter_store = _get_parameter_store(session)
+
     for index, (section, method) in enumerate(methods.items(), start=1):
         if section:
             print_step_name(section, index, len(methods))
@@ -139,7 +165,7 @@ def run_methods(
         print_fitmethod(method.fitmethod)
 
         # Update the parameter "vary" and "expr" status
-        database.set_parameter_status(method)
+        parameter_store.set_parameter_status(method)
 
         if method.grid and method.statistics:
             print_grid_statistic_warning()
@@ -155,6 +181,7 @@ def run_methods(
                     path_sect,
                     plot_level,
                     method.fitmethod,
+                    session=session,
                 )
             except KeyboardInterrupt:
                 print_calculation_stopped_error()
@@ -165,4 +192,5 @@ def run_methods(
                 plot_level,
                 method.fitmethod,
                 method.statistics,
+                session=session,
             )

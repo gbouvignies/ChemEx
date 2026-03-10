@@ -25,6 +25,7 @@ from chemex.messages import (
 )
 from chemex.parameters import database
 from chemex.parameters.factory import create_parameters
+from chemex.runtime import AnalysisSession
 from chemex.toml import read_toml
 
 GenericConfig = ExperimentConfiguration[Any, Any, Any]
@@ -140,7 +141,10 @@ def build_experiment(filename: Path, selection: Selection) -> Experiment:
 
 
 def build_experiments(
-    filenames: list[Path] | None, selection: Selection
+    filenames: list[Path] | None,
+    selection: Selection,
+    *,
+    session: AnalysisSession | None = None,
 ) -> Experiments:
     if not filenames:
         return Experiments()
@@ -153,6 +157,7 @@ def build_experiments(
         experiment = build_experiment(filename, selection)
         experiments.add(experiment)
 
-    database.sort_parameters()
+    parameter_store = session.parameters if session is not None else database
+    parameter_store.sort_parameters()
 
     return experiments

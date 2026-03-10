@@ -80,6 +80,10 @@ class ParameterIndex:
             *(self._index.get(search_key, set()) for search_key in search_keys),
         )
 
+    def clear(self) -> None:
+        """Remove all indexed parameter names."""
+        self._index.clear()
+
 
 def _convert_grid_expression_to_values(grid_expression: str) -> Array:
     """Convert grid expression to floating-point values.
@@ -287,7 +291,9 @@ class ParameterCatalog:
             self._parameters[param_id].param_name.section for param_id in param_ids
         )
 
-    def set_vary(self, section_names: Sequence[str], vary: bool) -> Counter[str]:
+    def set_vary(
+        self, section_names: Sequence[str], vary: bool  # noqa: FBT001
+    ) -> Counter[str]:
         """Set the variability of parameters by section name.
 
         Args:
@@ -322,7 +328,6 @@ class ParameterCatalog:
         """Fix all parameters, preventing them from varying during fitting."""
         for parameter in self._parameters.values():
             parameter.vary = False
-            # parameter.expr = ""
 
     def _get_ids_left(self, expression: str) -> set[str]:
         """Extract parameter IDs from the left side of an expression.
@@ -462,6 +467,11 @@ class ParameterCatalog:
         )
         self._parameters = dict(sorted_items)
 
+    def clear(self) -> None:
+        """Remove all registered parameters and rebuild the search index."""
+        self._parameters.clear()
+        self._index = ParameterIndex()
+
 
 @dataclass
 class ParamManager:
@@ -585,7 +595,9 @@ class ParamManager:
 
         self.database.check_params()
 
-    def set_vary(self, section_names: Sequence[str], vary: bool) -> Counter[str]:
+    def set_vary(
+        self, section_names: Sequence[str], vary: bool  # noqa: FBT001
+    ) -> Counter[str]:
         """Set variability of parameters in the active catalog by section name.
 
         Args:
@@ -626,6 +638,11 @@ class ParamManager:
         """
         return self.database.parse_grid(grid_entries)
 
+    def reset(self) -> None:
+        """Clear all parameter catalogs used by the current process."""
+        self._database.clear()
+        self._database_mf.clear()
+
 
 _parameter_catalog = ParameterCatalog()
 _parameter_catalog_mf = ParameterCatalog()
@@ -643,6 +660,7 @@ set_param_values = _manager.set_values
 set_param_defaults = _manager.set_defaults
 sort_parameters = _manager.sort
 fix_all_parameters = _manager.fix_all
+reset_parameters = _manager.reset
 
 
 def set_parameter_status(method: Method) -> None:
