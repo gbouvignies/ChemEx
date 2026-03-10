@@ -54,7 +54,7 @@ class Profile:
     def _cache_key(self, params: ParametersLF) -> tuple[Hashable, ...]:
         return (
             *(params[param_id].value for param_id in self.param_ids),
-            self.data.metadata.tobytes(),
+            self.data.revision,
         )
 
     def __post_init__(self) -> None:
@@ -67,6 +67,10 @@ class Profile:
     def param_ids(self) -> set[str]:
         """Get the set of parameter IDs."""
         return set(self.name_map.values())
+
+    def clear_cache(self) -> None:
+        """Drop cached residuals after the profile inputs change."""
+        self.cache.clear()
 
     def _get_parameter_values(self, params: ParametersLF) -> dict[str, float]:
         """Get the parameter values from the provided parameters."""
@@ -103,26 +107,34 @@ class Profile:
         if self.filterer is not None:
             self.update_spectrometer(params)
             self.filterer.filter(self.data)
+            self.data.mark_dirty()
+            self.clear_cache()
 
     def set_noise(self, value: float) -> None:
         """Set the noise value."""
         self.data.err[:] = value
+        self.data.mark_dirty()
+        self.clear_cache()
 
     def prepare_for_simulation(self) -> None:
         """Prepare data for simulation."""
         self.data.exp = self.data.calc
         self.printer.simulation = True
+        self.data.mark_dirty()
+        self.clear_cache()
 
     def monte_carlo(self: Self) -> Self:
         """Generate a Monte Carlo variant of the profile."""
         profile = deepcopy(self)
         profile.data = profile.data.monte_carlo()
+        profile.cache = LRUCache(maxsize=5)
         return profile
 
     def bootstrap(self) -> Self:
         """Generate a bootstrap variant of the profile."""
         profile = deepcopy(self)
         profile.data = profile.data.bootstrap()
+        profile.cache = LRUCache(maxsize=5)
         return profile
 
     def any_duplicate(self) -> bool:
@@ -133,6 +145,7 @@ class Profile:
         """Combine two profiles."""
         profile = deepcopy(self)
         profile.data = self.data + other.data
+        profile.cache = LRUCache(maxsize=5)
         return profile
 
     def __str__(self) -> str:

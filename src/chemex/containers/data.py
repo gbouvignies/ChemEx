@@ -3,7 +3,14 @@ from random import choices
 from typing import Any, Self
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    computed_field,
+    field_serializer,
+)
 
 from chemex.typing import Array
 
@@ -36,6 +43,7 @@ class Data(BaseModel):
     calc_unscaled: Array = Field(init=False, default=None)  # type: ignore[call-arg]
     mask: Array = Field(init=False, default=None)  # type: ignore[call-arg]
     refs: Array = Field(init=False, default=None)  # type: ignore[call-arg]
+    _revision: int = PrivateAttr(default=0)
 
     def __init__(self, **data: Array) -> None:
         """Initialize the Data instance and set computed arrays."""
@@ -44,6 +52,16 @@ class Data(BaseModel):
         self.calc_unscaled = np.full_like(self.exp, fill_value=1e32, dtype=np.float64)
         self.mask = np.full_like(self.exp, fill_value=True, dtype=np.bool_)
         self.refs = np.full_like(self.exp, fill_value=False, dtype=np.bool_)
+        self._revision = 0
+
+    @property
+    def revision(self) -> int:
+        """Return the mutation counter used for cache invalidation."""
+        return self._revision
+
+    def mark_dirty(self) -> None:
+        """Increment the mutation counter when residual inputs change."""
+        self._revision += 1
 
     # Serialize numpy arrays to lists for JSON output
     @field_serializer("exp", "err", "metadata", "calc", "calc_unscaled", "mask", "refs")
@@ -95,6 +113,7 @@ class Data(BaseModel):
         """
         data = deepcopy(self)
         data.exp = rng.normal(self.calc, self.err)
+        data.mark_dirty()
         return data
 
     def bootstrap(self) -> Self:
@@ -114,6 +133,8 @@ class Data(BaseModel):
         data.metadata[self.mask] = self.metadata[bs_indexes]
         data.exp[self.mask] = self.exp[bs_indexes]
         data.err[self.mask] = self.err[bs_indexes]
+        data.refs[self.mask] = self.refs[bs_indexes]
+        data.mark_dirty()
         return data
 
     def sort(self) -> None:
@@ -125,6 +146,7 @@ class Data(BaseModel):
         self.calc = self.calc[sorted_indexes]
         self.refs = self.refs[sorted_indexes]
         self.mask = self.mask[sorted_indexes]
+        self.mark_dirty()
 
     def any_duplicate(self) -> bool:
         """Check for duplicate entries in metadata.
@@ -159,5 +181,6 @@ class Data(BaseModel):
         result = deepcopy(self)
         result.exp = self.exp + other.exp
         result.err = np.sqrt(self.err**2 + other.err**2)
+        result.mark_dirty()
 
         return result
