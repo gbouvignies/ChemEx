@@ -17,6 +17,12 @@ from chemex.messages import (
 )
 from chemex.parameters import database
 from chemex.printers.parameters import write_parameters
+from chemex.runtime import AnalysisSession
+from chemex.runtime.session import ParameterStore
+
+
+def _get_parameter_store(session: AnalysisSession | None) -> ParameterStore:
+    return session.parameters if session is not None else database
 
 
 def calculate_statistics(
@@ -46,9 +52,14 @@ def calculate_statistics(
     }
 
 
-def _write_statistics(experiments: Experiments, path: Path) -> None:
+def _write_statistics(
+    experiments: Experiments,
+    path: Path,
+    session: AnalysisSession | None = None,
+) -> None:
     """Write fitting statistics to a file."""
-    params_lf = database.build_lmfit_params(experiments.param_ids)
+    parameter_store = _get_parameter_store(session)
+    params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
     stats = calculate_statistics(experiments, params_lf)
     filename = path / "statistics.toml"
     with filename.open("w", encoding="utf-8") as f:
@@ -64,13 +75,17 @@ def _write_statistics(experiments: Experiments, path: Path) -> None:
         f.write(f'"Bayesian Information Criterion (BIC)" = {stats["bic"]: .5e}\n')
 
 
-def _write_files(experiments: Experiments, path: Path) -> None:
+def _write_files(
+    experiments: Experiments,
+    path: Path,
+    session: AnalysisSession | None = None,
+) -> None:
     """Write the results of the fit to output files."""
     print_writing_results(path)
     path.mkdir(parents=True, exist_ok=True)
     write_parameters(experiments, path)
     experiments.write(path)
-    _write_statistics(experiments, path=path)
+    _write_statistics(experiments, path=path, session=session)
 
 
 def _write_simulation_files(experiments: Experiments, path: Path) -> None:
@@ -110,8 +125,9 @@ def execute_post_fit(
     path: Path,
     *,
     plot: bool = False,
+    session: AnalysisSession | None = None,
 ) -> None:
-    _write_files(experiments, path)
+    _write_files(experiments, path, session=session)
     if plot:
         _write_plots(experiments, path)
 
@@ -121,23 +137,42 @@ def execute_simulation(
     path: Path,
     *,
     plot: bool = False,
+    session: AnalysisSession | None = None,
 ) -> None:
+    _ = session
     experiments.prepare_for_simulation()
     _write_simulation_files(experiments, path)
     if plot:
         _write_simulation_plots(experiments, path)
 
 
-def execute_post_fit_groups(experiments: Experiments, path: Path, plot: str) -> None:
+def execute_post_fit_groups(
+    experiments: Experiments,
+    path: Path,
+    plot: str,
+    *,
+    session: AnalysisSession | None = None,
+) -> None:
     print_group_name("All groups")
-    params_lf = database.build_lmfit_params(experiments.param_ids)
+    parameter_store = _get_parameter_store(session)
+    params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
     statistics = calculate_statistics(experiments, params_lf)
     print_chi2(statistics["chisqr"], statistics["redchi"])
-    execute_post_fit(experiments, path / "All", plot=(plot != "nothing"))
+    execute_post_fit(
+        experiments,
+        path / "All",
+        plot=(plot != "nothing"),
+        session=session,
+    )
 
 
-def print_header(grid: Iterable[str]) -> str:
-    parameters = database.get_parameters(grid)
+def print_header(
+    grid: Iterable[str],
+    *,
+    session: AnalysisSession | None = None,
+) -> str:
+    parameter_store = _get_parameter_store(session)
+    parameters = parameter_store.get_parameters(grid)
     header_pnames = " ".join(f"{parameters[param_id].param_name}" for param_id in grid)
     return f"# {header_pnames} [χ²]\n"
 

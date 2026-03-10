@@ -30,6 +30,13 @@ class _Model:
         self._model_free = "mf" in ext if ext else False
         self._temp_coef = "tc" in ext if ext else False
 
+    def reset(self) -> None:
+        """Restore the default model selection for a fresh analysis run."""
+        self._name = "2st"
+        self._states = "ab"
+        self._model_free = False
+        self._temp_coef = False
+
     @property
     def name(self) -> str:
         return self._name
@@ -50,3 +57,4 @@ class _Model:
 model = _Model()
 
 set_model = model.set_model
+reset_model = model.reset

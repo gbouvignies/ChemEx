@@ -10,6 +10,8 @@ from chemex.containers.experiments import Experiments
 from chemex.parameters import database
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import Parameters
+from chemex.runtime import AnalysisSession
+from chemex.runtime.session import ParameterStore
 
 
 @dataclass
@@ -19,10 +21,19 @@ class Group:
     experiments: Experiments
 
 
-def ids_to_param_name(param_ids: set[str]) -> ParamName:
+def _get_parameter_store(session: AnalysisSession | None) -> ParameterStore:
+    return session.parameters if session is not None else database
+
+
+def ids_to_param_name(
+    param_ids: set[str],
+    *,
+    session: AnalysisSession | None = None,
+) -> ParamName:
     if not param_ids:
         return ParamName()
-    parameters = database.get_parameters(param_ids)
+    parameter_store = _get_parameter_store(session)
+    parameters = parameter_store.get_parameters(param_ids)
     param_names = (parameter.param_name for parameter in parameters.values())
     return reduce(and_, param_names)
 
@@ -30,9 +41,13 @@ def ids_to_param_name(param_ids: set[str]) -> ParamName:
 def group_ids(
     experiments: Experiments,
     parameters: Parameters | None = None,
+    *,
+    session: AnalysisSession | None = None,
 ) -> list[tuple[ParamName, set[str]]]:
+    parameter_store = _get_parameter_store(session)
+
     if parameters is None:
-        parameters = database.get_parameters(experiments.param_ids)
+        parameters = parameter_store.get_parameters(experiments.param_ids)
 
     ids_vary: set[str] = {
         param_id
@@ -41,7 +56,7 @@ def group_ids(
     }
 
     param_id_sets = (
-        set(database.get_parameters(param_id_set))
+        set(parameter_store.get_parameters(param_id_set))
         for param_id_set in experiments.param_id_sets
     )
 
@@ -61,10 +76,16 @@ def group_ids(
                 grouped = True
                 break
 
-    return sorted((ids_to_param_name(union), union) for union in groups.values())
+    return sorted(
+        (ids_to_param_name(union, session=session), union) for union in groups.values()
+    )
 
 
-def create_groups(experiments: Experiments) -> list[Group]:
+def create_groups(
+    experiments: Experiments,
+    *,
+    session: AnalysisSession | None = None,
+) -> list[Group]:
     """Create groups of datapoints that depend on disjoint sets of variables.
 
     For example, if the population of the minor state and the exchange
@@ -72,7 +93,8 @@ def create_groups(experiments: Experiments) -> list[Group]:
     residue-specifically.
 
     """
-    id_groups = group_ids(experiments)
+    parameter_store = _get_parameter_store(session)
+    id_groups = group_ids(experiments, session=session)
 
     group_name_template = ""
     path_name_template = ""
@@ -89,7 +111,7 @@ def create_groups(experiments: Experiments) -> list[Group]:
     for index, (pname, param_ids) in enumerate(id_groups, start=1):
         group_name = group_name_template.format(index=index, pname=pname)
         group_path = Path(path_name_template.format(group_name=group_name))
-        group_param_ids = set(database.get_parameters(param_ids))
+        group_param_ids = set(parameter_store.get_parameters(param_ids))
         group_experiments = experiments.get_relevant_subset(group_param_ids)
         group_message = group_message_template.format(
             index=index,
@@ -110,9 +132,13 @@ class ParamTree:
 def create_group_tree(
     experiments: Experiments,
     parameters: Parameters | None = None,
+    *,
+    session: AnalysisSession | None = None,
 ) -> ParamTree:
+    parameter_store = _get_parameter_store(session)
+
     if parameters is None:
-        parameters = database.get_parameters(experiments.param_ids)
+        parameters = parameter_store.get_parameters(experiments.param_ids)
 
     ids_vary: set[str] = {
         param_id
@@ -129,14 +155,14 @@ def create_group_tree(
     for param_id in ids_global:
         parameters[param_id].vary = False
 
-    id_groups = group_ids(experiments, parameters)
+    id_groups = group_ids(experiments, parameters, session=session)
 
     branches: list[ParamTree] = []
 
     if len(id_groups) > 1:
         for _, ids in id_groups:
             sub_experiments = experiments.get_relevant_subset(ids)
-            branches.append(create_group_tree(sub_experiments))
+            branches.append(create_group_tree(sub_experiments, session=session))
 
     for param_id in ids_global:
         parameters[param_id].vary = True

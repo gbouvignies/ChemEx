@@ -8,7 +8,6 @@ from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
 from chemex.experiments.builder import build_experiments
-from chemex.experiments.loader import register_experiments
 from chemex.messages import (
     print_logo,
     print_no_data,
@@ -17,14 +16,16 @@ from chemex.messages import (
     print_running_simulations,
     print_start_fit,
 )
-from chemex.models import model
-from chemex.models.loader import register_kinetic_settings
 from chemex.optimize.fitting import run_methods
 from chemex.optimize.helper import execute_simulation
-from chemex.parameters import database
+from chemex.runtime import AnalysisSession
 
 
-def run_fit(args: Namespace, experiments: Experiments) -> None:
+def run_fit(
+    args: Namespace,
+    experiments: Experiments,
+    session: AnalysisSession,
+) -> None:
     # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
     experiments.filter()
 
@@ -35,28 +36,35 @@ def run_fit(args: Namespace, experiments: Experiments) -> None:
         methods = {"": Method()}
 
     print_start_fit()
-    run_methods(experiments, methods, args.output, args.plot)
+    run_methods(experiments, methods, args.output, args.plot, session=session)
 
 
-def run_sim(args: Namespace, experiments: Experiments) -> None:
+def run_sim(
+    args: Namespace,
+    experiments: Experiments,
+    session: AnalysisSession,
+) -> None:
     print_running_simulations()
 
     path = args.output
     plot = args.plot == "normal"
 
-    database.fix_all_parameters()
+    session.parameters.fix_all_parameters()
 
-    execute_simulation(experiments, path, plot=plot)
+    execute_simulation(experiments, path, plot=plot, session=session)
 
 
-def run(args: Namespace) -> None:
+def run(args: Namespace, session: AnalysisSession | None = None) -> None:
     """Run the fit or simulation."""
+    if session is None:
+        session = AnalysisSession.create()
+
     # Parse kinetics model
-    model.set_model(args.model)
+    session.set_model(args.model)
 
     # Read experimental setup and data
     selection = Selection(args.include, args.exclude)
-    experiments = build_experiments(args.experiments, selection)
+    experiments = build_experiments(args.experiments, selection, session=session)
 
     if not experiments:
         print_no_data()
@@ -65,20 +73,17 @@ def run(args: Namespace) -> None:
     # Read initial values of fitting/fixed parameters
     print_reading_defaults()
     defaults = read_defaults(args.parameters)
-    database.set_param_defaults(defaults)
+    session.parameters.set_param_defaults(defaults)
 
     if args.commands == "simulate":
-        run_sim(args, experiments)
+        run_sim(args, experiments, session)
     else:
-        run_fit(args, experiments)
+        run_fit(args, experiments, session)
 
 
 def main() -> None:
     """Do all the magic."""
     print_logo()
-
-    register_kinetic_settings()
-    register_experiments()
 
     parser = build_parser()
     args = parser.parse_args()

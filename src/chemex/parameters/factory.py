@@ -103,3 +103,8 @@ def create_parameters(
     selection = set(name_map) & liouvillian.basis.required_names
 
     return {local_name: name_map[local_name] for local_name in selection}
+
+
+def clear_settings_cache() -> None:
+    """Drop cached parameter templates between analysis sessions."""
+    _build_settings.cache_clear()
