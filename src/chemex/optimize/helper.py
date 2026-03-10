@@ -81,18 +81,24 @@ def _write_files(
     session: AnalysisSession | None = None,
 ) -> None:
     """Write the results of the fit to output files."""
+    parameter_store = _get_parameter_store(session)
     print_writing_results(path)
     path.mkdir(parents=True, exist_ok=True)
-    write_parameters(experiments, path)
+    write_parameters(experiments, path, parameter_store=parameter_store)
     experiments.write(path)
     _write_statistics(experiments, path=path, session=session)
 
 
-def _write_simulation_files(experiments: Experiments, path: Path) -> None:
+def _write_simulation_files(
+    experiments: Experiments,
+    path: Path,
+    session: AnalysisSession | None = None,
+) -> None:
     """Write the results of the simulation to output files."""
+    parameter_store = _get_parameter_store(session)
     print_writing_results(path)
     path.mkdir(parents=True, exist_ok=True)
-    write_parameters(experiments, path)
+    write_parameters(experiments, path, parameter_store=parameter_store)
     experiments.write(path)
 
 
@@ -139,9 +145,8 @@ def execute_simulation(
     plot: bool = False,
     session: AnalysisSession | None = None,
 ) -> None:
-    _ = session
     experiments.prepare_for_simulation()
-    _write_simulation_files(experiments, path)
+    _write_simulation_files(experiments, path, session=session)
     if plot:
         _write_simulation_plots(experiments, path)
 

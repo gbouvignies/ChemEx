@@ -69,7 +69,7 @@ def _run_statistics(
         print_running_statistics(method["message"])
 
         with (path / method["filename"]).open(mode="w", encoding="utf-8") as fileout:
-            fileout.write(print_header(ids_vary))
+            fileout.write(print_header(ids_vary, session=session))
 
             try:
                 for _ in track(range(iter_nb), total=iter_nb, description="   "):

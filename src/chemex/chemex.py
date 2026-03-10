@@ -18,7 +18,7 @@ from chemex.messages import (
 )
 from chemex.optimize.fitting import run_methods
 from chemex.optimize.helper import execute_simulation
-from chemex.runtime import AnalysisSession
+from chemex.runtime import AnalysisSession, ensure_plugins_registered
 
 
 def run_fit(
@@ -84,6 +84,7 @@ def run(args: Namespace, session: AnalysisSession | None = None) -> None:
 def main() -> None:
     """Do all the magic."""
     print_logo()
+    ensure_plugins_registered()
 
     parser = build_parser()
     args = parser.parse_args()

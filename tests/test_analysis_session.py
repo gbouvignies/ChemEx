@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from argparse import Namespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -10,6 +11,10 @@ from chemex import chemex as chemex_module
 from chemex.configuration.methods import Method, Selection
 from chemex.experiments import builder as builder_module
 from chemex.optimize import fitting as fitting_module
+from chemex.optimize import helper as helper_module
+from chemex.parameters.name import ParamName
+from chemex.parameters.setting import ParamSetting
+from chemex.printers import parameters as parameter_printer_module
 from chemex.runtime import AnalysisSession
 from chemex.runtime import session as session_module
 
@@ -57,6 +62,24 @@ class StubSession:
 
     def set_model(self, name: str) -> None:
         self.model_names.append(name)
+
+
+class WriterParameterStore:
+    def __init__(self, parameters: dict[str, ParamSetting]) -> None:
+        self.parameters = parameters
+
+    def get_parameters(self, param_ids: object) -> dict[str, ParamSetting]:
+        return {
+            param_id: parameter
+            for param_id, parameter in self.parameters.items()
+            if param_id in set(param_ids)
+        }
+
+
+class StatisticsParameterStore(StubParameters):
+    def build_lmfit_params(self, param_ids: object) -> dict[str, SimpleNamespace]:
+        _ = param_ids
+        return {"__PB": SimpleNamespace(name="PB", vary=True)}
 
 
 class FakeExperiments:
@@ -256,6 +279,31 @@ def test_run_uses_explicit_session_for_simulation_flow(
     np.testing.assert_equal(recorded["simulation"][3], session)
 
 
+def test_main_bootstraps_plugins_for_non_run_commands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    class StubParser:
+        def parse_args(self) -> Namespace:
+            return Namespace(func=lambda _args: calls.append("func"))
+
+    def build_parser() -> StubParser:
+        return StubParser()
+
+    monkeypatch.setattr(chemex_module, "print_logo", lambda: calls.append("logo"))
+    monkeypatch.setattr(
+        chemex_module,
+        "ensure_plugins_registered",
+        lambda: calls.append("plugins"),
+    )
+    monkeypatch.setattr(chemex_module, "build_parser", build_parser)
+
+    chemex_module.main()
+
+    np.testing.assert_equal(calls, ["logo", "plugins", "func"])
+
+
 def test_run_methods_passes_session_to_fit_groups(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -294,3 +342,67 @@ def test_run_methods_passes_session_to_fit_groups(
     np.testing.assert_equal(len(experiments.selections), 1)
     np.testing.assert_equal(len(session.parameters.status_calls), 1)
     np.testing.assert_equal(recorded["fit_groups"][5], session)
+
+
+def test_run_statistics_uses_session_for_header(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    recorded: dict[str, object] = {}
+    session = StubSession()
+    session.parameters = StatisticsParameterStore()
+    experiments = SimpleNamespace(param_ids=["__PB"])
+
+    monkeypatch.setattr(fitting_module, "track", lambda _iterable, **_kwargs: [])
+
+    def fake_print_header(
+        grid: object,
+        *,
+        session: StubSession | None = None,
+    ) -> str:
+        recorded["grid"] = grid
+        recorded["session"] = session
+        return "# header\n"
+
+    monkeypatch.setattr(fitting_module, "print_header", fake_print_header)
+
+    fitting_module._run_statistics(  # noqa: SLF001
+        experiments,
+        tmp_path,
+        "leastsq",
+        fitting_module.Statistics(mc=1),
+        session=session,
+    )
+
+    np.testing.assert_equal(recorded["grid"], ["PB"])
+    np.testing.assert_equal(recorded["session"], session)
+
+
+def test_execute_post_fit_writes_parameters_from_session_store(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    param = ParamSetting(ParamName("PB"), value=0.15, vary=False)
+    session = StubSession()
+    session.parameters = WriterParameterStore({param.id_: param})
+    experiments = SimpleNamespace(param_ids=[param.id_], write=lambda _path: None)
+
+    def should_not_be_called(_param_ids: object) -> None:
+        msg = "global parameter store should not be used"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(
+        parameter_printer_module.database,
+        "get_parameters",
+        should_not_be_called,
+    )
+    monkeypatch.setattr(helper_module, "print_writing_results", lambda _path: None)
+    monkeypatch.setattr(
+        helper_module,
+        "_write_statistics",
+        lambda *_args, **_kwargs: None,
+    )
+
+    helper_module.execute_post_fit(experiments, tmp_path, session=session)
+
+    np.testing.assert_equal(int((tmp_path / "Parameters" / "fixed.toml").exists()), 1)

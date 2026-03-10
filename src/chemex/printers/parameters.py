@@ -1,18 +1,25 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from re import compile
+from typing import Protocol
 
 from chemex.containers.experiments import Experiments
 from chemex.parameters import database
 from chemex.parameters.name import ParamName
+from chemex.parameters.setting import Parameters as ParameterMap
 from chemex.parameters.setting import ParamSetting
 
 Parameters = dict[ParamName, ParamSetting]
 
-RE_GROUPNAME = compile(r"^[A-Za-z0-9_-]+$")
+RE_GROUPNAME = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+class ParameterStore(Protocol):
+    def get_parameters(self, param_ids: Iterable[str]) -> ParameterMap: ...
 
 
 @dataclass
@@ -36,13 +43,16 @@ def _format_fitted(param: ParamSetting) -> str:
     return f"{param.value: .5e} # {error}"
 
 
-def _format_constrained(param: ParamSetting) -> str:
+def _format_constrained(
+    param: ParamSetting,
+    parameter_store: ParameterStore = database,
+) -> str:
     if param.value is None:
         return ""
 
     error = f"±{param.stderr:.5e} " if param.stderr else ""
     constraint = param.expr
-    parameters = database.get_parameters(param.dependencies)
+    parameters = parameter_store.get_parameters(param.dependencies)
     for param_id, parameter in parameters.items():
         constraint = constraint.replace(param_id, str(parameter.param_name))
     return f"{param.value: .5e} # {error}({constraint})"
@@ -52,26 +62,40 @@ def _format_fixed(param: ParamSetting) -> str:
     return f"{param.value: .5e} # (fixed)"
 
 
-_format_param = {
-    "fitted": _format_fitted,
-    "constrained": _format_constrained,
-    "fixed": _format_fixed,
-}
-
-
 def _params_to_strings(
     parameters: GlobalLocalParameters,
     status: str,
+    parameter_store: ParameterStore = database,
 ) -> dict[str, dict[str, str]]:
     result: defaultdict[str, dict[str, str]] = defaultdict(dict)
 
     for pname, param in parameters.global_.items():
-        result["GLOBAL"][pname.section_res] = _format_param[status](param)
+        result["GLOBAL"][pname.section_res] = _format_parameter(
+            param,
+            status,
+            parameter_store,
+        )
 
     for pname, param in parameters.local.items():
-        result[pname.section][str(pname.spin_system)] = _format_param[status](param)
+        result[pname.section][str(pname.spin_system)] = _format_parameter(
+            param,
+            status,
+            parameter_store,
+        )
 
     return result
+
+
+def _format_parameter(
+    param: ParamSetting,
+    status: str,
+    parameter_store: ParameterStore = database,
+) -> str:
+    if status == "fitted":
+        return _format_fitted(param)
+    if status == "fixed":
+        return _format_fixed(param)
+    return _format_constrained(param, parameter_store)
 
 
 def _quote(text: str) -> str:
@@ -92,11 +116,16 @@ def _format_strings(par_strings: dict[str, dict[str, str]]) -> str:
     return "\n".join(result)
 
 
-def write_file(parameters: GlobalLocalParameters, status: str, path: Path) -> None:
+def write_file(
+    parameters: GlobalLocalParameters,
+    status: str,
+    path: Path,
+    parameter_store: ParameterStore = database,
+) -> None:
     if not parameters:
         return
 
-    par_strings = _params_to_strings(parameters, status)
+    par_strings = _params_to_strings(parameters, status, parameter_store)
     formatted_strings = _format_strings(par_strings)
     filename = path / f"{status}.toml"
     filename.write_text(formatted_strings)
@@ -115,10 +144,14 @@ def classify_global(parameters: Parameters) -> GlobalLocalParameters:
     return GlobalLocalParameters(global_, local)
 
 
-def classify_parameters(experiments: Experiments) -> ClassifiedParameters:
+def classify_parameters(
+    experiments: Experiments,
+    parameter_store: ParameterStore = database,
+) -> ClassifiedParameters:
     param_ids = experiments.param_ids
     parameters = {
-        param.param_name: param for param in database.get_parameters(param_ids).values()
+        param.param_name: param
+        for param in parameter_store.get_parameters(param_ids).values()
     }
 
     constrained = {pname: param for pname, param in parameters.items() if param.expr}
@@ -142,12 +175,21 @@ def classify_parameters(experiments: Experiments) -> ClassifiedParameters:
     )
 
 
-def write_parameters(experiments: Experiments, path: Path) -> None:
+def write_parameters(
+    experiments: Experiments,
+    path: Path,
+    parameter_store: ParameterStore = database,
+) -> None:
     """Write the model parameter values and their uncertainties to a file."""
     path_par = path / "Parameters"
     path_par.mkdir(parents=True, exist_ok=True)
-    classified_parameters = classify_parameters(experiments)
+    classified_parameters = classify_parameters(experiments, parameter_store)
 
-    write_file(classified_parameters.fitted, "fitted", path_par)
-    write_file(classified_parameters.fixed, "fixed", path_par)
-    write_file(classified_parameters.constrained, "constrained", path_par)
+    write_file(classified_parameters.fitted, "fitted", path_par, parameter_store)
+    write_file(classified_parameters.fixed, "fixed", path_par, parameter_store)
+    write_file(
+        classified_parameters.constrained,
+        "constrained",
+        path_par,
+        parameter_store,
+    )
