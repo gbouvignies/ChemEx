@@ -2,8 +2,21 @@
 name = "chemex"
 version = "2026.01.0"
 description = "An analysis program for chemical exchange detected by NMR"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "GPL-3.0-or-later"  # SPDX expression
+license-files = ["LICENSE.md"]  # list of paths or globs
 authors = [
   { name = "Guillaume Bouvignies", email = "guillaume.bouvignies@ens.psl.eu" },
+]
+keywords = ["NMR", "analysis", "chemical exchange", "spectroscopy"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",  # Experimental - ecosystem catching up
+  "Topic :: Scientific/Engineering :: Chemistry",
 ]
 dependencies = [
   "annotated-types>=0.7.0",
@@ -18,32 +31,30 @@ dependencies = [
   "rich>=13.9.4",
   "scipy>=1.15.2",
 ]
-# Python 3.11+ supported for broader compatibility (development/testing)
-# Python 3.13 is the recommended version for best performance in production
-# Python 3.14 support is experimental (tested in CI but may have ecosystem issues)
-# TODO: Evaluate minimum version requirements during optimization work
-requires-python = ">=3.11"
-readme = "README.md"
-classifiers = [
-  "Development Status :: 5 - Production/Stable",
-  "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
-  "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: 3.14",  # Experimental - ecosystem catching up
-  "Topic :: Scientific/Engineering :: Chemistry",
-]
-keywords = ["NMR", "chemical exchange", "spectroscopy", "analysis"]
-license = "GPL-3.0-or-later" # SPDX expression
-license-files = ["LICENSE.md"] # list of paths or globs
 
 [project.urls]
-Homepage = "http://gbouvignies.github.io/ChemEx/"
-Documentation = "http://gbouvignies.github.io/ChemEx/"
-Repository = "https://github.com/gbouvignies/chemex"
 Changelog = "https://github.com/gbouvignies/chemex/releases"
+Documentation = "http://gbouvignies.github.io/ChemEx/"
+Homepage = "http://gbouvignies.github.io/ChemEx/"
+Repository = "https://github.com/gbouvignies/chemex"
 
 [project.scripts]
 chemex = "chemex.chemex:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4.2",
+  "scipy-stubs>=1.16.2.3",
+  "ty>=0.0.1a22",
+  "types-cachetools>=6.2.0.20250827",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.14,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+extend-exclude = ["benchmarks", "src/chemex/experiments/catalog/wip"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -85,9 +96,6 @@ ignore = [
   "PD011",
 ]
 
-[tool.ruff]
-extend-exclude = ["benchmarks", "src/chemex/experiments/catalog/wip"]
-
 [tool.ruff.lint.isort]
 known-first-party = ["chemex"]
 
@@ -101,15 +109,3 @@ exclude = ["benchmarks/", "src/chemex/experiments/catalog/wip/", "tests/"]
 [tool.ty.rules]
 # Downgrade warnings to avoid failing CI
 possibly-missing-attribute = "ignore"
-
-[build-system]
-requires = ["uv_build>=0.8.14,<0.11.0"]
-build-backend = "uv_build"
-
-[dependency-groups]
-dev = [
-    "pytest>=8.4.2",
-    "scipy-stubs>=1.16.2.3",
-    "ty>=0.0.1a22",
-    "types-cachetools>=6.2.0.20250827",
-]
