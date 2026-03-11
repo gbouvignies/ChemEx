@@ -5,6 +5,19 @@ All notable changes to ChemEx will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO).
 
+## [2026.03.0] - 2026-03-11
+
+### Fixed
+- Fixed `simulate` plotting for CEST and CPMG experiments in released packages.
+- Fixed profile cache invalidation when data objects are mutated during analysis flows.
+
+### Changed
+- Made runtime session state explicit to reduce hidden global state during analysis runs.
+- Refined computed-field and typing boundaries across the runtime layer.
+
+### Infrastructure
+- Updated assorted build, CI, and website dependencies.
+
 ## [2025.10.0] - 2025-10-27
 
 ### Added
