@@ -43,7 +43,7 @@ class Cpmg15N0013IpSettings(CpmgSettings):
     )
     ncyc_max: int = Field(gt=0, description="Maximum number of CPMG cycles")
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def t_neg(self) -> float:
         """Calculate negative delay compensation for pulse imperfections.
@@ -54,7 +54,7 @@ class Cpmg15N0013IpSettings(CpmgSettings):
         """
         return -2.0 * self.pw90 / np.pi
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def t_pos(self) -> float:
         """Calculate positive delay compensation for pulse imperfections.
@@ -65,7 +65,7 @@ class Cpmg15N0013IpSettings(CpmgSettings):
         """
         return 4.0 * self.pw90 / np.pi
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Initial magnetization terms for the experiment.
@@ -76,7 +76,7 @@ class Cpmg15N0013IpSettings(CpmgSettings):
         """
         return [f"iz{self.suffix_start}"]
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection mode for the observable magnetization.

@@ -37,19 +37,19 @@ class Cpmg1HnApSettings(CpmgSettings):
     time_equil_2: Delay = 0.0
     cs_evolution_prior: bool = True
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def t_neg(self) -> float:
         """Negative time delay for CPMG element."""
         return -2.0 * self.pw90 / np.pi
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms (anti-phase)."""
         return [f"2izsz{self.suffix_start}"]
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection operator (anti-phase)."""

@@ -62,7 +62,7 @@ def generate(
     -----
     The beta distribution parameters α and β are derived from the mean and CV:
     - mean_rel = mean_frac (on [0,1] scale)
-    - variance = (mean_rel * scale)² 
+    - variance = (mean_rel * scale)²
     - α, β computed via method of moments
 
     Physical interpretation:
@@ -80,7 +80,9 @@ def generate(
     """
     # Handle edge cases
     if scale in (0.0, np.inf) or res <= 1:
-        return Distribution(np.array([value], dtype=float), np.array([1.0], dtype=float))
+        return Distribution(
+            np.array([value], dtype=float), np.array([1.0], dtype=float)
+        )
 
     # Clamp inputs to valid ranges
     scale = np.clip(scale, 0.01, 0.5)

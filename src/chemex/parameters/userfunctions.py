@@ -15,13 +15,11 @@ class Registry:
 
     user_function_registry: ClassVar[dict[str, Any]] = {}
 
-    def register(
-        self, name: str, user_functions: dict[str, Callable[[Any], Any]]
-    ) -> None:
+    def register(self, name: str, user_functions: dict[str, Any]) -> None:
         """Register a new set of user functions."""
         self.user_function_registry[name] = user_functions
 
-    def get(self, name: str) -> dict[str, Callable[[Any], Any]]:
+    def get(self, name: str) -> dict[str, Any]:
         if name not in self.user_function_registry:
             return {}
         return self.user_function_registry[name]

@@ -55,6 +55,9 @@ ignore = [
   "ANN401",
   "ARG002",
   "COM812",
+  "D1",
+  "D203",
+  "D213",
   "D401",
   "D417",
   "E402",
@@ -78,16 +81,8 @@ ignore = [
   "TC003",
   "TD002",
   "TD003",
-  "D100",
-  "D101",
-  "D102",
-  "D103",
-  "D104",
-  "D105",
-  "D107",
   "S311",
   "PD011",
-  "W291",
 ]
 
 [tool.ruff]
@@ -106,8 +101,6 @@ exclude = ["benchmarks/", "src/chemex/experiments/catalog/wip/", "tests/"]
 [tool.ty.rules]
 # Downgrade warnings to avoid failing CI
 possibly-missing-attribute = "ignore"
-redundant-cast = "ignore"
-unused-ignore-comment = "ignore"
 
 [build-system]
 requires = ["uv_build>=0.8.14,<0.11.0"]

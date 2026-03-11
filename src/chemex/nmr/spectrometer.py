@@ -11,6 +11,7 @@ from scipy.linalg import expm
 
 from chemex.nmr.constants import Distribution
 from chemex.nmr.liouvillian import LiouvillianIS
+from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.typing import Array
 
 DictArray = dict[str, Array]
@@ -263,7 +264,7 @@ class Spectrometer:
     def get_start_magnetization(
         self,
         terms: Iterable[str],
-        atom: str = "h",
+        atom: Nucleus = Nucleus.H1,
     ) -> Array:
         return self.liouvillian.get_start_magnetization(terms=terms, atom=atom)
 

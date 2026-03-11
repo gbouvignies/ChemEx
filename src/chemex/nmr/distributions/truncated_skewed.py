@@ -124,9 +124,9 @@ def _compute_mode_location(alpha: float) -> float:
     result = minimize_scalar(
         neg_pdf,
         bounds=(mu_z - 1.0, mu_z + 1.0),
-        method="bounded",  # type: ignore[call-overload]
+        method="bounded",
     )
-    return float(result.x)  # type: ignore[attr-defined]
+    return float(result.x)
 
 
 def generate(

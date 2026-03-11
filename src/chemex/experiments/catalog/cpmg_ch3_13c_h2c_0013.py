@@ -49,7 +49,7 @@ class CpmgCh313CH2c0013Settings(CpmgSettingsEvenNcycs):
         description="Gradient duration (seconds)",
     )
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def t_neg(self) -> float:
         """Calculate negative delay compensation for pulse imperfections.
@@ -60,7 +60,7 @@ class CpmgCh313CH2c0013Settings(CpmgSettingsEvenNcycs):
         """
         return -2.0 * self.pw90 / np.pi
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def t_pos(self) -> float:
         """Calculate positive delay compensation for pulse imperfections.
@@ -71,7 +71,7 @@ class CpmgCh313CH2c0013Settings(CpmgSettingsEvenNcycs):
         """
         return 4.0 * self.pw90 / np.pi
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def taub_eff(self) -> float:
         """Calculate effective taub delay accounting for pulse width.
@@ -82,7 +82,7 @@ class CpmgCh313CH2c0013Settings(CpmgSettingsEvenNcycs):
         """
         return self.taub - 2.0 * self.pw90 / np.pi
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Initial magnetization terms for the experiment.
@@ -93,7 +93,7 @@ class CpmgCh313CH2c0013Settings(CpmgSettingsEvenNcycs):
         """
         return [f"2izsz{self.suffix_start}"]
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection mode for the observable magnetization.

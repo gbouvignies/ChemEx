@@ -34,13 +34,13 @@ class CpmgCh3MqSettings(CpmgSettings):
     t_zeta: float = 1.0 / (8.0 * 125.3)
     small_protein: bool = False
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms (multiple-quantum)."""
         return [f"2iysx{self.suffix_start}"]
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection operator (multiple-quantum)."""

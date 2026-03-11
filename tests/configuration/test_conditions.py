@@ -6,7 +6,9 @@ from chemex.models.model import ModelSpec
 
 
 def test_hd_model_requires_d2o() -> None:
-    with pytest.raises(ValidationError, match='To use the "hd" model, d2o must be provided'):
+    with pytest.raises(
+        ValidationError, match='To use the "hd" model, d2o must be provided'
+    ):
         ConditionsWithValidations.model_validate(
             {},
             context={"model": ModelSpec(name="2st_hd")},

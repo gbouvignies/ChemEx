@@ -118,7 +118,7 @@ class RelaxationSettings(ExperimentSettings):
     cs_evolution_prior: bool = False
     detect_all_states: bool = False
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def suffix_start(self) -> str:
         """Suffix for starting terms.
@@ -129,7 +129,7 @@ class RelaxationSettings(ExperimentSettings):
         """
         return f"_{self.observed_state}" if self.cs_evolution_prior else ""
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def suffix_detect(self) -> str:
         """Suffix for detection.

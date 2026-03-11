@@ -38,7 +38,7 @@ class Cest1HnIpApSettings(CestSettings, B1InhomogeneityMixin):
     taua: float = 2.38e-3
     eta_block: int = 0
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection operator (anti-phase)."""

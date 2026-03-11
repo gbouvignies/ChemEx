@@ -20,7 +20,7 @@ class DistributionModule(Protocol):
 
 def import_module(name: str) -> DistributionModule:
     """Import a module given a name."""
-    return importlib.import_module(name)  # type: ignore
+    return importlib.import_module(name)
 
 
 def iter_distribution_modules(package: ModuleType) -> Iterator[str]:

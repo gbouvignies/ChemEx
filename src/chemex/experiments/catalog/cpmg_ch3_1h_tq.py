@@ -37,13 +37,13 @@ class CpmgCh31HTqSettings(CpmgSettings):
     comp180_flg: bool = True
     ipap_flg: bool = False
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms (triple-quantum)."""
         return [f"2ixsz{self.suffix_start}"]
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection operator (triple-quantum)."""
@@ -120,9 +120,7 @@ class CpmgCh31HTqSequence:
         ncycs = data.metadata
 
         # Getting the starting magnetization
-        start = spectrometer.get_start_magnetization(
-            self.settings.start_terms, atom="h"
-        )
+        start = spectrometer.get_start_magnetization(self.settings.start_terms)
 
         # Calculation of the spectrometers corresponding to all the delays
         tau_cps, all_delays = self._get_delays(ncycs)

@@ -39,13 +39,13 @@ class CpmgCh31HSqSettings(CpmgSettings):
     ipap_flg: bool = False
     cs_evolution_prior: bool = True
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms (transverse components)."""
         return [f"2ixsz{self.suffix_start}", f"2iysz{self.suffix_start}"]
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection operator."""

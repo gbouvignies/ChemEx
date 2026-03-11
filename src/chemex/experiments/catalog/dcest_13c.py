@@ -59,7 +59,7 @@ class DCest13CSettings(MFCestSettings, B1InhomogeneityMixin):
         return self
 
     # D-CEST convention: the B1 distribution should be centered on pw90.
-    def get_b1_nominal(self) -> float:  # type: ignore[override]
+    def get_b1_nominal(self) -> float:
         """Get nominal B1 from hardware pw90 for distribution centering."""
         if self.pw90 is None:
             msg = (
@@ -69,7 +69,7 @@ class DCest13CSettings(MFCestSettings, B1InhomogeneityMixin):
             raise ValueError(msg)
         return 1.0 / (4.0 * float(self.pw90))
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def pw_dante(self) -> float:
         """Duration of each DANTE pulse (seconds)."""
@@ -78,25 +78,25 @@ class DCest13CSettings(MFCestSettings, B1InhomogeneityMixin):
             raise ValueError(msg)
         return 4.0 * float(self.pw90) * float(self.b1_eff) / float(self.sw)
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def tau_dante(self) -> float:
         """Inter-pulse delay in DANTE train (seconds)."""
         return 1.0 / self.sw - self.pw_dante
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def ncyc_dante(self) -> int:
         """Number of DANTE pulses in the train."""
         return int(self.time_t1 * self.sw + 0.1)
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms."""
         return [f"iz{self.suffix_start}"]
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection operator for the experiment."""

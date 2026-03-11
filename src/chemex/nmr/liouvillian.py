@@ -343,7 +343,9 @@ class LiouvillianIS:
             mag += self.basis.vectors.get(f"{name}z_{state}", 0.0) * scale
         return mag
 
-    def get_start_magnetization(self, terms: Iterable[str], atom: str = "h") -> Array:
+    def get_start_magnetization(
+        self, terms: Iterable[str], atom: Nucleus = Nucleus.H1
+    ) -> Array:
         ratio = XI_RATIO.get(atom, 1.0)
         terms_set = set(terms)
         mag = np.zeros((self.size, 1))

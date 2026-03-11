@@ -18,6 +18,17 @@ from chemex.optimize.grouping import ParamTree, create_group_tree
 from chemex.typing import Array
 
 
+def _get_result_params(minimizer: lmfit.Minimizer) -> lmfit.Parameters:
+    """Extract params from a Minimizer's result.
+
+    MinimizerResult sets attributes dynamically via setattr,
+    so static type checkers cannot resolve them.
+    """
+    result = minimizer.result
+    params: lmfit.Parameters = result.params  # type: ignore[union-attr]
+    return deepcopy(params)
+
+
 @dataclass
 class Reporter:
     last_chisqr: float = +1.0e32
@@ -68,7 +79,7 @@ def minimize(
 
     minimizer = lmfit.Minimizer(experiments.residuals, params)
     minimizer.minimize(method=fitmethod, **(kws.get(fitmethod, {})))
-    return deepcopy(minimizer.result.params)
+    return _get_result_params(minimizer)
 
 
 def minimize_with_report(
@@ -101,7 +112,7 @@ def minimize_with_report(
     except ValueError:
         print_value_error()
 
-    return deepcopy(minimizer.result.params)
+    return _get_result_params(minimizer)
 
 
 def residuals_hierarchical(params: lmfit.Parameters, param_tree: ParamTree) -> Array:
@@ -164,4 +175,4 @@ def minimize_hierarchical(
     except ValueError:
         print_value_error()
 
-    return deepcopy(minimizer.result.params)
+    return _get_result_params(minimizer)

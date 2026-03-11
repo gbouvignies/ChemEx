@@ -39,7 +39,7 @@ class CosCest1HnIpApSettings(MFCestSettings, B1InhomogeneityMixin):
     d1: float = Field(description="Relaxation delay in seconds")
     taua: float = 2.38e-3
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection operator (anti-phase)."""

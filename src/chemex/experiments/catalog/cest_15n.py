@@ -35,13 +35,13 @@ class Cest15NSettings(CestSettings, B1InhomogeneityMixin):
     time_t1: Delay = Field(description="CEST relaxation delay (seconds)")
     carrier: ChemicalShift = Field(description="15N carrier position during CEST (ppm)")
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms."""
         return [f"iz{self.suffix_start}"]
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection operator."""

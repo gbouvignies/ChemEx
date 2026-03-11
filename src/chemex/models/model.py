@@ -35,6 +35,7 @@ class ModelSpec:
             temp_coef="tc" in extensions if extensions else False,
         )
 
+
 _DEFAULT_MODEL = ModelSpec()
 
 

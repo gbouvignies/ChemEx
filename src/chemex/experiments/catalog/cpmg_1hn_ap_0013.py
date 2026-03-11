@@ -67,7 +67,7 @@ class Cpmg1HnAp0013Settings(CpmgSettings):
         description="Flag for chemical shift evolution prior to CPMG",
     )
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def t_neg(self) -> float:
         """Calculate negative delay compensation for pulse imperfections.
@@ -78,7 +78,7 @@ class Cpmg1HnAp0013Settings(CpmgSettings):
         """
         return -2.0 * self.pw90 / np.pi
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Initial magnetization terms for the experiment.
@@ -89,7 +89,7 @@ class Cpmg1HnAp0013Settings(CpmgSettings):
         """
         return [f"2izsz{self.suffix_start}"]
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection mode for the observable magnetization.

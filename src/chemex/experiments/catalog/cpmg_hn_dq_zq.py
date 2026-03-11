@@ -42,7 +42,7 @@ class CpmgHNDqZqSettings(CpmgSettingsEvenNcycs):
         description="Flag for double-quantum (True) vs zero-quantum (False)"
     )
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Initial magnetization terms for the experiment.
@@ -53,7 +53,7 @@ class CpmgHNDqZqSettings(CpmgSettingsEvenNcycs):
         """
         return [f"2ixsx{self.suffix_start}"]
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection mode for the observable magnetization.

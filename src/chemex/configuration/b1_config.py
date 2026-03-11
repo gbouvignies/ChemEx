@@ -113,7 +113,9 @@ class B1FieldConfig(BaseModel):
             flat_schema[key] = value
 
         # Reject nested schema (where distribution is a sub-dict)
-        if "distribution" in flat_schema and isinstance(flat_schema["distribution"], dict):
+        if "distribution" in flat_schema and isinstance(
+            flat_schema["distribution"], dict
+        ):
             msg = (
                 "Nested distribution schema is not supported. "
                 "Use flat schema: put all keys (value, type, scale, etc.) "
@@ -130,7 +132,7 @@ class B1FieldConfig(BaseModel):
                 for key, value in flat_schema.items()
                 if key not in {"value", "pw90"}
             }
-            result = {"distribution": distribution}
+            result: dict[str, object] = {"distribution": distribution}
             if "value" in flat_schema:
                 result["value"] = flat_schema["value"]
             if "pw90" in flat_schema:

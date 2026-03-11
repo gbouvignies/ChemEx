@@ -71,7 +71,7 @@ class Data(BaseModel):
             return []
         return value.tolist()
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def size(self) -> int:
         """Return the number of data points."""

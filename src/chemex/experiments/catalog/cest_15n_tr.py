@@ -36,7 +36,7 @@ class Cest15NTrSettings(CestSettings, B1InhomogeneityMixin):
     carrier: Frequency = Field(description="15N carrier position in Hz")
     antitrosy: bool = False
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Start from the TROSY or ANTI-TROSY component.
@@ -49,7 +49,7 @@ class Cest15NTrSettings(CestSettings, B1InhomogeneityMixin):
             return [f"2izsz{suffix}", f"-iz{suffix}"]
         return [f"2izsz{suffix}", f"iz{suffix}"]
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection operator for TROSY or ANTI-TROSY component."""

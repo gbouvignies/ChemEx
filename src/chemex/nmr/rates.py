@@ -71,9 +71,7 @@ class RatesIS:
         self.delta_i = self.csa_i[:2] - self.csa_i[2]
         self.delta_s = self.csa_s[:2] - self.csa_s[2]
 
-    def __call__(
-        self, h_frq: float, tauc: float, s2: float
-    ) -> dict[str, np.floating]:
+    def __call__(self, h_frq: float, tauc: float, s2: float) -> dict[str, np.floating]:
         """Calculate relaxation rates for given Larmor frequency, tau_c, and s2.
 
         Args:

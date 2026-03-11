@@ -47,7 +47,7 @@ class CpmgCh31HDqSettings(CpmgSettings):
         description="Flag for IPAP (in-phase/anti-phase) experiment",
     )
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Initial magnetization terms for the experiment.
@@ -58,7 +58,7 @@ class CpmgCh31HDqSettings(CpmgSettings):
         """
         return [f"2ixsz{self.suffix_start}"]
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection mode for the observable magnetization.
@@ -140,9 +140,7 @@ class CpmgCh31HDqSequence:
         ncycs = data.metadata
 
         # Getting the starting magnetization
-        start = spectrometer.get_start_magnetization(
-            self.settings.start_terms, atom="h"
-        )
+        start = spectrometer.get_start_magnetization(self.settings.start_terms)
 
         # Calculation of the spectrometers corresponding to all the delays
         tau_cps, all_delays = self._get_delays(ncycs)

@@ -58,7 +58,7 @@ class CpmgCh31HTqDiffSettings(CpmgSettings):
         description="Flag for IPAP (in-phase/anti-phase) experiment",
     )
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def k2_factor(self) -> float:
         """Calculate diffusion attenuation factor based on gradient parameters.
@@ -69,7 +69,7 @@ class CpmgCh31HTqDiffSettings(CpmgSettings):
         """
         return (3.0 * GAMMA[Nucleus.H1] * self.gradient * self.delta) ** 2
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Initial magnetization terms for the experiment.
@@ -80,7 +80,7 @@ class CpmgCh31HTqDiffSettings(CpmgSettings):
         """
         return [f"2ixsz{self.suffix_start}"]
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection mode for the observable magnetization.
@@ -122,7 +122,9 @@ def build_spectrometer(
     settings = config.experiment
     conditions = config.conditions
 
-    basis = Basis(type="ixyzsz_diff", extension="tq", spin_system="hc", model=config.model)
+    basis = Basis(
+        type="ixyzsz_diff", extension="tq", spin_system="hc", model=config.model
+    )
     liouvillian = LiouvillianIS(spin_system, basis, conditions)
     spectrometer = Spectrometer(liouvillian)
 
@@ -165,9 +167,7 @@ class CpmgCh31HTqDiffSequence:
         ncycs = data.metadata
 
         # Getting the starting magnetization
-        start = spectrometer.get_start_magnetization(
-            self.settings.start_terms, atom="h"
-        )
+        start = spectrometer.get_start_magnetization(self.settings.start_terms)
 
         # Calculation of the spectrometers with gradient 0
         spectrometer.gradient_dephasing = 0.0

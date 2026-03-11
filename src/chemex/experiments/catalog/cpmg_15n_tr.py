@@ -37,7 +37,7 @@ class Cpmg15NTrSettings(CpmgSettings):
     taub: float = 2.68e-3
     antitrosy: bool = False
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def t_neg(self) -> float:
         """Negative time delay for CPMG element."""
@@ -47,7 +47,7 @@ class Cpmg15NTrSettings(CpmgSettings):
     def taub_eff(self) -> float:
         return self.taub - 2.0 * self.pw90 - 2.0 * self.pw90 / np.pi
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms (TROSY component)."""

@@ -20,6 +20,7 @@ from chemex.nmr.constants import get_multiplet
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
+from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.plotters.cest import CestPlotter
 from chemex.printers.data import CestPrinter
 from chemex.typing import Array
@@ -64,7 +65,7 @@ class DCest15NSettings(MFCestSettings, B1InhomogeneityMixin):
     # on the hardware B1 set by pw90, regardless of whether b1_frq is also
     # provided. We therefore override the nominal B1 used to build the
     # distribution to always derive it from pw90.
-    def get_b1_nominal(self) -> float:  # type: ignore[override]
+    def get_b1_nominal(self) -> float:
         """Get nominal B1 from hardware pw90 for distribution centering."""
         if self.pw90 is None:
             msg = (
@@ -74,7 +75,7 @@ class DCest15NSettings(MFCestSettings, B1InhomogeneityMixin):
             raise ValueError(msg)
         return 1.0 / (4.0 * float(self.pw90))
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def pw_dante(self) -> float:
         """Duration of each DANTE pulse (seconds)."""
@@ -83,26 +84,26 @@ class DCest15NSettings(MFCestSettings, B1InhomogeneityMixin):
             raise ValueError(msg)
         return 4.0 * float(self.pw90) * float(self.b1_eff) / float(self.sw)
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def tau_dante(self) -> float:
         """Inter-pulse delay in DANTE train (seconds)."""
         return 1.0 / self.sw - self.pw_dante
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def ncyc_dante(self) -> int:
         """Number of DANTE pulses in the train."""
         return int(self.time_t1 * self.sw + 0.1)
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms based on kinetic model."""
         starts = {"2st_hd": ["iz_a"], "4st_hd": ["iz_a", "iz_b"]}
         return starts.get(self.model_name, [f"iz{self.suffix_start}"])
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection operator for the experiment."""
@@ -160,7 +161,9 @@ class DCest15NSequence:
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         offsets = data.metadata
 
-        start = spectrometer.get_start_magnetization(self.settings.start_terms, "n")
+        start = spectrometer.get_start_magnetization(
+            self.settings.start_terms, Nucleus.N15
+        )
 
         d_eq = (
             spectrometer.delays(self.settings.time_equil)

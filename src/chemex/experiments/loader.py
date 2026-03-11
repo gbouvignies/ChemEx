@@ -21,7 +21,7 @@ class ExperimentModule(Protocol):
 
 def import_module(name: str) -> ExperimentModule:
     """Imports a module given a name."""
-    return importlib.import_module(name)  # type: ignore
+    return importlib.import_module(name)
 
 
 def iter_experiment_modules(package: ModuleType) -> Iterator[str]:

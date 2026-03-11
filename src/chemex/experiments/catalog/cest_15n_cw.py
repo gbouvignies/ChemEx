@@ -19,6 +19,7 @@ from chemex.nmr.constants import get_multiplet
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
+from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.plotters.cest import CestPlotter
 from chemex.printers.data import CestPrinter
 from chemex.typing import Array
@@ -37,13 +38,13 @@ class Cest15NCwSettings(CestSettings, B1InhomogeneityMixin):
     carrier_dec: Frequency = Field(description="1H decoupling carrier position in Hz")
     b1_frq_dec: B1Field = Field(description="1H decoupling B1 field strength in Hz")
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms for the experiment."""
         return [f"iz{self.suffix_start}"]
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def detection(self) -> str:
         """Detection operator for the experiment."""
@@ -113,7 +114,7 @@ class Cest15NCwSequence:
         offsets = data.metadata
 
         start = spectrometer.get_start_magnetization(
-            terms=self.settings.start_terms, atom="n"
+            terms=self.settings.start_terms, atom=Nucleus.N15
         )
 
         intensities: dict[float, Array] = {}

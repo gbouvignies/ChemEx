@@ -36,9 +36,7 @@ class AnalysisSession:
     ) -> None:
         self.model = ModelState() if model is None else model
         self.parameters = (
-            create_parameter_store(self.model)
-            if parameters is None
-            else parameters
+            create_parameter_store(self.model) if parameters is None else parameters
         )
         self.parameter_factory = (
             ParameterFactory(self.parameters)

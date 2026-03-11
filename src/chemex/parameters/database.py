@@ -302,9 +302,7 @@ class ParameterCatalog:
             self._parameters[param_id].param_name.section for param_id in param_ids
         )
 
-    def set_vary(
-        self, section_names: Sequence[str], vary: bool
-    ) -> Counter[str]:
+    def set_vary(self, section_names: Sequence[str], vary: bool) -> Counter[str]:
         """Set the variability of parameters by section name.
 
         Args:
@@ -622,9 +620,7 @@ class ParameterStore:
     def set_param_defaults(self, defaults: DefaultListType) -> None:
         self.set_defaults(defaults)
 
-    def set_vary(
-        self, section_names: Sequence[str], vary: bool
-    ) -> Counter[str]:
+    def set_vary(self, section_names: Sequence[str], vary: bool) -> Counter[str]:
         """Set variability of parameters in the active catalog by section name.
 
         Args:
