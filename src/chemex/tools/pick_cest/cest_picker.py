@@ -13,8 +13,7 @@ from chemex.configuration.methods import Selection
 from chemex.containers.experiment import Experiment
 from chemex.containers.experiments import Experiments
 from chemex.experiments.builder import build_experiments
-from chemex.experiments.loader import register_experiments
-from chemex.models import model
+from chemex.runtime import AnalysisSession
 from chemex.tools.pick_cest.buttons import Buttons
 
 FigureSizeType = tuple[float, float]
@@ -48,9 +47,13 @@ def is_cest_experiment(experiment: Experiment) -> bool:
 
 def initialize_cest(args: Namespace) -> Experiments:
     """Initializes CEST experiments."""
-    register_experiments()
-    model.set_model("2st")
-    return build_experiments(args.experiments, Selection(include=None, exclude=None))
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    return build_experiments(
+        args.experiments,
+        Selection(include=None, exclude=None),
+        session=session,
+    )
 
 
 def create_slider(

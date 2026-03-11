@@ -1,6 +1,6 @@
 """Factories for creating different parts of an experiment."""
 
-from collections.abc import Callable, MutableMapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
@@ -8,6 +8,7 @@ from typing import Any, ClassVar
 from chemex.configuration.base import ExperimentConfiguration
 from chemex.containers.data import Data
 from chemex.containers.profile import Filterer, PulseSequence
+from chemex.models.model import ModelSpec
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.plotter import Plotter
@@ -15,9 +16,9 @@ from chemex.printers.data import Printer
 
 Dataset = list[tuple[SpinSystem, Data]]
 GenericConfig = ExperimentConfiguration[Any, Any, Any]
-ConfigCreator = Callable[..., GenericConfig]
+ConfigCreator = type[GenericConfig]
 PropagatorCreator = Callable[..., Spectrometer]
-SequenceCreator = Callable[..., PulseSequence]
+SequenceCreator = Callable[[Any], object]
 DatasetCreator = Callable[..., Dataset]
 FiltererCreator = Callable[..., Filterer]
 PrinterCreator = Callable[[], Printer]
@@ -36,10 +37,18 @@ class Creators:
 
     def create_config(
         self,
-        config_dict: MutableMapping[str, Any],
+        config_dict: Mapping[str, object],
+        *,
+        model: ModelSpec,
     ) -> GenericConfig:
         """Create a configuration object of a specific type."""
-        return self.config_creator(**config_dict)
+        config = self.config_creator.model_validate(
+            config_dict,
+            context={"model": model},
+        )
+        config.model = model
+        config.experiment.model_name = model.name
+        return config
 
     def create_spectrometer(
         self,
@@ -51,7 +60,11 @@ class Creators:
 
     def create_sequence(self, config: GenericConfig) -> PulseSequence:
         """Create a sequence of a specific type."""
-        return self.sequence_creator(config.experiment)
+        sequence = self.sequence_creator(config.experiment)
+        if isinstance(sequence, PulseSequence):
+            return sequence
+        msg = "Sequence creator must return an object implementing PulseSequence"
+        raise TypeError(msg)
 
     def create_dataset(self, base_path: Path, settings: GenericConfig) -> Dataset:
         """Create a dataset of a specific type."""

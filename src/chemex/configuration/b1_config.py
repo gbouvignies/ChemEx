@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import operator
 from functools import reduce
-from typing import TYPE_CHECKING, Annotated, Any, Self, cast
+from typing import TYPE_CHECKING, Annotated, Self
 
 from pydantic import (
     BaseModel,
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from chemex.nmr.constants import Distribution
 
 from chemex.nmr.distributions import registry  # Triggers plugin auto-registration
+from chemex.nmr.distributions.registry import DistributionConfig
 
 
 def _build_distribution_union() -> object:
@@ -36,11 +37,25 @@ def _build_distribution_union() -> object:
     return reduce(operator.or_, classes)
 
 
+def _default_distribution() -> DistributionConfig:
+    config = registry.get_config_class("gaussian").model_validate({"type": "gaussian"})
+    if isinstance(config, DistributionConfig):
+        return config
+    msg = "Invalid default B1 distribution configuration"
+    raise TypeError(msg)
+
+
+def _build_distribution_adapter() -> TypeAdapter:
+    """Construct a discriminated TypeAdapter for the registered distribution configs."""
+    distribution_union = _build_distribution_union()
+    discriminated_union = Annotated.__getitem__(
+        (distribution_union, Field(discriminator="type"))
+    )
+    return TypeAdapter(discriminated_union)
+
+
 # Discriminated union of all dynamically-registered distribution configs
-_DISTRIBUTION_UNION = _build_distribution_union()
-_DISTRIBUTION_ADAPTER: TypeAdapter = TypeAdapter(
-    Annotated[_DISTRIBUTION_UNION, Field(discriminator="type")]
-)
+_DISTRIBUTION_ADAPTER = _build_distribution_adapter()
 
 
 class B1FieldConfig(BaseModel):
@@ -55,7 +70,7 @@ class B1FieldConfig(BaseModel):
     pw90 : float | None
         90-degree pulse width (in seconds). If specified, value is calculated
         as 1/(4*pw90).
-    distribution : BaseModel
+    distribution : DistributionConfig
         Distribution configuration (dynamically typed based on registered plugins)
 
     """
@@ -79,8 +94,8 @@ class B1FieldConfig(BaseModel):
         examples=[45e-6, 96e-6],
     )
     # Default to Gaussian distribution if available
-    distribution: BaseModel = Field(
-        default_factory=lambda: registry.get_config_class("gaussian")(),
+    distribution: DistributionConfig = Field(
+        default_factory=_default_distribution,
         description="B1 distribution configuration",
     )
 
@@ -91,11 +106,14 @@ class B1FieldConfig(BaseModel):
         if not isinstance(data, dict):
             return data
 
-        # Work with a typed view of the incoming mapping
-        d = cast("dict[str, Any]", data)
+        flat_schema: dict[str, object] = {}
+        for key, value in data.items():
+            if not isinstance(key, str):
+                return data
+            flat_schema[key] = value
 
         # Reject nested schema (where distribution is a sub-dict)
-        if "distribution" in d and isinstance(d["distribution"], dict):
+        if "distribution" in flat_schema and isinstance(flat_schema["distribution"], dict):
             msg = (
                 "Nested distribution schema is not supported. "
                 "Use flat schema: put all keys (value, type, scale, etc.) "
@@ -105,17 +123,21 @@ class B1FieldConfig(BaseModel):
 
         # If top-level contains a distribution type alongside value or pw90,
         # fold keys into a nested 'distribution' object internally
-        if ("value" in d or "pw90" in d) and "type" in d:
+        if ("value" in flat_schema or "pw90" in flat_schema) and "type" in flat_schema:
             # Move all keys except 'value' and 'pw90' into the 'distribution' sub-dict
-            distribution = {k: v for k, v in d.items() if k not in ("value", "pw90")}
+            distribution = {
+                key: value
+                for key, value in flat_schema.items()
+                if key not in {"value", "pw90"}
+            }
             result = {"distribution": distribution}
-            if "value" in d:
-                result["value"] = d["value"]
-            if "pw90" in d:
-                result["pw90"] = d["pw90"]
+            if "value" in flat_schema:
+                result["value"] = flat_schema["value"]
+            if "pw90" in flat_schema:
+                result["pw90"] = flat_schema["pw90"]
             return result
 
-        return d
+        return flat_schema
 
     @model_validator(mode="after")
     def _validate_value_or_pw90(self) -> Self:
@@ -134,11 +156,15 @@ class B1FieldConfig(BaseModel):
     # Parse the distribution using the dynamic union adapter
     @field_validator("distribution", mode="before")
     @classmethod
-    def _parse_distribution(cls, value: Any) -> BaseModel:
+    def _parse_distribution(cls, value: object) -> DistributionConfig:
         """Parse distribution config using dynamic union adapter."""
-        if isinstance(value, BaseModel):
+        if isinstance(value, DistributionConfig):
             return value
-        return _DISTRIBUTION_ADAPTER.validate_python(value)
+        parsed = _DISTRIBUTION_ADAPTER.validate_python(value)
+        if isinstance(parsed, DistributionConfig):
+            return parsed
+        msg = "Invalid B1 distribution configuration"
+        raise TypeError(msg)
 
     @property
     def b1_nominal(self) -> float:
@@ -164,8 +190,7 @@ class B1FieldConfig(BaseModel):
             B1 values and weights for numerical integration
 
         """
-        dist = cast("Any", self.distribution)
-        return dist.get_distribution(self.b1_nominal)
+        return self.distribution.get_distribution(self.b1_nominal)
 
 
 # Type alias for the b1_frq field that accepts either float or table

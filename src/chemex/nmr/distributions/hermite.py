@@ -9,11 +9,11 @@ from __future__ import annotations
 from typing import Literal
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import Field
 from scipy.special import roots_hermite
 
 from chemex.nmr.constants import Distribution
-from chemex.nmr.distributions.registry import registry
+from chemex.nmr.distributions.registry import DistributionConfig, registry
 
 
 def generate(
@@ -60,7 +60,7 @@ def generate(
     return Distribution(distribution * value, weights)
 
 
-class HermiteDistributionConfig(BaseModel):
+class HermiteDistributionConfig(DistributionConfig):
     """Configuration for B1 distribution using Gauss-Hermite quadrature.
 
     Advanced method using Hermite polynomial roots for optimal integration

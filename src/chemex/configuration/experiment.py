@@ -18,6 +18,7 @@ T = TypeVar("T")
 
 class ExperimentSettings(BaseModel):
     observed_state: Literal["a", "b", "c", "d"] = "a"
+    model_name: str = Field(default="", exclude=True)
 
     model_config = ConfigDict(str_to_lower=True)
 

@@ -18,9 +18,9 @@ register_experiments()
 
 def profile_cpmg_calculate():
     """Profile the components of CPMG pulse_sequence.calculate."""
-    from chemex.experiments.builder import build_experiments
     from chemex.configuration.methods import Selection
-    from chemex.parameters import database
+    from chemex.experiments.builder import build_experiments
+    from chemex.runtime import AnalysisSession
 
     print("=" * 70)
     print("PROFILING pulse_sequence.calculate")
@@ -28,13 +28,19 @@ def profile_cpmg_calculate():
 
     example_dir = Path(__file__).parent.parent / "examples" / "Experiments" / "CPMG_15N_IP_0013"
     selection = Selection(include="*", exclude=None)
+    session = AnalysisSession.create()
+    session.set_model("2st")
 
-    experiments = build_experiments([
-        example_dir / "Experiments" / "600mhz.toml",
-    ], selection)
+    experiments = build_experiments(
+        [
+            example_dir / "Experiments" / "600mhz.toml",
+        ],
+        selection,
+        session=session,
+    )
 
     profile = list(experiments)[0].profiles[0]
-    params = database.build_lmfit_params(experiments.param_ids)
+    params = session.parameters.build_lmfit_params(experiments.param_ids)
     profile.update_spectrometer(params)
 
     spectrometer = profile.spectrometer

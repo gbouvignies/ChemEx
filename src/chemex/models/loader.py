@@ -1,32 +1,26 @@
 """A simple plugin loader."""
 
 import importlib
+from collections.abc import Callable
 from pkgutil import iter_modules
-from typing import Protocol, cast
+from types import ModuleType
 
 from chemex.models import kinetic
 
 
-class SettingModuleInterface(Protocol):
-    """Represents a setting module interface.
-
-    A setting module plugin has a single register function.
-    """
-
-    @staticmethod
-    def register() -> None:
-        """Register the necessary items related to the settings."""
-        ...
-
-
-def import_module(name: str) -> SettingModuleInterface:
-    """Imports a module given a name."""
-    return cast(SettingModuleInterface, importlib.import_module(name))
+def _load_register(name: str) -> Callable[[], None]:
+    """Load the registration callable for a kinetic settings module."""
+    module: ModuleType = importlib.import_module(name)
+    register = getattr(module, "register", None)
+    if callable(register):
+        return register
+    msg = f"Module {name!r} does not define a callable 'register' function"
+    raise TypeError(msg)
 
 
 def register_kinetic_settings() -> None:
     """Loads the plugins defined in the plugins list."""
     for module in iter_modules(kinetic.__path__):
         module_name = f"{kinetic.__name__}.{module.name}"
-        setting_module = import_module(module_name)
-        setting_module.register()
+        register = _load_register(module_name)
+        register()

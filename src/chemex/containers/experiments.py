@@ -16,7 +16,7 @@ from lmfit.parameter import Parameters
 from chemex.configuration.methods import Selection
 from chemex.containers.experiment import Experiment
 from chemex.messages import print_selecting_profiles
-from chemex.parameters import database
+from chemex.parameters.database import ParameterStore
 from chemex.parameters.spin_system import Group, SpinSystem
 from chemex.typing import Array
 
@@ -32,9 +32,10 @@ class Experiments:
     data, plotting, and more.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, parameter_store: ParameterStore) -> None:
         """Initialize an empty Experiments collection."""
         self._experiments: dict[Path, Experiment] = {}
+        self.parameter_store = parameter_store
 
     @property
     def groups(self) -> set[Group]:
@@ -71,8 +72,8 @@ class Experiments:
         return np.concatenate([experiment.residuals(params) for experiment in self])
 
     def back_calculate(self) -> None:
-        """Back calculate experiments' parameters from the database."""
-        params_lf = database.build_lmfit_params(self.param_ids)
+        """Back calculate experiments using the instance parameter store."""
+        params_lf = self.parameter_store.build_lmfit_params(self.param_ids)
         self.residuals(params_lf)
 
     def prepare_for_simulation(self) -> None:
@@ -156,7 +157,7 @@ class Experiments:
             set[str]: Set of unique parameter IDs.
 
         """
-        params = database.build_lmfit_params(self.param_ids)
+        params = self.parameter_store.build_lmfit_params(self.param_ids)
         for experiment in self:
             experiment.filter(params)
 
@@ -170,7 +171,7 @@ class Experiments:
             Self: Subset of Experiments relevant to given parameter IDs.
 
         """
-        relevant_subset = type(self)()
+        relevant_subset = type(self)(parameter_store=self.parameter_store)
         for experiment in self:
             if subset := experiment.get_relevant_subset(param_ids):
                 relevant_subset.add(subset)
@@ -214,7 +215,7 @@ def generate_monte_carlo_experiments(experiments: Experiments) -> Experiments:
         Experiments: Collection with Monte Carlo simulated data.
 
     """
-    experiments_mc = Experiments()
+    experiments_mc = Experiments(parameter_store=experiments.parameter_store)
     for experiment in experiments:
         experiments_mc.add(experiment.monte_carlo())
     return experiments_mc
@@ -230,7 +231,7 @@ def generate_bootstrap_experiments(experiments: Experiments) -> Experiments:
         Experiments: Collection with Bootstrap simulated data.
 
     """
-    experiments_mc = Experiments()
+    experiments_mc = Experiments(parameter_store=experiments.parameter_store)
     for experiment in experiments:
         experiments_mc.add(experiment.bootstrap())
     return experiments_mc
@@ -248,7 +249,7 @@ def generate_bootstrap_ns_experiments(experiments: Experiments) -> Experiments:
     """
     groups = experiments.groups
     groups_bs = choices(tuple(groups), k=len(groups))
-    experiments_bs = Experiments()
+    experiments_bs = Experiments(parameter_store=experiments.parameter_store)
     for experiment in experiments:
         experiments_bs.add(experiment.bootstrap_ns(groups_bs))
     return experiments_bs

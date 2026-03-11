@@ -12,12 +12,12 @@ Typical usage example:
   model_instance = BaseModelLowerCase.parse_obj({"Name": "Alice"})
 """
 
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar, overload
 
 T = TypeVar("T")
 
 
-def ensure_list(variable: T | list[T] | None) -> T | list[T]:
+def ensure_list(variable: T | list[T] | None) -> list[T]:
     """Ensures that the input variable is returned as a list.
 
     If the input variable is already a list, it is returned as-is.
@@ -30,17 +30,25 @@ def ensure_list(variable: T | list[T] | None) -> T | list[T]:
 
     Returns
     -------
-    T | list[T]: The input variable as a list.
+    list[T]: The input variable as a list.
 
     """
     if isinstance(variable, list):
-        return cast("list[T]", variable)
+        return variable
     if variable is None:
         return []
     return [variable]
 
 
-def to_lower(string: T) -> T:
+@overload
+def to_lower(string: str) -> str: ...
+
+
+@overload
+def to_lower(string: T) -> T: ...
+
+
+def to_lower(string: object) -> object:
     """Converts a string to lowercase if it is of type str.
 
     If the input is not a string, it is returned unchanged.
@@ -55,7 +63,7 @@ def to_lower(string: T) -> T:
 
     """
     if isinstance(string, str):
-        return string.lower()  # type: ignore[return-value]
+        return string.lower()
     return string
 
 

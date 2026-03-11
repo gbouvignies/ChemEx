@@ -15,7 +15,6 @@ from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import CestFilterer
-from chemex.models.model import model
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import get_multiplet
 from chemex.nmr.liouvillian import LiouvillianIS
@@ -101,7 +100,7 @@ class DCest15NSettings(MFCestSettings, B1InhomogeneityMixin):
     def start_terms(self) -> list[str]:
         """Starting magnetization terms based on kinetic model."""
         starts = {"2st_hd": ["iz_a"], "4st_hd": ["iz_a", "iz_b"]}
-        return starts.get(model.name, [f"iz{self.suffix_start}"])
+        return starts.get(self.model_name, [f"iz{self.suffix_start}"])
 
     @computed_field  # type: ignore[misc]
     @property
@@ -128,7 +127,7 @@ def build_spectrometer(config: DCest15NConfig, spin_system: SpinSystem) -> Spect
     settings = config.experiment
     conditions = config.conditions
 
-    basis = Basis(type="ixyz", spin_system="nh")
+    basis = Basis(type="ixyz", spin_system="nh", model=config.model)
     liouvillian = LiouvillianIS(spin_system, basis, conditions)
     spectrometer = Spectrometer(liouvillian)
 

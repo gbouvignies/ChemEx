@@ -14,7 +14,7 @@ from chemex.messages import (
     print_no_duplicate_warning,
     print_not_implemented_noise_method_warning,
 )
-from chemex.parameters import database
+from chemex.parameters.database import ParameterStore
 from chemex.parameters.spin_system import Group
 from chemex.plotters.plotter import Plotter
 from chemex.printers.data import Printer
@@ -30,6 +30,7 @@ class Experiment:
     filtered_profiles: list[Profile] = field(init=False, default_factory=list)
     printer: Printer
     plotter: Plotter
+    parameter_store: ParameterStore = field(compare=False)
 
     def residuals(self, params: ParametersLF) -> Array:
         return np.concatenate([profile.residuals(params) for profile in self.profiles])
@@ -104,6 +105,7 @@ class Experiment:
             profiles,
             self.printer,
             self.plotter,
+            self.parameter_store,
         )
 
     def bootstrap(self) -> Self:
@@ -114,6 +116,7 @@ class Experiment:
             profiles,
             self.printer,
             self.plotter,
+            self.parameter_store,
         )
 
     def bootstrap_ns(self, groups: list[Group]) -> Self:
@@ -130,6 +133,7 @@ class Experiment:
             profiles_bs_ns,
             self.printer,
             self.plotter,
+            self.parameter_store,
         )
 
     @property
@@ -139,14 +143,15 @@ class Experiment:
     @property
     def param_id_sets(self) -> list[set[str]]:
         return [
-            set(database.get_parameters(profile.param_ids)) for profile in self.profiles
+            set(self.parameter_store.get_parameters(profile.param_ids))
+            for profile in self.profiles
         ]
 
     def get_relevant_subset(self, param_ids: set[str]) -> Self:
         profiles = [
             profile
             for profile in self.profiles
-            if set(database.get_parameters(profile.param_ids)) & param_ids
+            if set(self.parameter_store.get_parameters(profile.param_ids)) & param_ids
         ]
 
         return type(self)(
@@ -155,6 +160,7 @@ class Experiment:
             profiles,
             self.printer,
             self.plotter,
+            self.parameter_store,
         )
 
     def __iter__(self) -> Iterator[Profile]:

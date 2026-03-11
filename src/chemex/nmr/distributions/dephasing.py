@@ -10,10 +10,9 @@ from __future__ import annotations
 from typing import Literal
 
 import numpy as np
-from pydantic import BaseModel
 
 from chemex.nmr.constants import Distribution
-from chemex.nmr.distributions.registry import registry
+from chemex.nmr.distributions.registry import DistributionConfig, registry
 
 
 def generate(
@@ -49,7 +48,7 @@ def generate(
     )
 
 
-class DephasingConfig(BaseModel):
+class DephasingConfig(DistributionConfig):
     """Configuration for dephasing mode (no additional parameters needed)."""
 
     type: Literal["dephasing"]

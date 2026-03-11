@@ -65,7 +65,7 @@ class Data(BaseModel):
 
     # Serialize numpy arrays to lists for JSON output
     @field_serializer("exp", "err", "metadata", "calc", "calc_unscaled", "mask", "refs")
-    def serialize_array(self, value: Array, _info: Any) -> list:  # noqa: ANN401
+    def serialize_array(self, value: Array, _info: Any) -> list:
         """Convert numpy arrays to lists for JSON serialization."""
         if value is None:
             return []

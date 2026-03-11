@@ -66,7 +66,7 @@ def build_spectrometer(config: Cest15NConfig, spin_system: SpinSystem) -> Spectr
     settings = config.experiment
     conditions = config.conditions
 
-    basis = Basis(type="ixyz", spin_system="nh")
+    basis = Basis(type="ixyz", spin_system="nh", model=config.model)
     liouvillian = LiouvillianIS(spin_system, basis, conditions)
     spectrometer = Spectrometer(liouvillian)
 

@@ -9,11 +9,11 @@ from __future__ import annotations
 from typing import Literal
 
 import numpy as np
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
 from pydantic_core.core_schema import ValidationInfo
 
 from chemex.nmr.constants import Distribution
-from chemex.nmr.distributions.registry import registry
+from chemex.nmr.distributions.registry import DistributionConfig, registry
 
 
 def generate(
@@ -67,7 +67,7 @@ def generate(
     return Distribution(b1_values, weights_array)
 
 
-class CustomDistributionConfig(BaseModel):
+class CustomDistributionConfig(DistributionConfig):
     """Configuration for custom B1 distribution with user-defined points.
 
     Attributes

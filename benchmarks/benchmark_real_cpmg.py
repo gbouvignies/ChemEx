@@ -20,31 +20,36 @@ register_experiments()
 
 def load_real_experiment():
     """Load the real CPMG experiment from examples."""
-    from chemex.experiments.builder import build_experiments
     from chemex.configuration.methods import Selection
+    from chemex.experiments.builder import build_experiments
+    from chemex.runtime import AnalysisSession
 
     example_dir = Path(__file__).parent.parent / "examples" / "Experiments" / "CPMG_15N_IP_0013"
 
     # Default selection includes everything
     selection = Selection(include="*", exclude=None)
+    session = AnalysisSession.create()
+    session.set_model("2st")
 
-    experiments = build_experiments([
-        example_dir / "Experiments" / "600mhz.toml",
-        example_dir / "Experiments" / "800mhz.toml",
-    ], selection)
+    experiments = build_experiments(
+        [
+            example_dir / "Experiments" / "600mhz.toml",
+            example_dir / "Experiments" / "800mhz.toml",
+        ],
+        selection,
+        session=session,
+    )
 
-    return experiments
+    return experiments, session
 
 
 def benchmark_residual_calculation():
     """Benchmark the residual calculation (what happens during fitting)."""
-    from chemex.parameters import database
-
     print("=" * 70)
     print("REAL CPMG BENCHMARK")
     print("=" * 70)
 
-    experiments = load_real_experiment()
+    experiments, session = load_real_experiment()
 
     # Get all profiles
     all_profiles = []
@@ -55,7 +60,7 @@ def benchmark_residual_calculation():
     print(f"Total data points: {sum(len(p.data.exp) for p in all_profiles)}")
 
     # Get parameters (built from experiment param_ids)
-    params = database.build_lmfit_params(experiments.param_ids)
+    params = session.parameters.build_lmfit_params(experiments.param_ids)
     print(f"Total parameters: {len(params)}")
 
     # Warm up

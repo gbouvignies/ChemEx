@@ -11,6 +11,7 @@ import sys
 from collections import Counter, defaultdict
 from collections.abc import Hashable, Iterable, Sequence
 from dataclasses import dataclass, field
+from typing import Protocol
 
 import numpy as np
 from lmfit import Parameters as ParametersLF
@@ -24,7 +25,6 @@ from chemex.messages import (
     print_warning_negative_jch,
     print_warning_positive_jnh,
 )
-from chemex.models.model import model
 from chemex.nmr.rates import rate_functions
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import Parameters, ParamSetting
@@ -37,6 +37,14 @@ _LINEAR = rf"lin[(](?P<start>{_FLOAT}),(?P<end>{_FLOAT}),(?P<num>\d+)[)]$"
 _GEOMETRIC = rf"log[(](?P<start>{_FLOAT}),(?P<end>{_FLOAT}),(?P<num>\d+)[)]$"
 _LIST = rf"([(](({_FLOAT})(,|[)]$))+)"
 _GRID_DEFINTION = (_LINEAR, _GEOMETRIC, _LIST)
+
+
+class ModelReader(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def model_free(self) -> bool: ...
 
 
 class ParameterIndex:
@@ -185,6 +193,8 @@ class ParameterCatalog:
     def build_lmfit_params(
         self,
         param_ids: Iterable[str] | None = None,
+        *,
+        model_name: str,
     ) -> ParametersLF:
         """Construct lmfit Parameters from the catalog's parameters.
 
@@ -194,6 +204,7 @@ class ParameterCatalog:
         Args:
             param_ids (Iterable[str] | None): Specific parameter IDs to include.
                                               If None, includes all parameters.
+            model_name (str): Name of the active kinetic model.
 
         Returns:
             ParametersLF: lmfit-compatible parameter collection.
@@ -206,7 +217,7 @@ class ParameterCatalog:
 
         parameter_args = (parameter.args for parameter in parameters.values())
 
-        usersyms = rate_functions | user_function_registry.get(model.name)
+        usersyms = rate_functions | user_function_registry.get(model_name)
         lmfit_params = ParametersLF(usersyms=usersyms)
         lmfit_params.add_many(*parameter_args)
         lmfit_params.update_constraints()
@@ -292,7 +303,7 @@ class ParameterCatalog:
         )
 
     def set_vary(
-        self, section_names: Sequence[str], vary: bool  # noqa: FBT001
+        self, section_names: Sequence[str], vary: bool
     ) -> Counter[str]:
         """Set the variability of parameters by section name.
 
@@ -474,7 +485,7 @@ class ParameterCatalog:
 
 
 @dataclass
-class ParamManager:
+class ParameterStore:
     """Manages a collection of ParameterCatalogs for different fitting models.
 
     This class acts as an interface to multiple ParameterCatalogs, allowing
@@ -487,6 +498,7 @@ class ParamManager:
 
     """
 
+    model: ModelReader
     _database: ParameterCatalog
     _database_mf: ParameterCatalog
 
@@ -498,7 +510,7 @@ class ParamManager:
             ParameterCatalog: The active parameter catalog.
 
         """
-        return self._database_mf if model.model_free else self._database
+        return self._database_mf if self.model.model_free else self._database
 
     def add_multiple(self, parameters: Parameters) -> None:
         """Add multiple parameters to the primary catalog.
@@ -517,6 +529,12 @@ class ParamManager:
 
         """
         self._database_mf.add_multiple(parameters)
+
+    def add_parameters(self, parameters: Parameters) -> None:
+        self.add_multiple(parameters)
+
+    def add_parameters_mf(self, parameters: Parameters) -> None:
+        self.add_multiple_mf(parameters)
 
     def get_parameters(self, param_ids: Iterable[str]) -> Parameters:
         """Retrieve parameters from the active catalog by IDs.
@@ -552,11 +570,14 @@ class ParamManager:
             ParametersLF: lmfit-compatible parameters.
 
         """
-        return self.database.build_lmfit_params(param_ids)
+        return self.database.build_lmfit_params(param_ids, model_name=self.model.name)
 
     def sort(self) -> None:
         """Sort parameters in the active catalog."""
         self.database.sort()
+
+    def sort_parameters(self) -> None:
+        self.sort()
 
     def update_from_parameters(self, parameters: ParametersLF) -> None:
         """Update the active catalog from lmfit Parameters.
@@ -576,6 +597,9 @@ class ParamManager:
         """
         return self.database.set_values(par_values)
 
+    def set_param_values(self, par_values: dict[str, float]) -> None:
+        self.set_values(par_values)
+
     def set_defaults(self, defaults: DefaultListType) -> None:
         """Set defaults for parameters in both catalogs.
 
@@ -585,18 +609,21 @@ class ParamManager:
         """
         self._database_mf.set_defaults(defaults)
 
-        if model.model_free:
+        if self.model.model_free:
             return
 
-        params_mf = self._database_mf.build_lmfit_params()
+        params_mf = self._database_mf.build_lmfit_params(model_name=self.model.name)
         self.database.set_values(params_mf.valuesdict())
 
         self.database.set_defaults(defaults)
 
         self.database.check_params()
 
+    def set_param_defaults(self, defaults: DefaultListType) -> None:
+        self.set_defaults(defaults)
+
     def set_vary(
-        self, section_names: Sequence[str], vary: bool  # noqa: FBT001
+        self, section_names: Sequence[str], vary: bool
     ) -> Counter[str]:
         """Set variability of parameters in the active catalog by section name.
 
@@ -614,6 +641,9 @@ class ParamManager:
         """Fix all parameters in the active catalog, preventing them from varying."""
         self.database.fix_all()
 
+    def fix_all_parameters(self) -> None:
+        self.fix_all()
+
     def set_expressions(self, expression_list: Sequence[str]) -> Counter[str]:
         """Apply expressions to parameters in the active catalog.
 
@@ -625,6 +655,13 @@ class ParamManager:
 
         """
         return self.database.set_expressions(expression_list)
+
+    def set_parameter_status(self, method: Method) -> None:
+        matches_con = self.set_expressions(method.constraints)
+        matches_fix = self.set_vary(method.fix, vary=False)
+        matches_fit = self.set_vary(method.fit, vary=True)
+
+        print_status_changes(matches_fit, matches_fix, matches_con)
 
     def parse_grid(self, grid_entries: list[str]) -> dict[str, Array]:
         """Parse grid definitions and sets up parameters in the active catalog.
@@ -643,38 +680,9 @@ class ParamManager:
         self._database.clear()
         self._database_mf.clear()
 
-
-_parameter_catalog = ParameterCatalog()
-_parameter_catalog_mf = ParameterCatalog()
-_manager = ParamManager(_parameter_catalog, _parameter_catalog_mf)
-
-set_param_vary = _manager.set_vary
-set_param_expressions = _manager.set_expressions
-add_parameters = _manager.add_multiple
-add_parameters_mf = _manager.add_multiple_mf
-get_parameters = _manager.get_parameters
-build_lmfit_params = _manager.build_lmfit_params
-update_from_parameters = _manager.update_from_parameters
-parse_grid = _manager.parse_grid
-set_param_values = _manager.set_values
-set_param_defaults = _manager.set_defaults
-sort_parameters = _manager.sort
-fix_all_parameters = _manager.fix_all
-reset_parameters = _manager.reset
+    def reset_parameters(self) -> None:
+        self.reset()
 
 
-def set_parameter_status(method: Method) -> None:
-    """Set parameter status based on a given method configuration.
-
-    This function configures parameters to vary, be fixed, or follow certain
-    expressions based on the provided method configuration.
-
-    Args:
-        method (Method): Method configuration to apply.
-
-    """
-    matches_con = set_param_expressions(method.constraints)
-    matches_fix = set_param_vary(method.fix, vary=False)
-    matches_fit = set_param_vary(method.fit, vary=True)
-
-    print_status_changes(matches_fit, matches_fix, matches_con)
+def create_parameter_store(model_reader: ModelReader) -> ParameterStore:
+    return ParameterStore(model_reader, ParameterCatalog(), ParameterCatalog())

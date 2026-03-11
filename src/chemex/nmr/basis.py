@@ -8,7 +8,7 @@ from typing import Literal
 
 import numpy as np
 
-from chemex.models.model import model
+from chemex.models.model import ModelSpec
 from chemex.parameters.spin_system.nucleus import Nucleus, str2nucleus
 from chemex.typing import Array
 
@@ -283,13 +283,15 @@ _NUCLEI = {
 @cache
 def _build_vectors(basis: Basis) -> DictArray:
     """Build vector representations for basis components."""
-    size = len(basis) * len(model.states)
+    size = len(basis) * len(basis.model.states)
 
     # Initialize empty vectors dictionary with zero arrays
     vectors: defaultdict[str, Array] = defaultdict(lambda: np.zeros((size, 1)))
 
     # Populate vectors for each state/component combination
-    for idx, (state, component) in enumerate(product(model.states, basis.components)):
+    for idx, (state, component) in enumerate(
+        product(basis.model.states, basis.components),
+    ):
         state_component = f"{component}_{state}"
         vectors[state_component][idx] = 1.0
         vectors[component][idx] = 1.0
@@ -305,7 +307,7 @@ def _get_indices(
     rows: list[int] = []
     cols: list[int] = []
     vals: list[float | complex] = []
-    offset = model.states.index(state) * len(basis)
+    offset = basis.model.states.index(state) * len(basis)
     for start, end, value in _TRANSITIONS[transition_name]:
         if {start, end}.issubset(basis.components):
             rows.append(basis.components.index(start) + offset)
@@ -315,12 +317,12 @@ def _get_indices(
 
 
 def _build_spin_matrices(basis: Basis) -> DictArray:
-    size = len(basis) * len(model.states)
+    size = len(basis) * len(basis.model.states)
 
     matrices: DictArray = defaultdict(partial(np.zeros, (size, size), dtype=complex))
 
     # Build matrices for each transition
-    for transition_name, state in product(_TRANSITIONS, model.states):
+    for transition_name, state in product(_TRANSITIONS, basis.model.states):
         if not basis.type.endswith("_diff") and transition_name.startswith("d_"):
             continue
         name = transition_name.format(state=state)
@@ -338,9 +340,9 @@ def _build_spin_matrices(basis: Basis) -> DictArray:
 
 def _build_exchange_matrices(basis: Basis) -> DictArray:
     matrices: DictArray = {}
-    for (i1, s1), (i2, s2) in permutations(enumerate(model.states), r=2):
+    for (i1, s1), (i2, s2) in permutations(enumerate(basis.model.states), r=2):
         name = f"k{s1}{s2}"
-        matrix = np.zeros((len(model.states), len(model.states)))
+        matrix = np.zeros((len(basis.model.states), len(basis.model.states)))
         matrix[((i1, i2), i1)] = -1.0, 1.0
         matrices[name] = np.kron(matrix, np.eye(len(basis)))
     return matrices
@@ -349,6 +351,7 @@ def _build_exchange_matrices(basis: Basis) -> DictArray:
 @dataclass(frozen=True)
 class Basis:
     type: str
+    model: ModelSpec
     extension: Literal["", "dq", "tq"] = ""
     spin_system: str = ""
 
@@ -363,7 +366,8 @@ class Basis:
     @property
     def components_states(self) -> list[str]:
         return [
-            f"{comp}_{state}" for state, comp in product(model.states, self.components)
+            f"{comp}_{state}"
+            for state, comp in product(self.model.states, self.components)
         ]
 
     @property
@@ -389,14 +393,14 @@ class Basis:
     @property
     def required_names(self) -> set[str]:
         required_names = set(self.matrices)
-        required_names |= {f"p{state}" for state in model.states}
+        required_names |= {f"p{state}" for state in self.model.states}
         return required_names
 
     def scale_matrices(self, names: list[str] | str, value: float) -> None:
         if isinstance(names, str):
             names = [names]
         for name in names:
-            state_names = {name.format(state=state) for state in model.states}
+            state_names = {name.format(state=state) for state in self.model.states}
             for state_name in state_names & self.matrices.keys():
                 self.matrices[state_name] = (
                     np.sign(self.matrices_ref[state_name]) * value

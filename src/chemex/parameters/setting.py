@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from builtins import set as builtin_set
 from dataclasses import dataclass, field
 from re import Pattern
 from typing import Literal
@@ -117,7 +118,7 @@ class ParamSetting:
         self.__expr.expr = value
 
     @property
-    def dependencies(self) -> set[str]:
+    def dependencies(self) -> builtin_set[str]:
         return self.__expr.dependencies
 
     @property

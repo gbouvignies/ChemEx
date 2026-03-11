@@ -50,7 +50,7 @@ def build_spectrometer(
 ) -> Spectrometer:
     conditions = config.conditions
 
-    basis = Basis(type="ixy_ixysxy", spin_system="nh")
+    basis = Basis(type="ixy_ixysxy", spin_system="nh", model=config.model)
     liouvillian = LiouvillianIS(spin_system, basis, conditions)
     return Spectrometer(liouvillian)
 

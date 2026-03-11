@@ -7,11 +7,9 @@ from operator import and_
 from pathlib import Path
 
 from chemex.containers.experiments import Experiments
-from chemex.parameters import database
+from chemex.parameters.database import ParameterStore
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import Parameters
-from chemex.runtime import AnalysisSession
-from chemex.runtime.session import ParameterStore
 
 
 @dataclass
@@ -21,18 +19,13 @@ class Group:
     experiments: Experiments
 
 
-def _get_parameter_store(session: AnalysisSession | None) -> ParameterStore:
-    return session.parameters if session is not None else database
-
-
 def ids_to_param_name(
     param_ids: set[str],
     *,
-    session: AnalysisSession | None = None,
+    parameter_store: ParameterStore,
 ) -> ParamName:
     if not param_ids:
         return ParamName()
-    parameter_store = _get_parameter_store(session)
     parameters = parameter_store.get_parameters(param_ids)
     param_names = (parameter.param_name for parameter in parameters.values())
     return reduce(and_, param_names)
@@ -41,10 +34,8 @@ def ids_to_param_name(
 def group_ids(
     experiments: Experiments,
     parameters: Parameters | None = None,
-    *,
-    session: AnalysisSession | None = None,
 ) -> list[tuple[ParamName, set[str]]]:
-    parameter_store = _get_parameter_store(session)
+    parameter_store = experiments.parameter_store
 
     if parameters is None:
         parameters = parameter_store.get_parameters(experiments.param_ids)
@@ -77,14 +68,16 @@ def group_ids(
                 break
 
     return sorted(
-        (ids_to_param_name(union, session=session), union) for union in groups.values()
+        (
+            ids_to_param_name(union, parameter_store=parameter_store),
+            union,
+        )
+        for union in groups.values()
     )
 
 
 def create_groups(
     experiments: Experiments,
-    *,
-    session: AnalysisSession | None = None,
 ) -> list[Group]:
     """Create groups of datapoints that depend on disjoint sets of variables.
 
@@ -93,8 +86,8 @@ def create_groups(
     residue-specifically.
 
     """
-    parameter_store = _get_parameter_store(session)
-    id_groups = group_ids(experiments, session=session)
+    parameter_store = experiments.parameter_store
+    id_groups = group_ids(experiments)
 
     group_name_template = ""
     path_name_template = ""
@@ -132,10 +125,8 @@ class ParamTree:
 def create_group_tree(
     experiments: Experiments,
     parameters: Parameters | None = None,
-    *,
-    session: AnalysisSession | None = None,
 ) -> ParamTree:
-    parameter_store = _get_parameter_store(session)
+    parameter_store = experiments.parameter_store
 
     if parameters is None:
         parameters = parameter_store.get_parameters(experiments.param_ids)
@@ -155,14 +146,14 @@ def create_group_tree(
     for param_id in ids_global:
         parameters[param_id].vary = False
 
-    id_groups = group_ids(experiments, parameters, session=session)
+    id_groups = group_ids(experiments, parameters)
 
     branches: list[ParamTree] = []
 
     if len(id_groups) > 1:
         for _, ids in id_groups:
             sub_experiments = experiments.get_relevant_subset(ids)
-            branches.append(create_group_tree(sub_experiments, session=session))
+            branches.append(create_group_tree(sub_experiments))
 
     for param_id in ids_global:
         parameters[param_id].vary = True

@@ -11,12 +11,12 @@ from typing import Literal
 
 import numpy as np
 from numpy.polynomial.legendre import leggauss
-from pydantic import BaseModel, Field
+from pydantic import Field
 from scipy.optimize import minimize_scalar
 from scipy.special import erf
 
 from chemex.nmr.constants import Distribution
-from chemex.nmr.distributions.registry import registry
+from chemex.nmr.distributions.registry import DistributionConfig, registry
 
 
 def _skewnorm_pdf(x: np.ndarray, xi: float, omega: float, alpha: float) -> np.ndarray:
@@ -236,7 +236,7 @@ def generate(
     return Distribution(b1_values, final_weights)
 
 
-class TruncatedSkewedDistributionConfig(BaseModel):
+class TruncatedSkewedDistributionConfig(DistributionConfig):
     r"""Configuration for truncated skew-normal B1 distribution.
 
     This distribution combines the asymmetry of skew-normal with a hard

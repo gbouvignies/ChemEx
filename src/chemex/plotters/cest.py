@@ -267,7 +267,11 @@ class CestPlotter(Generic[T]):
             file_pdf = stack.enter_context(PdfPages(str(name_pdf)))
             file_sim = stack.enter_context(name_sim.open("w", encoding="utf-8"))
             for profile in sorted(profiles):
-                data_exp = Data(np.array([]), np.array([]), np.array([]))
+                data_exp = Data(
+                    exp=np.array([]),
+                    err=np.array([]),
+                    metadata=np.array([]),
+                )
                 data_calc = create_plot_data_calc(profile)
                 self._plot_profile(file_pdf, profile, data_exp, data_calc)
                 file_sim.write(

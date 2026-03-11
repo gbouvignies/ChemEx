@@ -13,8 +13,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from chemex.configuration.conditions import Conditions
-from chemex.models.factory import create_model
-from chemex.models.model import model
+from chemex.models.model import ModelSpec
 from chemex.nmr.basis import Basis
 from chemex.nmr.liouvillian import LiouvillianIS
 
@@ -35,25 +34,23 @@ def check_real_liouvillians() -> None:
     print("Testing REAL Liouvillians from ChemEx")
     print("=" * 70)
 
-    # Set up a 2-state model (most common)
-    model.name = "2st"
-    model._model = create_model("2st")
+    model_spec = ModelSpec.from_name("2st")
 
     # Test different experiment types
     test_cases = [
         {
             "name": "CEST 15N (ixyz, nh)",
-            "basis": Basis(type="ixyz", spin_system="nh"),
+            "basis": Basis(type="ixyz", spin_system="nh", model=model_spec),
             "spin_system": "nh",
         },
         {
             "name": "CPMG 15N (ixyzsz, nh)",
-            "basis": Basis(type="ixyzsz", spin_system="nh"),
+            "basis": Basis(type="ixyzsz", spin_system="nh", model=model_spec),
             "spin_system": "nh",
         },
         {
             "name": "CPMG 1H (ixyzsz, hn)",
-            "basis": Basis(type="ixyzsz", spin_system="hn"),
+            "basis": Basis(type="ixyzsz", spin_system="hn", model=model_spec),
             "spin_system": "hn",
         },
     ]
@@ -153,10 +150,11 @@ def check_with_offset() -> None:
     print("Testing with RF OFFSET (CEST-like)")
     print("=" * 70)
 
-    model.name = "2st"
-    model._model = create_model("2st")
-
-    basis = Basis(type="ixyz", spin_system="nh")
+    basis = Basis(
+        type="ixyz",
+        spin_system="nh",
+        model=ModelSpec.from_name("2st"),
+    )
     conditions = Conditions(h_larmor_frq=600.0, temperature=298.0)
 
     from chemex.parameters.spin_system import SpinSystem

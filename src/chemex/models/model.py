@@ -1,60 +1,69 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from string import ascii_lowercase
 
 from chemex.messages import print_model_error
-from chemex.models.factory import model_factory
 
 
-@dataclass
-class _Model:
-    _name: str = "2st"
-    _states: str = "ab"
-    _model_free: bool = False
-    _temp_coef: bool = False
+@dataclass(frozen=True, order=True)
+class ModelSpec:
+    name: str = "2st"
+    states: str = "ab"
+    model_free: bool = False
+    temp_coef: bool = False
 
     @staticmethod
     def validate_model_name(name: str) -> str:
+        from chemex.models.factory import model_factory
+
         if name not in model_factory.set:
             print_model_error(name)
             sys.exit()
         return name
 
+    @classmethod
+    def from_name(cls, name: str) -> ModelSpec:
+        kinetic_model_name, *extensions = name.split(".")
+        validated_name = cls.validate_model_name(kinetic_model_name)
+        state_nb = int(validated_name[0])
+        return cls(
+            name=validated_name,
+            states=ascii_lowercase[:state_nb],
+            model_free="mf" in extensions if extensions else False,
+            temp_coef="tc" in extensions if extensions else False,
+        )
+
+_DEFAULT_MODEL = ModelSpec()
+
+
+@dataclass
+class ModelState:
+    _spec: ModelSpec = field(default_factory=ModelSpec)
+
     def set_model(self, name: str) -> None:
-        kinetic_model_name, *ext = name.split(".")
-        self._name = self.validate_model_name(kinetic_model_name)
-        state_nb = int(kinetic_model_name[0])
-        self._states = ascii_lowercase[:state_nb]
-        self._model_free = "mf" in ext if ext else False
-        self._temp_coef = "tc" in ext if ext else False
+        self._spec = ModelSpec.from_name(name)
 
     def reset(self) -> None:
-        """Restore the default model selection for a fresh analysis run."""
-        self._name = "2st"
-        self._states = "ab"
-        self._model_free = False
-        self._temp_coef = False
+        self._spec = _DEFAULT_MODEL
+
+    @property
+    def spec(self) -> ModelSpec:
+        return self._spec
 
     @property
     def name(self) -> str:
-        return self._name
+        return self._spec.name
 
     @property
     def states(self) -> str:
-        return self._states
+        return self._spec.states
 
     @property
     def model_free(self) -> bool:
-        return self._model_free
+        return self._spec.model_free
 
     @property
     def temp_coef(self) -> bool:
-        return self._temp_coef
-
-
-model = _Model()
-
-set_model = model.set_model
-reset_model = model.reset
+        return self._spec.temp_coef

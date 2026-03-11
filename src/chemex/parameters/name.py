@@ -51,7 +51,8 @@ def _multireplace(string: str, replacements: dict[str, str]) -> str:
     # ones should take place. For instance given the replacements
     # {'ab': 'AB', 'abc': 'ABC'} against the string 'hey abc', it should produce
     # 'hey ABC' and not 'hey ABc'
-    substrings = sorted(replacements, key=len, reverse=True)
+    substrings = list(replacements.keys())
+    substrings.sort(key=len, reverse=True)
 
     # Create a big OR regex that matches any of the substrings to replace
     regexp = re.compile("|".join(re.escape(substring) for substring in substrings))
