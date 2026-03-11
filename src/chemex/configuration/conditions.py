@@ -9,8 +9,6 @@ from pydantic import (
     BeforeValidator,
     Field,
     NonNegativeFloat,
-    ValidationError,
-    field_validator,
     model_validator,
 )
 from pydantic_core.core_schema import ValidationInfo
@@ -144,37 +142,22 @@ class Conditions(BaseModel, frozen=True):
 class ConditionsWithValidations(Conditions, frozen=True):
     _key_to_lower = model_validator(mode="before")(key_to_lower)
 
-    @field_validator("d2o")
-    @classmethod
-    def validate_d2o(
-        cls,
-        d2o: float | None,
-        info: ValidationInfo,
-    ) -> float | None:
-        """Validate the d2o field for specific model requirements."""
-        if "hd" in _model_from_context(info).name and d2o is None:
-            msg = 'To use the "hd" model, d2o must be provided'
-            raise ValidationError(msg)
-        return d2o
-
-    @field_validator("temperature")
-    @classmethod
-    def validate_temperature(
-        cls,
-        temperature: float | None,
-        info: ValidationInfo,
-    ) -> float | None:
-        """Validate temperature field for specific model requirements."""
-        if "eyring" in _model_from_context(info).name and temperature is None:
-            msg = 'To use the "eyring" model, "temperature" must be provided'
-            raise ValidationError(msg)
-        return temperature
-
     @model_validator(mode="after")
-    def validate_p_total_l_total(self, info: ValidationInfo) -> Self:
-        """Validate both p_total and l_total for specific model requirements."""
+    def validate_model_requirements(self, info: ValidationInfo) -> Self:
+        """Validate model-specific required condition fields."""
+        model_name = _model_from_context(info).name
+
+        if "hd" in model_name and self.d2o is None:
+            msg = 'To use the "hd" model, d2o must be provided'
+            raise ValueError(msg)
+
+        if "eyring" in model_name and self.temperature is None:
+            msg = 'To use the "eyring" model, "temperature" must be provided'
+            raise ValueError(msg)
+
+        # Binding models require both concentrations to be present.
         are_not_both_set = self.p_total is None or self.l_total is None
-        if "binding" in _model_from_context(info).name and are_not_both_set:
+        if "binding" in model_name and are_not_both_set:
             msg = 'To use the "binding" model, "p_total" and "l_total" must be provided'
             raise ValueError(msg)
         return self
