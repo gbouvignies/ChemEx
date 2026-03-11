@@ -1,22 +1,21 @@
 from __future__ import annotations
 
-from collections.abc import Hashable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import cached_property
-from operator import attrgetter
-from typing import Protocol, Self
+from typing import Protocol, Self, runtime_checkable
 
-from cachetools import LRUCache, cachedmethod
 from lmfit import Parameters as ParametersLF
 
 from chemex.containers.data import Data
+from chemex.evaluation import ProfileEvaluator
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.printers.data import Printer
 from chemex.typing import Array
 
 
+@runtime_checkable
 class PulseSequence(Protocol):
     """Defines a protocol for pulse sequence classes."""
 
@@ -48,20 +47,13 @@ class Profile:
     printer: Printer = field(compare=False)
     filterer: Filterer | None = field(compare=False, default=None)
     is_scaled: bool = field(compare=False, default=True)
+    evaluator: ProfileEvaluator = field(compare=False, default_factory=ProfileEvaluator)
     spin_system: SpinSystem = field(compare=True, init=False)
-    cache: LRUCache = field(compare=False, init=False)
-
-    def _cache_key(self, params: ParametersLF) -> tuple[Hashable, ...]:
-        return (
-            *(params[param_id].value for param_id in self.param_ids),
-            self.data.revision,
-        )
 
     def __post_init__(self) -> None:
         """Initialize derived attributes."""
         self.spin_system = self.spectrometer.liouvillian.spin_system
         self.data.refs = self.pulse_sequence.is_reference(self.data.metadata)
-        self.cache = LRUCache(maxsize=5)
 
     @cached_property
     def param_ids(self) -> set[str]:
@@ -70,7 +62,7 @@ class Profile:
 
     def clear_cache(self) -> None:
         """Drop cached residuals after the profile inputs change."""
-        self.cache.clear()
+        self.evaluator.clear()
 
     def _get_parameter_values(self, params: ParametersLF) -> dict[str, float]:
         """Get the parameter values from the provided parameters."""
@@ -96,11 +88,17 @@ class Profile:
             self.data.calc = self.data.calc_unscaled
         return self.data.calc
 
-    @cachedmethod(attrgetter("cache"), key=_cache_key)
     def residuals(self, params: ParametersLF) -> Array:
         """Calculate and return residuals."""
-        residuals = (self.calculate(params) - self.data.exp) / self.data.err
-        return residuals[self.data.mask]
+        return self.evaluator.residuals(
+            params,
+            param_ids=tuple(sorted(self.param_ids)),
+            data_revision=self.data.revision,
+            calculate=self.calculate,
+            exp=self.data.exp,
+            err=self.data.err,
+            mask=self.data.mask,
+        )
 
     def filter(self, params: ParametersLF) -> None:
         """Apply a filter to the data, if a filterer is available."""
@@ -127,14 +125,14 @@ class Profile:
         """Generate a Monte Carlo variant of the profile."""
         profile = deepcopy(self)
         profile.data = profile.data.monte_carlo()
-        profile.cache = LRUCache(maxsize=5)
+        profile.evaluator = ProfileEvaluator()
         return profile
 
     def bootstrap(self) -> Self:
         """Generate a bootstrap variant of the profile."""
         profile = deepcopy(self)
         profile.data = profile.data.bootstrap()
-        profile.cache = LRUCache(maxsize=5)
+        profile.evaluator = ProfileEvaluator()
         return profile
 
     def any_duplicate(self) -> bool:
@@ -145,7 +143,7 @@ class Profile:
         """Combine two profiles."""
         profile = deepcopy(self)
         profile.data = self.data + other.data
-        profile.cache = LRUCache(maxsize=5)
+        profile.evaluator = ProfileEvaluator()
         return profile
 
     def __str__(self) -> str:

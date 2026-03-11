@@ -1,33 +1,37 @@
 from __future__ import annotations
 
 from itertools import product
-from typing import TypeVar
+from typing import overload
 
 import numpy as np
 from scipy.constants import hbar, mu_0
 
 from chemex.configuration.conditions import Conditions
-from chemex.models.model import model
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import GAMMA
 from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.typing import Array
 
-# Type definition
-T = TypeVar("T", np.floating, Array)
+
+@overload
+def _calculate_jw(tauc: float, s2: float, w: float) -> float: ...
 
 
-def _calculate_jw(tauc: np.floating, s2: np.floating, w: T) -> T:
+@overload
+def _calculate_jw(tauc: float, s2: float, w: Array) -> Array: ...
+
+
+def _calculate_jw(tauc: float, s2: float, w: float | Array) -> float | Array:
     """Calculate J(w) for given tau_c, s2, and angular frequency w.
 
     Args:
         tauc (float): Correlation time in seconds.
         s2 (float): Order parameter squared, amplitude of motion measure.
-        w (T): Angular frequency/frequencies for J(w) calculation. Can be float or
+        w (float | Array): Angular frequency/frequencies for J(w) calculation. Can be float or
                Array.
 
     Returns:
-        T: Spectral density function(s) J(w).
+        float | Array: Spectral density function(s) J(w).
 
     """
     tauc_ = tauc * 1e-9
@@ -68,7 +72,7 @@ class RatesIS:
         self.delta_s = self.csa_s[:2] - self.csa_s[2]
 
     def __call__(
-        self, h_frq: np.floating, tauc: np.floating, s2: np.floating
+        self, h_frq: float, tauc: float, s2: float
     ) -> dict[str, np.floating]:
         """Calculate relaxation rates for given Larmor frequency, tau_c, and s2.
 
@@ -97,14 +101,15 @@ class RatesIS:
         ci = (ci_ * p2i).sum()
         cs = (cs_ * p2s).sum()
 
+        jw_frequencies: Array = np.array(
+            [0.0, wi, ws, wh, wi - ws, wi + ws, wi - wh, wi + wh, ws - wh, ws + wh],
+        )
         jw_values = _calculate_jw(
             tauc,
             s2,
-            np.array(
-                [0.0, wi, ws, wh, wi - ws, wi + ws, wi - wh, wi + wh, ws - wh, ws + wh],
-            ),
+            jw_frequencies,
         )
-        j0, ji, js, jh, jmis, jpis, jmih, jpih, jmsh, jpsh = jw_values  # type: ignore[misc]
+        j0, ji, js, jh, jmis, jpis, jmih, jpih, jmsh, jpsh = jw_values
 
         return {
             "r2_i": 0.5
@@ -182,10 +187,10 @@ class RateNH(RatesIS):
 
     def __call__(
         self,
-        h_frq: np.floating,
-        tauc: np.floating,
-        s2: np.floating,
-        khh: np.floating | None = None,
+        h_frq: float,
+        tauc: float,
+        s2: float,
+        khh: float | None = None,
     ) -> dict[str, np.floating]:
         """Calculate rates for NH systems, including exchange contributions if any.
 
@@ -232,10 +237,10 @@ class RateHN(RatesIS):
 
     def __call__(
         self,
-        h_frq: np.floating,
-        tauc: np.floating,
-        s2: np.floating,
-        khh: np.floating | None = None,
+        h_frq: float,
+        tauc: float,
+        s2: float,
+        khh: float | None = None,
     ) -> dict[str, np.floating]:
         rates = super().__call__(h_frq, tauc, s2)
         if khh is None:
@@ -340,7 +345,7 @@ def get_model_free_expressions(basis: Basis, conditions: Conditions) -> dict[str
     has_h_exchange = basis.spin_system in {"nh", "hn"}
 
     model_free_expr: dict[str, str] = {}
-    for state, name in product(model.states, _RATE_NAMES):
+    for state, name in product(basis.model.states, _RATE_NAMES):
         rate_name = f"{name}_{state}"
         khh = f", {{khh_{state}}}" if has_h_exchange else ""
         arguments = f"{h_frq_str}, {{tauc_{state}}}, {{s2_{state}}}{khh}"

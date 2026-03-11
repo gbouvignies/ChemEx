@@ -10,6 +10,7 @@ import pytest
 from chemex import chemex as chemex_module
 from chemex.configuration.methods import Method, Selection
 from chemex.experiments import builder as builder_module
+from chemex.nmr.basis import Basis
 from chemex.optimize import fitting as fitting_module
 from chemex.optimize import helper as helper_module
 from chemex.parameters.name import ParamName
@@ -55,10 +56,19 @@ class StubParameters:
         self.status_calls.append(method)
 
 
+class StubParameterFactory:
+    def __init__(self) -> None:
+        self.clear_calls = 0
+
+    def clear_cache(self) -> None:
+        self.clear_calls += 1
+
+
 class StubSession:
     def __init__(self) -> None:
         self.parameters = StubParameters()
         self.model_names: list[str] = []
+        self.parameter_factory = StubParameterFactory()
 
     def set_model(self, name: str) -> None:
         self.model_names.append(name)
@@ -83,9 +93,10 @@ class StatisticsParameterStore(StubParameters):
 
 
 class FakeExperiments:
-    def __init__(self) -> None:
+    def __init__(self, parameter_store: object | None = None) -> None:
         self.filtered = 0
         self.selections: list[Selection] = []
+        self.parameter_store = parameter_store
 
     def filter(self) -> None:
         self.filtered += 1
@@ -122,30 +133,57 @@ def make_args(command: str) -> Namespace:
 def test_analysis_session_lifecycle_calls_reset_hooks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    clear_calls: list[str] = []
     model = StubModel()
     parameters = StubParameters()
+    parameter_factory = StubParameterFactory()
+    plugin_calls: list[str] = []
 
-    monkeypatch.setattr(
-        session_module,
-        "clear_settings_cache",
-        lambda: clear_calls.append("clear"),
-    )
     monkeypatch.setattr(
         session_module,
         "ensure_plugins_registered",
-        lambda: clear_calls.append("plugins"),
+        lambda: plugin_calls.append("plugins"),
     )
 
-    session = AnalysisSession(model=model, parameters=parameters)
+    session = AnalysisSession(
+        model=model,
+        parameters=parameters,
+        parameter_factory=parameter_factory,
+    )
 
     session.reset()
     session.set_model("3st")
 
-    np.testing.assert_equal(clear_calls, ["clear", "plugins", "clear"])
+    np.testing.assert_equal(plugin_calls, ["plugins"])
+    np.testing.assert_equal(parameter_factory.clear_calls, 2)
     np.testing.assert_equal(parameters.reset_calls, 1)
     np.testing.assert_equal(model.reset_calls, 1)
     np.testing.assert_equal(model.model_names, ["3st"])
+
+
+def test_analysis_sessions_own_distinct_runtime_state() -> None:
+    session_a = AnalysisSession.create()
+    session_b = AnalysisSession.create()
+
+    session_a.set_model("3st")
+    session_b.set_model("2st")
+
+    basis_a = Basis(type="ixy", model=session_a.model.spec)
+    basis_b = Basis(type="ixy", model=session_b.model.spec)
+
+    param = ParamSetting(ParamName("PB"), value=0.15, vary=False)
+    session_a.parameters.add_multiple({param.id_: param})
+
+    np.testing.assert_equal(int(session_a.parameters is session_b.parameters), 0)
+    np.testing.assert_equal(
+        int(session_a.parameter_factory is session_b.parameter_factory),
+        0,
+    )
+    np.testing.assert_equal(basis_a.model.states, "abc")
+    np.testing.assert_equal(basis_b.model.states, "ab")
+    np.testing.assert_equal(
+        session_b.parameters.get_parameters([param.id_]),
+        {},
+    )
 
 
 def test_ensure_plugins_registered_runs_once(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -177,17 +215,9 @@ def test_build_experiments_uses_session_parameter_store(
     monkeypatch.setattr(
         builder_module,
         "build_experiment",
-        lambda filename, _selection: DummyExperiment(filename),
-    )
-
-    def should_not_be_called() -> None:
-        msg = "global parameter store should not be used"
-        raise AssertionError(msg)
-
-    monkeypatch.setattr(
-        builder_module.database,
-        "sort_parameters",
-        should_not_be_called,
+        lambda filename, _selection, *, session=None: (  # noqa: ARG005
+            DummyExperiment(filename)
+        ),
     )
 
     experiments = builder_module.build_experiments(
@@ -205,7 +235,7 @@ def test_run_uses_explicit_session_for_fit_flow(
 ) -> None:
     defaults = object()
     session = StubSession()
-    experiments = FakeExperiments()
+    experiments = FakeExperiments(parameter_store=session.parameters)
     recorded: dict[str, object] = {}
 
     def fake_build_experiments(
@@ -245,7 +275,7 @@ def test_run_uses_explicit_session_for_simulation_flow(
 ) -> None:
     defaults = object()
     session = StubSession()
-    experiments = FakeExperiments()
+    experiments = FakeExperiments(parameter_store=session.parameters)
     recorded: dict[str, object] = {}
 
     def fake_build_experiments(
@@ -308,10 +338,10 @@ def test_run_methods_passes_session_to_fit_groups(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = StubSession()
-    experiments = FakeExperiments()
+    experiments = FakeExperiments(parameter_store=session.parameters)
     recorded: dict[str, object] = {}
 
-    def fake_fit_groups(  # noqa: PLR0913
+    def fake_fit_groups(
         experiments_arg: FakeExperiments,
         path: Path,
         plot: str,
@@ -351,17 +381,20 @@ def test_run_statistics_uses_session_for_header(
     recorded: dict[str, object] = {}
     session = StubSession()
     session.parameters = StatisticsParameterStore()
-    experiments = SimpleNamespace(param_ids=["__PB"])
+    experiments = SimpleNamespace(
+        param_ids=["__PB"],
+        parameter_store=session.parameters,
+    )
 
     monkeypatch.setattr(fitting_module, "track", lambda _iterable, **_kwargs: [])
 
     def fake_print_header(
         grid: object,
         *,
-        session: StubSession | None = None,
+        parameter_store: object,
     ) -> str:
         recorded["grid"] = grid
-        recorded["session"] = session
+        recorded["parameter_store"] = parameter_store
         return "# header\n"
 
     monkeypatch.setattr(fitting_module, "print_header", fake_print_header)
@@ -371,11 +404,10 @@ def test_run_statistics_uses_session_for_header(
         tmp_path,
         "leastsq",
         fitting_module.Statistics(mc=1),
-        session=session,
     )
 
     np.testing.assert_equal(recorded["grid"], ["PB"])
-    np.testing.assert_equal(recorded["session"], session)
+    np.testing.assert_equal(recorded["parameter_store"], session.parameters)
 
 
 def test_execute_post_fit_writes_parameters_from_session_store(
@@ -385,16 +417,10 @@ def test_execute_post_fit_writes_parameters_from_session_store(
     param = ParamSetting(ParamName("PB"), value=0.15, vary=False)
     session = StubSession()
     session.parameters = WriterParameterStore({param.id_: param})
-    experiments = SimpleNamespace(param_ids=[param.id_], write=lambda _path: None)
-
-    def should_not_be_called(_param_ids: object) -> None:
-        msg = "global parameter store should not be used"
-        raise AssertionError(msg)
-
-    monkeypatch.setattr(
-        parameter_printer_module.database,
-        "get_parameters",
-        should_not_be_called,
+    experiments = SimpleNamespace(
+        param_ids=[param.id_],
+        parameter_store=session.parameters,
+        write=lambda _path: None,
     )
     monkeypatch.setattr(helper_module, "print_writing_results", lambda _path: None)
     monkeypatch.setattr(
@@ -416,4 +442,9 @@ def test_write_file_rejects_unknown_parameter_status(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="Unknown parameter status"):
-        parameter_printer_module.write_file(parameters, "typo", tmp_path)
+        parameter_printer_module.write_file(
+            parameters,
+            "typo",
+            tmp_path,
+            WriterParameterStore({}),
+        )

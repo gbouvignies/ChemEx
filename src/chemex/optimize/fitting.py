@@ -30,13 +30,7 @@ from chemex.optimize.minimizer import (
     minimize,
     minimize_with_report,
 )
-from chemex.parameters import database
 from chemex.runtime import AnalysisSession
-from chemex.runtime.session import ParameterStore
-
-
-def _get_parameter_store(session: AnalysisSession | None) -> ParameterStore:
-    return session.parameters if session is not None else database
 
 
 def _run_statistics(
@@ -44,8 +38,6 @@ def _run_statistics(
     path: Path,
     fitmethod: str,
     statistics: Statistics | None = None,
-    *,
-    session: AnalysisSession | None = None,
 ) -> None:
     if statistics is None:
         return
@@ -56,7 +48,7 @@ def _run_statistics(
         "bsn": {"message": "nucleus-based bootstrap", "filename": "bootstrap_ns.out"},
     }
 
-    parameter_store = _get_parameter_store(session)
+    parameter_store = experiments.parameter_store
     params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
     ids_vary = [param.name for param in params_lf.values() if param.vary]
 
@@ -69,7 +61,7 @@ def _run_statistics(
         print_running_statistics(method["message"])
 
         with (path / method["filename"]).open(mode="w", encoding="utf-8") as fileout:
-            fileout.write(print_header(ids_vary, session=session))
+            fileout.write(print_header(ids_vary, parameter_store=parameter_store))
 
             try:
                 for _ in track(range(iter_nb), total=iter_nb, description="   "):
@@ -89,7 +81,7 @@ def _run_statistics(
                 fileout.flush()
 
 
-def _fit_groups(  # noqa: PLR0913
+def _fit_groups(
     experiments: Experiments,
     path: Path,
     plot: str,
@@ -98,8 +90,8 @@ def _fit_groups(  # noqa: PLR0913
     *,
     session: AnalysisSession | None = None,
 ) -> None:
-    parameter_store = _get_parameter_store(session)
-    groups = create_groups(experiments, session=session)
+    parameter_store = experiments.parameter_store
+    groups = create_groups(experiments)
 
     plot_flg = (plot == "normal" and len(groups) == 1) or plot == "all"
 
@@ -134,7 +126,6 @@ def _fit_groups(  # noqa: PLR0913
             group_path,
             fitmethod,
             statistics,
-            session=session,
         )
 
     if len(groups) > 1:
@@ -149,7 +140,7 @@ def run_methods(
     *,
     session: AnalysisSession | None = None,
 ) -> None:
-    parameter_store = _get_parameter_store(session)
+    parameter_store = experiments.parameter_store
 
     for index, (section, method) in enumerate(methods.items(), start=1):
         if section:

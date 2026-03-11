@@ -94,7 +94,7 @@ def test_set_noise_invalidates_residual_cache() -> None:
     params = make_params()
 
     np.testing.assert_allclose(profile.residuals(params), [-1.0, -2.0])
-    np.testing.assert_equal(profile.cache.currsize, 1)
+    np.testing.assert_equal(profile.evaluator.cache.currsize, 1)
 
     profile.set_noise(0.5)
 
@@ -112,7 +112,7 @@ def test_filter_invalidates_residual_cache() -> None:
     params = make_params()
 
     np.testing.assert_allclose(profile.residuals(params), [-1.0, -2.0])
-    np.testing.assert_equal(profile.cache.currsize, 1)
+    np.testing.assert_equal(profile.evaluator.cache.currsize, 1)
 
     profile.filter(params)
 
@@ -132,11 +132,11 @@ def test_monte_carlo_profile_starts_with_empty_cache_and_fresh_residuals() -> No
         params = make_params()
 
         np.testing.assert_allclose(profile.residuals(params), [0.0, 0.0, 0.0])
-        np.testing.assert_equal(profile.cache.currsize, 1)
+        np.testing.assert_equal(profile.evaluator.cache.currsize, 1)
 
         profile_mc = profile.monte_carlo()
 
-        np.testing.assert_equal(profile_mc.cache.currsize, 0)
+        np.testing.assert_equal(profile_mc.evaluator.cache.currsize, 0)
         expected = (
             np.array([1.0, 2.0, 3.0]) - profile_mc.data.exp
         ) / profile_mc.data.err
@@ -165,11 +165,11 @@ def test_bootstrap_profile_starts_with_empty_cache_and_fresh_residuals(
         profile.residuals(params),
         [-10.0, -5.0, -6.0, -4.5],
     )
-    np.testing.assert_equal(profile.cache.currsize, 1)
+    np.testing.assert_equal(profile.evaluator.cache.currsize, 1)
 
     profile_bs = profile.bootstrap()
 
-    np.testing.assert_equal(profile_bs.cache.currsize, 0)
+    np.testing.assert_equal(profile_bs.evaluator.cache.currsize, 0)
     expected = (
         np.array([1.0, 2.0, 3.0, 4.0]) - profile_bs.data.exp
     ) / profile_bs.data.err

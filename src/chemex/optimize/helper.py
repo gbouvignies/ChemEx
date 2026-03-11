@@ -15,14 +15,18 @@ from chemex.messages import (
     print_plotting_canceled,
     print_writing_results,
 )
-from chemex.parameters import database
+from chemex.parameters.database import ParameterStore
 from chemex.printers.parameters import write_parameters
 from chemex.runtime import AnalysisSession
-from chemex.runtime.session import ParameterStore
 
 
-def _get_parameter_store(session: AnalysisSession | None) -> ParameterStore:
-    return session.parameters if session is not None else database
+def _validate_session_parameter_store(
+    experiments: Experiments,
+    session: AnalysisSession | None,
+) -> None:
+    if session is not None and experiments.parameter_store is not session.parameters:
+        msg = "Experiments parameter store does not match the active session"
+        raise ValueError(msg)
 
 
 def calculate_statistics(
@@ -55,11 +59,9 @@ def calculate_statistics(
 def _write_statistics(
     experiments: Experiments,
     path: Path,
-    session: AnalysisSession | None = None,
 ) -> None:
     """Write fitting statistics to a file."""
-    parameter_store = _get_parameter_store(session)
-    params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
+    params_lf = experiments.parameter_store.build_lmfit_params(experiments.param_ids)
     stats = calculate_statistics(experiments, params_lf)
     filename = path / "statistics.toml"
     with filename.open("w", encoding="utf-8") as f:
@@ -81,24 +83,22 @@ def _write_files(
     session: AnalysisSession | None = None,
 ) -> None:
     """Write the results of the fit to output files."""
-    parameter_store = _get_parameter_store(session)
+    _validate_session_parameter_store(experiments, session)
     print_writing_results(path)
     path.mkdir(parents=True, exist_ok=True)
-    write_parameters(experiments, path, parameter_store=parameter_store)
+    write_parameters(experiments, path, parameter_store=experiments.parameter_store)
     experiments.write(path)
-    _write_statistics(experiments, path=path, session=session)
+    _write_statistics(experiments, path=path)
 
 
 def _write_simulation_files(
     experiments: Experiments,
     path: Path,
-    session: AnalysisSession | None = None,
 ) -> None:
     """Write the results of the simulation to output files."""
-    parameter_store = _get_parameter_store(session)
     print_writing_results(path)
     path.mkdir(parents=True, exist_ok=True)
-    write_parameters(experiments, path, parameter_store=parameter_store)
+    write_parameters(experiments, path, parameter_store=experiments.parameter_store)
     experiments.write(path)
 
 
@@ -145,8 +145,9 @@ def execute_simulation(
     plot: bool = False,
     session: AnalysisSession | None = None,
 ) -> None:
+    _validate_session_parameter_store(experiments, session)
     experiments.prepare_for_simulation()
-    _write_simulation_files(experiments, path, session=session)
+    _write_simulation_files(experiments, path)
     if plot:
         _write_simulation_plots(experiments, path)
 
@@ -159,8 +160,7 @@ def execute_post_fit_groups(
     session: AnalysisSession | None = None,
 ) -> None:
     print_group_name("All groups")
-    parameter_store = _get_parameter_store(session)
-    params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
+    params_lf = experiments.parameter_store.build_lmfit_params(experiments.param_ids)
     statistics = calculate_statistics(experiments, params_lf)
     print_chi2(statistics["chisqr"], statistics["redchi"])
     execute_post_fit(
@@ -174,9 +174,8 @@ def execute_post_fit_groups(
 def print_header(
     grid: Iterable[str],
     *,
-    session: AnalysisSession | None = None,
+    parameter_store: ParameterStore,
 ) -> str:
-    parameter_store = _get_parameter_store(session)
     parameters = parameter_store.get_parameters(grid)
     header_pnames = " ".join(f"{parameters[param_id].param_name}" for param_id in grid)
     return f"# {header_pnames} [χ²]\n"

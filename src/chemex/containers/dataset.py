@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Protocol
 
 import numpy as np
 
-from chemex.configuration.base import ExperimentConfiguration
 from chemex.configuration.data import RelaxationDataSettings, ShiftDataSettings
 from chemex.containers.data import Data
 from chemex.parameters.spin_system import SpinSystem
@@ -15,11 +14,16 @@ from chemex.toml import normalize_path
 Dataset = list[tuple[SpinSystem, Data]]
 ProfilesType = dict[SpinSystem, list[Path]]
 
-RelaxationConfig = ExperimentConfiguration[Any, Any, RelaxationDataSettings]
-ShiftConfig = ExperimentConfiguration[Any, Any, ShiftDataSettings]
+
+class HasRelaxationData(Protocol):
+    data: RelaxationDataSettings
 
 
-def load_relaxation_dataset(base_path: Path, settings: RelaxationConfig) -> Dataset:
+class HasShiftData(Protocol):
+    data: ShiftDataSettings
+
+
+def load_relaxation_dataset(base_path: Path, settings: HasRelaxationData) -> Dataset:
     data_path = normalize_path(base_path, settings.data.path)
     dtype = [("metadata", "f8"), ("exp", "f8"), ("err", "f8")]
 
@@ -41,7 +45,7 @@ def load_relaxation_dataset(base_path: Path, settings: RelaxationConfig) -> Data
     return dataset
 
 
-def load_exsy_dataset(base_path: Path, settings: RelaxationConfig) -> Dataset:
+def load_exsy_dataset(base_path: Path, settings: HasRelaxationData) -> Dataset:
     data_path = normalize_path(base_path, settings.data.path)
     dtype = [
         ("times", "f8"),
@@ -69,7 +73,7 @@ def load_exsy_dataset(base_path: Path, settings: RelaxationConfig) -> Dataset:
     return dataset
 
 
-def load_shift_dataset(base_path: Path, settings: ShiftConfig) -> Dataset:
+def load_shift_dataset(base_path: Path, settings: HasShiftData) -> Dataset:
     data_path = normalize_path(base_path, settings.data.path)
 
     shifts = np.loadtxt(

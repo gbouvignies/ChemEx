@@ -17,7 +17,7 @@ from itertools import product
 import numpy as np
 
 from chemex.configuration.conditions import Conditions
-from chemex.models.model import model
+from chemex.models.model import ModelSpec
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import SIGNED_XI_RATIO, XI_RATIO, Distribution
 from chemex.nmr.distributions import get_b1_distribution
@@ -41,11 +41,12 @@ class LiouvillianIS:
         conditions: Conditions,
     ) -> None:
         # Initialize attributes
+        self.model: ModelSpec = basis.model
         self.spin_system = spin_system.correct(basis)
         self.basis = basis
         self.h_frq = 0.0 if conditions.h_larmor_frq is None else conditions.h_larmor_frq
         self.par_values: dict[str, float] = {}
-        self.size = len(model.states) * len(basis)
+        self.size = len(self.model.states) * len(basis)
         self._detection: str = ""
         self._detect_vector: Array = np.array([])
         self._q_order_i = _Q_ORDER_I.get(self.basis.extension, 1.0)
@@ -307,7 +308,7 @@ class LiouvillianIS:
 
         w1 = self.b1_i * 2.0 * np.pi
 
-        for state in model.states:
+        for state in self.model.states:
             index_x, index_z = (
                 basis.components_states.index(f"ix_{state}"),
                 basis.components_states.index(f"iz_{state}"),
@@ -333,7 +334,10 @@ class LiouvillianIS:
 
     def get_equilibrium(self) -> Array:
         mag = np.zeros((self.size, 1))
-        for state, (name, nucleus) in product(model.states, self.basis.nuclei.items()):
+        for state, (name, nucleus) in product(
+            self.model.states,
+            self.basis.nuclei.items(),
+        ):
             scale = self.par_values.get(f"p{state}", 0.0) * XI_RATIO.get(nucleus, 1.0)
             mag += self.basis.vectors.get(f"{name}e_{state}", 0.0) * scale
             mag += self.basis.vectors.get(f"{name}z_{state}", 0.0) * scale

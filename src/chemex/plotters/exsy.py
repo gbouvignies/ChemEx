@@ -137,3 +137,6 @@ class EXSYPlotter:
                     plot_exsy(file_pdf, name, data_exp, data_calc)
                     file_exp.write(self.printer.print_exp(name, data_exp))
                     file_calc.write(self.printer.print_calc(name, data_calc))
+
+    def plot_simulation(self, path: Path, profiles: list[Profile]) -> None:
+        self.plot(path, profiles)

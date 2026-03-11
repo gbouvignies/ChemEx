@@ -41,7 +41,6 @@ def create_plot_data(profiles: list[Profile]) -> Data:
 class ShiftPlotter:
     def __init__(self, filename: Path, **_extra: Any) -> None:
         self.filename = filename
-        self.plot_simulation = self.plot
 
     def plot(self, path: Path, profiles: list[Profile]) -> None:
         basename = path / self.filename.name
@@ -51,3 +50,6 @@ class ShiftPlotter:
 
         data_plot = create_plot_data(profiles)
         plot_shift(name_pdf, data_plot)
+
+    def plot_simulation(self, path: Path, profiles: list[Profile]) -> None:
+        self.plot(path, profiles)

@@ -13,9 +13,10 @@ Defines:
 from dataclasses import dataclass, field
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from chemex.configuration.utils import key_to_lower
+from chemex.models.model import ModelSpec
 
 T = TypeVar("T")
 ExperimentSettings = TypeVar("ExperimentSettings", bound=BaseModel)
@@ -39,6 +40,7 @@ class ExperimentConfiguration(
     BaseModel,
     Generic[ExperimentSettings, ConditionsSettings, DataSettings],
 ):
+    model: ModelSpec = Field(default_factory=ModelSpec, exclude=True)
     experiment: ExperimentSettings
     conditions: ConditionsSettings
     data: DataSettings

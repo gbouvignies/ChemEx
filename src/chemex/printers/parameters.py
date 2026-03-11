@@ -2,24 +2,17 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
 
 from chemex.containers.experiments import Experiments
-from chemex.parameters import database
+from chemex.parameters.database import ParameterStore
 from chemex.parameters.name import ParamName
-from chemex.parameters.setting import Parameters as ParameterMap
 from chemex.parameters.setting import ParamSetting
 
 Parameters = dict[ParamName, ParamSetting]
 
 RE_GROUPNAME = re.compile(r"^[A-Za-z0-9_-]+$")
-
-
-class ParameterStore(Protocol):
-    def get_parameters(self, param_ids: Iterable[str]) -> ParameterMap: ...
 
 
 @dataclass
@@ -45,7 +38,7 @@ def _format_fitted(param: ParamSetting) -> str:
 
 def _format_constrained(
     param: ParamSetting,
-    parameter_store: ParameterStore = database,
+    parameter_store: ParameterStore,
 ) -> str:
     if param.value is None:
         return ""
@@ -65,7 +58,7 @@ def _format_fixed(param: ParamSetting) -> str:
 def _params_to_strings(
     parameters: GlobalLocalParameters,
     status: str,
-    parameter_store: ParameterStore = database,
+    parameter_store: ParameterStore,
 ) -> dict[str, dict[str, str]]:
     result: defaultdict[str, dict[str, str]] = defaultdict(dict)
 
@@ -89,7 +82,7 @@ def _params_to_strings(
 def _format_parameter(
     param: ParamSetting,
     status: str,
-    parameter_store: ParameterStore = database,
+    parameter_store: ParameterStore,
 ) -> str:
     if status == "fitted":
         return _format_fitted(param)
@@ -126,7 +119,7 @@ def write_file(
     parameters: GlobalLocalParameters,
     status: str,
     path: Path,
-    parameter_store: ParameterStore = database,
+    parameter_store: ParameterStore,
 ) -> None:
     if not parameters:
         return
@@ -152,7 +145,7 @@ def classify_global(parameters: Parameters) -> GlobalLocalParameters:
 
 def classify_parameters(
     experiments: Experiments,
-    parameter_store: ParameterStore = database,
+    parameter_store: ParameterStore,
 ) -> ClassifiedParameters:
     param_ids = experiments.param_ids
     parameters = {
@@ -184,7 +177,7 @@ def classify_parameters(
 def write_parameters(
     experiments: Experiments,
     path: Path,
-    parameter_store: ParameterStore = database,
+    parameter_store: ParameterStore,
 ) -> None:
     """Write the model parameter values and their uncertainties to a file."""
     path_par = path / "Parameters"

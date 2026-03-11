@@ -121,7 +121,7 @@ def build_spectrometer(config: DCest13CConfig, spin_system: SpinSystem) -> Spect
     settings = config.experiment
     conditions = config.conditions
 
-    basis = Basis(type="ixyz", spin_system="ch")
+    basis = Basis(type="ixyz", spin_system="ch", model=config.model)
     liouvillian = LiouvillianIS(spin_system, basis, conditions)
     spectrometer = Spectrometer(liouvillian)
 

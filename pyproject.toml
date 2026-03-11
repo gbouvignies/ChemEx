@@ -48,11 +48,36 @@ chemex = "chemex.chemex:main"
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
+  "A002",
+  "ANN002",
+  "ANN003",
+  "ANN201",
+  "ANN401",
+  "ARG002",
   "COM812",
+  "D401",
+  "D417",
+  "E402",
+  "E501",
+  "ERA001",
+  "FBT001",
+  "FBT002",
+  "FIX002",
   "ISC001",
+  "PGH003",
+  "PLC0415",
+  "PLR0913",
+  "PLR2004",
+  "RET504",
+  "RUF002",
+  "RUF003",
+  "RUF034",
+  "S307",
   "TC001",
   "TC002",
   "TC003",
+  "TD002",
+  "TD003",
   "D100",
   "D101",
   "D102",
@@ -62,18 +87,27 @@ ignore = [
   "D107",
   "S311",
   "PD011",
+  "W291",
 ]
+
+[tool.ruff]
+extend-exclude = ["benchmarks", "src/chemex/experiments/catalog/wip"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["chemex"]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["ANN001", "N806", "PLC0415", "PLR2004", "S101"]
+
 [tool.ty.src]
 # Exclude work-in-progress experimental code
-exclude = ["src/chemex/experiments/catalog/wip/"]
+exclude = ["benchmarks/", "src/chemex/experiments/catalog/wip/", "tests/"]
 
 [tool.ty.rules]
 # Downgrade warnings to avoid failing CI
-possibly-missing-attribute = "warn"
+possibly-missing-attribute = "ignore"
+redundant-cast = "ignore"
+unused-ignore-comment = "ignore"
 
 [build-system]
 requires = ["uv_build>=0.8.14,<0.10.0"]

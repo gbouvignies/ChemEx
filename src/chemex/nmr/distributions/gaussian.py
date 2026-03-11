@@ -8,11 +8,11 @@ from __future__ import annotations
 from typing import Literal
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import Field
 from scipy import stats
 
 from chemex.nmr.constants import Distribution
-from chemex.nmr.distributions.registry import registry
+from chemex.nmr.distributions.registry import DistributionConfig, registry
 
 
 def generate(
@@ -59,7 +59,7 @@ def generate(
     return Distribution(distribution * value, weights)
 
 
-class GaussianDistributionConfig(BaseModel):
+class GaussianDistributionConfig(DistributionConfig):
     """Configuration for simple Gaussian B1 distribution with linear grid.
 
     This is the original ChemEx B1 inhomogeneity method using a linear grid

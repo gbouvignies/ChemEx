@@ -13,11 +13,20 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic_core.core_schema import ValidationInfo
 
 from chemex.configuration.utils import key_to_lower, to_lower
+from chemex.models.model import ModelSpec
 
 T = TypeVar("T")
 LabelType = Annotated[Literal["1h", "2h", "13c", "15n"], BeforeValidator(to_lower)]
+
+
+def _model_from_context(info: ValidationInfo) -> ModelSpec:
+    context = info.context
+    if isinstance(context, dict) and "model" in context:
+        return context["model"]
+    return ModelSpec()
 
 
 @total_ordering
@@ -125,17 +134,11 @@ class Conditions(BaseModel, frozen=True):
         }
         return type(self).model_construct(**intersection)
 
-    def _sort_values(self) -> tuple[float | tuple[LabelType, ...], ...]:
-        return tuple(
-            value if value is not None else -1e16
-            for value in self.model_dump().values()
-        )
-
     def __lt__(self, other: object) -> bool:
         """Define less than operation for Conditions instances."""
         if not isinstance(other, type(self)):
             return NotImplemented
-        return self._sort_values() < other._sort_values()
+        return self.folder < other.folder
 
 
 class ConditionsWithValidations(Conditions, frozen=True):
@@ -143,33 +146,35 @@ class ConditionsWithValidations(Conditions, frozen=True):
 
     @field_validator("d2o")
     @classmethod
-    def validate_d2o(cls, d2o: float | None) -> float | None:
+    def validate_d2o(
+        cls,
+        d2o: float | None,
+        info: ValidationInfo,
+    ) -> float | None:
         """Validate the d2o field for specific model requirements."""
-        from chemex.models.model import model
-
-        if "hd" in model.name and d2o is None:
+        if "hd" in _model_from_context(info).name and d2o is None:
             msg = 'To use the "hd" model, d2o must be provided'
             raise ValidationError(msg)
         return d2o
 
     @field_validator("temperature")
     @classmethod
-    def validate_temperature(cls, temperature: float | None) -> float | None:
+    def validate_temperature(
+        cls,
+        temperature: float | None,
+        info: ValidationInfo,
+    ) -> float | None:
         """Validate temperature field for specific model requirements."""
-        from chemex.models.model import model
-
-        if "eyring" in model.name and temperature is None:
+        if "eyring" in _model_from_context(info).name and temperature is None:
             msg = 'To use the "eyring" model, "temperature" must be provided'
             raise ValidationError(msg)
         return temperature
 
     @model_validator(mode="after")
-    def validate_p_total_l_total(self) -> Self:
+    def validate_p_total_l_total(self, info: ValidationInfo) -> Self:
         """Validate both p_total and l_total for specific model requirements."""
-        from chemex.models.model import model
-
         are_not_both_set = self.p_total is None or self.l_total is None
-        if "binding" in model.name and are_not_both_set:
+        if "binding" in _model_from_context(info).name and are_not_both_set:
             msg = 'To use the "binding" model, "p_total" and "l_total" must be provided'
             raise ValueError(msg)
         return self

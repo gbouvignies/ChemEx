@@ -3,7 +3,6 @@ from __future__ import annotations
 from copy import deepcopy
 
 from chemex.configuration.conditions import Conditions
-from chemex.models.model import model
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import J_COUPLINGS
 from chemex.nmr.rates import get_model_free_expressions
@@ -71,6 +70,7 @@ def _add_temp_coef_param_settings(
 def _add_dw_param_settings(
     settings: dict[str, ParamLocalSetting],
     state: str,
+    basis: Basis,
     conditions: Conditions,
 ) -> None:
     settings[f"dw_i_a{state}"] = ParamLocalSetting(
@@ -90,7 +90,7 @@ def _add_dw_param_settings(
     settings[f"cs_i_{state}"].expr = f"{{cs_i_a}} + {{dw_i_a{state}}}"
     settings[f"cs_s_{state}"].expr = f"{{cs_s_a}} + {{dw_s_a{state}}}"
 
-    if model.temp_coef:
+    if basis.model.temp_coef:
         _add_temp_coef_param_settings(settings, state, conditions)
 
 
@@ -266,7 +266,7 @@ def create_base_param_settings(
 
     if state != "a":
         _set_equal_to_a(settings)
-        _add_dw_param_settings(settings, state, conditions)
+        _add_dw_param_settings(settings, state, basis, conditions)
 
     return settings
 
@@ -304,7 +304,7 @@ def build_spin_param_settings(
     conditions: Conditions,
 ) -> tuple[LocalSettings, LocalSettings]:
     all_settings: LocalSettings = {}
-    for state in model.states:
+    for state in basis.model.states:
         all_settings.update(create_base_param_settings(basis, state, conditions))
 
     all_settings_mf = _build_model_free_settings(all_settings, basis, conditions)
@@ -316,7 +316,7 @@ def build_spin_param_settings(
     # but not in settings_mf. This can happen when a constraint require parameters
     # that are not in the basis. This way the starting value of these parameters
     # can be calculated using the model free parameters.
-    if not model.model_free:
+    if not basis.model.model_free:
         names = set(settings) - set(settings_mf)
         settings_mf |= {name: all_settings_mf[name] for name in names}
 

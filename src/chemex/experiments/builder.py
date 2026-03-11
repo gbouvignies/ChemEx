@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import MutableMapping
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +23,7 @@ from chemex.messages import (
     print_loading_experiments,
     print_pydantic_parsing_error,
 )
-from chemex.parameters import database
+from chemex.models.model import ModelSpec
 from chemex.parameters.factory import create_parameters
 from chemex.runtime import AnalysisSession
 from chemex.toml import read_toml
@@ -39,9 +39,9 @@ class ExperimentConfig(BaseSettings):
     experiment: NameConfig
 
 
-def _get_experiment_name(config: MutableMapping[str, Any], filename: Path) -> str:
+def _get_experiment_name(config: Mapping[str, object], filename: Path) -> str:
     try:
-        model = ExperimentConfig(**config)
+        model = ExperimentConfig.model_validate(config)
     except ValidationError:
         print_experiment_name_error(filename)
         sys.exit()
@@ -86,10 +86,12 @@ def _create_config(
     filename: Path,
     live: Live,
     factory: Creators,
-    config_dict: MutableMapping[str, Any],
+    config_dict: Mapping[str, object],
+    *,
+    model_spec: ModelSpec,
 ) -> GenericConfig:
     try:
-        config = factory.create_config(config_dict)
+        config = factory.create_config(config_dict, model=model_spec)
     except ValidationError as e:
         live.stop()
         print_pydantic_parsing_error(filename, e)
@@ -97,15 +99,32 @@ def _create_config(
     return config
 
 
-def build_experiment(filename: Path, selection: Selection) -> Experiment:
-    config_dict: MutableMapping[str, Any] = read_toml(filename)
+def build_experiment(
+    filename: Path,
+    selection: Selection,
+    *,
+    session: AnalysisSession,
+) -> Experiment:
+    config_dict: Mapping[str, object] = read_toml(filename)
 
     experiment_name = _get_experiment_name(config_dict, filename)
+    parameter_store = session.parameters
+    parameter_factory = session.parameter_factory
+    model_spec = session.model.spec
 
-    with Live(get_reading_exp_text(filename, experiment_name), console=console) as live:
+    with Live(
+        get_reading_exp_text(filename, experiment_name),
+        console=console,
+    ) as live:
         factory = factories.get(experiment_name)
 
-        config = _create_config(filename, live, factory, config_dict)
+        config = _create_config(
+            filename,
+            live,
+            factory,
+            config_dict,
+            model_spec=model_spec,
+        )
 
         printer = factory.create_printer()
         plotter = factory.create_plotter(filename, config)
@@ -119,7 +138,11 @@ def build_experiment(filename: Path, selection: Selection) -> Experiment:
             spectrometer = factory.create_spectrometer(config, spin_system)
             sequence = factory.create_sequence(config)
             filterer = factory.create_filterer(config, spectrometer)
-            name_map = create_parameters(config, spectrometer.liouvillian)
+            name_map = create_parameters(
+                config,
+                spectrometer.liouvillian,
+                parameter_factory=parameter_factory,
+            )
             profiles.append(
                 Profile(
                     data,
@@ -134,7 +157,14 @@ def build_experiment(filename: Path, selection: Selection) -> Experiment:
 
         live.update(get_reading_exp_text(filename, experiment_name, len(profiles)))
 
-    experiment = Experiment(filename, experiment_name, profiles, printer, plotter)
+    experiment = Experiment(
+        filename,
+        experiment_name,
+        profiles,
+        printer,
+        plotter,
+        parameter_store=parameter_store,
+    )
     experiment.estimate_noise(config.data.error, global_error=config.data.global_error)
 
     return experiment
@@ -144,20 +174,21 @@ def build_experiments(
     filenames: list[Path] | None,
     selection: Selection,
     *,
-    session: AnalysisSession | None = None,
+    session: AnalysisSession,
 ) -> Experiments:
+    parameter_store = session.parameters
+
     if not filenames:
-        return Experiments()
+        return Experiments(parameter_store=parameter_store)
 
     print_loading_experiments()
 
-    experiments = Experiments()
+    experiments = Experiments(parameter_store=parameter_store)
 
     for filename in filenames:
-        experiment = build_experiment(filename, selection)
+        experiment = build_experiment(filename, selection, session=session)
         experiments.add(experiment)
 
-    parameter_store = session.parameters if session is not None else database
     parameter_store.sort_parameters()
 
     return experiments

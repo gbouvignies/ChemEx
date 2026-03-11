@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, ClassVar
+from typing import ClassVar
+
+from pydantic import BaseModel
 
 from chemex.nmr.constants import Distribution
 
@@ -11,18 +13,29 @@ from chemex.nmr.constants import Distribution
 DistributionGenerator = Callable[..., Distribution]
 
 
+class DistributionConfig(BaseModel):
+    """Base class for B1 distribution configuration models."""
+
+    type: str
+
+    def get_distribution(self, value: float) -> Distribution:
+        """Build the concrete B1 distribution for a nominal field value."""
+        msg = f"{type(self).__name__} must implement 'get_distribution()'"
+        raise NotImplementedError(msg)
+
+
 class DistributionRegistry:
     """Registry for B1 distribution generators."""
 
     _generators: ClassVar[dict[str, DistributionGenerator]] = {}
-    _configs: ClassVar[dict[str, type[Any]]] = {}
+    _configs: ClassVar[dict[str, type[DistributionConfig]]] = {}
 
     @classmethod
     def register(
         cls,
         name: str,
         generator: DistributionGenerator,
-        config_class: type[Any],
+        config_class: type[DistributionConfig],
     ) -> None:
         """Register a distribution generator and its config class.
 
@@ -72,12 +85,12 @@ class DistributionRegistry:
         return cls._generators.copy()
 
     @classmethod
-    def get_all_config_classes(cls) -> list[type[Any]]:
+    def get_all_config_classes(cls) -> list[type[DistributionConfig]]:
         """Get all registered config classes for discriminated union."""
         return list(cls._configs.values())
 
     @classmethod
-    def get_config_class(cls, name: str) -> type[Any]:
+    def get_config_class(cls, name: str) -> type[DistributionConfig]:
         """Get a registered config class by distribution name.
 
         Parameters
@@ -87,7 +100,7 @@ class DistributionRegistry:
 
         Returns
         -------
-        type[Any]
+        type[DistributionConfig]
             The Pydantic configuration class
 
         Raises

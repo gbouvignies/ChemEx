@@ -115,61 +115,67 @@ if example_dir.exists():
             total = min(100, len(captured_matrices))
             print(f"\nMatrices analyzed: {total}")
             print(f"Unique shapes: {unique_shapes}")
-            print(f"\nResults:")
-            print(f"  Hermitian:     {hermitian_count:4d} ({hermitian_count/total*100:.1f}%)")
-            print(
-                f"  Anti-Hermitian: {anti_hermitian_count:4d} ({anti_hermitian_count/total*100:.1f}%)"
-            )
-            print(f"  Neither:        {neither_count:4d} ({neither_count/total*100:.1f}%)")
 
-            # Check eigenvalues for sample matrices
-            print("\n" + "─" * 70)
-            print("Sample Matrix Analysis")
-            print("─" * 70)
-
-            for matrix_type, matrix, idx in sample_matrices[:3]:
-                print(f"\nMatrix #{idx} ({matrix_type}):")
-                print(f"  Shape: {matrix.shape}")
-                print(f"  Dtype: {matrix.dtype}")
-
-                eigenvalues = np.linalg.eigvals(matrix)
-                are_real = np.allclose(eigenvalues.imag, 0, atol=1e-10)
-
-                print(f"  Eigenvalues real: {are_real}")
-                if not are_real:
-                    max_imag = np.max(np.abs(eigenvalues.imag))
-                    print(f"  Max imaginary part: {max_imag:.2e}")
-
-                print(f"  Sample eigenvalues:")
-                for j, eig in enumerate(eigenvalues[:5]):
-                    if abs(eig.imag) < 1e-10:
-                        print(f"    λ{j} = {eig.real:.6f}")
-                    else:
-                        print(f"    λ{j} = {eig.real:.6f} + {eig.imag:.6f}i")
-
-            # Conclusion
-            print("\n" + "=" * 70)
-            print("CONCLUSION")
-            print("=" * 70)
-
-            if hermitian_count == total:
-                print("✓ ALL matrices are Hermitian")
-                print("  → Using np.linalg.eigh is SAFE and CORRECT")
-            elif anti_hermitian_count == total:
-                print("⚠ ALL matrices are anti-Hermitian")
-                print("  → Eigenvalues are purely imaginary")
-                print("  → np.linalg.eigh will give INCORRECT results")
-                print("  → MUST use np.linalg.eig")
-            elif hermitian_count > 0 and neither_count > 0:
-                print("⚠ MIXED: Some Hermitian, some not")
-                print(
-                    f"  → {hermitian_count}/{total} are Hermitian, {neither_count}/{total} are not"
-                )
-                print("  → Current implementation (check + fallback) is CORRECT")
+            if total == 0:
+                print("\nNo Liouvillian matrices were captured; skipping analysis.")
             else:
-                print("✗ NO matrices are Hermitian or anti-Hermitian")
-                print("  → np.linalg.eigh will give INCORRECT results")
-                print("  → MUST revert to np.linalg.eig only")
+                print(f"\nResults:")
+                print(
+                    f"  Hermitian:     {hermitian_count:4d} ({hermitian_count/total*100:.1f}%)"
+                )
+                print(
+                    f"  Anti-Hermitian: {anti_hermitian_count:4d} ({anti_hermitian_count/total*100:.1f}%)"
+                )
+                print(f"  Neither:        {neither_count:4d} ({neither_count/total*100:.1f}%)")
+
+                # Check eigenvalues for sample matrices
+                print("\n" + "─" * 70)
+                print("Sample Matrix Analysis")
+                print("─" * 70)
+
+                for matrix_type, matrix, idx in sample_matrices[:3]:
+                    print(f"\nMatrix #{idx} ({matrix_type}):")
+                    print(f"  Shape: {matrix.shape}")
+                    print(f"  Dtype: {matrix.dtype}")
+
+                    eigenvalues = np.linalg.eigvals(matrix)
+                    are_real = np.allclose(eigenvalues.imag, 0, atol=1e-10)
+
+                    print(f"  Eigenvalues real: {are_real}")
+                    if not are_real:
+                        max_imag = np.max(np.abs(eigenvalues.imag))
+                        print(f"  Max imaginary part: {max_imag:.2e}")
+
+                    print(f"  Sample eigenvalues:")
+                    for j, eig in enumerate(eigenvalues[:5]):
+                        if abs(eig.imag) < 1e-10:
+                            print(f"    λ{j} = {eig.real:.6f}")
+                        else:
+                            print(f"    λ{j} = {eig.real:.6f} + {eig.imag:.6f}i")
+
+                # Conclusion
+                print("\n" + "=" * 70)
+                print("CONCLUSION")
+                print("=" * 70)
+
+                if hermitian_count == total:
+                    print("✓ ALL matrices are Hermitian")
+                    print("  → Using np.linalg.eigh is SAFE and CORRECT")
+                elif anti_hermitian_count == total:
+                    print("⚠ ALL matrices are anti-Hermitian")
+                    print("  → Eigenvalues are purely imaginary")
+                    print("  → np.linalg.eigh will give INCORRECT results")
+                    print("  → MUST use np.linalg.eig")
+                elif hermitian_count > 0 and neither_count > 0:
+                    print("⚠ MIXED: Some Hermitian, some not")
+                    print(
+                        f"  → {hermitian_count}/{total} are Hermitian, {neither_count}/{total} are not"
+                    )
+                    print("  → Current implementation (check + fallback) is CORRECT")
+                else:
+                    print("✗ NO matrices are Hermitian or anti-Hermitian")
+                    print("  → np.linalg.eigh will give INCORRECT results")
+                    print("  → MUST revert to np.linalg.eig only")
 
 else:
     print(f"Example directory not found: {example_dir}")
