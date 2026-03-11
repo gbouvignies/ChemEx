@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import operator
 from functools import reduce
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Annotated, Self
 
 from pydantic import (
     BaseModel,
@@ -45,9 +45,17 @@ def _default_distribution() -> DistributionConfig:
     raise TypeError(msg)
 
 
+def _build_distribution_adapter() -> TypeAdapter:
+    """Construct a discriminated TypeAdapter for the registered distribution configs."""
+    distribution_union = _build_distribution_union()
+    discriminated_union = Annotated.__getitem__(
+        (distribution_union, Field(discriminator="type"))
+    )
+    return TypeAdapter(discriminated_union)
+
+
 # Discriminated union of all dynamically-registered distribution configs
-_DISTRIBUTION_UNION = _build_distribution_union()
-_DISTRIBUTION_ADAPTER = TypeAdapter(_DISTRIBUTION_UNION)
+_DISTRIBUTION_ADAPTER = _build_distribution_adapter()
 
 
 class B1FieldConfig(BaseModel):
@@ -62,7 +70,7 @@ class B1FieldConfig(BaseModel):
     pw90 : float | None
         90-degree pulse width (in seconds). If specified, value is calculated
         as 1/(4*pw90).
-    distribution : BaseModel
+    distribution : DistributionConfig
         Distribution configuration (dynamically typed based on registered plugins)
 
     """

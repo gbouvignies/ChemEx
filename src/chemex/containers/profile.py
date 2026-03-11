@@ -60,6 +60,11 @@ class Profile:
         """Get the set of parameter IDs."""
         return set(self.name_map.values())
 
+    @cached_property
+    def cache_param_ids(self) -> tuple[str, ...]:
+        """Get the stable ordered parameter ids used in residual cache keys."""
+        return tuple(sorted(self.param_ids))
+
     def clear_cache(self) -> None:
         """Drop cached residuals after the profile inputs change."""
         self.evaluator.clear()
@@ -92,7 +97,7 @@ class Profile:
         """Calculate and return residuals."""
         return self.evaluator.residuals(
             params,
-            param_ids=tuple(sorted(self.param_ids)),
+            param_ids=self.cache_param_ids,
             data_revision=self.data.revision,
             calculate=self.calculate,
             exp=self.data.exp,

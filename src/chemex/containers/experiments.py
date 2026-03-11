@@ -72,7 +72,7 @@ class Experiments:
         return np.concatenate([experiment.residuals(params) for experiment in self])
 
     def back_calculate(self) -> None:
-        """Back calculate experiments' parameters from the database."""
+        """Back calculate experiments using the instance parameter store."""
         params_lf = self.parameter_store.build_lmfit_params(self.param_ids)
         self.residuals(params_lf)
 
