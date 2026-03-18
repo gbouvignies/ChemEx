@@ -10,7 +10,6 @@ Ix, Iy, Iz, Sx, Sy, Sz,
 
 """
 
-import re
 from collections.abc import Iterable
 from itertools import product
 
@@ -20,12 +19,11 @@ from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import SIGNED_XI_RATIO, XI_RATIO, Distribution
+from chemex.nmr.detection import build_detection_vector
 from chemex.nmr.distributions import get_b1_distribution
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.typing import Array
-
-_RE_COMP = re.compile(r"\[(.+?)\]")
 
 _Q_ORDER_I = {"sq": 1.0, "dq": 2.0, "tq": 3.0}
 
@@ -274,9 +272,7 @@ class LiouvillianIS:
     @detection.setter
     def detection(self, value: str) -> None:
         self._detection = value
-        expr = _RE_COMP.sub(r'self.basis.vectors.get("\1")', value)
-        vector: Array = eval(expr)
-        self._detect_vector = vector.transpose()
+        self._detect_vector = build_detection_vector(value, self.basis.vectors).transpose()
 
     def update(self, par_values: dict[str, float]) -> None:
         self.par_values = par_values
