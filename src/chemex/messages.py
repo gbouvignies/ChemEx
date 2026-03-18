@@ -463,15 +463,18 @@ def print_error_grid_settings(entry: str) -> None:
     console.print()
 
 
-def print_error_constraints(expression: str) -> None:
-    """Display an error message for issues with constraints expressions.
+def print_error_constraints(expression: str, detail: str | None = None) -> None:
+    """Display an error message for issues with constraint expressions.
 
     Args:
         expression (str): The problematic constraint expression.
+        detail (str | None): Optional explanation of the validation failure.
 
     """
     console.print()
     console.print(f'[red] -- ERROR: Error reading constraints -> "{expression}" --')
+    if detail is not None:
+        console.print(Text(f"    {detail}", style="red"))
     console.print()
 
 
