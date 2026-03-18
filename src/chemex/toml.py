@@ -21,17 +21,17 @@ def _deep_update(target: dict, src: dict) -> dict:
 
 def read_toml(filename: Path) -> dict[str, Any]:
     """Read and parse the experiment configuration file with 'toml."""
-    with filename.open(mode="rb") as file:
-        try:
+    try:
+        with filename.open(mode="rb") as file:
             config = tomllib.load(file)
-        except FileNotFoundError:
-            print_file_not_found(filename)
-            sys.exit(1)
-        except (tomllib.TOMLDecodeError, TypeError) as error:
-            print_toml_error(filename, error)
-            sys.exit(1)
+    except FileNotFoundError:
+        print_file_not_found(filename)
+        sys.exit(1)
+    except (tomllib.TOMLDecodeError, TypeError) as error:
+        print_toml_error(filename, error)
+        sys.exit(1)
 
-        return config
+    return config
 
 
 def read_toml_multi(filenames: Iterable[Path]) -> MutableMapping[str, Any]:
