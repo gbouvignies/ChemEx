@@ -46,6 +46,13 @@ class ConstraintExpressionError(ValueError):
         self.detail = detail
 
 
+class GridExpressionError(ValueError):
+    def __init__(self, entry: str, detail: str) -> None:
+        super().__init__(detail)
+        self.entry = entry
+        self.detail = detail
+
+
 class ModelReader(Protocol):
     @property
     def name(self) -> str: ...
@@ -457,6 +464,21 @@ class ParameterCatalog:
 
         return self._count_per_section(ids_modified)
 
+    def _split_grid_entry(self, entry: str) -> tuple[str, str]:
+        compact_entry = entry.replace(" ", "")
+
+        separator_count = compact_entry.count("=")
+        if separator_count != 1:
+            detail = "Expected exactly one '=' in the grid entry"
+            raise GridExpressionError(entry, detail)
+
+        name, _, expression = compact_entry.partition("=")
+        if not any(re.fullmatch(regex, expression) for regex in _GRID_DEFINTION):
+            detail = "Unsupported grid definition"
+            raise GridExpressionError(entry, detail)
+
+        return name, expression
+
     def parse_grid(self, grid_entries: list[str]) -> dict[str, Array]:
         """Parse grid definitions and sets up parameters accordingly.
 
@@ -471,23 +493,20 @@ class ParameterCatalog:
 
         grid_values: dict[str, Array] = {}
 
-        for entry in reversed(grid_entries):
-            name, expression, *something_else = entry.replace(" ", "").split("=")
+        try:
+            for entry in reversed(grid_entries):
+                name, expression = self._split_grid_entry(entry)
+                ids_selected = self.get_matching_ids(ParamName.from_section(name))
+                ids_changed = ids_selected & ids_pool
+                values = _convert_grid_expression_to_values(expression)
 
-            valid_definition = any(
-                re.match(regex, expression) for regex in _GRID_DEFINTION
-            )
+                grid_values.update(dict.fromkeys(ids_changed, values))
+                ids_pool -= ids_changed
 
-            if something_else or not valid_definition:
-                print_error_grid_settings(entry)
-                sys.exit()
-
-            ids_left = self.get_matching_ids(ParamName.from_section(name))
-            values = _convert_grid_expression_to_values(expression)
-
-            grid_values |= dict.fromkeys(ids_left & ids_pool, values)
-
-            self.set_vary([name], vary=False)
+                self.set_vary([name], vary=False)
+        except GridExpressionError as error:
+            print_error_grid_settings(error.entry, error.detail)
+            sys.exit(1)
 
         return grid_values
 

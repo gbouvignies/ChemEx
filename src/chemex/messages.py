@@ -443,16 +443,19 @@ def print_warning_negative_jch() -> None:
     console.print()
 
 
-def print_error_grid_settings(entry: str) -> None:
+def print_error_grid_settings(entry: str, detail: str | None = None) -> None:
     """Display an error related to grid settings.
 
     Args:
         entry (str): The problematic entry in the grid settings.
+        detail (str | None): Optional explanation of the validation failure.
 
     """
     console.print()
     console.print("[red] -- ERROR: Error reading grid settings:")
     console.print(Text(f'    "{entry}"', style="red"))
+    if detail is not None:
+        console.print(Text(f"    {detail}", style="red"))
     console.print()
     console.print(
         "Please make sure that the grid settings are provided in the correct format",
