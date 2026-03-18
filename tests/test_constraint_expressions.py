@@ -63,6 +63,31 @@ def test_constraint_reference_exits_on_missing_match(
     assert get_expression(catalog, global_pb.id_) == ""
 
 
+def test_constraint_reference_exits_on_missing_separator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    global_pb = make_param("PB")
+    catalog = make_catalog(global_pb)
+    recorded: dict[str, str] = {}
+
+    monkeypatch.setattr(
+        database_module,
+        "print_error_constraints",
+        lambda expression, detail=None: recorded.update(
+            {"expression": expression, "detail": detail or ""}
+        ),
+    )
+
+    with pytest.raises(SystemExit):
+        catalog.set_expressions(["PB [BOGUS]"])
+
+    assert recorded == {
+        "expression": "PB [BOGUS]",
+        "detail": "Expected exactly one '=' in the constraint expression",
+    }
+    assert get_expression(catalog, global_pb.id_) == ""
+
+
 def test_constraint_reference_exits_on_self_only_match(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

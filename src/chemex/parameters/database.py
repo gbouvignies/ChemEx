@@ -374,12 +374,12 @@ class ParameterCatalog:
         return ids_right
 
     def _split_constraint_expression(self, expression: str) -> tuple[str, str]:
-        left, right, *something_else = expression.split("=")
-
-        if something_else:
-            detail = "Expected a single '=' in the constraint expression"
+        separator_count = expression.count("=")
+        if separator_count != 1:
+            detail = "Expected exactly one '=' in the constraint expression"
             raise ConstraintExpressionError(expression, detail)
 
+        left, _, right = expression.partition("=")
         return left, right.strip()
 
     def _resolve_constraint_reference(

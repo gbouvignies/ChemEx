@@ -464,7 +464,7 @@ def print_error_grid_settings(entry: str) -> None:
 
 
 def print_error_constraints(expression: str, detail: str | None = None) -> None:
-    """Display an error message for issues with constraints expressions.
+    """Display an error message for issues with constraint expressions.
 
     Args:
         expression (str): The problematic constraint expression.
