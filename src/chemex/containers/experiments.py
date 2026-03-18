@@ -196,13 +196,13 @@ class Experiments:
         return sum(len(experiment) for experiment in self)
 
     def __bool__(self) -> bool:
-        """Check if the collection contains any experiments.
+        """Check if the collection contains any active profiles.
 
         Returns:
-            bool: True if collection is non-empty, False otherwise.
+            bool: True if at least one profile remains selected, False otherwise.
 
         """
-        return bool(self._experiments)
+        return len(self) > 0
 
 
 def generate_monte_carlo_experiments(experiments: Experiments) -> Experiments:
