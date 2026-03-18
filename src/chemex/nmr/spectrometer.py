@@ -1,130 +1,22 @@
 from __future__ import annotations
 
-from collections.abc import Hashable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from functools import reduce
-from itertools import product
 
 import numpy as np
-from cachetools import cached
-from cachetools.keys import hashkey
-from scipy.linalg import expm
 
 from chemex.nmr.constants import Distribution
 from chemex.nmr.liouvillian import LiouvillianIS
+from chemex.nmr.propagators import (
+    calculate_propagators,
+    get_phases,
+    make_perfect90,
+    make_perfect180,
+)
 from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.typing import Array
 
 DictArray = dict[str, Array]
-
-# A small value used for numerical stability
-SMALL_VALUE = 1e-6
-
-
-def calculate_propagators(
-    liouv: Array,
-    delays: float | Iterable[float],
-    *,
-    dephasing: bool = False,
-) -> Array:
-    """Calculate the propagators for the given delays.
-
-    Parameters
-    ----------
-    liouv : Array
-        The Liouvillians of the system
-    delays : float | Iterable[float]
-        The delays to calculate the propagators for
-    dephasing : bool, optional
-        Whether to apply dephasing, by default False
-
-    Returns
-    -------
-    Array
-        The propagators
-
-    """
-    # Ensure delays is a 1D NumPy array
-    delays_array = np.asarray(delays).flatten()
-
-    if delays_array.size == 1 and not dephasing:
-        # If there's only one delay and no dephasing, calculate the propagator directly
-        # using scipy expm function
-        return expm(liouv * delays_array[0]).astype(np.float64)
-
-    # Calculate eigenvalues and eigenvectors of the Liouvillian matrices
-    eigenvalues, eigenvectors = np.linalg.eig(liouv)
-    eigenvalues = eigenvalues.astype(
-        np.complex128
-    )  # Ensure eigenvalues are complex, mainly for type checking
-
-    if dephasing:
-        # If dephasing is requested, adjust eigenvalues
-        eigenvalues = np.where(
-            np.abs(eigenvalues.imag) < SMALL_VALUE,
-            eigenvalues,
-            eigenvalues * 1e9,
-        )
-
-    # Calculate the exponentiated eigenvalues for each delay
-    evt = np.exp(np.multiply.outer(delays_array, eigenvalues))
-
-    # Create an empty array for diagonal matrices
-    diag = np.empty((*delays_array.shape, *liouv.shape), dtype=np.complex128)
-
-    # Calculate diagonal matrices for each delay
-    for index in product(*(range(x) for x in evt.shape[:-1])):
-        diag[index] = np.diag(evt[index])
-
-    # Calculate the propagators using matrix multiplication
-    propagators = eigenvectors @ diag @ np.linalg.inv(eigenvectors)
-
-    if propagators.shape[0] == 1:
-        # If there's only one propagator, return it with no extra time dimension
-        propagators = propagators[0]
-
-    # Return the real part of the propagators
-    return propagators.real.astype(np.float64)
-
-
-def _get_key(
-    liouvillian: LiouvillianIS, *args: Hashable, **kwargs: Hashable
-) -> tuple[Hashable, ...]:
-    return tuple(hashkey(liouvillian.basis, *args, **kwargs))
-
-
-@cached(cache={}, key=_get_key)
-def _make_perfect180(liouvillian: LiouvillianIS, spin: str) -> Array:
-    size = liouvillian.size
-    identity = np.eye(size).reshape((1, 1, size, size))
-    compx, compy, compz = (f"{spin}{axis}" for axis in "xyz")
-    perfect180: dict[str, Array] = {comp: identity.copy() for comp in (compx, compy)}
-    for comp in liouvillian.basis.components:
-        vect = liouvillian.basis.vectors[comp].ravel()
-        if compx in comp or compz in comp:
-            perfect180[compy] -= 2 * np.diag(vect)
-        if compy in comp or compz in comp:
-            perfect180[compx] -= 2 * np.diag(vect)
-    p180 = [perfect180[comp] for comp in (compx, compy, compx, compy)]
-    return np.array(p180)
-
-
-@cached(cache={}, key=_get_key)
-def _make_perfect90(liouvillian: LiouvillianIS, spin: str) -> Array:
-    size = liouvillian.size
-    zeros = np.zeros((size, size))
-    rot = liouvillian.basis.matrices.get(f"b1x_{spin}", zeros)
-    return expm(0.25 * rot).reshape(1, 1, size, size).astype(np.float64)
-
-
-@cached(cache={}, key=_get_key)
-def _get_phases(liouvillian: LiouvillianIS) -> DictArray:
-    phases = {}
-    size = liouvillian.size
-    zeros = np.zeros((size, size))
-    for spin in "is":
-        l_rotz = liouvillian.basis.matrices.get(f"rotz_{spin}", zeros)
-        phases[spin] = np.array([expm(n * 0.5 * np.pi * l_rotz) for n in range(4)])
-    return phases
 
 
 class Spectrometer:
@@ -136,10 +28,10 @@ class Spectrometer:
         self.liouvillian = liouvillian
         size = self.liouvillian.size
         self.identity = np.eye(self.liouvillian.size).reshape((1, 1, size, size))
-        self._phases = _get_phases(liouvillian)
-        self.perfect90_i = self._add_phases(_make_perfect90(liouvillian, "i"))
-        self.perfect180_i = _make_perfect180(liouvillian, "i")
-        self.perfect180_s = _make_perfect180(liouvillian, "s")
+        self._phases = get_phases(liouvillian)
+        self.perfect90_i = self._add_phases(make_perfect90(liouvillian, "i"))
+        self.perfect180_i = make_perfect180(liouvillian, "i")
+        self.perfect180_s = make_perfect180(liouvillian, "s")
         self.zfilter = self.keep(
             self.identity,
             components={"ie", "se", "iz", "sz", "2izsz"}
