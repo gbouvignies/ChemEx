@@ -34,7 +34,7 @@ def test_cest_plot_simulation_accepts_empty_experimental_data(
 
     monkeypatch.setattr(plotter, "_plot_profile", fake_plot_profile)
 
-    plotter.plot_simulation(tmp_path, [SimpleNamespace(spin_system="G23N-H")])
+    plotter.plot_simulation(tmp_path / "13hz", [SimpleNamespace(spin_system="G23N-H")])
 
     assert recorded["data_exp"].size == 0
     assert recorded["data_exp"].mask.size == 0
@@ -62,7 +62,10 @@ def test_cpmg_plot_simulation_accepts_empty_experimental_data(
 
     monkeypatch.setattr(cpmg_module, "plot_cpmg", fake_plot_cpmg)
 
-    plotter.plot_simulation(tmp_path, [SimpleNamespace(spin_system="G23N-H")])
+    plotter.plot_simulation(
+        tmp_path / "500mhz",
+        [SimpleNamespace(spin_system="G23N-H")],
+    )
 
     assert recorded["data_exp"].size == 0
     assert recorded["data_exp"].mask.size == 0

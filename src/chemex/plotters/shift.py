@@ -42,14 +42,13 @@ class ShiftPlotter:
     def __init__(self, filename: Path, **_extra: Any) -> None:
         self.filename = filename
 
-    def plot(self, path: Path, profiles: list[Profile]) -> None:
-        basename = path / self.filename.name
-        name_pdf = basename.with_suffix(".pdf")
+    def plot(self, output_stem: Path, profiles: list[Profile]) -> None:
+        name_pdf = output_stem.with_suffix(".pdf")
 
         print_plot_filename(name_pdf, extra=False)
 
         data_plot = create_plot_data(profiles)
         plot_shift(name_pdf, data_plot)
 
-    def plot_simulation(self, path: Path, profiles: list[Profile]) -> None:
-        self.plot(path, profiles)
+    def plot_simulation(self, output_stem: Path, profiles: list[Profile]) -> None:
+        self.plot(output_stem, profiles)
