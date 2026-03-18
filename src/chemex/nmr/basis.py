@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cache, cached_property, partial
 from itertools import permutations, product
+from types import MappingProxyType
 from typing import Literal
 
 import numpy as np
@@ -13,6 +15,7 @@ from chemex.parameters.spin_system.nucleus import Nucleus, str2nucleus
 from chemex.typing import Array
 
 DictArray = dict[str, Array]
+MatrixMap = Mapping[str, Array]
 
 _BASES = {
     "i-": ["i-"],
@@ -348,6 +351,14 @@ def _build_exchange_matrices(basis: Basis) -> DictArray:
     return matrices
 
 
+def _freeze_matrices(matrices: DictArray) -> MatrixMap:
+    frozen_matrices: DictArray = {}
+    for name, matrix in matrices.items():
+        matrix.flags.writeable = False
+        frozen_matrices[name] = matrix
+    return MappingProxyType(frozen_matrices)
+
+
 @dataclass(frozen=True)
 class Basis:
     type: str
@@ -383,12 +394,9 @@ class Basis:
         return dict(_build_vectors(self))
 
     @cached_property
-    def matrices(self) -> DictArray:
-        return _build_exchange_matrices(self) | _build_spin_matrices(self)
-
-    @property
-    def matrices_ref(self) -> DictArray:
-        return _build_exchange_matrices(self) | _build_spin_matrices(self)
+    def matrices(self) -> MatrixMap:
+        matrices = _build_exchange_matrices(self) | _build_spin_matrices(self)
+        return _freeze_matrices(matrices)
 
     @property
     def required_names(self) -> set[str]:
@@ -396,15 +404,8 @@ class Basis:
         required_names |= {f"p{state}" for state in self.model.states}
         return required_names
 
-    def scale_matrices(self, names: list[str] | str, value: float) -> None:
-        if isinstance(names, str):
-            names = [names]
-        for name in names:
-            state_names = {name.format(state=state) for state in self.model.states}
-            for state_name in state_names & self.matrices.keys():
-                self.matrices[state_name] = (
-                    np.sign(self.matrices_ref[state_name]) * value
-                )
+    def copy_matrices(self) -> DictArray:
+        return {name: matrix.copy() for name, matrix in self.matrices.items()}
 
     def __len__(self) -> int:
         return len(self.components)
