@@ -1,9 +1,15 @@
 """Test B1FieldConfig with pw90 parameter."""
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
 
 from chemex.configuration.b1_config import B1FieldConfig
+from chemex.configuration.experiment import B1InhomogeneityMixin
+
+
+class DummyB1Settings(B1InhomogeneityMixin):
+    pass
 
 
 def test_b1_field_config_with_value():
@@ -96,3 +102,57 @@ def test_b1_field_config_flat_schema_with_value():
     }
     config = B1FieldConfig.model_validate(data)
     assert config.b1_nominal == 15.95
+
+
+def test_b1_inhomogeneity_mixin_parses_distribution_to_typed_config():
+    settings = DummyB1Settings.model_validate(
+        {
+            "b1_frq": 15.0,
+            "b1_distribution": {
+                "type": "gaussian",
+                "scale": 0.1,
+                "res": 5,
+            },
+        }
+    )
+
+    assert settings.b1_distribution is not None
+    assert settings.b1_distribution.type == "gaussian"
+
+    distribution = settings.get_b1_distribution()
+    assert len(distribution.values) == 5
+    assert np.isclose(distribution.weights.sum(), 1.0)
+
+
+def test_b1_inhomogeneity_mixin_defaults_distribution_type_to_gaussian():
+    settings = DummyB1Settings.model_validate(
+        {
+            "b1_frq": 15.0,
+            "b1_distribution": {
+                "scale": 0.1,
+                "res": 5,
+            },
+        }
+    )
+
+    assert settings.b1_distribution is not None
+    assert settings.b1_distribution.type == "gaussian"
+
+
+def test_b1_inhomogeneity_mixin_without_distribution_uses_single_point():
+    settings = DummyB1Settings.model_validate({"b1_frq": 15.0})
+
+    distribution = settings.get_b1_distribution()
+
+    np.testing.assert_allclose(distribution.values, [15.0])
+    np.testing.assert_allclose(distribution.weights, [1.0])
+
+
+def test_b1_inhomogeneity_mixin_rejects_unknown_distribution_type():
+    with pytest.raises(ValueError, match="Unknown B1 distribution type"):
+        DummyB1Settings.model_validate(
+            {
+                "b1_frq": 15.0,
+                "b1_distribution": {"type": "nonexistent"},
+            }
+        )
