@@ -44,6 +44,7 @@ class LiouvillianIS:
         self.model: ModelSpec = basis.model
         self.spin_system = spin_system.correct(basis)
         self.basis = basis
+        self._matrices = basis.copy_matrices()
         self.h_frq = 0.0 if conditions.h_larmor_frq is None else conditions.h_larmor_frq
         self.par_values: dict[str, float] = {}
         self.size = len(self.model.states) * len(basis)
@@ -64,13 +65,23 @@ class LiouvillianIS:
         self.b1_s = 1e32
         self.jeff_i = Distribution(np.array([0.0]), np.array([1.0]))
         self.gradient_dephasing = 0.0
-        self.basis.scale_matrices("j_is_{state}", self._q_order_i * np.pi)
+        self._scale_matrices("j_is_{state}", self._q_order_i * np.pi)
+
+    def _scale_matrices(self, names: list[str] | str, value: float) -> None:
+        if isinstance(names, str):
+            names = [names]
+        for name in names:
+            matrix_names = {name.format(state=state) for state in self.model.states}
+            for matrix_name in matrix_names & self._matrices.keys():
+                self._matrices[matrix_name] = (
+                    np.sign(self.basis.matrices[matrix_name]) * value
+                )
 
     def _build_base_liouvillian(self) -> None:
         self._l_base = sum(
             (
-                self.basis.matrices[name] * self.par_values.get(name, 0.0)
-                for name in self.basis.matrices
+                self._matrices[name] * self.par_values.get(name, 0.0)
+                for name in self._matrices
             ),
             start=np.array(0.0),
         )
@@ -90,9 +101,7 @@ class LiouvillianIS:
     @ppm_i.setter
     def ppm_i(self, value: float) -> None:
         self._ppm_i = value
-        self.basis.scale_matrices(
-            ["cs_i_{state}", "carrier_i"], self._q_order_i * value
-        )
+        self._scale_matrices(["cs_i_{state}", "carrier_i"], self._q_order_i * value)
 
     @property
     def ppm_s(self) -> float:
@@ -101,7 +110,7 @@ class LiouvillianIS:
     @ppm_s.setter
     def ppm_s(self, value: float) -> None:
         self._ppm_s = value
-        self.basis.scale_matrices(["cs_s_{state}", "carrier_s"], value)
+        self._scale_matrices(["cs_s_{state}", "carrier_s"], value)
 
     @property
     def carrier_i(self) -> float:
@@ -110,7 +119,7 @@ class LiouvillianIS:
     @carrier_i.setter
     def carrier_i(self, value: float) -> None:
         self._carrier_i = np.array(value)
-        self._l_carrier_i = self.basis.matrices.get("carrier_i", np.array(0.0)) * value
+        self._l_carrier_i = self._matrices.get("carrier_i", np.array(0.0)) * value
 
     @property
     def carrier_s(self) -> float:
@@ -119,7 +128,7 @@ class LiouvillianIS:
     @carrier_s.setter
     def carrier_s(self, value: float) -> None:
         self._carrier_s = np.array(value)
-        self._l_carrier_s = self.basis.matrices.get("carrier_s", np.array(0.0)) * value
+        self._l_carrier_s = self._matrices.get("carrier_s", np.array(0.0)) * value
 
     @property
     def offset_i(self) -> float:
@@ -129,7 +138,7 @@ class LiouvillianIS:
     def offset_i(self, value: float) -> None:
         self._offset_i = np.array(value)
         self._l_offset_i = (
-            self.basis.matrices.get("offset_i", np.array(0.0))
+            self._matrices.get("offset_i", np.array(0.0))
             * value
             * np.sign(self.ppm_i)
         )
@@ -142,7 +151,7 @@ class LiouvillianIS:
     def offset_s(self, value: float) -> None:
         self._offset_s = np.array(value)
         self._l_offset_s = (
-            self.basis.matrices.get("offset_s", np.array(0.0))
+            self._matrices.get("offset_s", np.array(0.0))
             * value
             * np.sign(self.ppm_s)
         )
@@ -181,8 +190,8 @@ class LiouvillianIS:
         gaussian_dist.values = gaussian_dist.values.reshape((-1, 1, 1))
         gaussian_dist.weights = gaussian_dist.weights.reshape((-1, 1, 1))
         self._b1_i_dist = gaussian_dist
-        self.l_b1x_i = self.basis.matrices.get("b1x_i", 0.0) * gaussian_dist.values
-        self.l_b1y_i = self.basis.matrices.get("b1y_i", 0.0) * gaussian_dist.values
+        self.l_b1x_i = self._matrices.get("b1x_i", 0.0) * gaussian_dist.values
+        self.l_b1y_i = self._matrices.get("b1y_i", 0.0) * gaussian_dist.values
 
     def set_b1_i_distribution(self, distribution: Distribution) -> None:
         """Set B1 inhomogeneity distribution directly.
@@ -201,8 +210,8 @@ class LiouvillianIS:
         distribution.weights = distribution.weights.reshape((-1, 1, 1))
         self._b1_i_dist = distribution
         self._b1_i = float(distribution.values.mean())
-        self.l_b1x_i = self.basis.matrices.get("b1x_i", 0.0) * distribution.values
-        self.l_b1y_i = self.basis.matrices.get("b1y_i", 0.0) * distribution.values
+        self.l_b1x_i = self._matrices.get("b1x_i", 0.0) * distribution.values
+        self.l_b1y_i = self._matrices.get("b1y_i", 0.0) * distribution.values
 
     @property
     def b1_i_dist(self) -> Distribution:
@@ -216,8 +225,8 @@ class LiouvillianIS:
     @b1_s.setter
     def b1_s(self, value: float) -> None:
         self._b1_s = value
-        self.l_b1x_s = self.basis.matrices.get("b1x_s", 0.0) * value
-        self.l_b1y_s = self.basis.matrices.get("b1y_s", 0.0) * value
+        self.l_b1x_s = self._matrices.get("b1x_s", 0.0) * value
+        self.l_b1y_s = self._matrices.get("b1y_s", 0.0) * value
 
     @property
     def jeff_i(self) -> Distribution:
@@ -227,7 +236,7 @@ class LiouvillianIS:
     def jeff_i(self, distribution: Distribution) -> None:
         self._jeff_i = distribution
         values = distribution.values.reshape((-1, 1, 1, 1))
-        self._l_jeff_i = self.basis.matrices.get("jeff_i", np.array(0.0)) * values
+        self._l_jeff_i = self._matrices.get("jeff_i", np.array(0.0)) * values
         self._jeff_i_weights = distribution.weights.reshape((-1, 1, 1, 1))
 
     @property
@@ -237,7 +246,7 @@ class LiouvillianIS:
     @gradient_dephasing.setter
     def gradient_dephasing(self, value: float) -> None:
         self._gradient_dephasing = value
-        self.basis.scale_matrices("d_{state}", value * 1e-12)
+        self._scale_matrices("d_{state}", value * 1e-12)
         self._build_base_liouvillian()
 
     @property
