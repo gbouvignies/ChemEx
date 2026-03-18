@@ -39,6 +39,13 @@ _LIST = rf"([(](({_FLOAT})(,|[)]$))+)"
 _GRID_DEFINTION = (_LINEAR, _GEOMETRIC, _LIST)
 
 
+class ConstraintExpressionError(ValueError):
+    def __init__(self, expression: str, detail: str) -> None:
+        super().__init__(detail)
+        self.expression = expression
+        self.detail = detail
+
+
 class ModelReader(Protocol):
     @property
     def name(self) -> str: ...
@@ -366,6 +373,36 @@ class ParameterCatalog:
             ids_right[match.group(0)] = self.get_matching_ids(param_name)
         return ids_right
 
+    def _split_constraint_expression(self, expression: str) -> tuple[str, str]:
+        left, right, *something_else = expression.split("=")
+
+        if something_else:
+            detail = "Expected a single '=' in the constraint expression"
+            raise ConstraintExpressionError(expression, detail)
+
+        return left, right.strip()
+
+    def _resolve_constraint_reference(
+        self,
+        expression: str,
+        left_id: str,
+        reference: str,
+        candidate_ids: set[str],
+    ) -> str:
+        if not candidate_ids:
+            detail = f'No parameter matches reference "{reference}"'
+            raise ConstraintExpressionError(expression, detail)
+
+        non_self_candidate_ids = candidate_ids - {left_id}
+        if not non_self_candidate_ids:
+            detail = (
+                f'Reference "{reference}" resolves only to the constrained parameter'
+            )
+            raise ConstraintExpressionError(expression, detail)
+
+        param_name = self._parameters[left_id].param_name
+        return param_name.get_closest_id(non_self_candidate_ids)
+
     def _set_expression(self, expression: str, ids_pool: set[str]) -> set[str]:
         """Set expressions for parameters based on an input expression.
 
@@ -377,11 +414,7 @@ class ParameterCatalog:
             set[str]: Set of parameter IDs updated.
 
         """
-        left, right, *something_else = expression.split("=")
-
-        if something_else:
-            print_error_constraints(expression)
-            sys.exit()
+        left, right = self._split_constraint_expression(expression)
 
         ids_left = self._get_ids_left(left) & ids_pool
         ids_right_dict = self._get_ids_right(right)
@@ -389,8 +422,12 @@ class ParameterCatalog:
         for id_left in ids_left:
             new_expression = right.strip()
             for section_name, ids_right in ids_right_dict.items():
-                name = self._parameters[id_left].param_name
-                id_replace = name.get_closest_id(ids_right)
+                id_replace = self._resolve_constraint_reference(
+                    expression,
+                    id_left,
+                    section_name,
+                    ids_right,
+                )
                 new_expression = new_expression.replace(section_name, id_replace)
             self._parameters[id_left].expr = new_expression
 
@@ -409,10 +446,14 @@ class ParameterCatalog:
         ids_modified: set[str] = set()
         ids_pool = set(self._parameters)
 
-        for expression in reversed(expression_list):
-            ids_changed = self._set_expression(expression, ids_pool)
-            ids_pool -= ids_changed
-            ids_modified.update(ids_changed)
+        try:
+            for expression in reversed(expression_list):
+                ids_changed = self._set_expression(expression, ids_pool)
+                ids_pool -= ids_changed
+                ids_modified.update(ids_changed)
+        except ConstraintExpressionError as error:
+            print_error_constraints(error.expression, error.detail)
+            sys.exit(1)
 
         return self._count_per_section(ids_modified)
 
