@@ -5,6 +5,7 @@ types of simulated experiment datasets for statistical analysis.
 """
 
 from collections.abc import Iterator
+from hashlib import blake2b
 from itertools import chain
 from pathlib import Path
 from random import choices
@@ -22,6 +23,85 @@ from chemex.typing import Array
 
 # Type definitions
 SelectionType = list[SpinSystem] | Literal["*", "all"], None
+
+
+def _sanitize_output_part(part: str) -> str:
+    replacements = {
+        "": "__empty__",
+        ".": "__current__",
+        "..": "__parent__",
+    }
+    return replacements.get(part, part)
+
+
+def _filename_parts_for_output(filename: Path) -> tuple[str, ...]:
+    output_path = filename.with_suffix("")
+    parts = output_path.parts
+
+    if output_path.anchor:
+        parts = parts[1:]
+        parts = ("__absolute__", *parts)
+
+    return tuple(_sanitize_output_part(part) for part in parts)
+
+
+def _suffix_path(parts: tuple[str, ...], depth: int) -> Path:
+    return Path(*parts[-depth:])
+
+
+def _append_hash_suffix(path: Path, filename: Path) -> Path:
+    digest = blake2b(str(filename).encode("utf-8"), digest_size=4).hexdigest()
+    return path.parent / f"{path.name}__{digest}"
+
+
+def _build_output_stems(filenames: list[Path]) -> dict[Path, Path]:
+    output_parts = {filename: _filename_parts_for_output(filename) for filename in filenames}
+    depth_by_filename = dict.fromkeys(filenames, 1)
+
+    while True:
+        grouped: dict[Path, list[Path]] = {}
+        for filename, parts in output_parts.items():
+            suffix = _suffix_path(parts, depth_by_filename[filename])
+            grouped.setdefault(suffix, []).append(filename)
+
+        duplicates = [
+            filenames_for_suffix
+            for filenames_for_suffix in grouped.values()
+            if len(filenames_for_suffix) > 1
+        ]
+        if not duplicates:
+            break
+
+        progress = False
+        for filenames_for_suffix in duplicates:
+            for filename in filenames_for_suffix:
+                max_depth = len(output_parts[filename])
+                if depth_by_filename[filename] < max_depth:
+                    depth_by_filename[filename] += 1
+                    progress = True
+
+        if not progress:
+            colliding_filenames = {
+                filename
+                for filenames_for_suffix in duplicates
+                for filename in filenames_for_suffix
+            }
+            return {
+                filename: (
+                    _append_hash_suffix(
+                        _suffix_path(output_parts[filename], depth_by_filename[filename]),
+                        filename,
+                    )
+                    if filename in colliding_filenames
+                    else _suffix_path(output_parts[filename], depth_by_filename[filename])
+                )
+                for filename in filenames
+            }
+
+    return {
+        filename: _suffix_path(output_parts[filename], depth_by_filename[filename])
+        for filename in filenames
+    }
 
 
 class Experiments:
@@ -91,8 +171,11 @@ class Experiments:
         """
         path_dat = path / "Data"
         path_dat.mkdir(parents=True, exist_ok=True)
+        output_stems = _build_output_stems(list(self._experiments))
         for experiment in self:
-            experiment.write(path_dat)
+            output_stem = path_dat / output_stems[experiment.filename]
+            output_stem.parent.mkdir(parents=True, exist_ok=True)
+            experiment.write(output_stem)
 
     def plot(self, path: Path) -> None:
         """Plot each experiment in the collection.
@@ -101,8 +184,11 @@ class Experiments:
             path (Path): Directory path for saving plots.
 
         """
+        output_stems = _build_output_stems(list(self._experiments))
         for experiment in self:
-            experiment.plot(path)
+            output_stem = path / output_stems[experiment.filename]
+            output_stem.parent.mkdir(parents=True, exist_ok=True)
+            experiment.plot(output_stem)
 
     def plot_simulation(self, path: Path) -> None:
         """Plot simulations for each experiment.
@@ -111,8 +197,11 @@ class Experiments:
             path (Path): Directory path for saving simulation plots.
 
         """
+        output_stems = _build_output_stems(list(self._experiments))
         for experiment in self:
-            experiment.plot_simulation(path)
+            output_stem = path / output_stems[experiment.filename]
+            output_stem.parent.mkdir(parents=True, exist_ok=True)
+            experiment.plot_simulation(output_stem)
 
     def select(self, selection: Selection) -> None:
         """Select experiments based on the given selection criteria.

@@ -156,11 +156,10 @@ class CpmgPlotter(Generic[T]):
         self.config = config
         self.printer: PlotPrinter = data_plot_printers["cpmg"]
 
-    def plot(self, path: Path, profiles: list[Profile]) -> None:
-        basename = path / self.filename.name
-        name_pdf = basename.with_suffix(".pdf")
-        name_exp = basename.with_suffix(".exp")
-        name_fit = basename.with_suffix(".fit")
+    def plot(self, output_stem: Path, profiles: list[Profile]) -> None:
+        name_pdf = output_stem.with_suffix(".pdf")
+        name_exp = output_stem.with_suffix(".exp")
+        name_fit = output_stem.with_suffix(".fit")
 
         print_plot_filename(name_pdf)
 
@@ -179,10 +178,9 @@ class CpmgPlotter(Generic[T]):
                     self.printer.print_calc(str(profile.spin_system), data_calc),
                 )
 
-    def plot_simulation(self, path: Path, profiles: list[Profile]) -> None:
-        basename = path / self.filename.name
-        name_pdf = basename.with_suffix(".pdf")
-        name_sim = basename.with_suffix(".sim")
+    def plot_simulation(self, output_stem: Path, profiles: list[Profile]) -> None:
+        name_pdf = output_stem.with_suffix(".pdf")
+        name_sim = output_stem.with_suffix(".sim")
 
         print_plot_filename(name_pdf, extra=False)
 

@@ -35,14 +35,14 @@ class Experiment:
     def residuals(self, params: ParametersLF) -> Array:
         return np.concatenate([profile.residuals(params) for profile in self.profiles])
 
-    def plot(self, path: Path) -> None:
-        self.plotter.plot(path, self.profiles)
+    def plot(self, output_stem: Path) -> None:
+        self.plotter.plot(output_stem, self.profiles)
 
-    def plot_simulation(self, path: Path) -> None:
-        self.plotter.plot_simulation(path, self.profiles)
+    def plot_simulation(self, output_stem: Path) -> None:
+        self.plotter.plot_simulation(output_stem, self.profiles)
 
-    def write(self, path: Path) -> None:
-        filename = (path / self.filename.name).with_suffix(".dat")
+    def write(self, output_stem: Path) -> None:
+        filename = output_stem.with_suffix(".dat")
         with filename.open("w", encoding="utf-8") as file_dat:
             file_dat.write(self.printer.header)
             for profile in sorted(self.profiles):
