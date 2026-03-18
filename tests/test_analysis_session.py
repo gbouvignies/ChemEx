@@ -108,6 +108,19 @@ class FakeExperiments:
         return True
 
 
+class EmptyAfterSelectExperiments(FakeExperiments):
+    def __init__(self, parameter_store: object | None = None) -> None:
+        super().__init__(parameter_store=parameter_store)
+        self.has_profiles = True
+
+    def select(self, selection: Selection) -> None:
+        super().select(selection)
+        self.has_profiles = False
+
+    def __bool__(self) -> bool:
+        return self.has_profiles
+
+
 class DummyExperiment:
     def __init__(self, filename: Path) -> None:
         self.filename = filename
@@ -372,6 +385,33 @@ def test_run_methods_passes_session_to_fit_groups(
     np.testing.assert_equal(len(experiments.selections), 1)
     np.testing.assert_equal(len(session.parameters.status_calls), 1)
     np.testing.assert_equal(recorded["fit_groups"][5], session)
+
+
+def test_run_methods_skips_fit_when_selection_removes_all_profiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = StubSession()
+    experiments = EmptyAfterSelectExperiments(parameter_store=session.parameters)
+    calls: list[str] = []
+
+    monkeypatch.setattr(fitting_module, "print_no_data", lambda: calls.append("no_data"))
+
+    def fail_if_called(*_args, **_kwargs) -> None:
+        pytest.fail("_fit_groups should not run when no profiles remain selected")
+
+    monkeypatch.setattr(fitting_module, "_fit_groups", fail_if_called)
+
+    fitting_module.run_methods(
+        experiments,
+        {"": Method(include=["1H"])},
+        Path("Output"),
+        "normal",
+        session=session,
+    )
+
+    np.testing.assert_equal(calls, ["no_data"])
+    np.testing.assert_equal(len(experiments.selections), 1)
+    np.testing.assert_equal(session.parameters.status_calls, [])
 
 
 def test_run_statistics_uses_session_for_header(
