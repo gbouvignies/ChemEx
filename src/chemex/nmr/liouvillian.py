@@ -11,16 +11,21 @@ Ix, Iy, Iz, Sx, Sy, Sz,
 """
 
 from collections.abc import Iterable
-from itertools import product
 
 import numpy as np
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
 from chemex.nmr.basis import Basis
-from chemex.nmr.constants import SIGNED_XI_RATIO, XI_RATIO, Distribution
+from chemex.nmr.constants import SIGNED_XI_RATIO, Distribution
 from chemex.nmr.detection import build_detection_vector
 from chemex.nmr.distributions import get_b1_distribution
+from chemex.nmr.magnetization import (
+    build_equilibrium_magnetization,
+    build_start_magnetization,
+    detect_signal,
+    keep_components,
+)
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.typing import Array
@@ -83,14 +88,6 @@ class LiouvillianIS:
             ),
             start=np.array(0.0),
         )
-
-    def _collapse(self, magnetization: Array) -> Array:
-        """Collapse the distribution of magnetization into an average."""
-        if (ndim := magnetization.ndim) < 3:
-            return magnetization
-        magnetization_weighted = self.weights * magnetization
-        sum_axes = tuple(range(ndim - 2))
-        return magnetization_weighted.sum(axis=sum_axes)
 
     @property
     def ppm_i(self) -> float:
@@ -279,11 +276,7 @@ class LiouvillianIS:
         self._build_base_liouvillian()
 
     def detect(self, magnetization: Array) -> float:
-        collapsed_magnetization = self._collapse(magnetization)
-        detected = self._detect_vector @ collapsed_magnetization
-        if np.iscomplexobj(detected):
-            detected = np.sign(detected.real) * np.abs(detected)
-        return float(detected.item())
+        return detect_signal(self._detect_vector, magnetization, self.weights)
 
     # def detect_spectrum(
     #     self, magnetization: Array, observed_state: str = "a"
@@ -338,44 +331,15 @@ class LiouvillianIS:
         return magnetization
 
     def get_equilibrium(self) -> Array:
-        mag = np.zeros((self.size, 1))
-        for state, (name, nucleus) in product(
-            self.model.states,
-            self.basis.nuclei.items(),
-        ):
-            scale = self.par_values.get(f"p{state}", 0.0) * XI_RATIO.get(nucleus, 1.0)
-            mag += self.basis.vectors.get(f"{name}e_{state}", 0.0) * scale
-            mag += self.basis.vectors.get(f"{name}z_{state}", 0.0) * scale
-        return mag
+        return build_equilibrium_magnetization(self.basis, self.par_values)
 
     def get_start_magnetization(
         self, terms: Iterable[str], atom: Nucleus = Nucleus.H1
     ) -> Array:
-        ratio = XI_RATIO.get(atom, 1.0)
-        terms_set = set(terms)
-        mag = np.zeros((self.size, 1))
-
-        for component, vector in self.basis.vectors.items():
-            state_specific = "_" in component
-            if not state_specific:
-                continue
-            state = component[-1]
-            for term in terms_set:
-                match = component.startswith(term.strip("+-"))
-                if match:
-                    sign = -1.0 if term.startswith("-") else 1.0
-                    population = self.par_values.get(f"p{state}", 0.0)
-                    mag += sign * population * ratio * vector
-
-        return mag
+        return build_start_magnetization(self.basis, self.par_values, terms, atom)
 
     def keep(self, magnetization: Array, components: Iterable[str]) -> Array:
-        keep = sum(
-            (self.basis.vectors[name] for name in components),
-            start=np.zeros((self.size, 1)),
-        )
-        keep[keep > 0] = 1.0
-        return keep * magnetization
+        return keep_components(self.basis, magnetization, components)
 
     def offsets_to_ppms(self, offsets: Array) -> Array:
         return self.carrier_i + 2.0 * np.pi * offsets / abs(self.ppm_i)
