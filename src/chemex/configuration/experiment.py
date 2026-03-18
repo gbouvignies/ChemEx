@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Literal, TypeVar
+from typing import Literal, TypeVar
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
+from chemex.configuration.b1_config import parse_distribution_config
 from chemex.configuration.types import OptionalB1Field, PulseWidth
 from chemex.configuration.utils import key_to_lower
 from chemex.nmr.constants import Distribution
-from chemex.nmr.distributions.registry import (
-    get_b1_distribution as get_distribution_from_registry,
-)
+from chemex.nmr.distributions.registry import DistributionConfig
 
 T = TypeVar("T")
 
@@ -58,10 +64,19 @@ class B1InhomogeneityMixin(BaseModel):
         description="B1 radio-frequency field strength (Hz or kHz)",
         examples=[25.0, 700.0],
     )
-    b1_distribution: dict[str, Any] | None = Field(
+    b1_distribution: DistributionConfig | None = Field(
         default=None,
         description="B1 distribution configuration (type, scale, res, etc.)",
     )
+
+    @field_validator("b1_distribution", mode="before")
+    @classmethod
+    def _parse_b1_distribution(cls, value: object) -> DistributionConfig | None:
+        if value is None:
+            return None
+        if isinstance(value, dict) and "type" not in value:
+            value = {"type": "gaussian", **value}
+        return parse_distribution_config(value)
 
     def get_b1_nominal(self) -> float:
         """Nominal B1 value for distribution generation."""
@@ -73,21 +88,17 @@ class B1InhomogeneityMixin(BaseModel):
         raise ValueError(msg)
 
     def get_b1_distribution(self) -> Distribution:
-        """Generate B1 distribution using the plugin registry."""
+        """Generate B1 distribution using typed plugin configuration."""
         nominal = self.get_b1_nominal()
 
-        if not self.b1_distribution:
+        if self.b1_distribution is None:
             # Single-point distribution (no inhomogeneity)
             return Distribution(
                 values=np.array([nominal]),
                 weights=np.array([1.0]),
             )
 
-        dist_type = self.b1_distribution.get("type", "gaussian")
-        params = dict(self.b1_distribution)
-        params.pop("type", None)
-
-        return get_distribution_from_registry(dist_type, nominal, **params)
+        return self.b1_distribution.get_distribution(nominal)
 
 
 class RelaxationSettings(ExperimentSettings):

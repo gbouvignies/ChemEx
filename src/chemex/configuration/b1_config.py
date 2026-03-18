@@ -58,6 +58,26 @@ def _build_distribution_adapter() -> TypeAdapter:
 _DISTRIBUTION_ADAPTER = _build_distribution_adapter()
 
 
+def default_distribution_config() -> DistributionConfig:
+    """Build the default Gaussian distribution config."""
+    return _default_distribution()
+
+
+def parse_distribution_config(value: object) -> DistributionConfig:
+    """Parse a distribution config using the registered plugin union."""
+    if isinstance(value, DistributionConfig):
+        return value
+    if isinstance(value, dict):
+        distribution_type = value.get("type")
+        if isinstance(distribution_type, str):
+            registry.get_generator(distribution_type)
+    parsed = _DISTRIBUTION_ADAPTER.validate_python(value)
+    if isinstance(parsed, DistributionConfig):
+        return parsed
+    msg = "Invalid B1 distribution configuration"
+    raise TypeError(msg)
+
+
 class B1FieldConfig(BaseModel):
     """Complete B1 field configuration including nominal value and distribution.
 
@@ -160,13 +180,7 @@ class B1FieldConfig(BaseModel):
     @classmethod
     def _parse_distribution(cls, value: object) -> DistributionConfig:
         """Parse distribution config using dynamic union adapter."""
-        if isinstance(value, DistributionConfig):
-            return value
-        parsed = _DISTRIBUTION_ADAPTER.validate_python(value)
-        if isinstance(parsed, DistributionConfig):
-            return parsed
-        msg = "Invalid B1 distribution configuration"
-        raise TypeError(msg)
+        return parse_distribution_config(value)
 
     @property
     def b1_nominal(self) -> float:
