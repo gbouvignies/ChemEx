@@ -16,10 +16,14 @@ import numpy as np
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
+from chemex.nmr.b1 import (
+    B1DistributionModel,
+    B1Profile,
+    FixedDistributionModel,
+)
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import SIGNED_XI_RATIO, Distribution
 from chemex.nmr.detection import build_detection_vector
-from chemex.nmr.distributions import get_b1_distribution
 from chemex.nmr.magnetization import (
     build_equilibrium_magnetization,
     build_start_magnetization,
@@ -62,9 +66,8 @@ class LiouvillianIS:
         self.offset_i = 0.0
         self.offset_s = 0.0
         self._l_base = np.array(0.0)
-        self._b1_i_inh_scale = 0.0
-        self._b1_i_inh_res = 11
-        self.b1_i = 1e32
+        self._b1_i_profile = B1Profile.gaussian(1e32, scale=0.0, res=11)
+        self._set_b1_i_profile(self._b1_i_profile)
         self.b1_s = 1e32
         self.jeff_i = Distribution(np.array([0.0]), np.array([1.0]))
         self.gradient_dephasing = 0.0
@@ -151,23 +154,44 @@ class LiouvillianIS:
             * np.sign(self.ppm_s)
         )
 
+    def _apply_b1_i_distribution(self, distribution: Distribution) -> None:
+        self._b1_i_dist = distribution
+        self._b1_i_values = distribution.values.reshape((-1, 1, 1))
+        self._b1_i_weights = distribution.weights.reshape((-1, 1, 1))
+        self.l_b1x_i = self._matrices.get("b1x_i", 0.0) * self._b1_i_values
+        self.l_b1y_i = self._matrices.get("b1y_i", 0.0) * self._b1_i_values
+
+    def _set_b1_i_profile(self, profile: B1Profile) -> None:
+        self._b1_i_profile = profile.with_distribution(profile.distribution)
+        self._b1_i = self._b1_i_profile.nominal
+        self._apply_b1_i_distribution(self._b1_i_profile.build_distribution())
+
+    def set_b1_i_inhomogeneity(
+        self,
+        nominal: float,
+        distribution: B1DistributionModel = None,
+    ) -> None:
+        """Set the nominal B1 field and the model used to build its distribution."""
+        profile = B1Profile(nominal=nominal, distribution=distribution)
+        self._set_b1_i_profile(profile)
+
     @property
     def b1_i_inh_scale(self) -> float:
-        return self._b1_i_inh_scale
+        return self._b1_i_profile.scale
 
     @b1_i_inh_scale.setter
     def b1_i_inh_scale(self, value: float) -> None:
-        self._b1_i_inh_scale = value
-        self.b1_i = self._b1_i
+        # These legacy knobs explicitly switch the runtime back to the Gaussian
+        # model used by the historic `b1_i` path.
+        self._set_b1_i_profile(self._b1_i_profile.with_gaussian(scale=value))
 
     @property
     def b1_i_inh_res(self) -> int:
-        return self._b1_i_inh_res
+        return self._b1_i_profile.res
 
     @b1_i_inh_res.setter
     def b1_i_inh_res(self, value: int) -> None:
-        self._b1_i_inh_res = value
-        self.b1_i = self._b1_i
+        self._set_b1_i_profile(self._b1_i_profile.with_gaussian(res=value))
 
     @property
     def b1_i(self) -> float:
@@ -175,38 +199,31 @@ class LiouvillianIS:
 
     @b1_i.setter
     def b1_i(self, value: float) -> None:
-        self._b1_i = value
-        distribution = get_b1_distribution(
-            distribution_type="gaussian",
-            value=self.b1_i,
-            scale=self.b1_i_inh_scale,
-            res=self.b1_i_inh_res,
-        )
-        self._b1_i_dist = distribution
-        self._b1_i_values = distribution.values.reshape((-1, 1, 1))
-        self._b1_i_weights = distribution.weights.reshape((-1, 1, 1))
-        self.l_b1x_i = self._matrices.get("b1x_i", 0.0) * self._b1_i_values
-        self.l_b1y_i = self._matrices.get("b1y_i", 0.0) * self._b1_i_values
+        self._set_b1_i_profile(self._b1_i_profile.with_nominal(value))
 
-    def set_b1_i_distribution(self, distribution: Distribution) -> None:
-        """Set B1 inhomogeneity distribution directly.
-
-        This method allows setting a custom B1 distribution, bypassing the
-        default Gaussian distribution generated from b1_i_inh_scale and
-        b1_i_inh_res.
+    def set_b1_i_distribution(
+        self,
+        distribution: Distribution,
+        *,
+        nominal: float | None = None,
+    ) -> None:
+        """Set a sampled B1 distribution directly.
 
         Parameters
         ----------
         distribution : Distribution
-            B1 distribution with values and weights
+            Sampled B1 values and weights.
+        nominal : float, optional
+            Nominal B1 field associated with the sampled points. If omitted,
+            the weighted average of the sampled values is used.
 
         """
-        self._b1_i_dist = distribution
-        self._b1_i = float(distribution.values.mean())
-        self._b1_i_values = distribution.values.reshape((-1, 1, 1))
-        self._b1_i_weights = distribution.weights.reshape((-1, 1, 1))
-        self.l_b1x_i = self._matrices.get("b1x_i", 0.0) * self._b1_i_values
-        self.l_b1y_i = self._matrices.get("b1y_i", 0.0) * self._b1_i_values
+        if nominal is None:
+            nominal = float(
+                np.average(distribution.values, weights=distribution.weights)
+            )
+        model = FixedDistributionModel.from_distribution(distribution, nominal)
+        self._set_b1_i_profile(B1Profile(nominal=nominal, distribution=model))
 
     @property
     def b1_i_dist(self) -> Distribution:

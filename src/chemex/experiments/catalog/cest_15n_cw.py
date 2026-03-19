@@ -86,9 +86,10 @@ def build_spectrometer(
 
     spectrometer.carrier_i = settings.carrier
 
-    # Set the B1 inhomogeneity distribution
-    distribution = settings.get_b1_distribution()
-    liouvillian.set_b1_i_distribution(distribution)
+    spectrometer.set_b1_i_inhomogeneity(
+        settings.get_b1_nominal(),
+        settings.b1_distribution,
+    )
 
     spectrometer.b1_s = settings.b1_frq_dec
     spectrometer.carrier_s = settings.carrier_dec

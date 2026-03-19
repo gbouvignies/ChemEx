@@ -72,9 +72,10 @@ def build_spectrometer(config: Cest15NConfig, spin_system: SpinSystem) -> Spectr
 
     spectrometer.carrier_i = settings.carrier
 
-    # Set the B1 inhomogeneity distribution
-    distribution = settings.get_b1_distribution()
-    liouvillian.set_b1_i_distribution(distribution)
+    spectrometer.set_b1_i_inhomogeneity(
+        settings.get_b1_nominal(),
+        settings.b1_distribution,
+    )
 
     spectrometer.detection = settings.detection
 
