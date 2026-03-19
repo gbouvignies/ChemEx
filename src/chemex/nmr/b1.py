@@ -78,34 +78,3 @@ class B1Profile:
 
     def with_nominal(self, nominal: float) -> B1Profile:
         return replace(self, nominal=nominal)
-
-    def with_gaussian(
-        self,
-        *,
-        scale: float | None = None,
-        res: int | None = None,
-    ) -> B1Profile:
-        current_scale = float(getattr(self.distribution, "scale", 0.0))
-        current_res = self.res if self.res > 1 else 11
-        return type(self).gaussian(
-            self.nominal,
-            scale=current_scale if scale is None else scale,
-            res=current_res if res is None else res,
-        )
-
-    @property
-    def scale(self) -> float:
-        return float(getattr(self.distribution, "scale", 0.0))
-
-    @property
-    def res(self) -> int:
-        distribution = self.distribution
-        if distribution is None:
-            return 1
-        res = getattr(distribution, "res", None)
-        if isinstance(res, int):
-            return res
-        scales = getattr(distribution, "scales", None)
-        if isinstance(scales, tuple):
-            return len(scales)
-        return 1

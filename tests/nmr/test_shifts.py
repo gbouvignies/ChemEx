@@ -25,9 +25,7 @@ def make_spectrometer() -> Spectrometer:
 
 def test_calculate_shifts_returns_liouvillian_eigenvalue_imaginary_parts() -> None:
     spectrometer = make_spectrometer()
-    expected = np.linalg.eigvals(
-        np.squeeze(spectrometer.liouvillian.l_free).astype(np.complex128),
-    ).imag
+    expected = np.linalg.eigvals(np.squeeze(spectrometer.liouvillian.l_free)).imag
 
     shifts = spectrometer.calculate_shifts()
 

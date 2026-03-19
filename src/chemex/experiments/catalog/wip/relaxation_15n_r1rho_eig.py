@@ -8,13 +8,12 @@ import numpy as np
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
-from chemex.configuration.experiment import ExperimentSettings
+from chemex.configuration.experiment import B1InhomogeneityMixin, ExperimentSettings
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import PlanesFilterer
 from chemex.nmr.basis import Basis
-from chemex.nmr.distributions.gaussian import GaussianDistributionConfig
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
@@ -25,7 +24,7 @@ from chemex.typing import Array
 EXPERIMENT_NAME = "wip.relaxation_15n_r1rho_eig"
 
 
-class Relaxation15NR1RhoSettings(ExperimentSettings):
+class Relaxation15NR1RhoSettings(ExperimentSettings, B1InhomogeneityMixin):
     name: Literal["wip.relaxation_15n_r1rho_eig"]
 
     carrier: float
@@ -68,11 +67,8 @@ def build_spectrometer(
 
     spectrometer.carrier_i = settings.carrier
     spectrometer.set_b1_i_inhomogeneity(
-        settings.b1_frq,
-        GaussianDistributionConfig(
-            scale=settings.b1_inh_scale,
-            res=settings.b1_inh_res,
-        ),
+        settings.get_b1_nominal(),
+        settings.b1_distribution,
     )
 
     spectrometer.detection = settings.detection

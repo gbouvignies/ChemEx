@@ -150,23 +150,6 @@ class Spectrometer:
         self._invalidate_base_pulses("s")
 
     @property
-    def b1_i_inh_scale(self) -> float:
-        return self.liouvillian.b1_i_inh_scale
-
-    @b1_i_inh_scale.setter
-    def b1_i_inh_scale(self, value: float) -> None:
-        self._set_liouvillian_attr("b1_i_inh_scale", value, invalidate=("i",))
-
-    @property
-    def b1_i_inh_res(self) -> int:
-        return self.liouvillian.b1_i_inh_res
-
-    @b1_i_inh_res.setter
-    def b1_i_inh_res(self, value: int) -> None:
-        self.liouvillian.b1_i_inh_res = value
-        self._invalidate_base_pulses("i")
-
-    @property
     def jeff_i(self) -> Distribution:
         return self.liouvillian.jeff_i
 
@@ -361,7 +344,7 @@ class Spectrometer:
             self.liouvillian.size,
             purpose="Shift eigenvalue calculation",
         )
-        return np.linalg.eigvals(liouv.astype(np.complex128)).imag
+        return np.linalg.eigvals(liouv).imag
 
     def offsets_to_ppms(self, offsets: Array) -> Array:
         return self.liouvillian.offsets_to_ppms(offsets)

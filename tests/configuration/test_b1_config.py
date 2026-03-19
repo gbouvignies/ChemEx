@@ -6,6 +6,8 @@ from pydantic import ValidationError
 
 from chemex.configuration.b1_config import B1FieldConfig
 from chemex.configuration.experiment import B1InhomogeneityMixin
+from chemex.nmr.distributions.dephasing import DephasingConfig
+from chemex.nmr.distributions.gaussian import GaussianDistributionConfig
 
 
 class DummyB1Settings(B1InhomogeneityMixin):
@@ -149,10 +151,49 @@ def test_b1_inhomogeneity_mixin_without_distribution_uses_single_point():
 
 
 def test_b1_inhomogeneity_mixin_rejects_unknown_distribution_type():
-    with pytest.raises(ValueError, match="Unknown B1 distribution type"):
+    with pytest.raises(ValidationError, match="Unknown B1 distribution type"):
         DummyB1Settings.model_validate(
             {
                 "b1_frq": 15.0,
                 "b1_distribution": {"type": "nonexistent"},
+            }
+        )
+
+
+def test_b1_inhomogeneity_mixin_normalizes_legacy_gaussian_fields():
+    settings = DummyB1Settings.model_validate(
+        {
+            "b1_frq": 15.0,
+            "b1_inh_scale": 0.2,
+            "b1_inh_res": 7,
+        }
+    )
+
+    assert isinstance(settings.b1_distribution, GaussianDistributionConfig)
+    assert settings.b1_distribution.scale == 0.2
+    assert settings.b1_distribution.res == 7
+
+
+def test_b1_inhomogeneity_mixin_normalizes_legacy_dephasing_scale():
+    settings = DummyB1Settings.model_validate(
+        {
+            "b1_frq": 15.0,
+            "b1_inh_scale": np.inf,
+        }
+    )
+
+    assert isinstance(settings.b1_distribution, DephasingConfig)
+
+
+def test_b1_inhomogeneity_mixin_rejects_legacy_and_typed_distribution_together():
+    with pytest.raises(
+        ValidationError,
+        match="Use either 'b1_distribution' or the legacy",
+    ):
+        DummyB1Settings.model_validate(
+            {
+                "b1_frq": 15.0,
+                "b1_distribution": {"type": "gaussian", "scale": 0.1, "res": 5},
+                "b1_inh_scale": 0.2,
             }
         )

@@ -75,8 +75,7 @@ class LiouvillianIS:
         self.offset_i = 0.0
         self.offset_s = 0.0
         self._l_base = np.array(0.0)
-        self._b1_i_profile = B1Profile.gaussian(1e32, scale=0.0, res=11)
-        self._set_b1_i_profile(self._b1_i_profile)
+        self._set_b1_i_profile(B1Profile.gaussian(1e32, scale=0.0, res=11))
         self.b1_s = 1e32
         self.jeff_i = Distribution(np.array([0.0]), np.array([1.0]))
         self.gradient_dephasing = 0.0
@@ -164,7 +163,7 @@ class LiouvillianIS:
         )
 
     def _set_b1_i_profile(self, profile: B1Profile) -> None:
-        self._b1_i_profile = profile.with_distribution(profile.distribution)
+        self._b1_i_profile = profile
         self._b1_i = self._b1_i_profile.nominal
         self._b1_i_state = B1DistributionState.build(
             self._b1_i_profile.build_distribution(),
@@ -178,26 +177,10 @@ class LiouvillianIS:
         distribution: B1DistributionModel = None,
     ) -> None:
         """Set the nominal B1 field and the model used to build its distribution."""
-        profile = B1Profile(nominal=nominal, distribution=distribution)
+        profile = self._b1_i_profile.with_nominal(nominal).with_distribution(
+            distribution
+        )
         self._set_b1_i_profile(profile)
-
-    @property
-    def b1_i_inh_scale(self) -> float:
-        return self._b1_i_profile.scale
-
-    @b1_i_inh_scale.setter
-    def b1_i_inh_scale(self, value: float) -> None:
-        # These legacy knobs explicitly switch the runtime back to the Gaussian
-        # model used by the historic `b1_i` path.
-        self._set_b1_i_profile(self._b1_i_profile.with_gaussian(scale=value))
-
-    @property
-    def b1_i_inh_res(self) -> int:
-        return self._b1_i_profile.res
-
-    @b1_i_inh_res.setter
-    def b1_i_inh_res(self, value: int) -> None:
-        self._set_b1_i_profile(self._b1_i_profile.with_gaussian(res=value))
 
     @property
     def b1_i(self) -> float:
@@ -229,7 +212,9 @@ class LiouvillianIS:
                 np.average(distribution.values, weights=distribution.weights)
             )
         model = FixedDistributionModel.from_distribution(distribution, nominal)
-        self._set_b1_i_profile(B1Profile(nominal=nominal, distribution=model))
+        self._set_b1_i_profile(
+            self._b1_i_profile.with_nominal(nominal).with_distribution(model)
+        )
 
     @property
     def b1_i_dist(self) -> Distribution:
@@ -299,8 +284,9 @@ class LiouvillianIS:
 
     @detection.setter
     def detection(self, value: str) -> None:
+        detect_vector = build_detection_vector(value, self.basis.vectors).transpose()
         self._detection = value
-        self._detect_vector = build_detection_vector(value, self.basis.vectors).transpose()
+        self._detect_vector = detect_vector
 
     def update(self, par_values: dict[str, float]) -> None:
         self.par_values = par_values
