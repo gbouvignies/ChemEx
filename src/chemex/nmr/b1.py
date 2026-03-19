@@ -102,8 +102,10 @@ class B1Profile:
         distribution = self.distribution
         if distribution is None:
             return 1
-        if hasattr(distribution, "res"):
-            return int(distribution.res)
-        if hasattr(distribution, "scales"):
-            return len(distribution.scales)
+        res = getattr(distribution, "res", None)
+        if isinstance(res, int):
+            return res
+        scales = getattr(distribution, "scales", None)
+        if isinstance(scales, tuple):
+            return len(scales)
         return 1
