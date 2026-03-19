@@ -5,6 +5,7 @@ from functools import reduce
 
 import numpy as np
 
+from chemex.nmr.b1 import B1DistributionModel
 from chemex.nmr.constants import Distribution
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.propagators import (
@@ -106,6 +107,31 @@ class Spectrometer:
     def b1_i(self, value: float) -> None:
         self._pw90_i = 1.0 / (4.0 * value) if value else 0.0
         self.liouvillian.b1_i = value
+        self.calculate_i_flag = True
+        self.calculate_s_flag = True
+
+    def set_b1_i_inhomogeneity(
+        self,
+        nominal: float,
+        distribution: B1DistributionModel = None,
+    ) -> None:
+        self._pw90_i = 1.0 / (4.0 * nominal) if nominal else 0.0
+        self.liouvillian.set_b1_i_inhomogeneity(nominal, distribution)
+        self.calculate_i_flag = True
+        self.calculate_s_flag = True
+
+    def set_b1_i_distribution(
+        self,
+        distribution: Distribution,
+        *,
+        nominal: float | None = None,
+    ) -> None:
+        if nominal is None:
+            nominal = float(
+                np.average(distribution.values, weights=distribution.weights),
+            )
+        self._pw90_i = 1.0 / (4.0 * nominal) if nominal else 0.0
+        self.liouvillian.set_b1_i_distribution(distribution, nominal=nominal)
         self.calculate_i_flag = True
         self.calculate_s_flag = True
 
