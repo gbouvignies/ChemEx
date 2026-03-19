@@ -132,7 +132,7 @@ class Cest15NTrSequence:
 
             intensities[offset] = (
                 spectrometer.pulse_i(self.settings.time_t1, 0.0) @ intensities[offset]
-            ).real.astype(float)
+            )
 
         return np.array(
             [spectrometer.detect(intensities[offset]) for offset in offsets],

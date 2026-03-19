@@ -45,13 +45,13 @@ def calculate_propagators(
     dephasing: bool = False,
 ) -> Array:
     """Calculate propagators for one or more delays."""
+    liouv_array = np.asarray(liouv, dtype=np.float64)
     delays_array = np.atleast_1d(np.asarray(delays, dtype=np.float64))
 
-    if delays_array.size == 1 and not dephasing:
-        return expm(liouv * delays_array[0]).astype(np.float64)
+    if liouv_array.ndim == 2 and delays_array.size == 1 and not dephasing:
+        return expm(liouv_array * delays_array[0])
 
-    eigenvalues, eigenvectors = np.linalg.eig(liouv)
-    eigenvalues = eigenvalues.astype(np.complex128)
+    eigenvalues, eigenvectors = np.linalg.eig(liouv_array)
     if dephasing:
         eigenvalues = _dephase_eigenvalues(eigenvalues)
 
@@ -69,7 +69,7 @@ def calculate_propagators(
     if propagators.shape[0] == 1:
         propagators = propagators[0]
 
-    return propagators.real.astype(np.float64)
+    return propagators.real
 
 
 @cached(cache={}, key=_cache_key)
@@ -93,7 +93,7 @@ def make_perfect90(liouvillian: LiouvillianIS, spin: str) -> Array:
     size = liouvillian.size
     zeros = np.zeros((size, size))
     rot = liouvillian.basis.matrices.get(f"b1x_{spin}", zeros)
-    return expm(0.25 * rot).reshape(1, 1, size, size).astype(np.float64)
+    return expm(0.25 * rot).reshape(1, 1, size, size)
 
 
 @cached(cache={}, key=_cache_key)

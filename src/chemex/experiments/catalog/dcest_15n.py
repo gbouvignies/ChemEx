@@ -176,7 +176,7 @@ class DCest15NSequence:
 
         for offset in set(offsets):
             if self.is_reference(offset):
-                intensities[offset] = (d_eq @ start).real.astype(float)
+                intensities[offset] = d_eq @ start
                 continue
 
             spectrometer.offset_i = offset
@@ -186,7 +186,7 @@ class DCest15NSequence:
 
             intensities[offset] = (
                 d_eq @ matrix_power(p_delay @ p_pulse, self.settings.ncyc_dante) @ start
-            ).real.astype(float)
+            )
 
         return np.array(
             [spectrometer.detect(intensities[offset]) for offset in offsets],
