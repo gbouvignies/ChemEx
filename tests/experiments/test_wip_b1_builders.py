@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from chemex.experiments.catalog.wip import (
+    cest_15n_test,
     relaxation_15n_r1rho,
     relaxation_15n_r1rho_eig,
 )
@@ -14,6 +15,18 @@ from chemex.parameters.spin_system import SpinSystem
 @pytest.mark.parametrize(
     ("config_cls", "build_spectrometer", "experiment"),
     [
+        (
+            cest_15n_test.Cest15NTestConfig,
+            cest_15n_test.build_spectrometer,
+            {
+                "name": "cest_15n_test",
+                "time_t1": 0.2,
+                "carrier": 118.0,
+                "b1_frq": 25.0,
+                "b1_inh_scale": 0.15,
+                "b1_inh_res": 9,
+            },
+        ),
         (
             relaxation_15n_r1rho.Relaxation15NR1RhoConfig,
             relaxation_15n_r1rho.build_spectrometer,
