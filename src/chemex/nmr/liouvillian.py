@@ -309,11 +309,30 @@ class LiouvillianIS:
 
     #     return self._detect_vector @ collapsed_magnetization
 
+    def _reshape_r1rho_liouvillian(self, liouvillian: Array) -> Array:
+        squeezed = np.squeeze(liouvillian)
+        expected_shape = (self.size, self.size)
+        if squeezed.shape != expected_shape:
+            msg = (
+                "R1rho eigenvalue calculation requires single-point B1 and Jeff "
+                "distributions; "
+                f"got Liouvillian shape {liouvillian.shape} "
+                f"(squeezed to {squeezed.shape})."
+            )
+            raise ValueError(msg)
+        return squeezed.reshape(expected_shape)
+
     def calculate_r1rho(self) -> float:
-        liouv = self.l_free + self.l_b1x_i
-        liouv = liouv.reshape((self.size, self.size))
+        liouv = self._reshape_r1rho_liouvillian(self.l_free + self.l_b1x_i)
         eigenvalues = np.linalg.eigvals(liouv)
-        real_eigenvalues = eigenvalues[abs(eigenvalues.imag) < SMALL_VALUE].real
+        real_eigenvalues = eigenvalues[np.isclose(eigenvalues.imag, 0.0, atol=SMALL_VALUE)].real
+        if real_eigenvalues.size == 0:
+            smallest_imag = float(np.min(np.abs(eigenvalues.imag)))
+            msg = (
+                "R1rho eigenvalue calculation did not find a nearly real eigenvalue "
+                f"within atol={SMALL_VALUE}; smallest |imag| was {smallest_imag:.3e}."
+            )
+            raise ValueError(msg)
         return -float(np.max(real_eigenvalues))
 
     def tilt_mag_along_weff_i(
