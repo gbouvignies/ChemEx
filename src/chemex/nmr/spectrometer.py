@@ -14,6 +14,7 @@ from chemex.nmr.propagators import (
     make_perfect90,
     make_perfect180,
 )
+from chemex.nmr.pulse_cache import ISpinPulseCache, SSpinPulseCache
 from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.typing import Array
 
@@ -24,6 +25,26 @@ class Spectrometer:
     def _add_phases(self, propagator: Array, spin: str = "i") -> Array:
         phases = self._phases[spin]
         return np.array([phases[i] @ propagator @ phases[-i] for i in range(4)])
+
+    def _invalidate_base_pulses(self, *spins: str) -> None:
+        for spin in spins or ("i", "s"):
+            if spin == "i":
+                self._i_pulses.invalidate()
+            elif spin == "s":
+                self._s_pulses.invalidate()
+            else:
+                msg = f"Unknown spin cache {spin!r}"
+                raise ValueError(msg)
+
+    def _set_liouvillian_attr(
+        self,
+        name: str,
+        value: float | str | Distribution,
+        *,
+        invalidate: tuple[str, ...] = ("i", "s"),
+    ) -> None:
+        setattr(self.liouvillian, name, value)
+        self._invalidate_base_pulses(*invalidate)
 
     def __init__(self, liouvillian: LiouvillianIS) -> None:
         self.liouvillian = liouvillian
@@ -38,22 +59,15 @@ class Spectrometer:
             components={"ie", "se", "iz", "sz", "2izsz"}
             & set(liouvillian.basis.components),
         )
-        self.calculate_i_flag = True
-        self.calculate_s_flag = True
-        self._pw90_i = 0.0
-        self._pw90_s = 0.0
-        self._p90_i = np.array(0.0)
-        self._p180_i = np.array(0.0)
-        self._p240_i = np.array(0.0)
-        self._p180_s = np.array(0.0)
+        self._i_pulses = ISpinPulseCache()
+        self._s_pulses = SSpinPulseCache()
 
     def keep(self, magnetization: Array, components: Iterable[str]) -> Array:
         return self.liouvillian.keep(magnetization, components)
 
     def update(self, par_values: dict[str, float]) -> None:
         self.liouvillian.update(par_values)
-        self.calculate_i_flag = True
-        self.calculate_s_flag = True
+        self._invalidate_base_pulses()
 
     @property
     def par_values(self) -> dict[str, float]:
@@ -65,9 +79,7 @@ class Spectrometer:
 
     @carrier_i.setter
     def carrier_i(self, value: float) -> None:
-        self.liouvillian.carrier_i = value
-        self.calculate_i_flag = True
-        self.calculate_s_flag = True
+        self._set_liouvillian_attr("carrier_i", value)
 
     @property
     def carrier_s(self) -> float:
@@ -75,9 +87,7 @@ class Spectrometer:
 
     @carrier_s.setter
     def carrier_s(self, value: float) -> None:
-        self.liouvillian.carrier_s = value
-        self.calculate_i_flag = True
-        self.calculate_s_flag = True
+        self._set_liouvillian_attr("carrier_s", value)
 
     @property
     def offset_i(self) -> float:
@@ -85,9 +95,7 @@ class Spectrometer:
 
     @offset_i.setter
     def offset_i(self, value: float) -> None:
-        self.liouvillian.offset_i = value
-        self.calculate_i_flag = True
-        self.calculate_s_flag = True
+        self._set_liouvillian_attr("offset_i", value)
 
     @property
     def offset_s(self) -> float:
@@ -95,9 +103,7 @@ class Spectrometer:
 
     @offset_s.setter
     def offset_s(self, value: float) -> None:
-        self.liouvillian.offset_s = value
-        self.calculate_i_flag = True
-        self.calculate_s_flag = True
+        self._set_liouvillian_attr("offset_s", value)
 
     @property
     def b1_i(self) -> float:
@@ -105,20 +111,18 @@ class Spectrometer:
 
     @b1_i.setter
     def b1_i(self, value: float) -> None:
-        self._pw90_i = 1.0 / (4.0 * value) if value else 0.0
+        self._i_pulses.set_b1(value)
         self.liouvillian.b1_i = value
-        self.calculate_i_flag = True
-        self.calculate_s_flag = True
+        self._invalidate_base_pulses("i")
 
     def set_b1_i_inhomogeneity(
         self,
         nominal: float,
         distribution: B1DistributionModel = None,
     ) -> None:
-        self._pw90_i = 1.0 / (4.0 * nominal) if nominal else 0.0
+        self._i_pulses.set_b1(nominal)
         self.liouvillian.set_b1_i_inhomogeneity(nominal, distribution)
-        self.calculate_i_flag = True
-        self.calculate_s_flag = True
+        self._invalidate_base_pulses("i")
 
     def set_b1_i_distribution(
         self,
@@ -130,10 +134,9 @@ class Spectrometer:
             nominal = float(
                 np.average(distribution.values, weights=distribution.weights),
             )
-        self._pw90_i = 1.0 / (4.0 * nominal) if nominal else 0.0
+        self._i_pulses.set_b1(nominal)
         self.liouvillian.set_b1_i_distribution(distribution, nominal=nominal)
-        self.calculate_i_flag = True
-        self.calculate_s_flag = True
+        self._invalidate_base_pulses("i")
 
     @property
     def b1_s(self) -> float:
@@ -141,10 +144,9 @@ class Spectrometer:
 
     @b1_s.setter
     def b1_s(self, value: float) -> None:
-        self._pw90_s = 1.0 / (4.0 * value) if value else 0.0
+        self._s_pulses.set_b1(value)
         self.liouvillian.b1_s = value
-        self.calculate_i_flag = True
-        self.calculate_s_flag = True
+        self._invalidate_base_pulses("s")
 
     @property
     def b1_i_inh_scale(self) -> float:
@@ -152,9 +154,7 @@ class Spectrometer:
 
     @b1_i_inh_scale.setter
     def b1_i_inh_scale(self, value: float) -> None:
-        self.liouvillian.b1_i_inh_scale = value
-        self.calculate_i_flag = True
-        self.calculate_s_flag = True
+        self._set_liouvillian_attr("b1_i_inh_scale", value, invalidate=("i",))
 
     @property
     def b1_i_inh_res(self) -> int:
@@ -163,8 +163,7 @@ class Spectrometer:
     @b1_i_inh_res.setter
     def b1_i_inh_res(self, value: int) -> None:
         self.liouvillian.b1_i_inh_res = value
-        self.calculate_i_flag = True
-        self.calculate_s_flag = True
+        self._invalidate_base_pulses("i")
 
     @property
     def jeff_i(self) -> Distribution:
@@ -172,9 +171,7 @@ class Spectrometer:
 
     @jeff_i.setter
     def jeff_i(self, value: Distribution) -> None:
-        self.liouvillian.jeff_i = value
-        self.calculate_i_flag = True
-        self.calculate_s_flag = True
+        self._set_liouvillian_attr("jeff_i", value)
 
     def get_equilibrium(self) -> Array:
         return self.liouvillian.get_equilibrium()
@@ -208,9 +205,7 @@ class Spectrometer:
 
     @gradient_dephasing.setter
     def gradient_dephasing(self, value: float) -> None:
-        self.liouvillian.gradient_dephasing = value
-        self.calculate_i_flag = True
-        self.calculate_s_flag = True
+        self._set_liouvillian_attr("gradient_dephasing", value)
 
     def delays(self, times: float | Iterable[float]) -> Array:
         return calculate_propagators(self.liouvillian.l_free, times)
@@ -274,28 +269,26 @@ class Spectrometer:
         base = reduce(np.matmul, (pulses[pair] for pair in reversed(pairs)))
         return self._add_phases(base, "i")
 
-    def _calculate_base_pulses_i(self) -> None:
-        if self.calculate_i_flag:
-            pws = np.array([1.0, 2.0, 8.0 / 3.0]) * self._pw90_i
-            base = self.pulse_i(pws, 0.0)
-            pulses = self._add_phases(base, "i")
-            self._p90_i, self._p180_i, self._p240_i = pulses.swapaxes(0, 1)
-            self.calculate_i_flag = False
+    def _ensure_base_pulses_i(self) -> None:
+        if self._i_pulses.dirty:
+            base = self.pulse_i(self._i_pulses.pulse_widths(), 0.0)
+            p90, p180, p240 = self._add_phases(base, "i").swapaxes(0, 1)
+            self._i_pulses.store(p90=p90, p180=p180, p240=p240)
 
     @property
     def p90_i(self) -> Array:
-        self._calculate_base_pulses_i()
-        return self._p90_i
+        self._ensure_base_pulses_i()
+        return self._i_pulses.p90
 
     @property
     def p180_i(self) -> Array:
-        self._calculate_base_pulses_i()
-        return self._p180_i
+        self._ensure_base_pulses_i()
+        return self._i_pulses.p180
 
     @property
     def p240_i(self) -> Array:
-        self._calculate_base_pulses_i()
-        return self._p240_i
+        self._ensure_base_pulses_i()
+        return self._i_pulses.p240
 
     @property
     def p9018090_i_1(self) -> Array:
@@ -313,24 +306,22 @@ class Spectrometer:
     def p9024090_i_2(self) -> Array:
         return self.p90_i[[1, 2, 3, 0]] @ self.p240_i @ self.p90_i[[1, 2, 3, 0]]
 
-    def _calculate_base_pulses_s(self) -> None:
-        if self.calculate_s_flag:
-            pws = np.array([2.0]) * self._pw90_s
-            base = self.pulse_s(pws, 0.0)
-            pulses = self._add_phases(base, "s")
-            self._p180_s = pulses.swapaxes(0, 1)
-            self.calculate_s_flag = False
+    def _ensure_base_pulses_s(self) -> None:
+        if self._s_pulses.dirty:
+            base = self.pulse_s(self._s_pulses.pulse_widths(), 0.0)
+            (p180,) = self._add_phases(base, "s").swapaxes(0, 1)
+            self._s_pulses.store(p180=p180)
 
     @property
     def p180_s(self) -> Array:
-        self._calculate_base_pulses_s()
-        return self._p180_s
+        self._ensure_base_pulses_s()
+        return self._s_pulses.p180
 
     def p9024090_nh(self, *, reverse: bool = False) -> Array:
         ph_n = 1 if reverse else 3
         ph_h = 3 if reverse else 1
-        pw240i, pw9024090i = np.array([8.0, 14.0]) * self._pw90_i / 3.0
-        pw240s, pw9024090s = np.array([8.0, 14.0]) * self._pw90_s / 3.0
+        pw240i, pw9024090i = np.array([8.0, 14.0]) * self._i_pulses.pw90 / 3.0
+        pw240s, pw9024090s = np.array([8.0, 14.0]) * self._s_pulses.pw90 / 3.0
         t0, t1, t2, t3 = 0.5 * np.diff(
             np.sort([pw240i, pw240s, pw9024090i, pw9024090s]),
             prepend=0.0,
