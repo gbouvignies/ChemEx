@@ -61,9 +61,17 @@ class LiouvillianIS:
         self.spin_system = spin_system.correct(basis)
         self.basis = basis
         self._matrices = basis.copy_matrices()
+        self.size = len(self.model.states) * len(basis)
+        self._matrix_dtype = np.result_type(
+            *(matrix.dtype for matrix in self._matrices.values()),
+            np.float64,
+        )
+        self._zero_liouvillian = np.zeros(
+            (self.size, self.size),
+            dtype=self._matrix_dtype,
+        )
         self.h_frq = 0.0 if conditions.h_larmor_frq is None else conditions.h_larmor_frq
         self.par_values: dict[str, float] = {}
-        self.size = len(self.model.states) * len(basis)
         self._detection: str = ""
         self._detect_vector: Array = np.array([])
         self._q_order_i = _Q_ORDER_I.get(self.basis.extension, 1.0)
@@ -74,7 +82,7 @@ class LiouvillianIS:
         self.carrier_s = 0.0
         self.offset_i = 0.0
         self.offset_s = 0.0
-        self._l_base = np.array(0.0)
+        self._l_base = self._zero_liouvillian
         self._set_b1_i_profile(B1Profile.gaussian(1e32, scale=0.0, res=11))
         self.b1_s = 1e32
         self.jeff_i = Distribution(np.array([0.0]), np.array([1.0]))
@@ -97,8 +105,20 @@ class LiouvillianIS:
                 self._matrices[name] * self.par_values.get(name, 0.0)
                 for name in self._matrices
             ),
-            start=np.array(0.0),
+            start=self._zero_liouvillian,
         )
+
+    def _matrix_or_zero(self, name: str) -> Array:
+        return self._matrices.get(name, self._zero_liouvillian)
+
+    def _scaled_liouvillian_term(
+        self,
+        name: str,
+        value: float,
+        *,
+        factor: float = 1.0,
+    ) -> Array:
+        return self._matrix_or_zero(name) * (factor * value)
 
     @property
     def ppm_i(self) -> float:
@@ -120,46 +140,46 @@ class LiouvillianIS:
 
     @property
     def carrier_i(self) -> float:
-        return float(self._carrier_i)
+        return self._carrier_i
 
     @carrier_i.setter
     def carrier_i(self, value: float) -> None:
-        self._carrier_i = np.array(value)
-        self._l_carrier_i = self._matrices.get("carrier_i", np.array(0.0)) * value
+        self._carrier_i = float(value)
+        self._l_carrier_i = self._scaled_liouvillian_term("carrier_i", self._carrier_i)
 
     @property
     def carrier_s(self) -> float:
-        return float(self._carrier_s)
+        return self._carrier_s
 
     @carrier_s.setter
     def carrier_s(self, value: float) -> None:
-        self._carrier_s = np.array(value)
-        self._l_carrier_s = self._matrices.get("carrier_s", np.array(0.0)) * value
+        self._carrier_s = float(value)
+        self._l_carrier_s = self._scaled_liouvillian_term("carrier_s", self._carrier_s)
 
     @property
     def offset_i(self) -> float:
-        return float(self._offset_i)
+        return self._offset_i
 
     @offset_i.setter
     def offset_i(self, value: float) -> None:
-        self._offset_i = np.array(value)
-        self._l_offset_i = (
-            self._matrices.get("offset_i", np.array(0.0))
-            * value
-            * np.sign(self.ppm_i)
+        self._offset_i = float(value)
+        self._l_offset_i = self._scaled_liouvillian_term(
+            "offset_i",
+            self._offset_i,
+            factor=float(np.sign(self.ppm_i)),
         )
 
     @property
     def offset_s(self) -> float:
-        return float(self._offset_s)
+        return self._offset_s
 
     @offset_s.setter
     def offset_s(self, value: float) -> None:
-        self._offset_s = np.array(value)
-        self._l_offset_s = (
-            self._matrices.get("offset_s", np.array(0.0))
-            * value
-            * np.sign(self.ppm_s)
+        self._offset_s = float(value)
+        self._l_offset_s = self._scaled_liouvillian_term(
+            "offset_s",
+            self._offset_s,
+            factor=float(np.sign(self.ppm_s)),
         )
 
     def _set_b1_i_profile(self, profile: B1Profile) -> None:
@@ -167,8 +187,8 @@ class LiouvillianIS:
         self._b1_i = self._b1_i_profile.nominal
         self._b1_i_state = B1DistributionState.build(
             self._b1_i_profile.build_distribution(),
-            matrix_x=self._matrices.get("b1x_i", 0.0),
-            matrix_y=self._matrices.get("b1y_i", 0.0),
+            matrix_x=self._matrix_or_zero("b1x_i"),
+            matrix_y=self._matrix_or_zero("b1y_i"),
         )
 
     def set_b1_i_inhomogeneity(
@@ -236,8 +256,8 @@ class LiouvillianIS:
     @b1_s.setter
     def b1_s(self, value: float) -> None:
         self._b1_s = value
-        self.l_b1x_s = self._matrices.get("b1x_s", 0.0) * value
-        self.l_b1y_s = self._matrices.get("b1y_s", 0.0) * value
+        self.l_b1x_s = self._scaled_liouvillian_term("b1x_s", value)
+        self.l_b1y_s = self._scaled_liouvillian_term("b1y_s", value)
 
     @property
     def jeff_i(self) -> Distribution:
@@ -247,7 +267,7 @@ class LiouvillianIS:
     def jeff_i(self, distribution: Distribution) -> None:
         self._jeff_i_state = JeffDistributionState.build(
             distribution,
-            matrix=self._matrices.get("jeff_i", np.array(0.0)),
+            matrix=self._matrix_or_zero("jeff_i"),
         )
 
     @property
@@ -271,7 +291,7 @@ class LiouvillianIS:
                 self._l_carrier_s,
                 self._jeff_i_state.liouvillian,
             ),
-            start=np.array(0.0),
+            start=self._zero_liouvillian,
         )
 
     @property
