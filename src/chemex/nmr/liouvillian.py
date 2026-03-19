@@ -176,17 +176,17 @@ class LiouvillianIS:
     @b1_i.setter
     def b1_i(self, value: float) -> None:
         self._b1_i = value
-        gaussian_dist = get_b1_distribution(
+        distribution = get_b1_distribution(
             distribution_type="gaussian",
             value=self.b1_i,
             scale=self.b1_i_inh_scale,
             res=self.b1_i_inh_res,
         )
-        gaussian_dist.values = gaussian_dist.values.reshape((-1, 1, 1))
-        gaussian_dist.weights = gaussian_dist.weights.reshape((-1, 1, 1))
-        self._b1_i_dist = gaussian_dist
-        self.l_b1x_i = self._matrices.get("b1x_i", 0.0) * gaussian_dist.values
-        self.l_b1y_i = self._matrices.get("b1y_i", 0.0) * gaussian_dist.values
+        self._b1_i_dist = distribution
+        self._b1_i_values = distribution.values.reshape((-1, 1, 1))
+        self._b1_i_weights = distribution.weights.reshape((-1, 1, 1))
+        self.l_b1x_i = self._matrices.get("b1x_i", 0.0) * self._b1_i_values
+        self.l_b1y_i = self._matrices.get("b1y_i", 0.0) * self._b1_i_values
 
     def set_b1_i_distribution(self, distribution: Distribution) -> None:
         """Set B1 inhomogeneity distribution directly.
@@ -201,12 +201,12 @@ class LiouvillianIS:
             B1 distribution with values and weights
 
         """
-        distribution.values = distribution.values.reshape((-1, 1, 1))
-        distribution.weights = distribution.weights.reshape((-1, 1, 1))
         self._b1_i_dist = distribution
         self._b1_i = float(distribution.values.mean())
-        self.l_b1x_i = self._matrices.get("b1x_i", 0.0) * distribution.values
-        self.l_b1y_i = self._matrices.get("b1y_i", 0.0) * distribution.values
+        self._b1_i_values = distribution.values.reshape((-1, 1, 1))
+        self._b1_i_weights = distribution.weights.reshape((-1, 1, 1))
+        self.l_b1x_i = self._matrices.get("b1x_i", 0.0) * self._b1_i_values
+        self.l_b1y_i = self._matrices.get("b1y_i", 0.0) * self._b1_i_values
 
     @property
     def b1_i_dist(self) -> Distribution:
@@ -230,9 +230,9 @@ class LiouvillianIS:
     @jeff_i.setter
     def jeff_i(self, distribution: Distribution) -> None:
         self._jeff_i = distribution
-        values = distribution.values.reshape((-1, 1, 1, 1))
-        self._l_jeff_i = self._matrices.get("jeff_i", np.array(0.0)) * values
+        self._jeff_i_values = distribution.values.reshape((-1, 1, 1, 1))
         self._jeff_i_weights = distribution.weights.reshape((-1, 1, 1, 1))
+        self._l_jeff_i = self._matrices.get("jeff_i", np.array(0.0)) * self._jeff_i_values
 
     @property
     def gradient_dephasing(self) -> float:
@@ -260,7 +260,7 @@ class LiouvillianIS:
 
     @property
     def weights(self) -> Array:
-        return self._b1_i_dist.weights * self._jeff_i_weights
+        return self._b1_i_weights * self._jeff_i_weights
 
     @property
     def detection(self) -> str:

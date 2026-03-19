@@ -5,7 +5,6 @@ This module defines essential constants and functions for Nuclear Magnetic Reson
 """
 
 from collections import Counter
-from dataclasses import dataclass
 
 import numpy as np
 
@@ -225,11 +224,42 @@ J_EFF: dict[str, dict[str, tuple[float, ...]]] = {
 }
 
 
-@dataclass
 class Distribution:
-    values: Array
-    weights: Array
-    dephasing: bool = False
+    __slots__ = ("_dephasing", "_values", "_weights")
+
+    def __init__(
+        self,
+        values: Array,
+        weights: Array,
+        dephasing: bool = False,
+    ) -> None:
+        values_array = np.array(values, copy=True)
+        weights_array = np.array(weights, copy=True)
+        values_array.flags.writeable = False
+        weights_array.flags.writeable = False
+        self._values = values_array
+        self._weights = weights_array
+        self._dephasing = dephasing
+
+    @property
+    def values(self) -> Array:
+        return self._values
+
+    @property
+    def weights(self) -> Array:
+        return self._weights
+
+    @property
+    def dephasing(self) -> bool:
+        return self._dephasing
+
+    def __repr__(self) -> str:
+        values = np.array2string(self.values)
+        weights = np.array2string(self.weights)
+        return (
+            f"Distribution(values={values}, "
+            f"weights={weights}, dephasing={self.dephasing!r})"
+        )
 
 
 def get_multiplet(symbol: str, nucleus: str) -> Distribution:
