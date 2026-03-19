@@ -8,6 +8,7 @@ import numpy as np
 from chemex.nmr.b1 import B1DistributionModel
 from chemex.nmr.constants import Distribution
 from chemex.nmr.liouvillian import LiouvillianIS
+from chemex.nmr.liouvillian_views import reshape_single_liouvillian
 from chemex.nmr.propagators import (
     calculate_propagators,
     get_phases,
@@ -355,8 +356,10 @@ class Spectrometer:
         return self.p9024090_nh(reverse=True)
 
     def calculate_shifts(self) -> Array:
-        liouv = self.liouvillian.l_free.reshape(
-            (self.liouvillian.size, self.liouvillian.size),
+        liouv = reshape_single_liouvillian(
+            self.liouvillian.l_free,
+            self.liouvillian.size,
+            purpose="Shift eigenvalue calculation",
         )
         return np.linalg.eigvals(liouv.astype(np.complex128)).imag
 
