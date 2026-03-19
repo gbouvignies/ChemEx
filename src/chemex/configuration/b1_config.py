@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import operator
 from functools import reduce
-from typing import TYPE_CHECKING, Annotated, Self
+from typing import TYPE_CHECKING, Annotated, Self, cast
 
 from pydantic import (
     BaseModel,
@@ -68,7 +68,8 @@ def parse_distribution_config(value: object) -> DistributionConfig:
     if isinstance(value, DistributionConfig):
         return value
     if isinstance(value, dict):
-        distribution_type = value.get("type")
+        raw_config = cast("dict[str, object]", value)
+        distribution_type = raw_config.get("type")
         if isinstance(distribution_type, str):
             registry.get_generator(distribution_type)
     parsed = _DISTRIBUTION_ADAPTER.validate_python(value)
