@@ -24,6 +24,10 @@ from chemex.nmr.b1 import (
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import SIGNED_XI_RATIO, Distribution
 from chemex.nmr.detection import build_detection_vector
+from chemex.nmr.distribution_tensors import (
+    B1DistributionState,
+    JeffDistributionState,
+)
 from chemex.nmr.magnetization import (
     build_equilibrium_magnetization,
     build_start_magnetization,
@@ -154,17 +158,14 @@ class LiouvillianIS:
             * np.sign(self.ppm_s)
         )
 
-    def _apply_b1_i_distribution(self, distribution: Distribution) -> None:
-        self._b1_i_dist = distribution
-        self._b1_i_values = distribution.values.reshape((-1, 1, 1))
-        self._b1_i_weights = distribution.weights.reshape((-1, 1, 1))
-        self.l_b1x_i = self._matrices.get("b1x_i", 0.0) * self._b1_i_values
-        self.l_b1y_i = self._matrices.get("b1y_i", 0.0) * self._b1_i_values
-
     def _set_b1_i_profile(self, profile: B1Profile) -> None:
         self._b1_i_profile = profile.with_distribution(profile.distribution)
         self._b1_i = self._b1_i_profile.nominal
-        self._apply_b1_i_distribution(self._b1_i_profile.build_distribution())
+        self._b1_i_state = B1DistributionState.build(
+            self._b1_i_profile.build_distribution(),
+            matrix_x=self._matrices.get("b1x_i", 0.0),
+            matrix_y=self._matrices.get("b1y_i", 0.0),
+        )
 
     def set_b1_i_inhomogeneity(
         self,
@@ -228,7 +229,15 @@ class LiouvillianIS:
     @property
     def b1_i_dist(self) -> Distribution:
         """Get the B1_i distribution object."""
-        return self._b1_i_dist
+        return self._b1_i_state.axis.distribution
+
+    @property
+    def l_b1x_i(self) -> Array:
+        return self._b1_i_state.l_x
+
+    @property
+    def l_b1y_i(self) -> Array:
+        return self._b1_i_state.l_y
 
     @property
     def b1_s(self) -> float:
@@ -242,14 +251,14 @@ class LiouvillianIS:
 
     @property
     def jeff_i(self) -> Distribution:
-        return self._jeff_i
+        return self._jeff_i_state.axis.distribution
 
     @jeff_i.setter
     def jeff_i(self, distribution: Distribution) -> None:
-        self._jeff_i = distribution
-        self._jeff_i_values = distribution.values.reshape((-1, 1, 1, 1))
-        self._jeff_i_weights = distribution.weights.reshape((-1, 1, 1, 1))
-        self._l_jeff_i = self._matrices.get("jeff_i", np.array(0.0)) * self._jeff_i_values
+        self._jeff_i_state = JeffDistributionState.build(
+            distribution,
+            matrix=self._matrices.get("jeff_i", np.array(0.0)),
+        )
 
     @property
     def gradient_dephasing(self) -> float:
@@ -270,14 +279,14 @@ class LiouvillianIS:
                 self._l_offset_s,
                 self._l_carrier_i,
                 self._l_carrier_s,
-                self._l_jeff_i,
+                self._jeff_i_state.liouvillian,
             ),
             start=np.array(0.0),
         )
 
     @property
     def weights(self) -> Array:
-        return self._b1_i_weights * self._jeff_i_weights
+        return self._b1_i_state.axis.weights * self._jeff_i_state.axis.weights
 
     @property
     def detection(self) -> str:
