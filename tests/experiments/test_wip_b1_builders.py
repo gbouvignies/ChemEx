@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 import pytest
+from pydantic import BaseModel
 
 from chemex.experiments.catalog.wip import (
     cest_15n_test,
@@ -53,8 +57,8 @@ from chemex.parameters.spin_system import SpinSystem
 )
 def test_wip_builders_use_b1_inhomogeneity_api(
     monkeypatch: pytest.MonkeyPatch,
-    config_cls: object,
-    build_spectrometer: object,
+    config_cls: type[BaseModel],
+    build_spectrometer: Callable[[Any, SpinSystem], object],
     experiment: dict[str, object],
 ) -> None:
     calls: list[tuple[float, GaussianDistributionConfig | None]] = []

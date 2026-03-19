@@ -7,6 +7,7 @@ from chemex.models.model import ModelSpec
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import Distribution
 from chemex.nmr.distributions.custom import CustomDistributionConfig
+from chemex.nmr.distributions.gaussian import GaussianDistributionConfig
 from chemex.nmr.distributions.gaussian import generate as generate_gaussian
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.parameters.spin_system import SpinSystem
@@ -49,7 +50,7 @@ def test_set_b1_i_distribution_rescales_sampled_profile() -> None:
     np.testing.assert_allclose(liouvillian.b1_i_dist.weights, [0.2, 0.6, 0.2])
 
 
-def test_legacy_gaussian_knobs_switch_back_to_gaussian_model() -> None:
+def test_set_b1_i_inhomogeneity_switches_back_to_gaussian_model() -> None:
     liouvillian = make_liouvillian()
     liouvillian.set_b1_i_inhomogeneity(
         10.0,
@@ -59,9 +60,30 @@ def test_legacy_gaussian_knobs_switch_back_to_gaussian_model() -> None:
         ),
     )
 
-    liouvillian.b1_i_inh_res = 5
-    liouvillian.b1_i_inh_scale = 0.1
+    liouvillian.set_b1_i_inhomogeneity(
+        10.0,
+        GaussianDistributionConfig(scale=0.1, res=5),
+    )
 
     expected = generate_gaussian(10.0, scale=0.1, res=5)
+    np.testing.assert_allclose(liouvillian.b1_i_dist.values, expected.values)
+    np.testing.assert_allclose(liouvillian.b1_i_dist.weights, expected.weights)
+
+
+def test_set_b1_i_inhomogeneity_replaces_custom_distribution_with_gaussian() -> None:
+    liouvillian = make_liouvillian()
+    liouvillian.set_b1_i_inhomogeneity(
+        10.0,
+        CustomDistributionConfig(
+            scales=[0.8, 1.0, 1.2],
+            weights=[0.2, 0.6, 0.2],
+        ),
+    )
+    liouvillian.set_b1_i_inhomogeneity(
+        10.0,
+        GaussianDistributionConfig(scale=0.15, res=7),
+    )
+
+    expected = generate_gaussian(10.0, scale=0.15, res=7)
     np.testing.assert_allclose(liouvillian.b1_i_dist.values, expected.values)
     np.testing.assert_allclose(liouvillian.b1_i_dist.weights, expected.weights)

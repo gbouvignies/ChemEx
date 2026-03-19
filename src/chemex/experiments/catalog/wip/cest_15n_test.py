@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-# pyright: reportGeneralTypeIssues=false
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Literal
@@ -10,14 +9,13 @@ import numpy as np
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import CestSettings
+from chemex.configuration.experiment import B1InhomogeneityMixin, CestSettings
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import CestFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import get_multiplet
-from chemex.nmr.distributions.gaussian import GaussianDistributionConfig
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
@@ -30,7 +28,7 @@ EXPERIMENT_NAME = "cest_15n_test"
 OFFSET_REF = 1e4
 
 
-class Cest15NSettings(CestSettings):
+class Cest15NSettings(CestSettings, B1InhomogeneityMixin):
     name: Literal["cest_15n_test"]
     time_t1: float
     carrier: float
@@ -40,7 +38,7 @@ class Cest15NSettings(CestSettings):
 
     @cached_property
     def start_terms(self) -> list[str]:
-        return [f"iz{self.suffix}"]
+        return [f"iz{self.suffix_start}"]
 
     @cached_property
     def detection(self) -> str:
@@ -73,11 +71,8 @@ def build_spectrometer(
 
     spectrometer.carrier_i = settings.carrier
     spectrometer.set_b1_i_inhomogeneity(
-        settings.b1_frq,
-        GaussianDistributionConfig(
-            scale=settings.b1_inh_scale,
-            res=settings.b1_inh_res,
-        ),
+        settings.get_b1_nominal(),
+        settings.b1_distribution,
     )
 
     spectrometer.detection = settings.detection
@@ -116,7 +111,7 @@ class Cest15NTestSequence:
             )
 
         return np.array(
-            [spectrometer.detect_ls_2st(intensities[offset]) for offset in offsets],
+            [spectrometer.detect(intensities[offset]) for offset in offsets],
         )
 
 

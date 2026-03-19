@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Literal, TypeVar
+from typing import Any, Literal, TypeVar
 
 import numpy as np
 from pydantic import (
@@ -68,6 +68,16 @@ class B1InhomogeneityMixin(BaseModel):
         default=None,
         description="B1 distribution configuration (type, scale, res, etc.)",
     )
+    b1_inh_scale: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="Legacy Gaussian B1 inhomogeneity scale",
+    )
+    b1_inh_res: int | None = Field(
+        default=None,
+        ge=1,
+        description="Legacy Gaussian B1 inhomogeneity resolution",
+    )
 
     @field_validator("b1_distribution", mode="before")
     @classmethod
@@ -77,6 +87,47 @@ class B1InhomogeneityMixin(BaseModel):
         if isinstance(value, dict) and "type" not in value:
             value = {"type": "gaussian", **value}
         return parse_distribution_config(value)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_b1_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        normalized = dict(data)
+        has_legacy = (
+            normalized.get("b1_inh_scale") is not None
+            or normalized.get("b1_inh_res") is not None
+        )
+        if not has_legacy:
+            return normalized
+        if normalized.get("b1_distribution") is not None:
+            msg = (
+                "Use either 'b1_distribution' or the legacy "
+                "'b1_inh_scale'/'b1_inh_res' fields, not both"
+            )
+            raise ValueError(msg)
+
+        scale = (
+            normalized["b1_inh_scale"]
+            if normalized.get("b1_inh_scale") is not None
+            else 0.1
+        )
+        if math.isinf(scale):
+            normalized["b1_distribution"] = {"type": "dephasing"}
+            return normalized
+
+        res = (
+            normalized["b1_inh_res"]
+            if normalized.get("b1_inh_res") is not None
+            else 11
+        )
+        normalized["b1_distribution"] = {
+            "type": "gaussian",
+            "scale": scale,
+            "res": res,
+        }
+        return normalized
 
     def get_b1_nominal(self) -> float:
         """Nominal B1 value for distribution generation."""
