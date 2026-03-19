@@ -225,11 +225,19 @@ J_EFF: dict[str, dict[str, tuple[float, ...]]] = {
 }
 
 
-@dataclass
+@dataclass(frozen=True)
 class Distribution:
     values: Array
     weights: Array
     dephasing: bool = False
+
+    def __post_init__(self) -> None:
+        values = np.array(self.values, copy=True)
+        weights = np.array(self.weights, copy=True)
+        values.flags.writeable = False
+        weights.flags.writeable = False
+        object.__setattr__(self, "values", values)
+        object.__setattr__(self, "weights", weights)
 
 
 def get_multiplet(symbol: str, nucleus: str) -> Distribution:
