@@ -32,6 +32,7 @@ from chemex.nmr.effective_field import (
     build_i_effective_field_tilts,
     tilt_magnetization_along_i_effective_field,
 )
+from chemex.nmr.liouvillian_views import reshape_single_liouvillian
 from chemex.nmr.magnetization import (
     build_equilibrium_magnetization,
     build_start_magnetization,
@@ -322,21 +323,12 @@ class LiouvillianIS:
 
     #     return self._detect_vector @ collapsed_magnetization
 
-    def _reshape_r1rho_liouvillian(self, liouvillian: Array) -> Array:
-        squeezed = np.squeeze(liouvillian)
-        expected_shape = (self.size, self.size)
-        if squeezed.shape != expected_shape:
-            msg = (
-                "R1rho eigenvalue calculation requires single-point B1 and Jeff "
-                "distributions; "
-                f"got Liouvillian shape {liouvillian.shape} "
-                f"(squeezed to {squeezed.shape})."
-            )
-            raise ValueError(msg)
-        return squeezed.reshape(expected_shape)
-
     def calculate_r1rho(self) -> float:
-        liouv = self._reshape_r1rho_liouvillian(self.l_free + self.l_b1x_i)
+        liouv = reshape_single_liouvillian(
+            self.l_free + self.l_b1x_i,
+            self.size,
+            purpose="R1rho eigenvalue calculation",
+        )
         eigenvalues = np.linalg.eigvals(liouv)
         real_eigenvalues = eigenvalues[np.isclose(eigenvalues.imag, 0.0, atol=SMALL_VALUE)].real
         if real_eigenvalues.size == 0:
