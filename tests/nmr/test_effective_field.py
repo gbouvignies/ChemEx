@@ -20,7 +20,7 @@ def test_calculate_i_effective_field_angle_is_pi_over_two_on_resonance() -> None
         offset_i=0.0,
     )
 
-    assert angle == np.pi * 0.5
+    np.testing.assert_allclose(angle, np.pi * 0.5)
 
 
 def test_tilt_magnetization_along_i_effective_field_round_trips() -> None:
