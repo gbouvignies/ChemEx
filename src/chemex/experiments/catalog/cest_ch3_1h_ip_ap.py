@@ -116,7 +116,7 @@ class CestCh31HIpApSequence:
             if self.is_reference(offset):
                 inept = pp90_i[3] @ d_taua @ pp180_isx @ d_taua @ pp90_i[0]
                 mag = inept @ mag
-            intensities[offset] = spectrometer.detect(mag.real.astype(float))
+            intensities[offset] = spectrometer.detect(mag)
 
         return np.array([intensities[offset] for offset in offsets])
 

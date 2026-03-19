@@ -225,15 +225,15 @@ J_EFF: dict[str, dict[str, tuple[float, ...]]] = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Distribution:
     values: Array
     weights: Array
     dephasing: bool = False
 
     def __post_init__(self) -> None:
-        values = np.array(self.values, copy=True)
-        weights = np.array(self.weights, copy=True)
+        values = np.array(self.values, dtype=np.float64, copy=True)
+        weights = np.array(self.weights, dtype=np.float64, copy=True)
         values.flags.writeable = False
         weights.flags.writeable = False
         # `Distribution` is frozen, so `__post_init__` has to bypass the
@@ -241,6 +241,17 @@ class Distribution:
         # the read-only copies stored by the instance.
         object.__setattr__(self, "values", values)
         object.__setattr__(self, "weights", weights)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Distribution):
+            return NotImplemented
+        return bool(
+            self.dephasing == other.dephasing
+            and np.array_equal(self.values, other.values)
+            and np.array_equal(self.weights, other.weights)
+        )
+
+    __hash__ = None
 
 
 def get_multiplet(symbol: str, nucleus: str) -> Distribution:

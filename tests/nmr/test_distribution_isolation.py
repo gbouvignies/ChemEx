@@ -55,3 +55,12 @@ def test_set_jeff_distribution_does_not_mutate_input_distribution() -> None:
 
     assert distribution.values.shape == (2,)
     assert distribution.weights.shape == (2,)
+
+
+def test_distribution_equality_compares_array_contents() -> None:
+    left = Distribution(np.array([10.0, 12.0]), np.array([0.4, 0.6]))
+    same = Distribution(np.array([10.0, 12.0]), np.array([0.4, 0.6]))
+    different = Distribution(np.array([10.0, 12.0]), np.array([0.5, 0.5]))
+
+    assert left == same
+    assert left != different
