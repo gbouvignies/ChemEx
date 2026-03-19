@@ -28,6 +28,10 @@ from chemex.nmr.distribution_tensors import (
     B1DistributionState,
     JeffDistributionState,
 )
+from chemex.nmr.effective_field import (
+    build_i_effective_field_tilts,
+    tilt_magnetization_along_i_effective_field,
+)
 from chemex.nmr.magnetization import (
     build_equilibrium_magnetization,
     build_start_magnetization,
@@ -347,33 +351,20 @@ class LiouvillianIS:
     def tilt_mag_along_weff_i(
         self, magnetization: Array, *, back: bool = False
     ) -> Array:
-        basis = self.basis
-
-        w1 = self.b1_i * 2.0 * np.pi
-
-        for state in self.model.states:
-            index_x, index_z = (
-                basis.components_states.index(f"ix_{state}"),
-                basis.components_states.index(f"iz_{state}"),
-            )
-            components = magnetization[..., [index_x, index_z], :]
-
-            cs = self.par_values[f"cs_i_{state}"]
-            wi = -(
-                cs * self.ppm_i
-                - self.carrier_i * self.ppm_i
-                - self.offset_i * 2.0 * np.pi * np.sign(self.ppm_i)
-            )
-            theta = np.arctan2(w1, wi)
-            if back:
-                theta = -theta
-            rotation_matrix = np.array(
-                [[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]]
-            )
-            components_tilted = rotation_matrix @ components
-            magnetization[..., [index_x, index_z], :] = components_tilted
-
-        return magnetization
+        tilts = build_i_effective_field_tilts(
+            self.basis,
+            self.model.states,
+            self.par_values,
+            b1_i=self.b1_i,
+            ppm_i=self.ppm_i,
+            carrier_i=self.carrier_i,
+            offset_i=self.offset_i,
+        )
+        return tilt_magnetization_along_i_effective_field(
+            magnetization,
+            tilts,
+            back=back,
+        )
 
     def get_equilibrium(self) -> Array:
         return build_equilibrium_magnetization(self.basis, self.par_values)
