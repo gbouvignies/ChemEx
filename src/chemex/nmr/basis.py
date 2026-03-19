@@ -16,6 +16,7 @@ from chemex.typing import Array
 
 DictArray = dict[str, Array]
 MatrixMap = Mapping[str, Array]
+VectorMap = Mapping[str, Array]
 
 _BASES = {
     "i-": ["i-"],
@@ -359,6 +360,14 @@ def _freeze_matrices(matrices: DictArray) -> MatrixMap:
     return MappingProxyType(frozen_matrices)
 
 
+def _freeze_vectors(vectors: DictArray) -> VectorMap:
+    frozen_vectors: DictArray = {}
+    for name, vector in vectors.items():
+        vector.flags.writeable = False
+        frozen_vectors[name] = vector
+    return MappingProxyType(frozen_vectors)
+
+
 @dataclass(frozen=True)
 class Basis:
     type: str
@@ -389,9 +398,9 @@ class Basis:
             if letter in self.type
         }
 
-    @property
-    def vectors(self) -> DictArray:
-        return dict(_build_vectors(self))
+    @cached_property
+    def vectors(self) -> VectorMap:
+        return _freeze_vectors(_build_vectors(self))
 
     @cached_property
     def matrices(self) -> MatrixMap:

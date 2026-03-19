@@ -17,6 +17,25 @@ def test_basis_reference_matrices_are_read_only() -> None:
         basis.matrices["cs_i_a"][0, 1] = 1.0
 
 
+def test_basis_vectors_are_read_only() -> None:
+    basis = Basis(type="ixyz", spin_system="nh", model=ModelSpec())
+
+    with pytest.raises(ValueError, match="read-only"):
+        basis.vectors["iz_a"][0, 0] = 1.0
+
+
+def test_equal_basis_instances_do_not_expose_mutable_shared_vectors() -> None:
+    basis_a = Basis(type="ixyz", spin_system="nh", model=ModelSpec())
+    basis_b = Basis(type="ixyz", spin_system="nh", model=ModelSpec())
+
+    np.testing.assert_allclose(basis_a.vectors["iz_a"], basis_b.vectors["iz_a"])
+
+    with pytest.raises(ValueError, match="read-only"):
+        basis_a.vectors["iz_a"][0, 0] = 2.0
+
+    np.testing.assert_allclose(basis_a.vectors["iz_a"], basis_b.vectors["iz_a"])
+
+
 def test_shared_basis_does_not_leak_scaling_between_liouvillians() -> None:
     basis = Basis(type="ixyz", spin_system="nh", model=ModelSpec())
     spin_system = SpinSystem(name="G23N-HN")
