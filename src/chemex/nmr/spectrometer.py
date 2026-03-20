@@ -6,14 +6,14 @@ from typing import Self
 import numpy as np
 
 from chemex.configuration.conditions import Conditions
-from chemex.nmr import propagators as _propagators
+from chemex.nmr._engine.analysis import SpectrometerAnalysis
+from chemex.nmr._engine.engine import ISLiouvillianEngine
+from chemex.nmr._pulses import propagators as _propagators
+from chemex.nmr._pulses.kernel import PulseKernel
+from chemex.nmr._pulses.library import PulseLibrary
 from chemex.nmr.b1 import B1DistributionModel
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import Distribution
-from chemex.nmr.is_liouvillian_engine import ISLiouvillianEngine
-from chemex.nmr.pulse_kernel import PulseKernel
-from chemex.nmr.pulse_library import PulseLibrary
-from chemex.nmr.spectrometer_analysis import SpectrometerAnalysis
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.typing import Array
@@ -285,12 +285,6 @@ class Spectrometer:
     @property
     def p9024090_nh_2(self) -> Array:
         return self._pulse_library.p9024090_nh_2
-
-    def calculate_shifts(self) -> Array:
-        return self.analysis.calculate_shifts()
-
-    def calculate_r1rho(self) -> float:
-        return self.analysis.calculate_r1rho()
 
     def offsets_to_ppms(self, offsets: Array) -> Array:
         return self._engine.offsets_to_ppms(offsets)

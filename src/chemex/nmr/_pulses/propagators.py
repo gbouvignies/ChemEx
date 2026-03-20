@@ -7,7 +7,7 @@ from cachetools import cached
 from cachetools.keys import hashkey
 from scipy.linalg import expm
 
-from chemex.nmr.is_liouvillian_engine import ISLiouvillianEngine
+from chemex.nmr._engine.engine import ISLiouvillianEngine
 from chemex.typing import Array
 
 DictArray = dict[str, Array]

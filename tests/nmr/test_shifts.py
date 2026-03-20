@@ -5,9 +5,9 @@ import pytest
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
+from chemex.nmr._engine.engine import ISLiouvillianEngine
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import Distribution
-from chemex.nmr.is_liouvillian_engine import ISLiouvillianEngine
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 

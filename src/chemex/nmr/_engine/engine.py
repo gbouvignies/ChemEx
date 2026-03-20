@@ -8,6 +8,21 @@ import numpy as np
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
+from chemex.nmr._engine.effective_field import (
+    build_i_effective_field_tilts,
+    tilt_magnetization_along_i_effective_field,
+)
+from chemex.nmr._engine.magnetization import (
+    build_equilibrium_magnetization,
+    build_start_magnetization,
+    keep_components,
+)
+from chemex.nmr._engine.readout import LiouvillianReadout
+from chemex.nmr._engine.state import ISLiouvillianState
+from chemex.nmr._engine.tensors import (
+    B1DistributionState,
+    JeffDistributionState,
+)
 from chemex.nmr.b1 import (
     B1DistributionModel,
     B1Profile,
@@ -15,21 +30,6 @@ from chemex.nmr.b1 import (
 )
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import SIGNED_XI_RATIO, Distribution
-from chemex.nmr.distribution_tensors import (
-    B1DistributionState,
-    JeffDistributionState,
-)
-from chemex.nmr.effective_field import (
-    build_i_effective_field_tilts,
-    tilt_magnetization_along_i_effective_field,
-)
-from chemex.nmr.is_liouvillian_state import ISLiouvillianState
-from chemex.nmr.liouvillian_readout import LiouvillianReadout
-from chemex.nmr.magnetization import (
-    build_equilibrium_magnetization,
-    build_start_magnetization,
-    keep_components,
-)
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.typing import Array

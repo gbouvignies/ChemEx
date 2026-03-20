@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from chemex.nmr.propagators import (
+from chemex.nmr._pulses.propagators import (
     calculate_propagators,
     get_phases,
     make_perfect90,
@@ -15,7 +15,7 @@ from chemex.nmr.propagators import (
 from chemex.typing import Array
 
 if TYPE_CHECKING:
-    from chemex.nmr.is_liouvillian_engine import ISLiouvillianEngine
+    from chemex.nmr._engine.engine import ISLiouvillianEngine
 
 
 class PulseKernel:

@@ -4,8 +4,8 @@ from collections.abc import Mapping
 
 import numpy as np
 
-from chemex.nmr.detection import build_detection_vector
-from chemex.nmr.magnetization import detect_signal
+from chemex.nmr._engine.detection import build_detection_vector
+from chemex.nmr._engine.magnetization import detect_signal
 from chemex.typing import Array
 
 

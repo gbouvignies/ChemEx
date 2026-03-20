@@ -4,14 +4,14 @@ import numpy as np
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
+from chemex.nmr._engine.engine import ISLiouvillianEngine
 from chemex.nmr.basis import Basis
-from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.parameters.spin_system import SpinSystem
 
 
-def make_liouvillian() -> LiouvillianIS:
+def make_liouvillian() -> ISLiouvillianEngine:
     basis = Basis(type="ixyz", spin_system="nh", model=ModelSpec())
-    return LiouvillianIS(
+    return ISLiouvillianEngine(
         SpinSystem(name="G23N-HN"),
         basis,
         Conditions(h_larmor_frq=600.0),

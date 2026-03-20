@@ -3,12 +3,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from chemex.nmr.constants import Distribution
-from chemex.nmr.distribution_tensors import (
+from chemex.nmr._engine.tensors import (
     B1DistributionState,
     DistributionAxis,
     JeffDistributionState,
 )
+from chemex.nmr.constants import Distribution
 
 
 def test_distribution_axis_rejects_non_positive_ndim() -> None:

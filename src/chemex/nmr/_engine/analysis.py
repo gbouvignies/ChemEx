@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from chemex.nmr.is_liouvillian_engine import ISLiouvillianEngine
-from chemex.nmr.liouvillian_views import reshape_single_liouvillian
+from chemex.nmr._engine.engine import ISLiouvillianEngine
+from chemex.nmr._engine.views import reshape_single_liouvillian
 from chemex.typing import Array
 
 # A small value used for numerical stability

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import chemex.nmr.spectrometer_analysis as analysis_module
+import chemex.nmr._engine.analysis as analysis_module
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
 from chemex.nmr.basis import Basis
