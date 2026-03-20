@@ -19,7 +19,6 @@ MatrixMap = Mapping[str, Array]
 VectorMap = Mapping[str, Array]
 
 _BASES = {
-    "i-": ["i-"],
     "ixy": ["ix", "iy"],
     "iz": ["iz"],
     "izsz": ["iz", "2izsz"],
@@ -69,7 +68,7 @@ _BASES = {
     ],
 }
 _TRANSITIONS = {
-    "r2_i_{state}": (("ix", "ix", -1.0), ("iy", "iy", -1.0), ("i-", "i-", -1.0)),
+    "r2_i_{state}": (("ix", "ix", -1.0), ("iy", "iy", -1.0)),
     "r2_s_{state}": (("sx", "sx", -1.0), ("sy", "sy", -1.0)),
     "r1_i_{state}": (("iz", "iz", -1.0), ("iz", "ie", +1.0)),
     "r1_s_{state}": (("sz", "sz", -1.0), ("sz", "se", +1.0)),
@@ -139,7 +138,6 @@ _TRANSITIONS = {
     "cs_i_{state}": (
         ("ix", "iy", -1.0),
         ("iy", "ix", +1.0),
-        ("i-", "i-", +1.0j),
         ("2ixsx", "2iysx", -1.0),
         ("2iysx", "2ixsx", +1.0),
         ("2ixsy", "2iysy", -1.0),
@@ -160,7 +158,6 @@ _TRANSITIONS = {
     "carrier_i": (
         ("ix", "iy", +1.0),
         ("iy", "ix", -1.0),
-        ("i-", "i-", -1.0j),
         ("2ixsx", "2iysx", +1.0),
         ("2iysx", "2ixsx", -1.0),
         ("2ixsy", "2iysy", +1.0),
@@ -181,7 +178,6 @@ _TRANSITIONS = {
     "offset_i": (
         ("ix", "iy", +2.0 * np.pi),
         ("iy", "ix", -2.0 * np.pi),
-        ("i-", "i-", -2.0j * np.pi),
         ("2ixsx", "2iysx", +2.0 * np.pi),
         ("2iysx", "2ixsx", -2.0 * np.pi),
         ("2ixsy", "2iysy", +2.0 * np.pi),
@@ -307,10 +303,10 @@ def _get_indices(
     basis: Basis,
     transition_name: str,
     state: str,
-) -> tuple[tuple[list[int], list[int]], list[float | complex]]:
+) -> tuple[tuple[list[int], list[int]], list[float]]:
     rows: list[int] = []
     cols: list[int] = []
-    vals: list[float | complex] = []
+    vals: list[float] = []
     offset = basis.model.states.index(state) * len(basis)
     for start, end, value in _TRANSITIONS[transition_name]:
         if {start, end}.issubset(basis.components):
@@ -323,7 +319,7 @@ def _get_indices(
 def _build_spin_matrices(basis: Basis) -> DictArray:
     size = len(basis) * len(basis.model.states)
 
-    matrices: DictArray = defaultdict(partial(np.zeros, (size, size), dtype=complex))
+    matrices: DictArray = defaultdict(partial(np.zeros, (size, size), dtype=np.float64))
 
     # Build matrices for each transition
     for transition_name, state in product(_TRANSITIONS, basis.model.states):
@@ -333,11 +329,6 @@ def _build_spin_matrices(basis: Basis) -> DictArray:
         indices, values = _get_indices(basis, transition_name, state)
         if values:
             matrices[name][indices] = values
-
-    # Remove imaginary parts from real matrices
-    for key, matrix in matrices.items():
-        if not np.iscomplex(matrix).any():
-            matrices[key] = matrix.real
 
     return matrices
 
