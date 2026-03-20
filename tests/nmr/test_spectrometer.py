@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import numpy as np
+
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
 from chemex.nmr.basis import Basis
@@ -10,12 +12,13 @@ from chemex.parameters.spin_system import SpinSystem
 
 def make_spectrometer() -> Spectrometer:
     basis = Basis(type="ixyz", spin_system="nh", model=ModelSpec())
-    liouvillian = LiouvillianIS(
-        SpinSystem(name="G23N-HN"),
-        basis,
-        Conditions(h_larmor_frq=600.0),
+    spectrometer = Spectrometer(
+        LiouvillianIS(
+            SpinSystem(name="G23N-HN"),
+            basis,
+            Conditions(h_larmor_frq=600.0),
+        )
     )
-    spectrometer = Spectrometer(liouvillian)
     spectrometer.b1_i = 2_500.0
     spectrometer.b1_s = 20_000.0
     return spectrometer
@@ -60,3 +63,22 @@ def test_liouvillian_changes_invalidate_both_base_pulse_caches() -> None:
 
     assert spectrometer.p90_i is not p90_i
     assert spectrometer.p180_s is not p180_s
+
+
+def test_spectrometer_exposes_basis_spin_system_and_ppm_metadata() -> None:
+    spectrometer = make_spectrometer()
+
+    assert spectrometer.spin_system.name == "G23N"
+    assert spectrometer.basis.spin_system == "nh"
+    assert spectrometer.ppm_i != 0.0
+    assert spectrometer.ppm_s != 0.0
+
+
+def test_calculate_r1rho_is_available_on_spectrometer() -> None:
+    spectrometer = make_spectrometer()
+    spectrometer.update({"r2_i_a": 4.0})
+
+    r1rho = spectrometer.calculate_r1rho()
+
+    assert np.isfinite(r1rho)
+    assert r1rho >= 0.0

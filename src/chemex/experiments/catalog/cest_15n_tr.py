@@ -87,8 +87,7 @@ def build_spectrometer(
     conditions = config.conditions
 
     basis = Basis(type="ixyzsz", spin_system="nh", model=config.model)
-    liouvillian = LiouvillianIS(spin_system, basis, conditions)
-    spectrometer = Spectrometer(liouvillian)
+    spectrometer = Spectrometer(LiouvillianIS(spin_system, basis, conditions))
 
     spectrometer.carrier_i = settings.carrier
 
@@ -100,7 +99,7 @@ def build_spectrometer(
     spectrometer.detection = settings.detection
 
     if "13c" in conditions.label:
-        liouvillian.jeff_i = get_multiplet("", "n")
+        spectrometer.jeff_i = get_multiplet("", "n")
 
     return spectrometer
 

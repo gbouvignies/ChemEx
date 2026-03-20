@@ -51,8 +51,7 @@ def build_spectrometer(
     conditions = config.conditions
 
     basis = Basis(type="ixy_ixysxy", spin_system="nh", model=config.model)
-    liouvillian = LiouvillianIS(spin_system, basis, conditions)
-    return Spectrometer(liouvillian)
+    return Spectrometer(LiouvillianIS(spin_system, basis, conditions))
 
 
 def _find_nearest(array: Array, value: float) -> float:
@@ -70,11 +69,11 @@ class Shift15NSqMqSequence:
     def calculate(self, spectrometer: Spectrometer, _data: Data) -> Array:
         ref_shift_i = (
             spectrometer.par_values[self.settings.cs_i_name]
-            * spectrometer.liouvillian.ppm_i
+            * spectrometer.ppm_i
         )
         ref_shift_s = (
             spectrometer.par_values[self.settings.cs_s_name]
-            * spectrometer.liouvillian.ppm_s
+            * spectrometer.ppm_s
         )
         ref_shift_dq = ref_shift_i + ref_shift_s
         ref_shift_zq = ref_shift_i - ref_shift_s
@@ -86,7 +85,7 @@ class Shift15NSqMqSequence:
             [
                 1e3
                 * (shift_sq - 0.5 * (shift_dq + shift_zq))
-                / spectrometer.liouvillian.ppm_i,
+                / spectrometer.ppm_i,
             ],
         )
 

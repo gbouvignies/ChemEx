@@ -6,11 +6,13 @@ import numpy as np
 
 from chemex.nmr import propagators as _propagators
 from chemex.nmr.b1 import B1DistributionModel
+from chemex.nmr.basis import Basis
 from chemex.nmr.constants import Distribution
 from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.liouvillian_views import reshape_single_liouvillian
 from chemex.nmr.pulse_kernel import PulseKernel
 from chemex.nmr.pulse_library import PulseLibrary
+from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.typing import Array
 
@@ -60,6 +62,22 @@ class Spectrometer:
     @property
     def par_values(self) -> dict[str, float]:
         return self.liouvillian.par_values
+
+    @property
+    def basis(self) -> Basis:
+        return self.liouvillian.basis
+
+    @property
+    def spin_system(self) -> SpinSystem:
+        return self.liouvillian.spin_system
+
+    @property
+    def ppm_i(self) -> float:
+        return self.liouvillian.ppm_i
+
+    @property
+    def ppm_s(self) -> float:
+        return self.liouvillian.ppm_s
 
     @property
     def carrier_i(self) -> float:
@@ -263,6 +281,9 @@ class Spectrometer:
             purpose="Shift eigenvalue calculation",
         )
         return np.linalg.eigvals(liouv).imag
+
+    def calculate_r1rho(self) -> float:
+        return self.liouvillian.calculate_r1rho()
 
     def offsets_to_ppms(self, offsets: Array) -> Array:
         return self.liouvillian.offsets_to_ppms(offsets)

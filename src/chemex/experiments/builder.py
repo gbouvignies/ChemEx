@@ -140,7 +140,8 @@ def build_experiment(
             filterer = factory.create_filterer(config, spectrometer)
             name_map = create_parameters(
                 config,
-                spectrometer.liouvillian,
+                basis=spectrometer.basis,
+                spin_system=spectrometer.spin_system,
                 parameter_factory=parameter_factory,
             )
             profiles.append(

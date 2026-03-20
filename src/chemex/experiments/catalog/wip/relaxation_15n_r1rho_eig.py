@@ -62,8 +62,7 @@ def build_spectrometer(
     conditions = config.conditions
 
     basis = Basis(type="ixyz", spin_system="nh", model=config.model)
-    liouvillian = LiouvillianIS(spin_system, basis, conditions)
-    spectrometer = Spectrometer(liouvillian)
+    spectrometer = Spectrometer(LiouvillianIS(spin_system, basis, conditions))
 
     spectrometer.carrier_i = settings.carrier
     spectrometer.set_b1_i_inhomogeneity(
@@ -83,7 +82,7 @@ class Relaxation15NR1RhoSequence:
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         times = data.metadata
 
-        r1rho = spectrometer.liouvillian.calculate_r1rho()
+        r1rho = spectrometer.calculate_r1rho()
 
         # Return profile
         return np.exp(-r1rho * times)

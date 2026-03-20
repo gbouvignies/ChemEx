@@ -7,7 +7,6 @@ from chemex.configuration.base import ExperimentConfiguration
 from chemex.configuration.conditions import Conditions
 from chemex.models.factory import model_factory
 from chemex.nmr.basis import Basis
-from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.parameters.database import ParameterStore
 from chemex.parameters.setting import LocalSettings, Parameters, ParamSetting
 from chemex.parameters.spin_system import SpinSystem
@@ -96,22 +95,24 @@ class ParameterFactory:
     def create_parameters(
         self,
         config: ConfigConditionsType,
-        liouvillian: LiouvillianIS,
+        *,
+        basis: Basis,
+        spin_system: SpinSystem,
     ) -> dict[str, str]:
         settings, settings_mf = self._build_settings(
-            liouvillian.basis,
+            basis,
             config.conditions,
         )
 
         name_map, parameters = _build_parameters(
             settings,
-            liouvillian.spin_system,
+            spin_system,
             config.conditions,
         )
 
         name_map_mf, parameters_mf = _build_parameters(
             settings_mf,
-            liouvillian.spin_system,
+            spin_system,
             config.conditions,
         )
 
@@ -121,7 +122,7 @@ class ParameterFactory:
         self.parameter_store.add_multiple(parameters)
         self.parameter_store.add_multiple_mf(parameters_mf)
 
-        selection = set(name_map) & liouvillian.basis.required_names
+        selection = set(name_map) & basis.required_names
 
         return {local_name: name_map[local_name] for local_name in selection}
 
@@ -131,8 +132,13 @@ class ParameterFactory:
 
 def create_parameters(
     config: ConfigConditionsType,
-    liouvillian: LiouvillianIS,
     *,
+    basis: Basis,
+    spin_system: SpinSystem,
     parameter_factory: ParameterFactory,
 ) -> dict[str, str]:
-    return parameter_factory.create_parameters(config, liouvillian)
+    return parameter_factory.create_parameters(
+        config,
+        basis=basis,
+        spin_system=spin_system,
+    )

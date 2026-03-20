@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 import numpy as np
 import pytest
 from lmfit import Parameters
 
 import chemex.containers.data as data_module
 from chemex.containers.data import Data
-from chemex.containers.profile import Profile
+from chemex.containers.profile import Profile, PulseSequence
+from chemex.nmr.spectrometer import Spectrometer
+from chemex.printers.data import Printer
 
 
 class DummyLiouvillian:
@@ -15,6 +19,7 @@ class DummyLiouvillian:
 
 class DummySpectrometer:
     def __init__(self) -> None:
+        self.spin_system = "dummy"
         self.liouvillian = DummyLiouvillian()
         self.par_values: dict[str, float] = {}
 
@@ -69,10 +74,10 @@ def make_profile(
     )
     return Profile(
         data=data,
-        spectrometer=DummySpectrometer(),
-        pulse_sequence=DummyPulseSequence(calc),
+        spectrometer=cast("Spectrometer", DummySpectrometer()),
+        pulse_sequence=cast("PulseSequence", DummyPulseSequence(calc)),
         name_map={"k": "p1"},
-        printer=DummyPrinter(),
+        printer=cast("Printer", DummyPrinter()),
         filterer=filterer,
         is_scaled=False,
     )
@@ -121,7 +126,7 @@ def test_filter_invalidates_residual_cache() -> None:
 
 def test_monte_carlo_profile_starts_with_empty_cache_and_fresh_residuals() -> None:
     original_rng = data_module.rng
-    data_module.rng = StubRng([10.0, 20.0, 30.0])
+    data_module.rng = cast("Any", StubRng([10.0, 20.0, 30.0]))
     try:
         profile = make_profile(
             exp=[1.0, 2.0, 3.0],
