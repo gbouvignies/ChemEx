@@ -17,6 +17,12 @@ def test_basis_reference_matrices_are_read_only() -> None:
         basis.matrices["cs_i_a"][0, 1] = 1.0
 
 
+def test_basis_reference_matrices_are_real_valued() -> None:
+    basis = Basis(type="ixyz", spin_system="nh", model=ModelSpec())
+
+    assert all(not np.iscomplexobj(matrix) for matrix in basis.matrices.values())
+
+
 def test_basis_vectors_are_read_only() -> None:
     basis = Basis(type="ixyz", spin_system="nh", model=ModelSpec())
 
