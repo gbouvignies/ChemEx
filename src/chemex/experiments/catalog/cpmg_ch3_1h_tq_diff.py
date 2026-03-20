@@ -17,7 +17,6 @@ from chemex.experiments.factories import Creators, factories
 from chemex.filterers import PlanesFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import GAMMA
-from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.spin_system.nucleus import Nucleus
@@ -125,8 +124,7 @@ def build_spectrometer(
     basis = Basis(
         type="ixyzsz_diff", extension="tq", spin_system="hc", model=config.model
     )
-    liouvillian = LiouvillianIS(spin_system, basis, conditions)
-    spectrometer = Spectrometer(liouvillian)
+    spectrometer = Spectrometer.from_spin_system(spin_system, basis, conditions)
 
     spectrometer.carrier_i = settings.carrier
     spectrometer.b1_i = 1 / (4.0 * settings.pw90)

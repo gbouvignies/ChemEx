@@ -1,0 +1,328 @@
+"""Internal IS Liouvillian engine and matrix assembly."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+
+import numpy as np
+
+from chemex.configuration.conditions import Conditions
+from chemex.models.model import ModelSpec
+from chemex.nmr.b1 import (
+    B1DistributionModel,
+    B1Profile,
+    FixedDistributionModel,
+)
+from chemex.nmr.basis import Basis
+from chemex.nmr.constants import SIGNED_XI_RATIO, Distribution
+from chemex.nmr.distribution_tensors import (
+    B1DistributionState,
+    JeffDistributionState,
+)
+from chemex.nmr.effective_field import (
+    build_i_effective_field_tilts,
+    tilt_magnetization_along_i_effective_field,
+)
+from chemex.nmr.is_liouvillian_state import ISLiouvillianState
+from chemex.nmr.liouvillian_readout import LiouvillianReadout
+from chemex.nmr.magnetization import (
+    build_equilibrium_magnetization,
+    build_start_magnetization,
+    keep_components,
+)
+from chemex.parameters.spin_system import SpinSystem
+from chemex.parameters.spin_system.nucleus import Nucleus
+from chemex.typing import Array
+
+_Q_ORDER_I = {"sq": 1.0, "dq": 2.0, "tq": 3.0}
+
+
+class ISLiouvillianEngine:
+    """Internal engine assembling Liouvillian matrices for two-spin IS systems."""
+
+    def __init__(
+        self,
+        spin_system: SpinSystem,
+        basis: Basis,
+        conditions: Conditions,
+    ) -> None:
+        self.model: ModelSpec = basis.model
+        self.spin_system = spin_system.correct(basis)
+        self.basis = basis
+        self.state = ISLiouvillianState()
+        self._matrices = basis.copy_matrices()
+        self.size = len(self.model.states) * len(basis)
+        self._matrix_dtype = np.result_type(
+            *(matrix.dtype for matrix in self._matrices.values()),
+            np.float64,
+        )
+        self._zero_liouvillian = np.zeros(
+            (self.size, self.size),
+            dtype=self._matrix_dtype,
+        )
+        self.h_frq = 0.0 if conditions.h_larmor_frq is None else conditions.h_larmor_frq
+        self._readout = LiouvillianReadout(self.basis.vectors)
+        self._q_order_i = _Q_ORDER_I.get(self.basis.extension, 1.0)
+        scale = -2.0 * np.pi * self.h_frq
+        self.ppm_i = scale * SIGNED_XI_RATIO.get(basis.nuclei.get("i", Nucleus.X), 1.0)
+        self.ppm_s = scale * SIGNED_XI_RATIO.get(basis.nuclei.get("s", Nucleus.X), 1.0)
+        self.carrier_i = 0.0
+        self.carrier_s = 0.0
+        self.offset_i = 0.0
+        self.offset_s = 0.0
+        self._l_base = self._zero_liouvillian
+        self._set_b1_i_profile(self.state.b1_i_profile)
+        self.b1_s = self.state.b1_s
+        self.jeff_i = self.state.jeff_i
+        self.gradient_dephasing = self.state.gradient_dephasing
+        self._scale_matrices("j_is_{state}", self._q_order_i * np.pi)
+
+    def _scale_matrices(self, names: list[str] | str, value: float) -> None:
+        if isinstance(names, str):
+            names = [names]
+        for name in names:
+            matrix_names = {name.format(state=state) for state in self.model.states}
+            for matrix_name in matrix_names & self._matrices.keys():
+                self._matrices[matrix_name] = (
+                    np.sign(self.basis.matrices[matrix_name]) * value
+                )
+
+    def _build_base_liouvillian(self) -> None:
+        self._l_base = sum(
+            (
+                self._matrices[name] * self.state.par_values.get(name, 0.0)
+                for name in self._matrices
+            ),
+            start=self._zero_liouvillian,
+        )
+
+    def _matrix_or_zero(self, name: str) -> Array:
+        return self._matrices.get(name, self._zero_liouvillian)
+
+    def _scaled_liouvillian_term(
+        self,
+        name: str,
+        value: float,
+        *,
+        factor: float = 1.0,
+    ) -> Array:
+        return self._matrix_or_zero(name) * (factor * value)
+
+    @property
+    def par_values(self) -> dict[str, float]:
+        return self.state.par_values
+
+    @property
+    def ppm_i(self) -> float:
+        return self.state.ppm_i
+
+    @ppm_i.setter
+    def ppm_i(self, value: float) -> None:
+        self.state.ppm_i = float(value)
+        self._scale_matrices(["cs_i_{state}", "carrier_i"], self._q_order_i * value)
+
+    @property
+    def ppm_s(self) -> float:
+        return self.state.ppm_s
+
+    @ppm_s.setter
+    def ppm_s(self, value: float) -> None:
+        self.state.ppm_s = float(value)
+        self._scale_matrices(["cs_s_{state}", "carrier_s"], value)
+
+    @property
+    def carrier_i(self) -> float:
+        return self.state.carrier_i
+
+    @carrier_i.setter
+    def carrier_i(self, value: float) -> None:
+        self.state.carrier_i = float(value)
+        self._l_carrier_i = self._scaled_liouvillian_term("carrier_i", value)
+
+    @property
+    def carrier_s(self) -> float:
+        return self.state.carrier_s
+
+    @carrier_s.setter
+    def carrier_s(self, value: float) -> None:
+        self.state.carrier_s = float(value)
+        self._l_carrier_s = self._scaled_liouvillian_term("carrier_s", value)
+
+    @property
+    def offset_i(self) -> float:
+        return self.state.offset_i
+
+    @offset_i.setter
+    def offset_i(self, value: float) -> None:
+        self.state.offset_i = float(value)
+        self._l_offset_i = self._scaled_liouvillian_term(
+            "offset_i",
+            value,
+            factor=float(np.sign(self.ppm_i)),
+        )
+
+    @property
+    def offset_s(self) -> float:
+        return self.state.offset_s
+
+    @offset_s.setter
+    def offset_s(self, value: float) -> None:
+        self.state.offset_s = float(value)
+        self._l_offset_s = self._scaled_liouvillian_term(
+            "offset_s",
+            value,
+            factor=float(np.sign(self.ppm_s)),
+        )
+
+    def _set_b1_i_profile(self, profile: B1Profile) -> None:
+        self.state.b1_i_profile = profile
+        self._b1_i_state = B1DistributionState.build(
+            profile.build_distribution(),
+            matrix_x=self._matrix_or_zero("b1x_i"),
+            matrix_y=self._matrix_or_zero("b1y_i"),
+        )
+
+    def set_b1_i_inhomogeneity(
+        self,
+        nominal: float,
+        distribution: B1DistributionModel = None,
+    ) -> None:
+        profile = self.state.b1_i_profile.with_nominal(nominal).with_distribution(
+            distribution
+        )
+        self._set_b1_i_profile(profile)
+
+    @property
+    def b1_i(self) -> float:
+        return self.state.b1_i_profile.nominal
+
+    @b1_i.setter
+    def b1_i(self, value: float) -> None:
+        self._set_b1_i_profile(self.state.b1_i_profile.with_nominal(value))
+
+    def set_b1_i_distribution(
+        self,
+        distribution: Distribution,
+        *,
+        nominal: float | None = None,
+    ) -> None:
+        if nominal is None:
+            nominal = float(
+                np.average(distribution.values, weights=distribution.weights)
+            )
+        model = FixedDistributionModel.from_distribution(distribution, nominal)
+        self._set_b1_i_profile(
+            self.state.b1_i_profile.with_nominal(nominal).with_distribution(model)
+        )
+
+    @property
+    def b1_i_dist(self) -> Distribution:
+        return self._b1_i_state.axis.distribution
+
+    @property
+    def l_b1x_i(self) -> Array:
+        return self._b1_i_state.l_x
+
+    @property
+    def l_b1y_i(self) -> Array:
+        return self._b1_i_state.l_y
+
+    @property
+    def b1_s(self) -> float:
+        return self.state.b1_s
+
+    @b1_s.setter
+    def b1_s(self, value: float) -> None:
+        self.state.b1_s = float(value)
+        self.l_b1x_s = self._scaled_liouvillian_term("b1x_s", value)
+        self.l_b1y_s = self._scaled_liouvillian_term("b1y_s", value)
+
+    @property
+    def jeff_i(self) -> Distribution:
+        return self.state.jeff_i
+
+    @jeff_i.setter
+    def jeff_i(self, distribution: Distribution) -> None:
+        self.state.jeff_i = distribution
+        self._jeff_i_state = JeffDistributionState.build(
+            distribution,
+            matrix=self._matrix_or_zero("jeff_i"),
+        )
+
+    @property
+    def gradient_dephasing(self) -> float:
+        return self.state.gradient_dephasing
+
+    @gradient_dephasing.setter
+    def gradient_dephasing(self, value: float) -> None:
+        self.state.gradient_dephasing = float(value)
+        self._scale_matrices("d_{state}", value * 1e-12)
+        self._build_base_liouvillian()
+
+    @property
+    def l_free(self) -> Array:
+        return sum(
+            (
+                self._l_base,
+                self._l_offset_i,
+                self._l_offset_s,
+                self._l_carrier_i,
+                self._l_carrier_s,
+                self._jeff_i_state.liouvillian,
+            ),
+            start=self._zero_liouvillian,
+        )
+
+    @property
+    def weights(self) -> Array:
+        return self._b1_i_state.axis.weights * self._jeff_i_state.axis.weights
+
+    @property
+    def detection(self) -> str:
+        return self._readout.detection
+
+    @detection.setter
+    def detection(self, value: str) -> None:
+        self._readout.detection = value
+
+    def update(self, par_values: dict[str, float]) -> None:
+        self.state.par_values = par_values
+        self._build_base_liouvillian()
+
+    def detect(self, magnetization: Array) -> float:
+        return self._readout.detect(magnetization, self.weights)
+
+    def tilt_mag_along_weff_i(
+        self, magnetization: Array, *, back: bool = False
+    ) -> Array:
+        tilts = build_i_effective_field_tilts(
+            self.basis,
+            self.model.states,
+            self.par_values,
+            b1_i=self.b1_i,
+            ppm_i=self.ppm_i,
+            carrier_i=self.carrier_i,
+            offset_i=self.offset_i,
+        )
+        return tilt_magnetization_along_i_effective_field(
+            magnetization,
+            tilts,
+            back=back,
+        )
+
+    def get_equilibrium(self) -> Array:
+        return build_equilibrium_magnetization(self.basis, self.par_values)
+
+    def get_start_magnetization(
+        self, terms: Iterable[str], atom: Nucleus = Nucleus.H1
+    ) -> Array:
+        return build_start_magnetization(self.basis, self.par_values, terms, atom)
+
+    def keep(self, magnetization: Array, components: Iterable[str]) -> Array:
+        return keep_components(self.basis, magnetization, components)
+
+    def offsets_to_ppms(self, offsets: Array) -> Array:
+        return self.carrier_i + 2.0 * np.pi * offsets / abs(self.ppm_i)
+
+    def ppms_to_offsets(self, ppms: Array | float) -> Array | float:
+        return (ppms - self.carrier_i) * abs(self.ppm_i) / (2.0 * np.pi)

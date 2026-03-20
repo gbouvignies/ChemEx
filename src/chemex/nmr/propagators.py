@@ -7,7 +7,7 @@ from cachetools import cached
 from cachetools.keys import hashkey
 from scipy.linalg import expm
 
-from chemex.nmr.liouvillian import LiouvillianIS
+from chemex.nmr.is_liouvillian_engine import ISLiouvillianEngine
 from chemex.typing import Array
 
 DictArray = dict[str, Array]
@@ -17,9 +17,9 @@ SMALL_VALUE = 1e-6
 
 
 def _cache_key(
-    liouvillian: LiouvillianIS, *args: Hashable, **kwargs: Hashable
+    engine: ISLiouvillianEngine, *args: Hashable, **kwargs: Hashable
 ) -> tuple[Hashable, ...]:
-    return tuple(hashkey(liouvillian.basis, *args, **kwargs))
+    return tuple(hashkey(engine.basis, *args, **kwargs))
 
 
 def _dephase_eigenvalues(eigenvalues: Array) -> Array:
@@ -73,13 +73,13 @@ def calculate_propagators(
 
 
 @cached(cache={}, key=_cache_key)
-def make_perfect180(liouvillian: LiouvillianIS, spin: str) -> Array:
-    size = liouvillian.size
+def make_perfect180(engine: ISLiouvillianEngine, spin: str) -> Array:
+    size = engine.size
     identity = np.eye(size).reshape((1, 1, size, size))
     compx, compy, compz = (f"{spin}{axis}" for axis in "xyz")
     perfect180: dict[str, Array] = {comp: identity.copy() for comp in (compx, compy)}
-    for comp in liouvillian.basis.components:
-        vect = liouvillian.basis.vectors[comp].ravel()
+    for comp in engine.basis.components:
+        vect = engine.basis.vectors[comp].ravel()
         if compx in comp or compz in comp:
             perfect180[compy] -= 2 * np.diag(vect)
         if compy in comp or compz in comp:
@@ -89,19 +89,19 @@ def make_perfect180(liouvillian: LiouvillianIS, spin: str) -> Array:
 
 
 @cached(cache={}, key=_cache_key)
-def make_perfect90(liouvillian: LiouvillianIS, spin: str) -> Array:
-    size = liouvillian.size
+def make_perfect90(engine: ISLiouvillianEngine, spin: str) -> Array:
+    size = engine.size
     zeros = np.zeros((size, size))
-    rot = liouvillian.basis.matrices.get(f"b1x_{spin}", zeros)
+    rot = engine.basis.matrices.get(f"b1x_{spin}", zeros)
     return expm(0.25 * rot).reshape(1, 1, size, size)
 
 
 @cached(cache={}, key=_cache_key)
-def get_phases(liouvillian: LiouvillianIS) -> DictArray:
+def get_phases(engine: ISLiouvillianEngine) -> DictArray:
     phases = {}
-    size = liouvillian.size
+    size = engine.size
     zeros = np.zeros((size, size))
     for spin in "is":
-        l_rotz = liouvillian.basis.matrices.get(f"rotz_{spin}", zeros)
+        l_rotz = engine.basis.matrices.get(f"rotz_{spin}", zeros)
         phases[spin] = np.array([expm(n * 0.5 * np.pi * l_rotz) for n in range(4)])
     return phases

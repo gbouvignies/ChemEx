@@ -25,10 +25,10 @@ def test_scalar_control_values_are_stored_as_plain_floats() -> None:
     liouvillian.offset_i = 150.0
     liouvillian.offset_s = -35.0
 
-    assert isinstance(liouvillian._carrier_i, float)  # noqa: SLF001
-    assert isinstance(liouvillian._carrier_s, float)  # noqa: SLF001
-    assert isinstance(liouvillian._offset_i, float)  # noqa: SLF001
-    assert isinstance(liouvillian._offset_s, float)  # noqa: SLF001
+    assert isinstance(liouvillian.state.carrier_i, float)
+    assert isinstance(liouvillian.state.carrier_s, float)
+    assert isinstance(liouvillian.state.offset_i, float)
+    assert isinstance(liouvillian.state.offset_s, float)
 
 
 def test_update_without_parameters_keeps_matrix_shaped_base_liouvillian() -> None:

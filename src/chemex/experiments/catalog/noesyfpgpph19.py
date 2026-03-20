@@ -13,7 +13,6 @@ from chemex.containers.dataset import load_exsy_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import PlanesFilterer
 from chemex.nmr.basis import Basis
-from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.exsy import EXSYPlotter
@@ -46,9 +45,7 @@ def build_spectrometer(
     conditions = config.conditions
 
     basis = Basis(type="iz", spin_system="hn", model=config.model)
-    liouvillian = LiouvillianIS(spin_system, basis, conditions)
-
-    return Spectrometer(liouvillian)
+    return Spectrometer.from_spin_system(spin_system, basis, conditions)
 
 
 class Noesyfpgpph19Sequence:

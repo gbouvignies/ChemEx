@@ -5,19 +5,16 @@ import numpy as np
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
 from chemex.nmr.basis import Basis
-from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 
 
 def make_spectrometer() -> Spectrometer:
     basis = Basis(type="ixyz", spin_system="nh", model=ModelSpec())
-    spectrometer = Spectrometer(
-        LiouvillianIS(
-            SpinSystem(name="G23N-HN"),
-            basis,
-            Conditions(h_larmor_frq=600.0),
-        )
+    spectrometer = Spectrometer.from_spin_system(
+        SpinSystem(name="G23N-HN"),
+        basis,
+        Conditions(h_larmor_frq=600.0),
     )
     spectrometer.b1_i = 2_500.0
     spectrometer.b1_s = 20_000.0
@@ -78,7 +75,7 @@ def test_calculate_r1rho_is_available_on_spectrometer() -> None:
     spectrometer = make_spectrometer()
     spectrometer.update({"r2_i_a": 4.0})
 
-    r1rho = spectrometer.calculate_r1rho()
+    r1rho = spectrometer.analysis.calculate_r1rho()
 
     assert np.isfinite(r1rho)
     assert r1rho >= 0.0

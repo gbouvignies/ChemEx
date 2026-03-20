@@ -16,7 +16,6 @@ from chemex.experiments.factories import Creators, factories
 from chemex.filterers import CestFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import get_multiplet
-from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cest import CestPlotter
@@ -66,7 +65,7 @@ def build_spectrometer(
     conditions = config.conditions
 
     basis = Basis(type="ixyz", spin_system="nh", model=config.model)
-    spectrometer = Spectrometer(LiouvillianIS(spin_system, basis, conditions))
+    spectrometer = Spectrometer.from_spin_system(spin_system, basis, conditions)
 
     spectrometer.carrier_i = settings.carrier
     spectrometer.set_b1_i_inhomogeneity(
