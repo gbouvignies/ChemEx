@@ -112,8 +112,13 @@ class PulseLibrary:
 
     def _ensure_base_pulses_s(self) -> None:
         if self._s_pulses.dirty:
-            base = self._kernel.pulse_s(self._s_pulses.pulse_widths(), 0.0)
-            (p180,) = self._kernel.add_phases(base, "s").swapaxes(0, 1)
+            # S-spin caching only has a single base pulse width, so there is no
+            # width axis to preserve here. Keep the broadcast distribution axes
+            # intact and add only the phase axis.
+            p180 = self._kernel.add_phases(
+                self._kernel.pulse_s(self._s_pulses.pulse_widths(), 0.0),
+                "s",
+            )
             self._s_pulses.store(p180=p180)
 
     @property

@@ -14,6 +14,16 @@ class DummyB1Settings(B1InhomogeneityMixin):
     pass
 
 
+class DummyDefaultGaussianB1Settings(B1InhomogeneityMixin):
+    b1_inh_scale: float = 0.2
+    b1_inh_res: int = 7
+
+
+class DummyDefaultDephasingB1Settings(B1InhomogeneityMixin):
+    b1_inh_scale: float = np.inf
+    b1_inh_res: int = 11
+
+
 def test_b1_field_config_with_value():
     """Test B1FieldConfig with explicit value using flat schema."""
     # Simulate TOML flat schema parsing
@@ -181,6 +191,20 @@ def test_b1_inhomogeneity_mixin_normalizes_legacy_dephasing_scale():
             "b1_inh_scale": np.inf,
         }
     )
+
+    assert isinstance(settings.b1_distribution, DephasingConfig)
+
+
+def test_b1_inhomogeneity_mixin_normalizes_defaulted_legacy_gaussian_fields():
+    settings = DummyDefaultGaussianB1Settings.model_validate({"b1_frq": 15.0})
+
+    assert isinstance(settings.b1_distribution, GaussianDistributionConfig)
+    assert settings.b1_distribution.scale == 0.2
+    assert settings.b1_distribution.res == 7
+
+
+def test_b1_inhomogeneity_mixin_normalizes_defaulted_legacy_dephasing_fields():
+    settings = DummyDefaultDephasingB1Settings.model_validate({"b1_frq": 15.0})
 
     assert isinstance(settings.b1_distribution, DephasingConfig)
 

@@ -5,6 +5,7 @@ import numpy as np
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
 from chemex.nmr.basis import Basis
+from chemex.nmr.constants import Distribution
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 
@@ -60,6 +61,19 @@ def test_liouvillian_changes_invalidate_both_base_pulse_caches() -> None:
 
     assert spectrometer.p90_i is not p90_i
     assert spectrometer.p180_s is not p180_s
+
+
+def test_s_pulse_cache_handles_distributed_liouvillian() -> None:
+    spectrometer = make_spectrometer()
+    spectrometer.jeff_i = Distribution(
+        np.array([0.0, 10.0]),
+        np.array([0.5, 0.5]),
+    )
+
+    p180_s = spectrometer.p180_s
+
+    assert p180_s.shape == (4, 2, 1, 6, 6)
+    assert np.isfinite(p180_s).all()
 
 
 def test_spectrometer_exposes_basis_spin_system_and_ppm_metadata() -> None:

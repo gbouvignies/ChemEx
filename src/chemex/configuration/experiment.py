@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, Self, TypeVar
 
 import numpy as np
 from pydantic import (
@@ -20,6 +20,20 @@ from chemex.nmr.constants import Distribution
 from chemex.nmr.distributions.registry import DistributionConfig
 
 T = TypeVar("T")
+
+
+def _legacy_b1_distribution_input(
+    scale: float | None,
+    res: int | None,
+) -> dict[str, object]:
+    current_scale = 0.1 if scale is None else scale
+    if math.isinf(current_scale):
+        return {"type": "dephasing"}
+    return {
+        "type": "gaussian",
+        "scale": current_scale,
+        "res": 11 if res is None else res,
+    }
 
 
 class ExperimentSettings(BaseModel):
@@ -107,27 +121,28 @@ class B1InhomogeneityMixin(BaseModel):
                 "'b1_inh_scale'/'b1_inh_res' fields, not both"
             )
             raise ValueError(msg)
-
-        scale = (
-            normalized["b1_inh_scale"]
-            if normalized.get("b1_inh_scale") is not None
-            else 0.1
+        normalized["b1_distribution"] = _legacy_b1_distribution_input(
+            normalized.get("b1_inh_scale"),
+            normalized.get("b1_inh_res"),
         )
-        if math.isinf(scale):
-            normalized["b1_distribution"] = {"type": "dephasing"}
-            return normalized
-
-        res = (
-            normalized["b1_inh_res"]
-            if normalized.get("b1_inh_res") is not None
-            else 11
-        )
-        normalized["b1_distribution"] = {
-            "type": "gaussian",
-            "scale": scale,
-            "res": res,
-        }
         return normalized
+
+    @model_validator(mode="after")
+    def _normalize_defaulted_legacy_b1_fields(self) -> Self:
+        if self.b1_distribution is not None:
+            return self
+        if self.b1_inh_scale is None and self.b1_inh_res is None:
+            return self
+        return self.model_copy(
+            update={
+                "b1_distribution": parse_distribution_config(
+                    _legacy_b1_distribution_input(
+                        self.b1_inh_scale,
+                        self.b1_inh_res,
+                    ),
+                )
+            },
+        )
 
     def get_b1_nominal(self) -> float:
         """Nominal B1 value for distribution generation."""

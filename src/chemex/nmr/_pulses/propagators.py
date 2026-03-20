@@ -69,7 +69,7 @@ def calculate_propagators(
     if propagators.shape[0] == 1:
         propagators = propagators[0]
 
-    return propagators.real
+    return np.ascontiguousarray(propagators.real)
 
 
 @cached(cache={}, key=_cache_key)
