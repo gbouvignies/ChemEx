@@ -23,7 +23,6 @@ from chemex.nmr.b1 import (
 )
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import SIGNED_XI_RATIO, Distribution
-from chemex.nmr.detection import build_detection_vector
 from chemex.nmr.distribution_tensors import (
     B1DistributionState,
     JeffDistributionState,
@@ -32,11 +31,11 @@ from chemex.nmr.effective_field import (
     build_i_effective_field_tilts,
     tilt_magnetization_along_i_effective_field,
 )
+from chemex.nmr.liouvillian_readout import LiouvillianReadout
 from chemex.nmr.liouvillian_views import reshape_single_liouvillian
 from chemex.nmr.magnetization import (
     build_equilibrium_magnetization,
     build_start_magnetization,
-    detect_signal,
     keep_components,
 )
 from chemex.parameters.spin_system import SpinSystem
@@ -72,8 +71,7 @@ class LiouvillianIS:
         )
         self.h_frq = 0.0 if conditions.h_larmor_frq is None else conditions.h_larmor_frq
         self.par_values: dict[str, float] = {}
-        self._detection: str = ""
-        self._detect_vector: Array = np.array([])
+        self._readout = LiouvillianReadout(self.basis.vectors)
         self._q_order_i = _Q_ORDER_I.get(self.basis.extension, 1.0)
         scale = -2.0 * np.pi * self.h_frq
         self.ppm_i = scale * SIGNED_XI_RATIO.get(basis.nuclei.get("i", Nucleus.X), 1.0)
@@ -300,20 +298,18 @@ class LiouvillianIS:
 
     @property
     def detection(self) -> str:
-        return self._detection
+        return self._readout.detection
 
     @detection.setter
     def detection(self, value: str) -> None:
-        detect_vector = build_detection_vector(value, self.basis.vectors).transpose()
-        self._detection = value
-        self._detect_vector = detect_vector
+        self._readout.detection = value
 
     def update(self, par_values: dict[str, float]) -> None:
         self.par_values = par_values
         self._build_base_liouvillian()
 
     def detect(self, magnetization: Array) -> float:
-        return detect_signal(self._detect_vector, magnetization, self.weights)
+        return self._readout.detect(magnetization, self.weights)
 
     # def detect_spectrum(
     #     self, magnetization: Array, observed_state: str = "a"
