@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.linalg import expm
 
-from chemex.nmr.propagators import calculate_propagators
+from chemex.nmr._pulses.propagators import calculate_propagators
 
 
 def test_calculate_propagators_single_delay_matches_expm() -> None:

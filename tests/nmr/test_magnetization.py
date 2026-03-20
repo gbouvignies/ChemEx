@@ -3,15 +3,15 @@ from __future__ import annotations
 import numpy as np
 
 from chemex.models.model import ModelSpec
-from chemex.nmr.basis import Basis
-from chemex.nmr.constants import XI_RATIO
-from chemex.nmr.magnetization import (
+from chemex.nmr._engine.magnetization import (
     build_equilibrium_magnetization,
     build_start_magnetization,
     collapse_magnetization,
     detect_signal,
     keep_components,
 )
+from chemex.nmr.basis import Basis
+from chemex.nmr.constants import XI_RATIO
 from chemex.parameters.spin_system.nucleus import Nucleus
 
 

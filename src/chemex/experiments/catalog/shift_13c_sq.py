@@ -13,7 +13,6 @@ from chemex.containers.dataset import load_shift_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import NoFilterer
 from chemex.nmr.basis import Basis
-from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.shift import ShiftPlotter
@@ -52,8 +51,7 @@ def build_spectrometer(
     conditions = config.conditions
 
     basis = Basis(type="ixy", spin_system="ch", model=config.model)
-    liouvillian = LiouvillianIS(spin_system, basis, conditions)
-    return Spectrometer(liouvillian)
+    return Spectrometer.from_spin_system(spin_system, basis, conditions)
 
 
 def _find_nearest(array: Array, value: float) -> float:
@@ -69,9 +67,9 @@ class Shift13CSqSequence:
         self.settings = settings
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
-        ppm_i = spectrometer.liouvillian.ppm_i
+        ppm_i = spectrometer.ppm_i
         ref_shift_i = spectrometer.par_values[self.settings.cs_i_name] * ppm_i
-        shifts = spectrometer.calculate_shifts()
+        shifts = spectrometer.analysis.calculate_shifts()
         shift_sq = _find_nearest(shifts, ref_shift_i)
         return np.array([shift_sq / ppm_i])
 

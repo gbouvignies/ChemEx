@@ -5,9 +5,9 @@ import pytest
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
+from chemex.nmr._engine.detection import build_detection_vector
+from chemex.nmr._engine.engine import ISLiouvillianEngine
 from chemex.nmr.basis import Basis
-from chemex.nmr.detection import build_detection_vector
-from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.parameters.spin_system import SpinSystem
 
 
@@ -38,7 +38,7 @@ def test_build_detection_vector_rejects_unknown_components() -> None:
 
 def test_liouvillian_detect_uses_parsed_detection_expression() -> None:
     basis = Basis(type="izsz", spin_system="nh", model=ModelSpec())
-    liouvillian = LiouvillianIS(
+    liouvillian = ISLiouvillianEngine(
         SpinSystem(name="G23N-HN"),
         basis,
         Conditions(h_larmor_frq=600.0),
@@ -52,7 +52,7 @@ def test_liouvillian_detect_uses_parsed_detection_expression() -> None:
 
 def test_liouvillian_detection_state_does_not_change_on_parse_failure() -> None:
     basis = Basis(type="izsz", spin_system="nh", model=ModelSpec())
-    liouvillian = LiouvillianIS(
+    liouvillian = ISLiouvillianEngine(
         SpinSystem(name="G23N-HN"),
         basis,
         Conditions(h_larmor_frq=600.0),

@@ -4,14 +4,14 @@ import numpy as np
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
+from chemex.nmr._engine.engine import ISLiouvillianEngine
 from chemex.nmr.basis import Basis
-from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.parameters.spin_system import SpinSystem
 
 
-def make_liouvillian() -> LiouvillianIS:
+def make_liouvillian() -> ISLiouvillianEngine:
     basis = Basis(type="ixyz", spin_system="nh", model=ModelSpec())
-    return LiouvillianIS(
+    return ISLiouvillianEngine(
         SpinSystem(name="G23N-HN"),
         basis,
         Conditions(h_larmor_frq=600.0),
@@ -25,10 +25,10 @@ def test_scalar_control_values_are_stored_as_plain_floats() -> None:
     liouvillian.offset_i = 150.0
     liouvillian.offset_s = -35.0
 
-    assert isinstance(liouvillian._carrier_i, float)  # noqa: SLF001
-    assert isinstance(liouvillian._carrier_s, float)  # noqa: SLF001
-    assert isinstance(liouvillian._offset_i, float)  # noqa: SLF001
-    assert isinstance(liouvillian._offset_s, float)  # noqa: SLF001
+    assert isinstance(liouvillian.state.carrier_i, float)
+    assert isinstance(liouvillian.state.carrier_s, float)
+    assert isinstance(liouvillian.state.offset_i, float)
+    assert isinstance(liouvillian.state.offset_s, float)
 
 
 def test_update_without_parameters_keeps_matrix_shaped_base_liouvillian() -> None:

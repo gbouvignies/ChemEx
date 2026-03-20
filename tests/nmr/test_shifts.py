@@ -5,29 +5,34 @@ import pytest
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
+from chemex.nmr._engine.engine import ISLiouvillianEngine
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import Distribution
-from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 
 
-def make_spectrometer() -> Spectrometer:
+def make_engine() -> ISLiouvillianEngine:
     basis = Basis(type="ixyz", spin_system="nh", model=ModelSpec())
-    liouvillian = LiouvillianIS(
+    engine = ISLiouvillianEngine(
         SpinSystem(name="G23N-HN"),
         basis,
         Conditions(h_larmor_frq=600.0),
     )
-    liouvillian.update({"r2_i_a": 4.0, "cs_i_a": 1.0})
-    return Spectrometer(liouvillian)
+    engine.update({"r2_i_a": 4.0, "cs_i_a": 1.0})
+    return engine
+
+
+def make_spectrometer() -> Spectrometer:
+    return Spectrometer(make_engine())
 
 
 def test_calculate_shifts_returns_liouvillian_eigenvalue_imaginary_parts() -> None:
-    spectrometer = make_spectrometer()
-    expected = np.linalg.eigvals(np.squeeze(spectrometer.liouvillian.l_free)).imag
+    engine = make_engine()
+    spectrometer = Spectrometer(engine)
+    expected = np.linalg.eigvals(np.squeeze(engine.l_free)).imag
 
-    shifts = spectrometer.calculate_shifts()
+    shifts = spectrometer.analysis.calculate_shifts()
 
     np.testing.assert_allclose(np.sort(shifts), np.sort(expected))
 
@@ -43,4 +48,4 @@ def test_calculate_shifts_rejects_multi_point_distributions() -> None:
         ValueError,
         match="requires single-point B1 and Jeff distributions",
     ):
-        spectrometer.calculate_shifts()
+        spectrometer.analysis.calculate_shifts()

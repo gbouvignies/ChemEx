@@ -1,14 +1,6 @@
-"""The ref module contains the code for calculating the Liouvillians.
+"""Internal IS Liouvillian engine and matrix assembly."""
 
-Operator basis:
-
-{ Eq,
-Ix, Iy, Iz, Sx, Sy, Sz,
-2IxSz, 2IySz, 2IzSx, 2IzSy,
-2IxSx, 2IxSy, 2IySx, 2IySy,
-2IzSz }
-
-"""
+from __future__ import annotations
 
 from collections.abc import Iterable
 
@@ -16,6 +8,21 @@ import numpy as np
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
+from chemex.nmr._engine.effective_field import (
+    build_i_effective_field_tilts,
+    tilt_magnetization_along_i_effective_field,
+)
+from chemex.nmr._engine.magnetization import (
+    build_equilibrium_magnetization,
+    build_start_magnetization,
+    keep_components,
+)
+from chemex.nmr._engine.readout import LiouvillianReadout
+from chemex.nmr._engine.state import ISLiouvillianState
+from chemex.nmr._engine.tensors import (
+    B1DistributionState,
+    JeffDistributionState,
+)
 from chemex.nmr.b1 import (
     B1DistributionModel,
     B1Profile,
@@ -23,43 +30,26 @@ from chemex.nmr.b1 import (
 )
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import SIGNED_XI_RATIO, Distribution
-from chemex.nmr.detection import build_detection_vector
-from chemex.nmr.distribution_tensors import (
-    B1DistributionState,
-    JeffDistributionState,
-)
-from chemex.nmr.effective_field import (
-    build_i_effective_field_tilts,
-    tilt_magnetization_along_i_effective_field,
-)
-from chemex.nmr.liouvillian_views import reshape_single_liouvillian
-from chemex.nmr.magnetization import (
-    build_equilibrium_magnetization,
-    build_start_magnetization,
-    detect_signal,
-    keep_components,
-)
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.typing import Array
 
 _Q_ORDER_I = {"sq": 1.0, "dq": 2.0, "tq": 3.0}
 
-# A small value used for numerical stability
-SMALL_VALUE = 1e-6
 
+class ISLiouvillianEngine:
+    """Internal engine assembling Liouvillian matrices for two-spin IS systems."""
 
-class LiouvillianIS:
     def __init__(
         self,
         spin_system: SpinSystem,
         basis: Basis,
         conditions: Conditions,
     ) -> None:
-        # Initialize attributes
         self.model: ModelSpec = basis.model
         self.spin_system = spin_system.correct(basis)
         self.basis = basis
+        self.state = ISLiouvillianState()
         self._matrices = basis.copy_matrices()
         self.size = len(self.model.states) * len(basis)
         self._matrix_dtype = np.result_type(
@@ -71,9 +61,7 @@ class LiouvillianIS:
             dtype=self._matrix_dtype,
         )
         self.h_frq = 0.0 if conditions.h_larmor_frq is None else conditions.h_larmor_frq
-        self.par_values: dict[str, float] = {}
-        self._detection: str = ""
-        self._detect_vector: Array = np.array([])
+        self._readout = LiouvillianReadout(self.basis.vectors)
         self._q_order_i = _Q_ORDER_I.get(self.basis.extension, 1.0)
         scale = -2.0 * np.pi * self.h_frq
         self.ppm_i = scale * SIGNED_XI_RATIO.get(basis.nuclei.get("i", Nucleus.X), 1.0)
@@ -83,10 +71,10 @@ class LiouvillianIS:
         self.offset_i = 0.0
         self.offset_s = 0.0
         self._l_base = self._zero_liouvillian
-        self._set_b1_i_profile(B1Profile.gaussian(1e32, scale=0.0, res=11))
-        self.b1_s = 1e32
-        self.jeff_i = Distribution(np.array([0.0]), np.array([1.0]))
-        self.gradient_dephasing = 0.0
+        self._set_b1_i_profile(self.state.b1_i_profile)
+        self.b1_s = self.state.b1_s
+        self.jeff_i = self.state.jeff_i
+        self.gradient_dephasing = self.state.gradient_dephasing
         self._scale_matrices("j_is_{state}", self._q_order_i * np.pi)
 
     def _scale_matrices(self, names: list[str] | str, value: float) -> None:
@@ -102,7 +90,7 @@ class LiouvillianIS:
     def _build_base_liouvillian(self) -> None:
         self._l_base = sum(
             (
-                self._matrices[name] * self.par_values.get(name, 0.0)
+                self._matrices[name] * self.state.par_values.get(name, 0.0)
                 for name in self._matrices
             ),
             start=self._zero_liouvillian,
@@ -121,72 +109,75 @@ class LiouvillianIS:
         return self._matrix_or_zero(name) * (factor * value)
 
     @property
+    def par_values(self) -> dict[str, float]:
+        return self.state.par_values
+
+    @property
     def ppm_i(self) -> float:
-        return self._ppm_i
+        return self.state.ppm_i
 
     @ppm_i.setter
     def ppm_i(self, value: float) -> None:
-        self._ppm_i = value
+        self.state.ppm_i = float(value)
         self._scale_matrices(["cs_i_{state}", "carrier_i"], self._q_order_i * value)
 
     @property
     def ppm_s(self) -> float:
-        return self._ppm_s
+        return self.state.ppm_s
 
     @ppm_s.setter
     def ppm_s(self, value: float) -> None:
-        self._ppm_s = value
+        self.state.ppm_s = float(value)
         self._scale_matrices(["cs_s_{state}", "carrier_s"], value)
 
     @property
     def carrier_i(self) -> float:
-        return self._carrier_i
+        return self.state.carrier_i
 
     @carrier_i.setter
     def carrier_i(self, value: float) -> None:
-        self._carrier_i = float(value)
-        self._l_carrier_i = self._scaled_liouvillian_term("carrier_i", self._carrier_i)
+        self.state.carrier_i = float(value)
+        self._l_carrier_i = self._scaled_liouvillian_term("carrier_i", value)
 
     @property
     def carrier_s(self) -> float:
-        return self._carrier_s
+        return self.state.carrier_s
 
     @carrier_s.setter
     def carrier_s(self, value: float) -> None:
-        self._carrier_s = float(value)
-        self._l_carrier_s = self._scaled_liouvillian_term("carrier_s", self._carrier_s)
+        self.state.carrier_s = float(value)
+        self._l_carrier_s = self._scaled_liouvillian_term("carrier_s", value)
 
     @property
     def offset_i(self) -> float:
-        return self._offset_i
+        return self.state.offset_i
 
     @offset_i.setter
     def offset_i(self, value: float) -> None:
-        self._offset_i = float(value)
+        self.state.offset_i = float(value)
         self._l_offset_i = self._scaled_liouvillian_term(
             "offset_i",
-            self._offset_i,
+            value,
             factor=float(np.sign(self.ppm_i)),
         )
 
     @property
     def offset_s(self) -> float:
-        return self._offset_s
+        return self.state.offset_s
 
     @offset_s.setter
     def offset_s(self, value: float) -> None:
-        self._offset_s = float(value)
+        self.state.offset_s = float(value)
         self._l_offset_s = self._scaled_liouvillian_term(
             "offset_s",
-            self._offset_s,
+            value,
             factor=float(np.sign(self.ppm_s)),
         )
 
     def _set_b1_i_profile(self, profile: B1Profile) -> None:
-        self._b1_i_profile = profile
-        self._b1_i = self._b1_i_profile.nominal
+        self.state.b1_i_profile = profile
         self._b1_i_state = B1DistributionState.build(
-            self._b1_i_profile.build_distribution(),
+            profile.build_distribution(),
             matrix_x=self._matrix_or_zero("b1x_i"),
             matrix_y=self._matrix_or_zero("b1y_i"),
         )
@@ -196,19 +187,18 @@ class LiouvillianIS:
         nominal: float,
         distribution: B1DistributionModel = None,
     ) -> None:
-        """Set the nominal B1 field and the model used to build its distribution."""
-        profile = self._b1_i_profile.with_nominal(nominal).with_distribution(
+        profile = self.state.b1_i_profile.with_nominal(nominal).with_distribution(
             distribution
         )
         self._set_b1_i_profile(profile)
 
     @property
     def b1_i(self) -> float:
-        return self._b1_i
+        return self.state.b1_i_profile.nominal
 
     @b1_i.setter
     def b1_i(self, value: float) -> None:
-        self._set_b1_i_profile(self._b1_i_profile.with_nominal(value))
+        self._set_b1_i_profile(self.state.b1_i_profile.with_nominal(value))
 
     def set_b1_i_distribution(
         self,
@@ -216,29 +206,17 @@ class LiouvillianIS:
         *,
         nominal: float | None = None,
     ) -> None:
-        """Set a sampled B1 distribution directly.
-
-        Parameters
-        ----------
-        distribution : Distribution
-            Sampled B1 values and weights.
-        nominal : float, optional
-            Nominal B1 field associated with the sampled points. If omitted,
-            the weighted average of the sampled values is used.
-
-        """
         if nominal is None:
             nominal = float(
                 np.average(distribution.values, weights=distribution.weights)
             )
         model = FixedDistributionModel.from_distribution(distribution, nominal)
         self._set_b1_i_profile(
-            self._b1_i_profile.with_nominal(nominal).with_distribution(model)
+            self.state.b1_i_profile.with_nominal(nominal).with_distribution(model)
         )
 
     @property
     def b1_i_dist(self) -> Distribution:
-        """Get the B1_i distribution object."""
         return self._b1_i_state.axis.distribution
 
     @property
@@ -251,20 +229,21 @@ class LiouvillianIS:
 
     @property
     def b1_s(self) -> float:
-        return self._b1_s
+        return self.state.b1_s
 
     @b1_s.setter
     def b1_s(self, value: float) -> None:
-        self._b1_s = value
+        self.state.b1_s = float(value)
         self.l_b1x_s = self._scaled_liouvillian_term("b1x_s", value)
         self.l_b1y_s = self._scaled_liouvillian_term("b1y_s", value)
 
     @property
     def jeff_i(self) -> Distribution:
-        return self._jeff_i_state.axis.distribution
+        return self.state.jeff_i
 
     @jeff_i.setter
     def jeff_i(self, distribution: Distribution) -> None:
+        self.state.jeff_i = distribution
         self._jeff_i_state = JeffDistributionState.build(
             distribution,
             matrix=self._matrix_or_zero("jeff_i"),
@@ -272,11 +251,11 @@ class LiouvillianIS:
 
     @property
     def gradient_dephasing(self) -> float:
-        return self._gradient_dephasing
+        return self.state.gradient_dephasing
 
     @gradient_dephasing.setter
     def gradient_dephasing(self, value: float) -> None:
-        self._gradient_dephasing = value
+        self.state.gradient_dephasing = float(value)
         self._scale_matrices("d_{state}", value * 1e-12)
         self._build_base_liouvillian()
 
@@ -300,51 +279,18 @@ class LiouvillianIS:
 
     @property
     def detection(self) -> str:
-        return self._detection
+        return self._readout.detection
 
     @detection.setter
     def detection(self, value: str) -> None:
-        detect_vector = build_detection_vector(value, self.basis.vectors).transpose()
-        self._detection = value
-        self._detect_vector = detect_vector
+        self._readout.detection = value
 
     def update(self, par_values: dict[str, float]) -> None:
-        self.par_values = par_values
+        self.state.par_values = par_values
         self._build_base_liouvillian()
 
     def detect(self, magnetization: Array) -> float:
-        return detect_signal(self._detect_vector, magnetization, self.weights)
-
-    # def detect_spectrum(
-    #     self, magnetization: Array, observed_state: str = "a"
-    # ) -> Array:
-    #     collapsed_magnetization = self._collapse(magnetization)
-    #     component, _state = self.detection.split("_")
-    #     self.basis.vectors.get("ix", 0.0) - 1j * self.basis.vectors.get(
-    #         "iy", 0.0
-    #     )
-
-    #     # Getting the eigenvalues and eigenvectors of the Liouvillian
-    #     eigen_values, eigen_vectors = np.linalg.eig(self._l_base)
-
-    #     return self._detect_vector @ collapsed_magnetization
-
-    def calculate_r1rho(self) -> float:
-        liouv = reshape_single_liouvillian(
-            self.l_free + self.l_b1x_i,
-            self.size,
-            purpose="R1rho eigenvalue calculation",
-        )
-        eigenvalues = np.linalg.eigvals(liouv)
-        real_eigenvalues = eigenvalues[np.isclose(eigenvalues.imag, 0.0, atol=SMALL_VALUE)].real
-        if real_eigenvalues.size == 0:
-            smallest_imag = float(np.min(np.abs(eigenvalues.imag)))
-            msg = (
-                "R1rho eigenvalue calculation did not find a nearly real eigenvalue "
-                f"within atol={SMALL_VALUE}; smallest |imag| was {smallest_imag:.3e}."
-            )
-            raise ValueError(msg)
-        return -float(np.max(real_eigenvalues))
+        return self._readout.detect(magnetization, self.weights)
 
     def tilt_mag_along_weff_i(
         self, magnetization: Array, *, back: bool = False

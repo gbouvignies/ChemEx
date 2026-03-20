@@ -52,7 +52,7 @@ class Profile:
 
     def __post_init__(self) -> None:
         """Initialize derived attributes."""
-        self.spin_system = self.spectrometer.liouvillian.spin_system
+        self.spin_system = self.spectrometer.spin_system
         self.data.refs = self.pulse_sequence.is_reference(self.data.metadata)
 
     @cached_property

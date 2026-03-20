@@ -3,12 +3,12 @@ from __future__ import annotations
 import numpy as np
 
 from chemex.models.model import ModelSpec
-from chemex.nmr.basis import Basis
-from chemex.nmr.effective_field import (
+from chemex.nmr._engine.effective_field import (
     build_i_effective_field_tilts,
     calculate_i_effective_field_angle,
     tilt_magnetization_along_i_effective_field,
 )
+from chemex.nmr.basis import Basis
 
 
 def test_calculate_i_effective_field_angle_is_pi_over_two_on_resonance() -> None:

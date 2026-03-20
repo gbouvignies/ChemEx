@@ -16,7 +16,6 @@ from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import CestFilterer
 from chemex.nmr.basis import Basis
-from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.cest import CestPlotter
@@ -83,8 +82,7 @@ def build_spectrometer(
     conditions = config.conditions
 
     basis = Basis(type="ixyzsz_eq", spin_system="hn", model=config.model)
-    liouvillian = LiouvillianIS(spin_system, basis, conditions)
-    spectrometer = Spectrometer(liouvillian)
+    spectrometer = Spectrometer.from_spin_system(spin_system, basis, conditions)
 
     spectrometer.carrier_i = settings.carrier
 

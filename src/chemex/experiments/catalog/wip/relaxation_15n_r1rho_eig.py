@@ -14,7 +14,6 @@ from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
 from chemex.filterers import PlanesFilterer
 from chemex.nmr.basis import Basis
-from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.plotters.relaxation import RelaxationPlotter
@@ -62,8 +61,7 @@ def build_spectrometer(
     conditions = config.conditions
 
     basis = Basis(type="ixyz", spin_system="nh", model=config.model)
-    liouvillian = LiouvillianIS(spin_system, basis, conditions)
-    spectrometer = Spectrometer(liouvillian)
+    spectrometer = Spectrometer.from_spin_system(spin_system, basis, conditions)
 
     spectrometer.carrier_i = settings.carrier
     spectrometer.set_b1_i_inhomogeneity(
@@ -83,7 +81,7 @@ class Relaxation15NR1RhoSequence:
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         times = data.metadata
 
-        r1rho = spectrometer.liouvillian.calculate_r1rho()
+        r1rho = spectrometer.analysis.calculate_r1rho()
 
         # Return profile
         return np.exp(-r1rho * times)

@@ -5,9 +5,9 @@ import pytest
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
+from chemex.nmr._engine.engine import ISLiouvillianEngine
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import Distribution
-from chemex.nmr.liouvillian import LiouvillianIS
 from chemex.parameters.spin_system import SpinSystem
 
 
@@ -28,7 +28,7 @@ def test_distribution_copies_inputs_and_exposes_read_only_arrays() -> None:
 
 def test_set_b1_distribution_does_not_mutate_input_distribution() -> None:
     basis = Basis(type="ixyz", spin_system="nh", model=ModelSpec())
-    liouvillian = LiouvillianIS(
+    liouvillian = ISLiouvillianEngine(
         SpinSystem(name="G23N-HN"),
         basis,
         Conditions(h_larmor_frq=600.0),
@@ -44,7 +44,7 @@ def test_set_b1_distribution_does_not_mutate_input_distribution() -> None:
 
 def test_set_jeff_distribution_does_not_mutate_input_distribution() -> None:
     basis = Basis(type="ixyz", spin_system="nh", model=ModelSpec())
-    liouvillian = LiouvillianIS(
+    liouvillian = ISLiouvillianEngine(
         SpinSystem(name="G23N-HN"),
         basis,
         Conditions(h_larmor_frq=600.0),
