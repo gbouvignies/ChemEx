@@ -3,5 +3,5 @@
 chemex fit -e Experiments/*.toml \
            -p Parameters/parameters.toml \
            -m Methods/method.toml \
-           -d 2st_rs \
+           -d 2st.rs \
            -o Output
