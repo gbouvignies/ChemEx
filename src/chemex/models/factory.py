@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Factories for creating parameter settings."""
 
+from builtins import set as builtins_set
 from collections.abc import Callable
 from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
@@ -53,7 +54,7 @@ class Factory:
         return settings
 
     @property
-    def set(self) -> set[str]:
+    def set(self) -> builtins_set[str]:
         return set(self.setting_makers_registry)
 
 
