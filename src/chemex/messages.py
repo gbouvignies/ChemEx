@@ -509,6 +509,25 @@ def print_model_error(name: str) -> None:
     console.print()
 
 
+def print_model_suffix_error(
+    name: str,
+    unknown_suffixes: set[str],
+    supported_suffixes: tuple[str, ...],
+) -> None:
+    """Display an error message for unsupported model suffixes."""
+    suffixes = ", ".join(f"'.{suffix}'" for suffix in sorted(unknown_suffixes))
+
+    console.print()
+    console.print(
+        f"[red] -- ERROR: The model '{name}' uses unsupported suffixes: {suffixes}.",
+    )
+    console.print()
+    console.print("The supported model suffixes are:")
+    for suffix in supported_suffixes:
+        console.print(f"    - '.{suffix}'")
+    console.print()
+
+
 def print_not_implemented_noise_method_warning(
     filename: Path,
     kind: str,

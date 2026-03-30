@@ -22,6 +22,7 @@ class NameSetting:
     name: str
     spin_system_part: Literal["i", "s", "is", "g", ""] = ""
     conditions_part: tuple[str, ...] = field(default_factory=tuple)
+    allow_residue_specific: bool = True
 
     def get_param_name(
         self,

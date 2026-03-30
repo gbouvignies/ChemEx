@@ -65,7 +65,7 @@ def _build_parameters(
 class ParameterFactory:
     parameter_store: ParameterStore
     _settings_cache: dict[
-        tuple[str, bool, bool, Basis, Conditions],
+        tuple[str, bool, bool, bool, Basis, Conditions],
         tuple[LocalSettings, LocalSettings],
     ] = field(default_factory=dict)
 
@@ -78,6 +78,7 @@ class ParameterFactory:
             basis.model.name,
             basis.model.model_free,
             basis.model.temp_coef,
+            basis.model.residue_specific,
             basis,
             conditions,
         )
@@ -86,7 +87,7 @@ class ParameterFactory:
                 basis,
                 conditions,
             )
-            settings_kinetics = model_factory.create(basis.model.name, conditions)
+            settings_kinetics = model_factory.create_for_model(basis.model, conditions)
             settings = settings_kinetics | settings_spins
             settings_mf = settings_kinetics | settings_spins_mf
             self._settings_cache[key] = (settings, settings_mf)

@@ -11,7 +11,6 @@ The kinetic model (specified with the `-d` or `--model` option) defines the type
 | `2st`         | 2-state exchange model (default)                                                |
 | `3st`         | 3-state exchange model                                                          |
 | `4st`         | 4-state exchange model                                                          |
-| `2st_rs`      | 2-state exchange model for residue-specific studies                             |
 | `2st_hd`      | 2-state exchange model for H/D solvent exchange studies                         |
 | `2st_eyring`  | 2-state exchange model for temperature-dependent studies                        |
 | `3st_eyring`  | 3-state exchange model for temperature-dependent studies                        |
@@ -20,6 +19,10 @@ The kinetic model (specified with the `-d` or `--model` option) defines the type
 | `4st_hd`      | 4-state exchange model for simultaneous normal and H/D solvent exchange studies |
 
 In these models, each state in the exchange process is represented with a unique parameter suffix (`A`, `B`, `C`, `D`, etc.). For example, `R1_A` denotes the R<sub>1</sub> relaxation rate of the major (ground) state, while `R2_B` refers to the R<sub>2</sub> rate of the first minor state, and so forth.
+
+:::note
+For any kinetic model, you can add the `.rs` suffix to make the kinetic parameters residue-specific (for example, `2st.rs` or `3st_eyring.rs`). Suffixes can be combined, such as `2st.rs.mf`. The legacy `2st_rs` name remains supported as an alias for `2st.rs`.
+:::
 
 :::note
 For any kinetic model, you can add the `.mf` suffix to create a model that fits model-free parameters directly (e.g., `TAUC_A`, `S2_A`), rather than individual relaxation parameters (e.g., `R1_A`, `R2_A`). For an example, see `CEST_15N_TR/` under `Examples/Experiments/`.
@@ -98,4 +101,3 @@ The model automatically calculates all 12 rate constants (k_AB, k_BA, k_AC, k_CA
 :::note
 State A serves as the reference state with ΔH_A = ΔS_A = 0 for all Eyring models. Rate constants are automatically clipped to [0, 1×10¹⁶ s⁻¹] for numerical stability.
 :::
-

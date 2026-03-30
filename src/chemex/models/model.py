@@ -4,7 +4,9 @@ import sys
 from dataclasses import dataclass, field
 from string import ascii_lowercase
 
-from chemex.messages import print_model_error
+from chemex.messages import print_model_error, print_model_suffix_error
+
+SUPPORTED_MODEL_EXTENSIONS = ("mf", "rs", "tc")
 
 
 @dataclass(frozen=True, order=True)
@@ -13,6 +15,7 @@ class ModelSpec:
     states: str = "ab"
     model_free: bool = False
     temp_coef: bool = False
+    residue_specific: bool = False
 
     @staticmethod
     def validate_model_name(name: str) -> str:
@@ -23,16 +26,30 @@ class ModelSpec:
             sys.exit()
         return name
 
+    @staticmethod
+    def validate_extensions(name: str, extensions: list[str]) -> set[str]:
+        unknown_suffixes = set(extensions) - set(SUPPORTED_MODEL_EXTENSIONS)
+        if unknown_suffixes:
+            print_model_suffix_error(
+                name,
+                unknown_suffixes,
+                SUPPORTED_MODEL_EXTENSIONS,
+            )
+            sys.exit()
+        return set(extensions)
+
     @classmethod
     def from_name(cls, name: str) -> ModelSpec:
         kinetic_model_name, *extensions = name.split(".")
         validated_name = cls.validate_model_name(kinetic_model_name)
+        validated_extensions = cls.validate_extensions(name, extensions)
         state_nb = int(validated_name[0])
         return cls(
             name=validated_name,
             states=ascii_lowercase[:state_nb],
-            model_free="mf" in extensions if extensions else False,
-            temp_coef="tc" in extensions if extensions else False,
+            model_free="mf" in validated_extensions,
+            temp_coef="tc" in validated_extensions,
+            residue_specific="rs" in validated_extensions,
         )
 
 
@@ -68,3 +85,7 @@ class ModelState:
     @property
     def temp_coef(self) -> bool:
         return self._spec.temp_coef
+
+    @property
+    def residue_specific(self) -> bool:
+        return self._spec.residue_specific

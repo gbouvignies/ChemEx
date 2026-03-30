@@ -30,7 +30,12 @@ def make_settings_4st_hd(conditions: Conditions) -> dict[str, ParamLocalSetting]
     d2o: float = conditions.d2o if conditions.d2o is not None else 0.1
     return {
         "d2o": ParamLocalSetting(
-            name_setting=NameSetting("d2o", "", ("d2o",)),
+            name_setting=NameSetting(
+                "d2o",
+                "",
+                ("d2o",),
+                allow_residue_specific=False,
+            ),
             value=d2o,
             min=0.0,
             max=1.0,

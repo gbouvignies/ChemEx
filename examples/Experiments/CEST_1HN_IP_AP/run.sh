@@ -5,6 +5,6 @@ SELECTION="3 4 12 13 14 30 32 65 68 70 72 74 75 78 80 91 100 101 103 104 105 108
 chemex fit -e Experiments/*.toml \
            -p Parameters/parameters.toml \
            -m Methods/method.toml \
-           -d 2st_rs \
+           -d 2st.rs \
            --include $SELECTION \
            -o Output
