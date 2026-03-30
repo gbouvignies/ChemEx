@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import pytest
 
 from chemex.models.loader import register_kinetic_settings
