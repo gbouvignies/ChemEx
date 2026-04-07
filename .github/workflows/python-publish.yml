@@ -83,10 +83,12 @@ jobs:
         GITHUB_TOKEN: ${{ github.token }}
       # Upload to GitHub Release using the `gh` CLI.
       # `dist/` contains the built packages, and the
-      # sigstore-produced signatures and certificates.
+      # sigstore-produced signatures and certificates. `--clobber`
+      # keeps reruns idempotent when assets already exist on the release.
       run: >-
         gh release upload
         "$GITHUB_REF_NAME" dist/**
+        --clobber
         --repo "$GITHUB_REPOSITORY"
 
   publish-to-testpypi:
