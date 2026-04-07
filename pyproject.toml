@@ -1,6 +1,6 @@
 [project]
 name = "chemex"
-version = "2026.03.0"
+version = "2026.04.0"
 description = "An analysis program for chemical exchange detected by NMR"
 readme = "README.md"
 requires-python = ">=3.13"

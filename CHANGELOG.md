@@ -5,6 +5,25 @@ All notable changes to ChemEx will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO).
 
+## [2026.04.0] - 2026-04-07
+
+### Added
+- Added composable kinetic-model suffixes so residue-specific fits can use `.rs` and combine it with `.mf` and `.tc` (for example, `2st.rs.mf`), while keeping `2st_rs` as a legacy alias.
+
+### Changed
+- Refactored the NMR Liouvillian internals into reusable `chemex.nmr` engine, pulse, B1, detection, effective-field, magnetization, and tensor components.
+- Generalized residue-specific parameter naming across kinetic models and documented the `.rs` suffix in the fitting guide.
+- Updated experiment output naming to derive unique stems from input paths so files from different datasets no longer collide when basenames match.
+
+### Fixed
+- Hardened constraint and grid parsing with clearer validation errors and correct precedence for more specific grid entries.
+- Fixed empty-selection handling so experiment collections with no active profiles are treated as empty.
+- Tightened numeric validation around B1 inhomogeneity and shift/R1rho eigenvalue calculations.
+- Replaced detection `eval` usage with a parser and handled TOML file read/parse failures consistently.
+
+### Infrastructure
+- Expanded regression coverage for NMR engine behavior, output paths, TOML/config parsing, selection handling, and residue-specific models.
+
 ## [2026.03.0] - 2026-03-11
 
 ### Fixed
