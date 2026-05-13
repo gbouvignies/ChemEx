@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Literal, Self, TypeVar
+from typing import Any, ClassVar, Literal, TypeVar
 
 import numpy as np
 from pydantic import (
@@ -36,6 +36,24 @@ def _legacy_b1_distribution_input(
     }
 
 
+def normalize_b1_eff_alias(data: Any) -> Any:
+    """Map legacy D-CEST b1_frq input to b1_eff without populating both fields."""
+    if not isinstance(data, dict) or "b1_frq" not in data:
+        return data
+
+    b1_frq = data["b1_frq"]
+    if b1_frq is None:
+        return data
+
+    normalized = dict(data)
+    normalized.pop("b1_frq")
+    if "b1_eff" in normalized and normalized["b1_eff"] != b1_frq:
+        msg = "Use either 'b1_eff' or its legacy alias 'b1_frq', not both"
+        raise ValueError(msg)
+    normalized.setdefault("b1_eff", b1_frq)
+    return normalized
+
+
 class ExperimentSettings(BaseModel):
     observed_state: Literal["a", "b", "c", "d"] = "a"
     model_name: str = Field(default="", exclude=True)
@@ -64,9 +82,12 @@ class B1InhomogeneityMixin(BaseModel):
     """
 
     model_config = ConfigDict(
-        extra="allow",  # Mixins allow additional fields
+        extra="forbid",
         validate_assignment=True,  # Validate on attribute assignment
     )
+
+    legacy_b1_inh_scale_default: ClassVar[float | None] = None
+    legacy_b1_inh_res_default: ClassVar[int | None] = None
 
     pw90: PulseWidth | None = Field(
         default=None,
@@ -109,40 +130,37 @@ class B1InhomogeneityMixin(BaseModel):
             return data
 
         normalized = dict(data)
+        distribution = normalized.get("b1_distribution")
         has_legacy = (
             normalized.get("b1_inh_scale") is not None
             or normalized.get("b1_inh_res") is not None
         )
-        if not has_legacy:
-            return normalized
-        if normalized.get("b1_distribution") is not None:
+        if has_legacy and distribution is not None and not isinstance(
+            distribution, DistributionConfig
+        ):
             msg = (
                 "Use either 'b1_distribution' or the legacy "
                 "'b1_inh_scale'/'b1_inh_res' fields, not both"
             )
             raise ValueError(msg)
+
+        if distribution is not None:
+            return normalized
+
+        scale = normalized.get("b1_inh_scale", cls.legacy_b1_inh_scale_default)
+        res = normalized.get("b1_inh_res", cls.legacy_b1_inh_res_default)
+        if scale is None and res is None:
+            return normalized
+
+        if "b1_inh_scale" not in normalized and scale is not None:
+            normalized["b1_inh_scale"] = scale
+        if "b1_inh_res" not in normalized and res is not None:
+            normalized["b1_inh_res"] = res
         normalized["b1_distribution"] = _legacy_b1_distribution_input(
-            normalized.get("b1_inh_scale"),
-            normalized.get("b1_inh_res"),
+            scale,
+            res,
         )
         return normalized
-
-    @model_validator(mode="after")
-    def _normalize_defaulted_legacy_b1_fields(self) -> Self:
-        if self.b1_distribution is not None:
-            return self
-        if self.b1_inh_scale is None and self.b1_inh_res is None:
-            return self
-        return self.model_copy(
-            update={
-                "b1_distribution": parse_distribution_config(
-                    _legacy_b1_distribution_input(
-                        self.b1_inh_scale,
-                        self.b1_inh_res,
-                    ),
-                )
-            },
-        )
 
     def get_b1_nominal(self) -> float:
         """Nominal B1 value for distribution generation."""

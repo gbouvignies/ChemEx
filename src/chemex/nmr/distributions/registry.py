@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import ClassVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from chemex.nmr.constants import Distribution
 
@@ -15,6 +15,8 @@ DistributionGenerator = Callable[..., Distribution]
 
 class DistributionConfig(BaseModel):
     """Base class for B1 distribution configuration models."""
+
+    model_config = ConfigDict(extra="forbid")
 
     type: str
 
