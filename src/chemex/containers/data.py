@@ -11,11 +11,20 @@ from pydantic import (
     PrivateAttr,
     computed_field,
     field_serializer,
+    model_validator,
 )
 
 from chemex.typing import Array
 
 rng = np.random.default_rng()
+
+_DERIVED_ARRAY_FIELDS = frozenset({"calc", "calc_unscaled", "mask", "refs"})
+
+
+def _is_compatible_error_shape(exp: Array, err: Array) -> bool:
+    if err.shape == exp.shape:
+        return True
+    return err.shape == (*exp.shape, 2)
 
 
 class Data(BaseModel):
@@ -34,7 +43,6 @@ class Data(BaseModel):
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,  # Allow numpy arrays
-        validate_assignment=True,  # Validate on assignment
     )
 
     exp: Array
@@ -46,12 +54,33 @@ class Data(BaseModel):
     refs: Array = Field(init=False, default_factory=partial(np.empty, 0, dtype=np.bool_))
     _revision: int = PrivateAttr(default=0)
 
-    def model_post_init(self, __context: Any) -> None:
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_derived_array_inputs(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if supplied := _DERIVED_ARRAY_FIELDS & data.keys():
+            fields = ", ".join(sorted(supplied))
+            msg = f"Derived array fields are initialized internally: {fields}"
+            raise ValueError(msg)
+        return data
+
+    def model_post_init(self, __context: Any, /) -> None:
         """Set computed arrays shaped to match `exp` after initialization."""
         self.calc = np.full_like(self.exp, fill_value=1e32, dtype=np.float64)
         self.calc_unscaled = np.full_like(self.exp, fill_value=1e32, dtype=np.float64)
         self.mask = np.full_like(self.exp, fill_value=True, dtype=np.bool_)
         self.refs = np.full_like(self.exp, fill_value=False, dtype=np.bool_)
+
+    @model_validator(mode="after")
+    def _validate_array_shapes(self) -> Self:
+        if not _is_compatible_error_shape(self.exp, self.err):
+            msg = "'err' must match 'exp' shape or use trailing two-sided error bars"
+            raise ValueError(msg)
+        if self.metadata.size and self.metadata.size != self.exp.size:
+            msg = "'metadata' must be empty or have the same length as 'exp'"
+            raise ValueError(msg)
+        return self
 
     @property
     def revision(self) -> int:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Literal
+from typing import ClassVar, Literal
 
 import numpy as np
 
@@ -32,8 +32,8 @@ class Cest15NSettings(CestSettings, B1InhomogeneityMixin):
     time_t1: float
     carrier: float
     b1_frq: float
-    b1_inh_scale: float = 0.1
-    b1_inh_res: int = 11
+    legacy_b1_inh_scale_default: ClassVar[float | None] = 0.1
+    legacy_b1_inh_res_default: ClassVar[int | None] = 11
 
     @cached_property
     def start_terms(self) -> list[str]:

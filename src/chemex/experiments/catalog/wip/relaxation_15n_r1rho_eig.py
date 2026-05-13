@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 import numpy as np
 
@@ -28,8 +28,8 @@ class Relaxation15NR1RhoSettings(ExperimentSettings, B1InhomogeneityMixin):
 
     carrier: float
     b1_frq: float
-    b1_inh_scale: float = np.inf
-    b1_inh_res: int = 11
+    legacy_b1_inh_scale_default: ClassVar[float | None] = np.inf
+    legacy_b1_inh_res_default: ClassVar[int | None] = 11
     observed_state: Literal["a", "b", "c", "d"] = "a"
 
     @property

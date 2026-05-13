@@ -110,6 +110,17 @@ class TestB1FieldConfig:
         with pytest.raises(ValidationError):
             B1FieldConfig.model_validate({"value": 0.0})
 
+    def test_unknown_distribution_option_rejected(self):
+        """Test that mistyped distribution options are rejected."""
+        with pytest.raises(ValidationError, match="sclae"):
+            B1FieldConfig.model_validate(
+                {
+                    "value": 15.0,
+                    "type": "gaussian",
+                    "sclae": 0.2,
+                }
+            )
+
 
 class TestGaussianDistribution:
     """Test Gaussian distribution generation."""

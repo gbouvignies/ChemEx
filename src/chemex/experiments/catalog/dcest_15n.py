@@ -4,12 +4,16 @@ from typing import Literal, Self
 
 import numpy as np
 from numpy.linalg import matrix_power
-from pydantic import AliasChoices, Field, computed_field, model_validator
+from pydantic import Field, computed_field, model_validator
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import B1InhomogeneityMixin, MFCestSettings
+from chemex.configuration.experiment import (
+    B1InhomogeneityMixin,
+    MFCestSettings,
+    normalize_b1_eff_alias,
+)
 from chemex.configuration.types import B1Field, ChemicalShift, Delay
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
@@ -45,9 +49,10 @@ class DCest15NSettings(MFCestSettings, B1InhomogeneityMixin):
     # Accept both 'b1_eff' (preferred) and 'b1_frq' (alias) in configs.
     b1_eff: B1Field = Field(
         ...,
-        validation_alias=AliasChoices("b1_eff", "b1_frq"),
         description="Effective B1 field for DANTE excitation (Hz)",
     )
+
+    _normalize_b1_eff_alias = model_validator(mode="before")(normalize_b1_eff_alias)
 
     @model_validator(mode="after")
     def _validate_dcest_fields(self) -> Self:

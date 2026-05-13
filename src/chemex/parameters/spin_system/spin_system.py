@@ -51,6 +51,7 @@ class SpinSystem(BaseModel):
     @classmethod
     def parse_name(cls, model: Any) -> Any:
         if isinstance(model, dict) and "name" in model:
+            model = dict(model)
             name = str(model["name"]).strip().upper()
             model["spins"] = _parse_spin_system(name)
             model["name"] = _spins2name(model["spins"].values())
