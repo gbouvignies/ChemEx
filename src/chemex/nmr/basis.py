@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from functools import cache, cached_property, partial
 from itertools import permutations, product
 from types import MappingProxyType
-from typing import Literal
+from typing import Literal, Self
 
 import numpy as np
 
@@ -406,6 +406,10 @@ class Basis:
 
     def copy_matrices(self) -> DictArray:
         return {name: matrix.copy() for name, matrix in self.matrices.items()}
+
+    def __deepcopy__(self, memo: dict) -> Self:
+        """Return self: Basis is immutable, so copying is unnecessary."""
+        return self
 
     def __len__(self) -> int:
         return len(self.components)

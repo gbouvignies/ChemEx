@@ -13,7 +13,7 @@ class LiouvillianReadout:
     """Detection expression state and scalar readout for a Liouvillian."""
 
     def __init__(self, vectors: Mapping[str, Array]) -> None:
-        self._vectors = vectors
+        self._vectors = dict(vectors)
         self._detection = ""
         self._detect_vector: Array = np.array([])
 
