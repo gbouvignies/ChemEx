@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -62,7 +60,9 @@ def test_experiments_write_and_plot_use_unique_output_stems(tmp_path: Path) -> N
     assert (tmp_path / "SimPlots" / "set_b" / "experiment.sim").exists()
 
 
-def test_experiments_keep_simple_stems_when_basenames_are_unique(tmp_path: Path) -> None:
+def test_experiments_keep_simple_stems_when_basenames_are_unique(
+    tmp_path: Path,
+) -> None:
     experiments = Experiments(parameter_store=object())  # type: ignore[arg-type]
     experiment_a = RecordingExperiment(Path("set_a/alpha.toml"))
     experiment_b = RecordingExperiment(Path("set_b/beta.toml"))
