@@ -74,7 +74,7 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "scipy-stubs", specifier = ">=1.16.2.3" },
-    { name = "ty", specifier = "==0.0.35" },
+    { name = "ty", specifier = ">=0.0.35" },
     { name = "types-cachetools", specifier = ">=6.2.0.20250827" },
 ]
 
