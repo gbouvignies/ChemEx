@@ -5,6 +5,16 @@ All notable changes to ChemEx will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO).
 
+## [2026.05.1] - 2026-05-13
+
+### Infrastructure
+- Resolved all ty 0.0.35 type-checking errors: assert-based narrowing in
+  `b1_config.py`, `cast`+`getattr` for dynamic `MinimizerResult.params` in
+  `minimizer.py`, and type-correct `default_factory` placeholders in `data.py`.
+- Refactored `Data` to use `model_post_init` (idiomatic Pydantic v2) instead of
+  a custom `__init__`.
+- Bumped ty dev dependency to `>=0.0.35`.
+
 ## [2026.05.0] - 2026-05-13
 
 ### Fixed
