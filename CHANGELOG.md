@@ -5,6 +5,17 @@ All notable changes to ChemEx will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO).
 
+## [2026.05.0] - 2026-05-13
+
+### Fixed
+- Fixed Monte Carlo and bootstrap simulations crashing on Python 3.14 with
+  `TypeError: cannot pickle 'mappingproxy' object`. `Basis.__deepcopy__` now
+  returns `self` (correct for an immutable frozen dataclass), and
+  `LiouvillianReadout` stores a plain `dict` copy of its vectors.
+
+### Infrastructure
+- Made release uploads idempotent.
+
 ## [2026.04.0] - 2026-04-07
 
 ### Added
