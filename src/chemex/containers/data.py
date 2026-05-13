@@ -1,4 +1,5 @@
 from copy import deepcopy
+from functools import partial
 from random import choices
 from typing import Any, Self
 
@@ -38,21 +39,19 @@ class Data(BaseModel):
 
     exp: Array
     err: Array
-    metadata: Array = Field(default_factory=lambda: np.array([]))
-    calc: Array = Field(init=False, default=None)  # type: ignore[call-arg]
-    calc_unscaled: Array = Field(init=False, default=None)  # type: ignore[call-arg]
-    mask: Array = Field(init=False, default=None)  # type: ignore[call-arg]
-    refs: Array = Field(init=False, default=None)  # type: ignore[call-arg]
+    metadata: Array = Field(default_factory=partial(np.empty, 0))
+    calc: Array = Field(init=False, default_factory=partial(np.empty, 0))
+    calc_unscaled: Array = Field(init=False, default_factory=partial(np.empty, 0))
+    mask: Array = Field(init=False, default_factory=partial(np.empty, 0, dtype=np.bool_))
+    refs: Array = Field(init=False, default_factory=partial(np.empty, 0, dtype=np.bool_))
     _revision: int = PrivateAttr(default=0)
 
-    def __init__(self, **data: Array) -> None:
-        """Initialize the Data instance and set computed arrays."""
-        super().__init__(**data)
+    def model_post_init(self, __context: Any) -> None:
+        """Set computed arrays shaped to match `exp` after initialization."""
         self.calc = np.full_like(self.exp, fill_value=1e32, dtype=np.float64)
         self.calc_unscaled = np.full_like(self.exp, fill_value=1e32, dtype=np.float64)
         self.mask = np.full_like(self.exp, fill_value=True, dtype=np.bool_)
         self.refs = np.full_like(self.exp, fill_value=False, dtype=np.bool_)
-        self._revision = 0
 
     @property
     def revision(self) -> int:
@@ -67,8 +66,6 @@ class Data(BaseModel):
     @field_serializer("exp", "err", "metadata", "calc", "calc_unscaled", "mask", "refs")
     def serialize_array(self, value: Array, _info: Any) -> list:
         """Convert numpy arrays to lists for JSON serialization."""
-        if value is None:
-            return []
         return value.tolist()
 
     @computed_field

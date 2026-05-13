@@ -196,7 +196,8 @@ class B1FieldConfig(BaseModel):
         if self.value is not None:
             return self.value
         # At this point, pw90 is guaranteed to be not None
-        return 1.0 / (4.0 * self.pw90)  # type: ignore[operator]
+        assert self.pw90 is not None
+        return 1.0 / (4.0 * self.pw90)
 
     def get_distribution(self) -> Distribution:
         """Generate the B1 distribution based on the configuration.

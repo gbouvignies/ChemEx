@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from typing import cast
 
 import lmfit
 import numpy as np
@@ -25,7 +26,7 @@ def _get_result_params(minimizer: lmfit.Minimizer) -> lmfit.Parameters:
     so static type checkers cannot resolve them.
     """
     result = minimizer.result
-    params: lmfit.Parameters = result.params  # type: ignore[union-attr]
+    params = cast(lmfit.Parameters, getattr(result, "params"))
     return deepcopy(params)
 
 
