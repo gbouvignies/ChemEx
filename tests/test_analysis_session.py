@@ -450,6 +450,52 @@ def test_run_statistics_uses_session_for_header(
     np.testing.assert_equal(recorded["parameter_store"], session.parameters)
 
 
+def test_run_statistics_dispatches_mcmc_without_resampling(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    recorded: dict[str, object] = {}
+    session = StubSession()
+    session.parameters = StatisticsParameterStore()
+    experiments = SimpleNamespace(
+        param_ids=["__PB"],
+        parameter_store=session.parameters,
+    )
+
+    def fail_generate_exp_for_statistics(*_args, **_kwargs) -> None:
+        pytest.fail("MCMC should not generate resampled experiments")
+
+    def fake_run_mcmc(
+        experiments_arg: object,
+        params_arg: object,
+        settings_arg: object,
+        path_arg: Path,
+    ) -> None:
+        recorded["experiments"] = experiments_arg
+        recorded["params"] = params_arg
+        recorded["settings"] = settings_arg
+        recorded["path"] = path_arg
+
+    monkeypatch.setattr(
+        fitting_module,
+        "generate_exp_for_statistics",
+        fail_generate_exp_for_statistics,
+    )
+    monkeypatch.setattr(fitting_module, "run_mcmc", fake_run_mcmc)
+
+    fitting_module._run_statistics(  # noqa: SLF001
+        experiments,
+        tmp_path,
+        "leastsq",
+        fitting_module.Statistics(mcmc=100),
+    )
+
+    np.testing.assert_equal(recorded["experiments"], experiments)
+    assert "__PB" in recorded["params"]
+    assert recorded["settings"].steps == 100
+    np.testing.assert_equal(recorded["path"], tmp_path)
+
+
 def test_execute_post_fit_writes_parameters_from_session_store(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

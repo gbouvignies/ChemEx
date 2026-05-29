@@ -4,7 +4,7 @@ import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -16,7 +16,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from pydantic.types import PositiveInt
+from pydantic.types import NonNegativeInt, PositiveInt
 
 from chemex.configuration.utils import key_to_lower
 from chemex.messages import print_method_error
@@ -29,12 +29,43 @@ CoercedSpinSystem = Annotated[SpinSystem, PlainValidator(SpinSystem.from_name)]
 SelectionType = list[SpinSystem] | Literal["*"] | None
 
 
+class McmcSettings(BaseModel):
+    steps: PositiveInt
+    burn: NonNegativeInt = 0
+    thin: PositiveInt = 1
+    walkers: PositiveInt | None = None
+    seed: int | None = None
+    workers: PositiveInt = 1
+    update_parameters: bool = False
+
+    _key_to_lower = model_validator(mode="before")(key_to_lower)
+
+    @model_validator(mode="after")
+    def validate_sample_window(self) -> Self:
+        if self.burn >= self.steps:
+            msg = "MCMC burn must be smaller than steps"
+            raise ValueError(msg)
+        retained = (self.steps - self.burn) // self.thin
+        if retained < 1:
+            msg = "MCMC settings must retain at least one sample"
+            raise ValueError(msg)
+        return self
+
+
 class Statistics(BaseModel):
     mc: PositiveInt | None = None
     bs: PositiveInt | None = None
     bsn: PositiveInt | None = None
+    mcmc: McmcSettings | None = None
 
     _key_to_lower = model_validator(mode="before")(key_to_lower)
+
+    @field_validator("mcmc", mode="before")
+    @classmethod
+    def parse_mcmc_settings(cls, value: int | dict | None) -> dict | None:
+        if isinstance(value, int):
+            return {"steps": value}
+        return value
 
 
 @dataclass

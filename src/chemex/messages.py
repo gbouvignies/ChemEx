@@ -491,6 +491,33 @@ def print_grid_statistic_warning() -> None:
     console.print()
 
 
+def print_mcmc_no_vary_warning() -> None:
+    """Warn that MCMC was requested without fitted parameters."""
+    console.print()
+    console.print(
+        "[yellow] -- WARNING: MCMC was requested, but no parameters are marked "
+        "as fitted. Skipping MCMC.",
+    )
+    console.print()
+
+
+def print_mcmc_unbounded_warning(parameters: list[str]) -> None:
+    """Warn that MCMC was requested with unbounded parameters."""
+    console.print()
+    console.print(
+        "[yellow] -- WARNING: Some fitted parameters do not have finite MCMC "
+        "bounds.",
+    )
+    console.print(
+        "Uniform priors are inferred from parameter bounds; finite lower and "
+        "upper bounds are recommended for MCMC.",
+    )
+    console.print("Affected parameters:")
+    for parameter in parameters:
+        console.print(f"    - {parameter}")
+    console.print()
+
+
 def print_model_error(name: str) -> None:
     """Display an error message for unavailable models.
 
@@ -631,9 +658,9 @@ GRID_ERROR_MESSAGE = """\
     ]"""
 
 STATISTICS_ERROR_MESSAGE = """\
-  - "STATISTICS" must be a dictionary with keys 'MC', 'BS', 'BSN'
+  - "STATISTICS" must be a dictionary with keys 'MC', 'BS', 'BSN', 'MCMC'
 
-    Example: { "MC"=10 } or { "MC"=10, "BS"=10 }"""
+    Example: { "MC"=10 }, { "MCMC"=5000 }, or { "MC"=10, "BS"=10 }"""
 
 METHOD_ERROR_MESSAGES = {
     "fitmethod": FITMETHOD_ERROR_MESSAGE,

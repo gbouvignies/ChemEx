@@ -5,6 +5,13 @@ All notable changes to ChemEx will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO).
 
+## [Unreleased]
+
+### Added
+- Added MCMC posterior sampling as a `STATISTICS` method for fitted parameter
+  uncertainty, with text outputs for posterior summaries, samples,
+  correlations, and diagnostics.
+
 ## [2026.05.1] - 2026-05-13
 
 ### Infrastructure

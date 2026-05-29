@@ -166,7 +166,7 @@ Results are stored in the `grid.toml` file, with 1D and 2D plots generated. If m
 
 ## Estimating Parameter Uncertainty
 
-ChemEx offers additional methods for estimating uncertainty, including Monte Carlo, bootstrap, and nucleus-specific bootstrap analyses.
+ChemEx offers additional methods for estimating uncertainty, including Monte Carlo, bootstrap, nucleus-specific bootstrap, and MCMC analyses.
 
 ### Monte Carlo Simulations
 
@@ -184,6 +184,12 @@ In nucleus-specific bootstrap, profiles are resampled based on the associated nu
 Nucleus-specific bootstrap can create datasets of varying sizes, unlike standard bootstrap analysis.
 :::
 
+### MCMC Analysis
+
+MCMC analysis samples the posterior distribution after the normal fit has converged. It uses the fitted parameters as the starting point, ChemEx's weighted residuals as the likelihood, and the parameter bounds as uniform priors.
+
+For meaningful MCMC results, set finite lower and upper bounds for the fitted parameters in the parameter file. Parameters without finite bounds are still accepted, but ChemEx will print a warning because the implied prior is weakly constrained.
+
 ### Syntax
 
 Run these analyses at the end of any fitting step using the `STATISTICS` key.
@@ -198,6 +204,7 @@ Available types:
 -   `"MC"` for Monte Carlo
 -   `"BS"` for bootstrap
 -   `"BSN"` for nucleus-specific bootstrap
+-   `"MCMC"` for posterior sampling with MCMC
 
 To perform multiple analyses:
 
@@ -206,4 +213,25 @@ To perform multiple analyses:
 STATISTICS = {"MC"= 100, "BS"= 100}
 ```
 
+For MCMC, the compact form sets the number of sampler steps:
+
+```toml
+[STEP1]
+STATISTICS = {"MCMC"= 5000}
+```
+
+Advanced MCMC settings can be provided as a nested table:
+
+```toml
+[STEP1.STATISTICS.MCMC]
+STEPS = 5000
+BURN = 1000
+THIN = 10
+WALKERS = 64
+SEED = 1234
+WORKERS = 1
+```
+
 Outputs are stored in a file in the corresponding step directory. When data is unavailable (e.g., in nucleus-specific bootstrap), placeholders (`"--"`) are used.
+
+MCMC outputs are stored in a dedicated `MCMC` directory containing `summary.toml`, `samples.out`, `correlations.out`, and `diagnostics.toml`.

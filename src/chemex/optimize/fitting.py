@@ -26,6 +26,7 @@ from chemex.optimize.helper import (
     print_header,
     print_values_stat,
 )
+from chemex.optimize.mcmc import run_mcmc
 from chemex.optimize.minimizer import (
     minimize,
     minimize_with_report,
@@ -52,11 +53,10 @@ def _run_statistics(
     params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
     ids_vary = [param.name for param in params_lf.values() if param.vary]
 
-    for statistic_name, iter_nb in statistics.model_dump().items():
+    for statistic_name, method in methods.items():
+        iter_nb = getattr(statistics, statistic_name)
         if iter_nb is None:
             continue
-
-        method = methods[statistic_name]
 
         print_running_statistics(method["message"])
 
@@ -79,6 +79,18 @@ def _run_statistics(
                 print_value_error()
             finally:
                 fileout.flush()
+
+    if statistics.mcmc is None:
+        return
+
+    print_running_statistics("MCMC")
+    try:
+        params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
+        run_mcmc(experiments, params_lf, statistics.mcmc, path)
+    except KeyboardInterrupt:
+        print_calculation_stopped_error()
+    except ValueError:
+        print_value_error()
 
 
 def _fit_groups(
