@@ -12,6 +12,9 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   uncertainty, with text outputs for posterior summaries, samples,
   correlations, and diagnostics, including automatic autocorrelation-based
   burn-in reporting and 95% equal-tailed credible intervals.
+- Added canonical `Statistics/<method>/` output directories for sampling-based
+  uncertainty analyses, with summaries, correlations, and diagnostics for Monte
+  Carlo and bootstrap runs.
 
 ## [2026.05.1] - 2026-05-13
 

@@ -13,6 +13,7 @@ from chemex.experiments import builder as builder_module
 from chemex.nmr.basis import Basis
 from chemex.optimize import fitting as fitting_module
 from chemex.optimize import helper as helper_module
+from chemex.optimize import resampling as resampling_module
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import ParamSetting
 from chemex.printers import parameters as parameter_printer_module
@@ -426,7 +427,7 @@ def test_run_statistics_uses_session_for_header(
         parameter_store=session.parameters,
     )
 
-    monkeypatch.setattr(fitting_module, "track", lambda _iterable, **_kwargs: [])
+    monkeypatch.setattr(resampling_module, "track", lambda _iterable, **_kwargs: [])
 
     def fake_print_header(
         grid: object,
@@ -437,7 +438,7 @@ def test_run_statistics_uses_session_for_header(
         recorded["parameter_store"] = parameter_store
         return "# header\n"
 
-    monkeypatch.setattr(fitting_module, "print_header", fake_print_header)
+    monkeypatch.setattr(resampling_module, "print_header", fake_print_header)
 
     fitting_module._run_statistics(  # noqa: SLF001
         experiments,
@@ -448,6 +449,21 @@ def test_run_statistics_uses_session_for_header(
 
     np.testing.assert_equal(recorded["grid"], ["PB"])
     np.testing.assert_equal(recorded["parameter_store"], session.parameters)
+    assert (tmp_path / "monte_carlo.out").read_text(encoding="utf-8") == "# header\n"
+    assert (
+        tmp_path / "Statistics" / "MonteCarlo" / "samples.out"
+    ).read_text(encoding="utf-8") == "# header\n"
+    assert (tmp_path / "Statistics" / "MonteCarlo" / "summary.toml").exists()
+    assert (tmp_path / "Statistics" / "MonteCarlo" / "correlations.out").exists()
+    diagnostics = (
+        tmp_path / "Statistics" / "MonteCarlo" / "diagnostics.toml"
+    ).read_text(encoding="utf-8")
+    assert 'method = "Monte Carlo"' in diagnostics
+    assert "requested_samples = 1" in diagnostics
+    assert "completed_samples = 0" in diagnostics
+    assert 'summary_file = "summary.toml"' in diagnostics
+    assert 'correlations_file = "correlations.out"' in diagnostics
+    assert 'legacy_samples_file = "monte_carlo.out"' in diagnostics
 
 
 def test_run_statistics_dispatches_mcmc_without_resampling(
@@ -477,7 +493,7 @@ def test_run_statistics_dispatches_mcmc_without_resampling(
         recorded["path"] = path_arg
 
     monkeypatch.setattr(
-        fitting_module,
+        resampling_module,
         "generate_exp_for_statistics",
         fail_generate_exp_for_statistics,
     )
@@ -494,6 +510,40 @@ def test_run_statistics_dispatches_mcmc_without_resampling(
     assert "__PB" in recorded["params"]
     assert recorded["settings"].steps == 100
     np.testing.assert_equal(recorded["path"], tmp_path)
+
+
+def test_resampling_summary_and_correlations_are_written(tmp_path: Path) -> None:
+    store = WriterParameterStore(
+        {
+            "__PB": ParamSetting(ParamName("PB"), value=0.15, vary=True),
+            "__KEX_AB": ParamSetting(ParamName("KEX_AB"), value=250.0, vary=True),
+        },
+    )
+    samples = np.array([[0.1, 200.0], [0.3, 300.0], [0.5, 400.0]])
+
+    resampling_module._write_resampling_summary(  # noqa: SLF001
+        tmp_path,
+        parameter_ids=["__PB", "__KEX_AB"],
+        parameter_store=store,
+        samples=samples,
+    )
+    resampling_module._write_resampling_correlations(  # noqa: SLF001
+        tmp_path,
+        parameter_ids=["__PB", "__KEX_AB"],
+        parameter_store=store,
+        samples=samples,
+    )
+
+    summary = (tmp_path / "summary.toml").read_text(encoding="utf-8")
+    correlations = (tmp_path / "correlations.out").read_text(encoding="utf-8")
+
+    assert '["PB"]' in summary
+    assert 'interval = "95% percentile"' in summary
+    assert "sample_count = 3" in summary
+    assert "median = 3.00000e-01" in summary
+    assert "[PB]" in correlations
+    assert "[KEX_AB]" in correlations
+    assert "1.00000e+00" in correlations
 
 
 def test_execute_post_fit_writes_parameters_from_session_store(

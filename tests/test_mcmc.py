@@ -179,12 +179,13 @@ def test_write_mcmc_outputs(tmp_path: Path) -> None:
         unbounded_parameter_ids=("__KEX_AB",),
     )
 
-    summary = (tmp_path / "MCMC" / "summary.toml").read_text(encoding="utf-8")
-    samples = (tmp_path / "MCMC" / "samples.out").read_text(encoding="utf-8")
-    correlations = (tmp_path / "MCMC" / "correlations.out").read_text(
+    path_mcmc = tmp_path / "Statistics" / "MCMC"
+    summary = (path_mcmc / "summary.toml").read_text(encoding="utf-8")
+    samples = (path_mcmc / "samples.out").read_text(encoding="utf-8")
+    correlations = (path_mcmc / "correlations.out").read_text(
         encoding="utf-8",
     )
-    diagnostics = (tmp_path / "MCMC" / "diagnostics.toml").read_text(
+    diagnostics = (path_mcmc / "diagnostics.toml").read_text(
         encoding="utf-8",
     )
 

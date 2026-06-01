@@ -508,7 +508,7 @@ def write_mcmc_outputs(
     parameter_store: ParameterStore,
     unbounded_parameter_ids: tuple[str, ...] = (),
 ) -> None:
-    path_mcmc = path / "MCMC"
+    path_mcmc = path / "Statistics" / "MCMC"
     path_mcmc.mkdir(parents=True, exist_ok=True)
     _write_summary(result, path_mcmc, parameter_store)
     _write_samples(result, path_mcmc, parameter_store)

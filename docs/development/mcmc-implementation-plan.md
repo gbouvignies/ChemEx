@@ -181,16 +181,18 @@ recommended for meaningful MCMC priors.
 
 ## Output Design
 
-Create a dedicated `MCMC` directory under the current group or step output path:
+Create a dedicated `Statistics/MCMC` directory under the current group or step
+output path:
 
 ```text
 Output/
   STEP1/
-    MCMC/
-      summary.toml
-      samples.out
-      correlations.out
-      diagnostics.toml
+    Statistics/
+      MCMC/
+        summary.toml
+        samples.out
+        correlations.out
+        diagnostics.toml
 ```
 
 `summary.toml` should be human-readable and stable:

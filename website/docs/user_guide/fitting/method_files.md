@@ -243,6 +243,32 @@ provided to discard a fixed number of initial sampler steps.
 storage and output-size control; it is usually better to keep all post-burn-in
 samples unless the output files become too large.
 
-Outputs are stored in a file in the corresponding step directory. When data is unavailable (e.g., in nucleus-specific bootstrap), placeholders (`"--"`) are used.
+Sampling outputs are stored under a `Statistics` directory in the corresponding step or group output directory:
 
-MCMC outputs are stored in a dedicated `MCMC` directory containing `summary.toml`, `samples.out`, `correlations.out`, and `diagnostics.toml`. The summary reports the uniform prior implied by each parameter's bounds, posterior mean, median, standard deviation, a 95% equal-tailed credible interval, the 68.26% interval used for `stderr`, and effective sample size/Monte Carlo standard error when autocorrelation time is available. Diagnostics include sampler versions, retained samples, acceptance fractions, autocorrelation time, and burn-in decisions.
+```text
+Statistics/
+  MonteCarlo/
+    summary.toml
+    samples.out
+    correlations.out
+    diagnostics.toml
+  Bootstrap/
+    summary.toml
+    samples.out
+    correlations.out
+    diagnostics.toml
+  BootstrapNS/
+    summary.toml
+    samples.out
+    correlations.out
+    diagnostics.toml
+  MCMC/
+    summary.toml
+    samples.out
+    correlations.out
+    diagnostics.toml
+```
+
+For Monte Carlo and bootstrap methods, `samples.out` contains one fitted-parameter row per synthetic dataset plus χ², `summary.toml` reports percentile-based parameter summaries, and `correlations.out` reports parameter correlations across the fitted synthetic datasets. When data is unavailable (e.g., in nucleus-specific bootstrap), placeholders (`"--"`) are used. ChemEx also writes the legacy top-level `monte_carlo.out`, `bootstrap.out`, and `bootstrap_ns.out` files for compatibility.
+
+For MCMC, `summary.toml` reports the uniform prior implied by each parameter's bounds, posterior mean, median, standard deviation, a 95% equal-tailed credible interval, the 68.26% interval used for `stderr`, and effective sample size/Monte Carlo standard error when autocorrelation time is available. MCMC diagnostics include sampler versions, retained samples, acceptance fractions, autocorrelation time, and burn-in decisions.
