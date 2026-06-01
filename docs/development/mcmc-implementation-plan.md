@@ -250,6 +250,12 @@ KEX_AB	PB	lnprob
 - two-dimensional posterior distributions for parameter pairs whose absolute
   correlation is at least 0.5.
 
+The Monte Carlo and bootstrap statistics methods should write the same
+`plots.pdf` filename under their own `Statistics/<method>/` directories, with
+the same summary, one-dimensional distribution, and significant two-dimensional
+distribution pages. MCMC additionally includes walker and log-probability trace
+pages.
+
 `diagnostics.toml` should include:
 
 - `steps`

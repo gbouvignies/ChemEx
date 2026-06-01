@@ -452,6 +452,7 @@ def test_run_statistics_uses_session_for_header(
     ).read_text(encoding="utf-8") == "[PB]\tchisqr\n"
     assert (tmp_path / "Statistics" / "MonteCarlo" / "summary.toml").exists()
     assert (tmp_path / "Statistics" / "MonteCarlo" / "correlations.tsv").exists()
+    assert (tmp_path / "Statistics" / "MonteCarlo" / "plots.pdf").stat().st_size > 0
     diagnostics = (
         tmp_path / "Statistics" / "MonteCarlo" / "diagnostics.toml"
     ).read_text(encoding="utf-8")
@@ -461,6 +462,7 @@ def test_run_statistics_uses_session_for_header(
     assert 'samples_file = "samples.tsv"' in diagnostics
     assert 'summary_file = "summary.toml"' in diagnostics
     assert 'correlations_file = "correlations.tsv"' in diagnostics
+    assert 'plots_file = "plots.pdf"' in diagnostics
 
 
 def test_run_statistics_dispatches_mcmc_without_resampling(

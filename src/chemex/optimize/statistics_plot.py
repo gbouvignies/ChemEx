@@ -59,7 +59,7 @@ def _save_text_page(pdf: PdfPages, title: str, lines: list[str]) -> None:
     plt.close(fig)
 
 
-def _save_summary_page(
+def _save_mcmc_summary_page(
     pdf: PdfPages,
     result: McmcResult,
     settings: EffectiveMcmcSettings,
@@ -115,7 +115,7 @@ def _save_summary_page(
     _save_text_page(pdf, "MCMC Diagnostics", lines)
 
 
-def _save_distribution_pages(
+def _save_mcmc_distribution_pages(
     pdf: PdfPages,
     result: McmcResult,
     parameter_names: tuple[str, ...],
@@ -235,7 +235,7 @@ def _save_log_probability_page(
     plt.close(fig)
 
 
-def _save_correlation_pages(
+def _save_mcmc_correlation_pages(
     pdf: PdfPages,
     result: McmcResult,
     parameter_names: tuple[str, ...],
@@ -281,8 +281,194 @@ def write_mcmc_plots(
         threshold=_CORRELATION_THRESHOLD,
     )
     with PdfPages(str(path / "plots.pdf")) as pdf:
-        _save_summary_page(pdf, result, settings, parameter_names, correlated_pairs)
-        _save_distribution_pages(pdf, result, parameter_names)
+        _save_mcmc_summary_page(
+            pdf,
+            result,
+            settings,
+            parameter_names,
+            correlated_pairs,
+        )
+        _save_mcmc_distribution_pages(pdf, result, parameter_names)
         _save_trace_pages(pdf, result, settings, parameter_names)
         _save_log_probability_page(pdf, result, settings)
-        _save_correlation_pages(pdf, result, parameter_names, correlated_pairs)
+        _save_mcmc_correlation_pages(pdf, result, parameter_names, correlated_pairs)
+
+
+def _save_resampling_summary_page(
+    pdf: PdfPages,
+    *,
+    method: str,
+    fitmethod: str,
+    parameter_names: tuple[str, ...],
+    correlations: Array,
+    requested_samples: int,
+    completed_samples: int,
+    chisqr_values: Array,
+) -> list[tuple[int, int, float]]:
+    correlated_pairs = _correlated_pairs(
+        correlations,
+        threshold=_CORRELATION_THRESHOLD,
+    )
+    finite_chisqr = _finite_values(chisqr_values)
+    lines = [
+        f"Method: {method}",
+        f"Fit method: {fitmethod}",
+        f"Parameters: {len(parameter_names)}",
+        f"Requested samples: {requested_samples}",
+        f"Completed samples: {completed_samples}",
+    ]
+    if len(finite_chisqr):
+        lines.extend(
+            [
+                f"chisqr mean: {_format_float(float(np.mean(finite_chisqr)))}",
+                f"chisqr median: {_format_float(float(np.median(finite_chisqr)))}",
+                f"chisqr min: {_format_float(float(np.min(finite_chisqr)))}",
+                f"chisqr max: {_format_float(float(np.max(finite_chisqr)))}",
+            ],
+        )
+    else:
+        lines.append("chisqr: no finite values")
+
+    lines.extend(["", f"Correlation threshold: |r| >= {_CORRELATION_THRESHOLD:g}"])
+    if correlated_pairs:
+        for index_x, index_y, correlation in correlated_pairs:
+            lines.append(
+                f"{parameter_names[index_x]} vs {parameter_names[index_y]}: "
+                f"r={correlation:.3f}",
+            )
+    else:
+        lines.append("No parameter pairs exceeded the correlation threshold.")
+
+    _save_text_page(pdf, f"{method} Diagnostics", lines)
+    return correlated_pairs
+
+
+def _save_resampling_distribution_pages(
+    pdf: PdfPages,
+    *,
+    samples: Array,
+    parameter_names: tuple[str, ...],
+) -> None:
+    for index, name in enumerate(parameter_names):
+        values = _finite_values(samples[:, index]) if samples.size else np.empty(0)
+        fig, ax = plt.subplots(figsize=(7.5, 5.0))
+        if len(values):
+            ax.hist(values, bins="auto", density=True, color="#55A868", alpha=0.85)
+            lower_95, median, upper_95 = np.percentile(values, [2.5, 50.0, 97.5])
+            ax.axvspan(
+                lower_95,
+                upper_95,
+                color="#55A868",
+                alpha=0.15,
+                label="95% percentile",
+            )
+            ax.axvline(
+                median,
+                color="#C44E52",
+                linestyle="--",
+                linewidth=1.2,
+                label="median",
+            )
+            ax.legend()
+        else:
+            ax.text(0.5, 0.5, "No finite samples", ha="center", va="center")
+        ax.set_title(f"Sample distribution: {name}")
+        ax.set_xlabel(name)
+        ax.set_ylabel("Density")
+        fig.tight_layout()
+        pdf.savefig(fig)
+        plt.close(fig)
+
+
+def _save_chisqr_distribution_page(pdf: PdfPages, chisqr_values: Array) -> None:
+    values = _finite_values(chisqr_values)
+    fig, ax = plt.subplots(figsize=(7.5, 5.0))
+    if len(values):
+        ax.hist(values, bins="auto", color="#8172B3", alpha=0.85)
+        ax.axvline(
+            float(np.median(values)),
+            color="#C44E52",
+            linestyle="--",
+            linewidth=1.2,
+            label="median",
+        )
+        ax.legend()
+    else:
+        ax.text(0.5, 0.5, "No finite chisqr values", ha="center", va="center")
+    ax.set_title("chisqr distribution")
+    ax.set_xlabel("chisqr")
+    ax.set_ylabel("Samples")
+    fig.tight_layout()
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
+def _save_resampling_correlation_pages(
+    pdf: PdfPages,
+    *,
+    samples: Array,
+    parameter_names: tuple[str, ...],
+    correlated_pairs: list[tuple[int, int, float]],
+) -> None:
+    for index_x, index_y, correlation in correlated_pairs:
+        values_x = samples[:, index_x]
+        values_y = samples[:, index_y]
+        finite = np.isfinite(values_x) & np.isfinite(values_y)
+        fig, ax = plt.subplots(figsize=(7.5, 5.5))
+        if np.any(finite):
+            image = ax.hist2d(
+                values_x[finite],
+                values_y[finite],
+                bins=40,
+                cmap="Greens",
+            )
+            cbar = fig.colorbar(image[3], ax=ax)
+            cbar.set_label("Samples")
+        else:
+            ax.text(0.5, 0.5, "No finite samples", ha="center", va="center")
+        ax.set_title(
+            f"Sample pair: {parameter_names[index_x]} vs "
+            f"{parameter_names[index_y]} (r = {correlation:.3f})",
+        )
+        ax.set_xlabel(parameter_names[index_x])
+        ax.set_ylabel(parameter_names[index_y])
+        fig.tight_layout()
+        pdf.savefig(fig)
+        plt.close(fig)
+
+
+def write_resampling_plots(
+    path: Path,
+    *,
+    method: str,
+    fitmethod: str,
+    parameter_names: tuple[str, ...],
+    samples: Array,
+    chisqr_values: Array,
+    correlations: Array,
+    requested_samples: int,
+    completed_samples: int,
+) -> None:
+    with PdfPages(str(path / "plots.pdf")) as pdf:
+        correlated_pairs = _save_resampling_summary_page(
+            pdf,
+            method=method,
+            fitmethod=fitmethod,
+            parameter_names=parameter_names,
+            correlations=correlations,
+            requested_samples=requested_samples,
+            completed_samples=completed_samples,
+            chisqr_values=chisqr_values,
+        )
+        _save_resampling_distribution_pages(
+            pdf,
+            samples=samples,
+            parameter_names=parameter_names,
+        )
+        _save_chisqr_distribution_page(pdf, chisqr_values)
+        _save_resampling_correlation_pages(
+            pdf,
+            samples=samples,
+            parameter_names=parameter_names,
+            correlated_pairs=correlated_pairs,
+        )

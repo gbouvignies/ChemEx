@@ -19,6 +19,7 @@ from chemex.optimize.helper import (
     calculate_statistics,
 )
 from chemex.optimize.minimizer import minimize
+from chemex.optimize.statistics_plot import write_resampling_plots
 
 
 def _quote_toml_string(value: str) -> str:
@@ -126,11 +127,11 @@ def _write_resampling_correlations(
     parameter_ids: list[str],
     parameter_store: Any,
     samples: np.ndarray,
-) -> None:
+) -> np.ndarray:
     parameter_names = _format_parameter_names(parameter_ids, parameter_store)
     if not parameter_names:
         (path / "correlations.tsv").write_text("", encoding="utf-8")
-        return
+        return np.empty((0, 0), dtype=float)
     correlations = np.empty((len(parameter_names), len(parameter_names)), dtype=float)
     for index_a in range(len(parameter_names)):
         for index_b in range(len(parameter_names)):
@@ -145,6 +146,7 @@ def _write_resampling_correlations(
         for name, values in zip(parameter_names, correlations, strict=True):
             row = "\t".join(_format_tsv_float(value) for value in values)
             fileout.write(f"{name}\t{row}\n")
+    return correlations
 
 
 def _write_resampling_diagnostics(
@@ -165,6 +167,7 @@ def _write_resampling_diagnostics(
         'samples_file = "samples.tsv"',
         'summary_file = "summary.toml"',
         'correlations_file = "correlations.tsv"',
+        'plots_file = "plots.pdf"',
     ]
     (path / "diagnostics.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -183,6 +186,7 @@ def _run_resampling_method(
     statistic_path.mkdir(parents=True, exist_ok=True)
     samples_tsv = statistic_path / "samples.tsv"
     sample_rows: list[list[float]] = []
+    chisqr_rows: list[float] = []
     completed_samples = 0
 
     with samples_tsv.open(mode="w", encoding="utf-8") as file_tsv:
@@ -205,6 +209,7 @@ def _run_resampling_method(
                     + "\n",
                 )
                 sample_rows.append(sample_values)
+                chisqr_rows.append(float(chisqr))
                 completed_samples += 1
         except KeyboardInterrupt:
             print_calculation_stopped_error()
@@ -219,11 +224,22 @@ def _run_resampling_method(
                 parameter_store=parameter_store,
                 samples=samples,
             )
-            _write_resampling_correlations(
+            correlations = _write_resampling_correlations(
                 statistic_path,
                 parameter_ids=ids_vary,
                 parameter_store=parameter_store,
                 samples=samples,
+            )
+            write_resampling_plots(
+                statistic_path,
+                method=method["message"],
+                fitmethod=fitmethod,
+                parameter_names=_format_parameter_names(ids_vary, parameter_store),
+                samples=samples,
+                chisqr_values=np.asarray(chisqr_rows, dtype=float),
+                correlations=correlations,
+                requested_samples=iter_nb,
+                completed_samples=completed_samples,
             )
             _write_resampling_diagnostics(
                 statistic_path,

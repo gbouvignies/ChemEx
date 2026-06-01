@@ -252,16 +252,19 @@ Statistics/
     samples.tsv
     correlations.tsv
     diagnostics.toml
+    plots.pdf
   Bootstrap/
     summary.toml
     samples.tsv
     correlations.tsv
     diagnostics.toml
+    plots.pdf
   BootstrapNS/
     summary.toml
     samples.tsv
     correlations.tsv
     diagnostics.toml
+    plots.pdf
   MCMC/
     summary.toml
     samples.tsv
@@ -270,6 +273,6 @@ Statistics/
     plots.pdf
 ```
 
-For Monte Carlo and bootstrap methods, `samples.tsv` contains one fitted-parameter row per synthetic dataset plus χ², `summary.toml` reports percentile-based parameter summaries, and `correlations.tsv` reports parameter correlations across the fitted synthetic datasets. Missing values are written as `nan`.
+For Monte Carlo and bootstrap methods, `samples.tsv` contains one fitted-parameter row per synthetic dataset plus χ², `summary.toml` reports percentile-based parameter summaries, and `correlations.tsv` reports parameter correlations across the fitted synthetic datasets. Missing values are written as `nan`. Their `plots.pdf` reports provide a summary page, one-dimensional sample distributions, a χ² distribution, and two-dimensional sample distributions for parameter pairs with `|r| >= 0.5`.
 
 For MCMC, `summary.toml` reports the uniform prior implied by each parameter's bounds, posterior mean, median, standard deviation, a 95% equal-tailed credible interval, the 68.26% interval used for `stderr`, and effective sample size/Monte Carlo standard error when autocorrelation time is available. MCMC diagnostics include sampler versions, retained samples, acceptance fractions, autocorrelation time, and burn-in decisions. The `plots.pdf` report provides a summary page, one-dimensional posterior distributions, walker traces, the log-probability trace, and two-dimensional posterior distributions for parameter pairs with `|r| >= 0.5`.

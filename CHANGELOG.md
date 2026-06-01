@@ -15,7 +15,7 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   intervals.
 - Added canonical `Statistics/<method>/` output directories for sampling-based
   uncertainty analyses, with TSV sample/correlation tables, summaries, and
-  diagnostics for Monte Carlo and bootstrap runs.
+  diagnostics and PDF visual reports for Monte Carlo and bootstrap runs.
 
 ## [2026.05.1] - 2026-05-13
 

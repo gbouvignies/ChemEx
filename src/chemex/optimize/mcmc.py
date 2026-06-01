@@ -1,16 +1,20 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from math import ceil
 from pathlib import Path
-from typing import cast
+from types import TracebackType
+from typing import Any, Self, cast
 
+import emcee.ensemble as emcee_ensemble
 import lmfit
 import numpy as np
 from lmfit.minimizer import MinimizerResult
 from lmfit.parameter import Parameters
+from rich.progress import Progress, TaskID
 
 from chemex.configuration.methods import McmcBurnSetting, McmcSettings
 from chemex.containers.experiments import Experiments
@@ -20,6 +24,51 @@ from chemex.messages import (
 )
 from chemex.parameters.database import ParameterStore
 from chemex.typing import Array
+
+
+class _RichEmceeProgressBar:
+    def __init__(self, total: int) -> None:
+        self._total = total
+        self._progress = Progress()
+        self._task_id: TaskID | None = None
+
+    def __enter__(self) -> Self:
+        self._progress.start()
+        self._task_id = self._progress.add_task("   ", total=self._total)
+        return self
+
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        self._progress.stop()
+
+    def update(self, count: int) -> None:
+        if self._task_id is not None:
+            self._progress.update(self._task_id, advance=count)
+
+
+@contextmanager
+def _use_rich_emcee_progress() -> Iterator[None]:
+    original_get_progress_bar = emcee_ensemble.get_progress_bar
+
+    def get_progress_bar(
+        display: bool | str,
+        total: int,
+        **_kwargs: object,
+    ) -> object:
+        if display:
+            return _RichEmceeProgressBar(total)
+        return original_get_progress_bar(display, total, **_kwargs)
+
+    emcee_ensemble_dynamic = cast("Any", emcee_ensemble)
+    emcee_ensemble_dynamic.get_progress_bar = get_progress_bar
+    try:
+        yield
+    finally:
+        emcee_ensemble_dynamic.get_progress_bar = original_get_progress_bar
 
 
 @dataclass(frozen=True)
@@ -520,7 +569,7 @@ def write_mcmc_outputs(
     _write_summary(result, path_mcmc, parameter_store)
     _write_samples(result, path_mcmc, parameter_store)
     _write_correlations(result, path_mcmc, parameter_store)
-    from chemex.optimize.mcmc_plot import write_mcmc_plots
+    from chemex.optimize.statistics_plot import write_mcmc_plots
 
     write_mcmc_plots(
         result,
@@ -559,23 +608,24 @@ def run_mcmc(
         )
 
     minimizer = lmfit.Minimizer(experiments.residuals, params)
-    result_lf = minimizer.emcee(
-        params=params,
-        steps=effective_settings.steps,
-        nwalkers=effective_settings.walkers,
-        burn=0,
-        thin=1,
-        pos=_initial_positions(
-            params,
-            var_names,
+    with _use_rich_emcee_progress():
+        result_lf = minimizer.emcee(
+            params=params,
+            steps=effective_settings.steps,
             nwalkers=effective_settings.walkers,
+            burn=0,
+            thin=1,
+            pos=_initial_positions(
+                params,
+                var_names,
+                nwalkers=effective_settings.walkers,
+                seed=effective_settings.seed,
+            ),
+            workers=effective_settings.workers,
+            is_weighted=True,
             seed=effective_settings.seed,
-        ),
-        workers=effective_settings.workers,
-        is_weighted=True,
-        seed=effective_settings.seed,
-        progress=False,
-    )
+            progress=True,
+        )
     result = _result_from_lmfit(result_lf, effective_settings)
     write_mcmc_outputs(
         result,
