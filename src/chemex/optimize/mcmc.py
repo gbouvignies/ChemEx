@@ -399,9 +399,9 @@ def _write_samples(
     parameter_names = _format_parameter_ids(result.var_names, parameter_store)
     values = np.column_stack((result.samples, result.log_probabilities))
 
-    with (path / "samples.out").open("w", encoding="utf-8") as fileout:
-        fileout.write(f"# {' '.join(parameter_names)} [lnprob]\n")
-        np.savetxt(fileout, values, fmt="%12.5e")
+    with (path / "samples.tsv").open("w", encoding="utf-8") as fileout:
+        fileout.write("\t".join((*parameter_names, "lnprob")) + "\n")
+        np.savetxt(fileout, values, fmt="%.5e", delimiter="\t")
 
 
 def _write_correlations(
@@ -410,17 +410,16 @@ def _write_correlations(
     parameter_store: ParameterStore,
 ) -> None:
     parameter_names = _format_parameter_ids(result.var_names, parameter_store)
-    name_width = max(len(name) for name in parameter_names)
 
-    with (path / "correlations.out").open("w", encoding="utf-8") as fileout:
-        fileout.write(f"# {' '.join(f'{name:>12s}' for name in parameter_names)}\n")
+    with (path / "correlations.tsv").open("w", encoding="utf-8") as fileout:
+        fileout.write("parameter\t" + "\t".join(parameter_names) + "\n")
         for name, values in zip(
             parameter_names,
             result.correlations,
             strict=True,
         ):
-            row = " ".join(f"{value:12.5e}" for value in values)
-            fileout.write(f"{name:<{name_width}s} {row}\n")
+            row = "\t".join(f"{value:.5e}" for value in values)
+            fileout.write(f"{name}\t{row}\n")
 
 
 def _write_diagnostics(
@@ -449,6 +448,9 @@ def _write_diagnostics(
         f"walkers = {settings.walkers}",
         f"retained_steps = {result.chain.shape[0]}",
         f"retained_samples = {len(result.samples)}",
+        'samples_file = "samples.tsv"',
+        'summary_file = "summary.toml"',
+        'correlations_file = "correlations.tsv"',
         f"acceptance_fraction_mean = {_format_toml_float(float(np.mean(acceptance)))}",
         f"acceptance_fraction_min = {_format_toml_float(float(np.min(acceptance)))}",
         f"acceptance_fraction_max = {_format_toml_float(float(np.max(acceptance)))}",

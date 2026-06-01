@@ -249,26 +249,26 @@ Sampling outputs are stored under a `Statistics` directory in the corresponding 
 Statistics/
   MonteCarlo/
     summary.toml
-    samples.out
-    correlations.out
+    samples.tsv
+    correlations.tsv
     diagnostics.toml
   Bootstrap/
     summary.toml
-    samples.out
-    correlations.out
+    samples.tsv
+    correlations.tsv
     diagnostics.toml
   BootstrapNS/
     summary.toml
-    samples.out
-    correlations.out
+    samples.tsv
+    correlations.tsv
     diagnostics.toml
   MCMC/
     summary.toml
-    samples.out
-    correlations.out
+    samples.tsv
+    correlations.tsv
     diagnostics.toml
 ```
 
-For Monte Carlo and bootstrap methods, `samples.out` contains one fitted-parameter row per synthetic dataset plus χ², `summary.toml` reports percentile-based parameter summaries, and `correlations.out` reports parameter correlations across the fitted synthetic datasets. When data is unavailable (e.g., in nucleus-specific bootstrap), placeholders (`"--"`) are used. ChemEx also writes the legacy top-level `monte_carlo.out`, `bootstrap.out`, and `bootstrap_ns.out` files for compatibility.
+For Monte Carlo and bootstrap methods, `samples.tsv` contains one fitted-parameter row per synthetic dataset plus χ², `summary.toml` reports percentile-based parameter summaries, and `correlations.tsv` reports parameter correlations across the fitted synthetic datasets. Missing values are written as `nan`. ChemEx also writes the legacy top-level `monte_carlo.out`, `bootstrap.out`, and `bootstrap_ns.out` files for compatibility.
 
 For MCMC, `summary.toml` reports the uniform prior implied by each parameter's bounds, posterior mean, median, standard deviation, a 95% equal-tailed credible interval, the 68.26% interval used for `stderr`, and effective sample size/Monte Carlo standard error when autocorrelation time is available. MCMC diagnostics include sampler versions, retained samples, acceptance fractions, autocorrelation time, and burn-in decisions.

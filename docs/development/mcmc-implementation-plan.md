@@ -190,8 +190,8 @@ Output/
     Statistics/
       MCMC/
         summary.toml
-        samples.out
-        correlations.out
+        samples.tsv
+        correlations.tsv
         diagnostics.toml
 ```
 
@@ -231,15 +231,14 @@ effective_sample_size = 1.18000e+03
 mcse_mean = 3.46109e-05
 ```
 
-`samples.out` should use the same lightweight text-table style as existing
-statistics output:
+`samples.tsv` should be a tab-separated table with a header row:
 
-```text
-# KEX_AB PB [lnprob]
-  3.81511e+02  7.02971e-02 -1.23456e+03
+```tsv
+KEX_AB	PB	lnprob
+3.81511e+02	7.02971e-02	-1.23456e+03
 ```
 
-`correlations.out` should be a square matrix with parameter names in a header.
+`correlations.tsv` should be a square matrix with parameter names in a header.
 
 `diagnostics.toml` should include:
 
@@ -298,7 +297,7 @@ Add focused unit tests rather than expensive end-to-end MCMC tests:
   - default walkers are derived from number of varied parameters;
   - no varied parameters is handled without invoking the sampler;
 - writer tests:
-  - `summary.toml`, `samples.out`, `correlations.out`, and `diagnostics.toml`
+  - `summary.toml`, `samples.tsv`, `correlations.tsv`, and `diagnostics.toml`
     formatting from a small synthetic `McmcResult`;
 - integration dispatch:
   - `_run_statistics()` calls MCMC without generating bootstrap/Monte Carlo

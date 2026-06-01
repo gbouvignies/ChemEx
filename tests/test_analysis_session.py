@@ -451,18 +451,19 @@ def test_run_statistics_uses_session_for_header(
     np.testing.assert_equal(recorded["parameter_store"], session.parameters)
     assert (tmp_path / "monte_carlo.out").read_text(encoding="utf-8") == "# header\n"
     assert (
-        tmp_path / "Statistics" / "MonteCarlo" / "samples.out"
-    ).read_text(encoding="utf-8") == "# header\n"
+        tmp_path / "Statistics" / "MonteCarlo" / "samples.tsv"
+    ).read_text(encoding="utf-8") == "PB\tchisqr\n"
     assert (tmp_path / "Statistics" / "MonteCarlo" / "summary.toml").exists()
-    assert (tmp_path / "Statistics" / "MonteCarlo" / "correlations.out").exists()
+    assert (tmp_path / "Statistics" / "MonteCarlo" / "correlations.tsv").exists()
     diagnostics = (
         tmp_path / "Statistics" / "MonteCarlo" / "diagnostics.toml"
     ).read_text(encoding="utf-8")
     assert 'method = "Monte Carlo"' in diagnostics
     assert "requested_samples = 1" in diagnostics
     assert "completed_samples = 0" in diagnostics
+    assert 'samples_file = "samples.tsv"' in diagnostics
     assert 'summary_file = "summary.toml"' in diagnostics
-    assert 'correlations_file = "correlations.out"' in diagnostics
+    assert 'correlations_file = "correlations.tsv"' in diagnostics
     assert 'legacy_samples_file = "monte_carlo.out"' in diagnostics
 
 
@@ -535,7 +536,7 @@ def test_resampling_summary_and_correlations_are_written(tmp_path: Path) -> None
     )
 
     summary = (tmp_path / "summary.toml").read_text(encoding="utf-8")
-    correlations = (tmp_path / "correlations.out").read_text(encoding="utf-8")
+    correlations = (tmp_path / "correlations.tsv").read_text(encoding="utf-8")
 
     assert '["PB"]' in summary
     assert 'interval = "95% percentile"' in summary

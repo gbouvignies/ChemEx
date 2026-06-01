@@ -181,8 +181,8 @@ def test_write_mcmc_outputs(tmp_path: Path) -> None:
 
     path_mcmc = tmp_path / "Statistics" / "MCMC"
     summary = (path_mcmc / "summary.toml").read_text(encoding="utf-8")
-    samples = (path_mcmc / "samples.out").read_text(encoding="utf-8")
-    correlations = (path_mcmc / "correlations.out").read_text(
+    samples = (path_mcmc / "samples.tsv").read_text(encoding="utf-8")
+    correlations = (path_mcmc / "correlations.tsv").read_text(
         encoding="utf-8",
     )
     diagnostics = (path_mcmc / "diagnostics.toml").read_text(
@@ -196,11 +196,13 @@ def test_write_mcmc_outputs(tmp_path: Path) -> None:
     assert "median = 2.50000e-01" in summary
     assert "eti_95_lower = 1.10000e-01" in summary
     assert "effective_sample_size = 2.00000e+00" in summary
-    assert "# [PB] [KEX_AB] [lnprob]" in samples
-    assert "2.00000e-01  2.50000e+02 -2.00000e+00" in samples
+    assert "[PB]\t[KEX_AB]\tlnprob" in samples
+    assert "2.00000e-01\t2.50000e+02\t-2.00000e+00" in samples
     assert "[PB]" in correlations
     assert "5.00000e-01" in correlations
     assert 'sampler = "emcee via lmfit.Minimizer.emcee"' in diagnostics
+    assert 'samples_file = "samples.tsv"' in diagnostics
+    assert 'correlations_file = "correlations.tsv"' in diagnostics
     assert 'requested_burn = "auto"' in diagnostics
     assert "discarded_steps = 1" in diagnostics
     assert "retained_steps = 2" in diagnostics

@@ -38,6 +38,10 @@ def _format_toml_float(value: float) -> str:
     return f"{value:.5e}"
 
 
+def _format_tsv_float(value: float) -> str:
+    return "nan" if not np.isfinite(value) else f"{value:.5e}"
+
+
 def _format_parameter_names(
     parameter_ids: list[str],
     parameter_store: Any,
@@ -128,9 +132,8 @@ def _write_resampling_correlations(
 ) -> None:
     parameter_names = _format_parameter_names(parameter_ids, parameter_store)
     if not parameter_names:
-        (path / "correlations.out").write_text("", encoding="utf-8")
+        (path / "correlations.tsv").write_text("", encoding="utf-8")
         return
-    name_width = max(len(name) for name in parameter_names)
     correlations = np.empty((len(parameter_names), len(parameter_names)), dtype=float)
     for index_a in range(len(parameter_names)):
         for index_b in range(len(parameter_names)):
@@ -140,11 +143,11 @@ def _write_resampling_correlations(
                 else _pairwise_correlation(samples, index_a, index_b)
             )
 
-    with (path / "correlations.out").open("w", encoding="utf-8") as fileout:
-        fileout.write(f"# {' '.join(f'{name:>12s}' for name in parameter_names)}\n")
+    with (path / "correlations.tsv").open("w", encoding="utf-8") as fileout:
+        fileout.write("parameter\t" + "\t".join(parameter_names) + "\n")
         for name, values in zip(parameter_names, correlations, strict=True):
-            row = " ".join(f"{value:12.5e}" for value in values)
-            fileout.write(f"{name:<{name_width}s} {row}\n")
+            row = "\t".join(_format_tsv_float(value) for value in values)
+            fileout.write(f"{name}\t{row}\n")
 
 
 def _write_resampling_diagnostics(
@@ -163,9 +166,9 @@ def _write_resampling_diagnostics(
         f"requested_samples = {requested_samples}",
         f"completed_samples = {completed_samples}",
         f"parameters = {_format_toml_string_list(parameter_ids)}",
-        'samples_file = "samples.out"',
+        'samples_file = "samples.tsv"',
         'summary_file = "summary.toml"',
-        'correlations_file = "correlations.out"',
+        'correlations_file = "correlations.tsv"',
         f"legacy_samples_file = {_quote_toml_string(legacy_output)}",
     ]
     (path / "diagnostics.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -183,18 +186,19 @@ def _run_resampling_method(
     parameter_store = experiments.parameter_store
     statistic_path = path / "Statistics" / method["directory"]
     statistic_path.mkdir(parents=True, exist_ok=True)
-    sample_paths = (statistic_path / "samples.out", path / method["filename"])
+    samples_tsv = statistic_path / "samples.tsv"
+    samples_legacy = path / method["filename"]
     sample_rows: list[list[float]] = []
     completed_samples = 0
 
     with ExitStack() as stack:
-        files = [
-            stack.enter_context(filename.open(mode="w", encoding="utf-8"))
-            for filename in sample_paths
-        ]
-        header = print_header(ids_vary, parameter_store=parameter_store)
-        for fileout in files:
-            fileout.write(header)
+        file_tsv = stack.enter_context(samples_tsv.open(mode="w", encoding="utf-8"))
+        file_legacy = stack.enter_context(
+            samples_legacy.open(mode="w", encoding="utf-8"),
+        )
+        parameter_names = _format_parameter_names(ids_vary, parameter_store)
+        file_tsv.write("\t".join((*parameter_names, "chisqr")) + "\n")
+        file_legacy.write(print_header(ids_vary, parameter_store=parameter_store))
 
         try:
             for _ in track(range(iter_nb), total=iter_nb, description="   "):
@@ -203,18 +207,24 @@ def _run_resampling_method(
                 params_fit = minimize(exp_stat, params_lf, fitmethod)
                 stats = calculate_statistics(exp_stat, params_fit)
                 chisqr = stats.get("chisqr", 1e32)
-                values = print_values_stat(params_fit, ids_vary, chisqr)
-                for fileout in files:
-                    fileout.write(values)
-                sample_rows.append(_sample_parameter_values(params_fit, ids_vary))
+                sample_values = _sample_parameter_values(params_fit, ids_vary)
+                file_tsv.write(
+                    "\t".join(
+                        _format_tsv_float(value)
+                        for value in (*sample_values, float(chisqr))
+                    )
+                    + "\n",
+                )
+                file_legacy.write(print_values_stat(params_fit, ids_vary, chisqr))
+                sample_rows.append(sample_values)
                 completed_samples += 1
         except KeyboardInterrupt:
             print_calculation_stopped_error()
         except ValueError:
             print_value_error()
         finally:
-            for fileout in files:
-                fileout.flush()
+            file_tsv.flush()
+            file_legacy.flush()
             samples = _as_sample_array(sample_rows, len(ids_vary))
             _write_resampling_summary(
                 statistic_path,
