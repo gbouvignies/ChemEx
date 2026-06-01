@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
@@ -18,8 +17,6 @@ from chemex.messages import (
 )
 from chemex.optimize.helper import (
     calculate_statistics,
-    print_header,
-    print_values_stat,
 )
 from chemex.optimize.minimizer import minimize
 
@@ -158,7 +155,6 @@ def _write_resampling_diagnostics(
     requested_samples: int,
     completed_samples: int,
     parameter_ids: list[str],
-    legacy_output: str,
 ) -> None:
     lines = [
         f"method = {_quote_toml_string(method)}",
@@ -169,7 +165,6 @@ def _write_resampling_diagnostics(
         'samples_file = "samples.tsv"',
         'summary_file = "summary.toml"',
         'correlations_file = "correlations.tsv"',
-        f"legacy_samples_file = {_quote_toml_string(legacy_output)}",
     ]
     (path / "diagnostics.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -187,18 +182,12 @@ def _run_resampling_method(
     statistic_path = path / "Statistics" / method["directory"]
     statistic_path.mkdir(parents=True, exist_ok=True)
     samples_tsv = statistic_path / "samples.tsv"
-    samples_legacy = path / method["filename"]
     sample_rows: list[list[float]] = []
     completed_samples = 0
 
-    with ExitStack() as stack:
-        file_tsv = stack.enter_context(samples_tsv.open(mode="w", encoding="utf-8"))
-        file_legacy = stack.enter_context(
-            samples_legacy.open(mode="w", encoding="utf-8"),
-        )
+    with samples_tsv.open(mode="w", encoding="utf-8") as file_tsv:
         parameter_names = _format_parameter_names(ids_vary, parameter_store)
         file_tsv.write("\t".join((*parameter_names, "chisqr")) + "\n")
-        file_legacy.write(print_header(ids_vary, parameter_store=parameter_store))
 
         try:
             for _ in track(range(iter_nb), total=iter_nb, description="   "):
@@ -215,7 +204,6 @@ def _run_resampling_method(
                     )
                     + "\n",
                 )
-                file_legacy.write(print_values_stat(params_fit, ids_vary, chisqr))
                 sample_rows.append(sample_values)
                 completed_samples += 1
         except KeyboardInterrupt:
@@ -224,7 +212,6 @@ def _run_resampling_method(
             print_value_error()
         finally:
             file_tsv.flush()
-            file_legacy.flush()
             samples = _as_sample_array(sample_rows, len(ids_vary))
             _write_resampling_summary(
                 statistic_path,
@@ -245,7 +232,6 @@ def _run_resampling_method(
                 requested_samples=iter_nb,
                 completed_samples=completed_samples,
                 parameter_ids=ids_vary,
-                legacy_output=method["filename"],
             )
 
 
@@ -262,17 +248,14 @@ def run_resampling_statistics(
         "mc": {
             "message": "Monte Carlo",
             "directory": "MonteCarlo",
-            "filename": "monte_carlo.out",
         },
         "bs": {
             "message": "bootstrap",
             "directory": "Bootstrap",
-            "filename": "bootstrap.out",
         },
         "bsn": {
             "message": "nucleus-based bootstrap",
             "directory": "BootstrapNS",
-            "filename": "bootstrap_ns.out",
         },
     }
 

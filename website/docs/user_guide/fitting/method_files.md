@@ -269,6 +269,6 @@ Statistics/
     diagnostics.toml
 ```
 
-For Monte Carlo and bootstrap methods, `samples.tsv` contains one fitted-parameter row per synthetic dataset plus χ², `summary.toml` reports percentile-based parameter summaries, and `correlations.tsv` reports parameter correlations across the fitted synthetic datasets. Missing values are written as `nan`. ChemEx also writes the legacy top-level `monte_carlo.out`, `bootstrap.out`, and `bootstrap_ns.out` files for compatibility.
+For Monte Carlo and bootstrap methods, `samples.tsv` contains one fitted-parameter row per synthetic dataset plus χ², `summary.toml` reports percentile-based parameter summaries, and `correlations.tsv` reports parameter correlations across the fitted synthetic datasets. Missing values are written as `nan`.
 
 For MCMC, `summary.toml` reports the uniform prior implied by each parameter's bounds, posterior mean, median, standard deviation, a 95% equal-tailed credible interval, the 68.26% interval used for `stderr`, and effective sample size/Monte Carlo standard error when autocorrelation time is available. MCMC diagnostics include sampler versions, retained samples, acceptance fractions, autocorrelation time, and burn-in decisions.

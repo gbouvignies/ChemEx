@@ -90,7 +90,18 @@ class WriterParameterStore:
 class StatisticsParameterStore(StubParameters):
     def build_lmfit_params(self, param_ids: object) -> dict[str, SimpleNamespace]:
         _ = param_ids
-        return {"__PB": SimpleNamespace(name="PB", vary=True)}
+        return {"__PB": SimpleNamespace(name="__PB", vary=True)}
+
+    def get_parameters(self, param_ids: object) -> dict[str, ParamSetting]:
+        parameters = {
+            "__PB": ParamSetting(ParamName("PB"), value=0.15, vary=True),
+            "__KEX_AB": ParamSetting(ParamName("KEX_AB"), value=250.0, vary=True),
+        }
+        return {
+            param_id: parameter
+            for param_id, parameter in parameters.items()
+            if param_id in set(param_ids)
+        }
 
 
 class FakeExperiments:
@@ -419,7 +430,6 @@ def test_run_statistics_uses_session_for_header(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    recorded: dict[str, object] = {}
     session = StubSession()
     session.parameters = StatisticsParameterStore()
     experiments = SimpleNamespace(
@@ -429,17 +439,6 @@ def test_run_statistics_uses_session_for_header(
 
     monkeypatch.setattr(resampling_module, "track", lambda _iterable, **_kwargs: [])
 
-    def fake_print_header(
-        grid: object,
-        *,
-        parameter_store: object,
-    ) -> str:
-        recorded["grid"] = grid
-        recorded["parameter_store"] = parameter_store
-        return "# header\n"
-
-    monkeypatch.setattr(resampling_module, "print_header", fake_print_header)
-
     fitting_module._run_statistics(  # noqa: SLF001
         experiments,
         tmp_path,
@@ -447,12 +446,10 @@ def test_run_statistics_uses_session_for_header(
         fitting_module.Statistics(mc=1),
     )
 
-    np.testing.assert_equal(recorded["grid"], ["PB"])
-    np.testing.assert_equal(recorded["parameter_store"], session.parameters)
-    assert (tmp_path / "monte_carlo.out").read_text(encoding="utf-8") == "# header\n"
+    assert not (tmp_path / "monte_carlo.out").exists()
     assert (
         tmp_path / "Statistics" / "MonteCarlo" / "samples.tsv"
-    ).read_text(encoding="utf-8") == "PB\tchisqr\n"
+    ).read_text(encoding="utf-8") == "[PB]\tchisqr\n"
     assert (tmp_path / "Statistics" / "MonteCarlo" / "summary.toml").exists()
     assert (tmp_path / "Statistics" / "MonteCarlo" / "correlations.tsv").exists()
     diagnostics = (
@@ -464,7 +461,6 @@ def test_run_statistics_uses_session_for_header(
     assert 'samples_file = "samples.tsv"' in diagnostics
     assert 'summary_file = "summary.toml"' in diagnostics
     assert 'correlations_file = "correlations.tsv"' in diagnostics
-    assert 'legacy_samples_file = "monte_carlo.out"' in diagnostics
 
 
 def test_run_statistics_dispatches_mcmc_without_resampling(
