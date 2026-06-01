@@ -59,6 +59,8 @@ class McmcResult:
     autocorrelation_time: Array | None
     discarded_steps: int
     burn_in_warning: str | None
+    raw_chain: Array | None = None
+    raw_lnprob: Array | None = None
 
     @property
     def samples(self) -> Array:
@@ -323,6 +325,8 @@ def _result_from_lmfit(
         autocorrelation_time=autocorrelation_time,
         discarded_steps=discarded_steps,
         burn_in_warning=burn_in_warning,
+        raw_chain=chain,
+        raw_lnprob=lnprob,
     )
 
 
@@ -451,6 +455,7 @@ def _write_diagnostics(
         'samples_file = "samples.tsv"',
         'summary_file = "summary.toml"',
         'correlations_file = "correlations.tsv"',
+        'plots_file = "plots.pdf"',
         f"acceptance_fraction_mean = {_format_toml_float(float(np.mean(acceptance)))}",
         f"acceptance_fraction_min = {_format_toml_float(float(np.min(acceptance)))}",
         f"acceptance_fraction_max = {_format_toml_float(float(np.max(acceptance)))}",
@@ -515,6 +520,14 @@ def write_mcmc_outputs(
     _write_summary(result, path_mcmc, parameter_store)
     _write_samples(result, path_mcmc, parameter_store)
     _write_correlations(result, path_mcmc, parameter_store)
+    from chemex.optimize.mcmc_plot import write_mcmc_plots
+
+    write_mcmc_plots(
+        result,
+        settings,
+        path_mcmc,
+        parameter_names=_format_parameter_ids(result.var_names, parameter_store),
+    )
     _write_diagnostics(
         result,
         settings,

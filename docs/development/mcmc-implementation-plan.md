@@ -240,6 +240,16 @@ KEX_AB	PB	lnprob
 
 `correlations.tsv` should be a square matrix with parameter names in a header.
 
+`plots.pdf` should be a derived visual report with:
+
+- a summary page for sampler settings and diagnostics;
+- one-dimensional posterior distributions for every varied parameter;
+- walker traces for every varied parameter, with the burn-in zone shown when
+  available;
+- a log-probability trace;
+- two-dimensional posterior distributions for parameter pairs whose absolute
+  correlation is at least 0.5.
+
 `diagnostics.toml` should include:
 
 - `steps`
@@ -251,10 +261,7 @@ KEX_AB	PB	lnprob
 - autocorrelation time when available
 - ESS and retained chain length relative to autocorrelation time when available
 - a warning field when autocorrelation could not be estimated
-
-Avoid adding plots in the first PR. Chain and corner plots are valuable, but they
-introduce heavier dependencies and test surface. Text outputs are enough for the
-initial feature.
+- the relative `plots.pdf` path
 
 ## Integration Points
 
@@ -297,8 +304,8 @@ Add focused unit tests rather than expensive end-to-end MCMC tests:
   - default walkers are derived from number of varied parameters;
   - no varied parameters is handled without invoking the sampler;
 - writer tests:
-  - `summary.toml`, `samples.tsv`, `correlations.tsv`, and `diagnostics.toml`
-    formatting from a small synthetic `McmcResult`;
+  - `summary.toml`, `samples.tsv`, `correlations.tsv`, `diagnostics.toml`, and
+    `plots.pdf` generation from a small synthetic `McmcResult`;
 - integration dispatch:
   - `_run_statistics()` calls MCMC without generating bootstrap/Monte Carlo
     experiments;
@@ -317,6 +324,7 @@ Update the user guide:
 - document the short and expanded syntax;
 - recommend finite parameter bounds;
 - document output files and diagnostics;
+- document the `plots.pdf` report;
 - clarify that MCMC uncertainty is posterior-based, while `MC`/`BS` refit
   synthetic datasets.
 
@@ -337,7 +345,6 @@ statistics methods, not only as `FITMETHOD = "emcee"`.
 ## Non-Goals For The First Implementation
 
 - custom priors beyond current bounds;
-- posterior plotting;
 - resumable chains;
 - replacing best-fit parameters by default;
 - multiprocessing defaults above one worker;

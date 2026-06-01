@@ -210,3 +210,5 @@ def test_write_mcmc_outputs(tmp_path: Path) -> None:
     assert "min_effective_sample_size = 1.33333e+00" in diagnostics
     assert 'unbounded_parameters = ["[KEX_AB]"]' in diagnostics
     assert "autocorrelation_time = [2.00000e+00, 3.00000e+00]" in diagnostics
+    assert 'plots_file = "plots.pdf"' in diagnostics
+    assert (path_mcmc / "plots.pdf").stat().st_size > 0
