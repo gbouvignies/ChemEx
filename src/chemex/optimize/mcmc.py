@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
+from math import ceil
 from pathlib import Path
 from typing import cast
 
@@ -10,7 +12,7 @@ import numpy as np
 from lmfit.minimizer import MinimizerResult
 from lmfit.parameter import Parameters
 
-from chemex.configuration.methods import McmcSettings
+from chemex.configuration.methods import McmcBurnSetting, McmcSettings
 from chemex.containers.experiments import Experiments
 from chemex.messages import (
     print_mcmc_no_vary_warning,
@@ -23,7 +25,7 @@ from chemex.typing import Array
 @dataclass(frozen=True)
 class EffectiveMcmcSettings:
     steps: int
-    burn: int
+    burn: McmcBurnSetting
     thin: int
     walkers: int
     seed: int | None
@@ -34,10 +36,16 @@ class EffectiveMcmcSettings:
 @dataclass(frozen=True)
 class McmcSummary:
     parameter_id: str
+    mean: float
+    standard_deviation: float
     median: float
+    eti_95_lower: float
+    eti_95_upper: float
     lower_1sigma: float
     upper_1sigma: float
     stderr: float
+    effective_sample_size: float | None = None
+    mcse_mean: float | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +57,8 @@ class McmcResult:
     correlations: Array
     acceptance_fraction: Array
     autocorrelation_time: Array | None
+    discarded_steps: int
+    burn_in_warning: str | None
 
     @property
     def samples(self) -> Array:
@@ -88,7 +98,9 @@ def resolve_mcmc_settings(
 
 def _varying_parameter_ids(params: Parameters) -> tuple[str, ...]:
     return tuple(
-        name for name, parameter in params.items() if parameter.vary and not parameter.expr
+        name
+        for name, parameter in params.items()
+        if parameter.vary and not parameter.expr
     )
 
 
@@ -100,7 +112,10 @@ def _format_parameter_ids(
     return tuple(str(parameters[param_id].param_name) for param_id in parameter_ids)
 
 
-def _find_unbounded_parameter_ids(params: Parameters, var_names: tuple[str, ...]) -> tuple[str, ...]:
+def _find_unbounded_parameter_ids(
+    params: Parameters,
+    var_names: tuple[str, ...],
+) -> tuple[str, ...]:
     return tuple(
         name
         for name in var_names
@@ -120,7 +135,12 @@ def _validate_parameter_bounds(params: Parameters, var_names: tuple[str, ...]) -
             raise ValueError(msg)
 
 
-def _jitter_scale(value: float, lower: float, upper: float, stderr: float | None) -> float:
+def _jitter_scale(
+    value: float,
+    lower: float,
+    upper: float,
+    stderr: float | None,
+) -> float:
     scales = [abs(value) * 1.0e-4, 1.0e-8]
     if np.isfinite(lower) and np.isfinite(upper):
         scales.append((upper - lower) * 1.0e-4)
@@ -166,18 +186,36 @@ def _initial_positions(
 def _summarize_chain(
     var_names: tuple[str, ...],
     samples: Array,
+    autocorrelation_time: Array | None,
+    thin: int,
 ) -> tuple[McmcSummary, ...]:
-    quantiles = np.percentile(samples, [15.87, 50.0, 84.13], axis=0)
+    quantiles = np.percentile(samples, [2.5, 15.87, 50.0, 84.13, 97.5], axis=0)
     summaries: list[McmcSummary] = []
     for index, name in enumerate(var_names):
-        lower, median, upper = quantiles[:, index]
+        lower_95, lower, median, upper, upper_95 = quantiles[:, index]
+        values = samples[:, index]
+        standard_deviation = float(np.std(values, ddof=1)) if len(values) > 1 else 0.0
+        effective_sample_size = None
+        mcse_mean = None
+        if autocorrelation_time is not None:
+            tau = float(autocorrelation_time[index])
+            if np.isfinite(tau) and tau > 0.0:
+                tau_in_retained_steps = max(tau / thin, 1.0)
+                effective_sample_size = len(values) / tau_in_retained_steps
+                mcse_mean = standard_deviation / np.sqrt(effective_sample_size)
         summaries.append(
             McmcSummary(
                 parameter_id=name,
+                mean=float(np.mean(values)),
+                standard_deviation=standard_deviation,
                 median=float(median),
+                eti_95_lower=float(lower_95),
+                eti_95_upper=float(upper_95),
                 lower_1sigma=float(lower),
                 upper_1sigma=float(upper),
                 stderr=0.5 * float(upper - lower),
+                effective_sample_size=effective_sample_size,
+                mcse_mean=mcse_mean,
             ),
         )
     return tuple(summaries)
@@ -193,27 +231,98 @@ def _result_attr(result: MinimizerResult, name: str) -> object:
     return getattr(result, name)
 
 
-def _result_from_lmfit(result: MinimizerResult) -> McmcResult:
+def _autocorrelation_time(result: MinimizerResult) -> Array | None:
+    if not hasattr(result, "acor"):
+        return None
+    autocorrelation_time = np.asarray(
+        cast("Array", _result_attr(result, "acor")),
+        dtype=float,
+    )
+    if autocorrelation_time.ndim != 1 or not np.all(np.isfinite(autocorrelation_time)):
+        return None
+    return autocorrelation_time
+
+
+def _resolve_discarded_steps(
+    burn: McmcBurnSetting,
+    *,
+    nsteps: int,
+    autocorrelation_time: Array | None,
+) -> tuple[int, str | None]:
+    if burn != "auto":
+        return int(burn), None
+    if autocorrelation_time is None:
+        return 0, "autocorrelation time unavailable; automatic burn-in was not applied"
+    max_tau = float(np.max(autocorrelation_time))
+    if not np.isfinite(max_tau) or max_tau <= 0.0:
+        return 0, "autocorrelation time invalid; automatic burn-in was not applied"
+    discarded_steps = ceil(2.0 * max_tau)
+    if discarded_steps >= nsteps:
+        return (
+            0,
+            "estimated automatic burn-in is longer than the chain; "
+            "automatic burn-in was not applied",
+        )
+    return discarded_steps, None
+
+
+def _apply_sample_window(
+    chain: Array,
+    lnprob: Array,
+    *,
+    burn: McmcBurnSetting,
+    thin: int,
+    autocorrelation_time: Array | None,
+) -> tuple[Array, Array, int, str | None]:
+    discarded_steps, warning = _resolve_discarded_steps(
+        burn,
+        nsteps=chain.shape[0],
+        autocorrelation_time=autocorrelation_time,
+    )
+    retained_chain = chain[discarded_steps::thin]
+    retained_lnprob = lnprob[discarded_steps::thin]
+    if retained_chain.shape[0] < 1:
+        msg = "MCMC settings did not retain any samples"
+        raise ValueError(msg)
+    return retained_chain, retained_lnprob, discarded_steps, warning
+
+
+def _result_from_lmfit(
+    result: MinimizerResult,
+    settings: EffectiveMcmcSettings,
+) -> McmcResult:
     var_names = tuple(cast("Sequence[str]", _result_attr(result, "var_names")))
     chain = np.asarray(cast("Array", _result_attr(result, "chain")), dtype=float)
     lnprob = np.asarray(cast("Array", _result_attr(result, "lnprob")), dtype=float)
-    samples = chain.reshape((-1, len(var_names)))
-    autocorrelation_time = (
-        np.asarray(cast("Array", _result_attr(result, "acor")), dtype=float)
-        if hasattr(result, "acor")
-        else None
+    autocorrelation_time = _autocorrelation_time(result)
+    retained_chain, retained_lnprob, discarded_steps, burn_in_warning = (
+        _apply_sample_window(
+            chain,
+            lnprob,
+            burn=settings.burn,
+            thin=settings.thin,
+            autocorrelation_time=autocorrelation_time,
+        )
     )
+    samples = retained_chain.reshape((-1, len(var_names)))
     return McmcResult(
         var_names=var_names,
-        chain=chain,
-        lnprob=lnprob,
-        summary=_summarize_chain(var_names, samples),
+        chain=retained_chain,
+        lnprob=retained_lnprob,
+        summary=_summarize_chain(
+            var_names,
+            samples,
+            autocorrelation_time,
+            settings.thin,
+        ),
         correlations=_correlation_matrix(samples),
         acceptance_fraction=np.asarray(
             cast("Array", _result_attr(result, "acceptance_fraction")),
             dtype=float,
         ),
         autocorrelation_time=autocorrelation_time,
+        discarded_steps=discarded_steps,
+        burn_in_warning=burn_in_warning,
     )
 
 
@@ -227,10 +336,21 @@ def _format_toml_string_list(values: list[str]) -> str:
     return "[" + ", ".join(_quote_toml_string(value) for value in values) + "]"
 
 
+def _format_toml_float(value: float) -> str:
+    return f"{value:.5e}"
+
+
 def _format_toml_float_list(values: list[float]) -> str:
     if not values:
         return "[]"
-    return "[" + ", ".join(f"{value:.5e}" for value in values) + "]"
+    return "[" + ", ".join(_format_toml_float(value) for value in values) + "]"
+
+
+def _package_version(package_name: str) -> str:
+    try:
+        return version(package_name)
+    except PackageNotFoundError:
+        return "unknown"
 
 
 def _write_summary(
@@ -241,17 +361,33 @@ def _write_summary(
     parameters = parameter_store.get_parameters(result.var_names)
     lines: list[str] = []
     for summary in result.summary:
-        parameter_name = str(parameters[summary.parameter_id].param_name).strip("[]")
+        parameter = parameters[summary.parameter_id]
+        parameter_name = str(parameter.param_name).strip("[]")
         lines.extend(
             [
                 f"[{_quote_toml_string(parameter_name)}]",
-                f"median = {summary.median:.5e}",
-                f"lower_1sigma = {summary.lower_1sigma:.5e}",
-                f"upper_1sigma = {summary.upper_1sigma:.5e}",
-                f"stderr = {summary.stderr:.5e}",
-                "",
+                'prior = "uniform"',
+                f"prior_lower = {_format_toml_float(float(parameter.min))}",
+                f"prior_upper = {_format_toml_float(float(parameter.max))}",
+                'credible_interval = "95% equal-tailed"',
+                f"mean = {_format_toml_float(summary.mean)}",
+                f"standard_deviation = {_format_toml_float(summary.standard_deviation)}",
+                f"median = {_format_toml_float(summary.median)}",
+                f"eti_95_lower = {_format_toml_float(summary.eti_95_lower)}",
+                f"eti_95_upper = {_format_toml_float(summary.eti_95_upper)}",
+                f"lower_1sigma = {_format_toml_float(summary.lower_1sigma)}",
+                f"upper_1sigma = {_format_toml_float(summary.upper_1sigma)}",
+                f"stderr = {_format_toml_float(summary.stderr)}",
             ],
         )
+        if summary.effective_sample_size is not None:
+            lines.append(
+                "effective_sample_size = "
+                f"{_format_toml_float(summary.effective_sample_size)}",
+            )
+        if summary.mcse_mean is not None:
+            lines.append(f"mcse_mean = {_format_toml_float(summary.mcse_mean)}")
+        lines.append("")
     (path / "summary.toml").write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -298,24 +434,65 @@ def _write_diagnostics(
     unbounded_parameters = list(
         _format_parameter_ids(unbounded_parameter_ids, parameter_store),
     )
+    requested_burn = '"auto"' if settings.burn == "auto" else str(settings.burn)
     lines = [
+        'sampler = "emcee via lmfit.Minimizer.emcee"',
+        f"lmfit_version = {_quote_toml_string(_package_version('lmfit'))}",
+        f"emcee_version = {_quote_toml_string(_package_version('emcee'))}",
+        'credible_interval = "95% equal-tailed"',
+        'convergence_diagnostic = "integrated_autocorrelation_time"',
+        'rhat = "not computed: emcee ensemble walkers are not independent chains"',
         f"steps = {settings.steps}",
-        f"burn = {settings.burn}",
+        f"requested_burn = {requested_burn}",
+        f"discarded_steps = {result.discarded_steps}",
         f"thin = {settings.thin}",
         f"walkers = {settings.walkers}",
+        f"retained_steps = {result.chain.shape[0]}",
         f"retained_samples = {len(result.samples)}",
-        f"acceptance_fraction_mean = {float(np.mean(acceptance)):.5e}",
-        f"acceptance_fraction_min = {float(np.min(acceptance)):.5e}",
-        f"acceptance_fraction_max = {float(np.max(acceptance)):.5e}",
+        f"acceptance_fraction_mean = {_format_toml_float(float(np.mean(acceptance)))}",
+        f"acceptance_fraction_min = {_format_toml_float(float(np.min(acceptance)))}",
+        f"acceptance_fraction_max = {_format_toml_float(float(np.max(acceptance)))}",
         f"unbounded_parameters = {_format_toml_string_list(unbounded_parameters)}",
     ]
+    if result.burn_in_warning is not None:
+        lines.append(f"burn_in_warning = {_quote_toml_string(result.burn_in_warning)}")
     if result.autocorrelation_time is None:
         lines.append('autocorrelation_warning = "not available"')
     else:
+        max_tau = float(np.max(result.autocorrelation_time))
         lines.append(
             "autocorrelation_time = "
             f"{_format_toml_float_list(result.autocorrelation_time.tolist())}",
         )
+        lines.append(f"max_autocorrelation_time = {_format_toml_float(max_tau)}")
+        if max_tau <= 0.0:
+            lines.append(
+                'autocorrelation_warning = "autocorrelation time is not positive"',
+            )
+        else:
+            retained_steps_over_tau = result.chain.shape[0] * settings.thin / max_tau
+            min_effective_sample_size = min(
+                (
+                    summary.effective_sample_size
+                    for summary in result.summary
+                    if summary.effective_sample_size is not None
+                ),
+                default=None,
+            )
+            lines.append(
+                "retained_steps_over_max_autocorrelation_time = "
+                f"{_format_toml_float(retained_steps_over_tau)}",
+            )
+            if min_effective_sample_size is not None:
+                lines.append(
+                    "min_effective_sample_size = "
+                    f"{_format_toml_float(min_effective_sample_size)}",
+                )
+            if retained_steps_over_tau < 50.0:
+                lines.append(
+                    'autocorrelation_warning = "Retained chain length is shorter '
+                    'than 50 times the maximum autocorrelation time."',
+                )
     if unbounded_parameters:
         lines.append(
             'warning = "Finite lower and upper bounds are recommended for MCMC."',
@@ -371,8 +548,8 @@ def run_mcmc(
         params=params,
         steps=effective_settings.steps,
         nwalkers=effective_settings.walkers,
-        burn=effective_settings.burn,
-        thin=effective_settings.thin,
+        burn=0,
+        thin=1,
         pos=_initial_positions(
             params,
             var_names,
@@ -384,7 +561,7 @@ def run_mcmc(
         seed=effective_settings.seed,
         progress=False,
     )
-    result = _result_from_lmfit(result_lf)
+    result = _result_from_lmfit(result_lf, effective_settings)
     write_mcmc_outputs(
         result,
         effective_settings,
@@ -393,5 +570,9 @@ def run_mcmc(
         unbounded_parameter_ids,
     )
     if effective_settings.update_parameters:
+        for summary in result.summary:
+            result_lf.params[summary.parameter_id].value = summary.median
+            result_lf.params[summary.parameter_id].stderr = summary.stderr
+        result_lf.params.update_constraints()
         parameter_store.update_from_parameters(result_lf.params)
     return result

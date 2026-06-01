@@ -225,13 +225,24 @@ Advanced MCMC settings can be provided as a nested table:
 ```toml
 [STEP1.STATISTICS.MCMC]
 STEPS = 5000
-BURN = 1000
-THIN = 10
+BURN = "AUTO"
+THIN = 1
 WALKERS = 64
 SEED = 1234
 WORKERS = 1
 ```
 
+`BURN` defaults to `"AUTO"`. In automatic mode, ChemEx uses the integrated
+autocorrelation time reported by the sampler and discards twice the largest
+autocorrelation time when that estimate is available and shorter than the chain.
+If autocorrelation time cannot be estimated reliably, ChemEx keeps the full chain
+and records the reason in `diagnostics.toml`. A numeric `BURN` value can still be
+provided to discard a fixed number of initial sampler steps.
+
+`THIN` defaults to `1`, which keeps every retained sample. Thinning is mainly a
+storage and output-size control; it is usually better to keep all post-burn-in
+samples unless the output files become too large.
+
 Outputs are stored in a file in the corresponding step directory. When data is unavailable (e.g., in nucleus-specific bootstrap), placeholders (`"--"`) are used.
 
-MCMC outputs are stored in a dedicated `MCMC` directory containing `summary.toml`, `samples.out`, `correlations.out`, and `diagnostics.toml`.
+MCMC outputs are stored in a dedicated `MCMC` directory containing `summary.toml`, `samples.out`, `correlations.out`, and `diagnostics.toml`. The summary reports the uniform prior implied by each parameter's bounds, posterior mean, median, standard deviation, a 95% equal-tailed credible interval, the 68.26% interval used for `stderr`, and effective sample size/Monte Carlo standard error when autocorrelation time is available. Diagnostics include sampler versions, retained samples, acceptance fractions, autocorrelation time, and burn-in decisions.

@@ -65,7 +65,7 @@ Introduce a small Pydantic model:
 ```python
 class McmcSettings(BaseModel):
     steps: PositiveInt
-    burn: NonNegativeInt = 0
+    burn: NonNegativeInt | Literal["auto"] = "auto"
     thin: PositiveInt = 1
     walkers: PositiveInt | None = None
     seed: int | None = None
@@ -86,10 +86,16 @@ class Statistics(BaseModel):
 Validation rules:
 
 - Convert `STATISTICS = {"MCMC" = 5000}` to `McmcSettings(steps=5000)`.
-- Require `burn < steps`.
+- Require numeric `burn < steps`.
 - Require enough retained samples after burn/thinning.
 - If `walkers` is omitted, default to `max(32, 2 * nvarys)` at runtime, because
   the value depends on the current group.
+- Default `burn` to `"auto"` and resolve it from the integrated
+  autocorrelation time after the sampler has run. If autocorrelation time is not
+  available or implies discarding the whole chain, keep the full chain and record
+  a diagnostic warning.
+- Default `thin` to `1`. Thinning is kept as an explicit storage/output-size
+  control instead of an automatic convergence tool.
 - Keep `update_parameters = false` initially so MCMC does not silently replace
   deterministic best-fit output with posterior medians. This makes the new
   feature observational by default and avoids surprising existing workflows.
@@ -125,10 +131,16 @@ through the application:
 @dataclass(frozen=True)
 class McmcSummary:
     parameter_id: str
+    mean: float
+    standard_deviation: float
     median: float
+    eti_95_lower: float
+    eti_95_upper: float
     lower_1sigma: float
     upper_1sigma: float
     stderr: float
+    effective_sample_size: float | None
+    mcse_mean: float | None
 
 @dataclass(frozen=True)
 class McmcResult:
@@ -139,6 +151,8 @@ class McmcResult:
     correlations: Array
     acceptance_fraction: Array
     autocorrelation_time: Array | None
+    discarded_steps: int
+    burn_in_warning: str | None
 ```
 
 This keeps external-library details localized and makes tests independent of
@@ -183,16 +197,36 @@ Output/
 
 ```toml
 [GLOBAL.KEX_AB]
+prior = "uniform"
+prior_lower = 1.00000e+00
+prior_upper = 5.00000e+03
+credible_interval = "95% equal-tailed"
+mean = 3.81511e+02
+standard_deviation = 9.10234e+00
 median = 3.81511e+02
+eti_95_lower = 3.64001e+02
+eti_95_upper = 3.99020e+02
 lower_1sigma = 3.72602e+02
 upper_1sigma = 3.90420e+02
 stderr = 8.90870e+00
+effective_sample_size = 1.25000e+03
+mcse_mean = 2.57446e-01
 
 [GLOBAL.PB]
+prior = "uniform"
+prior_lower = 0.00000e+00
+prior_upper = 1.00000e+00
+credible_interval = "95% equal-tailed"
+mean = 7.02971e-02
+standard_deviation = 1.18903e-03
 median = 7.02971e-02
+eti_95_lower = 6.80343e-02
+eti_95_upper = 7.25599e-02
 lower_1sigma = 6.91493e-02
 upper_1sigma = 7.14449e-02
 stderr = 1.14780e-03
+effective_sample_size = 1.18000e+03
+mcse_mean = 3.46109e-05
 ```
 
 `samples.out` should use the same lightweight text-table style as existing
@@ -208,12 +242,13 @@ statistics output:
 `diagnostics.toml` should include:
 
 - `steps`
-- `burn`
+- requested burn-in setting and actual discarded steps
 - `thin`
 - `walkers`
 - number of retained samples
 - mean/min/max acceptance fraction
 - autocorrelation time when available
+- ESS and retained chain length relative to autocorrelation time when available
 - a warning field when autocorrelation could not be estimated
 
 Avoid adding plots in the first PR. Chain and corner plots are valuable, but they

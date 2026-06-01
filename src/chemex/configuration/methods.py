@@ -27,11 +27,12 @@ from chemex.toml import read_toml
 AllType = Annotated[Literal["*", "all"], BeforeValidator(str.lower)]
 CoercedSpinSystem = Annotated[SpinSystem, PlainValidator(SpinSystem.from_name)]
 SelectionType = list[SpinSystem] | Literal["*"] | None
+McmcBurnSetting = NonNegativeInt | Literal["auto"]
 
 
 class McmcSettings(BaseModel):
     steps: PositiveInt
-    burn: NonNegativeInt = 0
+    burn: McmcBurnSetting = "auto"
     thin: PositiveInt = 1
     walkers: PositiveInt | None = None
     seed: int | None = None
@@ -40,12 +41,20 @@ class McmcSettings(BaseModel):
 
     _key_to_lower = model_validator(mode="before")(key_to_lower)
 
+    @field_validator("burn", mode="before")
+    @classmethod
+    def parse_burn(cls, value: object) -> object:
+        if isinstance(value, str) and value.lower() == "auto":
+            return "auto"
+        return value
+
     @model_validator(mode="after")
     def validate_sample_window(self) -> Self:
-        if self.burn >= self.steps:
+        burn = 0 if self.burn == "auto" else self.burn
+        if burn >= self.steps:
             msg = "MCMC burn must be smaller than steps"
             raise ValueError(msg)
-        retained = (self.steps - self.burn) // self.thin
+        retained = (self.steps - burn) // self.thin
         if retained < 1:
             msg = "MCMC settings must retain at least one sample"
             raise ValueError(msg)
