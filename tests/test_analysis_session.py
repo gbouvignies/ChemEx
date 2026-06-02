@@ -13,6 +13,7 @@ from chemex.experiments import builder as builder_module
 from chemex.nmr.basis import Basis
 from chemex.optimize import fitting as fitting_module
 from chemex.optimize import helper as helper_module
+from chemex.optimize import resampling as resampling_module
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import ParamSetting
 from chemex.printers import parameters as parameter_printer_module
@@ -89,7 +90,18 @@ class WriterParameterStore:
 class StatisticsParameterStore(StubParameters):
     def build_lmfit_params(self, param_ids: object) -> dict[str, SimpleNamespace]:
         _ = param_ids
-        return {"__PB": SimpleNamespace(name="PB", vary=True)}
+        return {"__PB": SimpleNamespace(name="__PB", vary=True)}
+
+    def get_parameters(self, param_ids: object) -> dict[str, ParamSetting]:
+        parameters = {
+            "__PB": ParamSetting(ParamName("PB"), value=0.15, vary=True),
+            "__KEX_AB": ParamSetting(ParamName("KEX_AB"), value=250.0, vary=True),
+        }
+        return {
+            param_id: parameter
+            for param_id, parameter in parameters.items()
+            if param_id in set(param_ids)
+        }
 
 
 class FakeExperiments:
@@ -418,7 +430,6 @@ def test_run_statistics_uses_session_for_header(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    recorded: dict[str, object] = {}
     session = StubSession()
     session.parameters = StatisticsParameterStore()
     experiments = SimpleNamespace(
@@ -426,18 +437,7 @@ def test_run_statistics_uses_session_for_header(
         parameter_store=session.parameters,
     )
 
-    monkeypatch.setattr(fitting_module, "track", lambda _iterable, **_kwargs: [])
-
-    def fake_print_header(
-        grid: object,
-        *,
-        parameter_store: object,
-    ) -> str:
-        recorded["grid"] = grid
-        recorded["parameter_store"] = parameter_store
-        return "# header\n"
-
-    monkeypatch.setattr(fitting_module, "print_header", fake_print_header)
+    monkeypatch.setattr(resampling_module, "track", lambda _iterable, **_kwargs: [])
 
     fitting_module._run_statistics(  # noqa: SLF001
         experiments,
@@ -446,8 +446,105 @@ def test_run_statistics_uses_session_for_header(
         fitting_module.Statistics(mc=1),
     )
 
-    np.testing.assert_equal(recorded["grid"], ["PB"])
-    np.testing.assert_equal(recorded["parameter_store"], session.parameters)
+    assert not (tmp_path / "monte_carlo.out").exists()
+    assert (
+        tmp_path / "Statistics" / "MonteCarlo" / "samples.tsv"
+    ).read_text(encoding="utf-8") == "[PB]\tchisqr\n"
+    assert (tmp_path / "Statistics" / "MonteCarlo" / "summary.toml").exists()
+    assert (tmp_path / "Statistics" / "MonteCarlo" / "correlations.tsv").exists()
+    assert (tmp_path / "Statistics" / "MonteCarlo" / "plots.pdf").stat().st_size > 0
+    diagnostics = (
+        tmp_path / "Statistics" / "MonteCarlo" / "diagnostics.toml"
+    ).read_text(encoding="utf-8")
+    assert 'method = "Monte Carlo"' in diagnostics
+    assert "requested_samples = 1" in diagnostics
+    assert "completed_samples = 0" in diagnostics
+    assert 'samples_file = "samples.tsv"' in diagnostics
+    assert 'summary_file = "summary.toml"' in diagnostics
+    assert 'correlations_file = "correlations.tsv"' in diagnostics
+    assert 'plots_file = "plots.pdf"' in diagnostics
+
+
+def test_run_statistics_dispatches_mcmc_without_resampling(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    recorded: dict[str, object] = {}
+    session = StubSession()
+    session.parameters = StatisticsParameterStore()
+    experiments = SimpleNamespace(
+        param_ids=["__PB"],
+        parameter_store=session.parameters,
+    )
+
+    def fail_generate_exp_for_statistics(*_args, **_kwargs) -> None:
+        pytest.fail("MCMC should not generate resampled experiments")
+
+    def fake_run_mcmc(
+        experiments_arg: object,
+        params_arg: object,
+        settings_arg: object,
+        path_arg: Path,
+    ) -> None:
+        recorded["experiments"] = experiments_arg
+        recorded["params"] = params_arg
+        recorded["settings"] = settings_arg
+        recorded["path"] = path_arg
+
+    monkeypatch.setattr(
+        resampling_module,
+        "generate_exp_for_statistics",
+        fail_generate_exp_for_statistics,
+    )
+    monkeypatch.setattr(fitting_module, "run_mcmc", fake_run_mcmc)
+
+    fitting_module._run_statistics(  # noqa: SLF001
+        experiments,
+        tmp_path,
+        "leastsq",
+        fitting_module.Statistics(mcmc=100),
+    )
+
+    np.testing.assert_equal(recorded["experiments"], experiments)
+    assert "__PB" in recorded["params"]
+    assert recorded["settings"].steps == 100
+    np.testing.assert_equal(recorded["path"], tmp_path)
+
+
+def test_resampling_summary_and_correlations_are_written(tmp_path: Path) -> None:
+    store = WriterParameterStore(
+        {
+            "__PB": ParamSetting(ParamName("PB"), value=0.15, vary=True),
+            "__KEX_AB": ParamSetting(ParamName("KEX_AB"), value=250.0, vary=True),
+        },
+    )
+    samples = np.array([[0.1, 200.0], [0.3, 300.0], [0.5, 400.0]])
+    parameter_names = resampling_module._format_parameter_names(  # noqa: SLF001
+        ["__PB", "__KEX_AB"],
+        store,
+    )
+
+    resampling_module._write_resampling_summary(  # noqa: SLF001
+        tmp_path,
+        parameter_names=parameter_names,
+        samples=samples,
+    )
+    resampling_module._write_resampling_correlations(  # noqa: SLF001
+        tmp_path,
+        parameter_names=parameter_names,
+        samples=samples,
+    )
+
+    summary = (tmp_path / "summary.toml").read_text(encoding="utf-8")
+    correlations = (tmp_path / "correlations.tsv").read_text(encoding="utf-8")
+
+    assert '["PB"]' in summary
+    assert 'interval = "95% percentile"' in summary
+    assert "sample_count = 3" in summary
+    assert "median = 3.00000e-01" in summary
+    assert "[PB]" in correlations
+    assert "[KEX_AB]" in correlations
+    assert "1.00000e+00" in correlations
 
 
 def test_execute_post_fit_writes_parameters_from_session_store(

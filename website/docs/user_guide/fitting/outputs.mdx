@@ -129,3 +129,11 @@ Contains goodness-of-fit statistics, such as χ<sup>2</sup>.
 "reduced-chi-square"                   =  2.04143e+00
 "Akaike Information Criterion (AIC)"   =  1.80479e+02
 ```
+
+### `Statistics/`
+
+Contains optional uncertainty-analysis outputs requested with the `STATISTICS`
+method-file key. Monte Carlo and bootstrap methods write `summary.toml`,
+`samples.tsv`, `correlations.tsv`, and `diagnostics.toml` under
+`Statistics/MonteCarlo/`, `Statistics/Bootstrap/`, and `Statistics/BootstrapNS/`.
+MCMC writes the same file set under `Statistics/MCMC/`.

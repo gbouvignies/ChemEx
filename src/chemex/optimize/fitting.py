@@ -2,10 +2,8 @@
 
 from pathlib import Path
 
-from rich.progress import track
-
 from chemex.configuration.methods import Methods, Statistics
-from chemex.containers.experiments import Experiments, generate_exp_for_statistics
+from chemex.containers.experiments import Experiments
 from chemex.messages import (
     print_calculation_stopped_error,
     print_fitmethod,
@@ -20,16 +18,14 @@ from chemex.messages import (
 from chemex.optimize.gridding import run_grid
 from chemex.optimize.grouping import create_groups
 from chemex.optimize.helper import (
-    calculate_statistics,
     execute_post_fit,
     execute_post_fit_groups,
-    print_header,
-    print_values_stat,
 )
+from chemex.optimize.mcmc import run_mcmc
 from chemex.optimize.minimizer import (
-    minimize,
     minimize_with_report,
 )
+from chemex.optimize.resampling import run_resampling_statistics
 from chemex.runtime import AnalysisSession
 
 
@@ -42,43 +38,20 @@ def _run_statistics(
     if statistics is None:
         return
 
-    methods = {
-        "mc": {"message": "Monte Carlo", "filename": "monte_carlo.out"},
-        "bs": {"message": "bootstrap", "filename": "bootstrap.out"},
-        "bsn": {"message": "nucleus-based bootstrap", "filename": "bootstrap_ns.out"},
-    }
-
+    run_resampling_statistics(experiments, path, fitmethod, statistics)
     parameter_store = experiments.parameter_store
-    params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
-    ids_vary = [param.name for param in params_lf.values() if param.vary]
 
-    for statistic_name, iter_nb in statistics.model_dump().items():
-        if iter_nb is None:
-            continue
+    if statistics.mcmc is None:
+        return
 
-        method = methods[statistic_name]
-
-        print_running_statistics(method["message"])
-
-        with (path / method["filename"]).open(mode="w", encoding="utf-8") as fileout:
-            fileout.write(print_header(ids_vary, parameter_store=parameter_store))
-
-            try:
-                for _ in track(range(iter_nb), total=iter_nb, description="   "):
-                    exp_stat = generate_exp_for_statistics(experiments, statistic_name)
-                    params_lf = parameter_store.build_lmfit_params(exp_stat.param_ids)
-                    params_fit = minimize(exp_stat, params_lf, fitmethod)
-                    stats = calculate_statistics(exp_stat, params_fit)
-                    chisqr = stats.get("chisqr", 1e32)
-                    fileout.write(
-                        print_values_stat(params_fit, ids_vary, chisqr),
-                    )
-            except KeyboardInterrupt:
-                print_calculation_stopped_error()
-            except ValueError:
-                print_value_error()
-            finally:
-                fileout.flush()
+    print_running_statistics("MCMC")
+    try:
+        params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
+        run_mcmc(experiments, params_lf, statistics.mcmc, path)
+    except KeyboardInterrupt:
+        print_calculation_stopped_error()
+    except ValueError:
+        print_value_error()
 
 
 def _fit_groups(

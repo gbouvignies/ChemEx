@@ -5,6 +5,18 @@ All notable changes to ChemEx will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO).
 
+## [Unreleased]
+
+### Added
+- Added MCMC posterior sampling as a `STATISTICS` method for fitted parameter
+  uncertainty, with text outputs for posterior summaries, samples,
+  correlations, diagnostics, and a PDF visual report, including automatic
+  autocorrelation-based burn-in reporting, tentative short-chain burn-in
+  handling, and 95% equal-tailed credible intervals.
+- Added canonical `Statistics/<method>/` output directories for sampling-based
+  uncertainty analyses, with TSV sample/correlation tables, summaries, and
+  diagnostics and PDF visual reports for Monte Carlo and bootstrap runs.
+
 ## [2026.05.1] - 2026-05-13
 
 ### Infrastructure
