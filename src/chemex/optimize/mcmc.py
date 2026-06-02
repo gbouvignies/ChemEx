@@ -9,6 +9,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, Self, cast
 
+import emcee.autocorr as emcee_autocorr
 import emcee.ensemble as emcee_ensemble
 import lmfit
 import numpy as np
@@ -108,6 +109,8 @@ class McmcResult:
     autocorrelation_time: Array | None
     discarded_steps: int
     burn_in_warning: str | None
+    tentative_autocorrelation_time: Array | None = None
+    autocorrelation_warning: str | None = None
     raw_chain: Array | None = None
     raw_lnprob: Array | None = None
 
@@ -282,16 +285,42 @@ def _result_attr(result: MinimizerResult, name: str) -> object:
     return getattr(result, name)
 
 
-def _autocorrelation_time(result: MinimizerResult) -> Array | None:
-    if not hasattr(result, "acor"):
-        return None
+def _valid_autocorrelation_time(autocorrelation_time: object) -> Array | None:
     autocorrelation_time = np.asarray(
-        cast("Array", _result_attr(result, "acor")),
+        cast("Array", autocorrelation_time),
         dtype=float,
     )
-    if autocorrelation_time.ndim != 1 or not np.all(np.isfinite(autocorrelation_time)):
+    if (
+        autocorrelation_time.ndim != 1
+        or not np.all(np.isfinite(autocorrelation_time))
+        or np.any(autocorrelation_time <= 0.0)
+    ):
         return None
     return autocorrelation_time
+
+
+def _estimate_autocorrelation_time(
+    chain: Array,
+) -> tuple[Array | None, Array | None, str | None]:
+    try:
+        autocorrelation_time = emcee_autocorr.integrated_time(chain, quiet=False)
+    except emcee_autocorr.AutocorrError as error:
+        tentative_autocorrelation_time = _valid_autocorrelation_time(error.tau)
+        if tentative_autocorrelation_time is None:
+            return None, None, "autocorrelation time unavailable"
+        return (
+            None,
+            tentative_autocorrelation_time,
+            "chain shorter than 50 times the autocorrelation time; "
+            "tentative estimate reported",
+        )
+    except (FloatingPointError, ValueError):
+        return None, None, "autocorrelation time unavailable"
+
+    autocorrelation_time = _valid_autocorrelation_time(autocorrelation_time)
+    if autocorrelation_time is None:
+        return None, None, "autocorrelation time invalid"
+    return autocorrelation_time, autocorrelation_time, None
 
 
 def _resolve_discarded_steps(
@@ -299,6 +328,7 @@ def _resolve_discarded_steps(
     *,
     nsteps: int,
     autocorrelation_time: Array | None,
+    autocorrelation_time_reliable: bool = True,
 ) -> tuple[int, str | None]:
     if burn != "auto":
         return int(burn), None
@@ -314,6 +344,12 @@ def _resolve_discarded_steps(
             "estimated automatic burn-in is longer than the chain; "
             "automatic burn-in was not applied",
         )
+    if not autocorrelation_time_reliable:
+        return (
+            discarded_steps,
+            "autocorrelation time estimate is unreliable; "
+            "tentative automatic burn-in was applied",
+        )
     return discarded_steps, None
 
 
@@ -324,11 +360,13 @@ def _apply_sample_window(
     burn: McmcBurnSetting,
     thin: int,
     autocorrelation_time: Array | None,
+    autocorrelation_time_reliable: bool = True,
 ) -> tuple[Array, Array, int, str | None]:
     discarded_steps, warning = _resolve_discarded_steps(
         burn,
         nsteps=chain.shape[0],
         autocorrelation_time=autocorrelation_time,
+        autocorrelation_time_reliable=autocorrelation_time_reliable,
     )
     retained_chain = chain[discarded_steps::thin]
     retained_lnprob = lnprob[discarded_steps::thin]
@@ -345,14 +383,22 @@ def _result_from_lmfit(
     var_names = tuple(cast("Sequence[str]", _result_attr(result, "var_names")))
     chain = np.asarray(cast("Array", _result_attr(result, "chain")), dtype=float)
     lnprob = np.asarray(cast("Array", _result_attr(result, "lnprob")), dtype=float)
-    autocorrelation_time = _autocorrelation_time(result)
+    autocorrelation_time, tentative_autocorrelation_time, autocorrelation_warning = (
+        _estimate_autocorrelation_time(chain)
+    )
+    burn_in_autocorrelation_time = (
+        autocorrelation_time
+        if autocorrelation_time is not None
+        else tentative_autocorrelation_time
+    )
     retained_chain, retained_lnprob, discarded_steps, burn_in_warning = (
         _apply_sample_window(
             chain,
             lnprob,
             burn=settings.burn,
             thin=settings.thin,
-            autocorrelation_time=autocorrelation_time,
+            autocorrelation_time=burn_in_autocorrelation_time,
+            autocorrelation_time_reliable=autocorrelation_time is not None,
         )
     )
     samples = retained_chain.reshape((-1, len(var_names)))
@@ -374,6 +420,8 @@ def _result_from_lmfit(
         autocorrelation_time=autocorrelation_time,
         discarded_steps=discarded_steps,
         burn_in_warning=burn_in_warning,
+        tentative_autocorrelation_time=tentative_autocorrelation_time,
+        autocorrelation_warning=autocorrelation_warning,
         raw_chain=chain,
         raw_lnprob=lnprob,
     )
@@ -404,6 +452,20 @@ def _package_version(package_name: str) -> str:
         return version(package_name)
     except PackageNotFoundError:
         return "unknown"
+
+
+def _autocorrelation_status(result: McmcResult) -> str:
+    if result.autocorrelation_time is not None:
+        return "reliable"
+    if result.tentative_autocorrelation_time is not None:
+        return "unreliable_short_chain"
+    return "unavailable"
+
+
+def _autocorrelation_steps(result: McmcResult) -> int:
+    if result.raw_chain is not None:
+        return int(result.raw_chain.shape[0])
+    return int(result.discarded_steps + result.chain.shape[0])
 
 
 def _write_summary(
@@ -493,6 +555,7 @@ def _write_diagnostics(
         f"emcee_version = {_quote_toml_string(_package_version('emcee'))}",
         'credible_interval = "95% equal-tailed"',
         'convergence_diagnostic = "integrated_autocorrelation_time"',
+        f"autocorrelation_status = {_quote_toml_string(_autocorrelation_status(result))}",
         'rhat = "not computed: emcee ensemble walkers are not independent chains"',
         f"steps = {settings.steps}",
         f"requested_burn = {requested_burn}",
@@ -512,42 +575,87 @@ def _write_diagnostics(
     ]
     if result.burn_in_warning is not None:
         lines.append(f"burn_in_warning = {_quote_toml_string(result.burn_in_warning)}")
-    if result.autocorrelation_time is None:
-        lines.append('autocorrelation_warning = "not available"')
+    if result.autocorrelation_time is None and result.tentative_autocorrelation_time is None:
+        warning = result.autocorrelation_warning or "not available"
+        lines.append(f"autocorrelation_warning = {_quote_toml_string(warning)}")
     else:
-        max_tau = float(np.max(result.autocorrelation_time))
-        lines.append(
-            "autocorrelation_time = "
-            f"{_format_toml_float_list(result.autocorrelation_time.tolist())}",
+        autocorrelation_time = (
+            result.autocorrelation_time
+            if result.autocorrelation_time is not None
+            else result.tentative_autocorrelation_time
         )
-        lines.append(f"max_autocorrelation_time = {_format_toml_float(max_tau)}")
+        autocorrelation_time = cast("Array", autocorrelation_time)
+        max_tau = float(np.max(autocorrelation_time))
+        tau_key = (
+            "autocorrelation_time"
+            if result.autocorrelation_time is not None
+            else "autocorrelation_time_tentative"
+        )
+        max_tau_key = (
+            "max_autocorrelation_time"
+            if result.autocorrelation_time is not None
+            else "max_autocorrelation_time_tentative"
+        )
+        lines.append(
+            f"{tau_key} = "
+            f"{_format_toml_float_list(autocorrelation_time.tolist())}",
+        )
+        lines.append(f"{max_tau_key} = {_format_toml_float(max_tau)}")
         if max_tau <= 0.0:
             lines.append(
                 'autocorrelation_warning = "autocorrelation time is not positive"',
             )
         else:
-            retained_steps_over_tau = result.chain.shape[0] * settings.thin / max_tau
-            min_effective_sample_size = min(
-                (
-                    summary.effective_sample_size
-                    for summary in result.summary
-                    if summary.effective_sample_size is not None
-                ),
-                default=None,
+            autocorrelation_steps = _autocorrelation_steps(result)
+            steps_over_tau = autocorrelation_steps / max_tau
+            lines.append(
+                "steps_over_max_autocorrelation_time = "
+                f"{_format_toml_float(steps_over_tau)}",
             )
             lines.append(
-                "retained_steps_over_max_autocorrelation_time = "
-                f"{_format_toml_float(retained_steps_over_tau)}",
+                "recommended_min_steps_50tau = "
+                f"{ceil(50.0 * max_tau)}",
             )
-            if min_effective_sample_size is not None:
-                lines.append(
-                    "min_effective_sample_size = "
-                    f"{_format_toml_float(min_effective_sample_size)}",
+            lines.append(
+                "recommended_min_steps_100tau = "
+                f"{ceil(100.0 * max_tau)}",
+            )
+            if result.autocorrelation_time is not None:
+                retained_steps_over_tau = result.chain.shape[0] * settings.thin / max_tau
+                min_effective_sample_size = min(
+                    (
+                        summary.effective_sample_size
+                        for summary in result.summary
+                        if summary.effective_sample_size is not None
+                    ),
+                    default=None,
                 )
-            if retained_steps_over_tau < 50.0:
                 lines.append(
-                    'autocorrelation_warning = "Retained chain length is shorter '
-                    'than 50 times the maximum autocorrelation time."',
+                    "retained_steps_over_max_autocorrelation_time = "
+                    f"{_format_toml_float(retained_steps_over_tau)}",
+                )
+                if min_effective_sample_size is not None:
+                    lines.append(
+                        "min_effective_sample_size = "
+                        f"{_format_toml_float(min_effective_sample_size)}",
+                    )
+                if retained_steps_over_tau < 50.0:
+                    lines.append(
+                        'autocorrelation_warning = "Retained chain length is shorter '
+                        'than 50 times the maximum autocorrelation time."',
+                    )
+            else:
+                warning = (
+                    result.autocorrelation_warning
+                    or "chain shorter than 50 times the autocorrelation time"
+                )
+                lines.append(
+                    "autocorrelation_warning = "
+                    f"{_quote_toml_string(warning)}",
+                )
+                lines.append(
+                    'effective_sample_size_warning = "not reported: autocorrelation time '
+                    'estimate is unreliable"',
                 )
     if unbounded_parameters:
         lines.append(

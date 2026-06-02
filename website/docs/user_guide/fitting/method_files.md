@@ -235,9 +235,12 @@ WORKERS = 1
 `BURN` defaults to `"AUTO"`. In automatic mode, ChemEx uses the integrated
 autocorrelation time reported by the sampler and discards twice the largest
 autocorrelation time when that estimate is available and shorter than the chain.
-If autocorrelation time cannot be estimated reliably, ChemEx keeps the full chain
-and records the reason in `diagnostics.toml`. A numeric `BURN` value can still be
-provided to discard a fixed number of initial sampler steps.
+If the chain is too short for emcee's reliability threshold but still provides a
+tentative autocorrelation estimate, ChemEx uses that tentative estimate for
+automatic burn-in and records the warning in `diagnostics.toml`. If
+autocorrelation time cannot be estimated at all, ChemEx keeps the full chain and
+records the reason. A numeric `BURN` value can still be provided to discard a
+fixed number of initial sampler steps.
 
 `THIN` defaults to `1`, which keeps every retained sample. Thinning is mainly a
 storage and output-size control; it is usually better to keep all post-burn-in
@@ -275,4 +278,4 @@ Statistics/
 
 For Monte Carlo and bootstrap methods, `samples.tsv` contains one fitted-parameter row per synthetic dataset plus χ², `summary.toml` reports percentile-based parameter summaries, and `correlations.tsv` reports parameter correlations across the fitted synthetic datasets. Missing values are written as `nan`. Their `plots.pdf` reports provide a summary page, one-dimensional sample distributions, a χ² distribution, and two-dimensional sample distributions for parameter pairs with `|r| >= 0.5`.
 
-For MCMC, `summary.toml` reports the uniform prior implied by each parameter's bounds, posterior mean, median, standard deviation, a 95% equal-tailed credible interval, the 68.26% interval used for `stderr`, and effective sample size/Monte Carlo standard error when autocorrelation time is available. MCMC diagnostics include sampler versions, retained samples, acceptance fractions, autocorrelation time, and burn-in decisions. The `plots.pdf` report provides a summary page, one-dimensional posterior distributions, walker traces, the log-probability trace, and two-dimensional posterior distributions for parameter pairs with `|r| >= 0.5`.
+For MCMC, `summary.toml` reports the uniform prior implied by each parameter's bounds, posterior mean, median, standard deviation, a 95% equal-tailed credible interval, the 68.26% interval used for `stderr`, and effective sample size/Monte Carlo standard error when the autocorrelation estimate passes emcee's reliability threshold. MCMC diagnostics include sampler versions, retained samples, acceptance fractions, reliable or tentative autocorrelation time, recommended chain lengths, and burn-in decisions. The `plots.pdf` report provides a summary page, one-dimensional posterior distributions, walker traces, the log-probability trace, an autocorrelation monitor, and two-dimensional posterior distributions for parameter pairs with `|r| >= 0.5`.

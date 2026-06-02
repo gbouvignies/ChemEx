@@ -92,8 +92,10 @@ Validation rules:
   the value depends on the current group.
 - Default `burn` to `"auto"` and resolve it from the integrated
   autocorrelation time after the sampler has run. If autocorrelation time is not
-  available or implies discarding the whole chain, keep the full chain and record
-  a diagnostic warning.
+  reliable but emcee reports a tentative short-chain estimate, use that estimate
+  for automatic burn-in only and record a diagnostic warning. If autocorrelation
+  time is unavailable or implies discarding the whole chain, keep the full chain
+  and record a diagnostic warning.
 - Default `thin` to `1`. Thinning is kept as an explicit storage/output-size
   control instead of an automatic convergence tool.
 - Keep `update_parameters = false` initially so MCMC does not silently replace
@@ -247,6 +249,8 @@ KEX_AB	PB	lnprob
 - walker traces for every varied parameter, with the burn-in zone shown when
   available;
 - a log-probability trace;
+- an autocorrelation monitor showing tau estimates as a function of chain
+  length;
 - two-dimensional posterior distributions for parameter pairs whose absolute
   correlation is at least 0.5.
 
@@ -265,6 +269,8 @@ pages.
 - number of retained samples
 - mean/min/max acceptance fraction
 - autocorrelation time when available
+- tentative autocorrelation time and recommended chain lengths when emcee
+  reports a short-chain autocorrelation warning
 - ESS and retained chain length relative to autocorrelation time when available
 - a warning field when autocorrelation could not be estimated
 - the relative `plots.pdf` path

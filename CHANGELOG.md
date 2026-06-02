@@ -11,8 +11,8 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 - Added MCMC posterior sampling as a `STATISTICS` method for fitted parameter
   uncertainty, with text outputs for posterior summaries, samples,
   correlations, diagnostics, and a PDF visual report, including automatic
-  autocorrelation-based burn-in reporting and 95% equal-tailed credible
-  intervals.
+  autocorrelation-based burn-in reporting, tentative short-chain burn-in
+  handling, and 95% equal-tailed credible intervals.
 - Added canonical `Statistics/<method>/` output directories for sampling-based
   uncertainty analyses, with TSV sample/correlation tables, summaries, and
   diagnostics and PDF visual reports for Monte Carlo and bootstrap runs.

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from itertools import combinations
+from math import ceil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
+from emcee.autocorr import AutocorrError, integrated_time
 from matplotlib.backends.backend_pdf import PdfPages
 
 from chemex.typing import Array
@@ -28,6 +30,20 @@ def _format_float(value: float | None) -> str:
 
 def _finite_values(values: Array) -> Array:
     return values[np.isfinite(values)]
+
+
+def _mcmc_autocorrelation_time(result: McmcResult) -> Array | None:
+    if result.autocorrelation_time is not None:
+        return result.autocorrelation_time
+    return result.tentative_autocorrelation_time
+
+
+def _mcmc_autocorrelation_status(result: McmcResult) -> str:
+    if result.autocorrelation_time is not None:
+        return "reliable"
+    if result.tentative_autocorrelation_time is not None:
+        return "unreliable short chain"
+    return "unavailable"
 
 
 def _correlated_pairs(
@@ -85,11 +101,17 @@ def _save_mcmc_summary_page(
             f"max={_format_float(float(np.max(acceptance)))}"
         ),
     ]
-    if result.autocorrelation_time is None:
+    autocorrelation_time = _mcmc_autocorrelation_time(result)
+    lines.append(f"Autocorrelation status: {_mcmc_autocorrelation_status(result)}")
+    if autocorrelation_time is None:
         lines.append("Autocorrelation time: unavailable")
     else:
-        max_tau = float(np.max(result.autocorrelation_time))
+        max_tau = float(np.max(autocorrelation_time))
         lines.append(f"Max autocorrelation time: {_format_float(max_tau)}")
+        lines.append(f"Recommended steps (50 tau): {ceil(50.0 * max_tau)}")
+        lines.append(f"Recommended steps (100 tau): {ceil(100.0 * max_tau)}")
+    if result.autocorrelation_warning is not None:
+        lines.append(f"Autocorrelation warning: {result.autocorrelation_warning}")
     if result.burn_in_warning is not None:
         lines.append(f"Burn-in warning: {result.burn_in_warning}")
 
@@ -235,6 +257,57 @@ def _save_log_probability_page(
     plt.close(fig)
 
 
+def _autocorrelation_monitor_values(chain: Array) -> tuple[Array, Array, Array]:
+    nsteps = chain.shape[0]
+    if nsteps < 4:
+        empty = np.empty(0, dtype=float)
+        return empty, empty, empty
+
+    start = max(4, min(100, nsteps // 10))
+    lengths = np.unique(np.geomspace(start, nsteps, num=12).astype(int))
+    mean_tau: list[float] = []
+    max_tau: list[float] = []
+    used_lengths: list[int] = []
+    for length in lengths:
+        try:
+            tau = integrated_time(chain[:length], quiet=False)
+        except AutocorrError as error:
+            tau = error.tau
+        except (FloatingPointError, ValueError):
+            continue
+        tau = np.asarray(tau, dtype=float)
+        if tau.ndim != 1 or not np.all(np.isfinite(tau)) or np.any(tau <= 0.0):
+            continue
+        used_lengths.append(int(length))
+        mean_tau.append(float(np.mean(tau)))
+        max_tau.append(float(np.max(tau)))
+    return (
+        np.asarray(used_lengths, dtype=float),
+        np.asarray(mean_tau, dtype=float),
+        np.asarray(max_tau, dtype=float),
+    )
+
+
+def _save_autocorrelation_monitor_page(pdf: PdfPages, result: McmcResult) -> None:
+    chain, _raw = _trace_chain(result)
+    lengths, mean_tau, max_tau = _autocorrelation_monitor_values(chain)
+    fig, ax = plt.subplots(figsize=(7.5, 5.0))
+    if len(lengths):
+        ax.plot(lengths, mean_tau, "o-", label="mean tau")
+        ax.plot(lengths, max_tau, "o-", label="max tau")
+        ax.plot(lengths, lengths / 50.0, "--", color="0.4", label="N / 50")
+        ax.plot(lengths, lengths / 100.0, ":", color="0.4", label="N / 100")
+        ax.legend()
+    else:
+        ax.text(0.5, 0.5, "Autocorrelation unavailable", ha="center", va="center")
+    ax.set_title("MCMC autocorrelation monitor")
+    ax.set_xlabel("Steps")
+    ax.set_ylabel("Integrated autocorrelation time")
+    fig.tight_layout()
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
 def _save_mcmc_correlation_pages(
     pdf: PdfPages,
     result: McmcResult,
@@ -291,6 +364,7 @@ def write_mcmc_plots(
         _save_mcmc_distribution_pages(pdf, result, parameter_names)
         _save_trace_pages(pdf, result, settings, parameter_names)
         _save_log_probability_page(pdf, result, settings)
+        _save_autocorrelation_monitor_page(pdf, result)
         _save_mcmc_correlation_pages(pdf, result, parameter_names, correlated_pairs)
 
 
