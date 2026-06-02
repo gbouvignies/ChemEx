@@ -519,17 +519,19 @@ def test_resampling_summary_and_correlations_are_written(tmp_path: Path) -> None
         },
     )
     samples = np.array([[0.1, 200.0], [0.3, 300.0], [0.5, 400.0]])
+    parameter_names = resampling_module._format_parameter_names(  # noqa: SLF001
+        ["__PB", "__KEX_AB"],
+        store,
+    )
 
     resampling_module._write_resampling_summary(  # noqa: SLF001
         tmp_path,
-        parameter_ids=["__PB", "__KEX_AB"],
-        parameter_store=store,
+        parameter_names=parameter_names,
         samples=samples,
     )
     resampling_module._write_resampling_correlations(  # noqa: SLF001
         tmp_path,
-        parameter_ids=["__PB", "__KEX_AB"],
-        parameter_store=store,
+        parameter_names=parameter_names,
         samples=samples,
     )
 

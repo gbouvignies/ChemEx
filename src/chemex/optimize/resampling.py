@@ -72,11 +72,9 @@ def _as_sample_array(sample_rows: list[list[float]], width: int) -> np.ndarray:
 def _write_resampling_summary(
     path: Path,
     *,
-    parameter_ids: list[str],
-    parameter_store: Any,
+    parameter_names: tuple[str, ...],
     samples: np.ndarray,
 ) -> None:
-    parameter_names = _format_parameter_names(parameter_ids, parameter_store)
     lines: list[str] = []
     for index, parameter_name in enumerate(parameter_names):
         values = samples[:, index] if samples.size else np.empty(0, dtype=float)
@@ -124,11 +122,9 @@ def _pairwise_correlation(samples: np.ndarray, index_a: int, index_b: int) -> fl
 def _write_resampling_correlations(
     path: Path,
     *,
-    parameter_ids: list[str],
-    parameter_store: Any,
+    parameter_names: tuple[str, ...],
     samples: np.ndarray,
 ) -> np.ndarray:
-    parameter_names = _format_parameter_names(parameter_ids, parameter_store)
     if not parameter_names:
         (path / "correlations.tsv").write_text("", encoding="utf-8")
         return np.empty((0, 0), dtype=float)
@@ -187,10 +183,10 @@ def _run_resampling_method(
     samples_tsv = statistic_path / "samples.tsv"
     sample_rows: list[list[float]] = []
     chisqr_rows: list[float] = []
+    parameter_names = _format_parameter_names(ids_vary, parameter_store)
     completed_samples = 0
 
     with samples_tsv.open(mode="w", encoding="utf-8") as file_tsv:
-        parameter_names = _format_parameter_names(ids_vary, parameter_store)
         file_tsv.write("\t".join((*parameter_names, "chisqr")) + "\n")
 
         try:
@@ -220,21 +216,19 @@ def _run_resampling_method(
             samples = _as_sample_array(sample_rows, len(ids_vary))
             _write_resampling_summary(
                 statistic_path,
-                parameter_ids=ids_vary,
-                parameter_store=parameter_store,
+                parameter_names=parameter_names,
                 samples=samples,
             )
             correlations = _write_resampling_correlations(
                 statistic_path,
-                parameter_ids=ids_vary,
-                parameter_store=parameter_store,
+                parameter_names=parameter_names,
                 samples=samples,
             )
             write_resampling_plots(
                 statistic_path,
                 method=method["message"],
                 fitmethod=fitmethod,
-                parameter_names=_format_parameter_names(ids_vary, parameter_store),
+                parameter_names=parameter_names,
                 samples=samples,
                 chisqr_values=np.asarray(chisqr_rows, dtype=float),
                 correlations=correlations,

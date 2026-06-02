@@ -75,6 +75,90 @@ def _save_text_page(pdf: PdfPages, title: str, lines: list[str]) -> None:
     plt.close(fig)
 
 
+def _save_histogram_page(
+    pdf: PdfPages,
+    *,
+    values: Array,
+    title: str,
+    xlabel: str,
+    ylabel: str,
+    color: str,
+    density: bool,
+    interval: tuple[float, float] | None = None,
+    interval_label: str | None = None,
+    median: float | None = None,
+    empty_message: str = "No finite samples",
+) -> None:
+    values = _finite_values(values)
+    fig, ax = plt.subplots(figsize=(7.5, 5.0))
+    if len(values):
+        ax.hist(values, bins="auto", density=density, color=color, alpha=0.85)
+        if interval is not None:
+            lower, upper = interval
+            ax.axvspan(
+                lower,
+                upper,
+                color=color,
+                alpha=0.15,
+                label=interval_label,
+            )
+        if median is not None:
+            ax.axvline(
+                median,
+                color="#C44E52",
+                linestyle="--",
+                linewidth=1.2,
+                label="median",
+            )
+        handles, _labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend()
+    else:
+        ax.text(0.5, 0.5, empty_message, ha="center", va="center")
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    fig.tight_layout()
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
+def _save_pair_distribution_page(
+    pdf: PdfPages,
+    *,
+    samples: Array,
+    parameter_names: tuple[str, ...],
+    pair: tuple[int, int, float],
+    title_prefix: str,
+    cmap: str,
+) -> None:
+    index_x, index_y, correlation = pair
+    values_x = samples[:, index_x]
+    values_y = samples[:, index_y]
+    finite = np.isfinite(values_x) & np.isfinite(values_y)
+    fig, ax = plt.subplots(figsize=(7.5, 5.5))
+    if np.any(finite):
+        image = ax.hist2d(
+            values_x[finite],
+            values_y[finite],
+            bins=40,
+            cmap=cmap,
+        )
+        cbar = fig.colorbar(image[3], ax=ax)
+        cbar.set_label("Samples")
+    else:
+        ax.text(0.5, 0.5, "No finite samples", ha="center", va="center")
+    ax.set_title(
+        f"{title_prefix}: {parameter_names[index_x]} vs "
+        f"{parameter_names[index_y]} (r = {correlation:.3f})",
+    )
+    ax.set_xlabel(parameter_names[index_x])
+    ax.set_ylabel(parameter_names[index_y])
+    fig.tight_layout()
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
 def _save_mcmc_summary_page(
     pdf: PdfPages,
     result: McmcResult,
@@ -146,33 +230,18 @@ def _save_mcmc_distribution_pages(
     for index, (name, summary) in enumerate(
         zip(parameter_names, result.summary, strict=True),
     ):
-        values = _finite_values(samples[:, index])
-        fig, ax = plt.subplots(figsize=(7.5, 5.0))
-        if len(values):
-            ax.hist(values, bins="auto", density=True, color="#4C72B0", alpha=0.85)
-            ax.axvspan(
-                summary.eti_95_lower,
-                summary.eti_95_upper,
-                color="#4C72B0",
-                alpha=0.15,
-                label="95% ETI",
-            )
-            ax.axvline(
-                summary.median,
-                color="#C44E52",
-                linestyle="--",
-                linewidth=1.2,
-                label="median",
-            )
-            ax.legend()
-        else:
-            ax.text(0.5, 0.5, "No finite samples", ha="center", va="center")
-        ax.set_title(f"Posterior distribution: {name}")
-        ax.set_xlabel(name)
-        ax.set_ylabel("Density")
-        fig.tight_layout()
-        pdf.savefig(fig)
-        plt.close(fig)
+        _save_histogram_page(
+            pdf,
+            values=samples[:, index],
+            title=f"Posterior distribution: {name}",
+            xlabel=name,
+            ylabel="Density",
+            color="#4C72B0",
+            density=True,
+            interval=(summary.eti_95_lower, summary.eti_95_upper),
+            interval_label="95% ETI",
+            median=summary.median,
+        )
 
 
 def _trace_chain(result: McmcResult) -> tuple[Array, bool]:
@@ -315,31 +384,15 @@ def _save_mcmc_correlation_pages(
     correlated_pairs: list[tuple[int, int, float]],
 ) -> None:
     samples = result.samples
-    for index_x, index_y, correlation in correlated_pairs:
-        values_x = samples[:, index_x]
-        values_y = samples[:, index_y]
-        finite = np.isfinite(values_x) & np.isfinite(values_y)
-        fig, ax = plt.subplots(figsize=(7.5, 5.5))
-        if np.any(finite):
-            image = ax.hist2d(
-                values_x[finite],
-                values_y[finite],
-                bins=40,
-                cmap="Blues",
-            )
-            cbar = fig.colorbar(image[3], ax=ax)
-            cbar.set_label("Samples")
-        else:
-            ax.text(0.5, 0.5, "No finite samples", ha="center", va="center")
-        ax.set_title(
-            f"Posterior pair: {parameter_names[index_x]} vs "
-            f"{parameter_names[index_y]} (r = {correlation:.3f})",
+    for pair in correlated_pairs:
+        _save_pair_distribution_page(
+            pdf,
+            samples=samples,
+            parameter_names=parameter_names,
+            pair=pair,
+            title_prefix="Posterior pair",
+            cmap="Blues",
         )
-        ax.set_xlabel(parameter_names[index_x])
-        ax.set_ylabel(parameter_names[index_y])
-        fig.tight_layout()
-        pdf.savefig(fig)
-        plt.close(fig)
 
 
 def write_mcmc_plots(
@@ -424,57 +477,45 @@ def _save_resampling_distribution_pages(
     parameter_names: tuple[str, ...],
 ) -> None:
     for index, name in enumerate(parameter_names):
-        values = _finite_values(samples[:, index]) if samples.size else np.empty(0)
-        fig, ax = plt.subplots(figsize=(7.5, 5.0))
-        if len(values):
-            ax.hist(values, bins="auto", density=True, color="#55A868", alpha=0.85)
-            lower_95, median, upper_95 = np.percentile(values, [2.5, 50.0, 97.5])
-            ax.axvspan(
-                lower_95,
-                upper_95,
-                color="#55A868",
-                alpha=0.15,
-                label="95% percentile",
+        values = samples[:, index] if samples.size else np.empty(0, dtype=float)
+        finite_values = _finite_values(values)
+        interval = None
+        median = None
+        if len(finite_values):
+            lower_95, median, upper_95 = np.percentile(
+                finite_values,
+                [2.5, 50.0, 97.5],
             )
-            ax.axvline(
-                median,
-                color="#C44E52",
-                linestyle="--",
-                linewidth=1.2,
-                label="median",
-            )
-            ax.legend()
-        else:
-            ax.text(0.5, 0.5, "No finite samples", ha="center", va="center")
-        ax.set_title(f"Sample distribution: {name}")
-        ax.set_xlabel(name)
-        ax.set_ylabel("Density")
-        fig.tight_layout()
-        pdf.savefig(fig)
-        plt.close(fig)
+            interval = (float(lower_95), float(upper_95))
+            median = float(median)
+        _save_histogram_page(
+            pdf,
+            values=values,
+            title=f"Sample distribution: {name}",
+            xlabel=name,
+            ylabel="Density",
+            color="#55A868",
+            density=True,
+            interval=interval,
+            interval_label="95% percentile",
+            median=median,
+        )
 
 
 def _save_chisqr_distribution_page(pdf: PdfPages, chisqr_values: Array) -> None:
     values = _finite_values(chisqr_values)
-    fig, ax = plt.subplots(figsize=(7.5, 5.0))
-    if len(values):
-        ax.hist(values, bins="auto", color="#8172B3", alpha=0.85)
-        ax.axvline(
-            float(np.median(values)),
-            color="#C44E52",
-            linestyle="--",
-            linewidth=1.2,
-            label="median",
-        )
-        ax.legend()
-    else:
-        ax.text(0.5, 0.5, "No finite chisqr values", ha="center", va="center")
-    ax.set_title("chisqr distribution")
-    ax.set_xlabel("chisqr")
-    ax.set_ylabel("Samples")
-    fig.tight_layout()
-    pdf.savefig(fig)
-    plt.close(fig)
+    median = float(np.median(values)) if len(values) else None
+    _save_histogram_page(
+        pdf,
+        values=values,
+        title="chisqr distribution",
+        xlabel="chisqr",
+        ylabel="Samples",
+        color="#8172B3",
+        density=False,
+        median=median,
+        empty_message="No finite chisqr values",
+    )
 
 
 def _save_resampling_correlation_pages(
@@ -484,31 +525,15 @@ def _save_resampling_correlation_pages(
     parameter_names: tuple[str, ...],
     correlated_pairs: list[tuple[int, int, float]],
 ) -> None:
-    for index_x, index_y, correlation in correlated_pairs:
-        values_x = samples[:, index_x]
-        values_y = samples[:, index_y]
-        finite = np.isfinite(values_x) & np.isfinite(values_y)
-        fig, ax = plt.subplots(figsize=(7.5, 5.5))
-        if np.any(finite):
-            image = ax.hist2d(
-                values_x[finite],
-                values_y[finite],
-                bins=40,
-                cmap="Greens",
-            )
-            cbar = fig.colorbar(image[3], ax=ax)
-            cbar.set_label("Samples")
-        else:
-            ax.text(0.5, 0.5, "No finite samples", ha="center", va="center")
-        ax.set_title(
-            f"Sample pair: {parameter_names[index_x]} vs "
-            f"{parameter_names[index_y]} (r = {correlation:.3f})",
+    for pair in correlated_pairs:
+        _save_pair_distribution_page(
+            pdf,
+            samples=samples,
+            parameter_names=parameter_names,
+            pair=pair,
+            title_prefix="Sample pair",
+            cmap="Greens",
         )
-        ax.set_xlabel(parameter_names[index_x])
-        ax.set_ylabel(parameter_names[index_y])
-        fig.tight_layout()
-        pdf.savefig(fig)
-        plt.close(fig)
 
 
 def write_resampling_plots(
