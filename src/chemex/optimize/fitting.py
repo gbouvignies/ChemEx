@@ -34,11 +34,20 @@ def _run_statistics(
     path: Path,
     fitmethod: str,
     statistics: Statistics | None = None,
+    *,
+    session: AnalysisSession | None = None,
 ) -> None:
     if statistics is None:
         return
 
-    run_resampling_statistics(experiments, path, fitmethod, statistics)
+    execution = session.execution if session is not None else None
+    run_resampling_statistics(
+        experiments,
+        path,
+        fitmethod,
+        statistics,
+        execution=execution,
+    )
     parameter_store = experiments.parameter_store
 
     if statistics.mcmc is None:
@@ -99,6 +108,7 @@ def _fit_groups(
             group_path,
             fitmethod,
             statistics,
+            session=session,
         )
 
     if len(groups) > 1:

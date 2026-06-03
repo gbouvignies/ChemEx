@@ -1,12 +1,53 @@
 """The parsing module contains the code for the parsing of command-line arguments."""
 
-from argparse import ArgumentParser
+from argparse import ArgumentParser, ArgumentTypeError
 from pathlib import Path
 
-from chemex import __version__, chemex
+from chemex import __version__
 from chemex.parameters.spin_system import SpinSystem
+from chemex.runtime.execution import ExecutionCount
 from chemex.tools.pick_cest import pick_cest
 from chemex.tools.plot_param import plot_param
+
+
+def _execution_count(value: str) -> ExecutionCount:
+    if value.lower() == "auto":
+        return "auto"
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        msg = "must be 'auto' or a non-negative integer"
+        raise ArgumentTypeError(msg) from error
+    if parsed < 0:
+        msg = "must be 'auto' or a non-negative integer"
+        raise ArgumentTypeError(msg)
+    return parsed
+
+
+def _add_fit_execution_arguments(parser: ArgumentParser) -> None:
+    parser.add_argument(
+        "--workers",
+        type=_execution_count,
+        metavar="N|auto",
+        default="auto",
+        help=(
+            "Number of ChemEx worker processes for fit statistics; "
+            "'auto' chooses a conservative CPU count and 0 uses all available "
+            "CPUs (default: auto)"
+        ),
+    )
+
+    parser.add_argument(
+        "--native-threads",
+        type=_execution_count,
+        metavar="N|auto",
+        default="auto",
+        help=(
+            "Advanced: native BLAS/OpenMP threads per worker; 'auto' uses "
+            "one native thread for parallel worker pools and leaves serial "
+            "runs unmanaged (default: auto)"
+        ),
+    )
 
 
 def build_parser() -> ArgumentParser:
@@ -21,6 +62,7 @@ def build_parser() -> ArgumentParser:
     parser = ArgumentParser(description=description, prog="chemex")
 
     parser.set_defaults(func=lambda _: parser.print_usage())
+    parser.set_defaults(analysis_command=False)
 
     parser.add_argument(
         "--version",
@@ -33,7 +75,7 @@ def build_parser() -> ArgumentParser:
     # parser for the positional argument "fit"
     fit_parser = subparsers.add_parser("fit", help="Start a fit")
 
-    fit_parser.set_defaults(func=chemex.run)
+    fit_parser.set_defaults(analysis_command=True)
 
     fit_parser.add_argument(
         "-e",
@@ -107,10 +149,12 @@ def build_parser() -> ArgumentParser:
         type=SpinSystem.from_name,
     )
 
+    _add_fit_execution_arguments(fit_parser)
+
     # parser for the positional argument "simulate"
     simulate_parser = subparsers.add_parser("simulate", help="Start a simulation")
 
-    simulate_parser.set_defaults(func=chemex.run)
+    simulate_parser.set_defaults(analysis_command=True)
 
     simulate_parser.add_argument(
         "-e",
