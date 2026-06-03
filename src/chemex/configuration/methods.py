@@ -36,7 +36,7 @@ class McmcSettings(BaseModel):
     thin: PositiveInt = 1
     walkers: PositiveInt | None = None
     seed: int | None = None
-    workers: PositiveInt = 1
+    workers: PositiveInt | None = None
     update_parameters: bool = False
 
     _key_to_lower = model_validator(mode="before")(key_to_lower)

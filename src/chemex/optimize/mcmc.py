@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from math import ceil
 from pathlib import Path
+from time import perf_counter
 from types import TracebackType
 from typing import Any, Self, cast
 
 import emcee.autocorr as emcee_autocorr
 import emcee.ensemble as emcee_ensemble
-import lmfit
 import numpy as np
-from lmfit.minimizer import MinimizerResult
 from lmfit.parameter import Parameters
 from rich.progress import Progress, TaskID
 
@@ -23,7 +22,15 @@ from chemex.messages import (
     print_mcmc_no_vary_warning,
     print_mcmc_unbounded_warning,
 )
+from chemex.optimize.mcmc_engine import (
+    EmceeSamplerResult,
+    McmcProblem,
+    run_emcee_sampler,
+)
+from chemex.optimize.statistics_plot import write_mcmc_plots
 from chemex.parameters.database import ParameterStore
+from chemex.runtime import ExecutionSettings
+from chemex.runtime.execution import native_thread_env, native_thread_environment
 from chemex.typing import Array
 
 
@@ -80,6 +87,7 @@ class EffectiveMcmcSettings:
     walkers: int
     seed: int | None
     workers: int
+    native_threads: int | None
     update_parameters: bool
 
 
@@ -125,10 +133,23 @@ class McmcResult:
         return self.lnprob.reshape(-1)
 
 
+_TIMING_KEYS = (
+    "sampling_seconds",
+    "result_processing_seconds",
+    "output_summary_seconds",
+    "output_samples_seconds",
+    "output_correlations_seconds",
+    "output_plots_seconds",
+    "output_total_seconds",
+    "total_seconds",
+)
+
+
 def resolve_mcmc_settings(
     settings: McmcSettings,
     *,
     nvarys: int,
+    execution: ExecutionSettings | None = None,
 ) -> EffectiveMcmcSettings:
     walkers = settings.walkers or max(32, 2 * nvarys)
     min_walkers = 2 * nvarys
@@ -139,13 +160,17 @@ def resolve_mcmc_settings(
         )
         raise ValueError(msg)
 
+    workers = settings.workers or (execution.workers if execution is not None else 1)
+    native_threads = execution.native_threads if execution is not None else None
+
     return EffectiveMcmcSettings(
         steps=settings.steps,
         burn=settings.burn,
         thin=settings.thin,
         walkers=walkers,
         seed=settings.seed,
-        workers=settings.workers,
+        workers=workers,
+        native_threads=native_threads,
         update_parameters=settings.update_parameters,
     )
 
@@ -187,6 +212,28 @@ def _validate_parameter_bounds(params: Parameters, var_names: tuple[str, ...]) -
         ):
             msg = f"MCMC parameter {name!r} has an empty bounded interval"
             raise ValueError(msg)
+
+
+def _parameter_bound(value: float | None, fallback: float) -> float:
+    if value is None:
+        return fallback
+    bound = float(value)
+    if np.isnan(bound):
+        return fallback
+    return bound
+
+
+def _parameter_bounds(params: Parameters, var_names: tuple[str, ...]) -> Array:
+    return np.asarray(
+        [
+            (
+                _parameter_bound(params[name].min, -np.inf),
+                _parameter_bound(params[name].max, np.inf),
+            )
+            for name in var_names
+        ],
+        dtype=float,
+    )
 
 
 def _jitter_scale(
@@ -281,10 +328,6 @@ def _correlation_matrix(samples: Array) -> Array:
     return np.corrcoef(samples, rowvar=False)
 
 
-def _result_attr(result: MinimizerResult, name: str) -> object:
-    return getattr(result, name)
-
-
 def _valid_autocorrelation_time(autocorrelation_time: object) -> Array | None:
     autocorrelation_time = np.asarray(
         cast("Array", autocorrelation_time),
@@ -376,13 +419,13 @@ def _apply_sample_window(
     return retained_chain, retained_lnprob, discarded_steps, warning
 
 
-def _result_from_lmfit(
-    result: MinimizerResult,
+def _result_from_emcee(
+    result: EmceeSamplerResult,
     settings: EffectiveMcmcSettings,
 ) -> McmcResult:
-    var_names = tuple(cast("Sequence[str]", _result_attr(result, "var_names")))
-    chain = np.asarray(cast("Array", _result_attr(result, "chain")), dtype=float)
-    lnprob = np.asarray(cast("Array", _result_attr(result, "lnprob")), dtype=float)
+    var_names = result.var_names
+    chain = result.chain
+    lnprob = result.lnprob
     autocorrelation_time, tentative_autocorrelation_time, autocorrelation_warning = (
         _estimate_autocorrelation_time(chain)
     )
@@ -413,10 +456,7 @@ def _result_from_lmfit(
             settings.thin,
         ),
         correlations=_correlation_matrix(samples),
-        acceptance_fraction=np.asarray(
-            cast("Array", _result_attr(result, "acceptance_fraction")),
-            dtype=float,
-        ),
+        acceptance_fraction=result.acceptance_fraction,
         autocorrelation_time=autocorrelation_time,
         discarded_steps=discarded_steps,
         burn_in_warning=burn_in_warning,
@@ -554,6 +594,17 @@ def _extend_autocorrelation_diagnostics(
         )
 
 
+def _extend_timing_diagnostics(
+    lines: list[str],
+    timings: Mapping[str, float],
+) -> None:
+    lines.extend(
+        f"{key} = {_format_toml_float(timings[key])}"
+        for key in _TIMING_KEYS
+        if key in timings
+    )
+
+
 def _write_summary(
     result: McmcResult,
     path: Path,
@@ -629,6 +680,7 @@ def _write_diagnostics(
     path: Path,
     parameter_store: ParameterStore,
     unbounded_parameter_ids: tuple[str, ...],
+    timings: Mapping[str, float],
 ) -> None:
     acceptance = result.acceptance_fraction
     unbounded_parameters = list(
@@ -636,7 +688,7 @@ def _write_diagnostics(
     )
     requested_burn = '"auto"' if settings.burn == "auto" else str(settings.burn)
     lines = [
-        'sampler = "emcee via lmfit.Minimizer.emcee"',
+        'sampler = "emcee via ChemEx direct EnsembleSampler"',
         f"lmfit_version = {_quote_toml_string(_package_version('lmfit'))}",
         f"emcee_version = {_quote_toml_string(_package_version('emcee'))}",
         'credible_interval = "95% equal-tailed"',
@@ -648,6 +700,7 @@ def _write_diagnostics(
         f"discarded_steps = {result.discarded_steps}",
         f"thin = {settings.thin}",
         f"walkers = {settings.walkers}",
+        f"workers = {settings.workers}",
         f"retained_steps = {result.chain.shape[0]}",
         f"retained_samples = {len(result.samples)}",
         'samples_file = "samples.tsv"',
@@ -662,6 +715,7 @@ def _write_diagnostics(
     if result.burn_in_warning is not None:
         lines.append(f"burn_in_warning = {_quote_toml_string(result.burn_in_warning)}")
     _extend_autocorrelation_diagnostics(lines, result, settings)
+    _extend_timing_diagnostics(lines, timings)
     if unbounded_parameters:
         lines.append(
             'warning = "Finite lower and upper bounds are recommended for MCMC."',
@@ -676,26 +730,47 @@ def write_mcmc_outputs(
     path: Path,
     parameter_store: ParameterStore,
     unbounded_parameter_ids: tuple[str, ...] = (),
+    timings: dict[str, float] | None = None,
 ) -> None:
+    timings = {} if timings is None else timings
+    output_start = perf_counter()
     path_mcmc = path / "Statistics" / "MCMC"
     path_mcmc.mkdir(parents=True, exist_ok=True)
-    _write_summary(result, path_mcmc, parameter_store)
-    _write_samples(result, path_mcmc, parameter_store)
-    _write_correlations(result, path_mcmc, parameter_store)
-    from chemex.optimize.statistics_plot import write_mcmc_plots
 
+    phase_start = perf_counter()
+    _write_summary(result, path_mcmc, parameter_store)
+    timings["output_summary_seconds"] = perf_counter() - phase_start
+
+    phase_start = perf_counter()
+    _write_samples(result, path_mcmc, parameter_store)
+    timings["output_samples_seconds"] = perf_counter() - phase_start
+
+    phase_start = perf_counter()
+    _write_correlations(result, path_mcmc, parameter_store)
+    timings["output_correlations_seconds"] = perf_counter() - phase_start
+
+    phase_start = perf_counter()
     write_mcmc_plots(
         result,
         settings,
         path_mcmc,
         parameter_names=_format_parameter_ids(result.var_names, parameter_store),
     )
+    timings["output_plots_seconds"] = perf_counter() - phase_start
+    timings["output_total_seconds"] = perf_counter() - output_start
+    if "sampling_seconds" in timings and "result_processing_seconds" in timings:
+        timings["total_seconds"] = (
+            timings["sampling_seconds"]
+            + timings["result_processing_seconds"]
+            + timings["output_total_seconds"]
+        )
     _write_diagnostics(
         result,
         settings,
         path_mcmc,
         parameter_store,
         unbounded_parameter_ids,
+        timings,
     )
 
 
@@ -704,13 +779,19 @@ def run_mcmc(
     params: Parameters,
     settings: McmcSettings,
     path: Path,
+    *,
+    execution: ExecutionSettings | None = None,
 ) -> McmcResult | None:
     var_names = _varying_parameter_ids(params)
     if not var_names:
         print_mcmc_no_vary_warning()
         return None
 
-    effective_settings = resolve_mcmc_settings(settings, nvarys=len(var_names))
+    effective_settings = resolve_mcmc_settings(
+        settings,
+        nvarys=len(var_names),
+        execution=execution,
+    )
     _validate_parameter_bounds(params, var_names)
 
     parameter_store = experiments.parameter_store
@@ -720,37 +801,50 @@ def run_mcmc(
             list(_format_parameter_ids(unbounded_parameter_ids, parameter_store)),
         )
 
-    minimizer = lmfit.Minimizer(experiments.residuals, params)
+    timings: dict[str, float] = {}
+    phase_start = perf_counter()
     with _use_rich_emcee_progress():
-        result_lf = minimizer.emcee(
-            params=params,
-            steps=effective_settings.steps,
-            nwalkers=effective_settings.walkers,
-            burn=0,
-            thin=1,
-            pos=_initial_positions(
-                params,
-                var_names,
-                nwalkers=effective_settings.walkers,
-                seed=effective_settings.seed,
-            ),
-            workers=effective_settings.workers,
-            is_weighted=True,
-            seed=effective_settings.seed,
-            progress=True,
+        env = native_thread_env(
+            effective_settings.native_threads,
+            parallel=effective_settings.workers > 1,
         )
-    result = _result_from_lmfit(result_lf, effective_settings)
+        with native_thread_environment(env):
+            result_emcee = run_emcee_sampler(
+                McmcProblem(
+                    experiments=experiments,
+                    params=params,
+                    var_names=var_names,
+                    bounds=_parameter_bounds(params, var_names),
+                ),
+                _initial_positions(
+                    params,
+                    var_names,
+                    nwalkers=effective_settings.walkers,
+                    seed=effective_settings.seed,
+                ),
+                steps=effective_settings.steps,
+                workers=effective_settings.workers,
+                seed=effective_settings.seed,
+                progress=True,
+            )
+    timings["sampling_seconds"] = perf_counter() - phase_start
+
+    phase_start = perf_counter()
+    result = _result_from_emcee(result_emcee, effective_settings)
+    timings["result_processing_seconds"] = perf_counter() - phase_start
     write_mcmc_outputs(
         result,
         effective_settings,
         path,
         parameter_store,
         unbounded_parameter_ids,
+        timings=timings,
     )
     if effective_settings.update_parameters:
+        updated_params = params.copy()
         for summary in result.summary:
-            result_lf.params[summary.parameter_id].value = summary.median
-            result_lf.params[summary.parameter_id].stderr = summary.stderr
-        result_lf.params.update_constraints()
-        parameter_store.update_from_parameters(result_lf.params)
+            updated_params[summary.parameter_id].value = summary.median
+            updated_params[summary.parameter_id].stderr = summary.stderr
+        updated_params.update_constraints()
+        parameter_store.update_from_parameters(updated_params)
     return result

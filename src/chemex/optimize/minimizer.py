@@ -26,7 +26,7 @@ def _get_result_params(minimizer: lmfit.Minimizer) -> lmfit.Parameters:
     so static type checkers cannot resolve them.
     """
     result = minimizer.result
-    params = cast(lmfit.Parameters, getattr(result, "params"))
+    params = cast("lmfit.Parameters", result.params)
     return deepcopy(params)
 
 

@@ -620,11 +620,14 @@ def test_run_statistics_dispatches_mcmc_without_resampling(
         params_arg: object,
         settings_arg: object,
         path_arg: Path,
+        *,
+        execution: object | None = None,
     ) -> None:
         recorded["experiments"] = experiments_arg
         recorded["params"] = params_arg
         recorded["settings"] = settings_arg
         recorded["path"] = path_arg
+        recorded["execution"] = execution
 
     monkeypatch.setattr(
         resampling_module,
@@ -638,12 +641,14 @@ def test_run_statistics_dispatches_mcmc_without_resampling(
         tmp_path,
         "leastsq",
         fitting_module.Statistics(mcmc=100),
+        session=session,
     )
 
     np.testing.assert_equal(recorded["experiments"], experiments)
     assert "__PB" in recorded["params"]
     assert recorded["settings"].steps == 100
     np.testing.assert_equal(recorded["path"], tmp_path)
+    np.testing.assert_equal(recorded["execution"], session.execution)
 
 
 def test_resampling_summary_and_correlations_are_written(tmp_path: Path) -> None:

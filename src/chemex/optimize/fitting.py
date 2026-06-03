@@ -56,7 +56,13 @@ def _run_statistics(
     print_running_statistics("MCMC")
     try:
         params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
-        run_mcmc(experiments, params_lf, statistics.mcmc, path)
+        run_mcmc(
+            experiments,
+            params_lf,
+            statistics.mcmc,
+            path,
+            execution=execution,
+        )
     except KeyboardInterrupt:
         print_calculation_stopped_error()
     except ValueError:
