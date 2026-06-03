@@ -13,7 +13,11 @@ const config = {
     url: 'https://gbouvignies.github.io',
     baseUrl: '/ChemEx/',
     onBrokenLinks: 'throw',
-    onBrokenMarkdownLinks: 'warn',
+    markdown: {
+        hooks: {
+            onBrokenMarkdownLinks: 'warn',
+        },
+    },
     favicon: 'img/favicon.ico',
     organizationName: 'gbouvignies',
     projectName: 'chemex',
@@ -163,7 +167,7 @@ const config = {
         v4: {
             removeLegacyPostBuildHeadAttribute: true,
         },
-        experimental_faster: {
+        faster: {
             ssgWorkerThreads: true,
         },
     },
