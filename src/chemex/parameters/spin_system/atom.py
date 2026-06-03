@@ -33,10 +33,13 @@ class Atom:
 
     def __post_init__(self) -> None:
         """Initializes the Atom instance, correcting the atom name and determining the nucleus type."""
-        name = self.name.strip().upper()
+        self._restore_name(self.name)
+
+    def _restore_name(self, name: str) -> None:
+        name = name.strip().upper()
         self.name = CORRECT_ATOM_NAME.get(name, name)
         self.nucleus = str2nucleus(self.name[:1])
-        self.search_keys.update({self, self.nucleus})
+        self.search_keys = {self, self.nucleus}
 
     def match(self, other: Self) -> bool:
         """Checks if this atom matches another atom based on the name.
@@ -67,6 +70,14 @@ class Atom:
 
         """
         return bool(self.name)
+
+    def __getstate__(self) -> dict[str, object]:
+        """Serialize stable fields only; search keys are derived state."""
+        return {"name": self.name}
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        """Restore an Atom and rebuild self-referential search keys."""
+        self._restore_name(str(state["name"]))
 
     def __str__(self) -> str:
         """Returns the string representation of the Atom instance.
