@@ -24,6 +24,8 @@ The table below lists the available options for `chemex fit`. Each option links 
 | [`-d`](kinetic_models.md) or [`--model`](kinetic_models.md) | Specify the kinetic model for fitting (optional, default: `2st`). |
 | [`-o`](outputs.mdx) or [`--output`](outputs.mdx) | Set the output directory (optional, default: `./Output`). |
 | `--plot {nothing, normal, all}` | Select the plotting level (optional, default: `normal`). |
+| [`--workers N\|auto`](multicore_execution.md) | Set the number of ChemEx worker processes for fit statistics (optional, default: `auto`). |
+| [`--native-threads N\|auto`](multicore_execution.md) | Set native numerical-library threads per worker (optional, default: `auto`). |
 | `--include` | Define residues to include in the fit (optional). |
 | `--exclude` | Define residues to exclude from the fit (optional). |
 
@@ -44,7 +46,7 @@ ChemEx uses the [TOML](https://toml.io/) format for input and output files. For 
 
 ChemEx supports combined analysis of multiple experiments. To include various experiments in a fit, list the corresponding [experiment files](experiment_files.md) after the `--experiments` (or `-e`) option. This feature is particularly useful for fitting different types of CEST or CPMG experiments or a combination of both.
 
-For an example of protein-ligand binding analysis using both CPMG and CEST experiments, see [this example](examples/binding.md).
+For an example of protein-ligand binding analysis using both CPMG and CEST experiments, see [this example](../../examples/binding.md).
 
 ## Example
 
@@ -58,6 +60,12 @@ chemex fit -e Experiments/*.toml \
 ```
 
 Output files are saved in the directory specified by `-o`. By default, plots illustrating best-fit lines are generated; you can adjust this behavior with the `--plot` option.
+
+For uncertainty analyses, ChemEx can use multiple CPU cores during the statistics
+phase. The default `--workers auto` setting chooses a conservative worker count,
+and `--native-threads auto` avoids oversubscribing native numerical-library
+threads when worker processes are used. See
+[Multicore Execution](multicore_execution.md) for tuning guidance.
 
 :::tip
 For convenience, consider saving this command in a shell script, typically named `run.sh`:

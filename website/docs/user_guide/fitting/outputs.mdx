@@ -1,5 +1,5 @@
 ---
-sidebar_position: 8
+sidebar_position: 9
 ---
 
 # Outputs
@@ -136,4 +136,13 @@ Contains optional uncertainty-analysis outputs requested with the `STATISTICS`
 method-file key. Monte Carlo and bootstrap methods write `summary.toml`,
 `samples.tsv`, `correlations.tsv`, and `diagnostics.toml` under
 `Statistics/MonteCarlo/`, `Statistics/Bootstrap/`, and `Statistics/BootstrapNS/`.
-MCMC writes the same file set under `Statistics/MCMC/`.
+MCMC writes the same file set under `Statistics/MCMC/`, plus a `plots.pdf`
+report with posterior distributions, walker traces, log-probability traces, and
+autocorrelation diagnostics.
+
+The `diagnostics.toml` files record execution details for reproducibility. For
+parallel statistics, they include the effective worker count. MCMC diagnostics
+also include the direct emcee sampler engine, timing information, acceptance
+fractions, burn-in decisions, and autocorrelation estimates. These diagnostics
+are the best place to confirm that [`--workers`](multicore_execution.md) was
+applied as intended.
