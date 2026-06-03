@@ -4,7 +4,7 @@ from collections.abc import Hashable
 from copy import deepcopy
 from functools import cache, total_ordering
 from re import search
-from typing import Self
+from typing import Self, cast
 
 from .constants import AAA_TO_A
 
@@ -150,9 +150,9 @@ class Group:
     def __setstate__(self, state: dict[str, object]) -> None:
         """Restore a Group and rebuild self-referential search keys."""
         self._restore_parts(
-            str(state["symbol"]),
-            int(state["number"]),
-            str(state["suffix"]),
+            cast("str", state["symbol"]),
+            cast("int", state["number"]),
+            cast("str", state["suffix"]),
         )
 
     def __str__(self) -> str:
