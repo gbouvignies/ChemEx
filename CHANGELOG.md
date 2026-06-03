@@ -7,6 +7,8 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 
 ## [Unreleased]
 
+## [2026.06.0] - 2026-06-03
+
 ### Added
 - Added MCMC posterior sampling as a `STATISTICS` method for fitted parameter
   uncertainty, with text outputs for posterior summaries, samples,
