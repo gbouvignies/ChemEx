@@ -10,7 +10,8 @@ Method files define the fitting methods used in ChemEx. In these files, you can:
 
 -   Specify which parameters to fit, fix, or constrain.
 -   Select the profiles to include in calculations.
--   Activate additional analyses, such as grid search, Monte Carlo, or bootstrap analyses.
+-   Activate additional analyses, such as grid search, Monte Carlo, bootstrap,
+    or MCMC analyses.
 
 Provide the method file to ChemEx using the `-m` or `--method` option.
 
@@ -229,8 +230,12 @@ BURN = "AUTO"
 THIN = 1
 WALKERS = 64
 SEED = 1234
-WORKERS = 1
+WORKERS = 4
 ```
+
+`STEPS` is the number of emcee sampler iterations. `WALKERS` defaults to the
+larger of 32 or twice the number of fitted parameters. `SEED` fixes the initial
+walker positions for reproducible runs.
 
 `BURN` defaults to `"AUTO"`. In automatic mode, ChemEx uses the integrated
 autocorrelation time reported by the sampler and discards twice the largest
@@ -245,6 +250,15 @@ fixed number of initial sampler steps.
 `THIN` defaults to `1`, which keeps every retained sample. Thinning is mainly a
 storage and output-size control; it is usually better to keep all post-burn-in
 samples unless the output files become too large.
+
+`WORKERS` is optional. When omitted, MCMC inherits the command-line
+[`--workers`](multicore_execution.md) setting from `chemex fit`, whose default
+is `auto`. Set `WORKERS` in the method file only when this MCMC step needs a
+specific positive worker count. Command-line `--workers 0` means all available
+CPUs, but method-file `WORKERS` must be a positive integer.
+
+See [Multicore Execution](multicore_execution.md) for performance guidance and
+the interaction between `--workers` and `--native-threads`.
 
 Sampling outputs are stored under a `Statistics` directory in the corresponding step or group output directory:
 

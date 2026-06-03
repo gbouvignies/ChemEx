@@ -1,5 +1,6 @@
 """The chemex module provides the entry point for the chemex script."""
 
+import os
 import sys
 from argparse import Namespace
 
@@ -18,7 +19,11 @@ from chemex.messages import (
 )
 from chemex.optimize.fitting import run_methods
 from chemex.optimize.helper import execute_simulation
-from chemex.runtime import AnalysisSession, ensure_plugins_registered
+from chemex.runtime import (
+    AnalysisSession,
+    ExecutionSettings,
+    ensure_plugins_registered,
+)
 
 
 def run_fit(
@@ -59,6 +64,12 @@ def run(args: Namespace, session: AnalysisSession | None = None) -> None:
     if session is None:
         session = AnalysisSession.create()
 
+    session.execution = ExecutionSettings.from_counts(
+        workers=getattr(args, "workers", 1),
+        native_threads=getattr(args, "native_threads", "auto"),
+    )
+    os.environ.update(session.execution.native_thread_env())
+
     # Parse kinetics model
     session.set_model(args.model)
 
@@ -88,4 +99,7 @@ def main() -> None:
 
     parser = build_parser()
     args = parser.parse_args()
-    args.func(args)
+    if args.analysis_command:
+        run(args)
+    else:
+        args.func(args)

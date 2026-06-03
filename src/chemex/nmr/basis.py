@@ -411,5 +411,14 @@ class Basis:
         """Return self: Basis is immutable, so copying is unnecessary."""
         return self
 
+    def __reduce__(
+        self,
+    ) -> tuple[type[Self], tuple[str, ModelSpec, Literal["", "dq", "tq"], str]]:
+        """Reconstruct from constructor fields; cached maps are derived state."""
+        return (
+            type(self),
+            (self.type, self.model, self.extension, self.spin_system),
+        )
+
     def __len__(self) -> int:
         return len(self.components)

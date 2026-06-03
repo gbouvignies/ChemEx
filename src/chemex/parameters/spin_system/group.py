@@ -4,7 +4,7 @@ from collections.abc import Hashable
 from copy import deepcopy
 from functools import cache, total_ordering
 from re import search
-from typing import Self
+from typing import Self, cast
 
 from .constants import AAA_TO_A
 
@@ -59,7 +59,12 @@ class Group:
             name (str): The name of the group to be parsed.
 
         """
-        self.symbol, self.number, self.suffix = parse_group(name.strip().upper())
+        self._restore_parts(*parse_group(name.strip().upper()))
+
+    def _restore_parts(self, symbol: str, number: int, suffix: str) -> None:
+        self.symbol = symbol
+        self.number = number
+        self.suffix = suffix
         self.search_keys: set[Hashable] = {self} if self else set()
 
     @property
@@ -133,6 +138,22 @@ class Group:
 
         """
         return bool(self.name)
+
+    def __getstate__(self) -> dict[str, object]:
+        """Serialize stable fields only; search keys are derived state."""
+        return {
+            "symbol": self.symbol,
+            "number": self.number,
+            "suffix": self.suffix,
+        }
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        """Restore a Group and rebuild self-referential search keys."""
+        self._restore_parts(
+            cast("str", state["symbol"]),
+            cast("int", state["number"]),
+            cast("str", state["suffix"]),
+        )
 
     def __str__(self) -> str:
         """String representation of the Group object.

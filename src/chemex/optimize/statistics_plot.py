@@ -169,7 +169,7 @@ def _save_mcmc_summary_page(
     acceptance = result.acceptance_fraction
     burn = '"auto"' if settings.burn == "auto" else str(settings.burn)
     lines = [
-        "Sampler: emcee via lmfit.Minimizer.emcee",
+        "Sampler: emcee via ChemEx direct EnsembleSampler",
         f"Parameters: {len(parameter_names)}",
         f"Steps: {settings.steps}",
         f"Walkers: {settings.walkers}",

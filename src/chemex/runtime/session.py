@@ -11,6 +11,7 @@ from chemex.parameters.database import (
     create_parameter_store,
 )
 from chemex.parameters.factory import ParameterFactory
+from chemex.runtime.execution import ExecutionSettings
 
 _PLUGIN_STATE = {"registered": False}
 
@@ -33,6 +34,7 @@ class AnalysisSession:
         model: ModelController | None = None,
         parameters: ParameterStore | None = None,
         parameter_factory: ParameterFactory | None = None,
+        execution: ExecutionSettings | None = None,
     ) -> None:
         self.model = ModelState() if model is None else model
         self.parameters = (
@@ -43,6 +45,7 @@ class AnalysisSession:
             if parameter_factory is None
             else parameter_factory
         )
+        self.execution = ExecutionSettings() if execution is None else execution
 
     @classmethod
     def create(cls) -> AnalysisSession:

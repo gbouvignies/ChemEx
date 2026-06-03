@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 import lmfit
 import numpy as np
@@ -25,8 +25,8 @@ def _get_result_params(minimizer: lmfit.Minimizer) -> lmfit.Parameters:
     MinimizerResult sets attributes dynamically via setattr,
     so static type checkers cannot resolve them.
     """
-    result = minimizer.result
-    params = cast(lmfit.Parameters, getattr(result, "params"))
+    result = cast("Any", minimizer.result)
+    params = cast("lmfit.Parameters", result.params)
     return deepcopy(params)
 
 

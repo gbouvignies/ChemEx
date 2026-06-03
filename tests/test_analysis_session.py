@@ -3,6 +3,7 @@ from __future__ import annotations
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Self
 
 import numpy as np
 import pytest
@@ -17,7 +18,7 @@ from chemex.optimize import resampling as resampling_module
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import ParamSetting
 from chemex.printers import parameters as parameter_printer_module
-from chemex.runtime import AnalysisSession
+from chemex.runtime import AnalysisSession, ExecutionSettings
 from chemex.runtime import session as session_module
 
 
@@ -70,6 +71,7 @@ class StubSession:
         self.parameters = StubParameters()
         self.model_names: list[str] = []
         self.parameter_factory = StubParameterFactory()
+        self.execution = ExecutionSettings()
 
     def set_model(self, name: str) -> None:
         self.model_names.append(name)
@@ -142,7 +144,7 @@ EXPECTED_EXPERIMENT_COUNT = 2
 
 
 def make_args(command: str) -> Namespace:
-    return Namespace(
+    args = Namespace(
         commands=command,
         model="2st",
         include=None,
@@ -153,6 +155,10 @@ def make_args(command: str) -> Namespace:
         output=Path("Output"),
         plot="normal",
     )
+    if command == "fit":
+        args.workers = "auto"
+        args.native_threads = "auto"
+    return args
 
 
 def test_analysis_session_lifecycle_calls_reset_hooks(
@@ -262,6 +268,7 @@ def test_run_uses_explicit_session_for_fit_flow(
     session = StubSession()
     experiments = FakeExperiments(parameter_store=session.parameters)
     recorded: dict[str, object] = {}
+    recorded_env: dict[str, str] = {}
 
     def fake_build_experiments(
         filenames: list[Path] | None,
@@ -285,10 +292,19 @@ def test_run_uses_explicit_session_for_fit_flow(
     monkeypatch.setattr(chemex_module, "build_experiments", fake_build_experiments)
     monkeypatch.setattr(chemex_module, "read_defaults", lambda _filenames: defaults)
     monkeypatch.setattr(chemex_module, "run_methods", fake_run_methods)
+    monkeypatch.setattr(chemex_module.os, "environ", recorded_env)
 
-    chemex_module.run(make_args("fit"), session=session)
+    args = make_args("fit")
+    args.workers = 3
+    args.native_threads = 2
+    chemex_module.run(args, session=session)
 
     np.testing.assert_equal(session.model_names, ["2st"])
+    np.testing.assert_equal(
+        session.execution, ExecutionSettings(workers=3, native_threads=2)
+    )
+    np.testing.assert_equal(recorded_env["OMP_NUM_THREADS"], "2")
+    np.testing.assert_equal(recorded_env["VECLIB_MAXIMUM_THREADS"], "2")
     np.testing.assert_equal(session.parameters.defaults_calls, [defaults])
     np.testing.assert_equal(experiments.filtered, 1)
     np.testing.assert_equal(recorded["build"][2], session)
@@ -341,7 +357,10 @@ def test_main_bootstraps_plugins_for_non_run_commands(
 
     class StubParser:
         def parse_args(self) -> Namespace:
-            return Namespace(func=lambda _args: calls.append("func"))
+            return Namespace(
+                analysis_command=False,
+                func=lambda _args: calls.append("func"),
+            )
 
     def build_parser() -> StubParser:
         return StubParser()
@@ -357,6 +376,32 @@ def test_main_bootstraps_plugins_for_non_run_commands(
     chemex_module.main()
 
     np.testing.assert_equal(calls, ["logo", "plugins", "func"])
+
+
+def test_main_dispatches_analysis_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    class StubParser:
+        def parse_args(self) -> Namespace:
+            return Namespace(
+                analysis_command=True, func=lambda _args: calls.append("func")
+            )
+
+    def build_parser() -> StubParser:
+        return StubParser()
+
+    monkeypatch.setattr(chemex_module, "print_logo", lambda: calls.append("logo"))
+    monkeypatch.setattr(
+        chemex_module,
+        "ensure_plugins_registered",
+        lambda: calls.append("plugins"),
+    )
+    monkeypatch.setattr(chemex_module, "build_parser", build_parser)
+    monkeypatch.setattr(chemex_module, "run", lambda _args: calls.append("run"))
+
+    chemex_module.main()
+
+    np.testing.assert_equal(calls, ["logo", "plugins", "run"])
 
 
 def test_run_methods_passes_session_to_fit_groups(
@@ -406,7 +451,9 @@ def test_run_methods_skips_fit_when_selection_removes_all_profiles(
     experiments = EmptyAfterSelectExperiments(parameter_store=session.parameters)
     calls: list[str] = []
 
-    monkeypatch.setattr(fitting_module, "print_no_data", lambda: calls.append("no_data"))
+    monkeypatch.setattr(
+        fitting_module, "print_no_data", lambda: calls.append("no_data")
+    )
 
     def fail_if_called(*_args, **_kwargs) -> None:
         pytest.fail("_fit_groups should not run when no profiles remain selected")
@@ -447,9 +494,9 @@ def test_run_statistics_uses_session_for_header(
     )
 
     assert not (tmp_path / "monte_carlo.out").exists()
-    assert (
-        tmp_path / "Statistics" / "MonteCarlo" / "samples.tsv"
-    ).read_text(encoding="utf-8") == "[PB]\tchisqr\n"
+    assert (tmp_path / "Statistics" / "MonteCarlo" / "samples.tsv").read_text(
+        encoding="utf-8"
+    ) == "[PB]\tchisqr\n"
     assert (tmp_path / "Statistics" / "MonteCarlo" / "summary.toml").exists()
     assert (tmp_path / "Statistics" / "MonteCarlo" / "correlations.tsv").exists()
     assert (tmp_path / "Statistics" / "MonteCarlo" / "plots.pdf").stat().st_size > 0
@@ -459,10 +506,98 @@ def test_run_statistics_uses_session_for_header(
     assert 'method = "Monte Carlo"' in diagnostics
     assert "requested_samples = 1" in diagnostics
     assert "completed_samples = 0" in diagnostics
+    assert "workers = 1" in diagnostics
     assert 'samples_file = "samples.tsv"' in diagnostics
     assert 'summary_file = "summary.toml"' in diagnostics
     assert 'correlations_file = "correlations.tsv"' in diagnostics
     assert 'plots_file = "plots.pdf"' in diagnostics
+
+
+def test_resampling_statistics_use_execution_workers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class Store:
+        def build_lmfit_params(
+            self,
+            _param_ids: object,
+        ) -> dict[str, SimpleNamespace]:
+            return {"__PB": SimpleNamespace(name="__PB", vary=True, value=0.25)}
+
+    class FakePool:
+        def __init__(
+            self,
+            *,
+            processes: int,
+            initializer: object,
+            initargs: tuple[object, ...],
+        ) -> None:
+            captured["processes"] = processes
+            self.initializer = initializer
+            self.initargs = initargs
+
+        def __enter__(self) -> Self:
+            self.initializer(*self.initargs)
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def imap(self, function: object, iterable: object) -> object:
+            return map(function, iterable)
+
+    experiments = SimpleNamespace(
+        param_ids=["__PB"],
+        parameter_store=Store(),
+    )
+
+    monkeypatch.setattr(resampling_module.multiprocessing, "Pool", FakePool)
+    monkeypatch.setattr(
+        resampling_module,
+        "generate_exp_for_statistics",
+        lambda experiments_arg, _statistic_name: experiments_arg,
+    )
+    monkeypatch.setattr(
+        resampling_module,
+        "minimize",
+        lambda _experiments, params, _fitmethod: params,
+    )
+    monkeypatch.setattr(
+        resampling_module,
+        "calculate_statistics",
+        lambda _experiments, _params: {"chisqr": 2.0},
+    )
+    monkeypatch.setattr(
+        resampling_module,
+        "write_resampling_plots",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        resampling_module,
+        "track",
+        lambda iterable, **_kwargs: iterable,
+    )
+
+    resampling_module.run_resampling_statistics(
+        experiments,
+        tmp_path,
+        "leastsq",
+        fitting_module.Statistics(mc=2),
+        execution=ExecutionSettings(workers=3),
+    )
+
+    assert captured["processes"] == 2
+    diagnostics = (
+        tmp_path / "Statistics" / "MonteCarlo" / "diagnostics.toml"
+    ).read_text(encoding="utf-8")
+    samples = (tmp_path / "Statistics" / "MonteCarlo" / "samples.tsv").read_text(
+        encoding="utf-8"
+    )
+    assert "workers = 2" in diagnostics
+    assert "completed_samples = 2" in diagnostics
+    assert samples.count("\n") == 3
 
 
 def test_run_statistics_dispatches_mcmc_without_resampling(
@@ -485,11 +620,14 @@ def test_run_statistics_dispatches_mcmc_without_resampling(
         params_arg: object,
         settings_arg: object,
         path_arg: Path,
+        *,
+        execution: object | None = None,
     ) -> None:
         recorded["experiments"] = experiments_arg
         recorded["params"] = params_arg
         recorded["settings"] = settings_arg
         recorded["path"] = path_arg
+        recorded["execution"] = execution
 
     monkeypatch.setattr(
         resampling_module,
@@ -503,12 +641,14 @@ def test_run_statistics_dispatches_mcmc_without_resampling(
         tmp_path,
         "leastsq",
         fitting_module.Statistics(mcmc=100),
+        session=session,
     )
 
     np.testing.assert_equal(recorded["experiments"], experiments)
     assert "__PB" in recorded["params"]
     assert recorded["settings"].steps == 100
     np.testing.assert_equal(recorded["path"], tmp_path)
+    np.testing.assert_equal(recorded["execution"], session.execution)
 
 
 def test_resampling_summary_and_correlations_are_written(tmp_path: Path) -> None:

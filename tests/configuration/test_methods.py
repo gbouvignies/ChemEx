@@ -13,6 +13,7 @@ def test_statistics_parse_mcmc_short_form() -> None:
     assert statistics.mcmc.steps == 5000
     assert statistics.mcmc.burn == "auto"
     assert statistics.mcmc.thin == 1
+    assert statistics.mcmc.workers is None
 
 
 def test_statistics_parse_mcmc_expanded_form() -> None:

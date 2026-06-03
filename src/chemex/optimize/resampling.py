@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import multiprocessing
+from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +23,46 @@ from chemex.optimize.helper import (
 )
 from chemex.optimize.minimizer import minimize
 from chemex.optimize.statistics_plot import write_resampling_plots
+from chemex.runtime import ExecutionSettings
+from chemex.runtime.execution import native_thread_environment
+
+
+@dataclass(frozen=True, slots=True)
+class _ResamplingMethod:
+    statistic_name: str
+    message: str
+    directory: str
+    iterations: int
+
+
+@dataclass(frozen=True, slots=True)
+class _ResamplingContext:
+    experiments: Experiments
+    statistic_name: str
+    fitmethod: str
+    parameter_ids: tuple[str, ...]
+
+
+@dataclass(slots=True)
+class _WorkerState:
+    context: _ResamplingContext | None = None
+
+    def initialize(self, context: _ResamplingContext) -> None:
+        self.context = context
+
+    def clear(self) -> None:
+        self.context = None
+
+
+_WORKER_STATE = _WorkerState()
+
+
+def _initialize_worker(context: _ResamplingContext) -> None:
+    _WORKER_STATE.initialize(context)
+
+
+def _clear_worker() -> None:
+    _WORKER_STATE.clear()
 
 
 def _quote_toml_string(value: str) -> str:
@@ -55,12 +98,58 @@ def _format_parameter_names(
 
 def _sample_parameter_values(
     params_lf: Any,
-    parameter_ids: list[str],
+    parameter_ids: tuple[str, ...],
 ) -> list[float]:
     return [
         float(params_lf[param_id].value) if param_id in params_lf else np.nan
         for param_id in parameter_ids
     ]
+
+
+def _calculate_resampling_sample(
+    context: _ResamplingContext,
+) -> tuple[list[float], float]:
+    parameter_store = context.experiments.parameter_store
+    exp_stat = generate_exp_for_statistics(context.experiments, context.statistic_name)
+    params_lf = parameter_store.build_lmfit_params(exp_stat.param_ids)
+    params_fit = minimize(exp_stat, params_lf, context.fitmethod)
+    stats = calculate_statistics(exp_stat, params_fit)
+    chisqr = stats.get("chisqr", 1e32)
+    return _sample_parameter_values(params_fit, context.parameter_ids), float(chisqr)
+
+
+def _calculate_worker_sample(_index: int) -> tuple[list[float], float]:
+    context = _WORKER_STATE.context
+    if context is None:
+        msg = "Resampling worker context is not initialized"
+        raise RuntimeError(msg)
+    return _calculate_resampling_sample(context)
+
+
+def _iter_resampling_samples(
+    context: _ResamplingContext,
+    iterations: int,
+    *,
+    execution: ExecutionSettings,
+) -> Iterator[tuple[list[float], float]]:
+    if execution.workers == 1 or iterations == 1:
+        for _index in range(iterations):
+            yield _calculate_resampling_sample(context)
+        return
+
+    worker_count = min(execution.workers, iterations)
+    try:
+        with (
+            native_thread_environment(execution.native_thread_env(parallel=True)),
+            multiprocessing.Pool(
+                processes=worker_count,
+                initializer=_initialize_worker,
+                initargs=(context,),
+            ) as pool,
+        ):
+            yield from pool.imap(_calculate_worker_sample, range(iterations))
+    finally:
+        _clear_worker()
 
 
 def _as_sample_array(sample_rows: list[list[float]], width: int) -> np.ndarray:
@@ -152,6 +241,7 @@ def _write_resampling_diagnostics(
     fitmethod: str,
     requested_samples: int,
     completed_samples: int,
+    workers: int,
     parameter_ids: list[str],
 ) -> None:
     lines = [
@@ -159,6 +249,7 @@ def _write_resampling_diagnostics(
         f"fitmethod = {_quote_toml_string(fitmethod)}",
         f"requested_samples = {requested_samples}",
         f"completed_samples = {completed_samples}",
+        f"workers = {workers}",
         f"parameters = {_format_toml_string_list(parameter_ids)}",
         'samples_file = "samples.tsv"',
         'summary_file = "summary.toml"',
@@ -172,31 +263,41 @@ def _run_resampling_method(
     experiments: Experiments,
     path: Path,
     fitmethod: str,
-    statistic_name: str,
-    method: dict[str, str],
-    iter_nb: int,
-    ids_vary: list[str],
+    method: _ResamplingMethod,
+    parameter_ids: tuple[str, ...],
+    *,
+    execution: ExecutionSettings,
 ) -> None:
     parameter_store = experiments.parameter_store
-    statistic_path = path / "Statistics" / method["directory"]
+    statistic_path = path / "Statistics" / method.directory
     statistic_path.mkdir(parents=True, exist_ok=True)
     samples_tsv = statistic_path / "samples.tsv"
     sample_rows: list[list[float]] = []
     chisqr_rows: list[float] = []
-    parameter_names = _format_parameter_names(ids_vary, parameter_store)
+    parameter_names = _format_parameter_names(list(parameter_ids), parameter_store)
     completed_samples = 0
+    context = _ResamplingContext(
+        experiments=experiments,
+        statistic_name=method.statistic_name,
+        fitmethod=fitmethod,
+        parameter_ids=parameter_ids,
+    )
+    worker_count = min(execution.workers, method.iterations)
 
     with samples_tsv.open(mode="w", encoding="utf-8") as file_tsv:
         file_tsv.write("\t".join((*parameter_names, "chisqr")) + "\n")
 
         try:
-            for _ in track(range(iter_nb), total=iter_nb, description="   "):
-                exp_stat = generate_exp_for_statistics(experiments, statistic_name)
-                params_lf = parameter_store.build_lmfit_params(exp_stat.param_ids)
-                params_fit = minimize(exp_stat, params_lf, fitmethod)
-                stats = calculate_statistics(exp_stat, params_fit)
-                chisqr = stats.get("chisqr", 1e32)
-                sample_values = _sample_parameter_values(params_fit, ids_vary)
+            samples = _iter_resampling_samples(
+                context,
+                method.iterations,
+                execution=execution,
+            )
+            for sample_values, chisqr in track(
+                samples,
+                total=method.iterations,
+                description="   ",
+            ):
                 file_tsv.write(
                     "\t".join(
                         _format_tsv_float(value)
@@ -213,7 +314,7 @@ def _run_resampling_method(
             print_value_error()
         finally:
             file_tsv.flush()
-            samples = _as_sample_array(sample_rows, len(ids_vary))
+            samples = _as_sample_array(sample_rows, len(parameter_ids))
             _write_resampling_summary(
                 statistic_path,
                 parameter_names=parameter_names,
@@ -226,22 +327,23 @@ def _run_resampling_method(
             )
             write_resampling_plots(
                 statistic_path,
-                method=method["message"],
+                method=method.message,
                 fitmethod=fitmethod,
                 parameter_names=parameter_names,
                 samples=samples,
                 chisqr_values=np.asarray(chisqr_rows, dtype=float),
                 correlations=correlations,
-                requested_samples=iter_nb,
+                requested_samples=method.iterations,
                 completed_samples=completed_samples,
             )
             _write_resampling_diagnostics(
                 statistic_path,
-                method=method["message"],
+                method=method.message,
                 fitmethod=fitmethod,
-                requested_samples=iter_nb,
+                requested_samples=method.iterations,
                 completed_samples=completed_samples,
-                parameter_ids=ids_vary,
+                workers=worker_count,
+                parameter_ids=list(parameter_ids),
             )
 
 
@@ -250,41 +352,53 @@ def run_resampling_statistics(
     path: Path,
     fitmethod: str,
     statistics: Statistics,
+    *,
+    execution: ExecutionSettings | None = None,
 ) -> None:
     if statistics.mc is None and statistics.bs is None and statistics.bsn is None:
         return
 
-    methods = {
-        "mc": {
-            "message": "Monte Carlo",
-            "directory": "MonteCarlo",
-        },
-        "bs": {
-            "message": "bootstrap",
-            "directory": "Bootstrap",
-        },
-        "bsn": {
-            "message": "nucleus-based bootstrap",
-            "directory": "BootstrapNS",
-        },
-    }
+    execution = ExecutionSettings() if execution is None else execution
+    methods: list[_ResamplingMethod] = []
+    if statistics.mc is not None:
+        methods.append(
+            _ResamplingMethod(
+                statistic_name="mc",
+                message="Monte Carlo",
+                directory="MonteCarlo",
+                iterations=statistics.mc,
+            ),
+        )
+    if statistics.bs is not None:
+        methods.append(
+            _ResamplingMethod(
+                statistic_name="bs",
+                message="bootstrap",
+                directory="Bootstrap",
+                iterations=statistics.bs,
+            ),
+        )
+    if statistics.bsn is not None:
+        methods.append(
+            _ResamplingMethod(
+                statistic_name="bsn",
+                message="nucleus-based bootstrap",
+                directory="BootstrapNS",
+                iterations=statistics.bsn,
+            ),
+        )
 
     parameter_store = experiments.parameter_store
     params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
-    ids_vary = [param.name for param in params_lf.values() if param.vary]
+    parameter_ids = tuple(param.name for param in params_lf.values() if param.vary)
 
-    for statistic_name, method in methods.items():
-        iter_nb = getattr(statistics, statistic_name)
-        if iter_nb is None:
-            continue
-
-        print_running_statistics(method["message"])
+    for method in methods:
+        print_running_statistics(method.message)
         _run_resampling_method(
             experiments,
             path,
             fitmethod,
-            statistic_name,
             method,
-            iter_nb,
-            ids_vary,
+            parameter_ids,
+            execution=execution,
         )

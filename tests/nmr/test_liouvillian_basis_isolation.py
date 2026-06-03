@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pickle
+
 import numpy as np
 import pytest
 
@@ -28,6 +30,19 @@ def test_basis_vectors_are_read_only() -> None:
 
     with pytest.raises(ValueError, match="read-only"):
         basis.vectors["iz_a"][0, 0] = 1.0
+
+
+def test_basis_pickle_ignores_cached_mapping_proxies() -> None:
+    basis = Basis(type="ixyz", spin_system="nh", model=ModelSpec())
+
+    _ = basis.matrices
+    _ = basis.vectors
+    restored = pickle.loads(pickle.dumps(basis))  # noqa: S301
+
+    assert restored == basis
+    np.testing.assert_allclose(restored.matrices["cs_i_a"], basis.matrices["cs_i_a"])
+    with pytest.raises(ValueError, match="read-only"):
+        restored.matrices["cs_i_a"][0, 1] = 1.0
 
 
 def test_equal_basis_instances_do_not_expose_mutable_shared_vectors() -> None:
