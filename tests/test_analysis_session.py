@@ -292,6 +292,11 @@ def test_run_uses_explicit_session_for_fit_flow(
     monkeypatch.setattr(chemex_module, "build_experiments", fake_build_experiments)
     monkeypatch.setattr(chemex_module, "read_defaults", lambda _filenames: defaults)
     monkeypatch.setattr(chemex_module, "run_methods", fake_run_methods)
+    monkeypatch.setattr(
+        chemex_module,
+        "write_run_info",
+        lambda *_args, **_kwargs: recorded.setdefault("run_info", True),
+    )
     monkeypatch.setattr(chemex_module.os, "environ", recorded_env)
 
     args = make_args("fit")
@@ -309,6 +314,7 @@ def test_run_uses_explicit_session_for_fit_flow(
     np.testing.assert_equal(experiments.filtered, 1)
     np.testing.assert_equal(recorded["build"][2], session)
     np.testing.assert_equal(recorded["run_methods"][4], session)
+    assert recorded["run_info"] is True
 
 
 def test_run_uses_explicit_session_for_simulation_flow(
@@ -397,7 +403,11 @@ def test_main_dispatches_analysis_commands(monkeypatch: pytest.MonkeyPatch) -> N
         lambda: calls.append("plugins"),
     )
     monkeypatch.setattr(chemex_module, "build_parser", build_parser)
-    monkeypatch.setattr(chemex_module, "run", lambda _args: calls.append("run"))
+    monkeypatch.setattr(
+        chemex_module,
+        "run",
+        lambda _args, **_kwargs: calls.append("run"),
+    )
 
     chemex_module.main()
 

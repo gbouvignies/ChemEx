@@ -42,6 +42,17 @@ Output/
 
 The output directory typically includes the following files and subdirectories:
 
+### `run_info/`
+
+Records how the fit was started. `run.toml` contains runtime and command-line
+metadata grouped into run, ChemEx, Python, command, input, and optional Git
+sections. `parameters_used.toml` contains the parsed independent starting
+parameters needed to restart the fit, including values and bounds. Parameters
+calculated from expressions are not written separately because ChemEx
+reconstructs them from the independent parameters and model. `inputs/` contains
+lightweight copies of the user-provided experiment, parameter, and method TOML
+files. Raw experimental data files are not copied.
+
 ### `Parameters/`
 
 Contains results of the fitting as three files: `fitted.toml`, `fixed.toml`, and `constrained.toml`, which list parameters that were fitted, fixed, and constrained, respectively.
