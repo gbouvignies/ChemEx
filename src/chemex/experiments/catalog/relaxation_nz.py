@@ -37,7 +37,7 @@ class RelaxationNzSettings(RelaxationSettings):
             List of initial state terms for the Liouvillian calculation.
 
         """
-        return [f"iz{self.suffix_start}"]
+        return self.get_start_terms("iz")
 
     @computed_field
     @property
@@ -48,7 +48,7 @@ class RelaxationNzSettings(RelaxationSettings):
             Detection term for the Liouvillian calculation.
 
         """
-        return f"[iz{self.suffix_detect}]"
+        return self.get_detection_expression("[iz]")
 
 
 class RelaxationNzConfig(
@@ -60,7 +60,7 @@ class RelaxationNzConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
         return ToBeFitted(
             rates=[f"r1_i_{state}"],
             model_free=[f"tauc_{state}", f"s2_{state}"],

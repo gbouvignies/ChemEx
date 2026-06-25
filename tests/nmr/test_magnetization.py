@@ -84,6 +84,25 @@ def test_build_start_magnetization_respects_terms_signs_and_populations() -> Non
     np.testing.assert_allclose(magnetization, expected)
 
 
+def test_explicit_all_state_start_matches_equilibrium_component_selection() -> None:
+    model = ModelSpec(name="3st", states="abc")
+    basis = Basis(type="iz", spin_system="nh", model=model)
+    par_values = {"pa": 0.6, "pb": 0.3, "pc": 0.1}
+
+    equilibrium_terms = build_start_magnetization(
+        basis,
+        par_values,
+        terms=["iz"],
+    )
+    explicit_terms = build_start_magnetization(
+        basis,
+        par_values,
+        terms=["iz_a", "iz_b", "iz_c"],
+    )
+
+    np.testing.assert_allclose(explicit_terms, equilibrium_terms)
+
+
 def test_keep_components_masks_unselected_magnetization() -> None:
     basis = Basis(type="izsz", spin_system="nh", model=ModelSpec())
     magnetization = basis.vectors["iz_a"] + 2.0 * basis.vectors["2izsz_b"]

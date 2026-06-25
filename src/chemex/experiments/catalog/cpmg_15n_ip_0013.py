@@ -73,7 +73,7 @@ class Cpmg15N0013IpSettings(CpmgSettings):
             List of initial state terms for the Liouvillian calculation.
 
         """
-        return [f"iz{self.suffix_start}"]
+        return self.get_start_terms("iz")
 
     @computed_field
     @property
@@ -84,7 +84,7 @@ class Cpmg15N0013IpSettings(CpmgSettings):
             Detection term for the Liouvillian calculation.
 
         """
-        return f"[iz{self.suffix_detect}]"
+        return self.get_detection_expression("[iz]")
 
 
 class Cpmg15N0013IpConfig(
@@ -96,7 +96,7 @@ class Cpmg15N0013IpConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
         return ToBeFitted(rates=[f"r2_i_{state}"], model_free=[f"tauc_{state}"])
 
 

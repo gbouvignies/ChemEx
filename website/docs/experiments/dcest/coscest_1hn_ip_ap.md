@@ -65,6 +65,10 @@ type = "gaussian"
 scale = 0.1
 res = 11
 
+## Non-equilibrium starting state(s). Omit for equilibrium preparation.
+## [optional, default: equilibrium]
+# start_state = "a"
+
 ## State of the observed resonance [optional, default: "a"]
 # observed_state = "a"
 

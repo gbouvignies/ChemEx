@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 import numpy as np
 from numpy.linalg import matrix_power
@@ -34,7 +34,7 @@ class Cpmg1HnApSettings(CpmgSettings):
     pw90: PulseWidth = Field(description="90-degree pulse width in seconds")
     time_equil_1: Delay = 0.0
     time_equil_2: Delay = 0.0
-    cs_evolution_prior: bool = True
+    start_from_observed_by_default: ClassVar[bool] = True
 
     @computed_field
     @property
@@ -46,13 +46,13 @@ class Cpmg1HnApSettings(CpmgSettings):
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms (anti-phase)."""
-        return [f"2izsz{self.suffix_start}"]
+        return self.get_start_terms("2izsz")
 
     @computed_field
     @property
     def detection(self) -> str:
         """Detection operator (anti-phase)."""
-        return f"[2izsz{self.suffix_detect}]"
+        return self.get_detection_expression("[2izsz]")
 
 
 class Cpmg1HnApConfig(
@@ -64,7 +64,7 @@ class Cpmg1HnApConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
         return ToBeFitted(rates=[f"r2_i_{state}"], model_free=[f"tauc_{state}"])
 
 

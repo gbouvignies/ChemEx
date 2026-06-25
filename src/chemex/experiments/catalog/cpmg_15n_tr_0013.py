@@ -86,12 +86,11 @@ class Cpmg15NTr0013Settings(CpmgSettings):
             List of initial state terms for the Liouvillian calculation.
 
         """
-        suffix = self.suffix_start
         if self.s3e:
             if self.antitrosy:
-                return [f"2izsz{suffix}", f"iz{suffix}"]
-            return [f"2izsz{suffix}", f"-iz{suffix}"]
-        return [f"2izsz{suffix}"]
+                return self.get_start_terms("2izsz", "iz")
+            return self.get_start_terms("2izsz", "-iz")
+        return self.get_start_terms("2izsz")
 
     @computed_field
     @property
@@ -102,10 +101,9 @@ class Cpmg15NTr0013Settings(CpmgSettings):
             Detection term for the Liouvillian calculation.
 
         """
-        suffix = self.suffix_detect
         if self.antitrosy:
-            return f"[2izsz{suffix}] + [iz{suffix}]"
-        return f"[2izsz{suffix}] - [iz{suffix}]"
+            return self.get_detection_expression("[2izsz] + [iz]")
+        return self.get_detection_expression("[2izsz] - [iz]")
 
 
 class Cpmg15NTr0013Config(
@@ -117,7 +115,7 @@ class Cpmg15NTr0013Config(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
 
         to_be_fitted = ToBeFitted(rates=[f"r2_i_{state}"], model_free=[f"tauc_{state}"])
 

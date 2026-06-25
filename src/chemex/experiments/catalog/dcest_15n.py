@@ -104,14 +104,16 @@ class DCest15NSettings(MFCestSettings, B1InhomogeneityMixin):
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms based on kinetic model."""
+        if self.start_state is not None:
+            return self.get_start_terms("iz")
         starts = {"2st_hd": ["iz_a"], "4st_hd": ["iz_a", "iz_b"]}
-        return starts.get(self.model_name, [f"iz{self.suffix_start}"])
+        return starts.get(self.model_name, ["iz"])
 
     @computed_field
     @property
     def detection(self) -> str:
         """Detection operator for the experiment."""
-        return f"[iz{self.suffix_detect}]"
+        return self.get_detection_expression("[iz]")
 
 
 class DCest15NConfig(
@@ -121,7 +123,7 @@ class DCest15NConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
         return ToBeFitted(
             rates=["r2_i", f"r1_i_{state}"],
             model_free=[f"tauc_{state}", f"s2_{state}"],

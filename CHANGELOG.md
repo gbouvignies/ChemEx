@@ -7,6 +7,16 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 
 ## [Unreleased]
 
+### Changed
+- `observed_state` now accepts a state list for unweighted multi-state
+  detection in final-magnetization experiments.
+- Replaced `detect_all_states` with an explicit `observed_state` list.
+- Replaced `cs_evolution_prior` with `start_state`; provide one or more states
+  for non-equilibrium preparation, or use an empty list for equilibrium.
+- Preserved the existing observed-state starting defaults for `cest_1hn_ap`,
+  `cpmg_1hn_ap`, `cpmg_1hn_ap_0013`, and `cpmg_ch3_1h_sq`; use
+  `start_state = []` to request equilibrium preparation for these experiments.
+
 ## [2026.06.0] - 2026-06-03
 
 ### Added

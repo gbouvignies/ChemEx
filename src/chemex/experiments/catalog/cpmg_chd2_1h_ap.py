@@ -44,13 +44,13 @@ class CpmgChd21HApSettings(CpmgSettings):
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms (anti-phase)."""
-        return [f"2izsz{self.suffix_start}"]
+        return self.get_start_terms("2izsz")
 
     @computed_field
     @property
     def detection(self) -> str:
         """Detection operator (anti-phase)."""
-        return f"[2izsz{self.suffix_detect}]"
+        return self.get_detection_expression("[2izsz]")
 
 
 class CpmgChd21HApConfig(
@@ -60,7 +60,7 @@ class CpmgChd21HApConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
         return ToBeFitted(rates=[f"r2_i_{state}"], model_free=[f"tauc_{state}"])
 
 

@@ -64,27 +64,82 @@ The `[experiment]` section defines the type and settings of the pulse sequence. 
 | `time_t2`, `time_t1` | Relaxation delays in seconds (e.g., for CPMG relaxation dispersion experiments).                   |
 | `pw90`            | 90-degree pulse width, in seconds.                                                                    |
 | `b1_frq`          | B1 radio-frequency field strength, in Hz.                                                             |
-| `observed_state`  | ID of the observed state (e.g., `a`, `b`, `c`, or `d`).                                              |
-| `cs_evolution_prior` | Controls initial condition: equilibrium (False, default) vs non-equilibrium (True). See below.     |
+| `observed_state`  | Observed state; final-magnetization experiments also accept a list whose components are summed.       |
+| `start_state`     | Optional state or list of states used for non-equilibrium starting magnetization.                     |
 
-#### `cs_evolution_prior`
+#### `observed_state`
 
-The `cs_evolution_prior` key controls whether the initial magnetization assumes thermal equilibrium or a non-equilibrium condition:
-
-- **`False` (default)**: Equilibrium initial condition where all states are populated according to their equilibrium populations. Use this when the CEST/CPMG element starts immediately after magnetization preparation.
-
-- **`True`**: Non-equilibrium initial condition where only the observed state is initially populated. Use this when chemical shift evolution occurs **before** the CEST/CPMG element, as this breaks the equilibrium assumption.
-
-The choice can significantly affect extracted kinetic parameters, especially for slow exchange rates (see Yuwen et al., _J. Biomol. NMR_ **2016**, 65:143-156). Most experiments use the default (`False`), but some pulse sequences (e.g., `cpmg_1hn_ap`, `cest_1hn_ap`) set this to `True` by default based on their typical pulse sequence implementations. You can override the default in your experiment configuration file if your specific pulse sequence differs.
-
-Example:
+The existing string form selects one state:
 
 ```toml
-[experiment]
-name = "cpmg_1hn_ap"
-# Override the default if needed for your pulse sequence
-cs_evolution_prior = false
+observed_state = "a"
 ```
+
+For experiments that detect a final magnetization vector, such as CPMG, CEST,
+D-CEST, and relaxation experiments, a list selects several states and detects
+the unweighted sum of their final magnetization components:
+
+```toml
+observed_state = ["a", "c"]
+```
+
+This is equivalent to detecting the A component plus the C component; the sum
+is not divided by the number of states. Experiments that require a single state
+for another purpose, such as chemical-shift measurements, continue to require
+the string form.
+
+The first observed state is used as the reference state for state-specific
+parameter defaults and offset filtering. This does not constrain the starting
+magnetization.
+
+To detect all states, list every state in the active model:
+
+```toml
+observed_state = ["a", "b", "c"]
+```
+
+This replaces the removed `detect_all_states` option.
+
+#### `start_state`
+
+For most experiments, omitting `start_state` uses the thermal-equilibrium
+populations of all states. A string selects one non-equilibrium starting state:
+
+```toml
+start_state = "a"
+```
+
+A list selects several starting states:
+
+```toml
+start_state = ["a", "c"]
+```
+
+Each selected state's starting component is scaled by that state's equilibrium
+population. Selecting several states does not renormalize their populations;
+listing every state therefore reproduces the corresponding equilibrium
+component.
+
+For backward compatibility, `cest_1hn_ap`, `cpmg_1hn_ap`,
+`cpmg_1hn_ap_0013`, and `cpmg_ch3_1h_sq` default their starting states to
+`observed_state`, matching the previous `cs_evolution_prior = true` behavior.
+Use an empty list to select equilibrium preparation for these experiments:
+
+```toml
+start_state = []
+```
+
+This replaces `cs_evolution_prior`: omit `start_state` for equilibrium
+preparation in experiments whose default is equilibrium, use an empty list to
+override a state-specific experiment default, or set one or more states for
+non-equilibrium preparation. This choice can significantly affect extracted
+kinetic parameters, especially for slow exchange rates (see Yuwen et al.,
+_J. Biomol. NMR_ **2016**, 65:143-156).
+
+Multi-state detection and preparation are approximate component-selection
+models. They do not model acquisition, spectral lineshapes, peak overlap,
+integration windows, or the full transition between slow-, intermediate-, and
+fast-exchange lineshapes.
 
 ### `[conditions]`
 

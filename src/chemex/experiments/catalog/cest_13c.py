@@ -37,13 +37,13 @@ class Cest13CSettings(CestSettings, B1InhomogeneityMixin):
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms."""
-        return [f"iz{self.suffix_start}"]
+        return self.get_start_terms("iz")
 
     @computed_field
     @property
     def detection(self) -> str:
         """Detection operator."""
-        return f"[iz{self.suffix_detect}]"
+        return self.get_detection_expression("[iz]")
 
 
 class Cest13CConfig(
@@ -53,7 +53,7 @@ class Cest13CConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
         return ToBeFitted(
             rates=["r2_i", f"r1_i_{state}"],
             model_free=[f"tauc_{state}", f"s2_{state}"],

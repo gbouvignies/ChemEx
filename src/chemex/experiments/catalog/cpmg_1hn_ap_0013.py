@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import reduce
-from typing import Literal
+from typing import ClassVar, Literal
 
 import numpy as np
 from pydantic import Field, computed_field
@@ -61,10 +61,7 @@ class Cpmg1HnAp0013Settings(CpmgSettings):
         ge=0.0,
         description="Second equilibration delay (seconds)",
     )
-    cs_evolution_prior: bool = Field(
-        default=True,
-        description="Flag for chemical shift evolution prior to CPMG",
-    )
+    start_from_observed_by_default: ClassVar[bool] = True
 
     @computed_field
     @property
@@ -86,7 +83,7 @@ class Cpmg1HnAp0013Settings(CpmgSettings):
             List of initial state terms for the Liouvillian calculation.
 
         """
-        return [f"2izsz{self.suffix_start}"]
+        return self.get_start_terms("2izsz")
 
     @computed_field
     @property
@@ -97,7 +94,7 @@ class Cpmg1HnAp0013Settings(CpmgSettings):
             Detection term for the Liouvillian calculation.
 
         """
-        return f"[iz{self.suffix_detect}]"
+        return self.get_detection_expression("[iz]")
 
 
 class Cpmg1HnAp0013Config(
@@ -109,7 +106,7 @@ class Cpmg1HnAp0013Config(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
         return ToBeFitted(rates=[f"r2_i_{state}"], model_free=[f"tauc_{state}"])
 
 

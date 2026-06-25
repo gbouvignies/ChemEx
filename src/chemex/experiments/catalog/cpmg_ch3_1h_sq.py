@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import reduce
-from typing import Literal
+from typing import ClassVar, Literal
 
 import numpy as np
 from pydantic import Field, computed_field
@@ -36,19 +36,19 @@ class CpmgCh31HSqSettings(CpmgSettings):
     taua: float = 2.0e-3
     comp180_flg: bool = True
     ipap_flg: bool = False
-    cs_evolution_prior: bool = True
+    start_from_observed_by_default: ClassVar[bool] = True
 
     @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms (transverse components)."""
-        return [f"2ixsz{self.suffix_start}", f"2iysz{self.suffix_start}"]
+        return self.get_start_terms("2ixsz", "2iysz")
 
     @computed_field
     @property
     def detection(self) -> str:
         """Detection operator."""
-        return f"[iy{self.suffix_detect}]"
+        return self.get_detection_expression("[iy]")
 
 
 class CpmgCh31HSqConfig(
@@ -60,7 +60,7 @@ class CpmgCh31HSqConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
 
         to_be_fitted = ToBeFitted(rates=[f"r2_i_{state}"], model_free=[f"tauc_{state}"])
 

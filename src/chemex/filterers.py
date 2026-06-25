@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Generic, Literal, Protocol, TypeVar
+from typing import Any, Generic, Protocol, TypeVar
 
 from chemex.containers.data import Data
 from chemex.nmr.spectrometer import Spectrometer
@@ -38,7 +38,7 @@ class PlanesFilterer:
 
 
 class CestExperimentSettings(Protocol):
-    observed_state: Literal["a", "b", "c", "d"]
+    primary_state: str
     sw: float
 
 
@@ -65,7 +65,7 @@ def _filter_offsets(
     config: CestExperimentConfig,
     spectrometer: Spectrometer,
 ) -> None:
-    state = config.experiment.observed_state
+    state = config.experiment.primary_state
     state_ppm = spectrometer.par_values[f"cs_i_{state}"]
     state_offset = spectrometer.ppms_to_offsets(state_ppm)
 
