@@ -3,6 +3,7 @@
 import os
 import sys
 from argparse import Namespace
+from collections.abc import Sequence
 
 from chemex.cli import build_parser
 from chemex.configuration.methods import Method, Selection, read_methods
@@ -19,6 +20,7 @@ from chemex.messages import (
 )
 from chemex.optimize.fitting import run_methods
 from chemex.optimize.helper import execute_simulation
+from chemex.run_info import write_run_info
 from chemex.runtime import (
     AnalysisSession,
     ExecutionSettings,
@@ -30,6 +32,8 @@ def run_fit(
     args: Namespace,
     experiments: Experiments,
     session: AnalysisSession,
+    *,
+    argv: Sequence[str] | None = None,
 ) -> None:
     # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
     experiments.filter()
@@ -39,6 +43,8 @@ def run_fit(
         methods = read_methods(args.method)
     else:
         methods = {"": Method()}
+
+    write_run_info(args, experiments, argv=argv)
 
     print_start_fit()
     run_methods(experiments, methods, args.output, args.plot, session=session)
@@ -59,7 +65,12 @@ def run_sim(
     execute_simulation(experiments, path, plot=plot, session=session)
 
 
-def run(args: Namespace, session: AnalysisSession | None = None) -> None:
+def run(
+    args: Namespace,
+    session: AnalysisSession | None = None,
+    *,
+    argv: Sequence[str] | None = None,
+) -> None:
     """Run the fit or simulation."""
     if session is None:
         session = AnalysisSession.create()
@@ -89,7 +100,7 @@ def run(args: Namespace, session: AnalysisSession | None = None) -> None:
     if args.commands == "simulate":
         run_sim(args, experiments, session)
     else:
-        run_fit(args, experiments, session)
+        run_fit(args, experiments, session, argv=argv)
 
 
 def main() -> None:
@@ -100,6 +111,6 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     if args.analysis_command:
-        run(args)
+        run(args, argv=sys.argv)
     else:
         args.func(args)
