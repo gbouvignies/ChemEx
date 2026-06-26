@@ -17,3 +17,17 @@ def test_cest_fit_printer_keeps_ppm_offsets_distinct() -> None:
     lines = output.splitlines()
     assert lines[2].split()[0] == "14.97012"
     assert lines[3].split()[0] == "14.97067"
+
+
+def test_cest_exp_printer_keeps_ppm_offsets_distinct() -> None:
+    data = Data(
+        exp=np.array([0.1, 0.2]),
+        err=np.array([[0.01, 0.01], [0.02, 0.02]]),
+        metadata=np.array([14.97012, 14.97067]),
+    )
+
+    output = data_plot_printers["cest"].print_exp("G23CD2-HD2", data)
+
+    lines = output.splitlines()
+    assert lines[2].split()[0] == "14.97012"
+    assert lines[3].split()[0] == "14.97067"
