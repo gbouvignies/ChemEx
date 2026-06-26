@@ -148,6 +148,44 @@ def test_write_run_info_captures_inputs_parameters_and_runtime(
     assert "PA" not in parameters["GLOBAL"]
 
 
+def test_run_info_uses_chemex_path_semantics_for_literal_tilde(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    experiment_file = _write_input(tmp_path / "~" / "experiment.toml")
+    output = tmp_path / "~" / "Output"
+    args = Namespace(
+        experiments=[Path("~/experiment.toml")],
+        parameters=[],
+        method=None,
+        output=Path("~/Output"),
+    )
+    experiments = SimpleNamespace(
+        param_ids=set(),
+        parameter_store=ParameterStore({}),
+    )
+    monkeypatch.setattr(run_info_module, "_git_metadata", lambda: None)
+
+    run_info_module.write_run_info(
+        args,
+        experiments,
+        argv=["chemex", "fit", "--output", "~/Output"],
+        working_directory=tmp_path,
+        timestamp=datetime(2026, 6, 24, 12, 30, tzinfo=UTC),
+    )
+
+    run_info_path = output / "run_info"
+    run = tomllib.loads((run_info_path / "run.toml").read_text(encoding="utf-8"))
+    copied_experiment = run["inputs"]["experiments"][0]
+
+    assert run["run"]["output_directory"] == str(output.resolve())
+    assert copied_experiment["provided_path"] == "~/experiment.toml"
+    assert copied_experiment["resolved_path"] == str(experiment_file.resolve())
+    assert (run_info_path / copied_experiment["copied_path"]).read_text(
+        encoding="utf-8",
+    ) == experiment_file.read_text(encoding="utf-8")
+
+
 def test_input_files_with_same_basename_are_copied_without_collision(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
