@@ -116,10 +116,9 @@ def _serialize_parameters(
 
 
 def _resolve_path(path: Path, working_directory: Path) -> Path:
-    expanded = path.expanduser()
-    if not expanded.is_absolute():
-        expanded = working_directory / expanded
-    return expanded.resolve()
+    if path.is_absolute():
+        return path.resolve()
+    return (working_directory / path).resolve()
 
 
 def _collect_input_files(args: Namespace, working_directory: Path) -> list[InputFile]:
