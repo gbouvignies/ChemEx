@@ -7,15 +7,51 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 
 ## [Unreleased]
 
+## [2026.06.1] - 2026-06-26
+
+### Added
+- Added lightweight `run_info/` output for fits, including runtime metadata,
+  command and input provenance, optional Git metadata, starting independent
+  parameters, and copies of experiment, parameter, and method TOML inputs.
+- Added multi-state `observed_state` support for final-magnetization
+  experiments. Passing a state list now detects the unweighted sum of the
+  selected final magnetization components, while the existing string form keeps
+  single-state detection.
+- Added `start_state` to control non-equilibrium preparation independently from
+  detection. It accepts one state, multiple states, or an empty list to request
+  equilibrium preparation when overriding a state-specific default.
+
 ### Changed
-- `observed_state` now accepts a state list for unweighted multi-state
-  detection in final-magnetization experiments.
-- Replaced `detect_all_states` with an explicit `observed_state` list.
-- Replaced `cs_evolution_prior` with `start_state`; provide one or more states
-  for non-equilibrium preparation, or use an empty list for equilibrium.
-- Preserved the existing observed-state starting defaults for `cest_1hn_ap`,
+- Updated CEST, D-CEST, CPMG, and relaxation experiments to derive detection
+  expressions and starting terms from normalized state selections.
+- Validation now checks `observed_state` and `start_state` against the active
+  model states, rejects duplicate state selections, and keeps the first observed
+  state as the reference for state-specific defaults and offset filtering.
+- Preserved the previous observed-state preparation defaults for `cest_1hn_ap`,
   `cpmg_1hn_ap`, `cpmg_1hn_ap_0013`, and `cpmg_ch3_1h_sq`; use
   `start_state = []` to request equilibrium preparation for these experiments.
+- Preserved D-CEST HD model starting terms by default, while allowing
+  `start_state` to override them explicitly.
+
+### Removed
+- Removed `detect_all_states`; list every active model state in
+  `observed_state` to detect all states.
+- Removed `cs_evolution_prior`; use `start_state` for non-equilibrium
+  preparation or `start_state = []` for equilibrium preparation when overriding
+  a state-specific default.
+
+### Fixed
+- Fixed `run_info` path resolution so literal tilde-prefixed input paths are not
+  expanded before being resolved against the working directory.
+- Increased CEST plot output precision so closely spaced PPM offsets stay
+  distinct in `.fit` and `.exp` files.
+
+### Documentation
+- Updated the fitting guide and experiment reference pages for `observed_state`
+  list syntax, `start_state`, replacement syntax for removed options, and the
+  limits of multi-state component selection.
+- Documented the new `run_info/` output directory.
+- Removed duplicate MCMC implementation-plan documentation.
 
 ## [2026.06.0] - 2026-06-03
 
