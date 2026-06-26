@@ -63,7 +63,11 @@ ncyc_max = 40
 ## [optional, default: false]
 # ipap_flg = false
 
-## Non-equilibrium starting state(s).
+## Initial condition: non-equilibrium preparation (observed state(s) populated).
+## This is appropriate when chemical shift evolution occurs before the measured
+## relaxation/exchange element. Use start_state = [] for equilibrium
+## preparation if your pulse sequence differs (see Yuwen et al.,
+## J. Biomol. NMR 2016, 65:143-156).
 ## [optional, default: observed_state; use [] for equilibrium preparation]
 # start_state = "a"
 

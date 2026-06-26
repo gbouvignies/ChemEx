@@ -103,7 +103,12 @@ This replaces the removed `detect_all_states` option.
 #### `start_state`
 
 For most experiments, omitting `start_state` uses the thermal-equilibrium
-populations of all states. A string selects one non-equilibrium starting state:
+populations of all states. This is appropriate when the measured relaxation or
+exchange element starts from equilibrium magnetization.
+
+Set `start_state` for a non-equilibrium initial condition, for example when
+chemical shift evolution occurs before the measured CEST/CPMG element. A string
+selects one non-equilibrium starting state:
 
 ```toml
 start_state = "a"

@@ -38,7 +38,11 @@ An example use of the module is given
 ## Name of the chemex module corresponding to the experiment
 name = "relaxation_nz"
 
-## Non-equilibrium starting state(s). Omit for equilibrium preparation.
+## Initial condition: equilibrium preparation (all states populated according to
+## their equilibrium populations). Set start_state for non-equilibrium
+## preparation when chemical shift evolution occurs before the measured
+## relaxation/exchange element in your pulse sequence (see Yuwen et al.,
+## J. Biomol. NMR 2016, 65:143-156).
 ## [optional, default: equilibrium]
 # start_state = "a"
 

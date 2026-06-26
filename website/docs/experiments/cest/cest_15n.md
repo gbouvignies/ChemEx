@@ -59,7 +59,11 @@ type = "gaussian"
 scale = 0.1
 res = 11
 
-## Non-equilibrium starting state(s). Omit for equilibrium preparation.
+## Initial condition: equilibrium preparation (all states populated according to
+## their equilibrium populations). Set start_state for non-equilibrium
+## preparation when chemical shift evolution occurs before the measured
+## relaxation/exchange element in your pulse sequence (see Yuwen et al.,
+## J. Biomol. NMR 2016, 65:143-156).
 ## [optional, default: equilibrium]
 # start_state = "a"
 

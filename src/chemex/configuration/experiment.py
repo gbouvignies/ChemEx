@@ -294,7 +294,10 @@ class RelaxationSettings(DetectionSettings):
         start_state:
             Optional state or states used for non-equilibrium starting
             magnetization. If omitted, the experiment-specific default is used;
-            this is thermal equilibrium for most experiments.
+            this is thermal equilibrium for most experiments. Set it when
+            chemical shift evolution or another preparation step occurs before
+            the measured relaxation/exchange element and the equilibrium
+            assumption no longer matches the pulse sequence.
 
     """
 
