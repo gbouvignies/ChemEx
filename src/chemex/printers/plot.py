@@ -15,7 +15,7 @@ class PlotPrinter(Protocol):
 @dataclass
 class DataPlotPrinter:
     first_column_name: str = ""
-    first_column_fmt: str = "12.2f"
+    first_column_fmt: str = "12.5f"
 
     def print_exp(self, name: str, data: Data) -> str:
         output = [
@@ -56,7 +56,7 @@ class DataPlotPrinter:
 @dataclass
 class CpmgDataPlotPrinter(DataPlotPrinter):
     first_column_name: str = "NU_CPMG (Hz)"
-    first_column_fmt: str = "12.2f"
+    first_column_fmt: str = "12.5f"
 
     def print_exp(self, name: str, data: Data) -> str:
         output = [
@@ -92,7 +92,7 @@ class CpmgDataPlotPrinter(DataPlotPrinter):
 
 
 data_plot_printers: dict[str, PlotPrinter] = {
-    "cest": DataPlotPrinter("OFFSET (PPM)", "12.2f"),
+    "cest": DataPlotPrinter("OFFSET (PPM)", "12.5f"),
     "cpmg": CpmgDataPlotPrinter(),
     "relaxation": DataPlotPrinter("TIME (S)", "12.6f"),
 }
