@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 import numpy as np
-from pydantic import Field
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
@@ -35,9 +35,15 @@ class CestCh31HIpApSettings(CestSettings, B1InhomogeneityMixin):
     carrier: Frequency = Field(description="1H carrier position in Hz")
     taua: float = 2.00e-3
 
+    @computed_field
+    @property
+    def start_terms(self) -> list[str]:
+        """Starting longitudinal identity components."""
+        return self.get_start_terms("ie")
+
     @property
     def detection(self) -> str:
-        return f"[2izsz{self.suffix_detect}]"
+        return self.get_detection_expression("[2izsz]")
 
 
 class CestCh31HIpApConfig(
@@ -49,7 +55,7 @@ class CestCh31HIpApConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
         return ToBeFitted(
             rates=[
                 "r2_i",
@@ -103,7 +109,9 @@ class CestCh31HIpApSequence:
         pp90_i = spectrometer.perfect90_i
         pp180_isx = spectrometer.perfect180_i[0] @ spectrometer.perfect180_s[0]
 
-        start = d_d1 @ spectrometer.get_start_magnetization(terms=["ie"])
+        start = d_d1 @ spectrometer.get_start_magnetization(
+            terms=self.settings.start_terms,
+        )
         start = spectrometer.keep(start, components=["ie", "iz"])
 
         intensities: dict[float, float] = {}

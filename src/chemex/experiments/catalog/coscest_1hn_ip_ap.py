@@ -40,9 +40,15 @@ class CosCest1HnIpApSettings(MFCestSettings, B1InhomogeneityMixin):
 
     @computed_field
     @property
+    def start_terms(self) -> list[str]:
+        """Starting longitudinal identity components."""
+        return self.get_start_terms("ie")
+
+    @computed_field
+    @property
     def detection(self) -> str:
         """Detection operator (anti-phase)."""
-        return f"[2izsz{self.suffix_detect}]"
+        return self.get_detection_expression("[2izsz]")
 
 
 class CosCest1HnIpApConfig(
@@ -54,7 +60,7 @@ class CosCest1HnIpApConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
         return ToBeFitted(
             rates=[
                 "r2_i",
@@ -146,7 +152,9 @@ class CosCest1HnIpApSequence:
         pp90_i = spectrometer.perfect90_i
         pp180_isx = spectrometer.perfect180_i[0] @ spectrometer.perfect180_s[0]
 
-        start = d_d1 @ spectrometer.get_start_magnetization(terms=["ie"])
+        start = d_d1 @ spectrometer.get_start_magnetization(
+            terms=self.settings.start_terms,
+        )
         start = spectrometer.keep(start, components=["ie", "iz"])
 
         intensities: dict[float, float] = {}

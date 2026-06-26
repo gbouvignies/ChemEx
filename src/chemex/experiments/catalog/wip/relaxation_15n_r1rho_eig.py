@@ -8,7 +8,7 @@ import numpy as np
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
-from chemex.configuration.experiment import B1InhomogeneityMixin, ExperimentSettings
+from chemex.configuration.experiment import B1InhomogeneityMixin, DetectionSettings
 from chemex.containers.data import Data
 from chemex.containers.dataset import load_relaxation_dataset
 from chemex.experiments.factories import Creators, factories
@@ -23,18 +23,17 @@ from chemex.typing import Array
 EXPERIMENT_NAME = "wip.relaxation_15n_r1rho_eig"
 
 
-class Relaxation15NR1RhoSettings(ExperimentSettings, B1InhomogeneityMixin):
+class Relaxation15NR1RhoSettings(DetectionSettings, B1InhomogeneityMixin):
     name: Literal["wip.relaxation_15n_r1rho_eig"]
 
     carrier: float
     b1_frq: float
     legacy_b1_inh_scale_default: ClassVar[float | None] = np.inf
     legacy_b1_inh_res_default: ClassVar[int | None] = 11
-    observed_state: Literal["a", "b", "c", "d"] = "a"
 
     @property
     def detection(self) -> str:
-        return f"[iz_{self.observed_state}]"
+        return self.get_detection_expression("[iz]")
 
 
 class Relaxation15NR1RhoConfig(
@@ -46,7 +45,7 @@ class Relaxation15NR1RhoConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
         return ToBeFitted(
             rates=[f"r2_i_{state}"],
             model_free=[f"tauc_{state}", f"s2_{state}"],

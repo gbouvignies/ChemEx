@@ -85,12 +85,13 @@ res = 11
 ## [optional, default: 0.0]
 # time_equil = 0.0
 
-## Initial condition: equilibrium (all states populated according to their
-## equilibrium populations). Set to true for non-equilibrium initial condition
-## if chemical shift evolution occurs before the CEST element in your pulse
-## sequence (see Yuwen et al., J. Biomol. NMR 2016, 65:143-156).
-## [optional, default: false]
-# cs_evolution_prior = false
+## Initial condition: omit start_state for the model-specific default
+## (equilibrium except for the HD models). Set start_state for
+## non-equilibrium preparation when chemical shift evolution occurs before the
+## measured relaxation/exchange element (see Yuwen et al., J. Biomol. NMR
+## 2016, 65:143-156). Use [] to force equilibrium.
+## [optional]
+# start_state = "a"
 
 ## State of the observed resonance [optional, default: "a"]
 # observed_state = "a"

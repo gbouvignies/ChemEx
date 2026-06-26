@@ -43,19 +43,17 @@ class Cest15NTrSettings(CestSettings, B1InhomogeneityMixin):
         TROSY: (2IzSz + Iz) / 2
         ANTITROSY: (2IzSz - Iz) / 2.
         """
-        suffix = self.suffix_start
         if not self.antitrosy:
-            return [f"2izsz{suffix}", f"-iz{suffix}"]
-        return [f"2izsz{suffix}", f"iz{suffix}"]
+            return self.get_start_terms("2izsz", "-iz")
+        return self.get_start_terms("2izsz", "iz")
 
     @computed_field
     @property
     def detection(self) -> str:
         """Detection operator for TROSY or ANTI-TROSY component."""
-        suffix = self.suffix_detect
         if self.antitrosy:
-            return f"[2izsz{suffix}] + [iz{suffix}]"
-        return f"[2izsz{suffix}] - [iz{suffix}]"
+            return self.get_detection_expression("[2izsz] + [iz]")
+        return self.get_detection_expression("[2izsz] - [iz]")
 
 
 class Cest15NTrConfig(
@@ -65,7 +63,7 @@ class Cest15NTrConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
 
         to_be_fitted = ToBeFitted(
             rates=["r2_i", f"r1_i_{state}", "r1a_is"],

@@ -90,7 +90,7 @@ class CpmgCh313CH2c0013Settings(CpmgSettingsEvenNcycs):
             List of initial state terms for the Liouvillian calculation.
 
         """
-        return [f"2izsz{self.suffix_start}"]
+        return self.get_start_terms("2izsz")
 
     @computed_field
     @property
@@ -101,7 +101,7 @@ class CpmgCh313CH2c0013Settings(CpmgSettingsEvenNcycs):
             Detection term for the Liouvillian calculation.
 
         """
-        return f"[iz{self.suffix_detect}]"
+        return self.get_detection_expression("[iz]")
 
 
 class CpmgCh313CH2c0013Config(
@@ -113,7 +113,7 @@ class CpmgCh313CH2c0013Config(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
         return ToBeFitted(rates=[f"r2_i_{state}"], model_free=[f"tauc_{state}"])
 
 

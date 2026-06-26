@@ -77,7 +77,7 @@ class CpmgCh31HTqDiffSettings(CpmgSettings):
             List of initial state terms for the Liouvillian calculation.
 
         """
-        return [f"2ixsz{self.suffix_start}"]
+        return self.get_start_terms("2ixsz")
 
     @computed_field
     @property
@@ -88,7 +88,7 @@ class CpmgCh31HTqDiffSettings(CpmgSettings):
             Detection term for the Liouvillian calculation.
 
         """
-        return f"[2ixsz{self.suffix_detect}]"
+        return self.get_detection_expression("[2ixsz]")
 
 
 class CpmgCh31HTqDiffConfig(
@@ -100,7 +100,7 @@ class CpmgCh31HTqDiffConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
 
         to_be_fitted = ToBeFitted(
             rates=[f"r2_i_{state}", "d_"],

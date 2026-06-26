@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 import numpy as np
 from pydantic import Field, computed_field
@@ -32,19 +32,19 @@ class Cest1HnApSettings(CestSettings, B1InhomogeneityMixin):
     name: Literal["cest_1hn_ap"]
     time_t1: float = Field(description="Length of the CEST block in seconds")
     carrier: Frequency = Field(description="1H carrier position in Hz")
-    cs_evolution_prior: bool = True
+    start_from_observed_by_default: ClassVar[bool] = True
 
     @computed_field
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization term (anti-phase)."""
-        return [f"2izsz{self.suffix_start}"]
+        return self.get_start_terms("2izsz")
 
     @computed_field
     @property
     def detection(self) -> str:
         """Detection operator (anti-phase)."""
-        return f"[2izsz{self.suffix_detect}]"
+        return self.get_detection_expression("[2izsz]")
 
 
 class Cest1HnApConfig(
@@ -54,7 +54,7 @@ class Cest1HnApConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
         return ToBeFitted(
             rates=["r2_i", f"r1_i_{state}", f"r1_s_{state}", f"etaxy_i_{state}"],
             model_free=[f"tauc_{state}", f"s2_{state}", f"khh_{state}"],

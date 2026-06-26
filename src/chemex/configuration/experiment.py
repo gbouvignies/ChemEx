@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import math
-from typing import Any, ClassVar, Literal, TypeVar
+from string import ascii_lowercase
+from typing import Annotated, Any, ClassVar, TypeVar
 
 import numpy as np
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
-    computed_field,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
@@ -16,10 +18,88 @@ from pydantic import (
 from chemex.configuration.b1_config import parse_distribution_config
 from chemex.configuration.types import OptionalB1Field, PulseWidth
 from chemex.configuration.utils import key_to_lower
+from chemex.models.model import ModelSpec
+from chemex.nmr._engine.detection import build_state_detection_expression
 from chemex.nmr.constants import Distribution
 from chemex.nmr.distributions.registry import DistributionConfig
 
 T = TypeVar("T")
+_SUPPORTED_STATES = tuple(ascii_lowercase[:6])
+
+
+def _model_states_from_context(info: ValidationInfo) -> tuple[str, ...]:
+    context = info.context
+    model = context.get("model") if isinstance(context, dict) else None
+    if isinstance(model, ModelSpec):
+        return tuple(model.states)
+    return _SUPPORTED_STATES
+
+
+def _validate_state(value: object, info: ValidationInfo) -> str:
+    field = info.field_name or "state"
+    if not isinstance(value, str):
+        msg = f"'{field}' must be a state string"
+        raise ValueError(msg)  # noqa: TRY004
+
+    state = value.lower()
+    available_states = _model_states_from_context(info)
+    if state not in available_states:
+        available_list = ", ".join(repr(item) for item in available_states)
+        msg = (
+            f"Unknown {field.replace('_', ' ')}: {state!r}. "
+            f"Available states: {available_list}"
+        )
+        raise ValueError(msg)
+    return state
+
+
+def _validate_state_selection(
+    value: object,
+    info: ValidationInfo,
+) -> str | tuple[str, ...]:
+    field = info.field_name or "state"
+    if isinstance(value, str):
+        return _validate_state(value, info)
+    if not isinstance(value, (list, tuple)):
+        msg = (
+            f"'{field}' must be a state string or a non-empty list "
+            "of state strings"
+        )
+        raise ValueError(msg)  # noqa: TRY004
+    if not value:
+        msg = f"'{field}' must contain at least one state"
+        raise ValueError(msg)
+    if not all(isinstance(state, str) for state in value):
+        msg = f"Every entry in '{field}' must be a string"
+        raise ValueError(msg)
+
+    states = tuple(_validate_state(state, info) for state in value)
+    duplicates = sorted(state for state in set(states) if states.count(state) > 1)
+    if duplicates:
+        duplicate_list = ", ".join(repr(state) for state in duplicates)
+        msg = f"'{field}' contains duplicate states: {duplicate_list}"
+        raise ValueError(msg)
+    return states
+
+
+def _validate_start_state_selection(
+    value: object,
+    info: ValidationInfo,
+) -> str | tuple[str, ...]:
+    if isinstance(value, (list, tuple)) and not value:
+        return ()
+    return _validate_state_selection(value, info)
+
+
+_State = Annotated[str, BeforeValidator(_validate_state)]
+_StateSelection = Annotated[
+    str | tuple[str, ...],
+    BeforeValidator(_validate_state_selection),
+]
+_StartStateSelection = Annotated[
+    str | tuple[str, ...],
+    BeforeValidator(_validate_start_state_selection),
+]
 
 
 def _legacy_b1_distribution_input(
@@ -55,12 +135,34 @@ def normalize_b1_eff_alias(data: Any) -> Any:
 
 
 class ExperimentSettings(BaseModel):
-    observed_state: Literal["a", "b", "c", "d"] = "a"
+    observed_state: _State = "a"
     model_name: str = Field(default="", exclude=True)
 
     model_config = ConfigDict(str_to_lower=True)
 
     _key_to_lower = model_validator(mode="before")(key_to_lower)
+
+
+class DetectionSettings(ExperimentSettings):
+    """Settings for experiments that detect a final magnetization vector."""
+
+    observed_state: _StateSelection = "a"
+
+    @property
+    def observed_states(self) -> tuple[str, ...]:
+        """Normalized states contributing to final-magnetization detection."""
+        if isinstance(self.observed_state, str):
+            return (self.observed_state,)
+        return self.observed_state
+
+    @property
+    def primary_state(self) -> str:
+        """First observed state, used where a single reference state is needed."""
+        return self.observed_states[0]
+
+    def get_detection_expression(self, expression: str) -> str:
+        """Apply the selected observed states to a detection expression."""
+        return build_state_detection_expression(expression, self.observed_states)
 
 
 class B1InhomogeneityMixin(BaseModel):
@@ -185,53 +287,101 @@ class B1InhomogeneityMixin(BaseModel):
         return self.b1_distribution.get_distribution(nominal)
 
 
-class RelaxationSettings(ExperimentSettings):
+class RelaxationSettings(DetectionSettings):
     """Base settings for relaxation-based experiments (CEST, DCEST, CPMG, etc).
 
     Attributes:
-        cs_evolution_prior (bool):
-            Controls the initial condition (equilibrium vs non-equilibrium).
-            If False (default), the initial magnetization assumes thermal
-            equilibrium with all states populated according to their equilibrium
-            populations. If True, only the observed state is initially populated
-            (non-equilibrium condition), which is appropriate when chemical shift
-            evolution occurs before the CEST/CPMG element in the pulse sequence,
-            breaking the equilibrium assumption. This can affect the accuracy of
-            extracted kinetic parameters, especially for slow exchange rates
-            (see Yuwen et al., J. Biomol. NMR 2016, 65:143-156).
-        detect_all_states (bool):
-            If True, detection will use all states (e.g., '[iz]'),
-            otherwise only the observed state (e.g., '[iz_a]').
-
-    Properties:
-        suffix_start: Suffix for starting terms, respects cs_evolution_prior.
-        suffix_detect: Suffix for detection, respects detect_all_states.
-            Returns '' if detect_all_states is True, else '_{observed_state}'.
+        start_state:
+            Optional state or states used for non-equilibrium starting
+            magnetization. If omitted, the experiment-specific default is used;
+            this is thermal equilibrium for most experiments. Set it when
+            chemical shift evolution or another preparation step occurs before
+            the measured relaxation/exchange element and the equilibrium
+            assumption no longer matches the pulse sequence.
 
     """
 
-    cs_evolution_prior: bool = False
-    detect_all_states: bool = False
+    start_from_observed_by_default: ClassVar[bool] = False
+    start_state: _StartStateSelection | None = None
 
-    @computed_field
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_state_flags(
+        cls,
+        data: Any,
+        info: ValidationInfo,
+    ) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        values = {str(key).lower(): value for key, value in data.items()}
+        detect_all_states = values.get("detect_all_states")
+        if detect_all_states is True:
+            states = ", ".join(
+                f'"{state}"' for state in _model_states_from_context(info)
+            )
+            msg = (
+                "'detect_all_states' has been removed; use "
+                f"'observed_state = [{states}]'"
+            )
+            raise ValueError(msg)
+        if detect_all_states is False:
+            msg = (
+                "'detect_all_states' has been removed; remove it to retain "
+                "single-state detection through 'observed_state'"
+            )
+            raise ValueError(msg)
+        if "detect_all_states" in values:
+            msg = (
+                "'detect_all_states' has been removed; configure detection with "
+                "'observed_state' instead"
+            )
+            raise ValueError(msg)
+
+        cs_evolution_prior = values.get("cs_evolution_prior")
+        if cs_evolution_prior is True:
+            msg = (
+                "'cs_evolution_prior' has been removed; set 'start_state' to "
+                "the observed state or states"
+            )
+            raise ValueError(msg)
+        if cs_evolution_prior is False:
+            replacement = (
+                "use 'start_state = []' to retain equilibrium preparation"
+                if cls.start_from_observed_by_default
+                else "remove it to retain equilibrium preparation"
+            )
+            msg = f"'cs_evolution_prior' has been removed; {replacement}"
+            raise ValueError(msg)
+        if "cs_evolution_prior" in values:
+            msg = (
+                "'cs_evolution_prior' has been removed; configure preparation "
+                "with 'start_state' instead"
+            )
+            raise ValueError(msg)
+        return data
+
     @property
-    def suffix_start(self) -> str:
-        """Suffix for starting terms.
+    def start_states(self) -> tuple[str, ...]:
+        """Normalized non-equilibrium starting states, or empty for equilibrium."""
+        if self.start_state is None:
+            if self.start_from_observed_by_default:
+                return self.observed_states
+            return ()
+        if isinstance(self.start_state, str):
+            return (self.start_state,)
+        return self.start_state
 
-        Returns '_{observed_state}' if cs_evolution_prior is True (non-equilibrium
-        initial condition with only the observed state populated), else ''
-        (equilibrium initial condition with all states populated).
-        """
-        return f"_{self.observed_state}" if self.cs_evolution_prior else ""
-
-    @computed_field
-    @property
-    def suffix_detect(self) -> str:
-        """Suffix for detection.
-
-        Returns '' if detect_all_states is True, else '_{observed_state}'.
-        """
-        return "" if self.detect_all_states else f"_{self.observed_state}"
+    def get_start_terms(self, *components: str) -> list[str]:
+        """Apply starting-state selection to basis components."""
+        states = self.start_states
+        if not states:
+            return list(components)
+        return [
+            f"{component}_{state}"
+            for state in states
+            for component in components
+        ]
 
 
 class CpmgSettings(RelaxationSettings):

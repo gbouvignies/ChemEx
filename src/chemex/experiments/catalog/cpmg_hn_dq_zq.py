@@ -50,7 +50,7 @@ class CpmgHNDqZqSettings(CpmgSettingsEvenNcycs):
             List of initial state terms for the Liouvillian calculation.
 
         """
-        return [f"2ixsx{self.suffix_start}"]
+        return self.get_start_terms("2ixsx")
 
     @computed_field
     @property
@@ -61,10 +61,9 @@ class CpmgHNDqZqSettings(CpmgSettingsEvenNcycs):
             Detection term for the Liouvillian calculation.
 
         """
-        suffix = self.suffix_detect
         if self.dq_flg:
-            return f"[2ixsx{suffix}] - [2iysy{suffix}]"
-        return f"[2ixsx{suffix}] + [2iysy{suffix}]"
+            return self.get_detection_expression("[2ixsx] - [2iysy]")
+        return self.get_detection_expression("[2ixsx] + [2iysy]")
 
 
 class CpmgHNDqZqConfig(
@@ -74,7 +73,7 @@ class CpmgHNDqZqConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
         return ToBeFitted(
             rates=[f"r2mq_is_{state}", f"mu_is_{state}"],
             model_free=[f"tauc_{state}", f"s2_{state}"],

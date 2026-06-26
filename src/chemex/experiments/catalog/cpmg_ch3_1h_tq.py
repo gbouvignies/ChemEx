@@ -40,13 +40,13 @@ class CpmgCh31HTqSettings(CpmgSettings):
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms (triple-quantum)."""
-        return [f"2ixsz{self.suffix_start}"]
+        return self.get_start_terms("2ixsz")
 
     @computed_field
     @property
     def detection(self) -> str:
         """Detection operator (triple-quantum)."""
-        return f"[2ixsz{self.suffix_detect}]"
+        return self.get_detection_expression("[2ixsz]")
 
 
 class CpmgCh31HTqConfig(
@@ -58,7 +58,7 @@ class CpmgCh31HTqConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
 
         to_be_fitted = ToBeFitted(rates=[f"r2_i_{state}"], model_free=[f"tauc_{state}"])
 

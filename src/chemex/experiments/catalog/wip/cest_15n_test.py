@@ -37,11 +37,11 @@ class Cest15NSettings(CestSettings, B1InhomogeneityMixin):
 
     @cached_property
     def start_terms(self) -> list[str]:
-        return [f"iz{self.suffix_start}"]
+        return self.get_start_terms("iz")
 
     @cached_property
     def detection(self) -> str:
-        return f"[iz_{self.observed_state}]"
+        return self.get_detection_expression("[iz]")
 
 
 class Cest15NTestConfig(
@@ -51,7 +51,7 @@ class Cest15NTestConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
         return ToBeFitted(
             rates=["r2_i", f"r1_i_{state}"],
             model_free=[f"tauc_{state}", f"s2_{state}"],

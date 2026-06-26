@@ -5,7 +5,10 @@ import pytest
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
-from chemex.nmr._engine.detection import build_detection_vector
+from chemex.nmr._engine.detection import (
+    build_detection_vector,
+    build_state_detection_expression,
+)
 from chemex.nmr._engine.engine import ISLiouvillianEngine
 from chemex.nmr.basis import Basis
 from chemex.parameters.spin_system import SpinSystem
@@ -20,6 +23,42 @@ def test_build_detection_vector_supports_addition_and_subtraction() -> None:
     )
 
     np.testing.assert_allclose(vector, expected)
+
+
+def test_build_state_detection_expression_preserves_component_signs() -> None:
+    expression = build_state_detection_expression(
+        "[2izsz] - [iz]",
+        ("a", "c"),
+    )
+
+    assert expression == "[2izsz_a] - [iz_a] + [2izsz_c] - [iz_c]"
+
+
+def test_multi_state_detection_sums_selected_final_components() -> None:
+    model = ModelSpec(name="3st", states="abc")
+    basis = Basis(type="ixyz", spin_system="nh", model=model)
+    expression = build_state_detection_expression("[iz]", ("a", "c"))
+    detection_vector = build_detection_vector(expression, basis.vectors).transpose()
+    magnetization = (
+        2.0 * basis.vectors["iz_a"]
+        + 5.0 * basis.vectors["iz_b"]
+        + 7.0 * basis.vectors["iz_c"]
+    )
+
+    detected = (detection_vector @ magnetization).item()
+
+    assert detected == pytest.approx(9.0)
+
+
+def test_explicit_all_state_detection_matches_legacy_unsuffixed_component() -> None:
+    model = ModelSpec(name="3st", states="abc")
+    basis = Basis(type="ixyz", spin_system="nh", model=model)
+    expression = build_state_detection_expression("[iz]", model.states)
+
+    explicit = build_detection_vector(expression, basis.vectors)
+    legacy = build_detection_vector("[iz]", basis.vectors)
+
+    np.testing.assert_allclose(explicit, legacy)
 
 
 def test_build_detection_vector_rejects_invalid_syntax() -> None:

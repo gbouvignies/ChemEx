@@ -50,14 +50,13 @@ class Cpmg15NTrSettings(CpmgSettings):
     @property
     def start_terms(self) -> list[str]:
         """Starting magnetization terms (TROSY component)."""
-        return [f"2izsz{self.suffix_start}"]
+        return self.get_start_terms("2izsz")
 
     @property
     def detection(self) -> str:
-        suffix = self.suffix_detect
         if self.antitrosy:
-            return f"[2izsz{suffix}] + [iz{suffix}]"
-        return f"[2izsz{suffix}] - [iz{suffix}]"
+            return self.get_detection_expression("[2izsz] + [iz]")
+        return self.get_detection_expression("[2izsz] - [iz]")
 
 
 class Cpmg15NTrConfig(
@@ -69,7 +68,7 @@ class Cpmg15NTrConfig(
 ):
     @property
     def to_be_fitted(self) -> ToBeFitted:
-        state = self.experiment.observed_state
+        state = self.experiment.primary_state
 
         to_be_fitted = ToBeFitted(rates=[f"r2_i_{state}"], model_free=[f"tauc_{state}"])
 
