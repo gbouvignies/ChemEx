@@ -12,6 +12,8 @@ jobs:
   build:
     name: Build Docusaurus
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: ./website
