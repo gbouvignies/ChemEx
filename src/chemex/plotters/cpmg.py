@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 from pathlib import Path
-from typing import Any, Generic, Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
@@ -150,7 +150,7 @@ def create_plot_data_calc(profile: Profile, config: CpmgExperimentConfig) -> Dat
     return data_fit
 
 
-class CpmgPlotter(Generic[T]):
+class CpmgPlotter[T: CpmgExperimentConfig]:
     def __init__(self, filename: Path, config: T, **_extra: Any) -> None:
         self.filename = filename
         self.config = config

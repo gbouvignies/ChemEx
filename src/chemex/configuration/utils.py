@@ -17,7 +17,7 @@ from typing import Any, TypeVar, overload
 T = TypeVar("T")
 
 
-def ensure_list(variable: T | list[T] | None) -> list[T]:
+def ensure_list[T](variable: T | list[T] | None) -> list[T]:
     """Ensures that the input variable is returned as a list.
 
     If the input variable is already a list, it is returned as-is.
@@ -45,7 +45,7 @@ def to_lower(string: str) -> str: ...
 
 
 @overload
-def to_lower(string: T) -> T: ...
+def to_lower[T](string: T) -> T: ...
 
 
 def to_lower(string: object) -> object:

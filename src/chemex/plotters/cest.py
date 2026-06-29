@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Generic, Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 
 import numpy as np
 from matplotlib.axes import Axes
@@ -207,7 +207,7 @@ def get_state_positions(spectrometer: Spectrometer) -> Array:
     )
 
 
-class CestPlotter(Generic[T]):
+class CestPlotter[T: CestExperimentConfig]:
     def __init__(self, filename: Path, config: T, **_extra: Any) -> None:
         self.filename = filename
         self.config = config

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Generic, Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 
 from chemex.containers.data import Data
 from chemex.nmr.spectrometer import Spectrometer
@@ -82,7 +82,7 @@ def _filter_offsets(
         data.mask[mask_filter] = False
 
 
-class CestFilterer(Generic[T]):
+class CestFilterer[T: CestExperimentConfig]:
     def __init__(self, config: T, spectrometer: Spectrometer, **_extra: Any) -> None:
         self.config = config
         self.spectrometer = spectrometer

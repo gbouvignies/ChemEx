@@ -5,7 +5,7 @@ from typing import TypeVar
 T = TypeVar("T")
 
 
-def powerset(iterable: Iterable[T]) -> Iterable[tuple[T, ...]]:
+def powerset[T](iterable: Iterable[T]) -> Iterable[tuple[T, ...]]:
     """Generates all possible non-empty subsets of the given iterable.
 
     This function returns the power set of the input iterable, excluding the empty set.

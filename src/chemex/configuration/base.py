@@ -11,7 +11,7 @@ Defines:
 """
 
 from dataclasses import dataclass, field
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -36,9 +36,8 @@ class BaseSettings(BaseModel):
     _key_to_lower = model_validator(mode="before")(key_to_lower)
 
 
-class ExperimentConfiguration(
+class ExperimentConfiguration[ExperimentSettings: BaseModel, ConditionsSettings: BaseModel, DataSettings: BaseModel](
     BaseModel,
-    Generic[ExperimentSettings, ConditionsSettings, DataSettings],
 ):
     model: ModelSpec = Field(default_factory=ModelSpec, exclude=True)
     experiment: ExperimentSettings
