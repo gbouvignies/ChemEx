@@ -8,6 +8,9 @@ on:
     # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on
     paths: [website/**]
 
+permissions:
+  contents: read
+
 jobs:
   test-deploy:
     name: Test deployment
