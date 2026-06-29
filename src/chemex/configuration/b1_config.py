@@ -195,8 +195,9 @@ class B1FieldConfig(BaseModel):
         """
         if self.value is not None:
             return self.value
-        # At this point, pw90 is guaranteed to be not None
-        assert self.pw90 is not None
+        if self.pw90 is None:
+            msg = "Either value or pw90 must be set"
+            raise ValueError(msg)
         return 1.0 / (4.0 * self.pw90)
 
     def get_distribution(self) -> Distribution:
