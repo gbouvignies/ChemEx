@@ -44,6 +44,7 @@ chemex = "chemex.chemex:main"
 [dependency-groups]
 dev = [
   "pytest>=8.4.2",
+  "ruff>=0.15.20",
   "scipy-stubs>=1.16.2.3",
   "ty>=0.0.35",
   "types-cachetools>=6.2.0.20250827",
