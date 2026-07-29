@@ -13,9 +13,8 @@ keywords = ["NMR", "analysis", "chemical exchange", "spectroscopy"]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
   "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: 3.14",  # Experimental - ecosystem catching up
+  "Programming Language :: Python :: 3.14",
   "Topic :: Scientific/Engineering :: Chemistry",
 ]
 dependencies = [
@@ -33,10 +32,10 @@ dependencies = [
 ]
 
 [project.urls]
-Changelog = "https://github.com/gbouvignies/chemex/releases"
-Documentation = "http://gbouvignies.github.io/ChemEx/"
-Homepage = "http://gbouvignies.github.io/ChemEx/"
-Repository = "https://github.com/gbouvignies/chemex"
+Changelog = "https://github.com/gbouvignies/ChemEx/releases"
+Documentation = "https://gbouvignies.github.io/ChemEx/"
+Homepage = "https://gbouvignies.github.io/ChemEx/"
+Repository = "https://github.com/gbouvignies/ChemEx"
 
 [project.scripts]
 chemex = "chemex.chemex:main"
