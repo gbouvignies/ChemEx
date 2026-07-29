@@ -43,10 +43,11 @@ chemex = "chemex.chemex:main"
 [dependency-groups]
 dev = [
   "pytest>=8.4.2",
-  "ruff>=0.15.20",
-  "scipy-stubs>=1.16.2.3",
-  "ty>=0.0.35",
-  "types-cachetools>=6.2.0.20250827",
+  # New Ruff minor releases require an explicit policy review.
+  "ruff>=0.16.0,<0.17.0",
+  "scipy-stubs>=1.18.0.1",
+  "ty>=0.0.65",
+  "types-cachetools>=7.0.0.20260713",
 ]
 
 [build-system]
@@ -54,60 +55,56 @@ requires = ["uv_build>=0.8.14,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.ruff]
-extend-exclude = ["benchmarks", "src/chemex/experiments/catalog/wip"]
+target-version = "py313"
+line-length = 88
+src = ["src"]
+extend-exclude = ["benchmarks"]
+preview = false
+required-version = ">=0.16.0,<0.17.0"
 
 [tool.ruff.lint]
-select = ["ALL"]
-ignore = [
-  "A002",
-  "ANN002",
-  "ANN003",
-  "ANN201",
-  "ANN401",
-  "ARG002",
-  "COM812",
-  "CPY001",  # Repository-level licensing; no per-file copyright headers
-  "D1",
-  "D203",
-  "D213",
-  "D401",
-  "D417",
-  "E402",
-  "E501",
-  "ERA001",
-  "FBT001",
-  "FBT002",
-  "FIX002",
-  "ISC001",
-  "PGH003",
-  "PLC0415",
-  "PLR0913",
-  "PLR0917",  # Scientific kernels often expose equation parameters directly
-  "PLR2004",
-  "RET504",
-  "RUF002",
-  "RUF003",
-  "RUF034",
-  "S307",
-  "TC001",
-  "TC002",
-  "TC003",
-  "TD002",
-  "TD003",
-  "S311",
-  "PD011",
+explicit-preview-rules = true
+select = [
+  "B",
+  "BLE001",
+  "C4",
+  "C90",
+  "DTZ",
+  "E4",
+  "E7",
+  "E9",
+  "F",
+  "I",
+  "ISC004",
+  "LOG004",
+  "LOG007",
+  "LOG015",
+  "NPY",
+  "PERF",
+  "PIE",
+  "PLE1205",
+  "PLW1510",
+  "RUF100",
+  "S",
+  "SIM",
+  "TRY002",
+  "TRY004",
+  "TRY201",
+  "TRY203",
+  "TRY300",
+  "TRY400",
+  "TRY401",
+  "UP",
 ]
 
 [tool.ruff.lint.isort]
 known-first-party = ["chemex"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["ANN001", "N806", "PLC0415", "PLR2004", "S101"]
+"src/chemex/containers/data.py" = ["S311"]
+"src/chemex/containers/experiments.py" = ["S311"]
+"tests/**/*.py" = ["S101"]
 
 [tool.ty.src]
-# Exclude work-in-progress experimental code
-exclude = ["benchmarks/", "src/chemex/experiments/catalog/wip/", "tests/"]
-
-[tool.ty.rules]
-# Downgrade warnings to avoid failing CI
-possibly-missing-attribute = "ignore"
+include = ["src"]
+exclude = ["benchmarks/"]
