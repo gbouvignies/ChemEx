@@ -1,174 +1,82 @@
+"""Outer orchestration for loading configured Experiments."""
+
 from __future__ import annotations
 
 import sys
-from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import NoReturn
 
-from pydantic import ValidationError
 from rich.live import Live
 
-from chemex.configuration.base import BaseSettings, ExperimentConfiguration
 from chemex.configuration.methods import Selection
-from chemex.containers.dataset import Dataset
-from chemex.containers.experiment import Experiment
+from chemex.containers.dataset import DatasetLoadError
+from chemex.containers.experiment import (
+    NoDuplicateNoiseNotice,
+    UnsupportedNoiseMethodNotice,
+)
 from chemex.containers.experiments import Experiments
-from chemex.containers.profile import Profile
-from chemex.experiments.factories import Creators, factories
+from chemex.experiments import experiment_types
+from chemex.experiments.experiment_types import (
+    ExperimentBuildError,
+    ExperimentConfigurationError,
+    ExperimentDataError,
+    ExperimentFileError,
+    ExperimentNameError,
+    ExperimentNotice,
+    ExperimentTomlError,
+    InvalidExperimentSourceError,
+    UnknownExperimentTypeError,
+)
 from chemex.messages import (
     console,
     get_reading_exp_text,
+    print_dataset_error,
     print_experiment_name_error,
+    print_experiment_source_error,
+    print_experiment_type_error,
+    print_file_not_found,
     print_file_not_found_error,
     print_loading_experiments,
+    print_no_duplicate_warning,
+    print_not_implemented_noise_method_warning,
     print_pydantic_parsing_error,
+    print_toml_error,
 )
-from chemex.models.model import ModelSpec
-from chemex.parameters.factory import create_parameters
 from chemex.runtime import AnalysisSession
-from chemex.toml import read_toml
-
-GenericConfig = ExperimentConfiguration[Any, Any, Any]
 
 
-class NameConfig(BaseSettings):
-    name: str
+def _exit_after_build_error(error: ExperimentBuildError) -> NoReturn:
+    if isinstance(error, ExperimentFileError):
+        print_file_not_found(error.filename)
+    elif isinstance(error, ExperimentTomlError):
+        print_toml_error(error.filename, error.error)
+    elif isinstance(error, ExperimentNameError):
+        print_experiment_name_error(error.filename)
+    elif isinstance(error, UnknownExperimentTypeError):
+        print_experiment_type_error(error.filename, error.experiment_type_name)
+    elif isinstance(error, InvalidExperimentSourceError):
+        print_experiment_source_error(error.filename, error.explanation)
+    elif isinstance(error, ExperimentConfigurationError):
+        print_pydantic_parsing_error(error.filename, error.error)
+    elif isinstance(error, ExperimentDataError):
+        if isinstance(error.error, DatasetLoadError):
+            print_dataset_error(error.error.filename, error.error.explanation)
+        else:
+            print_file_not_found_error(error.error)
+    else:
+        raise error
+    sys.exit(1)
 
 
-class ExperimentConfig(BaseSettings):
-    experiment: NameConfig
-
-
-def _get_experiment_name(config: Mapping[str, object], filename: Path) -> str:
-    try:
-        model = ExperimentConfig.model_validate(config)
-    except ValidationError:
-        print_experiment_name_error(filename)
-        sys.exit()
-
-    return model.experiment.name
-
-
-def _apply_selection(dataset: Dataset, selection: Selection) -> Dataset:
-    if (include := selection.include) is not None:
-        return [
-            (spin_system, data)
-            for spin_system, data in dataset
-            if spin_system.part_of(include)
-        ]
-
-    if (exclude := selection.exclude) is not None:
-        return [
-            (spin_system, data)
-            for spin_system, data in dataset
-            if not spin_system.part_of(exclude)
-        ]
-
-    return dataset
-
-
-def _create_dataset(
-    filename: Path,
-    live: Live,
-    factory: Creators,
-    config: GenericConfig,
-) -> Dataset:
-    try:
-        dataset = factory.create_dataset(filename.parent, config)
-    except FileNotFoundError as e:
-        live.stop()
-        print_file_not_found_error(e)
-        sys.exit(1)
-    return dataset
-
-
-def _create_config(
-    filename: Path,
-    live: Live,
-    factory: Creators,
-    config_dict: Mapping[str, object],
-    *,
-    model_spec: ModelSpec,
-) -> GenericConfig:
-    try:
-        config = factory.create_config(config_dict, model=model_spec)
-    except ValidationError as e:
-        live.stop()
-        print_pydantic_parsing_error(filename, e)
-        sys.exit()
-    return config
-
-
-def build_experiment(
-    filename: Path,
-    selection: Selection,
-    *,
-    session: AnalysisSession,
-) -> Experiment:
-    config_dict: Mapping[str, object] = read_toml(filename)
-
-    experiment_name = _get_experiment_name(config_dict, filename)
-    parameter_store = session.parameters
-    parameter_factory = session.parameter_factory
-    model_spec = session.model.spec
-
-    with Live(
-        get_reading_exp_text(filename, experiment_name),
-        console=console,
-    ) as live:
-        factory = factories.get(experiment_name)
-
-        config = _create_config(
-            filename,
-            live,
-            factory,
-            config_dict,
-            model_spec=model_spec,
+def _print_notice(notice: ExperimentNotice) -> None:
+    if isinstance(notice, UnsupportedNoiseMethodNotice):
+        print_not_implemented_noise_method_warning(
+            notice.filename,
+            notice.requested,
+            notice.implemented,
         )
-
-        printer = factory.create_printer()
-        plotter = factory.create_plotter(filename, config)
-
-        dataset = _create_dataset(filename, live, factory, config)
-        dataset = _apply_selection(dataset, selection)
-
-        profiles: list[Profile] = []
-
-        for spin_system, data in dataset:
-            spectrometer = factory.create_spectrometer(config, spin_system)
-            sequence = factory.create_sequence(config)
-            filterer = factory.create_filterer(config, spectrometer)
-            name_map = create_parameters(
-                config,
-                basis=spectrometer.basis,
-                spin_system=spectrometer.spin_system,
-                parameter_factory=parameter_factory,
-            )
-            profiles.append(
-                Profile(
-                    data,
-                    spectrometer,
-                    sequence,
-                    name_map,
-                    printer,
-                    filterer,
-                    config.data.scaled,
-                ),
-            )
-
-        live.update(get_reading_exp_text(filename, experiment_name, len(profiles)))
-
-    experiment = Experiment(
-        filename,
-        experiment_name,
-        profiles,
-        printer,
-        plotter,
-        parameter_store=parameter_store,
-    )
-    experiment.estimate_noise(config.data.error, global_error=config.data.global_error)
-
-    return experiment
+    elif isinstance(notice, NoDuplicateNoiseNotice):
+        print_no_duplicate_warning(notice.filename)
 
 
 def build_experiments(
@@ -177,19 +85,47 @@ def build_experiments(
     *,
     session: AnalysisSession,
 ) -> Experiments:
+    """Build all configured Experiments using one session's parameter state."""
     parameter_store = session.parameters
 
     if not filenames:
         return Experiments(parameter_store=parameter_store)
 
     print_loading_experiments()
-
     experiments = Experiments(parameter_store=parameter_store)
 
     for filename in filenames:
-        experiment = build_experiment(filename, selection, session=session)
-        experiments.add(experiment)
+        try:
+            source = experiment_types.open(filename)
+        except ExperimentBuildError as error:
+            _exit_after_build_error(error)
+
+        with Live(
+            get_reading_exp_text(filename, source.experiment_type_name),
+            console=console,
+        ) as live:
+            try:
+                result = experiment_types.build(
+                    source,
+                    selection=selection,
+                    model=session.model.spec,
+                    parameters=session.parameter_factory,
+                )
+            except ExperimentBuildError as error:
+                live.stop()
+                _exit_after_build_error(error)
+
+            live.update(
+                get_reading_exp_text(
+                    filename,
+                    source.experiment_type_name,
+                    len(result.experiment),
+                ),
+            )
+
+        for notice in result.notices:
+            _print_notice(notice)
+        experiments.add(result.experiment)
 
     parameter_store.sort_parameters()
-
     return experiments

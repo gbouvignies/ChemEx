@@ -21,12 +21,16 @@ rng = np.random.default_rng()
 
 
 class CpmgExperimentSettings(Protocol):
-    time_t2: float
-    even_ncycs: bool = False
+    @property
+    def time_t2(self) -> float: ...
+
+    @property
+    def even_ncycs(self) -> bool: ...
 
 
 class CpmgExperimentConfig(Protocol):
-    experiment: CpmgExperimentSettings
+    @property
+    def experiment(self) -> CpmgExperimentSettings: ...
 
 
 T = TypeVar("T", bound=CpmgExperimentConfig)

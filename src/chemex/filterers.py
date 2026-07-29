@@ -17,11 +17,13 @@ class NoFilterer:
 
 
 class PlanesDataSettings(Protocol):
-    filter_planes: list[int]
+    @property
+    def filter_planes(self) -> list[int]: ...
 
 
 class PlanesExperimentConfig(Protocol):
-    data: PlanesDataSettings
+    @property
+    def data(self) -> PlanesDataSettings: ...
 
 
 def _filter_planes(data: Data, planes_to_filter: list[int]) -> None:
@@ -38,19 +40,30 @@ class PlanesFilterer:
 
 
 class CestExperimentSettings(Protocol):
-    primary_state: str
-    sw: float
+    @property
+    def primary_state(self) -> str: ...
+
+    @property
+    def sw(self) -> float: ...
 
 
 class CestDataSettings(Protocol):
-    filter_planes: list[int]
-    filter_offsets: list[tuple[float, float]]
-    filter_ref_planes: bool = False
+    @property
+    def filter_planes(self) -> list[int]: ...
+
+    @property
+    def filter_offsets(self) -> list[tuple[float, float]]: ...
+
+    @property
+    def filter_ref_planes(self) -> bool: ...
 
 
 class CestExperimentConfig(Protocol):
-    experiment: CestExperimentSettings
-    data: CestDataSettings
+    @property
+    def experiment(self) -> CestExperimentSettings: ...
+
+    @property
+    def data(self) -> CestDataSettings: ...
 
 
 T = TypeVar("T", bound=CestExperimentConfig)

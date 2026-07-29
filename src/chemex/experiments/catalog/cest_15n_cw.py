@@ -11,16 +11,16 @@ from chemex.configuration.data import CestDataSettings
 from chemex.configuration.experiment import B1InhomogeneityMixin, CestSettings
 from chemex.configuration.types import B1Field, Delay, Frequency
 from chemex.containers.data import Data
-from chemex.containers.dataset import load_relaxation_dataset
-from chemex.experiments.factories import Creators, factories
-from chemex.filterers import CestFilterer
+from chemex.experiments.experiment_types import (
+    ProfileCalculation,
+    cest_type,
+    register_experiment_type,
+)
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import get_multiplet
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.spin_system.nucleus import Nucleus
-from chemex.plotters.cest import CestPlotter
-from chemex.printers.data import CestPrinter
 from chemex.typing import Array
 
 EXPERIMENT_NAME = "cest_15n_cw"
@@ -136,14 +136,21 @@ class Cest15NCwSequence:
         )
 
 
-def register() -> None:
-    creators = Creators(
-        config_creator=Cest15NCwConfig,
-        spectrometer_creator=build_spectrometer,
-        sequence_creator=Cest15NCwSequence,
-        dataset_creator=load_relaxation_dataset,
-        filterer_creator=CestFilterer,
-        printer_creator=CestPrinter,
-        plotter_creator=CestPlotter,
+def create_profile_calculation(
+    config: Cest15NCwConfig,
+    spin_system: SpinSystem,
+) -> ProfileCalculation:
+    return ProfileCalculation(
+        spectrometer=build_spectrometer(config, spin_system),
+        pulse_sequence=Cest15NCwSequence(config.experiment),
     )
-    factories.register(name=EXPERIMENT_NAME, creators=creators)
+
+
+EXPERIMENT_TYPE = cest_type(
+    name=EXPERIMENT_NAME,
+    config_type=Cest15NCwConfig,
+)(create_profile_calculation)
+
+
+def register() -> None:
+    register_experiment_type(EXPERIMENT_TYPE)

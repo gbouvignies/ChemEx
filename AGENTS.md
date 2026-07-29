@@ -34,7 +34,7 @@ the discrepancy.
   `src/chemex/configuration/`
 - Experiment construction and registration:
   `src/chemex/experiments/builder.py`,
-  `src/chemex/experiments/factories.py`,
+  `src/chemex/experiments/experiment_types.py`,
   `src/chemex/experiments/loader.py`,
   `src/chemex/experiments/catalog/`
 - Experimental data, profiles, and experiment collections:
@@ -69,9 +69,9 @@ uses the same function. `fit` and `simulate` follow this path:
    `ModelState`, `ParameterStore`, `ParameterFactory`, and execution settings.
 3. `chemex.run()` sets the model, then `build_experiments()` reads every
    experiment TOML.
-4. `experiments/builder.py` selects a registered `Creators` bundle, validates
-   the experiment-specific configuration, loads data relative to the experiment
-   TOML, applies profile selection, and creates a `Profile` for each spin system.
+4. `experiments/experiment_types.py` selects a registered Experiment Type,
+   validates its configuration, loads data relative to the experiment TOML,
+   applies profile selection, and creates a `Profile` for each spin system.
 5. Parameter settings from the kinetic model and spin/basis are combined in
    `parameters/factory.py` and stored by stable parameter IDs.
 6. A `Profile` updates its `Spectrometer`, calls the pulse sequence, applies the
@@ -141,7 +141,10 @@ defines:
 - a pulse-sequence object implementing `calculate(spectrometer, data)` and
   `is_reference(metadata)`;
 - dataset, filterer, printer, and plotter choices;
-- `register()`, which supplies all creators to `experiments.factories`.
+- a typed profile-calculation adapter returning the `Spectrometer` and pulse
+  sequence;
+- `register()`, which supplies the module's `EXPERIMENT_TYPE` adapter to
+  `experiments.experiment_types`.
 
 Discovery is automatic through `experiments/loader.py`; do not add a second
 registry. Add or update schema tests, calculation/regression tests, example TOML

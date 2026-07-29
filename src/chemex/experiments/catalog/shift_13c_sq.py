@@ -9,14 +9,14 @@ from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import ShiftDataSettings
 from chemex.configuration.experiment import ExperimentSettings
 from chemex.containers.data import Data
-from chemex.containers.dataset import load_shift_dataset
-from chemex.experiments.factories import Creators, factories
-from chemex.filterers import NoFilterer
+from chemex.experiments.experiment_types import (
+    ProfileCalculation,
+    register_experiment_type,
+    shift_type,
+)
 from chemex.nmr.basis import Basis
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
-from chemex.plotters.shift import ShiftPlotter
-from chemex.printers.data import ShiftPrinter
 from chemex.typing import Array
 
 EXPERIMENT_NAME = "shift_13c_sq"
@@ -77,14 +77,21 @@ class Shift13CSqSequence:
         return np.full_like(metadata, fill_value=False, dtype=np.bool_)
 
 
-def register() -> None:
-    creators = Creators(
-        config_creator=Shift13CSqConfig,
-        spectrometer_creator=build_spectrometer,
-        sequence_creator=Shift13CSqSequence,
-        dataset_creator=load_shift_dataset,
-        filterer_creator=NoFilterer,
-        printer_creator=ShiftPrinter,
-        plotter_creator=ShiftPlotter,
+def create_profile_calculation(
+    config: Shift13CSqConfig,
+    spin_system: SpinSystem,
+) -> ProfileCalculation:
+    return ProfileCalculation(
+        spectrometer=build_spectrometer(config, spin_system),
+        pulse_sequence=Shift13CSqSequence(config.experiment),
     )
-    factories.register(name=EXPERIMENT_NAME, creators=creators)
+
+
+EXPERIMENT_TYPE = shift_type(
+    name=EXPERIMENT_NAME,
+    config_type=Shift13CSqConfig,
+)(create_profile_calculation)
+
+
+def register() -> None:
+    register_experiment_type(EXPERIMENT_TYPE)

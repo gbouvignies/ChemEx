@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
@@ -9,8 +10,13 @@ from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import ExperimentSettings
 from chemex.containers.data import Data
-from chemex.containers.dataset import load_exsy_dataset
-from chemex.experiments.factories import Creators, factories
+from chemex.containers.dataset import Dataset, load_exsy_dataset
+from chemex.experiments.experiment_types import (
+    ExperimentSupport,
+    ProfileCalculation,
+    experiment_type,
+    register_experiment_type,
+)
 from chemex.filterers import PlanesFilterer
 from chemex.nmr.basis import Basis
 from chemex.nmr.spectrometer import Spectrometer
@@ -77,14 +83,53 @@ class Noesyfpgpph19Sequence:
         return np.full_like(metadata, fill_value=False, dtype=np.bool_)
 
 
-def register() -> None:
-    creators = Creators(
-        config_creator=Noesyfpgpph19Config,
-        spectrometer_creator=build_spectrometer,
-        sequence_creator=Noesyfpgpph19Sequence,
-        dataset_creator=load_exsy_dataset,
-        filterer_creator=PlanesFilterer,
-        printer_creator=EXSYPrinter,
-        plotter_creator=EXSYPlotter,
+def create_profile_calculation(
+    config: Noesyfpgpph19Config,
+    spin_system: SpinSystem,
+) -> ProfileCalculation:
+    return ProfileCalculation(
+        spectrometer=build_spectrometer(config, spin_system),
+        pulse_sequence=Noesyfpgpph19Sequence(config.experiment),
     )
-    factories.register(name=EXPERIMENT_NAME, creators=creators)
+
+
+def load_dataset(base_path: Path, settings: Noesyfpgpph19Config) -> Dataset:
+    return load_exsy_dataset(base_path, settings)
+
+
+def create_filterer(
+    *,
+    config: Noesyfpgpph19Config,
+    spectrometer: Spectrometer,
+) -> PlanesFilterer:
+    return PlanesFilterer(config=config, spectrometer=spectrometer)
+
+
+def create_printer() -> EXSYPrinter:
+    return EXSYPrinter()
+
+
+def create_plotter(
+    *,
+    filename: Path,
+    config: Noesyfpgpph19Config,
+) -> EXSYPlotter:
+    return EXSYPlotter(filename=filename, config=config)
+
+
+EXSY_SUPPORT = ExperimentSupport[Noesyfpgpph19Config](
+    load_dataset=load_dataset,
+    create_filterer=create_filterer,
+    create_printer=create_printer,
+    create_plotter=create_plotter,
+)
+
+EXPERIMENT_TYPE = experiment_type(
+    name=EXPERIMENT_NAME,
+    config_type=Noesyfpgpph19Config,
+    support=EXSY_SUPPORT,
+)(create_profile_calculation)
+
+
+def register() -> None:
+    register_experiment_type(EXPERIMENT_TYPE)

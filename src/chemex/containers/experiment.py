@@ -10,16 +10,31 @@ from lmfit import Parameters as ParametersLF
 
 from chemex.configuration.methods import Selection
 from chemex.containers.profile import Profile
-from chemex.messages import (
-    print_no_duplicate_warning,
-    print_not_implemented_noise_method_warning,
-)
 from chemex.parameters.database import ParameterStore
 from chemex.parameters.spin_system import Group
 from chemex.plotters.plotter import Plotter
 from chemex.printers.data import Printer
 from chemex.typing import Array
 from chemex.uncertainty import estimate_noise_variance
+
+
+@dataclass(frozen=True)
+class UnsupportedNoiseMethodNotice:
+    """Report that noise estimation fell back to errors from the data file."""
+
+    filename: Path
+    requested: str
+    implemented: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class NoDuplicateNoiseNotice:
+    """Report that duplicate-based noise estimation had no duplicate data."""
+
+    filename: Path
+
+
+type NoiseEstimateNotice = UnsupportedNoiseMethodNotice | NoDuplicateNoiseNotice
 
 
 @dataclass
@@ -31,6 +46,12 @@ class Experiment:
     printer: Printer
     plotter: Plotter
     parameter_store: ParameterStore = field(compare=False)
+    _noise_notices: tuple[NoiseEstimateNotice, ...] = field(
+        init=False,
+        repr=False,
+        compare=False,
+        default=(),
+    )
 
     def residuals(self, params: ParametersLF) -> Array:
         return np.concatenate([profile.residuals(params) for profile in self.profiles])
@@ -71,16 +92,26 @@ class Experiment:
     def _any_duplicate(self) -> bool:
         return any(profile.any_duplicate() for profile in self.profiles)
 
-    def estimate_noise(self, kind: str, *, global_error: bool = True) -> None:
+    def estimate_noise(
+        self,
+        kind: str,
+        *,
+        global_error: bool = True,
+    ) -> None:
+        """Estimate data noise while preserving the historical ``None`` return."""
+        notices: list[NoiseEstimateNotice] = []
         # TODO: Validation should be moved to the configuration file module
         implemented = ("file", "scatter", "duplicates")
         if kind not in implemented:
-            print_not_implemented_noise_method_warning(self.filename, kind, implemented)
+            notices.append(
+                UnsupportedNoiseMethodNotice(self.filename, kind, implemented),
+            )
             kind = "file"
         if kind == "duplicates" and not self._any_duplicate():
-            print_no_duplicate_warning(self.filename)
+            notices.append(NoDuplicateNoiseNotice(self.filename))
             kind = "file"
         if kind == "file" or not self.profiles:
+            self._noise_notices = tuple(notices)
             return
         if global_error:
             noise_variance_values = [
@@ -92,6 +123,12 @@ class Experiment:
         else:
             for profile in self.profiles:
                 profile.set_noise(np.sqrt(estimate_noise_variance[kind](profile.data)))
+        self._noise_notices = tuple(notices)
+
+    @property
+    def noise_notices(self) -> tuple[NoiseEstimateNotice, ...]:
+        """Nonfatal notices produced by the latest noise estimate."""
+        return self._noise_notices
 
     def prepare_for_simulation(self) -> None:
         for profile in self.profiles:
