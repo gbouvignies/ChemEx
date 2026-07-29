@@ -354,8 +354,10 @@ def _estimate_autocorrelation_time(
         return (
             None,
             tentative_autocorrelation_time,
-            "chain shorter than 50 times the autocorrelation time; "
-            "tentative estimate reported",
+            (
+                "chain shorter than 50 times the autocorrelation time; "
+                "tentative estimate reported"
+            ),
         )
     except (FloatingPointError, ValueError):
         return None, None, "autocorrelation time unavailable"
@@ -384,14 +386,18 @@ def _resolve_discarded_steps(
     if discarded_steps >= nsteps:
         return (
             0,
-            "estimated automatic burn-in is longer than the chain; "
-            "automatic burn-in was not applied",
+            (
+                "estimated automatic burn-in is longer than the chain; "
+                "automatic burn-in was not applied"
+            ),
         )
     if not autocorrelation_time_reliable:
         return (
             discarded_steps,
-            "autocorrelation time estimate is unreliable; "
-            "tentative automatic burn-in was applied",
+            (
+                "autocorrelation time estimate is unreliable; "
+                "tentative automatic burn-in was applied"
+            ),
         )
     return discarded_steps, None
 
@@ -549,8 +555,10 @@ def _extend_autocorrelation_diagnostics(
     autocorrelation_steps = _autocorrelation_steps(result, settings)
     lines.extend(
         [
-            "steps_over_max_autocorrelation_time = "
-            f"{_format_toml_float(autocorrelation_steps / max_tau)}",
+            (
+                "steps_over_max_autocorrelation_time = "
+                f"{_format_toml_float(autocorrelation_steps / max_tau)}"
+            ),
             f"recommended_min_steps_50tau = {ceil(50.0 * max_tau)}",
             f"recommended_min_steps_100tau = {ceil(100.0 * max_tau)}",
         ],
@@ -563,8 +571,10 @@ def _extend_autocorrelation_diagnostics(
         lines.extend(
             [
                 f"autocorrelation_warning = {_quote_toml_string(warning)}",
-                'effective_sample_size_warning = "not reported: autocorrelation time '
-                'estimate is unreliable"',
+                (
+                    'effective_sample_size_warning = "not reported: autocorrelation time '
+                    'estimate is unreliable"'
+                ),
             ],
         )
         return

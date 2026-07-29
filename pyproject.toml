@@ -67,6 +67,7 @@ ignore = [
   "ANN401",
   "ARG002",
   "COM812",
+  "CPY001",  # Repository-level licensing; no per-file copyright headers
   "D1",
   "D203",
   "D213",
@@ -82,6 +83,7 @@ ignore = [
   "PGH003",
   "PLC0415",
   "PLR0913",
+  "PLR0917",  # Scientific kernels often expose equation parameters directly
   "PLR2004",
   "RET504",
   "RUF002",
