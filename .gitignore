@@ -108,3 +108,6 @@ Sandbox/
 # PDM
 .pdm-python
 .pdm-build
+
+# Generated Graphify knowledge graph
+graphify-out/
