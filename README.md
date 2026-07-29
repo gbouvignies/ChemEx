@@ -1,6 +1,6 @@
 # ChemEx: NMR Chemical Exchange Analysis Tool
 
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/ambv/black)
+[![Lint: Ruff](https://img.shields.io/badge/lint-Ruff-D7FF64.svg?logo=ruff)](https://docs.astral.sh/ruff/)
 
 ## Table of Contents
 

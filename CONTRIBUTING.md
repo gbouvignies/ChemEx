@@ -1,49 +1,91 @@
 # Contributing to ChemEx
 
-We welcome contributions to the ChemEx project! Whether you're interested in fixing bugs, adding new features, or improving documentation, your help is appreciated. This document provides guidelines for contributing to ChemEx.
+ChemEx is production scientific software. Contributions should remain focused,
+preserve existing numerical and user-facing behaviour unless a change is
+intentional, and include validation proportionate to their scientific impact.
+Read [`AGENTS.md`](AGENTS.md) for the repository map, extension paths, numerical
+invariants, and detailed validation matrix.
 
-## Getting Started
+## Development setup
 
-1. **Fork the Repository**: Start by forking the ChemEx repository on GitHub.
-2. **Clone Your Fork**: Clone the fork to your local machine.
-3. **Set Up Your Environment**: Make sure you have Python and other necessary tools installed.
-4. **Create a Branch**: Create a new branch for your work.
+ChemEx requires Python 3.13 or newer. Python 3.13 is the blocking CI target;
+Python 3.14 is currently tested as an informational target.
 
-## Making Contributions
+Install [uv](https://docs.astral.sh/uv/), clone your fork, and from the repository
+root run:
 
-### Reporting Bugs
+```sh
+uv sync --all-extras --dev
+```
 
--   **Use the GitHub Issue Tracker**: Report bugs by creating a new issue.
--   **Describe the Bug**: Include detailed information about the bug and steps to reproduce it.
--   **Screenshots and Logs**: If applicable, add screenshots and log files to help explain your problem.
+Create a branch and keep each pull request limited to one coherent change.
 
-### Suggesting Enhancements
+## Validation
 
--   **Use the GitHub Issue Tracker**: Suggest enhancements by opening a new issue.
--   **Provide a Clear Description**: Explain why this enhancement would be useful, and propose a possible implementation if you can.
+Run focused tests while developing. Before submitting a Python change, run the
+applicable repository checks:
 
-### Pull Requests
+```sh
+uv run pytest -q
+uv run ty check
+uv run ruff check .
+uv run ruff format --check <changed-python-files>
+git diff --check
+```
 
--   **Small and Focused**: Keep your pull requests small and focused on a single issue or feature.
--   **Code Standards**: Follow the coding style of the project (PEP 8 for Python, for example).
--   **Type Hints**: Import `Array` from `chemex.typing` for NumPy arrays.
--   **Documentation**: Update the documentation accordingly.
--   **Testing**: Add tests for new features or bug fixes.
--   **Describe Your Changes**: In your pull request, clearly describe what you have done.
+Use `Array` from `chemex.typing` for NumPy array annotations. Add precise type
+annotations to new or modified interfaces where they clarify the contract; do
+not weaken existing checks to make a change pass.
 
-## Code Review Process
+For website changes, run:
 
-1. **Review by Maintainers**: The project maintainers will review your pull request.
-2. **Feedback**: Be open to feedback and make necessary changes.
-3. **Approval and Merge**: Once approved, your changes will be merged into the main branch.
+```sh
+cd website
+npm ci
+npm run build
+```
 
-## Community Guidelines
+For packaging changes, also run `uv build`.
 
--   **Be Respectful**: Treat others as you would like to be treated.
--   **Collaboration Over Competition**: We are all working towards the same goal.
+## Tests and scientific changes
 
-## Questions?
+- Bug fixes should include a regression test whenever practical.
+- TOML or schema changes should cover valid and invalid inputs and should verify
+  relevant files under `examples/`.
+- Experiment and pulse-sequence changes should use realistic inputs and cover
+  reference or limiting cases.
+- Kinetic-model and parameter changes should verify rate/population constraints
+  and relevant physical limits.
+- Numerical changes should establish reference behaviour before implementation
+  and use justified floating-point tolerances.
+- CLI, output, or provenance changes should include the related integration tests
+  and a concrete CLI run when practical.
 
-If you have any questions, please don't hesitate to open a discussion in the GitHub repository.
+Do not update expected values simply to accept unexplained numerical drift.
+Document intentional changes to scientific behaviour, configuration, output, or
+compatibility in the pull request and the user documentation or changelog when
+appropriate.
 
-Thank you for considering contributing to ChemEx. Your efforts help make ChemEx a better tool for everyone!
+## Reporting issues and proposing changes
+
+Use the GitHub issue tracker for bugs and enhancements. Include a minimal
+reproducer, input files or logs where shareable, the ChemEx and Python versions,
+and the expected and actual behaviour. For a consequential scientific or
+architectural proposal, describe alternatives, compatibility implications, and
+a migration path before implementation.
+
+## Pull requests and review
+
+In the pull request description, report:
+
+- the behaviour changed;
+- compatibility implications;
+- tests and checks run, with outcomes;
+- numerical validation performed when relevant;
+- documentation or examples updated;
+- remaining risks or follow-up.
+
+Maintainers will review the change and may request revisions before merge. Be
+respectful and keep discussion focused on making ChemEx reliable for its users.
+
+Questions are welcome in the repository's GitHub Discussions.
