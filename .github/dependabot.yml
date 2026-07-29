@@ -1,88 +1,112 @@
 version: 2
-updates:
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 3
-    versioning-strategy: "increase-if-necessary"
-    rebase-strategy: "auto"
-    reviewers:
-      - gbouvignies
-    commit-message:
-      prefix: "chore(deps)"
-      include: "scope"
-    groups:
-      chemex-core:
-        patterns:
-          - "numpy*"
-          - "scipy*"
-          - "lmfit*"
-      chemex-aux:
-        patterns:
-          - "matplotlib*"
-          - "cachetools*"
-          - "emcee*"
 
+updates:
+  # Python package and lock-file updates.
+  # uv is the authoritative Python dependency manager for ChemEx.
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 2
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+
+    open-pull-requests-limit: 5
     rebase-strategy: "auto"
-    reviewers:
-      - gbouvignies
+    versioning-strategy: "increase-if-necessary"
+
+    commit-message:
+      prefix: "chore(deps)"
+
     groups:
-      core:
-        dependency-type: "production"
+      # One routinely reviewable PR for compatible Python updates.
+      python-minor-and-patch:
+        applies-to: "version-updates"
         patterns:
           - "*"
-      dev:
-        dependency-type: "development"
-        patterns:
-          - "dev"
-      extras:
-        patterns:
-          - "docs"
-          - "test"
+        update-types:
+          - "minor"
+          - "patch"
 
+      # Security updates remain separate from routine version updates,
+      # but are grouped into one Python security PR when possible.
+      python-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
+
+  # GitHub Actions change less often and do not need weekly version churn.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    reviewers:
-      - gbouvignies
+      interval: "monthly"
 
+    open-pull-requests-limit: 5
+    rebase-strategy: "auto"
+
+    commit-message:
+      prefix: "chore(deps)"
+
+    groups:
+      actions-minor-and-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+      actions-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
+
+  # Public Docusaurus website.
+  # Monthly version updates are sufficient; security updates remain immediate.
   - package-ecosystem: "npm"
     directory: "/website/"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 3
-    reviewers:
-      - gbouvignies
+      interval: "monthly"
+
+    open-pull-requests-limit: 6
+    rebase-strategy: "auto"
+
+    commit-message:
+      prefix: "chore(deps)"
+
     groups:
-      # All Docusaurus-related packages together to avoid conflicts
-      docusaurus:
+      # Keep the tightly coupled Docusaurus/MDX stack synchronized.
+      docusaurus-minor-and-patch:
+        applies-to: "version-updates"
         patterns:
           - "@docusaurus/*"
           - "@mdx-js/react"
           - "rehype-katex"
           - "remark-math"
-      # React ecosystem separate from Docusaurus
-      react:
+        update-types:
+          - "minor"
+          - "patch"
+
+      # React and React DOM should normally advance together.
+      react-minor-and-patch:
+        applies-to: "version-updates"
         patterns:
           - "react"
           - "react-dom"
-      # Other runtime dependencies
-      runtime:
-        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # Remaining runtime and development packages.
+      website-minor-and-patch:
+        applies-to: "version-updates"
         patterns:
-          - "clsx"
-          - "prism-react-renderer"
-      # Development tools
-      dev-tools:
-        dependency-type: "development"
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+      website-security:
+        applies-to: "security-updates"
         patterns:
-          - "eslint*"
-          - "prettier*"
+          - "*"
