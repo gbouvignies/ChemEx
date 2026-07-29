@@ -513,7 +513,7 @@ def shift_type[ConfigT: ShiftFamilyConfig](
     )
 
 
-def open(filename: Path) -> ExperimentSource:  # noqa: A001
+def open(filename: Path) -> ExperimentSource:
     """Read an Experiment input once and identify its Experiment Type."""
     try:
         raw_config = load_toml(filename)

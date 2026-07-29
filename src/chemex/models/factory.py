@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Factories for creating parameter settings."""
+
+from __future__ import annotations
 
 from builtins import set as builtins_set
 from collections.abc import Callable

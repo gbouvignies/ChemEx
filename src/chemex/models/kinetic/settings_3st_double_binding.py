@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """This code imports the necessary modules and functions to define a 3-state
 double binding model. The model is named "3st_double_binding" and it is
 registered in the model factory. The model requires two parameters,
@@ -9,6 +7,8 @@ the concentrations of free protein and protein bound to each ligand
 given the total protein and ligand concentrations, as well as the
 dissociation constants for each binding site.
 """
+
+from __future__ import annotations
 
 from functools import lru_cache
 

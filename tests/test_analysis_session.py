@@ -522,7 +522,7 @@ def test_run_statistics_uses_session_for_header(
 
     monkeypatch.setattr(resampling_module, "track", lambda _iterable, **_kwargs: [])
 
-    fitting_module._run_statistics(  # noqa: SLF001
+    fitting_module._run_statistics(
         experiments,
         tmp_path,
         "leastsq",
@@ -672,7 +672,7 @@ def test_run_statistics_dispatches_mcmc_without_resampling(
     )
     monkeypatch.setattr(fitting_module, "run_mcmc", fake_run_mcmc)
 
-    fitting_module._run_statistics(  # noqa: SLF001
+    fitting_module._run_statistics(
         experiments,
         tmp_path,
         "leastsq",
@@ -695,17 +695,17 @@ def test_resampling_summary_and_correlations_are_written(tmp_path: Path) -> None
         },
     )
     samples = np.array([[0.1, 200.0], [0.3, 300.0], [0.5, 400.0]])
-    parameter_names = resampling_module._format_parameter_names(  # noqa: SLF001
+    parameter_names = resampling_module._format_parameter_names(
         ["__PB", "__KEX_AB"],
         store,
     )
 
-    resampling_module._write_resampling_summary(  # noqa: SLF001
+    resampling_module._write_resampling_summary(
         tmp_path,
         parameter_names=parameter_names,
         samples=samples,
     )
-    resampling_module._write_resampling_correlations(  # noqa: SLF001
+    resampling_module._write_resampling_correlations(
         tmp_path,
         parameter_names=parameter_names,
         samples=samples,

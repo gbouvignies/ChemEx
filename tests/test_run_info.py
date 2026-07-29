@@ -304,7 +304,7 @@ def test_git_metadata_is_optional_when_git_is_unavailable(
 
     monkeypatch.setattr(run_info_module.subprocess, "run", unavailable)
 
-    assert run_info_module._git_metadata() is None  # noqa: SLF001
+    assert run_info_module._git_metadata() is None
 
 
 def test_git_metadata_is_omitted_for_repository_not_tracking_chemex(
@@ -327,7 +327,7 @@ def test_git_metadata_is_omitted_for_repository_not_tracking_chemex(
 
     monkeypatch.setattr(run_info_module, "_run_git", run_git)
 
-    assert run_info_module._git_metadata() is None  # noqa: SLF001
+    assert run_info_module._git_metadata() is None
     assert calls[0][:2] == ("ls-files", "--error-unmatch")
 
 
@@ -431,7 +431,7 @@ def test_failed_replacement_restores_existing_run_info(
     monkeypatch.setattr(Path, "replace", fail_staging_replace)
 
     with pytest.raises(OSError, match="replacement failed"):
-        run_info_module._replace_run_info(  # noqa: SLF001
+        run_info_module._replace_run_info(
             staging_path,
             run_info_path,
         )

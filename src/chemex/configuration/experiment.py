@@ -39,7 +39,7 @@ def _validate_state(value: object, info: ValidationInfo) -> str:
     field = info.field_name or "state"
     if not isinstance(value, str):
         msg = f"'{field}' must be a state string"
-        raise ValueError(msg)  # noqa: TRY004
+        raise ValueError(msg)  # noqa: TRY004 - Pydantic field-validation error
 
     state = value.lower()
     available_states = _model_states_from_context(info)
@@ -65,7 +65,7 @@ def _validate_state_selection(
             f"'{field}' must be a state string or a non-empty list "
             "of state strings"
         )
-        raise ValueError(msg)  # noqa: TRY004
+        raise ValueError(msg)  # noqa: TRY004 - Pydantic field-validation error
     if not value:
         msg = f"'{field}' must contain at least one state"
         raise ValueError(msg)

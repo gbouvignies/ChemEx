@@ -158,7 +158,7 @@ def test_opened_source_is_immutable(tmp_path: Path) -> None:
     source = experiment_types.open(filename)
 
     with pytest.raises(AttributeError, match="immutable"):
-        source._filename = tmp_path / "forged.toml"  # noqa: SLF001
+        source._filename = tmp_path / "forged.toml"
 
     assert source.filename == filename
     assert source.experiment_type_name == "cest_15n"
