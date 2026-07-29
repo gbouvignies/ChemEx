@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from importlib.util import find_spec
 from pkgutil import iter_modules
 from types import ModuleType
-from typing import Protocol
+from typing import Protocol, cast
 
 from chemex.experiments import catalog
 from chemex.experiments.catalog import wip
@@ -21,7 +21,11 @@ class ExperimentModule(Protocol):
 
 def import_module(name: str) -> ExperimentModule:
     """Imports a module given a name."""
-    return importlib.import_module(name)
+    module = importlib.import_module(name)
+    if not callable(getattr(module, "register", None)):
+        msg = f"Experiment module {name!r} does not define a callable register()"
+        raise ImportError(msg)  # noqa: TRY004
+    return cast("ExperimentModule", module)
 
 
 def iter_experiment_modules(package: ModuleType) -> Iterator[str]:

@@ -43,6 +43,7 @@ def calculate_statistics(
     aic = chisqr + 2 * nvarys
     bic = chisqr + np.log(ndata) * nvarys
     _, ks_p_value = stats.kstest(residuals, "norm")
+    ks_p_value = float(ks_p_value)
     pvalue: float = 1.0 - stats.chi2.cdf(chisqr, ndata - nvarys)
     return {
         "ndata": ndata,

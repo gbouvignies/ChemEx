@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from importlib.util import find_spec
 from pkgutil import iter_modules
 from types import ModuleType
-from typing import Protocol
+from typing import Protocol, cast
 
 from chemex.nmr import distributions
 
@@ -20,7 +20,11 @@ class DistributionModule(Protocol):
 
 def import_module(name: str) -> DistributionModule:
     """Import a module given a name."""
-    return importlib.import_module(name)
+    module = importlib.import_module(name)
+    if not callable(getattr(module, "register", None)):
+        msg = f"Distribution module {name!r} does not define a callable register()"
+        raise ImportError(msg)  # noqa: TRY004
+    return cast("DistributionModule", module)
 
 
 def iter_distribution_modules(package: ModuleType) -> Iterator[str]:

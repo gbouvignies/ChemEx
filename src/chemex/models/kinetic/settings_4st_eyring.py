@@ -102,7 +102,7 @@ def calculate_kij_4st_eyring(
     >>> print(f"k_ab = {rates['kab']:.2e} s⁻¹")
 
     """
-    kelvin = constants.convert_temperature(temperature, "C", "K")
+    kelvin = temperature + constants.zero_Celsius
     kbt_h = constants.k * kelvin / constants.h
     rt = constants.R * kelvin
 

@@ -36,7 +36,7 @@ def calculate_kij_3st_eyring(
     ds_bc: float,
     temperature: float,
 ) -> dict[str, float]:
-    kelvin = constants.convert_temperature(temperature, "C", "K")
+    kelvin = temperature + constants.zero_Celsius
     kbt_h = constants.k * kelvin / constants.h
     rt = constants.R * kelvin
     dh_a = ds_a = 0.0

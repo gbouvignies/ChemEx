@@ -21,6 +21,11 @@ rng = np.random.default_rng()
 _DERIVED_ARRAY_FIELDS = frozenset({"calc", "calc_unscaled", "mask", "refs"})
 
 
+def _empty_array() -> Array:
+    """Create the empty array used for uninitialized data fields."""
+    return np.empty(0)
+
+
 def _is_compatible_error_shape(exp: Array, err: Array) -> bool:
     if err.shape == exp.shape:
         return True
@@ -47,11 +52,15 @@ class Data(BaseModel):
 
     exp: Array
     err: Array
-    metadata: Array = Field(default_factory=partial(np.empty, 0))
-    calc: Array = Field(init=False, default_factory=partial(np.empty, 0))
-    calc_unscaled: Array = Field(init=False, default_factory=partial(np.empty, 0))
-    mask: Array = Field(init=False, default_factory=partial(np.empty, 0, dtype=np.bool_))
-    refs: Array = Field(init=False, default_factory=partial(np.empty, 0, dtype=np.bool_))
+    metadata: Array = Field(default_factory=_empty_array)
+    calc: Array = Field(init=False, default_factory=_empty_array)
+    calc_unscaled: Array = Field(init=False, default_factory=_empty_array)
+    mask: Array = Field(
+        init=False, default_factory=partial(np.empty, 0, dtype=np.bool_)
+    )
+    refs: Array = Field(
+        init=False, default_factory=partial(np.empty, 0, dtype=np.bool_)
+    )
     _revision: int = PrivateAttr(default=0)
 
     @model_validator(mode="before")
