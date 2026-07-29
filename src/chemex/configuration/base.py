@@ -36,7 +36,11 @@ class BaseSettings(BaseModel):
     _key_to_lower = model_validator(mode="before")(key_to_lower)
 
 
-class ExperimentConfiguration[ExperimentSettings: BaseModel, ConditionsSettings: BaseModel, DataSettings: BaseModel](
+class ExperimentConfiguration[
+    ExperimentSettings: BaseModel,
+    ConditionsSettings: BaseModel,
+    DataSettings: BaseModel,
+](
     BaseModel,
 ):
     model: ModelSpec = Field(default_factory=ModelSpec, exclude=True)

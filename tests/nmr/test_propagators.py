@@ -37,10 +37,7 @@ def test_calculate_propagators_handles_stacked_liouvillians() -> None:
 
     propagators = calculate_propagators(liouvillians, delays)
     expected = np.array(
-        [
-            [expm(liouv * delay) for liouv in liouvillians]
-            for delay in delays
-        ]
+        [[expm(liouv * delay) for liouv in liouvillians] for delay in delays]
     )
 
     np.testing.assert_allclose(propagators, expected)

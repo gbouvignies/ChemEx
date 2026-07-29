@@ -61,10 +61,9 @@ def test_build_equilibrium_magnetization_uses_populations_and_xi_ratio() -> None
     magnetization = build_equilibrium_magnetization(basis, par_values)
     expected_scale_a = 0.6 * XI_RATIO[Nucleus.N15]
     expected_scale_b = 0.4 * XI_RATIO[Nucleus.N15]
-    expected = (
-        expected_scale_a * (basis.vectors["ie_a"] + basis.vectors["iz_a"])
-        + expected_scale_b * (basis.vectors["ie_b"] + basis.vectors["iz_b"])
-    )
+    expected = expected_scale_a * (
+        basis.vectors["ie_a"] + basis.vectors["iz_a"]
+    ) + expected_scale_b * (basis.vectors["ie_b"] + basis.vectors["iz_b"])
 
     np.testing.assert_allclose(magnetization, expected)
 

@@ -18,9 +18,7 @@ def test_build_detection_vector_supports_addition_and_subtraction() -> None:
     basis = Basis(type="izsz", spin_system="nh", model=ModelSpec())
 
     vector = build_detection_vector("[2izsz_a] - [iz_a] + [iz_b]", basis.vectors)
-    expected = (
-        basis.vectors["2izsz_a"] - basis.vectors["iz_a"] + basis.vectors["iz_b"]
-    )
+    expected = basis.vectors["2izsz_a"] - basis.vectors["iz_a"] + basis.vectors["iz_b"]
 
     np.testing.assert_allclose(vector, expected)
 

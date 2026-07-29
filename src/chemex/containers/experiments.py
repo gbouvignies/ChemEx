@@ -55,7 +55,9 @@ def _append_hash_suffix(path: Path, filename: Path) -> Path:
 
 
 def _build_output_stems(filenames: list[Path]) -> dict[Path, Path]:
-    output_parts = {filename: _filename_parts_for_output(filename) for filename in filenames}
+    output_parts = {
+        filename: _filename_parts_for_output(filename) for filename in filenames
+    }
     depth_by_filename = dict.fromkeys(filenames, 1)
 
     while True:
@@ -89,11 +91,15 @@ def _build_output_stems(filenames: list[Path]) -> dict[Path, Path]:
             return {
                 filename: (
                     _append_hash_suffix(
-                        _suffix_path(output_parts[filename], depth_by_filename[filename]),
+                        _suffix_path(
+                            output_parts[filename], depth_by_filename[filename]
+                        ),
                         filename,
                     )
                     if filename in colliding_filenames
-                    else _suffix_path(output_parts[filename], depth_by_filename[filename])
+                    else _suffix_path(
+                        output_parts[filename], depth_by_filename[filename]
+                    )
                 )
                 for filename in filenames
             }

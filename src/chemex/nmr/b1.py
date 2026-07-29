@@ -28,7 +28,9 @@ class FixedDistributionModel:
         values = np.asarray(distribution.values, dtype=float)
         weights = np.asarray(distribution.weights, dtype=float)
         scales = np.ones_like(values) if nominal == 0.0 else values / nominal
-        return cls(tuple(scales.tolist()), tuple(weights.tolist()), distribution.dephasing)
+        return cls(
+            tuple(scales.tolist()), tuple(weights.tolist()), distribution.dephasing
+        )
 
     def get_distribution(self, value: float) -> Distribution:
         values = value * np.asarray(self.scales, dtype=float)
