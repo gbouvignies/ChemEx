@@ -36,8 +36,8 @@ def test_update_without_parameters_keeps_matrix_shaped_base_liouvillian() -> Non
 
     liouvillian.update({})
 
-    assert liouvillian._l_base.shape == (liouvillian.size, liouvillian.size)  # noqa: SLF001
-    np.testing.assert_allclose(liouvillian._l_base, 0.0)  # noqa: SLF001
+    assert liouvillian._l_base.shape == (liouvillian.size, liouvillian.size)
+    np.testing.assert_allclose(liouvillian._l_base, 0.0)
 
 
 def test_missing_s_control_terms_use_zero_liouvillian_matrices() -> None:
@@ -47,11 +47,11 @@ def test_missing_s_control_terms_use_zero_liouvillian_matrices() -> None:
     liouvillian.b1_s = 20_000.0
 
     expected_shape = (liouvillian.size, liouvillian.size)
-    assert liouvillian._l_carrier_s.shape == expected_shape  # noqa: SLF001
-    assert liouvillian._l_offset_s.shape == expected_shape  # noqa: SLF001
+    assert liouvillian._l_carrier_s.shape == expected_shape
+    assert liouvillian._l_offset_s.shape == expected_shape
     assert liouvillian.l_b1x_s.shape == expected_shape
     assert liouvillian.l_b1y_s.shape == expected_shape
-    np.testing.assert_allclose(liouvillian._l_carrier_s, 0.0)  # noqa: SLF001
-    np.testing.assert_allclose(liouvillian._l_offset_s, 0.0)  # noqa: SLF001
+    np.testing.assert_allclose(liouvillian._l_carrier_s, 0.0)
+    np.testing.assert_allclose(liouvillian._l_offset_s, 0.0)
     np.testing.assert_allclose(liouvillian.l_b1x_s, 0.0)
     np.testing.assert_allclose(liouvillian.l_b1y_s, 0.0)

@@ -78,5 +78,7 @@ def tilt_magnetization_along_i_effective_field(
             [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
         )
         components = magnetization[..., [tilt.index_x, tilt.index_z], :]
-        magnetization[..., [tilt.index_x, tilt.index_z], :] = rotation_matrix @ components
+        magnetization[..., [tilt.index_x, tilt.index_z], :] = (
+            rotation_matrix @ components
+        )
     return magnetization

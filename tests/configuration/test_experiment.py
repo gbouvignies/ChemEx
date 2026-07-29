@@ -34,10 +34,9 @@ def test_string_and_single_item_list_have_equivalent_detection() -> None:
     list_settings = RelaxationSettings.model_validate({"observed_state": ["a"]})
 
     assert string_settings.get_detection_expression("[iz]") == "[iz_a]"
-    assert (
-        list_settings.get_detection_expression("[iz]")
-        == string_settings.get_detection_expression("[iz]")
-    )
+    assert list_settings.get_detection_expression(
+        "[iz]"
+    ) == string_settings.get_detection_expression("[iz]")
 
 
 @pytest.mark.parametrize(

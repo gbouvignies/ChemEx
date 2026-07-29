@@ -39,7 +39,7 @@ def _validate_state(value: object, info: ValidationInfo) -> str:
     field = info.field_name or "state"
     if not isinstance(value, str):
         msg = f"'{field}' must be a state string"
-        raise ValueError(msg)  # noqa: TRY004
+        raise ValueError(msg)  # noqa: TRY004 - Pydantic field-validation error
 
     state = value.lower()
     available_states = _model_states_from_context(info)
@@ -61,11 +61,8 @@ def _validate_state_selection(
     if isinstance(value, str):
         return _validate_state(value, info)
     if not isinstance(value, (list, tuple)):
-        msg = (
-            f"'{field}' must be a state string or a non-empty list "
-            "of state strings"
-        )
-        raise ValueError(msg)  # noqa: TRY004
+        msg = f"'{field}' must be a state string or a non-empty list of state strings"
+        raise ValueError(msg)  # noqa: TRY004 - Pydantic field-validation error
     if not value:
         msg = f"'{field}' must contain at least one state"
         raise ValueError(msg)
@@ -237,8 +234,10 @@ class B1InhomogeneityMixin(BaseModel):
             normalized.get("b1_inh_scale") is not None
             or normalized.get("b1_inh_res") is not None
         )
-        if has_legacy and distribution is not None and not isinstance(
-            distribution, DistributionConfig
+        if (
+            has_legacy
+            and distribution is not None
+            and not isinstance(distribution, DistributionConfig)
         ):
             msg = (
                 "Use either 'b1_distribution' or the legacy "
@@ -377,11 +376,7 @@ class RelaxationSettings(DetectionSettings):
         states = self.start_states
         if not states:
             return list(components)
-        return [
-            f"{component}_{state}"
-            for state in states
-            for component in components
-        ]
+        return [f"{component}_{state}" for state in states for component in components]
 
 
 class CpmgSettings(RelaxationSettings):

@@ -8,14 +8,13 @@ invariants, and detailed validation matrix.
 
 ## Development setup
 
-ChemEx requires Python 3.13 or newer. Python 3.13 is the blocking CI target;
-Python 3.14 is currently tested as an informational target.
+ChemEx supports Python 3.13 and 3.14; both are required CI targets.
 
 Install [uv](https://docs.astral.sh/uv/), clone your fork, and from the repository
 root run:
 
 ```sh
-uv sync --all-extras --dev
+uv sync --locked
 ```
 
 Create a branch and keep each pull request limited to one coherent change.
@@ -29,7 +28,7 @@ applicable repository checks:
 uv run pytest -q
 uv run ty check
 uv run ruff check .
-uv run ruff format --check <changed-python-files>
+uv run ruff format --check .
 git diff --check
 ```
 
@@ -46,6 +45,10 @@ npm run build
 ```
 
 For packaging changes, also run `uv build`.
+
+`pyproject.toml` is the authoritative tooling policy. Ruff minor upgrades
+require a dedicated policy review that updates both the development dependency
+range and Ruff's `required-version` setting.
 
 ## Tests and scientific changes
 

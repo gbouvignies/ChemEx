@@ -60,8 +60,7 @@ class Spectrometer:
         self.perfect180_s = self._pulse_kernel.perfect180_s
         self.zfilter = self.keep(
             self.identity,
-            components={"ie", "se", "iz", "sz", "2izsz"}
-            & set(engine.basis.components),
+            components={"ie", "se", "iz", "sz", "2izsz"} & set(engine.basis.components),
         )
 
     def keep(self, magnetization: Array, components: Iterable[str]) -> Array:

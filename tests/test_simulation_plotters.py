@@ -25,8 +25,12 @@ def test_cest_plot_simulation_accepts_empty_experimental_data(
     recorded: dict[str, Data] = {}
     plotter = cest_module.CestPlotter(Path("13hz.toml"), SimpleNamespace())
 
-    monkeypatch.setattr(cest_module, "print_plot_filename", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(cest_module, "create_plot_data_calc", lambda _profile: _make_calc_data())
+    monkeypatch.setattr(
+        cest_module, "print_plot_filename", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        cest_module, "create_plot_data_calc", lambda _profile: _make_calc_data()
+    )
 
     def fake_plot_profile(_pdf, _profile, data_exp: Data, data_calc: Data) -> None:
         recorded["data_exp"] = data_exp
@@ -49,7 +53,9 @@ def test_cpmg_plot_simulation_accepts_empty_experimental_data(
     recorded: dict[str, Data] = {}
     plotter = cpmg_module.CpmgPlotter(Path("500mhz.toml"), SimpleNamespace())
 
-    monkeypatch.setattr(cpmg_module, "print_plot_filename", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        cpmg_module, "print_plot_filename", lambda *_args, **_kwargs: None
+    )
     monkeypatch.setattr(
         cpmg_module,
         "create_plot_data_calc",

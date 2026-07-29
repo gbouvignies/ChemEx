@@ -23,7 +23,7 @@ def import_module(name: str) -> DistributionModule:
     module = importlib.import_module(name)
     if not callable(getattr(module, "register", None)):
         msg = f"Distribution module {name!r} does not define a callable register()"
-        raise ImportError(msg)  # noqa: TRY004
+        raise ImportError(msg)  # noqa: TRY004 - plugin contract makes this an import failure
     return cast("DistributionModule", module)
 
 

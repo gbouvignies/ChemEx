@@ -37,6 +37,8 @@ def test_tilt_magnetization_along_i_effective_field_round_trips() -> None:
     original = basis.vectors["ix_a"] + 2.0 * basis.vectors["iz_b"]
 
     tilted = tilt_magnetization_along_i_effective_field(original.copy(), tilts)
-    restored = tilt_magnetization_along_i_effective_field(tilted.copy(), tilts, back=True)
+    restored = tilt_magnetization_along_i_effective_field(
+        tilted.copy(), tilts, back=True
+    )
 
     np.testing.assert_allclose(restored, original)

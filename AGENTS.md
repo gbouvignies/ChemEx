@@ -24,6 +24,14 @@ as authoritative. If documentation and implementation disagree, establish the
 current behaviour from code and tests, then correct the documentation or raise
 the discrepancy.
 
+`pyproject.toml` is the authoritative package and tooling policy, and uv is the
+authoritative dependency manager. `numdifftools` is an indirect functional
+runtime dependency: lmfit uses it to estimate covariance, standard errors, and
+parameter correlations for ChemEx-supported minimizers without native
+covariance estimates. Ruff minor upgrades require a dedicated policy review and
+coordinated updates to both its development dependency range and
+`required-version`.
+
 ## Orient by task
 
 - CLI and top-level orchestration: `src/chemex/cli.py`,
@@ -187,9 +195,8 @@ Treat imports exercised by tests, benchmarks, and scripts as quasi-public; do
 not casually move or rename them.
 
 - `src/chemex/experiments/catalog/wip/` is experimental but is still
-  auto-discovered and registered. It is excluded from Ruff and `ty`; do not use
-  that exclusion to weaken stable code, and do not promote or redesign WIP code
-  without maintainer intent.
+  auto-discovered, registered, distributed, and checked by Ruff and `ty`. Do
+  not promote or redesign WIP code without maintainer intent.
 - `dist/`, `website/build/`, caches, example `Output*` directories, and ChemEx
   result directories are generated/local artifacts. Do not edit or commit them.
 - `uv.lock` and `website/package-lock.json` are generated lock files; change
@@ -207,10 +214,10 @@ schemas and examples instead of copying large key lists into prose.
 Set up the repository with:
 
 ```sh
-uv sync --all-extras --dev
+uv sync --locked
 ```
 
-The blocking Python CI target is 3.13; Python 3.14 is currently informational.
+Python 3.13 and 3.14 are supported and required CI targets.
 Run the narrowest relevant check during development, then the applicable
 repository checks:
 
@@ -218,7 +225,7 @@ repository checks:
 uv run pytest -q
 uv run ty check
 uv run ruff check .
-uv run ruff format --check <changed-python-files>
+uv run ruff format --check .
 git diff --check
 ```
 
