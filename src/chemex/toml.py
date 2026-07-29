@@ -17,11 +17,16 @@ def _deep_update(target: dict, src: dict) -> dict:
     return target
 
 
+def load_toml(filename: Path) -> dict[str, Any]:
+    """Load a TOML file without applying command-line error handling."""
+    with filename.open(mode="rb") as file:
+        return tomllib.load(file)
+
+
 def read_toml(filename: Path) -> dict[str, Any]:
     """Read and parse the experiment configuration file with 'toml."""
     try:
-        with filename.open(mode="rb") as file:
-            config = tomllib.load(file)
+        config = load_toml(filename)
     except FileNotFoundError:
         print_file_not_found(filename)
         sys.exit(1)

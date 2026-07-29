@@ -69,6 +69,7 @@ class StubParameterFactory:
 class StubSession:
     def __init__(self) -> None:
         self.parameters = StubParameters()
+        self.model = SimpleNamespace(spec=object())
         self.model_names: list[str] = []
         self.parameter_factory = StubParameterFactory()
         self.execution = ExecutionSettings()
@@ -138,6 +139,9 @@ class EmptyAfterSelectExperiments(FakeExperiments):
 class DummyExperiment:
     def __init__(self, filename: Path) -> None:
         self.filename = filename
+
+    def __len__(self) -> int:
+        return 1
 
 
 EXPECTED_EXPERIMENT_COUNT = 2
@@ -242,13 +246,32 @@ def test_build_experiments_uses_session_parameter_store(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = StubSession()
+    opened: list[Path] = []
+    build_calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(
-        builder_module,
-        "build_experiment",
-        lambda filename, _selection, *, session=None: (  # noqa: ARG005
-            DummyExperiment(filename)
+        builder_module.experiment_types,
+        "open",
+        lambda filename: (
+            opened.append(filename)
+            or SimpleNamespace(
+                filename=filename,
+                experiment_type_name="test",
+            )
         ),
+    )
+
+    def fake_build(source: SimpleNamespace, **kwargs: object) -> SimpleNamespace:
+        build_calls.append(kwargs)
+        return SimpleNamespace(
+            experiment=DummyExperiment(source.filename),
+            notices=(),
+        )
+
+    monkeypatch.setattr(
+        builder_module.experiment_types,
+        "build",
+        fake_build,
     )
 
     experiments = builder_module.build_experiments(
@@ -259,6 +282,9 @@ def test_build_experiments_uses_session_parameter_store(
 
     np.testing.assert_equal(session.parameters.sort_calls, 1)
     np.testing.assert_equal(len(list(experiments)), EXPECTED_EXPERIMENT_COUNT)
+    np.testing.assert_equal(opened, [Path("a.toml"), Path("b.toml")])
+    assert all(call["parameters"] is session.parameter_factory for call in build_calls)
+    assert all(call["model"] is session.model.spec for call in build_calls)
 
 
 def test_run_uses_explicit_session_for_fit_flow(

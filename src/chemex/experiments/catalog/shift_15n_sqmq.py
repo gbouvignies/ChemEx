@@ -9,14 +9,14 @@ from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import ShiftDataSettings
 from chemex.configuration.experiment import ExperimentSettings
 from chemex.containers.data import Data
-from chemex.containers.dataset import load_shift_dataset
-from chemex.experiments.factories import Creators, factories
-from chemex.filterers import NoFilterer
+from chemex.experiments.experiment_types import (
+    ProfileCalculation,
+    register_experiment_type,
+    shift_type,
+)
 from chemex.nmr.basis import Basis
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
-from chemex.plotters.shift import ShiftPlotter
-from chemex.printers.data import ShiftPrinter
 from chemex.typing import Array
 
 EXPERIMENT_NAME = "shift_15n_sqmq"
@@ -65,14 +65,13 @@ class Shift15NSqMqSequence:
     def __init__(self, settings: Shift15NSqMqSettings) -> None:
         self.settings = settings
 
-    def calculate(self, spectrometer: Spectrometer, _data: Data) -> Array:
+    def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
+        del data
         ref_shift_i = (
-            spectrometer.par_values[self.settings.cs_i_name]
-            * spectrometer.ppm_i
+            spectrometer.par_values[self.settings.cs_i_name] * spectrometer.ppm_i
         )
         ref_shift_s = (
-            spectrometer.par_values[self.settings.cs_s_name]
-            * spectrometer.ppm_s
+            spectrometer.par_values[self.settings.cs_s_name] * spectrometer.ppm_s
         )
         ref_shift_dq = ref_shift_i + ref_shift_s
         ref_shift_zq = ref_shift_i - ref_shift_s
@@ -82,9 +81,7 @@ class Shift15NSqMqSequence:
         shift_zq = _find_nearest(shifts, ref_shift_zq)
         return np.array(
             [
-                1e3
-                * (shift_sq - 0.5 * (shift_dq + shift_zq))
-                / spectrometer.ppm_i,
+                1e3 * (shift_sq - 0.5 * (shift_dq + shift_zq)) / spectrometer.ppm_i,
             ],
         )
 
@@ -92,14 +89,21 @@ class Shift15NSqMqSequence:
         return np.full_like(metadata, fill_value=False, dtype=np.bool_)
 
 
-def register() -> None:
-    creators = Creators(
-        config_creator=Shift15NSqMqConfig,
-        spectrometer_creator=build_spectrometer,
-        sequence_creator=Shift15NSqMqSequence,
-        dataset_creator=load_shift_dataset,
-        filterer_creator=NoFilterer,
-        printer_creator=ShiftPrinter,
-        plotter_creator=ShiftPlotter,
+def create_profile_calculation(
+    config: Shift15NSqMqConfig,
+    spin_system: SpinSystem,
+) -> ProfileCalculation:
+    return ProfileCalculation(
+        spectrometer=build_spectrometer(config, spin_system),
+        pulse_sequence=Shift15NSqMqSequence(config.experiment),
     )
-    factories.register(name=EXPERIMENT_NAME, creators=creators)
+
+
+EXPERIMENT_TYPE = shift_type(
+    name=EXPERIMENT_NAME,
+    config_type=Shift15NSqMqConfig,
+)(create_profile_calculation)
+
+
+def register() -> None:
+    register_experiment_type(EXPERIMENT_TYPE)

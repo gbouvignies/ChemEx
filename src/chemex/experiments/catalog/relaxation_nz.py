@@ -10,14 +10,14 @@ from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import RelaxationSettings
 from chemex.containers.data import Data
-from chemex.containers.dataset import load_relaxation_dataset
-from chemex.experiments.factories import Creators, factories
-from chemex.filterers import PlanesFilterer
+from chemex.experiments.experiment_types import (
+    ProfileCalculation,
+    register_experiment_type,
+    relaxation_type,
+)
 from chemex.nmr.basis import Basis
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
-from chemex.plotters.relaxation import RelaxationPlotter
-from chemex.printers.data import RelaxationPrinter
 from chemex.typing import Array
 
 EXPERIMENT_NAME = "relaxation_nz"
@@ -102,14 +102,21 @@ class RelaxationNzSequence:
         return np.full_like(metadata, fill_value=False, dtype=np.bool_)
 
 
-def register() -> None:
-    creators = Creators(
-        config_creator=RelaxationNzConfig,
-        spectrometer_creator=build_spectrometer,
-        sequence_creator=RelaxationNzSequence,
-        dataset_creator=load_relaxation_dataset,
-        filterer_creator=PlanesFilterer,
-        printer_creator=RelaxationPrinter,
-        plotter_creator=RelaxationPlotter,
+def create_profile_calculation(
+    config: RelaxationNzConfig,
+    spin_system: SpinSystem,
+) -> ProfileCalculation:
+    return ProfileCalculation(
+        spectrometer=build_spectrometer(config, spin_system),
+        pulse_sequence=RelaxationNzSequence(config.experiment),
     )
-    factories.register(name=EXPERIMENT_NAME, creators=creators)
+
+
+EXPERIMENT_TYPE = relaxation_type(
+    name=EXPERIMENT_NAME,
+    config_type=RelaxationNzConfig,
+)(create_profile_calculation)
+
+
+def register() -> None:
+    register_experiment_type(EXPERIMENT_TYPE)

@@ -31,11 +31,13 @@ _LINESTYLES = [
 
 
 class CestExperimentSettings(Protocol):
-    sw: float
+    @property
+    def sw(self) -> float: ...
 
 
 class CestExperimentConfig(Protocol):
-    experiment: CestExperimentSettings
+    @property
+    def experiment(self) -> CestExperimentSettings: ...
 
 
 T = TypeVar("T", bound=CestExperimentConfig)

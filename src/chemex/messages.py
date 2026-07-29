@@ -344,6 +344,12 @@ def print_file_not_found_error(error: FileNotFoundError) -> None:
     console.print(f"[red]Error: {error}")
 
 
+def print_dataset_error(filename: Path, explanation: str) -> None:
+    """Display a concise error for invalid user-supplied dataset content."""
+    console.print()
+    console.print(f"[red]Error: Invalid data in '{filename}': {explanation}")
+
+
 def print_toml_error(filename: Path, error_message: Exception) -> None:
     """Display an error related to TOML file parsing.
 
@@ -379,6 +385,24 @@ def print_experiment_name_error(filename: Path) -> None:
         Syntax(EXPERIMENT_NAME, "toml"),
         "\nRun 'chemex info' to obtain the full list of the available experiments.",
     )
+
+
+def print_experiment_type_error(filename: Path, name: str) -> None:
+    """Display an error when an input names an unknown Experiment Type."""
+    console.print()
+    console.print(
+        f"[red]Unknown Experiment Type '{name}' in the file '{filename}'.[/]",
+    )
+    console.print(
+        "Run 'chemex info' to obtain the full list of available experiments.",
+    )
+
+
+def print_experiment_source_error(filename: Path | None, explanation: str) -> None:
+    """Display an error for an invalid or stale opened Experiment source."""
+    console.print()
+    location = f" for '{filename}'" if filename is not None else ""
+    console.print(f"[red]Invalid Experiment source{location}: {explanation}")
 
 
 def print_pydantic_parsing_error(filename: Path, error: ValidationError) -> None:
@@ -505,8 +529,7 @@ def print_mcmc_unbounded_warning(parameters: list[str]) -> None:
     """Warn that MCMC was requested with unbounded parameters."""
     console.print()
     console.print(
-        "[yellow] -- WARNING: Some fitted parameters do not have finite MCMC "
-        "bounds.",
+        "[yellow] -- WARNING: Some fitted parameters do not have finite MCMC bounds.",
     )
     console.print(
         "Uniform priors are inferred from parameter bounds; finite lower and "

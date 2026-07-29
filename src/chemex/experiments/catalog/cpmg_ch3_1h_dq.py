@@ -12,14 +12,14 @@ from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings
 from chemex.configuration.types import Delay, Frequency, PulseWidth
 from chemex.containers.data import Data
-from chemex.containers.dataset import load_relaxation_dataset
-from chemex.experiments.factories import Creators, factories
-from chemex.filterers import PlanesFilterer
+from chemex.experiments.experiment_types import (
+    ProfileCalculation,
+    cpmg_type,
+    register_experiment_type,
+)
 from chemex.nmr.basis import Basis
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
-from chemex.plotters.cpmg import CpmgPlotter
-from chemex.printers.data import CpmgPrinter
 from chemex.typing import Array
 
 EXPERIMENT_NAME = "cpmg_ch3_1h_dq"
@@ -187,14 +187,21 @@ class CpmgCh31HDqSequence:
         return metadata == 0
 
 
-def register() -> None:
-    creators = Creators(
-        config_creator=CpmgCh31HDqConfig,
-        spectrometer_creator=build_spectrometer,
-        sequence_creator=CpmgCh31HDqSequence,
-        dataset_creator=load_relaxation_dataset,
-        filterer_creator=PlanesFilterer,
-        printer_creator=CpmgPrinter,
-        plotter_creator=CpmgPlotter,
+def create_profile_calculation(
+    config: CpmgCh31HDqConfig,
+    spin_system: SpinSystem,
+) -> ProfileCalculation:
+    return ProfileCalculation(
+        spectrometer=build_spectrometer(config, spin_system),
+        pulse_sequence=CpmgCh31HDqSequence(config.experiment),
     )
-    factories.register(name=EXPERIMENT_NAME, creators=creators)
+
+
+EXPERIMENT_TYPE = cpmg_type(
+    name=EXPERIMENT_NAME,
+    config_type=CpmgCh31HDqConfig,
+)(create_profile_calculation)
+
+
+def register() -> None:
+    register_experiment_type(EXPERIMENT_TYPE)
