@@ -26,9 +26,8 @@ ChemEx is an advanced, open-source software specifically designed for analyzing 
 
 ## Prerequisites
 
-Before installing ChemEx, ensure you have **Python 3.13** installed on your system.
-
-> **Note**: ChemEx requires Python 3.13. Python 3.14 was recently released and is being tested for compatibility, but **Python 3.13 is recommended** for production use until the scientific Python ecosystem fully adopts 3.14.
+ChemEx supports **Python 3.13 and 3.14**. Ensure one of these versions is
+installed on your system.
 
 ## Installation
 
