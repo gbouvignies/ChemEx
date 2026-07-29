@@ -1,0 +1,17 @@
+# Generated Graphify artifacts must not be indexed recursively.
+graphify-out/
+
+# Installed agent skills are tooling, not ChemEx domain content.
+.agents/skills/
+
+# The configured semantic backend is text-only.
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.bmp
+*.tif
+*.tiff
+*.svg
+
