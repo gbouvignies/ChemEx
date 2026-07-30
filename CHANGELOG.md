@@ -7,6 +7,13 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 
 ## [Unreleased]
 
+### Infrastructure
+- Removed the unused `B1FieldConfig` model and its `default_distribution_config`
+  helper from `b1_config.py`; the flat-table `b1_frq` schema it implemented was
+  never wired to any experiment. `B1InhomogeneityMixin` remains the single B1
+  configuration path, and the distribution-union parsing it depends on is
+  unchanged.
+
 ## [2026.06.1] - 2026-06-26
 
 ### Added
