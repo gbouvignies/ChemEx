@@ -60,6 +60,12 @@ class ISLiouvillianEngine:
             (self.size, self.size),
             dtype=self._matrix_dtype,
         )
+        # Generations track how many times the shared free-evolution Liouvillian
+        # and each spin's B1 terms have changed, so pulse caches can detect
+        # staleness by comparison instead of being told to invalidate.
+        self._free_generation = 0
+        self._b1_i_generation = 0
+        self._b1_s_generation = 0
         self.h_frq = 0.0 if conditions.h_larmor_frq is None else conditions.h_larmor_frq
         self._readout = LiouvillianReadout(self.basis.vectors)
         self._q_order_i = _Q_ORDER_I.get(self.basis.extension, 1.0)
@@ -95,6 +101,7 @@ class ISLiouvillianEngine:
             ),
             start=self._zero_liouvillian,
         )
+        self._free_generation += 1
 
     def _matrix_or_zero(self, name: str) -> Array:
         return self._matrices.get(name, self._zero_liouvillian)
@@ -138,6 +145,7 @@ class ISLiouvillianEngine:
     def carrier_i(self, value: float) -> None:
         self.state.carrier_i = float(value)
         self._l_carrier_i = self._scaled_liouvillian_term("carrier_i", value)
+        self._free_generation += 1
 
     @property
     def carrier_s(self) -> float:
@@ -147,6 +155,7 @@ class ISLiouvillianEngine:
     def carrier_s(self, value: float) -> None:
         self.state.carrier_s = float(value)
         self._l_carrier_s = self._scaled_liouvillian_term("carrier_s", value)
+        self._free_generation += 1
 
     @property
     def offset_i(self) -> float:
@@ -160,6 +169,7 @@ class ISLiouvillianEngine:
             value,
             factor=float(np.sign(self.ppm_i)),
         )
+        self._free_generation += 1
 
     @property
     def offset_s(self) -> float:
@@ -173,6 +183,7 @@ class ISLiouvillianEngine:
             value,
             factor=float(np.sign(self.ppm_s)),
         )
+        self._free_generation += 1
 
     def _set_b1_i_profile(self, profile: B1Profile) -> None:
         self.state.b1_i_profile = profile
@@ -181,6 +192,7 @@ class ISLiouvillianEngine:
             matrix_x=self._matrix_or_zero("b1x_i"),
             matrix_y=self._matrix_or_zero("b1y_i"),
         )
+        self._b1_i_generation += 1
 
     def set_b1_i_inhomogeneity(
         self,
@@ -236,6 +248,7 @@ class ISLiouvillianEngine:
         self.state.b1_s = float(value)
         self.l_b1x_s = self._scaled_liouvillian_term("b1x_s", value)
         self.l_b1y_s = self._scaled_liouvillian_term("b1y_s", value)
+        self._b1_s_generation += 1
 
     @property
     def jeff_i(self) -> Distribution:
@@ -248,6 +261,7 @@ class ISLiouvillianEngine:
             distribution,
             matrix=self._matrix_or_zero("jeff_i"),
         )
+        self._free_generation += 1
 
     @property
     def gradient_dephasing(self) -> float:
@@ -276,6 +290,21 @@ class ISLiouvillianEngine:
     @property
     def weights(self) -> Array:
         return self._b1_i_state.axis.weights * self._jeff_i_state.axis.weights
+
+    def pulse_generation(self, spin: str) -> tuple[int, int]:
+        """Return a value that changes whenever spin's base pulses go stale.
+
+        Combines the shared free-evolution generation with the spin-specific
+        B1 generation, so callers only need to compare this tuple for
+        equality instead of knowing which underlying state affects which
+        spin's pulses.
+        """
+        if spin == "i":
+            return (self._free_generation, self._b1_i_generation)
+        if spin == "s":
+            return (self._free_generation, self._b1_s_generation)
+        msg = f"Unknown spin {spin!r}"
+        raise ValueError(msg)
 
     @property
     def detection(self) -> str:

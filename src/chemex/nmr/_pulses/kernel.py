@@ -32,6 +32,20 @@ class PulseKernel:
         phases = self._phases[spin]
         return np.array([phases[i] @ propagator @ phases[-i] for i in range(4)])
 
+    def pulse_generation(self, spin: str) -> tuple[int, int]:
+        return self._engine.pulse_generation(spin)
+
+    @staticmethod
+    def _phase_mixed_term(
+        l_x: Array,
+        l_y: Array,
+        phase: float,
+        scale: float = 1.0,
+    ) -> Array:
+        """Combine a spin's x/y B1 Liouvillian terms for an RF pulse phase."""
+        rad = phase * np.pi * 0.5
+        return scale * np.cos(rad) * l_x + scale * np.sin(rad) * l_y
+
     def delays(self, times: float | Iterable[float]) -> Array:
         return calculate_propagators(self._engine.l_free, times)
 
@@ -42,11 +56,11 @@ class PulseKernel:
         scale: float = 1.0,
     ) -> Array:
         dephased = self._engine.b1_i_dist.dephasing
-        rad = phase * np.pi * 0.5
-        liouv = (
-            self._engine.l_free
-            + scale * np.cos(rad) * self._engine.l_b1x_i
-            + scale * np.sin(rad) * self._engine.l_b1y_i
+        liouv = self._engine.l_free + self._phase_mixed_term(
+            self._engine.l_b1x_i,
+            self._engine.l_b1y_i,
+            phase,
+            scale,
         )
         return calculate_propagators(liouv, times, dephasing=dephased)
 
@@ -56,11 +70,11 @@ class PulseKernel:
         phase: float,
         scale: float = 1.0,
     ) -> Array:
-        rad = phase * np.pi * 0.5
-        liouv = (
-            self._engine.l_free
-            + scale * np.cos(rad) * self._engine.l_b1x_s
-            + scale * np.sin(rad) * self._engine.l_b1y_s
+        liouv = self._engine.l_free + self._phase_mixed_term(
+            self._engine.l_b1x_s,
+            self._engine.l_b1y_s,
+            phase,
+            scale,
         )
         return calculate_propagators(liouv, times)
 
@@ -73,10 +87,12 @@ class PulseKernel:
         dephased = self._engine.b1_i_dist.dephasing
         liouv = (
             self._engine.l_free
-            + np.cos(phase_i * np.pi * 0.5) * self._engine.l_b1x_i
-            + np.sin(phase_i * np.pi * 0.5) * self._engine.l_b1y_i
-            + np.cos(phase_s * np.pi * 0.5) * self._engine.l_b1x_s
-            + np.sin(phase_s * np.pi * 0.5) * self._engine.l_b1y_s
+            + self._phase_mixed_term(
+                self._engine.l_b1x_i, self._engine.l_b1y_i, phase_i
+            )
+            + self._phase_mixed_term(
+                self._engine.l_b1x_s, self._engine.l_b1y_s, phase_s
+            )
         )
         return calculate_propagators(liouv, times, dephasing=dephased)
 

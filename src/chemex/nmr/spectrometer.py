@@ -35,19 +35,6 @@ class Spectrometer:
     ) -> Self:
         return cls(ISLiouvillianEngine(spin_system, basis, conditions))
 
-    def _invalidate_base_pulses(self, *spins: str) -> None:
-        self._pulse_library.invalidate(*spins)
-
-    def _set_engine_attr(
-        self,
-        name: str,
-        value: float | str | Distribution,
-        *,
-        invalidate: tuple[str, ...] = ("i", "s"),
-    ) -> None:
-        setattr(self._engine, name, value)
-        self._invalidate_base_pulses(*invalidate)
-
     def __init__(self, engine: ISLiouvillianEngine) -> None:
         self._engine = engine
         self._pulse_kernel = PulseKernel(engine)
@@ -68,7 +55,6 @@ class Spectrometer:
 
     def update(self, par_values: dict[str, float]) -> None:
         self._engine.update(par_values)
-        self._invalidate_base_pulses()
 
     @property
     def par_values(self) -> dict[str, float]:
@@ -96,7 +82,7 @@ class Spectrometer:
 
     @carrier_i.setter
     def carrier_i(self, value: float) -> None:
-        self._set_engine_attr("carrier_i", value)
+        self._engine.carrier_i = value
 
     @property
     def carrier_s(self) -> float:
@@ -104,7 +90,7 @@ class Spectrometer:
 
     @carrier_s.setter
     def carrier_s(self, value: float) -> None:
-        self._set_engine_attr("carrier_s", value)
+        self._engine.carrier_s = value
 
     @property
     def offset_i(self) -> float:
@@ -112,7 +98,7 @@ class Spectrometer:
 
     @offset_i.setter
     def offset_i(self, value: float) -> None:
-        self._set_engine_attr("offset_i", value)
+        self._engine.offset_i = value
 
     @property
     def offset_s(self) -> float:
@@ -120,7 +106,7 @@ class Spectrometer:
 
     @offset_s.setter
     def offset_s(self, value: float) -> None:
-        self._set_engine_attr("offset_s", value)
+        self._engine.offset_s = value
 
     @property
     def b1_i(self) -> float:
@@ -130,7 +116,6 @@ class Spectrometer:
     def b1_i(self, value: float) -> None:
         self._pulse_library.set_b1_i(value)
         self._engine.b1_i = value
-        self._invalidate_base_pulses("i")
 
     def set_b1_i_inhomogeneity(
         self,
@@ -139,7 +124,6 @@ class Spectrometer:
     ) -> None:
         self._pulse_library.set_b1_i(nominal)
         self._engine.set_b1_i_inhomogeneity(nominal, distribution)
-        self._invalidate_base_pulses("i")
 
     def set_b1_i_distribution(
         self,
@@ -153,7 +137,6 @@ class Spectrometer:
             )
         self._pulse_library.set_b1_i(nominal)
         self._engine.set_b1_i_distribution(distribution, nominal=nominal)
-        self._invalidate_base_pulses("i")
 
     @property
     def b1_s(self) -> float:
@@ -163,7 +146,6 @@ class Spectrometer:
     def b1_s(self, value: float) -> None:
         self._pulse_library.set_b1_s(value)
         self._engine.b1_s = value
-        self._invalidate_base_pulses("s")
 
     @property
     def jeff_i(self) -> Distribution:
@@ -171,7 +153,7 @@ class Spectrometer:
 
     @jeff_i.setter
     def jeff_i(self, value: Distribution) -> None:
-        self._set_engine_attr("jeff_i", value)
+        self._engine.jeff_i = value
 
     def get_equilibrium(self) -> Array:
         return self._engine.get_equilibrium()
@@ -205,7 +187,7 @@ class Spectrometer:
 
     @gradient_dephasing.setter
     def gradient_dephasing(self, value: float) -> None:
-        self._set_engine_attr("gradient_dephasing", value)
+        self._engine.gradient_dephasing = value
 
     def delays(self, times: float | Iterable[float]) -> Array:
         return self._pulse_kernel.delays(times)
