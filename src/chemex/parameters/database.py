@@ -588,12 +588,6 @@ class ParameterStore:
         """
         self._database_mf.add_multiple(parameters)
 
-    def add_parameters(self, parameters: Parameters) -> None:
-        self.add_multiple(parameters)
-
-    def add_parameters_mf(self, parameters: Parameters) -> None:
-        self.add_multiple_mf(parameters)
-
     def get_parameters(self, param_ids: Iterable[str]) -> Parameters:
         """Retrieve parameters from the active catalog by IDs.
 
@@ -634,9 +628,6 @@ class ParameterStore:
         """Sort parameters in the active catalog."""
         self.database.sort()
 
-    def sort_parameters(self) -> None:
-        self.sort()
-
     def update_from_parameters(self, parameters: ParametersLF) -> None:
         """Update the active catalog from lmfit Parameters.
 
@@ -654,9 +645,6 @@ class ParameterStore:
 
         """
         return self.database.set_values(par_values)
-
-    def set_param_values(self, par_values: dict[str, float]) -> None:
-        self.set_values(par_values)
 
     def set_defaults(self, defaults: DefaultListType) -> None:
         """Set defaults for parameters in both catalogs.
@@ -677,9 +665,6 @@ class ParameterStore:
 
         self.database.check_params()
 
-    def set_param_defaults(self, defaults: DefaultListType) -> None:
-        self.set_defaults(defaults)
-
     def set_vary(self, section_names: Sequence[str], vary: bool) -> Counter[str]:
         """Set variability of parameters in the active catalog by section name.
 
@@ -696,9 +681,6 @@ class ParameterStore:
     def fix_all(self) -> None:
         """Fix all parameters in the active catalog, preventing them from varying."""
         self.database.fix_all()
-
-    def fix_all_parameters(self) -> None:
-        self.fix_all()
 
     def set_expressions(self, expression_list: Sequence[str]) -> Counter[str]:
         """Apply expressions to parameters in the active catalog.
@@ -735,9 +717,6 @@ class ParameterStore:
         """Clear all parameter catalogs used by the current process."""
         self._database.clear()
         self._database_mf.clear()
-
-    def reset_parameters(self) -> None:
-        self.reset()
 
 
 def create_parameter_store(model_reader: ModelReader) -> ParameterStore:

@@ -60,7 +60,7 @@ def run_sim(
     path = args.output
     plot = args.plot == "normal"
 
-    session.parameters.fix_all_parameters()
+    session.parameters.fix_all()
 
     execute_simulation(experiments, path, plot=plot, session=session)
 
@@ -95,7 +95,7 @@ def run(
     # Read initial values of fitting/fixed parameters
     print_reading_defaults()
     defaults = read_defaults(args.parameters)
-    session.parameters.set_param_defaults(defaults)
+    session.parameters.set_defaults(defaults)
 
     if args.commands == "simulate":
         run_sim(args, experiments, session)

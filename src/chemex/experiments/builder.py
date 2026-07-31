@@ -127,5 +127,5 @@ def build_experiments(
             _print_notice(notice)
         experiments.add(result.experiment)
 
-    parameter_store.sort_parameters()
+    parameter_store.sort()
     return experiments

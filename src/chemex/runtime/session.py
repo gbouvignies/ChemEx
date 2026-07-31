@@ -58,7 +58,7 @@ class AnalysisSession:
     def reset(self) -> None:
         """Clear cached runtime state before starting a new analysis."""
         self.parameter_factory.clear_cache()
-        self.parameters.reset_parameters()
+        self.parameters.reset()
         self.model.reset()
 
     def set_model(self, name: str) -> None:

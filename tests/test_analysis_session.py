@@ -42,16 +42,16 @@ class StubParameters:
         self.sort_calls = 0
         self.status_calls: list[Method] = []
 
-    def reset_parameters(self) -> None:
+    def reset(self) -> None:
         self.reset_calls += 1
 
-    def set_param_defaults(self, defaults: object) -> None:
+    def set_defaults(self, defaults: object) -> None:
         self.defaults_calls.append(defaults)
 
-    def fix_all_parameters(self) -> None:
+    def fix_all(self) -> None:
         self.fix_all_calls += 1
 
-    def sort_parameters(self) -> None:
+    def sort(self) -> None:
         self.sort_calls += 1
 
     def set_parameter_status(self, method: Method) -> None:
