@@ -11,14 +11,10 @@ from chemex.typing import Array
 @dataclass(slots=True)
 class _BasePulseCache:
     pw90: float = 0.0
-    dirty: bool = True
-
-    def invalidate(self) -> None:
-        self.dirty = True
+    built_generation: tuple[int, int] | None = None
 
     def set_b1(self, value: float) -> None:
         self.pw90 = 1.0 / (4.0 * value) if value else 0.0
-        self.dirty = True
 
 
 @dataclass(slots=True)
@@ -30,11 +26,13 @@ class _ISpinPulseCache(_BasePulseCache):
     def pulse_widths(self) -> Array:
         return np.array([1.0, 2.0, 8.0 / 3.0]) * self.pw90
 
-    def store(self, *, p90: Array, p180: Array, p240: Array) -> None:
+    def store(
+        self, *, p90: Array, p180: Array, p240: Array, generation: tuple[int, int]
+    ) -> None:
         self.p90 = p90
         self.p180 = p180
         self.p240 = p240
-        self.dirty = False
+        self.built_generation = generation
 
 
 @dataclass(slots=True)
@@ -44,9 +42,9 @@ class _SSpinPulseCache(_BasePulseCache):
     def pulse_widths(self) -> Array:
         return np.array([2.0]) * self.pw90
 
-    def store(self, *, p180: Array) -> None:
+    def store(self, *, p180: Array, generation: tuple[int, int]) -> None:
         self.p180 = p180
-        self.dirty = False
+        self.built_generation = generation
 
 
 class PulseLibrary:
@@ -57,16 +55,6 @@ class PulseLibrary:
         self._i_pulses = _ISpinPulseCache()
         self._s_pulses = _SSpinPulseCache()
 
-    def invalidate(self, *spins: str) -> None:
-        for spin in spins or ("i", "s"):
-            if spin == "i":
-                self._i_pulses.invalidate()
-            elif spin == "s":
-                self._s_pulses.invalidate()
-            else:
-                msg = f"Unknown spin cache {spin!r}"
-                raise ValueError(msg)
-
     def set_b1_i(self, value: float) -> None:
         self._i_pulses.set_b1(value)
 
@@ -74,10 +62,11 @@ class PulseLibrary:
         self._s_pulses.set_b1(value)
 
     def _ensure_base_pulses_i(self) -> None:
-        if self._i_pulses.dirty:
+        generation = self._kernel.pulse_generation("i")
+        if self._i_pulses.built_generation != generation:
             base = self._kernel.pulse_i(self._i_pulses.pulse_widths(), 0.0)
             p90, p180, p240 = self._kernel.add_phases(base, "i").swapaxes(0, 1)
-            self._i_pulses.store(p90=p90, p180=p180, p240=p240)
+            self._i_pulses.store(p90=p90, p180=p180, p240=p240, generation=generation)
 
     @property
     def p90_i(self) -> Array:
@@ -111,7 +100,8 @@ class PulseLibrary:
         return self.p90_i[[1, 2, 3, 0]] @ self.p240_i @ self.p90_i[[1, 2, 3, 0]]
 
     def _ensure_base_pulses_s(self) -> None:
-        if self._s_pulses.dirty:
+        generation = self._kernel.pulse_generation("s")
+        if self._s_pulses.built_generation != generation:
             # S-spin caching only has a single base pulse width, so there is no
             # width axis to preserve here. Keep the broadcast distribution axes
             # intact and add only the phase axis.
@@ -119,7 +109,7 @@ class PulseLibrary:
                 self._kernel.pulse_s(self._s_pulses.pulse_widths(), 0.0),
                 "s",
             )
-            self._s_pulses.store(p180=p180)
+            self._s_pulses.store(p180=p180, generation=generation)
 
     @property
     def p180_s(self) -> Array:
