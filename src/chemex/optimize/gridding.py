@@ -159,7 +159,7 @@ def set_params_from_grid(
     for grid_result in grids_1d:
         id_, values = next(iter(grid_result.grid.items()))
         par_values[id_] = values[grid_result.chisqr.argmin()]
-    parameter_store.set_param_values(par_values)
+    parameter_store.set_values(par_values)
 
 
 def make_grids_nd(

@@ -13,6 +13,14 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   never wired to any experiment. `B1InhomogeneityMixin` remains the single B1
   configuration path, and the distribution-union parsing it depends on is
   unchanged.
+- Removed the obsolete `ParameterStore` compatibility aliases
+  (`add_parameters`, `add_parameters_mf`, `sort_parameters`,
+  `set_param_values`, `set_param_defaults`, `fix_all_parameters`,
+  `reset_parameters`) left over from the `AnalysisSession` migration. Internal
+  callers now use the canonical short method names
+  (`add_multiple`/`add_multiple_mf`, `sort`, `set_values`, `set_defaults`,
+  `fix_all`, `reset`); parameter semantics and fit/simulate behavior are
+  unchanged.
 
 ## [2026.06.1] - 2026-06-26
 
