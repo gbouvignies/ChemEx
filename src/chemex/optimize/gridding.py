@@ -25,7 +25,6 @@ from chemex.optimize.helper import (
 )
 from chemex.optimize.minimizer import minimize
 from chemex.parameters.database import ParameterStore
-from chemex.runtime import AnalysisSession
 from chemex.typing import Array
 
 
@@ -259,8 +258,6 @@ def run_grid(
     path: Path,
     plot: str,
     fitmethod: str,
-    *,
-    session: AnalysisSession | None = None,
 ) -> None:
     print_running_grid()
 
@@ -284,6 +281,6 @@ def run_grid(
     plot_grid_2d(grids_2d, path / "Grid", parameter_store=parameter_store)
 
     if len(groups) > 1:
-        execute_post_fit_groups(experiments, path, plot, session=session)
+        execute_post_fit_groups(experiments, path, plot)
     else:
-        execute_post_fit(experiments, path, plot=plot != "nothing", session=session)
+        execute_post_fit(experiments, path, plot=plot != "nothing")

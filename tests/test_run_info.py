@@ -283,7 +283,7 @@ def test_run_fit_creates_run_info(
     chemex_module.run_fit(
         args,
         experiments,
-        SimpleNamespace(),
+        SimpleNamespace(execution=None),
         argv=["chemex", "fit"],
     )
 

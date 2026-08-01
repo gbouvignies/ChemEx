@@ -21,6 +21,15 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   (`add_multiple`/`add_multiple_mf`, `sort`, `set_values`, `set_defaults`,
   `fix_all`, `reset`); parameter semantics and fit/simulate behavior are
   unchanged.
+- Simplified the fit and simulation workflow: `AnalysisSession` is no longer
+  threaded through lower-level `optimize/*` helpers (`run_methods`,
+  `execute_post_fit`, `execute_simulation`, `execute_post_fit_groups`,
+  `run_grid`). Execution policy is now passed explicitly through
+  `ExecutionSettings` only where needed (`run_methods` through `_fit_groups` to
+  `_run_statistics`), and parameter access continues through
+  `Experiments.parameter_store`. This intentionally narrows these lower-level
+  function signatures for any direct caller; CLI, TOML, output, and scientific
+  behavior are unchanged.
 
 ## [2026.06.1] - 2026-06-26
 
