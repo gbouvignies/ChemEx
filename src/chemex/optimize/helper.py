@@ -17,16 +17,6 @@ from chemex.messages import (
 )
 from chemex.parameters.database import ParameterStore
 from chemex.printers.parameters import write_parameters
-from chemex.runtime import AnalysisSession
-
-
-def _validate_session_parameter_store(
-    experiments: Experiments,
-    session: AnalysisSession | None,
-) -> None:
-    if session is not None and experiments.parameter_store is not session.parameters:
-        msg = "Experiments parameter store does not match the active session"
-        raise ValueError(msg)
 
 
 def calculate_statistics(
@@ -81,10 +71,8 @@ def _write_statistics(
 def _write_files(
     experiments: Experiments,
     path: Path,
-    session: AnalysisSession | None = None,
 ) -> None:
     """Write the results of the fit to output files."""
-    _validate_session_parameter_store(experiments, session)
     print_writing_results(path)
     path.mkdir(parents=True, exist_ok=True)
     write_parameters(experiments, path, parameter_store=experiments.parameter_store)
@@ -132,9 +120,8 @@ def execute_post_fit(
     path: Path,
     *,
     plot: bool = False,
-    session: AnalysisSession | None = None,
 ) -> None:
-    _write_files(experiments, path, session=session)
+    _write_files(experiments, path)
     if plot:
         _write_plots(experiments, path)
 
@@ -144,9 +131,7 @@ def execute_simulation(
     path: Path,
     *,
     plot: bool = False,
-    session: AnalysisSession | None = None,
 ) -> None:
-    _validate_session_parameter_store(experiments, session)
     experiments.prepare_for_simulation()
     _write_simulation_files(experiments, path)
     if plot:
@@ -157,8 +142,6 @@ def execute_post_fit_groups(
     experiments: Experiments,
     path: Path,
     plot: str,
-    *,
-    session: AnalysisSession | None = None,
 ) -> None:
     print_group_name("All groups")
     params_lf = experiments.parameter_store.build_lmfit_params(experiments.param_ids)
@@ -168,7 +151,6 @@ def execute_post_fit_groups(
         experiments,
         path / "All",
         plot=(plot != "nothing"),
-        session=session,
     )
 
 

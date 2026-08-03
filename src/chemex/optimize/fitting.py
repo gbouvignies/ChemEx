@@ -26,7 +26,7 @@ from chemex.optimize.minimizer import (
     minimize_with_report,
 )
 from chemex.optimize.resampling import run_resampling_statistics
-from chemex.runtime import AnalysisSession
+from chemex.runtime import ExecutionSettings
 
 
 def _run_statistics(
@@ -35,12 +35,11 @@ def _run_statistics(
     fitmethod: str,
     statistics: Statistics | None = None,
     *,
-    session: AnalysisSession | None = None,
+    execution: ExecutionSettings | None = None,
 ) -> None:
     if statistics is None:
         return
 
-    execution = session.execution if session is not None else None
     run_resampling_statistics(
         experiments,
         path,
@@ -76,7 +75,7 @@ def _fit_groups(
     fitmethod: str,
     statistics: Statistics | None,
     *,
-    session: AnalysisSession | None = None,
+    execution: ExecutionSettings | None = None,
 ) -> None:
     parameter_store = experiments.parameter_store
     groups = create_groups(experiments)
@@ -105,7 +104,6 @@ def _fit_groups(
             group.experiments,
             group_path,
             plot=plot_flg,
-            session=session,
         )
 
         # Run Monte Carlo and/or bootstrap analysis
@@ -114,11 +112,11 @@ def _fit_groups(
             group_path,
             fitmethod,
             statistics,
-            session=session,
+            execution=execution,
         )
 
     if len(groups) > 1:
-        execute_post_fit_groups(experiments, path, plot, session=session)
+        execute_post_fit_groups(experiments, path, plot)
 
 
 def run_methods(
@@ -127,7 +125,7 @@ def run_methods(
     path: Path,
     plot_level: str,
     *,
-    session: AnalysisSession | None = None,
+    execution: ExecutionSettings | None = None,
 ) -> None:
     parameter_store = experiments.parameter_store
 
@@ -161,7 +159,6 @@ def run_methods(
                     path_sect,
                     plot_level,
                     method.fitmethod,
-                    session=session,
                 )
             except KeyboardInterrupt:
                 print_calculation_stopped_error()
@@ -172,5 +169,5 @@ def run_methods(
                 plot_level,
                 method.fitmethod,
                 method.statistics,
-                session=session,
+                execution=execution,
             )

@@ -47,7 +47,9 @@ def run_fit(
     write_run_info(args, experiments, argv=argv)
 
     print_start_fit()
-    run_methods(experiments, methods, args.output, args.plot, session=session)
+    run_methods(
+        experiments, methods, args.output, args.plot, execution=session.execution
+    )
 
 
 def run_sim(
@@ -62,7 +64,7 @@ def run_sim(
 
     session.parameters.fix_all()
 
-    execute_simulation(experiments, path, plot=plot, session=session)
+    execute_simulation(experiments, path, plot=plot)
 
 
 def run(
@@ -91,6 +93,10 @@ def run(
     if not experiments:
         print_no_data()
         sys.exit()
+
+    if experiments.parameter_store is not session.parameters:
+        msg = "Experiments parameter store does not match the active session"
+        raise ValueError(msg)
 
     # Read initial values of fitting/fixed parameters
     print_reading_defaults()

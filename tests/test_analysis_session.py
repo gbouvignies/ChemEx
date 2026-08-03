@@ -311,9 +311,15 @@ def test_run_uses_explicit_session_for_fit_flow(
         path: Path,
         plot_level: str,
         *,
-        session: StubSession | None = None,
+        execution: ExecutionSettings | None = None,
     ) -> None:
-        recorded["run_methods"] = (experiments_arg, methods, path, plot_level, session)
+        recorded["run_methods"] = (
+            experiments_arg,
+            methods,
+            path,
+            plot_level,
+            execution,
+        )
 
     monkeypatch.setattr(chemex_module, "build_experiments", fake_build_experiments)
     monkeypatch.setattr(chemex_module, "read_defaults", lambda _filenames: defaults)
@@ -339,7 +345,7 @@ def test_run_uses_explicit_session_for_fit_flow(
     np.testing.assert_equal(session.parameters.defaults_calls, [defaults])
     np.testing.assert_equal(experiments.filtered, 1)
     np.testing.assert_equal(recorded["build"][2], session)
-    np.testing.assert_equal(recorded["run_methods"][4], session)
+    np.testing.assert_equal(recorded["run_methods"][4], session.execution)
     assert recorded["run_info"] is True
 
 
@@ -365,9 +371,8 @@ def test_run_uses_explicit_session_for_simulation_flow(
         path: Path,
         *,
         plot: bool = False,
-        session: StubSession | None = None,
     ) -> None:
-        recorded["simulation"] = (experiments_arg, path, plot, session)
+        recorded["simulation"] = (experiments_arg, path, plot)
 
     monkeypatch.setattr(chemex_module, "build_experiments", fake_build_experiments)
     monkeypatch.setattr(chemex_module, "read_defaults", lambda _filenames: defaults)
@@ -379,7 +384,37 @@ def test_run_uses_explicit_session_for_simulation_flow(
     np.testing.assert_equal(session.parameters.defaults_calls, [defaults])
     np.testing.assert_equal(session.parameters.fix_all_calls, 1)
     np.testing.assert_equal(recorded["build"][2], session)
-    np.testing.assert_equal(recorded["simulation"][3], session)
+
+
+def test_run_rejects_experiments_built_under_a_different_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = StubSession()
+    mismatched_store = StubParameters()
+    experiments = FakeExperiments(parameter_store=mismatched_store)
+
+    def fake_build_experiments(
+        filenames: list[Path] | None,
+        selection: Selection,
+        *,
+        session: StubSession | None = None,
+    ) -> FakeExperiments:
+        return experiments
+
+    def fail_run_methods(*_args, **_kwargs) -> None:
+        pytest.fail("run_methods should not run for a mismatched parameter store")
+
+    def fail_execute_simulation(*_args, **_kwargs) -> None:
+        pytest.fail(
+            "execute_simulation should not run for a mismatched parameter store"
+        )
+
+    monkeypatch.setattr(chemex_module, "build_experiments", fake_build_experiments)
+    monkeypatch.setattr(chemex_module, "run_methods", fail_run_methods)
+    monkeypatch.setattr(chemex_module, "execute_simulation", fail_execute_simulation)
+
+    with pytest.raises(ValueError, match="does not match the active session"):
+        chemex_module.run(make_args("fit"), session=session)
 
 
 def test_main_bootstraps_plugins_for_non_run_commands(
@@ -440,7 +475,7 @@ def test_main_dispatches_analysis_commands(monkeypatch: pytest.MonkeyPatch) -> N
     np.testing.assert_equal(calls, ["logo", "plugins", "run"])
 
 
-def test_run_methods_passes_session_to_fit_groups(
+def test_run_methods_passes_execution_to_fit_groups(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = StubSession()
@@ -454,7 +489,7 @@ def test_run_methods_passes_session_to_fit_groups(
         fitmethod: str,
         statistics: object,
         *,
-        session: StubSession | None = None,
+        execution: ExecutionSettings | None = None,
     ) -> None:
         recorded["fit_groups"] = (
             experiments_arg,
@@ -462,7 +497,7 @@ def test_run_methods_passes_session_to_fit_groups(
             plot,
             fitmethod,
             statistics,
-            session,
+            execution,
         )
 
     monkeypatch.setattr(fitting_module, "_fit_groups", fake_fit_groups)
@@ -472,12 +507,12 @@ def test_run_methods_passes_session_to_fit_groups(
         {"": Method()},
         Path("Output"),
         "normal",
-        session=session,
+        execution=session.execution,
     )
 
     np.testing.assert_equal(len(experiments.selections), 1)
     np.testing.assert_equal(len(session.parameters.status_calls), 1)
-    np.testing.assert_equal(recorded["fit_groups"][5], session)
+    np.testing.assert_equal(recorded["fit_groups"][5], session.execution)
 
 
 def test_run_methods_skips_fit_when_selection_removes_all_profiles(
@@ -501,7 +536,7 @@ def test_run_methods_skips_fit_when_selection_removes_all_profiles(
         {"": Method(include=["1H"])},
         Path("Output"),
         "normal",
-        session=session,
+        execution=session.execution,
     )
 
     np.testing.assert_equal(calls, ["no_data"])
@@ -641,11 +676,10 @@ def test_run_statistics_dispatches_mcmc_without_resampling(
     tmp_path: Path,
 ) -> None:
     recorded: dict[str, object] = {}
-    session = StubSession()
-    session.parameters = StatisticsParameterStore()
+    execution = ExecutionSettings(workers=4)
     experiments = SimpleNamespace(
         param_ids=["__PB"],
-        parameter_store=session.parameters,
+        parameter_store=StatisticsParameterStore(),
     )
 
     def fail_generate_exp_for_statistics(*_args, **_kwargs) -> None:
@@ -677,14 +711,14 @@ def test_run_statistics_dispatches_mcmc_without_resampling(
         tmp_path,
         "leastsq",
         fitting_module.Statistics(mcmc=100),
-        session=session,
+        execution=execution,
     )
 
     np.testing.assert_equal(recorded["experiments"], experiments)
     assert "__PB" in recorded["params"]
     assert recorded["settings"].steps == 100
     np.testing.assert_equal(recorded["path"], tmp_path)
-    np.testing.assert_equal(recorded["execution"], session.execution)
+    np.testing.assert_equal(recorded["execution"], execution)
 
 
 def test_resampling_summary_and_correlations_are_written(tmp_path: Path) -> None:
@@ -723,16 +757,14 @@ def test_resampling_summary_and_correlations_are_written(tmp_path: Path) -> None
     assert "1.00000e+00" in correlations
 
 
-def test_execute_post_fit_writes_parameters_from_session_store(
+def test_execute_post_fit_writes_parameters_from_experiments_store(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     param = ParamSetting(ParamName("PB"), value=0.15, vary=False)
-    session = StubSession()
-    session.parameters = WriterParameterStore({param.id_: param})
     experiments = SimpleNamespace(
         param_ids=[param.id_],
-        parameter_store=session.parameters,
+        parameter_store=WriterParameterStore({param.id_: param}),
         write=lambda _path: None,
     )
     monkeypatch.setattr(helper_module, "print_writing_results", lambda _path: None)
@@ -742,7 +774,7 @@ def test_execute_post_fit_writes_parameters_from_session_store(
         lambda *_args, **_kwargs: None,
     )
 
-    helper_module.execute_post_fit(experiments, tmp_path, session=session)
+    helper_module.execute_post_fit(experiments, tmp_path)
 
     np.testing.assert_equal(int((tmp_path / "Parameters" / "fixed.toml").exists()), 1)
 
