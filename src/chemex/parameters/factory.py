@@ -8,6 +8,7 @@ from chemex.configuration.conditions import Conditions
 from chemex.models.factory import model_factory
 from chemex.nmr.basis import Basis
 from chemex.parameters.database import ParameterStore
+from chemex.parameters.definitions import ParameterDefinitionsCollector
 from chemex.parameters.setting import LocalSettings, Parameters, ParamSetting
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.spins import build_spin_param_settings
@@ -64,6 +65,7 @@ def _build_parameters(
 @dataclass
 class ParameterFactory:
     parameter_store: ParameterStore
+    definitions: ParameterDefinitionsCollector | None = None
     _settings_cache: dict[
         tuple[str, bool, bool, bool, Basis, Conditions],
         tuple[LocalSettings, LocalSettings],
@@ -116,6 +118,12 @@ class ParameterFactory:
             spin_system,
             config.conditions,
         )
+
+        if self.definitions is not None:
+            # Record the canonical scientific definitions before any runtime
+            # FIT/FIX selection mutates `vary`/`expr` below. This mirrors the
+            # legacy-authoritative construction without changing it.
+            self.definitions.collect(parameters, parameters_mf, source=str(spin_system))
 
         _set_to_fit(parameters, name_map, config.to_be_fitted.rates)
         _set_to_fit(parameters_mf, name_map_mf, config.to_be_fitted.model_free)

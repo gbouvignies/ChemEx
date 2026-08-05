@@ -2,13 +2,22 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from chemex.configuration.parameters import DefaultListType
 from chemex.experiments.loader import register_experiments
 from chemex.models.loader import register_kinetic_settings
 from chemex.models.model import ModelSpec, ModelState
+from chemex.parameters.configuration import (
+    ParameterConfiguration,
+    build_parameter_configuration,
+)
 from chemex.parameters.database import (
     ModelReader,
     ParameterStore,
     create_parameter_store,
+)
+from chemex.parameters.definitions import (
+    ParameterDefinitions,
+    ParameterDefinitionsCollector,
 )
 from chemex.parameters.factory import ParameterFactory
 from chemex.runtime.execution import ExecutionSettings
@@ -45,7 +54,14 @@ class AnalysisSession:
             if parameter_factory is None
             else parameter_factory
         )
+        if self.parameter_factory.definitions is None:
+            self.parameter_factory.definitions = ParameterDefinitionsCollector()
+
         self.execution = ExecutionSettings() if execution is None else execution
+        self.ordinary_definitions: ParameterDefinitions | None = None
+        self.model_free_definitions: ParameterDefinitions | None = None
+        self.ordinary_configuration: ParameterConfiguration | None = None
+        self.model_free_configuration: ParameterConfiguration | None = None
 
     @classmethod
     def create(cls) -> AnalysisSession:
@@ -66,6 +82,27 @@ class AnalysisSession:
         ensure_plugins_registered()
         self.parameter_factory.clear_cache()
         self.model.set_model(name)
+
+    def seal_configuration(self, defaults: DefaultListType) -> None:
+        """Seal definitions and configurations after loading experiments and defaults."""
+        definitions = self.parameter_factory.definitions
+        if definitions is None:
+            msg = "Cannot seal configuration: ParameterDefinitionsCollector is missing"
+            raise RuntimeError(msg)
+        ordinary_def, mf_def = definitions.seal()
+        self.ordinary_definitions = ordinary_def
+        self.model_free_definitions = mf_def
+
+        self.ordinary_configuration = build_parameter_configuration(
+            self.ordinary_definitions,
+            self.parameters.get_catalog(model_free=False),
+            defaults,
+        )
+        self.model_free_configuration = build_parameter_configuration(
+            self.model_free_definitions,
+            self.parameters.get_catalog(model_free=True),
+            defaults,
+        )
 
 
 def ensure_plugins_registered() -> None:

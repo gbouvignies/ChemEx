@@ -570,6 +570,21 @@ class ParameterStore:
         """
         return self._database_mf if self.model.model_free else self._database
 
+    def get_catalog(self, *, model_free: bool) -> ParameterCatalog:
+        """Return the ordinary or model-free catalog regardless of the active model.
+
+        Unlike `database`, this ignores `self.model.model_free` so callers (for
+        example native parameter-model adapters) can inspect both catalogs.
+
+        Args:
+            model_free: Whether to return the model-free catalog.
+
+        Returns:
+            ParameterCatalog: The requested parameter catalog.
+
+        """
+        return self._database_mf if model_free else self._database
+
     def add_multiple(self, parameters: Parameters) -> None:
         """Add multiple parameters to the primary catalog.
 

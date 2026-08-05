@@ -61,6 +61,7 @@ class StubParameters:
 class StubParameterFactory:
     def __init__(self) -> None:
         self.clear_calls = 0
+        self.definitions = None
 
     def clear_cache(self) -> None:
         self.clear_calls += 1
@@ -73,9 +74,13 @@ class StubSession:
         self.model_names: list[str] = []
         self.parameter_factory = StubParameterFactory()
         self.execution = ExecutionSettings()
+        self.seal_calls: list[object] = []
 
     def set_model(self, name: str) -> None:
         self.model_names.append(name)
+
+    def seal_configuration(self, defaults: object) -> None:
+        self.seal_calls.append(defaults)
 
 
 class WriterParameterStore:
