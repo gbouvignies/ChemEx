@@ -61,9 +61,20 @@ class StubParameters:
 class StubParameterFactory:
     def __init__(self) -> None:
         self.clear_calls = 0
+        self.seal_definition_calls = 0
+        self.seal_configuration_calls = 0
 
     def clear_cache(self) -> None:
         self.clear_calls += 1
+
+    def reset(self) -> None:
+        self.clear_calls += 1
+
+    def seal_definitions(self) -> None:
+        self.seal_definition_calls += 1
+
+    def seal_configuration(self) -> None:
+        self.seal_configuration_calls += 1
 
 
 class StubSession:
@@ -285,6 +296,20 @@ def test_build_experiments_uses_session_parameter_store(
     np.testing.assert_equal(opened, [Path("a.toml"), Path("b.toml")])
     assert all(call["parameters"] is session.parameter_factory for call in build_calls)
     assert all(call["model"] is session.model.spec for call in build_calls)
+    np.testing.assert_equal(session.parameter_factory.seal_definition_calls, 1)
+
+
+def test_build_experiments_seals_empty_definition_set() -> None:
+    session = StubSession()
+
+    experiments = builder_module.build_experiments(
+        None,
+        Selection(include=None, exclude=None),
+        session=session,
+    )
+
+    assert not experiments
+    np.testing.assert_equal(session.parameter_factory.seal_definition_calls, 1)
 
 
 def test_run_uses_explicit_session_for_fit_flow(
@@ -343,6 +368,7 @@ def test_run_uses_explicit_session_for_fit_flow(
     np.testing.assert_equal(recorded_env["OMP_NUM_THREADS"], "2")
     np.testing.assert_equal(recorded_env["VECLIB_MAXIMUM_THREADS"], "2")
     np.testing.assert_equal(session.parameters.defaults_calls, [defaults])
+    np.testing.assert_equal(session.parameter_factory.seal_configuration_calls, 1)
     np.testing.assert_equal(experiments.filtered, 1)
     np.testing.assert_equal(recorded["build"][2], session)
     np.testing.assert_equal(recorded["run_methods"][4], session.execution)
@@ -382,6 +408,7 @@ def test_run_uses_explicit_session_for_simulation_flow(
 
     np.testing.assert_equal(session.model_names, ["2st"])
     np.testing.assert_equal(session.parameters.defaults_calls, [defaults])
+    np.testing.assert_equal(session.parameter_factory.seal_configuration_calls, 1)
     np.testing.assert_equal(session.parameters.fix_all_calls, 1)
     np.testing.assert_equal(recorded["build"][2], session)
 

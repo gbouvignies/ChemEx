@@ -601,6 +601,9 @@ def _build[ConfigT: GenericConfig](
             config,
             basis=calculation.spectrometer.basis,
             spin_system=calculation.spectrometer.spin_system,
+            contributor=(
+                f"experiment={source.filename!s}, type={experiment_type_.name!r}"
+            ),
         )
         profiles.append(
             Profile(

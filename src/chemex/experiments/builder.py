@@ -89,6 +89,7 @@ def build_experiments(
     parameter_store = session.parameters
 
     if not filenames:
+        session.parameter_factory.seal_definitions()
         return Experiments(parameter_store=parameter_store)
 
     print_loading_experiments()
@@ -128,4 +129,5 @@ def build_experiments(
         experiments.add(result.experiment)
 
     parameter_store.sort()
+    session.parameter_factory.seal_definitions()
     return experiments
