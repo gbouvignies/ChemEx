@@ -1,8 +1,9 @@
 """The fitting module contains the code for fitting the experimental data."""
 
+from collections.abc import Callable
 from pathlib import Path
 
-from chemex.configuration.methods import Methods, Statistics
+from chemex.configuration.methods import Method, Methods, Statistics
 from chemex.containers.experiments import Experiments
 from chemex.messages import (
     print_calculation_stopped_error,
@@ -126,6 +127,7 @@ def run_methods(
     plot_level: str,
     *,
     execution: ExecutionSettings | None = None,
+    preview_parameterization: Callable[[Method, set[str]], object] | None = None,
 ) -> None:
     parameter_store = experiments.parameter_store
 
@@ -141,6 +143,9 @@ def run_methods(
             continue
 
         print_fitmethod(method.fitmethod)
+
+        if preview_parameterization is not None:
+            preview_parameterization(method, experiments.param_ids)
 
         # Update the parameter "vary" and "expr" status
         parameter_store.set_parameter_status(method)

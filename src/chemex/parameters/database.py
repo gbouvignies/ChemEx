@@ -63,6 +63,9 @@ class ModelReader(Protocol):
     @property
     def model_free(self) -> bool: ...
 
+    @property
+    def identity(self) -> str: ...
+
 
 class ParameterIndex:
     """Maintains an index of parameter names for efficient searching and retrieval.

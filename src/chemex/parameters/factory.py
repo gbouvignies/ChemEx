@@ -8,6 +8,11 @@ from chemex.configuration.conditions import Conditions
 from chemex.models.factory import model_factory
 from chemex.nmr.basis import Basis
 from chemex.parameters.database import ParameterStore
+from chemex.parameters.parameterization import (
+    ParameterDeclarationContribution,
+    SealedParameterModel,
+    seal_parameter_declarations,
+)
 from chemex.parameters.sealed import (
     DefinitionContribution,
     ParamDefinition,
@@ -75,13 +80,21 @@ class ParameterFactory:
     parameter_store: ParameterStore
     _settings_cache: dict[
         tuple[str, bool, bool, bool, Basis, Conditions],
-        tuple[LocalSettings, LocalSettings],
+        tuple[LocalSettings, LocalSettings, frozenset[str]],
     ] = field(default_factory=dict)
     _definition_contributions: dict[str, list[DefinitionContribution]] = field(
         default_factory=dict,
     )
+    _declaration_contributions: dict[
+        str,
+        list[ParameterDeclarationContribution],
+    ] = field(default_factory=dict)
     _sealed_definitions: SealedDefinitions | None = field(default=None, repr=False)
     _sealed_configuration: SealedConfiguration | None = field(default=None, repr=False)
+    _sealed_parameter_model: SealedParameterModel | None = field(
+        default=None,
+        repr=False,
+    )
     _native_construction_error: Exception | None = field(
         default=None,
         init=False,
@@ -99,6 +112,11 @@ class ParameterFactory:
         return self._sealed_configuration
 
     @property
+    def sealed_parameter_model(self) -> SealedParameterModel | None:
+        """Return the complete immutable native parameter model once sealed."""
+        return self._sealed_parameter_model
+
+    @property
     def native_construction_error(self) -> Exception | None:
         """Return the failure that disabled the non-authoritative native candidate."""
         return self._native_construction_error
@@ -112,7 +130,7 @@ class ParameterFactory:
         self,
         basis: Basis,
         conditions: Conditions,
-    ) -> tuple[LocalSettings, LocalSettings]:
+    ) -> tuple[LocalSettings, LocalSettings, frozenset[str]]:
         key = (
             basis.model.name,
             basis.model.model_free,
@@ -129,7 +147,11 @@ class ParameterFactory:
             settings_kinetics = model_factory.create_for_model(basis.model, conditions)
             settings = settings_kinetics | settings_spins
             settings_mf = settings_kinetics | settings_spins_mf
-            self._settings_cache[key] = (settings, settings_mf)
+            self._settings_cache[key] = (
+                settings,
+                settings_mf,
+                frozenset(settings_kinetics),
+            )
         return self._settings_cache[key]
 
     def _collect_definitions(
@@ -156,6 +178,25 @@ class ParameterFactory:
             )
             self._definition_contributions.setdefault(param_id, []).append(contribution)
 
+    def _collect_declarations(
+        self,
+        parameters: Parameters,
+        *,
+        contributor: str,
+        model_owned_ids: frozenset[str],
+    ) -> None:
+        for param_id, parameter in parameters.items():
+            contribution = ParameterDeclarationContribution(
+                param_id=param_id,
+                supports_estimation=parameter.vary,
+                model_expression=parameter.expr,
+                contributor=contributor,
+                model_owned=param_id in model_owned_ids and bool(parameter.expr),
+            )
+            self._declaration_contributions.setdefault(param_id, []).append(
+                contribution
+            )
+
     def create_parameters(
         self,
         config: ConfigConditionsType,
@@ -168,7 +209,7 @@ class ParameterFactory:
             msg = "Parameter definitions are already sealed; contributions are closed"
             raise RuntimeError(msg)
 
-        settings, settings_mf = self._build_settings(
+        settings, settings_mf, kinetic_names = self._build_settings(
             basis,
             config.conditions,
         )
@@ -192,20 +233,33 @@ class ParameterFactory:
         )
         if contributor is not None:
             construction_context = f"{contributor}; {construction_context}"
+        _set_to_fit(parameters, name_map, config.to_be_fitted.rates)
+        _set_to_fit(parameters_mf, name_map_mf, config.to_be_fitted.model_free)
+
         if self._native_construction_error is None:
             native_parameters = (
                 parameters_mf if self.parameter_store.model.model_free else parameters
+            )
+            native_name_map = (
+                name_map_mf if self.parameter_store.model.model_free else name_map
+            )
+            model_owned_ids = frozenset(
+                native_name_map[name]
+                for name in kinetic_names
+                if name in native_name_map
             )
             try:
                 self._collect_definitions(
                     native_parameters,
                     contributor=construction_context,
                 )
+                self._collect_declarations(
+                    native_parameters,
+                    contributor=construction_context,
+                    model_owned_ids=model_owned_ids,
+                )
             except Exception as error:  # noqa: BLE001 - checkpoint-1 isolation boundary
                 self._native_construction_error = error
-
-        _set_to_fit(parameters, name_map, config.to_be_fitted.rates)
-        _set_to_fit(parameters_mf, name_map_mf, config.to_be_fitted.model_free)
 
         self.parameter_store.add_multiple(parameters)
         self.parameter_store.add_multiple_mf(parameters_mf)
@@ -250,8 +304,19 @@ class ParameterFactory:
             self._sealed_definitions,
             self.parameter_store.database._parameters,
         )
+        declarations = seal_parameter_declarations(
+            self._sealed_definitions,
+            self._declaration_contributions,
+        )
         self.parameter_store.lock_configuration()
         self._sealed_configuration = configuration
+        self._sealed_parameter_model = SealedParameterModel(
+            model_name=self.parameter_store.model.name,
+            model_identity=self.parameter_store.model.identity,
+            definitions=self._sealed_definitions,
+            configuration=configuration,
+            declarations=declarations,
+        )
 
     def try_seal_definitions(self) -> bool:
         """Seal definitions without allowing the native candidate to veto legacy."""
@@ -295,8 +360,10 @@ class ParameterFactory:
     def _clear_state(self) -> None:
         self._settings_cache.clear()
         self._definition_contributions.clear()
+        self._declaration_contributions.clear()
         self._sealed_definitions = None
         self._sealed_configuration = None
+        self._sealed_parameter_model = None
         self._native_construction_error = None
 
 

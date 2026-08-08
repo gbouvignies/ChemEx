@@ -17,6 +17,14 @@ class ModelSpec:
     temp_coef: bool = False
     residue_specific: bool = False
 
+    @property
+    def identity(self) -> str:
+        """Return the exact semantic identity of the selected model variant."""
+        return (
+            f"{self.name}|states={self.states}|model_free={self.model_free}|"
+            f"temp_coef={self.temp_coef}|residue_specific={self.residue_specific}"
+        )
+
     @staticmethod
     def validate_model_name(name: str) -> str:
         from chemex.models.factory import model_factory
@@ -89,3 +97,7 @@ class ModelState:
     @property
     def residue_specific(self) -> bool:
         return self._spec.residue_specific
+
+    @property
+    def identity(self) -> str:
+        return self._spec.identity

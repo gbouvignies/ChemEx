@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from chemex.configuration.methods import Method
 from chemex.experiments.loader import register_experiments
 from chemex.models.loader import register_kinetic_settings
 from chemex.models.model import ModelSpec, ModelState
@@ -12,6 +13,11 @@ from chemex.parameters.database import (
 )
 from chemex.parameters.factory import ParameterFactory
 from chemex.parameters.legacy_adapter import LegacyValuesAdapter
+from chemex.parameters.parameterization import (
+    ActiveParameterization,
+    build_initial_analysis_values,
+    compile_active_parameterization,
+)
 from chemex.parameters.values import AnalysisValues
 from chemex.runtime.execution import ExecutionSettings
 
@@ -77,18 +83,24 @@ class AnalysisSession:
         if not self.parameter_factory.try_seal_configuration():
             return False
         configuration = self.parameter_factory.sealed_configuration
-        if configuration is None:
-            error = RuntimeError("Sealed parameter configuration is unavailable")
+        parameter_model = self.parameter_factory.sealed_parameter_model
+        if configuration is None or parameter_model is None:
+            error = RuntimeError("Sealed native parameter model is unavailable")
             self.parameter_factory.disable_native_candidate(error)
             self.legacy_values_adapter.disable(error)
             return False
-        spec = self.model.spec
-        model_identity = (
-            f"{spec.name}|states={spec.states}|model_free={spec.model_free}|"
-            f"temp_coef={spec.temp_coef}|residue_specific={spec.residue_specific}"
-        )
+        model_identity = self.model.spec.identity
         try:
-            self.analysis_values.initialize(model_identity, configuration)
+            initial_values = (
+                build_initial_analysis_values(parameter_model)
+                if any(item.effective_value is None for item in configuration)
+                else None
+            )
+            self.analysis_values.initialize(
+                model_identity,
+                configuration,
+                _native_initial_values=initial_values,
+            )
         except Exception as error:  # noqa: BLE001 - checkpoint-1 isolation boundary
             self.parameter_factory.disable_native_candidate(error)
             self.legacy_values_adapter.disable(error)
@@ -100,6 +112,37 @@ class AnalysisSession:
         ensure_plugins_registered()
         self.parameter_factory.clear_cache()
         self.model.set_model(name)
+
+    def compile_parameterization(
+        self,
+        method: Method,
+        required_ids: set[str],
+    ) -> ActiveParameterization:
+        """Compile one native preview without changing authoritative state."""
+        parameter_model = self.parameter_factory.sealed_parameter_model
+        if parameter_model is None:
+            msg = "The sealed native parameter model is unavailable"
+            raise RuntimeError(msg)
+        return compile_active_parameterization(
+            parameter_model,
+            self.analysis_values.snapshot(),
+            method,
+            required_ids,
+        )
+
+    def try_compile_parameterization(
+        self,
+        method: Method,
+        required_ids: set[str],
+    ) -> ActiveParameterization | None:
+        """Best-effort native preview that cannot veto the legacy occurrence."""
+        try:
+            candidate = self.compile_parameterization(method, required_ids)
+            frame = candidate.frame_from_snapshot(self.analysis_values.snapshot())
+            candidate.resolve(frame)
+        except Exception:  # noqa: BLE001 - checkpoint-1 isolation boundary
+            return None
+        return candidate
 
 
 def ensure_plugins_registered() -> None:

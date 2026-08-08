@@ -138,3 +138,11 @@ class ParamName:
 
     def __str__(self) -> str:
         return f"[{self.section_res}]"
+
+
+def matches_parameter_index_selector(
+    selector: ParamName,
+    candidate: ParamName,
+) -> bool:
+    """Match with the exact search-key semantics used by ``ParameterIndex``."""
+    return selector.search_keys <= candidate.search_keys
