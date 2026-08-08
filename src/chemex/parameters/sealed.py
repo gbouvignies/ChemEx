@@ -15,11 +15,11 @@ from types import MappingProxyType
 from typing import overload
 
 from chemex.configuration.conditions import Conditions
+from chemex.parameters.name import ParamName
 from chemex.parameters.setting import ParamSetting
 from chemex.parameters.spin_system import SpinSystem
 
 _CONDITION_FIELDS = ("d2o", "h_larmor_frq", "l_total", "p_total", "temperature")
-_CONDITION_ORDER = ("temperature", "h_larmor_frq", "p_total", "l_total", "d2o")
 _DEFINITION_FIELDS = (
     "name",
     "spin_system_name",
@@ -275,37 +275,87 @@ def _equal(left: object, right: object) -> bool:
     return left == right
 
 
-def _spin_sort_key(name: str) -> tuple[tuple[object, ...], ...]:
-    spin_system = SpinSystem.from_name(name)
-    return tuple(
-        (
-            spin.atom.nucleus.name,
-            spin.group.number,
-            spin.group.symbol,
-            spin.group.suffix,
-            spin.atom.name,
-        )
-        for spin in spin_system.spins.values()
-    )
-
-
-def _conditions_sort_key(
-    entries: Sequence[tuple[str, float]],
-) -> tuple[tuple[int, float], ...]:
-    values = dict(entries)
-    return tuple(
-        (1, values[field_name]) if field_name in values else (0, 0.0)
-        for field_name in _CONDITION_ORDER
-    )
-
-
-def _definition_sort_key(definition: ParamDefinition) -> tuple[object, ...]:
-    return (
+def _definition_sort_key(definition: ParamDefinition) -> ParamName:
+    """Reproduce the legacy-authoritative ``ParamName`` ordering exactly."""
+    return ParamName(
         definition.name,
-        _spin_sort_key(definition.spin_system_name),
-        _conditions_sort_key(definition.condition_entries),
-        definition.param_id,
+        SpinSystem.from_name(definition.spin_system_name),
+        Conditions.model_construct(None, **dict(definition.condition_entries)),
     )
+
+
+class InvalidConstructionError(ValueError):
+    """Base error for invalid initial values or physical bounds."""
+
+    artifact = "parameter state"
+
+    def __init__(
+        self,
+        param_id: str,
+        field: str,
+        value: object,
+        detail: str,
+    ) -> None:
+        self.param_id = param_id
+        self.field = field
+        self.value = value
+        self.detail = detail
+        super().__init__(
+            f"Invalid {self.artifact} for parameter {param_id!r}: "
+            f"{field}={value!r}; {detail}"
+        )
+
+
+class InvalidDefinitionError(InvalidConstructionError):
+    """Raised when a definition default or physical bound cannot be sealed."""
+
+    artifact = "definition"
+
+
+class InvalidConfigurationError(InvalidConstructionError):
+    """Raised when an effective value or physical bound cannot be sealed."""
+
+    artifact = "configuration"
+
+
+def _validate_initial_state(
+    param_id: str,
+    value: float | None,
+    lower_bound: float,
+    upper_bound: float,
+    *,
+    value_field: str,
+    error_type: type[InvalidConstructionError],
+) -> None:
+    for field_name, field_value in (
+        (value_field, value),
+        ("lower_bound", lower_bound),
+        ("upper_bound", upper_bound),
+    ):
+        if field_value is not None and math.isnan(field_value):
+            raise error_type(
+                param_id,
+                field_name,
+                field_value,
+                "NaN is not a valid configured value",
+            )
+    if lower_bound > upper_bound:
+        raise error_type(
+            param_id,
+            "lower_bound",
+            lower_bound,
+            f"must not exceed upper_bound={upper_bound!r}",
+        )
+    if value is not None and not lower_bound <= value <= upper_bound:
+        raise error_type(
+            param_id,
+            value_field,
+            value,
+            (
+                "must be within configured physical bounds "
+                f"[{lower_bound!r}, {upper_bound!r}]"
+            ),
+        )
 
 
 def canonicalize_definitions(
@@ -347,6 +397,14 @@ def canonicalize_definitions(
                 conflicts,
                 tuple(item.contributor for item in normalized),
             )
+        _validate_initial_state(
+            param_id,
+            reference.default_value,
+            reference.lower_bound,
+            reference.upper_bound,
+            value_field="default_value",
+            error_type=InvalidDefinitionError,
+        )
         canonical.append(reference)
 
     definitions = tuple(sorted(canonical, key=_definition_sort_key))
@@ -384,6 +442,14 @@ def build_sealed_configuration(
     configs: list[ParamConfig] = []
     for definition in definitions:
         parameter = legacy_parameters[definition.param_id]
+        _validate_initial_state(
+            definition.param_id,
+            parameter.value,
+            parameter.min,
+            parameter.max,
+            value_field="effective_value",
+            error_type=InvalidConfigurationError,
+        )
         configs.append(
             ParamConfig(
                 param_id=definition.param_id,

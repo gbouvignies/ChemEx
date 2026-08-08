@@ -63,6 +63,7 @@ class StubParameterFactory:
         self.clear_calls = 0
         self.seal_definition_calls = 0
         self.seal_configuration_calls = 0
+        self.native_sealing_succeeds = True
 
     def clear_cache(self) -> None:
         self.clear_calls += 1
@@ -70,11 +71,13 @@ class StubParameterFactory:
     def reset(self) -> None:
         self.clear_calls += 1
 
-    def seal_definitions(self) -> None:
+    def try_seal_definitions(self) -> bool:
         self.seal_definition_calls += 1
+        return self.native_sealing_succeeds
 
-    def seal_configuration(self) -> None:
+    def try_seal_configuration(self) -> bool:
         self.seal_configuration_calls += 1
+        return self.native_sealing_succeeds
 
 
 class StubSession:
@@ -373,6 +376,33 @@ def test_run_uses_explicit_session_for_fit_flow(
     np.testing.assert_equal(recorded["build"][2], session)
     np.testing.assert_equal(recorded["run_methods"][4], session.execution)
     assert recorded["run_info"] is True
+
+
+def test_run_continues_when_native_configuration_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = StubSession()
+    session.parameter_factory.native_sealing_succeeds = False
+    experiments = FakeExperiments(parameter_store=session.parameters)
+    fit_ran: list[bool] = []
+
+    monkeypatch.setattr(
+        chemex_module,
+        "build_experiments",
+        lambda *_args, **_kwargs: experiments,
+    )
+    monkeypatch.setattr(chemex_module, "read_defaults", lambda _filenames: object())
+    monkeypatch.setattr(
+        chemex_module,
+        "run_methods",
+        lambda *_args, **_kwargs: fit_ran.append(True),
+    )
+    monkeypatch.setattr(chemex_module, "write_run_info", lambda *_args, **_kwargs: None)
+
+    chemex_module.run(make_args("fit"), session=session)
+
+    assert fit_ran == [True]
+    assert session.parameter_factory.seal_configuration_calls == 1
 
 
 def test_run_uses_explicit_session_for_simulation_flow(

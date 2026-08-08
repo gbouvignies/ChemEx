@@ -22,12 +22,15 @@ from chemex.parameters.name import ParamName
 from chemex.parameters.sealed import (
     ConfigurationMismatchError,
     DefinitionConflictError,
+    InvalidConfigurationError,
+    InvalidDefinitionError,
     ParamConfig,
     ParamDefinition,
     SealedDefinitions,
     build_sealed_configuration,
     extract_condition_entries,
 )
+from chemex.parameters.setting import ParamSetting
 from chemex.parameters.spin_system import SpinSystem
 from chemex.runtime import AnalysisSession
 
@@ -291,6 +294,78 @@ class TestEquivalentDuplicateDeduplication:
 
 
 # ---------------------------------------------------------------------------
+# Definition defaults and physical bounds are valid before sealing
+# ---------------------------------------------------------------------------
+
+
+class TestDefinitionValidation:
+    @pytest.mark.parametrize(
+        ("field", "default_value", "lower_bound", "upper_bound"),
+        [
+            ("default_value", np.nan, 0.0, 1.0),
+            ("lower_bound", 0.5, np.nan, 1.0),
+            ("upper_bound", 0.5, 0.0, np.nan),
+            ("lower_bound", 0.5, 0.8, 0.2),
+            ("default_value", -0.1, 0.0, 1.0),
+            ("default_value", 1.1, 0.0, 1.0),
+        ],
+    )
+    def test_invalid_definition_cannot_be_sealed(
+        self,
+        field: str,
+        default_value: float,
+        lower_bound: float,
+        upper_bound: float,
+    ) -> None:
+        session = AnalysisSession.create()
+        definition = ParamDefinition(
+            param_id="__PB",
+            name="PB",
+            spin_system_name="",
+            condition_entries=(),
+            default_value=default_value,
+            lower_bound=lower_bound,
+            upper_bound=upper_bound,
+        )
+        session.parameter_factory._definition_contributions["__PB"] = [definition]
+
+        with pytest.raises(InvalidDefinitionError) as exc_info:
+            session.parameter_factory.seal_definitions()
+
+        assert exc_info.value.field == field
+        assert session.parameter_factory.sealed_definitions is None
+
+    @pytest.mark.parametrize(
+        ("lower_bound", "upper_bound"),
+        [
+            (-np.inf, np.inf),
+            (0.0, np.inf),
+            (-np.inf, 0.0),
+        ],
+    )
+    def test_definition_accepts_supported_infinite_bounds(
+        self,
+        lower_bound: float,
+        upper_bound: float,
+    ) -> None:
+        session = AnalysisSession.create()
+        definition = ParamDefinition(
+            param_id="__PB",
+            name="PB",
+            spin_system_name="",
+            condition_entries=(),
+            default_value=0.0,
+            lower_bound=lower_bound,
+            upper_bound=upper_bound,
+        )
+        session.parameter_factory._definition_contributions["__PB"] = [definition]
+
+        session.parameter_factory.seal_definitions()
+
+        assert session.parameter_factory.sealed_definitions["__PB"] == definition
+
+
+# ---------------------------------------------------------------------------
 # Test 4: Conflicting contributions raise DefinitionConflictError
 # ---------------------------------------------------------------------------
 
@@ -400,6 +475,73 @@ class TestConflictingContributions:
         assert exc_info.value.contributors == ("experiment-a", "experiment-b")
         assert "experiment-a" in str(exc_info.value)
         assert "experiment-b" in str(exc_info.value)
+
+    def test_real_construction_detects_conflict_before_legacy_collapse(self) -> None:
+        session = AnalysisSession.create()
+        session.set_model("2st_binding")
+        basis = Basis(type="ixy", spin_system="nh", model=session.model.spec)
+        spin_system = SpinSystem.from_name("A2N-HN")
+
+        for contributor, p_total in (
+            ("experiment-a", 1.0001e-3),
+            ("experiment-b", 1.0002e-3),
+        ):
+            config = SimpleNamespace(
+                conditions=Conditions(p_total=p_total, l_total=2.0e-3),
+                to_be_fitted=SimpleNamespace(rates=[], model_free=[]),
+            )
+            session.parameter_factory.create_parameters(
+                config,
+                basis=basis,
+                spin_system=spin_system,
+                contributor=contributor,
+            )
+
+        assert session.parameter_factory.try_seal_definitions() is False
+        error = session.parameter_factory.native_construction_error
+        assert isinstance(error, DefinitionConflictError)
+        assert error.conflicting_fields == ("condition_entries",)
+        assert {source.split(";", maxsplit=1)[0] for source in error.contributors} == {
+            "experiment-a",
+            "experiment-b",
+        }
+        assert error.param_id in session.parameters.database._parameters
+
+    def test_definition_collection_failure_preserves_legacy_parameters(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        session = AnalysisSession.create()
+        session.set_model("2st")
+        basis = Basis(type="ixy", spin_system="nh", model=session.model.spec)
+
+        def fail_native_collection(*_args: object, **_kwargs: object) -> None:
+            msg = "native definition collection failed"
+            raise RuntimeError(msg)
+
+        monkeypatch.setattr(
+            session.parameter_factory,
+            "_collect_definitions",
+            fail_native_collection,
+        )
+
+        name_map = session.parameter_factory.create_parameters(
+            _make_cpmg_config(),
+            basis=basis,
+            spin_system=SpinSystem.from_name("A2N-HN"),
+        )
+
+        assert name_map
+        legacy_parameters = session.parameters.get_parameters(name_map.values())
+        assert set(name_map.values()) <= set(legacy_parameters)
+        assert session.parameter_factory.try_seal_definitions() is False
+        assert isinstance(
+            session.parameter_factory.native_construction_error,
+            RuntimeError,
+        )
+        with pytest.raises(RuntimeError, match="reset the analysis session"):
+            session.set_model("3st")
+        assert session.model.name == "2st"
 
 
 # ---------------------------------------------------------------------------
@@ -537,33 +679,57 @@ class TestCanonicalOrdering:
 
         assert ids_ab == ids_ba
 
-    def test_residues_and_conditions_use_semantic_numeric_order(self) -> None:
+    def test_residue_order_matches_legacy_for_multi_digit_numbers(self) -> None:
         session = AnalysisSession.create()
         session.set_model("2st")
         basis = Basis(type="ixy", spin_system="nh", model=session.model.spec)
-        for field, residue in (
-            (1000.0, "G10N-HN"),
-            (800.0, "A2N-HN"),
-        ):
+        for residue in ("A10N-HN", "A2N-HN"):
             session.parameter_factory.create_parameters(
-                _make_cpmg_config(h_larmor_frq=field),
+                _make_cpmg_config(),
                 basis=basis,
                 spin_system=SpinSystem.from_name(residue),
             )
+        session.parameters.sort()
         session.parameter_factory.seal_definitions()
         definitions = session.parameter_factory.sealed_definitions
 
         cs_residues = [
             defn.spin_system_name for defn in definitions if defn.name == "CS_A"
         ]
-        r2_fields = [
-            dict(defn.condition_entries)["h_larmor_frq"]
-            for defn in definitions
-            if defn.name == "R2_A"
+
+        assert cs_residues == ["A2N", "A10N"]
+        assert [defn.param_id for defn in definitions if defn.name == "CS_A"] == [
+            param_id
+            for param_id, setting in session.parameters.database._parameters.items()
+            if setting.param_name.name == "CS_A"
         ]
 
-        assert cs_residues == ["A2N", "G10N"]
-        assert r2_fields == [800.0, 1000.0]
+    def test_condition_order_matches_legacy_for_different_digit_widths(self) -> None:
+        session = AnalysisSession.create()
+        session.set_model("2st")
+        basis = Basis(type="ixy", spin_system="nh", model=session.model.spec)
+        spin_system = SpinSystem.from_name("A2N-HN")
+        for field in (800.0, 1000.0):
+            session.parameter_factory.create_parameters(
+                _make_cpmg_config(h_larmor_frq=field),
+                basis=basis,
+                spin_system=spin_system,
+            )
+        session.parameters.sort()
+        session.parameter_factory.seal_definitions()
+        definitions = session.parameter_factory.sealed_definitions
+
+        r2_ids = [defn.param_id for defn in definitions if defn.name == "R2_A"]
+
+        assert r2_ids == [
+            "__R2_A_A2N_1000_0MHZ",
+            "__R2_A_A2N_800_0MHZ",
+        ]
+        assert r2_ids == [
+            param_id
+            for param_id, setting in session.parameters.database._parameters.items()
+            if setting.param_name.name == "R2_A"
+        ]
 
 
 class TestSealingLifecycle:
@@ -639,6 +805,40 @@ class TestSealingLifecycle:
 
         assert session.parameter_factory.sealed_configuration.identity == identity
 
+    def test_reset_clears_and_reconstructs_sealed_parameter_state(self) -> None:
+        session, _, _ = _build_ordinary_session_with_two_residues()
+        session.parameter_factory.seal_definitions()
+        session.parameters.set_defaults([])
+        session.parameter_factory.seal_configuration()
+        definitions_identity = session.parameter_factory.sealed_definitions.identity
+        configuration_identity = session.parameter_factory.sealed_configuration.identity
+
+        session.reset()
+
+        assert session.parameter_factory.sealed_definitions is None
+        assert session.parameter_factory.sealed_configuration is None
+        assert session.parameter_factory.native_construction_error is None
+
+        session.set_model("2st")
+        config = _make_cpmg_config()
+        basis = Basis(type="ixy", spin_system="nh", model=session.model.spec)
+        for residue in ("G23N-HN", "A45N-HN"):
+            session.parameter_factory.create_parameters(
+                config,
+                basis=basis,
+                spin_system=SpinSystem.from_name(residue),
+            )
+        session.parameter_factory.seal_definitions()
+        session.parameters.set_defaults([])
+        session.parameter_factory.seal_configuration()
+
+        assert session.parameter_factory.sealed_definitions.identity == (
+            definitions_identity
+        )
+        assert session.parameter_factory.sealed_configuration.identity == (
+            configuration_identity
+        )
+
 
 # ---------------------------------------------------------------------------
 # Test 7: Configuration matches post-defaults legacy state
@@ -697,6 +897,146 @@ class TestConfigurationMatchesLegacy:
             build_sealed_configuration(definitions, {})
 
         assert exc_info.value.missing == ("__PB",)
+
+    def test_configuration_rejects_reversed_bounds(self) -> None:
+        definition = ParamDefinition(
+            param_id="__PB",
+            name="PB",
+            spin_system_name="",
+            condition_entries=(),
+            default_value=0.05,
+            lower_bound=0.0,
+            upper_bound=1.0,
+        )
+        definitions = SealedDefinitions(
+            _definitions=(definition,),
+            _index={"__PB": 0},
+        )
+        parameter = ParamSetting(
+            ParamName("PB"),
+            value=0.5,
+            min=0.8,
+            max=0.2,
+        )
+
+        with pytest.raises(InvalidConfigurationError, match="lower_bound"):
+            build_sealed_configuration(definitions, {"__PB": parameter})
+
+    @pytest.mark.parametrize(
+        ("field", "value", "lower_bound", "upper_bound"),
+        [
+            ("effective_value", np.nan, 0.0, 1.0),
+            ("lower_bound", 0.5, np.nan, 1.0),
+            ("upper_bound", 0.5, 0.0, np.nan),
+        ],
+    )
+    def test_configuration_rejects_nan_values_and_bounds(
+        self,
+        field: str,
+        value: float,
+        lower_bound: float,
+        upper_bound: float,
+    ) -> None:
+        definition = ParamDefinition(
+            param_id="__PB",
+            name="PB",
+            spin_system_name="",
+            condition_entries=(),
+            default_value=0.05,
+            lower_bound=0.0,
+            upper_bound=1.0,
+        )
+        definitions = SealedDefinitions(
+            _definitions=(definition,),
+            _index={"__PB": 0},
+        )
+        parameter = ParamSetting(
+            ParamName("PB"),
+            value=value,
+            min=lower_bound,
+            max=upper_bound,
+        )
+
+        with pytest.raises(InvalidConfigurationError) as exc_info:
+            build_sealed_configuration(definitions, {"__PB": parameter})
+
+        assert exc_info.value.field == field
+
+    @pytest.mark.parametrize("value", [-0.1, 1.1])
+    def test_configuration_rejects_initial_value_outside_bounds(
+        self,
+        value: float,
+    ) -> None:
+        definition = ParamDefinition(
+            param_id="__PB",
+            name="PB",
+            spin_system_name="",
+            condition_entries=(),
+            default_value=0.05,
+            lower_bound=0.0,
+            upper_bound=1.0,
+        )
+        definitions = SealedDefinitions(
+            _definitions=(definition,),
+            _index={"__PB": 0},
+        )
+        parameter = ParamSetting(
+            ParamName("PB"),
+            value=value,
+            min=0.0,
+            max=1.0,
+        )
+
+        with pytest.raises(
+            InvalidConfigurationError,
+            match="effective_value",
+        ):
+            build_sealed_configuration(definitions, {"__PB": parameter})
+
+    @pytest.mark.parametrize(
+        ("lower_bound", "upper_bound"),
+        [
+            (-np.inf, np.inf),
+            (0.0, np.inf),
+            (-np.inf, 0.0),
+        ],
+    )
+    def test_configuration_accepts_supported_infinite_bounds(
+        self,
+        lower_bound: float,
+        upper_bound: float,
+    ) -> None:
+        definition = ParamDefinition(
+            param_id="__PB",
+            name="PB",
+            spin_system_name="",
+            condition_entries=(),
+            default_value=0.0,
+            lower_bound=lower_bound,
+            upper_bound=upper_bound,
+        )
+        definitions = SealedDefinitions(
+            _definitions=(definition,),
+            _index={"__PB": 0},
+        )
+        parameter = ParamSetting(
+            ParamName("PB"),
+            value=0.0,
+            min=lower_bound,
+            max=upper_bound,
+        )
+
+        configuration = build_sealed_configuration(
+            definitions,
+            {"__PB": parameter},
+        )
+
+        assert configuration["__PB"] == ParamConfig(
+            param_id="__PB",
+            effective_value=0.0,
+            lower_bound=lower_bound,
+            upper_bound=upper_bound,
+        )
 
     def test_configuration_captures_effective_overrides(self) -> None:
         session, _, _ = _build_ordinary_session_with_two_residues()

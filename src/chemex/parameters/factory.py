@@ -82,6 +82,11 @@ class ParameterFactory:
     )
     _sealed_definitions: SealedDefinitions | None = field(default=None, repr=False)
     _sealed_configuration: SealedConfiguration | None = field(default=None, repr=False)
+    _native_construction_error: Exception | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
     @property
     def sealed_definitions(self) -> SealedDefinitions | None:
@@ -92,6 +97,11 @@ class ParameterFactory:
     def sealed_configuration(self) -> SealedConfiguration | None:
         """Return immutable per-analysis configuration once it has been sealed."""
         return self._sealed_configuration
+
+    @property
+    def native_construction_error(self) -> Exception | None:
+        """Return the failure that disabled the non-authoritative native candidate."""
+        return self._native_construction_error
 
     def _build_settings(
         self,
@@ -177,10 +187,17 @@ class ParameterFactory:
         )
         if contributor is not None:
             construction_context = f"{contributor}; {construction_context}"
-        if self.parameter_store.model.model_free:
-            self._collect_definitions(parameters_mf, contributor=construction_context)
-        else:
-            self._collect_definitions(parameters, contributor=construction_context)
+        if self._native_construction_error is None:
+            native_parameters = (
+                parameters_mf if self.parameter_store.model.model_free else parameters
+            )
+            try:
+                self._collect_definitions(
+                    native_parameters,
+                    contributor=construction_context,
+                )
+            except Exception as error:  # noqa: BLE001 - checkpoint-1 isolation boundary
+                self._native_construction_error = error
 
         _set_to_fit(parameters, name_map, config.to_be_fitted.rates)
         _set_to_fit(parameters_mf, name_map_mf, config.to_be_fitted.model_free)
@@ -231,8 +248,34 @@ class ParameterFactory:
         self.parameter_store.lock_configuration()
         self._sealed_configuration = configuration
 
+    def try_seal_definitions(self) -> bool:
+        """Seal definitions without allowing the native candidate to veto legacy."""
+        if self._native_construction_error is not None:
+            return False
+        try:
+            self.seal_definitions()
+        except Exception as error:  # noqa: BLE001 - checkpoint-1 isolation boundary
+            self._native_construction_error = error
+            return False
+        return True
+
+    def try_seal_configuration(self) -> bool:
+        """Seal configuration without allowing the native candidate to veto legacy."""
+        if self._native_construction_error is not None:
+            return False
+        try:
+            self.seal_configuration()
+        except Exception as error:  # noqa: BLE001 - checkpoint-1 isolation boundary
+            self._native_construction_error = error
+            return False
+        return True
+
     def clear_cache(self) -> None:
-        if self._definition_contributions or self._sealed_definitions is not None:
+        if (
+            self._definition_contributions
+            or self._sealed_definitions is not None
+            or self._native_construction_error is not None
+        ):
             msg = (
                 "Parameter construction has started; reset the analysis session "
                 "before changing its model"
@@ -249,6 +292,7 @@ class ParameterFactory:
         self._definition_contributions.clear()
         self._sealed_definitions = None
         self._sealed_configuration = None
+        self._native_construction_error = None
 
 
 def create_parameters(
