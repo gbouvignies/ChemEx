@@ -564,7 +564,7 @@ class ParameterStore:
     _database_mf: ParameterCatalog
     _defaults_applied: bool = field(default=False, init=False, repr=False)
     _configuration_locked: bool = field(default=False, init=False, repr=False)
-    _legacy_values_adapter: LegacyValuesAdapter | None = field(
+    _legacy_values_adapter: "LegacyValuesAdapter | None" = field(
         default=None,
         init=False,
         repr=False,
@@ -589,7 +589,7 @@ class ParameterStore:
         """Reject later definition/default mutations while values remain mutable."""
         self._configuration_locked = True
 
-    def attach_legacy_values_adapter(self, adapter: LegacyValuesAdapter) -> None:
+    def attach_legacy_values_adapter(self, adapter: "LegacyValuesAdapter") -> None:
         """Attach the session's one-way legacy-to-native values edge."""
         self._legacy_values_adapter = adapter
 
