@@ -559,6 +559,8 @@ class ParameterStore:
     model: ModelReader
     _database: ParameterCatalog
     _database_mf: ParameterCatalog
+    _defaults_applied: bool = field(default=False, init=False, repr=False)
+    _configuration_locked: bool = field(default=False, init=False, repr=False)
 
     @property
     def database(self) -> ParameterCatalog:
@@ -570,6 +572,20 @@ class ParameterStore:
         """
         return self._database_mf if self.model.model_free else self._database
 
+    @property
+    def defaults_applied(self) -> bool:
+        """Whether default and ordinary model-free initialization completed."""
+        return self._defaults_applied
+
+    def lock_configuration(self) -> None:
+        """Reject later definition/default mutations while values remain mutable."""
+        self._configuration_locked = True
+
+    def _ensure_configuration_open(self) -> None:
+        if self._configuration_locked:
+            msg = "Parameter configuration is sealed"
+            raise RuntimeError(msg)
+
     def add_multiple(self, parameters: Parameters) -> None:
         """Add multiple parameters to the primary catalog.
 
@@ -577,7 +593,9 @@ class ParameterStore:
             parameters (Parameters): Parameters to be added.
 
         """
+        self._ensure_configuration_open()
         self._database.add_multiple(parameters)
+        self._defaults_applied = False
 
     def add_multiple_mf(self, parameters: Parameters) -> None:
         """Add multiple parameters to the model-free catalog.
@@ -586,7 +604,9 @@ class ParameterStore:
             parameters (Parameters): Parameters to be added.
 
         """
+        self._ensure_configuration_open()
         self._database_mf.add_multiple(parameters)
+        self._defaults_applied = False
 
     def get_parameters(self, param_ids: Iterable[str]) -> Parameters:
         """Retrieve parameters from the active catalog by IDs.
@@ -653,9 +673,15 @@ class ParameterStore:
             defaults (DefaultListType): Default settings to apply.
 
         """
+        self._ensure_configuration_open()
+        if self._defaults_applied:
+            msg = "Parameter defaults have already been applied"
+            raise RuntimeError(msg)
+        self._defaults_applied = False
         self._database_mf.set_defaults(defaults)
 
         if self.model.model_free:
+            self._defaults_applied = True
             return
 
         params_mf = self._database_mf.build_lmfit_params(model_name=self.model.name)
@@ -664,6 +690,7 @@ class ParameterStore:
         self.database.set_defaults(defaults)
 
         self.database.check_params()
+        self._defaults_applied = True
 
     def set_vary(self, section_names: Sequence[str], vary: bool) -> Counter[str]:
         """Set variability of parameters in the active catalog by section name.
@@ -717,6 +744,8 @@ class ParameterStore:
         """Clear all parameter catalogs used by the current process."""
         self._database.clear()
         self._database_mf.clear()
+        self._defaults_applied = False
+        self._configuration_locked = False
 
 
 def create_parameter_store(model_reader: ModelReader) -> ParameterStore:

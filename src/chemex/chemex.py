@@ -102,6 +102,7 @@ def run(
     print_reading_defaults()
     defaults = read_defaults(args.parameters)
     session.parameters.set_defaults(defaults)
+    session.parameter_factory.seal_configuration()
 
     if args.commands == "simulate":
         run_sim(args, experiments, session)
