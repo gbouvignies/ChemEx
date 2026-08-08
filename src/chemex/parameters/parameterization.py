@@ -9,13 +9,18 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import inspect
+import io
 import json
 import math
 import operator
+import re
+import tokenize
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from numbers import Real
+from pathlib import Path
 from types import MappingProxyType
 from typing import ClassVar, Literal, cast
 from uuid import uuid4
@@ -25,7 +30,7 @@ import numpy as np
 from chemex.configuration.conditions import Conditions
 from chemex.configuration.methods import Method
 from chemex.nmr.rates import rate_functions
-from chemex.parameters.name import ParamName
+from chemex.parameters.name import ParamName, matches_parameter_index_selector
 from chemex.parameters.sealed import (
     ParamDefinition,
     SealedConfiguration,
@@ -34,6 +39,9 @@ from chemex.parameters.sealed import (
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.userfunctions import user_function_registry
 from chemex.parameters.values import AnalysisValuesSnapshot
+
+_PUBLIC_DECIMAL = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\Z")
+_PUBLIC_OPERATORS = frozenset({"+", "-", "*", "/", "(", ")"})
 
 
 class ParameterRole(StrEnum):
@@ -103,6 +111,10 @@ class UnsupportedConstraintExpressionError(ParameterizationError):
     code = "unsupported_expression"
 
 
+class ModelDerivationOverrideError(ParameterizationError):
+    code = "model_derivation_override"
+
+
 @dataclass(frozen=True, slots=True)
 class ParameterDeclarationContribution:
     """One construction contribution to a parameter's scientific baseline."""
@@ -111,6 +123,7 @@ class ParameterDeclarationContribution:
     supports_estimation: bool
     model_expression: str
     contributor: str
+    model_owned: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +133,7 @@ class ParameterDeclaration:
     param_id: str
     supports_estimation: bool
     model_expression: str = ""
+    model_owned: bool = False
 
 
 def _fingerprint(kind: str, records: object) -> str:
@@ -161,6 +175,7 @@ class SealedParameterDeclarations(Mapping[str, ParameterDeclaration]):
                         item.param_id,
                         item.supports_estimation,
                         item.model_expression,
+                        item.model_owned,
                     )
                     for item in items
                 ),
@@ -204,17 +219,17 @@ def seal_parameter_declarations(
                 expressions=tuple(expressions),
             )
         supports_estimation = any(item.supports_estimation for item in contributed)
-        if supports_estimation:
-            expression = ""
-        elif expressions:
-            expression = expressions[0]
-        else:
-            expression = ""
+        expression = expressions[0] if expressions else ""
+        model_owned = any(
+            item.model_owned and item.model_expression.strip() == expression
+            for item in contributed
+        )
         items.append(
             ParameterDeclaration(
                 definition.param_id,
                 supports_estimation,
                 expression,
+                model_owned,
             )
         )
     return SealedParameterDeclarations(tuple(items))
@@ -225,6 +240,7 @@ class SealedParameterModel:
     """One immutable aggregate referencing the #582 sealed artifacts."""
 
     model_name: str
+    model_identity: str
     definitions: SealedDefinitions
     configuration: SealedConfiguration
     declarations: SealedParameterDeclarations
@@ -248,6 +264,7 @@ class SealedParameterModel:
                 "sealed-parameter-model",
                 (
                     self.model_name,
+                    self.model_identity,
                     self.definitions.identity,
                     self.configuration.identity,
                     self.declarations.identity,
@@ -304,25 +321,159 @@ class CompiledConstraint:
     expression_text: str
 
 
+_SCIENTIFIC_FUNCTION_SEMANTICS_VERSION = 1
+
+
+def _semantic_value_record(value: object) -> object:
+    """Encode deterministic callable state without process-local identities."""
+    if value is None or isinstance(value, (bool, str)):
+        return value
+    if isinstance(value, np.generic):
+        return _semantic_value_record(value.item())
+    if isinstance(value, int):
+        return ("integer", str(value))
+    if isinstance(value, float):
+        return ("float", value.hex())
+    if isinstance(value, np.ndarray):
+        array = np.ascontiguousarray(value)
+        return (
+            "ndarray",
+            array.dtype.str,
+            tuple(array.shape),
+            hashlib.sha256(array.tobytes()).hexdigest(),
+        )
+    if isinstance(value, Mapping):
+        if not all(isinstance(key, str) for key in value):
+            raise IncompatibleParameterizationInputError(
+                "Scientific function state must use string mapping keys",
+            )
+        return tuple(
+            (key, _semantic_value_record(item)) for key, item in sorted(value.items())
+        )
+    if isinstance(value, (tuple, list)):
+        return tuple(_semantic_value_record(item) for item in value)
+    if isinstance(value, type):
+        return (
+            "type",
+            value.__module__,
+            value.__qualname__,
+            *_source_record(value),
+        )
+    raise IncompatibleParameterizationInputError(
+        "Scientific function has unsupported mutable implementation state",
+        state_type=type(value).__qualname__,
+    )
+
+
+def _source_record(
+    implementation: type[object] | Callable[..., object],
+) -> tuple[str, str]:
+    try:
+        source = inspect.getsource(implementation).encode()
+        source_file = inspect.getsourcefile(implementation)
+    except (OSError, TypeError) as error:
+        raise IncompatibleParameterizationInputError(
+            "Scientific function implementation source is unavailable",
+            implementation=type(implementation).__qualname__,
+        ) from error
+    module_digest = ""
+    if source_file is not None:
+        try:
+            module_digest = hashlib.sha256(Path(source_file).read_bytes()).hexdigest()
+        except OSError as error:
+            raise IncompatibleParameterizationInputError(
+                "Scientific function module source is unavailable",
+                source_file=source_file,
+            ) from error
+    return hashlib.sha256(source).hexdigest(), module_digest
+
+
+def _class_runtime_record(implementation_type: type[object]) -> object:
+    """Record runtime class data and Python methods used by callable instances."""
+    owners: list[object] = []
+    for owner in reversed(implementation_type.__mro__):
+        data: list[tuple[str, object]] = []
+        methods: list[tuple[str, object]] = []
+        for name, value in sorted(vars(owner).items()):
+            method = (
+                value.__func__
+                if isinstance(value, (classmethod, staticmethod))
+                else value
+            )
+            if inspect.isfunction(method):
+                methods.append((name, _scientific_function_record(method)))
+            elif not name.startswith("__") and not callable(value):
+                data.append((name, _semantic_value_record(value)))
+        if data or methods:
+            owners.append(
+                (owner.__module__, owner.__qualname__, tuple(data), tuple(methods))
+            )
+    return tuple(owners)
+
+
+def _scientific_function_record(function: Callable[..., object]) -> object:
+    if function is max:
+        return (
+            _SCIENTIFIC_FUNCTION_SEMANTICS_VERSION,
+            "chemex-scalar-maximum",
+        )
+    unwrapped = inspect.unwrap(function)
+    if inspect.isfunction(unwrapped):
+        closure = tuple(
+            _semantic_value_record(cell.cell_contents)
+            for cell in (unwrapped.__closure__ or ())
+        )
+        return (
+            _SCIENTIFIC_FUNCTION_SEMANTICS_VERSION,
+            "function",
+            unwrapped.__module__,
+            unwrapped.__qualname__,
+            *_source_record(unwrapped),
+            _semantic_value_record(unwrapped.__defaults__),
+            _semantic_value_record(unwrapped.__kwdefaults__),
+            closure,
+        )
+    if callable(function):
+        implementation_type = type(function)
+        return (
+            _SCIENTIFIC_FUNCTION_SEMANTICS_VERSION,
+            "callable-instance",
+            implementation_type.__module__,
+            implementation_type.__qualname__,
+            *_source_record(implementation_type),
+            _class_runtime_record(implementation_type),
+            _semantic_value_record(vars(function)),
+        )
+    raise IncompatibleParameterizationInputError(
+        "Scientific function registry entry is not callable",
+        function_type=type(function).__qualname__,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ScientificFunctionBinder:
     """Immutable trusted binding of the existing model-owned scalar functions."""
 
     model_name: str
     _functions: Mapping[str, Callable[..., object]]
+    _implementation_records: Mapping[str, object] = field(
+        init=False,
+        repr=False,
+        compare=False,
+    )
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
         functions = MappingProxyType(dict(sorted(self._functions.items())))
         object.__setattr__(self, "_functions", functions)
-        records = tuple(
-            (
-                name,
-                getattr(function, "__module__", type(function).__module__),
-                getattr(function, "__qualname__", type(function).__qualname__),
-            )
-            for name, function in functions.items()
+        implementation_records = MappingProxyType(
+            {
+                name: _scientific_function_record(function)
+                for name, function in functions.items()
+            }
         )
+        object.__setattr__(self, "_implementation_records", implementation_records)
+        records = tuple(implementation_records.items())
         object.__setattr__(self, "identity", _fingerprint("function-binder", records))
 
     def __contains__(self, function_id: object) -> bool:
@@ -330,6 +481,23 @@ class ScientificFunctionBinder:
 
     def __getitem__(self, function_id: str) -> Callable[..., object]:
         return self._functions[function_id]
+
+    def validate_implementations(self) -> None:
+        """Reject mutation of a callable after its implementation was bound."""
+        for function_id, function in self._functions.items():
+            expected = self._implementation_records[function_id]
+            try:
+                actual = _scientific_function_record(function)
+            except ParameterizationError as error:
+                raise ConstraintProgramMismatchError(
+                    "A bound scientific function no longer has its compiled semantics",
+                    function_id=function_id,
+                ) from error
+            if actual != expected:
+                raise ConstraintProgramMismatchError(
+                    "A bound scientific function changed after program compilation",
+                    function_id=function_id,
+                )
 
     @classmethod
     def for_model(cls, model_name: str) -> ScientificFunctionBinder:
@@ -546,6 +714,7 @@ class ActiveParameterization:
 
     def resolve(self, frame: IndependentValueFrame) -> ResolvedParameterValues:
         _validate_frame(self, frame)
+        self.binder.validate_implementations()
         values = {
             param_id: _finite_scalar(value, param_id=param_id)
             for param_id, value in frame._items
@@ -597,7 +766,7 @@ def _match_selector(
     matches = tuple(
         definition.param_id
         for definition in definitions
-        if selector.match(_definition_name(definition))
+        if matches_parameter_index_selector(selector, _definition_name(definition))
     )
     if not matches:
         raise NoParameterMatchError(
@@ -659,8 +828,44 @@ def _split_constraint(text: str) -> tuple[str, str]:
     return selectors[0][2], right.strip()
 
 
+def _validate_public_numeric_tokens(
+    source: str,
+    references: Mapping[str, str],
+    expression: str,
+) -> None:
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(source).readline)
+        for token in tokens:
+            if token.type in {
+                tokenize.NEWLINE,
+                tokenize.NL,
+                tokenize.ENDMARKER,
+                tokenize.ENCODING,
+            }:
+                continue
+            if token.type == tokenize.NUMBER and _PUBLIC_DECIMAL.fullmatch(
+                token.string
+            ):
+                continue
+            if token.type == tokenize.NAME and token.string in references:
+                continue
+            if token.type == tokenize.OP and token.string in _PUBLIC_OPERATORS:
+                continue
+            raise UnsupportedConstraintExpressionError(
+                "Method expression contains syntax outside ChemEx numeric grammar",
+                expression=expression,
+                token=token.string,
+            )
+    except (IndentationError, tokenize.TokenError) as error:
+        raise UnsupportedConstraintExpressionError(
+            "Constraint is not a valid scalar expression",
+            expression=expression,
+        ) from error
+
+
 def _validate_public_expression_syntax(text: str) -> None:
     source, references = _replace_selectors(text)
+    _validate_public_numeric_tokens(source, references, text)
     try:
         parsed = ast.parse(source, mode="eval")
     except (SyntaxError, ValueError) as error:
@@ -753,7 +958,7 @@ def _role_for(
         else ParameterRole.FIX
     )
     expression = declaration.model_expression
-    source = "model"
+    source = "model" if declaration.model_owned else "baseline"
     for rule in rules:
         if param_id not in rule.matches:
             continue
@@ -761,6 +966,27 @@ def _role_for(
         expression = rule.expression_text
         source = f"method-rule:{rule.ordinal}"
     return role, expression, source
+
+
+def _validate_model_derivation_authority(
+    rules: Sequence[_RoleRule],
+    declarations: SealedParameterDeclarations,
+) -> None:
+    for rule in rules:
+        derived_matches = tuple(
+            param_id
+            for param_id in rule.matches
+            if declarations[param_id].model_expression
+            and declarations[param_id].model_owned
+        )
+        if derived_matches:
+            raise ModelDerivationOverrideError(
+                "Method rule cannot override a model-owned derivation",
+                selector=rule.selector,
+                role=rule.role.value,
+                ordinal=rule.ordinal,
+                param_ids=derived_matches,
+            )
 
 
 def _replace_selectors(right: str) -> tuple[str, Mapping[str, str]]:
@@ -822,7 +1048,7 @@ def _resolve_reference(
     candidates = tuple(
         definition
         for definition in definitions
-        if selector.match(_definition_name(definition))
+        if matches_parameter_index_selector(selector, _definition_name(definition))
     )
     if not candidates:
         raise NoParameterMatchError(
@@ -885,7 +1111,13 @@ def _compile_literal(node: ast.Constant, target_id: str) -> LiteralExpression:
             "Only finite numeric scalar literals are supported",
             target_id=target_id,
         )
-    value = float(node.value)
+    try:
+        value = float(node.value)
+    except OverflowError as error:
+        raise NonFiniteParameterValueError(
+            "Constraint literal exceeds the supported finite scalar range",
+            target_id=target_id,
+        ) from error
     if not math.isfinite(value):
         raise NonFiniteParameterValueError(
             "Constraint literal is non-finite",
@@ -973,6 +1205,12 @@ def _compile_function(
             target_id=context.target_id,
             function_id=function_id,
         )
+    if node.func.id != "max" or len(node.args) != 2:
+        raise UnsupportedConstraintExpressionError(
+            "Only the two-argument scalar maximum may be used without a component",
+            target_id=context.target_id,
+            function_id=node.func.id,
+        )
     return FunctionExpression(
         node.func.id,
         tuple(_compile_ast(argument, context) for argument in node.args),
@@ -988,7 +1226,19 @@ def _compile_function_component(
             "Only model-owned scientific-function components may be selected",
             target_id=context.target_id,
         )
-    compiled_call = _compile_function(node.value, context)
+    call = node.value
+    if (
+        not isinstance(call.func, ast.Name)
+        or call.keywords
+        or call.func.id == "max"
+        or call.func.id not in context.binder
+    ):
+        function_id = call.func.id if isinstance(call.func, ast.Name) else ""
+        raise UnsupportedConstraintExpressionError(
+            "Model expression requests an unsupported component function",
+            target_id=context.target_id,
+            function_id=function_id,
+        )
     component_node = node.slice
     if not isinstance(component_node, ast.Constant) or not isinstance(
         component_node.value,
@@ -999,8 +1249,8 @@ def _compile_function_component(
             target_id=context.target_id,
         )
     return FunctionExpression(
-        compiled_call.function_id,
-        compiled_call.arguments,
+        call.func.id,
+        tuple(_compile_ast(argument, context) for argument in call.args),
         component_node.value,
     )
 
@@ -1197,10 +1447,15 @@ def _validate_parameterization_inputs(
     required_ids: Sequence[str] | set[str],
 ) -> set[str]:
     expected = (
+        parameter_model.model_identity,
         parameter_model.definitions.identity,
         parameter_model.configuration.identity,
     )
-    actual = (snapshot.definitions_identity, snapshot.configuration_identity)
+    actual = (
+        snapshot.model_identity,
+        snapshot.definitions_identity,
+        snapshot.configuration_identity,
+    )
     if actual != expected:
         raise IncompatibleParameterizationInputError(
             "Analysis Values snapshot does not belong to the sealed parameter model",
@@ -1250,7 +1505,7 @@ def _compile_active_scope(
                 definitions=definitions,
                 binder=binder,
                 target_id=param_id,
-                model_owned=source == "model",
+                model_owned=source in {"model", "baseline"},
             )
             dependencies = _dependencies(expression)
             compiled[param_id] = CompiledConstraint(
@@ -1304,6 +1559,7 @@ def compile_active_parameterization(
 
     definitions = parameter_model.definitions
     rules = _build_rules(method, definitions)
+    _validate_model_derivation_authority(rules, parameter_model.declarations)
     binder = ScientificFunctionBinder.for_model(parameter_model.model_name)
     definition_order = {
         definition.param_id: position for position, definition in enumerate(definitions)
@@ -1338,7 +1594,7 @@ def compile_active_parameterization(
     constraints = tuple(compiled[param_id] for param_id in derived_ids)
     program = ConstraintProgram(
         parameter_model_identity=parameter_model.identity,
-        model_identity=snapshot.model_identity,
+        model_identity=parameter_model.model_identity,
         definitions_identity=snapshot.definitions_identity,
         configuration_identity=snapshot.configuration_identity,
         function_binder_identity=binder.identity,
@@ -1359,7 +1615,6 @@ def compile_active_parameterization(
 
 def build_initial_analysis_values(
     parameter_model: SealedParameterModel,
-    model_identity: str,
 ) -> Mapping[str, float]:
     """Natively fill missing model-derived revision-zero configuration values."""
     configuration = parameter_model.configuration
@@ -1374,7 +1629,7 @@ def build_initial_analysis_values(
             )
     bootstrap_snapshot = AnalysisValuesSnapshot(
         occurrence_identity=f"bootstrap:{uuid4().hex}",
-        model_identity=model_identity,
+        model_identity=parameter_model.model_identity,
         definitions_identity=parameter_model.definitions.identity,
         configuration_identity=configuration.identity,
         revision=0,
@@ -1443,7 +1698,13 @@ def _finite_scalar(value: object, *, param_id: str) -> float:
             param_id=param_id,
             value=value,
         )
-    scalar = float(value)
+    try:
+        scalar = float(value)
+    except OverflowError as error:
+        raise NonFiniteParameterValueError(
+            "Constraint value exceeds the supported finite scalar range",
+            param_id=param_id,
+        ) from error
     if not math.isfinite(scalar):
         raise NonFiniteParameterValueError(
             "Constraint value is non-finite",
@@ -1513,7 +1774,7 @@ def _evaluate_binary(
 def _evaluate_function(
     expression: FunctionExpression,
     context: _EvaluationContext,
-) -> object:
+) -> float:
     arguments = tuple(
         _evaluate_node(argument, context) for argument in expression.arguments
     )
@@ -1538,7 +1799,7 @@ def _evaluate_function(
             position=context.position,
         ) from error
     if expression.component is None:
-        return result
+        return _finite_scalar(result, param_id=context.target_id)
     if not isinstance(result, Mapping) or expression.component not in result:
         raise ConstraintDomainError(
             "Scientific constraint function did not return its declared component",
@@ -1548,7 +1809,10 @@ def _evaluate_function(
             arguments=arguments,
             position=context.position,
         )
-    return cast("Mapping[str, object]", result)[expression.component]
+    return _finite_scalar(
+        cast("Mapping[str, object]", result)[expression.component],
+        param_id=context.target_id,
+    )
 
 
 def _evaluate_node(

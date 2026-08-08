@@ -80,7 +80,7 @@ class ParameterFactory:
     parameter_store: ParameterStore
     _settings_cache: dict[
         tuple[str, bool, bool, bool, Basis, Conditions],
-        tuple[LocalSettings, LocalSettings],
+        tuple[LocalSettings, LocalSettings, frozenset[str]],
     ] = field(default_factory=dict)
     _definition_contributions: dict[str, list[DefinitionContribution]] = field(
         default_factory=dict,
@@ -130,7 +130,7 @@ class ParameterFactory:
         self,
         basis: Basis,
         conditions: Conditions,
-    ) -> tuple[LocalSettings, LocalSettings]:
+    ) -> tuple[LocalSettings, LocalSettings, frozenset[str]]:
         key = (
             basis.model.name,
             basis.model.model_free,
@@ -147,7 +147,11 @@ class ParameterFactory:
             settings_kinetics = model_factory.create_for_model(basis.model, conditions)
             settings = settings_kinetics | settings_spins
             settings_mf = settings_kinetics | settings_spins_mf
-            self._settings_cache[key] = (settings, settings_mf)
+            self._settings_cache[key] = (
+                settings,
+                settings_mf,
+                frozenset(settings_kinetics),
+            )
         return self._settings_cache[key]
 
     def _collect_definitions(
@@ -179,6 +183,7 @@ class ParameterFactory:
         parameters: Parameters,
         *,
         contributor: str,
+        model_owned_ids: frozenset[str],
     ) -> None:
         for param_id, parameter in parameters.items():
             contribution = ParameterDeclarationContribution(
@@ -186,6 +191,7 @@ class ParameterFactory:
                 supports_estimation=parameter.vary,
                 model_expression=parameter.expr,
                 contributor=contributor,
+                model_owned=param_id in model_owned_ids and bool(parameter.expr),
             )
             self._declaration_contributions.setdefault(param_id, []).append(
                 contribution
@@ -203,7 +209,7 @@ class ParameterFactory:
             msg = "Parameter definitions are already sealed; contributions are closed"
             raise RuntimeError(msg)
 
-        settings, settings_mf = self._build_settings(
+        settings, settings_mf, kinetic_names = self._build_settings(
             basis,
             config.conditions,
         )
@@ -234,6 +240,14 @@ class ParameterFactory:
             native_parameters = (
                 parameters_mf if self.parameter_store.model.model_free else parameters
             )
+            native_name_map = (
+                name_map_mf if self.parameter_store.model.model_free else name_map
+            )
+            model_owned_ids = frozenset(
+                native_name_map[name]
+                for name in kinetic_names
+                if name in native_name_map
+            )
             try:
                 self._collect_definitions(
                     native_parameters,
@@ -242,6 +256,7 @@ class ParameterFactory:
                 self._collect_declarations(
                     native_parameters,
                     contributor=construction_context,
+                    model_owned_ids=model_owned_ids,
                 )
             except Exception as error:  # noqa: BLE001 - checkpoint-1 isolation boundary
                 self._native_construction_error = error
@@ -297,6 +312,7 @@ class ParameterFactory:
         self._sealed_configuration = configuration
         self._sealed_parameter_model = SealedParameterModel(
             model_name=self.parameter_store.model.name,
+            model_identity=self.parameter_store.model.identity,
             definitions=self._sealed_definitions,
             configuration=configuration,
             declarations=declarations,

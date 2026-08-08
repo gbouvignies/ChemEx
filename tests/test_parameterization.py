@@ -18,6 +18,9 @@ from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
 from chemex.experiments.builder import build_experiments
 from chemex.models.factory import model_factory
+from chemex.nmr.rates import rate_functions
+from chemex.parameters.database import ParameterIndex
+from chemex.parameters.name import ParamName
 from chemex.parameters.parameterization import (
     AmbiguousParameterReferenceError,
     ConstraintCycleError,
@@ -27,14 +30,17 @@ from chemex.parameters.parameterization import (
     ConstraintSelfReferenceError,
     IncompatibleParameterizationInputError,
     IncompleteParameterDependenciesError,
+    ModelDerivationOverrideError,
     NonFiniteParameterValueError,
     NoParameterMatchError,
     ParameterDeclaration,
+    ParameterDeclarationContribution,
     ParameterRole,
     SealedParameterDeclarations,
     SealedParameterModel,
     UnsupportedConstraintExpressionError,
     compile_active_parameterization,
+    seal_parameter_declarations,
 )
 from chemex.parameters.sealed import (
     ParamConfig,
@@ -78,6 +84,83 @@ def _build_dcest_session() -> tuple[AnalysisSession, set[str]]:
     return session, experiments.param_ids
 
 
+def _build_mf_session() -> tuple[AnalysisSession, set[str]]:
+    session = AnalysisSession.create()
+    session.set_model("2st.mf")
+    experiments = build_experiments(
+        [MF_EXPERIMENT],
+        Selection(include=[SpinSystem.from_name("G23N-HN")], exclude=None),
+        session=session,
+    )
+    session.parameters.set_defaults(read_defaults([MF_PARAMETERS]))
+    assert session.try_build_analysis_values(), repr(
+        session.parameter_factory.native_construction_error
+    )
+    return session, experiments.param_ids
+
+
+def _build_fit_session() -> tuple[AnalysisSession, set[str]]:
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    experiments = build_experiments(
+        [FIT_EXPERIMENT],
+        Selection(include=[SpinSystem.from_name("G2N-HN")], exclude=None),
+        session=session,
+    )
+    session.parameters.set_defaults(read_defaults([FIT_PARAMETERS]))
+    assert session.try_build_analysis_values(), repr(
+        session.parameter_factory.native_construction_error
+    )
+    return session, experiments.param_ids
+
+
+def _legacy_roles_and_values(
+    session: AnalysisSession,
+    method: Method,
+    required_ids: set[str],
+) -> tuple[dict[str, ParameterRole], dict[str, float]]:
+    session.parameters.set_parameter_status(method)
+    parameters = session.parameters.build_lmfit_params(required_ids)
+    roles = {
+        param_id: (
+            ParameterRole.DERIVED
+            if parameter.expr is not None
+            else ParameterRole.FIT
+            if parameter.vary
+            else ParameterRole.FIX
+        )
+        for param_id, parameter in parameters.items()
+    }
+    return roles, parameters.valuesdict()
+
+
+def _assert_complete_shipped_parity(
+    native_session: AnalysisSession,
+    legacy_session: AnalysisSession,
+    method: Method,
+    required_ids: set[str],
+) -> None:
+    snapshot = native_session.analysis_values.snapshot()
+    parameterization = native_session.compile_parameterization(
+        method,
+        required_ids,
+    )
+    resolved = parameterization.resolve(parameterization.frame_from_snapshot(snapshot))
+    legacy_roles, legacy_values = _legacy_roles_and_values(
+        legacy_session,
+        method,
+        required_ids,
+    )
+
+    assert parameterization.scope_ids == tuple(legacy_roles)
+    assert {
+        param_id: parameterization.role(param_id)
+        for param_id in parameterization.scope_ids
+    } == legacy_roles
+    assert dict(resolved) == pytest.approx(legacy_values, rel=1e-13, abs=1e-13)
+    assert native_session.analysis_values.snapshot() == snapshot
+
+
 def _native_fixture(
     declarations: tuple[ParameterDeclaration, ...],
     *,
@@ -116,6 +199,7 @@ def _native_fixture(
     sealed_declarations = SealedParameterDeclarations(declarations)
     parameter_model = SealedParameterModel(
         model_name,
+        f"{model_name}|test",
         sealed_definitions,
         configuration,
         sealed_declarations,
@@ -143,8 +227,7 @@ def test_shipped_method_compiles_roles_and_resolves_without_mutation() -> None:
 
     parameterization = session.try_compile_parameterization(method, required_ids)
     assert parameterization is not None
-    resolved = session.last_resolved_parameter_values
-    assert resolved is not None
+    resolved = parameterization.resolve(parameterization.frame_from_snapshot(before))
 
     definitions = session.parameter_factory.sealed_definitions
     assert definitions is not None
@@ -172,6 +255,97 @@ def test_shipped_method_compiles_roles_and_resolves_without_mutation() -> None:
     assert step2 is not None
     assert step2.role(d2o) is ParameterRole.FIX
     assert session.analysis_values.snapshot() == before
+
+
+def test_shipped_dcest_constraint_roles_and_values_match_legacy_completely() -> None:
+    native_session, required_ids = _build_dcest_session()
+    legacy_session, legacy_required_ids = _build_dcest_session()
+    assert legacy_required_ids == required_ids
+    method = read_methods([DCEST_METHOD])["STEP1"]
+
+    _assert_complete_shipped_parity(
+        native_session,
+        legacy_session,
+        method,
+        required_ids,
+    )
+
+
+def test_shipped_fix_roles_and_values_match_legacy_completely() -> None:
+    native_session, required_ids = _build_fit_session()
+    legacy_session, legacy_required_ids = _build_fit_session()
+    assert legacy_required_ids == required_ids
+    method = read_methods([FIT_METHOD])["DEFAULT"]
+
+    _assert_complete_shipped_parity(
+        native_session,
+        legacy_session,
+        method,
+        required_ids,
+    )
+
+
+@pytest.mark.parametrize(
+    "method",
+    (
+        Method(fit=("PA",)),
+        Method(fix=("PA",)),
+        Method(constraints=("[PA] = 0.5",)),
+    ),
+    ids=("fit", "fix", "constraint"),
+)
+def test_shipped_2st_hd_population_derivation_cannot_be_overridden(
+    method: Method,
+) -> None:
+    session, required_ids = _build_dcest_session()
+    definitions = session.parameter_factory.sealed_definitions
+    assert definitions is not None
+    pa_id = next(item.param_id for item in definitions if item.name == "PA")
+    baseline = session.compile_parameterization(Method(), required_ids)
+
+    assert baseline.role(pa_id) is ParameterRole.DERIVED
+
+    with pytest.raises(ModelDerivationOverrideError) as raised:
+        session.compile_parameterization(method, required_ids)
+
+    assert raised.value.code == "model_derivation_override"
+    assert raised.value.context["param_ids"] == (pa_id,)
+
+
+def test_sealing_retains_model_derivation_when_estimation_is_supported() -> None:
+    definition = ParamDefinition(
+        "__PA",
+        "PA",
+        "",
+        (),
+        1.0,
+        -float("inf"),
+        float("inf"),
+    )
+    definitions = SealedDefinitions((definition,), {definition.param_id: 0})
+    declarations = seal_parameter_declarations(
+        definitions,
+        {
+            definition.param_id: (
+                ParameterDeclarationContribution(
+                    definition.param_id,
+                    False,
+                    "1.0 - __PB",
+                    "model",
+                    True,
+                ),
+                ParameterDeclarationContribution(
+                    definition.param_id,
+                    True,
+                    "",
+                    "experiment",
+                ),
+            )
+        },
+    )
+
+    assert declarations[definition.param_id].supports_estimation
+    assert declarations[definition.param_id].model_expression == "1.0 - __PB"
 
 
 def test_constraint_chain_is_deterministic_and_freshly_reresolves() -> None:
@@ -282,19 +456,11 @@ def test_shadowed_constraint_still_receives_public_syntax_validation() -> None:
 
 
 def test_real_model_free_scientific_expression_matches_legacy_resolution() -> None:
-    session = AnalysisSession.create()
-    session.set_model("2st.mf")
-    experiments = build_experiments(
-        [MF_EXPERIMENT],
-        Selection(include=[SpinSystem.from_name("G23N-HN")], exclude=None),
-        session=session,
-    )
-    session.parameters.set_defaults(read_defaults([MF_PARAMETERS]))
-    assert session.try_build_analysis_values(), repr(
-        session.parameter_factory.native_construction_error
-    )
-    snapshot = session.analysis_values.snapshot()
-    configuration = session.parameter_factory.sealed_configuration
+    native_session, required_ids = _build_mf_session()
+    legacy_session, legacy_required_ids = _build_mf_session()
+    assert legacy_required_ids == required_ids
+    snapshot = native_session.analysis_values.snapshot()
+    configuration = native_session.parameter_factory.sealed_configuration
     assert configuration is not None
     assert tuple(snapshot) == tuple(item.param_id for item in configuration)
     assert all(
@@ -306,26 +472,23 @@ def test_real_model_free_scientific_expression_matches_legacy_resolution() -> No
     assert not snapshot.occurrence_identity.startswith("bootstrap:")
 
     method = read_methods([MF_METHOD])["DEFAULT"]
-    parameterization = session.compile_parameterization(method, experiments.param_ids)
-    resolved = parameterization.resolve(parameterization.frame_from_snapshot(snapshot))
-    legacy = session.parameters.build_lmfit_params(experiments.param_ids).valuesdict()
-    definitions = session.parameter_factory.sealed_definitions
+    parameterization = native_session.compile_parameterization(method, required_ids)
+    definitions = native_session.parameter_factory.sealed_definitions
     assert definitions is not None
-    derived_rate_ids = tuple(
-        item.param_id
-        for item in definitions
-        if item.param_id in parameterization.derived_ids and item.name.startswith("R2")
-    )
-
-    assert derived_rate_ids
     pb = next(item.param_id for item in definitions if item.name == "PB")
     kex_ab = next(item.param_id for item in definitions if item.name == "KEX_AB")
     assert parameterization.role(pb) is ParameterRole.FIX
     assert parameterization.role(kex_ab) is ParameterRole.FIX
-    for param_id in derived_rate_ids:
-        assert resolved[param_id] == pytest.approx(
-            legacy[param_id], rel=1e-13, abs=1e-13
-        )
+    assert any(
+        item.param_id in parameterization.derived_ids and item.name.startswith("R2")
+        for item in definitions
+    )
+    _assert_complete_shipped_parity(
+        native_session,
+        legacy_session,
+        method,
+        required_ids,
+    )
 
 
 @pytest.mark.parametrize("model_name", ("2st_binding", "2st_eyring"))
@@ -387,6 +550,104 @@ def test_supported_arithmetic_has_explicit_precedence_and_unary_semantics() -> N
     assert resolved["__B"] == -2.0
 
 
+@pytest.mark.parametrize(
+    ("literal", "expected"),
+    (
+        ("10", 10.0),
+        ("10.25", 10.25),
+        (".25", 0.25),
+        ("10.", 10.0),
+        ("1.25e-2", 0.0125),
+        ("2E+3", 2000.0),
+    ),
+)
+def test_public_constraints_accept_legacy_decimal_numeric_syntax(
+    literal: str,
+    expected: float,
+) -> None:
+    parameter_model, snapshot = _native_fixture(
+        (ParameterDeclaration("__A", False),),
+    )
+    parameterization = compile_active_parameterization(
+        parameter_model,
+        snapshot,
+        Method(constraints=(f"[A] = {literal}",)),
+        {"__A"},
+    )
+
+    resolved = parameterization.resolve(parameterization.frame_from_snapshot(snapshot))
+
+    assert resolved["__A"] == expected
+
+
+@pytest.mark.parametrize("literal", ("0x10", "0b10", "0o10", "1_0", "1j"))
+def test_public_constraints_reject_python_only_numeric_literals(literal: str) -> None:
+    parameter_model, snapshot = _native_fixture(
+        (ParameterDeclaration("__A", False),),
+    )
+
+    with pytest.raises(UnsupportedConstraintExpressionError) as raised:
+        compile_active_parameterization(
+            parameter_model,
+            snapshot,
+            Method(constraints=(f"[A] = {literal}",)),
+            {"__A"},
+        )
+
+    assert raised.value.code == "unsupported_expression"
+
+
+def test_oversized_public_literal_is_a_typed_non_finite_failure() -> None:
+    parameter_model, snapshot = _native_fixture(
+        (ParameterDeclaration("__A", False),),
+    )
+
+    with pytest.raises(NonFiniteParameterValueError) as raised:
+        compile_active_parameterization(
+            parameter_model,
+            snapshot,
+            Method(constraints=(f"[A] = {'9' * 400}",)),
+            {"__A"},
+        )
+
+    assert raised.value.code == "non_finite"
+
+
+def test_oversized_independent_frame_value_is_a_typed_non_finite_failure() -> None:
+    parameter_model, snapshot = _native_fixture(
+        (ParameterDeclaration("__A", False),),
+    )
+    parameterization = compile_active_parameterization(
+        parameter_model,
+        snapshot,
+        Method(),
+        {"__A"},
+    )
+    frame = parameterization.frame_from_snapshot(snapshot)
+
+    with pytest.raises(NonFiniteParameterValueError) as raised:
+        parameterization.resolve(frame.with_updates({"__A": 10**400}))
+
+    assert raised.value.code == "non_finite"
+
+
+def test_foreign_model_snapshot_is_rejected_before_program_compilation() -> None:
+    parameter_model, snapshot = _native_fixture(
+        (ParameterDeclaration("__A", False),),
+    )
+
+    with pytest.raises(IncompatibleParameterizationInputError) as raised:
+        compile_active_parameterization(
+            parameter_model,
+            dataclasses.replace(snapshot, model_identity="foreign-model"),
+            Method(),
+            {"__A"},
+        )
+
+    assert raised.value.code == "incompatible_input"
+    assert raised.value.context["actual"][0] == "foreign-model"
+
+
 def test_no_match_failure_has_stable_type_code_and_context() -> None:
     parameter_model, snapshot = _native_fixture((ParameterDeclaration("__A", False),))
 
@@ -400,6 +661,45 @@ def test_no_match_failure_has_stable_type_code_and_context() -> None:
 
     assert raised.value.code == "no_match"
     assert raised.value.context["selector"] == "missing"
+
+
+@pytest.mark.parametrize(
+    ("method", "required_ids"),
+    (
+        (Method(fit=("R2",)), {"__R2_A"}),
+        (Method(fix=("R2",)), {"__R2_A"}),
+        (Method(constraints=("[R2] = 1.0",)), {"__R2_A"}),
+        (Method(constraints=("[B] = [R2]",)), {"__B"}),
+    ),
+    ids=("fit-target", "fix-target", "constraint-target", "constraint-reference"),
+)
+def test_parameter_selectors_use_legacy_exact_name_matching(
+    method: Method,
+    required_ids: set[str],
+) -> None:
+    definitions = (
+        ParamDefinition("__R2_A", "R2_A", "", (), 1.0, -10.0, 10.0),
+        ParamDefinition("__B", "B", "", (), 1.0, -10.0, 10.0),
+    )
+    declarations = tuple(
+        ParameterDeclaration(item.param_id, False) for item in definitions
+    )
+    parameter_model, snapshot = _native_fixture(
+        declarations,
+        definitions=definitions,
+    )
+    legacy_index = ParameterIndex()
+    legacy_index.add(ParamName.from_section("R2_A"))
+
+    assert legacy_index.get_matching_ids(ParamName.from_section("R2")) == set()
+
+    with pytest.raises(NoParameterMatchError):
+        compile_active_parameterization(
+            parameter_model,
+            snapshot,
+            method,
+            required_ids,
+        )
 
 
 def test_contextually_incomparable_reference_is_ambiguity() -> None:
@@ -499,7 +799,7 @@ def test_arithmetic_domain_failure_does_not_return_partial_values() -> None:
 def test_scientific_function_evaluation_failure_is_typed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def explode(_value: float) -> float:
+    def explode(_value: float) -> dict[str, float]:
         msg = "backend exploded"
         raise RuntimeError(msg)
 
@@ -510,7 +810,7 @@ def test_scientific_function_evaluation_failure_is_typed(
     )
     declarations = (
         ParameterDeclaration("__A", False),
-        ParameterDeclaration("__B", False, "explode(__A)"),
+        ParameterDeclaration("__B", False, 'explode(__A)["result"]'),
     )
     parameter_model, snapshot = _native_fixture(
         declarations,
@@ -528,6 +828,139 @@ def test_scientific_function_evaluation_failure_is_typed(
 
     assert raised.value.code == "evaluation_error"
     assert raised.value.context["function_id"] == "explode"
+
+
+def test_scientific_function_identity_tracks_same_metadata_implementation_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def implementation_one(value: float) -> dict[str, float]:
+        return {"result": value * 2.0}
+
+    def implementation_two(value: float) -> dict[str, float]:
+        return {"result": value * 3.0}
+
+    for implementation in (implementation_one, implementation_two):
+        monkeypatch.setattr(implementation, "__name__", "same_metadata")
+        monkeypatch.setattr(implementation, "__qualname__", "same_metadata")
+
+    declarations = (
+        ParameterDeclaration("__A", False),
+        ParameterDeclaration(
+            "__B",
+            False,
+            'same_metadata(__A)["result"]',
+        ),
+    )
+    parameter_model, snapshot = _native_fixture(
+        declarations,
+        values={"__A": 2.0, "__B": 0.0},
+        model_name="test_model",
+    )
+    monkeypatch.setitem(
+        user_function_registry.user_function_registry,
+        "test_model",
+        {"same_metadata": implementation_one},
+    )
+    first = compile_active_parameterization(
+        parameter_model,
+        snapshot,
+        Method(),
+        {"__B"},
+    )
+    first_frame = first.frame_from_snapshot(snapshot)
+
+    monkeypatch.setitem(
+        user_function_registry.user_function_registry,
+        "test_model",
+        {"same_metadata": implementation_two},
+    )
+    second = compile_active_parameterization(
+        parameter_model,
+        snapshot,
+        Method(),
+        {"__B"},
+    )
+
+    assert first.binder.identity != second.binder.identity
+    assert first.program.fingerprint != second.program.fingerprint
+    assert first.resolve(first_frame)["__B"] == 4.0
+    with pytest.raises(ConstraintProgramMismatchError):
+        second.resolve(first_frame)
+
+
+def test_mutated_bound_scientific_function_cannot_change_compiled_program(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class MutableScientificFunction:
+        def __init__(self) -> None:
+            self.scale = 2.0
+
+        def __call__(self, value: float) -> dict[str, float]:
+            return {"result": value * self.scale}
+
+    function = MutableScientificFunction()
+    monkeypatch.setitem(
+        user_function_registry.user_function_registry,
+        "test_model",
+        {"mutable": function},
+    )
+    declarations = (
+        ParameterDeclaration("__A", False),
+        ParameterDeclaration("__B", False, 'mutable(__A)["result"]'),
+    )
+    parameter_model, snapshot = _native_fixture(
+        declarations,
+        values={"__A": 2.0, "__B": 0.0},
+        model_name="test_model",
+    )
+    parameterization = compile_active_parameterization(
+        parameter_model,
+        snapshot,
+        Method(),
+        {"__B"},
+    )
+    frame = parameterization.frame_from_snapshot(snapshot)
+    assert parameterization.resolve(frame)["__B"] == 4.0
+
+    function.scale = 3.0
+
+    with pytest.raises(ConstraintProgramMismatchError) as raised:
+        parameterization.resolve(frame)
+
+    assert raised.value.code == "program_mismatch"
+    assert raised.value.context["function_id"] == "mutable"
+
+
+def test_mutated_shipped_rate_class_state_cannot_change_compiled_program(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    declarations = (
+        ParameterDeclaration("__H", False),
+        ParameterDeclaration("__TAUC", False),
+        ParameterDeclaration("__S2", False),
+        ParameterDeclaration("__R2", False, 'nh(__H, __TAUC, __S2)["r2_i"]'),
+    )
+    parameter_model, snapshot = _native_fixture(
+        declarations,
+        values={"__H": 800.0, "__TAUC": 5.0, "__S2": 0.9, "__R2": 0.0},
+    )
+    parameterization = compile_active_parameterization(
+        parameter_model,
+        snapshot,
+        Method(),
+        {"__R2"},
+    )
+    frame = parameterization.frame_from_snapshot(snapshot)
+    parameterization.resolve(frame)
+    rate_type = type(rate_functions["nh"])
+
+    monkeypatch.setattr(rate_type, "gi", rate_type.gi * 1.01)
+
+    with pytest.raises(ConstraintProgramMismatchError) as raised:
+        parameterization.resolve(frame)
+
+    assert raised.value.code == "program_mismatch"
+    assert raised.value.context["function_id"] == "nh"
 
 
 def test_malformed_scientific_function_component_is_typed(
@@ -564,8 +997,7 @@ def test_malformed_scientific_function_component_is_typed(
         parameterization.resolve(parameterization.frame_from_snapshot(snapshot))
 
     assert raised.value.code == "evaluation_error"
-    assert raised.value.context["target_id"] == "__B"
-    assert raised.value.context["operator"] == "add"
+    assert raised.value.context["param_id"] == "__B"
 
 
 def test_non_finite_derived_value_has_its_own_failure_category() -> None:
@@ -651,8 +1083,11 @@ def test_native_compilation_failure_cannot_veto_real_legacy_fit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = AnalysisSession.create()
+    preview_calls = 0
 
     def fail_preview(*_args: object, **_kwargs: object) -> None:
+        nonlocal preview_calls
+        preview_calls += 1
         msg = "native preview failed"
         raise RuntimeError(msg)
 
@@ -675,6 +1110,4 @@ def test_native_compilation_failure_cannot_veto_real_legacy_fit(
 
     assert list((tmp_path / "Data").rglob("*.dat"))
     assert list((tmp_path / "Parameters").rglob("*.toml"))
-    assert isinstance(session.last_parameterization_failure, RuntimeError)
-    assert session.last_parameterization is None
-    assert session.last_resolved_parameter_values is None
+    assert preview_calls > 0

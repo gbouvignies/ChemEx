@@ -15,7 +15,6 @@ from chemex.parameters.factory import ParameterFactory
 from chemex.parameters.legacy_adapter import LegacyValuesAdapter
 from chemex.parameters.parameterization import (
     ActiveParameterization,
-    ResolvedParameterValues,
     build_initial_analysis_values,
     compile_active_parameterization,
 )
@@ -62,9 +61,6 @@ class AnalysisSession:
             else parameter_factory
         )
         self.execution = ExecutionSettings() if execution is None else execution
-        self.last_parameterization: ActiveParameterization | None = None
-        self.last_resolved_parameter_values: ResolvedParameterValues | None = None
-        self.last_parameterization_failure: Exception | None = None
 
     @classmethod
     def create(cls) -> AnalysisSession:
@@ -80,9 +76,6 @@ class AnalysisSession:
         self.parameters.reset()
         self.analysis_values.reset()
         self.legacy_values_adapter.reset()
-        self.last_parameterization = None
-        self.last_resolved_parameter_values = None
-        self.last_parameterization_failure = None
         self.model.reset()
 
     def try_build_analysis_values(self) -> bool:
@@ -96,14 +89,10 @@ class AnalysisSession:
             self.parameter_factory.disable_native_candidate(error)
             self.legacy_values_adapter.disable(error)
             return False
-        spec = self.model.spec
-        model_identity = (
-            f"{spec.name}|states={spec.states}|model_free={spec.model_free}|"
-            f"temp_coef={spec.temp_coef}|residue_specific={spec.residue_specific}"
-        )
+        model_identity = self.model.spec.identity
         try:
             initial_values = (
-                build_initial_analysis_values(parameter_model, model_identity)
+                build_initial_analysis_values(parameter_model)
                 if any(item.effective_value is None for item in configuration)
                 else None
             )
@@ -150,15 +139,9 @@ class AnalysisSession:
         try:
             candidate = self.compile_parameterization(method, required_ids)
             frame = candidate.frame_from_snapshot(self.analysis_values.snapshot())
-            resolved = candidate.resolve(frame)
-        except Exception as error:  # noqa: BLE001 - checkpoint-1 isolation boundary
-            self.last_parameterization = None
-            self.last_resolved_parameter_values = None
-            self.last_parameterization_failure = error
+            candidate.resolve(frame)
+        except Exception:  # noqa: BLE001 - checkpoint-1 isolation boundary
             return None
-        self.last_parameterization = candidate
-        self.last_resolved_parameter_values = resolved
-        self.last_parameterization_failure = None
         return candidate
 
 
