@@ -11,6 +11,8 @@ from chemex.parameters.database import (
     create_parameter_store,
 )
 from chemex.parameters.factory import ParameterFactory
+from chemex.parameters.legacy_adapter import LegacyValuesAdapter
+from chemex.parameters.values import AnalysisValues
 from chemex.runtime.execution import ExecutionSettings
 
 _PLUGIN_STATE = {"registered": False}
@@ -34,12 +36,19 @@ class AnalysisSession:
         model: ModelController | None = None,
         parameters: ParameterStore | None = None,
         parameter_factory: ParameterFactory | None = None,
+        analysis_values: AnalysisValues | None = None,
         execution: ExecutionSettings | None = None,
     ) -> None:
         self.model = ModelState() if model is None else model
+        self.analysis_values = (
+            AnalysisValues() if analysis_values is None else analysis_values
+        )
+        self.legacy_values_adapter = LegacyValuesAdapter(self.analysis_values)
         self.parameters = (
             create_parameter_store(self.model) if parameters is None else parameters
         )
+        if isinstance(self.parameters, ParameterStore):
+            self.parameters.attach_legacy_values_adapter(self.legacy_values_adapter)
         self.parameter_factory = (
             ParameterFactory(self.parameters)
             if parameter_factory is None
@@ -59,7 +68,32 @@ class AnalysisSession:
         """Clear cached runtime state before starting a new analysis."""
         self.parameter_factory.reset()
         self.parameters.reset()
+        self.analysis_values.reset()
+        self.legacy_values_adapter.reset()
         self.model.reset()
+
+    def try_build_analysis_values(self) -> bool:
+        """Seal configuration and initialize the non-authoritative native values."""
+        if not self.parameter_factory.try_seal_configuration():
+            return False
+        configuration = self.parameter_factory.sealed_configuration
+        if configuration is None:
+            error = RuntimeError("Sealed parameter configuration is unavailable")
+            self.parameter_factory.disable_native_candidate(error)
+            self.legacy_values_adapter.disable(error)
+            return False
+        spec = self.model.spec
+        model_identity = (
+            f"{spec.name}|states={spec.states}|model_free={spec.model_free}|"
+            f"temp_coef={spec.temp_coef}|residue_specific={spec.residue_specific}"
+        )
+        try:
+            self.analysis_values.initialize(model_identity, configuration)
+        except Exception as error:  # noqa: BLE001 - checkpoint-1 isolation boundary
+            self.parameter_factory.disable_native_candidate(error)
+            self.legacy_values_adapter.disable(error)
+            return False
+        return True
 
     def set_model(self, name: str) -> None:
         """Set the active kinetics model for the current session."""
