@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from numbers import Real
 from threading import RLock
 from types import MappingProxyType
+from uuid import uuid4
 
 from chemex.parameters.sealed import SealedConfiguration
 
@@ -33,6 +34,7 @@ class InvalidAnalysisValuesCommitError(AnalysisValuesCommitError):
 class AnalysisValuesSnapshot(Mapping[str, float]):
     """Immutable central values and the identities needed for freshness checks."""
 
+    occurrence_identity: str
     model_identity: str
     definitions_identity: str
     configuration_identity: str
@@ -68,6 +70,7 @@ class AnalysisValuesSnapshot(Mapping[str, float]):
         """Serialize with stable field order and exact binary64 value tokens."""
         payload = {
             "schema_version": 1,
+            "occurrence_identity": self.occurrence_identity,
             "model_identity": self.model_identity,
             "definitions_identity": self.definitions_identity,
             "configuration_identity": self.configuration_identity,
@@ -94,6 +97,7 @@ class AnalysisValuesSnapshot(Mapping[str, float]):
             items = tuple(
                 (entry["id"], float.fromhex(entry["value"])) for entry in values
             )
+            occurrence_identity = payload["occurrence_identity"]
             model_identity = payload["model_identity"]
             definitions_identity = payload["definitions_identity"]
             configuration_identity = payload["configuration_identity"]
@@ -105,6 +109,7 @@ class AnalysisValuesSnapshot(Mapping[str, float]):
             not all(
                 isinstance(identity, str)
                 for identity in (
+                    occurrence_identity,
                     model_identity,
                     definitions_identity,
                     configuration_identity,
@@ -116,6 +121,7 @@ class AnalysisValuesSnapshot(Mapping[str, float]):
             msg = "Invalid analysis values snapshot identity or revision"
             raise ValueError(msg)
         return cls(
+            occurrence_identity=occurrence_identity,
             model_identity=model_identity,
             definitions_identity=definitions_identity,
             configuration_identity=configuration_identity,
@@ -128,6 +134,7 @@ class AnalysisValues:
     """Session-owned mutable central values with one analysis-wide revision."""
 
     def __init__(self) -> None:
+        self._occurrence_identity = ""
         self._model_identity = ""
         self._definitions_identity = ""
         self._configuration_identity = ""
@@ -164,6 +171,7 @@ class AnalysisValues:
                     raise ValueError(msg)
                 items.append((config.param_id, float(value)))
 
+            self._occurrence_identity = uuid4().hex
             self._model_identity = str(model_identity)
             self._definitions_identity = configuration.definitions_identity
             self._configuration_identity = configuration.identity
@@ -186,6 +194,7 @@ class AnalysisValues:
             msg = "Analysis values are not initialized"
             raise RuntimeError(msg)
         return AnalysisValuesSnapshot(
+            occurrence_identity=self._occurrence_identity,
             model_identity=self._model_identity,
             definitions_identity=self._definitions_identity,
             configuration_identity=self._configuration_identity,
@@ -212,6 +221,9 @@ class AnalysisValues:
         scope: tuple[str, ...],
     ) -> AnalysisValuesSnapshot:
         current = self._snapshot_unlocked()
+        if expected.occurrence_identity != current.occurrence_identity:
+            msg = "Analysis values snapshot belongs to another analysis occurrence"
+            raise IncompatibleAnalysisValuesError(msg)
         current_identity = (
             current.model_identity,
             current.definitions_identity,
@@ -277,6 +289,7 @@ class AnalysisValues:
     def reset(self) -> None:
         """Return to the uninitialized state for a full analysis rebuild."""
         with self._lock:
+            self._occurrence_identity = ""
             self._model_identity = ""
             self._definitions_identity = ""
             self._configuration_identity = ""

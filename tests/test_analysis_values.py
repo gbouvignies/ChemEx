@@ -123,7 +123,9 @@ def test_snapshot_is_immutable_and_has_a_deterministic_json_round_trip() -> None
     restored = AnalysisValuesSnapshot.from_json(encoded)
 
     assert restored == snapshot
+    assert restored.occurrence_identity == snapshot.occurrence_identity
     assert restored.to_json() == encoded
+    assert '"occurrence_identity"' in encoded
     assert '"revision":0' in encoded
     assert '"value":"0x1.47ae147ae147bp-4"' in encoded
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -346,10 +348,49 @@ def test_session_reset_rebuilds_values_at_revision_zero() -> None:
 
     rebuilt = _build_shipped_session(session).analysis_values.snapshot()
     assert rebuilt.revision == 0
+    assert rebuilt.occurrence_identity != initial.occurrence_identity
     assert rebuilt.model_identity == initial.model_identity
     assert rebuilt.definitions_identity == initial.definitions_identity
     assert rebuilt.configuration_identity == initial.configuration_identity
     assert rebuilt["__PB"] == initial["__PB"]
+
+
+def test_snapshot_from_before_session_reset_is_rejected_after_rebuild() -> None:
+    session = _build_shipped_session()
+    previous_occurrence = session.analysis_values.snapshot()
+
+    session.reset()
+    rebuilt = _build_shipped_session(session).analysis_values.snapshot()
+
+    with pytest.raises(IncompatibleAnalysisValuesError):
+        session.analysis_values.commit(
+            {"__PB": 0.12},
+            expected=previous_occurrence,
+            scope=("__PB",),
+        )
+
+    assert session.analysis_values.snapshot() == rebuilt
+
+
+def test_snapshot_from_another_identical_session_is_rejected() -> None:
+    session_a = _build_shipped_session()
+    session_b = _build_shipped_session()
+    snapshot_a = session_a.analysis_values.snapshot()
+    snapshot_b = session_b.analysis_values.snapshot()
+
+    assert snapshot_a.occurrence_identity != snapshot_b.occurrence_identity
+    assert snapshot_a.model_identity == snapshot_b.model_identity
+    assert snapshot_a.definitions_identity == snapshot_b.definitions_identity
+    assert snapshot_a.configuration_identity == snapshot_b.configuration_identity
+
+    with pytest.raises(IncompatibleAnalysisValuesError):
+        session_b.analysis_values.commit(
+            {"__PB": 0.12},
+            expected=snapshot_a,
+            scope=("__PB",),
+        )
+
+    assert session_b.analysis_values.snapshot() == snapshot_b
 
 
 def test_model_change_is_rejected_after_analysis_values_are_initialized() -> None:
