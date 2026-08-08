@@ -48,7 +48,12 @@ def run_fit(
 
     print_start_fit()
     run_methods(
-        experiments, methods, args.output, args.plot, execution=session.execution
+        experiments,
+        methods,
+        args.output,
+        args.plot,
+        execution=session.execution,
+        preview_parameterization=session.try_compile_parameterization,
     )
 
 

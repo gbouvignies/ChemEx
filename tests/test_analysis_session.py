@@ -96,6 +96,13 @@ class StubSession:
         self.build_analysis_values_calls += 1
         return self.parameter_factory.try_seal_configuration()
 
+    def try_compile_parameterization(
+        self,
+        _method: object,
+        _required_ids: set[str],
+    ) -> None:
+        return None
+
 
 class WriterParameterStore:
     def __init__(self, parameters: dict[str, ParamSetting]) -> None:
@@ -348,6 +355,7 @@ def test_run_uses_explicit_session_for_fit_flow(
         plot_level: str,
         *,
         execution: ExecutionSettings | None = None,
+        preview_parameterization: object | None = None,
     ) -> None:
         recorded["run_methods"] = (
             experiments_arg,
@@ -355,6 +363,7 @@ def test_run_uses_explicit_session_for_fit_flow(
             path,
             plot_level,
             execution,
+            preview_parameterization,
         )
 
     monkeypatch.setattr(chemex_module, "build_experiments", fake_build_experiments)
@@ -384,6 +393,7 @@ def test_run_uses_explicit_session_for_fit_flow(
     np.testing.assert_equal(experiments.filtered, 1)
     np.testing.assert_equal(recorded["build"][2], session)
     np.testing.assert_equal(recorded["run_methods"][4], session.execution)
+    assert recorded["run_methods"][5] == session.try_compile_parameterization
     assert recorded["run_info"] is True
 
 

@@ -153,6 +153,8 @@ class AnalysisValues:
         self,
         model_identity: str,
         configuration: SealedConfiguration,
+        *,
+        _native_initial_values: Mapping[str, float] | None = None,
     ) -> None:
         """Initialize revision zero from immutable configured effective values."""
         with self._lock:
@@ -160,10 +162,36 @@ class AnalysisValues:
                 msg = "Analysis values are already initialized"
                 raise RuntimeError(msg)
 
+            configured_ids = tuple(config.param_id for config in configuration)
+            if (
+                _native_initial_values is not None
+                and tuple(_native_initial_values) != configured_ids
+            ):
+                msg = "Native initial values do not exactly cover configuration IDs"
+                raise ValueError(msg)
+
             items: list[tuple[str, float]] = []
             for config in configuration:
-                value = config.effective_value
-                if value is None or not math.isfinite(value):
+                value = (
+                    config.effective_value
+                    if _native_initial_values is None
+                    else _native_initial_values[config.param_id]
+                )
+                if (
+                    config.effective_value is not None
+                    and value != config.effective_value
+                ):
+                    msg = (
+                        "Native initialization changed configured value for "
+                        f"{config.param_id!r}"
+                    )
+                    raise ValueError(msg)
+                if (
+                    value is None
+                    or isinstance(value, bool)
+                    or not isinstance(value, Real)
+                    or not math.isfinite(value)
+                ):
                     msg = (
                         f"Invalid initial analysis value for {config.param_id!r}: "
                         f"{value!r}"
