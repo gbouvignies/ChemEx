@@ -87,9 +87,14 @@ class StubSession:
         self.model_names: list[str] = []
         self.parameter_factory = StubParameterFactory()
         self.execution = ExecutionSettings()
+        self.build_analysis_values_calls = 0
 
     def set_model(self, name: str) -> None:
         self.model_names.append(name)
+
+    def try_build_analysis_values(self) -> bool:
+        self.build_analysis_values_calls += 1
+        return self.parameter_factory.try_seal_configuration()
 
 
 class WriterParameterStore:
@@ -226,6 +231,9 @@ def test_analysis_sessions_own_distinct_runtime_state() -> None:
     np.testing.assert_equal(
         int(session_a.parameter_factory is session_b.parameter_factory),
         0,
+    )
+    np.testing.assert_equal(
+        int(session_a.analysis_values is session_b.analysis_values), 0
     )
     np.testing.assert_equal(basis_a.model.states, "abc")
     np.testing.assert_equal(basis_b.model.states, "ab")
@@ -372,6 +380,7 @@ def test_run_uses_explicit_session_for_fit_flow(
     np.testing.assert_equal(recorded_env["VECLIB_MAXIMUM_THREADS"], "2")
     np.testing.assert_equal(session.parameters.defaults_calls, [defaults])
     np.testing.assert_equal(session.parameter_factory.seal_configuration_calls, 1)
+    np.testing.assert_equal(session.build_analysis_values_calls, 1)
     np.testing.assert_equal(experiments.filtered, 1)
     np.testing.assert_equal(recorded["build"][2], session)
     np.testing.assert_equal(recorded["run_methods"][4], session.execution)
@@ -403,6 +412,7 @@ def test_run_continues_when_native_configuration_is_unavailable(
 
     assert fit_ran == [True]
     assert session.parameter_factory.seal_configuration_calls == 1
+    assert session.build_analysis_values_calls == 1
 
 
 def test_run_uses_explicit_session_for_simulation_flow(
@@ -439,6 +449,7 @@ def test_run_uses_explicit_session_for_simulation_flow(
     np.testing.assert_equal(session.model_names, ["2st"])
     np.testing.assert_equal(session.parameters.defaults_calls, [defaults])
     np.testing.assert_equal(session.parameter_factory.seal_configuration_calls, 1)
+    np.testing.assert_equal(session.build_analysis_values_calls, 1)
     np.testing.assert_equal(session.parameters.fix_all_calls, 1)
     np.testing.assert_equal(recorded["build"][2], session)
 

@@ -11,7 +11,7 @@ import sys
 from collections import Counter, defaultdict
 from collections.abc import Hashable, Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 from lmfit import Parameters as ParametersLF
@@ -30,6 +30,9 @@ from chemex.parameters.name import ParamName
 from chemex.parameters.setting import Parameters, ParamSetting
 from chemex.parameters.userfunctions import user_function_registry
 from chemex.typing import Array
+
+if TYPE_CHECKING:
+    from chemex.parameters.legacy_adapter import LegacyValuesAdapter
 
 _PARAM_NAME = r"\[(.+?)\]"
 _FLOAT = r"[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?"
@@ -561,6 +564,11 @@ class ParameterStore:
     _database_mf: ParameterCatalog
     _defaults_applied: bool = field(default=False, init=False, repr=False)
     _configuration_locked: bool = field(default=False, init=False, repr=False)
+    _legacy_values_adapter: "LegacyValuesAdapter | None" = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
     @property
     def database(self) -> ParameterCatalog:
@@ -580,6 +588,10 @@ class ParameterStore:
     def lock_configuration(self) -> None:
         """Reject later definition/default mutations while values remain mutable."""
         self._configuration_locked = True
+
+    def attach_legacy_values_adapter(self, adapter: "LegacyValuesAdapter") -> None:
+        """Attach the session's one-way legacy-to-native values edge."""
+        self._legacy_values_adapter = adapter
 
     def _ensure_configuration_open(self) -> None:
         if self._configuration_locked:
@@ -656,6 +668,11 @@ class ParameterStore:
 
         """
         self.database.update_from_lmfit_params(parameters)
+        if self._legacy_values_adapter is not None:
+            try:
+                self._legacy_values_adapter.try_commit(parameters)
+            except Exception as error:  # noqa: BLE001 - legacy authority boundary
+                self._legacy_values_adapter.disable(error)
 
     def set_values(self, par_values: dict[str, float]) -> None:
         """Set the values of specific parameters in the active catalog.
@@ -664,7 +681,12 @@ class ParameterStore:
             par_values (dict[str, float]): Parameter values to set.
 
         """
-        return self.database.set_values(par_values)
+        self.database.set_values(par_values)
+        if self._legacy_values_adapter is not None:
+            try:
+                self._legacy_values_adapter.try_commit_values(par_values)
+            except Exception as error:  # noqa: BLE001 - legacy authority boundary
+                self._legacy_values_adapter.disable(error)
 
     def set_defaults(self, defaults: DefaultListType) -> None:
         """Set defaults for parameters in both catalogs.

@@ -103,6 +103,11 @@ class ParameterFactory:
         """Return the failure that disabled the non-authoritative native candidate."""
         return self._native_construction_error
 
+    def disable_native_candidate(self, error: Exception) -> None:
+        """Record the first native failure without disturbing legacy construction."""
+        if self._native_construction_error is None:
+            self._native_construction_error = error
+
     def _build_settings(
         self,
         basis: Basis,
