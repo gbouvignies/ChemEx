@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Protocol, Self, runtime_checkable
 
+import numpy as np
 from lmfit import Parameters as ParametersLF
 
 from chemex.containers.data import Data
-from chemex.evaluation import ProfileEvaluator
+from chemex.evaluation.profile import ProfileEvaluator
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.printers.data import Printer
@@ -71,8 +73,15 @@ class Profile:
 
     def _get_parameter_values(self, params: ParametersLF) -> dict[str, float]:
         """Get the parameter values from the provided parameters."""
+        return self._local_parameter_values(
+            {param_id: params[param_id].value for param_id in self.param_ids}
+        )
+
+    def _local_parameter_values(
+        self, parameter_values: Mapping[str, float]
+    ) -> dict[str, float]:
         return {
-            local_name: params[param_id].value
+            local_name: parameter_values[param_id]
             for local_name, param_id in self.name_map.items()
         }
 
@@ -81,11 +90,28 @@ class Profile:
         parameter_values = self._get_parameter_values(params)
         self.spectrometer.update(parameter_values)
 
+    def calculate_unscaled(self, parameter_values: Mapping[str, float]) -> Array:
+        """Run only this profile's scientific calculation.
+
+        Scaling, residual construction, masking, and publication remain owned by
+        the caller.  This is intentionally the narrow calculation seam used by
+        the native qualification evaluator as well as the legacy adapter.
+        """
+        self.spectrometer.update(self._local_parameter_values(parameter_values))
+        # Existing pulse implementations are typed against Data but consume only
+        # metadata.  Give them a fresh zeroed carrier so kernels never see this
+        # profile's observations, errors, masks, or calculated arrays.
+        kernel_data = Data(
+            exp=np.zeros_like(self.data.exp),
+            err=np.zeros_like(self.data.err),
+            metadata=self.data.metadata,
+        )
+        return self.pulse_sequence.calculate(self.spectrometer, kernel_data)
+
     def calculate(self, params: ParametersLF) -> Array:
         """Calculate and return the Array."""
-        self.update_spectrometer(params)
-        self.data.calc_unscaled = self.pulse_sequence.calculate(
-            self.spectrometer, self.data
+        self.data.calc_unscaled = self.calculate_unscaled(
+            {param_id: params[param_id].value for param_id in self.param_ids}
         )
         if self.is_scaled:
             self.data.calc = self.data.scale * self.data.calc_unscaled
