@@ -104,7 +104,10 @@ class Profile:
         kernel_data = Data(
             exp=np.zeros_like(self.data.exp),
             err=np.zeros_like(self.data.err),
-            metadata=self.data.metadata,
+            # Kernel metadata is a per-call carrier, never an alias of the
+            # authoritative profile data.  Native evaluation owns all
+            # observations, uncertainties, masks, and residual semantics.
+            metadata=np.array(self.data.metadata, copy=True),
         )
         return self.pulse_sequence.calculate(self.spectrometer, kernel_data)
 

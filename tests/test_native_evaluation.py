@@ -25,8 +25,24 @@ from chemex.evaluation.native import (
     EvaluationFrame,
     EvaluationPlan,
     EvaluationResult,
+    _identity,
+    _parameterization_failure_validity,
 )
 from chemex.experiments.builder import build_experiments
+from chemex.parameters.parameterization import (
+    AmbiguousParameterReferenceError,
+    ConstraintCycleError,
+    ConstraintDomainError,
+    ConstraintEvaluationError,
+    ConstraintProgramMismatchError,
+    ConstraintSelfReferenceError,
+    IncompatibleParameterizationInputError,
+    IncompleteParameterDependenciesError,
+    ModelDerivationOverrideError,
+    NonFiniteParameterValueError,
+    NoParameterMatchError,
+    UnsupportedConstraintExpressionError,
+)
 from chemex.parameters.spin_system import SpinSystem
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
@@ -84,14 +100,20 @@ def test_shipped_two_profile_dcest_plan_matches_legacy_completely() -> None:
         outcome.unscaled_calculations,
         np.concatenate([profile.data.calc_unscaled for profile in legacy_profiles]),
     )
-    np.testing.assert_array_equal(
+    # #572 deliberately replaces legacy BLAS dot accumulation with the frozen
+    # ordered binary64 reduction.  The DCEST difference is confined to scale.
+    np.testing.assert_allclose(
         outcome.normalized_calculations,
         np.concatenate([profile.data.calc for profile in legacy_profiles]),
+        rtol=6.0e-16,
+        atol=1.2e-8,
     )
-    np.testing.assert_array_equal(outcome.residuals, legacy_residuals)
-    assert [item.normalization_factor for item in outcome.profiles] == [
-        profile.data.scale for profile in legacy_profiles
-    ]
+    np.testing.assert_allclose(outcome.residuals, legacy_residuals, rtol=6.0e-13)
+    np.testing.assert_allclose(
+        [item.normalization_factor for item in outcome.profiles],
+        [profile.data.scale for profile in legacy_profiles],
+        rtol=6.0e-16,
+    )
     assert [item.retained_observation_indices for item in outcome.profiles] == [
         tuple(np.flatnonzero(profile.data.mask)) for profile in legacy_profiles
     ]
@@ -136,11 +158,22 @@ def test_trusted_rebinding_rejects_each_mutated_kernel_descriptor(
         engine.plan.parameterization_identity,
         engine.plan.constraint_program_identity,
         (descriptor,),
+        resolved_ids=engine.plan.resolved_ids,
     )
     payload["identity"] = signed_plan.identity
-    plan = EvaluationPlan.from_record(payload)
-    with pytest.raises(ValueError, match="Trusted"):
-        EvaluationEngine.bind(plan, parameterization, experiments)
+    if field in {
+        "output_shape",
+        "observation_offset",
+        "experiment_ordinal",
+        "profile_ordinal",
+        "identity",
+    }:
+        with pytest.raises(ValueError):
+            EvaluationPlan.from_record(payload)
+    else:
+        plan = EvaluationPlan.from_record(payload)
+        with pytest.raises(ValueError, match="Trusted"):
+            EvaluationEngine.bind(plan, parameterization, experiments)
 
 
 def test_trusted_rebinding_rejects_nested_serialized_basis_descriptor_mutation() -> (
@@ -161,6 +194,7 @@ def test_trusted_rebinding_rejects_nested_serialized_basis_descriptor_mutation()
         engine.plan.parameterization_identity,
         engine.plan.constraint_program_identity,
         (descriptor,),
+        resolved_ids=engine.plan.resolved_ids,
     ).identity
     plan = EvaluationPlan.from_record(payload)
     with pytest.raises(ValueError, match="Trusted"):
@@ -226,7 +260,7 @@ def test_evaluation_frame_validates_canonical_binary64_input_and_projection_orde
         EvaluationFrame(parameterization.identity, (("a", True),))
     with pytest.raises(ValueError, match="finite"):
         EvaluationFrame(parameterization.identity, (("a", np.inf),))
-    with pytest.raises(ValueError, match="finite"):
+    with pytest.raises(TypeError, match="real binary64"):
         EvaluationFrame(parameterization.identity, (("a", 10**10_000),))
     with pytest.raises(ValueError, match="canonical independent ID order"):
         EvaluationFrame.from_lifecycle_frame(
@@ -278,7 +312,7 @@ def test_later_profile_invalid_trial_is_atomic_resets_workspace_and_isolates_leg
     legacy = experiments.residuals(
         session.parameters.build_lmfit_params(experiments.param_ids)
     )
-    np.testing.assert_array_equal(legacy, recovered.residuals)
+    np.testing.assert_allclose(legacy, recovered.residuals, rtol=6.0e-13)
 
 
 def test_later_profile_implementation_failure_poisoning_requires_fresh_evaluator() -> (
@@ -490,7 +524,7 @@ def test_native_normalization_uses_the_no_epsilon_572_formula() -> None:
         np.dot(profile.data.exp / profile.data.err, unscaled / profile.data.err)
         / np.dot(unscaled / profile.data.err, unscaled / profile.data.err)
     )
-    assert outcome.profiles[0].normalization_factor == expected
+    assert outcome.profiles[0].normalization_factor == pytest.approx(expected)
     profile.calculate(session.parameters.build_lmfit_params(experiments.param_ids))
     assert profile.data.scale != expected
 
@@ -610,3 +644,470 @@ def test_native_failure_is_qualification_only_and_cannot_veto_legacy() -> None:
         session.parameters.build_lmfit_params(experiments.param_ids)
     )
     assert legacy.size and np.all(np.isfinite(legacy))
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("experimental_values", 1.0),
+        ("uncertainties", 1.0),
+        ("mask", False),
+        ("is_scaled", False),
+        ("source_identity", "foreign-source"),
+    ),
+)
+def test_trusted_rebinding_rejects_complete_profile_population_tampering(
+    field: str, value: object
+) -> None:
+    session, experiments = _shipped_dcest()
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    descriptor = engine.plan.profiles[0]
+    if field in {"experimental_values", "uncertainties", "mask"}:
+        changed = list(getattr(descriptor, field))
+        changed[0] = not changed[0] if field == "mask" else value
+        value = tuple(changed)
+    tampered = dataclasses.replace(descriptor, **{field: value})
+    # A hostile serializer can recompute every fingerprint; trusted rebinding
+    # must still compare the complete local scientific descriptor.
+    if field in {"source_identity"}:
+        tampered = dataclasses.replace(
+            tampered,
+            identity=_identity(
+                "profile-plan",
+                (
+                    tampered.source_identity,
+                    tampered.experiment_ordinal,
+                    tampered.profile_ordinal,
+                    tampered.observation_offset,
+                ),
+            ),
+        )
+    plan = EvaluationPlan.from_record(
+        json.loads(
+            json.dumps(
+                dataclasses.replace(engine.plan, profiles=(tampered,)).to_record()
+            )
+        )
+    )
+    with pytest.raises(ValueError):
+        EvaluationEngine.bind(plan, parameterization, experiments)
+
+
+def test_frame_result_and_failure_records_fail_closed_after_tampering() -> None:
+    session, experiments = _shipped_dcest()
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    frame = _evaluation_frame(session, parameterization)
+    result = engine.new_evaluator().evaluate(frame)
+    assert isinstance(result, EvaluationResult)
+    for mutate in (
+        lambda record: record["items"].__setitem__(0, ["bad", "0x1.0000000000000p+0"]),
+        lambda record: record.__setitem__("identity", "bad"),
+    ):
+        record = json.loads(json.dumps(frame.to_record()))
+        mutate(record)
+        with pytest.raises((TypeError, ValueError)):
+            EvaluationFrame.from_record(record)
+    for mutate in (
+        lambda record: record["profiles"][0].__setitem__("observation_offset", 999),
+        lambda record: record["profiles"][0].__setitem__(
+            "normalization_factor", "0x1.0000000000000p+0"
+        ),
+        lambda record: record["residuals"].__setitem__(0, "0x1.0000000000000p+0"),
+        lambda record: record.__setitem__("parameterization_identity", "foreign"),
+    ):
+        record = json.loads(json.dumps(result.to_record()))
+        mutate(record)
+        with pytest.raises((TypeError, ValueError)):
+            EvaluationResult.from_record(record, engine.plan)
+    failure = EvaluationFailure(
+        engine.plan.identity,
+        engine.plan.parameterization_identity,
+        "kernel",
+        "non_finite_calculation",
+        "INVALID_TRIAL",
+        engine.plan.profiles[0].identity,
+    )
+    record = failure.to_record()
+    record["identity"] = "foreign"
+    with pytest.raises(ValueError):
+        EvaluationFailure.from_record(record, engine.plan)
+
+
+def test_result_buffers_are_owned_immutable_bytes() -> None:
+    session, experiments = _shipped_dcest()
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    result = (
+        EvaluationEngine.from_experiments(experiments, parameterization)
+        .new_evaluator()
+        .evaluate(_evaluation_frame(session, parameterization))
+    )
+    assert isinstance(result, EvaluationResult)
+    for values in (
+        result.unscaled_calculations,
+        result.normalized_calculations,
+        result.residuals,
+    ):
+        before = values.copy()
+        with pytest.raises(ValueError):
+            values[0] = 0.0
+        with pytest.raises(ValueError):
+            values.flags.writeable = True
+        assert isinstance(values.base, bytes)
+        np.testing.assert_array_equal(values, before)
+
+
+def test_native_evaluation_is_stable_under_hostile_numpy_error_state() -> None:
+    session, experiments = _shipped_dcest()
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    previous = np.seterr(all="raise")
+    try:
+        outcome = (
+            EvaluationEngine.from_experiments(experiments, parameterization)
+            .new_evaluator()
+            .evaluate(_evaluation_frame(session, parameterization))
+        )
+    finally:
+        np.seterr(**previous)
+    assert isinstance(outcome, EvaluationResult)
+
+
+def test_semantic_parameterization_identity_excludes_lifecycle_identity() -> None:
+    first_session, first_experiments = _shipped_dcest()
+    second_session, second_experiments = _shipped_dcest()
+    first = first_session.compile_parameterization(
+        Method(), first_experiments.param_ids
+    )
+    second = second_session.compile_parameterization(
+        Method(), second_experiments.param_ids
+    )
+    assert first.identity != second.identity
+    assert first.evaluator_identity == second.evaluator_identity
+    assert (
+        EvaluationEngine.from_experiments(
+            first_experiments, first
+        ).plan.parameterization_identity
+        == EvaluationEngine.from_experiments(
+            second_experiments, second
+        ).plan.parameterization_identity
+    )
+
+
+def test_masked_and_empty_unscaled_profiles_preserve_complete_calculations() -> None:
+    session, experiments = _shipped_dcest()
+    profile = next(iter(experiments)).profiles[0]
+    profile.data.mask[0] = False
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    masked_engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    restored_plan = EvaluationPlan.from_record(
+        json.loads(json.dumps(masked_engine.plan.to_record()))
+    )
+    masked = (
+        EvaluationEngine.bind(restored_plan, parameterization, experiments)
+        .new_evaluator()
+        .evaluate(_evaluation_frame(session, parameterization))
+    )
+    assert isinstance(masked, EvaluationResult)
+    assert masked.unscaled_calculations.size == profile.data.exp.size
+    assert masked.normalized_calculations.size == profile.data.exp.size
+    assert masked.residuals.size == profile.data.exp.size - 1
+    assert masked.profiles[0].retained_observation_indices == tuple(
+        np.flatnonzero(profile.data.mask)
+    )
+    assert masked.profiles[0].observation_offset == 0
+    assert masked.profiles[0].residual_offset == 0
+    assert masked.profiles[0].residual_count == profile.data.exp.size - 1
+    retained = profile.data.mask
+    unscaled = masked.unscaled_calculations
+    numerator = 0.0
+    denominator = 0.0
+    for exp, calc, err in zip(
+        profile.data.exp[retained],
+        unscaled[retained],
+        profile.data.err[retained],
+        strict=True,
+    ):
+        numerator += (calc / err) * (exp / err)
+        denominator += (calc / err) * (calc / err)
+    assert masked.profiles[0].normalization_factor == numerator / denominator
+    profile.is_scaled = False
+    profile.data.mask[:] = False
+    empty = (
+        EvaluationEngine.from_experiments(experiments, parameterization)
+        .new_evaluator()
+        .evaluate(_evaluation_frame(session, parameterization))
+    )
+    assert isinstance(empty, EvaluationResult)
+    assert empty.profiles[0].normalization_factor == 1.0
+    assert empty.residuals.size == 0
+    assert empty.unscaled_calculations.size == profile.data.exp.size
+
+
+@pytest.mark.parametrize("sign", (0.0, -1.0))
+def test_finite_zero_and_negative_normalization_are_valid(sign: float) -> None:
+    session, experiments = _shipped_dcest()
+    profile = next(iter(experiments)).profiles[0]
+    profile.data.exp = sign * np.abs(profile.data.exp)
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    result = (
+        EvaluationEngine.from_experiments(experiments, parameterization)
+        .new_evaluator()
+        .evaluate(_evaluation_frame(session, parameterization))
+    )
+    assert isinstance(result, EvaluationResult)
+    factor = result.profiles[0].normalization_factor
+    assert factor == 0.0 if sign == 0.0 else factor < 0.0
+
+
+def test_descriptor_is_history_independent_and_evaluator_rejects_reentry_and_pid() -> (
+    None
+):
+    session, experiments = _shipped_dcest()
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    first = EvaluationEngine.from_experiments(experiments, parameterization).plan
+    profile = next(iter(experiments)).profiles[0]
+    profile.calculate(session.parameters.build_lmfit_params(experiments.param_ids))
+    second = EvaluationEngine.from_experiments(experiments, parameterization).plan
+    assert first.identity == second.identity
+    evaluator = EvaluationEngine.from_experiments(
+        experiments, parameterization
+    ).new_evaluator()
+    frame = _evaluation_frame(session, parameterization)
+    pulse_type = type(profile.pulse_sequence)
+    original = pulse_type.calculate
+    nested: list[EvaluationFailure] = []
+
+    def calculate(self: object, spectrometer: object, data: object) -> Array:
+        nested_result = evaluator.evaluate(frame)
+        assert isinstance(nested_result, EvaluationFailure)
+        nested.append(nested_result)
+        return original(self, spectrometer, data)
+
+    with patch.object(pulse_type, "calculate", calculate):
+        assert isinstance(evaluator.evaluate(frame), EvaluationResult)
+    assert nested[0].category == "workspace_reentrant"
+    evaluator._owner_pid = -1
+    failed = evaluator.evaluate(frame)
+    assert isinstance(failed, EvaluationFailure)
+    assert failed.category == "workspace_process_violation"
+
+
+def test_dcest_construction_descriptor_precedes_and_survives_pulse_history() -> None:
+    session, experiments = _shipped_dcest()
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    profile = next(iter(experiments)).profiles[0]
+    initial = dict(profile.spectrometer.native_kernel_descriptor())
+    profile.calculate(session.parameters.build_lmfit_params(experiments.param_ids))
+    after_legacy = dict(profile.spectrometer.native_kernel_descriptor())
+    before_plan = EvaluationEngine.from_experiments(experiments, parameterization).plan
+    profile.calculate(session.parameters.build_lmfit_params(experiments.param_ids))
+    after_plan = EvaluationEngine.from_experiments(experiments, parameterization).plan
+    assert initial == after_legacy
+    assert before_plan.identity == after_plan.identity
+
+
+def test_construction_setting_changes_native_descriptor_and_plan_identity() -> None:
+    session, experiments = _shipped_dcest()
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    original = EvaluationEngine.from_experiments(experiments, parameterization).plan
+    changed = next(iter(experiments)).profiles[0].spectrometer
+    changed._native_kernel_descriptor = None
+    changed._native_workspace_template = None
+    changed.detection = "[iz_b]"
+    changed.finalize_native_construction()
+    changed_plan = EvaluationEngine.from_experiments(experiments, parameterization).plan
+    assert changed.native_kernel_descriptor()["detection"] == "[iz_b]"
+    assert original.identity != changed_plan.identity
+
+
+def test_native_workspace_cannot_mutate_authoritative_profile_or_metadata() -> None:
+    session, experiments = _shipped_dcest()
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    profile = next(iter(experiments)).profiles[0]
+    metadata = profile.data.metadata.copy()
+    profile.data.mask[0] = False
+    legacy_params = session.parameters.build_lmfit_params(experiments.param_ids)
+    profile.calculate(legacy_params)
+    legacy_unscaled = profile.data.calc_unscaled.copy()
+    offset = profile.spectrometer.offset_i
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    baseline = engine.new_evaluator().evaluate(
+        _evaluation_frame(session, parameterization)
+    )
+    assert isinstance(baseline, EvaluationResult)
+    observed_parameter_ids: list[set[str]] = []
+    observed_data: list[tuple[Array, Array, Array]] = []
+    pulse_type = type(profile.pulse_sequence)
+    original = pulse_type.calculate
+    spectrometer_type = type(profile.spectrometer)
+    original_update = spectrometer_type.update
+
+    def update(self: object, values: dict[str, float]) -> None:
+        observed_parameter_ids.append(set(values))
+        original_update(self, values)
+
+    def mutate(self: object, spectrometer: object, data: object) -> Array:
+        observed_data.append((data.exp.copy(), data.err.copy(), data.mask.copy()))
+        data.metadata[:] = 999.0
+        spectrometer.offset_i = 999.0
+        return original(self, spectrometer, data)
+
+    with (
+        patch.object(pulse_type, "calculate", mutate),
+        patch.object(spectrometer_type, "update", update),
+    ):
+        result = engine.new_evaluator().evaluate(
+            _evaluation_frame(session, parameterization)
+        )
+    assert isinstance(result, EvaluationResult)
+    np.testing.assert_array_equal(profile.data.metadata, metadata)
+    assert profile.spectrometer.offset_i == offset
+    assert observed_parameter_ids
+    assert observed_parameter_ids[0] == set(profile.name_map)
+    assert all(
+        np.array_equal(exp, np.zeros_like(exp)) for exp, _err, _mask in observed_data
+    )
+    assert all(
+        np.array_equal(err, np.ones_like(err)) for _exp, err, _mask in observed_data
+    )
+    assert all(np.all(mask) for _exp, _err, mask in observed_data)
+    repeated = engine.new_evaluator().evaluate(
+        _evaluation_frame(session, parameterization)
+    )
+    assert isinstance(repeated, EvaluationResult)
+    np.testing.assert_array_equal(
+        baseline.unscaled_calculations, repeated.unscaled_calculations
+    )
+    profile.calculate(legacy_params)
+    np.testing.assert_array_equal(profile.data.calc_unscaled, legacy_unscaled)
+
+
+def test_normalization_overflow_is_typed_under_hostile_numpy_settings() -> None:
+    session, experiments = _shipped_dcest()
+    profile = next(iter(experiments)).profiles[0]
+    profile.data.err[:] = np.finfo(np.float64).tiny
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    frame = _evaluation_frame(session, parameterization)
+    default = (
+        EvaluationEngine.from_experiments(experiments, parameterization)
+        .new_evaluator()
+        .evaluate(frame)
+    )
+    previous = np.seterr(all="raise")
+    try:
+        outcome = (
+            EvaluationEngine.from_experiments(experiments, parameterization)
+            .new_evaluator()
+            .evaluate(frame)
+        )
+        assert np.geterr() == {
+            "divide": "raise",
+            "over": "raise",
+            "under": "raise",
+            "invalid": "raise",
+        }
+    finally:
+        np.seterr(**previous)
+    assert isinstance(default, EvaluationFailure)
+    assert (default.stage, default.category, default.validity) == (
+        outcome.stage,
+        outcome.category,
+        outcome.validity,
+    )
+    assert isinstance(outcome, EvaluationFailure)
+    assert (outcome.stage, outcome.category, outcome.validity) == (
+        "normalization",
+        "invalid_normalization",
+        "INVALID_TRIAL",
+    )
+
+
+def test_normalization_is_independent_of_blas_thread_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, experiments = _shipped_dcest()
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    frame = _evaluation_frame(session, parameterization)
+    outcomes: list[EvaluationResult] = []
+    for threads in ("1", "4"):
+        monkeypatch.setenv("OPENBLAS_NUM_THREADS", threads)
+        outcome = (
+            EvaluationEngine.from_experiments(experiments, parameterization)
+            .new_evaluator()
+            .evaluate(frame)
+        )
+        assert isinstance(outcome, EvaluationResult)
+        outcomes.append(outcome)
+    np.testing.assert_array_equal(
+        outcomes[0].normalized_calculations, outcomes[1].normalized_calculations
+    )
+    assert [item.normalization_factor for item in outcomes[0].profiles] == [
+        item.normalization_factor for item in outcomes[1].profiles
+    ]
+
+
+@pytest.mark.parametrize(
+    ("error_type", "expected"),
+    (
+        (NoParameterMatchError, "INVALID_PLAN_OR_BINDING"),
+        (AmbiguousParameterReferenceError, "INVALID_PLAN_OR_BINDING"),
+        (ConstraintSelfReferenceError, "INVALID_PLAN_OR_BINDING"),
+        (ConstraintCycleError, "INVALID_PLAN_OR_BINDING"),
+        (ConstraintDomainError, "INVALID_TRIAL"),
+        (ConstraintEvaluationError, "INVALID_TRIAL"),
+        (NonFiniteParameterValueError, "INVALID_TRIAL"),
+        (IncompleteParameterDependenciesError, "INVALID_PLAN_OR_BINDING"),
+        (IncompatibleParameterizationInputError, "INVALID_PLAN_OR_BINDING"),
+        (ConstraintProgramMismatchError, "INVALID_PLAN_OR_BINDING"),
+        (UnsupportedConstraintExpressionError, "INVALID_PLAN_OR_BINDING"),
+        (ModelDerivationOverrideError, "INVALID_PLAN_OR_BINDING"),
+    ),
+)
+def test_parameterization_failure_taxonomy_is_closed(
+    error_type: type[Exception], expected: str
+) -> None:
+    error = error_type("qualification")
+    assert _parameterization_failure_validity(error) == expected
+
+
+@pytest.mark.parametrize(
+    ("error_type", "expected"),
+    (
+        (ConstraintDomainError, "INVALID_TRIAL"),
+        (NonFiniteParameterValueError, "INVALID_TRIAL"),
+        (ConstraintProgramMismatchError, "INVALID_PLAN_OR_BINDING"),
+    ),
+)
+def test_evaluator_maps_declared_parameterization_failures(
+    error_type: type[Exception], expected: str
+) -> None:
+    session, experiments = _shipped_dcest()
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    evaluator = EvaluationEngine.from_experiments(
+        experiments, parameterization
+    ).new_evaluator()
+    with patch.object(
+        type(parameterization), "resolve", side_effect=error_type("test")
+    ):
+        outcome = evaluator.evaluate(_evaluation_frame(session, parameterization))
+    assert isinstance(outcome, EvaluationFailure)
+    assert outcome.validity == expected
+
+
+def test_projection_and_result_assembly_failures_are_typed() -> None:
+    session, experiments = _shipped_dcest()
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    profile = next(iter(experiments)).profiles[0]
+    profile.name_map["missing"] = "__missing"
+    try:
+        with pytest.raises(ValueError, match="outside its closure"):
+            EvaluationEngine.from_experiments(experiments, parameterization)
+    finally:
+        del profile.name_map["missing"]
+    evaluator = engine.new_evaluator()
+    with patch("chemex.evaluation.native.EvaluationResult", side_effect=RuntimeError):
+        outcome = evaluator.evaluate(_evaluation_frame(session, parameterization))
+    assert isinstance(outcome, EvaluationFailure)
+    assert (outcome.stage, outcome.validity) == ("result", "IMPLEMENTATION_FAILURE")

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
+from copy import deepcopy
 from types import MappingProxyType
-from typing import Self
+from typing import Self, cast
 
 import numpy as np
 
@@ -26,49 +27,69 @@ DictArray = dict[str, Array]
 calculate_propagators = _propagators.calculate_propagators
 
 
+def _native_descriptor_view(record: dict[str, object]) -> Mapping[str, object]:
+    return MappingProxyType(
+        {
+            key: MappingProxyType(value) if isinstance(value, dict) else value
+            for key, value in record.items()
+        }
+    )
+
+
 class Spectrometer:
+    def finalize_native_construction(self) -> None:
+        """Freeze configured scientific construction state before pulse execution."""
+        if self._native_workspace_template is not None:
+            return
+        self._native_kernel_descriptor = self._build_native_kernel_descriptor()
+        self._native_workspace_template = deepcopy(self)
+
+    def new_native_workspace(self) -> Self:
+        """Return a private mutable execution spectrometer from frozen inputs."""
+        if self._native_workspace_template is None:
+            raise ValueError("Spectrometer native construction was not finalized")
+        return cast("Self", deepcopy(self._native_workspace_template))
+
     def native_kernel_descriptor(self) -> Mapping[str, object]:
         """Return immutable public construction semantics for native evaluation.
 
         This deliberately exposes a value record, rather than the internal
         Liouvillian engine, for the native qualification boundary.
         """
+        if self._native_kernel_descriptor is None:
+            raise ValueError("Spectrometer native construction was not finalized")
+        return _native_descriptor_view(self._native_kernel_descriptor)
+
+    def _build_native_kernel_descriptor(self) -> dict[str, object]:
         basis = self.basis
 
-        def distribution_record(distribution: Distribution) -> Mapping[str, object]:
-            return MappingProxyType(
-                {
-                    "values": tuple(float(value) for value in distribution.values),
-                    "weights": tuple(float(value) for value in distribution.weights),
-                    "dephasing": distribution.dephasing,
-                }
-            )
-
-        return MappingProxyType(
-            {
-                "basis_type": basis.type,
-                "basis_spin_system": basis.spin_system,
-                "basis_extension": basis.extension,
-                "model_name": basis.model.name,
-                "model_states": basis.model.states,
-                "model_free": basis.model.model_free,
-                "model_temp_coef": basis.model.temp_coef,
-                "model_residue_specific": basis.model.residue_specific,
-                "spin_system": str(self.spin_system),
-                "ppm_i": float(self.ppm_i),
-                "ppm_s": float(self.ppm_s),
-                "carrier_i": float(self.carrier_i),
-                "carrier_s": float(self.carrier_s),
-                "offset_i": float(self.offset_i),
-                "offset_s": float(self.offset_s),
-                "detection": self.detection,
-                "b1_i": float(self.b1_i),
-                "b1_i_distribution": distribution_record(self.b1_i_distribution),
-                "b1_s": float(self.b1_s),
-                "jeff_i": distribution_record(self.jeff_i),
-                "gradient_dephasing": float(self.gradient_dephasing),
+        def distribution_record(distribution: Distribution) -> dict[str, object]:
+            return {
+                "values": tuple(float(value) for value in distribution.values),
+                "weights": tuple(float(value) for value in distribution.weights),
+                "dephasing": distribution.dephasing,
             }
-        )
+
+        return {
+            "basis_type": basis.type,
+            "basis_spin_system": basis.spin_system,
+            "basis_extension": basis.extension,
+            "model_name": basis.model.name,
+            "model_states": basis.model.states,
+            "model_free": basis.model.model_free,
+            "model_temp_coef": basis.model.temp_coef,
+            "model_residue_specific": basis.model.residue_specific,
+            "spin_system": str(self.spin_system),
+            "ppm_i": float(self.ppm_i),
+            "ppm_s": float(self.ppm_s),
+            "carrier_i": float(self.carrier_i),
+            "carrier_s": float(self.carrier_s),
+            "detection": self.detection,
+            "b1_i": float(self.b1_i),
+            "b1_i_distribution": distribution_record(self.b1_i_distribution),
+            "b1_s": float(self.b1_s),
+            "jeff_i": distribution_record(self.jeff_i),
+        }
 
     @classmethod
     def from_spin_system(
@@ -81,6 +102,8 @@ class Spectrometer:
 
     def __init__(self, engine: ISLiouvillianEngine) -> None:
         self._engine = engine
+        self._native_kernel_descriptor: dict[str, object] | None = None
+        self._native_workspace_template: Spectrometer | None = None
         self._pulse_kernel = PulseKernel(engine)
         self._pulse_library = PulseLibrary(self._pulse_kernel)
         self.analysis = SpectrometerAnalysis(self._engine)
