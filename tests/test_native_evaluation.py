@@ -96,9 +96,15 @@ def test_shipped_two_profile_dcest_plan_matches_legacy_completely() -> None:
     legacy_profiles = next(iter(legacy_experiments)).profiles
     assert [item.profile_ordinal for item in native.plan.profiles] == [0, 1]
     assert outcome.resolved_values == pytest.approx(legacy_parameters.valuesdict())
-    np.testing.assert_array_equal(
+    # The isolated native workspace has bitwise-identical pulse-entry inputs,
+    # but the SciPy/BLAS propagator path is allowed a few binary64 ulps across
+    # independent workspace executions on Linux.  Keep this separate from the
+    # deliberate ordered-normalization tolerance below.
+    np.testing.assert_allclose(
         outcome.unscaled_calculations,
         np.concatenate([profile.data.calc_unscaled for profile in legacy_profiles]),
+        rtol=6.0e-16,
+        atol=0.0,
     )
     # #572 deliberately replaces legacy BLAS dot accumulation with the frozen
     # ordered binary64 reduction.  The DCEST difference is confined to scale.
@@ -404,20 +410,111 @@ def test_native_plan_matches_legacy_complete_profile_evaluation() -> None:
 
     assert outcome.plan_identity == engine.plan.identity
     assert outcome.resolved_values == pytest.approx(legacy_parameters.valuesdict())
+    # Native and legacy calculate through separate isolated Spectrometers.
+    # Their pulse-entry scalar values, matrices, weights, and detection vector
+    # are bitwise-identical; Linux SciPy/BLAS propagator reductions may differ
+    # by a few ulps between those independent executions.
     np.testing.assert_allclose(
         outcome.unscaled_calculations,
         legacy_profile.data.calc_unscaled,
-        rtol=0.0,
+        rtol=6.0e-16,
         atol=0.0,
     )
-    np.testing.assert_array_equal(
-        outcome.normalized_calculations, legacy_profile.data.calc
+    np.testing.assert_allclose(
+        outcome.normalized_calculations,
+        legacy_profile.data.calc,
+        rtol=6.0e-16,
+        atol=1.2e-8,
     )
-    np.testing.assert_array_equal(outcome.residuals, legacy_residuals)
-    assert outcome.profiles[0].normalization_factor == legacy_profile.data.scale
+    np.testing.assert_allclose(outcome.residuals, legacy_residuals, rtol=6.0e-13)
+    assert outcome.profiles[0].normalization_factor == pytest.approx(
+        legacy_profile.data.scale, rel=6.0e-16
+    )
     assert outcome.profiles[0].retained_observation_indices == tuple(
         np.flatnonzero(legacy_profile.data.mask)
     )
+
+
+def test_native_private_workspace_has_bitwise_identical_dcest_pulse_inputs() -> None:
+    native_session, native_experiments = _shipped_dcest()
+    legacy_session, legacy_experiments = _shipped_dcest()
+    parameterization = native_session.compile_parameterization(
+        Method(), native_experiments.param_ids
+    )
+    frame = _evaluation_frame(native_session, parameterization)
+    captured: list[dict[str, object]] = []
+    pulse_type = type(next(iter(native_experiments)).profiles[0].pulse_sequence)
+    original = pulse_type.calculate
+
+    def capture(self: object, spectrometer: object, data: object) -> Array:
+        engine = spectrometer._engine
+        captured.append(
+            {
+                "settings": self.settings.model_dump(),
+                "metadata_dtype": data.metadata.dtype,
+                "metadata": data.metadata.copy(),
+                "scalars": {
+                    name: getattr(spectrometer, name)
+                    for name in (
+                        "ppm_i",
+                        "ppm_s",
+                        "carrier_i",
+                        "carrier_s",
+                        "offset_i",
+                        "offset_s",
+                        "b1_i",
+                        "b1_s",
+                        "detection",
+                    )
+                }
+                | {"h_larmor_frq": engine.h_frq},
+                "b1_i_values": spectrometer.b1_i_distribution.values.copy(),
+                "b1_i_weights": spectrometer.b1_i_distribution.weights.copy(),
+                "jeff_i_values": spectrometer.jeff_i.values.copy(),
+                "jeff_i_weights": spectrometer.jeff_i.weights.copy(),
+                "parameter_values": dict(engine.par_values),
+                "matrix_keys": frozenset(engine._matrices),
+                "matrices": {
+                    name: matrix.copy() for name, matrix in engine._matrices.items()
+                },
+                "l_free": engine.l_free.copy(),
+                "weights": engine.weights.copy(),
+                "detection_vector": engine._readout._detect_vector.copy(),
+            }
+        )
+        return original(self, spectrometer, data)
+
+    with patch.object(pulse_type, "calculate", capture):
+        outcome = (
+            EvaluationEngine.from_experiments(native_experiments, parameterization)
+            .new_evaluator()
+            .evaluate(frame)
+        )
+        legacy_experiments.residuals(
+            legacy_session.parameters.build_lmfit_params(legacy_experiments.param_ids)
+        )
+    assert isinstance(outcome, EvaluationResult)
+    native, legacy = captured
+    assert native["settings"] == legacy["settings"]
+    assert native["metadata_dtype"] == legacy["metadata_dtype"]
+    assert native["scalars"] == legacy["scalars"]
+    assert native["parameter_values"] == legacy["parameter_values"]
+    assert native["matrix_keys"] == legacy["matrix_keys"]
+    for name in (
+        "metadata",
+        "b1_i_values",
+        "b1_i_weights",
+        "jeff_i_values",
+        "jeff_i_weights",
+        "l_free",
+        "weights",
+        "detection_vector",
+    ):
+        np.testing.assert_array_equal(native[name], legacy[name])
+    for matrix_name in native["matrix_keys"]:
+        np.testing.assert_array_equal(
+            native["matrices"][matrix_name], legacy["matrices"][matrix_name]
+        )
 
 
 def test_plan_identity_is_deterministic_and_rebinds_after_serialization() -> None:
