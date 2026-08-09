@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from types import MappingProxyType
 from typing import Self
 
 import numpy as np
@@ -26,6 +27,49 @@ calculate_propagators = _propagators.calculate_propagators
 
 
 class Spectrometer:
+    def native_kernel_descriptor(self) -> Mapping[str, object]:
+        """Return immutable public construction semantics for native evaluation.
+
+        This deliberately exposes a value record, rather than the internal
+        Liouvillian engine, for the native qualification boundary.
+        """
+        basis = self.basis
+
+        def distribution_record(distribution: Distribution) -> Mapping[str, object]:
+            return MappingProxyType(
+                {
+                    "values": tuple(float(value) for value in distribution.values),
+                    "weights": tuple(float(value) for value in distribution.weights),
+                    "dephasing": distribution.dephasing,
+                }
+            )
+
+        return MappingProxyType(
+            {
+                "basis_type": basis.type,
+                "basis_spin_system": basis.spin_system,
+                "basis_extension": basis.extension,
+                "model_name": basis.model.name,
+                "model_states": basis.model.states,
+                "model_free": basis.model.model_free,
+                "model_temp_coef": basis.model.temp_coef,
+                "model_residue_specific": basis.model.residue_specific,
+                "spin_system": str(self.spin_system),
+                "ppm_i": float(self.ppm_i),
+                "ppm_s": float(self.ppm_s),
+                "carrier_i": float(self.carrier_i),
+                "carrier_s": float(self.carrier_s),
+                "offset_i": float(self.offset_i),
+                "offset_s": float(self.offset_s),
+                "detection": self.detection,
+                "b1_i": float(self.b1_i),
+                "b1_i_distribution": distribution_record(self.b1_i_distribution),
+                "b1_s": float(self.b1_s),
+                "jeff_i": distribution_record(self.jeff_i),
+                "gradient_dephasing": float(self.gradient_dephasing),
+            }
+        )
+
     @classmethod
     def from_spin_system(
         cls,
@@ -116,6 +160,11 @@ class Spectrometer:
     def b1_i(self, value: float) -> None:
         self._pulse_library.set_b1_i(value)
         self._engine.b1_i = value
+
+    @property
+    def b1_i_distribution(self) -> Distribution:
+        """Return the immutable configured I-spin B1 distribution."""
+        return self._engine.b1_i_dist
 
     def set_b1_i_inhomogeneity(
         self,
