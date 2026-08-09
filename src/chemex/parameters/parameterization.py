@@ -628,6 +628,7 @@ class ActiveParameterization:
     source_revision: int
     _roles: tuple[tuple[str, ParameterRole], ...]
     identity: str = field(init=False)
+    evaluator_identity: str = field(init=False)
     _role_index: Mapping[str, ParameterRole] = field(
         init=False,
         repr=False,
@@ -651,6 +652,21 @@ class ActiveParameterization:
                     self.program.fingerprint,
                     self.occurrence_identity,
                     self.source_revision,
+                    tuple((param_id, role.value) for param_id, role in roles),
+                ),
+            ),
+        )
+        # The occurrence and source revision protect the lifecycle boundary.
+        # Evaluation is deliberately downstream of that check: two valid
+        # occurrences with the same compiled scientific program must have the
+        # same evaluator-facing identity.
+        object.__setattr__(
+            self,
+            "evaluator_identity",
+            _fingerprint(
+                "evaluator-parameterization",
+                (
+                    self.program.fingerprint,
                     tuple((param_id, role.value) for param_id, role in roles),
                 ),
             ),

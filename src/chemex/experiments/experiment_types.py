@@ -605,6 +605,7 @@ def _build[ConfigT: GenericConfig](
                 f"experiment={source.filename!s}, type={experiment_type_.name!r}"
             ),
         )
+        calculation.spectrometer.try_finalize_native_construction()
         profiles.append(
             Profile(
                 data,

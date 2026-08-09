@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
-from typing import Self
+from collections.abc import Iterable, Mapping, Sequence
+from copy import deepcopy
+from types import MappingProxyType
+from typing import Self, cast
 
 import numpy as np
 
@@ -25,7 +27,100 @@ DictArray = dict[str, Array]
 calculate_propagators = _propagators.calculate_propagators
 
 
+def _native_descriptor_view(record: dict[str, object]) -> Mapping[str, object]:
+    return MappingProxyType(
+        {
+            key: MappingProxyType(value) if isinstance(value, dict) else value
+            for key, value in record.items()
+        }
+    )
+
+
 class Spectrometer:
+    def finalize_native_construction(self) -> None:
+        """Freeze configured scientific construction state before pulse execution."""
+        if self._native_construction_attempted:
+            if self._native_workspace_template is not None:
+                return
+            raise ValueError(self._native_construction_unavailable_message())
+        try:
+            descriptor = self._build_native_kernel_descriptor()
+            workspace_template = deepcopy(self)
+        except Exception as error:
+            self._native_kernel_descriptor = None
+            self._native_workspace_template = None
+            self._native_construction_diagnostic = f"{type(error).__name__}: {error}"
+            self._native_construction_attempted = True
+            raise
+        self._native_kernel_descriptor = descriptor
+        self._native_workspace_template = workspace_template
+        self._native_construction_diagnostic = None
+        self._native_construction_attempted = True
+
+    def try_finalize_native_construction(self) -> bool:
+        """Attempt a native snapshot without making legacy construction depend on it."""
+        try:
+            self.finalize_native_construction()
+        except Exception:  # noqa: BLE001 - isolate optional native qualification
+            return False
+        return True
+
+    @property
+    def native_construction_diagnostic(self) -> str | None:
+        """Explain why this one-time native snapshot is unavailable."""
+        return self._native_construction_diagnostic
+
+    def _native_construction_unavailable_message(self) -> str:
+        detail = self._native_construction_diagnostic or "not finalized"
+        return f"Native construction is unavailable: {detail}"
+
+    def new_native_workspace(self) -> Self:
+        """Return a private mutable execution spectrometer from frozen inputs."""
+        if self._native_workspace_template is None:
+            raise ValueError(self._native_construction_unavailable_message())
+        return cast("Self", deepcopy(self._native_workspace_template))
+
+    def native_kernel_descriptor(self) -> Mapping[str, object]:
+        """Return immutable public construction semantics for native evaluation.
+
+        This deliberately exposes a value record, rather than the internal
+        Liouvillian engine, for the native qualification boundary.
+        """
+        if self._native_kernel_descriptor is None:
+            raise ValueError(self._native_construction_unavailable_message())
+        return _native_descriptor_view(self._native_kernel_descriptor)
+
+    def _build_native_kernel_descriptor(self) -> dict[str, object]:
+        basis = self.basis
+
+        def distribution_record(distribution: Distribution) -> dict[str, object]:
+            return {
+                "values": tuple(float(value) for value in distribution.values),
+                "weights": tuple(float(value) for value in distribution.weights),
+                "dephasing": distribution.dephasing,
+            }
+
+        return {
+            "basis_type": basis.type,
+            "basis_spin_system": basis.spin_system,
+            "basis_extension": basis.extension,
+            "model_name": basis.model.name,
+            "model_states": basis.model.states,
+            "model_free": basis.model.model_free,
+            "model_temp_coef": basis.model.temp_coef,
+            "model_residue_specific": basis.model.residue_specific,
+            "spin_system": str(self.spin_system),
+            "ppm_i": float(self.ppm_i),
+            "ppm_s": float(self.ppm_s),
+            "carrier_i": float(self.carrier_i),
+            "carrier_s": float(self.carrier_s),
+            "detection": self.detection,
+            "b1_i": float(self.b1_i),
+            "b1_i_distribution": distribution_record(self.b1_i_distribution),
+            "b1_s": float(self.b1_s),
+            "jeff_i": distribution_record(self.jeff_i),
+        }
+
     @classmethod
     def from_spin_system(
         cls,
@@ -37,6 +132,10 @@ class Spectrometer:
 
     def __init__(self, engine: ISLiouvillianEngine) -> None:
         self._engine = engine
+        self._native_kernel_descriptor: dict[str, object] | None = None
+        self._native_workspace_template: Spectrometer | None = None
+        self._native_construction_attempted = False
+        self._native_construction_diagnostic: str | None = None
         self._pulse_kernel = PulseKernel(engine)
         self._pulse_library = PulseLibrary(self._pulse_kernel)
         self.analysis = SpectrometerAnalysis(self._engine)
@@ -116,6 +215,11 @@ class Spectrometer:
     def b1_i(self, value: float) -> None:
         self._pulse_library.set_b1_i(value)
         self._engine.b1_i = value
+
+    @property
+    def b1_i_distribution(self) -> Distribution:
+        """Return the immutable configured I-spin B1 distribution."""
+        return self._engine.b1_i_dist
 
     def set_b1_i_inhomogeneity(
         self,
