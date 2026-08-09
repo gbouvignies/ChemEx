@@ -240,6 +240,48 @@ def test_spectrometer_native_kernel_descriptor_is_immutable_by_value() -> None:
         descriptor["jeff_i"]["dephasing"] = True
 
 
+def test_native_snapshot_failure_does_not_disable_legacy_dcest() -> None:
+    normal_session, normal_experiments = _shipped_dcest()
+    normal_parameters = normal_session.parameters.build_lmfit_params(
+        normal_experiments.param_ids
+    )
+    normal_residuals = normal_experiments.residuals(normal_parameters)
+    normal_profile = next(iter(normal_experiments)).profiles[0]
+    normal_calculation = normal_profile.data.calc.copy()
+
+    with patch(
+        "chemex.nmr.spectrometer.deepcopy",
+        side_effect=RuntimeError("native snapshot failed"),
+    ):
+        failed_session, failed_experiments = _shipped_dcest()
+    failed_profile = next(iter(failed_experiments)).profiles[0]
+    failed_spectrometer = failed_profile.spectrometer
+    assert failed_spectrometer.native_construction_diagnostic == (
+        "RuntimeError: native snapshot failed"
+    )
+    with pytest.raises(ValueError, match="Native construction is unavailable"):
+        failed_spectrometer.native_kernel_descriptor()
+    with pytest.raises(ValueError, match="Native construction is unavailable"):
+        failed_spectrometer.new_native_workspace()
+
+    failed_parameters = failed_session.parameters.build_lmfit_params(
+        failed_experiments.param_ids
+    )
+    failed_residuals = failed_experiments.residuals(failed_parameters)
+    np.testing.assert_array_equal(failed_profile.data.calc, normal_calculation)
+    np.testing.assert_array_equal(failed_residuals, normal_residuals)
+    parameterization = failed_session.compile_parameterization(
+        Method(), failed_experiments.param_ids
+    )
+    with pytest.raises(ValueError, match="Native construction is unavailable"):
+        EvaluationEngine.from_experiments(failed_experiments, parameterization)
+
+    failed_profile.calculate(failed_parameters)
+    assert not failed_spectrometer.try_finalize_native_construction()
+    with pytest.raises(ValueError, match="native snapshot failed"):
+        failed_spectrometer.native_kernel_descriptor()
+
+
 def test_lifecycle_frames_reject_stale_and_foreign_snapshots_before_projection() -> (
     None
 ):
@@ -1011,6 +1053,8 @@ def test_construction_setting_changes_native_descriptor_and_plan_identity() -> N
     changed = next(iter(experiments)).profiles[0].spectrometer
     changed._native_kernel_descriptor = None
     changed._native_workspace_template = None
+    changed._native_construction_attempted = False
+    changed._native_construction_diagnostic = None
     changed.detection = "[iz_b]"
     changed.finalize_native_construction()
     changed_plan = EvaluationEngine.from_experiments(experiments, parameterization).plan
