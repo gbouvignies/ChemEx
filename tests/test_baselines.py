@@ -29,6 +29,7 @@ from chemex.baselines import (
     capture_cpmg_15n_ip_legacy_observation,
     cpmg_15n_ip_case,
 )
+from chemex.numerical_lanes import LaneAttestation
 
 
 def _inventory(roles: Sequence[str] = ("result:a", "result:b")) -> dict[str, object]:
@@ -64,12 +65,13 @@ def _specification(
     artifact_inventory: Mapping[str, object] | None = None,
     roles: Sequence[str] = ("Scientific anchor",),
     claims: Sequence[str] = ("legacy-observation-continuity",),
+    lane_reference: str = "unqualified-local-lane-v1",
 ) -> ExecutionSpecification:
     return ExecutionSpecification.create(
         case,
         LegacyObservationImplementation(),
         workflow=workflow,
-        lane_reference="unqualified-local-lane-v1",
+        lane_reference=lane_reference,
         policy=policy,
         budget=budget,
         seed=seed,
@@ -148,6 +150,57 @@ def test_case_and_execution_identities_are_deterministic_and_separate() -> None:
         specification.implementation.authority_role == "LegacyObservationImplementation"
     )
     assert specification.implementation.identity != first.source_authority.identity
+
+
+def test_qualified_occurrence_requires_matching_startup_attestation() -> None:
+    case = _case()
+    lane_identity = "d" * 64
+    specification = _specification(
+        case,
+        lane_reference=lane_identity,
+        execution_settings={"native_threads": 1, "workers": 1},
+    )
+    attestation = LaneAttestation._mint(lane_identity, "e" * 64, 1, 1)
+
+    with pytest.raises(ValueError, match="requires a post-import"):
+        Occurrence.requested(specification, case, "unattested")
+    with pytest.raises(ValueError, match="does not match"):
+        Occurrence.requested(
+            specification,
+            case,
+            "wrong-lane",
+            LaneAttestation._mint("f" * 64, "e" * 64, 1, 1),
+        )
+
+    occurrence = Occurrence.requested(specification, case, "qualified", attestation)
+
+    assert occurrence.lane_reference == lane_identity
+    assert occurrence.lane_attestation_identity == attestation.identity
+    assert Occurrence.from_record(occurrence.to_record(), specification) == occurrence
+    with pytest.raises(ValueError, match="cannot carry lane authority"):
+        Occurrence.requested(_specification(case), case, "retroactive", attestation)
+    incompatible_specification = _specification(
+        case,
+        lane_reference=lane_identity,
+        execution_settings={"native_threads": 1, "workers": 8},
+    )
+    with pytest.raises(ValueError, match="lane concurrency"):
+        Occurrence.requested(
+            incompatible_specification, case, "wrong-workers", attestation
+        )
+
+    unqualified_specification = _specification(case)
+    unqualified = Occurrence.requested(
+        unqualified_specification, case, "legacy-wire-format"
+    )
+    legacy_record = unqualified.to_record()
+    assert "lane_attestation_identity" not in legacy_record
+    assert (
+        Occurrence.from_record(legacy_record, unqualified_specification) == unqualified
+    )
+    legacy_record["lane_attestation_identity"] = None
+    with pytest.raises(ValueError, match="unknown or missing fields"):
+        Occurrence.from_record(legacy_record, unqualified_specification)
 
 
 @pytest.mark.parametrize(
