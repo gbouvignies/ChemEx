@@ -50,6 +50,7 @@ from chemex.optimize.direct_trf import (
     DirectTrfCandidateOutcome,
     DirectTrfConstructionError,
     DirectTrfInvocation,
+    DirectTrfTerminal,
     OptimizationProblem,
 )
 from chemex.parameters.parameterization import ActiveParameterization
@@ -1451,6 +1452,87 @@ def test_foreign_self_consistent_polish_lineage_fails_before_root_promotion(
     assert outcome.failure is not None
     assert outcome.failure.category == "de_polish_lineage_failure"
     assert outcome.accounting.search_to_polish_transfers == 1
+    assert outcome.accounting.root_materializations == 0
+    assert outcome.root_materialization is None
+    assert outcome.accepted_result is None
+    assert outcome.commit_authority is None
+    assert session.analysis_values.snapshot() == before
+    root_promotion.assert_not_called()
+
+
+def test_successful_looking_non_converged_polish_cannot_reach_root_promotion() -> None:
+    session, _experiments, parameterization, engine, problem = _qualification_problem(
+        read_methods([METHOD])["DEFAULT"]
+    )
+    invocation = _bounded_de_invocation(problem)
+    execute_polish = de_workflow.execute_direct_trf_candidate
+    before = session.analysis_values.snapshot()
+
+    def successful_non_converged_polish(
+        polish_problem: OptimizationProblem,
+        polish_invocation: DirectTrfInvocation,
+        active_parameterization: ActiveParameterization,
+        evaluation_engine: EvaluationEngine,
+        *,
+        cancellation: CancellationToken | None = None,
+    ) -> DirectTrfCandidateOutcome:
+        result = execute_polish(
+            polish_problem,
+            polish_invocation,
+            active_parameterization,
+            evaluation_engine,
+            cancellation=cancellation,
+        )
+        assert result.materialization is not None
+        assert result.candidate is not None
+        non_converged_execution = dataclasses.replace(
+            result.execution,
+            terminal=DirectTrfTerminal.NON_CONVERGED,
+        )
+        rebound_materialization = dataclasses.replace(
+            result.materialization,
+            execution_identity=non_converged_execution.identity,
+        )
+        rebound_candidate = dataclasses.replace(
+            result.candidate,
+            execution_identity=non_converged_execution.identity,
+            materialization=rebound_materialization,
+        )
+        return dataclasses.replace(
+            result,
+            execution=non_converged_execution,
+            materialization=rebound_materialization,
+            candidate=rebound_candidate,
+        )
+
+    with (
+        patch(
+            "chemex.optimize.de_direct_trf.differential_evolution",
+            _eligible_search_backend,
+        ),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            _successful_polish_backend,
+        ),
+        patch(
+            "chemex.optimize.de_direct_trf.execute_direct_trf_candidate",
+            side_effect=successful_non_converged_polish,
+        ),
+        patch(
+            "chemex.optimize.de_direct_trf."
+            "_materialize_derived_direct_trf_candidate_for_root"
+        ) as root_promotion,
+    ):
+        outcome = execute_de_direct_trf(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert outcome.terminal is DeDirectTrfTerminal.EXECUTION_FAILURE
+    assert outcome.failure is not None
+    assert outcome.failure.category == "de_polish_lineage_failure"
     assert outcome.accounting.root_materializations == 0
     assert outcome.root_materialization is None
     assert outcome.accepted_result is None

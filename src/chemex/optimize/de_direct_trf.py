@@ -40,6 +40,7 @@ from chemex.optimize.direct_trf import (
     DirectTrfConstructionError,
     DirectTrfInterrupted,
     DirectTrfInvocation,
+    DirectTrfTerminal,
     LiveFitCommitAuthority,
     MaterializationTerminal,
     MaterializedDirectTrfCandidate,
@@ -1629,8 +1630,10 @@ def _validate_de_polish_transition_lineage(
     if (
         search_candidate is None
         or polish.terminal is not DirectTrfCandidateTerminal.SUCCESS
+        or polish.execution.terminal is not DirectTrfTerminal.CONVERGED
         or polished_candidate is None
         or materialization is None
+        or materialization.terminal is not MaterializationTerminal.SUCCESS
         or not isinstance(derivation, DePolishProblemDerivation)
         or derivation != expected_derivation
         or polish_problem.evaluation_plan_identity != problem.evaluation_plan_identity
