@@ -19,6 +19,7 @@ import struct
 import subprocess
 import sys
 import sysconfig
+import weakref
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, fields
 from importlib.resources import files
@@ -920,72 +921,42 @@ class RuntimeEnvironment:
         return cls(semantics)
 
 
-@dataclass(frozen=True, slots=True, init=False)
+@dataclass(frozen=True, slots=True)
 class LaneAttestation:
-    """Canonical proof that one observed process matched one lane exactly."""
+    """Canonical evidence that one observed process matched one lane exactly.
+
+    Parsing or constructing this record never grants live lane authority.  Only
+    :meth:`NumericalLane.attest_current_process` can return that process-local
+    capability.
+    """
 
     lane_identity: str
     environment_identity: str
     workers: int
     native_threads: int
     method: Literal["POST_IMPORT_CURRENT_PROCESS"]
-    identity: str
+    identity: str = field(init=False)
 
-    def __init__(
-        self,
-        lane_identity: str,
-        environment_identity: str,
-        workers: int,
-        native_threads: int,
-        method: Literal["POST_IMPORT_CURRENT_PROCESS"],
-        identity: str,
-        *,
-        _validated: bool = False,
-    ) -> None:
-        if not _validated:
-            raise TypeError(
-                "Lane attestations are minted only by current-process probing"
-            )
-        _digest(lane_identity, "lane identity")
-        _digest(environment_identity, "environment identity")
-        _positive_int(workers, "attested workers")
-        _positive_int(native_threads, "attested native threads")
-        if method != "POST_IMPORT_CURRENT_PROCESS":
+    def __post_init__(self) -> None:
+        _digest(self.lane_identity, "lane identity")
+        _digest(self.environment_identity, "environment identity")
+        _positive_int(self.workers, "attested workers")
+        _positive_int(self.native_threads, "attested native threads")
+        if self.method != "POST_IMPORT_CURRENT_PROCESS":
             raise ValueError("Unknown lane-attestation method")
-        expected_identity = _identity(
-            "numerical-lane-attestation",
-            (lane_identity, environment_identity, workers, native_threads, method),
-        )
-        if identity != expected_identity:
-            raise ValueError("Lane-attestation identity does not match payload")
-        object.__setattr__(self, "lane_identity", lane_identity)
-        object.__setattr__(self, "environment_identity", environment_identity)
-        object.__setattr__(self, "workers", workers)
-        object.__setattr__(self, "native_threads", native_threads)
-        object.__setattr__(self, "method", method)
-        object.__setattr__(self, "identity", identity)
-
-    @classmethod
-    def _mint(
-        cls,
-        lane_identity: str,
-        environment_identity: str,
-        workers: int,
-        native_threads: int,
-    ) -> LaneAttestation:
-        method: Literal["POST_IMPORT_CURRENT_PROCESS"] = "POST_IMPORT_CURRENT_PROCESS"
-        identity = _identity(
-            "numerical-lane-attestation",
-            (lane_identity, environment_identity, workers, native_threads, method),
-        )
-        return cls(
-            lane_identity,
-            environment_identity,
-            workers,
-            native_threads,
-            method,
-            identity,
-            _validated=True,
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "numerical-lane-attestation",
+                (
+                    self.lane_identity,
+                    self.environment_identity,
+                    self.workers,
+                    self.native_threads,
+                    self.method,
+                ),
+            ),
         )
 
     def to_record(self) -> dict[str, object]:
@@ -1024,15 +995,61 @@ class LaneAttestation:
         method = _non_empty(record["method"], "lane-attestation method")
         if method != "POST_IMPORT_CURRENT_PROCESS":
             raise ValueError("Unknown lane-attestation method")
-        return cls(
+        record_identity = _digest(record["identity"], "lane-attestation identity")
+        attestation = cls(
             _digest(record["lane_identity"], "lane identity"),
             _digest(record["environment_identity"], "environment identity"),
             _positive_int(record["workers"], "attested workers"),
             _positive_int(record["native_threads"], "attested native threads"),
             "POST_IMPORT_CURRENT_PROCESS",
-            _digest(record["identity"], "lane-attestation identity"),
-            _validated=True,
         )
+        if record_identity != attestation.identity:
+            raise ValueError("Lane-attestation identity does not match payload")
+        return attestation
+
+
+class LiveLaneAuthority:
+    """Non-serializable capability owned by one successfully probed process."""
+
+    __slots__ = ("_evidence", "__weakref__")
+    _evidence: LaneAttestation
+
+    def __new__(cls) -> LiveLaneAuthority:
+        raise TypeError("Live lane authority is minted only by current-process probing")
+
+    @property
+    def evidence(self) -> LaneAttestation:
+        if self not in _LIVE_LANE_AUTHORITIES:
+            raise LaneAuthorityError("Live lane authority is not process-owned")
+        return self._evidence
+
+    @property
+    def lane_identity(self) -> str:
+        return self.evidence.lane_identity
+
+    @property
+    def environment_identity(self) -> str:
+        return self.evidence.environment_identity
+
+    @property
+    def workers(self) -> int:
+        return self.evidence.workers
+
+    @property
+    def native_threads(self) -> int:
+        return self.evidence.native_threads
+
+    @property
+    def identity(self) -> str:
+        return self.evidence.identity
+
+    def to_record(self) -> dict[str, object]:
+        """Serialize evidence only; deserialization cannot recreate this capability."""
+
+        return self.evidence.to_record()
+
+
+_LIVE_LANE_AUTHORITIES: weakref.WeakSet[LiveLaneAuthority] = weakref.WeakSet()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1132,7 +1149,7 @@ class NumericalLane:
         self,
         image_digest: str,
         provenance_path: Path = _PROVENANCE_PATH,
-    ) -> LaneAttestation:
+    ) -> LiveLaneAuthority:
         """Mint authority only after an exact current-process observation."""
 
         environment = RuntimeEnvironment.from_current_process(
@@ -1150,12 +1167,17 @@ class NumericalLane:
                 "Numerical lane authority rejected; mismatched claims: "
                 + ", ".join(mismatches)
             )
-        return LaneAttestation._mint(
+        evidence = LaneAttestation(
             self.identity,
             environment.identity,
             environment.semantics.workers,
             environment.semantics.native_threads,
+            "POST_IMPORT_CURRENT_PROCESS",
         )
+        authority = object.__new__(LiveLaneAuthority)
+        object.__setattr__(authority, "_evidence", evidence)
+        _LIVE_LANE_AUTHORITIES.add(authority)
+        return authority
 
     def compatibility_delta(self, other: NumericalLane) -> dict[str, tuple[str, str]]:
         """Report every structural difference between the two lane records."""
@@ -1493,22 +1515,28 @@ def compare_values(
     return ComparisonOutcome(scope.identity, policy.identity, equivalent)
 
 
-def comparison_scope(left: LaneAttestation, right: LaneAttestation) -> ComparisonScope:
+def comparison_scope(
+    left: LiveLaneAuthority, right: LiveLaneAuthority
+) -> ComparisonScope:
     """Create a scope only from two qualified post-import attestations."""
 
-    if not isinstance(left, LaneAttestation) or not isinstance(right, LaneAttestation):
-        raise TypeError("Comparison scope requires two lane attestations")
+    if not isinstance(left, LiveLaneAuthority) or not isinstance(
+        right, LiveLaneAuthority
+    ):
+        raise TypeError("Comparison scope requires live current-process lane authority")
+    left_evidence = left.evidence
+    right_evidence = right.evidence
     kind: ComparisonScopeKind = (
         "WITHIN_LANE_BITWISE"
-        if left.lane_identity == right.lane_identity
+        if left_evidence.lane_identity == right_evidence.lane_identity
         else "CROSS_LANE_NUMERICAL_ARTIFACT_COMPARISON"
     )
     return ComparisonScope(
         kind,
-        left.lane_identity,
-        right.lane_identity,
-        left.identity,
-        right.identity,
+        left_evidence.lane_identity,
+        right_evidence.lane_identity,
+        left_evidence.identity,
+        right_evidence.identity,
     )
 
 

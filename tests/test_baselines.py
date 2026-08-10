@@ -29,7 +29,13 @@ from chemex.baselines import (
     capture_cpmg_15n_ip_legacy_observation,
     cpmg_15n_ip_case,
 )
-from chemex.numerical_lanes import LaneAttestation
+from chemex.numerical_lanes import (
+    LaneAttestation,
+    LiveLaneAuthority,
+    NumericalLane,
+    RuntimeEnvironment,
+    canonical_lanes,
+)
 
 
 def _inventory(roles: Sequence[str] = ("result:a", "result:b")) -> dict[str, object]:
@@ -80,6 +86,18 @@ def _specification(
         roles=roles,
         claims=claims,
     )
+
+
+def _live_authority(
+    monkeypatch: pytest.MonkeyPatch, lane: NumericalLane
+) -> LiveLaneAuthority:
+    environment = RuntimeEnvironment(lane.semantics)
+    monkeypatch.setattr(
+        RuntimeEnvironment,
+        "from_current_process",
+        classmethod(lambda cls, image_digest, provenance_path=None: environment),
+    )
+    return lane.attest_current_process(lane.semantics.image_digest)
 
 
 def _artifacts(
@@ -152,15 +170,18 @@ def test_case_and_execution_identities_are_deterministic_and_separate() -> None:
     assert specification.implementation.identity != first.source_authority.identity
 
 
-def test_qualified_occurrence_requires_matching_startup_attestation() -> None:
+def test_genuine_current_process_authority_qualifies_a_matching_occurrence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     case = _case()
-    lane_identity = "d" * 64
+    lane, other_lane = canonical_lanes()
     specification = _specification(
         case,
-        lane_reference=lane_identity,
+        lane_reference=lane.identity,
         execution_settings={"native_threads": 1, "workers": 1},
     )
-    attestation = LaneAttestation._mint(lane_identity, "e" * 64, 1, 1)
+    wrong_authority = _live_authority(monkeypatch, other_lane)
+    authority = _live_authority(monkeypatch, lane)
 
     with pytest.raises(ValueError, match="requires a post-import"):
         Occurrence.requested(specification, case, "unattested")
@@ -169,24 +190,24 @@ def test_qualified_occurrence_requires_matching_startup_attestation() -> None:
             specification,
             case,
             "wrong-lane",
-            LaneAttestation._mint("f" * 64, "e" * 64, 1, 1),
+            wrong_authority,
         )
 
-    occurrence = Occurrence.requested(specification, case, "qualified", attestation)
+    occurrence = Occurrence.requested(specification, case, "qualified", authority)
 
-    assert occurrence.lane_reference == lane_identity
-    assert occurrence.lane_attestation_identity == attestation.identity
+    assert occurrence.lane_reference == lane.identity
+    assert occurrence.lane_attestation_identity == authority.evidence.identity
     assert Occurrence.from_record(occurrence.to_record(), specification) == occurrence
     with pytest.raises(ValueError, match="cannot carry lane authority"):
-        Occurrence.requested(_specification(case), case, "retroactive", attestation)
+        Occurrence.requested(_specification(case), case, "retroactive", authority)
     incompatible_specification = _specification(
         case,
-        lane_reference=lane_identity,
+        lane_reference=lane.identity,
         execution_settings={"native_threads": 1, "workers": 8},
     )
     with pytest.raises(ValueError, match="lane concurrency"):
         Occurrence.requested(
-            incompatible_specification, case, "wrong-workers", attestation
+            incompatible_specification, case, "wrong-workers", authority
         )
 
     unqualified_specification = _specification(case)
@@ -201,6 +222,27 @@ def test_qualified_occurrence_requires_matching_startup_attestation() -> None:
     legacy_record["lane_attestation_identity"] = None
     with pytest.raises(ValueError, match="unknown or missing fields"):
         Occurrence.from_record(legacy_record, unqualified_specification)
+
+
+def test_deserialized_evidence_cannot_qualify_a_new_occurrence() -> None:
+    case = _case()
+    lane_identity = "d" * 64
+    specification = _specification(
+        case,
+        lane_reference=lane_identity,
+        execution_settings={"native_threads": 1, "workers": 1},
+    )
+    fabricated = LaneAttestation(
+        lane_identity,
+        "e" * 64,
+        1,
+        1,
+        "POST_IMPORT_CURRENT_PROCESS",
+    )
+    evidence = LaneAttestation.from_record(fabricated.to_record())
+
+    with pytest.raises(TypeError, match="live current-process lane authority"):
+        Occurrence.requested(specification, case, "fabricated", evidence)
 
 
 @pytest.mark.parametrize(

@@ -26,7 +26,7 @@ from typing import Literal, cast
 
 from chemex.chemex import run
 from chemex.cli import build_parser
-from chemex.numerical_lanes import LaneAttestation
+from chemex.numerical_lanes import LiveLaneAuthority
 
 _SCHEMA_VERSION = 1
 _SEMANTIC_VERSION = "chemex-baseline-v1"
@@ -769,27 +769,31 @@ class Occurrence:
         specification: ExecutionSpecification,
         case: CaseDefinition,
         attempt_token: str,
-        attestation: LaneAttestation | None = None,
+        attestation: LiveLaneAuthority | None = None,
     ) -> Occurrence:
         if specification.case_identity != case.identity:
             raise ValueError("Occurrence case does not match execution specification")
         qualified = _is_qualified_lane_reference(specification.lane_reference)
         if qualified:
-            if not isinstance(attestation, LaneAttestation):
+            if attestation is None:
                 raise ValueError(
                     "Qualified occurrence requires a post-import lane attestation"
                 )
-            if attestation.lane_identity != specification.lane_reference:
+            if not isinstance(attestation, LiveLaneAuthority):
+                raise TypeError(
+                    "Qualified occurrence requires live current-process lane authority"
+                )
+            evidence = attestation.evidence
+            if evidence.lane_identity != specification.lane_reference:
                 raise ValueError("Occurrence attestation does not match its lane")
             execution_settings = specification.execution_settings.to_record_value()
             if not isinstance(execution_settings, Mapping):
                 raise TypeError("Qualified execution settings must be a record")
             if (
                 type(execution_settings.get("workers")) is not int
-                or execution_settings.get("workers") != attestation.workers
+                or execution_settings.get("workers") != evidence.workers
                 or type(execution_settings.get("native_threads")) is not int
-                or execution_settings.get("native_threads")
-                != attestation.native_threads
+                or execution_settings.get("native_threads") != evidence.native_threads
             ):
                 raise ValueError(
                     "Qualified occurrence execution settings do not match "
@@ -802,7 +806,7 @@ class Occurrence:
             case.identity,
             specification.implementation.identity,
             specification.lane_reference,
-            attestation.identity if attestation is not None else None,
+            evidence.identity if qualified else None,
             tuple(sorted(member.identity for member in case.inputs)),
             attempt_token,
         )

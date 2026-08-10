@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from dataclasses import replace
@@ -15,6 +16,7 @@ from chemex.numerical_lanes import (
     LaneAttestation,
     LaneAuthorityError,
     LaneSemantics,
+    LiveLaneAuthority,
     NumericalLane,
     RuntimeEnvironment,
     canonical_lanes,
@@ -91,7 +93,7 @@ def _lane(*, compatibility: bool = False) -> NumericalLane:
 
 def _attestation(
     monkeypatch: pytest.MonkeyPatch, lane: NumericalLane
-) -> LaneAttestation:
+) -> LiveLaneAuthority:
     environment = RuntimeEnvironment(lane.semantics)
     monkeypatch.setattr(
         RuntimeEnvironment,
@@ -99,6 +101,38 @@ def _attestation(
         classmethod(lambda cls, image_digest, provenance_path=None: environment),
     )
     return lane.attest_current_process(lane.semantics.image_digest)
+
+
+def _fabricated_evidence(lane_identity: str) -> LaneAttestation:
+    environment_identity = "0" * 64
+    method = "POST_IMPORT_CURRENT_PROCESS"
+    identity_payload = {
+        "kind": "numerical-lane-attestation",
+        "record": [lane_identity, environment_identity, 1, 1, method],
+        "schema_version": 2,
+        "semantic_version": "chemex-numerical-lane-v2",
+    }
+    identity = hashlib.sha256(
+        json.dumps(
+            identity_payload,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    ).hexdigest()
+    return LaneAttestation.from_record(
+        {
+            "environment_identity": environment_identity,
+            "identity": identity,
+            "lane_identity": lane_identity,
+            "method": method,
+            "native_threads": 1,
+            "schema_version": 2,
+            "semantic_version": "chemex-numerical-lane-v2",
+            "workers": 1,
+        }
+    )
 
 
 def test_lane_identity_covers_complete_semantics_and_round_trips_strictly() -> None:
@@ -188,28 +222,22 @@ def test_canonical_manifest_loader_rejects_duplicate_json_members(
         canonical_lanes(tmp_path)
 
 
-def test_only_current_process_probe_can_mint_lane_authority(
+def test_only_current_process_probe_can_mint_live_authority_and_evidence_round_trips(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     lane = _lane()
 
     with pytest.raises(TypeError, match="minted only"):
-        LaneAttestation(
-            lane.identity,
-            "0" * 64,
-            1,
-            1,
-            "POST_IMPORT_CURRENT_PROCESS",
-            "0" * 64,
-        )
+        LiveLaneAuthority()
 
-    attestation = _attestation(monkeypatch, lane)
+    authority = _attestation(monkeypatch, lane)
+    evidence = LaneAttestation.from_record(authority.to_record())
 
-    assert LaneAttestation.from_record(attestation.to_record()) == attestation
-    assert attestation.lane_identity == lane.identity
-    assert (
-        attestation.environment_identity == RuntimeEnvironment(lane.semantics).identity
-    )
+    assert isinstance(authority, LiveLaneAuthority)
+    assert not isinstance(evidence, LiveLaneAuthority)
+    assert evidence == authority.evidence
+    assert evidence.lane_identity == lane.identity
+    assert evidence.environment_identity == RuntimeEnvironment(lane.semantics).identity
 
 
 def test_post_import_attestation_rejects_any_actual_process_mismatch(
@@ -246,7 +274,7 @@ def test_comparison_scopes_require_attested_lanes_and_round_trip(
     assert within.kind == "WITHIN_LANE_BITWISE"
     assert cross.kind == "CROSS_LANE_NUMERICAL_ARTIFACT_COMPARISON"
     assert ComparisonScope.from_record(within.to_record()) == within
-    with pytest.raises(TypeError, match="attestations"):
+    with pytest.raises(TypeError, match="live current-process lane authority"):
         comparison_scope(python_313, python_313)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="Unknown comparison scope"):
         ComparisonScope(
@@ -256,6 +284,15 @@ def test_comparison_scopes_require_attested_lanes_and_round_trip(
             attestation_313.identity,
             attestation_314.identity,
         )
+
+
+def test_deserialized_evidence_cannot_create_an_authoritative_comparison_scope() -> (
+    None
+):
+    evidence = _fabricated_evidence(_lane().identity)
+
+    with pytest.raises(TypeError, match="live current-process lane authority"):
+        comparison_scope(evidence, evidence)
 
 
 def test_within_lane_replay_is_bitwise_and_never_accepts_tolerances(
