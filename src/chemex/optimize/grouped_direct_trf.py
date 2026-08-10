@@ -1,0 +1,1497 @@
+"""Exact native fit-component decomposition for grouped Direct TRF (#594).
+
+This remains an isolated qualification path.  It does not dispatch production
+fits or alter the legacy grouped-fit implementation.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from enum import StrEnum
+from uuid import uuid4
+
+import numpy as np
+
+from chemex.evaluation.native import (
+    BoundEvaluator,
+    EvaluationEngine,
+    EvaluationFailure,
+    EvaluationFrame,
+    EvaluationResult,
+)
+from chemex.optimize.direct_trf import (
+    AcceptedFitResult,
+    CancellationToken,
+    CandidateMaterialization,
+    CandidateSummary,
+    ComponentProblemDerivation,
+    DirectTrfCandidateTerminal,
+    DirectTrfConstructionError,
+    DirectTrfInterrupted,
+    DirectTrfInvocation,
+    DirectTrfTerminal,
+    MaterializationTerminal,
+    MaterializedDirectTrfCandidate,
+    ObjectiveScalarizationError,
+    OptimizationProblem,
+    TerminalFailure,
+    accept_materialized_fit,
+    canonical_chi_square,
+    execute_direct_trf_candidate,
+)
+from chemex.parameters.parameterization import ActiveParameterization
+
+_SCHEMA_VERSION = 1
+_DECOMPOSITION_POLICY = "profile-constraint-connectivity-v1"
+_PROJECTION_POLICY = "complete-profile-root-order-v1"
+
+
+class _GroupedValidationCancelled(Exception):
+    """Internal control flow for cancellation during context recompilation."""
+
+
+def _check_grouped_cancellation(cancellation: CancellationToken | None) -> None:
+    if cancellation is not None and cancellation.is_cancelled:
+        raise _GroupedValidationCancelled
+
+
+def _identity(kind: str, record: object) -> str:
+    encoded = json.dumps(
+        {"kind": kind, "record": record, "schema_version": _SCHEMA_VERSION},
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class FitComponent:
+    """One deterministic exact child derived from a complete root problem."""
+
+    controlled_ids: tuple[str, ...]
+    root_profile_indices: tuple[int, ...]
+    problem: OptimizationProblem = field(repr=False, compare=False)
+    identity: str
+
+
+class _ControlledDependencyResolver:
+    def __init__(
+        self,
+        controlled_ids: tuple[str, ...],
+        parameterization: ActiveParameterization,
+    ) -> None:
+        self._controlled = frozenset(controlled_ids)
+        self._constraints = {
+            constraint.target_id: constraint
+            for constraint in parameterization.program.constraints
+        }
+        self._cache: dict[str, frozenset[str]] = {}
+        self._path_cache: dict[
+            str,
+            tuple[tuple[str, tuple[str, ...]], ...],
+        ] = {}
+
+    def resolve(self, param_id: str) -> frozenset[str]:
+        if param_id in self._cache:
+            return self._cache[param_id]
+        if param_id in self._controlled:
+            result = frozenset((param_id,))
+        elif constraint := self._constraints.get(param_id):
+            result = frozenset(
+                dependency
+                for source in constraint.dependencies
+                for dependency in self.resolve(source)
+            )
+        else:
+            result = frozenset()
+        self._cache[param_id] = result
+        return result
+
+    def paths(self, param_id: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+        """Return every declared path from one resolved input to a control."""
+        if param_id in self._path_cache:
+            return self._path_cache[param_id]
+        if param_id in self._controlled:
+            result = ((param_id, (param_id,)),)
+        elif constraint := self._constraints.get(param_id):
+            result = tuple(
+                (controlled_id, (param_id, *path))
+                for dependency in constraint.dependencies
+                for controlled_id, path in self.paths(dependency)
+            )
+        else:
+            result = ()
+        self._path_cache[param_id] = result
+        return result
+
+
+def _profile_dependencies(
+    problem: OptimizationProblem,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+) -> tuple[frozenset[str], ...]:
+    resolver = _ControlledDependencyResolver(problem.controlled_ids, parameterization)
+    return tuple(
+        (
+            frozenset(
+                controlled_id
+                for param_id in profile.param_ids
+                for controlled_id in resolver.resolve(param_id)
+            )
+            if profile.retained_observation_indices
+            else frozenset()
+        )
+        for profile in engine.plan.profiles
+    )
+
+
+def _profile_dependency_paths(
+    problem: OptimizationProblem,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+) -> tuple[tuple[tuple[str, str, tuple[str, ...]], ...], ...]:
+    resolver = _ControlledDependencyResolver(problem.controlled_ids, parameterization)
+    return tuple(
+        (
+            tuple(
+                (param_id, controlled_id, path)
+                for param_id in profile.param_ids
+                for controlled_id, path in resolver.paths(param_id)
+            )
+            if profile.retained_observation_indices
+            else ()
+        )
+        for profile in engine.plan.profiles
+    )
+
+
+def _ordered_component_controls(
+    controlled_ids: tuple[str, ...],
+    profile_dependencies: tuple[frozenset[str], ...],
+) -> tuple[tuple[str, ...], ...]:
+    parent = {param_id: param_id for param_id in controlled_ids}
+
+    def find(param_id: str) -> str:
+        while parent[param_id] != param_id:
+            parent[param_id] = parent[parent[param_id]]
+            param_id = parent[param_id]
+        return param_id
+
+    for dependencies in profile_dependencies:
+        ordered = tuple(
+            param_id for param_id in controlled_ids if param_id in dependencies
+        )
+        for param_id in ordered[1:]:
+            left_root = find(ordered[0])
+            right_root = find(param_id)
+            if left_root != right_root:
+                parent[right_root] = left_root
+    observed = set().union(*profile_dependencies)
+    missing = set(controlled_ids) - observed
+    if missing:
+        raise DirectTrfConstructionError(
+            "Controlled parameters lack a retained-objective dependency: "
+            + ", ".join(sorted(missing))
+        )
+    components = {
+        tuple(
+            candidate for candidate in controlled_ids if find(candidate) == find(root)
+        )
+        for root in controlled_ids
+    }
+    return tuple(
+        sorted(
+            components,
+            key=lambda ids: tuple(param_id.encode("utf-8") for param_id in ids),
+        )
+    )
+
+
+def _build_component(
+    problem: OptimizationProblem,
+    engine: EvaluationEngine,
+    component_ids: tuple[str, ...],
+    profile_dependencies: tuple[frozenset[str], ...],
+) -> FitComponent:
+    component_set = set(component_ids)
+    profile_indices = tuple(
+        index
+        for index, dependencies in enumerate(profile_dependencies)
+        if dependencies and dependencies.issubset(component_set)
+    )
+    child_engine = engine.project_profiles(profile_indices)
+    bounds = {
+        param_id: (start, lower, upper)
+        for param_id, start, lower, upper in zip(
+            problem.controlled_ids,
+            problem.start,
+            problem.lower_bounds,
+            problem.upper_bounds,
+            strict=True,
+        )
+    }
+    held_items = tuple(
+        item for item in problem.independent_items if item[0] not in component_set
+    )
+    start = tuple(bounds[param_id][0] for param_id in component_ids)
+    lower = tuple(bounds[param_id][1] for param_id in component_ids)
+    upper = tuple(bounds[param_id][2] for param_id in component_ids)
+    component_identity = _identity(
+        "native-fit-component",
+        (
+            _DECOMPOSITION_POLICY,
+            _PROJECTION_POLICY,
+            problem.evaluator_parameterization_identity,
+            problem.constraint_program_identity,
+            component_ids,
+            tuple(
+                engine.plan.profiles[index].source_identity for index in profile_indices
+            ),
+            child_engine.plan.identity,
+            tuple(float(value).hex() for value in lower),
+            tuple(float(value).hex() for value in upper),
+        ),
+    )
+    derivation = ComponentProblemDerivation(
+        problem.identity,
+        component_identity,
+        _PROJECTION_POLICY,
+        child_engine.plan.identity,
+        component_ids,
+        held_items,
+    )
+    child_problem = OptimizationProblem(
+        child_engine.plan.identity,
+        problem.parameterization_identity,
+        problem.evaluator_parameterization_identity,
+        problem.constraint_program_identity,
+        problem.configuration_identity,
+        problem.source_snapshot,
+        problem.independent_items,
+        component_ids,
+        held_items,
+        start,
+        lower,
+        upper,
+        problem.commit_scope,
+        derivation,
+    )
+    return FitComponent(
+        component_ids,
+        profile_indices,
+        child_problem,
+        component_identity,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class FitPartitionProof:
+    """Verifiable exact partition of current Profile objectives and box domain."""
+
+    root_plan_identity: str
+    constraint_program_identity: str
+    controlled_ids: tuple[str, ...]
+    profile_records: tuple[
+        tuple[
+            str,
+            tuple[str, ...],
+            tuple[str, ...],
+            tuple[tuple[str, str, tuple[str, ...]], ...],
+        ],
+        ...,
+    ]
+    component_records: tuple[
+        tuple[
+            str,
+            tuple[str, ...],
+            tuple[int, ...],
+            tuple[tuple[str, str, str], ...],
+        ],
+        ...,
+    ]
+    constant_profile_indices: tuple[int, ...]
+    non_objective_profile_indices: tuple[int, ...]
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        assigned_profiles = (
+            [
+                index
+                for _component_id, _controlled, indices, _bounds in self.component_records
+                for index in indices
+            ]
+            + list(self.constant_profile_indices)
+            + list(self.non_objective_profile_indices)
+        )
+        assigned_controls = [
+            param_id
+            for _component_id, controlled, _indices, _bounds in self.component_records
+            for param_id in controlled
+        ]
+        if (
+            sorted(assigned_profiles) != list(range(len(self.profile_records)))
+            or len(assigned_profiles) != len(set(assigned_profiles))
+            or set(assigned_controls) != set(self.controlled_ids)
+            or len(assigned_controls) != len(set(assigned_controls))
+        ):
+            raise DirectTrfConstructionError("Fit partition is incomplete or overlaps")
+        for _component_id, controlled, indices, bounds in self.component_records:
+            controlled_set = set(controlled)
+            if tuple(item[0] for item in bounds) != controlled:
+                raise DirectTrfConstructionError(
+                    "Fit partition bounds do not match component coordinates"
+                )
+            if any(
+                not self.profile_records[index][2]
+                or not set(self.profile_records[index][2]).issubset(controlled_set)
+                for index in indices
+            ):
+                raise DirectTrfConstructionError(
+                    "Fit partition component does not cover Profile dependencies"
+                )
+        if any(
+            self.profile_records[index][2] for index in self.constant_profile_indices
+        ):
+            raise DirectTrfConstructionError(
+                "Constant objective partition contains a controlled dependency"
+            )
+        if any(
+            self.profile_records[index][2] or self.profile_records[index][3]
+            for index in self.non_objective_profile_indices
+        ):
+            raise DirectTrfConstructionError(
+                "Non-objective Profile partition contains a retained dependency"
+            )
+        for _profile_id, param_ids, controlled_ids, paths in self.profile_records:
+            path_controls = {controlled_id for _local, controlled_id, _path in paths}
+            if path_controls != set(controlled_ids) or any(
+                local_id not in param_ids
+                or not path
+                or path[0] != local_id
+                or path[-1] != controlled_id
+                for local_id, controlled_id, path in paths
+            ):
+                raise DirectTrfConstructionError(
+                    "Fit partition dependency provenance is incomplete"
+                )
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-fit-partition-proof",
+                (
+                    _DECOMPOSITION_POLICY,
+                    _PROJECTION_POLICY,
+                    "independent-box-domain-v1",
+                    self.root_plan_identity,
+                    self.constraint_program_identity,
+                    self.controlled_ids,
+                    self.profile_records,
+                    self.component_records,
+                    self.constant_profile_indices,
+                    self.non_objective_profile_indices,
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class FitDecomposition:
+    """Maximal exact Profile/objective factorization of one native root fit."""
+
+    root_problem_identity: str
+    root_plan_identity: str
+    components: tuple[FitComponent, ...]
+    constant_profile_indices: tuple[int, ...]
+    non_objective_profile_indices: tuple[int, ...]
+    partition_proof: FitPartitionProof
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        expected_component_records = tuple(
+            (
+                component.identity,
+                component.controlled_ids,
+                component.root_profile_indices,
+                tuple(
+                    (param_id, float(lower).hex(), float(upper).hex())
+                    for param_id, lower, upper in zip(
+                        component.controlled_ids,
+                        component.problem.lower_bounds,
+                        component.problem.upper_bounds,
+                        strict=True,
+                    )
+                ),
+            )
+            for component in self.components
+        )
+        if (
+            self.partition_proof.root_plan_identity != self.root_plan_identity
+            or self.partition_proof.component_records != expected_component_records
+            or self.partition_proof.constant_profile_indices
+            != self.constant_profile_indices
+            or self.partition_proof.non_objective_profile_indices
+            != self.non_objective_profile_indices
+        ):
+            raise DirectTrfConstructionError(
+                "Fit decomposition differs from its exact partition proof"
+            )
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-fit-decomposition",
+                (
+                    _DECOMPOSITION_POLICY,
+                    _PROJECTION_POLICY,
+                    self.root_plan_identity,
+                    self.partition_proof.constraint_program_identity,
+                    tuple(component.identity for component in self.components),
+                    self.constant_profile_indices,
+                    self.non_objective_profile_indices,
+                    self.partition_proof.identity,
+                ),
+            ),
+        )
+
+    @classmethod
+    def from_root(
+        cls,
+        problem: OptimizationProblem,
+        parameterization: ActiveParameterization,
+        engine: EvaluationEngine,
+        *,
+        cancellation: CancellationToken | None = None,
+    ) -> FitDecomposition:
+        """Derive exact components from semantic Profile and constraint paths."""
+        problem.validate_parameterization(parameterization)
+        if engine.plan.identity != problem.evaluation_plan_identity:
+            raise DirectTrfConstructionError(
+                "Root evaluator belongs to another problem"
+            )
+
+        profile_dependencies = _profile_dependencies(
+            problem,
+            parameterization,
+            engine,
+        )
+        profile_paths = _profile_dependency_paths(
+            problem,
+            parameterization,
+            engine,
+        )
+        components_list: list[FitComponent] = []
+        for component_ids in _ordered_component_controls(
+            problem.controlled_ids,
+            profile_dependencies,
+        ):
+            _check_grouped_cancellation(cancellation)
+            component = _build_component(
+                problem,
+                engine,
+                component_ids,
+                profile_dependencies,
+            )
+            _check_grouped_cancellation(cancellation)
+            components_list.append(component)
+        components = tuple(components_list)
+
+        constant_indices = tuple(
+            index
+            for index, dependencies in enumerate(profile_dependencies)
+            if not dependencies
+            and engine.plan.profiles[index].retained_observation_indices
+        )
+        non_objective_indices = tuple(
+            index
+            for index, profile in enumerate(engine.plan.profiles)
+            if not profile.retained_observation_indices
+        )
+        partition_proof = FitPartitionProof(
+            engine.plan.identity,
+            problem.constraint_program_identity,
+            problem.controlled_ids,
+            tuple(
+                (
+                    profile.identity,
+                    profile.param_ids,
+                    tuple(
+                        param_id
+                        for param_id in problem.controlled_ids
+                        if param_id in profile_dependencies[index]
+                    ),
+                    profile_paths[index],
+                )
+                for index, profile in enumerate(engine.plan.profiles)
+            ),
+            tuple(
+                (
+                    component.identity,
+                    component.controlled_ids,
+                    component.root_profile_indices,
+                    tuple(
+                        (
+                            param_id,
+                            float(lower).hex(),
+                            float(upper).hex(),
+                        )
+                        for param_id, lower, upper in zip(
+                            component.controlled_ids,
+                            component.problem.lower_bounds,
+                            component.problem.upper_bounds,
+                            strict=True,
+                        )
+                    ),
+                )
+                for component in components
+            ),
+            constant_indices,
+            non_objective_indices,
+        )
+        return cls(
+            problem.identity,
+            engine.plan.identity,
+            components,
+            constant_indices,
+            non_objective_indices,
+            partition_proof,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class GroupedDirectTrfInvocation:
+    """Explicit immutable per-component Direct TRF budget allocation."""
+
+    root_problem_identity: str
+    decomposition_identity: str
+    component_invocations: tuple[DirectTrfInvocation, ...]
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-grouped-direct-trf-invocation",
+                (
+                    self.root_problem_identity,
+                    self.decomposition_identity,
+                    tuple(item.identity for item in self.component_invocations),
+                ),
+            ),
+        )
+
+    @classmethod
+    def for_decomposition(
+        cls,
+        decomposition: FitDecomposition,
+        *,
+        objective_request_budgets: Sequence[int],
+    ) -> GroupedDirectTrfInvocation:
+        """Bind one declared objective-request budget to every component."""
+        budgets = tuple(objective_request_budgets)
+        if len(budgets) != len(decomposition.components):
+            raise DirectTrfConstructionError(
+                "Grouped Direct TRF requires one explicit budget per component"
+            )
+        invocations = tuple(
+            DirectTrfInvocation.for_problem(
+                component.problem,
+                objective_request_budget=budget,
+            )
+            for component, budget in zip(
+                decomposition.components,
+                budgets,
+                strict=True,
+            )
+        )
+        return cls(
+            decomposition.root_problem_identity,
+            decomposition.identity,
+            invocations,
+        )
+
+
+class ComponentDisposition(StrEnum):
+    """Closed lifecycle disposition for every required fit component."""
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    EXECUTION_FAILURE = "execution_failure"
+    CANCELLED = "cancelled"
+    INTERRUPTED = "interrupted"
+    NOT_STARTED = "not_started"
+
+
+@dataclass(frozen=True, slots=True)
+class FitComponentOutcome:
+    """Non-authoritative component evidence in canonical decomposition order."""
+
+    component_identity: str
+    controlled_ids: tuple[str, ...]
+    disposition: ComponentDisposition
+    execution_identity: str | None = None
+    candidate: MaterializedDirectTrfCandidate | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    failure: TerminalFailure | None = None
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if (self.disposition is ComponentDisposition.SUCCEEDED) != (
+            self.candidate is not None
+        ):
+            raise ValueError("Only a successful component may expose a candidate")
+        if self.disposition is ComponentDisposition.NOT_STARTED and (
+            self.execution_identity is not None or self.failure is not None
+        ):
+            raise ValueError("An unstarted component cannot expose attempt evidence")
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-fit-component-outcome",
+                (
+                    self.component_identity,
+                    self.controlled_ids,
+                    self.disposition.value,
+                    self.execution_identity,
+                    None if self.candidate is None else self.candidate.identity,
+                    None if self.failure is None else self.failure.identity,
+                ),
+            ),
+        )
+
+
+class GroupedDirectTrfTerminal(StrEnum):
+    """Closed authoritative outcomes of grouped native Direct TRF."""
+
+    ACCEPTED = "accepted"
+    COMPONENT_FAILURE = "component_failure"
+    EXECUTION_FAILURE = "execution_failure"
+    DECOMPOSITION_VALIDATION_FAILURE = "decomposition_validation_failure"
+    CANCELLED = "cancelled"
+    INTERRUPTED = "interrupted"
+
+
+@dataclass(frozen=True, slots=True)
+class GroupedDirectTrfOutcome:
+    """Complete grouped occurrence; only ACCEPTED may carry root authority."""
+
+    terminal: GroupedDirectTrfTerminal
+    components: tuple[FitComponentOutcome, ...]
+    accepted_result: AcceptedFitResult | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    failure: TerminalFailure | None = None
+
+    def __post_init__(self) -> None:
+        if (self.terminal is GroupedDirectTrfTerminal.ACCEPTED) != (
+            self.accepted_result is not None
+        ):
+            raise ValueError("Only accepted grouped execution has root fit authority")
+
+
+def _validate_grouped_context(
+    problem: OptimizationProblem,
+    decomposition: FitDecomposition,
+    invocation: GroupedDirectTrfInvocation,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    cancellation: CancellationToken,
+) -> None:
+    _check_grouped_cancellation(cancellation)
+    problem.validate_parameterization(parameterization)
+    _check_grouped_cancellation(cancellation)
+    expected_decomposition = FitDecomposition.from_root(
+        problem,
+        parameterization,
+        engine,
+        cancellation=cancellation,
+    )
+    _check_grouped_cancellation(cancellation)
+    if (
+        decomposition.root_problem_identity != problem.identity
+        or decomposition.root_plan_identity != engine.plan.identity
+        or invocation.root_problem_identity != problem.identity
+        or invocation.decomposition_identity != decomposition.identity
+        or len(invocation.component_invocations) != len(decomposition.components)
+        or decomposition.identity != expected_decomposition.identity
+    ):
+        raise DirectTrfConstructionError(
+            "Grouped Direct TRF context is not rooted in one problem"
+        )
+
+
+def _not_started(component: FitComponent) -> FitComponentOutcome:
+    return FitComponentOutcome(
+        component.identity,
+        component.controlled_ids,
+        ComponentDisposition.NOT_STARTED,
+    )
+
+
+def execute_direct_trf_components(
+    decomposition: FitDecomposition,
+    invocation: GroupedDirectTrfInvocation,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    *,
+    cancellation: CancellationToken | None = None,
+) -> tuple[FitComponentOutcome, ...]:
+    """Execute canonical components without acceptance, commit, or publication."""
+    if (
+        invocation.root_problem_identity != decomposition.root_problem_identity
+        or invocation.decomposition_identity != decomposition.identity
+        or len(invocation.component_invocations) != len(decomposition.components)
+    ):
+        raise DirectTrfConstructionError(
+            "Component invocation belongs to another decomposition"
+        )
+    token = CancellationToken() if cancellation is None else cancellation
+    outcomes: list[FitComponentOutcome] = []
+    stopped = token.is_cancelled
+    for component, component_invocation in zip(
+        decomposition.components,
+        invocation.component_invocations,
+        strict=True,
+    ):
+        if stopped:
+            outcomes.append(_not_started(component))
+            continue
+        try:
+            child_engine = engine.project_profiles(component.root_profile_indices)
+            if child_engine.plan.identity != component.problem.evaluation_plan_identity:
+                raise DirectTrfConstructionError(
+                    "Component evaluator projection differs from its derivation"
+                )
+            result = execute_direct_trf_candidate(
+                component.problem,
+                component_invocation,
+                parameterization,
+                child_engine,
+                cancellation=token,
+            )
+        except DirectTrfInterrupted as interrupted:
+            interruption_failure = (
+                interrupted.materialization.failure
+                if interrupted.materialization is not None
+                else interrupted.execution.failure
+            )
+            outcomes.append(
+                FitComponentOutcome(
+                    component.identity,
+                    component.controlled_ids,
+                    ComponentDisposition.INTERRUPTED,
+                    interrupted.execution.identity,
+                    failure=interruption_failure,
+                )
+            )
+            stopped = True
+            continue
+        except KeyboardInterrupt:
+            outcomes.append(
+                FitComponentOutcome(
+                    component.identity,
+                    component.controlled_ids,
+                    ComponentDisposition.INTERRUPTED,
+                    failure=TerminalFailure(
+                        "interrupted",
+                        "KeyboardInterrupt during component projection",
+                    ),
+                )
+            )
+            stopped = True
+            continue
+        except Exception as error:  # noqa: BLE001 - projection failures stop safely
+            outcomes.append(
+                FitComponentOutcome(
+                    component.identity,
+                    component.controlled_ids,
+                    ComponentDisposition.EXECUTION_FAILURE,
+                    failure=TerminalFailure(
+                        "component_projection_failure",
+                        f"{type(error).__name__}: {error}",
+                    ),
+                )
+            )
+            stopped = True
+            continue
+        if result.terminal is DirectTrfCandidateTerminal.SUCCESS:
+            outcomes.append(
+                FitComponentOutcome(
+                    component.identity,
+                    component.controlled_ids,
+                    ComponentDisposition.SUCCEEDED,
+                    result.execution.identity,
+                    result.candidate,
+                )
+            )
+        elif result.terminal is DirectTrfCandidateTerminal.CANCELLED:
+            outcomes.append(
+                FitComponentOutcome(
+                    component.identity,
+                    component.controlled_ids,
+                    ComponentDisposition.CANCELLED,
+                    result.execution.identity,
+                    failure=result.execution.failure,
+                )
+            )
+            stopped = True
+        else:
+            execution_failure = (
+                result.terminal is DirectTrfCandidateTerminal.MATERIALIZATION_FAILURE
+                or result.execution.terminal
+                in {
+                    DirectTrfTerminal.PREFLIGHT_INVALID,
+                    DirectTrfTerminal.BACKEND_FAILURE,
+                    DirectTrfTerminal.IMPLEMENTATION_FAILURE,
+                }
+            )
+            outcomes.append(
+                FitComponentOutcome(
+                    component.identity,
+                    component.controlled_ids,
+                    (
+                        ComponentDisposition.EXECUTION_FAILURE
+                        if execution_failure
+                        else ComponentDisposition.FAILED
+                    ),
+                    result.execution.identity,
+                    failure=(
+                        result.materialization.failure
+                        if result.materialization is not None
+                        and result.materialization.failure is not None
+                        else result.execution.failure
+                    ),
+                )
+            )
+            stopped = execution_failure
+    return tuple(outcomes)
+
+
+type _ComponentProjection = tuple[EvaluationEngine, EvaluationResult]
+
+
+def _materialized_component_projection(
+    child_engine: EvaluationEngine,
+    component: FitComponent,
+    invocation: DirectTrfInvocation,
+    outcome: FitComponentOutcome,
+) -> _ComponentProjection | TerminalFailure:
+    candidate = outcome.candidate
+    if (
+        outcome.controlled_ids != component.controlled_ids
+        or candidate is None
+        or len(candidate.vector) != len(component.controlled_ids)
+    ):
+        return TerminalFailure(
+            "aggregate_assignment_failure",
+            "A successful component lacks its exact controlled assignment",
+        )
+    if any(
+        not lower <= value <= upper
+        for value, lower, upper in zip(
+            candidate.vector,
+            component.problem.lower_bounds,
+            component.problem.upper_bounds,
+            strict=True,
+        )
+    ):
+        return TerminalFailure(
+            "aggregate_feasibility_failure",
+            "Combined component assignment violates the root feasible domain",
+        )
+    child_result = candidate.evaluation_result
+    expected_compatibility_identity = child_engine.compatibility_identity
+    try:
+        child_chi_square = canonical_chi_square(child_result.residuals)
+    except (TypeError, ValueError, ObjectiveScalarizationError):
+        return TerminalFailure(
+            "decomposition_projection_mismatch",
+            "Fresh root objective differs from component evidence",
+        )
+    if (
+        child_result.plan_identity != child_engine.plan.identity
+        or child_result.parameterization_identity
+        != component.problem.evaluator_parameterization_identity
+        or tuple(child_result.resolved_values) != component.problem.commit_scope
+        or candidate.problem_identity != component.problem.identity
+        or candidate.invocation_identity != invocation.identity
+        or candidate.execution_identity != outcome.execution_identity
+        or candidate.chi_square != child_chi_square
+        or candidate.materialization.terminal is not MaterializationTerminal.SUCCESS
+        or candidate.materialization.problem_identity != component.problem.identity
+        or candidate.materialization.invocation_identity != invocation.identity
+        or candidate.materialization.execution_identity != outcome.execution_identity
+        or candidate.materialization.candidate.vector != candidate.vector
+        or candidate.materialization.candidate.chi_square != candidate.chi_square
+        or candidate.materialization.evaluation_identity != child_result.identity
+        or candidate.materialization.evaluator_compatibility_identity
+        != expected_compatibility_identity
+        or child_result.evaluator_compatibility_identity
+        != expected_compatibility_identity
+        or candidate.vector
+        != tuple(
+            child_result.resolved_values[param_id]
+            for param_id in component.controlled_ids
+        )
+    ):
+        return TerminalFailure(
+            "decomposition_projection_mismatch",
+            "Fresh root objective differs from component evidence",
+        )
+    return child_engine, child_result
+
+
+def _root_projection_matches(
+    root_result: EvaluationResult,
+    root_engine: EvaluationEngine,
+    component: FitComponent,
+    projection: _ComponentProjection,
+) -> bool:
+    child_engine, child_result = projection
+    for child_index, root_index in enumerate(component.root_profile_indices):
+        root_descriptor = root_engine.plan.profiles[root_index]
+        child_descriptor = child_engine.plan.profiles[child_index]
+        root_profile = root_result.profiles[root_index]
+        child_profile = child_result.profiles[child_index]
+        root_start = root_descriptor.observation_offset
+        root_stop = root_start + root_descriptor.observation_count
+        child_start = child_descriptor.observation_offset
+        child_stop = child_start + child_descriptor.observation_count
+        root_residual_start = root_profile.residual_offset
+        root_residual_stop = root_residual_start + root_profile.residual_count
+        child_residual_start = child_profile.residual_offset
+        child_residual_stop = child_residual_start + child_profile.residual_count
+        if (
+            root_descriptor.source_identity != child_descriptor.source_identity
+            or root_profile.normalization_factor != child_profile.normalization_factor
+            or root_profile.retained_observation_indices
+            != child_profile.retained_observation_indices
+            or root_profile.kernel_identity != child_profile.kernel_identity
+            or not np.array_equal(
+                root_result.unscaled_calculations[root_start:root_stop],
+                child_result.unscaled_calculations[child_start:child_stop],
+            )
+            or not np.array_equal(
+                root_result.normalized_calculations[root_start:root_stop],
+                child_result.normalized_calculations[child_start:child_stop],
+            )
+            or not np.array_equal(
+                root_result.residuals[root_residual_start:root_residual_stop],
+                child_result.residuals[child_residual_start:child_residual_stop],
+            )
+        ):
+            return False
+    return True
+
+
+def _projection_mismatch(
+    outcomes: tuple[FitComponentOutcome, ...],
+) -> GroupedDirectTrfOutcome:
+    return GroupedDirectTrfOutcome(
+        GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
+        outcomes,
+        failure=TerminalFailure(
+            "decomposition_projection_mismatch",
+            "Fresh root objective differs from component evidence",
+        ),
+    )
+
+
+def _validate_component_projections(
+    decomposition: FitDecomposition,
+    invocation: GroupedDirectTrfInvocation,
+    engine: EvaluationEngine,
+    outcomes: tuple[FitComponentOutcome, ...],
+    token: CancellationToken,
+) -> tuple[_ComponentProjection, ...] | GroupedDirectTrfOutcome:
+    projections: list[_ComponentProjection] = []
+    try:
+        for component, component_invocation, outcome in zip(
+            decomposition.components,
+            invocation.component_invocations,
+            outcomes,
+            strict=True,
+        ):
+            if token.is_cancelled:
+                return GroupedDirectTrfOutcome(
+                    GroupedDirectTrfTerminal.CANCELLED,
+                    outcomes,
+                )
+            child_engine = engine.project_profiles(component.root_profile_indices)
+            if token.is_cancelled:
+                return GroupedDirectTrfOutcome(
+                    GroupedDirectTrfTerminal.CANCELLED,
+                    outcomes,
+                )
+            projection = _materialized_component_projection(
+                child_engine,
+                component,
+                component_invocation,
+                outcome,
+            )
+            if token.is_cancelled:
+                return GroupedDirectTrfOutcome(
+                    GroupedDirectTrfTerminal.CANCELLED,
+                    outcomes,
+                )
+            if isinstance(projection, TerminalFailure):
+                return GroupedDirectTrfOutcome(
+                    GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
+                    outcomes,
+                    failure=projection,
+                )
+            projections.append(projection)
+    except KeyboardInterrupt:
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.INTERRUPTED,
+            outcomes,
+        )
+    except Exception as error:  # noqa: BLE001 - validation failures fail closed
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
+            outcomes,
+            failure=TerminalFailure(
+                "aggregate_validation_exception",
+                f"{type(error).__name__}: {error}",
+            ),
+        )
+    return tuple(projections)
+
+
+def _component_gate(
+    outcomes: tuple[FitComponentOutcome, ...],
+    cancellation: CancellationToken | None,
+) -> GroupedDirectTrfOutcome | None:
+    dispositions = tuple(item.disposition for item in outcomes)
+    if ComponentDisposition.INTERRUPTED in dispositions:
+        return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.INTERRUPTED, outcomes)
+    if ComponentDisposition.CANCELLED in dispositions or (
+        cancellation is not None and cancellation.is_cancelled
+    ):
+        return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.CANCELLED, outcomes)
+    if ComponentDisposition.EXECUTION_FAILURE in dispositions:
+        superseding = next(
+            (item.failure for item in outcomes if item.failure is not None),
+            TerminalFailure(
+                "component_execution_failure",
+                "A component invalidated grouped execution",
+            ),
+        )
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.EXECUTION_FAILURE,
+            outcomes,
+            failure=superseding,
+        )
+    if all(item is ComponentDisposition.SUCCEEDED for item in dispositions):
+        return None
+    primary = next(
+        (item.failure for item in outcomes if item.failure is not None),
+        TerminalFailure("component_failure", "A required component failed"),
+    )
+    return GroupedDirectTrfOutcome(
+        GroupedDirectTrfTerminal.COMPONENT_FAILURE,
+        outcomes,
+        failure=primary,
+    )
+
+
+def _aggregate_vector(
+    problem: OptimizationProblem,
+    decomposition: FitDecomposition,
+    outcomes: tuple[FitComponentOutcome, ...],
+) -> tuple[float, ...] | TerminalFailure:
+    assignments: dict[str, float] = {}
+    for component, outcome in zip(decomposition.components, outcomes, strict=True):
+        candidate = outcome.candidate
+        if (
+            outcome.controlled_ids != component.controlled_ids
+            or candidate is None
+            or len(candidate.vector) != len(component.controlled_ids)
+        ):
+            return TerminalFailure(
+                "aggregate_assignment_failure",
+                "A successful component lacks its exact controlled assignment",
+            )
+        for param_id, value in zip(
+            component.controlled_ids,
+            candidate.vector,
+            strict=True,
+        ):
+            if param_id in assignments or param_id not in problem.controlled_ids:
+                return TerminalFailure(
+                    "aggregate_assignment_failure",
+                    "Component assignments are duplicate or out of root scope",
+                )
+            assignments[param_id] = value
+    if set(assignments) != set(problem.controlled_ids):
+        return TerminalFailure(
+            "aggregate_assignment_failure",
+            "Component assignments do not cover the complete root vector",
+        )
+    vector = tuple(assignments[param_id] for param_id in problem.controlled_ids)
+    if any(
+        not lower <= value <= upper
+        for value, lower, upper in zip(
+            vector,
+            problem.lower_bounds,
+            problem.upper_bounds,
+            strict=True,
+        )
+    ):
+        return TerminalFailure(
+            "aggregate_feasibility_failure",
+            "Combined component assignment violates the root feasible domain",
+        )
+    return vector
+
+
+def _fresh_root_aggregate(
+    problem: OptimizationProblem,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    vector: tuple[float, ...],
+    token: CancellationToken,
+    outcomes: tuple[FitComponentOutcome, ...],
+) -> tuple[BoundEvaluator, EvaluationResult] | GroupedDirectTrfOutcome:
+    if token.is_cancelled:
+        return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.CANCELLED, outcomes)
+    try:
+        lifecycle = problem.lifecycle_frame(vector, parameterization)
+        frame = EvaluationFrame.from_lifecycle_frame(parameterization, lifecycle)
+        evaluator = engine.new_evaluator()
+        aggregate = evaluator.evaluate(frame)
+    except KeyboardInterrupt:
+        return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.INTERRUPTED, outcomes)
+    except Exception as error:  # noqa: BLE001 - aggregate validation fails closed
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
+            outcomes,
+            failure=TerminalFailure(
+                "aggregate_materialization_exception",
+                f"{type(error).__name__}: {error}",
+            ),
+        )
+    if token.is_cancelled:
+        return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.CANCELLED, outcomes)
+    if isinstance(aggregate, EvaluationFailure):
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
+            outcomes,
+            failure=TerminalFailure(aggregate.category, aggregate.message, aggregate),
+        )
+    return evaluator, aggregate
+
+
+type _FreshAggregate = tuple[tuple[float, ...], BoundEvaluator, EvaluationResult]
+
+
+def _reconstruct_fresh_aggregate(
+    problem: OptimizationProblem,
+    decomposition: FitDecomposition,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    outcomes: tuple[FitComponentOutcome, ...],
+    token: CancellationToken,
+) -> _FreshAggregate | GroupedDirectTrfOutcome:
+    try:
+        _check_grouped_cancellation(token)
+        vector_or_failure = _aggregate_vector(problem, decomposition, outcomes)
+        _check_grouped_cancellation(token)
+        if isinstance(vector_or_failure, TerminalFailure):
+            return GroupedDirectTrfOutcome(
+                GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
+                outcomes,
+                failure=vector_or_failure,
+            )
+        vector = vector_or_failure
+        _check_grouped_cancellation(token)
+    except _GroupedValidationCancelled:
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.CANCELLED,
+            outcomes,
+        )
+    fresh = _fresh_root_aggregate(
+        problem,
+        parameterization,
+        engine,
+        vector,
+        token,
+        outcomes,
+    )
+    if isinstance(fresh, GroupedDirectTrfOutcome):
+        return fresh
+    evaluator, aggregate = fresh
+    return vector, evaluator, aggregate
+
+
+def _accept_grouped_aggregate_unchecked(
+    problem: OptimizationProblem,
+    decomposition: FitDecomposition,
+    invocation: GroupedDirectTrfInvocation,
+    engine: EvaluationEngine,
+    outcomes: tuple[FitComponentOutcome, ...],
+    projections: tuple[_ComponentProjection, ...],
+    vector: tuple[float, ...],
+    token: CancellationToken,
+    evaluator: BoundEvaluator,
+    aggregate: EvaluationResult,
+) -> GroupedDirectTrfOutcome:
+    for component, projection in zip(
+        decomposition.components,
+        projections,
+        strict=True,
+    ):
+        if token.is_cancelled:
+            return GroupedDirectTrfOutcome(
+                GroupedDirectTrfTerminal.CANCELLED,
+                outcomes,
+            )
+        if not _root_projection_matches(
+            aggregate,
+            engine,
+            component,
+            projection,
+        ):
+            return _projection_mismatch(outcomes)
+        if token.is_cancelled:
+            return GroupedDirectTrfOutcome(
+                GroupedDirectTrfTerminal.CANCELLED,
+                outcomes,
+            )
+    if token.is_cancelled:
+        return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.CANCELLED, outcomes)
+    chi_square = canonical_chi_square(aggregate.residuals)
+    execution_identity = _identity(
+        "native-grouped-direct-trf-execution",
+        (
+            invocation.identity,
+            tuple(outcome.identity for outcome in outcomes),
+            tuple(float(value).hex() for value in vector),
+            aggregate.identity,
+        ),
+    )
+    statistics = evaluator.cache_statistics
+    materialization = CandidateMaterialization(
+        uuid4().hex,
+        problem.identity,
+        invocation.identity,
+        execution_identity,
+        CandidateSummary(vector, chi_square, 0),
+        MaterializationTerminal.SUCCESS,
+        1,
+        evaluator.compatibility_identity,
+        aggregate.identity,
+        statistics.hits,
+        statistics.misses,
+    )
+    if token.is_cancelled:
+        return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.CANCELLED, outcomes)
+    accepted = accept_materialized_fit(
+        problem=problem,
+        invocation_identity=invocation.identity,
+        execution_identity=execution_identity,
+        materialization=materialization,
+        vector=vector,
+        chi_square=chi_square,
+        evaluation_result=aggregate,
+    )
+    return GroupedDirectTrfOutcome(
+        GroupedDirectTrfTerminal.ACCEPTED,
+        outcomes,
+        accepted,
+    )
+
+
+def _accept_grouped_aggregate(
+    problem: OptimizationProblem,
+    decomposition: FitDecomposition,
+    invocation: GroupedDirectTrfInvocation,
+    engine: EvaluationEngine,
+    outcomes: tuple[FitComponentOutcome, ...],
+    projections: tuple[_ComponentProjection, ...],
+    vector: tuple[float, ...],
+    token: CancellationToken,
+    evaluator: BoundEvaluator,
+    aggregate: EvaluationResult,
+) -> GroupedDirectTrfOutcome:
+    try:
+        return _accept_grouped_aggregate_unchecked(
+            problem,
+            decomposition,
+            invocation,
+            engine,
+            outcomes,
+            projections,
+            vector,
+            token,
+            evaluator,
+            aggregate,
+        )
+    except KeyboardInterrupt:
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.INTERRUPTED,
+            outcomes,
+        )
+    except Exception as error:  # noqa: BLE001 - validation failures fail closed
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
+            outcomes,
+            failure=TerminalFailure(
+                "aggregate_validation_exception",
+                f"{type(error).__name__}: {error}",
+            ),
+        )
+
+
+def materialize_grouped_direct_trf(
+    problem: OptimizationProblem,
+    decomposition: FitDecomposition,
+    invocation: GroupedDirectTrfInvocation,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    components: Sequence[FitComponentOutcome],
+    *,
+    cancellation: CancellationToken | None = None,
+) -> GroupedDirectTrfOutcome:
+    """Freshly validate one complete aggregate before granting root authority."""
+    outcomes = tuple(components)
+    token = CancellationToken() if cancellation is None else cancellation
+    try:
+        _validate_grouped_context(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+            token,
+        )
+    except _GroupedValidationCancelled:
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.CANCELLED,
+            outcomes,
+        )
+    except KeyboardInterrupt:
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.INTERRUPTED,
+            outcomes,
+        )
+    except Exception as error:  # noqa: BLE001 - proof/context mismatch fails closed
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
+            outcomes,
+            failure=TerminalFailure(
+                "decomposition_context_failure",
+                f"{type(error).__name__}: {error}",
+            ),
+        )
+    if tuple(item.component_identity for item in outcomes) != tuple(
+        component.identity for component in decomposition.components
+    ):
+        raise DirectTrfConstructionError(
+            "Component outcomes do not match canonical decomposition order"
+        )
+    gated = _component_gate(outcomes, token)
+    if gated is not None:
+        return gated
+    projections_or_outcome = _validate_component_projections(
+        decomposition,
+        invocation,
+        engine,
+        outcomes,
+        token,
+    )
+    if isinstance(projections_or_outcome, GroupedDirectTrfOutcome):
+        return projections_or_outcome
+    projections = projections_or_outcome
+    fresh_or_outcome = _reconstruct_fresh_aggregate(
+        problem,
+        decomposition,
+        parameterization,
+        engine,
+        outcomes,
+        token,
+    )
+    if isinstance(fresh_or_outcome, GroupedDirectTrfOutcome):
+        return fresh_or_outcome
+    vector, evaluator, aggregate = fresh_or_outcome
+    return _accept_grouped_aggregate(
+        problem,
+        decomposition,
+        invocation,
+        engine,
+        outcomes,
+        projections,
+        vector,
+        token,
+        evaluator,
+        aggregate,
+    )
+
+
+def execute_grouped_direct_trf(
+    problem: OptimizationProblem,
+    decomposition: FitDecomposition,
+    invocation: GroupedDirectTrfInvocation,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    *,
+    cancellation: CancellationToken | None = None,
+) -> GroupedDirectTrfOutcome:
+    """Execute all exact components, then freshly validate the root aggregate."""
+    token = CancellationToken() if cancellation is None else cancellation
+    try:
+        _validate_grouped_context(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+            token,
+        )
+    except _GroupedValidationCancelled:
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.CANCELLED,
+            tuple(_not_started(component) for component in decomposition.components),
+        )
+    except KeyboardInterrupt:
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.INTERRUPTED,
+            tuple(_not_started(component) for component in decomposition.components),
+        )
+    except Exception as error:  # noqa: BLE001 - invalidation gives every disposition
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.EXECUTION_FAILURE,
+            tuple(_not_started(component) for component in decomposition.components),
+            failure=TerminalFailure(
+                "grouped_context_failure",
+                f"{type(error).__name__}: {error}",
+            ),
+        )
+    components = execute_direct_trf_components(
+        decomposition,
+        invocation,
+        parameterization,
+        engine,
+        cancellation=token,
+    )
+    return materialize_grouped_direct_trf(
+        problem,
+        decomposition,
+        invocation,
+        parameterization,
+        engine,
+        components,
+        cancellation=token,
+    )
