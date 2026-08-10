@@ -15,9 +15,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from numbers import Real
-from threading import Event
-from typing import cast
+from threading import Event, RLock
+from typing import SupportsIndex, cast
 from uuid import uuid4
+from weakref import WeakKeyDictionary
 
 import numpy as np
 from scipy.optimize import least_squares
@@ -292,6 +293,66 @@ class ComponentProblemDerivation:
 
 
 @dataclass(frozen=True, slots=True)
+class GridSeedProblemDerivation:
+    """Exact lineage for one full-coordinate GRID seed child problem."""
+
+    root_problem_identity: str
+    seed_identity: str
+    seed_ordinal: int
+    axis_items: tuple[tuple[str, float], ...]
+    controlled_ids: tuple[str, ...]
+    start: tuple[float, ...]
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.seed_ordinal, bool) or self.seed_ordinal < 0:
+            raise DirectTrfConstructionError(
+                "GRID seed ordinal must be a non-negative integer"
+            )
+        axis_items = tuple(
+            (param_id, _finite_binary64(value, name=f"GRID axis {param_id!r}"))
+            for param_id, value in self.axis_items
+        )
+        axis_ids = tuple(param_id for param_id, _value in axis_items)
+        if (
+            not axis_items
+            or len(set(axis_ids)) != len(axis_ids)
+            or axis_ids
+            != tuple(sorted(axis_ids, key=lambda item: item.encode("utf-8")))
+            or not set(axis_ids).issubset(self.controlled_ids)
+        ):
+            raise DirectTrfConstructionError(
+                "GRID seed axes must be unique canonical controlled IDs"
+            )
+        start = tuple(
+            _finite_binary64(value, name=f"GRID start[{index}]")
+            for index, value in enumerate(self.start)
+        )
+        if len(start) != len(self.controlled_ids):
+            raise DirectTrfConstructionError("GRID seed start has the wrong dimension")
+        object.__setattr__(self, "axis_items", axis_items)
+        object.__setattr__(self, "start", start)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-grid-seed-problem-derivation",
+                (
+                    self.root_problem_identity,
+                    self.seed_identity,
+                    self.seed_ordinal,
+                    tuple(
+                        (param_id, _float_token(value))
+                        for param_id, value in axis_items
+                    ),
+                    self.controlled_ids,
+                    _vector_tokens(start),
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class OptimizationProblem:
     """One immutable canonical external-coordinate fit and commit context."""
 
@@ -308,7 +369,7 @@ class OptimizationProblem:
     lower_bounds: tuple[float, ...]
     upper_bounds: tuple[float, ...]
     commit_scope: tuple[str, ...]
-    derivation: ComponentProblemDerivation | None = None
+    derivation: ComponentProblemDerivation | GridSeedProblemDerivation | None = None
     scalarization_version: str = _SCALARIZATION_VERSION
     identity: str = field(init=False)
 
@@ -325,22 +386,31 @@ class OptimizationProblem:
             self.lower_bounds,
             self.upper_bounds,
         )
-        if self.derivation is not None and (
-            self.derivation.projected_plan_identity != self.evaluation_plan_identity
-            or self.derivation.controlled_ids != self.controlled_ids
-            or self.derivation.root_start_bindings != self.held_items
+        if isinstance(self.derivation, ComponentProblemDerivation):
+            if (
+                self.derivation.projected_plan_identity != self.evaluation_plan_identity
+                or self.derivation.controlled_ids != self.controlled_ids
+                or self.derivation.root_start_bindings != self.held_items
+            ):
+                raise DirectTrfConstructionError(
+                    "Component problem differs from its derivation record"
+                )
+        elif isinstance(self.derivation, GridSeedProblemDerivation) and (
+            self.derivation.controlled_ids != self.controlled_ids
+            or self.derivation.start != normalized_start
         ):
             raise DirectTrfConstructionError(
-                "Component problem differs from its derivation record"
+                "GRID seed problem differs from its derivation record"
             )
         object.__setattr__(self, "start", normalized_start)
         object.__setattr__(self, "lower_bounds", lower)
         object.__setattr__(self, "upper_bounds", upper)
-        derivation_record = (
-            ()
-            if self.derivation is None
-            else (("derived-fit-component", self.derivation.identity),)
-        )
+        if self.derivation is None:
+            derivation_record: tuple[tuple[str, str], ...] = ()
+        elif isinstance(self.derivation, ComponentProblemDerivation):
+            derivation_record = (("derived-fit-component", self.derivation.identity),)
+        else:
+            derivation_record = (("derived-grid-seed", self.derivation.identity),)
         object.__setattr__(
             self,
             "identity",
@@ -793,8 +863,73 @@ class CandidateMaterialization:
 
 
 @dataclass(frozen=True, slots=True)
+class GridSelectionProvenance:
+    """Exact GRID workflow selection that authorizes one root materialization."""
+
+    workflow_invocation_identity: str
+    root_problem_identity: str
+    selection_identity: str
+    selected_seed_identity: str
+    selected_seed_ordinal: int
+    grid_candidate_identity: str
+    materialized_candidate_identity: str
+    candidate_problem_identity: str
+    candidate_invocation_identity: str
+    candidate_execution_identity: str
+    candidate_materialization_identity: str
+    accepted_materialization_identity: str
+    accepted_evaluation_identity: str
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.selected_seed_ordinal, bool)
+            or self.selected_seed_ordinal < 0
+        ):
+            raise ValueError("Selected GRID seed ordinal must be non-negative")
+        identities = (
+            self.workflow_invocation_identity,
+            self.root_problem_identity,
+            self.selection_identity,
+            self.selected_seed_identity,
+            self.grid_candidate_identity,
+            self.materialized_candidate_identity,
+            self.candidate_problem_identity,
+            self.candidate_invocation_identity,
+            self.candidate_execution_identity,
+            self.candidate_materialization_identity,
+            self.accepted_materialization_identity,
+            self.accepted_evaluation_identity,
+        )
+        if any(not identity for identity in identities):
+            raise ValueError("GRID selection provenance identities cannot be empty")
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-grid-selection-provenance",
+                (
+                    self.workflow_invocation_identity,
+                    self.root_problem_identity,
+                    self.selection_identity,
+                    self.selected_seed_identity,
+                    self.selected_seed_ordinal,
+                    self.grid_candidate_identity,
+                    self.materialized_candidate_identity,
+                    self.candidate_problem_identity,
+                    self.candidate_invocation_identity,
+                    self.candidate_execution_identity,
+                    self.candidate_materialization_identity,
+                    self.accepted_materialization_identity,
+                    self.accepted_evaluation_identity,
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class AcceptedFitResult:
-    """Fresh-materialized immutable fit result eligible for one atomic commit."""
+    """Fresh-materialized immutable evidence with no live commit authority."""
 
     occurrence_identity: str = field(compare=False)
     problem_identity: str
@@ -811,11 +946,14 @@ class AcceptedFitResult:
     evaluation_result: EvaluationResult = field(repr=False, compare=False)
     commit_scope: tuple[str, ...]
     commit_items: tuple[tuple[str, float], ...]
+    origin_context_identity: str
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
         if self.evaluation_result.residuals.size < 1:
             raise ValueError("Accepted result cannot have an empty residual objective")
+        if not self.origin_context_identity:
+            raise ValueError("Accepted result requires an origin context identity")
         object.__setattr__(
             self,
             "identity",
@@ -839,9 +977,54 @@ class AcceptedFitResult:
                         (param_id, _float_token(value))
                         for param_id, value in self.commit_items
                     ),
+                    self.origin_context_identity,
                 ),
             ),
         )
+
+
+class LiveFitCommitAuthority:
+    """Opaque process-local token whose authority lives only in Direct TRF."""
+
+    __slots__ = ("__weakref__",)
+
+    def __new__(cls) -> LiveFitCommitAuthority:
+        raise TypeError(
+            "Live fit commit authority is minted only by Direct TRF acceptance"
+        )
+
+    def __copy__(self) -> LiveFitCommitAuthority:
+        raise TypeError("Live fit commit authority cannot be copied")
+
+    def __deepcopy__(self, _memo: object) -> LiveFitCommitAuthority:
+        raise TypeError("Live fit commit authority cannot be copied")
+
+    def __reduce__(self) -> tuple[object, ...]:
+        raise TypeError("Live fit commit authority cannot be serialized")
+
+    def __reduce_ex__(self, _protocol: SupportsIndex, /) -> tuple[object, ...]:
+        raise TypeError("Live fit commit authority cannot be serialized")
+
+
+@dataclass(frozen=True, slots=True)
+class _CommitAuthorityBinding:
+    """Private immutable binding for one exact accepted evidence object."""
+
+    accepted_result: AcceptedFitResult = field(repr=False, compare=False)
+    accepted_result_identity: str
+    accepted_occurrence_identity: str
+    problem_identity: str
+    snapshot_context_identity: str
+    source_occurrence_identity: str
+    source_revision: int
+    origin_context_identity: str
+
+
+_LIVE_FIT_COMMIT_AUTHORITIES: WeakKeyDictionary[
+    LiveFitCommitAuthority,
+    _CommitAuthorityBinding,
+] = WeakKeyDictionary()
+_LIVE_FIT_COMMIT_AUTHORITIES_LOCK = RLock()
 
 
 class DirectTrfOutcomeTerminal(StrEnum):
@@ -861,11 +1044,24 @@ class DirectTrfOutcome:
     execution: DirectTrfExecution
     materialization: CandidateMaterialization | None = None
     accepted_result: AcceptedFitResult | None = None
+    commit_authority: LiveFitCommitAuthority | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         accepted = self.terminal is DirectTrfOutcomeTerminal.ACCEPTED
-        if accepted != (self.accepted_result is not None):
-            raise ValueError("Only ACCEPTED may expose an Accepted Fit Result")
+        if accepted != (
+            self.accepted_result is not None and self.commit_authority is not None
+        ):
+            raise ValueError(
+                "Only ACCEPTED may expose fit evidence and live commit authority"
+            )
+        if not accepted and (
+            self.accepted_result is not None or self.commit_authority is not None
+        ):
+            raise ValueError("Unaccepted outcome cannot expose fit authority")
         if accepted and (
             self.materialization is None
             or self.materialization.terminal is not MaterializationTerminal.SUCCESS
@@ -1737,7 +1933,7 @@ def _materialize_candidate(
     )
 
 
-def accept_materialized_fit(
+def _accepted_fit_evidence(
     *,
     problem: OptimizationProblem,
     invocation_identity: str,
@@ -1746,8 +1942,9 @@ def accept_materialized_fit(
     vector: tuple[float, ...],
     chi_square: float,
     evaluation_result: EvaluationResult,
+    origin_context_identity: str,
 ) -> AcceptedFitResult:
-    """Grant fit authority only to one fresh complete root materialization."""
+    """Construct evidence only from one fresh complete root materialization."""
     if not problem.acceptance_authority:
         raise DirectTrfConstructionError(
             "A derived component problem has no acceptance authority"
@@ -1787,7 +1984,137 @@ def accept_materialized_fit(
         evaluation_result,
         problem.commit_scope,
         commit_items,
+        origin_context_identity,
     )
+
+
+def _snapshot_commit_context_identity(snapshot: AnalysisValuesSnapshot) -> str:
+    return _identity(
+        "native-analysis-values-commit-context",
+        (
+            snapshot.occurrence_identity,
+            snapshot.model_identity,
+            snapshot.definitions_identity,
+            snapshot.configuration_identity,
+            snapshot.revision,
+            tuple(
+                (param_id, _float_token(value)) for param_id, value in snapshot.items()
+            ),
+        ),
+    )
+
+
+def _mint_fit_commit_authority(
+    accepted: AcceptedFitResult,
+    problem: OptimizationProblem,
+) -> LiveFitCommitAuthority:
+    if (
+        accepted.problem_identity != problem.identity
+        or accepted.source_occurrence_identity
+        != problem.source_snapshot.occurrence_identity
+        or accepted.source_revision != problem.source_snapshot.revision
+        or not accepted.origin_context_identity
+    ):
+        raise DirectTrfConstructionError(
+            "Fit commit authority evidence differs from its root context"
+        )
+    authority = object.__new__(LiveFitCommitAuthority)
+    binding = _CommitAuthorityBinding(
+        accepted,
+        accepted.identity,
+        accepted.occurrence_identity,
+        problem.identity,
+        _snapshot_commit_context_identity(problem.source_snapshot),
+        problem.source_snapshot.occurrence_identity,
+        problem.source_snapshot.revision,
+        accepted.origin_context_identity,
+    )
+    with _LIVE_FIT_COMMIT_AUTHORITIES_LOCK:
+        _LIVE_FIT_COMMIT_AUTHORITIES[authority] = binding
+    return authority
+
+
+def _direct_fit_commit_origin(
+    problem: OptimizationProblem,
+    invocation_identity: str,
+    execution_identity: str,
+    materialization: CandidateMaterialization,
+    evaluation_result: EvaluationResult,
+) -> str:
+    return _identity(
+        "native-direct-trf-fit-commit-origin",
+        (
+            problem.identity,
+            invocation_identity,
+            execution_identity,
+            materialization.identity,
+            evaluation_result.identity,
+        ),
+    )
+
+
+def accept_materialized_fit(
+    *,
+    problem: OptimizationProblem,
+    invocation_identity: str,
+    execution_identity: str,
+    materialization: CandidateMaterialization,
+    vector: tuple[float, ...],
+    chi_square: float,
+    evaluation_result: EvaluationResult,
+) -> tuple[AcceptedFitResult, LiveFitCommitAuthority]:
+    """Accept a fresh Direct TRF fit and mint its process-owned capability."""
+    origin_context_identity = _direct_fit_commit_origin(
+        problem,
+        invocation_identity,
+        execution_identity,
+        materialization,
+        evaluation_result,
+    )
+    accepted = _accepted_fit_evidence(
+        problem=problem,
+        invocation_identity=invocation_identity,
+        execution_identity=execution_identity,
+        materialization=materialization,
+        vector=vector,
+        chi_square=chi_square,
+        evaluation_result=evaluation_result,
+        origin_context_identity=origin_context_identity,
+    )
+    authority = _mint_fit_commit_authority(accepted, problem)
+    return accepted, authority
+
+
+def _accept_materialized_fit_for_derived_workflow(
+    *,
+    problem: OptimizationProblem,
+    invocation_identity: str,
+    execution_identity: str,
+    materialization: CandidateMaterialization,
+    vector: tuple[float, ...],
+    chi_square: float,
+    evaluation_result: EvaluationResult,
+    authority_context_identity: str,
+) -> AcceptedFitResult:
+    """Construct derived evidence after workflow validation, before authority."""
+    return _accepted_fit_evidence(
+        problem=problem,
+        invocation_identity=invocation_identity,
+        execution_identity=execution_identity,
+        materialization=materialization,
+        vector=vector,
+        chi_square=chi_square,
+        evaluation_result=evaluation_result,
+        origin_context_identity=authority_context_identity,
+    )
+
+
+def _grant_derived_fit_commit_authority(
+    accepted: AcceptedFitResult,
+    problem: OptimizationProblem,
+) -> LiveFitCommitAuthority:
+    """Mint authority for one exact, already validated derived evidence object."""
+    return _mint_fit_commit_authority(accepted, problem)
 
 
 def _accepted_outcome(
@@ -1796,7 +2123,7 @@ def _accepted_outcome(
     problem: OptimizationProblem,
     invocation: DirectTrfInvocation,
 ) -> DirectTrfOutcome:
-    accepted = accept_materialized_fit(
+    accepted, authority = accept_materialized_fit(
         problem=problem,
         invocation_identity=invocation.identity,
         execution_identity=execution.identity,
@@ -1810,6 +2137,7 @@ def _accepted_outcome(
         execution,
         candidate.materialization,
         accepted,
+        authority,
     )
 
 
@@ -2009,14 +2337,162 @@ def execute_direct_trf_candidate(
     )
 
 
+def _materialize_direct_trf_candidate_for_root(
+    problem: OptimizationProblem,
+    candidate_problem: OptimizationProblem,
+    invocation: DirectTrfInvocation,
+    outcome: DirectTrfCandidateOutcome,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    *,
+    cancellation: CancellationToken | None = None,
+) -> MaterializedDirectTrfCandidate | DirectTrfOutcome:
+    """Freshly materialize one derived full-coordinate candidate at its root."""
+    derivation = candidate_problem.derivation
+    if (
+        not problem.acceptance_authority
+        or candidate_problem.acceptance_authority
+        or not isinstance(derivation, GridSeedProblemDerivation)
+        or derivation.root_problem_identity != problem.identity
+    ):
+        raise DirectTrfConstructionError(
+            "Selected candidate is not derived from this GRID root problem"
+        )
+    _validate_execution_context(
+        candidate_problem,
+        invocation,
+        parameterization,
+        engine,
+    )
+    candidate = outcome.candidate
+    materialization = outcome.materialization
+    if (
+        outcome.terminal is not DirectTrfCandidateTerminal.SUCCESS
+        or outcome.execution.terminal is not DirectTrfTerminal.CONVERGED
+        or candidate is None
+        or materialization is None
+        or materialization.terminal is not MaterializationTerminal.SUCCESS
+    ):
+        raise DirectTrfConstructionError(
+            "Only a successful converged GRID candidate may be selected"
+        )
+    unchanged_root_semantics = (
+        candidate_problem.evaluation_plan_identity == problem.evaluation_plan_identity
+        and candidate_problem.parameterization_identity
+        == problem.parameterization_identity
+        and candidate_problem.evaluator_parameterization_identity
+        == problem.evaluator_parameterization_identity
+        and candidate_problem.constraint_program_identity
+        == problem.constraint_program_identity
+        and candidate_problem.configuration_identity == problem.configuration_identity
+        and candidate_problem.source_snapshot == problem.source_snapshot
+        and candidate_problem.independent_items == problem.independent_items
+        and candidate_problem.controlled_ids == problem.controlled_ids
+        and candidate_problem.held_items == problem.held_items
+        and candidate_problem.lower_bounds == problem.lower_bounds
+        and candidate_problem.upper_bounds == problem.upper_bounds
+        and candidate_problem.commit_scope == problem.commit_scope
+        and candidate_problem.scalarization_version == problem.scalarization_version
+    )
+    evaluation = candidate.evaluation_result
+    try:
+        candidate_chi_square = canonical_chi_square(evaluation.residuals)
+    except (TypeError, ValueError, ObjectiveScalarizationError) as error:
+        raise DirectTrfConstructionError(
+            "Selected GRID candidate has invalid objective evidence"
+        ) from error
+    if (
+        not unchanged_root_semantics
+        or outcome.execution.problem_identity != candidate_problem.identity
+        or outcome.execution.invocation_identity != invocation.identity
+        or candidate.problem_identity != candidate_problem.identity
+        or candidate.invocation_identity != invocation.identity
+        or candidate.execution_identity != outcome.execution.identity
+        or candidate.materialization is not materialization
+        or materialization.problem_identity != candidate_problem.identity
+        or materialization.invocation_identity != invocation.identity
+        or materialization.execution_identity != outcome.execution.identity
+        or materialization.candidate.vector != candidate.vector
+        or materialization.candidate.chi_square != candidate.chi_square
+        or materialization.evaluation_identity != evaluation.identity
+        or evaluation.plan_identity != problem.evaluation_plan_identity
+        or evaluation.parameterization_identity
+        != problem.evaluator_parameterization_identity
+        or evaluation.evaluator_compatibility_identity != engine.compatibility_identity
+        or tuple(evaluation.resolved_values) != problem.commit_scope
+        or candidate.vector
+        != tuple(
+            evaluation.resolved_values[param_id] for param_id in problem.controlled_ids
+        )
+        or candidate.chi_square != candidate_chi_square
+    ):
+        raise DirectTrfConstructionError(
+            "Selected GRID candidate provenance is incompatible with its root"
+        )
+    token = CancellationToken() if cancellation is None else cancellation
+    if token.is_cancelled:
+        return DirectTrfOutcome(
+            DirectTrfOutcomeTerminal.CANCELLED,
+            outcome.execution,
+        )
+    request = _CompletedRequest(
+        materialization.candidate,
+        tuple(float(value) for value in evaluation.residuals),
+        evaluation.identity,
+    )
+    fresh = _materialize_candidate(
+        outcome.execution,
+        problem,
+        invocation,
+        parameterization,
+        engine,
+        request,
+        token,
+    )
+    if isinstance(fresh, DirectTrfOutcome):
+        return fresh
+    return fresh
+
+
+def _consume_fit_commit_authority(
+    accepted: AcceptedFitResult,
+    authority: LiveFitCommitAuthority,
+    problem: OptimizationProblem,
+) -> None:
+    if not isinstance(authority, LiveFitCommitAuthority):
+        raise DirectTrfConstructionError(
+            "Accepted result lacks its exact live Direct TRF commit authority"
+        )
+    with _LIVE_FIT_COMMIT_AUTHORITIES_LOCK:
+        binding = _LIVE_FIT_COMMIT_AUTHORITIES.get(authority)
+        if (
+            binding is None
+            or binding.accepted_result is not accepted
+            or binding.accepted_result_identity != accepted.identity
+            or binding.accepted_occurrence_identity != accepted.occurrence_identity
+            or binding.problem_identity != problem.identity
+            or binding.snapshot_context_identity
+            != _snapshot_commit_context_identity(problem.source_snapshot)
+            or binding.source_occurrence_identity
+            != problem.source_snapshot.occurrence_identity
+            or binding.source_revision != problem.source_snapshot.revision
+            or binding.origin_context_identity != accepted.origin_context_identity
+        ):
+            raise DirectTrfConstructionError(
+                "Accepted result lacks its exact live Direct TRF commit authority"
+            )
+        del _LIVE_FIT_COMMIT_AUTHORITIES[authority]
+
+
 def commit_accepted_fit(
     accepted: AcceptedFitResult,
+    authority: LiveFitCommitAuthority,
     *,
     problem: OptimizationProblem,
     parameterization: ActiveParameterization,
     analysis_values: AnalysisValues,
 ) -> CommitReceipt:
-    """Commit exactly one validated accepted result at its captured revision."""
+    """Commit evidence once through its exact process-owned live capability."""
     if not problem.acceptance_authority:
         raise DirectTrfConstructionError(
             "A derived component problem has no commit authority"
@@ -2043,6 +2519,7 @@ def commit_accepted_fit(
         raise DirectTrfConstructionError(
             "Accepted result commit snapshot is not its materialized aggregate"
         )
+    _consume_fit_commit_authority(accepted, authority, problem)
     committed = analysis_values.commit(
         dict(accepted.commit_items),
         expected=problem.source_snapshot,
