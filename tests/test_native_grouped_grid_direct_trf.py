@@ -11,6 +11,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+import chemex.optimize.grouped_grid_direct_trf as grouped_grid
 from chemex.configuration.methods import Selection, read_methods
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
@@ -33,6 +34,7 @@ from chemex.optimize.grouped_grid_direct_trf import (
     execute_grouped_grid_direct_trf,
 )
 from chemex.parameters.parameterization import ActiveParameterization
+from chemex.parameters.values import StaleAnalysisValuesError
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
 
@@ -132,6 +134,13 @@ def test_each_seed_uses_exact_components_and_only_selected_aggregate_commits() -
             parameterization,
             engine,
         )
+        stale_outcome = execute_grouped_grid_direct_trf(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+        )
 
     assert outcome.terminal is GroupedGridDirectTrfTerminal.ACCEPTED
     assert tuple(attempt.disposition for attempt in outcome.attempts) == (
@@ -141,6 +150,8 @@ def test_each_seed_uses_exact_components_and_only_selected_aggregate_commits() -
     assert outcome.selection is not None
     assert outcome.accepted_result is not None
     assert outcome.commit_authority is not None
+    assert stale_outcome.accepted_result is not None
+    assert stale_outcome.commit_authority is not None
     assert session.analysis_values.snapshot() == before
 
     for seed, attempt in zip(invocation.seeds, outcome.attempts, strict=True):
@@ -186,6 +197,27 @@ def test_each_seed_uses_exact_components_and_only_selected_aggregate_commits() -
 
     assert receipt.old_revision == before.revision
     assert receipt.new_revision == before.revision + 1
+    committed = session.analysis_values.snapshot()
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="exact live Direct TRF commit authority",
+    ):
+        commit_grouped_grid_accepted_fit(
+            outcome.accepted_result,
+            outcome.commit_authority,
+            problem=problem,
+            parameterization=parameterization,
+            analysis_values=session.analysis_values,
+        )
+    with pytest.raises(StaleAnalysisValuesError, match="revision is stale"):
+        commit_grouped_grid_accepted_fit(
+            stale_outcome.accepted_result,
+            stale_outcome.commit_authority,
+            problem=problem,
+            parameterization=parameterization,
+            analysis_values=session.analysis_values,
+        )
+    assert session.analysis_values.snapshot() == committed
 
 
 def test_selection_orders_whole_aggregates_and_never_combines_marginal_minima() -> None:
@@ -241,9 +273,7 @@ def test_selection_orders_whole_aggregates_and_never_combines_marginal_minima() 
 
     assert outcome.terminal is GroupedGridDirectTrfTerminal.ACCEPTED
     assert outcome.selection is not None
-    assert outcome.selection.ordering_policy == (
-        "aggregate-chi-square-vector-seed-ordinal-v1"
-    )
+    assert outcome.selection.ordering_policy == "chi-square-vector-seed-ordinal-v1"
     assert all(attempt.candidate is not None for attempt in outcome.attempts)
 
     aggregate_vectors: list[tuple[float, ...]] = []
@@ -335,25 +365,15 @@ def test_commit_rejects_tampered_component_lineage_before_generic_authority() ->
         selected,
         components=(foreign_component, *selected.components[1:]),
     )
-    selection_type = type(outcome.selection)
-    foreign_selection = selection_type.from_candidate_records((foreign_selected,))
-    foreign_provenance = dataclasses.replace(
-        outcome.accepted_result.grouped_grid_provenance,
-        selection_identity=foreign_selection.identity,
-        selected_outcome_identity=foreign_selected.identity,
-    )
     foreign_accepted = dataclasses.replace(
         outcome.accepted_result,
-        grouped_grid_provenance=foreign_provenance,
-        selection=foreign_selection,
         selected_outcome=foreign_selected,
-        origin_context_identity=foreign_provenance.identity,
     )
     before = session.analysis_values.snapshot()
 
     with pytest.raises(
         DirectTrfConstructionError,
-        match="canonical aggregate authority",
+        match="exact component ownership",
     ):
         commit_grouped_grid_accepted_fit(
             foreign_accepted,
@@ -507,3 +527,297 @@ def test_equal_aggregate_objective_and_vector_tie_selects_first_seed() -> None:
     assert first.candidate.objective == second.candidate.objective
     assert first.candidate.vector == second.candidate.vector
     assert outcome.selection.selected_seed_ordinal == 0
+
+
+def test_cross_seed_component_mix_is_rejected_before_grid_selection() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_grid_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    (axis_id,) = problem.controlled_ids[:1]
+    invocation = GridDirectTrfInvocation.for_problem(
+        problem,
+        axes=((axis_id, (problem.start[0], problem.start[0] * 1.1)),),
+        objective_request_budget=10,
+    )
+
+    def successful_backend(
+        fun: Callable[[Array], Array], x0: Array, **_kwargs: object
+    ) -> object:
+        candidate = np.asarray(x0, dtype=np.float64) * 0.9
+        return _backend_result(candidate, fun(candidate))
+
+    with patch("chemex.optimize.direct_trf.least_squares", successful_backend):
+        clean = execute_grouped_grid_direct_trf(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    seed_0, seed_1 = clean.attempts
+    mixed_seed_0 = dataclasses.replace(
+        seed_0,
+        components=(seed_1.components[0], *seed_0.components[1:]),
+    )
+
+    with patch.object(
+        grouped_grid,
+        "_execute_all_seeds",
+        return_value=(mixed_seed_0, seed_1),
+    ):
+        attacked = execute_grouped_grid_direct_trf(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert attacked.terminal is GroupedGridDirectTrfTerminal.EXECUTION_FAILURE
+    assert attacked.attempts[0].disposition is (
+        GridSeedDisposition.IMPLEMENTATION_FAILURE
+    )
+    assert attacked.attempts[0].candidate is None
+    assert attacked.selection is None
+    assert attacked.accepted_result is None
+    assert attacked.commit_authority is None
+
+
+def test_foreign_grouped_seed_evidence_is_rejected_before_grid_selection() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_grid_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    (axis_id,) = problem.controlled_ids[:1]
+    invocation = GridDirectTrfInvocation.for_problem(
+        problem,
+        axes=((axis_id, (problem.start[0], problem.start[0] * 1.1)),),
+        objective_request_budget=10,
+    )
+
+    def successful_backend(
+        fun: Callable[[Array], Array], x0: Array, **_kwargs: object
+    ) -> object:
+        candidate = np.asarray(x0, dtype=np.float64) * 0.9
+        return _backend_result(candidate, fun(candidate))
+
+    with patch("chemex.optimize.direct_trf.least_squares", successful_backend):
+        clean = execute_grouped_grid_direct_trf(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    seed_0, seed_1 = clean.attempts
+    first_outcome = seed_0.components[0]
+    assert first_outcome.candidate is not None
+    assert seed_0.seed_decomposition is not None
+    assert seed_1.seed_decomposition is not None
+    assert seed_0.component_invocation is not None
+    assert seed_1.component_invocation is not None
+    first_fit_component = seed_0.seed_decomposition.components[0]
+
+    wrong_controlled = dataclasses.replace(
+        first_outcome,
+        controlled_ids=("foreign-control",),
+    )
+    wrong_child_component = dataclasses.replace(
+        first_fit_component,
+        problem=seed_1.seed_decomposition.components[0].problem,
+    )
+    wrong_child_decomposition = dataclasses.replace(
+        seed_0.seed_decomposition,
+        components=(
+            wrong_child_component,
+            *seed_0.seed_decomposition.components[1:],
+        ),
+    )
+    wrong_direct_invocation = dataclasses.replace(
+        seed_0.component_invocation,
+        component_invocations=(
+            seed_1.component_invocation.component_invocations[0],
+            *seed_0.component_invocation.component_invocations[1:],
+        ),
+    )
+    foreign_candidate = dataclasses.replace(
+        first_outcome.candidate,
+        problem_identity="foreign-component-problem",
+    )
+    foreign_materialization = dataclasses.replace(
+        first_outcome.candidate.materialization,
+        problem_identity="foreign-materialization-problem",
+    )
+    candidate_with_foreign_materialization = dataclasses.replace(
+        first_outcome.candidate,
+        materialization=foreign_materialization,
+    )
+    duplicate_missing = (
+        first_outcome,
+        first_outcome,
+        *seed_0.components[2:],
+    )
+    attacks = {
+        "wrong decomposition": dataclasses.replace(
+            seed_0,
+            root_decomposition_identity="foreign-decomposition",
+        ),
+        "wrong controlled IDs": dataclasses.replace(
+            seed_0,
+            components=(wrong_controlled, *seed_0.components[1:]),
+        ),
+        "wrong child problem": dataclasses.replace(
+            seed_0,
+            seed_decomposition=wrong_child_decomposition,
+        ),
+        "wrong child invocation": dataclasses.replace(
+            seed_0,
+            component_invocation=wrong_direct_invocation,
+        ),
+        "duplicate and missing component": dataclasses.replace(
+            seed_0,
+            components=duplicate_missing,
+        ),
+        "foreign candidate": dataclasses.replace(
+            seed_0,
+            components=(
+                dataclasses.replace(first_outcome, candidate=foreign_candidate),
+                *seed_0.components[1:],
+            ),
+        ),
+        "foreign materialization": dataclasses.replace(
+            seed_0,
+            components=(
+                dataclasses.replace(
+                    first_outcome,
+                    candidate=candidate_with_foreign_materialization,
+                ),
+                *seed_0.components[1:],
+            ),
+        ),
+    }
+
+    for attack_name, attacked_seed in attacks.items():
+        with patch.object(
+            grouped_grid,
+            "_execute_all_seeds",
+            return_value=(attacked_seed, seed_1),
+        ):
+            attacked = execute_grouped_grid_direct_trf(
+                problem,
+                decomposition,
+                invocation,
+                parameterization,
+                engine,
+            )
+
+        assert attacked.terminal is GroupedGridDirectTrfTerminal.EXECUTION_FAILURE, (
+            attack_name
+        )
+        assert attacked.attempts[0].disposition is (
+            GridSeedDisposition.IMPLEMENTATION_FAILURE
+        ), attack_name
+        assert attacked.attempts[0].candidate is None, attack_name
+        assert attacked.selection is None, attack_name
+        assert attacked.accepted_result is None, attack_name
+        assert attacked.commit_authority is None, attack_name
+
+
+def test_cancellation_after_seed_execution_gates_selection() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_grid_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    (axis_id,) = problem.controlled_ids[:1]
+    invocation = GridDirectTrfInvocation.for_problem(
+        problem,
+        axes=((axis_id, (problem.start[0], problem.start[0] * 1.1)),),
+        objective_request_budget=10,
+    )
+    token = CancellationToken()
+    execute_all_seeds = grouped_grid._execute_all_seeds
+
+    def cancel_after_seed_execution(*args: object, **kwargs: object) -> object:
+        result = execute_all_seeds(*args, **kwargs)
+        token.cancel()
+        return result
+
+    def successful_backend(
+        fun: Callable[[Array], Array], x0: Array, **_kwargs: object
+    ) -> object:
+        candidate = np.asarray(x0, dtype=np.float64) * 0.9
+        return _backend_result(candidate, fun(candidate))
+
+    with (
+        patch("chemex.optimize.direct_trf.least_squares", successful_backend),
+        patch.object(
+            grouped_grid,
+            "_execute_all_seeds",
+            side_effect=cancel_after_seed_execution,
+        ),
+    ):
+        outcome = execute_grouped_grid_direct_trf(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+            cancellation=token,
+        )
+
+    assert outcome.terminal is GroupedGridDirectTrfTerminal.CANCELLED
+    assert outcome.selection is None
+    assert outcome.accepted_result is None
+    assert outcome.commit_authority is None
+
+
+def test_interruption_after_seed_execution_gates_selection() -> None:
+    class InterruptAfterSeedExecution(CancellationToken):
+        armed = False
+
+        @property
+        def is_cancelled(self) -> bool:
+            if self.armed:
+                raise KeyboardInterrupt
+            return super().is_cancelled
+
+    _session, _experiments, parameterization, engine, problem = _grouped_grid_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    (axis_id,) = problem.controlled_ids[:1]
+    invocation = GridDirectTrfInvocation.for_problem(
+        problem,
+        axes=((axis_id, (problem.start[0], problem.start[0] * 1.1)),),
+        objective_request_budget=10,
+    )
+    token = InterruptAfterSeedExecution()
+    execute_all_seeds = grouped_grid._execute_all_seeds
+
+    def interrupt_after_seed_execution(*args: object, **kwargs: object) -> object:
+        result = execute_all_seeds(*args, **kwargs)
+        token.armed = True
+        return result
+
+    def successful_backend(
+        fun: Callable[[Array], Array], x0: Array, **_kwargs: object
+    ) -> object:
+        candidate = np.asarray(x0, dtype=np.float64) * 0.9
+        return _backend_result(candidate, fun(candidate))
+
+    with (
+        patch("chemex.optimize.direct_trf.least_squares", successful_backend),
+        patch.object(
+            grouped_grid,
+            "_execute_all_seeds",
+            side_effect=interrupt_after_seed_execution,
+        ),
+    ):
+        outcome = execute_grouped_grid_direct_trf(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+            cancellation=token,
+        )
+
+    assert outcome.terminal is GroupedGridDirectTrfTerminal.INTERRUPTED
+    assert outcome.selection is None
+    assert outcome.accepted_result is None
+    assert outcome.commit_authority is None

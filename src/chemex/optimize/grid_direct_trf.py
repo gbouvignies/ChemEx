@@ -15,20 +15,25 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from itertools import product
 from numbers import Real
-from typing import cast
+from typing import Protocol, cast
+from uuid import uuid4
 
-from chemex.evaluation.native import EvaluationEngine
+from chemex.evaluation.native import (
+    EvaluationEngine,
+    EvaluationFailure,
+    EvaluationFrame,
+)
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     CancellationToken,
     CandidateMaterialization,
+    CandidateSummary,
     CommitReceipt,
     DirectTrfCandidateOutcome,
     DirectTrfCandidateTerminal,
     DirectTrfConstructionError,
     DirectTrfInterrupted,
     DirectTrfInvocation,
-    DirectTrfOutcomeTerminal,
     DirectTrfTerminal,
     GridSeedProblemDerivation,
     GridSelectionProvenance,
@@ -39,7 +44,7 @@ from chemex.optimize.direct_trf import (
     TerminalFailure,
     _accept_materialized_fit_for_derived_workflow,
     _grant_derived_fit_commit_authority,
-    _materialize_direct_trf_candidate_for_root,
+    canonical_chi_square,
     commit_accepted_fit,
     execute_direct_trf_candidate,
 )
@@ -518,6 +523,49 @@ class GridCandidate:
         return self.objective, self.vector, self.seed_ordinal
 
 
+class GridCandidateRecord(Protocol):
+    """Narrow evidence contract consumed by canonical GRID finalization."""
+
+    @property
+    def seed_identity(self) -> str: ...
+
+    @property
+    def seed_ordinal(self) -> int: ...
+
+    @property
+    def axis_items(self) -> tuple[tuple[str, GridCoordinate], ...]: ...
+
+    @property
+    def start(self) -> tuple[GridCoordinate, ...]: ...
+
+    @property
+    def disposition(self) -> GridSeedDisposition: ...
+
+    @property
+    def execution_identity(self) -> str | None: ...
+
+    @property
+    def objective(self) -> float | None: ...
+
+    @property
+    def candidate(self) -> GridCandidate | None: ...
+
+    @property
+    def failure(self) -> TerminalFailure | None: ...
+
+    @property
+    def identity(self) -> str: ...
+
+    def validate_for_grid_selection(
+        self,
+        problem: OptimizationProblem,
+        invocation: GridDirectTrfInvocation,
+        seed: GridSeed,
+    ) -> None:
+        """Raise when this candidate is not exact evidence for ``seed``."""
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class GridSeedOutcome:
     """Compact exact table/provenance row for one canonical seed."""
@@ -585,6 +633,122 @@ class GridSeedOutcome:
             ),
         )
 
+    def validate_for_grid_selection(
+        self,
+        problem: OptimizationProblem,
+        invocation: GridDirectTrfInvocation,
+        seed: GridSeed,
+    ) -> None:
+        """Prove exact single-component seed lineage before selection."""
+        _validate_direct_grid_record(self, problem, invocation, seed)
+
+
+def _validate_direct_grid_record(
+    record: GridSeedOutcome,
+    problem: OptimizationProblem,
+    invocation: GridDirectTrfInvocation,
+    seed: GridSeed,
+) -> None:
+    """Validate #595 child/candidate evidence at GRID's ownership boundary."""
+    candidate = record.candidate
+    direct = record.direct_outcome
+    child_problem = seed.problem
+    child_invocation = seed.invocation
+    materialized = None if candidate is None else candidate.candidate
+    materialization = None if materialized is None else materialized.materialization
+    derivation = None if child_problem is None else child_problem.derivation
+    unchanged_root_semantics = (
+        child_problem is not None
+        and child_problem.evaluation_plan_identity == problem.evaluation_plan_identity
+        and child_problem.parameterization_identity == problem.parameterization_identity
+        and child_problem.evaluator_parameterization_identity
+        == problem.evaluator_parameterization_identity
+        and child_problem.constraint_program_identity
+        == problem.constraint_program_identity
+        and child_problem.configuration_identity == problem.configuration_identity
+        and child_problem.source_snapshot == problem.source_snapshot
+        and child_problem.independent_items == problem.independent_items
+        and child_problem.controlled_ids == problem.controlled_ids
+        and child_problem.held_items == problem.held_items
+        and child_problem.lower_bounds == problem.lower_bounds
+        and child_problem.upper_bounds == problem.upper_bounds
+        and child_problem.commit_scope == problem.commit_scope
+        and child_problem.scalarization_version == problem.scalarization_version
+    )
+    if (
+        invocation.root_problem_identity != problem.identity
+        or seed.root_problem_identity != problem.identity
+        or seed.identity != record.seed_identity
+        or seed.ordinal != record.seed_ordinal
+        or record.disposition is not GridSeedDisposition.ELIGIBLE
+        or candidate is None
+        or candidate.seed_identity != seed.identity
+        or candidate.seed_ordinal != seed.ordinal
+        or direct is None
+        or materialized is None
+        or direct.terminal is not DirectTrfCandidateTerminal.SUCCESS
+        or direct.execution.terminal is not DirectTrfTerminal.CONVERGED
+        or direct.candidate is not materialized
+        or direct.materialization is not materialization
+        or record.execution_identity != direct.execution.identity
+        or child_problem is None
+        or child_invocation is None
+        or not isinstance(derivation, GridSeedProblemDerivation)
+        or derivation.root_problem_identity != problem.identity
+        or derivation.seed_identity != seed.coordinate_identity
+        or derivation.seed_ordinal != seed.ordinal
+        or not unchanged_root_semantics
+        or direct.execution.problem_identity != child_problem.identity
+        or direct.execution.invocation_identity != child_invocation.identity
+        or not _materialized_grid_candidate_matches(
+            materialized,
+            child_problem,
+            child_invocation.identity,
+            direct.execution.identity,
+        )
+    ):
+        raise DirectTrfConstructionError(
+            "GRID candidate lacks exact canonical seed lineage"
+        )
+
+
+def _materialized_grid_candidate_matches(
+    candidate: MaterializedDirectTrfCandidate,
+    problem: OptimizationProblem,
+    invocation_identity: str,
+    execution_identity: str,
+) -> bool:
+    """Check self-consistent materialized evidence for a known GRID problem."""
+    evaluation = candidate.evaluation_result
+    materialization = candidate.materialization
+    try:
+        objective = canonical_chi_square(evaluation.residuals)
+        vector = tuple(
+            evaluation.resolved_values[param_id] for param_id in problem.controlled_ids
+        )
+    except Exception:  # noqa: BLE001 - malformed evidence fails closed
+        return False
+    return (
+        candidate.problem_identity == problem.identity
+        and candidate.invocation_identity == invocation_identity
+        and candidate.execution_identity == execution_identity
+        and candidate.vector == vector
+        and candidate.chi_square == objective
+        and materialization.problem_identity == problem.identity
+        and materialization.invocation_identity == invocation_identity
+        and materialization.execution_identity == execution_identity
+        and materialization.terminal is MaterializationTerminal.SUCCESS
+        and materialization.candidate.vector == candidate.vector
+        and materialization.candidate.chi_square == candidate.chi_square
+        and materialization.evaluation_identity == evaluation.identity
+        and materialization.evaluator_compatibility_identity
+        == evaluation.evaluator_compatibility_identity
+        and evaluation.plan_identity == problem.evaluation_plan_identity
+        and evaluation.parameterization_identity
+        == problem.evaluator_parameterization_identity
+        and tuple(evaluation.resolved_values) == problem.commit_scope
+    )
+
 
 @dataclass(frozen=True, slots=True)
 class GridSelection:
@@ -594,7 +758,7 @@ class GridSelection:
     selected_seed_ordinal: int
     selected_candidate_identity: str
     eligible_candidate_identities: tuple[str, ...]
-    candidate_records: tuple[GridSeedOutcome, ...] = field(
+    candidate_records: tuple[GridCandidateRecord, ...] = field(
         repr=False,
         compare=False,
     )
@@ -654,7 +818,7 @@ class GridSelection:
         selected_seed_identity: str,
         selected_seed_ordinal: int,
         selected_candidate_identity: str,
-        candidate_records: Sequence[GridSeedOutcome],
+        candidate_records: Sequence[GridCandidateRecord],
     ) -> GridSelection:
         """Validate the requested winner against canonical eligible records."""
         records = tuple(candidate_records)
@@ -685,7 +849,7 @@ class GridSelection:
         )
 
     @property
-    def selected_record(self) -> GridSeedOutcome:
+    def selected_record(self) -> GridCandidateRecord:
         """Return the one exact candidate record that won selection."""
         return self.candidate_records[0]
 
@@ -698,7 +862,7 @@ class AcceptedGridDirectTrfResult(AcceptedFitResult):
     workflow_invocation: GridDirectTrfInvocation = field(repr=False, compare=False)
     selection: GridSelection = field(repr=False, compare=False)
     selected_seed: GridSeed = field(repr=False, compare=False)
-    selected_outcome: GridSeedOutcome = field(repr=False, compare=False)
+    selected_outcome: GridCandidateRecord = field(repr=False, compare=False)
     fresh_candidate: MaterializedDirectTrfCandidate = field(
         repr=False,
         compare=False,
@@ -712,7 +876,7 @@ class AcceptedGridDirectTrfResult(AcceptedFitResult):
         workflow_invocation: GridDirectTrfInvocation,
         selection: GridSelection,
         selected_seed: GridSeed,
-        selected_outcome: GridSeedOutcome,
+        selected_outcome: GridCandidateRecord,
         fresh_candidate: MaterializedDirectTrfCandidate,
     ) -> AcceptedGridDirectTrfResult:
         """Attach GRID provenance to already accepted root evidence."""
@@ -747,32 +911,34 @@ def validate_grid_acceptance_lineage(
     invocation: GridDirectTrfInvocation,
     selection: GridSelection,
     selected_seed: GridSeed,
-    selected_outcome: GridSeedOutcome,
+    selected_outcome: GridCandidateRecord,
     fresh_candidate: MaterializedDirectTrfCandidate,
     problem: OptimizationProblem,
 ) -> None:
-    """Validate complete GRID lineage before Direct TRF grants live authority."""
-    fresh_materialization = fresh_candidate.materialization
+    """Validate canonical selection and fresh root promotion for any GRID record."""
     candidate = selected_outcome.candidate
-    direct_outcome = selected_outcome.direct_outcome
     try:
         canonical_seed = invocation.seeds[provenance.selected_seed_ordinal]
     except (AttributeError, IndexError, TypeError):
         canonical_seed = None
-    child_problem = None if canonical_seed is None else canonical_seed.problem
-    child_invocation = None if canonical_seed is None else canonical_seed.invocation
     materialized_candidate = None if candidate is None else candidate.candidate
     candidate_materialization = (
         None
         if materialized_candidate is None
         else materialized_candidate.materialization
     )
-    candidate_evaluation = (
-        None
-        if materialized_candidate is None
-        else materialized_candidate.evaluation_result
-    )
-    derivation = None if child_problem is None else child_problem.derivation
+    fresh_materialization = fresh_candidate.materialization
+    try:
+        if canonical_seed is not None:
+            selected_outcome.validate_for_grid_selection(
+                problem,
+                invocation,
+                canonical_seed,
+            )
+    except Exception as error:
+        raise DirectTrfConstructionError(
+            "Accepted GRID result lacks its canonical selection authority"
+        ) from error
     if (
         not isinstance(provenance, GridSelectionProvenance)
         or invocation.root_problem_identity != problem.identity
@@ -792,41 +958,36 @@ def validate_grid_acceptance_lineage(
         or materialized_candidate is None
         or selection.selected_candidate_identity != candidate.identity
         or provenance.grid_candidate_identity != candidate.identity
-        or direct_outcome is None
-        or direct_outcome.candidate is not materialized_candidate
-        or child_problem is None
-        or child_invocation is None
-        or not isinstance(derivation, GridSeedProblemDerivation)
-        or derivation.root_problem_identity != problem.identity
-        or derivation.seed_identity != selected_seed.coordinate_identity
-        or derivation.seed_ordinal != selected_seed.ordinal
-        or child_problem.source_snapshot != problem.source_snapshot
         or provenance.materialized_candidate_identity != materialized_candidate.identity
-        or provenance.candidate_problem_identity != child_problem.identity
-        or provenance.candidate_invocation_identity != child_invocation.identity
-        or provenance.candidate_execution_identity != direct_outcome.execution.identity
+        or provenance.candidate_problem_identity
+        != materialized_candidate.problem_identity
+        or provenance.candidate_invocation_identity
+        != materialized_candidate.invocation_identity
+        or provenance.candidate_execution_identity
+        != materialized_candidate.execution_identity
         or candidate_materialization is None
         or provenance.candidate_materialization_identity
         != candidate_materialization.identity
-        or candidate_evaluation is None
-        or candidate_materialization.evaluation_identity
-        != candidate_evaluation.identity
-        or candidate_materialization.problem_identity != child_problem.identity
-        or candidate_materialization.invocation_identity != child_invocation.identity
+        or candidate_materialization.problem_identity
+        != materialized_candidate.problem_identity
+        or candidate_materialization.invocation_identity
+        != materialized_candidate.invocation_identity
         or candidate_materialization.execution_identity
-        != direct_outcome.execution.identity
-        or candidate_evaluation.plan_identity != problem.evaluation_plan_identity
-        or candidate_evaluation.parameterization_identity
-        != problem.evaluator_parameterization_identity
-        or tuple(candidate_evaluation.resolved_values) != problem.commit_scope
+        != materialized_candidate.execution_identity
+        or candidate_materialization.evaluation_identity
+        != materialized_candidate.evaluation_result.identity
         or provenance.accepted_materialization_identity
         != fresh_materialization.identity
         or fresh_candidate.problem_identity != problem.identity
-        or fresh_candidate.invocation_identity != child_invocation.identity
-        or fresh_candidate.execution_identity != direct_outcome.execution.identity
+        or fresh_candidate.invocation_identity
+        != materialized_candidate.invocation_identity
+        or fresh_candidate.execution_identity
+        != materialized_candidate.execution_identity
         or fresh_materialization.problem_identity != problem.identity
-        or fresh_materialization.invocation_identity != child_invocation.identity
-        or fresh_materialization.execution_identity != direct_outcome.execution.identity
+        or fresh_materialization.invocation_identity
+        != materialized_candidate.invocation_identity
+        or fresh_materialization.execution_identity
+        != materialized_candidate.execution_identity
         or fresh_materialization.terminal is not MaterializationTerminal.SUCCESS
         or fresh_materialization.candidate.vector != fresh_candidate.vector
         or fresh_materialization.candidate.chi_square != fresh_candidate.chi_square
@@ -842,6 +1003,8 @@ def validate_grid_acceptance_lineage(
         != problem.evaluator_parameterization_identity
         or tuple(fresh_candidate.evaluation_result.resolved_values)
         != problem.commit_scope
+        or fresh_candidate.vector != candidate.vector
+        or fresh_candidate.chi_square != candidate.objective
     ):
         raise DirectTrfConstructionError(
             "Accepted GRID result lacks its canonical selection authority"
@@ -943,7 +1106,7 @@ class GridDirectTrfOutcome:
     """Complete GRID occurrence; only ACCEPTED carries root fit authority."""
 
     terminal: GridDirectTrfTerminal
-    attempts: tuple[GridSeedOutcome, ...]
+    attempts: tuple[GridCandidateRecord, ...]
     selection: GridSelection | None = None
     materialization: CandidateMaterialization | None = field(
         default=None,
@@ -1182,8 +1345,8 @@ def _disposition_for_unsuccessful(
 
 
 def _selection(
-    attempts: Sequence[GridSeedOutcome],
-) -> tuple[GridSelection, GridSeedOutcome]:
+    attempts: Sequence[GridCandidateRecord],
+) -> tuple[GridSelection, GridCandidateRecord]:
     eligible = sorted(
         (
             attempt
@@ -1202,6 +1365,286 @@ def _selection(
         candidate_records=eligible,
     )
     return selection, selected
+
+
+def _grid_finalization_gate(
+    cancellation: CancellationToken,
+) -> GridDirectTrfTerminal | None:
+    """Gate canonical selection against late cancellation or interruption."""
+    try:
+        return GridDirectTrfTerminal.CANCELLED if cancellation.is_cancelled else None
+    except KeyboardInterrupt:
+        return GridDirectTrfTerminal.INTERRUPTED
+
+
+def _failed_root_materialization(
+    problem: OptimizationProblem,
+    candidate: MaterializedDirectTrfCandidate,
+    evaluator_compatibility_identity: str,
+    evaluation_count: int,
+    cache_hits: int,
+    cache_misses: int,
+    failure: TerminalFailure,
+    *,
+    terminal: MaterializationTerminal = MaterializationTerminal.FAILURE,
+) -> CandidateMaterialization:
+    return CandidateMaterialization(
+        uuid4().hex,
+        problem.identity,
+        candidate.invocation_identity,
+        candidate.execution_identity,
+        CandidateSummary(candidate.vector, candidate.chi_square, 0),
+        terminal,
+        evaluation_count,
+        evaluator_compatibility_identity,
+        None,
+        cache_hits,
+        cache_misses,
+        failure,
+    )
+
+
+def _materialize_grid_candidate_for_root(
+    problem: OptimizationProblem,
+    candidate: MaterializedDirectTrfCandidate,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    cancellation: CancellationToken,
+) -> MaterializedDirectTrfCandidate | CandidateMaterialization:
+    """Freshly evaluate one selected GRID vector against the complete root."""
+    try:
+        evaluator = engine.new_evaluator()
+    except Exception as error:  # noqa: BLE001 - binding failure is typed evidence
+        return _failed_root_materialization(
+            problem,
+            candidate,
+            engine.compatibility_identity,
+            0,
+            0,
+            0,
+            TerminalFailure(
+                "grid_selection_materialization_binding_failure",
+                f"{type(error).__name__}: {error}",
+            ),
+        )
+    if cancellation.is_cancelled:
+        return _failed_root_materialization(
+            problem,
+            candidate,
+            evaluator.compatibility_identity,
+            0,
+            0,
+            0,
+            TerminalFailure("cancelled", "Cancellation before GRID promotion"),
+            terminal=MaterializationTerminal.CANCELLED,
+        )
+    try:
+        lifecycle = problem.lifecycle_frame(candidate.vector, parameterization)
+        frame = EvaluationFrame.from_lifecycle_frame(parameterization, lifecycle)
+        evaluated = evaluator.evaluate(frame)
+    except KeyboardInterrupt:
+        statistics = evaluator.cache_statistics
+        return _failed_root_materialization(
+            problem,
+            candidate,
+            evaluator.compatibility_identity,
+            1,
+            statistics.hits,
+            statistics.misses,
+            TerminalFailure("interrupted", "KeyboardInterrupt during GRID promotion"),
+            terminal=MaterializationTerminal.INTERRUPTED,
+        )
+    except Exception as error:  # noqa: BLE001 - root evaluation fails closed
+        statistics = evaluator.cache_statistics
+        return _failed_root_materialization(
+            problem,
+            candidate,
+            evaluator.compatibility_identity,
+            1,
+            statistics.hits,
+            statistics.misses,
+            TerminalFailure(
+                "grid_selection_materialization_exception",
+                f"{type(error).__name__}: {error}",
+            ),
+        )
+    statistics = evaluator.cache_statistics
+    if cancellation.is_cancelled:
+        return _failed_root_materialization(
+            problem,
+            candidate,
+            evaluator.compatibility_identity,
+            1,
+            statistics.hits,
+            statistics.misses,
+            TerminalFailure("cancelled", "Cancellation after GRID promotion"),
+            terminal=MaterializationTerminal.CANCELLED,
+        )
+    if isinstance(evaluated, EvaluationFailure):
+        return _failed_root_materialization(
+            problem,
+            candidate,
+            evaluator.compatibility_identity,
+            1,
+            statistics.hits,
+            statistics.misses,
+            TerminalFailure(evaluated.category, evaluated.message, evaluated),
+        )
+    chi_square = canonical_chi_square(evaluated.residuals)
+    if chi_square != candidate.chi_square:
+        return _failed_root_materialization(
+            problem,
+            candidate,
+            evaluator.compatibility_identity,
+            1,
+            statistics.hits,
+            statistics.misses,
+            TerminalFailure(
+                "grid_selection_objective_mismatch",
+                "Fresh root objective differs from the selected aggregate candidate",
+            ),
+        )
+    materialization = CandidateMaterialization(
+        uuid4().hex,
+        problem.identity,
+        candidate.invocation_identity,
+        candidate.execution_identity,
+        CandidateSummary(candidate.vector, chi_square, 0),
+        MaterializationTerminal.SUCCESS,
+        1,
+        evaluator.compatibility_identity,
+        evaluated.identity,
+        statistics.hits,
+        statistics.misses,
+    )
+    return MaterializedDirectTrfCandidate(
+        problem.identity,
+        candidate.invocation_identity,
+        candidate.execution_identity,
+        materialization,
+        candidate.vector,
+        chi_square,
+        evaluated,
+    )
+
+
+def _finalize_grid_candidates(
+    problem: OptimizationProblem,
+    invocation: GridDirectTrfInvocation,
+    attempts: Sequence[GridCandidateRecord],
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    cancellation: CancellationToken,
+) -> GridDirectTrfOutcome:
+    """Own canonical validation, selection, promotion, acceptance, and authority."""
+    records = tuple(attempts)
+    gate = _grid_finalization_gate(cancellation)
+    if gate is not None:
+        return GridDirectTrfOutcome(gate, records)
+    eligible = tuple(
+        record
+        for record in records
+        if record.disposition is GridSeedDisposition.ELIGIBLE
+    )
+    if not eligible:
+        return GridDirectTrfOutcome(
+            GridDirectTrfTerminal.NO_ELIGIBLE_CANDIDATE,
+            records,
+        )
+    try:
+        for record in eligible:
+            seed = invocation.seeds[record.seed_ordinal]
+            record.validate_for_grid_selection(problem, invocation, seed)
+    except Exception as error:  # noqa: BLE001 - foreign evidence fails closed
+        return GridDirectTrfOutcome(
+            GridDirectTrfTerminal.EXECUTION_FAILURE,
+            records,
+            failure=TerminalFailure(
+                "grid_candidate_lineage_failure",
+                f"{type(error).__name__}: {error}",
+            ),
+        )
+    gate = _grid_finalization_gate(cancellation)
+    if gate is not None:
+        return GridDirectTrfOutcome(gate, records)
+    selection, selected = _selection(eligible)
+    selected_seed = invocation.seeds[selected.seed_ordinal]
+    selected_candidate = cast("GridCandidate", selected.candidate)
+    promoted = _materialize_grid_candidate_for_root(
+        problem,
+        selected_candidate.candidate,
+        parameterization,
+        engine,
+        cancellation,
+    )
+    if isinstance(promoted, CandidateMaterialization):
+        terminal = {
+            MaterializationTerminal.CANCELLED: GridDirectTrfTerminal.CANCELLED,
+            MaterializationTerminal.INTERRUPTED: GridDirectTrfTerminal.INTERRUPTED,
+        }.get(
+            promoted.terminal,
+            GridDirectTrfTerminal.MATERIALIZATION_FAILURE,
+        )
+        return GridDirectTrfOutcome(
+            terminal,
+            records,
+            selection,
+            promoted,
+            failure=promoted.failure,
+        )
+    provenance = GridSelectionProvenance(
+        invocation.identity,
+        problem.identity,
+        selection.identity,
+        selected.seed_identity,
+        selected.seed_ordinal,
+        selected_candidate.identity,
+        selected_candidate.candidate.identity,
+        selected_candidate.candidate.problem_identity,
+        selected_candidate.candidate.invocation_identity,
+        selected_candidate.candidate.execution_identity,
+        selected_candidate.candidate.materialization.identity,
+        promoted.materialization.identity,
+        promoted.evaluation_result.identity,
+    )
+    validate_grid_acceptance_lineage(
+        provenance,
+        invocation,
+        selection,
+        selected_seed,
+        selected,
+        promoted,
+        problem,
+    )
+    root_accepted = _accept_materialized_fit_for_derived_workflow(
+        problem=problem,
+        invocation_identity=promoted.invocation_identity,
+        execution_identity=promoted.execution_identity,
+        materialization=promoted.materialization,
+        vector=promoted.vector,
+        chi_square=promoted.chi_square,
+        evaluation_result=promoted.evaluation_result,
+        authority_context_identity=provenance.identity,
+    )
+    accepted = AcceptedGridDirectTrfResult.from_accepted(
+        root_accepted,
+        provenance,
+        invocation,
+        selection,
+        selected_seed,
+        selected,
+        promoted,
+    )
+    validate_grid_commit_lineage(accepted, problem)
+    authority = _grant_derived_fit_commit_authority(accepted, problem)
+    return GridDirectTrfOutcome(
+        GridDirectTrfTerminal.ACCEPTED,
+        records,
+        selection,
+        promoted.materialization,
+        accepted,
+        authority,
+    )
 
 
 class _GridSeedInterrupted(KeyboardInterrupt):
@@ -1361,138 +1804,11 @@ def execute_grid_direct_trf(
     )
     if isinstance(seed_execution, GridDirectTrfOutcome):
         return seed_execution
-    attempts = seed_execution
-    if not any(
-        attempt.disposition is GridSeedDisposition.ELIGIBLE for attempt in attempts
-    ):
-        return GridDirectTrfOutcome(
-            GridDirectTrfTerminal.NO_ELIGIBLE_CANDIDATE,
-            tuple(attempts),
-        )
-    selection, selected = _selection(attempts)
-    selected_seed = invocation.seeds[selected.seed_ordinal]
-    if (
-        selected.direct_outcome is None
-        or selected_seed.problem is None
-        or selected_seed.invocation is None
-    ):
-        failure = TerminalFailure(
-            "grid_selection_failure",
-            "Selected GRID candidate lacks its exact attempt provenance",
-        )
-        return GridDirectTrfOutcome(
-            GridDirectTrfTerminal.EXECUTION_FAILURE,
-            tuple(attempts),
-            selection,
-            failure=failure,
-        )
-    selected_candidate = cast("GridCandidate", selected.candidate)
-    try:
-        promoted = _materialize_direct_trf_candidate_for_root(
-            problem,
-            selected_seed.problem,
-            selected_seed.invocation,
-            selected.direct_outcome,
-            parameterization,
-            engine,
-            cancellation=token,
-        )
-        if isinstance(promoted, MaterializedDirectTrfCandidate):
-            grid_selection_provenance = GridSelectionProvenance(
-                invocation.identity,
-                problem.identity,
-                selection.identity,
-                selected.seed_identity,
-                selected.seed_ordinal,
-                selected_candidate.identity,
-                selected_candidate.candidate.identity,
-                selected_seed.problem.identity,
-                selected_seed.invocation.identity,
-                selected.direct_outcome.execution.identity,
-                selected_candidate.candidate.materialization.identity,
-                promoted.materialization.identity,
-                promoted.evaluation_result.identity,
-            )
-            validate_grid_acceptance_lineage(
-                grid_selection_provenance,
-                invocation,
-                selection,
-                selected_seed,
-                selected,
-                promoted,
-                problem,
-            )
-            root_accepted = _accept_materialized_fit_for_derived_workflow(
-                problem=problem,
-                invocation_identity=selected_seed.invocation.identity,
-                execution_identity=selected.direct_outcome.execution.identity,
-                materialization=promoted.materialization,
-                vector=promoted.vector,
-                chi_square=promoted.chi_square,
-                evaluation_result=promoted.evaluation_result,
-                authority_context_identity=grid_selection_provenance.identity,
-            )
-            grid_accepted = AcceptedGridDirectTrfResult.from_accepted(
-                root_accepted,
-                grid_selection_provenance,
-                invocation,
-                selection,
-                selected_seed,
-                selected,
-                promoted,
-            )
-            validate_grid_commit_lineage(grid_accepted, problem)
-            authority = _grant_derived_fit_commit_authority(
-                grid_accepted,
-                problem,
-            )
-            return GridDirectTrfOutcome(
-                GridDirectTrfTerminal.ACCEPTED,
-                tuple(attempts),
-                selection,
-                promoted.materialization,
-                grid_accepted,
-                authority,
-            )
-    except DirectTrfInterrupted as interrupted:
-        raise GridDirectTrfInterrupted(
-            _interrupted_outcome(
-                attempts,
-                (),
-                selection,
-                interrupted.materialization,
-            )
-        ) from interrupted
-    except KeyboardInterrupt as error:
-        raise GridDirectTrfInterrupted(
-            _interrupted_outcome(attempts, (), selection)
-        ) from error
-    except Exception as error:  # noqa: BLE001 - selection promotion fails closed
-        failure = TerminalFailure(
-            "grid_selection_materialization_exception",
-            f"{type(error).__name__}: {error}",
-        )
-        return GridDirectTrfOutcome(
-            GridDirectTrfTerminal.EXECUTION_FAILURE,
-            tuple(attempts),
-            selection,
-            failure=failure,
-        )
-    if promoted.terminal is DirectTrfOutcomeTerminal.CANCELLED:
-        return GridDirectTrfOutcome(
-            GridDirectTrfTerminal.CANCELLED,
-            tuple(attempts),
-            selection,
-            promoted.materialization,
-        )
-    return GridDirectTrfOutcome(
-        GridDirectTrfTerminal.MATERIALIZATION_FAILURE,
-        tuple(attempts),
-        selection,
-        promoted.materialization,
-        failure=(
-            promoted.materialization.failure
-            if promoted.materialization is not None
-            else promoted.execution.failure
-        ),
+    return _finalize_grid_candidates(
+        problem,
+        invocation,
+        seed_execution,
+        parameterization,
+        engine,
+        token,
     )
