@@ -36,7 +36,6 @@ from chemex.optimize.grouped_direct_trf import (
     materialize_grouped_direct_trf,
 )
 from chemex.parameters.parameterization import ActiveParameterization
-from chemex.parameters.values import StaleAnalysisValuesError
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
 
@@ -251,6 +250,7 @@ def test_successful_components_compose_one_fresh_root_accepted_result_and_commit
         not hasattr(component, "accepted_result") for component in outcome.components
     )
     assert outcome.accepted_result is not None
+    assert outcome.commit_authority is not None
     accepted = outcome.accepted_result
     selected = {
         param_id: component.candidate.vector[index]
@@ -268,6 +268,7 @@ def test_successful_components_compose_one_fresh_root_accepted_result_and_commit
 
     receipt = commit_accepted_fit(
         accepted,
+        outcome.commit_authority,
         problem=problem,
         parameterization=parameterization,
         analysis_values=session.analysis_values,
@@ -275,9 +276,13 @@ def test_successful_components_compose_one_fresh_root_accepted_result_and_commit
     assert receipt.old_revision == before.revision
     assert receipt.new_revision == before.revision + 1
     committed = session.analysis_values.snapshot()
-    with pytest.raises(StaleAnalysisValuesError):
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="exact live Direct TRF commit authority",
+    ):
         commit_accepted_fit(
             accepted,
+            outcome.commit_authority,
             problem=problem,
             parameterization=parameterization,
             analysis_values=session.analysis_values,
