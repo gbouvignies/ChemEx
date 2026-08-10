@@ -1,0 +1,8 @@
+**
+!pyproject.toml
+!uv.lock
+!src/
+!src/**
+src/chemex/numerical_lanes/manifests/*.json
+**/__pycache__/
+**/*.pyc

@@ -26,6 +26,7 @@ from typing import Literal, cast
 
 from chemex.chemex import run
 from chemex.cli import build_parser
+from chemex.numerical_lanes import LiveLaneAuthority
 
 _SCHEMA_VERSION = 1
 _SEMANTIC_VERSION = "chemex-baseline-v1"
@@ -246,6 +247,19 @@ def _record_hash(value: object, field_name: str) -> str:
     ):
         raise ValueError(f"Baseline {field_name} must be a SHA-256 digest")
     return value
+
+
+def _is_qualified_lane_reference(value: str) -> bool:
+    return len(value) == _HASH_LENGTH and all(
+        character in "0123456789abcdef" for character in value
+    )
+
+
+def _validate_lane_reference(value: str) -> None:
+    if not value.startswith("unqualified-") and not _is_qualified_lane_reference(value):
+        raise ValueError(
+            "Lane reference must be an explicit unqualified label or lane identity"
+        )
 
 
 def _record_string(value: object, field_name: str) -> str:
@@ -622,6 +636,7 @@ class ExecutionSpecification:
     def __post_init__(self) -> None:
         _record_hash(self.case_identity, "execution case identity")
         _record_string(self.lane_reference, "lane reference")
+        _validate_lane_reference(self.lane_reference)
         for value, name in (
             (self.workflow, "workflow"),
             (self.policy, "policy"),
@@ -741,6 +756,7 @@ class Occurrence:
     case_identity: str
     actual_implementation_identity: str
     lane_reference: str
+    lane_attestation_identity: str | None
     input_member_identities: tuple[str, ...]
     attempt_token: str
     lifecycle: OccurrenceLifecycle = "REQUESTED"
@@ -753,14 +769,44 @@ class Occurrence:
         specification: ExecutionSpecification,
         case: CaseDefinition,
         attempt_token: str,
+        attestation: LiveLaneAuthority | None = None,
     ) -> Occurrence:
         if specification.case_identity != case.identity:
             raise ValueError("Occurrence case does not match execution specification")
+        qualified = _is_qualified_lane_reference(specification.lane_reference)
+        if qualified:
+            if attestation is None:
+                raise ValueError(
+                    "Qualified occurrence requires a post-import lane attestation"
+                )
+            if not isinstance(attestation, LiveLaneAuthority):
+                raise TypeError(
+                    "Qualified occurrence requires live current-process lane authority"
+                )
+            evidence = attestation.evidence
+            if evidence.lane_identity != specification.lane_reference:
+                raise ValueError("Occurrence attestation does not match its lane")
+            execution_settings = specification.execution_settings.to_record_value()
+            if not isinstance(execution_settings, Mapping):
+                raise TypeError("Qualified execution settings must be a record")
+            if (
+                type(execution_settings.get("workers")) is not int
+                or execution_settings.get("workers") != evidence.workers
+                or type(execution_settings.get("native_threads")) is not int
+                or execution_settings.get("native_threads") != evidence.native_threads
+            ):
+                raise ValueError(
+                    "Qualified occurrence execution settings do not match "
+                    "attested lane concurrency"
+                )
+        elif attestation is not None:
+            raise ValueError("Unqualified occurrence cannot carry lane authority")
         return cls(
             specification.identity,
             case.identity,
             specification.implementation.identity,
             specification.lane_reference,
+            evidence.identity if qualified else None,
             tuple(sorted(member.identity for member in case.inputs)),
             attempt_token,
         )
@@ -769,7 +815,7 @@ class Occurrence:
         _record_hash(self.execution_specification_identity, "occurrence specification")
         _record_hash(self.case_identity, "occurrence case")
         _record_hash(self.actual_implementation_identity, "occurrence implementation")
-        _record_string(self.lane_reference, "occurrence lane reference")
+        self._validate_lane_evidence()
         if (
             not self.input_member_identities
             or tuple(sorted(self.input_member_identities))
@@ -797,8 +843,24 @@ class Occurrence:
         else:
             raise ValueError("Unknown baseline occurrence lifecycle")
 
+    def _validate_lane_evidence(self) -> None:
+        _record_string(self.lane_reference, "occurrence lane reference")
+        _validate_lane_reference(self.lane_reference)
+        qualified = _is_qualified_lane_reference(self.lane_reference)
+        if qualified and self.lane_attestation_identity is None:
+            raise ValueError("Qualified occurrence requires lane attestation evidence")
+        if not qualified and self.lane_attestation_identity is not None:
+            raise ValueError("Unqualified occurrence cannot carry lane authority")
+        if self.lane_attestation_identity is not None:
+            _record_hash(self.lane_attestation_identity, "occurrence lane attestation")
+
     @property
     def identity(self) -> str:
+        lane_evidence = (
+            ()
+            if self.lane_attestation_identity is None
+            else (self.lane_attestation_identity,)
+        )
         return _identity(
             "occurrence",
             (
@@ -806,6 +868,7 @@ class Occurrence:
                 self.case_identity,
                 self.actual_implementation_identity,
                 self.lane_reference,
+                *lane_evidence,
                 self.input_member_identities,
                 self.attempt_token,
             ),
@@ -831,6 +894,7 @@ class Occurrence:
             self.case_identity,
             self.actual_implementation_identity,
             self.lane_reference,
+            self.lane_attestation_identity,
             self.input_member_identities,
             self.attempt_token,
             "SUCCEEDED",
@@ -845,6 +909,7 @@ class Occurrence:
             self.case_identity,
             self.actual_implementation_identity,
             self.lane_reference,
+            self.lane_attestation_identity,
             self.input_member_identities,
             self.attempt_token,
             "FAILED",
@@ -852,7 +917,7 @@ class Occurrence:
         )
 
     def to_record(self) -> dict[str, object]:
-        return {
+        record: dict[str, object] = {
             "schema_version": _SCHEMA_VERSION,
             "execution_specification_identity": self.execution_specification_identity,
             "case_identity": self.case_identity,
@@ -866,6 +931,9 @@ class Occurrence:
             "identity": self.identity,
             "lifecycle_identity": self.lifecycle_identity,
         }
+        if self.lane_attestation_identity is not None:
+            record["lane_attestation_identity"] = self.lane_attestation_identity
+        return record
 
     @classmethod
     def from_record(
@@ -873,24 +941,26 @@ class Occurrence:
         record: Mapping[str, object],
         specification: ExecutionSpecification | None = None,
     ) -> Occurrence:
-        _record_exact_keys(
-            record,
-            {
-                "schema_version",
-                "execution_specification_identity",
-                "case_identity",
-                "actual_implementation_identity",
-                "lane_reference",
-                "input_member_identities",
-                "attempt_token",
-                "lifecycle",
-                "result_bundle_identity",
-                "failure_code",
-                "identity",
-                "lifecycle_identity",
-            },
-            "Occurrence",
+        lane_reference = _record_string(
+            record.get("lane_reference"), "occurrence lane reference"
         )
+        expected_keys = {
+            "schema_version",
+            "execution_specification_identity",
+            "case_identity",
+            "actual_implementation_identity",
+            "lane_reference",
+            "input_member_identities",
+            "attempt_token",
+            "lifecycle",
+            "result_bundle_identity",
+            "failure_code",
+            "identity",
+            "lifecycle_identity",
+        }
+        if _is_qualified_lane_reference(lane_reference):
+            expected_keys.add("lane_attestation_identity")
+        _record_exact_keys(record, expected_keys, "Occurrence")
         if record.get("schema_version") != _SCHEMA_VERSION:
             raise ValueError("Unsupported baseline occurrence schema")
         lifecycle = record.get("lifecycle")
@@ -909,7 +979,8 @@ class Occurrence:
                 record.get("actual_implementation_identity"),
                 "occurrence implementation",
             ),
-            _record_string(record.get("lane_reference"), "occurrence lane reference"),
+            lane_reference,
+            cast("str | None", record.get("lane_attestation_identity")),
             tuple(
                 _record_hash(value, "occurrence input identity") for value in raw_inputs
             ),
@@ -1335,6 +1406,7 @@ class CpmgBaselinePublisher:
             occurrence.case_identity,
             occurrence.actual_implementation_identity,
             occurrence.lane_reference,
+            occurrence.lane_attestation_identity,
             occurrence.input_member_identities,
             occurrence.attempt_token,
         )
@@ -1666,6 +1738,7 @@ class CpmgBaselinePublisher:
             occurrence.case_identity,
             occurrence.actual_implementation_identity,
             occurrence.lane_reference,
+            occurrence.lane_attestation_identity,
             occurrence.input_member_identities,
             occurrence.attempt_token,
         ):
