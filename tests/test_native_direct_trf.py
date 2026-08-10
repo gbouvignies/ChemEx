@@ -1,0 +1,790 @@
+"""Behavioral qualification tests for the bounded native Direct-TRF slice (#586).
+
+The public seams are the canonical optimization problem/invocation, the typed
+terminal outcome, accepted-result materialization, and revision-checked commit.
+The production lmfit runner remains outside this qualification harness.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+from collections.abc import Callable
+from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
+from unittest.mock import patch
+
+import numpy as np
+import pytest
+
+from chemex.configuration.methods import Method, Selection, read_methods
+from chemex.configuration.parameters import read_defaults
+from chemex.containers.experiments import Experiments
+from chemex.evaluation.native import EvaluationEngine
+from chemex.experiments.builder import build_experiments
+from chemex.optimize.direct_trf import (
+    CancellationToken,
+    CandidateSummary,
+    DirectTrfConstructionError,
+    DirectTrfInterrupted,
+    DirectTrfInvocation,
+    DirectTrfOutcomeTerminal,
+    DirectTrfTerminal,
+    MaterializationTerminal,
+    ObjectiveScalarizationError,
+    OptimizationProblem,
+    canonical_chi_square,
+    commit_accepted_fit,
+    execute_direct_trf,
+)
+from chemex.parameters.parameterization import (
+    ActiveParameterization,
+    compile_active_parameterization,
+)
+from chemex.parameters.sealed import ParamConfig, SealedConfiguration
+from chemex.parameters.spin_system import SpinSystem
+from chemex.parameters.values import AnalysisValuesSnapshot, StaleAnalysisValuesError
+from chemex.runtime import AnalysisSession
+from chemex.typing import Array
+
+ROOT = Path(__file__).parent.parent
+EXPERIMENT = ROOT / "examples/Experiments/RELAXATION_HZNZ/Experiments/800mhz.toml"
+PARAMETERS = ROOT / "examples/Experiments/RELAXATION_HZNZ/Parameters/parameters.toml"
+METHOD = ROOT / "examples/Experiments/RELAXATION_HZNZ/Methods/method.toml"
+
+
+def _qualification_fit(
+    *, budget: int = 80
+) -> tuple[
+    AnalysisSession,
+    Experiments,
+    ActiveParameterization,
+    EvaluationEngine,
+    OptimizationProblem,
+    DirectTrfInvocation,
+]:
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    experiments = build_experiments(
+        [EXPERIMENT],
+        Selection(
+            include=[SpinSystem.from_name("G2N-HN")],
+            exclude=None,
+        ),
+        session=session,
+    )
+    session.parameters.set_defaults(read_defaults([PARAMETERS]))
+    assert session.try_build_analysis_values(), repr(
+        session.parameter_factory.native_construction_error
+    )
+    method = read_methods([METHOD])["DEFAULT"]
+    parameterization = session.compile_parameterization(method, experiments.param_ids)
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    configuration = session.parameter_factory.sealed_configuration
+    assert configuration is not None
+    problem = OptimizationProblem.from_native(
+        engine.plan,
+        parameterization,
+        configuration,
+        session.analysis_values.snapshot(),
+    )
+    invocation = DirectTrfInvocation.for_problem(
+        problem,
+        objective_request_budget=budget,
+    )
+    return session, experiments, parameterization, engine, problem, invocation
+
+
+def _legacy_values(
+    session: AnalysisSession, scope: tuple[str, ...]
+) -> dict[str, float]:
+    return {
+        param_id: parameter.value
+        for param_id, parameter in session.parameters.build_lmfit_params(
+            set(scope)
+        ).items()
+    }
+
+
+def _backend_result(
+    candidate: Array,
+    residuals: Array,
+    *,
+    status: int,
+    success: bool,
+    message: str,
+    optimality: float,
+) -> object:
+    return SimpleNamespace(
+        x=candidate,
+        fun=residuals,
+        status=status,
+        success=success,
+        message=message,
+        nfev=1,
+        njev=0,
+        cost=0.5 * float(np.dot(residuals, residuals)),
+        optimality=optimality,
+        active_mask=np.zeros_like(candidate, dtype=np.int64),
+    )
+
+
+def _one_request_converged_backend(
+    fun: Callable[[Array], Array],
+    x0: Array,
+    *,
+    after_request: Callable[[], None] | None = None,
+) -> object:
+    candidate = np.asarray(x0, dtype=np.float64) * 0.9
+    residuals = fun(candidate)
+    if after_request is not None:
+        after_request()
+    return _backend_result(
+        candidate,
+        residuals,
+        status=1,
+        success=True,
+        message="gradient tolerance satisfied",
+        optimality=0.0,
+    )
+
+
+def test_representative_single_component_fit_materializes_and_commits_atomically() -> (
+    None
+):
+    session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    before = session.analysis_values.snapshot()
+    legacy_before = _legacy_values(session, problem.commit_scope)
+
+    first = execute_direct_trf(problem, invocation, parameterization, engine)
+    second = execute_direct_trf(problem, invocation, parameterization, engine)
+
+    assert problem.controlled_ids == ("__R1A_A_G2N_H_800_0MHZ",)
+    assert problem.lower_bounds == (0.0,)
+    assert problem.upper_bounds == (float("inf"),)
+    assert problem.start == (6.87922079444668,)
+    assert first.terminal is DirectTrfOutcomeTerminal.ACCEPTED
+    assert first.execution.terminal is DirectTrfTerminal.CONVERGED
+    assert first.accepted_result is not None
+    assert first.materialization is not None
+    assert first.materialization.terminal is MaterializationTerminal.SUCCESS
+    assert first.materialization.evaluation_count == 1
+    assert first.materialization.cache_hits == 0
+    # The literals come from the independent legacy least_squares baseline at
+    # c6378fb0. A 2e-8 relative tolerance covers the observed native ordered-
+    # normalization plus finite-difference/TRF rounding while remaining far
+    # below any scientifically meaningful change in this relaxation rate.
+    assert first.accepted_result.vector == (
+        pytest.approx(2.3474211504, rel=2.0e-8, abs=1.0e-10),
+    )
+    assert first.accepted_result.chi_square == pytest.approx(
+        13.2171307054,
+        rel=1.0e-9,
+        abs=1.0e-10,
+    )
+    assert first.execution.counters.solver_requests_received <= 80
+    assert first.execution.counters.objective_requests_accepted == (
+        first.execution.counters.objective_evaluations_completed
+    )
+    assert first.execution.identity == second.execution.identity
+    assert second.materialization is not None
+    assert second.accepted_result is not None
+    assert first.materialization.identity == second.materialization.identity
+    assert first.accepted_result.identity == second.accepted_result.identity
+    assert session.analysis_values.snapshot() == before
+    assert _legacy_values(session, problem.commit_scope) == legacy_before
+
+    receipt = commit_accepted_fit(
+        first.accepted_result,
+        problem=problem,
+        parameterization=parameterization,
+        analysis_values=session.analysis_values,
+    )
+
+    committed = session.analysis_values.snapshot()
+    assert receipt.old_revision == 0
+    assert receipt.new_revision == 1
+    assert receipt.scope == problem.commit_scope
+    assert committed.revision == 1
+    assert committed[problem.controlled_ids[0]] == pytest.approx(
+        2.3474211504,
+        rel=2.0e-8,
+        abs=1.0e-10,
+    )
+    assert _legacy_values(session, problem.commit_scope) == legacy_before
+
+
+def test_canonical_scalarization_and_candidate_order_are_explicit() -> None:
+    assert canonical_chi_square((1.0, 2.0, 3.0)) == 14.0
+    with pytest.raises(ObjectiveScalarizationError):
+        canonical_chi_square((1.0, float("inf")))
+
+    candidates = (
+        CandidateSummary((2.0,), 4.0, 0),
+        CandidateSummary((1.0,), 4.0, 2),
+        CandidateSummary((1.0,), 4.0, 1),
+        CandidateSummary((9.0,), 3.0, 3),
+    )
+    assert min(candidates, key=CandidateSummary.ordering_key) == candidates[3]
+    assert min(candidates[:3], key=CandidateSummary.ordering_key) == candidates[2]
+
+
+def test_multicoordinate_problem_preserves_canonical_vector_and_bound_alignment() -> (
+    None
+):
+    session, experiments, _parameterization, _engine, _problem, _invocation = (
+        _qualification_fit()
+    )
+    parameter_model = session.parameter_factory.sealed_parameter_model
+    assert parameter_model is not None
+    source = session.analysis_values.snapshot()
+    r1a_id = "__R1A_A_G2N_H_800_0MHZ"
+    qualification_values = {
+        "__PB": (0.17, 0.05, 0.40),
+        r1a_id: (7.25, 2.0, 15.0),
+    }
+
+    def qualify_config(item: ParamConfig) -> ParamConfig:
+        value, lower, upper = qualification_values.get(
+            item.param_id,
+            (item.effective_value, item.lower_bound, item.upper_bound),
+        )
+        return ParamConfig(item.param_id, value, lower, upper)
+
+    configs = tuple(qualify_config(item) for item in parameter_model.configuration)
+    configuration = SealedConfiguration(
+        configs,
+        {},
+        definitions_identity=parameter_model.definitions.identity,
+    )
+    qualified_model = dataclasses.replace(
+        parameter_model,
+        configuration=configuration,
+    )
+    snapshot = AnalysisValuesSnapshot(
+        source.occurrence_identity,
+        source.model_identity,
+        source.definitions_identity,
+        configuration.identity,
+        source.revision,
+        tuple(
+            (
+                param_id,
+                qualification_values.get(param_id, (value, 0.0, 0.0))[0],
+            )
+            for param_id, value in source.items()
+        ),
+    )
+    method = Method(fit=["PB"], fix=["KEX_AB"])
+
+    def reconstruct() -> tuple[ActiveParameterization, OptimizationProblem]:
+        parameterization = compile_active_parameterization(
+            qualified_model,
+            snapshot,
+            method,
+            experiments.param_ids,
+        )
+        engine = EvaluationEngine.from_experiments(experiments, parameterization)
+        problem = OptimizationProblem.from_native(
+            engine.plan,
+            parameterization,
+            configuration,
+            snapshot,
+        )
+        return parameterization, problem
+
+    first_parameterization, first = reconstruct()
+    second_parameterization, second = reconstruct()
+
+    expected_ids = ("__PB", r1a_id)
+    assert first.controlled_ids == expected_ids
+    assert (
+        tuple(
+            param_id
+            for param_id, _value in first.independent_items
+            if param_id in expected_ids
+        )
+        == expected_ids
+    )
+    assert first.start == (0.17, 7.25)
+    assert first.lower_bounds == (0.05, 2.0)
+    assert first.upper_bounds == (0.40, 15.0)
+    assert (
+        first.lifecycle_frame(
+            first.start,
+            first_parameterization,
+        ).ordered_items()
+        == first.independent_items
+    )
+    assert first_parameterization.identity == second_parameterization.identity
+    assert first.independent_items == second.independent_items
+    assert first.start == second.start
+    assert first.lower_bounds == second.lower_bounds
+    assert first.upper_bounds == second.upper_bounds
+    assert first.identity == second.identity
+
+
+@pytest.mark.parametrize(
+    "budget",
+    (True, False, 2.0, 2.5, "2", None, 0, -1),
+)
+def test_objective_request_budget_requires_a_positive_integer(budget: object) -> None:
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="Objective-request budget must be a positive integer",
+    ):
+        DirectTrfInvocation(
+            "qualification-problem",
+            cast("int", budget),
+            (1.0,),
+        )
+
+
+def test_non_convergence_keeps_last_iterate_diagnostic_and_commits_nothing() -> None:
+    session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    before = session.analysis_values.snapshot()
+    legacy_before = _legacy_values(session, problem.commit_scope)
+
+    def non_converged(
+        fun: Callable[[Array], Array], x0: Array, **settings: object
+    ) -> object:
+        bounds = settings.pop("bounds")
+        assert isinstance(bounds, tuple)
+        np.testing.assert_array_equal(bounds[0], problem.lower_bounds)
+        np.testing.assert_array_equal(bounds[1], problem.upper_bounds)
+        x_scale = settings.pop("x_scale")
+        np.testing.assert_array_equal(x_scale, np.ones(1))
+        assert settings == {
+            "method": "trf",
+            "jac": "2-point",
+            "diff_step": None,
+            "tr_solver": "exact",
+            "tr_options": {},
+            "loss": "linear",
+            "f_scale": 1.0,
+            "ftol": 1.0e-8,
+            "xtol": 1.0e-8,
+            "gtol": 1.0e-8,
+            "max_nfev": 80,
+            "verbose": 0,
+        }
+        candidate = np.asarray(x0, dtype=np.float64) * 0.9
+        residuals = fun(candidate)
+        return _backend_result(
+            candidate,
+            residuals,
+            status=0,
+            success=False,
+            message="maximum evaluations reached",
+            optimality=1.0,
+        )
+
+    with patch("chemex.optimize.direct_trf.least_squares", non_converged):
+        outcome = execute_direct_trf(problem, invocation, parameterization, engine)
+
+    assert outcome.terminal is DirectTrfOutcomeTerminal.SOLVER_UNSUCCESSFUL
+    assert outcome.execution.terminal is DirectTrfTerminal.NON_CONVERGED
+    assert outcome.execution.best_candidate is not None
+    assert outcome.materialization is None
+    assert outcome.accepted_result is None
+    assert session.analysis_values.snapshot() == before
+    assert _legacy_values(session, problem.commit_scope) == legacy_before
+
+
+def test_budget_exhaustion_has_exact_counters_and_no_accepted_candidate() -> None:
+    session, _experiments, parameterization, engine, problem, _invocation = (
+        _qualification_fit()
+    )
+    invocation = DirectTrfInvocation.for_problem(
+        problem,
+        objective_request_budget=2,
+    )
+    before = session.analysis_values.snapshot()
+
+    def exhaust(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        for _ in range(3):
+            fun(np.array(x0, copy=True))
+        raise AssertionError("the third request must stop the backend")
+
+    with patch("chemex.optimize.direct_trf.least_squares", exhaust):
+        outcome = execute_direct_trf(problem, invocation, parameterization, engine)
+
+    assert outcome.execution.terminal is DirectTrfTerminal.BUDGET_EXHAUSTED
+    assert outcome.execution.counters.solver_requests_received == 3
+    assert outcome.execution.counters.objective_requests_accepted == 2
+    assert outcome.execution.counters.objective_evaluations_completed == 2
+    assert outcome.accepted_result is None
+    assert session.analysis_values.snapshot() == before
+
+
+def test_cancellation_and_interruption_never_materialize_or_commit() -> None:
+    session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    before = session.analysis_values.snapshot()
+    token = CancellationToken()
+    token.cancel()
+
+    cancelled = execute_direct_trf(
+        problem,
+        invocation,
+        parameterization,
+        engine,
+        cancellation=token,
+    )
+
+    assert cancelled.terminal is DirectTrfOutcomeTerminal.CANCELLED
+    assert cancelled.execution.terminal is DirectTrfTerminal.CANCELLED
+    assert cancelled.execution.counters.solver_requests_received == 0
+    assert cancelled.materialization is None
+    assert cancelled.accepted_result is None
+    assert session.analysis_values.snapshot() == before
+
+    def interrupt_after_iterate(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        fun(np.asarray(x0, dtype=np.float64) * 0.9)
+        raise KeyboardInterrupt
+
+    with (
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            interrupt_after_iterate,
+        ),
+        pytest.raises(DirectTrfInterrupted) as interrupted,
+    ):
+        execute_direct_trf(problem, invocation, parameterization, engine)
+    assert interrupted.value.execution.terminal is DirectTrfTerminal.INTERRUPTED
+    assert interrupted.value.execution.best_candidate is not None
+    assert session.analysis_values.snapshot() == before
+
+
+def test_exact_start_preflight_interruption_freezes_typed_attempt_evidence() -> None:
+    session, experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    before = session.analysis_values.snapshot()
+    legacy_before = _legacy_values(session, problem.commit_scope)
+    pulse_type = type(next(iter(experiments)).profiles[0].pulse_sequence)
+
+    with (
+        patch.object(pulse_type, "calculate", side_effect=KeyboardInterrupt),
+        pytest.raises(DirectTrfInterrupted) as interrupted,
+    ):
+        execute_direct_trf(problem, invocation, parameterization, engine)
+
+    execution = interrupted.value.execution
+    assert execution.terminal is DirectTrfTerminal.INTERRUPTED
+    assert execution.counters.solver_requests_received == 0
+    assert execution.counters.objective_requests_accepted == 0
+    assert execution.counters.objective_evaluations_completed == 0
+    assert execution.preflight_evaluation_identity is None
+    assert execution.best_candidate is None
+    assert execution.final_candidate is None
+    assert execution.backend is None
+    assert execution.failure is not None
+    assert execution.failure.category == "interrupted"
+    assert interrupted.value.materialization is None
+    assert session.analysis_values.snapshot() == before
+    assert _legacy_values(session, problem.commit_scope) == legacy_before
+
+
+def test_cancellation_after_exact_start_preflight_never_enters_solver() -> None:
+    session, experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    before = session.analysis_values.snapshot()
+    legacy_before = _legacy_values(session, problem.commit_scope)
+    token = CancellationToken()
+    pulse_type = type(next(iter(experiments)).profiles[0].pulse_sequence)
+    original = cast("Callable[..., Array]", pulse_type.calculate)
+
+    def calculate_then_cancel(*args: object, **kwargs: object) -> Array:
+        result = original(*args, **kwargs)
+        token.cancel()
+        return result
+
+    with (
+        patch.object(pulse_type, "calculate", calculate_then_cancel),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=AssertionError("solver must not be entered"),
+        ) as backend,
+    ):
+        outcome = execute_direct_trf(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+            cancellation=token,
+        )
+
+    backend.assert_not_called()
+    assert outcome.terminal is DirectTrfOutcomeTerminal.CANCELLED
+    assert outcome.execution.terminal is DirectTrfTerminal.CANCELLED
+    assert outcome.execution.counters.solver_requests_received == 0
+    assert outcome.execution.counters.objective_requests_accepted == 0
+    assert outcome.execution.counters.objective_evaluations_completed == 0
+    assert outcome.execution.preflight_evaluation_identity is not None
+    assert outcome.execution.best_candidate is None
+    assert outcome.execution.final_candidate is None
+    assert outcome.execution.backend is None
+    assert outcome.execution.failure is not None
+    assert outcome.execution.failure.category == "cancelled"
+    assert outcome.materialization is None
+    assert outcome.accepted_result is None
+    assert session.analysis_values.snapshot() == before
+    assert _legacy_values(session, problem.commit_scope) == legacy_before
+
+
+def test_cancellation_after_a_valid_last_iterate_suppresses_materialization() -> None:
+    session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    before = session.analysis_values.snapshot()
+    token = CancellationToken()
+
+    def cancel_after_iterate(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        return _one_request_converged_backend(
+            fun,
+            x0,
+            after_request=token.cancel,
+        )
+
+    with patch("chemex.optimize.direct_trf.least_squares", cancel_after_iterate):
+        outcome = execute_direct_trf(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+            cancellation=token,
+        )
+
+    assert outcome.terminal is DirectTrfOutcomeTerminal.CANCELLED
+    assert outcome.execution.terminal is DirectTrfTerminal.CANCELLED
+    assert outcome.execution.best_candidate is not None
+    assert outcome.materialization is None
+    assert outcome.accepted_result is None
+    assert session.analysis_values.snapshot() == before
+
+
+def test_native_problem_construction_failure_leaves_legacy_state_untouched() -> None:
+    session, _experiments, parameterization, engine, _problem, _invocation = (
+        _qualification_fit()
+    )
+    before = session.analysis_values.snapshot()
+    legacy_before = _legacy_values(session, parameterization.scope_ids)
+    incomplete_plan = dataclasses.replace(engine.plan, resolved_ids=())
+    configuration = session.parameter_factory.sealed_configuration
+    assert configuration is not None
+
+    with pytest.raises(DirectTrfConstructionError):
+        OptimizationProblem.from_native(
+            incomplete_plan,
+            parameterization,
+            configuration,
+            before,
+        )
+
+    assert session.analysis_values.snapshot() == before
+    assert _legacy_values(session, parameterization.scope_ids) == legacy_before
+
+
+def test_native_preflight_evaluation_failure_leaves_legacy_state_untouched() -> None:
+    session, experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    before = session.analysis_values.snapshot()
+    legacy_before = _legacy_values(session, problem.commit_scope)
+    pulse_type = type(next(iter(experiments)).profiles[0].pulse_sequence)
+
+    with patch.object(
+        pulse_type,
+        "calculate",
+        side_effect=RuntimeError("qualification kernel failure"),
+    ):
+        outcome = execute_direct_trf(problem, invocation, parameterization, engine)
+
+    assert outcome.terminal is DirectTrfOutcomeTerminal.SOLVER_UNSUCCESSFUL
+    assert outcome.execution.terminal is DirectTrfTerminal.PREFLIGHT_INVALID
+    assert outcome.materialization is None
+    assert outcome.accepted_result is None
+    assert session.analysis_values.snapshot() == before
+    assert _legacy_values(session, problem.commit_scope) == legacy_before
+
+
+def test_fresh_materialization_failure_cannot_accept_or_commit_last_iterate() -> None:
+    session, experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    before = session.analysis_values.snapshot()
+    legacy_before = _legacy_values(session, problem.commit_scope)
+    pulse_type = type(next(iter(experiments)).profiles[0].pulse_sequence)
+    original = cast("Callable[..., Array]", pulse_type.calculate)
+    fail_materialization = False
+
+    def controlled_calculate(*args: object, **kwargs: object) -> Array:
+        if fail_materialization:
+            raise RuntimeError("fresh materialization kernel failure")
+        return original(*args, **kwargs)
+
+    def arm_failure() -> None:
+        nonlocal fail_materialization
+        fail_materialization = True
+
+    def converge_then_fail(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        return _one_request_converged_backend(
+            fun,
+            x0,
+            after_request=arm_failure,
+        )
+
+    with (
+        patch.object(pulse_type, "calculate", controlled_calculate),
+        patch("chemex.optimize.direct_trf.least_squares", converge_then_fail),
+    ):
+        outcome = execute_direct_trf(problem, invocation, parameterization, engine)
+
+    assert outcome.terminal is DirectTrfOutcomeTerminal.MATERIALIZATION_FAILURE
+    assert outcome.execution.terminal is DirectTrfTerminal.CONVERGED
+    assert outcome.materialization is not None
+    assert outcome.materialization.terminal is MaterializationTerminal.FAILURE
+    assert outcome.accepted_result is None
+    assert session.analysis_values.snapshot() == before
+    assert _legacy_values(session, problem.commit_scope) == legacy_before
+
+
+def test_materialization_interruption_freezes_typed_evidence_and_commits_nothing() -> (
+    None
+):
+    session, experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    before = session.analysis_values.snapshot()
+    legacy_before = _legacy_values(session, problem.commit_scope)
+    pulse_type = type(next(iter(experiments)).profiles[0].pulse_sequence)
+    original = cast("Callable[..., Array]", pulse_type.calculate)
+    interrupt_materialization = False
+
+    def controlled_calculate(*args: object, **kwargs: object) -> Array:
+        if interrupt_materialization:
+            raise KeyboardInterrupt
+        return original(*args, **kwargs)
+
+    def arm_interruption() -> None:
+        nonlocal interrupt_materialization
+        interrupt_materialization = True
+
+    def converge_then_interrupt(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        return _one_request_converged_backend(
+            fun,
+            x0,
+            after_request=arm_interruption,
+        )
+
+    with (
+        patch.object(pulse_type, "calculate", controlled_calculate),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            converge_then_interrupt,
+        ),
+        pytest.raises(DirectTrfInterrupted) as interrupted,
+    ):
+        execute_direct_trf(problem, invocation, parameterization, engine)
+
+    assert interrupted.value.execution.terminal is DirectTrfTerminal.CONVERGED
+    assert interrupted.value.materialization is not None
+    assert (
+        interrupted.value.materialization.terminal
+        is MaterializationTerminal.INTERRUPTED
+    )
+    assert interrupted.value.materialization.evaluation_count == 1
+    assert session.analysis_values.snapshot() == before
+    assert _legacy_values(session, problem.commit_scope) == legacy_before
+
+
+def test_cancellation_during_materialization_suppresses_accepted_result() -> None:
+    session, experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    before = session.analysis_values.snapshot()
+    token = CancellationToken()
+    pulse_type = type(next(iter(experiments)).profiles[0].pulse_sequence)
+    original = cast("Callable[..., Array]", pulse_type.calculate)
+    cancel_materialization = False
+
+    def controlled_calculate(*args: object, **kwargs: object) -> Array:
+        result = original(*args, **kwargs)
+        if cancel_materialization:
+            token.cancel()
+        return result
+
+    def arm_cancellation() -> None:
+        nonlocal cancel_materialization
+        cancel_materialization = True
+
+    def converge_then_cancel_materialization(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        return _one_request_converged_backend(
+            fun,
+            x0,
+            after_request=arm_cancellation,
+        )
+
+    with (
+        patch.object(pulse_type, "calculate", controlled_calculate),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            converge_then_cancel_materialization,
+        ),
+    ):
+        outcome = execute_direct_trf(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+            cancellation=token,
+        )
+
+    assert outcome.terminal is DirectTrfOutcomeTerminal.CANCELLED
+    assert outcome.execution.terminal is DirectTrfTerminal.CONVERGED
+    assert outcome.materialization is not None
+    assert outcome.materialization.terminal is MaterializationTerminal.CANCELLED
+    assert outcome.accepted_result is None
+    assert session.analysis_values.snapshot() == before
+
+
+def test_stale_commit_rejects_the_complete_accepted_scope_atomically() -> None:
+    session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    outcome = execute_direct_trf(problem, invocation, parameterization, engine)
+    assert outcome.accepted_result is not None
+    start = session.analysis_values.snapshot()
+    session.analysis_values.commit({"__PB": 0.01}, expected=start, scope=("__PB",))
+    advanced = session.analysis_values.snapshot()
+
+    with pytest.raises(StaleAnalysisValuesError):
+        commit_accepted_fit(
+            outcome.accepted_result,
+            problem=problem,
+            parameterization=parameterization,
+            analysis_values=session.analysis_values,
+        )
+
+    assert session.analysis_values.snapshot() == advanced
+    assert advanced["__PB"] == 0.01
+    assert advanced[problem.controlled_ids[0]] == start[problem.controlled_ids[0]]
