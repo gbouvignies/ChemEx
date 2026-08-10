@@ -353,6 +353,120 @@ class GridSeedProblemDerivation:
 
 
 @dataclass(frozen=True, slots=True)
+class DeSearchProblemDerivation:
+    """Exact lineage for one selected-coordinate DE search problem."""
+
+    root_problem_identity: str
+    search_specification_identity: str
+    selected_ids: tuple[str, ...]
+    captured_held_items: tuple[tuple[str, float], ...]
+    start: tuple[float, ...]
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if (
+            not self.root_problem_identity
+            or not self.search_specification_identity
+            or not self.selected_ids
+            or len(set(self.selected_ids)) != len(self.selected_ids)
+            or self.selected_ids
+            != tuple(sorted(self.selected_ids, key=lambda item: item.encode("utf-8")))
+        ):
+            raise DirectTrfConstructionError(
+                "DE search derivation requires unique canonical selected IDs"
+            )
+        held_items = tuple(
+            (
+                param_id,
+                _finite_binary64(value, name=f"DE held value {param_id!r}"),
+            )
+            for param_id, value in self.captured_held_items
+        )
+        held_ids = tuple(param_id for param_id, _value in held_items)
+        if len(set(held_ids)) != len(held_ids) or set(held_ids) & set(
+            self.selected_ids
+        ):
+            raise DirectTrfConstructionError(
+                "DE search derivation has inconsistent held coordinates"
+            )
+        start = tuple(
+            _finite_binary64(value, name=f"DE search start[{index}]")
+            for index, value in enumerate(self.start)
+        )
+        if len(start) != len(self.selected_ids):
+            raise DirectTrfConstructionError("DE search start has the wrong dimension")
+        object.__setattr__(self, "captured_held_items", held_items)
+        object.__setattr__(self, "start", start)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-de-search-problem-derivation",
+                (
+                    self.root_problem_identity,
+                    self.search_specification_identity,
+                    self.selected_ids,
+                    tuple(
+                        (param_id, _float_token(value))
+                        for param_id, value in held_items
+                    ),
+                    _vector_tokens(start),
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class DePolishProblemDerivation:
+    """Exact lineage for the one full-coordinate TRF polish after DE."""
+
+    root_problem_identity: str
+    workflow_invocation_identity: str
+    search_problem_identity: str
+    search_execution_identity: str
+    search_candidate_identity: str
+    controlled_ids: tuple[str, ...]
+    start: tuple[float, ...]
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if (
+            not self.root_problem_identity
+            or not self.workflow_invocation_identity
+            or not self.search_problem_identity
+            or not self.search_execution_identity
+            or not self.search_candidate_identity
+            or not self.controlled_ids
+        ):
+            raise DirectTrfConstructionError(
+                "DE polish derivation requires complete transition lineage"
+            )
+        start = tuple(
+            _finite_binary64(value, name=f"DE polish start[{index}]")
+            for index, value in enumerate(self.start)
+        )
+        if len(start) != len(self.controlled_ids):
+            raise DirectTrfConstructionError("DE polish start has the wrong dimension")
+        object.__setattr__(self, "start", start)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-de-polish-problem-derivation",
+                (
+                    self.root_problem_identity,
+                    self.workflow_invocation_identity,
+                    self.search_problem_identity,
+                    self.search_execution_identity,
+                    self.search_candidate_identity,
+                    self.controlled_ids,
+                    _vector_tokens(start),
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class OptimizationProblem:
     """One immutable canonical external-coordinate fit and commit context."""
 
@@ -369,7 +483,13 @@ class OptimizationProblem:
     lower_bounds: tuple[float, ...]
     upper_bounds: tuple[float, ...]
     commit_scope: tuple[str, ...]
-    derivation: ComponentProblemDerivation | GridSeedProblemDerivation | None = None
+    derivation: (
+        ComponentProblemDerivation
+        | GridSeedProblemDerivation
+        | DeSearchProblemDerivation
+        | DePolishProblemDerivation
+        | None
+    ) = None
     scalarization_version: str = _SCALARIZATION_VERSION
     identity: str = field(init=False)
 
@@ -402,6 +522,21 @@ class OptimizationProblem:
             raise DirectTrfConstructionError(
                 "GRID seed problem differs from its derivation record"
             )
+        elif isinstance(self.derivation, DeSearchProblemDerivation) and (
+            self.derivation.selected_ids != self.controlled_ids
+            or self.derivation.captured_held_items != self.held_items
+            or self.derivation.start != normalized_start
+        ):
+            raise DirectTrfConstructionError(
+                "DE search problem differs from its derivation record"
+            )
+        elif isinstance(self.derivation, DePolishProblemDerivation) and (
+            self.derivation.controlled_ids != self.controlled_ids
+            or self.derivation.start != normalized_start
+        ):
+            raise DirectTrfConstructionError(
+                "DE polish problem differs from its derivation record"
+            )
         object.__setattr__(self, "start", normalized_start)
         object.__setattr__(self, "lower_bounds", lower)
         object.__setattr__(self, "upper_bounds", upper)
@@ -409,8 +544,12 @@ class OptimizationProblem:
             derivation_record: tuple[tuple[str, str], ...] = ()
         elif isinstance(self.derivation, ComponentProblemDerivation):
             derivation_record = (("derived-fit-component", self.derivation.identity),)
-        else:
+        elif isinstance(self.derivation, GridSeedProblemDerivation):
             derivation_record = (("derived-grid-seed", self.derivation.identity),)
+        elif isinstance(self.derivation, DeSearchProblemDerivation):
+            derivation_record = (("derived-de-search", self.derivation.identity),)
+        else:
+            derivation_record = (("derived-de-polish", self.derivation.identity),)
         object.__setattr__(
             self,
             "identity",
@@ -2337,81 +2476,34 @@ def execute_direct_trf_candidate(
     )
 
 
-def _materialize_direct_trf_candidate_for_root(
+def _validate_derived_candidate_for_root(
     problem: OptimizationProblem,
-    candidate_problem: OptimizationProblem,
-    invocation: DirectTrfInvocation,
-    outcome: DirectTrfCandidateOutcome,
+    candidate: MaterializedDirectTrfCandidate,
     parameterization: ActiveParameterization,
     engine: EvaluationEngine,
-    *,
-    cancellation: CancellationToken | None = None,
-) -> MaterializedDirectTrfCandidate | DirectTrfOutcome:
-    """Freshly materialize one derived full-coordinate candidate at its root."""
-    derivation = candidate_problem.derivation
-    if (
-        not problem.acceptance_authority
-        or candidate_problem.acceptance_authority
-        or not isinstance(derivation, GridSeedProblemDerivation)
-        or derivation.root_problem_identity != problem.identity
-    ):
+) -> _CompletedRequest:
+    if not problem.acceptance_authority:
         raise DirectTrfConstructionError(
-            "Selected candidate is not derived from this GRID root problem"
+            "Derived root materialization requires an authoritative root problem"
         )
-    _validate_execution_context(
-        candidate_problem,
-        invocation,
-        parameterization,
-        engine,
-    )
-    candidate = outcome.candidate
-    materialization = outcome.materialization
-    if (
-        outcome.terminal is not DirectTrfCandidateTerminal.SUCCESS
-        or outcome.execution.terminal is not DirectTrfTerminal.CONVERGED
-        or candidate is None
-        or materialization is None
-        or materialization.terminal is not MaterializationTerminal.SUCCESS
-    ):
+    problem.validate_parameterization(parameterization)
+    if engine.plan.identity != problem.evaluation_plan_identity:
         raise DirectTrfConstructionError(
-            "Only a successful converged GRID candidate may be selected"
+            "Derived root materialization evaluator belongs to another plan"
         )
-    unchanged_root_semantics = (
-        candidate_problem.evaluation_plan_identity == problem.evaluation_plan_identity
-        and candidate_problem.parameterization_identity
-        == problem.parameterization_identity
-        and candidate_problem.evaluator_parameterization_identity
-        == problem.evaluator_parameterization_identity
-        and candidate_problem.constraint_program_identity
-        == problem.constraint_program_identity
-        and candidate_problem.configuration_identity == problem.configuration_identity
-        and candidate_problem.source_snapshot == problem.source_snapshot
-        and candidate_problem.independent_items == problem.independent_items
-        and candidate_problem.controlled_ids == problem.controlled_ids
-        and candidate_problem.held_items == problem.held_items
-        and candidate_problem.lower_bounds == problem.lower_bounds
-        and candidate_problem.upper_bounds == problem.upper_bounds
-        and candidate_problem.commit_scope == problem.commit_scope
-        and candidate_problem.scalarization_version == problem.scalarization_version
-    )
+    materialization = candidate.materialization
     evaluation = candidate.evaluation_result
     try:
         candidate_chi_square = canonical_chi_square(evaluation.residuals)
     except (TypeError, ValueError, ObjectiveScalarizationError) as error:
         raise DirectTrfConstructionError(
-            "Selected GRID candidate has invalid objective evidence"
+            "Derived candidate has invalid objective evidence"
         ) from error
     if (
-        not unchanged_root_semantics
-        or outcome.execution.problem_identity != candidate_problem.identity
-        or outcome.execution.invocation_identity != invocation.identity
-        or candidate.problem_identity != candidate_problem.identity
-        or candidate.invocation_identity != invocation.identity
-        or candidate.execution_identity != outcome.execution.identity
-        or candidate.materialization is not materialization
-        or materialization.problem_identity != candidate_problem.identity
-        or materialization.invocation_identity != invocation.identity
-        or materialization.execution_identity != outcome.execution.identity
+        materialization.terminal is not MaterializationTerminal.SUCCESS
+        or materialization.problem_identity != candidate.problem_identity
+        or materialization.invocation_identity != candidate.invocation_identity
+        or materialization.execution_identity != candidate.execution_identity
         or materialization.candidate.vector != candidate.vector
         or materialization.candidate.chi_square != candidate.chi_square
         or materialization.evaluation_identity != evaluation.identity
@@ -2427,31 +2519,198 @@ def _materialize_direct_trf_candidate_for_root(
         or candidate.chi_square != candidate_chi_square
     ):
         raise DirectTrfConstructionError(
-            "Selected GRID candidate provenance is incompatible with its root"
+            "Derived candidate provenance is incompatible with its root"
         )
-    token = CancellationToken() if cancellation is None else cancellation
-    if token.is_cancelled:
-        return DirectTrfOutcome(
-            DirectTrfOutcomeTerminal.CANCELLED,
-            outcome.execution,
-        )
-    request = _CompletedRequest(
+    return _CompletedRequest(
         materialization.candidate,
         tuple(float(value) for value in evaluation.residuals),
         evaluation.identity,
     )
-    fresh = _materialize_candidate(
-        outcome.execution,
+
+
+def _bind_derived_root_evaluator(
+    problem: OptimizationProblem,
+    candidate: MaterializedDirectTrfCandidate,
+    engine: EvaluationEngine,
+) -> BoundEvaluator | CandidateMaterialization:
+    try:
+        return engine.new_evaluator()
+    except KeyboardInterrupt:
+        return CandidateMaterialization(
+            uuid4().hex,
+            problem.identity,
+            candidate.invocation_identity,
+            candidate.execution_identity,
+            CandidateSummary(candidate.vector, candidate.chi_square, 0),
+            MaterializationTerminal.INTERRUPTED,
+            0,
+            engine.compatibility_identity,
+            None,
+            0,
+            0,
+            TerminalFailure(
+                "interrupted",
+                "KeyboardInterrupt during root evaluator binding",
+            ),
+        )
+    except Exception as error:  # noqa: BLE001 - root binding fails closed
+        return CandidateMaterialization(
+            uuid4().hex,
+            problem.identity,
+            candidate.invocation_identity,
+            candidate.execution_identity,
+            CandidateSummary(candidate.vector, candidate.chi_square, 0),
+            MaterializationTerminal.FAILURE,
+            0,
+            engine.compatibility_identity,
+            None,
+            0,
+            0,
+            TerminalFailure(
+                "materialization_binding_failure",
+                f"{type(error).__name__}: {error}",
+            ),
+        )
+
+
+def _materialize_derived_direct_trf_candidate_for_root(
+    problem: OptimizationProblem,
+    candidate: MaterializedDirectTrfCandidate,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    *,
+    cancellation: CancellationToken | None = None,
+) -> MaterializedDirectTrfCandidate | CandidateMaterialization:
+    """Freshly evaluate workflow-validated candidate evidence at its root."""
+    request = _validate_derived_candidate_for_root(
         problem,
-        invocation,
+        candidate,
         parameterization,
         engine,
-        request,
-        token,
     )
-    if isinstance(fresh, DirectTrfOutcome):
-        return fresh
-    return fresh
+    token = CancellationToken() if cancellation is None else cancellation
+    bound = _bind_derived_root_evaluator(problem, candidate, engine)
+    if isinstance(bound, CandidateMaterialization):
+        return bound
+    fresh_evaluator = bound
+    if token.is_cancelled:
+        return CandidateMaterialization(
+            uuid4().hex,
+            problem.identity,
+            candidate.invocation_identity,
+            candidate.execution_identity,
+            CandidateSummary(candidate.vector, candidate.chi_square, 0),
+            MaterializationTerminal.CANCELLED,
+            0,
+            fresh_evaluator.compatibility_identity,
+            None,
+            0,
+            0,
+            TerminalFailure("cancelled", "Cancellation before root materialization"),
+        )
+    try:
+        lifecycle = problem.lifecycle_frame(candidate.vector, parameterization)
+        frame = EvaluationFrame.from_lifecycle_frame(parameterization, lifecycle)
+        evaluated = fresh_evaluator.evaluate(frame)
+    except KeyboardInterrupt:
+        statistics = fresh_evaluator.cache_statistics
+        return CandidateMaterialization(
+            uuid4().hex,
+            problem.identity,
+            candidate.invocation_identity,
+            candidate.execution_identity,
+            CandidateSummary(candidate.vector, candidate.chi_square, 0),
+            MaterializationTerminal.INTERRUPTED,
+            1,
+            fresh_evaluator.compatibility_identity,
+            None,
+            statistics.hits,
+            statistics.misses,
+            TerminalFailure("interrupted", "KeyboardInterrupt during materialization"),
+        )
+    except Exception as error:  # noqa: BLE001 - root evaluation fails closed
+        statistics = fresh_evaluator.cache_statistics
+        return CandidateMaterialization(
+            uuid4().hex,
+            problem.identity,
+            candidate.invocation_identity,
+            candidate.execution_identity,
+            CandidateSummary(candidate.vector, candidate.chi_square, 0),
+            MaterializationTerminal.FAILURE,
+            1,
+            fresh_evaluator.compatibility_identity,
+            None,
+            statistics.hits,
+            statistics.misses,
+            TerminalFailure(
+                "materialization_exception",
+                f"{type(error).__name__}: {error}",
+            ),
+        )
+    statistics = fresh_evaluator.cache_statistics
+    terminal: MaterializationTerminal | None = None
+    failure: TerminalFailure | None = None
+    if token.is_cancelled:
+        terminal = MaterializationTerminal.CANCELLED
+        failure = TerminalFailure(
+            "cancelled",
+            "Cancellation observed during root materialization",
+        )
+    elif isinstance(evaluated, EvaluationFailure):
+        terminal = MaterializationTerminal.FAILURE
+        failure = TerminalFailure(evaluated.category, evaluated.message, evaluated)
+    else:
+        try:
+            _validate_materialized_result(
+                evaluated,
+                request,
+                problem,
+                fresh_evaluator,
+            )
+        except Exception as error:  # noqa: BLE001 - aggregate validation fails closed
+            terminal = MaterializationTerminal.FAILURE
+            failure = TerminalFailure(
+                "materialization_validation_failure",
+                f"{type(error).__name__}: {error}",
+            )
+    if terminal is not None:
+        return CandidateMaterialization(
+            uuid4().hex,
+            problem.identity,
+            candidate.invocation_identity,
+            candidate.execution_identity,
+            CandidateSummary(candidate.vector, candidate.chi_square, 0),
+            terminal,
+            1,
+            fresh_evaluator.compatibility_identity,
+            None,
+            statistics.hits,
+            statistics.misses,
+            failure,
+        )
+    successful = cast("EvaluationResult", evaluated)
+    fresh_materialization = CandidateMaterialization(
+        uuid4().hex,
+        problem.identity,
+        candidate.invocation_identity,
+        candidate.execution_identity,
+        CandidateSummary(candidate.vector, candidate.chi_square, 0),
+        MaterializationTerminal.SUCCESS,
+        1,
+        fresh_evaluator.compatibility_identity,
+        successful.identity,
+        statistics.hits,
+        statistics.misses,
+    )
+    return MaterializedDirectTrfCandidate(
+        problem.identity,
+        candidate.invocation_identity,
+        candidate.execution_identity,
+        fresh_materialization,
+        candidate.vector,
+        candidate.chi_square,
+        successful,
+    )
 
 
 def _consume_fit_commit_authority(

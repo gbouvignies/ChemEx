@@ -16,18 +16,12 @@ from enum import StrEnum
 from itertools import product
 from numbers import Real
 from typing import Protocol, cast
-from uuid import uuid4
 
-from chemex.evaluation.native import (
-    EvaluationEngine,
-    EvaluationFailure,
-    EvaluationFrame,
-)
+from chemex.evaluation.native import EvaluationEngine
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     CancellationToken,
     CandidateMaterialization,
-    CandidateSummary,
     CommitReceipt,
     DirectTrfCandidateOutcome,
     DirectTrfCandidateTerminal,
@@ -44,6 +38,7 @@ from chemex.optimize.direct_trf import (
     TerminalFailure,
     _accept_materialized_fit_for_derived_workflow,
     _grant_derived_fit_commit_authority,
+    _materialize_derived_direct_trf_candidate_for_root,
     canonical_chi_square,
     commit_accepted_fit,
     execute_direct_trf_candidate,
@@ -1377,157 +1372,6 @@ def _grid_finalization_gate(
         return GridDirectTrfTerminal.INTERRUPTED
 
 
-def _failed_root_materialization(
-    problem: OptimizationProblem,
-    candidate: MaterializedDirectTrfCandidate,
-    evaluator_compatibility_identity: str,
-    evaluation_count: int,
-    cache_hits: int,
-    cache_misses: int,
-    failure: TerminalFailure,
-    *,
-    terminal: MaterializationTerminal = MaterializationTerminal.FAILURE,
-) -> CandidateMaterialization:
-    return CandidateMaterialization(
-        uuid4().hex,
-        problem.identity,
-        candidate.invocation_identity,
-        candidate.execution_identity,
-        CandidateSummary(candidate.vector, candidate.chi_square, 0),
-        terminal,
-        evaluation_count,
-        evaluator_compatibility_identity,
-        None,
-        cache_hits,
-        cache_misses,
-        failure,
-    )
-
-
-def _materialize_grid_candidate_for_root(
-    problem: OptimizationProblem,
-    candidate: MaterializedDirectTrfCandidate,
-    parameterization: ActiveParameterization,
-    engine: EvaluationEngine,
-    cancellation: CancellationToken,
-) -> MaterializedDirectTrfCandidate | CandidateMaterialization:
-    """Freshly evaluate one selected GRID vector against the complete root."""
-    try:
-        evaluator = engine.new_evaluator()
-    except Exception as error:  # noqa: BLE001 - binding failure is typed evidence
-        return _failed_root_materialization(
-            problem,
-            candidate,
-            engine.compatibility_identity,
-            0,
-            0,
-            0,
-            TerminalFailure(
-                "grid_selection_materialization_binding_failure",
-                f"{type(error).__name__}: {error}",
-            ),
-        )
-    if cancellation.is_cancelled:
-        return _failed_root_materialization(
-            problem,
-            candidate,
-            evaluator.compatibility_identity,
-            0,
-            0,
-            0,
-            TerminalFailure("cancelled", "Cancellation before GRID promotion"),
-            terminal=MaterializationTerminal.CANCELLED,
-        )
-    try:
-        lifecycle = problem.lifecycle_frame(candidate.vector, parameterization)
-        frame = EvaluationFrame.from_lifecycle_frame(parameterization, lifecycle)
-        evaluated = evaluator.evaluate(frame)
-    except KeyboardInterrupt:
-        statistics = evaluator.cache_statistics
-        return _failed_root_materialization(
-            problem,
-            candidate,
-            evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure("interrupted", "KeyboardInterrupt during GRID promotion"),
-            terminal=MaterializationTerminal.INTERRUPTED,
-        )
-    except Exception as error:  # noqa: BLE001 - root evaluation fails closed
-        statistics = evaluator.cache_statistics
-        return _failed_root_materialization(
-            problem,
-            candidate,
-            evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure(
-                "grid_selection_materialization_exception",
-                f"{type(error).__name__}: {error}",
-            ),
-        )
-    statistics = evaluator.cache_statistics
-    if cancellation.is_cancelled:
-        return _failed_root_materialization(
-            problem,
-            candidate,
-            evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure("cancelled", "Cancellation after GRID promotion"),
-            terminal=MaterializationTerminal.CANCELLED,
-        )
-    if isinstance(evaluated, EvaluationFailure):
-        return _failed_root_materialization(
-            problem,
-            candidate,
-            evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure(evaluated.category, evaluated.message, evaluated),
-        )
-    chi_square = canonical_chi_square(evaluated.residuals)
-    if chi_square != candidate.chi_square:
-        return _failed_root_materialization(
-            problem,
-            candidate,
-            evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure(
-                "grid_selection_objective_mismatch",
-                "Fresh root objective differs from the selected aggregate candidate",
-            ),
-        )
-    materialization = CandidateMaterialization(
-        uuid4().hex,
-        problem.identity,
-        candidate.invocation_identity,
-        candidate.execution_identity,
-        CandidateSummary(candidate.vector, chi_square, 0),
-        MaterializationTerminal.SUCCESS,
-        1,
-        evaluator.compatibility_identity,
-        evaluated.identity,
-        statistics.hits,
-        statistics.misses,
-    )
-    return MaterializedDirectTrfCandidate(
-        problem.identity,
-        candidate.invocation_identity,
-        candidate.execution_identity,
-        materialization,
-        candidate.vector,
-        chi_square,
-        evaluated,
-    )
-
-
 def _finalize_grid_candidates(
     problem: OptimizationProblem,
     invocation: GridDirectTrfInvocation,
@@ -1570,12 +1414,12 @@ def _finalize_grid_candidates(
     selection, selected = _selection(eligible)
     selected_seed = invocation.seeds[selected.seed_ordinal]
     selected_candidate = cast("GridCandidate", selected.candidate)
-    promoted = _materialize_grid_candidate_for_root(
+    promoted = _materialize_derived_direct_trf_candidate_for_root(
         problem,
         selected_candidate.candidate,
         parameterization,
         engine,
-        cancellation,
+        cancellation=cancellation,
     )
     if isinstance(promoted, CandidateMaterialization):
         terminal = {
