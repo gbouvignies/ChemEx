@@ -7,9 +7,13 @@ The production lmfit runner remains outside this qualification harness.
 
 from __future__ import annotations
 
+import copy
 import dataclasses
+import pickle
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import patch
@@ -30,6 +34,7 @@ from chemex.optimize.direct_trf import (
     DirectTrfInvocation,
     DirectTrfOutcomeTerminal,
     DirectTrfTerminal,
+    LiveFitCommitAuthority,
     MaterializationTerminal,
     ObjectiveScalarizationError,
     OptimizationProblem,
@@ -152,7 +157,7 @@ def _one_request_converged_backend(
 def test_representative_single_component_fit_materializes_and_commits_atomically() -> (
     None
 ):
-    session, _experiments, parameterization, engine, problem, invocation = (
+    session, experiments, parameterization, engine, problem, invocation = (
         _qualification_fit()
     )
     before = session.analysis_values.snapshot()
@@ -168,6 +173,7 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
     assert first.terminal is DirectTrfOutcomeTerminal.ACCEPTED
     assert first.execution.terminal is DirectTrfTerminal.CONVERGED
     assert first.accepted_result is not None
+    assert first.commit_authority is not None
     assert first.materialization is not None
     assert first.materialization.terminal is MaterializationTerminal.SUCCESS
     assert first.materialization.evaluation_count == 1
@@ -191,6 +197,7 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
     assert first.execution.identity == second.execution.identity
     assert second.materialization is not None
     assert second.accepted_result is not None
+    assert second.commit_authority is not None
     assert first.materialization.identity == second.materialization.identity
     assert first.accepted_result.identity == second.accepted_result.identity
     assert session.analysis_values.snapshot() == before
@@ -198,6 +205,7 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
 
     receipt = commit_accepted_fit(
         first.accepted_result,
+        first.commit_authority,
         problem=problem,
         parameterization=parameterization,
         analysis_values=session.analysis_values,
@@ -213,6 +221,183 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
         rel=2.0e-8,
         abs=1.0e-10,
     )
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="exact live Direct TRF commit authority",
+    ):
+        commit_accepted_fit(
+            first.accepted_result,
+            first.commit_authority,
+            problem=problem,
+            parameterization=parameterization,
+            analysis_values=session.analysis_values,
+        )
+    assert session.analysis_values.snapshot() == committed
+
+    configuration = session.parameter_factory.sealed_configuration
+    assert configuration is not None
+    revision_one_parameterization = session.compile_parameterization(
+        read_methods([METHOD])["DEFAULT"],
+        experiments.param_ids,
+    )
+    revision_one_engine = EvaluationEngine.from_experiments(
+        experiments,
+        revision_one_parameterization,
+    )
+    revision_one_problem = OptimizationProblem.from_native(
+        revision_one_engine.plan,
+        revision_one_parameterization,
+        configuration,
+        committed,
+    )
+    revision_one_invocation = DirectTrfInvocation.for_problem(
+        revision_one_problem,
+        objective_request_budget=invocation.objective_request_budget,
+        x_scale=invocation.x_scale,
+        ftol=invocation.ftol,
+        xtol=invocation.xtol,
+        gtol=invocation.gtol,
+    )
+    revision_one = execute_direct_trf(
+        revision_one_problem,
+        revision_one_invocation,
+        revision_one_parameterization,
+        revision_one_engine,
+    )
+    assert revision_one.accepted_result is not None
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="exact live Direct TRF commit authority",
+    ):
+        commit_accepted_fit(
+            revision_one.accepted_result,
+            first.commit_authority,
+            problem=revision_one_problem,
+            parameterization=revision_one_parameterization,
+            analysis_values=session.analysis_values,
+        )
+    assert session.analysis_values.snapshot() == committed
+    assert _legacy_values(session, problem.commit_scope) == legacy_before
+
+
+def test_live_commit_authority_is_atomic_under_concurrent_use() -> None:
+    session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    outcome = execute_direct_trf(problem, invocation, parameterization, engine)
+    assert outcome.accepted_result is not None
+    assert outcome.commit_authority is not None
+    before = session.analysis_values.snapshot()
+    legacy_before = _legacy_values(session, problem.commit_scope)
+    barrier = Barrier(2)
+
+    def commit_once() -> object:
+        barrier.wait()
+        try:
+            return commit_accepted_fit(
+                outcome.accepted_result,
+                outcome.commit_authority,
+                problem=problem,
+                parameterization=parameterization,
+                analysis_values=session.analysis_values,
+            )
+        except DirectTrfConstructionError as error:
+            return error
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = tuple(executor.map(lambda _index: commit_once(), range(2)))
+
+    errors = tuple(
+        result for result in results if isinstance(result, DirectTrfConstructionError)
+    )
+    receipts = tuple(result for result in results if result not in errors)
+    assert len(errors) == len(receipts) == 1
+    assert "exact live Direct TRF commit authority" in str(errors[0])
+    assert session.analysis_values.snapshot().revision == before.revision + 1
+    assert _legacy_values(session, problem.commit_scope) == legacy_before
+
+
+def test_commit_rejects_absent_foreign_or_wrongly_bound_live_authority() -> None:
+    session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    first = execute_direct_trf(problem, invocation, parameterization, engine)
+    second = execute_direct_trf(problem, invocation, parameterization, engine)
+    assert first.accepted_result is not None
+    assert first.commit_authority is not None
+    assert second.accepted_result is not None
+    assert second.commit_authority is not None
+    before = session.analysis_values.snapshot()
+    legacy_before = _legacy_values(session, problem.commit_scope)
+
+    with pytest.raises(TypeError, match="minted only"):
+        LiveFitCommitAuthority()
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.copy(first.commit_authority)
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.deepcopy(first.commit_authority)
+    with pytest.raises(TypeError, match="cannot be serialized"):
+        pickle.dumps(first.commit_authority)
+    with pytest.raises(AttributeError):
+        first.commit_authority.origin_context_identity = "foreign-origin"  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        first.commit_authority._problem_identity = "foreign-problem"  # type: ignore[attr-defined]
+    equivalent_evidence = dataclasses.replace(first.accepted_result)
+    assert equivalent_evidence is not first.accepted_result
+    assert equivalent_evidence.identity == first.accepted_result.identity
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="exact live Direct TRF commit authority",
+    ):
+        commit_accepted_fit(
+            equivalent_evidence,
+            first.commit_authority,
+            problem=problem,
+            parameterization=parameterization,
+            analysis_values=session.analysis_values,
+        )
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="exact live Direct TRF commit authority",
+    ):
+        commit_accepted_fit(
+            first.accepted_result,
+            second.commit_authority,
+            problem=problem,
+            parameterization=parameterization,
+            analysis_values=session.analysis_values,
+        )
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="exact live Direct TRF commit authority",
+    ):
+        commit_accepted_fit(
+            first.accepted_result,
+            None,  # type: ignore[arg-type] - adversarial runtime absence
+            problem=problem,
+            parameterization=parameterization,
+            analysis_values=session.analysis_values,
+        )
+
+    wrong_snapshot = dataclasses.replace(
+        problem.source_snapshot,
+        occurrence_identity="foreign-analysis-values",
+        revision=problem.source_snapshot.revision + 1,
+    )
+    wrong_problem = dataclasses.replace(problem, source_snapshot=wrong_snapshot)
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="commit context",
+    ):
+        commit_accepted_fit(
+            first.accepted_result,
+            first.commit_authority,
+            problem=wrong_problem,
+            parameterization=parameterization,
+            analysis_values=session.analysis_values,
+        )
+
+    assert session.analysis_values.snapshot() == before
     assert _legacy_values(session, problem.commit_scope) == legacy_before
 
 
@@ -773,6 +958,7 @@ def test_stale_commit_rejects_the_complete_accepted_scope_atomically() -> None:
     )
     outcome = execute_direct_trf(problem, invocation, parameterization, engine)
     assert outcome.accepted_result is not None
+    assert outcome.commit_authority is not None
     start = session.analysis_values.snapshot()
     session.analysis_values.commit({"__PB": 0.01}, expected=start, scope=("__PB",))
     advanced = session.analysis_values.snapshot()
@@ -780,6 +966,18 @@ def test_stale_commit_rejects_the_complete_accepted_scope_atomically() -> None:
     with pytest.raises(StaleAnalysisValuesError):
         commit_accepted_fit(
             outcome.accepted_result,
+            outcome.commit_authority,
+            problem=problem,
+            parameterization=parameterization,
+            analysis_values=session.analysis_values,
+        )
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="exact live Direct TRF commit authority",
+    ):
+        commit_accepted_fit(
+            outcome.accepted_result,
+            outcome.commit_authority,
             problem=problem,
             parameterization=parameterization,
             analysis_values=session.analysis_values,

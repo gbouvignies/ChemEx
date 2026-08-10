@@ -36,7 +36,6 @@ from chemex.optimize.grouped_direct_trf import (
     materialize_grouped_direct_trf,
 )
 from chemex.parameters.parameterization import ActiveParameterization
-from chemex.parameters.values import StaleAnalysisValuesError
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
 
@@ -251,6 +250,7 @@ def test_successful_components_compose_one_fresh_root_accepted_result_and_commit
         not hasattr(component, "accepted_result") for component in outcome.components
     )
     assert outcome.accepted_result is not None
+    assert outcome.commit_authority is not None
     accepted = outcome.accepted_result
     selected = {
         param_id: component.candidate.vector[index]
@@ -268,6 +268,7 @@ def test_successful_components_compose_one_fresh_root_accepted_result_and_commit
 
     receipt = commit_accepted_fit(
         accepted,
+        outcome.commit_authority,
         problem=problem,
         parameterization=parameterization,
         analysis_values=session.analysis_values,
@@ -275,9 +276,13 @@ def test_successful_components_compose_one_fresh_root_accepted_result_and_commit
     assert receipt.old_revision == before.revision
     assert receipt.new_revision == before.revision + 1
     committed = session.analysis_values.snapshot()
-    with pytest.raises(StaleAnalysisValuesError):
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="exact live Direct TRF commit authority",
+    ):
         commit_accepted_fit(
             accepted,
+            outcome.commit_authority,
             problem=problem,
             parameterization=parameterization,
             analysis_values=session.analysis_values,
@@ -428,12 +433,23 @@ def test_component_vector_cannot_be_retargeted_to_transposed_controlled_ids() ->
         objective_request_budgets=(80,),
     )
     before = session.analysis_values.snapshot()
-    components = execute_direct_trf_components(
-        decomposition,
-        invocation,
-        parameterization,
-        engine,
-    )
+
+    def successful_backend(
+        fun: Callable[[Array], Array],
+        x0: Array,
+        **_settings: object,
+    ) -> object:
+        candidate = np.asarray(x0, dtype=np.float64)
+        assert np.isfinite(candidate).all()
+        return _backend_result(candidate, fun(candidate), success=True)
+
+    with patch("chemex.optimize.direct_trf.least_squares", successful_backend):
+        components = execute_direct_trf_components(
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+        )
     assert len(components) == 1
     component = components[0]
     assert component.candidate is not None

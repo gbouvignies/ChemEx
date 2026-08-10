@@ -33,6 +33,7 @@ from chemex.optimize.direct_trf import (
     DirectTrfInterrupted,
     DirectTrfInvocation,
     DirectTrfTerminal,
+    LiveFitCommitAuthority,
     MaterializationTerminal,
     MaterializedDirectTrfCandidate,
     ObjectiveScalarizationError,
@@ -692,13 +693,22 @@ class GroupedDirectTrfOutcome:
         repr=False,
         compare=False,
     )
+    commit_authority: LiveFitCommitAuthority | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     failure: TerminalFailure | None = None
 
     def __post_init__(self) -> None:
         if (self.terminal is GroupedDirectTrfTerminal.ACCEPTED) != (
-            self.accepted_result is not None
+            self.accepted_result is not None and self.commit_authority is not None
         ):
             raise ValueError("Only accepted grouped execution has root fit authority")
+        if self.terminal is not GroupedDirectTrfTerminal.ACCEPTED and (
+            self.accepted_result is not None or self.commit_authority is not None
+        ):
+            raise ValueError("Unaccepted grouped execution cannot expose fit authority")
 
 
 def _validate_grouped_context(
@@ -1298,7 +1308,7 @@ def _accept_grouped_aggregate_unchecked(
     )
     if token.is_cancelled:
         return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.CANCELLED, outcomes)
-    accepted = accept_materialized_fit(
+    accepted, authority = accept_materialized_fit(
         problem=problem,
         invocation_identity=invocation.identity,
         execution_identity=execution_identity,
@@ -1311,6 +1321,7 @@ def _accept_grouped_aggregate_unchecked(
         GroupedDirectTrfTerminal.ACCEPTED,
         outcomes,
         accepted,
+        authority,
     )
 
 
