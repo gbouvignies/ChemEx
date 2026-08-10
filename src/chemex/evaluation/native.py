@@ -1461,6 +1461,66 @@ class EvaluationEngine:
         )
         return cls(plan, parameterization, sources)
 
+    def project_profiles(self, profile_indices: Sequence[int]) -> EvaluationEngine:
+        """Project complete Profiles in root order into an isolated child engine."""
+        indices = tuple(profile_indices)
+        if (
+            not indices
+            or tuple(sorted(set(indices))) != indices
+            or indices[-1] >= len(self.plan.profiles)
+            or indices[0] < 0
+        ):
+            raise ValueError("Profile projection requires unique root-ordered indices")
+        profiles: list[ProfilePlan] = []
+        sources: list[tuple[int, int, Profile]] = []
+        offset = 0
+        for index in indices:
+            root = self.plan.profiles[index]
+            source = self._sources[index]
+            profiles.append(
+                ProfilePlan(
+                    identity=_identity(
+                        "profile-plan",
+                        (
+                            root.source_identity,
+                            root.experiment_ordinal,
+                            root.profile_ordinal,
+                            offset,
+                        ),
+                    ),
+                    source_identity=root.source_identity,
+                    experiment_ordinal=root.experiment_ordinal,
+                    profile_ordinal=root.profile_ordinal,
+                    observation_offset=offset,
+                    local_inputs=root.local_inputs,
+                    is_scaled=root.is_scaled,
+                    experimental_values=root.experimental_values,
+                    uncertainties=root.uncertainties,
+                    mask=root.mask,
+                    kernel_identity=root.kernel_identity,
+                    kernel_configuration=root.kernel_configuration,
+                    spectrometer_configuration=root.spectrometer_configuration,
+                    observation_metadata=root.observation_metadata,
+                    output_shape=root.output_shape,
+                )
+            )
+            sources.append((root.experiment_ordinal, root.profile_ordinal, source))
+            offset += root.observation_count
+        plan = EvaluationPlan(
+            parameterization_identity=self.plan.parameterization_identity,
+            constraint_program_identity=self.plan.constraint_program_identity,
+            profiles=tuple(profiles),
+            resolved_ids=self.plan.resolved_ids,
+            scalar_version=self.plan.scalar_version,
+            normalization_version=self.plan.normalization_version,
+            residual_version=self.plan.residual_version,
+            masking_version=self.plan.masking_version,
+            ordering_version=self.plan.ordering_version,
+            failure_version=self.plan.failure_version,
+            diagnostics_version=self.plan.diagnostics_version,
+        )
+        return EvaluationEngine(plan, self._parameterization, sources)
+
     def new_evaluator(self) -> BoundEvaluator:
         """Create an empty single-owner workspace from trusted implementations."""
         return BoundEvaluator(

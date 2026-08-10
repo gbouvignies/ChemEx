@@ -259,6 +259,39 @@ class CandidateSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class ComponentProblemDerivation:
+    """Exact immutable derivation of one non-authoritative child problem."""
+
+    root_problem_identity: str
+    component_identity: str
+    projection_policy: str
+    projected_plan_identity: str
+    controlled_ids: tuple[str, ...]
+    root_start_bindings: tuple[tuple[str, float], ...]
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-component-problem-derivation",
+                (
+                    self.root_problem_identity,
+                    self.component_identity,
+                    self.projection_policy,
+                    self.projected_plan_identity,
+                    self.controlled_ids,
+                    tuple(
+                        (param_id, _float_token(value))
+                        for param_id, value in self.root_start_bindings
+                    ),
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class OptimizationProblem:
     """One immutable canonical external-coordinate fit and commit context."""
 
@@ -275,6 +308,7 @@ class OptimizationProblem:
     lower_bounds: tuple[float, ...]
     upper_bounds: tuple[float, ...]
     commit_scope: tuple[str, ...]
+    derivation: ComponentProblemDerivation | None = None
     scalarization_version: str = _SCALARIZATION_VERSION
     identity: str = field(init=False)
 
@@ -291,9 +325,22 @@ class OptimizationProblem:
             self.lower_bounds,
             self.upper_bounds,
         )
+        if self.derivation is not None and (
+            self.derivation.projected_plan_identity != self.evaluation_plan_identity
+            or self.derivation.controlled_ids != self.controlled_ids
+            or self.derivation.root_start_bindings != self.held_items
+        ):
+            raise DirectTrfConstructionError(
+                "Component problem differs from its derivation record"
+            )
         object.__setattr__(self, "start", normalized_start)
         object.__setattr__(self, "lower_bounds", lower)
         object.__setattr__(self, "upper_bounds", upper)
+        derivation_record = (
+            ()
+            if self.derivation is None
+            else (("derived-fit-component", self.derivation.identity),)
+        )
         object.__setattr__(
             self,
             "identity",
@@ -321,6 +368,7 @@ class OptimizationProblem:
                     _vector_tokens(lower),
                     _vector_tokens(upper),
                     self.commit_scope,
+                    *derivation_record,
                     self.scalarization_version,
                 ),
             ),
@@ -409,6 +457,11 @@ class OptimizationProblem:
             raise DirectTrfConstructionError(
                 "Optimization problem belongs to another parameterization"
             )
+
+    @property
+    def acceptance_authority(self) -> bool:
+        """Whether this is the complete root rather than a derived component."""
+        return self.derivation is None
 
     def lifecycle_frame(
         self,
@@ -673,7 +726,7 @@ class DirectTrfInterrupted(KeyboardInterrupt):
     def __init__(
         self,
         execution: DirectTrfExecution,
-        materialization: AcceptanceMaterialization | None = None,
+        materialization: CandidateMaterialization | None = None,
     ) -> None:
         self.execution = execution
         self.materialization = materialization
@@ -690,8 +743,8 @@ class MaterializationTerminal(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class AcceptanceMaterialization:
-    """One fresh-workspace aggregate materialization record."""
+class CandidateMaterialization:
+    """One fresh-workspace candidate materialization record."""
 
     occurrence_identity: str = field(compare=False)
     problem_identity: str
@@ -806,7 +859,7 @@ class DirectTrfOutcome:
 
     terminal: DirectTrfOutcomeTerminal
     execution: DirectTrfExecution
-    materialization: AcceptanceMaterialization | None = None
+    materialization: CandidateMaterialization | None = None
     accepted_result: AcceptedFitResult | None = None
 
     def __post_init__(self) -> None:
@@ -829,6 +882,67 @@ class DirectTrfOutcome:
             and self.materialization.terminal is not MaterializationTerminal.CANCELLED
         ):
             raise ValueError("Cancelled outcome has incompatible materialization")
+
+
+class DirectTrfCandidateTerminal(StrEnum):
+    """Terminal outcomes for non-authoritative component candidate execution."""
+
+    SUCCESS = "success"
+    SOLVER_UNSUCCESSFUL = "solver_unsuccessful"
+    MATERIALIZATION_FAILURE = "materialization_failure"
+    CANCELLED = "cancelled"
+
+
+@dataclass(frozen=True, slots=True)
+class MaterializedDirectTrfCandidate:
+    """Fresh component candidate evidence with no acceptance or commit authority."""
+
+    problem_identity: str
+    invocation_identity: str
+    execution_identity: str
+    materialization: CandidateMaterialization = field(repr=False, compare=False)
+    vector: tuple[float, ...]
+    chi_square: float
+    evaluation_result: EvaluationResult = field(repr=False, compare=False)
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-materialized-direct-trf-candidate",
+                (
+                    self.problem_identity,
+                    self.invocation_identity,
+                    self.execution_identity,
+                    self.materialization.identity,
+                    _vector_tokens(self.vector),
+                    _float_token(self.chi_square),
+                    self.evaluation_result.identity,
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class DirectTrfCandidateOutcome:
+    """Non-authoritative result of one component-local Direct TRF run."""
+
+    terminal: DirectTrfCandidateTerminal
+    execution: DirectTrfExecution
+    materialization: CandidateMaterialization | None = None
+    candidate: MaterializedDirectTrfCandidate | None = None
+
+    def __post_init__(self) -> None:
+        succeeded = self.terminal is DirectTrfCandidateTerminal.SUCCESS
+        if succeeded != (self.candidate is not None):
+            raise ValueError("Only successful component execution exposes a candidate")
+        if succeeded and (
+            self.materialization is None
+            or self.materialization.terminal is not MaterializationTerminal.SUCCESS
+        ):
+            raise ValueError("Successful component candidate lacks materialization")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1162,7 +1276,7 @@ def _materialization_failure(
     cache_misses: int,
     failure: TerminalFailure,
 ) -> DirectTrfOutcome:
-    materialization = AcceptanceMaterialization(
+    materialization = CandidateMaterialization(
         uuid4().hex,
         problem.identity,
         invocation.identity,
@@ -1193,7 +1307,7 @@ def _cancelled_materialization(
     cache_hits: int,
     cache_misses: int,
 ) -> DirectTrfOutcome:
-    materialization = AcceptanceMaterialization(
+    materialization = CandidateMaterialization(
         uuid4().hex,
         problem.identity,
         invocation.identity,
@@ -1223,8 +1337,8 @@ def _interrupted_materialization(
     evaluation_count: int,
     cache_hits: int,
     cache_misses: int,
-) -> AcceptanceMaterialization:
-    return AcceptanceMaterialization(
+) -> CandidateMaterialization:
+    return CandidateMaterialization(
         uuid4().hex,
         problem.identity,
         invocation.identity,
@@ -1467,7 +1581,7 @@ def _validate_materialized_result(
     return chi_square
 
 
-def _materialize_accepted_result(
+def _materialize_candidate(
     execution: DirectTrfExecution,
     problem: OptimizationProblem,
     invocation: DirectTrfInvocation,
@@ -1475,7 +1589,7 @@ def _materialize_accepted_result(
     engine: EvaluationEngine,
     request: _CompletedRequest,
     cancellation: CancellationToken,
-) -> DirectTrfOutcome:
+) -> MaterializedDirectTrfCandidate | DirectTrfOutcome:
     try:
         fresh_evaluator = engine.new_evaluator()
     except KeyboardInterrupt as error:
@@ -1599,7 +1713,7 @@ def _materialize_accepted_result(
             statistics.hits,
             statistics.misses,
         )
-    materialization = AcceptanceMaterialization(
+    materialization = CandidateMaterialization(
         uuid4().hex,
         problem.identity,
         invocation.identity,
@@ -1612,46 +1726,100 @@ def _materialize_accepted_result(
         statistics.hits,
         statistics.misses,
     )
-    commit_items = tuple(
-        (param_id, materialized.resolved_values[param_id])
-        for param_id in problem.commit_scope
-    )
-    accepted = AcceptedFitResult(
-        uuid4().hex,
+    return MaterializedDirectTrfCandidate(
         problem.identity,
         invocation.identity,
         execution.identity,
+        materialization,
+        request.summary.vector,
+        chi_square,
+        materialized,
+    )
+
+
+def accept_materialized_fit(
+    *,
+    problem: OptimizationProblem,
+    invocation_identity: str,
+    execution_identity: str,
+    materialization: CandidateMaterialization,
+    vector: tuple[float, ...],
+    chi_square: float,
+    evaluation_result: EvaluationResult,
+) -> AcceptedFitResult:
+    """Grant fit authority only to one fresh complete root materialization."""
+    if not problem.acceptance_authority:
+        raise DirectTrfConstructionError(
+            "A derived component problem has no acceptance authority"
+        )
+    if (
+        materialization.problem_identity != problem.identity
+        or materialization.invocation_identity != invocation_identity
+        or materialization.execution_identity != execution_identity
+        or materialization.candidate.vector != vector
+        or materialization.candidate.chi_square != chi_square
+        or materialization.evaluation_identity != evaluation_result.identity
+        or evaluation_result.plan_identity != problem.evaluation_plan_identity
+        or evaluation_result.parameterization_identity
+        != problem.evaluator_parameterization_identity
+        or tuple(evaluation_result.resolved_values) != problem.commit_scope
+    ):
+        raise DirectTrfConstructionError(
+            "Fresh materialization is incompatible with root acceptance"
+        )
+    commit_items = tuple(
+        (param_id, evaluation_result.resolved_values[param_id])
+        for param_id in problem.commit_scope
+    )
+    return AcceptedFitResult(
+        uuid4().hex,
+        problem.identity,
+        invocation_identity,
+        execution_identity,
         materialization.identity,
         problem.parameterization_identity,
         problem.evaluator_parameterization_identity,
         problem.source_snapshot.occurrence_identity,
         problem.source_snapshot.revision,
         problem.controlled_ids,
-        request.summary.vector,
+        vector,
         chi_square,
-        materialized,
+        evaluation_result,
         problem.commit_scope,
         commit_items,
+    )
+
+
+def _accepted_outcome(
+    candidate: MaterializedDirectTrfCandidate,
+    execution: DirectTrfExecution,
+    problem: OptimizationProblem,
+    invocation: DirectTrfInvocation,
+) -> DirectTrfOutcome:
+    accepted = accept_materialized_fit(
+        problem=problem,
+        invocation_identity=invocation.identity,
+        execution_identity=execution.identity,
+        materialization=candidate.materialization,
+        vector=candidate.vector,
+        chi_square=candidate.chi_square,
+        evaluation_result=candidate.evaluation_result,
     )
     return DirectTrfOutcome(
         DirectTrfOutcomeTerminal.ACCEPTED,
         execution,
-        materialization,
+        candidate.materialization,
         accepted,
     )
 
 
-def execute_direct_trf(
+def _execute_direct_trf_attempt(
     problem: OptimizationProblem,
     invocation: DirectTrfInvocation,
     parameterization: ActiveParameterization,
     engine: EvaluationEngine,
-    *,
-    cancellation: CancellationToken | None = None,
-) -> DirectTrfOutcome:
-    """Execute one bounded Direct-TRF attempt and fresh acceptance materialization."""
-    _validate_execution_context(problem, invocation, parameterization, engine)
-    token = CancellationToken() if cancellation is None else cancellation
+    token: CancellationToken,
+) -> tuple[DirectTrfExecution, _CompletedRequest] | DirectTrfOutcome:
     occurrence_identity = uuid4().hex
     evaluator = engine.new_evaluator()
     live = _LiveAttempt(problem, invocation, parameterization, evaluator, token)
@@ -1719,7 +1887,6 @@ def execute_direct_trf(
     )
     if isinstance(solver, DirectTrfExecution):
         return _failed_outcome(solver)
-    backend = solver.backend
     request = solver.request
     execution = _execution(
         occurrence_identity,
@@ -1729,12 +1896,39 @@ def execute_direct_trf(
         DirectTrfTerminal.CONVERGED,
         preflight_identity,
         final_candidate=request.summary,
-        backend=backend,
+        backend=solver.backend,
     )
-
     if token.is_cancelled:
         return DirectTrfOutcome(DirectTrfOutcomeTerminal.CANCELLED, execution)
-    return _materialize_accepted_result(
+    return execution, request
+
+
+def execute_direct_trf(
+    problem: OptimizationProblem,
+    invocation: DirectTrfInvocation,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    *,
+    cancellation: CancellationToken | None = None,
+) -> DirectTrfOutcome:
+    """Execute one bounded Direct-TRF attempt and fresh acceptance materialization."""
+    if not problem.acceptance_authority:
+        raise DirectTrfConstructionError(
+            "A derived component problem has no acceptance authority"
+        )
+    _validate_execution_context(problem, invocation, parameterization, engine)
+    token = CancellationToken() if cancellation is None else cancellation
+    attempt = _execute_direct_trf_attempt(
+        problem,
+        invocation,
+        parameterization,
+        engine,
+        token,
+    )
+    if isinstance(attempt, DirectTrfOutcome):
+        return attempt
+    execution, request = attempt
+    materialized = _materialize_candidate(
         execution,
         problem,
         invocation,
@@ -1742,6 +1936,76 @@ def execute_direct_trf(
         engine,
         request,
         token,
+    )
+    if isinstance(materialized, DirectTrfOutcome):
+        return materialized
+    return _accepted_outcome(
+        materialized,
+        execution,
+        problem,
+        invocation,
+    )
+
+
+def execute_direct_trf_candidate(
+    problem: OptimizationProblem,
+    invocation: DirectTrfInvocation,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    *,
+    cancellation: CancellationToken | None = None,
+) -> DirectTrfCandidateOutcome:
+    """Run Direct TRF for one component without acceptance or commit authority."""
+    _validate_execution_context(problem, invocation, parameterization, engine)
+    token = CancellationToken() if cancellation is None else cancellation
+    attempt = _execute_direct_trf_attempt(
+        problem,
+        invocation,
+        parameterization,
+        engine,
+        token,
+    )
+    if isinstance(attempt, DirectTrfOutcome):
+        terminal = {
+            DirectTrfOutcomeTerminal.SOLVER_UNSUCCESSFUL: (
+                DirectTrfCandidateTerminal.SOLVER_UNSUCCESSFUL
+            ),
+            DirectTrfOutcomeTerminal.MATERIALIZATION_FAILURE: (
+                DirectTrfCandidateTerminal.MATERIALIZATION_FAILURE
+            ),
+            DirectTrfOutcomeTerminal.CANCELLED: DirectTrfCandidateTerminal.CANCELLED,
+        }[attempt.terminal]
+        return DirectTrfCandidateOutcome(
+            terminal,
+            attempt.execution,
+            attempt.materialization,
+        )
+    execution, request = attempt
+    materialized = _materialize_candidate(
+        execution,
+        problem,
+        invocation,
+        parameterization,
+        engine,
+        request,
+        token,
+    )
+    if isinstance(materialized, DirectTrfOutcome):
+        terminal = (
+            DirectTrfCandidateTerminal.CANCELLED
+            if materialized.terminal is DirectTrfOutcomeTerminal.CANCELLED
+            else DirectTrfCandidateTerminal.MATERIALIZATION_FAILURE
+        )
+        return DirectTrfCandidateOutcome(
+            terminal,
+            execution,
+            materialized.materialization,
+        )
+    return DirectTrfCandidateOutcome(
+        DirectTrfCandidateTerminal.SUCCESS,
+        execution,
+        materialized.materialization,
+        materialized,
     )
 
 
@@ -1753,6 +2017,10 @@ def commit_accepted_fit(
     analysis_values: AnalysisValues,
 ) -> CommitReceipt:
     """Commit exactly one validated accepted result at its captured revision."""
+    if not problem.acceptance_authority:
+        raise DirectTrfConstructionError(
+            "A derived component problem has no commit authority"
+        )
     if (
         accepted.problem_identity != problem.identity
         or accepted.parameterization_identity != parameterization.identity
