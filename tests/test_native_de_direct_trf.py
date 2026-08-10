@@ -31,12 +31,15 @@ from chemex.evaluation.native import (
     EvaluationResult,
 )
 from chemex.experiments.builder import build_experiments
+from chemex.optimize import de_direct_trf as de_workflow
 from chemex.optimize.de_direct_trf import (
     DeCoordinateSemantics,
     DeDirectTrfInterrupted,
     DeDirectTrfInvocation,
     DeDirectTrfTerminal,
+    DePopulation,
     DeSearchCoordinate,
+    DeSearchExecution,
     DeSearchTerminal,
     commit_de_accepted_fit,
     execute_de_direct_trf,
@@ -166,6 +169,131 @@ def test_de_requires_an_explicit_unsigned_64_bit_root_seed(root_seed: object) ->
             de_objective_request_budget=5,
             polish_objective_request_budget=5,
         )
+
+
+def _two_coordinate_invocation(
+    problem: OptimizationProblem,
+) -> DeDirectTrfInvocation:
+    coordinates = tuple(
+        (
+            param_id,
+            max(
+                problem.lower_bounds[index],
+                (
+                    problem.start[index] * 0.5
+                    if problem.start[index] > 0.0
+                    else problem.start[index] - 1.0
+                ),
+            ),
+            min(
+                problem.upper_bounds[index],
+                (
+                    problem.start[index] * 1.5
+                    if problem.start[index] > 0.0
+                    else problem.start[index] + 1.0
+                ),
+            ),
+            DeCoordinateSemantics.LINEAR,
+        )
+        for index, param_id in enumerate(problem.controlled_ids)
+    )
+    return DeDirectTrfInvocation.for_problem(
+        problem,
+        search_coordinates=coordinates,
+        root_seed=597,
+        de_objective_request_budget=10,
+        polish_objective_request_budget=10,
+        population_multiplier=4,
+        maximum_generations=2,
+    )
+
+
+def test_reconstructed_invocation_rejects_retargeted_coordinates() -> None:
+    _session, _experiments, _parameterization, _engine, problem = (
+        _qualification_problem(Method(fit=["PB"], fix=["KEX_AB"]))
+    )
+    invocation = _two_coordinate_invocation(problem)
+    first, second = invocation.search_coordinates
+    foreign = dataclasses.replace(first, param_id="foreign")
+    duplicate = dataclasses.replace(second, param_id=first.param_id)
+    swapped_records = (
+        dataclasses.replace(
+            first,
+            physical_lower=second.physical_lower,
+            physical_upper=second.physical_upper,
+        ),
+        dataclasses.replace(
+            second,
+            physical_lower=first.physical_lower,
+            physical_upper=first.physical_upper,
+        ),
+    )
+    positive_index = next(
+        index
+        for index, coordinate in enumerate(invocation.search_coordinates)
+        if coordinate.physical_lower > 0.0
+    )
+    altered_transform = dataclasses.replace(
+        invocation.search_coordinates[positive_index],
+        semantics="log",
+    )
+    altered_bounds = dataclasses.replace(
+        first,
+        physical_lower=first.physical_lower + 0.01,
+    )
+
+    attacks = (
+        tuple(reversed(invocation.search_coordinates)),
+        swapped_records,
+        (first, duplicate),
+        (foreign, second),
+        tuple(
+            altered_transform if index == positive_index else coordinate
+            for index, coordinate in enumerate(invocation.search_coordinates)
+        ),
+        (altered_bounds, second),
+    )
+    for coordinates in attacks:
+        with pytest.raises(DirectTrfConstructionError):
+            dataclasses.replace(invocation, search_coordinates=coordinates)
+
+
+@pytest.mark.parametrize("root_seed", (True, -1, 2**64))
+def test_reconstructed_invocation_rejects_invalid_root_seed(root_seed: object) -> None:
+    _session, _experiments, _parameterization, _engine, problem = (
+        _qualification_problem(Method(fit=["PB"], fix=["KEX_AB"]))
+    )
+    invocation = _two_coordinate_invocation(problem)
+
+    with pytest.raises(DirectTrfConstructionError, match="unsigned 64-bit root seed"):
+        dataclasses.replace(invocation, root_seed=root_seed)
+
+
+def test_reconstructed_invocation_rejects_malformed_topology_budgets_and_settings() -> (
+    None
+):
+    _session, _experiments, _parameterization, _engine, problem = (
+        _qualification_problem(Method(fit=["PB"], fix=["KEX_AB"]))
+    )
+    invocation = _two_coordinate_invocation(problem)
+    wrong_dimension = DePopulation(1, 5, 5, 2)
+
+    attacks = (
+        {"population": wrong_dimension},
+        {"de_objective_request_budget": True},
+        {"polish_objective_request_budget": 0},
+        {"mutation": 2.0},
+        {"recombination": 1.1},
+        {"tol": -0.1},
+        {"polish_x_scale": (-1.0, 1.0)},
+        {"polish_ftol": None, "polish_xtol": None, "polish_gtol": None},
+    )
+    for changes in attacks:
+        with pytest.raises(DirectTrfConstructionError):
+            dataclasses.replace(invocation, **changes)
+
+    with pytest.raises(DirectTrfConstructionError):
+        dataclasses.replace(invocation.population, size=6)
 
 
 def test_log_coordinate_map_has_exact_endpoints_and_stable_interior_round_trip() -> (
@@ -827,6 +955,191 @@ def test_de_cancellation_stops_before_polish_without_fallback() -> None:
     polish_backend.assert_not_called()
 
 
+def test_cancellation_after_de_eligibility_prevents_polish_transfer() -> None:
+    _session, _experiments, parameterization, engine, problem = _qualification_problem(
+        read_methods([METHOD])["DEFAULT"]
+    )
+    invocation = _bounded_de_invocation(problem)
+    token = CancellationToken()
+    run_search = de_workflow._run_de_search
+
+    def eligible_then_cancel(
+        root_problem: OptimizationProblem,
+        workflow_invocation: DeDirectTrfInvocation,
+        active_parameterization: ActiveParameterization,
+        evaluation_engine: EvaluationEngine,
+        cancellation: CancellationToken,
+    ) -> DeSearchExecution:
+        search = run_search(
+            root_problem,
+            workflow_invocation,
+            active_parameterization,
+            evaluation_engine,
+            cancellation,
+        )
+        assert search.restart_eligible
+        token.cancel()
+        return search
+
+    with (
+        patch(
+            "chemex.optimize.de_direct_trf.differential_evolution",
+            _eligible_search_backend,
+        ),
+        patch(
+            "chemex.optimize.de_direct_trf._run_de_search",
+            side_effect=eligible_then_cancel,
+        ),
+        patch(
+            "chemex.optimize.de_direct_trf.execute_direct_trf_candidate"
+        ) as polish_entry,
+    ):
+        outcome = execute_de_direct_trf(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+            cancellation=token,
+        )
+
+    assert outcome.terminal is DeDirectTrfTerminal.CANCELLED
+    assert outcome.search.restart_eligible
+    assert outcome.accounting.search_to_polish_transfers == 0
+    assert outcome.accounting.root_materializations == 0
+    assert outcome.polish_problem is None
+    assert outcome.polish_invocation is None
+    assert outcome.polish is None
+    assert outcome.root_materialization is None
+    assert outcome.accepted_result is None
+    assert outcome.commit_authority is None
+    polish_entry.assert_not_called()
+
+
+def test_interruption_after_de_eligibility_prevents_polish_transfer() -> None:
+    _session, _experiments, parameterization, engine, problem = _qualification_problem(
+        read_methods([METHOD])["DEFAULT"]
+    )
+    invocation = _bounded_de_invocation(problem)
+
+    class InterruptAtTransition(CancellationToken):
+        ready = False
+
+        @property
+        def is_cancelled(self) -> bool:
+            if self.ready:
+                raise KeyboardInterrupt
+            return False
+
+    token = InterruptAtTransition()
+    run_search = de_workflow._run_de_search
+
+    def eligible_then_interrupt(
+        root_problem: OptimizationProblem,
+        workflow_invocation: DeDirectTrfInvocation,
+        active_parameterization: ActiveParameterization,
+        evaluation_engine: EvaluationEngine,
+        cancellation: CancellationToken,
+    ) -> DeSearchExecution:
+        search = run_search(
+            root_problem,
+            workflow_invocation,
+            active_parameterization,
+            evaluation_engine,
+            cancellation,
+        )
+        assert search.restart_eligible
+        token.ready = True
+        return search
+
+    with (
+        patch(
+            "chemex.optimize.de_direct_trf.differential_evolution",
+            _eligible_search_backend,
+        ),
+        patch(
+            "chemex.optimize.de_direct_trf._run_de_search",
+            side_effect=eligible_then_interrupt,
+        ),
+        patch(
+            "chemex.optimize.de_direct_trf.execute_direct_trf_candidate"
+        ) as polish_entry,
+        pytest.raises(DeDirectTrfInterrupted) as interrupted,
+    ):
+        execute_de_direct_trf(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+            cancellation=token,
+        )
+
+    outcome = interrupted.value.outcome
+    assert outcome.terminal is DeDirectTrfTerminal.INTERRUPTED
+    assert outcome.accounting.search_to_polish_transfers == 0
+    assert outcome.accounting.root_materializations == 0
+    assert outcome.polish is None
+    assert outcome.accepted_result is None
+    assert outcome.commit_authority is None
+    polish_entry.assert_not_called()
+
+
+def test_retargeted_de_candidate_lineage_fails_before_polish_transfer() -> None:
+    _session, _experiments, parameterization, engine, problem = _qualification_problem(
+        read_methods([METHOD])["DEFAULT"]
+    )
+    invocation = _bounded_de_invocation(problem)
+    run_search = de_workflow._run_de_search
+
+    def retarget_eligible_candidate(
+        root_problem: OptimizationProblem,
+        workflow_invocation: DeDirectTrfInvocation,
+        active_parameterization: ActiveParameterization,
+        evaluation_engine: EvaluationEngine,
+        cancellation: CancellationToken,
+    ) -> DeSearchExecution:
+        search = run_search(
+            root_problem,
+            workflow_invocation,
+            active_parameterization,
+            evaluation_engine,
+            cancellation,
+        )
+        candidate = search.best_candidate
+        assert candidate is not None
+        retargeted = dataclasses.replace(
+            candidate,
+            full_vector=(candidate.full_vector[0] + 0.01,),
+        )
+        return dataclasses.replace(search, best_candidate=retargeted)
+
+    with (
+        patch(
+            "chemex.optimize.de_direct_trf.differential_evolution",
+            _eligible_search_backend,
+        ),
+        patch(
+            "chemex.optimize.de_direct_trf._run_de_search",
+            side_effect=retarget_eligible_candidate,
+        ),
+        patch(
+            "chemex.optimize.de_direct_trf.execute_direct_trf_candidate"
+        ) as polish_entry,
+    ):
+        outcome = execute_de_direct_trf(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert outcome.terminal is DeDirectTrfTerminal.EXECUTION_FAILURE
+    assert outcome.accounting.search_to_polish_transfers == 0
+    assert outcome.polish is None
+    assert outcome.failure is not None
+    assert outcome.failure.category == "de_search_lineage_failure"
+    polish_entry.assert_not_called()
+
+
 def test_non_converged_polish_is_terminal_and_never_falls_back_to_de_candidate() -> (
     None
 ):
@@ -1099,3 +1412,87 @@ def test_real_scipy_de_is_deterministic_for_the_same_root_seed() -> None:
     assert first.search.best_candidate == second.search.best_candidate
     assert first.search.backend == second.search.backend
     assert first.search.identity == second.search.identity
+
+
+def test_real_de_and_real_trf_match_analytical_boundary_optimum() -> None:
+    _session, _experiments, parameterization, engine, problem = _qualification_problem(
+        Method(fit=["PB"], fix=["KEX_AB"])
+    )
+    selected_id, unselected_id = problem.controlled_ids
+    selected_index = problem.controlled_ids.index(selected_id)
+    unselected_index = problem.controlled_ids.index(unselected_id)
+    expected_vector = (0.0, 6.87922079444668)
+    assert problem.controlled_ids == ("__PB", "__R1A_A_G2N_H_800_0MHZ")
+    assert problem.start == expected_vector
+    lower = problem.lower_bounds[selected_index]
+    upper = min(
+        problem.upper_bounds[selected_index],
+        problem.start[selected_index] + max(abs(problem.start[selected_index]), 1.0),
+    )
+    assert math.isfinite(lower) and math.isfinite(upper) and lower < upper
+    target_below_bound = -1.0
+    unselected_target = expected_vector[unselected_index]
+    invocation = DeDirectTrfInvocation.for_problem(
+        problem,
+        search_coordinates=((selected_id, lower, upper, "linear"),),
+        root_seed=597,
+        de_objective_request_budget=25,
+        polish_objective_request_budget=100,
+        population_multiplier=5,
+        maximum_generations=4,
+        polish_ftol=1.0e-12,
+        polish_xtol=1.0e-12,
+        polish_gtol=1.0e-12,
+    )
+    original_new_evaluator = engine.new_evaluator
+
+    class AnalyticalBoundaryEvaluator:
+        def __init__(self, delegate: BoundEvaluator) -> None:
+            self._delegate = delegate
+            self.compatibility_identity = delegate.compatibility_identity
+
+        @property
+        def cache_statistics(self) -> object:
+            return self._delegate.cache_statistics
+
+        def evaluate(
+            self,
+            frame: EvaluationFrame,
+        ) -> EvaluationResult | EvaluationFailure:
+            evaluated = self._delegate.evaluate(frame)
+            if isinstance(evaluated, EvaluationFailure):
+                return evaluated
+            residuals = np.zeros(
+                engine.plan.retained_observation_count,
+                dtype=np.float64,
+            )
+            residuals[0] = evaluated.resolved_values[selected_id] - target_below_bound
+            residuals[1] = evaluated.resolved_values[unselected_id] - unselected_target
+            return dataclasses.replace(evaluated, residuals=residuals)
+
+    def analytical_new_evaluator() -> AnalyticalBoundaryEvaluator:
+        return AnalyticalBoundaryEvaluator(original_new_evaluator())
+
+    with patch.object(engine, "new_evaluator", analytical_new_evaluator):
+        outcome = execute_de_direct_trf(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert outcome.terminal is DeDirectTrfTerminal.ACCEPTED
+    assert outcome.search.best_candidate is not None
+    search_candidate = outcome.search.best_candidate
+    assert search_candidate.selected_vector == (
+        search_candidate.full_vector[selected_index],
+    )
+    assert search_candidate.full_vector[unselected_index] == unselected_target
+    assert outcome.accepted_result is not None
+    fitted = outcome.accepted_result.vector
+    # The exact constrained solution is (lower, unselected_target), with
+    # residual vector (1, 0, ...), hence chi-square 1.  The 1e-7 vector and
+    # 2e-7 chi-square tolerances cover TRF's interior representation of an
+    # active bound while remaining much tighter than the one-unit scale.
+    assert fitted == pytest.approx(expected_vector, abs=1.0e-7)
+    assert outcome.accepted_result.chi_square == pytest.approx(1.0, abs=2.0e-7)

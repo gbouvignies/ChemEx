@@ -22,7 +22,6 @@ import numpy as np
 from scipy.optimize import Bounds, differential_evolution
 
 from chemex.evaluation.native import (
-    BoundEvaluator,
     EvaluationEngine,
     EvaluationFailure,
     EvaluationFrame,
@@ -33,7 +32,6 @@ from chemex.optimize.direct_trf import (
     AttemptCounters,
     CancellationToken,
     CandidateMaterialization,
-    CandidateSummary,
     CommitReceipt,
     DePolishProblemDerivation,
     DeSearchProblemDerivation,
@@ -42,7 +40,6 @@ from chemex.optimize.direct_trf import (
     DirectTrfConstructionError,
     DirectTrfInterrupted,
     DirectTrfInvocation,
-    DirectTrfTerminal,
     LiveFitCommitAuthority,
     MaterializationTerminal,
     MaterializedDirectTrfCandidate,
@@ -51,6 +48,7 @@ from chemex.optimize.direct_trf import (
     TerminalFailure,
     _accept_materialized_fit_for_derived_workflow,
     _grant_derived_fit_commit_authority,
+    _materialize_derived_direct_trf_candidate_for_root,
     canonical_chi_square,
     commit_accepted_fit,
     execute_direct_trf_candidate,
@@ -214,7 +212,15 @@ class DePopulation:
 
     def __post_init__(self) -> None:
         if (
-            self.dimension < 1
+            isinstance(self.dimension, bool)
+            or not isinstance(self.dimension, int)
+            or isinstance(self.multiplier, bool)
+            or not isinstance(self.multiplier, int)
+            or isinstance(self.size, bool)
+            or not isinstance(self.size, int)
+            or isinstance(self.maximum_generations, bool)
+            or not isinstance(self.maximum_generations, int)
+            or self.dimension < 1
             or self.multiplier < 1
             or self.size != max(5, self.dimension * self.multiplier)
             or self.maximum_generations < 1
@@ -244,6 +250,63 @@ class DePopulation:
         )
 
 
+def _validate_invocation_search_contract(
+    root_problem_identity: str,
+    coordinates: tuple[DeSearchCoordinate, ...],
+    search_problem: OptimizationProblem,
+) -> None:
+    derivation = search_problem.derivation
+    if (
+        not root_problem_identity
+        or not isinstance(derivation, DeSearchProblemDerivation)
+        or derivation.root_problem_identity != root_problem_identity
+    ):
+        raise DirectTrfConstructionError(
+            "DE search problem must retain its exact root derivation"
+        )
+    if not isinstance(coordinates, tuple) or not coordinates:
+        raise DirectTrfConstructionError(
+            "DE requires immutable explicitly selected coordinates"
+        )
+    if any(not isinstance(item, DeSearchCoordinate) for item in coordinates):
+        raise DirectTrfConstructionError("DE search coordinates are malformed")
+    selected_ids = tuple(item.param_id for item in coordinates)
+    known_ids = {param_id for param_id, _value in search_problem.independent_items}
+    if (
+        selected_ids != search_problem.controlled_ids
+        or selected_ids
+        != tuple(sorted(selected_ids, key=lambda item: item.encode("utf-8")))
+        or len(set(selected_ids)) != len(selected_ids)
+        or set(selected_ids) - known_ids
+    ):
+        raise DirectTrfConstructionError(
+            "DE coordinates must exactly match canonical selected ownership"
+        )
+    if {item.declaration_ordinal for item in coordinates} != set(
+        range(len(coordinates))
+    ):
+        raise DirectTrfConstructionError(
+            "DE coordinate declaration ordinals must be unique and complete"
+        )
+    specification_identity = _identity(
+        "native-de-search-specification",
+        tuple(item.identity for item in coordinates),
+    )
+    if derivation.search_specification_identity != specification_identity:
+        raise DirectTrfConstructionError(
+            "DE coordinate transforms or bounds differ from their parameter IDs"
+        )
+    for index, coordinate in enumerate(coordinates):
+        if (
+            coordinate.physical_lower < search_problem.lower_bounds[index]
+            or coordinate.physical_upper > search_problem.upper_bounds[index]
+        ):
+            raise DirectTrfConstructionError(
+                f"DE search range for {coordinate.param_id!r} exceeds physical bounds"
+            )
+        coordinate.to_solver(search_problem.start[index])
+
+
 @dataclass(frozen=True, slots=True)
 class DeDirectTrfInvocation:
     """Immutable selected-coordinate DE search and one full TRF polish policy."""
@@ -266,12 +329,67 @@ class DeDirectTrfInvocation:
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
-        if self.search_problem.derivation is None:
-            raise DirectTrfConstructionError("DE search problem must be derived")
-        if self.de_objective_request_budget < self.population.size:
+        coordinates = self.search_coordinates
+        _validate_invocation_search_contract(
+            self.root_problem_identity,
+            coordinates,
+            self.search_problem,
+        )
+        if (
+            isinstance(self.root_seed, bool)
+            or not isinstance(self.root_seed, int)
+            or not 0 <= self.root_seed <= _UINT64_MAX
+        ):
+            raise DirectTrfConstructionError(
+                "DE requires an explicit unsigned 64-bit root seed"
+            )
+        if not isinstance(self.population, DePopulation) or (
+            self.population.dimension != len(coordinates)
+        ):
+            raise DirectTrfConstructionError(
+                "DE population topology does not match selected coordinates"
+            )
+        de_budget = _positive_integer_budget(
+            self.de_objective_request_budget,
+            name="DE objective-request budget",
+        )
+        polish_budget = _positive_integer_budget(
+            self.polish_objective_request_budget,
+            name="TRF polish objective-request budget",
+        )
+        if de_budget < self.population.size:
             raise DirectTrfConstructionError(
                 "DE objective-request budget must cover the initial population"
             )
+        mutation = _mutation(self.mutation)
+        recombination = _probability(
+            self.recombination,
+            name="DE recombination probability",
+        )
+        tol = _non_negative(self.tol, name="DE relative tolerance")
+        atol = _non_negative(self.atol, name="DE absolute tolerance")
+        polish = DirectTrfInvocation(
+            self.root_problem_identity,
+            polish_budget,
+            self.polish_x_scale,
+            self.polish_ftol,
+            self.polish_xtol,
+            self.polish_gtol,
+        )
+        if len(polish.x_scale) < len(coordinates):
+            raise DirectTrfConstructionError(
+                "TRF polish scale cannot omit selected coordinates"
+            )
+        object.__setattr__(self, "de_objective_request_budget", de_budget)
+        object.__setattr__(self, "polish_objective_request_budget", polish_budget)
+        object.__setattr__(self, "mutation", mutation)
+        object.__setattr__(self, "recombination", recombination)
+        object.__setattr__(self, "tol", tol)
+        object.__setattr__(self, "atol", atol)
+        object.__setattr__(self, "polish_x_scale", polish.x_scale)
+        object.__setattr__(self, "polish_ftol", polish.ftol)
+        object.__setattr__(self, "polish_xtol", polish.xtol)
+        object.__setattr__(self, "polish_gtol", polish.gtol)
         object.__setattr__(
             self,
             "identity",
@@ -285,23 +403,23 @@ class DeDirectTrfInvocation:
                     self.search_problem.identity,
                     self.root_seed,
                     self.population.identity,
-                    self.de_objective_request_budget,
-                    self.polish_objective_request_budget,
+                    de_budget,
+                    polish_budget,
                     (
-                        tuple(_float_token(value) for value in self.mutation)
-                        if isinstance(self.mutation, tuple)
-                        else _float_token(self.mutation)
+                        tuple(_float_token(value) for value in mutation)
+                        if isinstance(mutation, tuple)
+                        else _float_token(mutation)
                     ),
-                    _float_token(self.recombination),
-                    _float_token(self.tol),
-                    _float_token(self.atol),
-                    tuple(_float_token(value) for value in self.polish_x_scale),
+                    _float_token(recombination),
+                    _float_token(tol),
+                    _float_token(atol),
+                    tuple(_float_token(value) for value in polish.x_scale),
                     tuple(
                         None if value is None else _float_token(value)
                         for value in (
-                            self.polish_ftol,
-                            self.polish_xtol,
-                            self.polish_gtol,
+                            polish.ftol,
+                            polish.xtol,
+                            polish.gtol,
                         )
                     ),
                 ),
@@ -1331,6 +1449,60 @@ def _derive_polish_problem(
     return child, polish
 
 
+def _validate_de_transition_lineage(
+    problem: OptimizationProblem,
+    invocation: DeDirectTrfInvocation,
+    search: DeSearchExecution,
+) -> None:
+    """Validate DE-owned candidate lineage before any TRF transfer exists."""
+    candidate = search.best_candidate
+    if candidate is None:
+        raise DirectTrfConstructionError(
+            "Restart-eligible DE search lacks a transition candidate"
+        )
+    selected_ids = invocation.search_problem.controlled_ids
+    root_indices = {
+        param_id: index for index, param_id in enumerate(problem.controlled_ids)
+    }
+    expected_selected = tuple(
+        candidate.full_vector[root_indices[param_id]] for param_id in selected_ids
+    )
+    unselected_ids = tuple(
+        param_id
+        for param_id in problem.controlled_ids
+        if param_id not in set(selected_ids)
+    )
+    root_start = dict(zip(problem.controlled_ids, problem.start, strict=True))
+    expected_solver = tuple(
+        coordinate.to_solver(value)
+        for coordinate, value in zip(
+            invocation.search_coordinates,
+            candidate.selected_vector,
+            strict=True,
+        )
+    )
+    if (
+        search.problem_identity != invocation.search_problem.identity
+        or search.workflow_invocation_identity != invocation.identity
+        or search.population_identity != invocation.population.identity
+        or search.candidate_ordering_policy != _DE_CANDIDATE_ORDER_VERSION
+        or len(candidate.full_vector) != len(problem.controlled_ids)
+        or len(candidate.selected_vector) != len(selected_ids)
+        or candidate.selected_vector != expected_selected
+        or candidate.solver_vector != expected_solver
+        or any(
+            candidate.full_vector[root_indices[param_id]] != root_start[param_id]
+            for param_id in unselected_ids
+        )
+        or candidate.request_ordinal > search.counters.objective_requests_accepted
+        or search.valid_candidate_count
+        > search.counters.objective_evaluations_completed
+    ):
+        raise DirectTrfConstructionError(
+            "Eligible DE candidate lineage is incompatible with its root problem"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class DeTrfTransitionAccounting:
     """Explicit non-fungible accounting owned by the DE→TRF transition."""
@@ -1558,246 +1730,6 @@ def _transition_accounting(
     )
 
 
-def _failed_root_materialization(
-    problem: OptimizationProblem,
-    polish_invocation: DirectTrfInvocation,
-    polish: DirectTrfCandidateOutcome,
-    candidate: MaterializedDirectTrfCandidate,
-    compatibility_identity: str,
-    evaluation_count: int,
-    cache_hits: int,
-    cache_misses: int,
-    failure: TerminalFailure,
-    *,
-    terminal: MaterializationTerminal = MaterializationTerminal.FAILURE,
-) -> CandidateMaterialization:
-    return CandidateMaterialization(
-        uuid4().hex,
-        problem.identity,
-        polish_invocation.identity,
-        polish.execution.identity,
-        CandidateSummary(candidate.vector, candidate.chi_square, 0),
-        terminal,
-        evaluation_count,
-        compatibility_identity,
-        None,
-        cache_hits,
-        cache_misses,
-        failure,
-    )
-
-
-def _bind_root_materialization_evaluator(
-    problem: OptimizationProblem,
-    polish_invocation: DirectTrfInvocation,
-    polish: DirectTrfCandidateOutcome,
-    candidate: MaterializedDirectTrfCandidate,
-    engine: EvaluationEngine,
-) -> BoundEvaluator | CandidateMaterialization:
-    try:
-        return engine.new_evaluator()
-    except KeyboardInterrupt:
-        return _failed_root_materialization(
-            problem,
-            polish_invocation,
-            polish,
-            candidate,
-            engine.compatibility_identity,
-            0,
-            0,
-            0,
-            TerminalFailure(
-                "interrupted",
-                "KeyboardInterrupt while binding root materialization",
-            ),
-            terminal=MaterializationTerminal.INTERRUPTED,
-        )
-    except Exception as error:  # noqa: BLE001 - root binding fails closed
-        return _failed_root_materialization(
-            problem,
-            polish_invocation,
-            polish,
-            candidate,
-            engine.compatibility_identity,
-            0,
-            0,
-            0,
-            TerminalFailure(
-                "de_polish_materialization_binding_failure",
-                f"{type(error).__name__}: {error}",
-            ),
-        )
-
-
-def _materialize_polished_candidate_for_root(
-    problem: OptimizationProblem,
-    polish_invocation: DirectTrfInvocation,
-    polish: DirectTrfCandidateOutcome,
-    parameterization: ActiveParameterization,
-    engine: EvaluationEngine,
-    cancellation: CancellationToken,
-) -> MaterializedDirectTrfCandidate | CandidateMaterialization:
-    candidate = polish.candidate
-    if (
-        polish.terminal is not DirectTrfCandidateTerminal.SUCCESS
-        or polish.execution.terminal is not DirectTrfTerminal.CONVERGED
-        or candidate is None
-    ):
-        raise DirectTrfConstructionError(
-            "Only a converged materialized TRF polish may reach root validation"
-        )
-    bound = _bind_root_materialization_evaluator(
-        problem,
-        polish_invocation,
-        polish,
-        candidate,
-        engine,
-    )
-    if isinstance(bound, CandidateMaterialization):
-        return bound
-    evaluator = bound
-    if cancellation.is_cancelled:
-        return _failed_root_materialization(
-            problem,
-            polish_invocation,
-            polish,
-            candidate,
-            evaluator.compatibility_identity,
-            0,
-            0,
-            0,
-            TerminalFailure("cancelled", "Cancellation before root materialization"),
-            terminal=MaterializationTerminal.CANCELLED,
-        )
-    try:
-        lifecycle = problem.lifecycle_frame(candidate.vector, parameterization)
-        frame = EvaluationFrame.from_lifecycle_frame(parameterization, lifecycle)
-        evaluated = evaluator.evaluate(frame)
-    except KeyboardInterrupt:
-        statistics = evaluator.cache_statistics
-        return _failed_root_materialization(
-            problem,
-            polish_invocation,
-            polish,
-            candidate,
-            evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure("interrupted", "KeyboardInterrupt in root materialization"),
-            terminal=MaterializationTerminal.INTERRUPTED,
-        )
-    except Exception as error:  # noqa: BLE001 - root materialization fails closed
-        statistics = evaluator.cache_statistics
-        return _failed_root_materialization(
-            problem,
-            polish_invocation,
-            polish,
-            candidate,
-            evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure(
-                "de_polish_materialization_exception",
-                f"{type(error).__name__}: {error}",
-            ),
-        )
-    statistics = evaluator.cache_statistics
-    if cancellation.is_cancelled:
-        return _failed_root_materialization(
-            problem,
-            polish_invocation,
-            polish,
-            candidate,
-            evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure(
-                "cancelled",
-                "Cancellation after fresh root evaluation",
-            ),
-            terminal=MaterializationTerminal.CANCELLED,
-        )
-    if isinstance(evaluated, EvaluationFailure):
-        return _failed_root_materialization(
-            problem,
-            polish_invocation,
-            polish,
-            candidate,
-            evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure(evaluated.category, evaluated.message, evaluated),
-        )
-    try:
-        objective = canonical_chi_square(evaluated.residuals)
-        vector = tuple(
-            evaluated.resolved_values[param_id] for param_id in problem.controlled_ids
-        )
-    except Exception as error:  # noqa: BLE001 - malformed evidence fails closed
-        return _failed_root_materialization(
-            problem,
-            polish_invocation,
-            polish,
-            candidate,
-            evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure(
-                "de_polish_materialization_validation_failure",
-                f"{type(error).__name__}: {error}",
-            ),
-        )
-    if (
-        vector != candidate.vector
-        or objective != candidate.chi_square
-        or evaluated.plan_identity != problem.evaluation_plan_identity
-        or evaluated.parameterization_identity
-        != problem.evaluator_parameterization_identity
-        or tuple(evaluated.resolved_values) != problem.commit_scope
-    ):
-        return _failed_root_materialization(
-            problem,
-            polish_invocation,
-            polish,
-            candidate,
-            evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure(
-                "de_polish_materialization_mismatch",
-                "Fresh root evidence differs from the polished candidate",
-            ),
-        )
-    materialization = CandidateMaterialization(
-        uuid4().hex,
-        problem.identity,
-        polish_invocation.identity,
-        polish.execution.identity,
-        CandidateSummary(candidate.vector, objective, 0),
-        MaterializationTerminal.SUCCESS,
-        1,
-        evaluator.compatibility_identity,
-        evaluated.identity,
-        statistics.hits,
-        statistics.misses,
-    )
-    return MaterializedDirectTrfCandidate(
-        problem.identity,
-        polish_invocation.identity,
-        polish.execution.identity,
-        materialization,
-        candidate.vector,
-        objective,
-        evaluated,
-    )
-
-
 def execute_de_direct_trf(
     problem: OptimizationProblem,
     invocation: DeDirectTrfInvocation,
@@ -1834,6 +1766,59 @@ def execute_de_direct_trf(
         if terminal is DeDirectTrfTerminal.INTERRUPTED:
             raise DeDirectTrfInterrupted(outcome)
         return outcome
+    try:
+        _validate_de_transition_lineage(problem, invocation, search)
+    except Exception as error:  # noqa: BLE001 - transition lineage fails closed
+        return DeDirectTrfOutcome(
+            DeDirectTrfTerminal.EXECUTION_FAILURE,
+            search,
+            _transition_accounting(
+                invocation,
+                search,
+                None,
+                transferred=False,
+                materialized=False,
+            ),
+            failure=TerminalFailure(
+                "de_search_lineage_failure",
+                f"{type(error).__name__}: {error}",
+            ),
+        )
+    try:
+        cancelled_before_polish = token.is_cancelled
+    except KeyboardInterrupt as error:
+        outcome = DeDirectTrfOutcome(
+            DeDirectTrfTerminal.INTERRUPTED,
+            search,
+            _transition_accounting(
+                invocation,
+                search,
+                None,
+                transferred=False,
+                materialized=False,
+            ),
+            failure=TerminalFailure(
+                "interrupted",
+                "KeyboardInterrupt at DE to TRF transition gate",
+            ),
+        )
+        raise DeDirectTrfInterrupted(outcome) from error
+    if cancelled_before_polish:
+        return DeDirectTrfOutcome(
+            DeDirectTrfTerminal.CANCELLED,
+            search,
+            _transition_accounting(
+                invocation,
+                search,
+                None,
+                transferred=False,
+                materialized=False,
+            ),
+            failure=TerminalFailure(
+                "cancelled",
+                "Cancellation observed before DE to TRF transfer",
+            ),
+        )
     polish_problem, polish_invocation = _derive_polish_problem(
         problem,
         invocation,
@@ -1892,19 +1877,20 @@ def execute_de_direct_trf(
             polish,
             failure=polish.execution.failure,
         )
-    fresh = _materialize_polished_candidate_for_root(
+    polished_candidate = cast("MaterializedDirectTrfCandidate", polish.candidate)
+    fresh = _materialize_derived_direct_trf_candidate_for_root(
         problem,
-        polish_invocation,
-        polish,
+        polished_candidate,
         parameterization,
         engine,
-        token,
+        cancellation=token,
     )
     if isinstance(fresh, CandidateMaterialization):
         terminal = {
             MaterializationTerminal.CANCELLED: DeDirectTrfTerminal.CANCELLED,
             MaterializationTerminal.INTERRUPTED: DeDirectTrfTerminal.INTERRUPTED,
         }.get(fresh.terminal, DeDirectTrfTerminal.MATERIALIZATION_FAILURE)
+        materialization = fresh
         outcome = DeDirectTrfOutcome(
             terminal,
             search,
@@ -1918,14 +1904,13 @@ def execute_de_direct_trf(
             polish_problem,
             polish_invocation,
             polish,
-            fresh,
-            failure=fresh.failure,
+            materialization,
+            failure=materialization.failure,
         )
         if terminal is DeDirectTrfTerminal.INTERRUPTED:
             raise DeDirectTrfInterrupted(outcome)
         return outcome
     search_candidate = cast("DeSearchCandidate", search.best_candidate)
-    polished_candidate = cast("MaterializedDirectTrfCandidate", polish.candidate)
     provenance = DePolishProvenance(
         invocation.identity,
         problem.identity,
