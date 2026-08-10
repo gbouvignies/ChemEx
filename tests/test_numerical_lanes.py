@@ -9,8 +9,12 @@ import pytest
 
 import chemex.numerical_lanes as numerical_lanes
 from chemex.numerical_lanes import (
+    ComparisonOutcome,
+    ComparisonScope,
     CrossLaneNumericalPolicy,
+    LaneAttestation,
     LaneAuthorityError,
+    LaneSemantics,
     NumericalLane,
     RuntimeEnvironment,
     canonical_lanes,
@@ -19,135 +23,283 @@ from chemex.numerical_lanes import (
 )
 
 
-def _environment(lane: NumericalLane) -> RuntimeEnvironment:
-    return RuntimeEnvironment(
+def _semantics(*, compatibility: bool = False) -> LaneSemantics:
+    python_version = "3.14.5" if compatibility else "3.13.5"
+    python_digits = "314" if compatibility else "313"
+    python_source_hash = (
+        "9c22bfe9939a6c5418fc74b289a5f1cc41859ae82ac6b163016b5844bd0a86bc"
+        if compatibility
+        else "e6190f52699b534ee203d9f417bdbca05a92f23e35c19c691a50ed2942835385"
+    )
+    differing = "2" if compatibility else "1"
+    return LaneSemantics(
         python_implementation="CPython",
-        python_version=lane.python_version,
-        python_abi=lane.python_abi,
-        python_source_hash=lane.python_source_hash,
-        platform=lane.platform,
-        platform_manifest=lane.platform_manifest,
-        dependency_lock_hash=lane.dependency_lock_hash,
-        build_recipe_hash=lane.build_recipe_hash,
-        numerical_library=lane.numerical_library,
-        isa=lane.isa,
-        workers=lane.workers,
-        native_threads=lane.native_threads,
-        floating_point_mode=lane.floating_point_mode,
-        imported_packages=lane.required_packages,
+        python_version=python_version,
+        python_abi=f"cpython-{python_digits}-x86_64-linux-gnu",
+        python_source_hash=python_source_hash,
+        python_executable_hash=differing * 64,
+        platform="linux/amd64",
+        platform_manifest=numerical_lanes._PLATFORM_MANIFEST,
+        dependency_lock_hash=numerical_lanes._LOCKFILE_HASH,
+        build_recipe_hash=numerical_lanes._recipe_hash(),
+        build_context_hash="3" * 64,
+        uv_version=numerical_lanes._UV_VERSION,
+        uv_wheel_hash=numerical_lanes._UV_WHEEL_HASH,
+        wheel_manifest_hash=differing * 64,
+        os_package_manifest_hash="4" * 64,
+        image_digest=f"sha256:{differing * 64}",
+        numpy_version="2.5.1",
+        numpy_installation_hash=differing * 64,
+        scipy_version="1.18.0",
+        scipy_installation_hash=differing * 64,
+        numpy_blas=numerical_lanes._NUMPY_BLAS,
+        numpy_lapack=numerical_lanes._NUMPY_BLAS,
+        scipy_blas=(
+            numerical_lanes._SCIPY_BLAS_314
+            if compatibility
+            else numerical_lanes._SCIPY_BLAS_313
+        ),
+        scipy_lapack=(
+            numerical_lanes._SCIPY_LAPACK_314
+            if compatibility
+            else numerical_lanes._SCIPY_LAPACK_313
+        ),
+        openblas_configuration=numerical_lanes._OPENBLAS_RUNTIME,
+        openblas_core="Haswell",
+        loaded_library_manifest_hash=differing * 64,
+        numpy_dispatch_restrictions=",".join(
+            numerical_lanes._NUMPY_DISPATCH_RESTRICTIONS
+        ),
+        isa="x86-64-v3",
+        workers=1,
+        native_threads=1,
+        floating_point_mode="binary64-round-nearest-gradual-underflow",
     )
 
 
-def test_canonical_lanes_are_content_addressed_and_limit_compatibility_delta() -> None:
-    python_313, python_314 = canonical_lanes()
-
-    assert python_313.identity == canonical_lanes()[0].identity
-    assert python_313.identity != python_314.identity
-    assert python_313.platform == python_314.platform
-    assert python_313.dependency_lock_hash == python_314.dependency_lock_hash
-    assert python_313.numerical_library == python_314.numerical_library
-    assert python_313.isa == python_314.isa
-    assert python_313.workers == python_314.workers == 1
-    assert python_313.native_threads == python_314.native_threads == 1
-    assert python_313.floating_point_mode == python_314.floating_point_mode
-    assert python_313.compatibility_delta(python_314) == {
-        "python_abi": ("cp313", "cp314"),
-        "python_source_hash": (
-            "e6190f52699b534ee203d9f417bdbca05a92f23e35c19c691a50ed2942835385",
-            "9c22bfe9939a6c5418fc74b289a5f1cc41859ae82ac6b163016b5844bd0a86bc",
+def _lane(*, compatibility: bool = False) -> NumericalLane:
+    return NumericalLane(
+        (
+            "compatibility-linux-amd64-python-3.14-v1"
+            if compatibility
+            else "canonical-linux-amd64-python-3.13-v1"
         ),
-        "python_version": ("3.13.5", "3.14.5"),
+        "PYTHON_COMPATIBILITY" if compatibility else "CANONICAL_NUMERICAL",
+        _semantics(compatibility=compatibility),
+    )
+
+
+def _attestation(
+    monkeypatch: pytest.MonkeyPatch, lane: NumericalLane
+) -> LaneAttestation:
+    environment = RuntimeEnvironment(lane.semantics)
+    monkeypatch.setattr(
+        RuntimeEnvironment,
+        "from_current_process",
+        classmethod(lambda cls, image_digest, provenance_path=None: environment),
+    )
+    return lane.attest_current_process(lane.semantics.image_digest)
+
+
+def test_lane_identity_covers_complete_semantics_and_round_trips_strictly() -> None:
+    lane = _lane()
+
+    assert NumericalLane.from_record(lane.to_record()) == lane
+    assert LaneSemantics.from_record(lane.semantics.to_record()) == lane.semantics
+    assert (
+        replace(
+            lane,
+            semantics=replace(lane.semantics, image_digest=f"sha256:{'f' * 64}"),
+        ).identity
+        != lane.identity
+    )
+    assert (
+        replace(
+            lane,
+            semantics=replace(lane.semantics, loaded_library_manifest_hash="f" * 64),
+        ).identity
+        != lane.identity
+    )
+
+    malformed = lane.to_record()
+    malformed["unexpected"] = True
+    with pytest.raises(ValueError, match="not canonical"):
+        NumericalLane.from_record(malformed)
+
+
+def test_compatibility_lane_records_only_python_abi_structural_differences() -> None:
+    python_313 = _lane()
+    python_314 = _lane(compatibility=True)
+
+    assert python_313.identity != python_314.identity
+    python_313.validate_compatibility_lane(python_314)
+    assert set(python_313.compatibility_delta(python_314)) == {
+        "image_digest",
+        "loaded_library_manifest_hash",
+        "numpy_installation_hash",
+        "python_abi",
+        "python_executable_hash",
+        "python_source_hash",
+        "python_version",
+        "scipy_blas",
+        "scipy_installation_hash",
+        "scipy_lapack",
+        "wheel_manifest_hash",
     }
 
-
-def test_post_import_attestation_requires_every_declared_claim() -> None:
-    lane = canonical_lanes()[0]
-    environment = _environment(lane)
-
-    attestation = lane.attest(environment)
-
-    assert attestation.lane_identity == lane.identity
-    assert attestation.environment_identity == environment.identity
-    assert attestation.identity != lane.identity
-
-    unavailable = replace(environment, imported_packages=("numpy==2.5.1",))
-    with pytest.raises(LaneAuthorityError, match="post-import package"):
-        lane.attest(unavailable)
-
-    wrong_threads = replace(environment, native_threads=2)
-    with pytest.raises(LaneAuthorityError, match="native numerical threads"):
-        lane.attest(wrong_threads)
-
-    wrong_manifest = replace(environment, platform_manifest=f"debian@sha256:{'0' * 64}")
-    with pytest.raises(LaneAuthorityError, match="platform manifest"):
-        lane.attest(wrong_manifest)
-
-    with pytest.raises(LaneAuthorityError):
-        lane.attest_current_process()
-
-
-def test_post_import_probe_normalizes_the_linux_amd64_platform_name(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(numerical_lanes.sys, "platform", "linux")
-    monkeypatch.setattr(numerical_lanes.platform_module, "machine", lambda: "x86_64")
-
-    environment = RuntimeEnvironment.from_current_process()
-
-    assert environment.platform == "linux/amd64"
-
-
-def test_post_import_probe_reads_image_provenance_not_launcher_environment(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    lane = canonical_lanes()[0]
-    provenance = tmp_path / "provenance.json"
-    provenance.write_text(
-        json.dumps(
-            {
-                "build_recipe_hash": lane.build_recipe_hash,
-                "dependency_lock_hash": lane.dependency_lock_hash,
-                "platform_manifest": lane.platform_manifest,
-                "python_source_hash": lane.python_source_hash,
-            }
-        ),
-        encoding="ascii",
+    drifted = replace(
+        python_314,
+        semantics=replace(python_314.semantics, os_package_manifest_hash="f" * 64),
     )
-    monkeypatch.setenv("CHEMEX_NUMERICAL_LANE_RECIPE_HASH", "0" * 64)
-
-    environment = RuntimeEnvironment.from_current_process(provenance)
-
-    assert environment.build_recipe_hash == lane.build_recipe_hash
+    with pytest.raises(LaneAuthorityError, match="os_package_manifest_hash"):
+        python_313.validate_compatibility_lane(drifted)
 
 
-def test_replay_scope_never_uses_cross_lane_comparison_for_within_lane_replay() -> None:
+def test_canonical_manifest_loader_is_strict_and_role_ordered(tmp_path: Path) -> None:
+    python_313 = _lane()
+    python_314 = _lane(compatibility=True)
+    (tmp_path / "canonical-linux-amd64-python-3.13-v1.json").write_text(
+        json.dumps(python_313.to_record()), encoding="ascii"
+    )
+    (tmp_path / "compatibility-linux-amd64-python-3.14-v1.json").write_text(
+        json.dumps(python_314.to_record()), encoding="ascii"
+    )
+
+    assert canonical_lanes(tmp_path) == (python_313, python_314)
+
+
+def test_shipped_lane_manifests_are_the_declared_compatibility_pair() -> None:
     python_313, python_314 = canonical_lanes()
 
-    assert comparison_scope(python_313, python_313).kind == "WITHIN_LANE_BITWISE"
-    assert comparison_scope(python_313, python_313).left_lane_identity == (
-        comparison_scope(python_313, python_313).right_lane_identity
+    python_313.validate_compatibility_lane(python_314)
+    assert python_313.role == "CANONICAL_NUMERICAL"
+    assert python_314.role == "PYTHON_COMPATIBILITY"
+
+
+def test_canonical_manifest_loader_rejects_duplicate_json_members(
+    tmp_path: Path,
+) -> None:
+    duplicate = f'{{"identity":"{"0" * 64}","identity":"{"1" * 64}"}}'
+    (tmp_path / "canonical-linux-amd64-python-3.13-v1.json").write_text(
+        duplicate, encoding="ascii"
     )
 
-    cross_lane = comparison_scope(python_313, python_314)
-    assert cross_lane.kind == "CROSS_LANE_NUMERICAL_ARTIFACT_COMPARISON"
-    assert cross_lane.left_lane_identity != cross_lane.right_lane_identity
+    with pytest.raises(LaneAuthorityError, match="unavailable"):
+        canonical_lanes(tmp_path)
 
+
+def test_only_current_process_probe_can_mint_lane_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lane = _lane()
+
+    with pytest.raises(TypeError, match="minted only"):
+        LaneAttestation(
+            lane.identity,
+            "0" * 64,
+            1,
+            1,
+            "POST_IMPORT_CURRENT_PROCESS",
+            "0" * 64,
+        )
+
+    attestation = _attestation(monkeypatch, lane)
+
+    assert LaneAttestation.from_record(attestation.to_record()) == attestation
+    assert attestation.lane_identity == lane.identity
+    assert (
+        attestation.environment_identity == RuntimeEnvironment(lane.semantics).identity
+    )
+
+
+def test_post_import_attestation_rejects_any_actual_process_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lane = _lane()
+    wrong_environment = RuntimeEnvironment(replace(lane.semantics, native_threads=2))
+    monkeypatch.setattr(
+        RuntimeEnvironment,
+        "from_current_process",
+        classmethod(lambda cls, image_digest, provenance_path=None: wrong_environment),
+    )
+
+    with pytest.raises(LaneAuthorityError, match="native_threads"):
+        lane.attest_current_process(lane.semantics.image_digest)
+
+
+def test_current_process_probe_fails_closed_outside_the_lane() -> None:
+    with pytest.raises(LaneAuthorityError, match="provenance"):
+        RuntimeEnvironment.from_current_process(f"sha256:{'0' * 64}")
+
+
+def test_comparison_scopes_require_attested_lanes_and_round_trip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    python_313 = _lane()
+    python_314 = _lane(compatibility=True)
+    attestation_313 = _attestation(monkeypatch, python_313)
+    attestation_314 = _attestation(monkeypatch, python_314)
+
+    within = comparison_scope(attestation_313, attestation_313)
+    cross = comparison_scope(attestation_313, attestation_314)
+
+    assert within.kind == "WITHIN_LANE_BITWISE"
+    assert cross.kind == "CROSS_LANE_NUMERICAL_ARTIFACT_COMPARISON"
+    assert ComparisonScope.from_record(within.to_record()) == within
+    with pytest.raises(TypeError, match="attestations"):
+        comparison_scope(python_313, python_313)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Unknown comparison scope"):
+        ComparisonScope(
+            "UNKNOWN",  # type: ignore[arg-type]
+            python_313.identity,
+            python_314.identity,
+            attestation_313.identity,
+            attestation_314.identity,
+        )
+
+
+def test_within_lane_replay_is_bitwise_and_never_accepts_tolerances(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lane = _lane()
+    attestation = _attestation(monkeypatch, lane)
+    scope = comparison_scope(attestation, attestation)
     changed = math.nextafter(1.0, math.inf)
-    assert not compare_values(
-        comparison_scope(python_313, python_313), [1.0], [changed]
-    ).equivalent
+
+    outcome = compare_values(scope, [1.0], [changed])
+
+    assert not outcome.equivalent
+    assert ComparisonOutcome.from_record(outcome.to_record()) == outcome
+    assert not compare_values(scope, [0.0], [-0.0]).equivalent
     with pytest.raises(ValueError, match="tolerance"):
         compare_values(
-            comparison_scope(python_313, python_313),
+            scope,
             [1.0],
             [1.0],
-            policy=CrossLaneNumericalPolicy(1.0e-6, 0.0),
+            policy=CrossLaneNumericalPolicy("profile-intensity-v1", 1.0e-6, 0.0),
         )
+
+
+def test_cross_lane_comparison_is_structural_finite_and_content_identified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    left_lane = _lane()
+    right_lane = _lane(compatibility=True)
+    scope = comparison_scope(
+        _attestation(monkeypatch, left_lane),
+        _attestation(monkeypatch, right_lane),
+    )
+    policy = CrossLaneNumericalPolicy("profile-intensity-v1", 1.0e-12, 0.0)
+    changed = math.nextafter(1.0, math.inf)
+
+    outcome = compare_values(scope, [1.0], [changed], policy=policy)
+
+    assert outcome.equivalent
+    assert outcome.policy_identity == policy.identity
+    assert CrossLaneNumericalPolicy.from_record(policy.to_record()) == policy
     with pytest.raises(ValueError, match="explicit numerical policy"):
-        compare_values(cross_lane, [1.0], [changed])
-    assert compare_values(
-        cross_lane,
-        [1.0],
-        [changed],
-        policy=CrossLaneNumericalPolicy(1.0e-12, 0.0),
-    ).equivalent
+        compare_values(scope, [1.0], [changed])
+    with pytest.raises(ValueError, match="matching structure"):
+        compare_values(scope, [1.0], [[1.0]], policy=policy)  # type: ignore[list-item]
+    with pytest.raises(ValueError, match="finite"):
+        compare_values(scope, [float("nan")], [float("nan")], policy=policy)
