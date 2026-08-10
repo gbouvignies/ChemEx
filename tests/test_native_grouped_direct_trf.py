@@ -433,12 +433,23 @@ def test_component_vector_cannot_be_retargeted_to_transposed_controlled_ids() ->
         objective_request_budgets=(80,),
     )
     before = session.analysis_values.snapshot()
-    components = execute_direct_trf_components(
-        decomposition,
-        invocation,
-        parameterization,
-        engine,
-    )
+
+    def successful_backend(
+        fun: Callable[[Array], Array],
+        x0: Array,
+        **_settings: object,
+    ) -> object:
+        candidate = np.asarray(x0, dtype=np.float64)
+        assert np.isfinite(candidate).all()
+        return _backend_result(candidate, fun(candidate), success=True)
+
+    with patch("chemex.optimize.direct_trf.least_squares", successful_backend):
+        components = execute_direct_trf_components(
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+        )
     assert len(components) == 1
     component = components[0]
     assert component.candidate is not None
