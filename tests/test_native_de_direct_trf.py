@@ -46,7 +46,10 @@ from chemex.optimize.de_direct_trf import (
 )
 from chemex.optimize.direct_trf import (
     CancellationToken,
+    DePolishProblemDerivation,
+    DirectTrfCandidateOutcome,
     DirectTrfConstructionError,
+    DirectTrfInvocation,
     OptimizationProblem,
 )
 from chemex.parameters.parameterization import ActiveParameterization
@@ -206,6 +209,182 @@ def _two_coordinate_invocation(
         population_multiplier=4,
         maximum_generations=2,
     )
+
+
+def _one_of_two_coordinate_invocation(
+    problem: OptimizationProblem,
+    *,
+    polish_x_scale: float | tuple[float, ...] | None = None,
+) -> DeDirectTrfInvocation:
+    selected_id = problem.controlled_ids[0]
+    selected_index = problem.controlled_ids.index(selected_id)
+    return DeDirectTrfInvocation.for_problem(
+        problem,
+        search_coordinates=(
+            (
+                selected_id,
+                problem.lower_bounds[selected_index],
+                problem.upper_bounds[selected_index],
+                DeCoordinateSemantics.LINEAR,
+            ),
+        ),
+        root_seed=597,
+        de_objective_request_budget=6,
+        polish_objective_request_budget=10,
+        population_multiplier=4,
+        maximum_generations=2,
+        polish_x_scale=polish_x_scale,
+    )
+
+
+def _replace_item_value(
+    items: tuple[tuple[str, float], ...],
+    param_id: str,
+    value: float,
+) -> tuple[tuple[str, float], ...]:
+    return tuple(
+        (item_id, value if item_id == param_id else item_value)
+        for item_id, item_value in items
+    )
+
+
+def _forged_search_child(
+    invocation: DeDirectTrfInvocation,
+    attack: str,
+) -> OptimizationProblem:
+    child = invocation.search_problem
+    derivation = child.derivation
+    assert derivation is not None
+    held_ids = tuple(param_id for param_id, _value in child.held_items)
+    first_held = held_ids[0]
+    first_value = dict(child.held_items)[first_held]
+    independent_items = child.independent_items
+    held_items = child.held_items
+    source_snapshot = child.source_snapshot
+    if attack in {"one_unselected", "multiple_unselected"}:
+        independent_items = _replace_item_value(
+            independent_items,
+            first_held,
+            first_value + 1.0,
+        )
+        held_items = _replace_item_value(held_items, first_held, first_value + 1.0)
+        if attack == "multiple_unselected":
+            second_held = held_ids[1]
+            second_value = dict(child.held_items)[second_held]
+            independent_items = _replace_item_value(
+                independent_items,
+                second_held,
+                second_value + 2.0,
+            )
+            held_items = _replace_item_value(
+                held_items,
+                second_held,
+                second_value + 2.0,
+            )
+    elif attack == "snapshot_revision":
+        source_snapshot = dataclasses.replace(
+            source_snapshot,
+            revision=source_snapshot.revision + 1,
+        )
+    elif attack == "selected_independent_frame":
+        selected_id = child.controlled_ids[0]
+        selected_value = dict(child.independent_items)[selected_id]
+        independent_items = _replace_item_value(
+            independent_items,
+            selected_id,
+            selected_value + 0.25,
+        )
+    elif attack == "held_only":
+        held_items = _replace_item_value(held_items, first_held, first_value + 1.0)
+    else:
+        raise AssertionError(f"Unknown forged search-child attack: {attack}")
+    forged_derivation = dataclasses.replace(
+        derivation,
+        captured_held_items=held_items,
+    )
+    return dataclasses.replace(
+        child,
+        source_snapshot=source_snapshot,
+        independent_items=independent_items,
+        held_items=held_items,
+        derivation=forged_derivation,
+    )
+
+
+@pytest.mark.parametrize(
+    "attack",
+    (
+        "one_unselected",
+        "multiple_unselected",
+        "snapshot_revision",
+        "selected_independent_frame",
+        "held_only",
+    ),
+)
+def test_reconstructed_invocation_rejects_forged_search_root_projection(
+    attack: str,
+) -> None:
+    _session, _experiments, _parameterization, _engine, problem = (
+        _qualification_problem(Method(fit=["PB"], fix=["KEX_AB"]))
+    )
+    invocation = _one_of_two_coordinate_invocation(problem)
+    forged = _forged_search_child(invocation, attack)
+
+    with (
+        patch("chemex.optimize.de_direct_trf.differential_evolution") as backend,
+        pytest.raises(DirectTrfConstructionError, match="root projection"),
+    ):
+        dataclasses.replace(invocation, search_problem=forged)
+
+    backend.assert_not_called()
+
+
+def test_polish_scale_uses_the_complete_root_trf_dimension() -> None:
+    _session, _experiments, _parameterization, _engine, problem = (
+        _qualification_problem(Method(fit=["PB"], fix=["KEX_AB"]))
+    )
+    scalar = _one_of_two_coordinate_invocation(problem, polish_x_scale=2.0)
+    vector = _one_of_two_coordinate_invocation(
+        problem,
+        polish_x_scale=(2.0, 3.0),
+    )
+
+    assert scalar.polish_x_scale == (2.0, 2.0)
+    assert vector.polish_x_scale == (2.0, 3.0)
+    assert dataclasses.replace(vector, polish_x_scale=(3.0, 2.0)).polish_x_scale == (
+        3.0,
+        2.0,
+    )
+
+
+@pytest.mark.parametrize(
+    "polish_x_scale",
+    (
+        (1.0,),
+        (),
+        (1.0, 1.0, 1.0),
+        (1.0, math.nan),
+        (1.0, -1.0),
+    ),
+)
+def test_reconstructed_invocation_rejects_non_full_polish_scale(
+    polish_x_scale: tuple[float, ...],
+) -> None:
+    _session, _experiments, _parameterization, _engine, problem = (
+        _qualification_problem(Method(fit=["PB"], fix=["KEX_AB"]))
+    )
+    invocation = _one_of_two_coordinate_invocation(
+        problem,
+        polish_x_scale=(1.0, 1.0),
+    )
+
+    with (
+        patch("chemex.optimize.de_direct_trf.differential_evolution") as backend,
+        pytest.raises((DirectTrfConstructionError, ValueError)),
+    ):
+        dataclasses.replace(invocation, polish_x_scale=polish_x_scale)
+
+    backend.assert_not_called()
 
 
 def test_reconstructed_invocation_rejects_retargeted_coordinates() -> None:
@@ -1138,6 +1317,146 @@ def test_retargeted_de_candidate_lineage_fails_before_polish_transfer() -> None:
     assert outcome.failure is not None
     assert outcome.failure.category == "de_search_lineage_failure"
     polish_entry.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "attack",
+    (
+        "another_de_invocation",
+        "another_polish_problem",
+        "same_root_foreign_polish_invocation",
+        "foreign_execution_materialization",
+    ),
+)
+def test_foreign_self_consistent_polish_lineage_fails_before_root_promotion(
+    attack: str,
+) -> None:
+    session, _experiments, parameterization, engine, problem = _qualification_problem(
+        read_methods([METHOD])["DEFAULT"]
+    )
+    invocation = _bounded_de_invocation(problem)
+    execute_polish = de_workflow.execute_direct_trf_candidate
+    before = session.analysis_values.snapshot()
+
+    def foreign_polish(
+        polish_problem: OptimizationProblem,
+        polish_invocation: DirectTrfInvocation,
+        active_parameterization: ActiveParameterization,
+        evaluation_engine: EvaluationEngine,
+        *,
+        cancellation: CancellationToken | None = None,
+    ) -> DirectTrfCandidateOutcome:
+        derivation = polish_problem.derivation
+        assert isinstance(derivation, DePolishProblemDerivation)
+        if attack in {"another_de_invocation", "another_polish_problem"}:
+            replacement = (
+                {"workflow_invocation_identity": "foreign-de-invocation"}
+                if attack == "another_de_invocation"
+                else {"search_candidate_identity": "foreign-de-candidate"}
+            )
+            foreign_derivation = dataclasses.replace(derivation, **replacement)
+            foreign_problem = dataclasses.replace(
+                polish_problem,
+                derivation=foreign_derivation,
+            )
+            foreign_invocation = DirectTrfInvocation.for_problem(
+                foreign_problem,
+                objective_request_budget=polish_invocation.objective_request_budget,
+                x_scale=polish_invocation.x_scale,
+                ftol=polish_invocation.ftol,
+                xtol=polish_invocation.xtol,
+                gtol=polish_invocation.gtol,
+            )
+            result = execute_polish(
+                foreign_problem,
+                foreign_invocation,
+                active_parameterization,
+                evaluation_engine,
+                cancellation=cancellation,
+            )
+            assert result.candidate is not None
+            assert result.candidate.vector == polish_problem.start
+            return result
+        if attack == "same_root_foreign_polish_invocation":
+            foreign_invocation = dataclasses.replace(
+                polish_invocation,
+                objective_request_budget=(
+                    polish_invocation.objective_request_budget + 1
+                ),
+            )
+            return execute_polish(
+                polish_problem,
+                foreign_invocation,
+                active_parameterization,
+                evaluation_engine,
+                cancellation=cancellation,
+            )
+        result = execute_polish(
+            polish_problem,
+            polish_invocation,
+            active_parameterization,
+            evaluation_engine,
+            cancellation=cancellation,
+        )
+        assert result.materialization is not None
+        assert result.candidate is not None
+        foreign_execution = dataclasses.replace(
+            result.execution,
+            invocation_identity="foreign-polish-invocation",
+        )
+        foreign_materialization = dataclasses.replace(
+            result.materialization,
+            invocation_identity="foreign-polish-invocation",
+            execution_identity=foreign_execution.identity,
+        )
+        foreign_candidate = dataclasses.replace(
+            result.candidate,
+            invocation_identity="foreign-polish-invocation",
+            execution_identity=foreign_execution.identity,
+            materialization=foreign_materialization,
+        )
+        return dataclasses.replace(
+            result,
+            execution=foreign_execution,
+            materialization=foreign_materialization,
+            candidate=foreign_candidate,
+        )
+
+    with (
+        patch(
+            "chemex.optimize.de_direct_trf.differential_evolution",
+            _eligible_search_backend,
+        ),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            _successful_polish_backend,
+        ),
+        patch(
+            "chemex.optimize.de_direct_trf.execute_direct_trf_candidate",
+            side_effect=foreign_polish,
+        ),
+        patch(
+            "chemex.optimize.de_direct_trf."
+            "_materialize_derived_direct_trf_candidate_for_root"
+        ) as root_promotion,
+    ):
+        outcome = execute_de_direct_trf(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert outcome.terminal is DeDirectTrfTerminal.EXECUTION_FAILURE
+    assert outcome.failure is not None
+    assert outcome.failure.category == "de_polish_lineage_failure"
+    assert outcome.accounting.search_to_polish_transfers == 1
+    assert outcome.accounting.root_materializations == 0
+    assert outcome.root_materialization is None
+    assert outcome.accepted_result is None
+    assert outcome.commit_authority is None
+    assert session.analysis_values.snapshot() == before
+    root_promotion.assert_not_called()
 
 
 def test_non_converged_polish_is_terminal_and_never_falls_back_to_de_candidate() -> (
