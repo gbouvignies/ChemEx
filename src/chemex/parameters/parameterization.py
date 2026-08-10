@@ -546,6 +546,10 @@ class IndependentValueFrame:
             ),
         )
 
+    def ordered_items(self) -> tuple[tuple[str, float], ...]:
+        """Return the complete independent frame in canonical program order."""
+        return self._items
+
 
 @dataclass(frozen=True, slots=True)
 class ResolvedParameterValues(Mapping[str, float]):
