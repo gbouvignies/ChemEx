@@ -353,6 +353,120 @@ class GridSeedProblemDerivation:
 
 
 @dataclass(frozen=True, slots=True)
+class DeSearchProblemDerivation:
+    """Exact lineage for one selected-coordinate DE search problem."""
+
+    root_problem_identity: str
+    search_specification_identity: str
+    selected_ids: tuple[str, ...]
+    captured_held_items: tuple[tuple[str, float], ...]
+    start: tuple[float, ...]
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if (
+            not self.root_problem_identity
+            or not self.search_specification_identity
+            or not self.selected_ids
+            or len(set(self.selected_ids)) != len(self.selected_ids)
+            or self.selected_ids
+            != tuple(sorted(self.selected_ids, key=lambda item: item.encode("utf-8")))
+        ):
+            raise DirectTrfConstructionError(
+                "DE search derivation requires unique canonical selected IDs"
+            )
+        held_items = tuple(
+            (
+                param_id,
+                _finite_binary64(value, name=f"DE held value {param_id!r}"),
+            )
+            for param_id, value in self.captured_held_items
+        )
+        held_ids = tuple(param_id for param_id, _value in held_items)
+        if len(set(held_ids)) != len(held_ids) or set(held_ids) & set(
+            self.selected_ids
+        ):
+            raise DirectTrfConstructionError(
+                "DE search derivation has inconsistent held coordinates"
+            )
+        start = tuple(
+            _finite_binary64(value, name=f"DE search start[{index}]")
+            for index, value in enumerate(self.start)
+        )
+        if len(start) != len(self.selected_ids):
+            raise DirectTrfConstructionError("DE search start has the wrong dimension")
+        object.__setattr__(self, "captured_held_items", held_items)
+        object.__setattr__(self, "start", start)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-de-search-problem-derivation",
+                (
+                    self.root_problem_identity,
+                    self.search_specification_identity,
+                    self.selected_ids,
+                    tuple(
+                        (param_id, _float_token(value))
+                        for param_id, value in held_items
+                    ),
+                    _vector_tokens(start),
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class DePolishProblemDerivation:
+    """Exact lineage for the one full-coordinate TRF polish after DE."""
+
+    root_problem_identity: str
+    workflow_invocation_identity: str
+    search_problem_identity: str
+    search_execution_identity: str
+    search_candidate_identity: str
+    controlled_ids: tuple[str, ...]
+    start: tuple[float, ...]
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if (
+            not self.root_problem_identity
+            or not self.workflow_invocation_identity
+            or not self.search_problem_identity
+            or not self.search_execution_identity
+            or not self.search_candidate_identity
+            or not self.controlled_ids
+        ):
+            raise DirectTrfConstructionError(
+                "DE polish derivation requires complete transition lineage"
+            )
+        start = tuple(
+            _finite_binary64(value, name=f"DE polish start[{index}]")
+            for index, value in enumerate(self.start)
+        )
+        if len(start) != len(self.controlled_ids):
+            raise DirectTrfConstructionError("DE polish start has the wrong dimension")
+        object.__setattr__(self, "start", start)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-de-polish-problem-derivation",
+                (
+                    self.root_problem_identity,
+                    self.workflow_invocation_identity,
+                    self.search_problem_identity,
+                    self.search_execution_identity,
+                    self.search_candidate_identity,
+                    self.controlled_ids,
+                    _vector_tokens(start),
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class OptimizationProblem:
     """One immutable canonical external-coordinate fit and commit context."""
 
@@ -369,7 +483,13 @@ class OptimizationProblem:
     lower_bounds: tuple[float, ...]
     upper_bounds: tuple[float, ...]
     commit_scope: tuple[str, ...]
-    derivation: ComponentProblemDerivation | GridSeedProblemDerivation | None = None
+    derivation: (
+        ComponentProblemDerivation
+        | GridSeedProblemDerivation
+        | DeSearchProblemDerivation
+        | DePolishProblemDerivation
+        | None
+    ) = None
     scalarization_version: str = _SCALARIZATION_VERSION
     identity: str = field(init=False)
 
@@ -402,6 +522,21 @@ class OptimizationProblem:
             raise DirectTrfConstructionError(
                 "GRID seed problem differs from its derivation record"
             )
+        elif isinstance(self.derivation, DeSearchProblemDerivation) and (
+            self.derivation.selected_ids != self.controlled_ids
+            or self.derivation.captured_held_items != self.held_items
+            or self.derivation.start != normalized_start
+        ):
+            raise DirectTrfConstructionError(
+                "DE search problem differs from its derivation record"
+            )
+        elif isinstance(self.derivation, DePolishProblemDerivation) and (
+            self.derivation.controlled_ids != self.controlled_ids
+            or self.derivation.start != normalized_start
+        ):
+            raise DirectTrfConstructionError(
+                "DE polish problem differs from its derivation record"
+            )
         object.__setattr__(self, "start", normalized_start)
         object.__setattr__(self, "lower_bounds", lower)
         object.__setattr__(self, "upper_bounds", upper)
@@ -409,8 +544,12 @@ class OptimizationProblem:
             derivation_record: tuple[tuple[str, str], ...] = ()
         elif isinstance(self.derivation, ComponentProblemDerivation):
             derivation_record = (("derived-fit-component", self.derivation.identity),)
-        else:
+        elif isinstance(self.derivation, GridSeedProblemDerivation):
             derivation_record = (("derived-grid-seed", self.derivation.identity),)
+        elif isinstance(self.derivation, DeSearchProblemDerivation):
+            derivation_record = (("derived-de-search", self.derivation.identity),)
+        else:
+            derivation_record = (("derived-de-polish", self.derivation.identity),)
         object.__setattr__(
             self,
             "identity",
