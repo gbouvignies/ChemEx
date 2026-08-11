@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import json
 import math
 import pickle
 from collections.abc import Callable
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
@@ -57,6 +59,18 @@ def _live_authority(
 
 def _detached_evidence(authority: LiveLaneAuthority) -> LaneAttestation:
     return LaneAttestation.from_record(authority.to_record())
+
+
+def _canonical_probe_baseline() -> NumericalProbeBaseline:
+    record = json.loads(
+        (
+            Path(__file__).parent
+            / "fixtures"
+            / "canonical_numerical_probe_baseline.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert isinstance(record, dict)
+    return NumericalProbeBaseline.from_record(record)
 
 
 def test_probe_catalogue_freezes_required_truth_and_execution_contracts() -> None:
@@ -648,28 +662,20 @@ def test_serialized_backend_grid_trajectory_and_manifest_tampering_is_rejected()
             NumericalProbeBaseline.from_record(record)
 
 
-def test_matching_external_manifest_is_recorded_but_remains_evidence_only(
+def test_fresh_capture_is_content_addressed_but_remains_capture_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     capture = run_numerical_probe_baseline()
-    assert capture.manifest_identity == CANONICAL_NUMERICAL_PROBE_MANIFEST_IDENTITY
+    assert len(capture.manifest_identity) == 64
+    int(capture.manifest_identity, 16)
+    assert capture.historical_qualification == "CAPTURE_ONLY"
+    assert capture.historically_satisfied_claims == ()
     authority = _live_authority(monkeypatch)
 
     authority_without_reference = run_numerical_probe_baseline(authority)
     assert authority_without_reference.historical_qualification == "CAPTURE_ONLY"
     assert authority_without_reference.historically_satisfied_claims == ()
 
-    matched = run_numerical_probe_baseline(
-        authority,
-        expected_manifest_identity=CANONICAL_NUMERICAL_PROBE_MANIFEST_IDENTITY,
-    )
-
-    assert matched.historical_qualification == "REFERENCE_MATCHED"
-    assert matched.historically_satisfied_claims == ("trajectory-manifest-compatible",)
-    tampered_role = copy.deepcopy(matched.to_record())
-    tampered_role["observed_lane_role"] = "PYTHON_COMPATIBILITY"
-    with pytest.raises(ValueError, match="identity"):
-        NumericalProbeBaseline.from_record(tampered_role)
     with pytest.raises(NumericalProbeQualificationError) as mismatch:
         capture.require_live_qualification(
             authority,
@@ -677,6 +683,25 @@ def test_matching_external_manifest_is_recorded_but_remains_evidence_only(
             required_lane_role="CANONICAL_NUMERICAL",
         )
     assert mismatch.value.terminal == "EXPECTED_REFERENCE_MISMATCH"
+
+
+def test_frozen_canonical_reference_records_historical_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matched = _canonical_probe_baseline()
+    authority = _live_authority(monkeypatch)
+
+    matched.require_live_qualification(
+        authority,
+        expected_manifest_identity=CANONICAL_NUMERICAL_PROBE_MANIFEST_IDENTITY,
+        required_lane_role="CANONICAL_NUMERICAL",
+    )
+    assert matched.historical_qualification == "REFERENCE_MATCHED"
+    assert matched.historically_satisfied_claims == ("trajectory-manifest-compatible",)
+    tampered_role = copy.deepcopy(matched.to_record())
+    tampered_role["observed_lane_role"] = "PYTHON_COMPATIBILITY"
+    with pytest.raises(ValueError, match="identity"):
+        NumericalProbeBaseline.from_record(tampered_role)
 
 
 def test_live_run_cannot_mint_a_new_manifest_from_backend_drift(
@@ -717,7 +742,7 @@ def test_live_run_cannot_mint_a_new_manifest_from_backend_drift(
 def test_fabricated_serialized_lane_facts_cannot_gain_live_authority(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    capture = run_numerical_probe_baseline()
+    capture = _canonical_probe_baseline()
     fabricated = NumericalProbeBaseline(
         capture.definitions,
         capture.artifacts,
@@ -744,11 +769,7 @@ def test_fabricated_serialized_lane_facts_cannot_gain_live_authority(
 def test_foreign_live_authority_does_not_match_historical_lane_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    canonical = _live_authority(monkeypatch)
-    matched = run_numerical_probe_baseline(
-        canonical,
-        expected_manifest_identity=CANONICAL_NUMERICAL_PROBE_MANIFEST_IDENTITY,
-    )
+    matched = _canonical_probe_baseline()
     foreign_lane = dataclasses.replace(
         canonical_lanes()[0],
         name="foreign-canonical-numerical-lane",
@@ -842,10 +863,7 @@ def test_serialized_probe_baseline_never_recreates_live_lane_authority(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     authority = _live_authority(monkeypatch)
-    baseline = run_numerical_probe_baseline(
-        authority,
-        expected_manifest_identity=CANONICAL_NUMERICAL_PROBE_MANIFEST_IDENTITY,
-    )
+    baseline = _canonical_probe_baseline()
     restored = pickle.loads(pickle.dumps(baseline))  # noqa: S301 - trusted self-record
     evidence = _detached_evidence(authority)
 
@@ -920,7 +938,7 @@ def test_compatibility_authority_role_mutation_cannot_qualify_canonical_capture(
 def test_detached_evidence_mutation_cannot_change_canonical_authority(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    capture = run_numerical_probe_baseline()
+    capture = _canonical_probe_baseline()
     authority = _live_authority(monkeypatch)
     evidence_record = authority.to_record()
     evidence = LaneAttestation.from_record(evidence_record)

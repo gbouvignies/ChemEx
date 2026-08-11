@@ -32,8 +32,10 @@ from chemex.typing import Array
 _SCHEMA_VERSION = 2
 _SEMANTIC_VERSION = "chemex-numerical-probes-v2"
 _SOURCE_REVISION = "700cb71df950fc54c268c0bca199403e5621269d"
+# Frozen from two clean captures in #588's canonical Python 3.13 x86-64 lane
+# (lane 4f1e7dab3384f88149fd33befb09ba3e96730dc336e9427b224a39a8a7167e4f).
 CANONICAL_NUMERICAL_PROBE_MANIFEST_IDENTITY = (
-    "c8052d59d8b648bd0ba55effdd91d86cc18bf68b948faa420450ede3d47b93bf"
+    "cbc5dbc9a0b432b6dbbd053f49769bb4dc84d322c409a84da26f8f892298b839"
 )
 
 type ProbeCategory = Literal[
@@ -2079,18 +2081,10 @@ class NumericalProbeBaseline:
             raise NumericalProbeQualificationError("EXPECTED_REFERENCE_UNAVAILABLE")
         if expected_manifest_identity != CANONICAL_NUMERICAL_PROBE_MANIFEST_IDENTITY:
             raise NumericalProbeQualificationError("EXPECTED_REFERENCE_MISMATCH")
-        if self.manifest_identity != expected_manifest_identity:
-            raise NumericalProbeQualificationError("MANIFEST_MISMATCH")
         required_lane = next(
             lane for lane in canonical_lanes() if lane.role == required_lane_role
         )
         historical = self.historical_qualification == "REFERENCE_MATCHED"
-        if historical and (
-            self.observed_lane_identity != required_lane.identity
-            or self.observed_lane_role != required_lane_role
-            or self.reference_manifest_identity != expected_manifest_identity
-        ):
-            raise NumericalProbeQualificationError("LANE_MISMATCH")
         try:
             _validate_live_lane_authority(
                 authority,
@@ -2108,6 +2102,14 @@ class NumericalProbeBaseline:
                 "LANE_ROLE_MISMATCH" if error.fact == "lane_role" else "LANE_MISMATCH"
             )
             raise NumericalProbeQualificationError(terminal) from error
+        if historical and (
+            self.observed_lane_identity != required_lane.identity
+            or self.observed_lane_role != required_lane_role
+            or self.reference_manifest_identity != expected_manifest_identity
+        ):
+            raise NumericalProbeQualificationError("LANE_MISMATCH")
+        if self.manifest_identity != expected_manifest_identity:
+            raise NumericalProbeQualificationError("MANIFEST_MISMATCH")
 
 
 class NumericalProbeExecutionError(RuntimeError):
