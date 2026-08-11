@@ -251,28 +251,76 @@ def test_root_owned_child_derivation_preserves_context_and_rejects_forgery() -> 
             constrained.validate_derived_problem(forged)
 
 
-def test_shared_root_materialization_preserves_cancellation_and_interruption_gates() -> (
+def test_pre_cancelled_shared_root_materialization_never_binds_or_promotes() -> None:
+    session, _experiments, parameterization, engine, problem, _invocation = (
+        _qualification_fit()
+    )
+    before_state = session.analysis_values.snapshot()
+    cancelled_before = CancellationToken()
+    cancelled_before.cancel()
+    binding_calls = 0
+    evaluation_calls = 0
+
+    def reject_binding(_engine: EvaluationEngine) -> BoundEvaluator:
+        nonlocal binding_calls
+        binding_calls += 1
+        raise AssertionError("pre-cancelled materialization must not bind an evaluator")
+
+    def reject_evaluation(
+        _evaluator: BoundEvaluator,
+        _frame: EvaluationFrame,
+    ) -> EvaluationResult:
+        nonlocal evaluation_calls
+        evaluation_calls += 1
+        raise AssertionError("pre-cancelled materialization must not evaluate")
+
+    with (
+        patch.object(EvaluationEngine, "new_evaluator", reject_binding),
+        patch.object(BoundEvaluator, "evaluate", reject_evaluation),
+    ):
+        outcome = materialize_root_candidate(
+            problem,
+            parameterization,
+            engine,
+            vector=problem.start,
+            invocation_identity="root-materialization-invocation",
+            execution_identity=lambda _evaluated: "root-materialization-execution",
+            cancellation=cancelled_before,
+        )
+
+    assert binding_calls == 0
+    assert evaluation_calls == 0
+    assert isinstance(outcome, RootMaterializationFailure)
+    assert outcome.terminal is MaterializationTerminal.CANCELLED
+    assert outcome.evaluation_count == 0
+    # This exact terminal type carries no materialized candidate, accepted result,
+    # or commit authority, so promotion cannot have begun.
+    assert session.analysis_values.snapshot() == before_state
+
+
+def test_shared_root_materialization_preserves_later_cancellation_and_interruption_gates() -> (
     None
 ):
     _session, _experiments, parameterization, engine, problem, _invocation = (
         _qualification_fit()
     )
-    cancelled_before = CancellationToken()
-    cancelled_before.cancel()
 
-    before = materialize_root_candidate(
-        problem,
-        parameterization,
-        engine,
-        vector=problem.start,
-        invocation_identity="root-materialization-invocation",
-        execution_identity=lambda _evaluated: "root-materialization-execution",
-        cancellation=cancelled_before,
-    )
+    def interrupt_binding(_engine: EvaluationEngine) -> BoundEvaluator:
+        raise KeyboardInterrupt
 
-    assert isinstance(before, RootMaterializationFailure)
-    assert before.terminal is MaterializationTerminal.CANCELLED
-    assert before.evaluation_count == 0
+    with patch.object(EvaluationEngine, "new_evaluator", interrupt_binding):
+        interrupted_binding = materialize_root_candidate(
+            problem,
+            parameterization,
+            engine,
+            vector=problem.start,
+            invocation_identity="root-materialization-invocation",
+            execution_identity=lambda _evaluated: "root-materialization-execution",
+        )
+
+    assert isinstance(interrupted_binding, RootMaterializationFailure)
+    assert interrupted_binding.terminal is MaterializationTerminal.INTERRUPTED
+    assert interrupted_binding.evaluation_count == 0
 
     cancelled_during = CancellationToken()
     original_evaluate = BoundEvaluator.evaluate

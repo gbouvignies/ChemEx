@@ -2488,26 +2488,10 @@ def _materialize_candidate_lifecycle(  # noqa: C901 - ordered lifecycle gate
     | RootMaterializationFailure
 ):
     """Own fresh binding, evaluation, validation, and immutable evidence."""
-    problem.validate_parameterization(parameterization)
-    if engine.plan.identity != problem.evaluation_plan_identity:
-        raise DirectTrfConstructionError(
-            "Root candidate materialization evaluator belongs to another plan"
-        )
-    canonical_vector = _canonical_vector(
-        vector,
-        dimension=len(problem.controlled_ids),
-        name="root materialization candidate",
-    )
+    token = CancellationToken() if cancellation is None else cancellation
     static_execution_identity = (
         execution_identity if isinstance(execution_identity, str) else None
     )
-    if candidate_summary is not None and (
-        candidate_summary.vector != canonical_vector
-        or static_execution_identity is None
-    ):
-        raise DirectTrfConstructionError(
-            "Root materialization summary requires one static execution identity"
-        )
 
     def failed(
         terminal: MaterializationTerminal,
@@ -2541,6 +2525,32 @@ def _materialize_candidate_lifecycle(  # noqa: C901 - ordered lifecycle gate
             failure,
         )
 
+    if check_cancellation_before_evaluation and token.is_cancelled:
+        return failed(
+            MaterializationTerminal.CANCELLED,
+            0,
+            engine.compatibility_identity,
+            0,
+            0,
+            TerminalFailure("cancelled", "Cancellation before root materialization"),
+        )
+    problem.validate_parameterization(parameterization)
+    if engine.plan.identity != problem.evaluation_plan_identity:
+        raise DirectTrfConstructionError(
+            "Root candidate materialization evaluator belongs to another plan"
+        )
+    canonical_vector = _canonical_vector(
+        vector,
+        dimension=len(problem.controlled_ids),
+        name="root materialization candidate",
+    )
+    if candidate_summary is not None and (
+        candidate_summary.vector != canonical_vector
+        or static_execution_identity is None
+    ):
+        raise DirectTrfConstructionError(
+            "Root materialization summary requires one static execution identity"
+        )
     try:
         evaluator = engine.new_evaluator()
     except KeyboardInterrupt:
@@ -2566,16 +2576,6 @@ def _materialize_candidate_lifecycle(  # noqa: C901 - ordered lifecycle gate
                 "materialization_binding_failure",
                 f"{type(error).__name__}: {error}",
             ),
-        )
-    token = CancellationToken() if cancellation is None else cancellation
-    if check_cancellation_before_evaluation and token.is_cancelled:
-        return failed(
-            MaterializationTerminal.CANCELLED,
-            0,
-            evaluator.compatibility_identity,
-            0,
-            0,
-            TerminalFailure("cancelled", "Cancellation before root materialization"),
         )
     try:
         lifecycle = problem.lifecycle_frame(canonical_vector, parameterization)
