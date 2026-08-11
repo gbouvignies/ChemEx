@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import math
 from pathlib import Path
 from typing import cast
 from unittest.mock import patch
@@ -20,8 +21,11 @@ from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
 from chemex.evaluation.native import EvaluationEngine, EvaluationFrame, EvaluationResult
 from chemex.experiments.builder import build_experiments
+from chemex.optimize import uncertainty as uncertainty_module
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
+    AffineEquality,
+    AffineHalfSpace,
     DirectTrfInvocation,
     OptimizationProblem,
     execute_direct_trf,
@@ -49,6 +53,18 @@ DCEST_EXPERIMENT = ROOT / "examples/Experiments/DCEST_15N_HD_EXCH/Experiments/3h
 DCEST_PARAMETERS = (
     ROOT / "examples/Experiments/DCEST_15N_HD_EXCH/Parameters/parameters.toml"
 )
+
+
+def _analytic_pa_kab(kab: float, kba: float) -> float:
+    return -kba / (kab + kba) ** 2
+
+
+def _analytic_pa_kab_alternative(kab: float, kba: float) -> float:
+    return -(kba + 1.0) / (kab + kba + 1.0) ** 2
+
+
+def _analytic_pa_kba(kab: float, kba: float) -> float:
+    return kab / (kab + kba) ** 2
 
 
 def _accepted_relaxation_fit() -> tuple[
@@ -117,9 +133,10 @@ def _qualification_policy(controlled_id: str) -> UncertaintyPolicy:
         rank_absolute_tolerance=0.0,
         rank_relative_tolerance=1.0e-12,
         weak_relative_tolerance=1.0e-6,
+        singular_value_cluster_relative_tolerance=1.0e-10,
         conditioning_limit=1.0e12,
         correlation_roundoff_multiplier=64.0,
-        affine_feasibility_policy="box-domain-no-affine-restrictions-v1",
+        affine_feasibility_policy="canonical-root-affine-halfspace-zeta-gt-3-v1",
     )
 
 
@@ -205,6 +222,54 @@ def _accepted_reference_anchor(
     )
 
 
+def _independent_five_point_jacobian(
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    problem: OptimizationProblem,
+    vector: tuple[float, ...],
+    steps: tuple[float, ...],
+    *,
+    forward_columns: frozenset[int] = frozenset(),
+) -> np.ndarray:
+    """Auditable five-point reference independent of uncertainty.py."""
+
+    def residuals(candidate: tuple[float, ...]) -> np.ndarray:
+        frame = EvaluationFrame.from_lifecycle_frame(
+            parameterization,
+            problem.lifecycle_frame(candidate, parameterization),
+        )
+        evaluated = engine.new_evaluator().evaluate(frame)
+        assert isinstance(evaluated, EvaluationResult)
+        return np.asarray(evaluated.residuals, dtype=np.float64)
+
+    base = residuals(vector)
+    columns: list[np.ndarray] = []
+    for column, step in enumerate(steps):
+        values: list[np.ndarray] = []
+        if column in forward_columns:
+            for multiplier in (1.0, 2.0, 3.0, 4.0):
+                candidate = list(vector)
+                candidate[column] += multiplier * step
+                values.append(residuals(tuple(candidate)))
+            derivative = (
+                -25.0 * base
+                + 48.0 * values[0]
+                - 36.0 * values[1]
+                + 16.0 * values[2]
+                - 3.0 * values[3]
+            ) / (12.0 * step)
+        else:
+            for multiplier in (-2.0, -1.0, 1.0, 2.0):
+                candidate = list(vector)
+                candidate[column] += multiplier * step
+                values.append(residuals(tuple(candidate)))
+            derivative = (values[0] - 8.0 * values[1] + 8.0 * values[2] - values[3]) / (
+                12.0 * step
+            )
+        columns.append(derivative)
+    return np.column_stack(columns)
+
+
 def test_accepted_fit_yields_typed_covariance_and_joint_constraint_propagation() -> (
     None
 ):
@@ -240,23 +305,18 @@ def test_accepted_fit_yields_typed_covariance_and_joint_constraint_propagation()
     assert evidence.residual_jacobian.residual_count == 7
     assert evidence.residual_jacobian.coordinate_count == 1
     assert evidence.residual_jacobian.complete_reliable
-    # Frozen from an independently evaluated five-point stencil (h=1e-4).  The
-    # tolerance covers its O(h^4) truncation plus the production two-scale
-    # stencil's binary64 roundoff without masking a scientifically material shift.
-    expected_jacobian = np.asarray(
-        (
-            6.877571026489022,
-            3.791023675708857,
-            1.0915054108627373,
-            -1.2596720503206598,
-            -3.297643939993577,
-            -5.054307903075824,
-            -6.558611676446162,
-        )
+    # Independent five-point O(h^4) derivative, followed below by the scalar
+    # closed form C = (chi²/nu) / (J^T J).  Neither calls uncertainty.py.
+    expected_jacobian = _independent_five_point_jacobian(
+        parameterization,
+        engine,
+        problem,
+        accepted.vector,
+        (1.0e-4,),
     )
     np.testing.assert_allclose(
         np.asarray(evidence.residual_jacobian.matrix)[:, 0],
-        expected_jacobian,
+        expected_jacobian[:, 0],
         rtol=2.0e-7,
         atol=2.0e-9,
     )
@@ -271,10 +331,15 @@ def test_accepted_fit_yields_typed_covariance_and_joint_constraint_propagation()
     assert evidence.covariance.profiled_normalization_count == 1
     assert evidence.covariance.nominal_residual_degrees_of_freedom == 5
     assert evidence.covariance.rank == 1
-    assert evidence.covariance.factorization == "scaled-svd-gram-v1"
+    assert evidence.covariance.factorization == (
+        "canonical-information-cholesky-gram-v2"
+    )
+    expected_variance = (accepted.chi_square / 5.0) / float(
+        expected_jacobian[:, 0] @ expected_jacobian[:, 0]
+    )
     np.testing.assert_allclose(
         evidence.covariance.covariance[0][0],
-        0.018371558813164147,
+        expected_variance,
         rtol=4.0e-7,
         atol=2.0e-12,
     )
@@ -536,20 +601,27 @@ def test_multivariate_scaled_svd_correlation_and_joint_propagation_reference() -
 
     assert evidence.failures == ()
     assert evidence.residual_jacobian is not None
+    reference_jacobian = _independent_five_point_jacobian(
+        parameterization,
+        engine,
+        problem,
+        accepted.vector,
+        (1.0e-4, 1.0e-2),
+    )
     np.testing.assert_allclose(
-        np.asarray(evidence.residual_jacobian.matrix)[:3],
-        (
-            (666.6712446920574, 1.910664913855726),
-            (0.27370067627634853, -0.01357184843345749),
-            (-5.879327716305852, -0.3296351577155292),
-        ),
-        rtol=2.0e-7,
+        np.asarray(evidence.residual_jacobian.matrix),
+        reference_jacobian,
+        # Small near-cancellation entries show a 2.54e-6 relative difference;
+        # the absolute maximum is 6.51e-6 over the complete 42x2 Jacobian.
+        rtol=3.0e-6,
         atol=2.0e-9,
     )
     assert evidence.rank_diagnostic is not None
+    scaled_reference = reference_jacobian * np.asarray((0.1, 10.0))[np.newaxis, :]
+    expected_singular_values = np.linalg.svd(scaled_reference, compute_uv=False)
     np.testing.assert_allclose(
         evidence.rank_diagnostic.singular_values,
-        (154.19754083595208, 24.21131174143699),
+        expected_singular_values,
         rtol=2.0e-7,
         atol=2.0e-9,
     )
@@ -560,11 +632,9 @@ def test_multivariate_scaled_svd_correlation_and_joint_propagation_reference() -
         atol=3.0e-16,
     )
     assert evidence.covariance is not None
-    expected_covariance = np.asarray(
-        (
-            (4.078404361040173e-06, -0.0006890732177197917),
-            (-0.0006890732177197917, 0.13401556849617918),
-        )
+    expected_covariance = np.linalg.solve(
+        reference_jacobian.T @ reference_jacobian,
+        np.eye(2),
     )
     np.testing.assert_allclose(
         evidence.covariance.covariance,
@@ -573,6 +643,9 @@ def test_multivariate_scaled_svd_correlation_and_joint_propagation_reference() -
         atol=2.0e-12,
     )
     assert evidence.correlations is not None
+    expected_correlation = expected_covariance[0, 1] / math.sqrt(
+        expected_covariance[0, 0] * expected_covariance[1, 1]
+    )
     np.testing.assert_allclose(
         np.asarray(
             [
@@ -580,7 +653,7 @@ def test_multivariate_scaled_svd_correlation_and_joint_propagation_reference() -
                 for row in evidence.correlations.entries
             ]
         ),
-        ((1.0, -0.9320572795396814), (-0.9320572795396814, 1.0)),
+        ((1.0, expected_correlation), (expected_correlation, 1.0)),
         rtol=2.0e-7,
         atol=2.0e-9,
     )
@@ -598,8 +671,8 @@ def test_multivariate_scaled_svd_correlation_and_joint_propagation_reference() -
     np.testing.assert_allclose(
         evidence.constrained_propagation.covariance,
         expected_gradient @ expected_covariance @ expected_gradient.T,
-        rtol=4.0e-15,
-        atol=2.0e-17,
+        rtol=4.0e-7,
+        atol=2.0e-12,
     )
 
 
@@ -689,6 +762,20 @@ def test_boundary_covariance_remains_diagnostic_but_reporting_fails_closed() -> 
 
     assert evidence.residual_jacobian is not None
     assert evidence.residual_jacobian.columns[0].orientation == "one_sided_positive"
+    independent_forward = _independent_five_point_jacobian(
+        parameterization,
+        engine,
+        boundary_problem,
+        boundary_accepted.vector,
+        (1.0e-4,),
+        forward_columns=frozenset({0}),
+    )
+    np.testing.assert_allclose(
+        np.asarray(evidence.residual_jacobian.matrix),
+        independent_forward,
+        rtol=2.0e-7,
+        atol=2.0e-9,
+    )
     assert evidence.covariance is not None
     assert evidence.covariance.claim("INTERIOR_POINT") is ClaimState.VIOLATED
     assert evidence.covariance.claim("BOUNDARY_SEPARATION") is ClaimState.VIOLATED
@@ -848,7 +935,12 @@ def test_absolute_observation_uncertainties_do_not_apply_residual_scaling() -> N
 
     assert evidence.covariance is not None
     assert evidence.covariance.residual_variance_scale == 1.0
-    assert evidence.covariance.covariance == (evidence.covariance.unscaled_covariance)
+    np.testing.assert_allclose(
+        evidence.covariance.covariance,
+        evidence.covariance.unscaled_covariance,
+        rtol=3.0e-16,
+        atol=0.0,
+    )
     assert (
         evidence.covariance.claim("RESIDUAL_VARIANCE_NONDEGENERACY")
         is ClaimState.NOT_APPLICABLE
@@ -920,7 +1012,7 @@ def test_positive_scale_covariance_factor_underflow_is_typed_failure() -> None:
         )
 
     assert evidence.covariance is None
-    assert evidence.failures[-1].category == "covariance_factor_underflow"
+    assert evidence.failures[-1].category == "invalid_covariance_arithmetic"
 
 
 def test_cancellation_freezes_terminal_operation_without_artifact() -> None:
@@ -947,3 +1039,649 @@ def test_cancellation_freezes_terminal_operation_without_artifact() -> None:
     assert evidence.operations[0].artifact_identity is None
     assert evidence.failures[0].category == "cancelled"
     assert len(evidence.operations) == 1
+
+
+def test_exact_accepted_occurrence_is_not_reconstructible_or_mixable() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    reconstructed = dataclasses.replace(
+        accepted, occurrence_identity="replacement-occurrence"
+    )
+    assert reconstructed.identity == accepted.identity
+    rejected = derive_uncertainty_evidence(
+        reconstructed,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=_qualification_policy(problem.controlled_ids[0]),
+        resolved_environment_identity="reconstructed-occurrence",
+    )
+    assert rejected.residual_jacobian is None
+    assert rejected.covariance is None
+    assert rejected.failures[0].category == "accepted_occurrence_identity_mismatch"
+
+    evidence = derive_uncertainty_evidence(
+        accepted,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=_qualification_policy(problem.controlled_ids[0]),
+        resolved_environment_identity="occurrence-integrity",
+    )
+    assert evidence.residual_jacobian is not None
+    assert evidence.rank_diagnostic is not None
+    assert evidence.covariance is not None
+    with pytest.raises(ValueError, match="exact accepted occurrence"):
+        dataclasses.replace(
+            evidence.residual_jacobian,
+            accepted_occurrence_identity="foreign-occurrence",
+        )
+    with pytest.raises(ValueError, match="exact accepted occurrence"):
+        dataclasses.replace(
+            evidence.covariance,
+            accepted_occurrence_identity="foreign-occurrence",
+        )
+    with pytest.raises(ValueError, match="exact accepted occurrence"):
+        dataclasses.replace(
+            evidence,
+            accepted_occurrence_identity="foreign-occurrence",
+            accepted_anchor=accepted,
+        )
+
+
+def test_authoritative_artifacts_reject_inconsistent_reconstruction() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    controlled_id = problem.controlled_ids[0]
+    derived_id = "__R1A_B_G2N_H_800_0MHZ"
+    evidence = derive_uncertainty_evidence(
+        accepted,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=_qualification_policy(controlled_id),
+        constrained_scope=(derived_id,),
+        constrained_units=((derived_id, ParameterUnit.RATE_PER_SECOND),),
+        constrained_scales=((derived_id, 1.0),),
+        compiled_constraint_linearization=compile_constraint_linearization_capabilities(
+            parameterization, (derived_id,), ()
+        ),
+        resolved_environment_identity="artifact-integrity",
+    )
+    jacobian = evidence.residual_jacobian
+    rank = evidence.rank_diagnostic
+    covariance = evidence.covariance
+    constraint = evidence.constraint_jacobian
+    propagation = evidence.constrained_propagation
+    assert jacobian is not None
+    assert rank is not None
+    assert covariance is not None
+    assert constraint is not None
+    assert propagation is not None
+    assert evidence.marginal_errors is not None
+
+    replacements = (
+        (jacobian, {"matrix": ((42.0,),) * 7}),
+        (rank, {"source_jacobian_identity": "foreign-jacobian"}),
+        (rank, {"singular_values": (42.0,)}),
+        (rank, {"rank": 0}),
+        (rank, {"identifiable_projector": ((0.0,),)}),
+        (covariance, {"source_jacobian_identity": "foreign-jacobian"}),
+        (covariance, {"rank_diagnostic_identity": "foreign-svd"}),
+        (covariance, {"coordinate_scales": (42.0,)}),
+        (covariance, {"residual_variance_scale": 42.0}),
+        (covariance, {"factor": ((0.0,),)}),
+        (covariance, {"unscaled_covariance": ((42.0,),)}),
+        (covariance, {"covariance": ((42.0,),)}),
+        (constraint, {"accepted_evaluation_identity": "foreign-evaluation"}),
+        (constraint, {"matrix": ((42.0,),)}),
+        (constraint, {"output_ids": ("__FOREIGN",)}),
+        (propagation, {"source_constraint_jacobian_identity": "foreign-G"}),
+        (propagation, {"output_ids": ("__FOREIGN",)}),
+        (propagation, {"covariance": ((42.0,),)}),
+    )
+    for artifact, changes in replacements:
+        with pytest.raises(ValueError):
+            dataclasses.replace(artifact, **changes)
+
+    altered_claims = tuple(
+        dataclasses.replace(item, state=ClaimState.SATISFIED)
+        if item.name == "USABLE_LOCAL_COVARIANCE"
+        else item
+        for item in covariance.claims
+    )
+    if altered_claims == covariance.claims:
+        altered_claims = tuple(
+            dataclasses.replace(item, state=ClaimState.VIOLATED)
+            if item.name == "USABLE_LOCAL_COVARIANCE"
+            else item
+            for item in covariance.claims
+        )
+    with pytest.raises(ValueError, match="usability"):
+        dataclasses.replace(covariance, claims=altered_claims)
+    with pytest.raises(ValueError):
+        dataclasses.replace(
+            evidence.marginal_errors,
+            entries=(
+                dataclasses.replace(evidence.marginal_errors.entries[0], value=42.0),
+            ),
+        )
+
+
+def _full_frame_coefficients(
+    problem: OptimizationProblem,
+    coefficients: dict[str, float],
+) -> tuple[float, ...]:
+    return tuple(
+        coefficients.get(param_id, 0.0)
+        for param_id, _value in problem.independent_items
+    )
+
+
+@pytest.mark.parametrize(
+    ("zeta", "expected"),
+    (
+        (4.0, ClaimState.SATISFIED),
+        (2.0, ClaimState.VIOLATED),
+        (0.0, ClaimState.VIOLATED),
+    ),
+)
+def test_affine_directional_separation_uses_exact_full_frame_slack(
+    zeta: float,
+    expected: ClaimState,
+) -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    policy = _qualification_policy(problem.controlled_ids[0])
+    baseline = derive_uncertainty_evidence(
+        accepted,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=policy,
+        resolved_environment_identity="affine-baseline",
+    )
+    assert baseline.covariance is not None
+    standard_error = math.sqrt(baseline.covariance.covariance[0][0])
+    restriction = AffineHalfSpace(
+        "controlled-upper",
+        _full_frame_coefficients(problem, {problem.controlled_ids[0]: 1.0}),
+        accepted.vector[0] + zeta * standard_error,
+    )
+    affine_problem = dataclasses.replace(problem, affine_half_spaces=(restriction,))
+    affine_accepted = dataclasses.replace(
+        accepted,
+        problem_identity=affine_problem.identity,
+        occurrence_identity=f"affine-{zeta.hex()}",
+    )
+    evidence = derive_uncertainty_evidence(
+        affine_accepted,
+        problem=affine_problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=policy,
+        resolved_environment_identity="affine-case",
+    )
+    assert evidence.covariance is not None
+    assert evidence.covariance.claim("AFFINE_FEASIBILITY") is expected
+    assert evidence.covariance.usable is (expected is ClaimState.SATISFIED)
+
+
+def test_affine_held_only_and_equality_semantics_fail_closed() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    held_id, held_value = problem.held_items[0]
+    held_only = AffineHalfSpace(
+        "held-only",
+        _full_frame_coefficients(problem, {held_id: 1.0}),
+        held_value,
+    )
+    equality = AffineEquality(
+        "controlled-equality",
+        _full_frame_coefficients(problem, {problem.controlled_ids[0]: 1.0}),
+        accepted.vector[0],
+    )
+    held_problem = dataclasses.replace(problem, affine_half_spaces=(held_only,))
+    held_accepted = dataclasses.replace(
+        accepted,
+        problem_identity=held_problem.identity,
+        occurrence_identity="held-only-occurrence",
+    )
+    held_evidence = derive_uncertainty_evidence(
+        held_accepted,
+        problem=held_problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=_qualification_policy(problem.controlled_ids[0]),
+        resolved_environment_identity="held-affine",
+    )
+    assert held_evidence.covariance is not None
+    assert held_evidence.covariance.claim("AFFINE_FEASIBILITY") is ClaimState.SATISFIED
+
+    equality_problem = dataclasses.replace(problem, affine_equalities=(equality,))
+    equality_accepted = dataclasses.replace(
+        accepted,
+        problem_identity=equality_problem.identity,
+        occurrence_identity="equality-occurrence",
+    )
+    equality_evidence = derive_uncertainty_evidence(
+        equality_accepted,
+        problem=equality_problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=_qualification_policy(problem.controlled_ids[0]),
+        resolved_environment_identity="equality-affine",
+    )
+    assert equality_evidence.covariance is not None
+    assert (
+        equality_evidence.covariance.claim("AFFINE_FEASIBILITY") is ClaimState.VIOLATED
+    )
+    assert (
+        equality_evidence.covariance.claim("FULL_DIMENSIONAL_FEASIBLE_INTERIOR")
+        is ClaimState.VIOLATED
+    )
+
+
+def test_affine_coupled_negative_degenerate_and_nonfinite_cases() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    controlled_id = problem.controlled_ids[0]
+    held_id, held_value = problem.held_items[0]
+    policy = _qualification_policy(controlled_id)
+    baseline = derive_uncertainty_evidence(
+        accepted,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=policy,
+        resolved_environment_identity="affine-exception-baseline",
+    )
+    assert baseline.covariance is not None
+    standard_error = math.sqrt(baseline.covariance.covariance[0][0])
+
+    restrictions = (
+        (
+            "coupled",
+            AffineHalfSpace(
+                "coupled",
+                _full_frame_coefficients(problem, {controlled_id: 1.0, held_id: 1.0}),
+                accepted.vector[0] + held_value + 4.0 * standard_error,
+            ),
+            ClaimState.SATISFIED,
+        ),
+        (
+            "negative",
+            AffineHalfSpace(
+                "negative",
+                _full_frame_coefficients(problem, {controlled_id: 1.0}),
+                accepted.vector[0] - 1.0,
+            ),
+            ClaimState.VIOLATED,
+        ),
+        (
+            "nonfinite",
+            AffineHalfSpace(
+                "nonfinite",
+                _full_frame_coefficients(
+                    problem,
+                    {
+                        controlled_id: float(np.finfo(np.float64).max),
+                        held_id: float(np.finfo(np.float64).max),
+                    },
+                ),
+                float(np.finfo(np.float64).max),
+            ),
+            ClaimState.INDETERMINATE,
+        ),
+    )
+    for label, restriction, expected in restrictions:
+        constrained_problem = dataclasses.replace(
+            problem, affine_half_spaces=(restriction,)
+        )
+        constrained_accepted = dataclasses.replace(
+            accepted,
+            problem_identity=constrained_problem.identity,
+            occurrence_identity=f"{label}-affine-occurrence",
+        )
+        evidence = derive_uncertainty_evidence(
+            constrained_accepted,
+            problem=constrained_problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=policy,
+            resolved_environment_identity=f"affine-{label}",
+        )
+        assert evidence.covariance is not None, evidence.failures
+        assert evidence.covariance.claim("AFFINE_FEASIBILITY") is expected
+
+    positive = AffineHalfSpace(
+        "positive-with-zero-variance",
+        _full_frame_coefficients(problem, {controlled_id: 1.0}),
+        accepted.vector[0] + 1.0,
+    )
+    degenerate_problem = dataclasses.replace(problem, affine_half_spaces=(positive,))
+    degenerate_accepted = dataclasses.replace(
+        accepted,
+        problem_identity=degenerate_problem.identity,
+        occurrence_identity="degenerate-affine-occurrence",
+        chi_square=0.0,
+    )
+    degenerate = derive_uncertainty_evidence(
+        degenerate_accepted,
+        problem=degenerate_problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=policy,
+        resolved_environment_identity="affine-degenerate",
+    )
+    assert degenerate.covariance is not None
+    assert degenerate.covariance.claim("AFFINE_FEASIBILITY") is ClaimState.INDETERMINATE
+
+
+def test_analytic_capability_identity_binds_actual_callable_semantics() -> None:
+    first = FunctionAnalyticPartialCapability(
+        "pop_2st",
+        "pa",
+        "same-user-facing-label",
+        (_analytic_pa_kab, _analytic_pa_kba),
+    )
+    different = FunctionAnalyticPartialCapability(
+        "pop_2st",
+        "pa",
+        "same-user-facing-label",
+        (_analytic_pa_kab_alternative, _analytic_pa_kba),
+    )
+    rebound = dataclasses.replace(
+        first,
+        partials=(_analytic_pa_kab_alternative, _analytic_pa_kba),
+    )
+    assert first.identity != different.identity
+    assert first.identity != rebound.identity
+    assert first.implementation_fingerprints != different.implementation_fingerprints
+
+    parameterization, _engine, _problem, _accepted = _accepted_hd_fit()
+    output_id = "__PA_1_0_1000"
+
+    def wrong_domain(_single: float) -> float:
+        return 1.0
+
+    incompatible = FunctionAnalyticPartialCapability(
+        "pop_2st",
+        "pa",
+        "incompatible-domain",
+        (wrong_domain, _analytic_pa_kba),
+    )
+    with pytest.raises(ValueError, match="domain arity"):
+        compile_constraint_linearization_capabilities(
+            parameterization,
+            (output_id,),
+            (incompatible,),
+        )
+
+
+def test_clustered_singular_evidence_retains_only_invariant_projectors() -> None:
+    identity = np.eye(3)
+    angle = 0.731
+    rotated = np.asarray(
+        (
+            (math.cos(angle), -math.sin(angle), 0.0),
+            (math.sin(angle), math.cos(angle), 0.0),
+            (0.0, 0.0, 1.0),
+        )
+    )
+    exact = uncertainty_module._invariant_singular_subspaces(
+        identity,
+        (2.0, 2.0, 1.0),
+        rank_threshold=1.0e-12,
+        weak_threshold=1.0e-6,
+        cluster_relative_tolerance=1.0e-10,
+    )
+    rotated_exact = uncertainty_module._invariant_singular_subspaces(
+        rotated,
+        (2.0, 2.0, 1.0),
+        rank_threshold=1.0e-12,
+        weak_threshold=1.0e-6,
+        cluster_relative_tolerance=1.0e-10,
+    )
+    assert exact[0].classification == "clustered_identifiable"
+    assert exact[1].classification == "isolated_identifiable"
+    np.testing.assert_allclose(
+        exact[0].projector, rotated_exact[0].projector, atol=2e-16
+    )
+
+    near = uncertainty_module._invariant_singular_subspaces(
+        identity,
+        (2.0, 2.0 * (1.0 - 5.0e-11), 1.0),
+        rank_threshold=1.0e-12,
+        weak_threshold=1.0e-6,
+        cluster_relative_tolerance=1.0e-10,
+    )
+    assert near[0].classification == "clustered_identifiable"
+    classified = uncertainty_module._invariant_singular_subspaces(
+        identity,
+        (2.0, 1.0e-7, 0.0),
+        rank_threshold=1.0e-9,
+        weak_threshold=1.0e-6,
+        cluster_relative_tolerance=1.0e-10,
+    )
+    assert tuple(item.classification for item in classified) == (
+        "isolated_identifiable",
+        "isolated_weak",
+        "isolated_null",
+    )
+
+
+def test_cancellation_after_svd_prevents_covariance_assembly() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    observed_svd = False
+    original_svd = uncertainty_module.svd
+
+    def traced_svd(*args: object, **kwargs: object) -> object:
+        nonlocal observed_svd
+        result = original_svd(*args, **kwargs)
+        observed_svd = True
+        return result
+
+    with (
+        patch("chemex.optimize.uncertainty.svd", side_effect=traced_svd),
+        patch(
+            "chemex.optimize.uncertainty._canonical_covariance_reduction",
+            wraps=uncertainty_module._canonical_covariance_reduction,
+        ) as covariance_reduction,
+    ):
+        evidence = derive_uncertainty_evidence(
+            accepted,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=_qualification_policy(problem.controlled_ids[0]),
+            cancellation_probe=lambda: (
+                OperationTerminal.CANCELLED if observed_svd else None
+            ),
+            resolved_environment_identity="cancel-after-svd",
+        )
+    covariance_reduction.assert_not_called()
+    assert evidence.rank_diagnostic is None
+    assert evidence.covariance is None
+    assert evidence.operations[-1].terminal is OperationTerminal.CANCELLED
+
+
+def test_cancellation_after_rank_retains_diagnostic_but_not_covariance() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    rank_subspaces_complete = False
+    original_subspaces = uncertainty_module._invariant_singular_subspaces
+
+    def traced_subspaces(*args: object, **kwargs: object) -> object:
+        nonlocal rank_subspaces_complete
+        result = original_subspaces(*args, **kwargs)
+        rank_subspaces_complete = True
+        return result
+
+    with (
+        patch(
+            "chemex.optimize.uncertainty._invariant_singular_subspaces",
+            side_effect=traced_subspaces,
+        ),
+        patch(
+            "chemex.optimize.uncertainty._canonical_covariance_reduction"
+        ) as covariance_reduction,
+    ):
+        evidence = derive_uncertainty_evidence(
+            accepted,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=_qualification_policy(problem.controlled_ids[0]),
+            cancellation_probe=lambda: (
+                OperationTerminal.CANCELLED if rank_subspaces_complete else None
+            ),
+            resolved_environment_identity="cancel-after-rank",
+        )
+    covariance_reduction.assert_not_called()
+    assert evidence.rank_diagnostic is not None
+    assert evidence.covariance is None
+    assert evidence.operations[-1].terminal is OperationTerminal.CANCELLED
+
+
+def test_cancellation_before_marginals_and_constraint_phases_is_ordered() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    controlled_id = problem.controlled_ids[0]
+    derived_id = "__R1A_B_G2N_H_800_0MHZ"
+    original_reduction = uncertainty_module._canonical_covariance_reduction
+    covariance_complete = False
+
+    def traced_reduction(*args: object, **kwargs: object) -> object:
+        nonlocal covariance_complete
+        result = original_reduction(*args, **kwargs)
+        covariance_complete = True
+        return result
+
+    with (
+        patch(
+            "chemex.optimize.uncertainty._canonical_covariance_reduction",
+            side_effect=traced_reduction,
+        ),
+        patch("chemex.optimize.uncertainty._marginal_errors") as marginal,
+    ):
+        before_marginal = derive_uncertainty_evidence(
+            accepted,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=_qualification_policy(controlled_id),
+            cancellation_probe=lambda: (
+                OperationTerminal.CANCELLED if covariance_complete else None
+            ),
+            resolved_environment_identity="cancel-before-marginal",
+        )
+    marginal.assert_not_called()
+    assert before_marginal.covariance is not None
+    assert before_marginal.marginal_errors is None
+
+    original_correlations = uncertainty_module._correlations
+    correlations_complete = False
+
+    def traced_correlations(*args: object, **kwargs: object) -> object:
+        nonlocal correlations_complete
+        result = original_correlations(*args, **kwargs)
+        correlations_complete = True
+        return result
+
+    with (
+        patch(
+            "chemex.optimize.uncertainty._correlations",
+            side_effect=traced_correlations,
+        ),
+        patch("chemex.optimize.uncertainty._linearize_constraints") as linearize_g,
+    ):
+        before_g = derive_uncertainty_evidence(
+            accepted,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=_qualification_policy(controlled_id),
+            constrained_scope=(derived_id,),
+            constrained_units=((derived_id, ParameterUnit.RATE_PER_SECOND),),
+            constrained_scales=((derived_id, 1.0),),
+            compiled_constraint_linearization=compile_constraint_linearization_capabilities(
+                parameterization, (derived_id,), ()
+            ),
+            cancellation_probe=lambda: (
+                OperationTerminal.CANCELLED if correlations_complete else None
+            ),
+            resolved_environment_identity="cancel-before-g",
+        )
+    linearize_g.assert_not_called()
+    assert before_g.constraint_jacobian is None
+
+
+def test_cancellation_during_g_and_before_propagation_emits_no_downstream() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    controlled_id = problem.controlled_ids[0]
+    derived_id = "__R1A_B_G2N_H_800_0MHZ"
+    compiled = compile_constraint_linearization_capabilities(
+        parameterization, (controlled_id, derived_id), ()
+    )
+    original_target = uncertainty_module._differentiate_target
+    target_started = False
+
+    def traced_target(*args: object, **kwargs: object) -> object:
+        nonlocal target_started
+        result = original_target(*args, **kwargs)
+        target_started = True
+        return result
+
+    common = {
+        "problem": problem,
+        "parameterization": parameterization,
+        "engine": engine,
+        "policy": _qualification_policy(controlled_id),
+        "constrained_scope": (controlled_id, derived_id),
+        "constrained_units": (
+            (controlled_id, ParameterUnit.RATE_PER_SECOND),
+            (derived_id, ParameterUnit.RATE_PER_SECOND),
+        ),
+        "constrained_scales": ((controlled_id, 1.0), (derived_id, 1.0)),
+        "compiled_constraint_linearization": compiled,
+    }
+    with (
+        patch(
+            "chemex.optimize.uncertainty._differentiate_target",
+            side_effect=traced_target,
+        ),
+        patch("chemex.optimize.uncertainty._propagate_constraints") as propagate,
+    ):
+        during_g = derive_uncertainty_evidence(
+            accepted,
+            **common,
+            cancellation_probe=lambda: (
+                OperationTerminal.CANCELLED if target_started else None
+            ),
+            resolved_environment_identity="cancel-during-g",
+        )
+    propagate.assert_not_called()
+    assert during_g.constraint_jacobian is None
+    assert during_g.constrained_propagation is None
+
+    original_linearize = uncertainty_module._linearize_constraints
+    g_complete = False
+
+    def traced_linearize(*args: object, **kwargs: object) -> object:
+        nonlocal g_complete
+        result = original_linearize(*args, **kwargs)
+        g_complete = True
+        return result
+
+    with (
+        patch(
+            "chemex.optimize.uncertainty._linearize_constraints",
+            side_effect=traced_linearize,
+        ),
+        patch("chemex.optimize.uncertainty._propagate_constraints") as propagate,
+    ):
+        before_propagation = derive_uncertainty_evidence(
+            accepted,
+            **common,
+            cancellation_probe=lambda: (
+                OperationTerminal.CANCELLED if g_complete else None
+            ),
+            resolved_environment_identity="cancel-before-propagation",
+        )
+    propagate.assert_not_called()
+    assert before_propagation.constraint_jacobian is not None
+    assert before_propagation.constrained_propagation is None

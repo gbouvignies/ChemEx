@@ -467,6 +467,106 @@ class DePolishProblemDerivation:
 
 
 @dataclass(frozen=True, slots=True)
+class AffineHalfSpace:
+    """One canonical full independent-frame restriction ``a^T x <= b``."""
+
+    restriction_id: str
+    coefficients: tuple[float, ...]
+    upper_bound: float
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        coefficients = tuple(
+            _finite_binary64(value, name=f"affine coefficient[{index}]")
+            for index, value in enumerate(self.coefficients)
+        )
+        upper_bound = _finite_binary64(
+            self.upper_bound,
+            name="affine upper bound",
+        )
+        if not self.restriction_id or not coefficients:
+            raise DirectTrfConstructionError(
+                "Affine restrictions require an ID and full-frame coefficients"
+            )
+        object.__setattr__(self, "coefficients", coefficients)
+        object.__setattr__(self, "upper_bound", upper_bound)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-affine-half-space",
+                (
+                    self.restriction_id,
+                    _vector_tokens(coefficients),
+                    _float_token(upper_bound),
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AffineEquality:
+    """One canonical full independent-frame restriction ``a^T x == b``."""
+
+    restriction_id: str
+    coefficients: tuple[float, ...]
+    value: float
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        coefficients = tuple(
+            _finite_binary64(value, name=f"equality coefficient[{index}]")
+            for index, value in enumerate(self.coefficients)
+        )
+        value = _finite_binary64(self.value, name="affine equality value")
+        if not self.restriction_id or not coefficients:
+            raise DirectTrfConstructionError(
+                "Affine equalities require an ID and full-frame coefficients"
+            )
+        object.__setattr__(self, "coefficients", coefficients)
+        object.__setattr__(self, "value", value)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-affine-equality",
+                (
+                    self.restriction_id,
+                    _vector_tokens(coefficients),
+                    _float_token(value),
+                ),
+            ),
+        )
+
+
+def _validate_affine_feasibility(
+    independent_items: tuple[tuple[str, float], ...],
+    half_spaces: tuple[AffineHalfSpace, ...],
+    equalities: tuple[AffineEquality, ...],
+) -> None:
+    restrictions = (*half_spaces, *equalities)
+    restriction_ids = tuple(item.restriction_id for item in restrictions)
+    if len(set(restriction_ids)) != len(restriction_ids) or any(
+        len(item.coefficients) != len(independent_items) for item in restrictions
+    ):
+        raise DirectTrfConstructionError(
+            "Affine feasibility must use unique IDs and full independent-frame coefficients"
+        )
+
+
+def _affine_feasibility_identity_record(
+    half_spaces: tuple[AffineHalfSpace, ...],
+    equalities: tuple[AffineEquality, ...],
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    if not half_spaces and not equalities:
+        return ()
+    return (
+        ("affine-half-spaces", tuple(item.identity for item in half_spaces)),
+        ("affine-equalities", tuple(item.identity for item in equalities)),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class OptimizationProblem:
     """One immutable canonical external-coordinate fit and commit context."""
 
@@ -491,6 +591,8 @@ class OptimizationProblem:
         | None
     ) = None
     scalarization_version: str = _SCALARIZATION_VERSION
+    affine_half_spaces: tuple[AffineHalfSpace, ...] = ()
+    affine_equalities: tuple[AffineEquality, ...] = ()
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -505,6 +607,11 @@ class OptimizationProblem:
             self.start,
             self.lower_bounds,
             self.upper_bounds,
+        )
+        _validate_affine_feasibility(
+            self.independent_items,
+            self.affine_half_spaces,
+            self.affine_equalities,
         )
         if isinstance(self.derivation, ComponentProblemDerivation):
             if (
@@ -550,6 +657,11 @@ class OptimizationProblem:
             derivation_record = (("derived-de-search", self.derivation.identity),)
         else:
             derivation_record = (("derived-de-polish", self.derivation.identity),)
+        # Preserve the established box-only problem identity exactly.
+        feasibility_record = _affine_feasibility_identity_record(
+            self.affine_half_spaces,
+            self.affine_equalities,
+        )
         object.__setattr__(
             self,
             "identity",
@@ -579,6 +691,7 @@ class OptimizationProblem:
                     self.commit_scope,
                     *derivation_record,
                     self.scalarization_version,
+                    *feasibility_record,
                 ),
             ),
         )
@@ -1066,6 +1179,10 @@ class GridSelectionProvenance:
         )
 
 
+_ACCEPTED_SEMANTIC_OCCURRENCES: dict[str, str] = {}
+_ACCEPTED_SEMANTIC_OCCURRENCES_LOCK = RLock()
+
+
 @dataclass(frozen=True, slots=True)
 class AcceptedFitResult:
     """Fresh-materialized immutable evidence with no live commit authority."""
@@ -1093,32 +1210,43 @@ class AcceptedFitResult:
             raise ValueError("Accepted result cannot have an empty residual objective")
         if not self.origin_context_identity:
             raise ValueError("Accepted result requires an origin context identity")
-        object.__setattr__(
-            self,
-            "identity",
-            _identity(
-                "native-accepted-fit-result",
-                (
-                    self.problem_identity,
-                    self.invocation_identity,
-                    self.execution_identity,
-                    self.materialization_identity,
-                    self.parameterization_identity,
-                    self.evaluator_parameterization_identity,
-                    self.source_occurrence_identity,
-                    self.source_revision,
-                    self.controlled_ids,
-                    _vector_tokens(self.vector),
-                    _float_token(self.chi_square),
-                    self.evaluation_result.identity,
-                    self.commit_scope,
-                    tuple(
-                        (param_id, _float_token(value))
-                        for param_id, value in self.commit_items
-                    ),
-                    self.origin_context_identity,
+        identity = _identity(
+            "native-accepted-fit-result",
+            (
+                self.problem_identity,
+                self.invocation_identity,
+                self.execution_identity,
+                self.materialization_identity,
+                self.parameterization_identity,
+                self.evaluator_parameterization_identity,
+                self.source_occurrence_identity,
+                self.source_revision,
+                self.controlled_ids,
+                _vector_tokens(self.vector),
+                _float_token(self.chi_square),
+                self.evaluation_result.identity,
+                self.commit_scope,
+                tuple(
+                    (param_id, _float_token(value))
+                    for param_id, value in self.commit_items
                 ),
+                self.origin_context_identity,
             ),
+        )
+        with _ACCEPTED_SEMANTIC_OCCURRENCES_LOCK:
+            _ACCEPTED_SEMANTIC_OCCURRENCES.setdefault(
+                identity,
+                self.occurrence_identity,
+            )
+        object.__setattr__(self, "identity", identity)
+
+
+def accepted_occurrence_is_authoritative(accepted: AcceptedFitResult) -> bool:
+    """Report whether this object carries the first established lifecycle occurrence."""
+    with _ACCEPTED_SEMANTIC_OCCURRENCES_LOCK:
+        return (
+            _ACCEPTED_SEMANTIC_OCCURRENCES.get(accepted.identity)
+            == accepted.occurrence_identity
         )
 
 

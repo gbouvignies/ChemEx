@@ -450,6 +450,14 @@ def _scientific_function_record(function: Callable[..., object]) -> object:
     )
 
 
+def scientific_callable_fingerprint(function: Callable[..., object]) -> str:
+    """Return ChemEx's canonical scientific implementation fingerprint."""
+    return _fingerprint(
+        "scientific-callable-implementation",
+        _scientific_function_record(function),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ScientificFunctionBinder:
     """Immutable trusted binding of the existing model-owned scalar functions."""
