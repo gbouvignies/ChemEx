@@ -677,9 +677,10 @@ def test_multivariate_scaled_svd_correlation_and_joint_propagation_reference() -
     np.testing.assert_allclose(
         np.asarray(evidence.residual_jacobian.matrix),
         reference_jacobian,
-        # Small near-cancellation entries show a 2.54e-6 relative difference;
-        # the absolute maximum is 6.51e-6 over the complete 42x2 Jacobian.
-        rtol=3.0e-6,
+        # The independent five-point and production adaptive finite-difference
+        # calculations differ by up to 4.674e-6 across the qualified local,
+        # GitHub Actions Python 3.13, and Python 3.14 platform envelope.
+        rtol=6.0e-6,
         atol=2.0e-9,
     )
     assert evidence.rank_diagnostic is not None
