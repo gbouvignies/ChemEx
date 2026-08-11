@@ -919,6 +919,7 @@ class DePopulationCandidate:
     population_index: int
     vector: tuple[float, ...]
     objective: float
+    backend_objective: float
     fingerprint: str = field(init=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -927,6 +928,11 @@ class DePopulationCandidate:
         objective = float(self.objective)
         if not math.isfinite(objective) or objective < 0.0:
             raise ValueError("DE population objective must be finite and non-negative")
+        backend_objective = float(self.backend_objective)
+        if not math.isfinite(backend_objective) or backend_objective < 0.0:
+            raise ValueError(
+                "DE backend population objective must be finite and non-negative"
+            )
         object.__setattr__(
             self,
             "fingerprint",
@@ -936,6 +942,7 @@ class DePopulationCandidate:
                     self.population_index,
                     _vector_tokens(self.vector),
                     _float_token(objective),
+                    _float_token(backend_objective),
                 ),
             ),
         )
@@ -945,6 +952,7 @@ class DePopulationCandidate:
             "population_index": self.population_index,
             "vector": list(_vector_tokens(self.vector)),
             "objective": _float_token(self.objective),
+            "backend_objective": _float_token(self.backend_objective),
             "fingerprint": self.fingerprint,
         }
 
@@ -952,7 +960,13 @@ class DePopulationCandidate:
     def from_record(cls, record: Mapping[str, object]) -> DePopulationCandidate:
         _exact_keys(
             record,
-            {"population_index", "vector", "objective", "fingerprint"},
+            {
+                "population_index",
+                "vector",
+                "objective",
+                "backend_objective",
+                "fingerprint",
+            },
             "DE population candidate",
         )
         candidate = cls(
@@ -961,6 +975,10 @@ class DePopulationCandidate:
             ),
             _vector_from_record(record.get("vector"), "DE candidate vector"),
             _float_from_record(record.get("objective"), "DE candidate objective"),
+            _float_from_record(
+                record.get("backend_objective"),
+                "DE backend candidate objective",
+            ),
         )
         if record.get("fingerprint") != candidate.fingerprint:
             raise ValueError("DE candidate fingerprint does not match its payload")
@@ -1107,6 +1125,7 @@ class FiniteDifferenceProbeEvidence:
 
     point: float
     actual_steps: tuple[float, ...]
+    weights: tuple[float, ...]
     sampled_values: tuple[float, ...]
     truth: float
     estimate: float
@@ -1119,9 +1138,14 @@ class FiniteDifferenceProbeEvidence:
 
     def __post_init__(self) -> None:
         _float_token(self.point)
-        if len(self.actual_steps) != 5 or len(self.sampled_values) != 5:
+        if (
+            len(self.actual_steps) != 5
+            or len(self.weights) != 5
+            or len(self.sampled_values) != 5
+        ):
             raise ValueError("Finite-difference evidence requires five stencil points")
         _vector_tokens(self.actual_steps)
+        _vector_tokens(self.weights)
         _vector_tokens(self.sampled_values)
         for value in (
             self.truth,
@@ -1134,6 +1158,12 @@ class FiniteDifferenceProbeEvidence:
             raise ValueError(
                 "Finite-difference error does not match estimate and truth"
             )
+        reconstructed = math.fsum(
+            weight * value
+            for weight, value in zip(self.weights, self.sampled_values, strict=True)
+        )
+        if self.estimate != reconstructed:
+            raise ValueError("Finite-difference estimate does not match its weights")
         if self.absolute_tolerance <= 0.0:
             raise ValueError("Finite-difference tolerance must be positive")
         if len(self.trajectory_fingerprint) != 64:
@@ -1146,6 +1176,7 @@ class FiniteDifferenceProbeEvidence:
                 (
                     _float_token(self.point),
                     _vector_tokens(self.actual_steps),
+                    _vector_tokens(self.weights),
                     _vector_tokens(self.sampled_values),
                     _float_token(self.truth),
                     _float_token(self.estimate),
@@ -1163,6 +1194,7 @@ class FiniteDifferenceProbeEvidence:
             "kind": "FINITE_DIFFERENCE",
             "point": _float_token(self.point),
             "actual_steps": list(_vector_tokens(self.actual_steps)),
+            "weights": list(_vector_tokens(self.weights)),
             "sampled_values": list(_vector_tokens(self.sampled_values)),
             "truth": _float_token(self.truth),
             "estimate": _float_token(self.estimate),
@@ -1182,6 +1214,7 @@ class FiniteDifferenceProbeEvidence:
                 "kind",
                 "point",
                 "actual_steps",
+                "weights",
                 "sampled_values",
                 "truth",
                 "estimate",
@@ -1205,6 +1238,7 @@ class FiniteDifferenceProbeEvidence:
         evidence = cls(
             _float_from_record(record.get("point"), "finite-difference point"),
             _vector_from_record(record.get("actual_steps"), "actual steps"),
+            _vector_from_record(record.get("weights"), "stencil weights"),
             _vector_from_record(record.get("sampled_values"), "sampled values"),
             _float_from_record(record.get("truth"), "derivative truth"),
             _float_from_record(record.get("estimate"), "derivative estimate"),
@@ -1434,6 +1468,19 @@ class NumericalProbeArtifact:
             or not set(self.satisfied_claims).issubset(definition.eligible_claims)
         ):
             raise ValueError("Numerical probe artifact violates its definition")
+        expected_evidence: type[NumericalProbeEvidence]
+        if definition.category in {"TRF_ROUTINE", "TRF_DIFFICULT", "BOUNDS"}:
+            expected_evidence = SolverProbeEvidence
+        elif definition.category == "GRID":
+            expected_evidence = GridProbeEvidence
+        elif definition.category == "DE_SEARCH":
+            expected_evidence = DeProbeEvidence
+        elif definition.category == "FINITE_DIFFERENCE":
+            expected_evidence = FiniteDifferenceProbeEvidence
+        else:
+            expected_evidence = SpectralRiskProbeEvidence
+        if not isinstance(self.evidence, expected_evidence):
+            raise TypeError("Numerical probe evidence does not match its category")
 
     def require_qualification(self, definition: NumericalProbeDefinition) -> None:
         self.validate_definition(definition)
@@ -1766,15 +1813,15 @@ class _ObjectiveRecorder:
             self.materialization_requests += 1
         else:
             raise ValueError("Unknown probe objective request source")
+        candidate = tuple(float(value) for value in vector)
+        key = _vector_tokens(candidate)
         if self.completed >= self._budget:
             self.refused += 1
-            self._trace.append((source, "budget_refused"))
+            self._trace.append((source, key, "budget_refused"))
             raise _ProbeBudgetExhausted(
                 self.accounting,
                 self.trajectory_fingerprint,
             )
-        candidate = tuple(float(value) for value in vector)
-        key = _vector_tokens(candidate)
         cached = self._cache.get(key)
         disposition = "cache_hit"
         if cached is None:
@@ -1851,11 +1898,6 @@ def _least_squares_evidence(
     settings: _TrfSettings,
 ) -> tuple[SolverProbeEvidence, bool]:
     recorder = _ObjectiveRecorder(residual, budget)
-    callback_calls = 0
-
-    def count_callback(_intermediate_result: object) -> None:
-        nonlocal callback_calls
-        callback_calls += 1
 
     result = least_squares(
         lambda vector: recorder.evaluate(vector, "solver"),
@@ -1870,7 +1912,6 @@ def _least_squares_evidence(
         gtol=settings.gtol,
         x_scale=settings.x_scale,
         max_nfev=budget,
-        callback=count_callback,
     )
     accepted = tuple(float(value) for value in result.x)
     residuals = tuple(
@@ -1895,7 +1936,7 @@ def _least_squares_evidence(
                 int(result.nfev),
                 None if result.njev is None else int(result.njev),
                 None,
-                callback_calls,
+                0,
                 0,
             ),
             recorder.trajectory_fingerprint,
@@ -2085,9 +2126,15 @@ def _run_de_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtifac
     root_seed = definition.seed.to_record_value()
     if isinstance(root_seed, bool) or not isinstance(root_seed, int):
         raise TypeError("DE probe root seed must be an integer")
+    oscillation_amplitude = _policy_float(definition, "oscillation_amplitude")
+    oscillation_frequency = _policy_float(definition, "oscillation_frequency")
 
     def residual(vector: tuple[float, ...]) -> tuple[float, ...]:
-        return (vector[0] - 0.25,)
+        displacement = vector[0] - 0.25
+        return (
+            displacement,
+            oscillation_amplitude * math.sin(oscillation_frequency * displacement),
+        )
 
     search_recorder = _ObjectiveRecorder(
         residual,
@@ -2131,12 +2178,16 @@ def _run_de_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtifac
         workers=_policy_int(definition, "workers"),
         callback=count_callback,
     )
-    selected_vector = tuple(float(value) for value in result.x)
-    search_recorder.evaluate(selected_vector, "materialization")
     population = tuple(
         DePopulationCandidate(
             index,
             tuple(float(value) for value in vector),
+            float(
+                np.dot(
+                    values := search_recorder.evaluate(vector, "materialization"),
+                    values,
+                )
+            ),
             float(result.population_energies[index]),
         )
         for index, vector in enumerate(result.population)
@@ -2148,6 +2199,7 @@ def _run_de_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtifac
             key=lambda candidate: (candidate.objective, candidate.population_index),
         )
     )
+    selected_vector = population[order[0]].vector
     polish, polish_succeeded = _least_squares_evidence(
         start=selected_vector,
         lower=lower,
@@ -2165,7 +2217,7 @@ def _run_de_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtifac
         BackendDiagnosticCounters(
             int(result.nfev),
             None,
-            callback_calls,
+            int(result.nit),
             callback_calls,
             0,
         ),
@@ -2179,15 +2231,15 @@ def _run_de_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtifac
             ),
         ),
     )
-    selected_population_vector = population[order[0]].vector
+    backend_selected_vector = tuple(float(value) for value in result.x)
     qualified = (
         polish_succeeded
         and _solver_matches_truth(definition, polish)
         and all(
             math.isclose(actual, selected, rel_tol=0.0, abs_tol=0.0)
             for actual, selected in zip(
+                backend_selected_vector,
                 selected_vector,
-                selected_population_vector,
                 strict=True,
             )
         )
@@ -2300,9 +2352,16 @@ def _run_finite_difference_probe(
 ) -> NumericalProbeArtifact:
     if _policy_string(definition, "stencil") != "centered-five-point":
         raise ValueError("Finite-difference probe requires its declared stencil")
+    if (
+        _policy_string(definition, "weight_derivation")
+        != "lagrange-first-derivative-at-zero"
+    ):
+        raise ValueError("Finite-difference probe requires Lagrange weights")
     point = _policy_float(definition, "point")
     step = _policy_float(definition, "step")
-    actual_steps = (-2.0 * step, -step, 0.0, step, 2.0 * step)
+    nominal_steps = (-2.0 * step, -step, 0.0, step, 2.0 * step)
+    sample_points = tuple(float(point + displacement) for displacement in nominal_steps)
+    actual_steps = tuple(sample - point for sample in sample_points)
 
     def residual(vector: tuple[float, ...]) -> tuple[float, ...]:
         return (math.exp(vector[0]),)
@@ -2312,17 +2371,35 @@ def _run_finite_difference_probe(
         _budget_value(definition, "objective_requests"),
     )
     sampled = tuple(
-        float(recorder.evaluate((point + displacement,), "solver")[0])
-        for displacement in actual_steps
+        float(recorder.evaluate((sample,), "solver")[0]) for sample in sample_points
     )
-    minus_two, minus_one, _center, plus_one, plus_two = sampled
-    estimate = (minus_two - 8.0 * minus_one + 8.0 * plus_one - plus_two) / (12.0 * step)
+    weights = tuple(
+        math.fsum(
+            math.prod(
+                -actual_steps[other]
+                for other in range(len(actual_steps))
+                if other not in (index, omitted)
+            )
+            / math.prod(
+                actual_steps[index] - actual_steps[other]
+                for other in range(len(actual_steps))
+                if other != index
+            )
+            for omitted in range(len(actual_steps))
+            if omitted != index
+        )
+        for index in range(len(actual_steps))
+    )
+    estimate = math.fsum(
+        weight * value for weight, value in zip(weights, sampled, strict=True)
+    )
     truth = math.exp(point)
     absolute_error = abs(estimate - truth)
     absolute_tolerance = _policy_float(definition, "absolute_tolerance")
     evidence = FiniteDifferenceProbeEvidence(
         point,
         actual_steps,
+        weights,
         sampled,
         truth,
         estimate,
@@ -2617,9 +2694,15 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
             "de-bounded-search-v1",
             "DE_SEARCH",
             parent_case="bounded multimodal basin search",
-            reduction="One selected coordinate retains seeded DE then TRF polish.",
+            reduction=(
+                "One selected coordinate retains oscillatory local basins, seeded DE, "
+                "and separate TRF polish."
+            ),
             truth_kind="ANALYTIC_DERIVATION",
-            truth_reference="f(x)=(x-0.25)^2; unique bounded minimizer x=0.25.",
+            truth_reference=(
+                "f(x)=(x-0.25)^2+0.25 sin^2(5(x-0.25)); its non-negative "
+                "first term makes x=0.25 the unique bounded global minimizer."
+            ),
             eligible_claims=(
                 "de-seeded-replay",
                 "de-to-trf-candidate-ordering",
@@ -2628,6 +2711,8 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
             policy={
                 "de_strategy": "best1bin",
                 "bounds": [[-2.0, 2.0]],
+                "oscillation_amplitude": 0.5,
+                "oscillation_frequency": 5.0,
                 "population_multiplier": 5,
                 "maximum_generations": 6,
                 "mutation": [0.5, 1.0],
@@ -2664,6 +2749,7 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
             ),
             policy={
                 "stencil": "centered-five-point",
+                "weight_derivation": "lagrange-first-derivative-at-zero",
                 "point": 0.5,
                 "step": 1.0e-4,
                 "absolute_tolerance": 1.0e-10,

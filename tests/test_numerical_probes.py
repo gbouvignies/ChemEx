@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import math
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import cast
@@ -111,7 +112,7 @@ def test_trf_probes_replay_with_authoritative_request_accounting(
     assert first.risks == ()
     assert first.satisfied_claims == definition.eligible_claims
     assert isinstance(first.evidence, SolverProbeEvidence)
-    assert first.evidence.accepted == pytest.approx(expected, abs=1.0e-8)
+    assert first.evidence.accepted == pytest.approx(expected, rel=0.0, abs=1.0e-8)
     accounting = first.evidence.objective_accounting
     assert accounting.requests_received == accounting.requests_completed
     assert accounting.cache_hits + accounting.cache_misses == (
@@ -120,7 +121,8 @@ def test_trf_probes_replay_with_authoritative_request_accounting(
     assert accounting.materialization_requests == 1
     assert accounting.cache_hits >= 1
     assert accounting.workflow_requests > first.evidence.backend_diagnostics.nfev
-    assert first.evidence.backend_diagnostics.callback_calls > 0
+    # SciPy 1.15 has no least_squares callback API, so its absence is explicit.
+    assert first.evidence.backend_diagnostics.callback_calls == 0
     assert first.evidence.trajectory_fingerprint == (
         replay.evidence.trajectory_fingerprint
     )
@@ -138,12 +140,22 @@ def test_finite_difference_probe_retains_truth_steps_and_request_fingerprint() -
     assert isinstance(first.evidence, FiniteDifferenceProbeEvidence)
     assert first.evidence.estimate == pytest.approx(
         first.evidence.truth,
+        rel=0.0,
         abs=first.evidence.absolute_tolerance,
     )
-    assert first.evidence.actual_steps == pytest.approx(
-        (-2.0e-4, -1.0e-4, 0.0, 1.0e-4, 2.0e-4),
-        rel=0.0,
-        abs=1.0e-16,
+    expected_steps = tuple(
+        (0.5 + nominal_step) - 0.5
+        for nominal_step in (-2.0e-4, -1.0e-4, 0.0, 1.0e-4, 2.0e-4)
+    )
+    assert first.evidence.actual_steps == expected_steps
+    assert first.evidence.actual_steps[3] != 1.0e-4
+    assert first.evidence.estimate == math.fsum(
+        weight * value
+        for weight, value in zip(
+            first.evidence.weights,
+            first.evidence.sampled_values,
+            strict=True,
+        )
     )
     assert first.evidence.objective_accounting.requests_received == 5
     assert first.evidence.backend_diagnostics.nfev == 0
@@ -160,7 +172,7 @@ def test_bound_rank_and_conditioning_probes_fail_closed_against_exact_truth() ->
     conditioning = run_numerical_probe(definitions[7])
 
     assert isinstance(boundary.evidence, SolverProbeEvidence)
-    assert boundary.evidence.accepted == pytest.approx((1.0,), abs=1.0e-8)
+    assert boundary.evidence.accepted == pytest.approx((1.0,), rel=0.0, abs=1.0e-8)
     assert boundary.evidence.active_mask == (1,)
     assert boundary.risks == ("ACTIVE_BOUND",)
 
@@ -218,7 +230,9 @@ def test_grid_probe_retains_all_physical_seeds_and_canonical_candidate_order() -
         == (first.evidence.ordered_seed_ordinals[0])
     )
     selected = first.evidence.seeds[first.evidence.selected_seed_ordinal]
-    assert selected.solver.accepted == pytest.approx((1.0, -1.0, 0.5), abs=1.0e-8)
+    assert selected.solver.accepted == pytest.approx(
+        (1.0, -1.0, 0.5), rel=0.0, abs=1.0e-8
+    )
     assert first.evidence.objective_accounting.requests_received == sum(
         seed.solver.objective_accounting.requests_received
         for seed in first.evidence.seeds
@@ -251,10 +265,21 @@ def test_de_probe_retains_seeded_population_order_and_separate_trf_polish() -> N
         == (first.evidence.ordered_population_indices[0])
     )
     assert first.evidence.search_accounting.requests_received > 0
+    assert first.evidence.search_accounting.materialization_requests == len(
+        first.evidence.final_population
+    )
     assert first.evidence.search_diagnostics.nfev > 0
     assert first.evidence.search_diagnostics.callback_calls == 6
     assert first.evidence.search_diagnostics.iterations == 6
-    assert first.evidence.polish.accepted == pytest.approx((0.25,), abs=1.0e-8)
+    for candidate in first.evidence.final_population:
+        displacement = candidate.vector[0] - 0.25
+        expected_objective = displacement**2 + 0.25 * math.sin(5.0 * displacement) ** 2
+        assert candidate.objective == pytest.approx(
+            expected_objective,
+            rel=0.0,
+            abs=1.0e-16,
+        )
+    assert first.evidence.polish.accepted == pytest.approx((0.25,), rel=0.0, abs=1.0e-8)
     assert first.evidence.trajectory_fingerprint == (
         replay.evidence.trajectory_fingerprint
     )
@@ -293,27 +318,52 @@ def test_budget_exhaustion_retains_refused_request_and_trajectory(
 ) -> None:
     definition = numerical_probe_definitions()[0]
 
-    def exhaust_budget(
-        fun: Callable[[Array], Array],
-        _start: object,
-        **_kwargs: object,
-    ) -> object:
-        for _index in range(65):
-            fun(np.asarray((0.0, 0.0)))
-        raise AssertionError("Budget should terminate before backend completion")
+    def exhauster(refused: tuple[float, float]) -> Callable[..., object]:
+        def exhaust_budget(
+            fun: Callable[[Array], Array],
+            _start: object,
+            **_kwargs: object,
+        ) -> object:
+            for _index in range(64):
+                fun(np.asarray((0.0, 0.0)))
+            fun(np.asarray(refused))
+            raise AssertionError("Budget should terminate before backend completion")
+
+        return exhaust_budget
 
     monkeypatch.setattr(
         "chemex.optimize.numerical_probes.least_squares",
-        exhaust_budget,
+        exhauster((1.0, 1.0)),
     )
 
-    with pytest.raises(NumericalProbeExecutionError) as captured:
+    with pytest.raises(NumericalProbeExecutionError) as first:
+        run_numerical_probe(definition)
+    monkeypatch.setattr(
+        "chemex.optimize.numerical_probes.least_squares",
+        exhauster((2.0, 2.0)),
+    )
+    with pytest.raises(NumericalProbeExecutionError) as second:
         run_numerical_probe(definition)
 
-    assert captured.value.terminal == "BUDGET_EXHAUSTED"
-    assert captured.value.accounting.requests_completed == 64
-    assert captured.value.accounting.requests_refused == 1
-    assert len(captured.value.trajectory_fingerprint) == 64
+    assert first.value.terminal == "BUDGET_EXHAUSTED"
+    assert first.value.accounting.requests_completed == 64
+    assert first.value.accounting.requests_refused == 1
+    assert len(first.value.trajectory_fingerprint) == 64
+    assert first.value.trajectory_fingerprint != second.value.trajectory_fingerprint
+
+
+def test_probe_baseline_rejects_evidence_from_another_category() -> None:
+    baseline = run_numerical_probe_baseline()
+    wrong = dataclasses.replace(
+        baseline.artifacts[0],
+        evidence=baseline.artifacts[3].evidence,
+    )
+
+    with pytest.raises(TypeError, match="category"):
+        NumericalProbeBaseline(
+            baseline.definitions,
+            (wrong, *baseline.artifacts[1:]),
+        )
 
 
 def test_probe_baseline_manifest_replays_round_trips_and_rejects_tampering() -> None:
