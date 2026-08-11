@@ -18,6 +18,7 @@ from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import EvaluationEngine
 from chemex.experiments.builder import build_experiments
 from chemex.optimize.direct_trf import (
+    AffineHalfSpace,
     CancellationToken,
     DirectTrfConstructionError,
     OptimizationProblem,
@@ -106,6 +107,64 @@ def _component_objective(
     candidate = attempt.components[component_ordinal].candidate
     assert candidate is not None
     return candidate.chi_square
+
+
+def test_grouped_grid_seed_and_components_preserve_root_affine_feasibility() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_grid_problem()
+    controlled_id = problem.controlled_ids[0]
+    coefficients = tuple(
+        1.0 if param_id == controlled_id else 0.0
+        for param_id, _value in problem.independent_items
+    )
+    restriction = AffineHalfSpace(
+        "grouped-grid-affine",
+        coefficients,
+        problem.start[0] + 1.0,
+    )
+    affine_problem = dataclasses.replace(
+        problem,
+        affine_half_spaces=(restriction,),
+    )
+    decomposition = FitDecomposition.from_root(
+        affine_problem,
+        parameterization,
+        engine,
+    )
+    assert all(
+        component.problem.affine_half_spaces == (restriction,)
+        for component in decomposition.components
+    )
+    invocation = GridDirectTrfInvocation.for_problem(
+        affine_problem,
+        axes=((controlled_id, (affine_problem.start[0],)),),
+        objective_request_budget=1,
+    )
+    (seed,) = invocation.seeds
+    assert seed.problem is not None
+    assert seed.problem.affine_half_spaces == (restriction,)
+    seed_decomposition = FitDecomposition.from_root(
+        seed.problem,
+        parameterization,
+        engine,
+    )
+    assert all(
+        component.problem.affine_half_spaces == (restriction,)
+        for component in seed_decomposition.components
+    )
+
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="affine feasibility differs",
+    ):
+        dataclasses.replace(seed.problem, affine_half_spaces=())
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="affine feasibility differs",
+    ):
+        dataclasses.replace(
+            seed_decomposition.components[0].problem,
+            affine_half_spaces=(),
+        )
 
 
 def test_each_seed_uses_exact_components_and_only_selected_aggregate_commits() -> None:

@@ -364,6 +364,7 @@ def _expected_search_projection(
         ),
         DeSearchProblemDerivation(
             root_problem.identity,
+            root_problem.affine_feasibility_identity,
             specification_identity,
             selected_ids,
             held_items,
@@ -397,6 +398,8 @@ def _validate_exact_search_projection(
         or search_problem.upper_bounds != expected.upper_bounds
         or search_problem.commit_scope != root_problem.commit_scope
         or search_problem.scalarization_version != root_problem.scalarization_version
+        or search_problem.affine_half_spaces != root_problem.affine_half_spaces
+        or search_problem.affine_equalities != root_problem.affine_equalities
         or derivation != expected.derivation
     ):
         raise DirectTrfConstructionError(
@@ -699,6 +702,7 @@ class DeDirectTrfInvocation:
         )
         derivation = DeSearchProblemDerivation(
             problem.identity,
+            problem.affine_feasibility_identity,
             search_specification_identity,
             canonical_selected_ids,
             held_items,
@@ -726,6 +730,8 @@ class DeDirectTrfInvocation:
             problem.commit_scope,
             derivation,
             problem.scalarization_version,
+            problem.affine_half_spaces,
+            problem.affine_equalities,
         )
         population = DePopulation(
             len(coordinates),
@@ -1514,6 +1520,7 @@ def _derive_polish_problem(
         )
     derivation = DePolishProblemDerivation(
         problem.identity,
+        problem.affine_feasibility_identity,
         invocation.identity,
         invocation.search_problem.identity,
         search.identity,
@@ -1537,6 +1544,8 @@ def _derive_polish_problem(
         problem.commit_scope,
         derivation,
         problem.scalarization_version,
+        problem.affine_half_spaces,
+        problem.affine_equalities,
     )
     polish = DirectTrfInvocation.for_problem(
         child,
@@ -1620,6 +1629,7 @@ def _validate_de_polish_transition_lineage(
     if search_candidate is not None:
         expected_derivation = DePolishProblemDerivation(
             problem.identity,
+            problem.affine_feasibility_identity,
             invocation.identity,
             invocation.search_problem.identity,
             search.identity,
@@ -1652,6 +1662,8 @@ def _validate_de_polish_transition_lineage(
         or polish_problem.upper_bounds != problem.upper_bounds
         or polish_problem.commit_scope != problem.commit_scope
         or polish_problem.scalarization_version != problem.scalarization_version
+        or polish_problem.affine_half_spaces != problem.affine_half_spaces
+        or polish_problem.affine_equalities != problem.affine_equalities
         or polish_invocation.problem_identity != polish_problem.identity
         or polish_invocation.objective_request_budget
         != invocation.polish_objective_request_budget

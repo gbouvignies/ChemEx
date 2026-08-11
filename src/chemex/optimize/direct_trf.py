@@ -264,6 +264,7 @@ class ComponentProblemDerivation:
     """Exact immutable derivation of one non-authoritative child problem."""
 
     root_problem_identity: str
+    root_affine_feasibility_identity: str
     component_identity: str
     projection_policy: str
     projected_plan_identity: str
@@ -279,6 +280,7 @@ class ComponentProblemDerivation:
                 "native-component-problem-derivation",
                 (
                     self.root_problem_identity,
+                    self.root_affine_feasibility_identity,
                     self.component_identity,
                     self.projection_policy,
                     self.projected_plan_identity,
@@ -297,6 +299,7 @@ class GridSeedProblemDerivation:
     """Exact lineage for one full-coordinate GRID seed child problem."""
 
     root_problem_identity: str
+    root_affine_feasibility_identity: str
     seed_identity: str
     seed_ordinal: int
     axis_items: tuple[tuple[str, float], ...]
@@ -339,6 +342,7 @@ class GridSeedProblemDerivation:
                 "native-grid-seed-problem-derivation",
                 (
                     self.root_problem_identity,
+                    self.root_affine_feasibility_identity,
                     self.seed_identity,
                     self.seed_ordinal,
                     tuple(
@@ -357,6 +361,7 @@ class DeSearchProblemDerivation:
     """Exact lineage for one selected-coordinate DE search problem."""
 
     root_problem_identity: str
+    root_affine_feasibility_identity: str
     search_specification_identity: str
     selected_ids: tuple[str, ...]
     captured_held_items: tuple[tuple[str, float], ...]
@@ -404,6 +409,7 @@ class DeSearchProblemDerivation:
                 "native-de-search-problem-derivation",
                 (
                     self.root_problem_identity,
+                    self.root_affine_feasibility_identity,
                     self.search_specification_identity,
                     self.selected_ids,
                     tuple(
@@ -421,6 +427,7 @@ class DePolishProblemDerivation:
     """Exact lineage for the one full-coordinate TRF polish after DE."""
 
     root_problem_identity: str
+    root_affine_feasibility_identity: str
     workflow_invocation_identity: str
     search_problem_identity: str
     search_execution_identity: str
@@ -455,6 +462,7 @@ class DePolishProblemDerivation:
                 "native-de-polish-problem-derivation",
                 (
                     self.root_problem_identity,
+                    self.root_affine_feasibility_identity,
                     self.workflow_invocation_identity,
                     self.search_problem_identity,
                     self.search_execution_identity,
@@ -549,6 +557,48 @@ class AffineEquality:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class CoordinateLineFeasibility:
+    """Exact feasible displacement interval along one controlled coordinate."""
+
+    param_id: str
+    minimum_displacement: float
+    maximum_displacement: float
+    lower_limiters: tuple[str, ...]
+    upper_limiters: tuple[str, ...]
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        minimum = _bound_binary64(
+            self.minimum_displacement,
+            name="minimum feasible displacement",
+        )
+        maximum = _bound_binary64(
+            self.maximum_displacement,
+            name="maximum feasible displacement",
+        )
+        if not minimum <= 0.0 <= maximum:
+            raise DirectTrfConstructionError(
+                "Coordinate line feasibility must contain the accepted point"
+            )
+        object.__setattr__(self, "minimum_displacement", minimum)
+        object.__setattr__(self, "maximum_displacement", maximum)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-coordinate-line-feasibility",
+                (
+                    self.param_id,
+                    _float_token(minimum),
+                    _float_token(maximum),
+                    self.lower_limiters,
+                    self.upper_limiters,
+                ),
+            ),
+        )
+
+
 def _validate_affine_feasibility(
     independent_items: tuple[tuple[str, float], ...],
     half_spaces: tuple[AffineHalfSpace, ...],
@@ -574,6 +624,93 @@ def _affine_feasibility_identity_record(
         ("affine-half-spaces", tuple(item.identity for item in half_spaces)),
         ("affine-equalities", tuple(item.identity for item in equalities)),
     )
+
+
+def _affine_feasibility_identity(
+    half_spaces: tuple[AffineHalfSpace, ...],
+    equalities: tuple[AffineEquality, ...],
+) -> str:
+    return _identity(
+        "native-affine-feasibility",
+        _affine_feasibility_identity_record(half_spaces, equalities),
+    )
+
+
+def _pairwise_feasibility_sum(values: Sequence[float]) -> float:
+    terms = list(values)
+    while len(terms) > 1:
+        reduced = [
+            terms[index] + terms[index + 1] for index in range(0, len(terms) - 1, 2)
+        ]
+        if len(terms) % 2:
+            reduced.append(terms[-1])
+        terms = reduced
+    result = terms[0] if terms else 0.0
+    return 0.0 if result == 0.0 else result
+
+
+def _full_frame_candidate(
+    independent_items: tuple[tuple[str, float], ...],
+    controlled_ids: tuple[str, ...],
+    candidate: tuple[float, ...],
+) -> tuple[float, ...]:
+    updates = dict(zip(controlled_ids, candidate, strict=True))
+    return tuple(updates.get(param_id, value) for param_id, value in independent_items)
+
+
+def _affine_total(
+    coefficients: tuple[float, ...],
+    full_values: tuple[float, ...],
+) -> float:
+    products = tuple(
+        coefficient * value
+        for coefficient, value in zip(coefficients, full_values, strict=True)
+    )
+    return _pairwise_feasibility_sum(products)
+
+
+def _validate_candidate_feasibility(
+    independent_items: tuple[tuple[str, float], ...],
+    controlled_ids: tuple[str, ...],
+    candidate: tuple[float, ...],
+    lower_bounds: tuple[float, ...],
+    upper_bounds: tuple[float, ...],
+    half_spaces: tuple[AffineHalfSpace, ...],
+    equalities: tuple[AffineEquality, ...],
+) -> tuple[float, ...]:
+    if any(
+        not lower <= value <= upper
+        for value, lower, upper in zip(
+            candidate,
+            lower_bounds,
+            upper_bounds,
+            strict=True,
+        )
+    ):
+        raise DirectTrfConstructionError(
+            "External candidate is outside exact box bounds"
+        )
+    full_values = _full_frame_candidate(
+        independent_items,
+        controlled_ids,
+        candidate,
+    )
+    for restriction in half_spaces:
+        total = _affine_total(restriction.coefficients, full_values)
+        slack = restriction.upper_bound - total
+        if not math.isfinite(total) or not math.isfinite(slack) or slack < 0.0:
+            raise DirectTrfConstructionError(
+                f"External candidate violates affine half-space "
+                f"{restriction.restriction_id!r}"
+            )
+    for restriction in equalities:
+        total = _affine_total(restriction.coefficients, full_values)
+        if not math.isfinite(total) or total != restriction.value:
+            raise DirectTrfConstructionError(
+                f"External candidate violates affine equality "
+                f"{restriction.restriction_id!r}"
+            )
+    return full_values
 
 
 @dataclass(frozen=True, slots=True)
@@ -605,7 +742,7 @@ class OptimizationProblem:
     affine_equalities: tuple[AffineEquality, ...] = ()
     identity: str = field(init=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:  # noqa: C901 - complete problem invariant
         _validate_problem_ordering(
             self.controlled_ids,
             self.independent_items,
@@ -623,7 +760,28 @@ class OptimizationProblem:
             self.affine_half_spaces,
             self.affine_equalities,
         )
+        affine_feasibility_identity = _affine_feasibility_identity(
+            self.affine_half_spaces,
+            self.affine_equalities,
+        )
+        _validate_candidate_feasibility(
+            self.independent_items,
+            self.controlled_ids,
+            normalized_start,
+            lower,
+            upper,
+            self.affine_half_spaces,
+            self.affine_equalities,
+        )
         if isinstance(self.derivation, ComponentProblemDerivation):
+            if (
+                self.derivation.root_affine_feasibility_identity
+                != affine_feasibility_identity
+            ):
+                raise DirectTrfConstructionError(
+                    "Component problem affine feasibility differs from its "
+                    "derivation record"
+                )
             if (
                 self.derivation.projected_plan_identity != self.evaluation_plan_identity
                 or self.derivation.controlled_ids != self.controlled_ids
@@ -632,28 +790,52 @@ class OptimizationProblem:
                 raise DirectTrfConstructionError(
                     "Component problem differs from its derivation record"
                 )
-        elif isinstance(self.derivation, GridSeedProblemDerivation) and (
-            self.derivation.controlled_ids != self.controlled_ids
-            or self.derivation.start != normalized_start
-        ):
-            raise DirectTrfConstructionError(
-                "GRID seed problem differs from its derivation record"
-            )
-        elif isinstance(self.derivation, DeSearchProblemDerivation) and (
-            self.derivation.selected_ids != self.controlled_ids
-            or self.derivation.captured_held_items != self.held_items
-            or self.derivation.start != normalized_start
-        ):
-            raise DirectTrfConstructionError(
-                "DE search problem differs from its derivation record"
-            )
-        elif isinstance(self.derivation, DePolishProblemDerivation) and (
-            self.derivation.controlled_ids != self.controlled_ids
-            or self.derivation.start != normalized_start
-        ):
-            raise DirectTrfConstructionError(
-                "DE polish problem differs from its derivation record"
-            )
+        elif isinstance(self.derivation, GridSeedProblemDerivation):
+            if (
+                self.derivation.root_affine_feasibility_identity
+                != affine_feasibility_identity
+            ):
+                raise DirectTrfConstructionError(
+                    "GRID seed affine feasibility differs from its derivation record"
+                )
+            if (
+                self.derivation.controlled_ids != self.controlled_ids
+                or self.derivation.start != normalized_start
+            ):
+                raise DirectTrfConstructionError(
+                    "GRID seed problem differs from its derivation record"
+                )
+        elif isinstance(self.derivation, DeSearchProblemDerivation):
+            if (
+                self.derivation.root_affine_feasibility_identity
+                != affine_feasibility_identity
+            ):
+                raise DirectTrfConstructionError(
+                    "DE search affine feasibility differs from its derivation record"
+                )
+            if (
+                self.derivation.selected_ids != self.controlled_ids
+                or self.derivation.captured_held_items != self.held_items
+                or self.derivation.start != normalized_start
+            ):
+                raise DirectTrfConstructionError(
+                    "DE search problem differs from its derivation record"
+                )
+        elif isinstance(self.derivation, DePolishProblemDerivation):
+            if (
+                self.derivation.root_affine_feasibility_identity
+                != affine_feasibility_identity
+            ):
+                raise DirectTrfConstructionError(
+                    "DE polish affine feasibility differs from its derivation record"
+                )
+            if (
+                self.derivation.controlled_ids != self.controlled_ids
+                or self.derivation.start != normalized_start
+            ):
+                raise DirectTrfConstructionError(
+                    "DE polish problem differs from its derivation record"
+                )
         object.__setattr__(self, "start", normalized_start)
         object.__setattr__(self, "lower_bounds", lower)
         object.__setattr__(self, "upper_bounds", upper)
@@ -795,6 +977,87 @@ class OptimizationProblem:
         """Whether this is the complete root rather than a derived component."""
         return self.derivation is None
 
+    @property
+    def affine_feasibility_identity(self) -> str:
+        """Return the canonical box-independent affine feasibility identity."""
+        return _affine_feasibility_identity(
+            self.affine_half_spaces,
+            self.affine_equalities,
+        )
+
+    def coordinate_line_feasibility(  # noqa: C901 - exact interval intersection
+        self,
+        vector: Sequence[float] | Array,
+        column: int,
+    ) -> CoordinateLineFeasibility:
+        """Intersect exact box and affine feasibility along one coordinate line."""
+        candidate = _canonical_vector(
+            vector,
+            dimension=len(self.controlled_ids),
+            name="coordinate-line center",
+        )
+        full_values = _validate_candidate_feasibility(
+            self.independent_items,
+            self.controlled_ids,
+            candidate,
+            self.lower_bounds,
+            self.upper_bounds,
+            self.affine_half_spaces,
+            self.affine_equalities,
+        )
+        if not 0 <= column < len(self.controlled_ids):
+            raise IndexError("Controlled coordinate column is out of range")
+        param_id = self.controlled_ids[column]
+        independent_index = next(
+            index
+            for index, (independent_id, _value) in enumerate(self.independent_items)
+            if independent_id == param_id
+        )
+        minimum = self.lower_bounds[column] - candidate[column]
+        maximum = self.upper_bounds[column] - candidate[column]
+        lower_limiters = (f"box-lower:{param_id}",) if math.isfinite(minimum) else ()
+        upper_limiters = (f"box-upper:{param_id}",) if math.isfinite(maximum) else ()
+        for restriction in self.affine_half_spaces:
+            coefficient = restriction.coefficients[independent_index]
+            if coefficient == 0.0:
+                continue
+            slack = restriction.upper_bound - _affine_total(
+                restriction.coefficients,
+                full_values,
+            )
+            boundary = _bound_binary64(
+                slack / coefficient,
+                name=f"affine line boundary {restriction.restriction_id!r}",
+            )
+            limiter = f"affine:{restriction.restriction_id}"
+            if coefficient > 0.0:
+                if boundary < maximum:
+                    maximum = boundary
+                    upper_limiters = (limiter,)
+                elif boundary == maximum:
+                    upper_limiters += (limiter,)
+            elif boundary > minimum:
+                minimum = boundary
+                lower_limiters = (limiter,)
+            elif boundary == minimum:
+                lower_limiters += (limiter,)
+        for restriction in self.affine_equalities:
+            coefficient = restriction.coefficients[independent_index]
+            if coefficient == 0.0:
+                continue
+            minimum = 0.0
+            maximum = 0.0
+            limiter = f"equality:{restriction.restriction_id}"
+            lower_limiters = (limiter,)
+            upper_limiters = (limiter,)
+        return CoordinateLineFeasibility(
+            param_id,
+            minimum,
+            maximum,
+            lower_limiters,
+            upper_limiters,
+        )
+
     def lifecycle_frame(
         self,
         vector: Sequence[float] | Array,
@@ -806,6 +1069,15 @@ class OptimizationProblem:
             vector,
             dimension=len(self.controlled_ids),
             name="external candidate",
+        )
+        _validate_candidate_feasibility(
+            self.independent_items,
+            self.controlled_ids,
+            candidate,
+            self.lower_bounds,
+            self.upper_bounds,
+            self.affine_half_spaces,
+            self.affine_equalities,
         )
         updates = dict(zip(self.controlled_ids, candidate, strict=True))
         return IndependentValueFrame(

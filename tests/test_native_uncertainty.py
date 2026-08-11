@@ -19,13 +19,19 @@ import pytest
 
 from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
-from chemex.evaluation.native import EvaluationEngine, EvaluationFrame, EvaluationResult
+from chemex.evaluation.native import (
+    BoundEvaluator,
+    EvaluationEngine,
+    EvaluationFrame,
+    EvaluationResult,
+)
 from chemex.experiments.builder import build_experiments
 from chemex.optimize import uncertainty as uncertainty_module
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     AffineEquality,
     AffineHalfSpace,
+    DirectTrfConstructionError,
     DirectTrfInvocation,
     OptimizationProblem,
     execute_direct_trf,
@@ -305,6 +311,25 @@ def _independent_five_point_jacobian(
     return np.column_stack(columns)
 
 
+def _independent_svd_covariance(
+    jacobian: Array,
+    coordinate_scales: tuple[float, ...],
+    residual_variance_scale: float,
+) -> tuple[Array, Array, Array]:
+    """Direct closed-form SVD reference independent of uncertainty.py."""
+    scales = np.asarray(coordinate_scales, dtype=np.float64)
+    scaled = np.asarray(jacobian, dtype=np.float64) * scales[np.newaxis, :]
+    _left, singular_values, right_transpose = np.linalg.svd(
+        scaled,
+        full_matrices=False,
+    )
+    right = right_transpose.T
+    inverse_singular = 1.0 / singular_values
+    unscaled_factor = scales[:, np.newaxis] * right * inverse_singular[np.newaxis, :]
+    factor = math.sqrt(residual_variance_scale) * unscaled_factor
+    return unscaled_factor @ unscaled_factor.T, factor, factor @ factor.T
+
+
 def test_accepted_fit_yields_typed_covariance_and_joint_constraint_propagation() -> (
     None
 ):
@@ -342,6 +367,11 @@ def test_accepted_fit_yields_typed_covariance_and_joint_constraint_propagation()
     assert evidence.residual_jacobian.complete_reliable
     # Independent five-point O(h^4) derivative, followed below by the scalar
     # closed form C = (chi²/nu) / (J^T J).  Neither calls uncertainty.py.
+    # The reference J is [6.8775710242, 3.7910236726, 1.0915054084,
+    # -1.2596720492, -3.2976439424, -5.0543079057, -6.5586116745]; the
+    # observed production/reference maxima are 3.16e-9 absolute and 2.23e-9
+    # relative.  Its independently derived variance is 0.01837155881904635;
+    # production differs by 5.89e-12, supporting the declared tolerances.
     expected_jacobian = _independent_five_point_jacobian(
         parameterization,
         engine,
@@ -357,18 +387,19 @@ def test_accepted_fit_yields_typed_covariance_and_joint_constraint_propagation()
     )
     assert evidence.covariance is not None
     factor = np.asarray(evidence.covariance.factor)
-    for column in range(factor.shape[1]):
-        pivot = int(np.argmax(np.abs(factor[:, column])))
-        assert factor[pivot, column] >= 0.0
+    np.testing.assert_allclose(
+        factor @ factor.T,
+        evidence.covariance.covariance,
+        rtol=0.0,
+        atol=0.0,
+    )
     assert evidence.covariance.controlled_ids == (controlled_id,)
     assert evidence.covariance.retained_residual_count == 7
     assert evidence.covariance.controlled_coordinate_count == 1
     assert evidence.covariance.profiled_normalization_count == 1
     assert evidence.covariance.nominal_residual_degrees_of_freedom == 5
     assert evidence.covariance.rank == 1
-    assert evidence.covariance.factorization == (
-        "canonical-information-cholesky-gram-v2"
-    )
+    assert evidence.covariance.factorization == ("direct-scaled-svd-factor-gram-v3")
     expected_variance = (accepted.chi_square / 5.0) / float(
         expected_jacobian[:, 0] @ expected_jacobian[:, 0]
     )
@@ -654,6 +685,9 @@ def test_multivariate_scaled_svd_correlation_and_joint_propagation_reference() -
     assert evidence.rank_diagnostic is not None
     scaled_reference = reference_jacobian * np.asarray((0.1, 10.0))[np.newaxis, :]
     expected_singular_values = np.linalg.svd(scaled_reference, compute_uv=False)
+    # Independent expected singular values are [154.1975407925,
+    # 24.2113113641].  The SVD comparison therefore measures the production
+    # derivative error, not a copied production decomposition.
     np.testing.assert_allclose(
         evidence.rank_diagnostic.singular_values,
         expected_singular_values,
@@ -673,13 +707,26 @@ def test_multivariate_scaled_svd_correlation_and_joint_propagation_reference() -
             null_projector=((0.0, 0.0), (0.0, 1.0)),
         )
     assert evidence.covariance is not None
-    expected_covariance = np.linalg.solve(
-        reference_jacobian.T @ reference_jacobian,
-        np.eye(2),
+    expected_unscaled, _expected_factor, expected_covariance = (
+        _independent_svd_covariance(
+            reference_jacobian,
+            (0.1, 10.0),
+            1.0,
+        )
     )
+    # Direct SVD reference C = [[4.0784044539e-6, -6.8907323809e-4],
+    # [-6.8907323809e-4, 1.3401557289e-1]].  Observed production/reference
+    # covariance differences are 4.40e-9 absolute and 3.28e-8 relative, well
+    # inside the 4e-7 tolerance inherited from the finite-difference error.
     np.testing.assert_allclose(
         evidence.covariance.covariance,
         expected_covariance,
+        rtol=4.0e-7,
+        atol=2.0e-12,
+    )
+    np.testing.assert_allclose(
+        evidence.covariance.unscaled_covariance,
+        expected_unscaled,
         rtol=4.0e-7,
         atol=2.0e-12,
     )
@@ -715,6 +762,62 @@ def test_multivariate_scaled_svd_correlation_and_joint_propagation_reference() -
         rtol=4.0e-7,
         atol=2.0e-12,
     )
+
+
+def test_covariance_uses_direct_svd_not_normal_equations() -> None:
+    jacobian = np.asarray(
+        (
+            (1.0, 1.0),
+            (1.0, 1.0 + 1.0e-6),
+            (1.0, 1.0 - 1.0e-6),
+            (2.0, 2.0 + 0.5e-6),
+        ),
+        dtype=np.float64,
+    )
+    scales = (1.0e-3, 1.0e3)
+    expected_unscaled, expected_factor, expected_covariance = (
+        _independent_svd_covariance(jacobian, scales, 0.75)
+    )
+    scaled = jacobian * np.asarray(scales)[np.newaxis, :]
+    _left, singular_values, right_transpose = np.linalg.svd(
+        scaled,
+        full_matrices=False,
+    )
+    actual_unscaled, actual_factor, actual_covariance = (
+        uncertainty_module._canonical_covariance_reduction(
+            singular_values,
+            right_transpose,
+            scales,
+            0.75,
+        )
+    )
+    np.testing.assert_allclose(
+        actual_unscaled,
+        expected_unscaled,
+        rtol=2.0e-15,
+        atol=0.0,
+    )
+    np.testing.assert_allclose(
+        np.abs(actual_factor),
+        np.abs(expected_factor),
+        rtol=2.0e-15,
+        atol=0.0,
+    )
+    np.testing.assert_allclose(
+        actual_covariance,
+        expected_covariance,
+        rtol=2.0e-15,
+        atol=0.0,
+    )
+
+    scale_matrix = np.diag(scales)
+    normal_equation_covariance = 0.75 * (
+        scale_matrix @ np.linalg.solve(scaled.T @ scaled, np.eye(2)) @ scale_matrix
+    )
+    relative_difference = np.max(
+        np.abs((normal_equation_covariance - expected_covariance) / expected_covariance)
+    )
+    assert relative_difference > 1.0e-5
 
 
 def test_rank_deficiency_is_diagnostic_and_never_manufactures_uncertainty() -> None:
@@ -811,6 +914,10 @@ def test_boundary_covariance_remains_diagnostic_but_reporting_fails_closed() -> 
         (1.0e-4,),
         forward_columns=frozenset({0}),
     )
+    # The independent one-sided O(h^4) reference J is [6.8775710282,
+    # 3.7910236723, 1.0915054092, -1.2596720491, -3.2976439423,
+    # -5.0543079056, -6.5586116752].  Observed maxima are 2.02e-8 absolute
+    # and 9.41e-9 relative, supporting the same 2e-7 / 2e-9 policy.
     np.testing.assert_allclose(
         np.asarray(evidence.residual_jacobian.matrix),
         independent_forward,
@@ -1068,7 +1175,7 @@ def test_positive_scale_covariance_factor_underflow_is_typed_failure() -> None:
         )
 
     assert evidence.covariance is None
-    assert evidence.failures[-1].category == "invalid_covariance_arithmetic"
+    assert evidence.failures[-1].category == "covariance_factor_underflow"
 
 
 def test_cancellation_freezes_terminal_operation_without_artifact() -> None:
@@ -1357,7 +1464,11 @@ def test_affine_directional_separation_uses_exact_full_frame_slack(
         _full_frame_coefficients(problem, {problem.controlled_ids[0]: 1.0}),
         accepted.vector[0] + zeta * standard_error,
     )
-    affine_problem = dataclasses.replace(problem, affine_half_spaces=(restriction,))
+    affine_problem = dataclasses.replace(
+        problem,
+        start=accepted.vector,
+        affine_half_spaces=(restriction,),
+    )
     affine_accepted = _qualified_accepted_copy(
         accepted,
         problem_identity=affine_problem.identity,
@@ -1374,6 +1485,187 @@ def test_affine_directional_separation_uses_exact_full_frame_slack(
     assert evidence.covariance is not None
     assert evidence.covariance.claim("AFFINE_FEASIBILITY") is expected
     assert evidence.covariance.usable is (expected is ClaimState.SATISFIED)
+
+
+def test_active_affine_upper_uses_inward_stencil_without_off_feasible_calls() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    controlled_id = problem.controlled_ids[0]
+    restriction = AffineHalfSpace(
+        "active-stencil-upper",
+        _full_frame_coefficients(problem, {controlled_id: 1.0}),
+        accepted.vector[0],
+    )
+    constrained_problem = dataclasses.replace(
+        problem,
+        start=accepted.vector,
+        affine_half_spaces=(restriction,),
+    )
+    constrained_accepted = _qualified_accepted_copy(
+        accepted,
+        problem_identity=constrained_problem.identity,
+        occurrence_identity="active-stencil-upper-occurrence",
+    )
+    original_evaluate = BoundEvaluator.evaluate
+    evaluated_values: list[float] = []
+
+    def guarded_evaluate(
+        bound: BoundEvaluator,
+        frame: EvaluationFrame,
+    ) -> object:
+        items = cast("list[list[object]]", frame.to_record()["items"])
+        encoded = cast(
+            "str",
+            next(item[1] for item in items if item[0] == controlled_id),
+        )
+        value = float.fromhex(encoded)
+        assert value <= accepted.vector[0]
+        evaluated_values.append(value)
+        return original_evaluate(bound, frame)
+
+    with patch.object(BoundEvaluator, "evaluate", guarded_evaluate):
+        evidence = derive_uncertainty_evidence(
+            constrained_accepted,
+            problem=constrained_problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=_qualification_policy(controlled_id),
+            resolved_environment_identity="active-affine-stencil",
+        )
+
+    assert evidence.residual_jacobian is not None
+    column = evidence.residual_jacobian.columns[0]
+    assert column.orientation == "one_sided_negative"
+    assert column.feasible_displacement_interval[1] == 0.0
+    assert column.upper_feasibility_limiters == ("affine:active-stencil-upper",)
+    assert evaluated_values
+
+
+def test_affine_lower_inactive_box_intersection_and_coupled_held_stencils() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    controlled_id = problem.controlled_ids[0]
+    lower_restriction = AffineHalfSpace(
+        "active-stencil-lower",
+        _full_frame_coefficients(problem, {controlled_id: -1.0}),
+        -accepted.vector[0],
+    )
+    lower_problem = dataclasses.replace(
+        problem,
+        start=accepted.vector,
+        affine_half_spaces=(lower_restriction,),
+    )
+    lower_accepted = _qualified_accepted_copy(
+        accepted,
+        problem_identity=lower_problem.identity,
+        occurrence_identity="active-stencil-lower-occurrence",
+    )
+    lower_evidence = derive_uncertainty_evidence(
+        lower_accepted,
+        problem=lower_problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=_qualification_policy(controlled_id),
+        resolved_environment_identity="active-affine-lower-stencil",
+    )
+    assert lower_evidence.residual_jacobian is not None
+    lower_column = lower_evidence.residual_jacobian.columns[0]
+    assert lower_column.orientation == "one_sided_positive"
+    assert lower_column.feasible_displacement_interval[0] == 0.0
+    assert lower_column.lower_feasibility_limiters == ("affine:active-stencil-lower",)
+
+    inactive = AffineHalfSpace(
+        "inactive-stencil-upper",
+        _full_frame_coefficients(problem, {controlled_id: 1.0}),
+        accepted.vector[0] + 0.5,
+    )
+    inactive_problem = dataclasses.replace(
+        problem,
+        start=accepted.vector,
+        affine_half_spaces=(inactive,),
+    )
+    interval = inactive_problem.coordinate_line_feasibility(accepted.vector, 0)
+    assert interval.minimum_displacement == problem.lower_bounds[0] - accepted.vector[0]
+    assert interval.maximum_displacement == 0.5
+    assert interval.upper_limiters == ("affine:inactive-stencil-upper",)
+    inactive_accepted = _qualified_accepted_copy(
+        accepted,
+        problem_identity=inactive_problem.identity,
+        occurrence_identity="inactive-stencil-occurrence",
+    )
+    inactive_evidence = derive_uncertainty_evidence(
+        inactive_accepted,
+        problem=inactive_problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=_qualification_policy(controlled_id),
+        resolved_environment_identity="inactive-affine-stencil",
+    )
+    assert inactive_evidence.residual_jacobian is not None
+    assert inactive_evidence.residual_jacobian.columns[0].orientation == "centered"
+
+    held_id, held_value = problem.held_items[0]
+    coupled = AffineHalfSpace(
+        "coupled-held-stencil-upper",
+        _full_frame_coefficients(
+            problem,
+            {controlled_id: 1.0, held_id: 1.0},
+        ),
+        accepted.vector[0] + held_value,
+    )
+    coupled_problem = dataclasses.replace(
+        problem,
+        start=accepted.vector,
+        affine_half_spaces=(coupled,),
+    )
+    coupled_accepted = _qualified_accepted_copy(
+        accepted,
+        problem_identity=coupled_problem.identity,
+        occurrence_identity="coupled-held-stencil-occurrence",
+    )
+    coupled_evidence = derive_uncertainty_evidence(
+        coupled_accepted,
+        problem=coupled_problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=_qualification_policy(controlled_id),
+        resolved_environment_identity="coupled-held-affine-stencil",
+    )
+    assert coupled_evidence.residual_jacobian is not None
+    coupled_column = coupled_evidence.residual_jacobian.columns[0]
+    assert coupled_column.orientation == "one_sided_negative"
+    assert coupled_column.upper_feasibility_limiters == (
+        "affine:coupled-held-stencil-upper",
+    )
+
+
+def test_affine_equality_has_no_single_coordinate_stencil() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    controlled_id = problem.controlled_ids[0]
+    equality = AffineEquality(
+        "fixed-stencil-coordinate",
+        _full_frame_coefficients(problem, {controlled_id: 1.0}),
+        accepted.vector[0],
+    )
+    equality_problem = dataclasses.replace(
+        problem,
+        start=accepted.vector,
+        affine_equalities=(equality,),
+    )
+    equality_accepted = _qualified_accepted_copy(
+        accepted,
+        problem_identity=equality_problem.identity,
+        occurrence_identity="fixed-stencil-coordinate-occurrence",
+    )
+    evidence = derive_uncertainty_evidence(
+        equality_accepted,
+        problem=equality_problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=_qualification_policy(controlled_id),
+        resolved_environment_identity="fixed-affine-stencil",
+    )
+    assert evidence.residual_jacobian is None
+    assert evidence.covariance is None
+    assert evidence.failures[0].category == "exhausted_exact_feasible_distance"
 
 
 def test_affine_held_only_and_equality_semantics_fail_closed() -> None:
@@ -1435,7 +1727,11 @@ def test_affine_held_only_and_equality_semantics_fail_closed() -> None:
         is ClaimState.NOT_APPLICABLE
     )
 
-    equality_problem = dataclasses.replace(problem, affine_equalities=(equality,))
+    equality_problem = dataclasses.replace(
+        problem,
+        start=accepted.vector,
+        affine_equalities=(equality,),
+    )
     equality_accepted = _qualified_accepted_copy(
         accepted,
         problem_identity=equality_problem.identity,
@@ -1449,14 +1745,9 @@ def test_affine_held_only_and_equality_semantics_fail_closed() -> None:
         policy=_qualification_policy(problem.controlled_ids[0]),
         resolved_environment_identity="equality-affine",
     )
-    assert equality_evidence.covariance is not None
-    assert (
-        equality_evidence.covariance.claim("AFFINE_FEASIBILITY") is ClaimState.VIOLATED
-    )
-    assert (
-        equality_evidence.covariance.claim("FULL_DIMENSIONAL_FEASIBLE_INTERIOR")
-        is ClaimState.VIOLATED
-    )
+    assert equality_evidence.residual_jacobian is None
+    assert equality_evidence.covariance is None
+    assert equality_evidence.failures[0].category == "exhausted_exact_feasible_distance"
 
 
 def test_affine_coupled_negative_degenerate_and_nonfinite_cases() -> None:
@@ -1475,67 +1766,70 @@ def test_affine_coupled_negative_degenerate_and_nonfinite_cases() -> None:
     assert baseline.covariance is not None
     standard_error = math.sqrt(baseline.covariance.covariance[0][0])
 
-    restrictions = (
-        (
-            "coupled",
-            AffineHalfSpace(
-                "coupled",
-                _full_frame_coefficients(problem, {controlled_id: 1.0, held_id: 1.0}),
-                accepted.vector[0] + held_value + 4.0 * standard_error,
-            ),
-            ClaimState.SATISFIED,
-        ),
-        (
+    coupled = AffineHalfSpace(
+        "coupled",
+        _full_frame_coefficients(problem, {controlled_id: 1.0, held_id: 1.0}),
+        accepted.vector[0] + held_value + 4.0 * standard_error,
+    )
+    coupled_problem = dataclasses.replace(
+        problem,
+        start=accepted.vector,
+        affine_half_spaces=(coupled,),
+    )
+    coupled_accepted = _qualified_accepted_copy(
+        accepted,
+        problem_identity=coupled_problem.identity,
+        occurrence_identity="coupled-affine-occurrence",
+    )
+    coupled_evidence = derive_uncertainty_evidence(
+        coupled_accepted,
+        problem=coupled_problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=policy,
+        resolved_environment_identity="affine-coupled",
+    )
+    assert coupled_evidence.covariance is not None, coupled_evidence.failures
+    assert (
+        coupled_evidence.covariance.claim("AFFINE_FEASIBILITY") is ClaimState.SATISFIED
+    )
+
+    invalid_restrictions = (
+        AffineHalfSpace(
             "negative",
-            AffineHalfSpace(
-                "negative",
-                _full_frame_coefficients(problem, {controlled_id: 1.0}),
-                accepted.vector[0] - 1.0,
-            ),
-            ClaimState.VIOLATED,
+            _full_frame_coefficients(problem, {controlled_id: 1.0}),
+            accepted.vector[0] - 1.0,
         ),
-        (
+        AffineHalfSpace(
             "nonfinite",
-            AffineHalfSpace(
-                "nonfinite",
-                _full_frame_coefficients(
-                    problem,
-                    {
-                        controlled_id: float(np.finfo(np.float64).max),
-                        held_id: float(np.finfo(np.float64).max),
-                    },
-                ),
-                float(np.finfo(np.float64).max),
+            _full_frame_coefficients(
+                problem,
+                {
+                    controlled_id: float(np.finfo(np.float64).max),
+                    held_id: float(np.finfo(np.float64).max),
+                },
             ),
-            ClaimState.INDETERMINATE,
+            float(np.finfo(np.float64).max),
         ),
     )
-    for label, restriction, expected in restrictions:
-        constrained_problem = dataclasses.replace(
-            problem, affine_half_spaces=(restriction,)
-        )
-        constrained_accepted = _qualified_accepted_copy(
-            accepted,
-            problem_identity=constrained_problem.identity,
-            occurrence_identity=f"{label}-affine-occurrence",
-        )
-        evidence = derive_uncertainty_evidence(
-            constrained_accepted,
-            problem=constrained_problem,
-            parameterization=parameterization,
-            engine=engine,
-            policy=policy,
-            resolved_environment_identity=f"affine-{label}",
-        )
-        assert evidence.covariance is not None, evidence.failures
-        assert evidence.covariance.claim("AFFINE_FEASIBILITY") is expected
+    for restriction in invalid_restrictions:
+        with pytest.raises(DirectTrfConstructionError, match="affine half-space"):
+            dataclasses.replace(
+                problem,
+                start=accepted.vector,
+                affine_half_spaces=(restriction,),
+            )
 
     positive = AffineHalfSpace(
         "positive-with-zero-variance",
         _full_frame_coefficients(problem, {controlled_id: 1.0}),
         accepted.vector[0] + 1.0,
     )
-    degenerate_problem = dataclasses.replace(problem, affine_half_spaces=(positive,))
+    degenerate_problem = dataclasses.replace(
+        problem,
+        start=accepted.vector,
+        affine_half_spaces=(positive,),
+    )
     degenerate_accepted = _qualified_accepted_copy(
         accepted,
         problem_identity=degenerate_problem.identity,
@@ -1866,3 +2160,66 @@ def test_cancellation_during_g_and_before_propagation_emits_no_downstream() -> N
     propagate.assert_not_called()
     assert before_propagation.constraint_jacobian is not None
     assert before_propagation.constrained_propagation is None
+
+
+def test_cancellation_between_constrained_marginals_and_correlations() -> None:
+    session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    controlled_id = problem.controlled_ids[0]
+    derived_id = "__R1A_B_G2N_H_800_0MHZ"
+    before = session.analysis_values.snapshot()
+    original_marginals = uncertainty_module._marginal_errors
+    original_correlations = uncertainty_module._correlations
+    constrained_marginals_complete = False
+    constrained_correlations_started = False
+
+    def traced_marginals(*args: object, **kwargs: object) -> object:
+        nonlocal constrained_marginals_complete
+        result = original_marginals(*args, **kwargs)
+        if kwargs.get("source_family") == "constrained_propagation":
+            constrained_marginals_complete = True
+        return result
+
+    def traced_correlations(*args: object, **kwargs: object) -> object:
+        nonlocal constrained_correlations_started
+        if kwargs.get("source_family") == "constrained_propagation":
+            constrained_correlations_started = True
+        return original_correlations(*args, **kwargs)
+
+    with (
+        patch(
+            "chemex.optimize.uncertainty._marginal_errors",
+            side_effect=traced_marginals,
+        ),
+        patch(
+            "chemex.optimize.uncertainty._correlations",
+            side_effect=traced_correlations,
+        ),
+    ):
+        evidence = derive_uncertainty_evidence(
+            accepted,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=_qualification_policy(controlled_id),
+            constrained_scope=(derived_id,),
+            constrained_units=((derived_id, ParameterUnit.RATE_PER_SECOND),),
+            constrained_scales=((derived_id, 1.0),),
+            compiled_constraint_linearization=compile_constraint_linearization_capabilities(
+                parameterization, (derived_id,), ()
+            ),
+            cancellation_probe=lambda: (
+                OperationTerminal.CANCELLED if constrained_marginals_complete else None
+            ),
+            resolved_environment_identity="cancel-before-constrained-correlations",
+        )
+
+    assert not constrained_correlations_started
+    assert evidence.constrained_propagation is not None
+    assert evidence.constrained_marginal_errors is not None
+    assert evidence.constrained_correlations is None
+    assert evidence.operations[-1].stage == "constrained_correlations"
+    assert evidence.operations[-1].terminal is OperationTerminal.CANCELLED
+    assert all(
+        operation.stage != "final_bundle_assembly" for operation in evidence.operations
+    )
+    assert session.analysis_values.snapshot() == before

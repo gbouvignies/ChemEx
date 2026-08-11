@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import math
 import pickle
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -27,6 +28,8 @@ from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import EvaluationEngine
 from chemex.experiments.builder import build_experiments
 from chemex.optimize.direct_trf import (
+    AffineEquality,
+    AffineHalfSpace,
     CancellationToken,
     CandidateSummary,
     DirectTrfConstructionError,
@@ -98,6 +101,58 @@ def _qualification_fit(
         objective_request_budget=budget,
     )
     return session, experiments, parameterization, engine, problem, invocation
+
+
+def _full_frame_coefficients(
+    problem: OptimizationProblem,
+    param_id: str,
+    coefficient: float = 1.0,
+) -> tuple[float, ...]:
+    return tuple(
+        coefficient if independent_id == param_id else 0.0
+        for independent_id, _value in problem.independent_items
+    )
+
+
+def test_lifecycle_frame_rejects_exact_box_and_affine_infeasibility() -> None:
+    _session, _experiments, parameterization, _engine, problem, _invocation = (
+        _qualification_fit()
+    )
+    param_id = problem.controlled_ids[0]
+    active_value = problem.start[0]
+    constrained = dataclasses.replace(
+        problem,
+        affine_half_spaces=(
+            AffineHalfSpace(
+                "active-upper",
+                _full_frame_coefficients(problem, param_id),
+                active_value,
+            ),
+        ),
+    )
+    constrained.lifecycle_frame(constrained.start, parameterization)
+    with pytest.raises(DirectTrfConstructionError, match="affine half-space"):
+        constrained.lifecycle_frame(
+            (float(np.nextafter(active_value, math.inf)),),
+            parameterization,
+        )
+    equality = dataclasses.replace(
+        problem,
+        affine_equalities=(
+            AffineEquality(
+                "fixed-coordinate",
+                _full_frame_coefficients(problem, param_id),
+                active_value,
+            ),
+        ),
+    )
+    with pytest.raises(DirectTrfConstructionError, match="affine equality"):
+        equality.lifecycle_frame(
+            (float(np.nextafter(active_value, -math.inf)),),
+            parameterization,
+        )
+    with pytest.raises(DirectTrfConstructionError, match="box bounds"):
+        problem.lifecycle_frame((problem.lower_bounds[0] - 1.0,), parameterization)
 
 
 def _legacy_values(

@@ -23,6 +23,7 @@ from chemex.evaluation.native import EvaluationEngine
 from chemex.experiments.builder import build_experiments
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
+    AffineHalfSpace,
     CancellationToken,
     DirectTrfConstructionError,
     DirectTrfInvocation,
@@ -81,6 +82,35 @@ def _qualification_problem(
         session.analysis_values.snapshot(),
     )
     return session, experiments, parameterization, engine, problem
+
+
+def test_grid_seed_problems_preserve_root_affine_feasibility() -> None:
+    _session, _experiments, _parameterization, _engine, problem = (
+        _qualification_problem(Method(fit=["PB"], fix=["KEX_AB"]))
+    )
+    param_id = problem.controlled_ids[0]
+    restriction = AffineHalfSpace(
+        "grid-root-upper",
+        tuple(
+            1.0 if independent_id == param_id else 0.0
+            for independent_id, _value in problem.independent_items
+        ),
+        problem.start[0] + 1.0,
+    )
+    constrained = dataclasses.replace(
+        problem,
+        affine_half_spaces=(restriction,),
+    )
+    invocation = GridDirectTrfInvocation.for_problem(
+        constrained,
+        axes=((param_id, (constrained.start[0],)),),
+        objective_request_budget=5,
+    )
+    (seed,) = invocation.seeds
+    assert seed.problem is not None
+    assert seed.problem.affine_half_spaces == (restriction,)
+    with pytest.raises(DirectTrfConstructionError, match="feasibility"):
+        dataclasses.replace(seed.problem, affine_half_spaces=())
 
 
 def test_cartesian_seed_plan_is_canonical_physical_and_rooted_once() -> None:

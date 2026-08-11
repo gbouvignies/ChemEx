@@ -35,6 +35,7 @@ from chemex.evaluation.native import (
 )
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
+    DirectTrfConstructionError,
     OptimizationProblem,
     accepted_occurrence_is_authoritative,
 )
@@ -55,8 +56,8 @@ from chemex.typing import Array
 _SCHEMA_VERSION = 1
 _RESIDUAL_LINEARIZATION_VERSION = "external-real-finite-difference-v1"
 _CONSTRAINT_LINEARIZATION_VERSION = "constraint-forward-chain-v1"
-_COVARIANCE_VERSION = "full-rank-scaled-svd-cholesky-v2"
-_FACTOR_VERSION = "canonical-information-cholesky-gram-v2"
+_COVARIANCE_VERSION = "full-rank-direct-scaled-svd-factor-gram-v3"
+_FACTOR_VERSION = "direct-scaled-svd-factor-gram-v3"
 _REDUCTION_VERSION = "fixed-pairwise-binary64-v1"
 _MARGINAL_VERSION = "covariance-diagonal-square-root-v1"
 _CORRELATION_VERSION = "ordered-double-division-v1"
@@ -760,6 +761,9 @@ class LinearizationColumn:
     param_id: str
     orientation: str
     nominal_step: float
+    feasible_displacement_interval: tuple[float, float]
+    lower_feasibility_limiters: tuple[str, ...]
+    upper_feasibility_limiters: tuple[str, ...]
     represented_displacements: tuple[float, ...]
     fine_estimate: tuple[float, ...]
     companion_estimate: tuple[float, ...]
@@ -781,6 +785,9 @@ class LinearizationColumn:
                     self.param_id,
                     self.orientation,
                     _float_token(self.nominal_step),
+                    _vector_tokens(self.feasible_displacement_interval),
+                    self.lower_feasibility_limiters,
+                    self.upper_feasibility_limiters,
                     _vector_tokens(self.represented_displacements),
                     _vector_tokens(self.fine_estimate),
                     _vector_tokens(self.companion_estimate),
@@ -1105,6 +1112,37 @@ class SingularSubspaceEvidence:
         )
 
 
+def _recomputed_scaled_svd(
+    source: ResidualJacobianEvidence,
+    policy: UncertaintyPolicy,
+) -> tuple[tuple[float, ...], tuple[tuple[float, ...], ...]]:
+    scaled = (
+        np.asarray(source.matrix, dtype=np.float64)
+        * np.asarray(source.coordinate_scales, dtype=np.float64)[np.newaxis, :]
+    )
+    _left, singular_values, right_transpose = svd(
+        scaled,
+        full_matrices=False,
+        compute_uv=True,
+        overwrite_a=False,
+        check_finite=True,
+        lapack_driver=policy.svd_driver,
+    )
+    dimension = len(source.controlled_ids)
+    return (
+        tuple(
+            _finite(value, name=f"recomputed singular value[{index}]")
+            for index, value in enumerate(singular_values)
+        ),
+        _canonical_matrix(
+            right_transpose,
+            rows=dimension,
+            columns=dimension,
+            name="recomputed right singular vectors",
+        ),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class RankDiagnostic:
     request_identity: str
@@ -1200,9 +1238,10 @@ class RankDiagnostic:
         expected_norms = tuple(
             float(np.linalg.norm(scaled[:, index])) for index in range(dimension)
         )
-        information_eigenvalues = np.linalg.eigvalsh(scaled.T @ scaled)[::-1]
-        with np.errstate(over="ignore", invalid="ignore"):
-            expected_squared = np.square(np.asarray(self.singular_values))
+        recomputed_singular, recomputed_right_t = _recomputed_scaled_svd(
+            source,
+            self.source_policy,
+        )
         tolerance = 512.0 * _EPSILON * max(1, dimension)
         if (
             self.normalized_singular_values != expected_normalized
@@ -1212,10 +1251,10 @@ class RankDiagnostic:
                 self.scaled_column_norms, expected_norms, rtol=tolerance, atol=0.0
             )
             or not np.allclose(
-                expected_squared,
-                information_eigenvalues,
+                self.singular_values,
+                recomputed_singular,
                 rtol=tolerance,
-                atol=tolerance,
+                atol=0.0,
             )
         ):
             raise ValueError("SVD/rank numerical evidence does not derive from J_z")
@@ -1254,8 +1293,20 @@ class RankDiagnostic:
                 "Singular subspaces violate the declared clustering policy"
             )
         subspace_sum = np.zeros((dimension, dimension), dtype=np.float64)
-        information = scaled.T @ scaled
-        for item in self.subspaces:
+        recomputed_subspaces = _invariant_singular_subspaces(
+            np.asarray(recomputed_right_t, dtype=np.float64).T,
+            recomputed_singular,
+            rank_threshold=self.threshold,
+            weak_threshold=self.weak_threshold,
+            cluster_relative_tolerance=(
+                self.source_policy.singular_value_cluster_relative_tolerance
+            ),
+        )
+        for item, expected_subspace in zip(
+            self.subspaces,
+            recomputed_subspaces,
+            strict=True,
+        ):
             if item.singular_values != tuple(
                 self.singular_values[index] for index in item.indices
             ):
@@ -1271,16 +1322,16 @@ class RankDiagnostic:
             if item.classification != expected_classification:
                 raise ValueError("Singular subspace classification is inconsistent")
             item_projector = np.asarray(item.projector)
-            if not np.allclose(
-                item_projector @ information,
-                information @ item_projector,
-                rtol=tolerance,
-                atol=tolerance,
-            ) or not np.allclose(
-                np.trace(item_projector @ information),
-                sum(value * value for value in item.singular_values),
-                rtol=tolerance,
-                atol=tolerance,
+            if (
+                item.indices != expected_subspace.indices
+                or item.singular_values != expected_subspace.singular_values
+                or item.classification != expected_subspace.classification
+                or not np.allclose(
+                    item_projector,
+                    expected_subspace.projector,
+                    rtol=0.0,
+                    atol=tolerance,
+                )
             ):
                 raise ValueError(
                     "Singular projector does not match its invariant spectrum"
@@ -1519,9 +1570,16 @@ class CovarianceEvidence:
             or self.factorization != _FACTOR_VERSION
         ):
             raise ValueError("Covariance derivation lineage is internally inconsistent")
+        recomputed_singular, recomputed_right_t = _recomputed_scaled_svd(
+            source,
+            policy,
+        )
+        if recomputed_singular != rank_source.singular_values:
+            raise ValueError("Covariance SVD kernel differs from rank evidence")
         expected_unscaled, expected_factor, expected_covariance = (
             _canonical_covariance_reduction(
-                source.matrix,
+                rank_source.singular_values,
+                recomputed_right_t,
                 source.coordinate_scales,
                 expected_scale,
             )
@@ -2548,7 +2606,8 @@ def _gram_matrix(factor: Sequence[Sequence[float]]) -> tuple[tuple[float, ...], 
 
 
 def _canonical_covariance_reduction(
-    jacobian: Sequence[Sequence[float]],
+    singular_values: Sequence[float],
+    right_transpose: Sequence[Sequence[float]],
     coordinate_scales: Sequence[float],
     residual_variance_scale: float,
 ) -> tuple[
@@ -2556,32 +2615,60 @@ def _canonical_covariance_reduction(
     tuple[tuple[float, ...], ...],
     tuple[tuple[float, ...], ...],
 ]:
-    """Reduce the full-rank information matrix through one canonical factor."""
-    matrix = np.asarray(jacobian, dtype=np.float64)
-    scales = np.asarray(coordinate_scales, dtype=np.float64)
-    scaled = matrix * scales[np.newaxis, :]
-    information = scaled.T @ scaled
-    inverse_scaled = np.linalg.solve(
-        information,
-        np.eye(information.shape[0], dtype=np.float64),
+    """Construct ``C0`` and ``L`` directly from one declared full-rank SVD."""
+    scales = tuple(
+        _finite(value, name=f"coordinate scale[{index}]")
+        for index, value in enumerate(coordinate_scales)
     )
-    scale_matrix = np.diag(scales)
-    unscaled_array = scale_matrix @ inverse_scaled @ scale_matrix
-    unscaled_array = 0.5 * (unscaled_array + unscaled_array.T)
-    unscaled = _canonical_matrix(
-        unscaled_array,
-        rows=len(scales),
-        columns=len(scales),
-        name="canonical unscaled covariance",
+    if any(value <= 0.0 for value in scales):
+        raise ValueError("Coordinate scales must be strictly positive")
+    dimension = len(scales)
+    spectrum = tuple(
+        _finite(value, name=f"singular value[{index}]")
+        for index, value in enumerate(singular_values)
     )
-    unscaled_factor = np.linalg.cholesky(unscaled_array)
-    factor_array = math.sqrt(residual_variance_scale) * unscaled_factor
-    factor = _canonical_matrix(
-        factor_array,
-        rows=len(scales),
-        columns=len(scales),
-        name="canonical covariance factor",
+    if len(spectrum) != dimension or any(value <= 0.0 for value in spectrum):
+        raise ValueError("Direct SVD covariance requires a positive full-rank spectrum")
+    right_t = _canonical_matrix(
+        right_transpose,
+        rows=dimension,
+        columns=dimension,
+        name="right singular vectors",
     )
+    phi = _finite(residual_variance_scale, name="residual variance scale")
+    if phi < 0.0:
+        raise ValueError("Residual variance scale cannot be negative")
+    square_root_phi = _finite(math.sqrt(phi), name="sqrt residual variance scale")
+    inverse_singular = tuple(
+        _finite(1.0 / value, name=f"reciprocal singular value[{index}]")
+        for index, value in enumerate(spectrum)
+    )
+    right = tuple(zip(*right_t, strict=True))
+    unscaled_factor = tuple(
+        tuple(
+            _finite(
+                _finite(
+                    scales[row] * right[row][column],
+                    name=f"scaled right singular vector[{row},{column}]",
+                )
+                * inverse_singular[column],
+                name=f"unscaled SVD covariance factor[{row},{column}]",
+            )
+            for column in range(dimension)
+        )
+        for row in range(dimension)
+    )
+    factor = tuple(
+        tuple(
+            _finite(
+                square_root_phi * unscaled_factor[row][column],
+                name=f"scaled SVD covariance factor[{row},{column}]",
+            )
+            for column in range(dimension)
+        )
+        for row in range(dimension)
+    )
+    unscaled = _gram_matrix(unscaled_factor)
     return unscaled, factor, _gram_matrix(factor)
 
 
@@ -2896,12 +2983,15 @@ def _evaluate_stencil(
     results: list[tuple[float, ...]] = []
     displacements: list[float] = []
     for trial in vectors:
-        result = _evaluate_vector(
-            trial,
-            problem=problem,
-            parameterization=parameterization,
-            evaluator=evaluator,
-        )
+        try:
+            result = _evaluate_vector(
+                trial,
+                problem=problem,
+                parameterization=parameterization,
+                evaluator=evaluator,
+            )
+        except DirectTrfConstructionError:
+            return None, None, None
         if isinstance(result, EvaluationFailure):
             if result.validity == "INVALID_TRIAL":
                 return None, None, None
@@ -2999,13 +3089,26 @@ def _linearize_residual_column(
     cancellation_probe: Callable[[], OperationTerminal | None] | None,
 ) -> tuple[LinearizationColumn | None, tuple[object, ...], EvidenceFailure | None]:
     center = accepted.vector[column]
+    line_feasibility = problem.coordinate_line_feasibility(
+        accepted.vector,
+        column,
+    )
     orientations = _column_orientations(
         center,
-        problem.lower_bounds[column],
-        problem.upper_bounds[column],
+        center + line_feasibility.minimum_displacement,
+        center + line_feasibility.maximum_displacement,
     )
     nominal = _NOMINAL_STEP_FACTOR * scale
-    trajectory: list[object] = []
+    trajectory: list[object] = [
+        (
+            "exact-coordinate-line-feasibility",
+            line_feasibility.identity,
+            _float_token(line_feasibility.minimum_displacement),
+            _float_token(line_feasibility.maximum_displacement),
+            line_feasibility.lower_limiters,
+            line_feasibility.upper_limiters,
+        )
+    ]
     if not orientations:
         return (
             None,
@@ -3096,6 +3199,12 @@ def _linearize_residual_column(
                         param_id,
                         orientation,
                         nominal,
+                        (
+                            line_feasibility.minimum_displacement,
+                            line_feasibility.maximum_displacement,
+                        ),
+                        line_feasibility.lower_limiters,
+                        line_feasibility.upper_limiters,
                         tuple(displacements),
                         fine,
                         coarse,
@@ -3902,7 +4011,8 @@ def _covariance_from_jacobian(  # noqa: C901 - ordered scientific derivation gat
     _raise_if_terminated(cancellation_probe)
     chi_square = _finite(accepted.chi_square, name="accepted chi-square")
     unscaled_covariance, factor, covariance = _canonical_covariance_reduction(
-        jacobian.matrix,
+        singular_values,
+        right_transpose,
         jacobian.coordinate_scales,
         residual_variance_scale,
     )
@@ -5248,7 +5358,7 @@ class _ConstraintBranch:
     correlations: CorrelationEvidence | None
 
 
-def _derive_constraint_branch(
+def _derive_constraint_branch(  # noqa: C901 - ordered cancellation phase ledger
     accepted: AcceptedFitResult,
     *,
     problem: OptimizationProblem,
@@ -5366,6 +5476,36 @@ def _derive_constraint_branch(
     marginal: MarginalErrorEvidence | None = None
     correlations: CorrelationEvidence | None = None
     if propagation is not None and covariance is not None:
+        marginal_request = _identity(
+            "native-constrained-marginal-error-request",
+            (propagation.identity, _MARGINAL_VERSION),
+        )
+        correlation_request = _identity(
+            "native-constrained-correlation-request",
+            (propagation.identity, policy.identity, _CORRELATION_VERSION),
+        )
+        marginal_terminal = _cancellation_terminal(cancellation_probe)
+        if marginal_terminal is not None:
+            _record_operation(
+                operations,
+                failures,
+                _operation(
+                    "constrained_marginal_errors",
+                    marginal_request,
+                    None,
+                    None,
+                    resolved_environment_identity=resolved_environment_identity,
+                    terminal_override=marginal_terminal,
+                ),
+            )
+            return _ConstraintBranch(
+                tuple(operations),
+                tuple(failures),
+                jacobian,
+                propagation,
+                None,
+                None,
+            )
         variance_degenerate = covariance.residual_variance_scale == 0.0
         source_reportable = (
             covariance.usable
@@ -5385,6 +5525,39 @@ def _derive_constraint_branch(
             inherited_claims=propagation.claims,
             source_artifact=propagation,
         )
+        _record_operation(
+            operations,
+            failures,
+            _operation(
+                "constrained_marginal_errors",
+                marginal_request,
+                marginal,
+                None,
+                resolved_environment_identity=resolved_environment_identity,
+            ),
+        )
+        correlation_terminal = _cancellation_terminal(cancellation_probe)
+        if correlation_terminal is not None:
+            _record_operation(
+                operations,
+                failures,
+                _operation(
+                    "constrained_correlations",
+                    correlation_request,
+                    None,
+                    None,
+                    resolved_environment_identity=resolved_environment_identity,
+                    terminal_override=correlation_terminal,
+                ),
+            )
+            return _ConstraintBranch(
+                tuple(operations),
+                tuple(failures),
+                jacobian,
+                propagation,
+                marginal,
+                None,
+            )
         correlations = _correlations(
             source_identity=propagation.identity,
             accepted_result_identity=accepted.identity,
@@ -5398,25 +5571,6 @@ def _derive_constraint_branch(
             policy=policy,
             inherited_claims=propagation.claims,
             source_artifact=propagation,
-        )
-        marginal_request = _identity(
-            "native-constrained-marginal-error-request",
-            (propagation.identity, _MARGINAL_VERSION),
-        )
-        correlation_request = _identity(
-            "native-constrained-correlation-request",
-            (propagation.identity, policy.identity, _CORRELATION_VERSION),
-        )
-        _record_operation(
-            operations,
-            failures,
-            _operation(
-                "constrained_marginal_errors",
-                marginal_request,
-                marginal,
-                None,
-                resolved_environment_identity=resolved_environment_identity,
-            ),
         )
         _record_operation(
             operations,
