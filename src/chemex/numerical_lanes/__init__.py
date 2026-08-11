@@ -24,7 +24,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, fields
 from importlib.resources import files
 from pathlib import Path, PurePosixPath
-from typing import Any, Literal, cast
+from typing import Any, Literal, SupportsIndex, cast
 
 from chemex.runtime.execution import NATIVE_THREAD_ENV_VARS
 
@@ -1011,8 +1011,9 @@ class LaneAttestation:
 class LiveLaneAuthority:
     """Non-serializable capability owned by one successfully probed process."""
 
-    __slots__ = ("_evidence", "__weakref__")
+    __slots__ = ("_evidence", "_lane_role", "__weakref__")
     _evidence: LaneAttestation
+    _lane_role: LaneRole
 
     def __new__(cls) -> LiveLaneAuthority:
         raise TypeError("Live lane authority is minted only by current-process probing")
@@ -1032,6 +1033,11 @@ class LiveLaneAuthority:
         return self.evidence.environment_identity
 
     @property
+    def lane_role(self) -> LaneRole:
+        _ = self.evidence
+        return self._lane_role
+
+    @property
     def workers(self) -> int:
         return self.evidence.workers
 
@@ -1047,6 +1053,17 @@ class LiveLaneAuthority:
         """Serialize evidence only; deserialization cannot recreate this capability."""
 
         return self.evidence.to_record()
+
+    def __copy__(self) -> LiveLaneAuthority:
+        raise TypeError("Live lane authority cannot be copied")
+
+    def __deepcopy__(self, memo: object) -> LiveLaneAuthority:
+        _ = memo
+        raise TypeError("Live lane authority cannot be copied")
+
+    def __reduce_ex__(self, protocol: SupportsIndex) -> str | tuple[object, ...]:
+        _ = protocol
+        raise TypeError("Live lane authority cannot be pickled")
 
 
 _LIVE_LANE_AUTHORITIES: weakref.WeakSet[LiveLaneAuthority] = weakref.WeakSet()
@@ -1176,6 +1193,7 @@ class NumericalLane:
         )
         authority = object.__new__(LiveLaneAuthority)
         object.__setattr__(authority, "_evidence", evidence)
+        object.__setattr__(authority, "_lane_role", self.role)
         _LIVE_LANE_AUTHORITIES.add(authority)
         return authority
 

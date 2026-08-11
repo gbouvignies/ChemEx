@@ -13,24 +13,28 @@ import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import product
-from typing import Literal, cast
+from typing import Literal, Never, cast
 
 import numpy as np
 from scipy.linalg import svd
 from scipy.optimize import Bounds, OptimizeResult, differential_evolution, least_squares
 
 from chemex.baselines import CanonicalBaselineValue
-from chemex.numerical_lanes import LiveLaneAuthority
+from chemex.numerical_lanes import LaneRole, LiveLaneAuthority
 from chemex.typing import Array
 
-_SCHEMA_VERSION = 1
-_SEMANTIC_VERSION = "chemex-numerical-probes-v1"
+_SCHEMA_VERSION = 2
+_SEMANTIC_VERSION = "chemex-numerical-probes-v2"
 _SOURCE_REVISION = "700cb71df950fc54c268c0bca199403e5621269d"
+CANONICAL_NUMERICAL_PROBE_MANIFEST_IDENTITY = (
+    "c8052d59d8b648bd0ba55effdd91d86cc18bf68b948faa420450ede3d47b93bf"
+)
 
 type ProbeCategory = Literal[
     "TRF_ROUTINE",
     "TRF_DIFFICULT",
     "GRID",
+    "GRID_ORDERING",
     "DE_SEARCH",
     "FINITE_DIFFERENCE",
     "BOUNDS",
@@ -38,6 +42,11 @@ type ProbeCategory = Literal[
     "CONDITIONING",
 ]
 type TruthAuthorityKind = Literal["ANALYTIC_DERIVATION", "EXACT_LINEAR_ALGEBRA"]
+type RequestFailureKind = Literal[
+    "INVALID_INPUT",
+    "EVALUATION_FAILURE",
+    "NON_FINITE_RESULT",
+]
 
 
 def _identity(kind: str, record: object) -> str:
@@ -292,6 +301,7 @@ class NumericalProbeDefinition:
             "TRF_ROUTINE",
             "TRF_DIFFICULT",
             "GRID",
+            "GRID_ORDERING",
             "DE_SEARCH",
             "FINITE_DIFFERENCE",
             "BOUNDS",
@@ -409,44 +419,71 @@ class NumericalProbeDefinition:
 
 
 @dataclass(frozen=True, slots=True)
-class ObjectiveRequestAccounting:
+class AuthoritativeObjectiveAccounting:
     """Authoritative evaluator requests, distinct from backend diagnostics."""
 
     workflow_requests: int
     materialization_requests: int
-    requests_completed: int
+    fresh_evaluations: int
+    cache_served_requests: int
     requests_refused: int
-    cache_hits: int
-    cache_misses: int
+    failure_kinds: tuple[RequestFailureKind, ...]
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
         values = (
             self.workflow_requests,
             self.materialization_requests,
-            self.requests_completed,
+            self.fresh_evaluations,
+            self.cache_served_requests,
             self.requests_refused,
-            self.cache_hits,
-            self.cache_misses,
         )
         if any(
             isinstance(value, bool) or not isinstance(value, int) or value < 0
             for value in values
         ):
             raise ValueError("Objective-request counters must be non-negative integers")
-        if self.requests_completed + self.requests_refused != self.requests_received:
+        if any(
+            kind not in {"INVALID_INPUT", "EVALUATION_FAILURE", "NON_FINITE_RESULT"}
+            for kind in self.failure_kinds
+        ):
+            raise ValueError("Unknown authoritative request failure kind")
+        if (
+            self.fresh_evaluations
+            + self.cache_served_requests
+            + self.requests_refused
+            + self.requests_failed
+            != self.requests_received
+        ):
             raise ValueError("Objective requests do not reconcile with terminal counts")
-        if self.cache_hits + self.cache_misses != self.requests_completed:
-            raise ValueError("Objective cache accounting does not reconcile")
         object.__setattr__(
             self,
             "identity",
-            _identity("probe-objective-accounting", values),
+            _identity(
+                "probe-authoritative-objective-accounting",
+                (values, self.failure_kinds),
+            ),
         )
 
     @property
     def requests_received(self) -> int:
         return self.workflow_requests + self.materialization_requests
+
+    @property
+    def requests_completed(self) -> int:
+        return self.fresh_evaluations + self.cache_served_requests
+
+    @property
+    def requests_failed(self) -> int:
+        return len(self.failure_kinds)
+
+    @property
+    def cache_hits(self) -> int:
+        return self.cache_served_requests
+
+    @property
+    def cache_misses(self) -> int:
+        return self.fresh_evaluations
 
     def to_record(self) -> dict[str, object]:
         return {
@@ -454,14 +491,18 @@ class ObjectiveRequestAccounting:
             "materialization_requests": self.materialization_requests,
             "requests_received": self.requests_received,
             "requests_completed": self.requests_completed,
+            "fresh_evaluations": self.fresh_evaluations,
+            "cache_served_requests": self.cache_served_requests,
             "requests_refused": self.requests_refused,
-            "cache_hits": self.cache_hits,
-            "cache_misses": self.cache_misses,
+            "requests_failed": self.requests_failed,
+            "failure_kinds": list(self.failure_kinds),
             "identity": self.identity,
         }
 
     @classmethod
-    def from_record(cls, record: Mapping[str, object]) -> ObjectiveRequestAccounting:
+    def from_record(
+        cls, record: Mapping[str, object]
+    ) -> AuthoritativeObjectiveAccounting:
         _exact_keys(
             record,
             {
@@ -469,13 +510,20 @@ class ObjectiveRequestAccounting:
                 "materialization_requests",
                 "requests_received",
                 "requests_completed",
+                "fresh_evaluations",
+                "cache_served_requests",
                 "requests_refused",
-                "cache_hits",
-                "cache_misses",
+                "requests_failed",
+                "failure_kinds",
                 "identity",
             },
             "Objective request accounting",
         )
+        raw_failures = record.get("failure_kinds")
+        if not isinstance(raw_failures, list) or any(
+            not isinstance(value, str) for value in raw_failures
+        ):
+            raise TypeError("Objective request failure kinds must be strings")
         accounting = cls(
             _record_nonnegative_int(
                 record.get("workflow_requests"), "workflow requests"
@@ -484,19 +532,25 @@ class ObjectiveRequestAccounting:
                 record.get("materialization_requests"),
                 "materialization requests",
             ),
+            _record_nonnegative_int(record.get("fresh_evaluations"), "evaluations"),
             _record_nonnegative_int(
-                record.get("requests_completed"), "completed requests"
+                record.get("cache_served_requests"), "cache-served requests"
             ),
             _record_nonnegative_int(record.get("requests_refused"), "refused requests"),
-            _record_nonnegative_int(record.get("cache_hits"), "cache hits"),
-            _record_nonnegative_int(record.get("cache_misses"), "cache misses"),
+            tuple(cast("list[RequestFailureKind]", raw_failures)),
         )
         if (
             record.get("requests_received") != accounting.requests_received
+            or record.get("requests_completed") != accounting.requests_completed
+            or record.get("requests_failed") != accounting.requests_failed
             or record.get("identity") != accounting.identity
         ):
             raise ValueError("Objective request accounting does not match its payload")
         return accounting
+
+
+# Compatibility name for the initial #591 draft; new code should use the explicit name.
+ObjectiveRequestAccounting = AuthoritativeObjectiveAccounting
 
 
 @dataclass(frozen=True, slots=True)
@@ -667,6 +721,10 @@ class SolverProbeEvidence:
             ),
         )
 
+    @property
+    def authoritative_accounting(self) -> AuthoritativeObjectiveAccounting:
+        return self.objective_accounting
+
     def to_record(self) -> dict[str, object]:
         return {
             "kind": "SOLVER",
@@ -821,7 +879,11 @@ class GridProbeEvidence:
             seed.ordinal
             for seed in sorted(
                 self.seeds,
-                key=lambda seed: (seed.solver.chi_square, seed.ordinal),
+                key=lambda seed: (
+                    seed.solver.chi_square,
+                    seed.solver.accepted,
+                    seed.ordinal,
+                ),
             )
         )
         if self.ordered_seed_ordinals != expected_order:
@@ -845,6 +907,10 @@ class GridProbeEvidence:
                 ),
             ),
         )
+
+    @property
+    def authoritative_accounting(self) -> AuthoritativeObjectiveAccounting:
+        return self.objective_accounting
 
     def to_record(self) -> dict[str, object]:
         return {
@@ -909,6 +975,181 @@ class GridProbeEvidence:
         )
         if record.get("identity") != evidence.identity:
             raise ValueError("GRID evidence identity does not match its payload")
+        return evidence
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class GridOrderingCandidate:
+    """One analytically declared candidate for the GRID ordering contract."""
+
+    ordinal: int
+    final_vector: tuple[float, ...]
+    chi_square: float
+    identity: str = field(init=False, compare=False)
+
+    def __post_init__(self) -> None:
+        _record_nonnegative_int(self.ordinal, "GRID ordering ordinal")
+        _vector_tokens(self.final_vector)
+        if not math.isfinite(self.chi_square) or self.chi_square < 0.0:
+            raise ValueError("GRID ordering chi square must be finite and non-negative")
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "grid-ordering-candidate",
+                (
+                    self.ordinal,
+                    _vector_tokens(self.final_vector),
+                    _float_token(self.chi_square),
+                ),
+            ),
+        )
+
+    def to_record(self) -> dict[str, object]:
+        return {
+            "ordinal": self.ordinal,
+            "final_vector": list(_vector_tokens(self.final_vector)),
+            "chi_square": _float_token(self.chi_square),
+            "identity": self.identity,
+        }
+
+    @classmethod
+    def from_record(cls, record: Mapping[str, object]) -> GridOrderingCandidate:
+        _exact_keys(
+            record,
+            {"ordinal", "final_vector", "chi_square", "identity"},
+            "GRID ordering candidate",
+        )
+        candidate = cls(
+            _record_nonnegative_int(record.get("ordinal"), "GRID ordering ordinal"),
+            _vector_from_record(record.get("final_vector"), "GRID final vector"),
+            _float_from_record(record.get("chi_square"), "GRID chi square"),
+        )
+        if record.get("identity") != candidate.identity:
+            raise ValueError("GRID ordering candidate identity does not match payload")
+        return candidate
+
+
+@dataclass(frozen=True, slots=True)
+class GridOrderingProbeEvidence:
+    """Observed ordering retained separately from its predeclared expected truth."""
+
+    candidates: tuple[GridOrderingCandidate, ...]
+    observed_order: tuple[int, ...]
+    expected_order: tuple[int, ...]
+    selected_ordinal: int
+    objective_accounting: ObjectiveRequestAccounting
+    backend_diagnostics: BackendDiagnosticCounters
+    trajectory_fingerprint: str
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        ordinals = tuple(candidate.ordinal for candidate in self.candidates)
+        if not ordinals or ordinals != tuple(range(len(ordinals))):
+            raise ValueError("GRID ordering candidates must retain ordinal order")
+        if sorted(self.observed_order) != list(ordinals):
+            raise ValueError("Observed GRID ordering must be a candidate permutation")
+        if sorted(self.expected_order) != list(ordinals):
+            raise ValueError("Expected GRID ordering must be a candidate permutation")
+        if self.selected_ordinal != self.observed_order[0]:
+            raise ValueError(
+                "GRID ordering selection must match observed first candidate"
+            )
+        if len(self.trajectory_fingerprint) != 64:
+            raise ValueError("GRID ordering trajectory must be a SHA-256 digest")
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "grid-ordering-probe-evidence",
+                (
+                    tuple(candidate.identity for candidate in self.candidates),
+                    self.observed_order,
+                    self.expected_order,
+                    self.selected_ordinal,
+                    self.objective_accounting.identity,
+                    self.backend_diagnostics.identity,
+                    self.trajectory_fingerprint,
+                ),
+            ),
+        )
+
+    @property
+    def authoritative_accounting(self) -> AuthoritativeObjectiveAccounting:
+        return self.objective_accounting
+
+    def to_record(self) -> dict[str, object]:
+        return {
+            "kind": "GRID_ORDERING",
+            "candidates": [candidate.to_record() for candidate in self.candidates],
+            "observed_order": list(self.observed_order),
+            "expected_order": list(self.expected_order),
+            "selected_ordinal": self.selected_ordinal,
+            "objective_accounting": self.objective_accounting.to_record(),
+            "backend_diagnostics": self.backend_diagnostics.to_record(),
+            "trajectory_fingerprint": self.trajectory_fingerprint,
+            "identity": self.identity,
+        }
+
+    @classmethod
+    def from_record(cls, record: Mapping[str, object]) -> GridOrderingProbeEvidence:
+        _exact_keys(
+            record,
+            {
+                "kind",
+                "candidates",
+                "observed_order",
+                "expected_order",
+                "selected_ordinal",
+                "objective_accounting",
+                "backend_diagnostics",
+                "trajectory_fingerprint",
+                "identity",
+            },
+            "GRID ordering probe evidence",
+        )
+        raw_candidates = record.get("candidates")
+        raw_observed = record.get("observed_order")
+        raw_expected = record.get("expected_order")
+        raw_accounting = record.get("objective_accounting")
+        raw_diagnostics = record.get("backend_diagnostics")
+        if (
+            record.get("kind") != "GRID_ORDERING"
+            or not isinstance(raw_candidates, list)
+            or any(not isinstance(value, Mapping) for value in raw_candidates)
+            or not isinstance(raw_observed, list)
+            or any(not isinstance(value, int) for value in raw_observed)
+            or not isinstance(raw_expected, list)
+            or any(not isinstance(value, int) for value in raw_expected)
+            or not isinstance(raw_accounting, Mapping)
+            or not isinstance(raw_diagnostics, Mapping)
+        ):
+            raise TypeError("Malformed GRID ordering probe evidence")
+        evidence = cls(
+            tuple(
+                GridOrderingCandidate.from_record(
+                    cast("Mapping[str, object]", candidate)
+                )
+                for candidate in raw_candidates
+            ),
+            tuple(cast("list[int]", raw_observed)),
+            tuple(cast("list[int]", raw_expected)),
+            _record_nonnegative_int(
+                record.get("selected_ordinal"), "selected GRID ordering candidate"
+            ),
+            ObjectiveRequestAccounting.from_record(
+                cast("Mapping[str, object]", raw_accounting)
+            ),
+            BackendDiagnosticCounters.from_record(
+                cast("Mapping[str, object]", raw_diagnostics)
+            ),
+            _nonempty_string(
+                record.get("trajectory_fingerprint"),
+                "GRID ordering trajectory fingerprint",
+            ),
+        )
+        if record.get("identity") != evidence.identity:
+            raise ValueError("GRID ordering evidence identity does not match payload")
         return evidence
 
 
@@ -1040,6 +1281,12 @@ class DeProbeEvidence:
                 ),
             ),
         )
+
+    @property
+    def authoritative_search_accounting(
+        self,
+    ) -> AuthoritativeObjectiveAccounting:
+        return self.search_accounting
 
     def to_record(self) -> dict[str, object]:
         return {
@@ -1189,6 +1436,10 @@ class FiniteDifferenceProbeEvidence:
             ),
         )
 
+    @property
+    def authoritative_accounting(self) -> AuthoritativeObjectiveAccounting:
+        return self.objective_accounting
+
     def to_record(self) -> dict[str, object]:
         return {
             "kind": "FINITE_DIFFERENCE",
@@ -1321,6 +1572,10 @@ class SpectralRiskProbeEvidence:
             ),
         )
 
+    @property
+    def authoritative_accounting(self) -> AuthoritativeObjectiveAccounting:
+        return self.objective_accounting
+
     def to_record(self) -> dict[str, object]:
         return {
             "kind": "SPECTRAL_RISK",
@@ -1407,6 +1662,7 @@ class SpectralRiskProbeEvidence:
 type NumericalProbeEvidence = (
     SolverProbeEvidence
     | GridProbeEvidence
+    | GridOrderingProbeEvidence
     | DeProbeEvidence
     | FiniteDifferenceProbeEvidence
     | SpectralRiskProbeEvidence
@@ -1473,6 +1729,8 @@ class NumericalProbeArtifact:
             expected_evidence = SolverProbeEvidence
         elif definition.category == "GRID":
             expected_evidence = GridProbeEvidence
+        elif definition.category == "GRID_ORDERING":
+            expected_evidence = GridOrderingProbeEvidence
         elif definition.category == "DE_SEARCH":
             expected_evidence = DeProbeEvidence
         elif definition.category == "FINITE_DIFFERENCE":
@@ -1491,6 +1749,12 @@ class NumericalProbeArtifact:
             or self.satisfied_claims != definition.eligible_claims
         ):
             raise ValueError("Numerical probe artifact does not qualify its definition")
+        if (
+            definition.category == "GRID_ORDERING"
+            and isinstance(self.evidence, GridOrderingProbeEvidence)
+            and self.evidence.observed_order != self.evidence.expected_order
+        ):
+            raise ValueError("GRID ordering evidence differs from independent truth")
 
     def to_record(self) -> dict[str, object]:
         return {
@@ -1550,6 +1814,10 @@ class NumericalProbeArtifact:
             evidence = GridProbeEvidence.from_record(
                 cast("Mapping[str, object]", raw_evidence)
             )
+        elif evidence_kind == "GRID_ORDERING":
+            evidence = GridOrderingProbeEvidence.from_record(
+                cast("Mapping[str, object]", raw_evidence)
+            )
         elif evidence_kind == "DE_SEARCH":
             evidence = DeProbeEvidence.from_record(
                 cast("Mapping[str, object]", raw_evidence)
@@ -1578,43 +1846,66 @@ class NumericalProbeArtifact:
         return artifact
 
 
+class NumericalProbeQualificationError(RuntimeError):
+    """Typed rejection of evidence at the live lane-qualification seam."""
+
+    def __init__(self, terminal: str) -> None:
+        self.terminal = terminal
+        super().__init__(f"Numerical probe qualification rejected: {terminal}")
+
+
 @dataclass(frozen=True, slots=True)
 class NumericalProbeBaseline:
-    """Closed content-addressed manifest for the complete v1 probe catalogue."""
+    """Serializable observations; live lane authority is always supplied separately."""
 
     definitions: tuple[NumericalProbeDefinition, ...]
     artifacts: tuple[NumericalProbeArtifact, ...]
-    lane_reference: str = "unqualified-local-diagnostic-v1"
-    lane_attestation_identity: str | None = None
-    environment_identity: str | None = None
-    authority_role: Literal["QUALIFIED_LANE", "UNQUALIFIED_DIAGNOSTIC"] = (
-        "UNQUALIFIED_DIAGNOSTIC"
+    observed_lane_identity: str | None = None
+    observed_lane_role: LaneRole | None = None
+    observed_attestation_identity: str | None = None
+    observed_environment_identity: str | None = None
+    reference_manifest_identity: str | None = None
+    historical_qualification: Literal["CAPTURE_ONLY", "REFERENCE_MATCHED"] = (
+        "CAPTURE_ONLY"
     )
     manifest_identity: str = field(init=False)
     identity: str = field(init=False)
 
+    def _validate_historical_observation(self, manifest: str) -> None:
+        observation = (
+            self.observed_lane_identity,
+            self.observed_lane_role,
+            self.observed_attestation_identity,
+            self.observed_environment_identity,
+            self.reference_manifest_identity,
+        )
+        if self.historical_qualification == "CAPTURE_ONLY":
+            if any(value is not None for value in observation):
+                raise ValueError(
+                    "Capture-only numerical evidence cannot claim lane qualification"
+                )
+            return
+        if self.historical_qualification != "REFERENCE_MATCHED":
+            raise ValueError("Unknown numerical probe historical qualification")
+        for value, name in (
+            (self.observed_lane_identity, "observed lane identity"),
+            (self.observed_attestation_identity, "observed attestation identity"),
+            (self.observed_environment_identity, "observed environment identity"),
+            (self.reference_manifest_identity, "reference manifest identity"),
+        ):
+            if not isinstance(value, str) or len(value) != 64:
+                raise ValueError(f"Matched numerical evidence requires {name}")
+        if self.observed_lane_role not in {
+            "CANONICAL_NUMERICAL",
+            "PYTHON_COMPATIBILITY",
+        }:
+            raise ValueError("Matched numerical evidence requires a lane role")
+        if self.reference_manifest_identity != manifest:
+            raise ValueError("Historical reference does not match probe manifest")
+
     def __post_init__(self) -> None:
         definitions = tuple(self.definitions)
         artifacts = tuple(self.artifacts)
-        if self.authority_role == "QUALIFIED_LANE":
-            for value, name in (
-                (self.lane_reference, "lane reference"),
-                (self.lane_attestation_identity, "lane attestation identity"),
-                (self.environment_identity, "environment identity"),
-            ):
-                if not isinstance(value, str) or len(value) != 64:
-                    raise ValueError(f"Qualified probe baseline requires {name}")
-        elif self.authority_role == "UNQUALIFIED_DIAGNOSTIC":
-            if (
-                not self.lane_reference.startswith("unqualified-")
-                or self.lane_attestation_identity is not None
-                or self.environment_identity is not None
-            ):
-                raise ValueError(
-                    "Diagnostic probe baseline cannot carry qualified lane evidence"
-                )
-        else:
-            raise ValueError("Unknown numerical probe baseline authority role")
         if (
             not definitions
             or len(definitions) != len(artifacts)
@@ -1623,6 +1914,10 @@ class NumericalProbeBaseline:
         ):
             raise ValueError(
                 "Probe baseline requires one artifact per unique definition"
+            )
+        if definitions != numerical_probe_definitions():
+            raise ValueError(
+                "Probe baseline does not qualify the canonical probe catalogue"
             )
         for definition, artifact in zip(definitions, artifacts, strict=True):
             artifact.require_qualification(definition)
@@ -1635,17 +1930,16 @@ class NumericalProbeBaseline:
                     artifacts,
                     strict=True,
                 )
-            )
-            + (
-                (
-                    "lane",
-                    self.lane_reference,
-                    self.lane_attestation_identity,
-                    self.environment_identity,
-                    self.authority_role,
-                ),
             ),
         )
+        observation = (
+            self.observed_lane_identity,
+            self.observed_lane_role,
+            self.observed_attestation_identity,
+            self.observed_environment_identity,
+            self.reference_manifest_identity,
+        )
+        self._validate_historical_observation(manifest)
         object.__setattr__(self, "manifest_identity", manifest)
         object.__setattr__(
             self,
@@ -1654,15 +1948,21 @@ class NumericalProbeBaseline:
                 "numerical-probe-baseline",
                 (
                     manifest,
-                    self.lane_reference,
-                    self.lane_attestation_identity,
-                    self.environment_identity,
-                    self.authority_role,
+                    observation,
+                    self.historical_qualification,
                     tuple(definition.identity for definition in definitions),
                     tuple(artifact.identity for artifact in artifacts),
                 ),
             ),
         )
+
+    @property
+    def historically_satisfied_claims(self) -> tuple[str, ...]:
+        """Claims recorded at capture time, never a replacement for live authority."""
+
+        if self.historical_qualification == "REFERENCE_MATCHED":
+            return ("trajectory-manifest-compatible",)
+        return ()
 
     def to_record(self) -> dict[str, object]:
         return {
@@ -1670,10 +1970,12 @@ class NumericalProbeBaseline:
             "semantic_version": _SEMANTIC_VERSION,
             "definitions": [definition.to_record() for definition in self.definitions],
             "artifacts": [artifact.to_record() for artifact in self.artifacts],
-            "lane_reference": self.lane_reference,
-            "lane_attestation_identity": self.lane_attestation_identity,
-            "environment_identity": self.environment_identity,
-            "authority_role": self.authority_role,
+            "observed_lane_identity": self.observed_lane_identity,
+            "observed_lane_role": self.observed_lane_role,
+            "observed_attestation_identity": self.observed_attestation_identity,
+            "observed_environment_identity": self.observed_environment_identity,
+            "reference_manifest_identity": self.reference_manifest_identity,
+            "historical_qualification": self.historical_qualification,
             "manifest_identity": self.manifest_identity,
             "identity": self.identity,
         }
@@ -1687,10 +1989,12 @@ class NumericalProbeBaseline:
                 "semantic_version",
                 "definitions",
                 "artifacts",
-                "lane_reference",
-                "lane_attestation_identity",
-                "environment_identity",
-                "authority_role",
+                "observed_lane_identity",
+                "observed_lane_role",
+                "observed_attestation_identity",
+                "observed_environment_identity",
+                "reference_manifest_identity",
+                "historical_qualification",
                 "manifest_identity",
                 "identity",
             },
@@ -1729,19 +2033,21 @@ class NumericalProbeBaseline:
                 strict=True,
             )
         )
-        authority_role = record.get("authority_role")
-        if authority_role not in {"QUALIFIED_LANE", "UNQUALIFIED_DIAGNOSTIC"}:
-            raise ValueError("Unknown numerical probe baseline authority role")
+        historical = record.get("historical_qualification")
+        if historical not in {"CAPTURE_ONLY", "REFERENCE_MATCHED"}:
+            raise ValueError("Unknown numerical probe historical qualification")
+        lane_role = record.get("observed_lane_role")
+        if lane_role not in {None, "CANONICAL_NUMERICAL", "PYTHON_COMPATIBILITY"}:
+            raise ValueError("Unknown observed numerical lane role")
         baseline = cls(
             definitions,
             artifacts,
-            _nonempty_string(record.get("lane_reference"), "lane reference"),
-            cast("str | None", record.get("lane_attestation_identity")),
-            cast("str | None", record.get("environment_identity")),
-            cast(
-                "Literal['QUALIFIED_LANE', 'UNQUALIFIED_DIAGNOSTIC']",
-                authority_role,
-            ),
+            cast("str | None", record.get("observed_lane_identity")),
+            cast("LaneRole | None", lane_role),
+            cast("str | None", record.get("observed_attestation_identity")),
+            cast("str | None", record.get("observed_environment_identity")),
+            cast("str | None", record.get("reference_manifest_identity")),
+            cast("Literal['CAPTURE_ONLY', 'REFERENCE_MATCHED']", historical),
         )
         if (
             record.get("manifest_identity") != baseline.manifest_identity
@@ -1750,15 +2056,36 @@ class NumericalProbeBaseline:
             raise ValueError("Numerical probe baseline identity does not match payload")
         return baseline
 
-    def require_replay(self, expected_manifest_identity: str) -> None:
+    def require_live_qualification(
+        self,
+        authority: LiveLaneAuthority,
+        *,
+        expected_manifest_identity: str,
+        required_lane_role: LaneRole,
+    ) -> None:
+        """Validate this evidence using #588's exact process-owned capability."""
+
+        if not isinstance(authority, LiveLaneAuthority):
+            raise TypeError("Probe qualification requires live lane authority")
+        evidence = authority.evidence
         if len(expected_manifest_identity) != 64:
-            raise ValueError(
-                "Expected numerical probe manifest must be a SHA-256 digest"
-            )
+            raise ValueError("Expected probe manifest must be a SHA-256 digest")
+        if required_lane_role != "CANONICAL_NUMERICAL":
+            raise NumericalProbeQualificationError("EXPECTED_REFERENCE_UNAVAILABLE")
+        if expected_manifest_identity != CANONICAL_NUMERICAL_PROBE_MANIFEST_IDENTITY:
+            raise NumericalProbeQualificationError("EXPECTED_REFERENCE_MISMATCH")
         if self.manifest_identity != expected_manifest_identity:
-            raise ValueError(
-                "Numerical probe replay differs from the selected manifest"
-            )
+            raise NumericalProbeQualificationError("MANIFEST_MISMATCH")
+        if authority.lane_role != required_lane_role:
+            raise NumericalProbeQualificationError("LANE_ROLE_MISMATCH")
+        if self.historical_qualification == "REFERENCE_MATCHED" and (
+            self.observed_lane_identity != evidence.lane_identity
+            or self.observed_lane_role != authority.lane_role
+            or self.observed_attestation_identity != evidence.identity
+            or self.observed_environment_identity != evidence.environment_identity
+            or self.reference_manifest_identity != expected_manifest_identity
+        ):
+            raise NumericalProbeQualificationError("LANE_MISMATCH")
 
 
 class NumericalProbeExecutionError(RuntimeError):
@@ -1770,11 +2097,13 @@ class NumericalProbeExecutionError(RuntimeError):
         terminal: str,
         accounting: ObjectiveRequestAccounting,
         trajectory_fingerprint: str,
+        failure_kind: RequestFailureKind | None = None,
     ) -> None:
         self.definition_identity = definition_identity
         self.terminal = terminal
         self.accounting = accounting
         self.trajectory_fingerprint = trajectory_fingerprint
+        self.failure_kind = failure_kind
         super().__init__(f"Numerical probe terminated: {terminal}")
 
 
@@ -1789,6 +2118,34 @@ class _ProbeBudgetExhausted(RuntimeError):
         super().__init__("Probe objective-request budget exhausted")
 
 
+class _ProbeRequestFailed(RuntimeError):
+    def __init__(
+        self,
+        accounting: ObjectiveRequestAccounting,
+        trajectory_fingerprint: str,
+        failure_kind: RequestFailureKind,
+    ) -> None:
+        self.accounting = accounting
+        self.trajectory_fingerprint = trajectory_fingerprint
+        self.failure_kind = failure_kind
+        super().__init__("Authoritative probe objective request failed")
+
+
+class _ProbeBackendFailed(RuntimeError):
+    pass
+
+
+class _ProbeBackendExecutionFailed(RuntimeError):
+    def __init__(
+        self,
+        accounting: ObjectiveRequestAccounting,
+        trajectory_fingerprint: str,
+    ) -> None:
+        self.accounting = accounting
+        self.trajectory_fingerprint = trajectory_fingerprint
+        super().__init__("Probe backend execution failed")
+
+
 class _ObjectiveRecorder:
     def __init__(
         self,
@@ -1801,10 +2158,19 @@ class _ObjectiveRecorder:
         self._trace: list[object] = []
         self.workflow_requests = 0
         self.materialization_requests = 0
-        self.completed = 0
+        self.fresh_evaluations = 0
+        self.cache_served_requests = 0
         self.refused = 0
-        self.cache_hits = 0
-        self.cache_misses = 0
+        self.failure_kinds: list[RequestFailureKind] = []
+
+    def _fail(self, source: str, failure_kind: RequestFailureKind) -> Never:
+        self.failure_kinds.append(failure_kind)
+        self._trace.append((source, "failed", failure_kind))
+        raise _ProbeRequestFailed(
+            self.accounting,
+            self.trajectory_fingerprint,
+            failure_kind,
+        )
 
     def evaluate(self, vector: Array | Sequence[float], source: str) -> Array:
         if source == "solver":
@@ -1813,9 +2179,12 @@ class _ObjectiveRecorder:
             self.materialization_requests += 1
         else:
             raise ValueError("Unknown probe objective request source")
-        candidate = tuple(float(value) for value in vector)
-        key = _vector_tokens(candidate)
-        if self.completed >= self._budget:
+        try:
+            candidate = tuple(float(value) for value in vector)
+            key = _vector_tokens(candidate)
+        except (TypeError, ValueError, OverflowError):
+            self._fail(source, "INVALID_INPUT")
+        if self.requests_completed >= self._budget:
             self.refused += 1
             self._trace.append((source, key, "budget_refused"))
             raise _ProbeBudgetExhausted(
@@ -1825,31 +2194,76 @@ class _ObjectiveRecorder:
         cached = self._cache.get(key)
         disposition = "cache_hit"
         if cached is None:
-            cached = tuple(float(value) for value in self._residual(candidate))
-            _vector_tokens(cached)
+            try:
+                raw_result = self._residual(candidate)
+            except (
+                ArithmeticError,
+                LookupError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ) as error:
+                try:
+                    self._fail(source, "EVALUATION_FAILURE")
+                except _ProbeRequestFailed as failure:
+                    raise failure from error
+            try:
+                cached = tuple(float(value) for value in raw_result)
+                _vector_tokens(cached)
+            except (TypeError, ValueError, OverflowError):
+                self._fail(source, "NON_FINITE_RESULT")
             self._cache[key] = cached
-            self.cache_misses += 1
+            self.fresh_evaluations += 1
             disposition = "cache_miss"
         else:
-            self.cache_hits += 1
-        self.completed += 1
+            self.cache_served_requests += 1
         self._trace.append((source, key, disposition, _vector_tokens(cached)))
         return np.asarray(cached, dtype=np.float64)
+
+    @property
+    def requests_completed(self) -> int:
+        return self.fresh_evaluations + self.cache_served_requests
 
     @property
     def accounting(self) -> ObjectiveRequestAccounting:
         return ObjectiveRequestAccounting(
             self.workflow_requests,
             self.materialization_requests,
-            self.completed,
+            self.fresh_evaluations,
+            self.cache_served_requests,
             self.refused,
-            self.cache_hits,
-            self.cache_misses,
+            tuple(self.failure_kinds),
         )
 
     @property
     def trajectory_fingerprint(self) -> str:
         return _identity("probe-objective-trajectory", tuple(self._trace))
+
+
+class _BackendObjectiveAdapter:
+    """Count SciPy calls without granting them ChemEx request authority."""
+
+    def __init__(
+        self,
+        residual: Callable[[tuple[float, ...]], tuple[float, ...]],
+        budget: int,
+    ) -> None:
+        self._residual = residual
+        self._budget = budget
+        self.calls = 0
+
+    def evaluate(self, vector: Array | Sequence[float]) -> Array:
+        if self.calls >= self._budget:
+            raise _ProbeBackendFailed
+        self.calls += 1
+        try:
+            candidate = tuple(float(value) for value in vector)
+            values = tuple(float(value) for value in self._residual(candidate))
+            _vector_tokens(candidate)
+            _vector_tokens(values)
+        except Exception as error:
+            raise _ProbeBackendFailed from error
+        return np.asarray(values, dtype=np.float64)
 
 
 def _budget_value(definition: NumericalProbeDefinition, field_name: str) -> int:
@@ -1894,25 +2308,34 @@ def _least_squares_evidence(
     lower: tuple[float, ...],
     upper: tuple[float, ...],
     residual: Callable[[tuple[float, ...]], tuple[float, ...]],
-    budget: int,
+    authoritative_budget: int,
+    backend_max_nfev: int,
     settings: _TrfSettings,
 ) -> tuple[SolverProbeEvidence, bool]:
-    recorder = _ObjectiveRecorder(residual, budget)
+    recorder = _ObjectiveRecorder(residual, authoritative_budget)
+    recorder.evaluate(start, "solver")
+    backend = _BackendObjectiveAdapter(residual, backend_max_nfev * (len(start) + 1))
 
-    result = least_squares(
-        lambda vector: recorder.evaluate(vector, "solver"),
-        np.asarray(start, dtype=np.float64),
-        bounds=(
-            np.asarray(lower, dtype=np.float64),
-            np.asarray(upper, dtype=np.float64),
-        ),
-        method="trf",
-        ftol=settings.ftol,
-        xtol=settings.xtol,
-        gtol=settings.gtol,
-        x_scale=settings.x_scale,
-        max_nfev=budget,
-    )
+    try:
+        result = least_squares(
+            backend.evaluate,
+            np.asarray(start, dtype=np.float64),
+            bounds=(
+                np.asarray(lower, dtype=np.float64),
+                np.asarray(upper, dtype=np.float64),
+            ),
+            method="trf",
+            ftol=settings.ftol,
+            xtol=settings.xtol,
+            gtol=settings.gtol,
+            x_scale=settings.x_scale,
+            max_nfev=backend_max_nfev,
+        )
+    except Exception as error:
+        raise _ProbeBackendExecutionFailed(
+            recorder.accounting,
+            recorder.trajectory_fingerprint,
+        ) from error
     accepted = tuple(float(value) for value in result.x)
     residuals = tuple(
         float(value) for value in recorder.evaluate(accepted, "materialization")
@@ -1937,7 +2360,7 @@ def _least_squares_evidence(
                 None if result.njev is None else int(result.njev),
                 None,
                 0,
-                0,
+                backend.calls,
             ),
             recorder.trajectory_fingerprint,
             candidate_fingerprint,
@@ -1952,10 +2375,10 @@ def _sum_accounting(
     return ObjectiveRequestAccounting(
         sum(item.workflow_requests for item in accounting),
         sum(item.materialization_requests for item in accounting),
-        sum(item.requests_completed for item in accounting),
+        sum(item.fresh_evaluations for item in accounting),
+        sum(item.cache_served_requests for item in accounting),
         sum(item.requests_refused for item in accounting),
-        sum(item.cache_hits for item in accounting),
-        sum(item.cache_misses for item in accounting),
+        tuple(kind for item in accounting for kind in item.failure_kinds),
     )
 
 
@@ -2032,7 +2455,10 @@ def _run_solver_probe(
         lower=lower,
         upper=upper,
         residual=residual,
-        budget=_budget_value(definition, "objective_requests"),
+        authoritative_budget=_budget_value(
+            definition, "authoritative_objective_requests"
+        ),
+        backend_max_nfev=_budget_value(definition, "backend_max_nfev"),
         settings=_TrfSettings.from_definition(definition),
     )
     qualified = succeeded and _solver_matches_truth(definition, evidence)
@@ -2069,7 +2495,10 @@ def _run_grid_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtif
             lower=lower,
             upper=upper,
             residual=residual,
-            budget=_budget_value(definition, "objective_requests_per_seed"),
+            authoritative_budget=_budget_value(
+                definition, "authoritative_objective_requests_per_seed"
+            ),
+            backend_max_nfev=_budget_value(definition, "backend_max_nfev_per_seed"),
             settings=_TrfSettings.from_definition(definition),
         )
         seeds.append(
@@ -2085,7 +2514,11 @@ def _run_grid_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtif
         seed.ordinal
         for seed in sorted(
             seed_evidence,
-            key=lambda seed: (seed.solver.chi_square, seed.ordinal),
+            key=lambda seed: (
+                seed.solver.chi_square,
+                seed.solver.accepted,
+                seed.ordinal,
+            ),
         )
     )
     evidence = GridProbeEvidence(
@@ -2122,6 +2555,81 @@ def _run_grid_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtif
     return artifact
 
 
+def _run_grid_ordering_probe(
+    definition: NumericalProbeDefinition,
+) -> NumericalProbeArtifact:
+    raw_candidates = _policy_record(definition).get("candidates")
+    if not isinstance(raw_candidates, list) or any(
+        not isinstance(value, Mapping) for value in raw_candidates
+    ):
+        raise TypeError("GRID ordering policy candidates must be records")
+    candidates: list[GridOrderingCandidate] = []
+    for index, raw_candidate in enumerate(raw_candidates):
+        candidate_record = cast("Mapping[str, object]", raw_candidate)
+        _exact_keys(
+            candidate_record,
+            {"ordinal", "final_vector", "chi_square"},
+            f"GRID ordering policy candidate {index}",
+        )
+        candidates.append(
+            GridOrderingCandidate(
+                _record_nonnegative_int(
+                    candidate_record.get("ordinal"), "GRID ordering ordinal"
+                ),
+                _semantic_vector(
+                    candidate_record.get("final_vector"),
+                    f"GRID ordering final_vector[{index}]",
+                ),
+                _semantic_float(
+                    candidate_record.get("chi_square"),
+                    f"GRID ordering chi_square[{index}]",
+                ),
+            )
+        )
+    candidate_evidence = tuple(candidates)
+    if len(candidate_evidence) != _budget_value(definition, "candidate_count"):
+        raise ValueError("GRID ordering policy differs from its declared budget")
+    if _policy_string(definition, "candidate_tie_break") != (
+        "chi-square-then-final-vector-then-seed-ordinal"
+    ):
+        raise ValueError("GRID ordering policy selects an unsupported tie break")
+    observed_order = tuple(
+        candidate.ordinal
+        for candidate in sorted(
+            candidate_evidence,
+            key=lambda candidate: (
+                candidate.chi_square,
+                candidate.final_vector,
+                candidate.ordinal,
+            ),
+        )
+    )
+    expected_order = _policy_int_vector(definition, "expected_order")
+    evidence = GridOrderingProbeEvidence(
+        candidate_evidence,
+        observed_order,
+        expected_order,
+        observed_order[0],
+        ObjectiveRequestAccounting(0, 0, 0, 0, 0, ()),
+        BackendDiagnosticCounters(0, None, None, 0, 0),
+        _identity(
+            "grid-ordering-trajectory",
+            tuple(candidate.identity for candidate in candidate_evidence),
+        ),
+    )
+    qualified = observed_order == expected_order
+    artifact = NumericalProbeArtifact(
+        definition.identity,
+        definition.probe_id,
+        "ORDERED" if qualified else "ORDERING_MISMATCH",
+        (),
+        definition.eligible_claims if qualified else (),
+        evidence,
+    )
+    artifact.validate_definition(definition)
+    return artifact
+
+
 def _run_de_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtifact:
     root_seed = definition.seed.to_record_value()
     if isinstance(root_seed, bool) or not isinstance(root_seed, int):
@@ -2138,11 +2646,15 @@ def _run_de_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtifac
 
     search_recorder = _ObjectiveRecorder(
         residual,
-        _budget_value(definition, "de_objective_requests"),
+        _budget_value(definition, "de_authoritative_objective_requests"),
+    )
+    backend = _BackendObjectiveAdapter(
+        residual,
+        _budget_value(definition, "de_backend_objective_calls"),
     )
 
     def objective(vector: Array) -> float:
-        values = search_recorder.evaluate(vector, "solver")
+        values = backend.evaluate(vector)
         return float(np.dot(values, values))
 
     callback_calls = 0
@@ -2160,24 +2672,31 @@ def _run_de_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtifac
     strategy = _policy_string(definition, "de_strategy")
     if strategy != "best1bin":
         raise ValueError("DE probe policy selects an unsupported strategy")
-    result = differential_evolution(
-        objective,
-        Bounds(np.asarray(lower), np.asarray(upper)),
-        strategy="best1bin",
-        maxiter=_policy_int(definition, "maximum_generations"),
-        popsize=_policy_int(definition, "population_multiplier"),
-        mutation=mutation,
-        recombination=_policy_float(definition, "recombination"),
-        tol=_policy_float(definition, "relative_tolerance"),
-        atol=_policy_float(definition, "absolute_tolerance"),
-        polish=_policy_bool(definition, "backend_polish"),
-        rng=np.random.default_rng(root_seed),
-        updating=cast(
-            "Literal['immediate', 'deferred']", _policy_string(definition, "updating")
-        ),
-        workers=_policy_int(definition, "workers"),
-        callback=count_callback,
-    )
+    try:
+        result = differential_evolution(
+            objective,
+            Bounds(np.asarray(lower), np.asarray(upper)),
+            strategy="best1bin",
+            maxiter=_policy_int(definition, "maximum_generations"),
+            popsize=_policy_int(definition, "population_multiplier"),
+            mutation=mutation,
+            recombination=_policy_float(definition, "recombination"),
+            tol=_policy_float(definition, "relative_tolerance"),
+            atol=_policy_float(definition, "absolute_tolerance"),
+            polish=_policy_bool(definition, "backend_polish"),
+            rng=np.random.default_rng(root_seed),
+            updating=cast(
+                "Literal['immediate', 'deferred']",
+                _policy_string(definition, "updating"),
+            ),
+            workers=_policy_int(definition, "workers"),
+            callback=count_callback,
+        )
+    except Exception as error:
+        raise _ProbeBackendExecutionFailed(
+            search_recorder.accounting,
+            search_recorder.trajectory_fingerprint,
+        ) from error
     population = tuple(
         DePopulationCandidate(
             index,
@@ -2205,7 +2724,10 @@ def _run_de_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtifac
         lower=lower,
         upper=upper,
         residual=residual,
-        budget=_budget_value(definition, "trf_objective_requests"),
+        authoritative_budget=_budget_value(
+            definition, "trf_authoritative_objective_requests"
+        ),
+        backend_max_nfev=_budget_value(definition, "trf_backend_max_nfev"),
         settings=_TrfSettings.from_definition(definition, "polish_"),
     )
     evidence = DeProbeEvidence(
@@ -2219,7 +2741,7 @@ def _run_de_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtifac
             None,
             int(result.nit),
             callback_calls,
-            0,
+            backend.calls,
         ),
         polish,
         _identity(
@@ -2368,7 +2890,7 @@ def _run_finite_difference_probe(
 
     recorder = _ObjectiveRecorder(
         residual,
-        _budget_value(definition, "objective_requests"),
+        _budget_value(definition, "authoritative_objective_requests"),
     )
     sampled = tuple(
         float(recorder.evaluate((sample,), "solver")[0]) for sample in sample_points
@@ -2465,7 +2987,7 @@ def _run_spectral_risk_probe(
         condition,
         condition_limit,
         risks,
-        ObjectiveRequestAccounting(0, 0, 0, 0, 0, 0),
+        ObjectiveRequestAccounting(0, 0, 0, 0, 0, ()),
         BackendDiagnosticCounters(0, None, None, 0, 1),
         _identity(
             "spectral-probe-trajectory",
@@ -2525,6 +3047,7 @@ def run_numerical_probe(
         "TRF_ROUTINE": _run_solver_probe,
         "TRF_DIFFICULT": _run_solver_probe,
         "GRID": _run_grid_probe,
+        "GRID_ORDERING": _run_grid_ordering_probe,
         "DE_SEARCH": _run_de_probe,
         "FINITE_DIFFERENCE": _run_finite_difference_probe,
         "BOUNDS": _run_solver_probe,
@@ -2540,33 +3063,55 @@ def run_numerical_probe(
             error.accounting,
             error.trajectory_fingerprint,
         ) from error
+    except _ProbeRequestFailed as error:
+        raise NumericalProbeExecutionError(
+            definition.identity,
+            "REQUEST_FAILED",
+            error.accounting,
+            error.trajectory_fingerprint,
+            error.failure_kind,
+        ) from error
+    except _ProbeBackendExecutionFailed as error:
+        raise NumericalProbeExecutionError(
+            definition.identity,
+            "BACKEND_FAILURE",
+            error.accounting,
+            error.trajectory_fingerprint,
+        ) from error
 
 
 def run_numerical_probe_baseline(
     authority: LiveLaneAuthority | None = None,
     *,
     expected_manifest_identity: str | None = None,
+    required_lane_role: LaneRole = "CANONICAL_NUMERICAL",
 ) -> NumericalProbeBaseline:
-    """Execute the closed v1 catalogue into one immutable typed manifest."""
+    """Capture the closed catalogue and optionally record a live-qualified replay."""
     definitions = numerical_probe_definitions()
     artifacts = tuple(run_numerical_probe(definition) for definition in definitions)
+    capture = NumericalProbeBaseline(definitions, artifacts)
+    if expected_manifest_identity is None:
+        return capture
     if authority is None:
-        baseline = NumericalProbeBaseline(definitions, artifacts)
-    else:
-        if not isinstance(authority, LiveLaneAuthority):
-            raise TypeError("Qualified numerical probes require live lane authority")
-        evidence = authority.evidence
-        baseline = NumericalProbeBaseline(
-            definitions,
-            artifacts,
-            evidence.lane_identity,
-            evidence.identity,
-            evidence.environment_identity,
-            "QUALIFIED_LANE",
+        raise TypeError(
+            "Qualified numerical replay requires live authority and expected manifest"
         )
-    if expected_manifest_identity is not None:
-        baseline.require_replay(expected_manifest_identity)
-    return baseline
+    capture.require_live_qualification(
+        authority,
+        expected_manifest_identity=expected_manifest_identity,
+        required_lane_role=required_lane_role,
+    )
+    evidence = authority.evidence
+    return NumericalProbeBaseline(
+        definitions,
+        artifacts,
+        evidence.lane_identity,
+        authority.lane_role,
+        evidence.identity,
+        evidence.environment_identity,
+        expected_manifest_identity,
+        "REFERENCE_MATCHED",
+    )
 
 
 def _definition(
@@ -2633,7 +3178,10 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
                 "truth_absolute_tolerance": 1.0e-8,
                 "maximum_chi_square": 1.0e-16,
             },
-            budget={"objective_requests": 64},
+            budget={
+                "authoritative_objective_requests": 2,
+                "backend_max_nfev": 64,
+            },
             seed="not-applicable",
             terminal="CONVERGED",
         ),
@@ -2657,19 +3205,21 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
                 "truth_absolute_tolerance": 1.0e-8,
                 "maximum_chi_square": 1.0e-16,
             },
-            budget={"objective_requests": 256},
+            budget={
+                "authoritative_objective_requests": 2,
+                "backend_max_nfev": 256,
+            },
             seed="not-applicable",
             terminal="CONVERGED",
         ),
         _definition(
-            "grid-27-seed-ordering-v1",
+            "grid-27-seed-coverage-v1",
             "GRID",
             parent_case="immutable 27-seed physical-coordinate grid",
-            reduction="Three three-point axes retain Cartesian order and tie policy.",
+            reduction="Three three-point axes retain complete Cartesian seed coverage.",
             truth_kind="ANALYTIC_DERIVATION",
             truth_reference="r(x,y,z)=(x-1,y+1,z-0.5); unique zero=(1,-1,0.5).",
             eligible_claims=(
-                "canonical-grid-candidate-ordering",
                 "grid-seed-coverage",
                 "solver-request-accounting",
             ),
@@ -2686,9 +3236,44 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
                 "truth_absolute_tolerance": 1.0e-8,
                 "maximum_chi_square": 1.0e-16,
             },
-            budget={"objective_requests_per_seed": 48, "seed_count": 27},
+            budget={
+                "authoritative_objective_requests_per_seed": 2,
+                "backend_max_nfev_per_seed": 48,
+                "seed_count": 27,
+            },
             seed="not-applicable",
             terminal="SELECTED",
+        ),
+        _definition(
+            "grid-candidate-ordering-v1",
+            "GRID_ORDERING",
+            parent_case="four-candidate deterministic GRID selection",
+            reduction=(
+                "Four analytically scored candidates isolate chi-square, final-vector, "
+                "and seed-ordinal ordering."
+            ),
+            truth_kind="ANALYTIC_DERIVATION",
+            truth_reference=(
+                "Candidates (ordinal,chi2,vector)=(0,1,(1,0)),(1,0,(0,0)),"
+                "(2,1,(0,1)),(3,1,(-1,0)); lexicographic ordering by "
+                "(chi2,vector,ordinal) is exactly (1,3,2,0)."
+            ),
+            eligible_claims=("canonical-grid-candidate-ordering",),
+            policy={
+                "candidate_tie_break": (
+                    "chi-square-then-final-vector-then-seed-ordinal"
+                ),
+                "candidates": [
+                    {"ordinal": 0, "chi_square": 1.0, "final_vector": [1.0, 0.0]},
+                    {"ordinal": 1, "chi_square": 0.0, "final_vector": [0.0, 0.0]},
+                    {"ordinal": 2, "chi_square": 1.0, "final_vector": [0.0, 1.0]},
+                    {"ordinal": 3, "chi_square": 1.0, "final_vector": [-1.0, 0.0]},
+                ],
+                "expected_order": [1, 3, 2, 0],
+            },
+            budget={"candidate_count": 4},
+            seed="not-applicable",
+            terminal="ORDERED",
         ),
         _definition(
             "de-bounded-search-v1",
@@ -2731,7 +3316,12 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
                 "truth_absolute_tolerance": 1.0e-8,
                 "maximum_chi_square": 1.0e-16,
             },
-            budget={"de_objective_requests": 128, "trf_objective_requests": 48},
+            budget={
+                "de_authoritative_objective_requests": 5,
+                "de_backend_objective_calls": 128,
+                "trf_authoritative_objective_requests": 2,
+                "trf_backend_max_nfev": 48,
+            },
             seed=591,
             terminal="POLISHED",
         ),
@@ -2754,7 +3344,7 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
                 "step": 1.0e-4,
                 "absolute_tolerance": 1.0e-10,
             },
-            budget={"objective_requests": 5},
+            budget={"authoritative_objective_requests": 5},
             seed="not-applicable",
             terminal="RELIABLE",
         ),
@@ -2778,7 +3368,10 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
                 "truth_absolute_tolerance": 1.0e-8,
                 "expected_active_mask": [1],
             },
-            budget={"objective_requests": 64},
+            budget={
+                "authoritative_objective_requests": 2,
+                "backend_max_nfev": 64,
+            },
             seed="not-applicable",
             terminal="CONVERGED",
             required_risks=("ACTIVE_BOUND",),
