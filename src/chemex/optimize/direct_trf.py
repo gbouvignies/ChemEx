@@ -1189,21 +1189,70 @@ class GridSelectionProvenance:
         )
 
 
-@dataclass(frozen=True, slots=True)
 class _AcceptedOccurrenceWitness:
-    occurrence_identity: str
-    accepted_result_identity: str
-    identity: str = field(init=False)
+    """Opaque process-local witness for one accepted-result occurrence."""
 
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "identity",
-            _identity(
-                "native-accepted-occurrence-witness",
-                (self.occurrence_identity, self.accepted_result_identity),
-            ),
+    __slots__ = ("__weakref__",)
+
+    def __new__(cls) -> _AcceptedOccurrenceWitness:
+        raise TypeError(
+            "Accepted occurrence witnesses are minted only by Direct TRF or "
+            "the isolated qualification constructor"
         )
+
+    def __copy__(self) -> _AcceptedOccurrenceWitness:
+        raise TypeError("Accepted occurrence witnesses cannot be copied")
+
+    def __deepcopy__(self, _memo: object) -> _AcceptedOccurrenceWitness:
+        raise TypeError("Accepted occurrence witnesses cannot be copied")
+
+    def __reduce__(self) -> tuple[object, ...]:
+        raise TypeError("Accepted occurrence witnesses cannot be serialized")
+
+    def __reduce_ex__(self, _protocol: SupportsIndex, /) -> tuple[object, ...]:
+        raise TypeError("Accepted occurrence witnesses cannot be serialized")
+
+
+@dataclass(frozen=True, slots=True)
+class _AcceptedOccurrenceBinding:
+    occurrence_identity: str
+    accepted_result_identity: str | None = None
+
+
+_ACCEPTED_OCCURRENCE_WITNESSES: WeakKeyDictionary[
+    _AcceptedOccurrenceWitness,
+    _AcceptedOccurrenceBinding,
+] = WeakKeyDictionary()
+_ACCEPTED_OCCURRENCE_WITNESSES_LOCK = RLock()
+
+
+def _mint_accepted_occurrence_witness(
+    occurrence_identity: str,
+) -> _AcceptedOccurrenceWitness:
+    witness = object.__new__(_AcceptedOccurrenceWitness)
+    with _ACCEPTED_OCCURRENCE_WITNESSES_LOCK:
+        _ACCEPTED_OCCURRENCE_WITNESSES[witness] = _AcceptedOccurrenceBinding(
+            occurrence_identity
+        )
+    return witness
+
+
+def _bind_accepted_occurrence_witness(
+    witness: _AcceptedOccurrenceWitness,
+    occurrence_identity: str,
+    accepted_result_identity: str,
+) -> bool:
+    with _ACCEPTED_OCCURRENCE_WITNESSES_LOCK:
+        binding = _ACCEPTED_OCCURRENCE_WITNESSES.get(witness)
+        if binding is None or binding.occurrence_identity != occurrence_identity:
+            return False
+        if binding.accepted_result_identity is None:
+            _ACCEPTED_OCCURRENCE_WITNESSES[witness] = _AcceptedOccurrenceBinding(
+                occurrence_identity,
+                accepted_result_identity,
+            )
+            return True
+        return binding.accepted_result_identity == accepted_result_identity
 
 
 @dataclass(frozen=True, slots=True)
@@ -1227,7 +1276,6 @@ class AcceptedFitResult:
     commit_items: tuple[tuple[str, float], ...]
     origin_context_identity: str
     occurrence_witness: _AcceptedOccurrenceWitness | None = field(
-        default=None,
         compare=False,
         repr=False,
         kw_only=True,
@@ -1262,21 +1310,65 @@ class AcceptedFitResult:
                 self.origin_context_identity,
             ),
         )
-        if self.occurrence_witness is None:
-            object.__setattr__(
-                self,
-                "occurrence_witness",
-                _AcceptedOccurrenceWitness(self.occurrence_identity, identity),
-            )
         object.__setattr__(self, "identity", identity)
+        if self.occurrence_witness is not None:
+            _bind_accepted_occurrence_witness(
+                self.occurrence_witness,
+                self.occurrence_identity,
+                identity,
+            )
+
+    @classmethod
+    def for_qualification(
+        cls,
+        occurrence_identity: str,
+        problem_identity: str,
+        invocation_identity: str,
+        execution_identity: str,
+        materialization_identity: str,
+        parameterization_identity: str,
+        evaluator_parameterization_identity: str,
+        source_occurrence_identity: str,
+        source_revision: int,
+        controlled_ids: tuple[str, ...],
+        vector: tuple[float, ...],
+        chi_square: float,
+        evaluation_result: EvaluationResult,
+        commit_scope: tuple[str, ...],
+        commit_items: tuple[tuple[str, float], ...],
+        origin_context_identity: str,
+    ) -> AcceptedFitResult:
+        """Construct an authoritative anchor only for isolated qualification."""
+        return cls(
+            occurrence_identity,
+            problem_identity,
+            invocation_identity,
+            execution_identity,
+            materialization_identity,
+            parameterization_identity,
+            evaluator_parameterization_identity,
+            source_occurrence_identity,
+            source_revision,
+            controlled_ids,
+            vector,
+            chi_square,
+            evaluation_result,
+            commit_scope,
+            commit_items,
+            origin_context_identity,
+            occurrence_witness=_mint_accepted_occurrence_witness(occurrence_identity),
+        )
 
 
 def accepted_occurrence_is_authoritative(accepted: AcceptedFitResult) -> bool:
     """Report whether this object retains its exact construction occurrence."""
-    witness = accepted.occurrence_witness
-    return witness is not None and (
-        witness.occurrence_identity == accepted.occurrence_identity
-        and witness.accepted_result_identity == accepted.identity
+    if accepted.occurrence_witness is None:
+        return False
+    with _ACCEPTED_OCCURRENCE_WITNESSES_LOCK:
+        binding = _ACCEPTED_OCCURRENCE_WITNESSES.get(accepted.occurrence_witness)
+    return binding == _AcceptedOccurrenceBinding(
+        accepted.occurrence_identity,
+        accepted.identity,
     )
 
 
@@ -2265,8 +2357,9 @@ def _accepted_fit_evidence(
         (param_id, evaluation_result.resolved_values[param_id])
         for param_id in problem.commit_scope
     )
+    occurrence_identity = uuid4().hex
     return AcceptedFitResult(
-        uuid4().hex,
+        occurrence_identity,
         problem.identity,
         invocation_identity,
         execution_identity,
@@ -2282,6 +2375,7 @@ def _accepted_fit_evidence(
         problem.commit_scope,
         commit_items,
         origin_context_identity,
+        occurrence_witness=_mint_accepted_occurrence_witness(occurrence_identity),
     )
 
 

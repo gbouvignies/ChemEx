@@ -944,6 +944,17 @@ class ResidualJacobianEvidence:
             != self.accepted_anchor.source_occurrence_identity
             or self.source_revision != self.accepted_anchor.source_revision
             or self.controlled_ids != self.accepted_anchor.controlled_ids
+            or self.source_problem.identity != self.problem_identity
+            or self.source_parameterization.identity != self.parameterization_identity
+            or self.source_parameterization.evaluator_identity
+            != self.evaluator_parameterization_identity
+            or self.source_parameterization.program.fingerprint
+            != self.constraint_program_identity
+            or self.source_engine.plan.identity != self.evaluation_plan_identity
+            or self.source_policy.identity != self.policy_identity
+            or self.source_policy.calibration_identity != self.calibration_identity
+            or self.source_policy.numerical_compatibility_requirement
+            != self.numerical_compatibility_requirement
             or tuple(item.param_id for item in self.columns) != self.controlled_ids
             or any(value <= 0.0 for value in self.coordinate_scales)
             or any(len(item.fine_estimate) != residual_count for item in self.columns)
@@ -1171,6 +1182,13 @@ class RankDiagnostic:
         ):
             raise ValueError("SVD/rank evidence has inconsistent lineage or spectrum")
         largest = self.singular_values[0] if self.singular_values else 0.0
+        expected_weak_threshold = _finite(
+            max(
+                self.threshold,
+                self.source_policy.weak_relative_tolerance * largest,
+            ),
+            name="weak-subspace threshold",
+        )
         expected_normalized = tuple(
             0.0 if largest == 0.0 else value / largest for value in self.singular_values
         )
@@ -1187,6 +1205,8 @@ class RankDiagnostic:
         tolerance = 512.0 * _EPSILON * max(1, dimension)
         if (
             self.normalized_singular_values != expected_normalized
+            or self.weak_threshold != expected_weak_threshold
+            or self.source_policy.identity != source.source_policy.identity
             or not np.allclose(
                 self.scaled_column_norms, expected_norms, rtol=tolerance, atol=0.0
             )
@@ -1272,6 +1292,21 @@ class RankDiagnostic:
             atol=tolerance,
         ):
             raise ValueError("Singular invariant-subspace projectors are incomplete")
+        expected_weak = sum(
+            (
+                np.asarray(item.projector)
+                for item in self.subspaces
+                if item.classification.endswith("_weak")
+            ),
+            start=np.zeros((dimension, dimension), dtype=np.float64),
+        )
+        if not np.allclose(
+            weak,
+            expected_weak,
+            rtol=0.0,
+            atol=tolerance,
+        ):
+            raise ValueError("Weak-subspace projector is inconsistent")
         object.__setattr__(self, "identifiable_projector", identifiable)
         object.__setattr__(self, "null_projector", null)
         object.__setattr__(self, "weak_projector", weak)
@@ -3465,6 +3500,14 @@ def _affine_feasibility_claim(
         )
         for item in problem.affine_equalities
     )
+    restrictions.extend(
+        (
+            f"{item.restriction_id}:negative",
+            -np.asarray(item.coefficients, dtype=np.float64),
+            -item.value,
+        )
+        for item in problem.affine_equalities
+    )
     if controlled_only:
         restrictions = [
             item
@@ -3477,14 +3520,6 @@ def _affine_feasibility_claim(
             ClaimState.NOT_APPLICABLE,
             "No affine restriction has a controlled-coordinate coefficient",
         )
-    restrictions.extend(
-        (
-            f"{item.restriction_id}:negative",
-            -np.asarray(item.coefficients, dtype=np.float64),
-            -item.value,
-        )
-        for item in problem.affine_equalities
-    )
     assessments = tuple(
         _classify_affine_restriction(
             label,

@@ -203,7 +203,7 @@ def _accepted_reference_anchor(
     evaluation = engine.new_evaluator().evaluate(frame)
     assert isinstance(evaluation, EvaluationResult)
     chi_square = float(np.dot(evaluation.residuals, evaluation.residuals))
-    return AcceptedFitResult(
+    return AcceptedFitResult.for_qualification(
         "qualification-anchor-occurrence",
         problem.identity,
         "qualification-anchor-invocation",
@@ -220,6 +220,36 @@ def _accepted_reference_anchor(
         problem.controlled_ids,
         tuple(zip(problem.controlled_ids, anchor, strict=True)),
         "qualification-anchor-origin",
+    )
+
+
+def _qualified_accepted_copy(
+    accepted: AcceptedFitResult,
+    *,
+    occurrence_identity: str | None = None,
+    problem_identity: str | None = None,
+    chi_square: float | None = None,
+) -> AcceptedFitResult:
+    """Mint a distinct authoritative occurrence for isolated qualification."""
+    return AcceptedFitResult.for_qualification(
+        accepted.occurrence_identity
+        if occurrence_identity is None
+        else occurrence_identity,
+        accepted.problem_identity if problem_identity is None else problem_identity,
+        accepted.invocation_identity,
+        accepted.execution_identity,
+        accepted.materialization_identity,
+        accepted.parameterization_identity,
+        accepted.evaluator_parameterization_identity,
+        accepted.source_occurrence_identity,
+        accepted.source_revision,
+        accepted.controlled_ids,
+        accepted.vector,
+        accepted.chi_square if chi_square is None else chi_square,
+        accepted.evaluation_result,
+        accepted.commit_scope,
+        accepted.commit_items,
+        accepted.origin_context_identity,
     )
 
 
@@ -747,10 +777,9 @@ def test_boundary_covariance_remains_diagnostic_but_reporting_fails_closed() -> 
         problem,
         lower_bounds=(accepted.vector[0],),
     )
-    boundary_accepted = dataclasses.replace(
+    boundary_accepted = _qualified_accepted_copy(
         accepted,
         problem_identity=boundary_problem.identity,
-        occurrence_witness=None,
     )
 
     evidence = derive_uncertainty_evidence(
@@ -832,10 +861,9 @@ def test_nonfinite_boundary_separation_is_indeterminate() -> None:
         problem,
         upper_bounds=(float(np.finfo(np.float64).max),),
     )
-    compatible_accepted = dataclasses.replace(
+    compatible_accepted = _qualified_accepted_copy(
         accepted,
         problem_identity=finite_extreme_problem.identity,
-        occurrence_witness=None,
     )
 
     evidence = derive_uncertainty_evidence(
@@ -853,10 +881,9 @@ def test_nonfinite_boundary_separation_is_indeterminate() -> None:
 
 def test_non_finite_accepted_objective_yields_only_typed_failed_covariance() -> None:
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
-    non_finite = dataclasses.replace(
+    non_finite = _qualified_accepted_copy(
         accepted,
         chi_square=float("inf"),
-        occurrence_witness=None,
     )
 
     evidence = derive_uncertainty_evidence(
@@ -1077,6 +1104,20 @@ def test_exact_accepted_occurrence_is_not_reconstructible_or_mixable() -> None:
     assert rejected.residual_jacobian is None
     assert rejected.covariance is None
     assert rejected.failures[0].category == "accepted_occurrence_identity_mismatch"
+    no_witness = dataclasses.replace(accepted, occurrence_witness=None)
+    rejected_no_witness = derive_uncertainty_evidence(
+        no_witness,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=_qualification_policy(problem.controlled_ids[0]),
+        resolved_environment_identity="missing-occurrence-witness",
+    )
+    assert rejected_no_witness.residual_jacobian is None
+    assert (
+        rejected_no_witness.failures[0].category
+        == "accepted_occurrence_identity_mismatch"
+    )
 
     evidence = derive_uncertainty_evidence(
         accepted,
@@ -1110,10 +1151,9 @@ def test_exact_accepted_occurrence_is_not_reconstructible_or_mixable() -> None:
     with pytest.raises(ValueError, match="request"):
         dataclasses.replace(evidence, policy_identity="foreign-policy")
 
-    equivalent_occurrence = dataclasses.replace(
+    equivalent_occurrence = _qualified_accepted_copy(
         accepted,
         occurrence_identity="equivalent-authoritative-occurrence",
-        occurrence_witness=None,
     )
     assert equivalent_occurrence.identity == accepted.identity
     other_evidence = derive_uncertainty_evidence(
@@ -1124,7 +1164,19 @@ def test_exact_accepted_occurrence_is_not_reconstructible_or_mixable() -> None:
         policy=_qualification_policy(problem.controlled_ids[0]),
         resolved_environment_identity="other-equivalent-occurrence",
     )
+    assert other_evidence.residual_jacobian is not None
+    assert other_evidence.rank_diagnostic is not None
     assert other_evidence.covariance is not None
+    with pytest.raises(ValueError, match="accepted fit occurrences"):
+        dataclasses.replace(
+            evidence,
+            residual_jacobian=other_evidence.residual_jacobian,
+        )
+    with pytest.raises(ValueError, match="accepted fit occurrences"):
+        dataclasses.replace(
+            evidence,
+            rank_diagnostic=other_evidence.rank_diagnostic,
+        )
     with pytest.raises(ValueError, match="accepted fit occurrences"):
         dataclasses.replace(evidence, covariance=other_evidence.covariance)
 
@@ -1161,10 +1213,20 @@ def test_authoritative_artifacts_reject_inconsistent_reconstruction() -> None:
 
     replacements = (
         (jacobian, {"matrix": ((42.0,),) * 7}),
+        (jacobian, {"constraint_program_identity": "foreign-program"}),
+        (jacobian, {"evaluation_plan_identity": "foreign-plan"}),
+        (jacobian, {"policy_identity": "foreign-policy"}),
+        (jacobian, {"calibration_identity": "foreign-calibration"}),
+        (
+            jacobian,
+            {"numerical_compatibility_requirement": "foreign-requirement"},
+        ),
         (rank, {"source_jacobian_identity": "foreign-jacobian"}),
         (rank, {"singular_values": (42.0,)}),
+        (rank, {"weak_threshold": 42.0}),
         (rank, {"rank": 0}),
         (rank, {"identifiable_projector": ((0.0,),)}),
+        (rank, {"weak_projector": ((1.0,),)}),
         (covariance, {"source_jacobian_identity": "foreign-jacobian"}),
         (covariance, {"rank_diagnostic_identity": "foreign-svd"}),
         (covariance, {"coordinate_scales": (42.0,)}),
@@ -1265,11 +1327,10 @@ def test_affine_directional_separation_uses_exact_full_frame_slack(
         accepted.vector[0] + zeta * standard_error,
     )
     affine_problem = dataclasses.replace(problem, affine_half_spaces=(restriction,))
-    affine_accepted = dataclasses.replace(
+    affine_accepted = _qualified_accepted_copy(
         accepted,
         problem_identity=affine_problem.identity,
         occurrence_identity=f"affine-{zeta.hex()}",
-        occurrence_witness=None,
     )
     evidence = derive_uncertainty_evidence(
         affine_accepted,
@@ -1298,11 +1359,10 @@ def test_affine_held_only_and_equality_semantics_fail_closed() -> None:
         accepted.vector[0],
     )
     held_problem = dataclasses.replace(problem, affine_half_spaces=(held_only,))
-    held_accepted = dataclasses.replace(
+    held_accepted = _qualified_accepted_copy(
         accepted,
         problem_identity=held_problem.identity,
         occurrence_identity="held-only-occurrence",
-        occurrence_witness=None,
     )
     held_evidence = derive_uncertainty_evidence(
         held_accepted,
@@ -1324,11 +1384,10 @@ def test_affine_held_only_and_equality_semantics_fail_closed() -> None:
     held_equality_problem = dataclasses.replace(
         problem, affine_equalities=(held_equality,)
     )
-    held_equality_accepted = dataclasses.replace(
+    held_equality_accepted = _qualified_accepted_copy(
         accepted,
         problem_identity=held_equality_problem.identity,
         occurrence_identity="held-equality-occurrence",
-        occurrence_witness=None,
     )
     held_equality_evidence = derive_uncertainty_evidence(
         held_equality_accepted,
@@ -1340,13 +1399,16 @@ def test_affine_held_only_and_equality_semantics_fail_closed() -> None:
     )
     assert held_equality_evidence.covariance is not None
     assert held_equality_evidence.covariance.usable
+    assert (
+        held_equality_evidence.covariance.claim("CONTROLLED_AFFINE_SEPARATION")
+        is ClaimState.NOT_APPLICABLE
+    )
 
     equality_problem = dataclasses.replace(problem, affine_equalities=(equality,))
-    equality_accepted = dataclasses.replace(
+    equality_accepted = _qualified_accepted_copy(
         accepted,
         problem_identity=equality_problem.identity,
         occurrence_identity="equality-occurrence",
-        occurrence_witness=None,
     )
     equality_evidence = derive_uncertainty_evidence(
         equality_accepted,
@@ -1421,11 +1483,10 @@ def test_affine_coupled_negative_degenerate_and_nonfinite_cases() -> None:
         constrained_problem = dataclasses.replace(
             problem, affine_half_spaces=(restriction,)
         )
-        constrained_accepted = dataclasses.replace(
+        constrained_accepted = _qualified_accepted_copy(
             accepted,
             problem_identity=constrained_problem.identity,
             occurrence_identity=f"{label}-affine-occurrence",
-            occurrence_witness=None,
         )
         evidence = derive_uncertainty_evidence(
             constrained_accepted,
@@ -1444,12 +1505,11 @@ def test_affine_coupled_negative_degenerate_and_nonfinite_cases() -> None:
         accepted.vector[0] + 1.0,
     )
     degenerate_problem = dataclasses.replace(problem, affine_half_spaces=(positive,))
-    degenerate_accepted = dataclasses.replace(
+    degenerate_accepted = _qualified_accepted_copy(
         accepted,
         problem_identity=degenerate_problem.identity,
         occurrence_identity="degenerate-affine-occurrence",
         chi_square=0.0,
-        occurrence_witness=None,
     )
     degenerate = derive_uncertainty_evidence(
         degenerate_accepted,

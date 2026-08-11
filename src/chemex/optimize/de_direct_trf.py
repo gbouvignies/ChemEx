@@ -1823,6 +1823,7 @@ class AcceptedDeDirectTrfResult(AcceptedFitResult):
             polish_invocation,
             polish_outcome,
             fresh_candidate,
+            occurrence_witness=accepted.occurrence_witness,
         )
 
 

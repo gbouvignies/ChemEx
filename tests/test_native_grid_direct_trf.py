@@ -478,6 +478,7 @@ def test_plain_base_evidence_cannot_recreate_grid_commit_authority() -> None:
         accepted.commit_scope,
         accepted.commit_items,
         accepted.origin_context_identity,
+        occurrence_witness=None,
     )
     assert plain_evidence.identity == accepted.identity
     replaced_evidence = dataclasses.replace(accepted)
@@ -525,6 +526,7 @@ def test_plain_base_evidence_cannot_recreate_grid_commit_authority() -> None:
             plain_evidence.commit_scope,
             plain_evidence.commit_items,
             plain_evidence.origin_context_identity,
+            occurrence_witness=None,
         ).identity
     )
     assert session.analysis_values.snapshot() == before

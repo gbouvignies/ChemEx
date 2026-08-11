@@ -898,6 +898,7 @@ class AcceptedGridDirectTrfResult(AcceptedFitResult):
             selected_seed,
             selected_outcome,
             fresh_candidate,
+            occurrence_witness=accepted.occurrence_witness,
         )
 
 
