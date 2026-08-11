@@ -463,8 +463,10 @@ def test_invalid_authoritative_request_has_typed_reconciled_failure(
     assert error.accounting.requests_refused == 0
 
 
-def test_evaluator_failure_after_issued_request_is_typed_and_reconciled(
+@pytest.mark.parametrize("failure_type", [OSError, RuntimeError])
+def test_ordinary_evaluator_failure_after_issued_request_is_typed_and_reconciled(
     monkeypatch: pytest.MonkeyPatch,
+    failure_type: type[Exception],
 ) -> None:
     definition = next(
         item
@@ -473,7 +475,7 @@ def test_evaluator_failure_after_issued_request_is_typed_and_reconciled(
     )
 
     def evaluator_failure(_value: float) -> float:
-        raise ArithmeticError
+        raise failure_type("ordinary evaluator failure")
 
     monkeypatch.setattr(
         "chemex.optimize.numerical_probes.math.exp",
@@ -489,6 +491,34 @@ def test_evaluator_failure_after_issued_request_is_typed_and_reconciled(
     assert error.accounting.requests_received == 1
     assert error.accounting.requests_failed == 1
     assert error.accounting.requests_completed == 0
+    assert error.accounting.requests_refused == 0
+    assert error.accounting.requests_received == (
+        error.accounting.fresh_evaluations
+        + error.accounting.cache_served_requests
+        + error.accounting.requests_refused
+        + error.accounting.requests_failed
+    )
+
+
+def test_evaluator_keyboard_interrupt_retains_process_control_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = next(
+        item
+        for item in numerical_probe_definitions()
+        if item.probe_id == "finite-difference-reliability-v1"
+    )
+
+    def interrupt(_value: float) -> float:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        "chemex.optimize.numerical_probes.math.exp",
+        interrupt,
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        run_numerical_probe(definition)
 
 
 def test_nonfinite_authoritative_result_is_typed_and_never_qualifies(
@@ -737,6 +767,34 @@ def test_foreign_live_authority_does_not_match_historical_lane_evidence(
     assert rejected.value.terminal == "LANE_MISMATCH"
 
 
+def test_renamed_canonical_lane_cannot_qualify_fresh_capture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capture = run_numerical_probe_baseline()
+    canonical = canonical_lanes()[0]
+    renamed = dataclasses.replace(
+        canonical,
+        name="renamed-canonical-numerical-lane",
+    )
+    environment = RuntimeEnvironment(renamed.semantics)
+    monkeypatch.setattr(
+        RuntimeEnvironment,
+        "from_current_process",
+        classmethod(lambda cls, image_digest, provenance_path=None: environment),
+    )
+    authority = renamed.attest_current_process(renamed.semantics.image_digest)
+
+    assert authority.lane_identity != canonical.identity
+    with pytest.raises(NumericalProbeQualificationError) as rejected:
+        capture.require_live_qualification(
+            authority,
+            expected_manifest_identity=CANONICAL_NUMERICAL_PROBE_MANIFEST_IDENTITY,
+            required_lane_role="CANONICAL_NUMERICAL",
+        )
+
+    assert rejected.value.terminal == "LANE_MISMATCH"
+
+
 def test_serialized_probe_baseline_never_recreates_live_lane_authority(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -765,15 +823,24 @@ def test_serialized_probe_baseline_never_recreates_live_lane_authority(
     with pytest.raises(TypeError):
         copy.copy(authority)
     with pytest.raises(TypeError):
+        copy.deepcopy(authority)
+    with pytest.raises(TypeError):
         pickle.dumps(authority)
 
 
-def test_foreign_or_compatibility_authority_cannot_qualify_canonical_capture(
+def test_compatibility_authority_role_mutation_cannot_qualify_canonical_capture(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     capture = run_numerical_probe_baseline()
     compatibility = _live_authority(monkeypatch, 1)
 
+    with pytest.raises(AttributeError):
+        object.__setattr__(
+            compatibility,
+            "_lane_role",
+            "CANONICAL_NUMERICAL",
+        )
+    assert compatibility.lane_role == "PYTHON_COMPATIBILITY"
     with pytest.raises(NumericalProbeQualificationError) as rejected:
         capture.require_live_qualification(
             compatibility,

@@ -20,7 +20,7 @@ from scipy.linalg import svd
 from scipy.optimize import Bounds, OptimizeResult, differential_evolution, least_squares
 
 from chemex.baselines import CanonicalBaselineValue
-from chemex.numerical_lanes import LaneRole, LiveLaneAuthority
+from chemex.numerical_lanes import LaneRole, LiveLaneAuthority, canonical_lanes
 from chemex.typing import Array
 
 _SCHEMA_VERSION = 2
@@ -2078,6 +2078,11 @@ class NumericalProbeBaseline:
             raise NumericalProbeQualificationError("MANIFEST_MISMATCH")
         if authority.lane_role != required_lane_role:
             raise NumericalProbeQualificationError("LANE_ROLE_MISMATCH")
+        required_lane = next(
+            lane for lane in canonical_lanes() if lane.role == required_lane_role
+        )
+        if authority.lane_identity != required_lane.identity:
+            raise NumericalProbeQualificationError("LANE_MISMATCH")
         if self.historical_qualification == "REFERENCE_MATCHED" and (
             self.observed_lane_identity != evidence.lane_identity
             or self.observed_lane_role != authority.lane_role
@@ -2196,13 +2201,7 @@ class _ObjectiveRecorder:
         if cached is None:
             try:
                 raw_result = self._residual(candidate)
-            except (
-                ArithmeticError,
-                LookupError,
-                RuntimeError,
-                TypeError,
-                ValueError,
-            ) as error:
+            except Exception as error:  # noqa: BLE001 - evaluator boundary
                 try:
                     self._fail(source, "EVALUATION_FAILURE")
                 except _ProbeRequestFailed as failure:

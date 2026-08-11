@@ -1008,34 +1008,49 @@ class LaneAttestation:
         return attestation
 
 
+@dataclass(frozen=True, slots=True)
+class _LiveLaneBinding:
+    """Immutable process-owned facts bound to one opaque live capability."""
+
+    lane_identity: str
+    lane_role: LaneRole
+    attestation_identity: str
+    environment_identity: str
+    evidence: LaneAttestation
+
+
 class LiveLaneAuthority:
     """Non-serializable capability owned by one successfully probed process."""
 
-    __slots__ = ("_evidence", "_lane_role", "__weakref__")
-    _evidence: LaneAttestation
-    _lane_role: LaneRole
+    __slots__ = ("__weakref__",)
 
     def __new__(cls) -> LiveLaneAuthority:
         raise TypeError("Live lane authority is minted only by current-process probing")
 
     @property
+    def _binding(self) -> _LiveLaneBinding:
+        try:
+            return _LIVE_LANE_BINDINGS[self]
+        except KeyError as error:
+            raise LaneAuthorityError(
+                "Live lane authority is not process-owned"
+            ) from error
+
+    @property
     def evidence(self) -> LaneAttestation:
-        if self not in _LIVE_LANE_AUTHORITIES:
-            raise LaneAuthorityError("Live lane authority is not process-owned")
-        return self._evidence
+        return self._binding.evidence
 
     @property
     def lane_identity(self) -> str:
-        return self.evidence.lane_identity
+        return self._binding.lane_identity
 
     @property
     def environment_identity(self) -> str:
-        return self.evidence.environment_identity
+        return self._binding.environment_identity
 
     @property
     def lane_role(self) -> LaneRole:
-        _ = self.evidence
-        return self._lane_role
+        return self._binding.lane_role
 
     @property
     def workers(self) -> int:
@@ -1047,7 +1062,7 @@ class LiveLaneAuthority:
 
     @property
     def identity(self) -> str:
-        return self.evidence.identity
+        return self._binding.attestation_identity
 
     def to_record(self) -> dict[str, object]:
         """Serialize evidence only; deserialization cannot recreate this capability."""
@@ -1066,7 +1081,9 @@ class LiveLaneAuthority:
         raise TypeError("Live lane authority cannot be pickled")
 
 
-_LIVE_LANE_AUTHORITIES: weakref.WeakSet[LiveLaneAuthority] = weakref.WeakSet()
+_LIVE_LANE_BINDINGS: weakref.WeakKeyDictionary[LiveLaneAuthority, _LiveLaneBinding] = (
+    weakref.WeakKeyDictionary()
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1192,9 +1209,13 @@ class NumericalLane:
             "POST_IMPORT_CURRENT_PROCESS",
         )
         authority = object.__new__(LiveLaneAuthority)
-        object.__setattr__(authority, "_evidence", evidence)
-        object.__setattr__(authority, "_lane_role", self.role)
-        _LIVE_LANE_AUTHORITIES.add(authority)
+        _LIVE_LANE_BINDINGS[authority] = _LiveLaneBinding(
+            lane_identity=self.identity,
+            lane_role=self.role,
+            attestation_identity=evidence.identity,
+            environment_identity=environment.identity,
+            evidence=evidence,
+        )
         return authority
 
     def compatibility_delta(self, other: NumericalLane) -> dict[str, tuple[str, str]]:
