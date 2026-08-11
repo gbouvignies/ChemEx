@@ -26,7 +26,11 @@ from typing import Literal, cast
 
 from chemex.chemex import run
 from chemex.cli import build_parser
-from chemex.numerical_lanes import LiveLaneAuthority
+from chemex.numerical_lanes import (
+    LiveLaneAuthority,
+    _LiveLaneAuthorityMismatch,
+    _validate_live_lane_authority,
+)
 
 _SCHEMA_VERSION = 1
 _SEMANTIC_VERSION = "chemex-baseline-v1"
@@ -783,22 +787,32 @@ class Occurrence:
                 raise TypeError(
                     "Qualified occurrence requires live current-process lane authority"
                 )
-            evidence = attestation.evidence
-            if evidence.lane_identity != specification.lane_reference:
-                raise ValueError("Occurrence attestation does not match its lane")
             execution_settings = specification.execution_settings.to_record_value()
             if not isinstance(execution_settings, Mapping):
                 raise TypeError("Qualified execution settings must be a record")
-            if (
-                type(execution_settings.get("workers")) is not int
-                or execution_settings.get("workers") != evidence.workers
-                or type(execution_settings.get("native_threads")) is not int
-                or execution_settings.get("native_threads") != evidence.native_threads
-            ):
+            workers = execution_settings.get("workers")
+            native_threads = execution_settings.get("native_threads")
+            if type(workers) is not int or type(native_threads) is not int:
                 raise ValueError(
                     "Qualified occurrence execution settings do not match "
                     "attested lane concurrency"
                 )
+            try:
+                evidence = _validate_live_lane_authority(
+                    attestation,
+                    required_lane_identity=specification.lane_reference,
+                    required_workers=workers,
+                    required_native_threads=native_threads,
+                )
+            except _LiveLaneAuthorityMismatch as error:
+                if error.fact == "lane_identity":
+                    raise ValueError(
+                        "Occurrence attestation does not match its lane"
+                    ) from error
+                raise ValueError(
+                    "Qualified occurrence execution settings do not match "
+                    "attested lane concurrency"
+                ) from error
         elif attestation is not None:
             raise ValueError("Unqualified occurrence cannot carry lane authority")
         return cls(
