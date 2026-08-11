@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO).
 
 ## [Unreleased]
-
+- Added `cpmg_15n_rc`, a relaxation-compensated 15N CPMG experiment corresponding
+to the Bruker `hsqcrexetf3gpsitc3d` pulse program (Long, Liu & Yang, JACS 2008),
+including the R1 compensation delay of Yuwen & Kay, J. Biomol. NMR 2019.
 ### Infrastructure
 - Removed the unused `B1FieldConfig` model and its `default_distribution_config`
   helper from `b1_config.py`; the flat-table `b1_frq` schema it implemented was
