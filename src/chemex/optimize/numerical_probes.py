@@ -16,9 +16,11 @@ from itertools import product
 from typing import Literal, cast
 
 import numpy as np
-from scipy.optimize import Bounds, differential_evolution, least_squares
+from scipy.linalg import svd
+from scipy.optimize import Bounds, OptimizeResult, differential_evolution, least_squares
 
 from chemex.baselines import CanonicalBaselineValue
+from chemex.numerical_lanes import LiveLaneAuthority
 from chemex.typing import Array
 
 _SCHEMA_VERSION = 1
@@ -503,21 +505,33 @@ class BackendDiagnosticCounters:
 
     nfev: int
     njev: int | None
+    iterations: int | None
     callback_calls: int
     diagnostic_evaluations: int
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
         values = (self.nfev, self.callback_calls, self.diagnostic_evaluations)
-        if any(
-            isinstance(value, bool) or not isinstance(value, int) or value < 0
-            for value in values
-        ) or (
-            self.njev is not None
-            and (
-                isinstance(self.njev, bool)
-                or not isinstance(self.njev, int)
-                or self.njev < 0
+        if (
+            any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in values
+            )
+            or (
+                self.njev is not None
+                and (
+                    isinstance(self.njev, bool)
+                    or not isinstance(self.njev, int)
+                    or self.njev < 0
+                )
+            )
+            or (
+                self.iterations is not None
+                and (
+                    isinstance(self.iterations, bool)
+                    or not isinstance(self.iterations, int)
+                    or self.iterations < 0
+                )
             )
         ):
             raise ValueError("Backend diagnostic counters must be non-negative")
@@ -529,6 +543,7 @@ class BackendDiagnosticCounters:
                 (
                     self.nfev,
                     self.njev,
+                    self.iterations,
                     self.callback_calls,
                     self.diagnostic_evaluations,
                 ),
@@ -539,6 +554,7 @@ class BackendDiagnosticCounters:
         return {
             "nfev": self.nfev,
             "njev": self.njev,
+            "iterations": self.iterations,
             "callback_calls": self.callback_calls,
             "diagnostic_evaluations": self.diagnostic_evaluations,
             "identity": self.identity,
@@ -551,6 +567,7 @@ class BackendDiagnosticCounters:
             {
                 "nfev",
                 "njev",
+                "iterations",
                 "callback_calls",
                 "diagnostic_evaluations",
                 "identity",
@@ -560,9 +577,16 @@ class BackendDiagnosticCounters:
         raw_njev = record.get("njev")
         if raw_njev is not None:
             raw_njev = _record_nonnegative_int(raw_njev, "backend njev")
+        raw_iterations = record.get("iterations")
+        if raw_iterations is not None:
+            raw_iterations = _record_nonnegative_int(
+                raw_iterations,
+                "backend iterations",
+            )
         diagnostics = cls(
             _record_nonnegative_int(record.get("nfev"), "backend nfev"),
             raw_njev,
+            raw_iterations,
             _record_nonnegative_int(record.get("callback_calls"), "callback calls"),
             _record_nonnegative_int(
                 record.get("diagnostic_evaluations"), "diagnostic evaluations"
@@ -725,11 +749,13 @@ class GridSeedEvidence:
 
     ordinal: int
     seed: tuple[float, ...]
+    terminal: str
     solver: SolverProbeEvidence
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
         _record_nonnegative_int(self.ordinal, "GRID seed ordinal")
+        _nonempty_string(self.terminal, "GRID seed terminal")
         if len(self.seed) != len(self.solver.start) or self.seed != self.solver.start:
             raise ValueError("GRID seed does not match its solver start")
         object.__setattr__(
@@ -737,7 +763,12 @@ class GridSeedEvidence:
             "identity",
             _identity(
                 "grid-seed-probe-evidence",
-                (self.ordinal, _vector_tokens(self.seed), self.solver.identity),
+                (
+                    self.ordinal,
+                    _vector_tokens(self.seed),
+                    self.terminal,
+                    self.solver.identity,
+                ),
             ),
         )
 
@@ -745,19 +776,25 @@ class GridSeedEvidence:
         return {
             "ordinal": self.ordinal,
             "seed": list(_vector_tokens(self.seed)),
+            "terminal": self.terminal,
             "solver": self.solver.to_record(),
             "identity": self.identity,
         }
 
     @classmethod
     def from_record(cls, record: Mapping[str, object]) -> GridSeedEvidence:
-        _exact_keys(record, {"ordinal", "seed", "solver", "identity"}, "GRID seed")
+        _exact_keys(
+            record,
+            {"ordinal", "seed", "terminal", "solver", "identity"},
+            "GRID seed",
+        )
         raw_solver = record.get("solver")
         if not isinstance(raw_solver, Mapping):
             raise TypeError("GRID seed solver evidence must be a record")
         evidence = cls(
             _record_nonnegative_int(record.get("ordinal"), "GRID seed ordinal"),
             _vector_from_record(record.get("seed"), "GRID seed"),
+            _nonempty_string(record.get("terminal"), "GRID seed terminal"),
             SolverProbeEvidence.from_record(cast("Mapping[str, object]", raw_solver)),
         )
         if record.get("identity") != evidence.identity:
@@ -1368,7 +1405,12 @@ class NumericalProbeArtifact:
             or len(set(self.risks)) != len(self.risks)
         ):
             raise ValueError("Probe risks must be unique and ordered")
-        _canonical_strings(self.satisfied_claims, "satisfied claims")
+        if self.satisfied_claims and (
+            tuple(sorted(self.satisfied_claims)) != self.satisfied_claims
+            or len(set(self.satisfied_claims)) != len(self.satisfied_claims)
+            or any(not claim for claim in self.satisfied_claims)
+        ):
+            raise ValueError("Probe satisfied claims must be unique and ordered")
         object.__setattr__(
             self,
             "identity",
@@ -1386,15 +1428,22 @@ class NumericalProbeArtifact:
         )
 
     def validate_definition(self, definition: NumericalProbeDefinition) -> None:
-        expectation = definition.failure_expectations[0]
         if (
             self.definition_identity != definition.identity
             or self.probe_id != definition.probe_id
-            or self.terminal != expectation.terminal
+            or not set(self.satisfied_claims).issubset(definition.eligible_claims)
+        ):
+            raise ValueError("Numerical probe artifact violates its definition")
+
+    def require_qualification(self, definition: NumericalProbeDefinition) -> None:
+        self.validate_definition(definition)
+        expectation = definition.failure_expectations[0]
+        if (
+            self.terminal != expectation.terminal
             or not set(expectation.required_risks).issubset(self.risks)
             or self.satisfied_claims != definition.eligible_claims
         ):
-            raise ValueError("Numerical probe artifact violates its definition")
+            raise ValueError("Numerical probe artifact does not qualify its definition")
 
     def to_record(self) -> dict[str, object]:
         return {
@@ -1473,7 +1522,7 @@ class NumericalProbeArtifact:
             _nonempty_string(record.get("probe_id"), "identifier"),
             _nonempty_string(record.get("terminal"), "terminal"),
             tuple(cast("list[str]", raw_risks)),
-            _canonical_strings(cast("Sequence[str]", raw_claims), "satisfied claims"),
+            tuple(cast("list[str]", raw_claims)),
             evidence,
         )
         artifact.validate_definition(definition)
@@ -1488,12 +1537,37 @@ class NumericalProbeBaseline:
 
     definitions: tuple[NumericalProbeDefinition, ...]
     artifacts: tuple[NumericalProbeArtifact, ...]
+    lane_reference: str = "unqualified-local-diagnostic-v1"
+    lane_attestation_identity: str | None = None
+    environment_identity: str | None = None
+    authority_role: Literal["QUALIFIED_LANE", "UNQUALIFIED_DIAGNOSTIC"] = (
+        "UNQUALIFIED_DIAGNOSTIC"
+    )
     manifest_identity: str = field(init=False)
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
         definitions = tuple(self.definitions)
         artifacts = tuple(self.artifacts)
+        if self.authority_role == "QUALIFIED_LANE":
+            for value, name in (
+                (self.lane_reference, "lane reference"),
+                (self.lane_attestation_identity, "lane attestation identity"),
+                (self.environment_identity, "environment identity"),
+            ):
+                if not isinstance(value, str) or len(value) != 64:
+                    raise ValueError(f"Qualified probe baseline requires {name}")
+        elif self.authority_role == "UNQUALIFIED_DIAGNOSTIC":
+            if (
+                not self.lane_reference.startswith("unqualified-")
+                or self.lane_attestation_identity is not None
+                or self.environment_identity is not None
+            ):
+                raise ValueError(
+                    "Diagnostic probe baseline cannot carry qualified lane evidence"
+                )
+        else:
+            raise ValueError("Unknown numerical probe baseline authority role")
         if (
             not definitions
             or len(definitions) != len(artifacts)
@@ -1504,7 +1578,7 @@ class NumericalProbeBaseline:
                 "Probe baseline requires one artifact per unique definition"
             )
         for definition, artifact in zip(definitions, artifacts, strict=True):
-            artifact.validate_definition(definition)
+            artifact.require_qualification(definition)
         manifest = _identity(
             "numerical-probe-manifest",
             tuple(
@@ -1514,6 +1588,15 @@ class NumericalProbeBaseline:
                     artifacts,
                     strict=True,
                 )
+            )
+            + (
+                (
+                    "lane",
+                    self.lane_reference,
+                    self.lane_attestation_identity,
+                    self.environment_identity,
+                    self.authority_role,
+                ),
             ),
         )
         object.__setattr__(self, "manifest_identity", manifest)
@@ -1524,6 +1607,10 @@ class NumericalProbeBaseline:
                 "numerical-probe-baseline",
                 (
                     manifest,
+                    self.lane_reference,
+                    self.lane_attestation_identity,
+                    self.environment_identity,
+                    self.authority_role,
                     tuple(definition.identity for definition in definitions),
                     tuple(artifact.identity for artifact in artifacts),
                 ),
@@ -1536,6 +1623,10 @@ class NumericalProbeBaseline:
             "semantic_version": _SEMANTIC_VERSION,
             "definitions": [definition.to_record() for definition in self.definitions],
             "artifacts": [artifact.to_record() for artifact in self.artifacts],
+            "lane_reference": self.lane_reference,
+            "lane_attestation_identity": self.lane_attestation_identity,
+            "environment_identity": self.environment_identity,
+            "authority_role": self.authority_role,
             "manifest_identity": self.manifest_identity,
             "identity": self.identity,
         }
@@ -1549,6 +1640,10 @@ class NumericalProbeBaseline:
                 "semantic_version",
                 "definitions",
                 "artifacts",
+                "lane_reference",
+                "lane_attestation_identity",
+                "environment_identity",
+                "authority_role",
                 "manifest_identity",
                 "identity",
             },
@@ -1587,7 +1682,20 @@ class NumericalProbeBaseline:
                 strict=True,
             )
         )
-        baseline = cls(definitions, artifacts)
+        authority_role = record.get("authority_role")
+        if authority_role not in {"QUALIFIED_LANE", "UNQUALIFIED_DIAGNOSTIC"}:
+            raise ValueError("Unknown numerical probe baseline authority role")
+        baseline = cls(
+            definitions,
+            artifacts,
+            _nonempty_string(record.get("lane_reference"), "lane reference"),
+            cast("str | None", record.get("lane_attestation_identity")),
+            cast("str | None", record.get("environment_identity")),
+            cast(
+                "Literal['QUALIFIED_LANE', 'UNQUALIFIED_DIAGNOSTIC']",
+                authority_role,
+            ),
+        )
         if (
             record.get("manifest_identity") != baseline.manifest_identity
             or record.get("identity") != baseline.identity
@@ -1595,9 +1703,43 @@ class NumericalProbeBaseline:
             raise ValueError("Numerical probe baseline identity does not match payload")
         return baseline
 
+    def require_replay(self, expected_manifest_identity: str) -> None:
+        if len(expected_manifest_identity) != 64:
+            raise ValueError(
+                "Expected numerical probe manifest must be a SHA-256 digest"
+            )
+        if self.manifest_identity != expected_manifest_identity:
+            raise ValueError(
+                "Numerical probe replay differs from the selected manifest"
+            )
+
+
+class NumericalProbeExecutionError(RuntimeError):
+    """Typed fail-closed terminal before a complete probe artifact exists."""
+
+    def __init__(
+        self,
+        definition_identity: str,
+        terminal: str,
+        accounting: ObjectiveRequestAccounting,
+        trajectory_fingerprint: str,
+    ) -> None:
+        self.definition_identity = definition_identity
+        self.terminal = terminal
+        self.accounting = accounting
+        self.trajectory_fingerprint = trajectory_fingerprint
+        super().__init__(f"Numerical probe terminated: {terminal}")
+
 
 class _ProbeBudgetExhausted(RuntimeError):
-    pass
+    def __init__(
+        self,
+        accounting: ObjectiveRequestAccounting,
+        trajectory_fingerprint: str,
+    ) -> None:
+        self.accounting = accounting
+        self.trajectory_fingerprint = trajectory_fingerprint
+        super().__init__("Probe objective-request budget exhausted")
 
 
 class _ObjectiveRecorder:
@@ -1627,7 +1769,10 @@ class _ObjectiveRecorder:
         if self.completed >= self._budget:
             self.refused += 1
             self._trace.append((source, "budget_refused"))
-            raise _ProbeBudgetExhausted("Probe objective-request budget exhausted")
+            raise _ProbeBudgetExhausted(
+                self.accounting,
+                self.trajectory_fingerprint,
+            )
         candidate = tuple(float(value) for value in vector)
         key = _vector_tokens(candidate)
         cached = self._cache.get(key)
@@ -1670,6 +1815,32 @@ def _budget_value(definition: NumericalProbeDefinition, field_name: str) -> int:
     return value
 
 
+@dataclass(frozen=True, slots=True)
+class _TrfSettings:
+    ftol: float
+    xtol: float
+    gtol: float
+    x_scale: float
+
+    @classmethod
+    def from_definition(
+        cls,
+        definition: NumericalProbeDefinition,
+        prefix: str = "",
+    ) -> _TrfSettings:
+        if prefix == "" and (
+            _policy_string(definition, "backend") != "scipy.optimize.least_squares"
+            or _policy_string(definition, "method") != "trf"
+        ):
+            raise ValueError("TRF probe policy selects an unsupported backend")
+        return cls(
+            _policy_float(definition, f"{prefix}ftol"),
+            _policy_float(definition, f"{prefix}xtol"),
+            _policy_float(definition, f"{prefix}gtol"),
+            _policy_float(definition, f"{prefix}x_scale"),
+        )
+
+
 def _least_squares_evidence(
     *,
     start: tuple[float, ...],
@@ -1677,8 +1848,15 @@ def _least_squares_evidence(
     upper: tuple[float, ...],
     residual: Callable[[tuple[float, ...]], tuple[float, ...]],
     budget: int,
+    settings: _TrfSettings,
 ) -> tuple[SolverProbeEvidence, bool]:
     recorder = _ObjectiveRecorder(residual, budget)
+    callback_calls = 0
+
+    def count_callback(_intermediate_result: object) -> None:
+        nonlocal callback_calls
+        callback_calls += 1
+
     result = least_squares(
         lambda vector: recorder.evaluate(vector, "solver"),
         np.asarray(start, dtype=np.float64),
@@ -1687,11 +1865,12 @@ def _least_squares_evidence(
             np.asarray(upper, dtype=np.float64),
         ),
         method="trf",
-        ftol=1.0e-10,
-        xtol=1.0e-10,
-        gtol=1.0e-10,
-        x_scale=1.0,
+        ftol=settings.ftol,
+        xtol=settings.xtol,
+        gtol=settings.gtol,
+        x_scale=settings.x_scale,
         max_nfev=budget,
+        callback=count_callback,
     )
     accepted = tuple(float(value) for value in result.x)
     residuals = tuple(
@@ -1715,7 +1894,8 @@ def _least_squares_evidence(
             BackendDiagnosticCounters(
                 int(result.nfev),
                 None if result.njev is None else int(result.njev),
-                0,
+                None,
+                callback_calls,
                 0,
             ),
             recorder.trajectory_fingerprint,
@@ -1746,39 +1926,60 @@ def _sum_diagnostics(
         if any(item.njev is None for item in diagnostics)
         else sum(cast("int", item.njev) for item in diagnostics)
     )
+    iterations = (
+        None
+        if any(item.iterations is None for item in diagnostics)
+        else sum(cast("int", item.iterations) for item in diagnostics)
+    )
     return BackendDiagnosticCounters(
         sum(item.nfev for item in diagnostics),
         njev,
+        iterations,
         sum(item.callback_calls for item in diagnostics),
         sum(item.diagnostic_evaluations for item in diagnostics),
+    )
+
+
+def _solver_matches_truth(
+    definition: NumericalProbeDefinition,
+    evidence: SolverProbeEvidence,
+) -> bool:
+    expected = _policy_vector(definition, "truth")
+    tolerance = _policy_float(definition, "truth_absolute_tolerance")
+    if len(expected) != len(evidence.accepted) or any(
+        not math.isclose(actual, truth, rel_tol=0.0, abs_tol=tolerance)
+        for actual, truth in zip(evidence.accepted, expected, strict=True)
+    ):
+        return False
+    if definition.category == "BOUNDS":
+        return evidence.active_mask == _policy_int_vector(
+            definition,
+            "expected_active_mask",
+        )
+    return evidence.chi_square <= _policy_float(
+        definition,
+        "maximum_chi_square",
     )
 
 
 def _run_solver_probe(
     definition: NumericalProbeDefinition,
 ) -> NumericalProbeArtifact:
+    start = _policy_vector(definition, "start")
+    lower, upper = _policy_bounds(definition)
     if definition.category == "TRF_ROUTINE":
-        start = (0.0, 0.0)
-        lower = (-4.0, -4.0)
-        upper = (4.0, 4.0)
 
         def residual(vector: tuple[float, ...]) -> tuple[float, ...]:
             x_value, y_value = vector
             return (x_value - 1.5, y_value + 0.5)
 
     elif definition.category == "TRF_DIFFICULT":
-        start = (-1.2, 1.0)
-        lower = (-3.0, -3.0)
-        upper = (3.0, 3.0)
 
         def residual(vector: tuple[float, ...]) -> tuple[float, ...]:
             x_value, y_value = vector
             return (10.0 * (y_value - x_value * x_value), 1.0 - x_value)
 
     elif definition.category == "BOUNDS":
-        start = (0.5,)
-        lower = (0.0,)
-        upper = (1.0,)
 
         def residual(vector: tuple[float, ...]) -> tuple[float, ...]:
             return (vector[0] - 2.0,)
@@ -1791,15 +1992,17 @@ def _run_solver_probe(
         upper=upper,
         residual=residual,
         budget=_budget_value(definition, "objective_requests"),
+        settings=_TrfSettings.from_definition(definition),
     )
-    terminal = "CONVERGED" if succeeded else "NON_CONVERGED"
-    risks = ("ACTIVE_BOUND",) if definition.category == "BOUNDS" else ()
+    qualified = succeeded and _solver_matches_truth(definition, evidence)
+    terminal = "CONVERGED" if qualified else "TRUTH_MISMATCH"
+    risks = ("ACTIVE_BOUND",) if qualified and definition.category == "BOUNDS" else ()
     artifact = NumericalProbeArtifact(
         definition.identity,
         definition.probe_id,
         terminal,
         risks,
-        definition.eligible_claims if succeeded else (),
+        definition.eligible_claims if qualified else (),
         evidence,
     )
     artifact.validate_definition(definition)
@@ -1807,24 +2010,35 @@ def _run_solver_probe(
 
 
 def _run_grid_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtifact:
-    lower = (-3.0, -3.0, -3.0)
-    upper = (3.0, 3.0, 3.0)
+    lower, upper = _policy_bounds(definition)
 
     def residual(vector: tuple[float, ...]) -> tuple[float, ...]:
         x_value, y_value, z_value = vector
         return (x_value - 1.0, y_value + 1.0, z_value - 0.5)
 
-    starts = tuple(product((-2.0, 0.0, 2.0), repeat=3))
+    axes = _policy_matrix(definition, "physical_axes")
+    starts = tuple(product(*axes))
+    expected_seed_count = _budget_value(definition, "seed_count")
+    if len(starts) != expected_seed_count:
+        raise ValueError("GRID policy axes do not match its declared seed budget")
     seeds: list[GridSeedEvidence] = []
     for ordinal, start in enumerate(starts):
-        solver, _succeeded = _least_squares_evidence(
+        solver, succeeded = _least_squares_evidence(
             start=start,
             lower=lower,
             upper=upper,
             residual=residual,
             budget=_budget_value(definition, "objective_requests_per_seed"),
+            settings=_TrfSettings.from_definition(definition),
         )
-        seeds.append(GridSeedEvidence(ordinal, start, solver))
+        seeds.append(
+            GridSeedEvidence(
+                ordinal,
+                start,
+                "CONVERGED" if succeeded else "NON_CONVERGED",
+                solver,
+            )
+        )
     seed_evidence = tuple(seeds)
     order = tuple(
         seed.ordinal
@@ -1848,12 +2062,19 @@ def _run_grid_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtif
             tuple(seed.solver.trajectory_fingerprint for seed in seed_evidence),
         ),
     )
+    selected = seed_evidence[order[0]].solver
+    qualified = (
+        all(seed.terminal == "CONVERGED" for seed in seed_evidence)
+        and _solver_matches_truth(definition, selected)
+        and _policy_string(definition, "candidate_tie_break")
+        == "chi-square-then-seed-ordinal"
+    )
     artifact = NumericalProbeArtifact(
         definition.identity,
         definition.probe_id,
-        "SELECTED",
+        "SELECTED" if qualified else "TRUTH_MISMATCH",
         (),
-        definition.eligible_claims,
+        definition.eligible_claims if qualified else (),
         evidence,
     )
     artifact.validate_definition(definition)
@@ -1877,20 +2098,38 @@ def _run_de_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtifac
         values = search_recorder.evaluate(vector, "solver")
         return float(np.dot(values, values))
 
+    callback_calls = 0
+
+    def count_callback(intermediate_result: OptimizeResult) -> None:
+        nonlocal callback_calls
+        _ = intermediate_result
+        callback_calls += 1
+
+    lower, upper = _policy_bounds(definition)
+    mutation = _policy_vector(definition, "mutation")
+    if len(mutation) != 2:
+        raise ValueError("DE mutation policy requires one declared range")
+
+    strategy = _policy_string(definition, "de_strategy")
+    if strategy != "best1bin":
+        raise ValueError("DE probe policy selects an unsupported strategy")
     result = differential_evolution(
         objective,
-        Bounds(np.asarray((-2.0,)), np.asarray((2.0,))),
+        Bounds(np.asarray(lower), np.asarray(upper)),
         strategy="best1bin",
-        maxiter=6,
-        popsize=5,
-        mutation=(0.5, 1.0),
-        recombination=0.7,
-        tol=0.0,
-        atol=0.0,
-        polish=False,
+        maxiter=_policy_int(definition, "maximum_generations"),
+        popsize=_policy_int(definition, "population_multiplier"),
+        mutation=mutation,
+        recombination=_policy_float(definition, "recombination"),
+        tol=_policy_float(definition, "relative_tolerance"),
+        atol=_policy_float(definition, "absolute_tolerance"),
+        polish=_policy_bool(definition, "backend_polish"),
         rng=np.random.default_rng(root_seed),
-        updating="immediate",
-        workers=1,
+        updating=cast(
+            "Literal['immediate', 'deferred']", _policy_string(definition, "updating")
+        ),
+        workers=_policy_int(definition, "workers"),
+        callback=count_callback,
     )
     selected_vector = tuple(float(value) for value in result.x)
     search_recorder.evaluate(selected_vector, "materialization")
@@ -1911,10 +2150,11 @@ def _run_de_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtifac
     )
     polish, polish_succeeded = _least_squares_evidence(
         start=selected_vector,
-        lower=(-2.0,),
-        upper=(2.0,),
+        lower=lower,
+        upper=upper,
         residual=residual,
         budget=_budget_value(definition, "trf_objective_requests"),
+        settings=_TrfSettings.from_definition(definition, "polish_"),
     )
     evidence = DeProbeEvidence(
         root_seed,
@@ -1922,7 +2162,13 @@ def _run_de_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtifac
         order,
         order[0],
         search_recorder.accounting,
-        BackendDiagnosticCounters(int(result.nfev), None, 0, 0),
+        BackendDiagnosticCounters(
+            int(result.nfev),
+            None,
+            callback_calls,
+            callback_calls,
+            0,
+        ),
         polish,
         _identity(
             "de-probe-trajectory",
@@ -1933,33 +2179,128 @@ def _run_de_probe(definition: NumericalProbeDefinition) -> NumericalProbeArtifac
             ),
         ),
     )
-    terminal = "POLISHED" if polish_succeeded else "POLISH_FAILED"
+    selected_population_vector = population[order[0]].vector
+    qualified = (
+        polish_succeeded
+        and _solver_matches_truth(definition, polish)
+        and all(
+            math.isclose(actual, selected, rel_tol=0.0, abs_tol=0.0)
+            for actual, selected in zip(
+                selected_vector,
+                selected_population_vector,
+                strict=True,
+            )
+        )
+        and _policy_string(definition, "workflow_polish") == "trf"
+    )
+    terminal = "POLISHED" if qualified else "TRUTH_MISMATCH"
     artifact = NumericalProbeArtifact(
         definition.identity,
         definition.probe_id,
         terminal,
         (),
-        definition.eligible_claims if polish_succeeded else (),
+        definition.eligible_claims if qualified else (),
         evidence,
     )
     artifact.validate_definition(definition)
     return artifact
 
 
-def _policy_float(definition: NumericalProbeDefinition, field_name: str) -> float:
+def _policy_record(definition: NumericalProbeDefinition) -> Mapping[str, object]:
     policy = definition.policy.to_record_value()
     if not isinstance(policy, Mapping):
         raise TypeError("Probe policy must be a record")
-    raw_value = policy.get(field_name)
+    return cast("Mapping[str, object]", policy)
+
+
+def _semantic_float(value: object, field_name: str) -> float:
+    raw_value = value
     if not isinstance(raw_value, Mapping) or set(raw_value) != {"binary64"}:
         raise TypeError(f"Probe policy {field_name!r} must be binary64")
     return _float_from_record(raw_value.get("binary64"), field_name)
 
 
+def _policy_float(definition: NumericalProbeDefinition, field_name: str) -> float:
+    return _semantic_float(_policy_record(definition).get(field_name), field_name)
+
+
+def _policy_int(definition: NumericalProbeDefinition, field_name: str) -> int:
+    value = _policy_record(definition).get(field_name)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"Probe policy {field_name!r} must be an integer")
+    return value
+
+
+def _policy_string(definition: NumericalProbeDefinition, field_name: str) -> str:
+    return _nonempty_string(
+        _policy_record(definition).get(field_name),
+        f"policy {field_name}",
+    )
+
+
+def _policy_bool(definition: NumericalProbeDefinition, field_name: str) -> bool:
+    value = _policy_record(definition).get(field_name)
+    if not isinstance(value, bool):
+        raise TypeError(f"Probe policy {field_name!r} must be boolean")
+    return value
+
+
+def _semantic_vector(value: object, field_name: str) -> tuple[float, ...]:
+    if not isinstance(value, list) or not value:
+        raise TypeError(f"Probe policy {field_name!r} must be a non-empty list")
+    return tuple(
+        _semantic_float(item, f"{field_name}[{index}]")
+        for index, item in enumerate(value)
+    )
+
+
+def _policy_vector(
+    definition: NumericalProbeDefinition,
+    field_name: str,
+) -> tuple[float, ...]:
+    return _semantic_vector(_policy_record(definition).get(field_name), field_name)
+
+
+def _policy_matrix(
+    definition: NumericalProbeDefinition,
+    field_name: str,
+) -> tuple[tuple[float, ...], ...]:
+    value = _policy_record(definition).get(field_name)
+    if not isinstance(value, list) or not value:
+        raise TypeError(f"Probe policy {field_name!r} must be a non-empty matrix")
+    return tuple(
+        _semantic_vector(row, f"{field_name}[{index}]")
+        for index, row in enumerate(value)
+    )
+
+
+def _policy_int_vector(
+    definition: NumericalProbeDefinition,
+    field_name: str,
+) -> tuple[int, ...]:
+    value = _policy_record(definition).get(field_name)
+    if not isinstance(value, list) or any(
+        isinstance(item, bool) or not isinstance(item, int) for item in value
+    ):
+        raise TypeError(f"Probe policy {field_name!r} must be an integer list")
+    return tuple(cast("list[int]", value))
+
+
+def _policy_bounds(
+    definition: NumericalProbeDefinition,
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    rows = _policy_matrix(definition, "bounds")
+    if any(len(row) != 2 or row[0] >= row[1] for row in rows):
+        raise ValueError("Probe bounds must be ordered lower/upper pairs")
+    return tuple(row[0] for row in rows), tuple(row[1] for row in rows)
+
+
 def _run_finite_difference_probe(
     definition: NumericalProbeDefinition,
 ) -> NumericalProbeArtifact:
-    point = 0.5
+    if _policy_string(definition, "stencil") != "centered-five-point":
+        raise ValueError("Finite-difference probe requires its declared stencil")
+    point = _policy_float(definition, "point")
     step = _policy_float(definition, "step")
     actual_steps = (-2.0 * step, -step, 0.0, step, 2.0 * step)
 
@@ -1988,7 +2329,7 @@ def _run_finite_difference_probe(
         absolute_error,
         absolute_tolerance,
         recorder.accounting,
-        BackendDiagnosticCounters(0, None, 0, 0),
+        BackendDiagnosticCounters(0, None, None, 0, 0),
         recorder.trajectory_fingerprint,
     )
     reliable = absolute_error <= absolute_tolerance
@@ -2019,9 +2360,13 @@ def _run_spectral_risk_probe(
         raise ValueError(f"Probe {definition.probe_id!r} is not spectral")
     singular_values = tuple(
         float(value)
-        for value in np.linalg.svd(
+        for value in svd(
             np.asarray(jacobian, dtype=np.float64),
             compute_uv=False,
+            lapack_driver=cast(
+                "Literal['gesdd', 'gesvd']",
+                _policy_string(definition, "svd_driver"),
+            ),
         )
     )
     rank_threshold = singular_values[0] * relative_tolerance
@@ -2044,7 +2389,7 @@ def _run_spectral_risk_probe(
         condition_limit,
         risks,
         ObjectiveRequestAccounting(0, 0, 0, 0, 0, 0),
-        BackendDiagnosticCounters(0, None, 0, 1),
+        BackendDiagnosticCounters(0, None, None, 0, 1),
         _identity(
             "spectral-probe-trajectory",
             (
@@ -2056,12 +2401,26 @@ def _run_spectral_risk_probe(
             ),
         ),
     )
+    expected_rank = _policy_int(definition, "expected_rank")
+    qualified = rank == expected_rank and bool(risks)
+    if definition.category == "CONDITIONING":
+        expected_condition = _policy_float(definition, "expected_condition")
+        qualified = (
+            qualified
+            and condition is not None
+            and math.isclose(
+                condition,
+                expected_condition,
+                rel_tol=_policy_float(definition, "condition_relative_tolerance"),
+                abs_tol=0.0,
+            )
+        )
     artifact = NumericalProbeArtifact(
         definition.identity,
         definition.probe_id,
-        "RISK_DETECTED" if risks else "NO_RISK",
-        risks,
-        definition.eligible_claims if risks else (),
+        "RISK_DETECTED" if qualified else "TRUTH_MISMATCH",
+        risks if qualified else (),
+        definition.eligible_claims if qualified else (),
         evidence,
     )
     artifact.validate_definition(definition)
@@ -2082,26 +2441,55 @@ def run_numerical_probe(
     )
     if canonical != definition:
         raise ValueError("Only an exact predeclared numerical probe may run")
-    if definition.category in {"TRF_ROUTINE", "TRF_DIFFICULT", "BOUNDS"}:
-        return _run_solver_probe(definition)
-    if definition.category == "GRID":
-        return _run_grid_probe(definition)
-    if definition.category == "DE_SEARCH":
-        return _run_de_probe(definition)
-    if definition.category == "FINITE_DIFFERENCE":
-        return _run_finite_difference_probe(definition)
-    if definition.category in {"RANK", "CONDITIONING"}:
-        return _run_spectral_risk_probe(definition)
-    raise NotImplementedError(f"Probe category {definition.category!r} is not runnable")
+    runners: Mapping[
+        ProbeCategory,
+        Callable[[NumericalProbeDefinition], NumericalProbeArtifact],
+    ] = {
+        "TRF_ROUTINE": _run_solver_probe,
+        "TRF_DIFFICULT": _run_solver_probe,
+        "GRID": _run_grid_probe,
+        "DE_SEARCH": _run_de_probe,
+        "FINITE_DIFFERENCE": _run_finite_difference_probe,
+        "BOUNDS": _run_solver_probe,
+        "RANK": _run_spectral_risk_probe,
+        "CONDITIONING": _run_spectral_risk_probe,
+    }
+    try:
+        return runners[definition.category](definition)
+    except _ProbeBudgetExhausted as error:
+        raise NumericalProbeExecutionError(
+            definition.identity,
+            "BUDGET_EXHAUSTED",
+            error.accounting,
+            error.trajectory_fingerprint,
+        ) from error
 
 
-def run_numerical_probe_baseline() -> NumericalProbeBaseline:
+def run_numerical_probe_baseline(
+    authority: LiveLaneAuthority | None = None,
+    *,
+    expected_manifest_identity: str | None = None,
+) -> NumericalProbeBaseline:
     """Execute the closed v1 catalogue into one immutable typed manifest."""
     definitions = numerical_probe_definitions()
-    return NumericalProbeBaseline(
-        definitions,
-        tuple(run_numerical_probe(definition) for definition in definitions),
-    )
+    artifacts = tuple(run_numerical_probe(definition) for definition in definitions)
+    if authority is None:
+        baseline = NumericalProbeBaseline(definitions, artifacts)
+    else:
+        if not isinstance(authority, LiveLaneAuthority):
+            raise TypeError("Qualified numerical probes require live lane authority")
+        evidence = authority.evidence
+        baseline = NumericalProbeBaseline(
+            definitions,
+            artifacts,
+            evidence.lane_identity,
+            evidence.identity,
+            evidence.environment_identity,
+            "QUALIFIED_LANE",
+        )
+    if expected_manifest_identity is not None:
+        baseline.require_replay(expected_manifest_identity)
+    return baseline
 
 
 def _definition(
@@ -2164,6 +2552,9 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
                 **trf_policy,
                 "start": [0.0, 0.0],
                 "bounds": [[-4.0, 4.0], [-4.0, 4.0]],
+                "truth": [1.5, -0.5],
+                "truth_absolute_tolerance": 1.0e-8,
+                "maximum_chi_square": 1.0e-16,
             },
             budget={"objective_requests": 64},
             seed="not-applicable",
@@ -2185,6 +2576,9 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
                 **trf_policy,
                 "start": [-1.2, 1.0],
                 "bounds": [[-3.0, 3.0], [-3.0, 3.0]],
+                "truth": [1.0, 1.0],
+                "truth_absolute_tolerance": 1.0e-8,
+                "maximum_chi_square": 1.0e-16,
             },
             budget={"objective_requests": 256},
             seed="not-applicable",
@@ -2211,6 +2605,9 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
                 ],
                 "bounds": [[-3.0, 3.0], [-3.0, 3.0], [-3.0, 3.0]],
                 "candidate_tie_break": "chi-square-then-seed-ordinal",
+                "truth": [1.0, -1.0, 0.5],
+                "truth_absolute_tolerance": 1.0e-8,
+                "maximum_chi_square": 1.0e-16,
             },
             budget={"objective_requests_per_seed": 48, "seed_count": 27},
             seed="not-applicable",
@@ -2241,6 +2638,13 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
                 "workers": 1,
                 "backend_polish": False,
                 "workflow_polish": "trf",
+                "polish_ftol": 1.0e-10,
+                "polish_xtol": 1.0e-10,
+                "polish_gtol": 1.0e-10,
+                "polish_x_scale": 1.0,
+                "truth": [0.25],
+                "truth_absolute_tolerance": 1.0e-8,
+                "maximum_chi_square": 1.0e-16,
             },
             budget={"de_objective_requests": 128, "trf_objective_requests": 48},
             seed=591,
@@ -2284,6 +2688,9 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
                 **trf_policy,
                 "start": [0.5],
                 "bounds": [[0.0, 1.0]],
+                "truth": [1.0],
+                "truth_absolute_tolerance": 1.0e-8,
+                "expected_active_mask": [1],
             },
             budget={"objective_requests": 64},
             seed="not-applicable",
@@ -2302,6 +2709,7 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
                 "rank_relative_tolerance": 1.0e-12,
                 "conditioning_limit": 1.0e12,
                 "svd_driver": "gesdd",
+                "expected_rank": 1,
             },
             budget={"svd_decompositions": 1},
             seed="not-applicable",
@@ -2316,7 +2724,13 @@ def numerical_probe_definitions() -> tuple[NumericalProbeDefinition, ...]:
             truth_kind="EXACT_LINEAR_ALGEBRA",
             truth_reference="J=diag(1,1e-8); exact kappa_2(J)=1e8.",
             eligible_claims=("conditioning-risk-detection",),
-            policy={"conditioning_limit": 1.0e6, "svd_driver": "gesdd"},
+            policy={
+                "conditioning_limit": 1.0e6,
+                "svd_driver": "gesdd",
+                "expected_rank": 2,
+                "expected_condition": 1.0e8,
+                "condition_relative_tolerance": 1.0e-12,
+            },
             budget={"svd_decompositions": 1},
             seed="not-applicable",
             terminal="RISK_DETECTED",

@@ -4,23 +4,44 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+from collections.abc import Callable
+from types import SimpleNamespace
 from typing import cast
 
+import numpy as np
 import pytest
 
-from chemex.numerical_probes import (
+from chemex.numerical_lanes import (
+    LiveLaneAuthority,
+    RuntimeEnvironment,
+    canonical_lanes,
+)
+from chemex.optimize.numerical_probes import (
     DeProbeEvidence,
     FiniteDifferenceProbeEvidence,
     GridProbeEvidence,
     NumericalProbeArtifact,
     NumericalProbeBaseline,
     NumericalProbeDefinition,
+    NumericalProbeExecutionError,
     SolverProbeEvidence,
     SpectralRiskProbeEvidence,
     numerical_probe_definitions,
     run_numerical_probe,
     run_numerical_probe_baseline,
 )
+from chemex.typing import Array
+
+
+def _live_authority(monkeypatch: pytest.MonkeyPatch) -> LiveLaneAuthority:
+    lane = canonical_lanes()[0]
+    environment = RuntimeEnvironment(lane.semantics)
+    monkeypatch.setattr(
+        RuntimeEnvironment,
+        "from_current_process",
+        classmethod(lambda cls, image_digest, provenance_path=None: environment),
+    )
+    return lane.attest_current_process(lane.semantics.image_digest)
 
 
 def test_probe_catalogue_freezes_required_truth_and_execution_contracts() -> None:
@@ -99,6 +120,7 @@ def test_trf_probes_replay_with_authoritative_request_accounting(
     assert accounting.materialization_requests == 1
     assert accounting.cache_hits >= 1
     assert accounting.workflow_requests > first.evidence.backend_diagnostics.nfev
+    assert first.evidence.backend_diagnostics.callback_calls > 0
     assert first.evidence.trajectory_fingerprint == (
         replay.evidence.trajectory_fingerprint
     )
@@ -119,7 +141,9 @@ def test_finite_difference_probe_retains_truth_steps_and_request_fingerprint() -
         abs=first.evidence.absolute_tolerance,
     )
     assert first.evidence.actual_steps == pytest.approx(
-        (-2.0e-4, -1.0e-4, 0.0, 1.0e-4, 2.0e-4)
+        (-2.0e-4, -1.0e-4, 0.0, 1.0e-4, 2.0e-4),
+        rel=0.0,
+        abs=1.0e-16,
     )
     assert first.evidence.objective_accounting.requests_received == 5
     assert first.evidence.backend_diagnostics.nfev == 0
@@ -149,8 +173,16 @@ def test_bound_rank_and_conditioning_probes_fail_closed_against_exact_truth() ->
     assert isinstance(conditioning.evidence, SpectralRiskProbeEvidence)
     assert conditioning.terminal == "RISK_DETECTED"
     assert conditioning.evidence.rank == 2
-    assert conditioning.evidence.condition == pytest.approx(1.0e8)
-    assert conditioning.evidence.condition_limit == pytest.approx(1.0e6)
+    assert conditioning.evidence.condition == pytest.approx(
+        1.0e8,
+        rel=1.0e-12,
+        abs=0.0,
+    )
+    assert conditioning.evidence.condition_limit == pytest.approx(
+        1.0e6,
+        rel=0.0,
+        abs=0.0,
+    )
     assert conditioning.risks == ("ILL_CONDITIONED",)
 
     for definition, artifact in zip(
@@ -220,11 +252,68 @@ def test_de_probe_retains_seeded_population_order_and_separate_trf_polish() -> N
     )
     assert first.evidence.search_accounting.requests_received > 0
     assert first.evidence.search_diagnostics.nfev > 0
+    assert first.evidence.search_diagnostics.callback_calls == 6
+    assert first.evidence.search_diagnostics.iterations == 6
     assert first.evidence.polish.accepted == pytest.approx((0.25,), abs=1.0e-8)
     assert first.evidence.trajectory_fingerprint == (
         replay.evidence.trajectory_fingerprint
     )
     assert first.identity == replay.identity
+
+
+def test_backend_success_cannot_mint_truth_claims(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = numerical_probe_definitions()[0]
+
+    def false_success(*_args: object, **_kwargs: object) -> object:
+        return SimpleNamespace(
+            x=np.asarray((0.0, 0.0)),
+            active_mask=np.asarray((0, 0)),
+            nfev=1,
+            njev=0,
+            success=True,
+        )
+
+    monkeypatch.setattr(
+        "chemex.optimize.numerical_probes.least_squares",
+        false_success,
+    )
+
+    artifact = run_numerical_probe(definition)
+
+    assert artifact.terminal == "TRUTH_MISMATCH"
+    assert artifact.satisfied_claims == ()
+    with pytest.raises(ValueError, match="qualify"):
+        NumericalProbeBaseline((definition,), (artifact,))
+
+
+def test_budget_exhaustion_retains_refused_request_and_trajectory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = numerical_probe_definitions()[0]
+
+    def exhaust_budget(
+        fun: Callable[[Array], Array],
+        _start: object,
+        **_kwargs: object,
+    ) -> object:
+        for _index in range(65):
+            fun(np.asarray((0.0, 0.0)))
+        raise AssertionError("Budget should terminate before backend completion")
+
+    monkeypatch.setattr(
+        "chemex.optimize.numerical_probes.least_squares",
+        exhaust_budget,
+    )
+
+    with pytest.raises(NumericalProbeExecutionError) as captured:
+        run_numerical_probe(definition)
+
+    assert captured.value.terminal == "BUDGET_EXHAUSTED"
+    assert captured.value.accounting.requests_completed == 64
+    assert captured.value.accounting.requests_refused == 1
+    assert len(captured.value.trajectory_fingerprint) == 64
 
 
 def test_probe_baseline_manifest_replays_round_trips_and_rejects_tampering() -> None:
@@ -237,7 +326,15 @@ def test_probe_baseline_manifest_replays_round_trips_and_rejects_tampering() -> 
     )
     assert first.manifest_identity == replay.manifest_identity
     assert first.identity == replay.identity
+    assert first.authority_role == "UNQUALIFIED_DIAGNOSTIC"
+    assert first.lane_reference.startswith("unqualified-")
     assert NumericalProbeBaseline.from_record(first.to_record()) == first
+    assert (
+        run_numerical_probe_baseline(expected_manifest_identity=first.manifest_identity)
+        == first
+    )
+    with pytest.raises(ValueError, match="differs"):
+        run_numerical_probe_baseline(expected_manifest_identity="0" * 64)
 
     tampered = copy.deepcopy(first.to_record())
     artifacts = tampered["artifacts"]
@@ -249,3 +346,17 @@ def test_probe_baseline_manifest_replays_round_trips_and_rejects_tampering() -> 
 
     with pytest.raises(ValueError, match="accounting|payload"):
         NumericalProbeBaseline.from_record(tampered)
+
+
+def test_probe_baseline_retains_live_lane_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authority = _live_authority(monkeypatch)
+
+    baseline = run_numerical_probe_baseline(authority)
+
+    assert baseline.authority_role == "QUALIFIED_LANE"
+    assert baseline.lane_reference == authority.lane_identity
+    assert baseline.lane_attestation_identity == authority.identity
+    assert baseline.environment_identity == authority.environment_identity
+    assert NumericalProbeBaseline.from_record(baseline.to_record()) == baseline
