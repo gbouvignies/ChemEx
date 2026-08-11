@@ -417,24 +417,10 @@ class GridDirectTrfInvocation:
                 problem.controlled_ids,
                 finite_start,
             )
-            child = OptimizationProblem(
-                problem.evaluation_plan_identity,
-                problem.parameterization_identity,
-                problem.evaluator_parameterization_identity,
-                problem.constraint_program_identity,
-                problem.configuration_identity,
-                problem.source_snapshot,
-                problem.independent_items,
-                problem.controlled_ids,
-                problem.held_items,
-                finite_start,
-                problem.lower_bounds,
-                problem.upper_bounds,
-                problem.commit_scope,
-                derivation,
-                problem.scalarization_version,
-                problem.affine_half_spaces,
-                problem.affine_equalities,
+            child = problem.derive_child(
+                controlled_ids=problem.controlled_ids,
+                start=finite_start,
+                derivation=derivation,
             )
             child_invocation = DirectTrfInvocation.for_problem(
                 child,
@@ -655,26 +641,8 @@ def _validate_direct_grid_record(
     materialized = None if candidate is None else candidate.candidate
     materialization = None if materialized is None else materialized.materialization
     derivation = None if child_problem is None else child_problem.derivation
-    unchanged_root_semantics = (
-        child_problem is not None
-        and child_problem.evaluation_plan_identity == problem.evaluation_plan_identity
-        and child_problem.parameterization_identity == problem.parameterization_identity
-        and child_problem.evaluator_parameterization_identity
-        == problem.evaluator_parameterization_identity
-        and child_problem.constraint_program_identity
-        == problem.constraint_program_identity
-        and child_problem.configuration_identity == problem.configuration_identity
-        and child_problem.source_snapshot == problem.source_snapshot
-        and child_problem.independent_items == problem.independent_items
-        and child_problem.controlled_ids == problem.controlled_ids
-        and child_problem.held_items == problem.held_items
-        and child_problem.lower_bounds == problem.lower_bounds
-        and child_problem.upper_bounds == problem.upper_bounds
-        and child_problem.commit_scope == problem.commit_scope
-        and child_problem.scalarization_version == problem.scalarization_version
-        and child_problem.affine_half_spaces == problem.affine_half_spaces
-        and child_problem.affine_equalities == problem.affine_equalities
-    )
+    if child_problem is not None:
+        problem.validate_derived_problem(child_problem)
     if (
         invocation.root_problem_identity != problem.identity
         or seed.root_problem_identity != problem.identity
@@ -697,7 +665,6 @@ def _validate_direct_grid_record(
         or derivation.root_problem_identity != problem.identity
         or derivation.seed_identity != seed.coordinate_identity
         or derivation.seed_ordinal != seed.ordinal
-        or not unchanged_root_semantics
         or direct.execution.problem_identity != child_problem.identity
         or direct.execution.invocation_identity != child_invocation.identity
         or not _materialized_grid_candidate_matches(
