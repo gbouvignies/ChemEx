@@ -44,6 +44,7 @@ from chemex.optimize.uncertainty import (
 from chemex.parameters.parameterization import ActiveParameterization
 from chemex.parameters.spin_system import SpinSystem
 from chemex.runtime import AnalysisSession
+from chemex.typing import Array
 
 ROOT = Path(__file__).parent.parent
 EXPERIMENT = ROOT / "examples/Experiments/RELAXATION_HZNZ/Experiments/800mhz.toml"
@@ -230,10 +231,10 @@ def _independent_five_point_jacobian(
     steps: tuple[float, ...],
     *,
     forward_columns: frozenset[int] = frozenset(),
-) -> np.ndarray:
+) -> Array:
     """Auditable five-point reference independent of uncertainty.py."""
 
-    def residuals(candidate: tuple[float, ...]) -> np.ndarray:
+    def residuals(candidate: tuple[float, ...]) -> Array:
         frame = EvaluationFrame.from_lifecycle_frame(
             parameterization,
             problem.lifecycle_frame(candidate, parameterization),
@@ -243,9 +244,9 @@ def _independent_five_point_jacobian(
         return np.asarray(evaluated.residuals, dtype=np.float64)
 
     base = residuals(vector)
-    columns: list[np.ndarray] = []
+    columns: list[Array] = []
     for column, step in enumerate(steps):
-        values: list[np.ndarray] = []
+        values: list[Array] = []
         if column in forward_columns:
             for multiplier in (1.0, 2.0, 3.0, 4.0):
                 candidate = list(vector)
@@ -749,6 +750,7 @@ def test_boundary_covariance_remains_diagnostic_but_reporting_fails_closed() -> 
     boundary_accepted = dataclasses.replace(
         accepted,
         problem_identity=boundary_problem.identity,
+        occurrence_witness=None,
     )
 
     evidence = derive_uncertainty_evidence(
@@ -786,6 +788,18 @@ def test_boundary_covariance_remains_diagnostic_but_reporting_fails_closed() -> 
     assert evidence.correlations is not None
     assert evidence.correlations.entries[0][0].value == 1.0
     assert not evidence.correlations.scope_reportable
+    forged_reportability_claims = tuple(
+        dataclasses.replace(item, state=ClaimState.SATISFIED)
+        if item.name == "MARGINAL_SCOPE_REPORTABILITY"
+        else item
+        for item in evidence.marginal_errors.claims
+    )
+    with pytest.raises(ValueError, match="reportability"):
+        dataclasses.replace(
+            evidence.marginal_errors,
+            scope_reportable=True,
+            claims=forged_reportability_claims,
+        )
 
 
 def test_unrepresentable_centered_interval_falls_back_to_inward_stencil() -> None:
@@ -821,6 +835,7 @@ def test_nonfinite_boundary_separation_is_indeterminate() -> None:
     compatible_accepted = dataclasses.replace(
         accepted,
         problem_identity=finite_extreme_problem.identity,
+        occurrence_witness=None,
     )
 
     evidence = derive_uncertainty_evidence(
@@ -838,7 +853,11 @@ def test_nonfinite_boundary_separation_is_indeterminate() -> None:
 
 def test_non_finite_accepted_objective_yields_only_typed_failed_covariance() -> None:
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
-    non_finite = dataclasses.replace(accepted, chi_square=float("inf"))
+    non_finite = dataclasses.replace(
+        accepted,
+        chi_square=float("inf"),
+        occurrence_witness=None,
+    )
 
     evidence = derive_uncertainty_evidence(
         non_finite,
@@ -1086,6 +1105,28 @@ def test_exact_accepted_occurrence_is_not_reconstructible_or_mixable() -> None:
             accepted_occurrence_identity="foreign-occurrence",
             accepted_anchor=accepted,
         )
+    with pytest.raises(ValueError, match="request"):
+        dataclasses.replace(evidence, request_identity="foreign-request")
+    with pytest.raises(ValueError, match="request"):
+        dataclasses.replace(evidence, policy_identity="foreign-policy")
+
+    equivalent_occurrence = dataclasses.replace(
+        accepted,
+        occurrence_identity="equivalent-authoritative-occurrence",
+        occurrence_witness=None,
+    )
+    assert equivalent_occurrence.identity == accepted.identity
+    other_evidence = derive_uncertainty_evidence(
+        equivalent_occurrence,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=_qualification_policy(problem.controlled_ids[0]),
+        resolved_environment_identity="other-equivalent-occurrence",
+    )
+    assert other_evidence.covariance is not None
+    with pytest.raises(ValueError, match="accepted fit occurrences"):
+        dataclasses.replace(evidence, covariance=other_evidence.covariance)
 
 
 def test_authoritative_artifacts_reject_inconsistent_reconstruction() -> None:
@@ -1141,6 +1182,24 @@ def test_authoritative_artifacts_reject_inconsistent_reconstruction() -> None:
     for artifact, changes in replacements:
         with pytest.raises(ValueError):
             dataclasses.replace(artifact, **changes)
+
+    forged_column = dataclasses.replace(
+        jacobian.columns[0],
+        fine_estimate=tuple(value + 1.0 for value in jacobian.columns[0].fine_estimate),
+    )
+    forged_matrix = tuple((value,) for value in forged_column.fine_estimate)
+    with pytest.raises(ValueError, match="replayed"):
+        dataclasses.replace(
+            jacobian,
+            columns=(forged_column,),
+            matrix=forged_matrix,
+        )
+    forged_subspace = dataclasses.replace(
+        rank.subspaces[0],
+        classification="isolated_null",
+    )
+    with pytest.raises(ValueError, match="classification"):
+        dataclasses.replace(rank, subspaces=(forged_subspace,))
 
     altered_claims = tuple(
         dataclasses.replace(item, state=ClaimState.SATISFIED)
@@ -1210,6 +1269,7 @@ def test_affine_directional_separation_uses_exact_full_frame_slack(
         accepted,
         problem_identity=affine_problem.identity,
         occurrence_identity=f"affine-{zeta.hex()}",
+        occurrence_witness=None,
     )
     evidence = derive_uncertainty_evidence(
         affine_accepted,
@@ -1242,6 +1302,7 @@ def test_affine_held_only_and_equality_semantics_fail_closed() -> None:
         accepted,
         problem_identity=held_problem.identity,
         occurrence_identity="held-only-occurrence",
+        occurrence_witness=None,
     )
     held_evidence = derive_uncertainty_evidence(
         held_accepted,
@@ -1253,12 +1314,39 @@ def test_affine_held_only_and_equality_semantics_fail_closed() -> None:
     )
     assert held_evidence.covariance is not None
     assert held_evidence.covariance.claim("AFFINE_FEASIBILITY") is ClaimState.SATISFIED
+    assert held_evidence.covariance.usable
+
+    held_equality = AffineEquality(
+        "held-equality",
+        _full_frame_coefficients(problem, {held_id: 1.0}),
+        held_value,
+    )
+    held_equality_problem = dataclasses.replace(
+        problem, affine_equalities=(held_equality,)
+    )
+    held_equality_accepted = dataclasses.replace(
+        accepted,
+        problem_identity=held_equality_problem.identity,
+        occurrence_identity="held-equality-occurrence",
+        occurrence_witness=None,
+    )
+    held_equality_evidence = derive_uncertainty_evidence(
+        held_equality_accepted,
+        problem=held_equality_problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=_qualification_policy(problem.controlled_ids[0]),
+        resolved_environment_identity="held-equality-affine",
+    )
+    assert held_equality_evidence.covariance is not None
+    assert held_equality_evidence.covariance.usable
 
     equality_problem = dataclasses.replace(problem, affine_equalities=(equality,))
     equality_accepted = dataclasses.replace(
         accepted,
         problem_identity=equality_problem.identity,
         occurrence_identity="equality-occurrence",
+        occurrence_witness=None,
     )
     equality_evidence = derive_uncertainty_evidence(
         equality_accepted,
@@ -1337,6 +1425,7 @@ def test_affine_coupled_negative_degenerate_and_nonfinite_cases() -> None:
             accepted,
             problem_identity=constrained_problem.identity,
             occurrence_identity=f"{label}-affine-occurrence",
+            occurrence_witness=None,
         )
         evidence = derive_uncertainty_evidence(
             constrained_accepted,
@@ -1360,6 +1449,7 @@ def test_affine_coupled_negative_degenerate_and_nonfinite_cases() -> None:
         problem_identity=degenerate_problem.identity,
         occurrence_identity="degenerate-affine-occurrence",
         chi_square=0.0,
+        occurrence_witness=None,
     )
     degenerate = derive_uncertainty_evidence(
         degenerate_accepted,

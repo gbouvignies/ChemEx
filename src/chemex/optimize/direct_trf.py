@@ -466,6 +466,25 @@ class DePolishProblemDerivation:
         )
 
 
+def _normalize_affine_restriction(
+    restriction_id: str,
+    coefficients: tuple[float, ...],
+    scalar: float,
+    *,
+    scalar_name: str,
+) -> tuple[tuple[float, ...], float]:
+    normalized_coefficients = tuple(
+        _finite_binary64(value, name=f"affine coefficient[{index}]")
+        for index, value in enumerate(coefficients)
+    )
+    normalized_scalar = _finite_binary64(scalar, name=scalar_name)
+    if not restriction_id or not normalized_coefficients:
+        raise DirectTrfConstructionError(
+            "Affine restrictions require an ID and full-frame coefficients"
+        )
+    return normalized_coefficients, normalized_scalar
+
+
 @dataclass(frozen=True, slots=True)
 class AffineHalfSpace:
     """One canonical full independent-frame restriction ``a^T x <= b``."""
@@ -476,18 +495,12 @@ class AffineHalfSpace:
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
-        coefficients = tuple(
-            _finite_binary64(value, name=f"affine coefficient[{index}]")
-            for index, value in enumerate(self.coefficients)
-        )
-        upper_bound = _finite_binary64(
+        coefficients, upper_bound = _normalize_affine_restriction(
+            self.restriction_id,
+            self.coefficients,
             self.upper_bound,
-            name="affine upper bound",
+            scalar_name="affine upper bound",
         )
-        if not self.restriction_id or not coefficients:
-            raise DirectTrfConstructionError(
-                "Affine restrictions require an ID and full-frame coefficients"
-            )
         object.__setattr__(self, "coefficients", coefficients)
         object.__setattr__(self, "upper_bound", upper_bound)
         object.__setattr__(
@@ -514,15 +527,12 @@ class AffineEquality:
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
-        coefficients = tuple(
-            _finite_binary64(value, name=f"equality coefficient[{index}]")
-            for index, value in enumerate(self.coefficients)
+        coefficients, value = _normalize_affine_restriction(
+            self.restriction_id,
+            self.coefficients,
+            self.value,
+            scalar_name="affine equality value",
         )
-        value = _finite_binary64(self.value, name="affine equality value")
-        if not self.restriction_id or not coefficients:
-            raise DirectTrfConstructionError(
-                "Affine equalities require an ID and full-frame coefficients"
-            )
         object.__setattr__(self, "coefficients", coefficients)
         object.__setattr__(self, "value", value)
         object.__setattr__(
@@ -1179,8 +1189,21 @@ class GridSelectionProvenance:
         )
 
 
-_ACCEPTED_SEMANTIC_OCCURRENCES: dict[str, str] = {}
-_ACCEPTED_SEMANTIC_OCCURRENCES_LOCK = RLock()
+@dataclass(frozen=True, slots=True)
+class _AcceptedOccurrenceWitness:
+    occurrence_identity: str
+    accepted_result_identity: str
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-accepted-occurrence-witness",
+                (self.occurrence_identity, self.accepted_result_identity),
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1203,6 +1226,12 @@ class AcceptedFitResult:
     commit_scope: tuple[str, ...]
     commit_items: tuple[tuple[str, float], ...]
     origin_context_identity: str
+    occurrence_witness: _AcceptedOccurrenceWitness | None = field(
+        default=None,
+        compare=False,
+        repr=False,
+        kw_only=True,
+    )
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -1233,21 +1262,22 @@ class AcceptedFitResult:
                 self.origin_context_identity,
             ),
         )
-        with _ACCEPTED_SEMANTIC_OCCURRENCES_LOCK:
-            _ACCEPTED_SEMANTIC_OCCURRENCES.setdefault(
-                identity,
-                self.occurrence_identity,
+        if self.occurrence_witness is None:
+            object.__setattr__(
+                self,
+                "occurrence_witness",
+                _AcceptedOccurrenceWitness(self.occurrence_identity, identity),
             )
         object.__setattr__(self, "identity", identity)
 
 
 def accepted_occurrence_is_authoritative(accepted: AcceptedFitResult) -> bool:
-    """Report whether this object carries the first established lifecycle occurrence."""
-    with _ACCEPTED_SEMANTIC_OCCURRENCES_LOCK:
-        return (
-            _ACCEPTED_SEMANTIC_OCCURRENCES.get(accepted.identity)
-            == accepted.occurrence_identity
-        )
+    """Report whether this object retains its exact construction occurrence."""
+    witness = accepted.occurrence_witness
+    return witness is not None and (
+        witness.occurrence_identity == accepted.occurrence_identity
+        and witness.accepted_result_identity == accepted.identity
+    )
 
 
 class LiveFitCommitAuthority:

@@ -50,6 +50,7 @@ from chemex.parameters.parameterization import (
     UnaryExpression,
     scientific_callable_fingerprint,
 )
+from chemex.typing import Array
 
 _SCHEMA_VERSION = 1
 _RESIDUAL_LINEARIZATION_VERSION = "external-real-finite-difference-v1"
@@ -895,6 +896,18 @@ class ResidualJacobianEvidence:
         metadata={"record": False},
         kw_only=True,
     )
+    source_problem: OptimizationProblem = field(
+        repr=False, compare=False, metadata={"record": False}, kw_only=True
+    )
+    source_parameterization: ActiveParameterization = field(
+        repr=False, compare=False, metadata={"record": False}, kw_only=True
+    )
+    source_engine: EvaluationEngine = field(
+        repr=False, compare=False, metadata={"record": False}, kw_only=True
+    )
+    source_policy: UncertaintyPolicy = field(
+        repr=False, compare=False, metadata={"record": False}, kw_only=True
+    )
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -955,6 +968,43 @@ class ResidualJacobianEvidence:
             or self.trajectory_fingerprint != expected_trajectory
         ):
             raise ValueError("Residual Jacobian differs from its accepted columns")
+        evaluator = self.source_engine.new_evaluator()
+        base = _evaluate_vector(
+            self.accepted_anchor.vector,
+            problem=self.source_problem,
+            parameterization=self.source_parameterization,
+            evaluator=evaluator,
+        )
+        if (
+            isinstance(base, EvaluationFailure)
+            or base.identity != self.accepted_evaluation_identity
+        ):
+            raise ValueError("Residual Jacobian baseline cannot be replayed")
+        base_residuals = tuple(float(value) for value in base.residuals)
+        for column, (param_id, scale, declared) in enumerate(
+            zip(
+                self.controlled_ids,
+                self.coordinate_scales,
+                self.columns,
+                strict=True,
+            )
+        ):
+            replayed, _trajectory, failure = _linearize_residual_column(
+                self.accepted_anchor,
+                problem=self.source_problem,
+                parameterization=self.source_parameterization,
+                evaluator=evaluator,
+                policy=self.source_policy,
+                base_residuals=base_residuals,
+                column=column,
+                param_id=param_id,
+                scale=scale,
+                cancellation_probe=None,
+            )
+            if failure is not None or replayed != declared:
+                raise ValueError(
+                    "Residual Jacobian stencil evidence cannot be replayed"
+                )
         object.__setattr__(self, "matrix", matrix)
         object.__setattr__(
             self,
@@ -1189,6 +1239,16 @@ class RankDiagnostic:
                 self.singular_values[index] for index in item.indices
             ):
                 raise ValueError("Singular subspace spectrum is inconsistent")
+            expected_classification = (
+                "isolated_" if len(item.indices) == 1 else "clustered_"
+            ) + _singular_direction_class(
+                self.singular_values,
+                item.indices[0],
+                rank_threshold=self.threshold,
+                weak_threshold=self.weak_threshold,
+            )
+            if item.classification != expected_classification:
+                raise ValueError("Singular subspace classification is inconsistent")
             item_projector = np.asarray(item.projector)
             if not np.allclose(
                 item_projector @ information,
@@ -1410,7 +1470,12 @@ class CovarianceEvidence:
             != expected_jacobian_condition * expected_jacobian_condition
         ):
             raise ValueError("Covariance conditioning claims do not match the spectrum")
-        expected_interior, expected_boundary, expected_affine = _boundary_claims(
+        (
+            expected_interior,
+            expected_boundary,
+            expected_affine,
+            expected_controlled_affine,
+        ) = _boundary_claims(
             accepted,
             problem,
             covariance,
@@ -1432,6 +1497,7 @@ class CovarianceEvidence:
             "INTERIOR_POINT": expected_interior.state,
             "BOUNDARY_SEPARATION": expected_boundary.state,
             "AFFINE_FEASIBILITY": expected_affine.state,
+            "CONTROLLED_AFFINE_SEPARATION": expected_controlled_affine.state,
             "CONDITIONING_ADEQUACY": (
                 ClaimState.SATISFIED
                 if expected_jacobian_condition <= policy.conditioning_limit
@@ -1451,8 +1517,8 @@ class CovarianceEvidence:
             expected_full_dimensional.state,
             expected_interior.state,
             expected_boundary.state,
-            expected_affine.state
-            if expected_affine.state is not ClaimState.NOT_APPLICABLE
+            expected_controlled_affine.state
+            if expected_controlled_affine.state is not ClaimState.NOT_APPLICABLE
             else ClaimState.SATISFIED,
             expected_claim_states["PROFILED_NORMALIZATION_REGULARITY"],
             (
@@ -1629,13 +1695,19 @@ class MarginalErrorEvidence:
         ):
             raise ValueError("Marginal validity claim is inconsistent")
         report_claim = _named_claim(self.claims, "MARGINAL_SCOPE_REPORTABILITY")
+        source_reportable = (
+            source.source_covariance.usable
+            and source.claim("LOCAL_FIRST_ORDER_DEGENERACY") is ClaimState.SATISFIED
+            if isinstance(source, ConstrainedPropagationEvidence)
+            else source.usable
+        )
+        expected_reportable = source_reportable and complete
         if (
             report_claim.state
             is not (
-                ClaimState.SATISFIED if self.scope_reportable else ClaimState.VIOLATED
+                ClaimState.SATISFIED if expected_reportable else ClaimState.VIOLATED
             )
-            or self.scope_reportable
-            and not complete
+            or self.scope_reportable is not expected_reportable
         ):
             raise ValueError("Marginal reportability claim is inconsistent")
         object.__setattr__(
@@ -1816,13 +1888,19 @@ class CorrelationEvidence:
             ClaimState.SATISFIED if complete else ClaimState.VIOLATED
         ):
             raise ValueError("Correlation validity claim is inconsistent")
+        source_reportable = (
+            source.source_covariance.usable
+            and source.claim("LOCAL_FIRST_ORDER_DEGENERACY") is ClaimState.SATISFIED
+            if isinstance(source, ConstrainedPropagationEvidence)
+            else source.usable
+        )
+        expected_reportable = source_reportable and complete
         if (
             _named_claim(self.claims, "CORRELATION_SCOPE_REPORTABILITY").state
             is not (
-                ClaimState.SATISFIED if self.scope_reportable else ClaimState.VIOLATED
+                ClaimState.SATISFIED if expected_reportable else ClaimState.VIOLATED
             )
-            or self.scope_reportable
-            and not complete
+            or self.scope_reportable is not expected_reportable
         ):
             raise ValueError("Correlation reportability claim is inconsistent")
         object.__setattr__(
@@ -2206,14 +2284,57 @@ class UncertaintyEvidence:
         metadata={"record": False},
         kw_only=True,
     )
+    requested_output_scope: tuple[str, ...] = field(kw_only=True)
+    requested_output_units: tuple[ParameterUnit, ...] = field(kw_only=True)
+    requested_output_scales: tuple[float, ...] = field(kw_only=True)
+    source_problem: OptimizationProblem = field(
+        repr=False, compare=False, metadata={"record": False}, kw_only=True
+    )
+    source_parameterization: ActiveParameterization = field(
+        repr=False, compare=False, metadata={"record": False}, kw_only=True
+    )
+    source_engine: EvaluationEngine = field(
+        repr=False, compare=False, metadata={"record": False}, kw_only=True
+    )
+    source_policy: UncertaintyPolicy = field(
+        repr=False, compare=False, metadata={"record": False}, kw_only=True
+    )
+    source_capabilities: CompiledConstraintLinearizationCapabilities = field(
+        repr=False, compare=False, metadata={"record": False}, kw_only=True
+    )
     identity: str = field(init=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:  # noqa: C901 - complete bundle integrity chain
         _validate_accepted_anchor(
             self.accepted_anchor,
             self.accepted_result_identity,
             self.accepted_occurrence_identity,
         )
+        expected_request = _identity(
+            "native-uncertainty-request",
+            (
+                self.accepted_anchor.identity,
+                self.accepted_anchor.occurrence_identity,
+                self.source_problem.identity,
+                self.source_parameterization.identity,
+                self.source_engine.plan.identity,
+                self.source_policy.identity,
+                self.requested_output_scope,
+                self.requested_output_units,
+                _vector_tokens(self.requested_output_scales),
+                self.source_capabilities.identity,
+            ),
+        )
+        if (
+            self.request_identity != expected_request
+            or self.policy_identity != self.source_policy.identity
+            or self.source_capabilities.output_scope != self.requested_output_scope
+            or len(self.requested_output_units) != len(self.requested_output_scope)
+            or len(self.requested_output_scales) != len(self.requested_output_scope)
+        ):
+            raise ValueError(
+                "Uncertainty request does not match its exact source inputs"
+            )
         artifacts = tuple(
             item
             for item in (
@@ -2289,6 +2410,76 @@ class UncertaintyEvidence:
         }
         if completed != stage_artifacts:
             raise ValueError("Evidence operations do not bind the assembled artifacts")
+        if self.residual_jacobian is not None:
+            expected_residual_request = _identity(
+                "native-residual-linearization-request",
+                (
+                    self.request_identity,
+                    self.accepted_result_identity,
+                    self.accepted_occurrence_identity,
+                    self.source_engine.plan.identity,
+                    self.source_policy.identity,
+                ),
+            )
+            if self.residual_jacobian.request_identity != expected_residual_request:
+                raise ValueError("Residual Jacobian request lineage is inconsistent")
+        if self.rank_diagnostic is not None:
+            expected_covariance_request = _identity(
+                "native-covariance-request",
+                (
+                    self.request_identity,
+                    None
+                    if self.residual_jacobian is None
+                    else self.residual_jacobian.identity,
+                    self.source_policy.identity,
+                ),
+            )
+            if self.rank_diagnostic.request_identity != expected_covariance_request or (
+                self.covariance is not None
+                and self.covariance.request_identity != expected_covariance_request
+            ):
+                raise ValueError("Covariance request lineage is inconsistent")
+        if self.constraint_jacobian is not None:
+            expected_constraint_request = _identity(
+                "native-constraint-linearization-request",
+                (
+                    self.request_identity,
+                    self.accepted_result_identity,
+                    self.accepted_occurrence_identity,
+                    self.requested_output_scope,
+                    self.requested_output_units,
+                    _vector_tokens(self.requested_output_scales),
+                    self.source_policy.identity,
+                ),
+            )
+            if (
+                self.constraint_jacobian.request_identity != expected_constraint_request
+                or self.constraint_jacobian.output_ids != self.requested_output_scope
+                or self.constraint_jacobian.output_units != self.requested_output_units
+                or self.constraint_jacobian.output_scales
+                != self.requested_output_scales
+            ):
+                raise ValueError("Constraint Jacobian request lineage is inconsistent")
+        if self.constrained_propagation is not None:
+            expected_propagation_request = _identity(
+                "native-constrained-propagation-request",
+                (
+                    self.request_identity,
+                    None if self.covariance is None else self.covariance.identity,
+                    None
+                    if self.constraint_jacobian is None
+                    else self.constraint_jacobian.identity,
+                    self.requested_output_scope,
+                    self.source_policy.identity,
+                ),
+            )
+            if (
+                self.constrained_propagation.request_identity
+                != expected_propagation_request
+            ):
+                raise ValueError(
+                    "Constrained propagation request lineage is inconsistent"
+                )
         object.__setattr__(
             self,
             "identity",
@@ -2442,18 +2633,8 @@ def _has_positive_scale_zero_variance(
     )
 
 
-def _canonical_right_singular_vectors(values: np.ndarray) -> np.ndarray:
-    """Fix each isolated right-singular direction by its first max-magnitude entry."""
-    canonical = np.array(values, dtype=np.float64, copy=True)
-    for column in range(canonical.shape[1]):
-        pivot = int(np.argmax(np.abs(canonical[:, column])))
-        if canonical[pivot, column] < 0.0:
-            canonical[:, column] *= -1.0
-    return canonical
-
-
 def _invariant_singular_subspaces(
-    right: np.ndarray,
+    right: Array,
     singular_values: tuple[float, ...],
     *,
     rank_threshold: float,
@@ -2461,14 +2642,6 @@ def _invariant_singular_subspaces(
     cluster_relative_tolerance: float,
 ) -> tuple[SingularSubspaceEvidence, ...]:
     """Retain projectors, never basis orientation, for clustered directions."""
-
-    def direction_class(index: int) -> Literal["identifiable", "weak", "null"]:
-        value = singular_values[index]
-        if value <= rank_threshold:
-            return "null"
-        if value <= weak_threshold:
-            return "weak"
-        return "identifiable"
 
     groups = _singular_cluster_indices(
         singular_values,
@@ -2492,7 +2665,12 @@ def _invariant_singular_subspaces(
             indices,
             tuple(singular_values[index] for index in indices),
             ("isolated_" if len(indices) == 1 else "clustered_")
-            + direction_class(indices[0]),
+            + _singular_direction_class(
+                singular_values,
+                indices[0],
+                rank_threshold=rank_threshold,
+                weak_threshold=weak_threshold,
+            ),
             projector(indices),
         )
         for indices in groups
@@ -2508,21 +2686,24 @@ def _singular_cluster_indices(
 ) -> tuple[tuple[int, ...], ...]:
     largest = singular_values[0] if singular_values else 0.0
 
-    def direction_class(index: int) -> Literal["identifiable", "weak", "null"]:
-        value = singular_values[index]
-        if value <= rank_threshold:
-            return "null"
-        if value <= weak_threshold:
-            return "weak"
-        return "identifiable"
-
     groups: list[tuple[int, ...]] = []
     current: list[int] = []
     for index, value in enumerate(singular_values):
         if current:
             previous = singular_values[current[-1]]
             if not (
-                direction_class(index) == direction_class(current[-1])
+                _singular_direction_class(
+                    singular_values,
+                    index,
+                    rank_threshold=rank_threshold,
+                    weak_threshold=weak_threshold,
+                )
+                == _singular_direction_class(
+                    singular_values,
+                    current[-1],
+                    rank_threshold=rank_threshold,
+                    weak_threshold=weak_threshold,
+                )
                 and abs(previous - value)
                 <= cluster_relative_tolerance * max(largest, previous, value)
             ):
@@ -2532,6 +2713,21 @@ def _singular_cluster_indices(
     if current:
         groups.append(tuple(current))
     return tuple(groups)
+
+
+def _singular_direction_class(
+    singular_values: tuple[float, ...],
+    index: int,
+    *,
+    rank_threshold: float,
+    weak_threshold: float,
+) -> Literal["identifiable", "weak", "null"]:
+    value = singular_values[index]
+    if value <= rank_threshold:
+        return "null"
+    if value <= weak_threshold:
+        return "weak"
+    return "identifiable"
 
 
 def _singular_spectrum_error(
@@ -3074,6 +3270,10 @@ def _linearize_residuals(
             tuple(column_evidence),
             trajectory_fingerprint,
             accepted_anchor=accepted,
+            source_problem=problem,
+            source_parameterization=parameterization,
+            source_engine=engine,
+            source_policy=policy,
         ),
         None,
     )
@@ -3166,9 +3366,9 @@ def _box_boundary_claims(
 
 def _classify_affine_restriction(
     label: str,
-    coefficient_array: np.ndarray,
+    coefficient_array: Array,
     upper_bound: float,
-    full_values: np.ndarray,
+    full_values: Array,
     controlled_frame_indices: tuple[int, ...],
     covariance: tuple[tuple[float, ...], ...],
     residual_variance_scale: float,
@@ -3221,10 +3421,15 @@ def _affine_feasibility_claim(
     covariance: tuple[tuple[float, ...], ...],
     residual_variance_scale: float,
     affine_feasibility_policy: str,
+    *,
+    controlled_only: bool = False,
 ) -> ClaimAssessment:
+    claim_name = (
+        "CONTROLLED_AFFINE_SEPARATION" if controlled_only else "AFFINE_FEASIBILITY"
+    )
     if not problem.affine_half_spaces and not problem.affine_equalities:
         return ClaimAssessment(
-            "AFFINE_FEASIBILITY",
+            claim_name,
             ClaimState.NOT_APPLICABLE,
             affine_feasibility_policy,
         )
@@ -3260,6 +3465,18 @@ def _affine_feasibility_claim(
         )
         for item in problem.affine_equalities
     )
+    if controlled_only:
+        restrictions = [
+            item
+            for item in restrictions
+            if any(item[1][index] != 0.0 for index in controlled_frame_indices)
+        ]
+    if not restrictions:
+        return ClaimAssessment(
+            claim_name,
+            ClaimState.NOT_APPLICABLE,
+            "No affine restriction has a controlled-coordinate coefficient",
+        )
     restrictions.extend(
         (
             f"{item.restriction_id}:negative",
@@ -3288,7 +3505,7 @@ def _affine_feasibility_claim(
     else:
         affine_state = ClaimState.SATISFIED
     return ClaimAssessment(
-        "AFFINE_FEASIBILITY",
+        claim_name,
         affine_state,
         "; ".join(detail for _state, detail in assessments),
     )
@@ -3300,7 +3517,12 @@ def _boundary_claims(
     covariance: tuple[tuple[float, ...], ...],
     residual_variance_scale: float,
     affine_feasibility_policy: str,
-) -> tuple[ClaimAssessment, ClaimAssessment, ClaimAssessment]:
+) -> tuple[
+    ClaimAssessment,
+    ClaimAssessment,
+    ClaimAssessment,
+    ClaimAssessment,
+]:
     box = _box_boundary_claims(
         accepted,
         problem,
@@ -3329,7 +3551,15 @@ def _boundary_claims(
             residual_variance_scale,
             affine_feasibility_policy,
         )
-    return (*box, affine)
+    controlled_affine = _affine_feasibility_claim(
+        accepted,
+        problem,
+        covariance,
+        residual_variance_scale,
+        affine_feasibility_policy,
+        controlled_only=True,
+    )
+    return (*box, affine, controlled_affine)
 
 
 def _residual_variance_scale(
@@ -3373,7 +3603,18 @@ def _full_dimensional_feasible_interior_claim(
     problem: OptimizationProblem,
     box_interior: ClaimAssessment,
 ) -> ClaimAssessment:
-    if problem.affine_equalities:
+    controlled_ids = set(problem.controlled_ids)
+    controlled_frame_indices = tuple(
+        index
+        for index, (param_id, _value) in enumerate(problem.independent_items)
+        if param_id in controlled_ids
+    )
+    relevant_equalities = tuple(
+        item
+        for item in problem.affine_equalities
+        if any(item.coefficients[index] != 0.0 for index in controlled_frame_indices)
+    )
+    if relevant_equalities:
         return ClaimAssessment(
             "FULL_DIMENSIONAL_FEASIBLE_INTERIOR",
             ClaimState.VIOLATED,
@@ -3403,6 +3644,9 @@ def _full_dimensional_feasible_interior_claim(
             )
         )
         for restriction in problem.affine_half_spaces
+        if any(
+            restriction.coefficients[index] != 0.0 for index in controlled_frame_indices
+        )
     )
     state = (
         ClaimState.SATISFIED
@@ -3412,7 +3656,7 @@ def _full_dimensional_feasible_interior_claim(
     )
     detail = (
         "Accepted point is in the strict box and affine-half-space interior"
-        if problem.affine_half_spaces
+        if slacks
         else "Accepted point is in the strict box interior"
     )
     return ClaimAssessment("FULL_DIMENSIONAL_FEASIBLE_INTERIOR", state, detail)
@@ -3626,7 +3870,7 @@ def _covariance_from_jacobian(  # noqa: C901 - ordered scientific derivation gat
                 jacobian.identity,
             ),
         )
-    interior, boundary, affine = _boundary_claims(
+    interior, boundary, affine, controlled_affine = _boundary_claims(
         accepted,
         problem,
         covariance,
@@ -3668,8 +3912,8 @@ def _covariance_from_jacobian(  # noqa: C901 - ordered scientific derivation gat
         full_dimensional_interior.state,
         interior.state,
         boundary.state,
-        affine.state
-        if affine.state is not ClaimState.NOT_APPLICABLE
+        controlled_affine.state
+        if controlled_affine.state is not ClaimState.NOT_APPLICABLE
         else ClaimState.SATISFIED,
         normalization.state,
         variance_nondegeneracy.state
@@ -3686,6 +3930,7 @@ def _covariance_from_jacobian(  # noqa: C901 - ordered scientific derivation gat
         interior,
         boundary,
         affine,
+        controlled_affine,
         variance_nondegeneracy,
         normalization,
         ClaimAssessment("COVARIANCE_ARITHMETIC_INTEGRITY", ClaimState.SATISFIED),
@@ -5302,6 +5547,14 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
             (operation,),
             (terminal_failure,),
             accepted_anchor=accepted,
+            requested_output_scope=output_scope,
+            requested_output_units=output_units,
+            requested_output_scales=output_scales,
+            source_problem=problem,
+            source_parameterization=parameterization,
+            source_engine=engine,
+            source_policy=policy,
+            source_capabilities=compiled_capabilities,
         )
     lineage_category = _lineage_failure(
         accepted,
@@ -5333,6 +5586,14 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
             (operation,),
             (failure,),
             accepted_anchor=accepted,
+            requested_output_scope=output_scope,
+            requested_output_units=output_units,
+            requested_output_scales=output_scales,
+            source_problem=problem,
+            source_parameterization=parameterization,
+            source_engine=engine,
+            source_policy=policy,
+            source_capabilities=compiled_capabilities,
         )
 
     covariance_branch = _derive_covariance_branch(
@@ -5363,6 +5624,14 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
             covariance_branch.marginal_errors,
             covariance_branch.correlations,
             accepted_anchor=accepted,
+            requested_output_scope=output_scope,
+            requested_output_units=output_units,
+            requested_output_scales=output_scales,
+            source_problem=problem,
+            source_parameterization=parameterization,
+            source_engine=engine,
+            source_policy=policy,
+            source_capabilities=compiled_capabilities,
         )
     branch_terminal = (
         _cancellation_terminal(cancellation_probe) if output_scope else None
@@ -5391,6 +5660,14 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
             covariance_branch.marginal_errors,
             covariance_branch.correlations,
             accepted_anchor=accepted,
+            requested_output_scope=output_scope,
+            requested_output_units=output_units,
+            requested_output_scales=output_scales,
+            source_problem=problem,
+            source_parameterization=parameterization,
+            source_engine=engine,
+            source_policy=policy,
+            source_capabilities=compiled_capabilities,
         )
     constraint_branch = _derive_constraint_branch(
         accepted,
@@ -5445,4 +5722,12 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
         constraint_branch.marginal_errors,
         constraint_branch.correlations,
         accepted_anchor=accepted,
+        requested_output_scope=output_scope,
+        requested_output_units=output_units,
+        requested_output_scales=output_scales,
+        source_problem=problem,
+        source_parameterization=parameterization,
+        source_engine=engine,
+        source_policy=policy,
+        source_capabilities=compiled_capabilities,
     )
