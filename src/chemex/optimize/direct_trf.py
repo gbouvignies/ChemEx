@@ -1321,6 +1321,7 @@ class AcceptedFitResult:
     @classmethod
     def for_qualification(
         cls,
+        *,
         occurrence_identity: str,
         problem_identity: str,
         invocation_identity: str,

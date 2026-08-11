@@ -204,22 +204,22 @@ def _accepted_reference_anchor(
     assert isinstance(evaluation, EvaluationResult)
     chi_square = float(np.dot(evaluation.residuals, evaluation.residuals))
     return AcceptedFitResult.for_qualification(
-        "qualification-anchor-occurrence",
-        problem.identity,
-        "qualification-anchor-invocation",
-        "qualification-anchor-execution",
-        "qualification-anchor-materialization",
-        problem.parameterization_identity,
-        problem.evaluator_parameterization_identity,
-        problem.source_snapshot.occurrence_identity,
-        problem.source_snapshot.revision,
-        problem.controlled_ids,
-        anchor,
-        chi_square,
-        evaluation,
-        problem.controlled_ids,
-        tuple(zip(problem.controlled_ids, anchor, strict=True)),
-        "qualification-anchor-origin",
+        occurrence_identity="qualification-anchor-occurrence",
+        problem_identity=problem.identity,
+        invocation_identity="qualification-anchor-invocation",
+        execution_identity="qualification-anchor-execution",
+        materialization_identity="qualification-anchor-materialization",
+        parameterization_identity=problem.parameterization_identity,
+        evaluator_parameterization_identity=problem.evaluator_parameterization_identity,
+        source_occurrence_identity=problem.source_snapshot.occurrence_identity,
+        source_revision=problem.source_snapshot.revision,
+        controlled_ids=problem.controlled_ids,
+        vector=anchor,
+        chi_square=chi_square,
+        evaluation_result=evaluation,
+        commit_scope=problem.controlled_ids,
+        commit_items=tuple(zip(problem.controlled_ids, anchor, strict=True)),
+        origin_context_identity="qualification-anchor-origin",
     )
 
 
@@ -232,24 +232,28 @@ def _qualified_accepted_copy(
 ) -> AcceptedFitResult:
     """Mint a distinct authoritative occurrence for isolated qualification."""
     return AcceptedFitResult.for_qualification(
-        accepted.occurrence_identity
-        if occurrence_identity is None
-        else occurrence_identity,
-        accepted.problem_identity if problem_identity is None else problem_identity,
-        accepted.invocation_identity,
-        accepted.execution_identity,
-        accepted.materialization_identity,
-        accepted.parameterization_identity,
-        accepted.evaluator_parameterization_identity,
-        accepted.source_occurrence_identity,
-        accepted.source_revision,
-        accepted.controlled_ids,
-        accepted.vector,
-        accepted.chi_square if chi_square is None else chi_square,
-        accepted.evaluation_result,
-        accepted.commit_scope,
-        accepted.commit_items,
-        accepted.origin_context_identity,
+        occurrence_identity=(
+            accepted.occurrence_identity
+            if occurrence_identity is None
+            else occurrence_identity
+        ),
+        problem_identity=(
+            accepted.problem_identity if problem_identity is None else problem_identity
+        ),
+        invocation_identity=accepted.invocation_identity,
+        execution_identity=accepted.execution_identity,
+        materialization_identity=accepted.materialization_identity,
+        parameterization_identity=accepted.parameterization_identity,
+        evaluator_parameterization_identity=accepted.evaluator_parameterization_identity,
+        source_occurrence_identity=accepted.source_occurrence_identity,
+        source_revision=accepted.source_revision,
+        controlled_ids=accepted.controlled_ids,
+        vector=accepted.vector,
+        chi_square=accepted.chi_square if chi_square is None else chi_square,
+        evaluation_result=accepted.evaluation_result,
+        commit_scope=accepted.commit_scope,
+        commit_items=accepted.commit_items,
+        origin_context_identity=accepted.origin_context_identity,
     )
 
 
@@ -662,6 +666,12 @@ def test_multivariate_scaled_svd_correlation_and_joint_propagation_reference() -
         rtol=0.0,
         atol=3.0e-16,
     )
+    with pytest.raises(ValueError, match="classified subspaces"):
+        dataclasses.replace(
+            evidence.rank_diagnostic,
+            identifiable_projector=((1.0, 0.0), (0.0, 0.0)),
+            null_projector=((0.0, 0.0), (0.0, 1.0)),
+        )
     assert evidence.covariance is not None
     expected_covariance = np.linalg.solve(
         reference_jacobian.T @ reference_jacobian,
@@ -1093,31 +1103,25 @@ def test_exact_accepted_occurrence_is_not_reconstructible_or_mixable() -> None:
         accepted, occurrence_identity="replacement-occurrence"
     )
     assert reconstructed.identity == accepted.identity
-    rejected = derive_uncertainty_evidence(
-        reconstructed,
-        problem=problem,
-        parameterization=parameterization,
-        engine=engine,
-        policy=_qualification_policy(problem.controlled_ids[0]),
-        resolved_environment_identity="reconstructed-occurrence",
-    )
-    assert rejected.residual_jacobian is None
-    assert rejected.covariance is None
-    assert rejected.failures[0].category == "accepted_occurrence_identity_mismatch"
+    with pytest.raises(ValueError, match="authoritative accepted occurrence"):
+        derive_uncertainty_evidence(
+            reconstructed,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=_qualification_policy(problem.controlled_ids[0]),
+            resolved_environment_identity="reconstructed-occurrence",
+        )
     no_witness = dataclasses.replace(accepted, occurrence_witness=None)
-    rejected_no_witness = derive_uncertainty_evidence(
-        no_witness,
-        problem=problem,
-        parameterization=parameterization,
-        engine=engine,
-        policy=_qualification_policy(problem.controlled_ids[0]),
-        resolved_environment_identity="missing-occurrence-witness",
-    )
-    assert rejected_no_witness.residual_jacobian is None
-    assert (
-        rejected_no_witness.failures[0].category
-        == "accepted_occurrence_identity_mismatch"
-    )
+    with pytest.raises(ValueError, match="authoritative accepted occurrence"):
+        derive_uncertainty_evidence(
+            no_witness,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=_qualification_policy(problem.controlled_ids[0]),
+            resolved_environment_identity="missing-occurrence-witness",
+        )
 
     evidence = derive_uncertainty_evidence(
         accepted,
@@ -1130,6 +1134,17 @@ def test_exact_accepted_occurrence_is_not_reconstructible_or_mixable() -> None:
     assert evidence.residual_jacobian is not None
     assert evidence.rank_diagnostic is not None
     assert evidence.covariance is not None
+    reconstructed_anchor = dataclasses.replace(
+        accepted,
+        occurrence_identity="direct-artifact-reconstruction",
+        occurrence_witness=None,
+    )
+    with pytest.raises(ValueError, match="exact accepted occurrence"):
+        dataclasses.replace(
+            evidence.residual_jacobian,
+            accepted_anchor=reconstructed_anchor,
+            accepted_occurrence_identity=reconstructed_anchor.occurrence_identity,
+        )
     with pytest.raises(ValueError, match="exact accepted occurrence"):
         dataclasses.replace(
             evidence.residual_jacobian,
@@ -1276,8 +1291,24 @@ def test_authoritative_artifacts_reject_inconsistent_reconstruction() -> None:
             else item
             for item in covariance.claims
         )
-    with pytest.raises(ValueError, match="usability"):
+    with pytest.raises(ValueError, match="Covariance claims"):
         dataclasses.replace(covariance, claims=altered_claims)
+    forged_variance_claims = tuple(
+        dataclasses.replace(item, detail="forged residual variance claim")
+        if item.name == "RESIDUAL_VARIANCE_NONDEGENERACY"
+        else item
+        for item in covariance.claims
+    )
+    with pytest.raises(ValueError, match="Covariance claims"):
+        dataclasses.replace(covariance, claims=forged_variance_claims)
+    forged_rank_claims = tuple(
+        dataclasses.replace(item, detail="forged propagated rank claim")
+        if item.name == "OUTPUT_RANK_DEFICIENCY_EXPECTED"
+        else item
+        for item in propagation.claims
+    )
+    with pytest.raises(ValueError, match="propagation claims"):
+        dataclasses.replace(propagation, claims=forged_rank_claims)
     with pytest.raises(ValueError):
         dataclasses.replace(
             evidence.marginal_errors,

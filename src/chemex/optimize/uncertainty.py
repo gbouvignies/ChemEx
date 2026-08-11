@@ -852,7 +852,8 @@ def _validate_accepted_anchor(
     occurrence_identity: str,
 ) -> None:
     if (
-        semantic_identity != accepted.identity
+        not accepted_occurrence_is_authoritative(accepted)
+        or semantic_identity != accepted.identity
         or occurrence_identity != accepted.occurrence_identity
     ):
         raise ValueError(
@@ -1307,6 +1308,39 @@ class RankDiagnostic:
             atol=tolerance,
         ):
             raise ValueError("Weak-subspace projector is inconsistent")
+        expected_identifiable = sum(
+            (
+                np.asarray(item.projector)
+                for item in self.subspaces
+                if not item.classification.endswith("_null")
+            ),
+            start=np.zeros((dimension, dimension), dtype=np.float64),
+        )
+        expected_null = sum(
+            (
+                np.asarray(item.projector)
+                for item in self.subspaces
+                if item.classification.endswith("_null")
+            ),
+            start=np.zeros((dimension, dimension), dtype=np.float64),
+        )
+        if not (
+            np.allclose(
+                identifiable,
+                expected_identifiable,
+                rtol=0.0,
+                atol=tolerance,
+            )
+            and np.allclose(
+                null,
+                expected_null,
+                rtol=0.0,
+                atol=tolerance,
+            )
+        ):
+            raise ValueError(
+                "Identifiable/null projectors do not match classified subspaces"
+            )
         object.__setattr__(self, "identifiable_projector", identifiable)
         object.__setattr__(self, "null_projector", null)
         object.__setattr__(self, "weak_projector", weak)
@@ -1505,79 +1539,17 @@ class CovarianceEvidence:
             != expected_jacobian_condition * expected_jacobian_condition
         ):
             raise ValueError("Covariance conditioning claims do not match the spectrum")
-        (
-            expected_interior,
-            expected_boundary,
-            expected_affine,
-            expected_controlled_affine,
-        ) = _boundary_claims(
+        expected_claims = _canonical_covariance_claims(
             accepted,
             problem,
             covariance,
             expected_scale,
-            policy.affine_feasibility_policy,
+            expected_jacobian_condition,
+            policy,
+            engine,
         )
-        expected_full_dimensional = _full_dimensional_feasible_interior_claim(
-            accepted,
-            problem,
-            expected_interior,
-        )
-        expected_claim_states = {
-            "AUTHORITATIVE_LINEAGE": ClaimState.SATISFIED,
-            "LOCAL_LINEARIZATION_REGULARITY": ClaimState.SATISFIED,
-            "EFFECTIVE_OBSERVATION_SUFFICIENCY": ClaimState.SATISFIED,
-            "FULL_COLUMN_RANK": ClaimState.SATISFIED,
-            "COVARIANCE_ARITHMETIC_INTEGRITY": ClaimState.SATISFIED,
-            "FULL_DIMENSIONAL_FEASIBLE_INTERIOR": expected_full_dimensional.state,
-            "INTERIOR_POINT": expected_interior.state,
-            "BOUNDARY_SEPARATION": expected_boundary.state,
-            "AFFINE_FEASIBILITY": expected_affine.state,
-            "CONTROLLED_AFFINE_SEPARATION": expected_controlled_affine.state,
-            "CONDITIONING_ADEQUACY": (
-                ClaimState.SATISFIED
-                if expected_jacobian_condition <= policy.conditioning_limit
-                else ClaimState.VIOLATED
-            ),
-            "PROFILED_NORMALIZATION_REGULARITY": (
-                ClaimState.SATISFIED
-                if _profiled_normalization_regular(accepted, engine)
-                else ClaimState.VIOLATED
-            ),
-        }
-        for name, state in expected_claim_states.items():
-            if _named_claim(self.claims, name).state is not state:
-                raise ValueError(f"Covariance claim {name!r} is inconsistent")
-        usable_inputs = (
-            expected_claim_states["CONDITIONING_ADEQUACY"],
-            expected_full_dimensional.state,
-            expected_interior.state,
-            expected_boundary.state,
-            expected_controlled_affine.state
-            if expected_controlled_affine.state is not ClaimState.NOT_APPLICABLE
-            else ClaimState.SATISFIED,
-            expected_claim_states["PROFILED_NORMALIZATION_REGULARITY"],
-            (
-                ClaimState.SATISFIED
-                if policy.residual_variance_scaling
-                is ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES
-                or expected_scale > 0.0
-                else ClaimState.VIOLATED
-            ),
-        )
-        expected_usable = (
-            ClaimState.SATISFIED
-            if all(state is ClaimState.SATISFIED for state in usable_inputs)
-            else (
-                ClaimState.INDETERMINATE
-                if ClaimState.INDETERMINATE in usable_inputs
-                else ClaimState.VIOLATED
-            )
-        )
-        if (
-            _named_claim(self.claims, "USABLE_LOCAL_COVARIANCE").state
-            is not expected_usable
-        ):
-            raise ValueError("Covariance usability claim is inconsistent")
+        if self.claims != expected_claims:
+            raise ValueError("Covariance claims are inconsistent")
         object.__setattr__(self, "unscaled_covariance", unscaled)
         object.__setattr__(self, "factor", factor)
         object.__setattr__(self, "covariance", covariance)
@@ -2209,59 +2181,13 @@ class ConstrainedPropagationEvidence:
         )
         if factor != expected_factor or covariance != _gram_matrix(expected_factor):
             raise ValueError("Constrained covariance differs from G_S L")
-        inherited_claims = tuple(
-            ClaimAssessment(f"SOURCE_COVARIANCE::{item.name}", item.state, item.detail)
-            for item in source_covariance.claims
-        ) + tuple(
-            ClaimAssessment(
-                f"SOURCE_CONSTRAINT_LINEARIZATION::{item.name}",
-                item.state,
-                item.detail,
-            )
-            for item in source_jacobian.claims
+        expected_claims = _canonical_constrained_propagation_claims(
+            source_covariance,
+            source_jacobian,
+            source_covariance.source_policy,
         )
-        if self.claims[: len(inherited_claims)] != inherited_claims:
-            raise ValueError(
-                "Constrained propagation inherited claims are inconsistent"
-            )
-        per_output_degeneracy = tuple(
-            all(value == 0.0 for value in source_jacobian.matrix[index])
-            and bool(source_jacobian.structural_dependencies[index])
-            for index in range(rows)
-        )
-        expected_states = {
-            "EXACT_LINEAGE": ClaimState.SATISFIED,
-            "CONSTRAINT_LINEARIZATION_REGULARITY": ClaimState.SATISFIED,
-            "GRAM_ARITHMETIC_INTEGRITY": ClaimState.SATISFIED,
-            "LOCAL_FIRST_ORDER_DEGENERACY": (
-                ClaimState.VIOLATED
-                if any(per_output_degeneracy)
-                else ClaimState.SATISFIED
-            ),
-            "RESIDUAL_VARIANCE_NONDEGENERACY": (
-                ClaimState.VIOLATED
-                if source_covariance.residual_variance_scale == 0.0
-                else ClaimState.SATISFIED
-            ),
-            "SOURCE_COVARIANCE_USABILITY": source_covariance.claim(
-                "USABLE_LOCAL_COVARIANCE"
-            ),
-        }
-        expected_states.update(
-            {
-                f"OUTPUT_FIRST_ORDER_NONDEGENERACY::{param_id}": (
-                    ClaimState.VIOLATED
-                    if per_output_degeneracy[index]
-                    else ClaimState.SATISFIED
-                )
-                for index, param_id in enumerate(self.output_ids)
-            }
-        )
-        for name, state in expected_states.items():
-            if _named_claim(self.claims, name).state is not state:
-                raise ValueError(
-                    f"Constrained propagation claim {name!r} is inconsistent"
-                )
+        if self.claims != expected_claims:
+            raise ValueError("Constrained propagation claims are inconsistent")
         object.__setattr__(self, "factor", factor)
         object.__setattr__(self, "covariance", covariance)
         object.__setattr__(
@@ -3697,6 +3623,92 @@ def _full_dimensional_feasible_interior_claim(
     return ClaimAssessment("FULL_DIMENSIONAL_FEASIBLE_INTERIOR", state, detail)
 
 
+def _canonical_covariance_claims(
+    accepted: AcceptedFitResult,
+    problem: OptimizationProblem,
+    covariance: tuple[tuple[float, ...], ...],
+    residual_variance_scale: float,
+    jacobian_condition: float,
+    policy: UncertaintyPolicy,
+    engine: EvaluationEngine,
+) -> tuple[ClaimAssessment, ...]:
+    interior, boundary, affine, controlled_affine = _boundary_claims(
+        accepted,
+        problem,
+        covariance,
+        residual_variance_scale,
+        policy.affine_feasibility_policy,
+    )
+    full_dimensional_interior = _full_dimensional_feasible_interior_claim(
+        accepted,
+        problem,
+        interior,
+    )
+    conditioning = ClaimAssessment(
+        "CONDITIONING_ADEQUACY",
+        ClaimState.SATISFIED
+        if jacobian_condition <= policy.conditioning_limit
+        else ClaimState.VIOLATED,
+        f"kappa_J={float(jacobian_condition).hex()}",
+    )
+    normalization = ClaimAssessment(
+        "PROFILED_NORMALIZATION_REGULARITY",
+        ClaimState.SATISFIED
+        if _profiled_normalization_regular(accepted, engine)
+        else ClaimState.VIOLATED,
+    )
+    variance_nondegeneracy = ClaimAssessment(
+        "RESIDUAL_VARIANCE_NONDEGENERACY",
+        ClaimState.NOT_APPLICABLE
+        if policy.residual_variance_scaling
+        is ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES
+        else (
+            ClaimState.SATISFIED
+            if residual_variance_scale > 0.0
+            else ClaimState.VIOLATED
+        ),
+    )
+    required = (
+        conditioning.state,
+        ClaimState.SATISFIED,
+        full_dimensional_interior.state,
+        interior.state,
+        boundary.state,
+        controlled_affine.state
+        if controlled_affine.state is not ClaimState.NOT_APPLICABLE
+        else ClaimState.SATISFIED,
+        normalization.state,
+        variance_nondegeneracy.state
+        if variance_nondegeneracy.state is not ClaimState.NOT_APPLICABLE
+        else ClaimState.SATISFIED,
+    )
+    return (
+        ClaimAssessment("AUTHORITATIVE_LINEAGE", ClaimState.SATISFIED),
+        ClaimAssessment("LOCAL_LINEARIZATION_REGULARITY", ClaimState.SATISFIED),
+        ClaimAssessment("EFFECTIVE_OBSERVATION_SUFFICIENCY", ClaimState.SATISFIED),
+        ClaimAssessment("FULL_COLUMN_RANK", ClaimState.SATISFIED),
+        conditioning,
+        full_dimensional_interior,
+        interior,
+        boundary,
+        affine,
+        controlled_affine,
+        variance_nondegeneracy,
+        normalization,
+        ClaimAssessment("COVARIANCE_ARITHMETIC_INTEGRITY", ClaimState.SATISFIED),
+        ClaimAssessment(
+            "USABLE_LOCAL_COVARIANCE",
+            ClaimState.SATISFIED
+            if all(state is ClaimState.SATISFIED for state in required)
+            else (
+                ClaimState.INDETERMINATE
+                if ClaimState.INDETERMINATE in required
+                else ClaimState.VIOLATED
+            ),
+        ),
+    )
+
+
 def _covariance_from_jacobian(  # noqa: C901 - ordered scientific derivation gates
     accepted: AcceptedFitResult,
     jacobian: ResidualJacobianEvidence,
@@ -3905,80 +3917,14 @@ def _covariance_from_jacobian(  # noqa: C901 - ordered scientific derivation gat
                 jacobian.identity,
             ),
         )
-    interior, boundary, affine, controlled_affine = _boundary_claims(
+    claims = _canonical_covariance_claims(
         accepted,
         problem,
         covariance,
         residual_variance_scale,
-        policy.affine_feasibility_policy,
-    )
-    full_dimensional_interior = _full_dimensional_feasible_interior_claim(
-        accepted,
-        problem,
-        interior,
-    )
-    conditioning = ClaimAssessment(
-        "CONDITIONING_ADEQUACY",
-        ClaimState.SATISFIED
-        if jacobian_condition <= policy.conditioning_limit
-        else ClaimState.VIOLATED,
-        f"kappa_J={float(jacobian_condition).hex()}",
-    )
-    normalization = ClaimAssessment(
-        "PROFILED_NORMALIZATION_REGULARITY",
-        ClaimState.SATISFIED
-        if _profiled_normalization_regular(accepted, engine)
-        else ClaimState.VIOLATED,
-    )
-    variance_nondegeneracy = ClaimAssessment(
-        "RESIDUAL_VARIANCE_NONDEGENERACY",
-        ClaimState.NOT_APPLICABLE
-        if policy.residual_variance_scaling
-        is ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES
-        else (
-            ClaimState.SATISFIED
-            if residual_variance_scale > 0.0
-            else ClaimState.VIOLATED
-        ),
-    )
-    required = (
-        conditioning.state,
-        ClaimState.SATISFIED,
-        full_dimensional_interior.state,
-        interior.state,
-        boundary.state,
-        controlled_affine.state
-        if controlled_affine.state is not ClaimState.NOT_APPLICABLE
-        else ClaimState.SATISFIED,
-        normalization.state,
-        variance_nondegeneracy.state
-        if variance_nondegeneracy.state is not ClaimState.NOT_APPLICABLE
-        else ClaimState.SATISFIED,
-    )
-    claims = (
-        ClaimAssessment("AUTHORITATIVE_LINEAGE", ClaimState.SATISFIED),
-        ClaimAssessment("LOCAL_LINEARIZATION_REGULARITY", ClaimState.SATISFIED),
-        ClaimAssessment("EFFECTIVE_OBSERVATION_SUFFICIENCY", ClaimState.SATISFIED),
-        ClaimAssessment("FULL_COLUMN_RANK", ClaimState.SATISFIED),
-        conditioning,
-        full_dimensional_interior,
-        interior,
-        boundary,
-        affine,
-        controlled_affine,
-        variance_nondegeneracy,
-        normalization,
-        ClaimAssessment("COVARIANCE_ARITHMETIC_INTEGRITY", ClaimState.SATISFIED),
-        ClaimAssessment(
-            "USABLE_LOCAL_COVARIANCE",
-            ClaimState.SATISFIED
-            if all(state is ClaimState.SATISFIED for state in required)
-            else (
-                ClaimState.INDETERMINATE
-                if ClaimState.INDETERMINATE in required
-                else ClaimState.VIOLATED
-            ),
-        ),
+        jacobian_condition,
+        policy,
+        engine,
     )
     covariance_evidence = CovarianceEvidence(
         request_identity,
@@ -4795,6 +4741,104 @@ def _linearize_constraints(
     )
 
 
+def _canonical_constrained_propagation_claims(
+    covariance: CovarianceEvidence,
+    constraint_jacobian: ConstraintJacobianEvidence,
+    policy: UncertaintyPolicy,
+) -> tuple[ClaimAssessment, ...]:
+    per_output_degeneracy = tuple(
+        all(value == 0.0 for value in constraint_jacobian.matrix[index])
+        and bool(constraint_jacobian.structural_dependencies[index])
+        for index in range(len(constraint_jacobian.output_ids))
+    )
+    scaled_gradient = (
+        np.asarray(constraint_jacobian.matrix, dtype=np.float64)
+        * np.asarray(covariance.coordinate_scales, dtype=np.float64)[np.newaxis, :]
+        / np.asarray(constraint_jacobian.output_scales, dtype=np.float64)[:, np.newaxis]
+    )
+    try:
+        gradient_singular = tuple(
+            _finite(value, name="constraint-output singular value")
+            for value in svd(
+                scaled_gradient,
+                full_matrices=False,
+                compute_uv=False,
+                overwrite_a=False,
+                check_finite=True,
+                lapack_driver=policy.svd_driver,
+            )
+        )
+        if any(value < 0.0 for value in gradient_singular) or any(
+            left < right for left, right in pairwise(gradient_singular)
+        ):
+            raise ValueError("invalid scaled constraint-output singular spectrum")
+        largest = gradient_singular[0] if gradient_singular else 0.0
+        rank_threshold = _finite(
+            policy.rank_absolute_tolerance + policy.rank_relative_tolerance * largest,
+            name="constraint-output rank threshold",
+        )
+        output_rank = sum(value > rank_threshold for value in gradient_singular)
+        output_rank_claim = ClaimAssessment(
+            "OUTPUT_RANK_DEFICIENCY_EXPECTED",
+            ClaimState.SATISFIED
+            if output_rank < len(constraint_jacobian.output_ids)
+            else ClaimState.NOT_APPLICABLE,
+            f"scaled-rank={output_rank}; rows={len(constraint_jacobian.output_ids)}; "
+            f"threshold={float(rank_threshold).hex()}",
+        )
+    except Exception as error:  # noqa: BLE001 - diagnostic kernel fence
+        output_rank_claim = ClaimAssessment(
+            "OUTPUT_RANK_DEFICIENCY_EXPECTED",
+            ClaimState.INDETERMINATE,
+            f"diagnostic scaled-SVD unavailable: {error}",
+        )
+    inherited_claims = tuple(
+        ClaimAssessment(f"SOURCE_COVARIANCE::{item.name}", item.state, item.detail)
+        for item in covariance.claims
+    ) + tuple(
+        ClaimAssessment(
+            f"SOURCE_CONSTRAINT_LINEARIZATION::{item.name}",
+            item.state,
+            item.detail,
+        )
+        for item in constraint_jacobian.claims
+    )
+    output_claims = tuple(
+        ClaimAssessment(
+            f"OUTPUT_FIRST_ORDER_NONDEGENERACY::{param_id}",
+            ClaimState.VIOLATED
+            if per_output_degeneracy[index]
+            else ClaimState.SATISFIED,
+        )
+        for index, param_id in enumerate(constraint_jacobian.output_ids)
+    )
+    return (
+        *inherited_claims,
+        ClaimAssessment("EXACT_LINEAGE", ClaimState.SATISFIED),
+        ClaimAssessment(
+            "CONSTRAINT_LINEARIZATION_REGULARITY",
+            ClaimState.SATISFIED,
+        ),
+        ClaimAssessment("GRAM_ARITHMETIC_INTEGRITY", ClaimState.SATISFIED),
+        output_rank_claim,
+        ClaimAssessment(
+            "LOCAL_FIRST_ORDER_DEGENERACY",
+            ClaimState.VIOLATED if any(per_output_degeneracy) else ClaimState.SATISFIED,
+        ),
+        ClaimAssessment(
+            "RESIDUAL_VARIANCE_NONDEGENERACY",
+            ClaimState.VIOLATED
+            if covariance.residual_variance_scale == 0.0
+            else ClaimState.SATISFIED,
+        ),
+        ClaimAssessment(
+            "SOURCE_COVARIANCE_USABILITY",
+            covariance.claim("USABLE_LOCAL_COVARIANCE"),
+        ),
+        *output_claims,
+    )
+
+
 def _propagate_constraints(
     accepted: AcceptedFitResult,
     covariance: CovarianceEvidence,
@@ -4820,12 +4864,6 @@ def _propagate_constraints(
         for row in range(len(constraint_jacobian.output_ids))
     )
     propagated = _gram_matrix(factor)
-    per_output_degeneracy = tuple(
-        all(value == 0.0 for value in constraint_jacobian.matrix[index])
-        and bool(constraint_jacobian.structural_dependencies[index])
-        for index in range(len(factor))
-    )
-    local_degeneracy = any(per_output_degeneracy)
     residual_variance_degenerate = covariance.residual_variance_scale == 0.0
     if not residual_variance_degenerate:
         for index, row in enumerate(factor):
@@ -4839,97 +4877,10 @@ def _propagate_constraints(
                 raise ArithmeticError(
                     "Nonzero propagated factor row underflowed to zero variance"
                 )
-    scaled_gradient = (
-        np.asarray(gradient, dtype=np.float64)
-        * np.asarray(covariance.coordinate_scales, dtype=np.float64)[np.newaxis, :]
-        / np.asarray(constraint_jacobian.output_scales, dtype=np.float64)[:, np.newaxis]
-    )
-    output_rank_claim: ClaimAssessment
-    try:
-        gradient_singular = tuple(
-            _finite(value, name="constraint-output singular value")
-            for value in svd(
-                scaled_gradient,
-                full_matrices=False,
-                compute_uv=False,
-                overwrite_a=False,
-                check_finite=True,
-                lapack_driver=policy.svd_driver,
-            )
-        )
-        if any(value < 0.0 for value in gradient_singular) or any(
-            left < right for left, right in pairwise(gradient_singular)
-        ):
-            raise ValueError("invalid scaled constraint-output singular spectrum")
-        largest = gradient_singular[0] if gradient_singular else 0.0
-        rank_threshold = _finite(
-            policy.rank_absolute_tolerance + policy.rank_relative_tolerance * largest,
-            name="constraint-output rank threshold",
-        )
-        output_rank = sum(value > rank_threshold for value in gradient_singular)
-        output_rank_deficient = output_rank < len(constraint_jacobian.output_ids)
-        output_rank_claim = ClaimAssessment(
-            "OUTPUT_RANK_DEFICIENCY_EXPECTED",
-            ClaimState.SATISFIED
-            if output_rank_deficient
-            else ClaimState.NOT_APPLICABLE,
-            f"scaled-rank={output_rank}; rows={len(constraint_jacobian.output_ids)}; "
-            f"threshold={float(rank_threshold).hex()}",
-        )
-    except Exception as error:  # noqa: BLE001 - diagnostic kernel fence
-        output_rank_claim = ClaimAssessment(
-            "OUTPUT_RANK_DEFICIENCY_EXPECTED",
-            ClaimState.INDETERMINATE,
-            f"diagnostic scaled-SVD unavailable: {error}",
-        )
-    inherited_claims = tuple(
-        ClaimAssessment(
-            f"SOURCE_COVARIANCE::{item.name}",
-            item.state,
-            item.detail,
-        )
-        for item in covariance.claims
-    ) + tuple(
-        ClaimAssessment(
-            f"SOURCE_CONSTRAINT_LINEARIZATION::{item.name}",
-            item.state,
-            item.detail,
-        )
-        for item in constraint_jacobian.claims
-    )
-    output_claims = tuple(
-        ClaimAssessment(
-            f"OUTPUT_FIRST_ORDER_NONDEGENERACY::{param_id}",
-            ClaimState.VIOLATED
-            if per_output_degeneracy[index]
-            else ClaimState.SATISFIED,
-        )
-        for index, param_id in enumerate(constraint_jacobian.output_ids)
-    )
-    claims = (
-        *inherited_claims,
-        ClaimAssessment("EXACT_LINEAGE", ClaimState.SATISFIED),
-        ClaimAssessment(
-            "CONSTRAINT_LINEARIZATION_REGULARITY",
-            ClaimState.SATISFIED,
-        ),
-        ClaimAssessment("GRAM_ARITHMETIC_INTEGRITY", ClaimState.SATISFIED),
-        output_rank_claim,
-        ClaimAssessment(
-            "LOCAL_FIRST_ORDER_DEGENERACY",
-            ClaimState.VIOLATED if local_degeneracy else ClaimState.SATISFIED,
-        ),
-        ClaimAssessment(
-            "RESIDUAL_VARIANCE_NONDEGENERACY",
-            ClaimState.VIOLATED
-            if residual_variance_degenerate
-            else ClaimState.SATISFIED,
-        ),
-        ClaimAssessment(
-            "SOURCE_COVARIANCE_USABILITY",
-            covariance.claim("USABLE_LOCAL_COVARIANCE"),
-        ),
-        *output_claims,
+    claims = _canonical_constrained_propagation_claims(
+        covariance,
+        constraint_jacobian,
+        policy,
     )
     return ConstrainedPropagationEvidence(
         request_identity,
@@ -5509,6 +5460,11 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
         raise UncertaintyConstructionError(
             "Uncertainty evidence requires a resolved environment identity"
         )
+    if not accepted_occurrence_is_authoritative(accepted):
+        raise UncertaintyConstructionError(
+            "Uncertainty construction requires an exact authoritative accepted "
+            "occurrence"
+        )
     output_scope = tuple(constrained_scope)
     compiled_capabilities = (
         compile_constraint_linearization_capabilities(
@@ -5562,6 +5518,49 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
             compiled_capabilities.identity,
         ),
     )
+
+    def assemble_evidence(
+        operations: tuple[DerivationOperation, ...],
+        failures: tuple[EvidenceFailure, ...],
+        *,
+        residual_jacobian: ResidualJacobianEvidence | None = None,
+        rank_diagnostic: RankDiagnostic | None = None,
+        covariance: CovarianceEvidence | None = None,
+        marginal_errors: MarginalErrorEvidence | None = None,
+        correlations: CorrelationEvidence | None = None,
+        constraint_jacobian: ConstraintJacobianEvidence | None = None,
+        constrained_propagation: ConstrainedPropagationEvidence | None = None,
+        constrained_marginal_errors: MarginalErrorEvidence | None = None,
+        constrained_correlations: CorrelationEvidence | None = None,
+    ) -> UncertaintyEvidence:
+        return UncertaintyEvidence(
+            accepted.identity,
+            accepted.occurrence_identity,
+            request_identity,
+            policy.identity,
+            resolved_environment_identity,
+            operations,
+            failures,
+            residual_jacobian,
+            rank_diagnostic,
+            covariance,
+            marginal_errors,
+            correlations,
+            constraint_jacobian,
+            constrained_propagation,
+            constrained_marginal_errors,
+            constrained_correlations,
+            accepted_anchor=accepted,
+            requested_output_scope=output_scope,
+            requested_output_units=output_units,
+            requested_output_scales=output_scales,
+            source_problem=problem,
+            source_parameterization=parameterization,
+            source_engine=engine,
+            source_policy=policy,
+            source_capabilities=compiled_capabilities,
+        )
+
     initial_terminal = _cancellation_terminal(cancellation_probe)
     if initial_terminal is not None:
         operation = _operation(
@@ -5573,23 +5572,9 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
             terminal_override=initial_terminal,
         )
         terminal_failure = cast("EvidenceFailure", operation.failure)
-        return UncertaintyEvidence(
-            accepted.identity,
-            accepted.occurrence_identity,
-            request_identity,
-            policy.identity,
-            resolved_environment_identity,
+        return assemble_evidence(
             (operation,),
             (terminal_failure,),
-            accepted_anchor=accepted,
-            requested_output_scope=output_scope,
-            requested_output_units=output_units,
-            requested_output_scales=output_scales,
-            source_problem=problem,
-            source_parameterization=parameterization,
-            source_engine=engine,
-            source_policy=policy,
-            source_capabilities=compiled_capabilities,
         )
     lineage_category = _lineage_failure(
         accepted,
@@ -5612,23 +5597,9 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
             failure,
             resolved_environment_identity=resolved_environment_identity,
         )
-        return UncertaintyEvidence(
-            accepted.identity,
-            accepted.occurrence_identity,
-            request_identity,
-            policy.identity,
-            resolved_environment_identity,
+        return assemble_evidence(
             (operation,),
             (failure,),
-            accepted_anchor=accepted,
-            requested_output_scope=output_scope,
-            requested_output_units=output_units,
-            requested_output_scales=output_scales,
-            source_problem=problem,
-            source_parameterization=parameterization,
-            source_engine=engine,
-            source_policy=policy,
-            source_capabilities=compiled_capabilities,
         )
 
     covariance_branch = _derive_covariance_branch(
@@ -5645,28 +5616,14 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
         OperationTerminal.CANCELLED,
         OperationTerminal.INTERRUPTED,
     }:
-        return UncertaintyEvidence(
-            accepted.identity,
-            accepted.occurrence_identity,
-            request_identity,
-            policy.identity,
-            resolved_environment_identity,
+        return assemble_evidence(
             covariance_branch.operations,
             covariance_branch.failures,
-            covariance_branch.residual_jacobian,
-            covariance_branch.rank_diagnostic,
-            covariance_branch.covariance,
-            covariance_branch.marginal_errors,
-            covariance_branch.correlations,
-            accepted_anchor=accepted,
-            requested_output_scope=output_scope,
-            requested_output_units=output_units,
-            requested_output_scales=output_scales,
-            source_problem=problem,
-            source_parameterization=parameterization,
-            source_engine=engine,
-            source_policy=policy,
-            source_capabilities=compiled_capabilities,
+            residual_jacobian=covariance_branch.residual_jacobian,
+            rank_diagnostic=covariance_branch.rank_diagnostic,
+            covariance=covariance_branch.covariance,
+            marginal_errors=covariance_branch.marginal_errors,
+            correlations=covariance_branch.correlations,
         )
     branch_terminal = (
         _cancellation_terminal(cancellation_probe) if output_scope else None
@@ -5681,28 +5638,14 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
             terminal_override=branch_terminal,
         )
         terminal_failure = cast("EvidenceFailure", operation.failure)
-        return UncertaintyEvidence(
-            accepted.identity,
-            accepted.occurrence_identity,
-            request_identity,
-            policy.identity,
-            resolved_environment_identity,
+        return assemble_evidence(
             covariance_branch.operations + (operation,),
             covariance_branch.failures + (terminal_failure,),
-            covariance_branch.residual_jacobian,
-            covariance_branch.rank_diagnostic,
-            covariance_branch.covariance,
-            covariance_branch.marginal_errors,
-            covariance_branch.correlations,
-            accepted_anchor=accepted,
-            requested_output_scope=output_scope,
-            requested_output_units=output_units,
-            requested_output_scales=output_scales,
-            source_problem=problem,
-            source_parameterization=parameterization,
-            source_engine=engine,
-            source_policy=policy,
-            source_capabilities=compiled_capabilities,
+            residual_jacobian=covariance_branch.residual_jacobian,
+            rank_diagnostic=covariance_branch.rank_diagnostic,
+            covariance=covariance_branch.covariance,
+            marginal_errors=covariance_branch.marginal_errors,
+            correlations=covariance_branch.correlations,
         )
     constraint_branch = _derive_constraint_branch(
         accepted,
@@ -5739,30 +5682,16 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
             combined_operations += (final_operation,)
             combined_failures += (cast("EvidenceFailure", final_operation.failure),)
 
-    return UncertaintyEvidence(
-        accepted.identity,
-        accepted.occurrence_identity,
-        request_identity,
-        policy.identity,
-        resolved_environment_identity,
+    return assemble_evidence(
         combined_operations,
         combined_failures,
-        covariance_branch.residual_jacobian,
-        covariance_branch.rank_diagnostic,
-        covariance_branch.covariance,
-        covariance_branch.marginal_errors,
-        covariance_branch.correlations,
-        constraint_branch.jacobian,
-        constraint_branch.propagation,
-        constraint_branch.marginal_errors,
-        constraint_branch.correlations,
-        accepted_anchor=accepted,
-        requested_output_scope=output_scope,
-        requested_output_units=output_units,
-        requested_output_scales=output_scales,
-        source_problem=problem,
-        source_parameterization=parameterization,
-        source_engine=engine,
-        source_policy=policy,
-        source_capabilities=compiled_capabilities,
+        residual_jacobian=covariance_branch.residual_jacobian,
+        rank_diagnostic=covariance_branch.rank_diagnostic,
+        covariance=covariance_branch.covariance,
+        marginal_errors=covariance_branch.marginal_errors,
+        correlations=covariance_branch.correlations,
+        constraint_jacobian=constraint_branch.jacobian,
+        constrained_propagation=constraint_branch.propagation,
+        constrained_marginal_errors=constraint_branch.marginal_errors,
+        constrained_correlations=constraint_branch.correlations,
     )
