@@ -25,7 +25,12 @@ import pytest
 from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
-from chemex.evaluation.native import EvaluationEngine
+from chemex.evaluation.native import (
+    BoundEvaluator,
+    EvaluationEngine,
+    EvaluationFrame,
+    EvaluationResult,
+)
 from chemex.experiments.builder import build_experiments
 from chemex.optimize.direct_trf import (
     AffineEquality,
@@ -37,13 +42,16 @@ from chemex.optimize.direct_trf import (
     DirectTrfInvocation,
     DirectTrfOutcomeTerminal,
     DirectTrfTerminal,
+    GridSeedProblemDerivation,
     LiveFitCommitAuthority,
     MaterializationTerminal,
     ObjectiveScalarizationError,
     OptimizationProblem,
+    RootMaterializationFailure,
     canonical_chi_square,
     commit_accepted_fit,
     execute_direct_trf,
+    materialize_root_candidate,
 )
 from chemex.parameters.parameterization import (
     ActiveParameterization,
@@ -153,6 +161,161 @@ def test_lifecycle_frame_rejects_exact_box_and_affine_infeasibility() -> None:
         )
     with pytest.raises(DirectTrfConstructionError, match="box bounds"):
         problem.lifecycle_frame((problem.lower_bounds[0] - 1.0,), parameterization)
+
+
+def test_root_owned_child_derivation_preserves_context_and_rejects_forgery() -> None:
+    _session, _experiments, _parameterization, _engine, problem, _invocation = (
+        _qualification_fit()
+    )
+    param_id = problem.controlled_ids[0]
+    constrained = dataclasses.replace(
+        problem,
+        affine_half_spaces=(
+            AffineHalfSpace(
+                "derived-root-upper",
+                _full_frame_coefficients(problem, param_id),
+                problem.start[0] + 1.0,
+            ),
+        ),
+        affine_equalities=(
+            AffineEquality(
+                "derived-root-fixed",
+                _full_frame_coefficients(problem, param_id),
+                problem.start[0],
+            ),
+        ),
+    )
+    derivation = GridSeedProblemDerivation(
+        constrained.identity,
+        constrained.affine_feasibility_identity,
+        "seed-coordinate-identity",
+        0,
+        ((param_id, constrained.start[0]),),
+        constrained.controlled_ids,
+        constrained.start,
+    )
+
+    child = constrained.derive_child(
+        controlled_ids=constrained.controlled_ids,
+        start=constrained.start,
+        derivation=derivation,
+    )
+
+    assert child.source_snapshot is constrained.source_snapshot
+    assert child.evaluation_plan_identity == constrained.evaluation_plan_identity
+    assert child.parameterization_identity == constrained.parameterization_identity
+    assert (
+        child.evaluator_parameterization_identity
+        == constrained.evaluator_parameterization_identity
+    )
+    assert child.constraint_program_identity == constrained.constraint_program_identity
+    assert child.configuration_identity == constrained.configuration_identity
+    assert child.independent_items == constrained.independent_items
+    assert child.held_items == constrained.held_items
+    assert child.lower_bounds == constrained.lower_bounds
+    assert child.upper_bounds == constrained.upper_bounds
+    assert child.commit_scope == constrained.commit_scope
+    assert child.scalarization_version == constrained.scalarization_version
+    assert child.affine_half_spaces == constrained.affine_half_spaces
+    assert child.affine_equalities == constrained.affine_equalities
+    constrained.validate_derived_problem(child)
+
+    forged_fields = (
+        {"evaluation_plan_identity": "foreign-plan"},
+        {"parameterization_identity": "foreign-parameterization"},
+        {"evaluator_parameterization_identity": "foreign-evaluator"},
+        {"constraint_program_identity": "foreign-constraints"},
+        {"configuration_identity": "foreign-configuration"},
+        {
+            "source_snapshot": dataclasses.replace(
+                child.source_snapshot,
+                revision=child.source_snapshot.revision + 1,
+            ),
+        },
+        {
+            "independent_items": (
+                (child.independent_items[0][0], child.independent_items[0][1] + 1.0),
+                *child.independent_items[1:],
+            ),
+        },
+        {"lower_bounds": (child.lower_bounds[0] - 1.0,)},
+        {"upper_bounds": (child.start[0] + 2.0,)},
+        {"commit_scope": tuple(reversed(child.commit_scope))},
+        {"scalarization_version": "foreign-scalarization"},
+        {"affine_half_spaces": ()},
+        {"affine_equalities": ()},
+    )
+    for replacement in forged_fields:
+        with pytest.raises(DirectTrfConstructionError):
+            forged = dataclasses.replace(child, **replacement)
+            constrained.validate_derived_problem(forged)
+
+
+def test_shared_root_materialization_preserves_cancellation_and_interruption_gates() -> (
+    None
+):
+    _session, _experiments, parameterization, engine, problem, _invocation = (
+        _qualification_fit()
+    )
+    cancelled_before = CancellationToken()
+    cancelled_before.cancel()
+
+    before = materialize_root_candidate(
+        problem,
+        parameterization,
+        engine,
+        vector=problem.start,
+        invocation_identity="root-materialization-invocation",
+        execution_identity=lambda _evaluated: "root-materialization-execution",
+        cancellation=cancelled_before,
+    )
+
+    assert isinstance(before, RootMaterializationFailure)
+    assert before.terminal is MaterializationTerminal.CANCELLED
+    assert before.evaluation_count == 0
+
+    cancelled_during = CancellationToken()
+    original_evaluate = BoundEvaluator.evaluate
+
+    def evaluate_then_cancel(
+        evaluator: BoundEvaluator,
+        frame: EvaluationFrame,
+    ) -> EvaluationResult:
+        evaluated = original_evaluate(evaluator, frame)
+        assert isinstance(evaluated, EvaluationResult)
+        cancelled_during.cancel()
+        return evaluated
+
+    with patch.object(BoundEvaluator, "evaluate", evaluate_then_cancel):
+        during = materialize_root_candidate(
+            problem,
+            parameterization,
+            engine,
+            vector=problem.start,
+            invocation_identity="root-materialization-invocation",
+            execution_identity=lambda _evaluated: "root-materialization-execution",
+            cancellation=cancelled_during,
+        )
+
+    assert isinstance(during, RootMaterializationFailure)
+    assert during.terminal is MaterializationTerminal.CANCELLED
+    assert during.evaluation_count == 1
+
+    def interrupt_validation(_evaluated: EvaluationResult) -> str:
+        raise KeyboardInterrupt
+
+    interrupted = materialize_root_candidate(
+        problem,
+        parameterization,
+        engine,
+        vector=problem.start,
+        invocation_identity="root-materialization-invocation",
+        execution_identity=interrupt_validation,
+    )
+
+    assert isinstance(interrupted, RootMaterializationFailure)
+    assert interrupted.terminal is MaterializationTerminal.INTERRUPTED
+    assert interrupted.evaluation_count == 1
 
 
 def _legacy_values(

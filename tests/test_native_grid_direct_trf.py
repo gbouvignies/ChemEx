@@ -27,7 +27,9 @@ from chemex.optimize.direct_trf import (
     CancellationToken,
     DirectTrfConstructionError,
     DirectTrfInvocation,
+    GridSeedProblemDerivation,
     OptimizationProblem,
+    ProblemDerivation,
     commit_accepted_fit,
     execute_direct_trf,
 )
@@ -121,13 +123,37 @@ def test_cartesian_seed_plan_is_canonical_physical_and_rooted_once() -> None:
     pb_lower, r1_lower = problem.lower_bounds
     pb_upper, _r1_upper = problem.upper_bounds
 
-    invocation = GridDirectTrfInvocation.for_problem(
-        problem,
-        axes=(
-            (r1_id, (r1_lower, r1_lower)),
-            (pb_id, (pb_lower, pb_upper)),
-        ),
-        objective_request_budget=5,
+    derivations: list[ProblemDerivation] = []
+    original_derive_child = OptimizationProblem.derive_child
+
+    def track_derive_child(
+        self: OptimizationProblem,
+        *,
+        controlled_ids: tuple[str, ...],
+        start: tuple[float, ...],
+        derivation: ProblemDerivation,
+    ) -> OptimizationProblem:
+        derivations.append(derivation)
+        return original_derive_child(
+            self,
+            controlled_ids=controlled_ids,
+            start=start,
+            derivation=derivation,
+        )
+
+    with patch.object(OptimizationProblem, "derive_child", track_derive_child):
+        invocation = GridDirectTrfInvocation.for_problem(
+            problem,
+            axes=(
+                (r1_id, (r1_lower, r1_lower)),
+                (pb_id, (pb_lower, pb_upper)),
+            ),
+            objective_request_budget=5,
+        )
+
+    assert len(derivations) == len(invocation.seeds)
+    assert all(
+        isinstance(derivation, GridSeedProblemDerivation) for derivation in derivations
     )
 
     assert tuple(axis.param_id for axis in invocation.axes) == (pb_id, r1_id)

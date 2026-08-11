@@ -10,28 +10,20 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from uuid import uuid4
 
-from chemex.evaluation.native import (
-    BoundEvaluator,
-    EvaluationEngine,
-    EvaluationResult,
-)
+from chemex.evaluation.native import EvaluationEngine
+from chemex.optimize import direct_trf as direct_trf_owner
 from chemex.optimize.direct_trf import (
     CancellationToken,
     CandidateMaterialization,
-    CandidateSummary,
     CommitReceipt,
     ComponentProblemDerivation,
     DirectTrfConstructionError,
     DirectTrfInvocation,
     GridSeedProblemDerivation,
     LiveFitCommitAuthority,
-    MaterializationTerminal,
-    MaterializedDirectTrfCandidate,
     OptimizationProblem,
     TerminalFailure,
-    canonical_chi_square,
 )
 from chemex.optimize.grid_direct_trf import (
     AcceptedGridDirectTrfResult,
@@ -55,7 +47,8 @@ from chemex.optimize.grouped_direct_trf import (
     GroupedDirectTrfInvocation,
     GroupedDirectTrfOutcome,
     GroupedDirectTrfTerminal,
-    _reconstruct_fresh_aggregate,
+    _aggregate_vector,
+    _grouped_materialization_failure,
     _root_projection_matches,
     _validate_component_projections,
     execute_direct_trf_components,
@@ -246,42 +239,6 @@ def _component_invocation(
     )
 
 
-def _materialized_root_candidate(
-    problem: OptimizationProblem,
-    invocation_identity: str,
-    execution_identity: str,
-    vector: tuple[float, ...],
-    evaluator: BoundEvaluator,
-    evaluated: EvaluationResult,
-) -> MaterializedDirectTrfCandidate:
-    """Record one already evaluated root vector as fresh candidate evidence."""
-    chi_square = canonical_chi_square(evaluated.residuals)
-    statistics = evaluator.cache_statistics
-    summary = CandidateSummary(vector, chi_square, 0)
-    materialization = CandidateMaterialization(
-        uuid4().hex,
-        problem.identity,
-        invocation_identity,
-        execution_identity,
-        summary,
-        MaterializationTerminal.SUCCESS,
-        1,
-        evaluator.compatibility_identity,
-        evaluated.identity,
-        statistics.hits,
-        statistics.misses,
-    )
-    return MaterializedDirectTrfCandidate(
-        problem.identity,
-        invocation_identity,
-        execution_identity,
-        materialization,
-        vector,
-        chi_square,
-        evaluated,
-    )
-
-
 def _failed_component_seed_outcome(
     seed: GridSeed,
     root_decomposition_identity: str,
@@ -372,18 +329,16 @@ def _execute_seed(
         )
     if seed.problem is None:
         raise DirectTrfConstructionError("Feasible grouped GRID seed lacks a problem")
+    problem.validate_derived_problem(seed.problem)
     seed_decomposition = FitDecomposition.from_root(
         seed.problem,
         parameterization,
         engine,
         cancellation=token,
     )
-    if (
-        seed_decomposition.identity != decomposition.identity
-        or tuple(component.identity for component in seed_decomposition.components)
-        != tuple(component.identity for component in decomposition.components)
-        or seed.problem.source_snapshot is not problem.source_snapshot
-    ):
+    if seed_decomposition.identity != decomposition.identity or tuple(
+        component.identity for component in seed_decomposition.components
+    ) != tuple(component.identity for component in decomposition.components):
         raise DirectTrfConstructionError(
             "Grouped GRID seed differs from the exact root decomposition"
         )
@@ -426,24 +381,67 @@ def _execute_seed(
             component_invocation,
             projections,
         )
-    fresh = _reconstruct_fresh_aggregate(
+    vector_or_failure = _aggregate_vector(
         problem,
         seed_decomposition,
-        parameterization,
-        engine,
         components,
-        token,
     )
-    if isinstance(fresh, GroupedDirectTrfOutcome):
+    if isinstance(vector_or_failure, TerminalFailure):
         return _failed_aggregate_seed_outcome(
             seed,
             decomposition.identity,
             seed_decomposition,
             components,
             component_invocation,
-            fresh,
+            GroupedDirectTrfOutcome(
+                GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
+                components,
+                failure=vector_or_failure,
+            ),
         )
-    vector, evaluator, aggregate = fresh
+    vector = vector_or_failure
+    materialized = direct_trf_owner.materialize_root_candidate(
+        problem,
+        parameterization,
+        engine,
+        vector=vector,
+        invocation_identity=invocation.identity,
+        execution_identity=lambda aggregate: _identity(
+            "native-grouped-grid-seed-execution",
+            (
+                invocation.identity,
+                seed.identity,
+                component_invocation.identity,
+                tuple(component.identity for component in components),
+                aggregate.identity,
+            ),
+        ),
+        cancellation=token,
+    )
+    if isinstance(materialized, direct_trf_owner.RootMaterializationFailure):
+        grouped_failure = _grouped_materialization_failure(materialized, components)
+        return _failed_aggregate_seed_outcome(
+            seed,
+            decomposition.identity,
+            seed_decomposition,
+            components,
+            component_invocation,
+            grouped_failure,
+        )
+    if isinstance(materialized, CandidateMaterialization):
+        return _failed_aggregate_seed_outcome(
+            seed,
+            decomposition.identity,
+            seed_decomposition,
+            components,
+            component_invocation,
+            GroupedDirectTrfOutcome(
+                GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
+                components,
+                failure=materialized.failure,
+            ),
+        )
+    aggregate = materialized.evaluation_result
     if any(
         not _root_projection_matches(aggregate, engine, component, projection)
         for component, projection in zip(
@@ -467,24 +465,6 @@ def _execute_seed(
             root_decomposition_identity=decomposition.identity,
             seed_decomposition=seed_decomposition,
         )
-    execution_identity = _identity(
-        "native-grouped-grid-seed-execution",
-        (
-            invocation.identity,
-            seed.identity,
-            component_invocation.identity,
-            tuple(component.identity for component in components),
-            aggregate.identity,
-        ),
-    )
-    materialized = _materialized_root_candidate(
-        problem,
-        invocation.identity,
-        execution_identity,
-        vector,
-        evaluator,
-        aggregate,
-    )
     candidate = GridCandidate(seed.identity, seed.ordinal, materialized)
     record = GroupedGridSeedOutcome(
         seed.identity,
@@ -494,7 +474,7 @@ def _execute_seed(
         GridSeedDisposition.ELIGIBLE,
         components,
         component_invocation,
-        execution_identity,
+        materialized.execution_identity,
         candidate.objective,
         candidate,
         root_decomposition_identity=decomposition.identity,
@@ -579,6 +559,16 @@ def _validate_grouped_grid_seed(
         else materialized_aggregate.evaluation_result
     )
     seed_derivation = None if seed_problem is None else seed_problem.derivation
+    if seed_problem is None:
+        raise DirectTrfConstructionError(
+            "Grouped GRID seed lacks exact component ownership"
+        )
+    try:
+        problem.validate_derived_problem(seed_problem)
+    except DirectTrfConstructionError as error:
+        raise DirectTrfConstructionError(
+            "Grouped GRID seed lacks exact component ownership"
+        ) from error
     if (
         invocation.root_problem_identity != problem.identity
         or selected.seed_identity != seed.identity
@@ -586,29 +576,13 @@ def _validate_grouped_grid_seed(
         or selected.axis_items != seed.axis_items
         or selected.start != seed.start
         or selected.disposition is not GridSeedDisposition.ELIGIBLE
-        or seed_problem is None
-        or seed_problem.source_snapshot is not problem.source_snapshot
         or not isinstance(seed_derivation, GridSeedProblemDerivation)
         or seed_derivation.root_problem_identity != problem.identity
         or seed_derivation.seed_identity != seed.coordinate_identity
         or seed_derivation.seed_ordinal != seed.ordinal
         or seed_derivation.axis_items != seed.axis_items
         or seed_derivation.start != seed.start
-        or seed_problem.parameterization_identity != problem.parameterization_identity
-        or seed_problem.evaluator_parameterization_identity
-        != problem.evaluator_parameterization_identity
-        or seed_problem.constraint_program_identity
-        != problem.constraint_program_identity
-        or seed_problem.configuration_identity != problem.configuration_identity
-        or seed_problem.independent_items != problem.independent_items
         or seed_problem.controlled_ids != problem.controlled_ids
-        or seed_problem.held_items != problem.held_items
-        or seed_problem.lower_bounds != problem.lower_bounds
-        or seed_problem.upper_bounds != problem.upper_bounds
-        or seed_problem.commit_scope != problem.commit_scope
-        or seed_problem.scalarization_version != problem.scalarization_version
-        or seed_problem.affine_half_spaces != problem.affine_half_spaces
-        or seed_problem.affine_equalities != problem.affine_equalities
         or seed_decomposition is None
         or seed_decomposition.root_problem_identity != seed_problem.identity
         or seed_decomposition.root_plan_identity
@@ -674,54 +648,29 @@ def _validate_grouped_grid_seed(
         component_candidate = outcome.candidate
         component_problem = seed_component.problem
         component_derivation = component_problem.derivation
-        expected_held = tuple(
-            item
-            for item in seed_problem.independent_items
-            if item[0] not in set(seed_component.controlled_ids)
-        )
         seed_coordinates = dict(
             zip(seed_problem.controlled_ids, seed_problem.start, strict=True)
         )
-        seed_lower = dict(
-            zip(seed_problem.controlled_ids, seed_problem.lower_bounds, strict=True)
-        )
-        seed_upper = dict(
-            zip(seed_problem.controlled_ids, seed_problem.upper_bounds, strict=True)
-        )
+        try:
+            seed_problem.validate_derived_problem(component_problem)
+        except DirectTrfConstructionError as error:
+            raise DirectTrfConstructionError(
+                "Grouped GRID seed lacks exact component ownership"
+            ) from error
         if (
             component_candidate is None
             or outcome.component_identity != seed_component.identity
             or outcome.controlled_ids != seed_component.controlled_ids
             or outcome.disposition is not ComponentDisposition.SUCCEEDED
             or outcome.execution_identity != component_candidate.execution_identity
-            or component_problem.source_snapshot is not problem.source_snapshot
             or not isinstance(component_derivation, ComponentProblemDerivation)
             or component_derivation.root_problem_identity != seed_problem.identity
             or component_derivation.component_identity != seed_component.identity
             or component_derivation.controlled_ids != seed_component.controlled_ids
-            or component_problem.parameterization_identity
-            != seed_problem.parameterization_identity
-            or component_problem.evaluator_parameterization_identity
-            != seed_problem.evaluator_parameterization_identity
-            or component_problem.constraint_program_identity
-            != seed_problem.constraint_program_identity
-            or component_problem.configuration_identity
-            != seed_problem.configuration_identity
-            or component_problem.independent_items != seed_problem.independent_items
-            or component_problem.held_items != expected_held
             or component_problem.start
             != tuple(
                 seed_coordinates[param_id] for param_id in seed_component.controlled_ids
             )
-            or component_problem.lower_bounds
-            != tuple(seed_lower[param_id] for param_id in seed_component.controlled_ids)
-            or component_problem.upper_bounds
-            != tuple(seed_upper[param_id] for param_id in seed_component.controlled_ids)
-            or component_problem.commit_scope != seed_problem.commit_scope
-            or component_problem.scalarization_version
-            != seed_problem.scalarization_version
-            or component_problem.affine_half_spaces != seed_problem.affine_half_spaces
-            or component_problem.affine_equalities != seed_problem.affine_equalities
             or direct.problem_identity != component_problem.identity
             or component_candidate.problem_identity != direct.problem_identity
             or component_candidate.invocation_identity != direct.identity
