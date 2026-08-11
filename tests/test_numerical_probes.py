@@ -14,6 +14,8 @@ import numpy as np
 import pytest
 
 from chemex.numerical_lanes import (
+    LaneAttestation,
+    LaneAuthorityError,
     LiveLaneAuthority,
     RuntimeEnvironment,
     canonical_lanes,
@@ -51,6 +53,10 @@ def _live_authority(
         classmethod(lambda cls, image_digest, provenance_path=None: environment),
     )
     return lane.attest_current_process(lane.semantics.image_digest)
+
+
+def _detached_evidence(authority: LiveLaneAuthority) -> LaneAttestation:
+    return LaneAttestation.from_record(authority.to_record())
 
 
 def test_probe_catalogue_freezes_required_truth_and_execution_contracts() -> None:
@@ -783,8 +789,22 @@ def test_renamed_canonical_lane_cannot_qualify_fresh_capture(
         classmethod(lambda cls, image_digest, provenance_path=None: environment),
     )
     authority = renamed.attest_current_process(renamed.semantics.image_digest)
+    canonical_authority = canonical.attest_current_process(
+        canonical.semantics.image_digest
+    )
+    evidence = _detached_evidence(authority)
+    canonical_evidence = _detached_evidence(canonical_authority)
 
-    assert authority.lane_identity != canonical.identity
+    assert evidence.lane_identity != canonical.identity
+    for field in (
+        "lane_identity",
+        "environment_identity",
+        "workers",
+        "native_threads",
+        "method",
+        "identity",
+    ):
+        object.__setattr__(evidence, field, getattr(canonical_evidence, field))
     with pytest.raises(NumericalProbeQualificationError) as rejected:
         capture.require_live_qualification(
             authority,
@@ -793,6 +813,29 @@ def test_renamed_canonical_lane_cannot_qualify_fresh_capture(
         )
 
     assert rejected.value.terminal == "LANE_MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "accessor",
+    [
+        "_binding",
+        "evidence",
+        "lane_identity",
+        "environment_identity",
+        "lane_role",
+        "workers",
+        "native_threads",
+        "identity",
+    ],
+)
+def test_live_lane_authority_exposes_no_authority_bearing_facts(
+    monkeypatch: pytest.MonkeyPatch,
+    accessor: str,
+) -> None:
+    authority = _live_authority(monkeypatch)
+
+    with pytest.raises(AttributeError):
+        getattr(authority, accessor)
 
 
 def test_serialized_probe_baseline_never_recreates_live_lane_authority(
@@ -804,9 +847,10 @@ def test_serialized_probe_baseline_never_recreates_live_lane_authority(
         expected_manifest_identity=CANONICAL_NUMERICAL_PROBE_MANIFEST_IDENTITY,
     )
     restored = pickle.loads(pickle.dumps(baseline))  # noqa: S301 - trusted self-record
+    evidence = _detached_evidence(authority)
 
     assert restored.historical_qualification == "REFERENCE_MATCHED"
-    assert restored.observed_lane_identity == authority.lane_identity
+    assert restored.observed_lane_identity == evidence.lane_identity
     assert not isinstance(restored, LiveLaneAuthority)
     restored.require_live_qualification(
         authority,
@@ -833,14 +877,36 @@ def test_compatibility_authority_role_mutation_cannot_qualify_canonical_capture(
 ) -> None:
     capture = run_numerical_probe_baseline()
     compatibility = _live_authority(monkeypatch, 1)
+    canonical = _live_authority(monkeypatch)
+    compatibility_evidence = _detached_evidence(compatibility)
+    canonical_evidence = _detached_evidence(canonical)
 
-    with pytest.raises(AttributeError):
+    attempted_fields = {
+        "_binding": object(),
+        "evidence": canonical_evidence,
+        "lane_identity": canonical_evidence.lane_identity,
+        "environment_identity": canonical_evidence.environment_identity,
+        "lane_role": "CANONICAL_NUMERICAL",
+        "identity": canonical_evidence.identity,
+    }
+    for field, value in attempted_fields.items():
+        with pytest.raises(AttributeError):
+            setattr(compatibility, field, value)
+        with pytest.raises(AttributeError):
+            object.__setattr__(compatibility, field, value)
+    for field in (
+        "lane_identity",
+        "environment_identity",
+        "workers",
+        "native_threads",
+        "method",
+        "identity",
+    ):
         object.__setattr__(
-            compatibility,
-            "_lane_role",
-            "CANONICAL_NUMERICAL",
+            compatibility_evidence,
+            field,
+            getattr(canonical_evidence, field),
         )
-    assert compatibility.lane_role == "PYTHON_COMPATIBILITY"
     with pytest.raises(NumericalProbeQualificationError) as rejected:
         capture.require_live_qualification(
             compatibility,
@@ -849,3 +915,39 @@ def test_compatibility_authority_role_mutation_cannot_qualify_canonical_capture(
         )
 
     assert rejected.value.terminal == "LANE_ROLE_MISMATCH"
+
+
+def test_detached_evidence_mutation_cannot_change_canonical_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capture = run_numerical_probe_baseline()
+    authority = _live_authority(monkeypatch)
+    evidence_record = authority.to_record()
+    evidence = LaneAttestation.from_record(evidence_record)
+
+    evidence_record.update(
+        lane_identity="a" * 64,
+        environment_identity="b" * 64,
+        identity="c" * 64,
+    )
+    object.__setattr__(evidence, "lane_identity", "d" * 64)
+    object.__setattr__(evidence, "environment_identity", "e" * 64)
+    object.__setattr__(evidence, "identity", "f" * 64)
+
+    capture.require_live_qualification(
+        authority,
+        expected_manifest_identity=CANONICAL_NUMERICAL_PROBE_MANIFEST_IDENTITY,
+        required_lane_role="CANONICAL_NUMERICAL",
+    )
+
+
+def test_authority_absent_from_live_registry_fails_closed() -> None:
+    capture = run_numerical_probe_baseline()
+    authority = object.__new__(LiveLaneAuthority)
+
+    with pytest.raises(LaneAuthorityError, match="process-owned"):
+        capture.require_live_qualification(
+            authority,
+            expected_manifest_identity=CANONICAL_NUMERICAL_PROBE_MANIFEST_IDENTITY,
+            required_lane_role="CANONICAL_NUMERICAL",
+        )

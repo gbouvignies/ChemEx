@@ -235,9 +235,30 @@ def test_only_current_process_probe_can_mint_live_authority_and_evidence_round_t
 
     assert isinstance(authority, LiveLaneAuthority)
     assert not isinstance(evidence, LiveLaneAuthority)
-    assert evidence == authority.evidence
+    assert evidence.to_record() == authority.to_record()
     assert evidence.lane_identity == lane.identity
     assert evidence.environment_identity == RuntimeEnvironment(lane.semantics).identity
+
+
+def test_process_registry_binding_cannot_be_mutated_in_place(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authority = _attestation(monkeypatch, _lane())
+    binding = numerical_lanes._LIVE_LANE_BINDINGS[authority]
+
+    assert isinstance(binding, tuple)
+    for field, value in (
+        ("lane_identity", "a" * 64),
+        ("lane_role", "PYTHON_COMPATIBILITY"),
+        ("attestation_identity", "b" * 64),
+        ("environment_identity", "c" * 64),
+        ("workers", 8),
+        ("native_threads", 8),
+    ):
+        with pytest.raises(AttributeError):
+            object.__setattr__(binding, field, value)
+
+    assert comparison_scope(authority, authority).kind == "WITHIN_LANE_BITWISE"
 
 
 def test_post_import_attestation_rejects_any_actual_process_mismatch(
@@ -281,8 +302,8 @@ def test_comparison_scopes_require_attested_lanes_and_round_trip(
             "UNKNOWN",  # type: ignore[arg-type]
             python_313.identity,
             python_314.identity,
-            attestation_313.identity,
-            attestation_314.identity,
+            LaneAttestation.from_record(attestation_313.to_record()).identity,
+            LaneAttestation.from_record(attestation_314.to_record()).identity,
         )
 
 

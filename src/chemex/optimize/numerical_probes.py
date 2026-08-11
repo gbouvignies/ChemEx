@@ -20,7 +20,13 @@ from scipy.linalg import svd
 from scipy.optimize import Bounds, OptimizeResult, differential_evolution, least_squares
 
 from chemex.baselines import CanonicalBaselineValue
-from chemex.numerical_lanes import LaneRole, LiveLaneAuthority, canonical_lanes
+from chemex.numerical_lanes import (
+    LaneRole,
+    LiveLaneAuthority,
+    _LiveLaneAuthorityMismatch,
+    _validate_live_lane_authority,
+    canonical_lanes,
+)
 from chemex.typing import Array
 
 _SCHEMA_VERSION = 2
@@ -2067,7 +2073,6 @@ class NumericalProbeBaseline:
 
         if not isinstance(authority, LiveLaneAuthority):
             raise TypeError("Probe qualification requires live lane authority")
-        evidence = authority.evidence
         if len(expected_manifest_identity) != 64:
             raise ValueError("Expected probe manifest must be a SHA-256 digest")
         if required_lane_role != "CANONICAL_NUMERICAL":
@@ -2076,21 +2081,33 @@ class NumericalProbeBaseline:
             raise NumericalProbeQualificationError("EXPECTED_REFERENCE_MISMATCH")
         if self.manifest_identity != expected_manifest_identity:
             raise NumericalProbeQualificationError("MANIFEST_MISMATCH")
-        if authority.lane_role != required_lane_role:
-            raise NumericalProbeQualificationError("LANE_ROLE_MISMATCH")
         required_lane = next(
             lane for lane in canonical_lanes() if lane.role == required_lane_role
         )
-        if authority.lane_identity != required_lane.identity:
-            raise NumericalProbeQualificationError("LANE_MISMATCH")
-        if self.historical_qualification == "REFERENCE_MATCHED" and (
-            self.observed_lane_identity != evidence.lane_identity
-            or self.observed_lane_role != authority.lane_role
-            or self.observed_attestation_identity != evidence.identity
-            or self.observed_environment_identity != evidence.environment_identity
+        historical = self.historical_qualification == "REFERENCE_MATCHED"
+        if historical and (
+            self.observed_lane_identity != required_lane.identity
+            or self.observed_lane_role != required_lane_role
             or self.reference_manifest_identity != expected_manifest_identity
         ):
             raise NumericalProbeQualificationError("LANE_MISMATCH")
+        try:
+            _validate_live_lane_authority(
+                authority,
+                required_lane_identity=required_lane.identity,
+                required_lane_role=required_lane_role,
+                required_attestation_identity=(
+                    self.observed_attestation_identity if historical else None
+                ),
+                required_environment_identity=(
+                    self.observed_environment_identity if historical else None
+                ),
+            )
+        except _LiveLaneAuthorityMismatch as error:
+            terminal = (
+                "LANE_ROLE_MISMATCH" if error.fact == "lane_role" else "LANE_MISMATCH"
+            )
+            raise NumericalProbeQualificationError(terminal) from error
 
 
 class NumericalProbeExecutionError(RuntimeError):
@@ -3100,12 +3117,12 @@ def run_numerical_probe_baseline(
         expected_manifest_identity=expected_manifest_identity,
         required_lane_role=required_lane_role,
     )
-    evidence = authority.evidence
+    evidence = _validate_live_lane_authority(authority)
     return NumericalProbeBaseline(
         definitions,
         artifacts,
         evidence.lane_identity,
-        authority.lane_role,
+        required_lane_role,
         evidence.identity,
         evidence.environment_identity,
         expected_manifest_identity,

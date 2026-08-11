@@ -194,9 +194,10 @@ def test_genuine_current_process_authority_qualifies_a_matching_occurrence(
         )
 
     occurrence = Occurrence.requested(specification, case, "qualified", authority)
+    evidence = LaneAttestation.from_record(authority.to_record())
 
     assert occurrence.lane_reference == lane.identity
-    assert occurrence.lane_attestation_identity == authority.evidence.identity
+    assert occurrence.lane_attestation_identity == evidence.identity
     assert Occurrence.from_record(occurrence.to_record(), specification) == occurrence
     with pytest.raises(ValueError, match="cannot carry lane authority"):
         Occurrence.requested(_specification(case), case, "retroactive", authority)
