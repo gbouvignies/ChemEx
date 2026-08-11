@@ -264,6 +264,7 @@ class ComponentProblemDerivation:
     """Exact immutable derivation of one non-authoritative child problem."""
 
     root_problem_identity: str
+    root_affine_feasibility_identity: str
     component_identity: str
     projection_policy: str
     projected_plan_identity: str
@@ -279,6 +280,7 @@ class ComponentProblemDerivation:
                 "native-component-problem-derivation",
                 (
                     self.root_problem_identity,
+                    self.root_affine_feasibility_identity,
                     self.component_identity,
                     self.projection_policy,
                     self.projected_plan_identity,
@@ -297,6 +299,7 @@ class GridSeedProblemDerivation:
     """Exact lineage for one full-coordinate GRID seed child problem."""
 
     root_problem_identity: str
+    root_affine_feasibility_identity: str
     seed_identity: str
     seed_ordinal: int
     axis_items: tuple[tuple[str, float], ...]
@@ -339,6 +342,7 @@ class GridSeedProblemDerivation:
                 "native-grid-seed-problem-derivation",
                 (
                     self.root_problem_identity,
+                    self.root_affine_feasibility_identity,
                     self.seed_identity,
                     self.seed_ordinal,
                     tuple(
@@ -357,6 +361,7 @@ class DeSearchProblemDerivation:
     """Exact lineage for one selected-coordinate DE search problem."""
 
     root_problem_identity: str
+    root_affine_feasibility_identity: str
     search_specification_identity: str
     selected_ids: tuple[str, ...]
     captured_held_items: tuple[tuple[str, float], ...]
@@ -404,6 +409,7 @@ class DeSearchProblemDerivation:
                 "native-de-search-problem-derivation",
                 (
                     self.root_problem_identity,
+                    self.root_affine_feasibility_identity,
                     self.search_specification_identity,
                     self.selected_ids,
                     tuple(
@@ -421,6 +427,7 @@ class DePolishProblemDerivation:
     """Exact lineage for the one full-coordinate TRF polish after DE."""
 
     root_problem_identity: str
+    root_affine_feasibility_identity: str
     workflow_invocation_identity: str
     search_problem_identity: str
     search_execution_identity: str
@@ -455,6 +462,7 @@ class DePolishProblemDerivation:
                 "native-de-polish-problem-derivation",
                 (
                     self.root_problem_identity,
+                    self.root_affine_feasibility_identity,
                     self.workflow_invocation_identity,
                     self.search_problem_identity,
                     self.search_execution_identity,
@@ -464,6 +472,245 @@ class DePolishProblemDerivation:
                 ),
             ),
         )
+
+
+def _normalize_affine_restriction(
+    restriction_id: str,
+    coefficients: tuple[float, ...],
+    scalar: float,
+    *,
+    scalar_name: str,
+) -> tuple[tuple[float, ...], float]:
+    normalized_coefficients = tuple(
+        _finite_binary64(value, name=f"affine coefficient[{index}]")
+        for index, value in enumerate(coefficients)
+    )
+    normalized_scalar = _finite_binary64(scalar, name=scalar_name)
+    if not restriction_id or not normalized_coefficients:
+        raise DirectTrfConstructionError(
+            "Affine restrictions require an ID and full-frame coefficients"
+        )
+    return normalized_coefficients, normalized_scalar
+
+
+@dataclass(frozen=True, slots=True)
+class AffineHalfSpace:
+    """One canonical full independent-frame restriction ``a^T x <= b``."""
+
+    restriction_id: str
+    coefficients: tuple[float, ...]
+    upper_bound: float
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        coefficients, upper_bound = _normalize_affine_restriction(
+            self.restriction_id,
+            self.coefficients,
+            self.upper_bound,
+            scalar_name="affine upper bound",
+        )
+        object.__setattr__(self, "coefficients", coefficients)
+        object.__setattr__(self, "upper_bound", upper_bound)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-affine-half-space",
+                (
+                    self.restriction_id,
+                    _vector_tokens(coefficients),
+                    _float_token(upper_bound),
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AffineEquality:
+    """One canonical full independent-frame restriction ``a^T x == b``."""
+
+    restriction_id: str
+    coefficients: tuple[float, ...]
+    value: float
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        coefficients, value = _normalize_affine_restriction(
+            self.restriction_id,
+            self.coefficients,
+            self.value,
+            scalar_name="affine equality value",
+        )
+        object.__setattr__(self, "coefficients", coefficients)
+        object.__setattr__(self, "value", value)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-affine-equality",
+                (
+                    self.restriction_id,
+                    _vector_tokens(coefficients),
+                    _float_token(value),
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class CoordinateLineFeasibility:
+    """Exact feasible displacement interval along one controlled coordinate."""
+
+    param_id: str
+    minimum_displacement: float
+    maximum_displacement: float
+    lower_limiters: tuple[str, ...]
+    upper_limiters: tuple[str, ...]
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        minimum = _bound_binary64(
+            self.minimum_displacement,
+            name="minimum feasible displacement",
+        )
+        maximum = _bound_binary64(
+            self.maximum_displacement,
+            name="maximum feasible displacement",
+        )
+        if not minimum <= 0.0 <= maximum:
+            raise DirectTrfConstructionError(
+                "Coordinate line feasibility must contain the accepted point"
+            )
+        object.__setattr__(self, "minimum_displacement", minimum)
+        object.__setattr__(self, "maximum_displacement", maximum)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-coordinate-line-feasibility",
+                (
+                    self.param_id,
+                    _float_token(minimum),
+                    _float_token(maximum),
+                    self.lower_limiters,
+                    self.upper_limiters,
+                ),
+            ),
+        )
+
+
+def _validate_affine_feasibility(
+    independent_items: tuple[tuple[str, float], ...],
+    half_spaces: tuple[AffineHalfSpace, ...],
+    equalities: tuple[AffineEquality, ...],
+) -> None:
+    restrictions = (*half_spaces, *equalities)
+    restriction_ids = tuple(item.restriction_id for item in restrictions)
+    if len(set(restriction_ids)) != len(restriction_ids) or any(
+        len(item.coefficients) != len(independent_items) for item in restrictions
+    ):
+        raise DirectTrfConstructionError(
+            "Affine feasibility must use unique IDs and full independent-frame coefficients"
+        )
+
+
+def _affine_feasibility_identity_record(
+    half_spaces: tuple[AffineHalfSpace, ...],
+    equalities: tuple[AffineEquality, ...],
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    if not half_spaces and not equalities:
+        return ()
+    return (
+        ("affine-half-spaces", tuple(item.identity for item in half_spaces)),
+        ("affine-equalities", tuple(item.identity for item in equalities)),
+    )
+
+
+def _affine_feasibility_identity(
+    half_spaces: tuple[AffineHalfSpace, ...],
+    equalities: tuple[AffineEquality, ...],
+) -> str:
+    return _identity(
+        "native-affine-feasibility",
+        _affine_feasibility_identity_record(half_spaces, equalities),
+    )
+
+
+def _pairwise_feasibility_sum(values: Sequence[float]) -> float:
+    terms = list(values)
+    while len(terms) > 1:
+        reduced = [
+            terms[index] + terms[index + 1] for index in range(0, len(terms) - 1, 2)
+        ]
+        if len(terms) % 2:
+            reduced.append(terms[-1])
+        terms = reduced
+    result = terms[0] if terms else 0.0
+    return 0.0 if result == 0.0 else result
+
+
+def _full_frame_candidate(
+    independent_items: tuple[tuple[str, float], ...],
+    controlled_ids: tuple[str, ...],
+    candidate: tuple[float, ...],
+) -> tuple[float, ...]:
+    updates = dict(zip(controlled_ids, candidate, strict=True))
+    return tuple(updates.get(param_id, value) for param_id, value in independent_items)
+
+
+def _affine_total(
+    coefficients: tuple[float, ...],
+    full_values: tuple[float, ...],
+) -> float:
+    products = tuple(
+        coefficient * value
+        for coefficient, value in zip(coefficients, full_values, strict=True)
+    )
+    return _pairwise_feasibility_sum(products)
+
+
+def _validate_candidate_feasibility(
+    independent_items: tuple[tuple[str, float], ...],
+    controlled_ids: tuple[str, ...],
+    candidate: tuple[float, ...],
+    lower_bounds: tuple[float, ...],
+    upper_bounds: tuple[float, ...],
+    half_spaces: tuple[AffineHalfSpace, ...],
+    equalities: tuple[AffineEquality, ...],
+) -> tuple[float, ...]:
+    if any(
+        not lower <= value <= upper
+        for value, lower, upper in zip(
+            candidate,
+            lower_bounds,
+            upper_bounds,
+            strict=True,
+        )
+    ):
+        raise DirectTrfConstructionError(
+            "External candidate is outside exact box bounds"
+        )
+    full_values = _full_frame_candidate(
+        independent_items,
+        controlled_ids,
+        candidate,
+    )
+    for restriction in half_spaces:
+        total = _affine_total(restriction.coefficients, full_values)
+        slack = restriction.upper_bound - total
+        if not math.isfinite(total) or not math.isfinite(slack) or slack < 0.0:
+            raise DirectTrfConstructionError(
+                f"External candidate violates affine half-space "
+                f"{restriction.restriction_id!r}"
+            )
+    for restriction in equalities:
+        total = _affine_total(restriction.coefficients, full_values)
+        if not math.isfinite(total) or total != restriction.value:
+            raise DirectTrfConstructionError(
+                f"External candidate violates affine equality "
+                f"{restriction.restriction_id!r}"
+            )
+    return full_values
 
 
 @dataclass(frozen=True, slots=True)
@@ -491,9 +738,11 @@ class OptimizationProblem:
         | None
     ) = None
     scalarization_version: str = _SCALARIZATION_VERSION
+    affine_half_spaces: tuple[AffineHalfSpace, ...] = ()
+    affine_equalities: tuple[AffineEquality, ...] = ()
     identity: str = field(init=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:  # noqa: C901 - complete problem invariant
         _validate_problem_ordering(
             self.controlled_ids,
             self.independent_items,
@@ -506,7 +755,33 @@ class OptimizationProblem:
             self.lower_bounds,
             self.upper_bounds,
         )
+        _validate_affine_feasibility(
+            self.independent_items,
+            self.affine_half_spaces,
+            self.affine_equalities,
+        )
+        affine_feasibility_identity = _affine_feasibility_identity(
+            self.affine_half_spaces,
+            self.affine_equalities,
+        )
+        _validate_candidate_feasibility(
+            self.independent_items,
+            self.controlled_ids,
+            normalized_start,
+            lower,
+            upper,
+            self.affine_half_spaces,
+            self.affine_equalities,
+        )
         if isinstance(self.derivation, ComponentProblemDerivation):
+            if (
+                self.derivation.root_affine_feasibility_identity
+                != affine_feasibility_identity
+            ):
+                raise DirectTrfConstructionError(
+                    "Component problem affine feasibility differs from its "
+                    "derivation record"
+                )
             if (
                 self.derivation.projected_plan_identity != self.evaluation_plan_identity
                 or self.derivation.controlled_ids != self.controlled_ids
@@ -515,28 +790,52 @@ class OptimizationProblem:
                 raise DirectTrfConstructionError(
                     "Component problem differs from its derivation record"
                 )
-        elif isinstance(self.derivation, GridSeedProblemDerivation) and (
-            self.derivation.controlled_ids != self.controlled_ids
-            or self.derivation.start != normalized_start
-        ):
-            raise DirectTrfConstructionError(
-                "GRID seed problem differs from its derivation record"
-            )
-        elif isinstance(self.derivation, DeSearchProblemDerivation) and (
-            self.derivation.selected_ids != self.controlled_ids
-            or self.derivation.captured_held_items != self.held_items
-            or self.derivation.start != normalized_start
-        ):
-            raise DirectTrfConstructionError(
-                "DE search problem differs from its derivation record"
-            )
-        elif isinstance(self.derivation, DePolishProblemDerivation) and (
-            self.derivation.controlled_ids != self.controlled_ids
-            or self.derivation.start != normalized_start
-        ):
-            raise DirectTrfConstructionError(
-                "DE polish problem differs from its derivation record"
-            )
+        elif isinstance(self.derivation, GridSeedProblemDerivation):
+            if (
+                self.derivation.root_affine_feasibility_identity
+                != affine_feasibility_identity
+            ):
+                raise DirectTrfConstructionError(
+                    "GRID seed affine feasibility differs from its derivation record"
+                )
+            if (
+                self.derivation.controlled_ids != self.controlled_ids
+                or self.derivation.start != normalized_start
+            ):
+                raise DirectTrfConstructionError(
+                    "GRID seed problem differs from its derivation record"
+                )
+        elif isinstance(self.derivation, DeSearchProblemDerivation):
+            if (
+                self.derivation.root_affine_feasibility_identity
+                != affine_feasibility_identity
+            ):
+                raise DirectTrfConstructionError(
+                    "DE search affine feasibility differs from its derivation record"
+                )
+            if (
+                self.derivation.selected_ids != self.controlled_ids
+                or self.derivation.captured_held_items != self.held_items
+                or self.derivation.start != normalized_start
+            ):
+                raise DirectTrfConstructionError(
+                    "DE search problem differs from its derivation record"
+                )
+        elif isinstance(self.derivation, DePolishProblemDerivation):
+            if (
+                self.derivation.root_affine_feasibility_identity
+                != affine_feasibility_identity
+            ):
+                raise DirectTrfConstructionError(
+                    "DE polish affine feasibility differs from its derivation record"
+                )
+            if (
+                self.derivation.controlled_ids != self.controlled_ids
+                or self.derivation.start != normalized_start
+            ):
+                raise DirectTrfConstructionError(
+                    "DE polish problem differs from its derivation record"
+                )
         object.__setattr__(self, "start", normalized_start)
         object.__setattr__(self, "lower_bounds", lower)
         object.__setattr__(self, "upper_bounds", upper)
@@ -550,6 +849,11 @@ class OptimizationProblem:
             derivation_record = (("derived-de-search", self.derivation.identity),)
         else:
             derivation_record = (("derived-de-polish", self.derivation.identity),)
+        # Preserve the established box-only problem identity exactly.
+        feasibility_record = _affine_feasibility_identity_record(
+            self.affine_half_spaces,
+            self.affine_equalities,
+        )
         object.__setattr__(
             self,
             "identity",
@@ -579,6 +883,7 @@ class OptimizationProblem:
                     self.commit_scope,
                     *derivation_record,
                     self.scalarization_version,
+                    *feasibility_record,
                 ),
             ),
         )
@@ -672,6 +977,87 @@ class OptimizationProblem:
         """Whether this is the complete root rather than a derived component."""
         return self.derivation is None
 
+    @property
+    def affine_feasibility_identity(self) -> str:
+        """Return the canonical box-independent affine feasibility identity."""
+        return _affine_feasibility_identity(
+            self.affine_half_spaces,
+            self.affine_equalities,
+        )
+
+    def coordinate_line_feasibility(  # noqa: C901 - exact interval intersection
+        self,
+        vector: Sequence[float] | Array,
+        column: int,
+    ) -> CoordinateLineFeasibility:
+        """Intersect exact box and affine feasibility along one coordinate line."""
+        candidate = _canonical_vector(
+            vector,
+            dimension=len(self.controlled_ids),
+            name="coordinate-line center",
+        )
+        full_values = _validate_candidate_feasibility(
+            self.independent_items,
+            self.controlled_ids,
+            candidate,
+            self.lower_bounds,
+            self.upper_bounds,
+            self.affine_half_spaces,
+            self.affine_equalities,
+        )
+        if not 0 <= column < len(self.controlled_ids):
+            raise IndexError("Controlled coordinate column is out of range")
+        param_id = self.controlled_ids[column]
+        independent_index = next(
+            index
+            for index, (independent_id, _value) in enumerate(self.independent_items)
+            if independent_id == param_id
+        )
+        minimum = self.lower_bounds[column] - candidate[column]
+        maximum = self.upper_bounds[column] - candidate[column]
+        lower_limiters = (f"box-lower:{param_id}",) if math.isfinite(minimum) else ()
+        upper_limiters = (f"box-upper:{param_id}",) if math.isfinite(maximum) else ()
+        for restriction in self.affine_half_spaces:
+            coefficient = restriction.coefficients[independent_index]
+            if coefficient == 0.0:
+                continue
+            slack = restriction.upper_bound - _affine_total(
+                restriction.coefficients,
+                full_values,
+            )
+            boundary = _bound_binary64(
+                slack / coefficient,
+                name=f"affine line boundary {restriction.restriction_id!r}",
+            )
+            limiter = f"affine:{restriction.restriction_id}"
+            if coefficient > 0.0:
+                if boundary < maximum:
+                    maximum = boundary
+                    upper_limiters = (limiter,)
+                elif boundary == maximum:
+                    upper_limiters += (limiter,)
+            elif boundary > minimum:
+                minimum = boundary
+                lower_limiters = (limiter,)
+            elif boundary == minimum:
+                lower_limiters += (limiter,)
+        for restriction in self.affine_equalities:
+            coefficient = restriction.coefficients[independent_index]
+            if coefficient == 0.0:
+                continue
+            minimum = 0.0
+            maximum = 0.0
+            limiter = f"equality:{restriction.restriction_id}"
+            lower_limiters = (limiter,)
+            upper_limiters = (limiter,)
+        return CoordinateLineFeasibility(
+            param_id,
+            minimum,
+            maximum,
+            lower_limiters,
+            upper_limiters,
+        )
+
     def lifecycle_frame(
         self,
         vector: Sequence[float] | Array,
@@ -683,6 +1069,15 @@ class OptimizationProblem:
             vector,
             dimension=len(self.controlled_ids),
             name="external candidate",
+        )
+        _validate_candidate_feasibility(
+            self.independent_items,
+            self.controlled_ids,
+            candidate,
+            self.lower_bounds,
+            self.upper_bounds,
+            self.affine_half_spaces,
+            self.affine_equalities,
         )
         updates = dict(zip(self.controlled_ids, candidate, strict=True))
         return IndependentValueFrame(
@@ -1066,6 +1461,72 @@ class GridSelectionProvenance:
         )
 
 
+class _AcceptedOccurrenceWitness:
+    """Opaque process-local witness for one accepted-result occurrence."""
+
+    __slots__ = ("__weakref__",)
+
+    def __new__(cls) -> _AcceptedOccurrenceWitness:
+        raise TypeError(
+            "Accepted occurrence witnesses are minted only by Direct TRF or "
+            "the isolated qualification constructor"
+        )
+
+    def __copy__(self) -> _AcceptedOccurrenceWitness:
+        raise TypeError("Accepted occurrence witnesses cannot be copied")
+
+    def __deepcopy__(self, _memo: object) -> _AcceptedOccurrenceWitness:
+        raise TypeError("Accepted occurrence witnesses cannot be copied")
+
+    def __reduce__(self) -> tuple[object, ...]:
+        raise TypeError("Accepted occurrence witnesses cannot be serialized")
+
+    def __reduce_ex__(self, _protocol: SupportsIndex, /) -> tuple[object, ...]:
+        raise TypeError("Accepted occurrence witnesses cannot be serialized")
+
+
+@dataclass(frozen=True, slots=True)
+class _AcceptedOccurrenceBinding:
+    occurrence_identity: str
+    accepted_result_identity: str | None = None
+
+
+_ACCEPTED_OCCURRENCE_WITNESSES: WeakKeyDictionary[
+    _AcceptedOccurrenceWitness,
+    _AcceptedOccurrenceBinding,
+] = WeakKeyDictionary()
+_ACCEPTED_OCCURRENCE_WITNESSES_LOCK = RLock()
+
+
+def _mint_accepted_occurrence_witness(
+    occurrence_identity: str,
+) -> _AcceptedOccurrenceWitness:
+    witness = object.__new__(_AcceptedOccurrenceWitness)
+    with _ACCEPTED_OCCURRENCE_WITNESSES_LOCK:
+        _ACCEPTED_OCCURRENCE_WITNESSES[witness] = _AcceptedOccurrenceBinding(
+            occurrence_identity
+        )
+    return witness
+
+
+def _bind_accepted_occurrence_witness(
+    witness: _AcceptedOccurrenceWitness,
+    occurrence_identity: str,
+    accepted_result_identity: str,
+) -> bool:
+    with _ACCEPTED_OCCURRENCE_WITNESSES_LOCK:
+        binding = _ACCEPTED_OCCURRENCE_WITNESSES.get(witness)
+        if binding is None or binding.occurrence_identity != occurrence_identity:
+            return False
+        if binding.accepted_result_identity is None:
+            _ACCEPTED_OCCURRENCE_WITNESSES[witness] = _AcceptedOccurrenceBinding(
+                occurrence_identity,
+                accepted_result_identity,
+            )
+            return True
+        return binding.accepted_result_identity == accepted_result_identity
+
+
 @dataclass(frozen=True, slots=True)
 class AcceptedFitResult:
     """Fresh-materialized immutable evidence with no live commit authority."""
@@ -1086,6 +1547,11 @@ class AcceptedFitResult:
     commit_scope: tuple[str, ...]
     commit_items: tuple[tuple[str, float], ...]
     origin_context_identity: str
+    occurrence_witness: _AcceptedOccurrenceWitness | None = field(
+        compare=False,
+        repr=False,
+        kw_only=True,
+    )
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -1093,33 +1559,90 @@ class AcceptedFitResult:
             raise ValueError("Accepted result cannot have an empty residual objective")
         if not self.origin_context_identity:
             raise ValueError("Accepted result requires an origin context identity")
-        object.__setattr__(
-            self,
-            "identity",
-            _identity(
-                "native-accepted-fit-result",
-                (
-                    self.problem_identity,
-                    self.invocation_identity,
-                    self.execution_identity,
-                    self.materialization_identity,
-                    self.parameterization_identity,
-                    self.evaluator_parameterization_identity,
-                    self.source_occurrence_identity,
-                    self.source_revision,
-                    self.controlled_ids,
-                    _vector_tokens(self.vector),
-                    _float_token(self.chi_square),
-                    self.evaluation_result.identity,
-                    self.commit_scope,
-                    tuple(
-                        (param_id, _float_token(value))
-                        for param_id, value in self.commit_items
-                    ),
-                    self.origin_context_identity,
+        identity = _identity(
+            "native-accepted-fit-result",
+            (
+                self.problem_identity,
+                self.invocation_identity,
+                self.execution_identity,
+                self.materialization_identity,
+                self.parameterization_identity,
+                self.evaluator_parameterization_identity,
+                self.source_occurrence_identity,
+                self.source_revision,
+                self.controlled_ids,
+                _vector_tokens(self.vector),
+                _float_token(self.chi_square),
+                self.evaluation_result.identity,
+                self.commit_scope,
+                tuple(
+                    (param_id, _float_token(value))
+                    for param_id, value in self.commit_items
                 ),
+                self.origin_context_identity,
             ),
         )
+        object.__setattr__(self, "identity", identity)
+        if self.occurrence_witness is not None:
+            _bind_accepted_occurrence_witness(
+                self.occurrence_witness,
+                self.occurrence_identity,
+                identity,
+            )
+
+    @classmethod
+    def for_qualification(
+        cls,
+        *,
+        occurrence_identity: str,
+        problem_identity: str,
+        invocation_identity: str,
+        execution_identity: str,
+        materialization_identity: str,
+        parameterization_identity: str,
+        evaluator_parameterization_identity: str,
+        source_occurrence_identity: str,
+        source_revision: int,
+        controlled_ids: tuple[str, ...],
+        vector: tuple[float, ...],
+        chi_square: float,
+        evaluation_result: EvaluationResult,
+        commit_scope: tuple[str, ...],
+        commit_items: tuple[tuple[str, float], ...],
+        origin_context_identity: str,
+    ) -> AcceptedFitResult:
+        """Construct an authoritative anchor only for isolated qualification."""
+        return cls(
+            occurrence_identity,
+            problem_identity,
+            invocation_identity,
+            execution_identity,
+            materialization_identity,
+            parameterization_identity,
+            evaluator_parameterization_identity,
+            source_occurrence_identity,
+            source_revision,
+            controlled_ids,
+            vector,
+            chi_square,
+            evaluation_result,
+            commit_scope,
+            commit_items,
+            origin_context_identity,
+            occurrence_witness=_mint_accepted_occurrence_witness(occurrence_identity),
+        )
+
+
+def accepted_occurrence_is_authoritative(accepted: AcceptedFitResult) -> bool:
+    """Report whether this object retains its exact construction occurrence."""
+    if accepted.occurrence_witness is None:
+        return False
+    with _ACCEPTED_OCCURRENCE_WITNESSES_LOCK:
+        binding = _ACCEPTED_OCCURRENCE_WITNESSES.get(accepted.occurrence_witness)
+    return binding == _AcceptedOccurrenceBinding(
+        accepted.occurrence_identity,
+        accepted.identity,
+    )
 
 
 class LiveFitCommitAuthority:
@@ -2107,8 +2630,9 @@ def _accepted_fit_evidence(
         (param_id, evaluation_result.resolved_values[param_id])
         for param_id in problem.commit_scope
     )
+    occurrence_identity = uuid4().hex
     return AcceptedFitResult(
-        uuid4().hex,
+        occurrence_identity,
         problem.identity,
         invocation_identity,
         execution_identity,
@@ -2124,6 +2648,7 @@ def _accepted_fit_evidence(
         problem.commit_scope,
         commit_items,
         origin_context_identity,
+        occurrence_witness=_mint_accepted_occurrence_witness(occurrence_identity),
     )
 
 

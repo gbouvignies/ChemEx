@@ -18,6 +18,7 @@ from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import EvaluationEngine
 from chemex.experiments.builder import build_experiments
 from chemex.optimize.direct_trf import (
+    AffineHalfSpace,
     CancellationToken,
     DirectTrfConstructionError,
     DirectTrfInvocation,
@@ -197,6 +198,34 @@ def test_exact_decomposition_is_deterministic_and_distinguishes_shared_coordinat
         component.disposition is ComponentDisposition.NOT_STARTED
         for component in invalid_outcome.components
     )
+
+
+def test_grouped_components_preserve_root_affine_feasibility() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    controlled_id = problem.controlled_ids[0]
+    coefficients = tuple(
+        1.0 if param_id == controlled_id else 0.0
+        for param_id, _value in problem.independent_items
+    )
+    restriction = AffineHalfSpace(
+        "grouped-root-upper",
+        coefficients,
+        problem.start[0] + 1.0,
+    )
+    constrained = dataclasses.replace(
+        problem,
+        affine_half_spaces=(restriction,),
+    )
+    decomposition = FitDecomposition.from_root(
+        constrained,
+        parameterization,
+        engine,
+    )
+    assert decomposition.components
+    for component in decomposition.components:
+        assert component.problem.affine_half_spaces == (restriction,)
+        with pytest.raises(DirectTrfConstructionError, match="feasibility"):
+            dataclasses.replace(component.problem, affine_half_spaces=())
 
 
 def test_all_masked_unscaled_profile_cannot_supply_a_control_dependency() -> None:

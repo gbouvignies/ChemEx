@@ -45,6 +45,7 @@ from chemex.optimize.de_direct_trf import (
     execute_de_direct_trf,
 )
 from chemex.optimize.direct_trf import (
+    AffineHalfSpace,
     CancellationToken,
     DePolishProblemDerivation,
     DirectTrfCandidateOutcome,
@@ -582,6 +583,15 @@ def test_de_selects_canonical_restart_then_runs_one_full_trf_polish_and_commit()
     (param_id,) = problem.controlled_ids
     search_lower = max(problem.lower_bounds[0], problem.start[0] * 0.5)
     search_upper = min(problem.upper_bounds[0], problem.start[0] * 1.5)
+    restriction = AffineHalfSpace(
+        "de-root-upper",
+        tuple(
+            1.0 if independent_id == param_id else 0.0
+            for independent_id, _value in problem.independent_items
+        ),
+        search_upper,
+    )
+    problem = dataclasses.replace(problem, affine_half_spaces=(restriction,))
     invocation = DeDirectTrfInvocation.for_problem(
         problem,
         search_coordinates=((param_id, search_lower, search_upper, "linear"),),
@@ -591,6 +601,9 @@ def test_de_selects_canonical_restart_then_runs_one_full_trf_polish_and_commit()
         population_multiplier=4,
         maximum_generations=1,
     )
+    assert invocation.search_problem.affine_half_spaces == (restriction,)
+    with pytest.raises(DirectTrfConstructionError, match="feasibility"):
+        dataclasses.replace(invocation.search_problem, affine_half_spaces=())
     de_calls = 0
     polish_starts: list[tuple[float, ...]] = []
 
@@ -670,6 +683,9 @@ def test_de_selects_canonical_restart_then_runs_one_full_trf_polish_and_commit()
     assert outcome.polish_problem is not None
     assert outcome.polish_problem.controlled_ids == problem.controlled_ids
     assert outcome.polish_problem.start == outcome.search.best_candidate.full_vector
+    assert outcome.polish_problem.affine_half_spaces == (restriction,)
+    with pytest.raises(DirectTrfConstructionError, match="feasibility"):
+        dataclasses.replace(outcome.polish_problem, affine_half_spaces=())
     assert not outcome.polish_problem.acceptance_authority
     assert outcome.polish is not None
     assert outcome.accepted_result is not None

@@ -607,6 +607,8 @@ def _validate_grouped_grid_seed(
         or seed_problem.upper_bounds != problem.upper_bounds
         or seed_problem.commit_scope != problem.commit_scope
         or seed_problem.scalarization_version != problem.scalarization_version
+        or seed_problem.affine_half_spaces != problem.affine_half_spaces
+        or seed_problem.affine_equalities != problem.affine_equalities
         or seed_decomposition is None
         or seed_decomposition.root_problem_identity != seed_problem.identity
         or seed_decomposition.root_plan_identity
@@ -718,6 +720,8 @@ def _validate_grouped_grid_seed(
             or component_problem.commit_scope != seed_problem.commit_scope
             or component_problem.scalarization_version
             != seed_problem.scalarization_version
+            or component_problem.affine_half_spaces != seed_problem.affine_half_spaces
+            or component_problem.affine_equalities != seed_problem.affine_equalities
             or direct.problem_identity != component_problem.identity
             or component_candidate.problem_identity != direct.problem_identity
             or component_candidate.invocation_identity != direct.identity

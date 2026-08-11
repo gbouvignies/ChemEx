@@ -260,6 +260,7 @@ def _build_component(
     )
     derivation = ComponentProblemDerivation(
         problem.identity,
+        problem.affine_feasibility_identity,
         component_identity,
         _PROJECTION_POLICY,
         child_engine.plan.identity,
@@ -281,6 +282,9 @@ def _build_component(
         upper,
         problem.commit_scope,
         derivation,
+        problem.scalarization_version,
+        problem.affine_half_spaces,
+        problem.affine_equalities,
     )
     return FitComponent(
         component_ids,

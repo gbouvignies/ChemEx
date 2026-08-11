@@ -410,6 +410,7 @@ class GridDirectTrfInvocation:
                 continue
             derivation = GridSeedProblemDerivation(
                 problem.identity,
+                problem.affine_feasibility_identity,
                 seed_identity,
                 ordinal,
                 finite_axis_items,
@@ -432,6 +433,8 @@ class GridDirectTrfInvocation:
                 problem.commit_scope,
                 derivation,
                 problem.scalarization_version,
+                problem.affine_half_spaces,
+                problem.affine_equalities,
             )
             child_invocation = DirectTrfInvocation.for_problem(
                 child,
@@ -669,6 +672,8 @@ def _validate_direct_grid_record(
         and child_problem.upper_bounds == problem.upper_bounds
         and child_problem.commit_scope == problem.commit_scope
         and child_problem.scalarization_version == problem.scalarization_version
+        and child_problem.affine_half_spaces == problem.affine_half_spaces
+        and child_problem.affine_equalities == problem.affine_equalities
     )
     if (
         invocation.root_problem_identity != problem.identity
@@ -898,6 +903,7 @@ class AcceptedGridDirectTrfResult(AcceptedFitResult):
             selected_seed,
             selected_outcome,
             fresh_candidate,
+            occurrence_witness=accepted.occurrence_witness,
         )
 
 
