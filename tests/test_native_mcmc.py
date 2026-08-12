@@ -574,6 +574,18 @@ def test_complete_chain_is_primary_and_flat_samples_are_derived_views() -> None:
     assert diagnostics.mean_acceptance_fraction is not None
     assert len(diagnostics.acceptance_fractions) == plan.policy.walkers
     assert 0.0 <= diagnostics.mean_acceptance_fraction <= 1.0
+    assert diagnostics.accepted_counts == (0, 5, 2, 4, 3, 2, 4, 5)
+    assert diagnostics.acceptance_fractions == (
+        0.0,
+        1.0,
+        0.4,
+        0.8,
+        0.6,
+        0.4,
+        0.8,
+        1.0,
+    )
+    assert diagnostics.mean_acceptance_fraction == 0.625
 
 
 def test_interruption_preserves_only_a_contiguous_complete_state_prefix() -> None:
@@ -964,10 +976,83 @@ def test_acceptance_diagnostics_reject_replacement_and_serialized_tampering() ->
 
     canonical = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(source)
     record = canonical.to_record()
-    record["acceptance_fractions"] = [float("nan").hex()]
-    record["mean_acceptance_fraction"] = (-4.0).hex()
-    with pytest.raises(McmcConstructionError, match="canonical backend evidence"):
-        native_mcmc.AcceptanceDiagnostics.from_record(record, source=source)
+    for field_name, forged_value in (
+        ("source_identity", "forged"),
+        ("walker_ordinals", list(reversed(canonical.walker_ordinals))),
+        ("observed_transition_count", 999),
+        ("accepted_counts", [5] * plan.policy.walkers),
+        ("acceptance_fractions", [float("nan").hex()]),
+        ("mean_acceptance_fraction", (-4.0).hex()),
+        ("status", McmcDiagnosticStatus.UNAVAILABLE.value),
+        ("identity", "recomputed-outer-hash"),
+    ):
+        tampered = dict(record)
+        tampered[field_name] = forged_value
+        with pytest.raises(McmcConstructionError, match="canonical backend evidence"):
+            native_mcmc.AcceptanceDiagnostics.from_record(tampered, source=source)
+
+
+def test_acceptance_diagnostics_reject_forged_source_lineage() -> None:
+    accepted, plan = _plan_context()
+    operation = execute_mcmc_evidence(accepted, plan)
+    source = operation.backend_transition_evidence
+    assert source is not None
+    diagnostic = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(source)
+
+    object.__setattr__(diagnostic, "source_identity", "forged")
+
+    with pytest.raises(McmcConstructionError, match="source identity"):
+        diagnostic.validate_integrity()
+
+
+@pytest.mark.parametrize(
+    ("field_name", "forged_value"),
+    (
+        ("state_ordinals", (5, 4, 3, 2, 1)),
+        ("walker_ordinals", (7, 6, 5, 4, 3, 2, 1, 0)),
+        ("observed_transition_count", 999),
+        ("accepted_counts", (5,) * 8),
+        ("acceptance_fractions", (1.0,) * 8),
+        ("mean_acceptance_fraction", 1.0),
+        ("status", McmcDiagnosticStatus.UNAVAILABLE),
+    ),
+)
+def test_acceptance_diagnostics_reject_recursive_field_mutation(
+    field_name: str,
+    forged_value: object,
+) -> None:
+    accepted, plan = _plan_context()
+    operation = execute_mcmc_evidence(accepted, plan)
+    source = operation.backend_transition_evidence
+    assert source is not None
+    diagnostic = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(source)
+
+    object.__setattr__(diagnostic, field_name, forged_value)
+    object.__setattr__(diagnostic, "identity", diagnostic._content_identity())
+
+    with pytest.raises(McmcConstructionError, match="content"):
+        diagnostic.validate_integrity()
+
+
+def test_acceptance_diagnostics_reject_replaced_source_object() -> None:
+    accepted, plan = _plan_context()
+    operation = execute_mcmc_evidence(accepted, plan)
+    source = operation.backend_transition_evidence
+    assert source is not None
+    diagnostic = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(source)
+    hypothetical = source.with_hypothetical_masks(
+        tuple(
+            (True,) * plan.policy.walkers
+            for _transition in range(plan.policy.total_steps)
+        ),
+        observation_provenance="emcee-stretch-backend-v1",
+    )
+
+    object.__setattr__(diagnostic, "source", hypothetical)
+    object.__setattr__(diagnostic, "identity", diagnostic._content_identity())
+
+    with pytest.raises(McmcConstructionError, match="source identity"):
+        diagnostic.validate_integrity()
 
 
 @pytest.mark.parametrize(
@@ -994,7 +1079,7 @@ def test_backend_mask_variants_do_not_change_primary_scientific_evidence(
         )
         for transition in range(plan.policy.total_steps)
     )
-    variant = backend.with_observed_masks(
+    variant = backend.with_hypothetical_masks(
         masks,
         observation_provenance=backend.observation_provenance,
     )
@@ -1014,6 +1099,16 @@ def test_backend_mask_variants_do_not_change_primary_scientific_evidence(
     variant_diagnostic = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(
         variant
     )
+    assert backend.kind is native_mcmc.BackendTransitionEvidenceKind.OBSERVED_EXECUTION
+    assert variant.kind is native_mcmc.BackendTransitionEvidenceKind.HYPOTHETICAL
+    assert original_diagnostic.status is McmcDiagnosticStatus.AVAILABLE
+    assert variant_diagnostic.status is McmcDiagnosticStatus.UNAVAILABLE
+    assert (
+        variant_diagnostic.reason
+        is McmcDiagnosticReason.UNVALIDATED_BACKEND_TRANSITIONS
+    )
+    assert variant_diagnostic.acceptance_fractions is None
+    assert variant_diagnostic.mean_acceptance_fraction is None
     assert variant_diagnostic.source_identity != original_diagnostic.source_identity
     assert variant_diagnostic.identity != original_diagnostic.identity
 
@@ -1038,6 +1133,72 @@ def test_backend_mask_variants_do_not_change_primary_scientific_evidence(
     assert variant_summary.parameter_summaries == original_summary.parameter_summaries
     assert variant_summary.covariance == original_summary.covariance
     assert variant_summary.correlations == original_summary.correlations
+
+
+def test_observed_backend_evidence_is_bound_to_its_execution_occurrence() -> None:
+    accepted, plan = _plan_context()
+    first = execute_mcmc_evidence(accepted, plan)
+    second = execute_mcmc_evidence(accepted, plan)
+    first_source = first.backend_transition_evidence
+    second_source = second.backend_transition_evidence
+    assert first_source is not None
+    assert second_source is not None
+    assert first_source.execution_occurrence_identity != (
+        second_source.execution_occurrence_identity
+    )
+
+    record = first_source.to_record()
+    with pytest.raises(McmcConstructionError, match="execution occurrence"):
+        native_mcmc.BackendTransitionEvidence.from_record(
+            record,
+            source=second_source,
+        )
+
+    restored = native_mcmc.BackendTransitionEvidence.from_record(
+        record,
+        source=first_source,
+    )
+    assert (
+        restored.kind
+        is native_mcmc.BackendTransitionEvidenceKind.HISTORICAL_OBSERVATION
+    )
+    restored_diagnostic = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(
+        restored
+    )
+    assert restored_diagnostic.status is McmcDiagnosticStatus.AVAILABLE
+    assert restored_diagnostic.acceptance_fractions == (
+        native_mcmc.AcceptanceDiagnostics.from_backend_evidence(
+            first_source
+        ).acceptance_fractions
+    )
+
+    assert second.raw_capture is not None
+    foreign_masks = tuple(item.accepted for item in first_source.transitions)
+    foreign = native_mcmc.BackendTransitionEvidence.from_capture(
+        second.raw_capture,
+        foreign_masks,
+        observation_provenance="emcee-stretch-backend-v1",
+    )
+    foreign_diagnostic = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(
+        foreign
+    )
+    assert foreign.kind is native_mcmc.BackendTransitionEvidenceKind.HYPOTHETICAL
+    assert foreign_diagnostic.status is McmcDiagnosticStatus.UNAVAILABLE
+    assert foreign_diagnostic.acceptance_fractions is None
+
+    for field_name, forged_value in (
+        ("source_capture_identity", "forged"),
+        ("execution_occurrence_identity", "forged"),
+        ("masks", [[True] * plan.policy.walkers] * plan.policy.total_steps),
+        ("identity", "forged"),
+    ):
+        tampered = dict(record)
+        tampered[field_name] = forged_value
+        with pytest.raises(McmcConstructionError):
+            native_mcmc.BackendTransitionEvidence.from_record(
+                tampered,
+                source=first_source,
+            )
 
 
 def test_short_chain_autocorrelation_and_dependents_are_unreliable() -> None:

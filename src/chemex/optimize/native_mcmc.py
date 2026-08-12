@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import secrets
 import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -127,7 +128,16 @@ class McmcDiagnosticReason(StrEnum):
     INVALID_AUTOCORRELATION = "invalid_autocorrelation"
     PARTIAL_CHAIN = "partial_chain"
     BACKEND_TRANSITION_INCONSISTENT = "backend_transition_inconsistent"
+    UNVALIDATED_BACKEND_TRANSITIONS = "unvalidated_backend_transitions"
     UNRELIABLE_AUTOCORRELATION = "unreliable_autocorrelation"
+
+
+class BackendTransitionEvidenceKind(StrEnum):
+    """Authority of one backend transition-mask artifact."""
+
+    OBSERVED_EXECUTION = "observed_execution"
+    HISTORICAL_OBSERVATION = "historical_observation"
+    HYPOTHETICAL = "hypothetical"
 
 
 class McmcTrajectoryClaim(StrEnum):
@@ -217,6 +227,123 @@ def _mcmc_evidence_occurrence_is_authoritative(
     with _MCMC_EVIDENCE_WITNESSES_LOCK:
         binding = _MCMC_EVIDENCE_WITNESSES.get(witness)
     return binding == _McmcEvidenceBinding(kind, identity, id(artifact))
+
+
+class _BackendExecutionObservation:
+    """Opaque process-local owner of masks emitted by one sampler occurrence."""
+
+    __slots__ = ("__weakref__",)
+
+    def __new__(cls) -> _BackendExecutionObservation:
+        raise TypeError(
+            "Backend observations are minted only by native sampler execution"
+        )
+
+    def __copy__(self) -> _BackendExecutionObservation:
+        raise TypeError("Backend execution observations cannot be copied")
+
+    def __deepcopy__(self, _memo: object) -> _BackendExecutionObservation:
+        raise TypeError("Backend execution observations cannot be copied")
+
+    def __reduce__(self) -> tuple[object, ...]:
+        raise TypeError("Backend execution observations cannot be serialized")
+
+    def __reduce_ex__(self, _protocol: SupportsIndex, /) -> tuple[object, ...]:
+        raise TypeError("Backend execution observations cannot be serialized")
+
+
+@dataclass(frozen=True, slots=True)
+class _BackendExecutionObservationBinding:
+    plan_identity: str
+    execution_occurrence_identity: str
+    transitions: tuple[tuple[int, str, str, tuple[bool, ...]], ...] = ()
+
+
+_BACKEND_EXECUTION_OBSERVATIONS: WeakKeyDictionary[
+    _BackendExecutionObservation,
+    _BackendExecutionObservationBinding,
+] = WeakKeyDictionary()
+_BACKEND_EXECUTION_OBSERVATIONS_LOCK = RLock()
+
+
+def _mint_backend_execution_observation(
+    plan_identity: str,
+) -> _BackendExecutionObservation:
+    observation = object.__new__(_BackendExecutionObservation)
+    binding = _BackendExecutionObservationBinding(
+        plan_identity,
+        _identity(
+            "native-mcmc-backend-execution-occurrence",
+            (plan_identity, secrets.token_hex(32)),
+        ),
+    )
+    with _BACKEND_EXECUTION_OBSERVATIONS_LOCK:
+        _BACKEND_EXECUTION_OBSERVATIONS[observation] = binding
+    return observation
+
+
+def _record_backend_execution_transition(
+    observation: _BackendExecutionObservation,
+    previous: EnsembleState,
+    following: EnsembleState,
+    mask: Sequence[bool],
+) -> None:
+    exact_mask = tuple(mask)
+    with _BACKEND_EXECUTION_OBSERVATIONS_LOCK:
+        binding = _BACKEND_EXECUTION_OBSERVATIONS.get(observation)
+        if (
+            binding is None
+            or following.ordinal != len(binding.transitions) + 1
+            or previous.ordinal + 1 != following.ordinal
+        ):
+            raise McmcExecutionError(
+                "Backend mask does not belong to the active sampler occurrence"
+            )
+        _BACKEND_EXECUTION_OBSERVATIONS[observation] = (
+            _BackendExecutionObservationBinding(
+                binding.plan_identity,
+                binding.execution_occurrence_identity,
+                (
+                    *binding.transitions,
+                    (
+                        following.ordinal,
+                        previous.identity,
+                        following.identity,
+                        exact_mask,
+                    ),
+                ),
+            )
+        )
+
+
+def _bind_backend_observation_to_raw_capture(
+    observation: _BackendExecutionObservation,
+    raw_capture: RawMcmcCapture,
+) -> _BackendExecutionObservationBinding:
+    with _BACKEND_EXECUTION_OBSERVATIONS_LOCK:
+        binding = _BACKEND_EXECUTION_OBSERVATIONS.get(observation)
+        expected_edges = tuple(
+            (following.ordinal, previous.identity, following.identity)
+            for previous, following in zip(
+                raw_capture.states,
+                raw_capture.states[1:],
+                strict=False,
+            )
+        )
+        observed_edges = (
+            tuple(item[:3] for item in binding.transitions) if binding else ()
+        )
+        if (
+            binding is None
+            or binding.plan_identity != raw_capture.plan_identity
+            or binding.execution_occurrence_identity
+            != raw_capture.backend_execution_occurrence_identity
+            or observed_edges != expected_edges
+        ):
+            raise McmcConstructionError(
+                "Backend masks cannot bind to a foreign execution occurrence"
+            )
+        return binding
 
 
 def _identity(kind: str, record: object) -> str:
@@ -1147,7 +1274,9 @@ class BackendTransitionEvidence:
     """Diagnostic-only backend masks bound to exact scientific raw states."""
 
     source_capture: RawMcmcCapture = field(repr=False, compare=False)
+    kind: BackendTransitionEvidenceKind
     observation_provenance: str
+    execution_occurrence_identity: str | None
     transitions: tuple[RawTransitionEvent, ...]
     _occurrence_witness: _McmcEvidenceWitness | None = field(
         default=None,
@@ -1164,6 +1293,14 @@ class BackendTransitionEvidence:
         if self._occurrence_witness is None or not self.observation_provenance:
             raise McmcConstructionError(
                 "Backend transition evidence requires canonical diagnostic provenance"
+            )
+        observed = self.kind in {
+            BackendTransitionEvidenceKind.OBSERVED_EXECUTION,
+            BackendTransitionEvidenceKind.HISTORICAL_OBSERVATION,
+        }
+        if observed != (self.execution_occurrence_identity is not None):
+            raise McmcConstructionError(
+                "Backend transition authority and execution occurrence disagree"
             )
         self.source_capture.validate_integrity()
         transitions = tuple(self.transitions)
@@ -1224,7 +1361,9 @@ class BackendTransitionEvidence:
             "native-mcmc-backend-transition-evidence",
             (
                 self.source_capture.identity,
+                self.kind.value,
                 self.observation_provenance,
+                self.execution_occurrence_identity,
                 tuple(item.identity for item in self.transitions),
                 tuple(
                     (item.transition_ordinal, item.walker_ordinal, item.category)
@@ -1241,15 +1380,41 @@ class BackendTransitionEvidence:
     def is_structurally_consistent(self) -> bool:
         return not self.consistency_failures
 
+    @property
+    def supports_observed_diagnostics(self) -> bool:
+        return self.kind in {
+            BackendTransitionEvidenceKind.OBSERVED_EXECUTION,
+            BackendTransitionEvidenceKind.HISTORICAL_OBSERVATION,
+        }
+
     def validate_integrity(self) -> None:
+        if not isinstance(self.source_capture, RawMcmcCapture):
+            raise McmcConstructionError(
+                "Backend transition evidence has a foreign source object"
+            )
         self.source_capture.validate_integrity()
-        expected = BackendTransitionEvidence.from_capture(
+        if self.source_capture_identity != self.source_capture.identity:
+            raise McmcConstructionError(
+                "Backend transition source identity differs from its source object"
+            )
+        if self.supports_observed_diagnostics and (
+            self.execution_occurrence_identity
+            != self.source_capture.backend_execution_occurrence_identity
+        ):
+            raise McmcConstructionError(
+                "Backend evidence differs from its source execution occurrence"
+            )
+        expected = BackendTransitionEvidence(
             self.source_capture,
-            tuple(item.accepted for item in self.transitions),
-            observation_provenance=self.observation_provenance,
+            self.kind,
+            self.observation_provenance,
+            self.execution_occurrence_identity,
+            self.transitions,
+            _mint_mcmc_evidence_witness("backend-transition-evidence"),
         )
         if (
-            self._content_identity() != self.identity
+            self.consistency_failures != expected.consistency_failures
+            or self._content_identity() != self.identity
             or expected._content_identity() != self.identity
         ):
             raise McmcConstructionError(
@@ -1273,6 +1438,7 @@ class BackendTransitionEvidence:
         *,
         observation_provenance: str,
     ) -> BackendTransitionEvidence:
+        """Create explicitly hypothetical masks without execution authority."""
         exact_masks = tuple(tuple(mask) for mask in masks)
         states = source_capture.states
         if len(exact_masks) != max(0, len(states) - 1):
@@ -1297,24 +1463,99 @@ class BackendTransitionEvidence:
         )
         return cls(
             source_capture,
+            BackendTransitionEvidenceKind.HYPOTHETICAL,
             observation_provenance,
+            None,
             transitions,
             _mint_mcmc_evidence_witness("backend-transition-evidence"),
         )
 
-    def with_observed_masks(
+    def with_hypothetical_masks(
         self,
         masks: Sequence[Sequence[bool]],
         *,
         observation_provenance: str,
     ) -> BackendTransitionEvidence:
-        """Create a diagnostic-only alternative without changing raw states."""
+        """Create an unvalidated alternative without changing scientific states."""
         self.validate_integrity()
         return self.from_capture(
             self.source_capture,
             masks,
             observation_provenance=observation_provenance,
         )
+
+    def to_record(self) -> dict[str, object]:
+        """Serialize backend evidence without its process-local authority witness."""
+        return {
+            "schema_version": _SCHEMA_VERSION,
+            "kind": self.kind.value,
+            "source_capture_identity": self.source_capture_identity,
+            "observation_provenance": self.observation_provenance,
+            "execution_occurrence_identity": self.execution_occurrence_identity,
+            "masks": [list(item.accepted) for item in self.transitions],
+            "identity": self.identity,
+        }
+
+    @classmethod
+    def from_record(
+        cls,
+        record: Mapping[str, object],
+        *,
+        source: BackendTransitionEvidence,
+    ) -> BackendTransitionEvidence:
+        """Restore historical evidence only against its exact live observed source."""
+        source.validate_integrity()
+        if record.get("execution_occurrence_identity") != (
+            source.execution_occurrence_identity
+        ):
+            raise McmcConstructionError(
+                "Stored backend evidence belongs to a foreign execution occurrence"
+            )
+        if record != source.to_record():
+            raise McmcConstructionError(
+                "Stored backend evidence differs from its exact observed source"
+            )
+        if source.kind is not BackendTransitionEvidenceKind.OBSERVED_EXECUTION:
+            raise McmcConstructionError(
+                "Historical backend evidence requires a live observed source"
+            )
+        return cls(
+            source.source_capture,
+            BackendTransitionEvidenceKind.HISTORICAL_OBSERVATION,
+            source.observation_provenance,
+            source.execution_occurrence_identity,
+            source.transitions,
+            _mint_mcmc_evidence_witness("backend-transition-evidence"),
+        )
+
+
+def _mint_observed_backend_transition_evidence(
+    observation: _BackendExecutionObservation,
+    raw_capture: RawMcmcCapture,
+    *,
+    observation_provenance: str,
+) -> BackendTransitionEvidence:
+    """Mint observed masks solely from the execution-owned occurrence registry."""
+    binding = _bind_backend_observation_to_raw_capture(observation, raw_capture)
+    transitions = tuple(
+        RawTransitionEvent(
+            ordinal,
+            previous_identity,
+            following_identity,
+            mask,
+            raw_capture.walkers,
+            sum(mask),
+        )
+        for ordinal, previous_identity, following_identity, mask in binding.transitions
+    )
+    return BackendTransitionEvidence(
+        raw_capture,
+        BackendTransitionEvidenceKind.OBSERVED_EXECUTION,
+        observation_provenance,
+        binding.execution_occurrence_identity,
+        transitions,
+        _mint_mcmc_evidence_witness("backend-transition-evidence"),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1327,6 +1568,7 @@ class RawMcmcCapture:
     walkers: int
     dimension: int
     total_steps: int
+    backend_execution_occurrence_identity: str = field(repr=False, compare=False)
     terminal: McmcOperationTerminal
     states: tuple[EnsembleState, ...]
     objective_request_count: int
@@ -1347,7 +1589,7 @@ class RawMcmcCapture:
             raise McmcConstructionError(
                 "Raw MCMC capture must contain a contiguous complete-state prefix"
             )
-        if not self.plan_identity:
+        if not self.plan_identity or not self.backend_execution_occurrence_identity:
             raise McmcConstructionError("Raw MCMC capture requires a plan identity")
         if self.objective_request_count < 0 or self.evaluation_request_count < 0:
             raise McmcConstructionError(
@@ -1417,9 +1659,19 @@ def _mint_raw_capture(
     evaluation_request_count: int,
     stage: McmcExecutionStage,
     initialization_outcome: McmcInitializationOutcome,
+    backend_observation: _BackendExecutionObservation,
     failure_category: str | None = None,
 ) -> RawMcmcCapture:
     exact_states = tuple(states)
+    with _BACKEND_EXECUTION_OBSERVATIONS_LOCK:
+        observation_binding = _BACKEND_EXECUTION_OBSERVATIONS.get(backend_observation)
+    if (
+        observation_binding is None
+        or observation_binding.plan_identity != plan.identity
+    ):
+        raise McmcConstructionError(
+            "Raw MCMC capture requires its exact backend execution occurrence"
+        )
     capture = RawMcmcCapture(
         plan.identity,
         plan.policy.identity,
@@ -1427,6 +1679,7 @@ def _mint_raw_capture(
         plan.policy.walkers,
         plan.policy.dimension,
         plan.policy.total_steps,
+        observation_binding.execution_occurrence_identity,
         terminal,
         exact_states,
         objective_request_count,
@@ -1988,6 +2241,14 @@ class McmcOperation:
             raise McmcConstructionError(
                 "Every MCMC operation requires raw and backend diagnostic evidence"
             )
+        if (
+            self.backend_transition_evidence.kind
+            is not BackendTransitionEvidenceKind.OBSERVED_EXECUTION
+            or self.backend_transition_evidence.source_capture is not self.raw_capture
+        ):
+            raise McmcConstructionError(
+                "MCMC operation requires execution-owned backend observations"
+            )
         object.__setattr__(self, "identity", self._content_identity())
         if self._occurrence_witness is None or not _bind_mcmc_evidence_witness(
             self._occurrence_witness,
@@ -2198,6 +2459,11 @@ class AcceptanceDiagnostics:
             reason = McmcDiagnosticReason.NO_TRANSITIONS
             fractions = None
             mean = None
+        elif not self.source.supports_observed_diagnostics:
+            status = McmcDiagnosticStatus.UNAVAILABLE
+            reason = McmcDiagnosticReason.UNVALIDATED_BACKEND_TRANSITIONS
+            fractions = None
+            mean = None
         elif not self.source.is_structurally_consistent:
             status = McmcDiagnosticStatus.UNAVAILABLE
             reason = McmcDiagnosticReason.BACKEND_TRANSITION_INCONSISTENT
@@ -2236,7 +2502,7 @@ class AcceptanceDiagnostics:
         return _identity(
             "native-mcmc-acceptance-diagnostics",
             (
-                self.source.identity,
+                self.source_identity,
                 self.state_ordinals,
                 self.walker_ordinals,
                 self.observed_transition_count,
@@ -2263,10 +2529,26 @@ class AcceptanceDiagnostics:
         )
 
     def validate_integrity(self) -> None:
+        if not isinstance(self.source, BackendTransitionEvidence):
+            raise McmcConstructionError(
+                "Acceptance diagnostics require an exact backend source object"
+            )
         self.source.validate_integrity()
+        if self.source_identity != self.source.identity:
+            raise McmcConstructionError(
+                "Acceptance diagnostic source identity differs from its source object"
+            )
         expected = self.from_backend_evidence(self.source)
         if (
-            self._content_identity() != self.identity
+            self.state_ordinals != expected.state_ordinals
+            or self.walker_ordinals != expected.walker_ordinals
+            or self.observed_transition_count != expected.observed_transition_count
+            or self.accepted_counts != expected.accepted_counts
+            or self.status is not expected.status
+            or self.reason is not expected.reason
+            or self.acceptance_fractions != expected.acceptance_fractions
+            or self.mean_acceptance_fraction != expected.mean_acceptance_fraction
+            or self._content_identity() != self.identity
             or expected._content_identity() != self.identity
         ):
             raise McmcConstructionError("Acceptance diagnostic content mismatch")
@@ -3181,8 +3463,8 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
     plan.validate_integrity(accepted)
     signal = CancellationToken() if cancellation is None else cancellation
     log_density = _LogDensityEvaluator(plan)
+    backend_observation = _mint_backend_execution_observation(plan.identity)
     states: list[EnsembleState] = []
-    acceptance_masks: list[tuple[bool, ...]] = []
     stage = McmcExecutionStage.BEFORE_INITIALIZATION
     initialization_outcome = McmcInitializationOutcome.NOT_STARTED
 
@@ -3234,11 +3516,16 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
                 raise McmcExecutionError(
                     "MCMC backend omitted its transition diagnostic mask"
                 )
-            acceptance_masks.append(tuple(bool(value) for value in move.last_accepted))
             state = _ensemble_state(
                 ordinal,
                 sampled.coords,
                 sampled.log_prob,
+            )
+            _record_backend_execution_transition(
+                backend_observation,
+                states[-1],
+                state,
+                tuple(bool(value) for value in move.last_accepted),
             )
             states.append(state)
             if state_observer is not None:
@@ -3257,10 +3544,11 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
             log_density.evaluation_request_count,
             stage,
             initialization_outcome,
+            backend_observation,
         )
-        backend_transition_evidence = BackendTransitionEvidence.from_capture(
+        backend_transition_evidence = _mint_observed_backend_transition_evidence(
+            backend_observation,
             raw_capture,
-            acceptance_masks,
             observation_provenance="emcee-stretch-backend-v1",
         )
         validation = validate_raw_mcmc_capture(
@@ -3307,11 +3595,12 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
         log_density.evaluation_request_count,
         stage,
         initialization_outcome,
+        backend_observation,
         category,
     )
-    backend_transition_evidence = BackendTransitionEvidence.from_capture(
+    backend_transition_evidence = _mint_observed_backend_transition_evidence(
+        backend_observation,
         raw_capture,
-        acceptance_masks,
         observation_provenance="emcee-stretch-backend-v1",
     )
     validation = validate_raw_mcmc_capture(
