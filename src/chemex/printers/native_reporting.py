@@ -11,6 +11,7 @@ from typing import Protocol
 from scipy import stats
 
 from chemex.evaluation.native import EvaluationPlan, EvaluationResult
+from chemex.native_provenance import serialize_independent_parameters
 from chemex.optimize.direct_trf import canonical_chi_square
 from chemex.optimize.native_mcmc import (
     McmcEvidence,
@@ -23,7 +24,12 @@ from chemex.optimize.native_resampling import (
     ResamplingSummaryOutcome,
 )
 from chemex.optimize.uncertainty import UncertaintyEvidence
-from chemex.parameters.parameterization import ActiveParameterization, ParameterRole
+from chemex.parameters.parameterization import (
+    ActiveParameterization,
+    ParameterRole,
+    SealedParameterModel,
+)
+from chemex.parameters.values import AnalysisValuesSnapshot
 
 
 class ComponentDiagnosticRecord(Protocol):
@@ -104,6 +110,24 @@ def write_parameter_reports(
                 comment = f" # constrained: {expression}"
             lines.append(f"{_toml_key(param_id)} = {_toml_float(value)}{comment}")
         (path / filenames[role]).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_restart_parameters(
+    path: Path,
+    parameter_model: SealedParameterModel,
+    parameterization: ActiveParameterization,
+    snapshot: AnalysisValuesSnapshot,
+) -> None:
+    """Write complete committed independent state in parameter-input form."""
+    path.write_text(
+        serialize_independent_parameters(
+            parameter_model,
+            parameterization.independent_ids,
+            snapshot,
+            state_kind="committed",
+        ),
+        encoding="utf-8",
+    )
 
 
 def write_data(
