@@ -19,7 +19,8 @@ import numpy as np
 from chemex import __version__
 from chemex.configuration.conditions import Conditions
 from chemex.configuration.methods import Method
-from chemex.evaluation.native import EvaluationPlan
+from chemex.evaluation.native import EvaluationPlan, EvaluationResult
+from chemex.optimize.direct_trf import DirectTrfExecution, DirectTrfInvocation
 from chemex.parameters.name import ParamName
 from chemex.parameters.parameterization import (
     ActiveParameterization,
@@ -878,12 +879,11 @@ class WorkflowProvenance:
         parameterization: ActiveParameterization,
         plan: EvaluationPlan,
         method: Method,
-        workflow_type: str,
-        grouping_topology: tuple[tuple[str, tuple[str, ...]], ...],
+        invocation: DirectTrfInvocation | None,
+        native_execution: DirectTrfExecution | EvaluationResult,
         policies: tuple[PolicyRecord, ...],
         budgets: tuple[BudgetRecord, ...],
         seeds: tuple[SeedRecord, ...],
-        execution: ExecutionSettings,
         environment: ProvenanceEnvironment,
         baseline_references: tuple[BaselineReference, ...],
     ) -> WorkflowProvenance:
@@ -895,6 +895,14 @@ class WorkflowProvenance:
             raise NativeProvenanceError(
                 "Workflow provenance requires the executed plan and parameterization"
             )
+        workflow_type, grouping_topology, execution_settings = (
+            cls._derive_live_execution_facts(
+                parameterization,
+                plan,
+                invocation,
+                native_execution,
+            )
+        )
         return cls(
             _WORKFLOW_PROVENANCE_KEY,
             _normalized_method_semantics(method),
@@ -910,10 +918,46 @@ class WorkflowProvenance:
             policies,
             budgets,
             seeds,
-            execution,
+            execution_settings,
             environment,
             baseline_references,
         )
+
+    @staticmethod
+    def _derive_live_execution_facts(
+        parameterization: ActiveParameterization,
+        plan: EvaluationPlan,
+        invocation: DirectTrfInvocation | None,
+        native_execution: DirectTrfExecution | EvaluationResult,
+    ) -> tuple[
+        str,
+        tuple[tuple[str, tuple[str, ...]], ...],
+        ExecutionSettings,
+    ]:
+        """Extract publication facts from the exact native occurrence artifacts."""
+        grouping = (("aggregate", parameterization.independent_ids),)
+        if isinstance(native_execution, DirectTrfExecution):
+            if (
+                invocation is None
+                or native_execution.problem_identity != invocation.problem_identity
+                or native_execution.invocation_identity != invocation.identity
+            ):
+                raise NativeProvenanceError(
+                    "Direct TRF provenance requires its exact invocation and execution"
+                )
+            return "direct_trf", grouping, invocation.execution_settings
+        if (
+            invocation is not None
+            or native_execution.plan_identity != plan.identity
+            or native_execution.parameterization_identity
+            != parameterization.evaluator_identity
+        ):
+            raise NativeProvenanceError(
+                "Evaluation provenance requires its exact evaluation result"
+            )
+        # Evaluation-only has no worker dispatcher or optimizer invocation. These are
+        # therefore implementation facts, not publication-time configuration claims.
+        return "evaluation_only", grouping, ExecutionSettings()
 
     @property
     def normalized_method_sha256(self) -> str:
@@ -924,8 +968,18 @@ class WorkflowProvenance:
         parameterization: ActiveParameterization,
         plan: EvaluationPlan,
         method: Method,
+        invocation: DirectTrfInvocation | None,
+        native_execution: DirectTrfExecution | EvaluationResult,
     ) -> None:
         """Re-derive and validate every execution-owned method/selection field."""
+        workflow_type, grouping_topology, execution_settings = (
+            self._derive_live_execution_facts(
+                parameterization,
+                plan,
+                invocation,
+                native_execution,
+            )
+        )
         if (
             self.parameterization_identity != parameterization.identity
             or self.evaluation_plan_identity != plan.identity
@@ -936,9 +990,13 @@ class WorkflowProvenance:
                 tuple(profile.identity for profile in plan.profiles),
                 (),
             )
+            or self.workflow_type != workflow_type
+            or self.grouping_topology != grouping_topology
+            or self.execution != execution_settings
         ):
             raise NativeProvenanceError(
-                "Workflow method and selection differ from executed artifacts"
+                "Workflow method, selection, or execution provenance differs from "
+                "executed artifacts"
             )
 
     @classmethod

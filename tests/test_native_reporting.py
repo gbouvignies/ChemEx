@@ -137,10 +137,14 @@ def _workflow_provenance(
     method: Method,
     invocation: DirectTrfInvocation | None = None,
     execution: DirectTrfExecution | None = None,
+    evaluation_result: EvaluationResult | None = None,
     uncertainty: UncertaintyEvidence | None = None,
     resampling: tuple[ResamplingPublication, ...] = (),
     mcmc: McmcPublication | None = None,
 ) -> WorkflowProvenance:
+    assert (execution is not None) != (evaluation_result is not None)
+    native_execution = execution if execution is not None else evaluation_result
+    assert native_execution is not None
     requested = Occurrence(
         "a" * 64,
         "b" * 64,
@@ -220,12 +224,11 @@ def _workflow_provenance(
         parameterization=parameterization,
         plan=plan,
         method=method,
-        workflow_type="direct_trf",
-        grouping_topology=(("aggregate", parameterization.independent_ids),),
+        invocation=invocation,
+        native_execution=native_execution,
         policies=tuple(policies),
         budgets=tuple(budgets),
         seeds=tuple(seeds),
-        execution=ExecutionSettings(workers=2, native_threads=1),
         environment=ProvenanceEnvironment(
             chemex_version="2026.8",
             python_version="3.14.5",
@@ -300,6 +303,7 @@ def _committed_fit(
     invocation = DirectTrfInvocation.for_problem(
         problem,
         objective_request_budget=80,
+        execution_settings=ExecutionSettings(workers=1, native_threads=1),
     )
     outcome = execute_direct_trf(
         problem,
@@ -485,6 +489,7 @@ def _evaluation_only(method: Method | None = None) -> EvaluationPublication:
             parameterization=parameterization,
             plan=engine.plan,
             method=method,
+            evaluation_result=result,
         ),
     )
 
@@ -819,7 +824,7 @@ def test_committed_native_fit_publishes_only_aggregate_step_root(
         "include": [profile.identity for profile in publication.plan.profiles],
         "exclude": [],
     }
-    assert manifest["execution"] == {"workers": 2, "native_threads": 1}
+    assert manifest["execution"] == {"workers": 1, "native_threads": 1}
     assert manifest["budgets"][0] == {
         "name": "primary_direct_trf_objective_requests",
         "limit": publication.primary_invocation.objective_request_budget,
@@ -1126,6 +1131,41 @@ def test_execution_identity_covers_every_non_method_execution_choice(
 
     assert changed.method_identity == base.method_identity
     assert changed.execution_identity != base.execution_identity
+
+
+@pytest.mark.parametrize(
+    ("changes", "description"),
+    (
+        ({"workflow_type": "grid"}, "GRID workflow"),
+        ({"workflow_type": "de"}, "DE workflow"),
+        (
+            {"grouping_topology": (("foreign-component", ("FOREIGN",)),)},
+            "grouping topology",
+        ),
+        (
+            {"execution": ExecutionSettings(workers=999, native_threads=1)},
+            "worker count",
+        ),
+        (
+            {"execution": ExecutionSettings(workers=1, native_threads=999)},
+            "native thread count",
+        ),
+    ),
+)
+def test_committed_publication_rejects_recomputed_false_execution_provenance(
+    tmp_path: Path,
+    changes: dict[str, object],
+    description: str,
+) -> None:
+    publication = _committed_fit()
+    forged_provenance = replace(publication.provenance, **changes)
+
+    with pytest.raises(ValueError, match="execution provenance"):
+        publish_native_results(
+            tmp_path / "STEP",
+            replace(publication, provenance=forged_provenance),
+        )
+    assert not (tmp_path / "STEP").exists(), description
 
 
 def test_committed_publication_rejects_unsuccessful_component_diagnostics(
@@ -1540,6 +1580,32 @@ def test_final_rename_failure_removes_complete_staging_tree(
         publish_native_results(output, publication)
 
     assert not output.exists()
+    assert not _staging_residue(tmp_path, output.name)
+
+
+def test_final_publication_primitive_receives_the_unchanged_validated_tree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publication = _committed_fit()
+    output = tmp_path / "STEP"
+    original = native_reporting.publish_directory_noreplace
+    candidate_at_atomic_boundary: dict[str, bytes] = {}
+
+    def observe_atomic_boundary(staging: Path, destination: Path) -> None:
+        candidate_at_atomic_boundary.update(_tree_bytes(staging))
+        original(staging, destination)
+
+    monkeypatch.setattr(
+        native_reporting,
+        "publish_directory_noreplace",
+        observe_atomic_boundary,
+    )
+
+    publish_native_results(output, publication)
+
+    assert candidate_at_atomic_boundary
+    assert _tree_bytes(output) == candidate_at_atomic_boundary
     assert not _staging_residue(tmp_path, output.name)
 
 

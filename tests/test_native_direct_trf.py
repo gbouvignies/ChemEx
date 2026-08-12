@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import math
+import os
 import pickle
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -60,7 +61,8 @@ from chemex.parameters.parameterization import (
 from chemex.parameters.sealed import ParamConfig, SealedConfiguration
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.values import AnalysisValuesSnapshot, StaleAnalysisValuesError
-from chemex.runtime import AnalysisSession
+from chemex.runtime import AnalysisSession, ExecutionSettings
+from chemex.runtime.execution import NATIVE_THREAD_ENV_VARS
 from chemex.typing import Array
 
 ROOT = Path(__file__).parent.parent
@@ -844,6 +846,48 @@ def test_non_convergence_keeps_last_iterate_diagnostic_and_commits_nothing() -> 
     assert outcome.accepted_result is None
     assert session.analysis_values.snapshot() == before
     assert _legacy_values(session, problem.commit_scope) == legacy_before
+
+
+def test_invocation_execution_settings_drive_the_solver_environment() -> None:
+    _session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    invocation = dataclasses.replace(
+        invocation,
+        execution_settings=ExecutionSettings(workers=1, native_threads=7),
+    )
+    previous = {name: os.environ.get(name) for name in NATIVE_THREAD_ENV_VARS}
+
+    def inspect_execution_settings(
+        fun: Callable[[Array], Array], x0: Array, **settings: object
+    ) -> object:
+        assert "workers" not in settings
+        assert all(os.environ.get(name) == "7" for name in NATIVE_THREAD_ENV_VARS)
+        return _one_request_converged_backend(fun, x0)
+
+    with patch(
+        "chemex.optimize.direct_trf.least_squares",
+        inspect_execution_settings,
+    ):
+        outcome = execute_direct_trf(problem, invocation, parameterization, engine)
+
+    assert outcome.terminal is DirectTrfOutcomeTerminal.ACCEPTED
+    assert {name: os.environ.get(name) for name in NATIVE_THREAD_ENV_VARS} == previous
+
+
+def test_direct_trf_rejects_a_parallel_worker_claim() -> None:
+    _session, _experiments, _parameterization, _engine, _problem, invocation = (
+        _qualification_fit()
+    )
+
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="exactly one ChemEx worker",
+    ):
+        dataclasses.replace(
+            invocation,
+            execution_settings=ExecutionSettings(workers=2),
+        )
 
 
 def test_budget_exhaustion_has_exact_counters_and_no_accepted_candidate() -> None:

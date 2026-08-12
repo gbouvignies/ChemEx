@@ -300,12 +300,21 @@ def _validate_provenance_context(
     plan: EvaluationPlan,
     parameterization: ActiveParameterization,
     method: Method,
+    invocation: DirectTrfInvocation | None,
+    native_execution: DirectTrfExecution | EvaluationResult,
 ) -> None:
     try:
-        provenance.validate_execution_context(parameterization, plan, method)
+        provenance.validate_execution_context(
+            parameterization,
+            plan,
+            method,
+            invocation,
+            native_execution,
+        )
     except NativeProvenanceError as error:
         raise NativePublicationError(
-            "Workflow method and selection provenance differ from execution"
+            "Workflow method and selection provenance, or execution provenance, "
+            "differ from execution"
         ) from error
 
 
@@ -326,11 +335,17 @@ def _validate_optional_primary_execution(
 def _validate_suppressed_execution_lineage(
     publication: SuppressedPublication,
 ) -> tuple[PolicyRecord | None, BudgetRecord | None]:
+    if publication.primary_execution is None:
+        raise NativePublicationError(
+            "Suppressed provenance requires the exact primary execution"
+        )
     _validate_provenance_context(
         publication.provenance,
         publication.plan,
         publication.parameterization,
         publication.method,
+        publication.primary_invocation,
+        publication.primary_execution,
     )
     primary_policy, primary_budget = _validate_optional_primary_execution(publication)
     primary_problem = publication.primary_problem
@@ -392,6 +407,8 @@ def _validate_evaluation_only(publication: EvaluationPublication) -> None:
         publication.plan,
         publication.parameterization,
         publication.method,
+        None,
+        publication.evaluation_result,
     )
     _validate_exact_provenance_records(publication.provenance, (), (), ())
     if any(
@@ -575,6 +592,8 @@ def _validate_committed_fit(publication: CommittedFitPublication) -> None:
         publication.plan,
         publication.parameterization,
         publication.method,
+        publication.primary_invocation,
+        publication.primary_execution,
     )
     _primary_execution_records(
         publication.primary_invocation,
@@ -1321,6 +1340,9 @@ def _validate_and_publish_staged_step(
             != hashlib.sha256(restart_path.read_bytes()).hexdigest()
         ):
             raise NativePublicationError("Committed restart provenance changed")
+    # Final ownership boundary: every ChemEx renderer and manifest writer has
+    # completed above. Keep the validation adjacent to this atomic primitive;
+    # staging is private and no application callback may run in between.
     publish_directory_noreplace(staging, destination)
 
 

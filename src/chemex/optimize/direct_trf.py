@@ -45,12 +45,13 @@ from chemex.parameters.values import (
     InvalidAnalysisValuesCommitError,
     StaleAnalysisValuesError,
 )
+from chemex.runtime.execution import ExecutionSettings, native_thread_environment
 from chemex.typing import Array
 
 _SCHEMA_VERSION = 1
 _PROBLEM_VERSION = "native-direct-trf-problem-v1"
 _SCALARIZATION_VERSION = "ordered-pairwise-chi-square-v1"
-_INVOCATION_VERSION = "scipy-direct-trf-v1"
+_INVOCATION_VERSION = "scipy-direct-trf-v2"
 _CANDIDATE_ORDER_VERSION = "chi-square-vector-ordinal-v1"
 _BACKEND_SETTINGS = (
     ("method", "trf"),
@@ -1210,9 +1211,14 @@ class DirectTrfInvocation:
     ftol: float | None = 1.0e-8
     xtol: float | None = 1.0e-8
     gtol: float | None = 1.0e-8
+    execution_settings: ExecutionSettings = field(default_factory=ExecutionSettings)
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
+        if self.execution_settings.workers != 1:
+            raise DirectTrfConstructionError(
+                "One Direct TRF invocation has exactly one ChemEx worker"
+            )
         if (
             isinstance(self.objective_request_budget, bool)
             or not isinstance(self.objective_request_budget, int)
@@ -1265,6 +1271,10 @@ class DirectTrfInvocation:
                         None if value is None else _float_token(value)
                         for value in tolerances
                     ),
+                    (
+                        self.execution_settings.workers,
+                        self.execution_settings.native_threads,
+                    ),
                     _BACKEND_SETTINGS,
                 ),
             ),
@@ -1280,6 +1290,7 @@ class DirectTrfInvocation:
         ftol: float | None = 1.0e-8,
         xtol: float | None = 1.0e-8,
         gtol: float | None = 1.0e-8,
+        execution_settings: ExecutionSettings | None = None,
     ) -> DirectTrfInvocation:
         """Resolve scalar/default scaling into one value per external coordinate."""
         dimension = len(problem.controlled_ids)
@@ -1298,6 +1309,7 @@ class DirectTrfInvocation:
             ftol,
             xtol,
             gtol,
+            ExecutionSettings() if execution_settings is None else execution_settings,
         )
 
 
@@ -2500,27 +2512,31 @@ def _invoke_least_squares(
     problem: OptimizationProblem,
     invocation: DirectTrfInvocation,
 ) -> object:
-    return least_squares(
-        live.objective,
-        np.asarray(problem.start, dtype=np.float64),
-        bounds=(
-            np.asarray(problem.lower_bounds, dtype=np.float64),
-            np.asarray(problem.upper_bounds, dtype=np.float64),
-        ),
-        method="trf",
-        jac="2-point",
-        diff_step=None,
-        tr_solver="exact",
-        tr_options={},
-        loss="linear",
-        f_scale=1.0,
-        x_scale=np.asarray(invocation.x_scale, dtype=np.float64),
-        ftol=invocation.ftol,
-        xtol=invocation.xtol,
-        gtol=invocation.gtol,
-        max_nfev=invocation.objective_request_budget,
-        verbose=0,
-    )
+    execution = invocation.execution_settings
+    with native_thread_environment(
+        execution.native_thread_env(parallel=execution.is_parallel)
+    ):
+        return least_squares(
+            live.objective,
+            np.asarray(problem.start, dtype=np.float64),
+            bounds=(
+                np.asarray(problem.lower_bounds, dtype=np.float64),
+                np.asarray(problem.upper_bounds, dtype=np.float64),
+            ),
+            method="trf",
+            jac="2-point",
+            diff_step=None,
+            tr_solver="exact",
+            tr_options={},
+            loss="linear",
+            f_scale=1.0,
+            x_scale=np.asarray(invocation.x_scale, dtype=np.float64),
+            ftol=invocation.ftol,
+            xtol=invocation.xtol,
+            gtol=invocation.gtol,
+            max_nfev=invocation.objective_request_budget,
+            verbose=0,
+        )
 
 
 def _terminal_backend_failure(
