@@ -129,6 +129,7 @@ class McmcDiagnosticReason(StrEnum):
     PARTIAL_CHAIN = "partial_chain"
     BACKEND_TRANSITION_INCONSISTENT = "backend_transition_inconsistent"
     UNVALIDATED_BACKEND_TRANSITIONS = "unvalidated_backend_transitions"
+    HISTORICAL_OBSERVATION_UNVERIFIED = "historical_observation_unverified"
     UNRELIABLE_AUTOCORRELATION = "unreliable_autocorrelation"
 
 
@@ -1503,6 +1504,10 @@ class BackendTransitionEvidence:
 
     @property
     def supports_observed_diagnostics(self) -> bool:
+        return self.kind is BackendTransitionEvidenceKind.OBSERVED_EXECUTION
+
+    @property
+    def has_execution_occurrence_lineage(self) -> bool:
         return self.kind in {
             BackendTransitionEvidenceKind.OBSERVED_EXECUTION,
             BackendTransitionEvidenceKind.HISTORICAL_OBSERVATION,
@@ -1518,7 +1523,7 @@ class BackendTransitionEvidence:
             raise McmcConstructionError(
                 "Backend transition source identity differs from its source object"
             )
-        if self.supports_observed_diagnostics and (
+        if self.has_execution_occurrence_lineage and (
             self.execution_occurrence_identity
             != self.source_capture.backend_execution_occurrence_identity
         ):
@@ -2033,7 +2038,7 @@ class McmcEvidence:
         backend.validate_integrity()
         source_capture = backend.source_capture
         if (
-            not backend.supports_observed_diagnostics
+            not backend.has_execution_occurrence_lineage
             or backend.execution_occurrence_identity
             != self.backend_execution_occurrence_identity
             or source_capture.backend_execution_occurrence_identity
@@ -2664,7 +2669,12 @@ class AcceptanceDiagnostics:
             sum(transition.accepted[walker] for transition in transitions)
             for walker in walker_ordinals
         )
-        if denominator == 0:
+        if self.source.kind is BackendTransitionEvidenceKind.HISTORICAL_OBSERVATION:
+            status = McmcDiagnosticStatus.UNAVAILABLE
+            reason = McmcDiagnosticReason.HISTORICAL_OBSERVATION_UNVERIFIED
+            fractions = None
+            mean = None
+        elif denominator == 0:
             status = McmcDiagnosticStatus.UNAVAILABLE
             reason = McmcDiagnosticReason.NO_TRANSITIONS
             fractions = None

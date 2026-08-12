@@ -938,6 +938,23 @@ def test_zero_transition_acceptance_is_typed_unavailable() -> None:
     assert diagnostics.acceptance_fractions is None
     assert diagnostics.mean_acceptance_fraction is None
 
+    source = operation.backend_transition_evidence
+    assert source is not None
+    historical = native_mcmc.BackendTransitionEvidence.from_record(
+        source.to_record(),
+        source=source,
+    )
+    historical_diagnostic = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(
+        historical
+    )
+    assert historical_diagnostic.status is McmcDiagnosticStatus.UNAVAILABLE
+    assert (
+        historical_diagnostic.reason
+        is McmcDiagnosticReason.HISTORICAL_OBSERVATION_UNVERIFIED
+    )
+    assert historical_diagnostic.acceptance_fractions is None
+    assert historical_diagnostic.mean_acceptance_fraction is None
+
 
 @pytest.mark.parametrize(
     ("fractions", "mean"),
@@ -1172,12 +1189,17 @@ def test_observed_backend_evidence_is_bound_to_its_execution_occurrence() -> Non
     restored_diagnostic = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(
         restored
     )
-    assert restored_diagnostic.status is McmcDiagnosticStatus.AVAILABLE
-    assert restored_diagnostic.acceptance_fractions == (
-        native_mcmc.AcceptanceDiagnostics.from_backend_evidence(
-            first_source
-        ).acceptance_fractions
+    assert restored.transitions == first_source.transitions
+    assert restored.observed_mask_payload_identity == (
+        first_source.observed_mask_payload_identity
     )
+    assert restored_diagnostic.status is McmcDiagnosticStatus.UNAVAILABLE
+    assert (
+        restored_diagnostic.reason
+        is McmcDiagnosticReason.HISTORICAL_OBSERVATION_UNVERIFIED
+    )
+    assert restored_diagnostic.acceptance_fractions is None
+    assert restored_diagnostic.mean_acceptance_fraction is None
 
     assert second.raw_capture is not None
     foreign_masks = tuple(item.accepted for item in first_source.transitions)
@@ -1207,6 +1229,42 @@ def test_observed_backend_evidence_is_bound_to_its_execution_occurrence() -> Non
                 tampered,
                 source=first_source,
             )
+
+
+def test_fabricated_historical_masks_cannot_authorize_acceptance_diagnostics() -> None:
+    accepted, plan = _plan_context()
+    operation = execute_mcmc_evidence(accepted, plan)
+    source = operation.backend_transition_evidence
+    assert source is not None
+    all_true = source.with_hypothetical_masks(
+        tuple(
+            (True,) * plan.policy.walkers
+            for _transition in range(plan.policy.total_steps)
+        ),
+        observation_provenance=source.observation_provenance,
+    )
+
+    fabricated_history = native_mcmc._initialize_backend_transition_evidence(
+        native_mcmc.BackendTransitionEvidence,
+        source.source_capture,
+        native_mcmc.BackendTransitionEvidenceKind.HISTORICAL_OBSERVATION,
+        source.observation_provenance,
+        source.execution_occurrence_identity,
+        all_true.transitions,
+        None,
+        native_mcmc._mint_mcmc_evidence_witness("backend-transition-evidence"),
+    )
+    diagnostic = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(
+        fabricated_history
+    )
+
+    assert all(
+        all(transition.accepted) for transition in fabricated_history.transitions
+    )
+    assert diagnostic.status is McmcDiagnosticStatus.UNAVAILABLE
+    assert diagnostic.reason is McmcDiagnosticReason.HISTORICAL_OBSERVATION_UNVERIFIED
+    assert diagnostic.acceptance_fractions is None
+    assert diagnostic.mean_acceptance_fraction is None
 
 
 def test_direct_constructor_cannot_forge_observed_backend_evidence() -> None:
