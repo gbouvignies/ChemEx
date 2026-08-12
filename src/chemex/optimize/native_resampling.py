@@ -16,7 +16,7 @@ import math
 import warnings
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from numbers import Real
 from typing import Literal, cast
@@ -1476,56 +1476,377 @@ type CandidateEvidenceTestHook = Callable[
 ]
 
 
-_VALIDATED_SUCCESS_CONSTRUCTION_KEY = object()
-
-
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class ValidatedReplicateSuccess:
-    """Resampling-owned complete sample after exact lineage and resolution checks."""
+    """Canonical complete sample derived from exact fresh materialization sources."""
 
-    _construction_key: object = field(repr=False, compare=False)
-    prepared_replicate_identity: str
-    projected_outcome_identity: str
-    evaluation_identity: str
-    materialization_identity: str
-    resolved_items: tuple[tuple[str, float], ...]
-    chi_square: float
-    backend_chi_square: float | None
-    backend_chi_square_agrees: bool | None
-    fresh_evaluation_count: int
-    identity: str = field(init=False)
+    prepared: ReplicateExecutionPlan = field(init=False, repr=False, compare=False)
+    projected: ProjectedOptimizationSuccess = field(
+        init=False, repr=False, compare=False
+    )
+    evaluation_result: EvaluationResult = field(init=False, repr=False, compare=False)
 
-    def __post_init__(self) -> None:
-        if self._construction_key is not _VALIDATED_SUCCESS_CONSTRUCTION_KEY:
-            raise ResamplingConstructionError(
-                "Successful samples require resampling-owned validation"
+    @classmethod
+    def from_materialization(
+        cls,
+        prepared: ReplicateExecutionPlan,
+        projected: ProjectedOptimizationSuccess,
+        evaluation_result: EvaluationResult,
+    ) -> ValidatedReplicateSuccess:
+        """Construct one success solely from its exact subordinate evidence."""
+        try:
+            rebound_prepared = replace(prepared)
+            canonical_projected = ProjectedOptimizationSuccess.for_prepared(
+                rebound_prepared,
+                candidate_vector=projected.candidate_vector,
+                backend_chi_square=projected.backend_chi_square,
+                execution_identity=projected.execution_identity,
+                backend_evaluation_identity=(projected.backend_evaluation_identity),
             )
-        if self.fresh_evaluation_count != 1:
-            raise ResamplingConstructionError(
-                "Successful samples require exactly one fresh validation evaluation"
+            canonical_evaluation = EvaluationResult.from_record(
+                evaluation_result.to_record(), rebound_prepared.evaluation_plan
             )
-        object.__setattr__(
-            self,
-            "identity",
-            _identity(
-                "native-resampling-validated-success",
+            resolved_items = tuple(
+                (param_id, canonical_evaluation.resolved_values[param_id])
+                for param_id in rebound_prepared.output_scope
+            )
+            if (
+                rebound_prepared.identity != prepared.identity
+                or canonical_projected != projected
+                or canonical_projected.identity != projected.identity
+                or canonical_evaluation.identity != evaluation_result.identity
+                or canonical_evaluation.plan_identity
+                != rebound_prepared.evaluation_plan.identity
+                or canonical_evaluation.parameterization_identity
+                != rebound_prepared.parameterization.evaluator_identity
+                or tuple(canonical_evaluation.resolved_values)
+                != rebound_prepared.output_scope
+                or resolved_items
+                != rebound_prepared.resolve_candidate(projected.candidate_vector)
+                or (
+                    projected.backend_evaluation_identity is not None
+                    and projected.backend_evaluation_identity
+                    != canonical_evaluation.identity
+                )
+            ):
+                raise ResamplingConstructionError(
+                    "Fresh materialization differs from its exact prepared candidate"
+                )
+            canonical_chi_square(canonical_evaluation.residuals)
+        except ResamplingConstructionError:
+            raise
+        except Exception as error:
+            raise ResamplingConstructionError(
+                "Successful replicate has an invalid fresh derivation chain"
+            ) from error
+        success = object.__new__(cls)
+        object.__setattr__(success, "prepared", rebound_prepared)
+        object.__setattr__(success, "projected", canonical_projected)
+        object.__setattr__(success, "evaluation_result", canonical_evaluation)
+        return success
+
+    @property
+    def prepared_replicate_identity(self) -> str:
+        return self.prepared.identity
+
+    @property
+    def projected_outcome_identity(self) -> str:
+        return self.projected.identity
+
+    @property
+    def evaluation_identity(self) -> str:
+        return self.evaluation_result.identity
+
+    @property
+    def output_scope(self) -> tuple[str, ...]:
+        return self.prepared.output_scope
+
+    @property
+    def output_units(self) -> tuple[str, ...]:
+        return self.prepared.output_units
+
+    @property
+    def resolved_items(self) -> tuple[tuple[str, float], ...]:
+        return tuple(
+            (param_id, self.evaluation_result.resolved_values[param_id])
+            for param_id in self.output_scope
+        )
+
+    @property
+    def chi_square(self) -> float:
+        return canonical_chi_square(self.evaluation_result.residuals)
+
+    @property
+    def backend_chi_square(self) -> float | None:
+        return self.projected.backend_chi_square
+
+    @property
+    def backend_chi_square_agrees(self) -> bool | None:
+        return (
+            None
+            if self.backend_chi_square is None
+            else self.backend_chi_square == self.chi_square
+        )
+
+    @property
+    def fresh_evaluation_count(self) -> int:
+        return 1
+
+    @property
+    def materialization_identity(self) -> str:
+        return _identity(
+            "native-resampling-fresh-materialization",
+            (
+                self.prepared.identity,
+                self.projected.candidate_identity,
+                self.projected.execution_identity,
+                self.evaluation_result.evaluator_compatibility_identity,
+                self.evaluation_result.identity,
+                _items_tokens(self.resolved_items),
+            ),
+        )
+
+    @property
+    def claims(self) -> tuple[ClaimAssessment, ...]:
+        return (
+            ClaimAssessment(
+                "FRESH_MATERIALIZATION_INTEGRITY",
+                ClaimState.SATISFIED,
+                self.prepared.identity,
                 (
-                    self.prepared_replicate_identity,
-                    self.projected_outcome_identity,
-                    self.evaluation_identity,
-                    self.materialization_identity,
-                    _items_tokens(self.resolved_items),
-                    _float_token(self.chi_square),
-                    (
-                        None
-                        if self.backend_chi_square is None
-                        else _float_token(self.backend_chi_square)
-                    ),
-                    self.backend_chi_square_agrees,
-                    self.fresh_evaluation_count,
+                    f"evaluation={self.evaluation_identity}",
+                    f"scope={','.join(self.output_scope)}",
                 ),
             ),
         )
+
+    @property
+    def identity(self) -> str:
+        return _identity(
+            "native-resampling-validated-success",
+            (
+                self.prepared_replicate_identity,
+                self.projected_outcome_identity,
+                self.evaluation_identity,
+                self.materialization_identity,
+                _items_tokens(self.resolved_items),
+                _float_token(self.chi_square),
+                (
+                    None
+                    if self.backend_chi_square is None
+                    else _float_token(self.backend_chi_square)
+                ),
+                self.backend_chi_square_agrees,
+                self.fresh_evaluation_count,
+                self.output_scope,
+                self.output_units,
+                tuple(
+                    (
+                        claim.name,
+                        claim.state.value,
+                        claim.policy_identity,
+                        claim.details,
+                    )
+                    for claim in self.claims
+                ),
+            ),
+        )
+
+    @staticmethod
+    def _projected_record(
+        projected: ProjectedOptimizationSuccess,
+    ) -> dict[str, object]:
+        return {
+            "prepared_replicate_identity": projected.prepared_replicate_identity,
+            "accepted_result_identity": projected.accepted_result_identity,
+            "accepted_occurrence_identity": projected.accepted_occurrence_identity,
+            "source_snapshot_occurrence_identity": (
+                projected.source_snapshot_occurrence_identity
+            ),
+            "source_snapshot_revision": projected.source_snapshot_revision,
+            "transformed_data_identity": projected.transformed_data_identity,
+            "optimization_projection_identity": (
+                projected.optimization_projection_identity
+            ),
+            "evaluation_plan_identity": projected.evaluation_plan_identity,
+            "problem_identity": projected.problem_identity,
+            "parameterization_identity": projected.parameterization_identity,
+            "evaluator_parameterization_identity": (
+                projected.evaluator_parameterization_identity
+            ),
+            "constraint_program_identity": projected.constraint_program_identity,
+            "workflow_identity": projected.workflow_identity,
+            "invocation_identity": projected.invocation_identity,
+            "execution_identity": projected.execution_identity,
+            "strategy": projected.strategy.value,
+            "component_identities": list(projected.component_identities),
+            "component_outcome_identities": list(
+                projected.component_outcome_identities
+            ),
+            "controlled_ids": list(projected.controlled_ids),
+            "candidate_identity": projected.candidate_identity,
+            "candidate_vector": [
+                _float_token(value) for value in projected.candidate_vector
+            ],
+            "backend_chi_square": (
+                None
+                if projected.backend_chi_square is None
+                else _float_token(projected.backend_chi_square)
+            ),
+            "backend_evaluation_identity": projected.backend_evaluation_identity,
+            "identity": projected.identity,
+        }
+
+    def to_record(self) -> dict[str, object]:
+        """Serialize sources plus checked readable projections."""
+        return {
+            "schema_version": _SCHEMA_VERSION,
+            "prepared_replicate_identity": self.prepared_replicate_identity,
+            "request_identity": self.prepared.request.identity,
+            "draw_identity": self.prepared.draw.identity,
+            "evaluation_plan_identity": self.prepared.evaluation_plan.identity,
+            "problem_identity": self.prepared.problem.identity,
+            "projected": self._projected_record(self.projected),
+            "evaluation_result": self.evaluation_result.to_record(),
+            "output_scope": list(self.output_scope),
+            "output_units": list(self.output_units),
+            "resolved_items": [
+                [param_id, _float_token(value)]
+                for param_id, value in self.resolved_items
+            ],
+            "chi_square": _float_token(self.chi_square),
+            "backend_chi_square": (
+                None
+                if self.backend_chi_square is None
+                else _float_token(self.backend_chi_square)
+            ),
+            "backend_chi_square_agrees": self.backend_chi_square_agrees,
+            "fresh_evaluation_count": self.fresh_evaluation_count,
+            "materialization_identity": self.materialization_identity,
+            "claims": [
+                {
+                    "name": claim.name,
+                    "state": claim.state.value,
+                    "policy_identity": claim.policy_identity,
+                    "details": list(claim.details),
+                }
+                for claim in self.claims
+            ],
+            "identity": self.identity,
+        }
+
+    @classmethod
+    def from_record(
+        cls,
+        record: Mapping[str, object],
+        plan: ResamplingPlan,
+        request: ReplicateRequest,
+    ) -> ValidatedReplicateSuccess:
+        """Rebuild from exact source context and reject altered checked copies."""
+        try:
+            draw = generate_resampling_draw(plan.dataset, request)
+            prepared = ReplicateExecutionPlan.prepare(plan, request, draw)
+            projected_record = record.get("projected")
+            evaluation_record = record.get("evaluation_result")
+            if not isinstance(projected_record, Mapping) or not isinstance(
+                evaluation_record, Mapping
+            ):
+                raise TypeError("Success source records must be mappings")
+            vector_record = projected_record.get("candidate_vector")
+            if not isinstance(vector_record, list):
+                raise TypeError("Candidate vector must be a list")
+            backend_record = projected_record.get("backend_chi_square")
+            backend_chi_square = (
+                None if backend_record is None else float.fromhex(str(backend_record))
+            )
+            execution_identity = projected_record.get("execution_identity")
+            if not isinstance(execution_identity, str):
+                raise TypeError("Execution identity must be a string")
+            backend_evaluation_identity = projected_record.get(
+                "backend_evaluation_identity"
+            )
+            if backend_evaluation_identity is not None and not isinstance(
+                backend_evaluation_identity, str
+            ):
+                raise TypeError("Backend evaluation identity must be a string")
+            projected = ProjectedOptimizationSuccess.for_prepared(
+                prepared,
+                candidate_vector=tuple(
+                    float.fromhex(str(value)) for value in vector_record
+                ),
+                backend_chi_square=backend_chi_square,
+                execution_identity=execution_identity,
+                backend_evaluation_identity=backend_evaluation_identity,
+            )
+            if projected_record != cls._projected_record(projected):
+                raise ResamplingConstructionError(
+                    "Stored projected candidate differs from exact prepared lineage"
+                )
+            evaluation_result = EvaluationResult.from_record(
+                cast("Mapping[str, object]", evaluation_record),
+                prepared.evaluation_plan,
+            )
+            success = cls.from_materialization(prepared, projected, evaluation_result)
+        except ResamplingConstructionError:
+            raise
+        except Exception as error:
+            raise ResamplingConstructionError(
+                "Malformed validated replicate success record"
+            ) from error
+        if record != success.to_record():
+            raise ResamplingConstructionError(
+                "Stored success differs from its canonical fresh derivation"
+            )
+        return success
+
+    def validate_integrity(
+        self,
+        plan: ResamplingPlan,
+        request: ReplicateRequest,
+    ) -> ValidatedReplicateSuccess:
+        """Reconstruct this success from the exact operation-owned derivation."""
+        try:
+            canonical_draw = generate_resampling_draw(plan.dataset, request)
+            canonical_prepared = ReplicateExecutionPlan.prepare(
+                plan, request, canonical_draw
+            )
+            stored_prepared = replace(self.prepared)
+            if (
+                stored_prepared.identity != self.prepared.identity
+                or stored_prepared.identity != canonical_prepared.identity
+                or self.prepared.request.identity != request.identity
+                or self.prepared.draw.identity != canonical_draw.identity
+            ):
+                raise ResamplingConstructionError(
+                    "Successful replicate belongs to another prepared request or draw"
+                )
+            validation_engine = plan.source_engine.resampled(
+                canonical_prepared.evaluation_plan,
+                canonical_prepared.profile_bindings,
+            )
+            if (
+                self.evaluation_result.evaluator_compatibility_identity
+                != validation_engine.compatibility_identity
+            ):
+                raise ResamplingConstructionError(
+                    "Successful evaluation has foreign evaluator compatibility"
+                )
+            canonical = type(self).from_materialization(
+                canonical_prepared,
+                self.projected,
+                self.evaluation_result,
+            )
+            if self.to_record() != canonical.to_record():
+                raise ResamplingConstructionError(
+                    "Successful replicate differs from its canonical derivation"
+                )
+        except ResamplingConstructionError:
+            raise
+        except Exception as error:
+            raise ResamplingConstructionError(
+                "Successful replicate integrity validation failed"
+            ) from error
+        return canonical
 
 
 @dataclass(frozen=True, slots=True)
@@ -1589,6 +1910,77 @@ class ReplicateOutcome:
             ),
         )
 
+    def validate_integrity(self, plan: ResamplingPlan) -> None:  # noqa: C901
+        """Recursively validate this terminal payload against its exact request."""
+        try:
+            if self.ordinal < 0 or self.ordinal >= plan.replicate_count:
+                raise ResamplingConstructionError(
+                    "Replicate outcome ordinal is outside its exact plan"
+                )
+            request = plan.replicates[self.ordinal]
+            if (
+                self.plan_identity != plan.identity
+                or self.request_identity != request.identity
+                or self.seed != request.seed
+            ):
+                raise ResamplingConstructionError(
+                    "Replicate outcome differs from its exact planned request"
+                )
+            succeeded = self.disposition is ReplicateDisposition.SUCCEEDED
+            if succeeded != (self.success is not None) or succeeded == (
+                self.failure is not None
+            ):
+                raise ResamplingConstructionError(
+                    "Replicate outcome has inconsistent terminal payload"
+                )
+            if self.success is not None:
+                canonical_success = self.success.validate_integrity(plan, request)
+                if (
+                    self.draw_identity != canonical_success.prepared.draw.identity
+                    or self.stage is not ReplicateStage.TERMINAL
+                ):
+                    raise ResamplingConstructionError(
+                        "Successful outcome differs from its generated draw or stage"
+                    )
+                payload_identity = canonical_success.identity
+            elif self.failure is not None:
+                canonical_failure = replace(self.failure)
+                if (
+                    canonical_failure.identity != self.failure.identity
+                    or canonical_failure.transformed_data_identity != self.draw_identity
+                ):
+                    raise ResamplingConstructionError(
+                        "Failed outcome has altered terminal evidence"
+                    )
+                payload_identity = canonical_failure.identity
+            else:
+                raise ResamplingConstructionError(
+                    "Replicate outcome lacks terminal evidence"
+                )
+            expected_identity = _identity(
+                "native-resampling-replicate-outcome",
+                (
+                    self.plan_identity,
+                    self.request_identity,
+                    self.ordinal,
+                    self.seed,
+                    self.draw_identity,
+                    self.stage.value,
+                    self.disposition.value,
+                    payload_identity,
+                ),
+            )
+            if self.identity != expected_identity:
+                raise ResamplingConstructionError(
+                    "Replicate outcome identity differs from its terminal payload"
+                )
+        except ResamplingConstructionError:
+            raise
+        except Exception as error:
+            raise ResamplingConstructionError(
+                "Replicate outcome integrity validation failed"
+            ) from error
+
 
 @dataclass(frozen=True, slots=True)
 class ResamplingEvidence:
@@ -1606,10 +1998,14 @@ class ResamplingEvidence:
     claims: tuple[ClaimAssessment, ...] = field(init=False)
     identity: str = field(init=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:  # noqa: C901
         if not self.outcomes:
             raise ResamplingConstructionError(
                 "Resampling evidence requires at least one genuine replicate outcome"
+            )
+        if self.population_identity != self.plan.dataset.identity:
+            raise ResamplingConstructionError(
+                "Resampling evidence belongs to another source population"
             )
         ordinals = tuple(outcome.ordinal for outcome in self.outcomes)
         if ordinals != tuple(sorted(ordinals)) or len(set(ordinals)) != len(ordinals):
@@ -1627,6 +2023,8 @@ class ResamplingEvidence:
             raise ResamplingConstructionError(
                 "Resampling outcomes differ from their planned replicate identities"
             )
+        for outcome in self.outcomes:
+            outcome.validate_integrity(self.plan)
         for outcome in self.outcomes:
             if (
                 outcome.success is not None
@@ -1738,6 +2136,34 @@ class ResamplingEvidence:
     def claim(self, name: str) -> ClaimState:
         """Return one exact named claim; unknown claims fail closed."""
         return _claim_state(self.claims, name)
+
+    def validate_integrity(self) -> None:
+        """Recompute this evidence and recursively reject altered descendants."""
+        try:
+            canonical = type(self)(
+                self.plan,
+                self.population_identity,
+                self.outcomes,
+                self.operation_terminal,
+            )
+            if (
+                self.lifecycle != canonical.lifecycle
+                or self.completed_count != canonical.completed_count
+                or self.successful_count != canonical.successful_count
+                or self.failed_count != canonical.failed_count
+                or self.coverage_satisfied != canonical.coverage_satisfied
+                or self.claims != canonical.claims
+                or self.identity != canonical.identity
+            ):
+                raise ResamplingConstructionError(
+                    "Resampling evidence differs from its recursive derivation"
+                )
+        except ResamplingConstructionError:
+            raise
+        except Exception as error:
+            raise ResamplingConstructionError(
+                "Resampling evidence integrity validation failed"
+            ) from error
 
 
 @dataclass(frozen=True, slots=True)
@@ -2110,7 +2536,7 @@ def _execute_replicate(  # noqa: C901 - ordered staged ownership boundary
             for param_id in prepared.output_scope
         )
         ordinary_resolved = prepared.resolve_candidate(projected.candidate_vector)
-        chi_square = canonical_chi_square(canonical_evaluation.residuals)
+        canonical_chi_square(canonical_evaluation.residuals)
         if (
             canonical_evaluation.evaluator_compatibility_identity
             != validation_engine.compatibility_identity
@@ -2134,33 +2560,10 @@ def _execute_replicate(  # noqa: C901 - ordered staged ownership boundary
             f"{type(error).__name__}: {error}",
             projected=projected,
         )
-    materialization_identity = _identity(
-        "native-resampling-fresh-materialization",
-        (
-            prepared.identity,
-            projected.candidate_identity,
-            projected.execution_identity,
-            validation_engine.compatibility_identity,
-            canonical_evaluation.identity,
-            _items_tokens(resolved_items),
-        ),
-    )
-    backend_agrees = (
-        None
-        if projected.backend_chi_square is None
-        else projected.backend_chi_square == chi_square
-    )
-    success = ValidatedReplicateSuccess(
-        _VALIDATED_SUCCESS_CONSTRUCTION_KEY,
-        prepared.identity,
-        projected.identity,
-        canonical_evaluation.identity,
-        materialization_identity,
-        resolved_items,
-        chi_square,
-        projected.backend_chi_square,
-        backend_agrees,
-        1,
+    success = ValidatedReplicateSuccess.from_materialization(
+        prepared,
+        projected,
+        canonical_evaluation,
     )
     return ReplicateOutcome(
         plan.identity,
@@ -2538,6 +2941,7 @@ class ResamplingSummary:
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
+        self.evidence.validate_integrity()
         successful = tuple(
             outcome for outcome in self.evidence.outcomes if outcome.success is not None
         )
@@ -2900,6 +3304,18 @@ def summarize_resampling_evidence(
 ) -> ResamplingSummaryOutcome:
     """Derive one summary from all and only complete successful scope rows."""
     exact_policy = ResamplingSummaryPolicy() if policy is None else policy
+    try:
+        evidence.validate_integrity()
+    except ResamplingConstructionError as error:
+        failure = SummaryFailure(
+            evidence.identity,
+            "invalid_source_evidence",
+            f"Source evidence failed recursive integrity validation: {error}",
+        )
+        return ResamplingSummaryOutcome(
+            SummaryTerminal.SOURCE_INVALID,
+            failure=failure,
+        )
     if evidence.successful_count < evidence.plan.minimum_successful_count:
         failure = SummaryFailure(
             evidence.identity,

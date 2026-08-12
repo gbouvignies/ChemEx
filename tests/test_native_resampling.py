@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import hashlib
+import json
 from collections.abc import Callable
 from copy import deepcopy
 from threading import Event, Lock
@@ -22,6 +24,7 @@ from chemex.evaluation.native import (
     EvaluationFrame,
     EvaluationPlan,
     EvaluationResult,
+    ResolvedEvaluationValues,
 )
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.optimize.direct_trf import AcceptedFitResult, OptimizationProblem
@@ -45,6 +48,7 @@ from chemex.optimize.native_resampling import (
     ResamplingSummaryOutcome,
     ResamplingSummaryPolicy,
     SummaryTerminal,
+    ValidatedReplicateSuccess,
     execute_resampling_evidence,
     generate_resampling_draw,
     summarize_resampling_evidence,
@@ -784,8 +788,10 @@ def test_serial_and_reordered_multi_worker_execution_use_fresh_single_owners(
     assert serial.evidence is not None
     assert parallel.evidence is not None
     assert serial.evidence.identity == parallel.evidence.identity
-    assert serial_engine_count == 2 * plan.replicate_count
-    assert len(engines) == 4 * plan.replicate_count
+    # Each replicate owns optimizer and validation engines; recursive evidence
+    # qualification independently rebinds the immutable compatibility descriptor.
+    assert serial_engine_count == 3 * plan.replicate_count
+    assert len(engines) == 6 * plan.replicate_count
     assert len({id(item) for item in engines}) == len(engines)
     assert serial_evaluator_count >= 2 * plan.replicate_count
     assert len({id(item) for item in evaluators}) == len(evaluators)
@@ -1013,6 +1019,178 @@ def test_summary_constructor_cannot_accept_caller_supplied_arrays_or_claims() ->
     recomputed = dataclasses.replace(summary, policy=changed_policy)
     assert recomputed.policy_identity == changed_policy.identity
     assert recomputed.identity != summary.identity
+
+
+def test_validated_success_cannot_be_retargeted_and_rehashed_into_summary() -> None:
+    accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=2)
+    source_values = accepted.evaluation_result.resolved_values.ordered_items()
+    operation = execute_resampling_evidence(accepted, plan)
+    assert operation.evidence is not None
+    outcome = operation.evidence.outcomes[0]
+    assert outcome.success is not None
+
+    for field_name, value in (
+        ("resolved_items", (("A", 999.0), ("B", 999.0))),
+        ("chi_square", 999.0),
+        ("materialization_identity", "forged-materialization"),
+        ("evaluation_identity", "forged-evaluation"),
+        ("output_scope", ("B", "A")),
+        ("output_units", ("wrong", "wrong")),
+        ("claims", ()),
+        ("identity", "forged-success"),
+    ):
+        with pytest.raises(TypeError):
+            dataclasses.replace(outcome.success, **{field_name: value})
+
+    assert accepted.evaluation_result.resolved_values.ordered_items() == source_values
+
+
+def test_summary_revalidates_success_after_post_construction_mutation() -> None:
+    accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=2)
+    operation = execute_resampling_evidence(accepted, plan)
+    assert operation.evidence is not None
+    success = operation.evidence.outcomes[0].success
+    assert success is not None
+    altered_snapshot = ResolvedEvaluationValues(
+        success.evaluation_result.resolved_values.parameterization_identity,
+        success.evaluation_result.resolved_values.program_identity,
+        (("A", 999.0), ("B", 999.0)),
+    )
+    object.__setattr__(
+        success,
+        "evaluation_result",
+        dataclasses.replace(
+            success.evaluation_result,
+            resolved_values=altered_snapshot,
+        ),
+    )
+    forged_outcome = dataclasses.replace(
+        operation.evidence.outcomes[0], success=success
+    )
+    with pytest.raises(ResamplingConstructionError):
+        dataclasses.replace(
+            operation.evidence,
+            outcomes=(forged_outcome, *operation.evidence.outcomes[1:]),
+        )
+
+    summary = summarize_resampling_evidence(operation.evidence)
+
+    assert summary.terminal is SummaryTerminal.SOURCE_INVALID
+    assert summary.summary is None
+    assert summary.failure is not None
+    assert summary.failure.category == "invalid_source_evidence"
+
+
+def test_validated_success_record_round_trip_recomputes_every_projection() -> None:
+    accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=2)
+    operation = execute_resampling_evidence(accepted, plan)
+    assert operation.evidence is not None
+    success = operation.evidence.outcomes[0].success
+    assert success is not None
+
+    restored = ValidatedReplicateSuccess.from_record(
+        success.to_record(),
+        plan,
+        plan.replicates[0],
+    )
+    restored_outcome = dataclasses.replace(
+        operation.evidence.outcomes[0], success=restored
+    )
+    restored_evidence = dataclasses.replace(
+        operation.evidence,
+        outcomes=(restored_outcome, *operation.evidence.outcomes[1:]),
+    )
+
+    assert restored.to_record() == success.to_record()
+    assert summarize_resampling_evidence(restored_evidence).terminal is (
+        SummaryTerminal.COMPLETED
+    )
+
+
+def test_validated_success_record_rejects_tampered_checked_projections() -> None:
+    accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=2)
+    operation = execute_resampling_evidence(accepted, plan)
+    assert operation.evidence is not None
+    success = operation.evidence.outcomes[0].success
+    assert success is not None
+
+    def reject(path: tuple[object, ...], value: object) -> None:
+        record = copy.deepcopy(success.to_record())
+        target: Any = record
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value
+        record["identity"] = hashlib.sha256(
+            json.dumps(record, sort_keys=True).encode()
+        ).hexdigest()
+        with pytest.raises(ResamplingConstructionError):
+            ValidatedReplicateSuccess.from_record(
+                record,
+                plan,
+                plan.replicates[0],
+            )
+
+    reject(("resolved_items", 0, 1), (999.0).hex())
+    reject(("chi_square",), (999.0).hex())
+    reject(("materialization_identity",), "forged-materialization")
+    reject(("evaluation_result", "identity"), "forged-evaluation")
+    reject(("output_scope", 0), "B")
+    reject(("output_units", 0), "wrong-unit")
+    reject(("claims", 0, "state"), "violated")
+    reject(("projected", "problem_identity"), "foreign-problem")
+
+
+def test_success_record_rejects_rehashed_altered_complete_resolved_snapshot() -> None:
+    accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=2)
+    operation = execute_resampling_evidence(accepted, plan)
+    assert operation.evidence is not None
+    success = operation.evidence.outcomes[0].success
+    assert success is not None
+    altered_snapshot = ResolvedEvaluationValues(
+        success.evaluation_result.resolved_values.parameterization_identity,
+        success.evaluation_result.resolved_values.program_identity,
+        (("A", 999.0), ("B", 999.0)),
+    )
+    altered_evaluation = dataclasses.replace(
+        success.evaluation_result,
+        resolved_values=altered_snapshot,
+    )
+    record = copy.deepcopy(success.to_record())
+    record["evaluation_result"] = altered_evaluation.to_record()
+    record["resolved_items"] = [["A", (999.0).hex()], ["B", (999.0).hex()]]
+    record["identity"] = hashlib.sha256(
+        json.dumps(record, sort_keys=True).encode()
+    ).hexdigest()
+
+    with pytest.raises(ResamplingConstructionError):
+        ValidatedReplicateSuccess.from_record(
+            record,
+            plan,
+            plan.replicates[0],
+        )
+
+
+def test_equivalent_looking_manual_success_without_exact_derivation_fails_closed() -> (
+    None
+):
+    accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=2)
+    operation = execute_resampling_evidence(accepted, plan)
+    assert operation.evidence is not None
+    first = operation.evidence.outcomes[0]
+    second = operation.evidence.outcomes[1]
+    assert first.success is not None
+    assert second.success is not None
+    manual = object.__new__(ValidatedReplicateSuccess)
+    object.__setattr__(manual, "prepared", first.success.prepared)
+    object.__setattr__(manual, "projected", second.success.projected)
+    object.__setattr__(manual, "evaluation_result", first.success.evaluation_result)
+    forged_outcome = dataclasses.replace(first, success=manual)
+
+    with pytest.raises(ResamplingConstructionError):
+        dataclasses.replace(
+            operation.evidence,
+            outcomes=(forged_outcome, *operation.evidence.outcomes[1:]),
+        )
 
 
 @pytest.mark.parametrize(
