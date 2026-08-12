@@ -27,6 +27,7 @@ from chemex.optimize.direct_trf import (
 )
 from chemex.runtime import ExecutionSettings
 from chemex.runtime.execution import native_thread_environment
+from chemex.typing import Array
 
 _SCHEMA_VERSION = 1
 _SEED_POLICY_VERSION = "sha256-structural-u64-v1"
@@ -120,6 +121,13 @@ class ClaimAssessment:
             raise ResamplingConstructionError(
                 "Claim assessment requires a name and policy identity"
             )
+
+
+def _claim_state(claims: Sequence[ClaimAssessment], name: str) -> ClaimState:
+    for claim in claims:
+        if claim.name == name:
+            return claim.state
+    return ClaimState.INDETERMINATE
 
 
 def _identity(kind: str, record: object) -> str:
@@ -248,6 +256,7 @@ class ResamplingPlan:
     accepted_occurrence_identity: str
     scheme: ResamplingScheme
     replicate_count: int
+    replicate_structural_identities: tuple[str, ...]
     root_seed: int
     source_dataset_identity: str
     output_scope: tuple[str, ...]
@@ -269,6 +278,16 @@ class ResamplingPlan:
             raise ResamplingConstructionError(
                 "Minimum successful replicate count cannot exceed the population"
             )
+        supplied_structural_identities = tuple(self.replicate_structural_identities)
+        if (
+            len(supplied_structural_identities) != count
+            or any(not item for item in supplied_structural_identities)
+            or len(set(supplied_structural_identities)) != count
+        ):
+            raise ResamplingConstructionError(
+                "Resampling requires one unique structural identity per replicate"
+            )
+        structural_identities = tuple(sorted(supplied_structural_identities))
         root_seed = _unsigned_seed(self.root_seed, name="root seed")
         scope = _canonical_scope(self.output_scope)
         for name, value in (
@@ -288,6 +307,7 @@ class ResamplingPlan:
                 self.accepted_occurrence_identity,
                 self.scheme.value,
                 count,
+                structural_identities,
                 root_seed,
                 self.source_dataset_identity,
                 scope,
@@ -299,11 +319,7 @@ class ResamplingPlan:
             ),
         )
         requests: list[ReplicateRequest] = []
-        for ordinal in range(count):
-            structural_identity = _identity(
-                "native-resampling-replicate-structure",
-                (identity, ordinal),
-            )
+        for ordinal, structural_identity in enumerate(structural_identities):
             seed = _derive_seed(
                 root_seed=root_seed,
                 stage_identity=identity,
@@ -319,6 +335,11 @@ class ResamplingPlan:
                 "Distinct resampling work units produced a derived-seed collision"
             )
         object.__setattr__(self, "replicate_count", count)
+        object.__setattr__(
+            self,
+            "replicate_structural_identities",
+            structural_identities,
+        )
         object.__setattr__(self, "minimum_successful_count", minimum)
         object.__setattr__(self, "root_seed", root_seed)
         object.__setattr__(self, "output_scope", scope)
@@ -332,6 +353,7 @@ class ResamplingPlan:
         *,
         scheme: ResamplingScheme,
         replicate_count: int,
+        replicate_structural_identities: Sequence[str],
         root_seed: int,
         source_dataset_identity: str,
         output_scope: Sequence[str],
@@ -348,6 +370,7 @@ class ResamplingPlan:
             accepted.occurrence_identity,
             scheme,
             replicate_count,
+            tuple(replicate_structural_identities),
             root_seed,
             source_dataset_identity,
             tuple(output_scope),
@@ -367,6 +390,7 @@ class ResamplingPopulation:
     mask: tuple[bool, ...]
     references: tuple[bool, ...]
     nucleus_groups: tuple[str, ...]
+    profile_blocks: tuple[str, ...]
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -383,6 +407,7 @@ class ResamplingPopulation:
                 self.mask,
                 self.references,
                 self.nucleus_groups,
+                self.profile_blocks,
             )
         ):
             raise ResamplingConstructionError(
@@ -412,6 +437,10 @@ class ResamplingPopulation:
             raise ResamplingConstructionError(
                 "Nucleus group identities must not be empty"
             )
+        if any(not block for block in self.profile_blocks):
+            raise ResamplingConstructionError(
+                "Profile block identities must not be empty"
+            )
         object.__setattr__(self, "observed", observed)
         object.__setattr__(self, "calculated", calculated)
         object.__setattr__(self, "standard_errors", errors)
@@ -428,6 +457,7 @@ class ResamplingPopulation:
                     self.mask,
                     self.references,
                     self.nucleus_groups,
+                    self.profile_blocks,
                 ),
             ),
         )
@@ -445,6 +475,7 @@ class ResamplingDraw:
     mask: tuple[bool, ...]
     references: tuple[bool, ...]
     nucleus_groups: tuple[str, ...]
+    profile_blocks: tuple[str, ...]
     source_indices: tuple[int, ...]
     sampled_nucleus_groups: tuple[str, ...] = ()
     identity: str = field(init=False)
@@ -459,6 +490,7 @@ class ResamplingDraw:
                 self.mask,
                 self.references,
                 self.nucleus_groups,
+                self.profile_blocks,
                 self.source_indices,
             )
         ):
@@ -489,6 +521,7 @@ class ResamplingDraw:
                     self.mask,
                     self.references,
                     self.nucleus_groups,
+                    self.profile_blocks,
                     self.source_indices,
                     self.sampled_nucleus_groups,
                 ),
@@ -520,39 +553,45 @@ def generate_resampling_draw(
             population.mask,
             population.references,
             population.nucleus_groups,
+            population.profile_blocks,
             tuple(range(size)),
         )
     if scheme is ResamplingScheme.BOOTSTRAP:
-        masked = tuple(index for index, active in enumerate(population.mask) if active)
-        reference_pool = tuple(
-            index for index in masked if population.references[index]
-        )
-        non_reference_pool = tuple(
-            index for index in masked if not population.references[index]
-        )
-        selected = sorted(
-            (
-                *(
-                    int(value)
-                    for value in rng.choice(
-                        reference_pool,
-                        size=len(reference_pool),
-                        replace=True,
-                    )
-                ),
-                *(
-                    int(value)
-                    for value in rng.choice(
-                        non_reference_pool,
-                        size=len(non_reference_pool),
-                        replace=True,
-                    )
-                ),
-            )
-        )
         source_indices = list(range(size))
-        for target, source in zip(masked, selected, strict=True):
-            source_indices[target] = source
+        for block in dict.fromkeys(population.profile_blocks):
+            masked = tuple(
+                index
+                for index, active in enumerate(population.mask)
+                if active and population.profile_blocks[index] == block
+            )
+            reference_pool = tuple(
+                index for index in masked if population.references[index]
+            )
+            non_reference_pool = tuple(
+                index for index in masked if not population.references[index]
+            )
+            selected = sorted(
+                (
+                    *(
+                        int(value)
+                        for value in rng.choice(
+                            reference_pool,
+                            size=len(reference_pool),
+                            replace=True,
+                        )
+                    ),
+                    *(
+                        int(value)
+                        for value in rng.choice(
+                            non_reference_pool,
+                            size=len(non_reference_pool),
+                            replace=True,
+                        )
+                    ),
+                )
+            )
+            for target, source in zip(masked, selected, strict=True):
+                source_indices[target] = source
         indexes = tuple(source_indices)
         return ResamplingDraw(
             population.identity,
@@ -563,6 +602,7 @@ def generate_resampling_draw(
             population.mask,
             tuple(population.references[index] for index in indexes),
             population.nucleus_groups,
+            population.profile_blocks,
             indexes,
         )
     canonical_groups = tuple(sorted(set(population.nucleus_groups)))
@@ -589,6 +629,7 @@ def generate_resampling_draw(
         tuple(population.mask[index] for index in indexes),
         tuple(population.references[index] for index in indexes),
         tuple(population.nucleus_groups[index] for index in indexes),
+        tuple(population.profile_blocks[index] for index in indexes),
         indexes,
         sampled_groups,
     )
@@ -924,10 +965,7 @@ class ResamplingEvidence:
 
     def claim(self, name: str) -> ClaimState:
         """Return one exact named claim; unknown claims fail closed."""
-        for claim in self.claims:
-            if claim.name == name:
-                return claim.state
-        return ClaimState.INDETERMINATE
+        return _claim_state(self.claims, name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1301,6 +1339,7 @@ class ResamplingSummary:
     evidence_identity: str
     output_scope: tuple[str, ...]
     included_ordinals: tuple[int, ...]
+    unstarted_ordinals: tuple[int, ...]
     exclusions: tuple[ResamplingExclusion, ...]
     samples: tuple[SummarySample, ...]
     distributions: tuple[ParameterDistribution, ...]
@@ -1318,6 +1357,7 @@ class ResamplingSummary:
                 self.evidence_identity,
                 self.output_scope,
                 self.included_ordinals,
+                self.unstarted_ordinals,
             ),
         )
         claims = (
@@ -1352,6 +1392,7 @@ class ResamplingSummary:
                     self.evidence_identity,
                     self.output_scope,
                     self.included_ordinals,
+                    self.unstarted_ordinals,
                     tuple(
                         (
                             item.ordinal,
@@ -1413,10 +1454,7 @@ class ResamplingSummary:
 
     def claim(self, name: str) -> ClaimState:
         """Return one exact named claim; unknown claims fail closed."""
-        for claim in self.claims:
-            if claim.name == name:
-                return claim.state
-        return ClaimState.INDETERMINATE
+        return _claim_state(self.claims, name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1439,7 +1477,7 @@ class ResamplingSummaryOutcome:
 
 
 def _build_summary_statistics(
-    matrix: np.ndarray,
+    matrix: Array,
     output_scope: tuple[str, ...],
 ) -> tuple[
     tuple[ParameterDistribution, ...],
@@ -1585,6 +1623,11 @@ def summarize_resampling_evidence(
         evidence.identity,
         evidence.plan.output_scope,
         tuple(outcome.ordinal for outcome in successful),
+        tuple(
+            request.ordinal
+            for request in evidence.plan.replicates
+            if request.ordinal not in {outcome.ordinal for outcome in evidence.outcomes}
+        ),
         exclusions,
         samples,
         distributions,

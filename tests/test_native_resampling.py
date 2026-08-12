@@ -83,6 +83,7 @@ def _population() -> ResamplingPopulation:
         mask=(True, True, True, True, False),
         references=(True, True, False, False, False),
         nucleus_groups=("N1", "N1", "N2", "N3", "N3"),
+        profile_blocks=("P1", "P1", "P1", "P1", "P2"),
     )
 
 
@@ -96,6 +97,10 @@ def _plan(
         accepted,
         scheme=scheme,
         replicate_count=count,
+        replicate_structural_identities=tuple(
+            f"qualification-replicate-{name}"
+            for name in ("alpha", "beta", "gamma", "delta")[:count]
+        ),
         root_seed=0x1234_5678_90AB_CDEF,
         source_dataset_identity="qualification-dataset",
         output_scope=("A", "B"),
@@ -136,10 +141,31 @@ def test_replicate_plan_uses_canonical_ordinals_and_identity_derived_seeds() -> 
     assert len({request.seed for request in plan.replicates}) == 4
     assert plan == _plan(accepted, ResamplingScheme.MONTE_CARLO)
 
+    reordered = ResamplingPlan.for_accepted(
+        accepted,
+        scheme=ResamplingScheme.MONTE_CARLO,
+        replicate_count=4,
+        replicate_structural_identities=tuple(
+            reversed(plan.replicate_structural_identities)
+        ),
+        root_seed=plan.root_seed,
+        source_dataset_identity=plan.source_dataset_identity,
+        output_scope=plan.output_scope,
+        optimization_projection_identity=plan.optimization_projection_identity,
+        minimum_successful_count=plan.minimum_successful_count,
+    )
+    assert reordered == plan
+
     changed = ResamplingPlan.for_accepted(
         accepted,
         scheme=ResamplingScheme.MONTE_CARLO,
         replicate_count=4,
+        replicate_structural_identities=(
+            "qualification-replicate-alpha",
+            "qualification-replicate-beta",
+            "qualification-replicate-gamma",
+            "qualification-replicate-delta",
+        ),
         root_seed=0x1234_5678_90AB_CDEE,
         source_dataset_identity="qualification-dataset",
         output_scope=("A", "B"),
@@ -184,6 +210,18 @@ def test_seeded_generation_preserves_mc_bs_and_bsn_scientific_schemes() -> None:
     assert mc.source_indices == tuple(range(5))
     assert mc.standard_errors == population.standard_errors
     assert mc.observations != population.calculated
+    np.testing.assert_allclose(
+        mc.observations,
+        (
+            10.209847500036986,
+            14.930749036336255,
+            31.904952620387146,
+            39.372147264939954,
+            48.225783000334324,
+        ),
+        rtol=0.0,
+        atol=1.0e-14,
+    )
 
     bootstrap = generate_resampling_draw(
         population,
@@ -199,6 +237,7 @@ def test_seeded_generation_preserves_mc_bs_and_bsn_scientific_schemes() -> None:
     ) == tuple(population.references[target] for target in masked_targets)
     assert bootstrap.source_indices[-1] == 4
     assert bootstrap.observations[-1] == population.observed[-1]
+    assert bootstrap.source_indices == (0, 0, 2, 2, 4)
 
     nucleus = generate_resampling_draw(
         population,
@@ -214,6 +253,35 @@ def test_seeded_generation_preserves_mc_bs_and_bsn_scientific_schemes() -> None:
         if source_group == group
     )
     assert nucleus.source_indices == expected_sources
+    assert nucleus.sampled_nucleus_groups == ("N2", "N1", "N3")
+    assert nucleus.source_indices == (2, 0, 1, 3, 4)
+
+
+def test_bootstrap_resamples_each_profile_reference_pool_independently() -> None:
+    population = ResamplingPopulation(
+        source_dataset_identity="blocked-dataset",
+        observed=(10.0, 11.0, 20.0, 21.0),
+        calculated=(10.0, 11.0, 20.0, 21.0),
+        standard_errors=(1.0, 1.0, 1.0, 1.0),
+        mask=(True, True, True, True),
+        references=(True, False, True, False),
+        nucleus_groups=("N1", "N1", "N2", "N2"),
+        profile_blocks=("P1", "P1", "P2", "P2"),
+    )
+    draw = generate_resampling_draw(
+        population,
+        ResamplingScheme.BOOTSTRAP,
+        seed=404,
+    )
+
+    assert all(
+        population.profile_blocks[target] == population.profile_blocks[source]
+        for target, source in enumerate(draw.source_indices)
+    )
+    assert all(
+        population.references[target] == population.references[source]
+        for target, source in enumerate(draw.source_indices)
+    )
 
 
 def test_resampling_execution_is_evidence_only_scope_complete_and_worker_stable() -> (
@@ -321,6 +389,59 @@ def test_failed_replicates_remain_typed_and_summary_uses_one_common_scope() -> N
         entry.value is None or np.isfinite(entry.value)
         for entry in summary.correlations
     )
+    distributions = {item.parameter_id: item for item in summary.distributions}
+    assert distributions["A"].mean == pytest.approx(2.0, rel=0.0, abs=1.0e-15)
+    assert distributions["A"].standard_deviation == pytest.approx(
+        np.sqrt(2.0), rel=0.0, abs=1.0e-15
+    )
+    assert distributions["A"].median == pytest.approx(2.0)
+    assert distributions["A"].percentile_95_lower == pytest.approx(1.05)
+    assert distributions["A"].percentile_95_upper == pytest.approx(2.95)
+    covariance = {
+        (item.parameter_a, item.parameter_b): item.value for item in summary.covariance
+    }
+    assert covariance[("A", "A")] == pytest.approx(2.0)
+    assert covariance[("A", "B")] == pytest.approx(-2.0)
+    correlations = {
+        (item.parameter_a, item.parameter_b): item.value
+        for item in summary.correlations
+    }
+    assert correlations[("A", "B")] == pytest.approx(-1.0)
+
+
+def test_zero_variance_correlation_is_typed_without_nan() -> None:
+    accepted = _accepted_anchor()
+    plan = _plan(accepted, ResamplingScheme.MONTE_CARLO, count=2)
+
+    def project(
+        request: ReplicateRequest,
+        draw: ResamplingDraw,
+    ) -> ProjectedOptimizationSuccess:
+        return ProjectedOptimizationSuccess(
+            transformed_data_identity=draw.identity,
+            evaluation_plan_identity=f"plan-{request.ordinal}",
+            problem_identity=f"problem-{request.ordinal}",
+            invocation_identity=f"invocation-{request.ordinal}",
+            execution_identity=f"execution-{request.ordinal}",
+            strategy=OptimizationStrategy.DIRECT_TRF,
+            component_outcome_identities=(f"component-{request.ordinal}",),
+            resolved_items=(("A", float(request.ordinal)), ("B", 5.0)),
+            chi_square=1.0,
+        )
+
+    operation = execute_resampling_evidence(
+        accepted,
+        plan,
+        _population(),
+        project,
+    )
+    assert operation.evidence is not None
+    outcome = summarize_resampling_evidence(operation.evidence)
+    assert outcome.summary is not None
+    b_entries = tuple(
+        entry for entry in outcome.summary.correlations if entry.parameter_b == "B"
+    )
+    assert all(entry.value is None for entry in b_entries)
 
 
 def test_partial_evidence_and_summary_publish_only_under_declared_contract() -> None:
@@ -363,10 +484,37 @@ def test_partial_evidence_and_summary_publish_only_under_declared_contract() -> 
     assert summary_outcome.summary is None
     assert summary_outcome.failure is not None
 
+
+def test_valid_partial_summary_records_unstarted_requested_ordinals() -> None:
+    accepted = _accepted_anchor()
+    plan = _plan(accepted, ResamplingScheme.MONTE_CARLO, count=4)
+    calls = 0
+
+    def project(
+        request: ReplicateRequest,
+        draw: ResamplingDraw,
+    ) -> ProjectedOptimizationSuccess:
+        nonlocal calls
+        calls += 1
+        return _successful_projection()(request, draw)
+
+    operation = execute_resampling_evidence(
+        accepted,
+        plan,
+        _population(),
+        project,
+        cancellation_probe=lambda: calls >= 2,
+    )
+    assert operation.evidence is not None
+    outcome = summarize_resampling_evidence(operation.evidence)
+    assert outcome.terminal is SummaryTerminal.COMPLETED
+    assert outcome.summary is not None
+    assert outcome.summary.unstarted_ordinals == (2, 3)
+
     initially_cancelled = execute_resampling_evidence(
         accepted,
         plan,
-        population,
+        _population(),
         project,
         execution=ExecutionSettings(workers=1),
         cancellation_probe=lambda: True,
