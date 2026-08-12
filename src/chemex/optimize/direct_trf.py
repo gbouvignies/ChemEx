@@ -39,7 +39,11 @@ from chemex.parameters.parameterization import (
 from chemex.parameters.sealed import SealedConfiguration
 from chemex.parameters.values import (
     AnalysisValues,
+    AnalysisValuesCommitError,
     AnalysisValuesSnapshot,
+    IncompatibleAnalysisValuesError,
+    InvalidAnalysisValuesCommitError,
+    StaleAnalysisValuesError,
 )
 from chemex.typing import Array
 
@@ -1580,52 +1584,97 @@ class GridSelectionProvenance:
         )
 
 
-class _AcceptedOccurrenceWitness:
-    """Opaque process-local witness for one accepted-result occurrence."""
+class _OpaqueOccurrenceWitness:
+    """Noncopyable, nonserializable base for process-local occurrence witnesses."""
 
     __slots__ = ("__weakref__",)
 
-    def __new__(cls) -> _AcceptedOccurrenceWitness:
-        raise TypeError(
-            "Accepted occurrence witnesses are minted only by Direct TRF or "
-            "the isolated qualification constructor"
-        )
+    def __new__(cls) -> _OpaqueOccurrenceWitness:
+        raise TypeError("Occurrence witnesses are minted only by native execution")
 
-    def __copy__(self) -> _AcceptedOccurrenceWitness:
-        raise TypeError("Accepted occurrence witnesses cannot be copied")
+    def __copy__(self) -> _OpaqueOccurrenceWitness:
+        raise TypeError("Occurrence witnesses cannot be copied")
 
-    def __deepcopy__(self, _memo: object) -> _AcceptedOccurrenceWitness:
-        raise TypeError("Accepted occurrence witnesses cannot be copied")
+    def __deepcopy__(self, _memo: object) -> _OpaqueOccurrenceWitness:
+        raise TypeError("Occurrence witnesses cannot be copied")
 
     def __reduce__(self) -> tuple[object, ...]:
-        raise TypeError("Accepted occurrence witnesses cannot be serialized")
+        raise TypeError("Occurrence witnesses cannot be serialized")
 
     def __reduce_ex__(self, _protocol: SupportsIndex, /) -> tuple[object, ...]:
-        raise TypeError("Accepted occurrence witnesses cannot be serialized")
+        raise TypeError("Occurrence witnesses cannot be serialized")
+
+
+class _AcceptedOccurrenceWitness(_OpaqueOccurrenceWitness):
+    """Opaque process-local witness for one accepted-result occurrence."""
+
+    __slots__ = ()
 
 
 @dataclass(frozen=True, slots=True)
-class _AcceptedOccurrenceBinding:
+class _OccurrenceWitnessBinding:
     occurrence_identity: str
-    accepted_result_identity: str | None = None
+    artifact_identity: str | None = None
 
 
-_ACCEPTED_OCCURRENCE_WITNESSES: WeakKeyDictionary[
-    _AcceptedOccurrenceWitness,
-    _AcceptedOccurrenceBinding,
-] = WeakKeyDictionary()
-_ACCEPTED_OCCURRENCE_WITNESSES_LOCK = RLock()
+class _OccurrenceWitnessRegistry[WitnessT]:
+    """Bind opaque witnesses to one occurrence and one immutable artifact."""
+
+    def __init__(self) -> None:
+        self._bindings: WeakKeyDictionary[WitnessT, _OccurrenceWitnessBinding] = (
+            WeakKeyDictionary()
+        )
+        self._lock = RLock()
+
+    def mint(self, witness_type: type[WitnessT], occurrence_identity: str) -> WitnessT:
+        witness = object.__new__(witness_type)
+        with self._lock:
+            self._bindings[witness] = _OccurrenceWitnessBinding(occurrence_identity)
+        return witness
+
+    def bind(
+        self,
+        witness: WitnessT,
+        occurrence_identity: str,
+        artifact_identity: str,
+    ) -> bool:
+        with self._lock:
+            binding = self._bindings.get(witness)
+            if binding is None or binding.occurrence_identity != occurrence_identity:
+                return False
+            if binding.artifact_identity is None:
+                self._bindings[witness] = _OccurrenceWitnessBinding(
+                    occurrence_identity,
+                    artifact_identity,
+                )
+                return True
+            return binding.artifact_identity == artifact_identity
+
+    def is_bound(
+        self,
+        witness: WitnessT,
+        occurrence_identity: str,
+        artifact_identity: str,
+    ) -> bool:
+        with self._lock:
+            return self._bindings.get(witness) == _OccurrenceWitnessBinding(
+                occurrence_identity,
+                artifact_identity,
+            )
+
+
+_ACCEPTED_OCCURRENCE_WITNESSES = _OccurrenceWitnessRegistry[
+    _AcceptedOccurrenceWitness
+]()
 
 
 def _mint_accepted_occurrence_witness(
     occurrence_identity: str,
 ) -> _AcceptedOccurrenceWitness:
-    witness = object.__new__(_AcceptedOccurrenceWitness)
-    with _ACCEPTED_OCCURRENCE_WITNESSES_LOCK:
-        _ACCEPTED_OCCURRENCE_WITNESSES[witness] = _AcceptedOccurrenceBinding(
-            occurrence_identity
-        )
-    return witness
+    return _ACCEPTED_OCCURRENCE_WITNESSES.mint(
+        _AcceptedOccurrenceWitness,
+        occurrence_identity,
+    )
 
 
 def _bind_accepted_occurrence_witness(
@@ -1633,17 +1682,11 @@ def _bind_accepted_occurrence_witness(
     occurrence_identity: str,
     accepted_result_identity: str,
 ) -> bool:
-    with _ACCEPTED_OCCURRENCE_WITNESSES_LOCK:
-        binding = _ACCEPTED_OCCURRENCE_WITNESSES.get(witness)
-        if binding is None or binding.occurrence_identity != occurrence_identity:
-            return False
-        if binding.accepted_result_identity is None:
-            _ACCEPTED_OCCURRENCE_WITNESSES[witness] = _AcceptedOccurrenceBinding(
-                occurrence_identity,
-                accepted_result_identity,
-            )
-            return True
-        return binding.accepted_result_identity == accepted_result_identity
+    return _ACCEPTED_OCCURRENCE_WITNESSES.bind(
+        witness,
+        occurrence_identity,
+        accepted_result_identity,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1756,9 +1799,8 @@ def accepted_occurrence_is_authoritative(accepted: AcceptedFitResult) -> bool:
     """Report whether this object retains its exact construction occurrence."""
     if accepted.occurrence_witness is None:
         return False
-    with _ACCEPTED_OCCURRENCE_WITNESSES_LOCK:
-        binding = _ACCEPTED_OCCURRENCE_WITNESSES.get(accepted.occurrence_witness)
-    return binding == _AcceptedOccurrenceBinding(
+    return _ACCEPTED_OCCURRENCE_WITNESSES.is_bound(
+        accepted.occurrence_witness,
         accepted.occurrence_identity,
         accepted.identity,
     )
@@ -1956,6 +1998,161 @@ class CommitReceipt:
                 ),
             ),
         )
+
+
+class FitCommitFailureCategory(StrEnum):
+    """Closed failure categories for one attempted fit commit."""
+
+    STALE_REVISION = "stale_revision"
+    INCOMPATIBLE_STATE = "incompatible_state"
+    INVALID_CANDIDATE = "invalid_candidate"
+
+
+@dataclass(frozen=True, slots=True)
+class FitCommitFailure:
+    """Sanitized typed reason that an atomic fit commit did not occur."""
+
+    category: FitCommitFailureCategory
+    message: str
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if not self.message:
+            raise ValueError("Fit commit failure requires a message")
+        object.__setattr__(
+            self,
+            "identity",
+            _identity("native-fit-commit-failure", (self.category.value, self.message)),
+        )
+
+
+class FitCommitTerminal(StrEnum):
+    """Terminal state of one atomic fit commit operation."""
+
+    COMMITTED = "committed"
+    FAILED = "failed"
+
+
+class _FitCommitOperationWitness(_OpaqueOccurrenceWitness):
+    """Opaque process-local witness for one fit-commit operation occurrence."""
+
+    __slots__ = ()
+
+
+_FIT_COMMIT_OPERATION_WITNESSES = _OccurrenceWitnessRegistry[
+    _FitCommitOperationWitness
+]()
+
+
+def _mint_fit_commit_operation_witness(
+    occurrence_identity: str,
+) -> _FitCommitOperationWitness:
+    return _FIT_COMMIT_OPERATION_WITNESSES.mint(
+        _FitCommitOperationWitness,
+        occurrence_identity,
+    )
+
+
+def _bind_fit_commit_operation_witness(
+    witness: _FitCommitOperationWitness,
+    occurrence_identity: str,
+    operation_identity: str,
+) -> bool:
+    return _FIT_COMMIT_OPERATION_WITNESSES.bind(
+        witness,
+        occurrence_identity,
+        operation_identity,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class FitCommitOperation:
+    """Frozen occurrence-exact result of one attempted atomic fit commit."""
+
+    occurrence_identity: str = field(compare=False)
+    accepted_result_identity: str
+    accepted_occurrence_identity: str
+    problem_identity: str
+    terminal: FitCommitTerminal
+    receipt: CommitReceipt | None = None
+    failure: FitCommitFailure | None = None
+    _occurrence_witness: _FitCommitOperationWitness | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        kw_only=True,
+    )
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        committed = self.terminal is FitCommitTerminal.COMMITTED
+        if (
+            not self.occurrence_identity
+            or committed != (self.receipt is not None)
+            or committed == (self.failure is not None)
+        ):
+            raise ValueError("Fit commit operation lacks its exact terminal payload")
+        if self.receipt is not None and (
+            self.receipt.accepted_result_identity != self.accepted_result_identity
+            or self.receipt.accepted_occurrence_identity
+            != self.accepted_occurrence_identity
+            or self.receipt.problem_identity != self.problem_identity
+        ):
+            raise ValueError("Fit commit receipt belongs to another operation anchor")
+        identity = _identity(
+            "native-fit-commit-operation",
+            (
+                self.occurrence_identity,
+                self.accepted_result_identity,
+                self.accepted_occurrence_identity,
+                self.problem_identity,
+                self.terminal.value,
+                None if self.receipt is None else self.receipt.identity,
+                None if self.failure is None else self.failure.identity,
+            ),
+        )
+        object.__setattr__(self, "identity", identity)
+        if self._occurrence_witness is not None:
+            _bind_fit_commit_operation_witness(
+                self._occurrence_witness,
+                self.occurrence_identity,
+                identity,
+            )
+
+    def to_record(self) -> dict[str, object]:
+        """Return the typed diagnostic representation of this operation."""
+        return {
+            "artifact_type": "native_fit_commit_operation",
+            "schema_version": 1,
+            "identity": self.identity,
+            "occurrence_identity": self.occurrence_identity,
+            "accepted_result_identity": self.accepted_result_identity,
+            "accepted_occurrence_identity": self.accepted_occurrence_identity,
+            "problem_identity": self.problem_identity,
+            "terminal": self.terminal.value,
+            "receipt_identity": None if self.receipt is None else self.receipt.identity,
+            "failure": (
+                None
+                if self.failure is None
+                else {
+                    "identity": self.failure.identity,
+                    "category": self.failure.category.value,
+                    "message": self.failure.message,
+                }
+            ),
+        }
+
+
+def fit_commit_operation_is_authoritative(operation: FitCommitOperation) -> bool:
+    """Return whether execution minted this exact commit-operation occurrence."""
+    witness = operation._occurrence_witness
+    if witness is None:
+        return False
+    return _FIT_COMMIT_OPERATION_WITNESSES.is_bound(
+        witness,
+        operation.occurrence_identity,
+        operation.identity,
+    )
 
 
 class CancellationToken:
@@ -2869,6 +3066,17 @@ def _snapshot_commit_context_identity(snapshot: AnalysisValuesSnapshot) -> str:
     )
 
 
+def committed_values_identity(
+    snapshot: AnalysisValuesSnapshot,
+    scope: tuple[str, ...],
+) -> str:
+    """Return the receipt identity for committed values in an exact scope."""
+    return _identity(
+        "native-committed-values",
+        tuple((param_id, _float_token(snapshot[param_id])) for param_id in scope),
+    )
+
+
 def _mint_fit_commit_authority(
     accepted: AcceptedFitResult,
     problem: OptimizationProblem,
@@ -3362,12 +3570,9 @@ def commit_accepted_fit(
         expected=problem.source_snapshot,
         scope=problem.commit_scope,
     )
-    committed_value_identity = _identity(
-        "native-committed-values",
-        tuple(
-            (param_id, _float_token(committed[param_id]))
-            for param_id in problem.commit_scope
-        ),
+    committed_value_identity = committed_values_identity(
+        committed,
+        problem.commit_scope,
     )
     return CommitReceipt(
         accepted.occurrence_identity,
@@ -3379,4 +3584,52 @@ def commit_accepted_fit(
         committed_value_identity,
         committed.model_identity,
         committed.configuration_identity,
+    )
+
+
+def execute_fit_commit(
+    accepted: AcceptedFitResult,
+    authority: LiveFitCommitAuthority,
+    *,
+    problem: OptimizationProblem,
+    parameterization: ActiveParameterization,
+    analysis_values: AnalysisValues,
+) -> FitCommitOperation:
+    """Attempt one fit commit and freeze either its receipt or typed failure."""
+    occurrence_identity = uuid4().hex
+    witness = _mint_fit_commit_operation_witness(occurrence_identity)
+    try:
+        receipt = commit_accepted_fit(
+            accepted,
+            authority,
+            problem=problem,
+            parameterization=parameterization,
+            analysis_values=analysis_values,
+        )
+    except AnalysisValuesCommitError as error:
+        if isinstance(error, StaleAnalysisValuesError):
+            category = FitCommitFailureCategory.STALE_REVISION
+        elif isinstance(error, IncompatibleAnalysisValuesError):
+            category = FitCommitFailureCategory.INCOMPATIBLE_STATE
+        elif isinstance(error, InvalidAnalysisValuesCommitError):
+            category = FitCommitFailureCategory.INVALID_CANDIDATE
+        else:  # pragma: no cover - closed subclasses above are exhaustive today
+            raise
+        return FitCommitOperation(
+            occurrence_identity,
+            accepted.identity,
+            accepted.occurrence_identity,
+            problem.identity,
+            FitCommitTerminal.FAILED,
+            failure=FitCommitFailure(category, str(error)),
+            _occurrence_witness=witness,
+        )
+    return FitCommitOperation(
+        occurrence_identity,
+        accepted.identity,
+        accepted.occurrence_identity,
+        problem.identity,
+        FitCommitTerminal.COMMITTED,
+        receipt=receipt,
+        _occurrence_witness=witness,
     )
