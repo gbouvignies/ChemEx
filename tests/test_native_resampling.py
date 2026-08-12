@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable
+from threading import Event
 
 import numpy as np
 import pytest
@@ -101,6 +102,9 @@ def _plan(
             f"qualification-replicate-{name}"
             for name in ("alpha", "beta", "gamma", "delta")[:count]
         ),
+        replicate_component_identities=tuple(
+            (f"component-{ordinal}",) for ordinal in range(count)
+        ),
         root_seed=0x1234_5678_90AB_CDEF,
         source_dataset_identity="qualification-dataset",
         output_scope=("A", "B"),
@@ -119,11 +123,13 @@ def _successful_projection(
         ordinal = request.ordinal
         return ProjectedOptimizationSuccess(
             transformed_data_identity=draw.identity,
+            optimization_projection_identity=request.optimization_projection_identity,
             evaluation_plan_identity=f"plan-{ordinal}",
             problem_identity=f"problem-{ordinal}",
             invocation_identity=f"invocation-{ordinal}",
             execution_identity=f"execution-{ordinal}",
             strategy=OptimizationStrategy.DIRECT_TRF,
+            component_identities=request.component_identities,
             component_outcome_identities=(f"component-{ordinal}",),
             resolved_items=(("A", offset + ordinal + 1.0), ("B", 10.0 - ordinal)),
             chi_square=float(ordinal + 1),
@@ -148,6 +154,9 @@ def test_replicate_plan_uses_canonical_ordinals_and_identity_derived_seeds() -> 
         replicate_structural_identities=tuple(
             reversed(plan.replicate_structural_identities)
         ),
+        replicate_component_identities=tuple(
+            reversed(plan.replicate_component_identities)
+        ),
         root_seed=plan.root_seed,
         source_dataset_identity=plan.source_dataset_identity,
         output_scope=plan.output_scope,
@@ -165,6 +174,9 @@ def test_replicate_plan_uses_canonical_ordinals_and_identity_derived_seeds() -> 
             "qualification-replicate-beta",
             "qualification-replicate-gamma",
             "qualification-replicate-delta",
+        ),
+        replicate_component_identities=tuple(
+            (f"component-{ordinal}",) for ordinal in range(4)
         ),
         root_seed=0x1234_5678_90AB_CDEE,
         source_dataset_identity="qualification-dataset",
@@ -331,6 +343,87 @@ def test_resampling_execution_is_evidence_only_scope_complete_and_worker_stable(
     assert not hasattr(serial.evidence, "commit_authority")
 
 
+def test_projection_and_complete_component_lineage_fail_closed() -> None:
+    accepted = _accepted_anchor()
+    plan = _plan(accepted, ResamplingScheme.MONTE_CARLO, count=2)
+
+    def wrong_projection(
+        request: ReplicateRequest,
+        draw: ResamplingDraw,
+    ) -> ProjectedOptimizationSuccess:
+        success = _successful_projection()(request, draw)
+        return dataclasses.replace(
+            success,
+            optimization_projection_identity="different-projection",
+        )
+
+    projection_operation = execute_resampling_evidence(
+        accepted,
+        plan,
+        _population(),
+        wrong_projection,
+    )
+    assert projection_operation.evidence is not None
+    assert all(
+        outcome.failure is not None
+        and outcome.failure.category == "optimization_projection_lineage_mismatch"
+        for outcome in projection_operation.evidence.outcomes
+    )
+
+    def missing_component(
+        request: ReplicateRequest,
+        draw: ResamplingDraw,
+    ) -> ProjectedOptimizationSuccess:
+        success = _successful_projection()(request, draw)
+        return dataclasses.replace(success, component_identities=("other-component",))
+
+    component_operation = execute_resampling_evidence(
+        accepted,
+        plan,
+        _population(),
+        missing_component,
+    )
+    assert component_operation.evidence is not None
+    assert all(
+        outcome.failure is not None
+        and outcome.failure.category == "incomplete_component_projection"
+        for outcome in component_operation.evidence.outcomes
+    )
+
+
+def test_multi_worker_cancellation_freezes_completed_partial_evidence() -> None:
+    accepted = _accepted_anchor()
+    plan = _plan(accepted, ResamplingScheme.MONTE_CARLO, count=4)
+    first_completed = Event()
+    release_remaining = Event()
+
+    def project(
+        request: ReplicateRequest,
+        draw: ResamplingDraw,
+    ) -> ProjectedOptimizationSuccess:
+        if request.ordinal == 0:
+            result = _successful_projection()(request, draw)
+            first_completed.set()
+            return result
+        release_remaining.wait(timeout=0.2)
+        return _successful_projection()(request, draw)
+
+    operation = execute_resampling_evidence(
+        accepted,
+        plan,
+        _population(),
+        project,
+        execution=ExecutionSettings(workers=2),
+        cancellation_probe=first_completed.is_set,
+    )
+    release_remaining.set()
+
+    assert operation.terminal.value == "cancelled"
+    assert operation.evidence is not None
+    assert tuple(outcome.ordinal for outcome in operation.evidence.outcomes) == (0,)
+    assert operation.unstarted_ordinals == (1, 2, 3)
+
+
 def test_failed_replicates_remain_typed_and_summary_uses_one_common_scope() -> None:
     accepted = _accepted_anchor()
     plan = _plan(accepted, ResamplingScheme.BOOTSTRAP, count=3)
@@ -343,6 +436,9 @@ def test_failed_replicates_remain_typed_and_summary_uses_one_common_scope() -> N
         if request.ordinal == 1:
             return ProjectedOptimizationFailure(
                 transformed_data_identity=draw.identity,
+                optimization_projection_identity=(
+                    request.optimization_projection_identity
+                ),
                 disposition=ReplicateDisposition.FAILED,
                 category="solver_unsuccessful",
                 message="declared local budget exhausted",
@@ -394,19 +490,25 @@ def test_failed_replicates_remain_typed_and_summary_uses_one_common_scope() -> N
     assert distributions["A"].standard_deviation == pytest.approx(
         np.sqrt(2.0), rel=0.0, abs=1.0e-15
     )
-    assert distributions["A"].median == pytest.approx(2.0)
-    assert distributions["A"].percentile_95_lower == pytest.approx(1.05)
-    assert distributions["A"].percentile_95_upper == pytest.approx(2.95)
+    # These small exact inputs exercise only stable binary64 reductions; one ulp-scale
+    # absolute tolerance avoids asserting on representation noise without hiding drift.
+    assert distributions["A"].median == pytest.approx(2.0, rel=0.0, abs=1.0e-15)
+    assert distributions["A"].percentile_95_lower == pytest.approx(
+        1.05, rel=0.0, abs=1.0e-15
+    )
+    assert distributions["A"].percentile_95_upper == pytest.approx(
+        2.95, rel=0.0, abs=1.0e-15
+    )
     covariance = {
         (item.parameter_a, item.parameter_b): item.value for item in summary.covariance
     }
-    assert covariance[("A", "A")] == pytest.approx(2.0)
-    assert covariance[("A", "B")] == pytest.approx(-2.0)
+    assert covariance[("A", "A")] == pytest.approx(2.0, rel=0.0, abs=1.0e-15)
+    assert covariance[("A", "B")] == pytest.approx(-2.0, rel=0.0, abs=1.0e-15)
     correlations = {
         (item.parameter_a, item.parameter_b): item.value
         for item in summary.correlations
     }
-    assert correlations[("A", "B")] == pytest.approx(-1.0)
+    assert correlations[("A", "B")] == pytest.approx(-1.0, rel=0.0, abs=1.0e-15)
 
 
 def test_zero_variance_correlation_is_typed_without_nan() -> None:
@@ -419,11 +521,13 @@ def test_zero_variance_correlation_is_typed_without_nan() -> None:
     ) -> ProjectedOptimizationSuccess:
         return ProjectedOptimizationSuccess(
             transformed_data_identity=draw.identity,
+            optimization_projection_identity=request.optimization_projection_identity,
             evaluation_plan_identity=f"plan-{request.ordinal}",
             problem_identity=f"problem-{request.ordinal}",
             invocation_identity=f"invocation-{request.ordinal}",
             execution_identity=f"execution-{request.ordinal}",
             strategy=OptimizationStrategy.DIRECT_TRF,
+            component_identities=request.component_identities,
             component_outcome_identities=(f"component-{request.ordinal}",),
             resolved_items=(("A", float(request.ordinal)), ("B", 5.0)),
             chi_square=1.0,
@@ -527,11 +631,13 @@ def test_success_payload_rejects_nan_and_non_atomic_scope() -> None:
     with pytest.raises(ResamplingConstructionError, match="complete output scope"):
         ProjectedOptimizationSuccess(
             transformed_data_identity="draw",
+            optimization_projection_identity="projection",
             evaluation_plan_identity="plan",
             problem_identity="problem",
             invocation_identity="invocation",
             execution_identity="execution",
             strategy=OptimizationStrategy.DIRECT_TRF,
+            component_identities=("component",),
             component_outcome_identities=("component",),
             resolved_items=(("A", 1.0),),
             chi_square=1.0,
@@ -540,11 +646,13 @@ def test_success_payload_rejects_nan_and_non_atomic_scope() -> None:
     with pytest.raises(ResamplingConstructionError, match="finite"):
         ProjectedOptimizationSuccess(
             transformed_data_identity="draw",
+            optimization_projection_identity="projection",
             evaluation_plan_identity="plan",
             problem_identity="problem",
             invocation_identity="invocation",
             execution_identity="execution",
             strategy=OptimizationStrategy.DIRECT_TRF,
+            component_identities=("component",),
             component_outcome_identities=("component",),
             resolved_items=(("A", np.nan), ("B", 2.0)),
             chi_square=1.0,
@@ -563,11 +671,13 @@ def test_non_finite_summary_arithmetic_returns_typed_unavailability() -> None:
         value = -1.0e308 if request.ordinal == 0 else 1.0e308
         return ProjectedOptimizationSuccess(
             transformed_data_identity=draw.identity,
+            optimization_projection_identity=request.optimization_projection_identity,
             evaluation_plan_identity=f"plan-{request.ordinal}",
             problem_identity=f"problem-{request.ordinal}",
             invocation_identity=f"invocation-{request.ordinal}",
             execution_identity=f"execution-{request.ordinal}",
             strategy=OptimizationStrategy.DIRECT_TRF,
+            component_identities=request.component_identities,
             component_outcome_identities=(f"component-{request.ordinal}",),
             resolved_items=(("A", value), ("B", value)),
             chi_square=1.0,

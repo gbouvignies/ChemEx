@@ -14,7 +14,7 @@ import json
 import math
 import warnings
 from collections.abc import Callable, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from enum import StrEnum
 from numbers import Real
@@ -226,12 +226,26 @@ class ReplicateRequest:
     plan_identity: str
     ordinal: int
     structural_identity: str
+    optimization_projection_identity: str
+    component_identities: tuple[str, ...]
     seed: int
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
         if self.ordinal < 0:
             raise ResamplingConstructionError("Replicate ordinal must be non-negative")
+        _non_empty_identity(
+            self.optimization_projection_identity,
+            name="optimization projection identity",
+        )
+        if (
+            not self.component_identities
+            or any(not item for item in self.component_identities)
+            or len(set(self.component_identities)) != len(self.component_identities)
+        ):
+            raise ResamplingConstructionError(
+                "Replicate request requires unique projected component identities"
+            )
         _unsigned_seed(self.seed, name="replicate seed")
         object.__setattr__(
             self,
@@ -242,6 +256,8 @@ class ReplicateRequest:
                     self.plan_identity,
                     self.ordinal,
                     self.structural_identity,
+                    self.optimization_projection_identity,
+                    self.component_identities,
                     self.seed,
                 ),
             ),
@@ -257,6 +273,7 @@ class ResamplingPlan:
     scheme: ResamplingScheme
     replicate_count: int
     replicate_structural_identities: tuple[str, ...]
+    replicate_component_identities: tuple[tuple[str, ...], ...]
     root_seed: int
     source_dataset_identity: str
     output_scope: tuple[str, ...]
@@ -279,6 +296,9 @@ class ResamplingPlan:
                 "Minimum successful replicate count cannot exceed the population"
             )
         supplied_structural_identities = tuple(self.replicate_structural_identities)
+        supplied_component_identities = tuple(
+            tuple(items) for items in self.replicate_component_identities
+        )
         if (
             len(supplied_structural_identities) != count
             or any(not item for item in supplied_structural_identities)
@@ -287,7 +307,26 @@ class ResamplingPlan:
             raise ResamplingConstructionError(
                 "Resampling requires one unique structural identity per replicate"
             )
-        structural_identities = tuple(sorted(supplied_structural_identities))
+        if len(supplied_component_identities) != count or any(
+            not items
+            or any(not item for item in items)
+            or len(set(items)) != len(items)
+            for items in supplied_component_identities
+        ):
+            raise ResamplingConstructionError(
+                "Resampling requires complete unique component identities per replicate"
+            )
+        canonical_work_units = tuple(
+            sorted(
+                zip(
+                    supplied_structural_identities,
+                    supplied_component_identities,
+                    strict=True,
+                )
+            )
+        )
+        structural_identities = tuple(item[0] for item in canonical_work_units)
+        component_identities = tuple(item[1] for item in canonical_work_units)
         root_seed = _unsigned_seed(self.root_seed, name="root seed")
         scope = _canonical_scope(self.output_scope)
         for name, value in (
@@ -308,6 +347,7 @@ class ResamplingPlan:
                 self.scheme.value,
                 count,
                 structural_identities,
+                component_identities,
                 root_seed,
                 self.source_dataset_identity,
                 scope,
@@ -319,7 +359,9 @@ class ResamplingPlan:
             ),
         )
         requests: list[ReplicateRequest] = []
-        for ordinal, structural_identity in enumerate(structural_identities):
+        for ordinal, (structural_identity, components) in enumerate(
+            zip(structural_identities, component_identities, strict=True)
+        ):
             seed = _derive_seed(
                 root_seed=root_seed,
                 stage_identity=identity,
@@ -327,7 +369,14 @@ class ResamplingPlan:
                 structural_identity=structural_identity,
             )
             requests.append(
-                ReplicateRequest(identity, ordinal, structural_identity, seed)
+                ReplicateRequest(
+                    identity,
+                    ordinal,
+                    structural_identity,
+                    self.optimization_projection_identity,
+                    components,
+                    seed,
+                )
             )
         seeds = tuple(item.seed for item in requests)
         if len(set(seeds)) != len(seeds):
@@ -339,6 +388,11 @@ class ResamplingPlan:
             self,
             "replicate_structural_identities",
             structural_identities,
+        )
+        object.__setattr__(
+            self,
+            "replicate_component_identities",
+            component_identities,
         )
         object.__setattr__(self, "minimum_successful_count", minimum)
         object.__setattr__(self, "root_seed", root_seed)
@@ -354,6 +408,7 @@ class ResamplingPlan:
         scheme: ResamplingScheme,
         replicate_count: int,
         replicate_structural_identities: Sequence[str],
+        replicate_component_identities: Sequence[Sequence[str]],
         root_seed: int,
         source_dataset_identity: str,
         output_scope: Sequence[str],
@@ -371,6 +426,7 @@ class ResamplingPlan:
             scheme,
             replicate_count,
             tuple(replicate_structural_identities),
+            tuple(tuple(items) for items in replicate_component_identities),
             root_seed,
             source_dataset_identity,
             tuple(output_scope),
@@ -640,11 +696,13 @@ class ProjectedOptimizationSuccess:
     """Complete projected candidate evidence with no acceptance or commit authority."""
 
     transformed_data_identity: str
+    optimization_projection_identity: str
     evaluation_plan_identity: str
     problem_identity: str
     invocation_identity: str
     execution_identity: str
     strategy: OptimizationStrategy
+    component_identities: tuple[str, ...]
     component_outcome_identities: tuple[str, ...]
     resolved_items: tuple[tuple[str, float], ...]
     chi_square: float
@@ -658,17 +716,28 @@ class ProjectedOptimizationSuccess:
     def __post_init__(self) -> None:
         for name, value in (
             ("transformed data identity", self.transformed_data_identity),
+            ("optimization projection identity", self.optimization_projection_identity),
             ("evaluation plan identity", self.evaluation_plan_identity),
             ("problem identity", self.problem_identity),
             ("invocation identity", self.invocation_identity),
             ("execution identity", self.execution_identity),
         ):
             _non_empty_identity(value, name=name)
-        if not self.component_outcome_identities or any(
-            not item for item in self.component_outcome_identities
+        if (
+            not self.component_outcome_identities
+            or any(not item for item in self.component_outcome_identities)
+            or len(self.component_outcome_identities) != len(self.component_identities)
         ):
             raise ResamplingConstructionError(
                 "Projected optimization requires complete component outcomes"
+            )
+        if (
+            not self.component_identities
+            or any(not item for item in self.component_identities)
+            or len(set(self.component_identities)) != len(self.component_identities)
+        ):
+            raise ResamplingConstructionError(
+                "Projected optimization requires unique component identities"
             )
         items = tuple(
             (param_id, _finite(value, name=f"resolved value {param_id!r}"))
@@ -703,11 +772,13 @@ class ProjectedOptimizationSuccess:
                 "native-projected-optimization-success",
                 (
                     self.transformed_data_identity,
+                    self.optimization_projection_identity,
                     self.evaluation_plan_identity,
                     self.problem_identity,
                     self.invocation_identity,
                     self.execution_identity,
                     self.strategy.value,
+                    self.component_identities,
                     self.component_outcome_identities,
                     _items_tokens(items),
                     _float_token(chi_square),
@@ -724,6 +795,7 @@ class ProjectedOptimizationFailure:
     disposition: ReplicateDisposition
     category: str
     message: str
+    optimization_projection_identity: str = field(kw_only=True)
     evaluation_plan_identity: str | None = None
     problem_identity: str | None = None
     execution_identity: str | None = None
@@ -739,6 +811,10 @@ class ProjectedOptimizationFailure:
             raise ResamplingConstructionError(
                 "Projected failure requires data identity, category, and message"
             )
+        _non_empty_identity(
+            self.optimization_projection_identity,
+            name="optimization projection identity",
+        )
         object.__setattr__(
             self,
             "identity",
@@ -749,6 +825,7 @@ class ProjectedOptimizationFailure:
                     self.disposition.value,
                     self.category,
                     self.message,
+                    self.optimization_projection_identity,
                     self.evaluation_plan_identity,
                     self.problem_identity,
                     self.execution_identity,
@@ -1013,6 +1090,7 @@ def _execute_replicate(
             ReplicateDisposition.INTERRUPTED,
             "asynchronous_interruption",
             "Replicate projected optimization was interrupted",
+            optimization_projection_identity=request.optimization_projection_identity,
         )
         return ReplicateOutcome(
             plan.identity,
@@ -1037,6 +1115,7 @@ def _execute_replicate(
             ReplicateDisposition.FAILED,
             "projected_execution_failure",
             f"{type(error).__name__}: {error}",
+            optimization_projection_identity=request.optimization_projection_identity,
         )
         return ReplicateOutcome(
             plan.identity,
@@ -1060,6 +1139,9 @@ def _execute_replicate(
                 projected.problem_identity,
                 projected.execution_identity,
                 projected.component_outcome_identities,
+                optimization_projection_identity=(
+                    request.optimization_projection_identity
+                ),
             )
             return ReplicateOutcome(
                 plan.identity,
@@ -1079,6 +1161,7 @@ def _execute_replicate(
             ReplicateDisposition.FAILED,
             "invalid_projected_outcome",
             "Projected optimization returned an unsupported outcome type",
+            optimization_projection_identity=request.optimization_projection_identity,
         )
         payload = failure
     if payload.transformed_data_identity != draw.identity:
@@ -1087,8 +1170,34 @@ def _execute_replicate(
             ReplicateDisposition.FAILED,
             "transformed_data_lineage_mismatch",
             "Projected optimization used a different transformed-data identity",
+            optimization_projection_identity=request.optimization_projection_identity,
         )
         payload = mismatch
+    if (
+        payload.optimization_projection_identity
+        != request.optimization_projection_identity
+    ):
+        payload = ProjectedOptimizationFailure(
+            draw.identity,
+            ReplicateDisposition.FAILED,
+            "optimization_projection_lineage_mismatch",
+            "Projected optimization used a different declared projection",
+            optimization_projection_identity=request.optimization_projection_identity,
+        )
+    if isinstance(payload, ProjectedOptimizationSuccess) and (
+        payload.component_identities != request.component_identities
+    ):
+        payload = ProjectedOptimizationFailure(
+            draw.identity,
+            ReplicateDisposition.FAILED,
+            "incomplete_component_projection",
+            "Projected optimization did not return every planned component",
+            optimization_projection_identity=request.optimization_projection_identity,
+            evaluation_plan_identity=payload.evaluation_plan_identity,
+            problem_identity=payload.problem_identity,
+            execution_identity=payload.execution_identity,
+            component_outcome_identities=payload.component_outcome_identities,
+        )
     if isinstance(payload, ProjectedOptimizationSuccess):
         return ReplicateOutcome(
             plan.identity,
@@ -1130,37 +1239,57 @@ def _execute_serial_replicates(
     return outcomes, terminal
 
 
+def _replicate_terminal(
+    outcomes: Sequence[ReplicateOutcome],
+) -> OperationTerminal:
+    if any(
+        outcome.disposition is ReplicateDisposition.INTERRUPTED for outcome in outcomes
+    ):
+        return OperationTerminal.INTERRUPTED
+    if any(
+        outcome.disposition is ReplicateDisposition.CANCELLED for outcome in outcomes
+    ):
+        return OperationTerminal.CANCELLED
+    return OperationTerminal.COMPLETED
+
+
 def _execute_parallel_replicates(
     plan: ResamplingPlan,
     population: ResamplingPopulation,
     executor: ReplicateExecutor,
     execution: ExecutionSettings,
+    cancellation_probe: Callable[[], bool] | None,
 ) -> tuple[list[ReplicateOutcome], OperationTerminal]:
     worker_count = min(execution.workers, plan.replicate_count)
-    with (
-        native_thread_environment(execution.native_thread_env(parallel=True)),
-        ThreadPoolExecutor(max_workers=worker_count) as pool,
-    ):
-        outcomes = list(
-            pool.map(
-                lambda request: _execute_replicate(
-                    plan,
-                    population,
-                    executor,
-                    request,
-                ),
-                plan.replicates,
-            )
-        )
-    if any(
-        outcome.disposition is ReplicateDisposition.INTERRUPTED for outcome in outcomes
-    ):
-        return outcomes, OperationTerminal.INTERRUPTED
-    if any(
-        outcome.disposition is ReplicateDisposition.CANCELLED for outcome in outcomes
-    ):
-        return outcomes, OperationTerminal.CANCELLED
-    return outcomes, OperationTerminal.COMPLETED
+    outcomes: list[ReplicateOutcome] = []
+    terminal = OperationTerminal.COMPLETED
+    with native_thread_environment(execution.native_thread_env(parallel=True)):
+        pool = ThreadPoolExecutor(max_workers=worker_count)
+        pending: set[Future[ReplicateOutcome]] = {
+            pool.submit(_execute_replicate, plan, population, executor, request)
+            for request in plan.replicates
+        }
+        try:
+            while pending:
+                done, pending = wait(
+                    pending,
+                    timeout=0.01 if cancellation_probe is not None else None,
+                    return_when=FIRST_COMPLETED,
+                )
+                outcomes.extend(future.result() for future in done)
+                terminal = _replicate_terminal(outcomes)
+                if cancellation_probe is not None and cancellation_probe():
+                    terminal = OperationTerminal.CANCELLED
+                if terminal is not OperationTerminal.COMPLETED:
+                    break
+        except KeyboardInterrupt:
+            terminal = OperationTerminal.INTERRUPTED
+        finally:
+            for future in pending:
+                future.cancel()
+            pool.shutdown(wait=True, cancel_futures=True)
+    outcomes.sort(key=lambda outcome: outcome.ordinal)
+    return outcomes, terminal
 
 
 def execute_resampling_evidence(
@@ -1193,7 +1322,7 @@ def execute_resampling_evidence(
             None,
             tuple(range(plan.replicate_count)),
         )
-    if settings.workers == 1 or cancellation_probe is not None:
+    if settings.workers == 1:
         outcomes, terminal = _execute_serial_replicates(
             plan,
             population,
@@ -1206,6 +1335,7 @@ def execute_resampling_evidence(
             population,
             executor,
             settings,
+            cancellation_probe,
         )
     evidence = (
         ResamplingEvidence(plan, population.identity, tuple(outcomes), terminal)
