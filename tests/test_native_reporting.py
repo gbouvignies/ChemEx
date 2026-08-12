@@ -19,6 +19,7 @@ from typing import Literal
 import numpy as np
 import pytest
 
+import chemex.run_info as run_info_module
 from chemex.baselines import (
     LegacyObservationImplementation,
     Occurrence,
@@ -35,10 +36,12 @@ from chemex.evaluation.native import (
 )
 from chemex.experiments.builder import build_experiments
 from chemex.native_provenance import (
+    ArtifactReference,
     BaselineReference,
     BudgetRecord,
     PolicyRecord,
     ProvenanceEnvironment,
+    PublishedStepReference,
     SeedRecord,
     WorkflowProvenance,
 )
@@ -99,9 +102,12 @@ from chemex.optimize.uncertainty import (
 from chemex.parameters.parameterization import ActiveParameterization
 from chemex.parameters.spin_system import SpinSystem
 from chemex.run_info import (
+    CapturedNativeInputs,
     NativeRunInformation,
     RunInformationKind,
+    capture_native_inputs,
     classify_run_information,
+    read_native_run_information,
     write_native_run_info,
 )
 from chemex.runtime import AnalysisSession, ExecutionSettings
@@ -112,10 +118,23 @@ PARAMETERS = ROOT / "examples/Experiments/RELAXATION_HZNZ/Parameters/parameters.
 METHOD = ROOT / "examples/Experiments/RELAXATION_HZNZ/Methods/method.toml"
 
 
+def _captured_inputs(output: Path) -> CapturedNativeInputs:
+    return capture_native_inputs(
+        Namespace(
+            experiments=[EXPERIMENT],
+            parameters=[PARAMETERS],
+            method=[METHOD],
+            output=output,
+        ),
+        working_directory=ROOT,
+    )
+
+
 def _workflow_provenance(
     *,
     parameterization: ActiveParameterization,
     plan: EvaluationPlan,
+    method: Method,
     invocation: DirectTrfInvocation | None = None,
     execution: DirectTrfExecution | None = None,
     uncertainty: UncertaintyEvidence | None = None,
@@ -200,6 +219,9 @@ def _workflow_provenance(
     return WorkflowProvenance.create(
         parameterization=parameterization,
         plan=plan,
+        method=method,
+        workflow_type="direct_trf",
+        grouping_topology=(("aggregate", parameterization.independent_ids),),
         policies=tuple(policies),
         budgets=tuple(budgets),
         seeds=tuple(seeds),
@@ -407,6 +429,7 @@ def _committed_fit(
         mcmc = McmcPublication(operation.evidence, posterior, summary)
     return CommittedFitPublication(
         engine.plan,
+        selected_method,
         parameterization,
         parameter_model,
         starting_snapshot,
@@ -421,6 +444,7 @@ def _committed_fit(
         provenance=_workflow_provenance(
             parameterization=parameterization,
             plan=engine.plan,
+            method=selected_method,
             invocation=invocation,
             execution=outcome.execution,
             uncertainty=uncertainty,
@@ -433,7 +457,7 @@ def _committed_fit(
     )
 
 
-def _evaluation_only() -> EvaluationPublication:
+def _evaluation_only(method: Method | None = None) -> EvaluationPublication:
     session = AnalysisSession.create()
     session.set_model("2st")
     experiments = build_experiments(
@@ -443,9 +467,8 @@ def _evaluation_only() -> EvaluationPublication:
     )
     session.parameters.set_defaults(read_defaults([PARAMETERS]))
     assert session.try_build_analysis_values()
-    parameterization = session.compile_parameterization(
-        Method(fix=["R1A_A", "PB", "KEX_AB"]), experiments.param_ids
-    )
+    method = Method(fix=["R1A_A", "PB", "KEX_AB"]) if method is None else method
+    parameterization = session.compile_parameterization(method, experiments.param_ids)
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     frame = EvaluationFrame.from_lifecycle_frame(
         parameterization,
@@ -455,13 +478,107 @@ def _evaluation_only() -> EvaluationPublication:
     assert isinstance(result, EvaluationResult)
     return EvaluationPublication(
         engine.plan,
+        method,
         parameterization,
         result,
         provenance=_workflow_provenance(
             parameterization=parameterization,
             plan=engine.plan,
+            method=method,
         ),
     )
+
+
+def _sequential_committed_steps(
+    output: Path,
+) -> tuple[
+    tuple[CommittedFitPublication, CommittedFitPublication],
+    tuple[PublishedStepReference, PublishedStepReference],
+]:
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    experiments = build_experiments(
+        [EXPERIMENT],
+        Selection(include=[SpinSystem.from_name("G2N-HN")], exclude=None),
+        session=session,
+    )
+    session.parameters.set_defaults(read_defaults([PARAMETERS]))
+    assert session.try_build_analysis_values()
+    parameter_model = session.parameter_factory.sealed_parameter_model
+    configuration = session.parameter_factory.sealed_configuration
+    assert parameter_model is not None
+    assert configuration is not None
+    publications: list[CommittedFitPublication] = []
+    steps: list[PublishedStepReference] = []
+    for method in (
+        Method(fit=["PB"], fix=["R1A_A", "KEX_AB"]),
+        Method(fit=["KEX_AB"], fix=["R1A_A", "PB"]),
+    ):
+        parameterization = session.compile_parameterization(
+            method,
+            experiments.param_ids,
+        )
+        engine = EvaluationEngine.from_experiments(experiments, parameterization)
+        starting = session.analysis_values.snapshot()
+        problem = OptimizationProblem.from_native(
+            engine.plan,
+            parameterization,
+            configuration,
+            starting,
+        )
+        invocation = DirectTrfInvocation.for_problem(
+            problem,
+            objective_request_budget=80,
+        )
+        outcome = execute_direct_trf(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+        )
+        assert outcome.accepted_result is not None
+        assert outcome.commit_authority is not None
+        accepted = outcome.accepted_result
+        operation = execute_fit_commit(
+            accepted,
+            outcome.commit_authority,
+            problem=problem,
+            parameterization=parameterization,
+            analysis_values=session.analysis_values,
+        )
+        assert operation.receipt is not None
+        assert operation.committed_snapshot is not None
+        publications.append(
+            CommittedFitPublication(
+                engine.plan,
+                method,
+                parameterization,
+                parameter_model,
+                starting,
+                problem,
+                invocation,
+                outcome.execution,
+                accepted,
+                operation.receipt,
+                operation.committed_snapshot,
+                operation,
+                session.analysis_values,
+                provenance=_workflow_provenance(
+                    parameterization=parameterization,
+                    plan=engine.plan,
+                    method=method,
+                    invocation=invocation,
+                    execution=outcome.execution,
+                ),
+            )
+        )
+        steps.append(
+            publish_native_results(
+                output / f"STEP-{len(publications)}",
+                publications[-1],
+            )
+        )
+    return (publications[0], publications[1]), (steps[0], steps[1])
 
 
 def _failed_commit_operation() -> tuple[
@@ -482,9 +599,8 @@ def _failed_commit_operation() -> tuple[
     )
     session.parameters.set_defaults(read_defaults([PARAMETERS]))
     assert session.try_build_analysis_values()
-    parameterization = session.compile_parameterization(
-        read_methods([METHOD])["DEFAULT"], experiments.param_ids
-    )
+    method = read_methods([METHOD])["DEFAULT"]
+    parameterization = session.compile_parameterization(method, experiments.param_ids)
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration
     parameter_model = session.parameter_factory.sealed_parameter_model
@@ -529,6 +645,7 @@ def _failed_commit_operation() -> tuple[
         _workflow_provenance(
             parameterization=parameterization,
             plan=engine.plan,
+            method=method,
             invocation=invocation,
             execution=outcome.execution,
         ),
@@ -547,9 +664,8 @@ def _publication_from_direct_commit_and_fabricated_evidence() -> (
     )
     session.parameters.set_defaults(read_defaults([PARAMETERS]))
     assert session.try_build_analysis_values()
-    parameterization = session.compile_parameterization(
-        read_methods([METHOD])["DEFAULT"], experiments.param_ids
-    )
+    method = read_methods([METHOD])["DEFAULT"]
+    parameterization = session.compile_parameterization(method, experiments.param_ids)
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration
     parameter_model = session.parameter_factory.sealed_parameter_model
@@ -615,6 +731,7 @@ def _publication_from_direct_commit_and_fabricated_evidence() -> (
     )
     return CommittedFitPublication(
         engine.plan,
+        method,
         parameterization,
         parameter_model,
         source,
@@ -629,6 +746,7 @@ def _publication_from_direct_commit_and_fabricated_evidence() -> (
         provenance=_workflow_provenance(
             parameterization=parameterization,
             plan=engine.plan,
+            method=method,
             invocation=invocation,
             execution=outcome.execution,
         ),
@@ -713,10 +831,22 @@ def test_committed_native_fit_publishes_only_aggregate_step_root(
         {
             "kind": "occurrence",
             "identity": publication.provenance.baseline_references[0].identity,
+            "occurrence_identity": publication.provenance.baseline_references[
+                0
+            ].occurrence_identity,
+            "result_bundle_identity": publication.provenance.baseline_references[
+                0
+            ].result_bundle_identity,
         },
         {
             "kind": "bundle",
             "identity": publication.provenance.baseline_references[1].identity,
+            "occurrence_identity": publication.provenance.baseline_references[
+                1
+            ].occurrence_identity,
+            "result_bundle_identity": publication.provenance.baseline_references[
+                1
+            ].result_bundle_identity,
         },
     ]
     assert manifest["artifacts"]["Parameters/restart.toml"]["role"] == (
@@ -754,6 +884,7 @@ def test_many_components_are_diagnostic_views_without_authoritative_copies(
     )
     publication = CommittedFitPublication(
         base.plan,
+        base.method,
         base.parameterization,
         base.parameter_model,
         base.starting_snapshot,
@@ -786,6 +917,10 @@ def test_many_components_are_diagnostic_views_without_authoritative_copies(
     publish_native_results(output, publication)
 
     components = json.loads((output / "Components" / "index.json").read_text())
+    manifest = tomllib.loads((output / "fit-manifest.toml").read_text())
+    assert manifest["artifacts"]["Components/index.json"]["role"] == (
+        "diagnostic_provenance"
+    )
     assert [item["ordinal"] for item in components["components"]] == [0, 1]
     assert [item["identity"] for item in components["components"]] == [
         "component-alpha",
@@ -936,6 +1071,61 @@ def test_committed_publication_rejects_a_foreign_normalized_method(
             replace(publication, provenance=forged_provenance),
         )
     assert not (tmp_path / "STEP").exists()
+
+
+def test_normalized_method_rejects_noncanonical_nested_payload() -> None:
+    publication = _committed_fit()
+    with pytest.raises(ValueError, match="Normalized method semantics"):
+        replace(
+            publication.provenance,
+            normalized_method_text=(
+                'FORMAT_VERSION = 2\n[METHOD]\nCANONICAL_JSON = "{}"\n'
+            ),
+        )
+
+
+def test_workflow_provenance_rejects_substituted_baseline_occurrence() -> None:
+    publication = _committed_fit()
+    occurrence, bundle = publication.provenance.baseline_references
+    with pytest.raises(ValueError, match="linked occurrence/bundle"):
+        replace(
+            publication.provenance,
+            baseline_references=(replace(occurrence, identity="f" * 64), bundle),
+        )
+
+
+@pytest.mark.parametrize(
+    "change",
+    ("workflow", "grouping", "selection", "policy", "budget", "seed", "execution"),
+)
+def test_execution_identity_covers_every_non_method_execution_choice(
+    change: str,
+) -> None:
+    publication = _committed_fit()
+    base = publication.provenance
+    changes: dict[str, object]
+    if change == "workflow":
+        changes = {"workflow_type": "grid"}
+    elif change == "grouping":
+        changes = {"grouping_topology": (("separate", base.grouping_topology[0][1]),)}
+    elif change == "selection":
+        changes = {"selection": replace(base.selection, include=("foreign",))}
+    elif change == "policy":
+        changes = {"policies": (PolicyRecord("primary_direct_trf", "foreign"),)}
+    elif change == "budget":
+        budget = base.budgets[0]
+        changes = {
+            "budgets": (BudgetRecord(budget.name, budget.limit + 1, budget.used),)
+        }
+    elif change == "seed":
+        changes = {"seeds": (SeedRecord("root", 609, "seed-policy"),)}
+    else:
+        changes = {"execution": ExecutionSettings(workers=3, native_threads=1)}
+
+    changed = replace(base, **changes)
+
+    assert changed.method_identity == base.method_identity
+    assert changed.execution_identity != base.execution_identity
 
 
 def test_committed_publication_rejects_unsuccessful_component_diagnostics(
@@ -1149,10 +1339,12 @@ def test_incomplete_resampling_is_retained_only_as_partial_evidence(
         suppressed_lifecycle,
         incomplete,
         publication.plan,
+        publication.method,
         publication.parameterization,
         provenance=_workflow_provenance(
             parameterization=publication.parameterization,
             plan=publication.plan,
+            method=publication.method,
             invocation=publication.primary_invocation,
             execution=publication.primary_execution,
             resampling=(partial_resampling,),
@@ -1351,6 +1543,46 @@ def test_final_rename_failure_removes_complete_staging_tree(
     assert not _staging_residue(tmp_path, output.name)
 
 
+@pytest.mark.parametrize(
+    "relative_path",
+    (
+        "statistics.toml",
+        "Parameters/restart.toml",
+        "Parameters/restart-provenance.json",
+        "Parameters/fitted.toml",
+    ),
+)
+def test_staged_artifact_mutation_after_manifest_prevents_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    relative_path: str,
+) -> None:
+    publication = _committed_fit()
+    output = tmp_path / "STEP"
+    original = native_reporting._write_committed_manifest
+
+    def write_then_mutate(
+        staging: Path,
+        source: CommittedFitPublication,
+        occurrence_identity: str,
+        restart: object,
+    ) -> object:
+        result = original(staging, source, occurrence_identity, restart)
+        (staging / relative_path).write_bytes(b"mutated after manifest\n")
+        return result
+
+    monkeypatch.setattr(
+        native_reporting,
+        "_write_committed_manifest",
+        write_then_mutate,
+    )
+
+    with pytest.raises(ValueError, match="changed after hashing"):
+        publish_native_results(output, publication)
+    assert not output.exists()
+    assert not _staging_residue(tmp_path, output.name)
+
+
 def test_uncommitted_workflow_suppresses_output_and_downstream_evidence(
     tmp_path: Path,
 ) -> None:
@@ -1379,10 +1611,12 @@ def test_uncommitted_workflow_suppresses_output_and_downstream_evidence(
         "cancelled",
         operation.evidence,
         committed.plan,
+        committed.method,
         committed.parameterization,
         provenance=_workflow_provenance(
             parameterization=committed.parameterization,
             plan=committed.plan,
+            method=committed.method,
             invocation=committed.primary_invocation,
             execution=committed.primary_execution,
             mcmc=replace(committed.mcmc, evidence=operation.evidence),
@@ -1411,6 +1645,7 @@ def test_uncommitted_workflow_suppresses_output_and_downstream_evidence(
         "accepted_uncommitted",
         forged_commit,
         failed_plan,
+        read_methods([METHOD])["DEFAULT"],
         failed_parameterization,
         provenance=failed_provenance,
         primary_invocation=failed_invocation,
@@ -1426,6 +1661,7 @@ def test_uncommitted_workflow_suppresses_output_and_downstream_evidence(
         "accepted_uncommitted",
         failed_commit,
         failed_plan,
+        read_methods([METHOD])["DEFAULT"],
         failed_parameterization,
         provenance=failed_provenance,
         primary_invocation=failed_invocation,
@@ -1445,6 +1681,7 @@ def test_uncommitted_workflow_suppresses_output_and_downstream_evidence(
         "accepted_uncommitted",
         failed_commit,
         failed_plan,
+        read_methods([METHOD])["DEFAULT"],
         failed_parameterization,
         provenance=failed_provenance,
         primary_invocation=failed_invocation,
@@ -1462,6 +1699,25 @@ def test_uncommitted_workflow_suppresses_output_and_downstream_evidence(
         )
 
     published_step = publish_native_results(output, publication)
+
+    with pytest.raises(ValueError, match="exact live publication"):
+        replace(
+            published_step,
+            lifecycle="committed",
+            authority="committed_fit",
+        )
+    with pytest.raises(ValueError, match="exact live publication"):
+        replace(
+            published_step,
+            artifacts=(
+                *published_step.artifacts,
+                ArtifactReference(
+                    "Parameters/restart.toml",
+                    "committed_restart_state",
+                    "0" * 64,
+                ),
+            ),
+        )
 
     assert {path.name for path in output.iterdir()} == {
         "Diagnostics",
@@ -1499,6 +1755,7 @@ def test_uncommitted_workflow_suppresses_output_and_downstream_evidence(
         ),
         NativeRunInformation(
             invocation_identity="issue-609-suppressed-only-run",
+            inputs=_captured_inputs(tmp_path),
             parameter_model=committed.parameter_model,
             starting_snapshot=committed.starting_snapshot,
             steps=(published_step,),
@@ -1526,6 +1783,7 @@ def test_native_run_information_archives_replay_complete_provenance(
         args,
         NativeRunInformation(
             invocation_identity="issue-609-invocation",
+            inputs=_captured_inputs(output),
             parameter_model=publication.parameter_model,
             starting_snapshot=publication.starting_snapshot,
             steps=(published_step,),
@@ -1543,7 +1801,7 @@ def test_native_run_information_archives_replay_complete_provenance(
     assert run["starting_state"]["kind"] == "starting_independent_state"
     assert run["starting_state"]["revision"] == 0
     assert (
-        run["normalized_method"]["sha256"]
+        run["normalized_methods"][0]["sha256"]
         == sha256(publication.provenance.normalized_method_text.encode()).hexdigest()
     )
     assert run["workflow_records"]["path"] == "workflows.json"
@@ -1588,6 +1846,7 @@ def test_native_run_information_archives_replay_complete_provenance(
             args,
             NativeRunInformation(
                 invocation_identity="issue-609-second-invocation",
+                inputs=_captured_inputs(output),
                 parameter_model=publication.parameter_model,
                 starting_snapshot=publication.starting_snapshot,
                 steps=(published_step,),
@@ -1596,6 +1855,70 @@ def test_native_run_information_archives_replay_complete_provenance(
         )
     assert _tree_bytes(run_info) == original_tree
     assert not list(output.glob(".run_info-*"))
+
+
+def test_native_run_information_archives_each_method_section(
+    tmp_path: Path,
+) -> None:
+    run_state = _committed_fit()
+    first = _evaluation_only(Method(fitmethod="leastsq", fix=["R1A_A", "PB", "KEX_AB"]))
+    second = _evaluation_only(Method(fitmethod="trf", fix=["R1A_A", "PB", "KEX_AB"]))
+    output = tmp_path / "Output"
+    steps = (
+        publish_native_results(output / "STEP-1", first),
+        publish_native_results(output / "STEP-2", second),
+    )
+    write_native_run_info(
+        Namespace(output=output),
+        NativeRunInformation(
+            invocation_identity="issue-609-multi-method",
+            inputs=_captured_inputs(output),
+            parameter_model=run_state.parameter_model,
+            starting_snapshot=run_state.starting_snapshot,
+            steps=steps,
+        ),
+        working_directory=ROOT,
+    )
+
+    run = tomllib.loads((output / "run_info" / "run.toml").read_text())
+    assert len(run["normalized_methods"]) == 2
+    assert {item["method_identity"] for item in run["normalized_methods"]} == {
+        first.provenance.method_identity,
+        second.provenance.method_identity,
+    }
+    assert read_native_run_information(
+        output / "run_info"
+    ).published_step_identities == (
+        steps[0].identity,
+        steps[1].identity,
+    )
+
+
+def test_native_run_information_walks_sequential_committed_revisions(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    publications, steps = _sequential_committed_steps(output)
+    first = publications[0]
+    assert steps[0].lifecycle == steps[1].lifecycle == "committed"
+    write_native_run_info(
+        Namespace(output=output),
+        NativeRunInformation(
+            invocation_identity="issue-609-sequential-commits",
+            inputs=_captured_inputs(output),
+            parameter_model=first.parameter_model,
+            starting_snapshot=first.starting_snapshot,
+            steps=steps,
+        ),
+        working_directory=ROOT,
+    )
+
+    assert read_native_run_information(
+        output / "run_info"
+    ).published_step_identities == (
+        steps[0].identity,
+        steps[1].identity,
+    )
 
 
 def test_native_run_information_rejects_changed_step_artifacts_without_replacement(
@@ -1623,6 +1946,7 @@ def test_native_run_information_rejects_changed_step_artifacts_without_replaceme
             ),
             NativeRunInformation(
                 invocation_identity="issue-609-tampered-invocation",
+                inputs=_captured_inputs(output),
                 parameter_model=publication.parameter_model,
                 starting_snapshot=publication.starting_snapshot,
                 steps=(published_step,),
@@ -1634,6 +1958,29 @@ def test_native_run_information_rejects_changed_step_artifacts_without_replaceme
     assert not list(output.glob(".run_info-*"))
 
 
+def test_native_run_information_rejects_unlisted_step_artifact(
+    tmp_path: Path,
+) -> None:
+    publication = _committed_fit()
+    output = tmp_path / "Output"
+    step = publish_native_results(output / "STEP", publication)
+    (output / "STEP" / "foreign.bin").write_bytes(b"not catalogued")
+
+    with pytest.raises(ValueError, match="catalogue is incomplete"):
+        write_native_run_info(
+            Namespace(output=output),
+            NativeRunInformation(
+                invocation_identity="issue-609-extra-artifact",
+                inputs=_captured_inputs(output),
+                parameter_model=publication.parameter_model,
+                starting_snapshot=publication.starting_snapshot,
+                steps=(step,),
+            ),
+            working_directory=ROOT,
+        )
+    assert not (output / "run_info").exists()
+
+
 @pytest.mark.parametrize("field", ("lifecycle", "authority", "artifacts"))
 def test_native_run_information_rejects_forged_step_references(
     tmp_path: Path,
@@ -1642,27 +1989,270 @@ def test_native_run_information_rejects_forged_step_references(
     publication = _committed_fit()
     output = tmp_path / "Output"
     step = publish_native_results(output / "STEP", publication)
-    if field == "lifecycle":
-        forged = replace(step, lifecycle="failed")
-    elif field == "authority":
-        forged = replace(step, authority="diagnostic_only")
-    else:
-        forged = replace(step, artifacts=step.artifacts[:-1])
+    changes = {
+        "lifecycle": {"lifecycle": "failed"},
+        "authority": {"authority": "diagnostic_only"},
+        "artifacts": {"artifacts": step.artifacts[:-1]},
+    }
+    with pytest.raises(ValueError, match="exact live publication"):
+        replace(step, **changes[field])
+    assert not (output / "run_info").exists()
 
-    with pytest.raises(ValueError, match="contradict.*manifest"):
+
+def test_native_run_information_rejects_reconstructed_live_step_reference(
+    tmp_path: Path,
+) -> None:
+    publication = _committed_fit()
+    output = tmp_path / "Output"
+    step = publish_native_results(output / "STEP", publication)
+    assert not hasattr(type(step), "from_live_publication")
+    with pytest.raises(ValueError, match="exact live publication"):
+        type(step)(
+            object(),
+            step.publication_occurrence_identity,
+            step.path,
+            step.lifecycle,
+            step.authority,
+            step.manifest_identity,
+            step.manifest_sha256,
+            step.provenance,
+            step.independent_ids,
+            step.artifacts,
+            _witness=None,
+        )
+
+
+def test_native_run_information_rejects_manifest_selection_with_new_file_hash(
+    tmp_path: Path,
+) -> None:
+    publication = _committed_fit()
+    output = tmp_path / "Output"
+    step = publish_native_results(output / "STEP", publication)
+    manifest_path = output / "STEP" / "fit-manifest.toml"
+    manifest_path.write_text(
+        manifest_path.read_text().replace(
+            'model = "2st"',
+            'model = "FOREIGN"',
+            1,
+        )
+    )
+    with pytest.raises(ValueError, match="exact live publication"):
+        replace(
+            step,
+            manifest_sha256=sha256(manifest_path.read_bytes()).hexdigest(),
+        )
+
+
+def test_native_run_information_rejects_relabel_and_foreign_workflow_reference(
+    tmp_path: Path,
+) -> None:
+    first = _committed_fit()
+    second = _committed_fit()
+    output = tmp_path / "Output"
+    step = publish_native_results(output / "STEP", first)
+    for changes in (
+        {"lifecycle": "failed", "authority": "diagnostic_only"},
+        {"provenance": second.provenance},
+        {"artifacts": step.artifacts[:-2]},
+    ):
+        with pytest.raises(ValueError, match="exact live publication"):
+            replace(step, **changes)
+
+
+def test_native_run_information_rejects_foreign_equivalent_publication(
+    tmp_path: Path,
+) -> None:
+    run_occurrence = _committed_fit()
+    foreign_occurrence = _committed_fit()
+    output = tmp_path / "Output"
+    foreign_step = publish_native_results(output / "STEP", foreign_occurrence)
+
+    with pytest.raises(ValueError, match="another run occurrence"):
         write_native_run_info(
-            Namespace(
-                experiments=[EXPERIMENT],
-                parameters=[PARAMETERS],
-                method=[METHOD],
-                output=output,
-            ),
+            Namespace(output=output),
             NativeRunInformation(
-                invocation_identity="issue-609-forged-reference",
-                parameter_model=publication.parameter_model,
-                starting_snapshot=publication.starting_snapshot,
-                steps=(forged,),
+                invocation_identity="issue-609-foreign-publication",
+                inputs=_captured_inputs(output),
+                parameter_model=run_occurrence.parameter_model,
+                starting_snapshot=run_occurrence.starting_snapshot,
+                steps=(foreign_step,),
             ),
             working_directory=ROOT,
         )
     assert not (output / "run_info").exists()
+
+
+def test_committed_restart_provenance_binds_exact_commit_occurrence(
+    tmp_path: Path,
+) -> None:
+    publication = _committed_fit()
+    output = tmp_path / "STEP"
+    publish_native_results(output, publication)
+
+    record = json.loads((output / "Parameters" / "restart-provenance.json").read_text())
+    assert record["starting_occurrence_identity"] == (
+        publication.starting_snapshot.occurrence_identity
+    )
+    assert record["starting_revision"] == publication.starting_snapshot.revision
+    assert record["accepted_result_identity"] == publication.accepted.identity
+    assert record["accepted_occurrence_identity"] == (
+        publication.accepted.occurrence_identity
+    )
+    assert record["commit_operation_identity"] == publication.commit_operation.identity
+    assert record["commit_occurrence_identity"] == (
+        publication.commit_operation.occurrence_identity
+    )
+    assert record["committed_occurrence_identity"] == (
+        publication.committed_snapshot.occurrence_identity
+    )
+    assert record["committed_revision"] == publication.committed_snapshot.revision
+    assert [item["id"] for item in record["independent_items"]] == list(
+        publication.parameterization.independent_ids
+    )
+
+
+def test_durable_native_run_rejects_child_tampering_with_new_outer_hash(
+    tmp_path: Path,
+) -> None:
+    publication = _committed_fit()
+    output = tmp_path / "Output"
+    step = publish_native_results(output / "STEP", publication)
+    write_native_run_info(
+        Namespace(output=output),
+        NativeRunInformation(
+            invocation_identity="issue-609-durable-tamper",
+            inputs=_captured_inputs(output),
+            parameter_model=publication.parameter_model,
+            starting_snapshot=publication.starting_snapshot,
+            steps=(step,),
+        ),
+        working_directory=ROOT,
+    )
+    run_info = output / "run_info"
+    historical = read_native_run_information(run_info)
+    assert historical.published_step_identities == (step.identity,)
+
+    workflow_path = run_info / "workflows.json"
+    workflows = json.loads(workflow_path.read_text())
+    workflows["workflows"][0]["published_step_identity"] = "0" * 64
+    workflow_path.write_text(json.dumps(workflows, sort_keys=True) + "\n")
+    run_path = run_info / "run.toml"
+    run_text = run_path.read_text()
+    parsed = tomllib.loads(run_text)
+    old_workflow_hash = parsed["workflow_records"]["sha256"]
+    new_workflow_hash = sha256(workflow_path.read_bytes()).hexdigest()
+    run_text = run_text.replace(old_workflow_hash, new_workflow_hash)
+    parsed = tomllib.loads(run_text)
+    old_record_identity = parsed["record_identity"]
+    new_record_identity = run_info_module._native_run_record_identity(parsed)
+    run_path.write_text(run_text.replace(old_record_identity, new_record_identity))
+
+    with pytest.raises(ValueError, match="step lineage"):
+        read_native_run_information(run_info)
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    (
+        "parameters_used.toml",
+        "normalized/method-0001.toml",
+        "workflows.json",
+        "run.toml",
+        "inputs/experiments/800mhz.toml",
+    ),
+)
+def test_staged_run_info_mutation_prevents_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    relative_path: str,
+) -> None:
+    publication = _committed_fit()
+    output = tmp_path / "Output"
+    step = publish_native_results(output / "STEP", publication)
+    original = run_info_module.read_native_run_information
+
+    def mutate_then_validate(path: Path) -> object:
+        (path / relative_path).write_bytes(b"mutated before final publication\n")
+        return original(path)
+
+    monkeypatch.setattr(
+        run_info_module,
+        "read_native_run_information",
+        mutate_then_validate,
+    )
+    with pytest.raises((ValueError, KeyError)):
+        write_native_run_info(
+            Namespace(output=output),
+            NativeRunInformation(
+                invocation_identity="issue-609-staged-run-mutation",
+                inputs=_captured_inputs(output),
+                parameter_model=publication.parameter_model,
+                starting_snapshot=publication.starting_snapshot,
+                steps=(step,),
+            ),
+            working_directory=ROOT,
+        )
+    assert not (output / "run_info").exists()
+    assert not list(output.glob(".run_info-*"))
+
+
+def test_native_run_information_uses_occurrence_start_input_bytes(
+    tmp_path: Path,
+) -> None:
+    publication = _committed_fit()
+    output = tmp_path / "Output"
+    step = publish_native_results(output / "STEP", publication)
+    first = tmp_path / "one" / "input.toml"
+    second = tmp_path / "two" / "input.toml"
+    target_a = tmp_path / "target-a.toml"
+    target_b = tmp_path / "target-b.toml"
+    link = tmp_path / "linked.toml"
+    traversal_like = tmp_path / "..input.toml"
+    for path, content in (
+        (first, b'A = "first"\n'),
+        (second, b'A = "second"\n'),
+        (target_a, b'A = "symlink-a"\n'),
+        (target_b, b'A = "symlink-b"\n'),
+        (traversal_like, b'A = "safe-name"\n'),
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    link.symlink_to(target_a)
+    capture_args = Namespace(
+        experiments=[first, second, link, traversal_like],
+        parameters=None,
+        method=None,
+        output=output,
+    )
+    captured = capture_native_inputs(capture_args, working_directory=tmp_path)
+
+    first.write_bytes(b'A = "mutated"\n')
+    second.unlink()
+    link.unlink()
+    link.symlink_to(target_b)
+    write_native_run_info(
+        Namespace(output=output),
+        NativeRunInformation(
+            invocation_identity="issue-609-input-capture",
+            inputs=captured,
+            parameter_model=publication.parameter_model,
+            starting_snapshot=publication.starting_snapshot,
+            steps=(step,),
+        ),
+        working_directory=tmp_path,
+    )
+
+    run = tomllib.loads((output / "run_info" / "run.toml").read_text())
+    archived = {
+        item["provided_path"]: (output / "run_info" / item["copied_path"]).read_bytes()
+        for item in run["inputs"]["experiments"]
+    }
+    assert archived[str(first)] == b'A = "first"\n'
+    assert archived[str(second)] == b'A = "second"\n'
+    assert archived[str(link)] == b'A = "symlink-a"\n'
+    assert archived[str(traversal_like)] == b'A = "safe-name"\n'
+    copied_names = [
+        Path(item["copied_path"]).name for item in run["inputs"]["experiments"]
+    ]
+    assert len(copied_names) == len(set(copied_names))
+    assert all(name not in {"", ".", ".."} for name in copied_names)

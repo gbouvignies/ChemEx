@@ -10,22 +10,28 @@ import hashlib
 import json
 import math
 import shutil
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
 from chemex.atomic import publish_directory_noreplace
+from chemex.configuration.methods import Method
 from chemex.evaluation.native import EvaluationPlan, EvaluationResult
 from chemex.native_provenance import (
     ArtifactReference,
     ArtifactRole,
     BudgetRecord,
+    CommittedRestartRecord,
     NativeProvenanceError,
     PolicyRecord,
     PublishedStepReference,
     SeedRecord,
     WorkflowProvenance,
+    _published_step_from_successful_native_publication,
+    native_step_manifest_identity,
+    validate_native_step_manifest_bytes,
 )
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
@@ -130,11 +136,12 @@ class McmcPublication:
     summary: PosteriorSummary
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class CommittedFitPublication:
     """Exact committed anchor from which ordinary fitted output may be rendered."""
 
     plan: EvaluationPlan
+    method: Method
     parameterization: ActiveParameterization
     parameter_model: SealedParameterModel
     starting_snapshot: AnalysisValuesSnapshot
@@ -153,17 +160,18 @@ class CommittedFitPublication:
     mcmc: McmcPublication | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class EvaluationPublication:
     """Authoritative evaluate-only result with no estimate or commit semantics."""
 
     plan: EvaluationPlan
+    method: Method
     parameterization: ActiveParameterization
     evaluation_result: EvaluationResult
     provenance: WorkflowProvenance = field(kw_only=True)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class SuppressedPublication:
     """Failure/uncommitted provenance with only genuine partial evidence."""
 
@@ -177,6 +185,7 @@ class SuppressedPublication:
         FitCommitOperation | DirectTrfExecution | ResamplingEvidence | McmcEvidence
     )
     plan: EvaluationPlan
+    method: Method
     parameterization: ActiveParameterization
     provenance: WorkflowProvenance = field(kw_only=True)
     primary_invocation: DirectTrfInvocation | None = field(
@@ -290,9 +299,10 @@ def _validate_provenance_context(
     provenance: WorkflowProvenance,
     plan: EvaluationPlan,
     parameterization: ActiveParameterization,
+    method: Method,
 ) -> None:
     try:
-        provenance.validate_execution_context(parameterization, plan)
+        provenance.validate_execution_context(parameterization, plan, method)
     except NativeProvenanceError as error:
         raise NativePublicationError(
             "Workflow method and selection provenance differ from execution"
@@ -320,6 +330,7 @@ def _validate_suppressed_execution_lineage(
         publication.provenance,
         publication.plan,
         publication.parameterization,
+        publication.method,
     )
     primary_policy, primary_budget = _validate_optional_primary_execution(publication)
     primary_problem = publication.primary_problem
@@ -380,6 +391,7 @@ def _validate_evaluation_only(publication: EvaluationPublication) -> None:
         publication.provenance,
         publication.plan,
         publication.parameterization,
+        publication.method,
     )
     _validate_exact_provenance_records(publication.provenance, (), (), ())
     if any(
@@ -562,6 +574,7 @@ def _validate_committed_fit(publication: CommittedFitPublication) -> None:
         publication.provenance,
         publication.plan,
         publication.parameterization,
+        publication.method,
     )
     _primary_execution_records(
         publication.primary_invocation,
@@ -839,7 +852,7 @@ def _render_suppressed(path: Path, publication: SuppressedPublication) -> None:
 def _render_committed_fit(
     path: Path,
     publication: CommittedFitPublication,
-) -> None:
+) -> CommittedRestartRecord:
     path.mkdir()
     write_parameter_reports(
         path / "Parameters",
@@ -851,6 +864,47 @@ def _render_committed_fit(
         publication.parameter_model,
         publication.parameterization,
         publication.committed_snapshot,
+    )
+    restart_path = path / "Parameters" / "restart.toml"
+    restart = CommittedRestartRecord(
+        publication.starting_snapshot.occurrence_identity,
+        publication.starting_snapshot.revision,
+        publication.accepted.identity,
+        publication.accepted.occurrence_identity,
+        publication.commit_operation.identity,
+        publication.commit_operation.occurrence_identity,
+        publication.committed_snapshot.occurrence_identity,
+        publication.committed_snapshot.revision,
+        publication.provenance.workflow_identity,
+        publication.primary_problem.identity,
+        publication.parameterization.identity,
+        publication.parameter_model.identity,
+        publication.committed_snapshot.configuration_identity,
+        tuple(
+            (
+                param_id,
+                float(publication.committed_snapshot[param_id]).hex(),
+                float(
+                    publication.parameter_model.configuration[param_id].lower_bound
+                ).hex(),
+                float(
+                    publication.parameter_model.configuration[param_id].upper_bound
+                ).hex(),
+            )
+            for param_id in publication.parameterization.independent_ids
+        ),
+        hashlib.sha256(restart_path.read_bytes()).hexdigest(),
+    )
+    (path / "Parameters" / "restart-provenance.json").write_text(
+        json.dumps(
+            restart.to_record(),
+            allow_nan=False,
+            ensure_ascii=True,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
     )
     write_data(path / "Data", publication.plan, publication.accepted.evaluation_result)
     write_native_plots(
@@ -876,21 +930,24 @@ def _render_committed_fit(
         None if mcmc is None else mcmc.summary,
     )
     write_components(path / "Components", publication.components)
+    return restart
 
 
 def _artifact_role(relative_path: str) -> ArtifactRole:
     if relative_path == "Parameters/restart.toml":
         return "committed_restart_state"
+    if relative_path == "Parameters/restart-provenance.json":
+        return "committed_restart_state"
     if relative_path == "Parameters/fitted.toml":
         return "report_only_fitted_values"
-    if relative_path.startswith("Diagnostics/"):
+    if relative_path.startswith(("Diagnostics/", "Components/")):
         return "diagnostic_provenance"
     if relative_path.startswith("PartialEvidence/"):
         return "partial_evidence"
     return "product_output"
 
 
-def _write_manifest(
+def _write_manifest(  # noqa: C901 - deterministic TOML sections
     path: Path,
     fields: tuple[tuple[str, str | int], ...],
     provenance: WorkflowProvenance,
@@ -912,35 +969,17 @@ def _write_manifest(
         for item in sorted(path.rglob("*"))
         if item.is_file()
     )
-    manifest_identity = hashlib.sha256(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "fields": fields,
-                "provenance_identity": provenance.identity,
-                "artifacts": [
-                    (item.path, item.role, item.sha256) for item in artifacts
-                ],
-                "components": [
-                    (item.identity, item.disposition, item.controlled_ids)
-                    for item in components
-                ],
-                "evidence": evidence,
-            },
-            ensure_ascii=True,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode()
-    ).hexdigest()
     lines = [
         "# Atomic native method-step manifest.",
         "schema_version = 1",
-        f"manifest_identity = {json.dumps(manifest_identity)}",
+        'manifest_identity = ""',
         *(f"{name} = {json.dumps(value)}" for name, value in fields),
         "",
         "[workflow]",
         f"identity = {json.dumps(provenance.workflow_identity)}",
+        f"execution_identity = {json.dumps(provenance.execution_identity)}",
         f"provenance_identity = {json.dumps(provenance.identity)}",
+        f"type = {json.dumps(provenance.workflow_type)}",
         "",
         "[method]",
         f"identity = {json.dumps(provenance.method_identity)}",
@@ -968,6 +1007,15 @@ def _write_manifest(
         ),
         "",
     ]
+    for group_identity, controlled_ids in provenance.grouping_topology:
+        lines.extend(
+            (
+                "[[workflow.groups]]",
+                f"identity = {json.dumps(group_identity)}",
+                f"controlled_ids = {json.dumps(list(controlled_ids))}",
+                "",
+            )
+        )
     for kind, name, library_version in provenance.environment.numerical_libraries:
         lines.extend(
             (
@@ -1014,6 +1062,8 @@ def _write_manifest(
                 "[[baseline_references]]",
                 f"kind = {json.dumps(reference.kind)}",
                 f"identity = {json.dumps(reference.identity)}",
+                f"occurrence_identity = {json.dumps(reference.occurrence_identity)}",
+                f"result_bundle_identity = {json.dumps(reference.result_bundle_identity)}",
                 "",
             )
         )
@@ -1050,7 +1100,11 @@ def _write_manifest(
             )
         )
     manifest_path = path / "fit-manifest.toml"
+    provisional = "\n".join(lines)
+    manifest_identity = native_step_manifest_identity(tomllib.loads(provisional))
+    lines[2] = f"manifest_identity = {json.dumps(manifest_identity)}"
     manifest_path.write_text("\n".join(lines), encoding="utf-8")
+    validate_native_step_manifest_bytes(manifest_path.read_bytes())
     return (
         manifest_identity,
         hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
@@ -1061,6 +1115,8 @@ def _write_manifest(
 def _write_committed_manifest(
     path: Path,
     publication: CommittedFitPublication,
+    publication_occurrence_identity: str,
+    restart: CommittedRestartRecord,
 ) -> tuple[str, str, tuple[ArtifactReference, ...]]:
     evidence: list[tuple[str, str, str, str]] = []
     if publication.uncertainty is not None:
@@ -1105,6 +1161,7 @@ def _write_committed_manifest(
         (
             ("lifecycle", "committed"),
             ("authority", "committed_fit"),
+            ("publication_occurrence_identity", publication_occurrence_identity),
             ("starting_state_kind", "workflow_starting_provenance"),
             (
                 "starting_occurrence_identity",
@@ -1117,6 +1174,19 @@ def _write_committed_manifest(
                 publication.accepted.occurrence_identity,
             ),
             ("commit_receipt_identity", publication.commit_receipt.identity),
+            ("commit_operation_identity", publication.commit_operation.identity),
+            (
+                "commit_occurrence_identity",
+                publication.commit_operation.occurrence_identity,
+            ),
+            (
+                "committed_occurrence_identity",
+                publication.committed_snapshot.occurrence_identity,
+            ),
+            ("committed_revision", publication.committed_snapshot.revision),
+            ("problem_identity", publication.primary_problem.identity),
+            ("parameterization_identity", publication.parameterization.identity),
+            ("restart_record_identity", restart.identity),
         ),
         publication.provenance,
         components=publication.components,
@@ -1127,12 +1197,14 @@ def _write_committed_manifest(
 def _write_evaluation_manifest(
     path: Path,
     publication: EvaluationPublication,
+    publication_occurrence_identity: str,
 ) -> tuple[str, str, tuple[ArtifactReference, ...]]:
     return _write_manifest(
         path,
         (
             ("lifecycle", "successful_no_state_change"),
             ("authority", "evaluation_only"),
+            ("publication_occurrence_identity", publication_occurrence_identity),
         ),
         publication.provenance,
     )
@@ -1141,10 +1213,12 @@ def _write_evaluation_manifest(
 def _write_suppressed_manifest(
     path: Path,
     publication: SuppressedPublication,
+    publication_occurrence_identity: str,
 ) -> tuple[str, str, tuple[ArtifactReference, ...]]:
     fields: list[tuple[str, str | int]] = [
         ("lifecycle", publication.lifecycle),
         ("authority", "diagnostic_only"),
+        ("publication_occurrence_identity", publication_occurrence_identity),
         ("operation_identity", publication.operation.identity),
     ]
     if publication.accepted_result_identity is not None:
@@ -1198,6 +1272,58 @@ def _render_evaluation(path: Path, publication: EvaluationPublication) -> None:
     write_statistics(path, publication.plan, publication.evaluation_result, 0)
 
 
+def _validate_and_publish_staged_step(
+    staging: Path,
+    destination: Path,
+    manifest: tuple[str, str, tuple[ArtifactReference, ...]],
+    expected_restart: CommittedRestartRecord | None,
+) -> None:
+    """Seal the complete staged #608 tree immediately before atomic publication."""
+    manifest_identity, manifest_sha256, artifacts = manifest
+    manifest_path = staging / "fit-manifest.toml"
+    manifest_bytes = manifest_path.read_bytes()
+    record = validate_native_step_manifest_bytes(manifest_bytes)
+    if (
+        record.get("manifest_identity") != manifest_identity
+        or hashlib.sha256(manifest_bytes).hexdigest() != manifest_sha256
+    ):
+        raise NativePublicationError(
+            "Staged native manifest changed before publication"
+        )
+    expected = {item.path: item for item in artifacts}
+    actual_paths = {
+        str(item.relative_to(staging))
+        for item in staging.rglob("*")
+        if item.is_file() and item != manifest_path
+    }
+    if actual_paths != set(expected):
+        raise NativePublicationError("Staged native artifact catalogue changed")
+    for relative_path, artifact in expected.items():
+        if (
+            hashlib.sha256((staging / relative_path).read_bytes()).hexdigest()
+            != artifact.sha256
+        ):
+            raise NativePublicationError("Staged native artifact changed after hashing")
+    if record.get("lifecycle") == "committed":
+        restart_path = staging / "Parameters" / "restart.toml"
+        restart_record = CommittedRestartRecord.from_record(
+            json.loads(
+                (staging / "Parameters" / "restart-provenance.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+        )
+        if (
+            expected_restart is None
+            or restart_record != expected_restart
+            or restart_record.identity != record.get("restart_record_identity")
+            or restart_record.restart_sha256
+            != hashlib.sha256(restart_path.read_bytes()).hexdigest()
+        ):
+            raise NativePublicationError("Committed restart provenance changed")
+    publish_directory_noreplace(staging, destination)
+
+
 def publish_native_results(
     path: Path,
     publication: NativePublication,
@@ -1214,31 +1340,48 @@ def publish_native_results(
         raise FileExistsError(f"Native publication destination exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = destination.parent / f".{destination.name}.tmp-{uuid4().hex}"
+    publication_occurrence_identity = uuid4().hex
+    restart: CommittedRestartRecord | None = None
     try:
         if isinstance(publication, CommittedFitPublication):
-            _render_committed_fit(staging, publication)
-            manifest = _write_committed_manifest(staging, publication)
+            restart = _render_committed_fit(staging, publication)
+            manifest = _write_committed_manifest(
+                staging,
+                publication,
+                publication_occurrence_identity,
+                restart,
+            )
             lifecycle = "committed"
             authority = "committed_fit"
             independent_ids = publication.parameterization.independent_ids
         elif isinstance(publication, EvaluationPublication):
             _render_evaluation(staging, publication)
-            manifest = _write_evaluation_manifest(staging, publication)
+            manifest = _write_evaluation_manifest(
+                staging,
+                publication,
+                publication_occurrence_identity,
+            )
             lifecycle = "successful_no_state_change"
             authority = "evaluation_only"
             independent_ids = publication.parameterization.independent_ids
         else:
             _render_suppressed(staging, publication)
-            manifest = _write_suppressed_manifest(staging, publication)
+            manifest = _write_suppressed_manifest(
+                staging,
+                publication,
+                publication_occurrence_identity,
+            )
             lifecycle = publication.lifecycle
             authority = "diagnostic_only"
             independent_ids = publication.parameterization.independent_ids
-        publish_directory_noreplace(staging, destination)
+        _validate_and_publish_staged_step(staging, destination, manifest, restart)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
     manifest_identity, manifest_sha256, artifacts = manifest
-    return PublishedStepReference(
+    return _published_step_from_successful_native_publication(
+        publication,
+        publication_occurrence_identity,
         destination,
         lifecycle,
         authority,
