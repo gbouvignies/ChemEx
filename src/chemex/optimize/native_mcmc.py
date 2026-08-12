@@ -255,8 +255,17 @@ class _BackendExecutionObservation:
 @dataclass(frozen=True, slots=True)
 class _BackendExecutionObservationBinding:
     plan_identity: str
+    policy_identity: str
+    walkers: int
+    dimension: int
+    backend_implementation_identity: str
     execution_occurrence_identity: str
     transitions: tuple[tuple[int, str, str, tuple[bool, ...]], ...] = ()
+    raw_capture_identity: str | None = None
+    raw_capture_object_identity: int | None = None
+    objective_request_count: int | None = None
+    evaluation_request_count: int | None = None
+    mask_payload_identity: str | None = None
 
 
 _BACKEND_EXECUTION_OBSERVATIONS: WeakKeyDictionary[
@@ -267,14 +276,20 @@ _BACKEND_EXECUTION_OBSERVATIONS_LOCK = RLock()
 
 
 def _mint_backend_execution_observation(
-    plan_identity: str,
+    plan: McmcPlan,
+    *,
+    backend_implementation_identity: str,
 ) -> _BackendExecutionObservation:
     observation = object.__new__(_BackendExecutionObservation)
     binding = _BackendExecutionObservationBinding(
-        plan_identity,
+        plan.identity,
+        plan.policy.identity,
+        plan.policy.walkers,
+        plan.policy.dimension,
+        backend_implementation_identity,
         _identity(
             "native-mcmc-backend-execution-occurrence",
-            (plan_identity, secrets.token_hex(32)),
+            (plan.identity, secrets.token_hex(32)),
         ),
     )
     with _BACKEND_EXECUTION_OBSERVATIONS_LOCK:
@@ -302,6 +317,10 @@ def _record_backend_execution_transition(
         _BACKEND_EXECUTION_OBSERVATIONS[observation] = (
             _BackendExecutionObservationBinding(
                 binding.plan_identity,
+                binding.policy_identity,
+                binding.walkers,
+                binding.dimension,
+                binding.backend_implementation_identity,
                 binding.execution_occurrence_identity,
                 (
                     *binding.transitions,
@@ -333,12 +352,50 @@ def _bind_backend_observation_to_raw_capture(
         observed_edges = (
             tuple(item[:3] for item in binding.transitions) if binding else ()
         )
+        mask_payload_identity = (
+            _identity(
+                "native-mcmc-backend-mask-payload",
+                binding.transitions,
+            )
+            if binding
+            else ""
+        )
         if (
             binding is None
             or binding.plan_identity != raw_capture.plan_identity
+            or binding.policy_identity != raw_capture.policy_identity
+            or binding.walkers != raw_capture.walkers
+            or binding.dimension != raw_capture.dimension
             or binding.execution_occurrence_identity
             != raw_capture.backend_execution_occurrence_identity
             or observed_edges != expected_edges
+        ):
+            raise McmcConstructionError(
+                "Backend masks cannot bind to a foreign execution occurrence"
+            )
+        if binding.raw_capture_identity is None:
+            bound = _BackendExecutionObservationBinding(
+                binding.plan_identity,
+                binding.policy_identity,
+                binding.walkers,
+                binding.dimension,
+                binding.backend_implementation_identity,
+                binding.execution_occurrence_identity,
+                binding.transitions,
+                raw_capture.identity,
+                id(raw_capture),
+                raw_capture.objective_request_count,
+                raw_capture.evaluation_request_count,
+                mask_payload_identity,
+            )
+            _BACKEND_EXECUTION_OBSERVATIONS[observation] = bound
+            return bound
+        if (
+            binding.raw_capture_identity != raw_capture.identity
+            or binding.raw_capture_object_identity != id(raw_capture)
+            or binding.objective_request_count != raw_capture.objective_request_count
+            or binding.evaluation_request_count != raw_capture.evaluation_request_count
+            or binding.mask_payload_identity != mask_payload_identity
         ):
             raise McmcConstructionError(
                 "Backend masks cannot bind to a foreign execution occurrence"
@@ -1269,7 +1326,48 @@ class BackendTransitionConsistencyFailure:
     category: str
 
 
-@dataclass(frozen=True, slots=True)
+def _backend_transition_consistency_failures(
+    source_capture: RawMcmcCapture,
+    transitions: Sequence[RawTransitionEvent],
+) -> tuple[BackendTransitionConsistencyFailure, ...]:
+    states = source_capture.states
+    if len(transitions) != max(0, len(states) - 1):
+        raise McmcConstructionError(
+            "Backend transition evidence must cover every complete state edge"
+        )
+    failures: list[BackendTransitionConsistencyFailure] = []
+    for transition, previous, following in zip(
+        transitions,
+        states[:-1],
+        states[1:],
+        strict=True,
+    ):
+        transition.validate_integrity()
+        if (
+            transition.ordinal != following.ordinal
+            or transition.previous_state_identity != previous.identity
+            or transition.next_state_identity != following.identity
+            or transition.proposal_count != source_capture.walkers
+        ):
+            raise McmcConstructionError(
+                "Backend transition labels differ from their exact state edge"
+            )
+        for walker, accepted in enumerate(transition.accepted):
+            if not accepted and (
+                following.positions[walker] != previous.positions[walker]
+                or following.log_densities[walker] != previous.log_densities[walker]
+            ):
+                failures.append(
+                    BackendTransitionConsistencyFailure(
+                        transition.ordinal,
+                        walker,
+                        "rejected_move_changed_state",
+                    )
+                )
+    return tuple(failures)
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class BackendTransitionEvidence:
     """Diagnostic-only backend masks bound to exact scientific raw states."""
 
@@ -1278,16 +1376,27 @@ class BackendTransitionEvidence:
     observation_provenance: str
     execution_occurrence_identity: str | None
     transitions: tuple[RawTransitionEvent, ...]
+    _live_observation_authority: _BackendExecutionObservation | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     _occurrence_witness: _McmcEvidenceWitness | None = field(
         default=None,
         repr=False,
         compare=False,
     )
     source_capture_identity: str = field(init=False)
+    observed_mask_payload_identity: str = field(init=False)
     consistency_failures: tuple[BackendTransitionConsistencyFailure, ...] = field(
         init=False
     )
     identity: str = field(init=False)
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError(
+            "Backend transition evidence is created only by canonical factories"
+        )
 
     def __post_init__(self) -> None:
         if self._occurrence_witness is None or not self.observation_provenance:
@@ -1302,49 +1411,60 @@ class BackendTransitionEvidence:
             raise McmcConstructionError(
                 "Backend transition authority and execution occurrence disagree"
             )
+        if (self.kind is BackendTransitionEvidenceKind.OBSERVED_EXECUTION) != (
+            self._live_observation_authority is not None
+        ):
+            raise McmcConstructionError(
+                "Live backend evidence requires its exact observation authority"
+            )
         self.source_capture.validate_integrity()
         transitions = tuple(self.transitions)
-        states = self.source_capture.states
-        if len(transitions) != max(0, len(states) - 1):
-            raise McmcConstructionError(
-                "Backend transition evidence must cover every complete state edge"
-            )
-        failures: list[BackendTransitionConsistencyFailure] = []
-        for transition, previous, following in zip(
+        failures = _backend_transition_consistency_failures(
+            self.source_capture,
             transitions,
-            states[:-1],
-            states[1:],
-            strict=True,
-        ):
-            transition.validate_integrity()
-            if (
-                transition.ordinal != following.ordinal
-                or transition.previous_state_identity != previous.identity
-                or transition.next_state_identity != following.identity
-                or transition.proposal_count != self.source_capture.walkers
-            ):
-                raise McmcConstructionError(
-                    "Backend transition labels differ from their exact state edge"
-                )
-            for walker, accepted in enumerate(transition.accepted):
-                if not accepted and (
-                    following.positions[walker] != previous.positions[walker]
-                    or following.log_densities[walker] != previous.log_densities[walker]
-                ):
-                    failures.append(
-                        BackendTransitionConsistencyFailure(
-                            transition.ordinal,
-                            walker,
-                            "rejected_move_changed_state",
-                        )
-                    )
+        )
         object.__setattr__(self, "transitions", transitions)
         object.__setattr__(
             self,
             "source_capture_identity",
             self.source_capture.identity,
         )
-        object.__setattr__(self, "consistency_failures", tuple(failures))
+        object.__setattr__(
+            self,
+            "observed_mask_payload_identity",
+            _identity(
+                "native-mcmc-backend-mask-payload",
+                tuple(
+                    (
+                        item.ordinal,
+                        item.previous_state_identity,
+                        item.next_state_identity,
+                        item.accepted,
+                    )
+                    for item in transitions
+                ),
+            ),
+        )
+        object.__setattr__(self, "consistency_failures", failures)
+        if self.kind is BackendTransitionEvidenceKind.OBSERVED_EXECUTION:
+            authority = cast(
+                "_BackendExecutionObservation",
+                self._live_observation_authority,
+            )
+            binding = _bind_backend_observation_to_raw_capture(
+                authority,
+                self.source_capture,
+            )
+            if (
+                binding.execution_occurrence_identity
+                != self.execution_occurrence_identity
+                or binding.backend_implementation_identity
+                != self.observation_provenance
+                or binding.mask_payload_identity != self.observed_mask_payload_identity
+            ):
+                raise McmcConstructionError(
+                    "Observed backend evidence differs from its authority registry"
+                )
         object.__setattr__(self, "identity", self._content_identity())
         if not _bind_mcmc_evidence_witness(
             self._occurrence_witness,
@@ -1364,6 +1484,7 @@ class BackendTransitionEvidence:
                 self.kind.value,
                 self.observation_provenance,
                 self.execution_occurrence_identity,
+                self.observed_mask_payload_identity,
                 tuple(item.identity for item in self.transitions),
                 tuple(
                     (item.transition_ordinal, item.walker_ordinal, item.category)
@@ -1404,18 +1525,32 @@ class BackendTransitionEvidence:
             raise McmcConstructionError(
                 "Backend evidence differs from its source execution occurrence"
             )
-        expected = BackendTransitionEvidence(
+        if self.kind is BackendTransitionEvidenceKind.OBSERVED_EXECUTION:
+            authority = cast(
+                "_BackendExecutionObservation",
+                self._live_observation_authority,
+            )
+            binding = _bind_backend_observation_to_raw_capture(
+                authority,
+                self.source_capture,
+            )
+            if (
+                binding.execution_occurrence_identity
+                != self.execution_occurrence_identity
+                or binding.backend_implementation_identity
+                != self.observation_provenance
+                or binding.mask_payload_identity != self.observed_mask_payload_identity
+            ):
+                raise McmcConstructionError(
+                    "Observed backend evidence differs from its authority registry"
+                )
+        expected_failures = _backend_transition_consistency_failures(
             self.source_capture,
-            self.kind,
-            self.observation_provenance,
-            self.execution_occurrence_identity,
             self.transitions,
-            _mint_mcmc_evidence_witness("backend-transition-evidence"),
         )
         if (
-            self.consistency_failures != expected.consistency_failures
+            self.consistency_failures != expected_failures
             or self._content_identity() != self.identity
-            or expected._content_identity() != self.identity
         ):
             raise McmcConstructionError(
                 "Backend transition diagnostic content identity mismatch"
@@ -1461,12 +1596,14 @@ class BackendTransitionEvidence:
                 strict=True,
             )
         )
-        return cls(
+        return _initialize_backend_transition_evidence(
+            cls,
             source_capture,
             BackendTransitionEvidenceKind.HYPOTHETICAL,
             observation_provenance,
             None,
             transitions,
+            None,
             _mint_mcmc_evidence_witness("backend-transition-evidence"),
         )
 
@@ -1492,6 +1629,7 @@ class BackendTransitionEvidence:
             "source_capture_identity": self.source_capture_identity,
             "observation_provenance": self.observation_provenance,
             "execution_occurrence_identity": self.execution_occurrence_identity,
+            "observed_mask_payload_identity": self.observed_mask_payload_identity,
             "masks": [list(item.accepted) for item in self.transitions],
             "identity": self.identity,
         }
@@ -1519,12 +1657,14 @@ class BackendTransitionEvidence:
             raise McmcConstructionError(
                 "Historical backend evidence requires a live observed source"
             )
-        return cls(
+        return _initialize_backend_transition_evidence(
+            cls,
             source.source_capture,
             BackendTransitionEvidenceKind.HISTORICAL_OBSERVATION,
             source.observation_provenance,
             source.execution_occurrence_identity,
             source.transitions,
+            None,
             _mint_mcmc_evidence_witness("backend-transition-evidence"),
         )
 
@@ -1532,8 +1672,6 @@ class BackendTransitionEvidence:
 def _mint_observed_backend_transition_evidence(
     observation: _BackendExecutionObservation,
     raw_capture: RawMcmcCapture,
-    *,
-    observation_provenance: str,
 ) -> BackendTransitionEvidence:
     """Mint observed masks solely from the execution-owned occurrence registry."""
     binding = _bind_backend_observation_to_raw_capture(observation, raw_capture)
@@ -1548,14 +1686,46 @@ def _mint_observed_backend_transition_evidence(
         )
         for ordinal, previous_identity, following_identity, mask in binding.transitions
     )
-    return BackendTransitionEvidence(
+    return _initialize_backend_transition_evidence(
+        BackendTransitionEvidence,
         raw_capture,
         BackendTransitionEvidenceKind.OBSERVED_EXECUTION,
-        observation_provenance,
+        binding.backend_implementation_identity,
         binding.execution_occurrence_identity,
         transitions,
+        observation,
         _mint_mcmc_evidence_witness("backend-transition-evidence"),
     )
+
+
+def _initialize_backend_transition_evidence(
+    cls: type[BackendTransitionEvidence],
+    source_capture: RawMcmcCapture,
+    kind: BackendTransitionEvidenceKind,
+    observation_provenance: str,
+    execution_occurrence_identity: str | None,
+    transitions: tuple[RawTransitionEvent, ...],
+    live_observation_authority: _BackendExecutionObservation | None,
+    occurrence_witness: _McmcEvidenceWitness,
+) -> BackendTransitionEvidence:
+    evidence = object.__new__(cls)
+    object.__setattr__(evidence, "source_capture", source_capture)
+    object.__setattr__(evidence, "kind", kind)
+    object.__setattr__(evidence, "observation_provenance", observation_provenance)
+    object.__setattr__(
+        evidence,
+        "execution_occurrence_identity",
+        execution_occurrence_identity,
+    )
+    object.__setattr__(evidence, "transitions", transitions)
+    object.__setattr__(
+        evidence,
+        "_live_observation_authority",
+        live_observation_authority,
+    )
+    object.__setattr__(evidence, "_occurrence_witness", occurrence_witness)
+    evidence.__post_init__()
+    return evidence
 
 
 @dataclass(frozen=True, slots=True)
@@ -1668,6 +1838,9 @@ def _mint_raw_capture(
     if (
         observation_binding is None
         or observation_binding.plan_identity != plan.identity
+        or observation_binding.policy_identity != plan.policy.identity
+        or observation_binding.walkers != plan.policy.walkers
+        or observation_binding.dimension != plan.policy.dimension
     ):
         raise McmcConstructionError(
             "Raw MCMC capture requires its exact backend execution occurrence"
@@ -1704,6 +1877,7 @@ class McmcEvidence:
     evaluation_request_count: int
     failure_category: str | None = None
     raw_capture_identity: str = ""
+    backend_execution_occurrence_identity: str = ""
     backend_transition_evidence: BackendTransitionEvidence | None = field(
         default=None,
         repr=False,
@@ -1727,6 +1901,10 @@ class McmcEvidence:
         if self._occurrence_witness is None:
             raise McmcConstructionError(
                 "Primary MCMC evidence must come from fresh native validation"
+            )
+        if not self.backend_execution_occurrence_identity:
+            raise McmcConstructionError(
+                "Primary MCMC evidence requires its backend execution occurrence"
             )
         states = tuple(self.states)
         expected_ordinals = tuple(range(len(states)))
@@ -1769,6 +1947,8 @@ class McmcEvidence:
             or self.evaluation_request_count > self.objective_request_count
         ):
             raise McmcConstructionError("MCMC request accounting is inconsistent")
+        if self.backend_transition_evidence is not None:
+            self._validate_backend_occurrence()
         identity = _identity(
             "native-mcmc-primary-evidence",
             (
@@ -1815,6 +1995,8 @@ class McmcEvidence:
         self.plan.validate_integrity()
         for state in self.states:
             state.validate_integrity()
+        if self.backend_transition_evidence is not None:
+            self._validate_backend_occurrence()
         expected_identity = _identity(
             "native-mcmc-primary-evidence",
             (
@@ -1843,6 +2025,29 @@ class McmcEvidence:
                 "Primary MCMC evidence is not its validation-owned occurrence"
             )
 
+    def _validate_backend_occurrence(self) -> None:
+        backend = cast(
+            "BackendTransitionEvidence",
+            self.backend_transition_evidence,
+        )
+        backend.validate_integrity()
+        source_capture = backend.source_capture
+        if (
+            not backend.supports_observed_diagnostics
+            or backend.execution_occurrence_identity
+            != self.backend_execution_occurrence_identity
+            or source_capture.backend_execution_occurrence_identity
+            != self.backend_execution_occurrence_identity
+            or source_capture.identity != self.raw_capture_identity
+            or source_capture.plan_identity != self.plan.identity
+            or source_capture.policy_identity != self.plan.policy.identity
+            or source_capture.walkers != self.plan.policy.walkers
+            or source_capture.dimension != self.plan.policy.dimension
+        ):
+            raise McmcConstructionError(
+                "Primary backend diagnostics differ from its exact execution occurrence"
+            )
+
     def to_record(self) -> dict[str, object]:
         """Serialize primary evidence without live evaluator or sampler objects."""
         return {
@@ -1856,6 +2061,9 @@ class McmcEvidence:
             "evaluation_request_count": self.evaluation_request_count,
             "failure_category": self.failure_category,
             "raw_capture_identity": self.raw_capture_identity,
+            "backend_execution_occurrence_identity": (
+                self.backend_execution_occurrence_identity
+            ),
             "identity": self.identity,
         }
 
@@ -1881,6 +2089,7 @@ class McmcEvidence:
                 "evaluation_request_count",
                 "failure_category",
                 "raw_capture_identity",
+                "backend_execution_occurrence_identity",
                 "identity",
             },
             "MCMC evidence",
@@ -1947,6 +2156,7 @@ def _mint_primary_evidence(
         raw_capture.evaluation_request_count,
         raw_capture.failure_category,
         raw_capture.identity,
+        raw_capture.backend_execution_occurrence_identity,
         backend_transition_evidence,
         _mint_mcmc_evidence_witness("primary-evidence"),
     )
@@ -3463,7 +3673,10 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
     plan.validate_integrity(accepted)
     signal = CancellationToken() if cancellation is None else cancellation
     log_density = _LogDensityEvaluator(plan)
-    backend_observation = _mint_backend_execution_observation(plan.identity)
+    backend_observation = _mint_backend_execution_observation(
+        plan,
+        backend_implementation_identity="emcee-stretch-backend-v1",
+    )
     states: list[EnsembleState] = []
     stage = McmcExecutionStage.BEFORE_INITIALIZATION
     initialization_outcome = McmcInitializationOutcome.NOT_STARTED
@@ -3546,20 +3759,21 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
             initialization_outcome,
             backend_observation,
         )
-        backend_transition_evidence = _mint_observed_backend_transition_evidence(
-            backend_observation,
-            raw_capture,
-            observation_provenance="emcee-stretch-backend-v1",
-        )
-        validation = validate_raw_mcmc_capture(
-            plan,
-            raw_capture,
-            backend_transition_evidence=backend_transition_evidence,
-        )
+        validation = validate_raw_mcmc_capture(plan, raw_capture)
         if not validation.is_complete or validation.primary_evidence is None:
             raise McmcExecutionError("fresh MCMC validation did not complete")
         checkpoint(McmcExecutionStage.BEFORE_FINAL_ASSEMBLY)
+        backend_transition_evidence = _mint_observed_backend_transition_evidence(
+            backend_observation,
+            raw_capture,
+        )
         evidence = validation.primary_evidence
+        object.__setattr__(
+            evidence,
+            "backend_transition_evidence",
+            backend_transition_evidence,
+        )
+        evidence.validate_integrity()
         return _mint_mcmc_operation(
             McmcOperationTerminal.COMPLETED,
             evidence,
@@ -3601,7 +3815,6 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
     backend_transition_evidence = _mint_observed_backend_transition_evidence(
         backend_observation,
         raw_capture,
-        observation_provenance="emcee-stretch-backend-v1",
     )
     validation = validate_raw_mcmc_capture(
         plan,

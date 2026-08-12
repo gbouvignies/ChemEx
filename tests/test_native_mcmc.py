@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 import dataclasses
+import pickle
 from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any, cast
@@ -1087,12 +1089,17 @@ def test_backend_mask_variants_do_not_change_primary_scientific_evidence(
     validation = validate_raw_mcmc_capture(
         plan,
         operation.raw_capture,
-        backend_transition_evidence=variant,
     )
 
     assert validation.primary_evidence is not None
     assert validation.primary_evidence.identity == operation.evidence.identity
     assert validation.primary_evidence.states == operation.evidence.states
+    object.__setattr__(
+        validation.primary_evidence,
+        "backend_transition_evidence",
+        backend,
+    )
+    validation.primary_evidence.validate_integrity()
     original_diagnostic = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(
         backend
     )
@@ -1189,6 +1196,7 @@ def test_observed_backend_evidence_is_bound_to_its_execution_occurrence() -> Non
     for field_name, forged_value in (
         ("source_capture_identity", "forged"),
         ("execution_occurrence_identity", "forged"),
+        ("observed_mask_payload_identity", "forged"),
         ("masks", [[True] * plan.policy.walkers] * plan.policy.total_steps),
         ("identity", "forged"),
     ):
@@ -1199,6 +1207,142 @@ def test_observed_backend_evidence_is_bound_to_its_execution_occurrence() -> Non
                 tampered,
                 source=first_source,
             )
+
+
+def test_direct_constructor_cannot_forge_observed_backend_evidence() -> None:
+    accepted, plan = _plan_context()
+    operation = execute_mcmc_evidence(accepted, plan)
+    source = operation.backend_transition_evidence
+    assert source is not None
+    all_true = source.with_hypothetical_masks(
+        tuple(
+            (True,) * plan.policy.walkers
+            for _transition in range(plan.policy.total_steps)
+        ),
+        observation_provenance=source.observation_provenance,
+    )
+
+    with pytest.raises(TypeError, match="canonical factories"):
+        native_mcmc.BackendTransitionEvidence(
+            source.source_capture,
+            native_mcmc.BackendTransitionEvidenceKind.OBSERVED_EXECUTION,
+            source.observation_provenance,
+            source.execution_occurrence_identity,
+            all_true.transitions,
+            native_mcmc._mint_mcmc_evidence_witness("backend-transition-evidence"),
+        )
+    with pytest.raises(McmcConstructionError, match="authority registry"):
+        native_mcmc._initialize_backend_transition_evidence(
+            native_mcmc.BackendTransitionEvidence,
+            source.source_capture,
+            native_mcmc.BackendTransitionEvidenceKind.OBSERVED_EXECUTION,
+            source.observation_provenance,
+            source.execution_occurrence_identity,
+            all_true.transitions,
+            source._live_observation_authority,
+            native_mcmc._mint_mcmc_evidence_witness("backend-transition-evidence"),
+        )
+
+    hypothetical_diagnostic = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(
+        all_true
+    )
+    assert all_true.kind is native_mcmc.BackendTransitionEvidenceKind.HYPOTHETICAL
+    assert hypothetical_diagnostic.status is McmcDiagnosticStatus.UNAVAILABLE
+    assert hypothetical_diagnostic.acceptance_fractions is None
+
+
+def test_primary_rejects_deterministic_replay_backend_substitution() -> None:
+    accepted, plan = _plan_context()
+    replay_a = execute_mcmc_evidence(accepted, plan)
+    replay_b = execute_mcmc_evidence(accepted, plan)
+    evidence_a = replay_a.evidence
+    evidence_b = replay_b.evidence
+    backend_a = replay_a.backend_transition_evidence
+    backend_b = replay_b.backend_transition_evidence
+    assert evidence_a is not None
+    assert evidence_b is not None
+    assert backend_a is not None
+    assert backend_b is not None
+    assert evidence_a.identity == evidence_b.identity
+    assert replay_a.raw_capture is not None
+    assert replay_b.raw_capture is not None
+    assert replay_a.raw_capture.identity == replay_b.raw_capture.identity
+    assert backend_a.execution_occurrence_identity != (
+        backend_b.execution_occurrence_identity
+    )
+
+    object.__setattr__(evidence_a, "backend_transition_evidence", backend_b)
+
+    with pytest.raises(McmcConstructionError, match="execution occurrence"):
+        evidence_a.validate_integrity()
+    with pytest.raises(McmcConstructionError, match="execution occurrence"):
+        derive_mcmc_diagnostics(evidence_a)
+
+
+def test_backend_observation_authority_is_exact_nontransferable_capability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accepted, plan = _plan_context()
+    original_factory = cast(
+        "Any",
+        native_mcmc._mint_observed_backend_transition_evidence,
+    )
+    captured: list[Any] = []
+
+    def capture_authority(
+        authority: Any,
+        raw_capture: Any,
+    ) -> Any:
+        captured.append(authority)
+        return original_factory(authority, raw_capture)
+
+    monkeypatch.setattr(
+        native_mcmc,
+        "_mint_observed_backend_transition_evidence",
+        capture_authority,
+    )
+    replay_a = execute_mcmc_evidence(accepted, plan)
+    replay_b = execute_mcmc_evidence(accepted, plan)
+    assert replay_a.raw_capture is not None
+    assert replay_b.raw_capture is not None
+    authority_a, authority_b = captured
+
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.copy(authority_a)
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.deepcopy(authority_a)
+    with pytest.raises(TypeError, match="cannot be serialized"):
+        pickle.dumps(authority_a)
+    with pytest.raises(McmcConstructionError, match="foreign execution occurrence"):
+        original_factory(authority_b, replay_a.raw_capture)
+    with pytest.raises(McmcConstructionError, match="foreign execution occurrence"):
+        original_factory(authority_a, replay_b.raw_capture)
+
+    raw_a = replay_a.raw_capture
+    copied_raw_a = native_mcmc.RawMcmcCapture(
+        raw_a.plan_identity,
+        raw_a.policy_identity,
+        raw_a.root_seed,
+        raw_a.walkers,
+        raw_a.dimension,
+        raw_a.total_steps,
+        raw_a.backend_execution_occurrence_identity,
+        raw_a.terminal,
+        raw_a.states,
+        raw_a.objective_request_count,
+        raw_a.evaluation_request_count,
+        raw_a.stage,
+        raw_a.initialization_outcome,
+        raw_a.failure_category,
+        native_mcmc._mint_mcmc_evidence_witness("raw-capture"),
+    )
+    assert copied_raw_a.identity == raw_a.identity
+    with pytest.raises(McmcConstructionError, match="foreign execution occurrence"):
+        original_factory(authority_a, copied_raw_a)
+
+    absent = object.__new__(native_mcmc._BackendExecutionObservation)
+    with pytest.raises(McmcConstructionError, match="foreign execution occurrence"):
+        original_factory(absent, replay_a.raw_capture)
 
 
 def test_short_chain_autocorrelation_and_dependents_are_unreliable() -> None:
