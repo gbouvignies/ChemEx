@@ -18,7 +18,7 @@ from numbers import Real
 from threading import Event, RLock
 from typing import SupportsIndex, cast
 from uuid import uuid4
-from weakref import WeakKeyDictionary
+from weakref import ReferenceType, WeakKeyDictionary, ref
 
 import numpy as np
 from scipy.optimize import least_squares
@@ -1615,6 +1615,7 @@ class _AcceptedOccurrenceWitness(_OpaqueOccurrenceWitness):
 class _OccurrenceWitnessBinding:
     occurrence_identity: str
     artifact_identity: str | None = None
+    artifact_reference: ReferenceType[object] | None = None
 
 
 class _OccurrenceWitnessRegistry[WitnessT]:
@@ -1637,7 +1638,10 @@ class _OccurrenceWitnessRegistry[WitnessT]:
         witness: WitnessT,
         occurrence_identity: str,
         artifact_identity: str,
+        *,
+        artifact_object: object | None = None,
     ) -> bool:
+        artifact_reference = None if artifact_object is None else ref(artifact_object)
         with self._lock:
             binding = self._bindings.get(witness)
             if binding is None or binding.occurrence_identity != occurrence_identity:
@@ -1646,20 +1650,40 @@ class _OccurrenceWitnessRegistry[WitnessT]:
                 self._bindings[witness] = _OccurrenceWitnessBinding(
                     occurrence_identity,
                     artifact_identity,
+                    artifact_reference,
                 )
                 return True
-            return binding.artifact_identity == artifact_identity
+            return (
+                binding.occurrence_identity == occurrence_identity
+                and binding.artifact_identity == artifact_identity
+                and (
+                    binding.artifact_reference is None
+                    if artifact_object is None
+                    else binding.artifact_reference is not None
+                    and binding.artifact_reference() is artifact_object
+                )
+            )
 
     def is_bound(
         self,
         witness: WitnessT,
         occurrence_identity: str,
         artifact_identity: str,
+        *,
+        artifact_object: object | None = None,
     ) -> bool:
         with self._lock:
-            return self._bindings.get(witness) == _OccurrenceWitnessBinding(
-                occurrence_identity,
-                artifact_identity,
+            binding = self._bindings.get(witness)
+            return (
+                binding is not None
+                and binding.occurrence_identity == occurrence_identity
+                and binding.artifact_identity == artifact_identity
+                and (
+                    binding.artifact_reference is None
+                    if artifact_object is None
+                    else binding.artifact_reference is not None
+                    and binding.artifact_reference() is artifact_object
+                )
             )
 
 
@@ -2057,15 +2081,18 @@ def _bind_fit_commit_operation_witness(
     witness: _FitCommitOperationWitness,
     occurrence_identity: str,
     operation_identity: str,
+    *,
+    artifact_object: object,
 ) -> bool:
     return _FIT_COMMIT_OPERATION_WITNESSES.bind(
         witness,
         occurrence_identity,
         operation_identity,
+        artifact_object=artifact_object,
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class FitCommitOperation:
     """Frozen occurrence-exact result of one attempted atomic fit commit."""
 
@@ -2075,6 +2102,11 @@ class FitCommitOperation:
     problem_identity: str
     terminal: FitCommitTerminal
     receipt: CommitReceipt | None = None
+    committed_snapshot: AnalysisValuesSnapshot | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     failure: FitCommitFailure | None = None
     _occurrence_witness: _FitCommitOperationWitness | None = field(
         default=None,
@@ -2089,6 +2121,7 @@ class FitCommitOperation:
         if (
             not self.occurrence_identity
             or committed != (self.receipt is not None)
+            or committed != (self.committed_snapshot is not None)
             or committed == (self.failure is not None)
         ):
             raise ValueError("Fit commit operation lacks its exact terminal payload")
@@ -2117,6 +2150,7 @@ class FitCommitOperation:
                 self._occurrence_witness,
                 self.occurrence_identity,
                 identity,
+                artifact_object=self,
             )
 
     def to_record(self) -> dict[str, object]:
@@ -2152,6 +2186,7 @@ def fit_commit_operation_is_authoritative(operation: FitCommitOperation) -> bool
         witness,
         operation.occurrence_identity,
         operation.identity,
+        artifact_object=operation,
     )
 
 
@@ -3631,5 +3666,6 @@ def execute_fit_commit(
         problem.identity,
         FitCommitTerminal.COMMITTED,
         receipt=receipt,
+        committed_snapshot=analysis_values.snapshot(),
         _occurrence_witness=witness,
     )

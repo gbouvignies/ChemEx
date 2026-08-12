@@ -11,13 +11,16 @@ import json
 import tomllib
 from dataclasses import replace
 from pathlib import Path
+from typing import Literal
 
+import numpy as np
 import pytest
 
 from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
 from chemex.evaluation.native import EvaluationEngine, EvaluationFrame, EvaluationResult
 from chemex.experiments.builder import build_experiments
+from chemex.optimize import native_reporting
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     CancellationToken,
@@ -27,7 +30,6 @@ from chemex.optimize.direct_trf import (
     FitCommitTerminal,
     OptimizationProblem,
     canonical_chi_square,
-    commit_accepted_fit,
     committed_values_identity,
     execute_direct_trf,
     execute_fit_commit,
@@ -51,9 +53,15 @@ from chemex.optimize.native_reporting import (
     publish_native_results,
 )
 from chemex.optimize.native_resampling import (
+    OperationTerminal,
     ResamplingDatasetManifest,
+    ResamplingEvidence,
+    ResamplingLifecycle,
     ResamplingPlan,
     ResamplingScheme,
+    ResamplingSummaryOutcome,
+    SummaryFailure,
+    SummaryTerminal,
     execute_resampling_evidence,
     summarize_resampling_evidence,
 )
@@ -97,6 +105,25 @@ def _committed_fit(
         experiments.param_ids,
     )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    if with_resampling or with_mcmc:
+        source = session.analysis_values.snapshot()
+        initial_frame = EvaluationFrame.from_lifecycle_frame(
+            parameterization,
+            parameterization.frame_from_snapshot(source),
+        )
+        initial = engine.new_evaluator().evaluate(initial_frame)
+        assert isinstance(initial, EvaluationResult)
+        offset = 0
+        for experiment in experiments:
+            for profile in experiment.profiles:
+                stop = offset + profile.data.size
+                profile.data.exp = np.asarray(
+                    initial.normalized_calculations[offset:stop],
+                    dtype=np.float64,
+                ).copy()
+                profile.data.mark_dirty()
+                offset = stop
+        engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration
     assert configuration is not None
     problem = OptimizationProblem.from_native(
@@ -105,65 +132,27 @@ def _committed_fit(
         configuration,
         session.analysis_values.snapshot(),
     )
-    if with_resampling or with_mcmc:
-        frame = EvaluationFrame.from_lifecycle_frame(
-            parameterization,
-            problem.lifecycle_frame(problem.start, parameterization),
-        )
-        evaluation = engine.new_evaluator().evaluate(frame)
-        assert isinstance(evaluation, EvaluationResult)
-        accepted = AcceptedFitResult.for_qualification(
-            occurrence_identity="issue-608-evidence-anchor",
-            problem_identity=problem.identity,
-            invocation_identity="issue-608-evidence-invocation",
-            execution_identity="issue-608-evidence-execution",
-            materialization_identity="issue-608-evidence-materialization",
-            parameterization_identity=parameterization.identity,
-            evaluator_parameterization_identity=parameterization.evaluator_identity,
-            source_occurrence_identity=problem.source_snapshot.occurrence_identity,
-            source_revision=problem.source_snapshot.revision,
-            controlled_ids=problem.controlled_ids,
-            vector=problem.start,
-            chi_square=canonical_chi_square(evaluation.residuals),
-            evaluation_result=evaluation,
-            commit_scope=problem.commit_scope,
-            commit_items=evaluation.resolved_values.ordered_items(),
-            origin_context_identity="issue-608-evidence-origin",
-        )
-        committed = session.analysis_values.commit(
-            dict(accepted.commit_items),
-            expected=problem.source_snapshot,
-            scope=problem.commit_scope,
-        )
-        receipt = CommitReceipt(
-            accepted.occurrence_identity,
-            accepted.identity,
-            problem.identity,
-            problem.source_snapshot.revision,
-            committed.revision,
-            problem.commit_scope,
-            committed_values_identity(committed, problem.commit_scope),
-            committed.model_identity,
-            committed.configuration_identity,
-        )
-    else:
-        outcome = execute_direct_trf(
-            problem,
-            DirectTrfInvocation.for_problem(problem, objective_request_budget=80),
-            parameterization,
-            engine,
-        )
-        assert outcome.accepted_result is not None
-        assert outcome.commit_authority is not None
-        accepted = outcome.accepted_result
-        receipt = commit_accepted_fit(
-            accepted,
-            outcome.commit_authority,
-            problem=problem,
-            parameterization=parameterization,
-            analysis_values=session.analysis_values,
-        )
-        committed = session.analysis_values.snapshot()
+    outcome = execute_direct_trf(
+        problem,
+        DirectTrfInvocation.for_problem(problem, objective_request_budget=80),
+        parameterization,
+        engine,
+    )
+    assert outcome.accepted_result is not None
+    assert outcome.commit_authority is not None
+    accepted = outcome.accepted_result
+    commit_operation = execute_fit_commit(
+        accepted,
+        outcome.commit_authority,
+        problem=problem,
+        parameterization=parameterization,
+        analysis_values=session.analysis_values,
+    )
+    assert commit_operation.terminal is FitCommitTerminal.COMMITTED
+    assert commit_operation.receipt is not None
+    assert commit_operation.committed_snapshot is not None
+    receipt = commit_operation.receipt
+    committed = commit_operation.committed_snapshot
     uncertainty = None
     if with_uncertainty:
         controlled_id = problem.controlled_ids[0]
@@ -275,6 +264,8 @@ def _committed_fit(
         accepted,
         receipt,
         committed,
+        commit_operation,
+        session.analysis_values,
         uncertainty=uncertainty,
         resampling=resampling,
         mcmc=mcmc,
@@ -348,6 +339,100 @@ def _failed_commit_operation() -> FitCommitOperation:
     return operation
 
 
+def _publication_from_direct_commit_and_fabricated_evidence() -> (
+    CommittedFitPublication
+):
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    experiments = build_experiments(
+        [EXPERIMENT],
+        Selection(include=[SpinSystem.from_name("G2N-HN")], exclude=None),
+        session=session,
+    )
+    session.parameters.set_defaults(read_defaults([PARAMETERS]))
+    assert session.try_build_analysis_values()
+    parameterization = session.compile_parameterization(
+        read_methods([METHOD])["DEFAULT"], experiments.param_ids
+    )
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    configuration = session.parameter_factory.sealed_configuration
+    assert configuration is not None
+    source = session.analysis_values.snapshot()
+    problem = OptimizationProblem.from_native(
+        engine.plan, parameterization, configuration, source
+    )
+    frame = EvaluationFrame.from_lifecycle_frame(
+        parameterization,
+        problem.lifecycle_frame(problem.start, parameterization),
+    )
+    evaluation = engine.new_evaluator().evaluate(frame)
+    assert isinstance(evaluation, EvaluationResult)
+    accepted = AcceptedFitResult.for_qualification(
+        occurrence_identity="issue-608-direct-commit-attack",
+        problem_identity=problem.identity,
+        invocation_identity="issue-608-fabricated-invocation",
+        execution_identity="issue-608-fabricated-execution",
+        materialization_identity="issue-608-fabricated-materialization",
+        parameterization_identity=parameterization.identity,
+        evaluator_parameterization_identity=parameterization.evaluator_identity,
+        source_occurrence_identity=source.occurrence_identity,
+        source_revision=source.revision,
+        controlled_ids=problem.controlled_ids,
+        vector=problem.start,
+        chi_square=canonical_chi_square(evaluation.residuals),
+        evaluation_result=evaluation,
+        commit_scope=problem.commit_scope,
+        commit_items=evaluation.resolved_values.ordered_items(),
+        origin_context_identity="issue-608-fabricated-origin",
+    )
+    committed = session.analysis_values.commit(
+        dict(accepted.commit_items),
+        expected=source,
+        scope=problem.commit_scope,
+    )
+    receipt = CommitReceipt(
+        accepted.occurrence_identity,
+        accepted.identity,
+        problem.identity,
+        source.revision,
+        committed.revision,
+        problem.commit_scope,
+        committed_values_identity(committed, problem.commit_scope),
+        committed.model_identity,
+        committed.configuration_identity,
+    )
+    fabricated_operation = FitCommitOperation(
+        "fabricated-commit-operation",
+        accepted.identity,
+        accepted.occurrence_identity,
+        problem.identity,
+        FitCommitTerminal.COMMITTED,
+        receipt=receipt,
+        committed_snapshot=committed,
+    )
+    return CommittedFitPublication(
+        engine.plan,
+        parameterization,
+        accepted,
+        receipt,
+        committed,
+        fabricated_operation,
+        session.analysis_values,
+    )
+
+
+def _tree_bytes(path: Path) -> dict[str, bytes]:
+    return {
+        str(item.relative_to(path)): item.read_bytes()
+        for item in sorted(path.rglob("*"))
+        if item.is_file()
+    }
+
+
+def _staging_residue(parent: Path, destination_name: str) -> tuple[Path, ...]:
+    return tuple(parent.glob(f".{destination_name}.tmp-*"))
+
+
 def test_committed_native_fit_publishes_only_aggregate_step_root(
     tmp_path: Path,
 ) -> None:
@@ -403,6 +488,8 @@ def test_many_components_are_diagnostic_views_without_authoritative_copies(
         base.accepted,
         base.commit_receipt,
         base.committed_snapshot,
+        base.commit_operation,
+        base.analysis_values,
         components=(
             ComponentDiagnostic(
                 "component-alpha",
@@ -440,16 +527,93 @@ def test_committed_publication_rejects_a_receipt_without_its_snapshot_witness(
     tmp_path: Path,
 ) -> None:
     publication = _committed_fit()
-    forged_receipt = replace(
-        publication.commit_receipt,
-        committed_value_identity="foreign-committed-values",
-    )
+    reconstructed_receipt = replace(publication.commit_receipt)
 
-    with pytest.raises(ValueError, match="Commit receipt does not belong"):
+    with pytest.raises(ValueError, match="exact successful commit operation"):
         publish_native_results(
             tmp_path / "STEP",
-            replace(publication, commit_receipt=forged_receipt),
+            replace(publication, commit_receipt=reconstructed_receipt),
         )
+    assert not (tmp_path / "STEP").exists()
+
+
+def test_committed_publication_rejects_a_manually_reconstructed_receipt(
+    tmp_path: Path,
+) -> None:
+    publication = _committed_fit()
+    receipt = publication.commit_receipt
+    reconstructed = CommitReceipt(
+        receipt.accepted_occurrence_identity,
+        receipt.accepted_result_identity,
+        receipt.problem_identity,
+        receipt.old_revision,
+        receipt.new_revision,
+        receipt.scope,
+        receipt.committed_value_identity,
+        receipt.model_identity,
+        receipt.configuration_identity,
+    )
+
+    with pytest.raises(ValueError, match="exact successful commit operation"):
+        publish_native_results(
+            tmp_path / "STEP",
+            replace(publication, commit_receipt=reconstructed),
+        )
+    assert not (tmp_path / "STEP").exists()
+
+
+def test_direct_analysis_values_commit_cannot_fabricate_publication_authority(
+    tmp_path: Path,
+) -> None:
+    publication = _publication_from_direct_commit_and_fabricated_evidence()
+
+    with pytest.raises(ValueError, match="exact successful commit operation"):
+        publish_native_results(tmp_path / "STEP", publication)
+    assert not (tmp_path / "STEP").exists()
+
+
+def test_committed_publication_rejects_another_occurrence_receipt(
+    tmp_path: Path,
+) -> None:
+    publication = _committed_fit()
+    other = _committed_fit()
+
+    with pytest.raises(ValueError, match="exact successful commit operation"):
+        publish_native_results(
+            tmp_path / "STEP",
+            replace(publication, commit_receipt=other.commit_receipt),
+        )
+    assert not (tmp_path / "STEP").exists()
+
+
+def test_committed_publication_rejects_a_stale_committed_revision(
+    tmp_path: Path,
+) -> None:
+    publication = _committed_fit()
+    current = publication.analysis_values.snapshot()
+    publication.analysis_values.commit(
+        {param_id: current[param_id] for param_id in publication.commit_receipt.scope},
+        expected=current,
+        scope=publication.commit_receipt.scope,
+    )
+
+    with pytest.raises(ValueError, match="exact successful commit operation"):
+        publish_native_results(tmp_path / "STEP", publication)
+    assert not (tmp_path / "STEP").exists()
+
+
+def test_committed_publication_rejects_a_copied_successful_commit_operation(
+    tmp_path: Path,
+) -> None:
+    publication = _committed_fit()
+    copied_operation = replace(publication.commit_operation)
+
+    with pytest.raises(ValueError, match="exact successful commit operation"):
+        publish_native_results(
+            tmp_path / "STEP",
+            replace(publication, commit_operation=copied_operation),
+        )
+    assert not (tmp_path / "STEP").exists()
 
 
 def test_committed_publication_rejects_unsuccessful_component_diagnostics(
@@ -521,20 +685,24 @@ def test_covariance_and_constrained_evidence_are_separate_from_central_reports(
 def test_resampling_and_posterior_evidence_keep_family_specific_semantics(
     tmp_path: Path,
 ) -> None:
-    publication = _committed_fit(
+    resampling_publication = _committed_fit(with_resampling=True)
+    mcmc_publication = _committed_fit(
         Method(fit=["PB"], fix=["R1A_A", "KEX_AB"]),
-        with_resampling=True,
         with_mcmc=True,
     )
-    output = tmp_path / "STEP"
+    resampling_output = tmp_path / "RESAMPLING"
+    mcmc_output = tmp_path / "MCMC"
 
-    publish_native_results(output, publication)
+    publish_native_results(resampling_output, resampling_publication)
+    publish_native_results(mcmc_output, mcmc_publication)
 
     resampling = json.loads(
-        (output / "Statistics" / "Resampling" / "MC" / "summary.json").read_text()
+        (
+            resampling_output / "Statistics" / "Resampling" / "MC" / "summary.json"
+        ).read_text()
     )
     posterior = json.loads(
-        (output / "Statistics" / "MCMC" / "posterior-summary.json").read_text()
+        (mcmc_output / "Statistics" / "MCMC" / "posterior-summary.json").read_text()
     )
     assert resampling["artifact_type"] == "native_resampling_summary"
     assert resampling["scheme"] == "mc"
@@ -546,8 +714,230 @@ def test_resampling_and_posterior_evidence_keep_family_specific_semantics(
     )
     rendered = json.dumps((resampling, posterior)).lower()
     assert "stderr" not in rendered
-    assert (output / "Statistics" / "Resampling" / "MC" / "evidence.json").is_file()
-    assert (output / "Statistics" / "MCMC" / "evidence.json").is_file()
+    assert (
+        resampling_output / "Statistics" / "Resampling" / "MC" / "evidence.json"
+    ).is_file()
+    assert (mcmc_output / "Statistics" / "MCMC" / "evidence.json").is_file()
+
+
+@pytest.mark.parametrize(
+    ("terminal", "truncate", "expected_lifecycle"),
+    (
+        (OperationTerminal.COMPLETED, True, ResamplingLifecycle.PARTIAL),
+        (OperationTerminal.CANCELLED, False, ResamplingLifecycle.CANCELLED),
+        (OperationTerminal.INTERRUPTED, False, ResamplingLifecycle.INTERRUPTED),
+    ),
+)
+def test_incomplete_resampling_is_rejected_from_ordinary_statistics(
+    tmp_path: Path,
+    terminal: OperationTerminal,
+    truncate: bool,
+    expected_lifecycle: ResamplingLifecycle,
+) -> None:
+    publication = _committed_fit(with_resampling=True)
+    source = publication.resampling[0].evidence
+    outcomes = source.outcomes[:1] if truncate else source.outcomes
+    incomplete = ResamplingEvidence(
+        source.plan,
+        source.population_identity,
+        outcomes,
+        terminal,
+    )
+    assert incomplete.lifecycle is expected_lifecycle
+    summary = summarize_resampling_evidence(incomplete)
+
+    with pytest.raises(ValueError, match="completed resampling evidence"):
+        publish_native_results(
+            tmp_path / "STEP",
+            replace(
+                publication,
+                resampling=(ResamplingPublication(incomplete, summary),),
+            ),
+        )
+    assert not (tmp_path / "STEP").exists()
+
+
+def test_failed_resampling_summary_is_rejected_from_ordinary_statistics(
+    tmp_path: Path,
+) -> None:
+    publication = _committed_fit(with_resampling=True)
+    evidence = publication.resampling[0].evidence
+    failure = SummaryFailure(
+        evidence.identity,
+        "failed_summary",
+        "summary qualification failed",
+    )
+    failed = ResamplingSummaryOutcome(
+        SummaryTerminal.SOURCE_INVALID,
+        failure=failure,
+    )
+
+    with pytest.raises(ValueError, match="completed resampling evidence"):
+        publish_native_results(
+            tmp_path / "STEP",
+            replace(
+                publication,
+                resampling=(ResamplingPublication(evidence, failed),),
+            ),
+        )
+    assert not (tmp_path / "STEP").exists()
+
+
+@pytest.mark.parametrize(
+    ("terminal", "truncate", "suppressed_lifecycle"),
+    (
+        (OperationTerminal.COMPLETED, True, "failed"),
+        (OperationTerminal.CANCELLED, False, "cancelled"),
+        (OperationTerminal.INTERRUPTED, False, "interrupted"),
+    ),
+)
+def test_incomplete_resampling_is_retained_only_as_partial_evidence(
+    tmp_path: Path,
+    terminal: OperationTerminal,
+    truncate: bool,
+    suppressed_lifecycle: Literal["failed", "cancelled", "interrupted"],
+) -> None:
+    publication = _committed_fit(with_resampling=True)
+    source = publication.resampling[0].evidence
+    outcomes = source.outcomes[:1] if truncate else source.outcomes
+    incomplete = ResamplingEvidence(
+        source.plan,
+        source.population_identity,
+        outcomes,
+        terminal,
+    )
+    suppressed = SuppressedPublication(
+        suppressed_lifecycle,
+        incomplete,
+        accepted_result_identity=publication.accepted.identity,
+        accepted_occurrence_identity=publication.accepted.occurrence_identity,
+        partial_resampling=(incomplete,),
+    )
+
+    publish_native_results(tmp_path / "STEP", suppressed)
+
+    assert (tmp_path / "STEP" / "PartialEvidence" / "Resampling").is_dir()
+    assert not (tmp_path / "STEP" / "Statistics").exists()
+
+
+@pytest.mark.parametrize(
+    "alteration",
+    (
+        "included_ordinals",
+        "covariance",
+        "correlations",
+        "percentile",
+        "claims",
+        "source_identity",
+    ),
+)
+def test_altered_resampling_summary_is_rejected_before_staging(
+    tmp_path: Path,
+    alteration: str,
+) -> None:
+    publication = _committed_fit(with_resampling=True)
+    summary = publication.resampling[0].summary.summary
+    assert summary is not None
+    if alteration == "included_ordinals":
+        object.__setattr__(
+            summary, "included_ordinals", (*summary.included_ordinals, 99)
+        )
+    elif alteration == "covariance":
+        object.__setattr__(summary, "covariance", summary.covariance[:-1])
+    elif alteration == "correlations":
+        object.__setattr__(summary, "correlations", summary.correlations[:-1])
+    elif alteration == "percentile":
+        distribution = summary.distributions[0]
+        object.__setattr__(
+            distribution,
+            "percentile_95_upper",
+            distribution.percentile_95_upper + 1.0,
+        )
+    elif alteration == "claims":
+        object.__setattr__(summary, "claims", summary.claims[:-1])
+    else:
+        object.__setattr__(summary, "evidence_identity", "foreign-evidence")
+
+    with pytest.raises(ValueError, match="differs from canonical source evidence"):
+        publish_native_results(tmp_path / "STEP", publication)
+    assert not (tmp_path / "STEP").exists()
+
+
+def test_round_tripped_resampling_summary_remains_publishable(tmp_path: Path) -> None:
+    publication = _committed_fit(with_resampling=True)
+    item = publication.resampling[0]
+    summary = item.summary.summary
+    assert summary is not None
+    restored = type(summary).from_record(
+        summary.to_record(),
+        item.evidence,
+        summary.policy,
+    )
+    outcome = replace(item.summary, summary=restored)
+
+    publish_native_results(
+        tmp_path / "STEP",
+        replace(
+            publication,
+            resampling=(ResamplingPublication(item.evidence, outcome),),
+        ),
+    )
+
+    assert (tmp_path / "STEP" / "Statistics" / "Resampling").is_dir()
+
+
+def test_existing_destination_collision_preserves_authoritative_tree(
+    tmp_path: Path,
+) -> None:
+    publication = _committed_fit()
+    output = tmp_path / "STEP"
+    (output / "existing").mkdir(parents=True)
+    (output / "existing" / "sentinel.bin").write_bytes(b"authoritative-old-tree")
+    before = _tree_bytes(output)
+
+    with pytest.raises(FileExistsError, match="destination exists"):
+        publish_native_results(output, publication)
+
+    assert _tree_bytes(output) == before
+    assert not _staging_residue(tmp_path, output.name)
+
+
+def test_mid_render_failure_removes_staging_without_publishing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publication = _committed_fit()
+    output = tmp_path / "STEP"
+
+    def fail_statistics(*_args: object, **_kwargs: object) -> None:
+        raise OSError("injected statistics rendering failure")
+
+    monkeypatch.setattr(native_reporting, "write_statistics", fail_statistics)
+
+    with pytest.raises(OSError, match="injected statistics rendering failure"):
+        publish_native_results(output, publication)
+
+    assert not output.exists()
+    assert not _staging_residue(tmp_path, output.name)
+
+
+def test_final_rename_failure_removes_complete_staging_tree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publication = _committed_fit()
+    output = tmp_path / "STEP"
+
+    def fail_replace(_source: object, _destination: object) -> None:
+        raise OSError("injected atomic rename failure")
+
+    monkeypatch.setattr(native_reporting.os, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="injected atomic rename failure"):
+        publish_native_results(output, publication)
+
+    assert not output.exists()
+    assert not _staging_residue(tmp_path, output.name)
 
 
 def test_uncommitted_workflow_suppresses_output_and_downstream_evidence(

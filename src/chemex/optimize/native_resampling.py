@@ -3190,6 +3190,10 @@ class ResamplingSummary:
         """Return one exact named claim; unknown claims fail closed."""
         return _claim_state(self.claims, name)
 
+    def validate_integrity(self) -> None:
+        """Recompute the canonical summary and reject any altered derived field."""
+        type(self).from_record(self.to_record(), self.evidence, self.policy)
+
 
 @dataclass(frozen=True, slots=True)
 class ResamplingSummaryOutcome:

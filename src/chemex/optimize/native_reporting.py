@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import os
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
@@ -33,12 +33,15 @@ from chemex.optimize.native_mcmc import (
     PosteriorSummary,
 )
 from chemex.optimize.native_resampling import (
+    ClaimState,
     ResamplingEvidence,
+    ResamplingLifecycle,
     ResamplingSummaryOutcome,
+    SummaryTerminal,
 )
 from chemex.optimize.uncertainty import UncertaintyEvidence
 from chemex.parameters.parameterization import ActiveParameterization, ParameterRole
-from chemex.parameters.values import AnalysisValuesSnapshot
+from chemex.parameters.values import AnalysisValues, AnalysisValuesSnapshot
 from chemex.plotters.native_reporting import write_native_plots
 from chemex.printers.native_reporting import (
     write_components,
@@ -117,6 +120,8 @@ class CommittedFitPublication:
     accepted: AcceptedFitResult
     commit_receipt: CommitReceipt
     committed_snapshot: AnalysisValuesSnapshot
+    commit_operation: FitCommitOperation
+    analysis_values: AnalysisValues = field(repr=False, compare=False)
     components: tuple[ComponentDiagnostic, ...] = ()
     uncertainty: UncertaintyEvidence | None = None
     resampling: tuple[ResamplingPublication, ...] = ()
@@ -238,8 +243,11 @@ def _validate_suppressed(publication: SuppressedPublication) -> None:
         (publication.lifecycle == "accepted_uncommitted" and commit_failure)
         or (
             publication.lifecycle == "failed"
-            and direct_terminal
-            not in (None, DirectTrfTerminal.CONVERGED, DirectTrfTerminal.CANCELLED)
+            and (
+                direct_terminal
+                not in (None, DirectTrfTerminal.CONVERGED, DirectTrfTerminal.CANCELLED)
+                or stochastic_terminal == "partial"
+            )
         )
         or (
             publication.lifecycle == "cancelled"
@@ -303,9 +311,24 @@ def _validate_committed_fit(publication: CommittedFitPublication) -> None:
     accepted = publication.accepted
     receipt = publication.commit_receipt
     committed = publication.committed_snapshot
+    operation = publication.commit_operation
+    current = publication.analysis_values.snapshot()
     if not accepted_occurrence_is_authoritative(accepted):
         raise NativePublicationError(
             "Committed publication requires an authoritative accepted occurrence"
+        )
+    if (
+        not fit_commit_operation_is_authoritative(operation)
+        or operation.terminal is not FitCommitTerminal.COMMITTED
+        or operation.receipt is not receipt
+        or operation.committed_snapshot is not committed
+        or operation.accepted_result_identity != accepted.identity
+        or operation.accepted_occurrence_identity != accepted.occurrence_identity
+        or operation.problem_identity != accepted.problem_identity
+        or current != committed
+    ):
+        raise NativePublicationError(
+            "Committed publication requires the exact successful commit operation"
         )
     if (
         accepted.problem_identity != receipt.problem_identity
@@ -409,19 +432,36 @@ def _validate_typed_evidence(publication: CommittedFitPublication) -> None:
     for item in publication.resampling:
         item.evidence.validate_integrity()
         scheme = item.evidence.plan.scheme.value
+        summary = item.summary.summary
         if (
             scheme in schemes
+            or item.evidence.lifecycle is not ResamplingLifecycle.COMPLETED
+            or item.summary.terminal is not SummaryTerminal.COMPLETED
+            or summary is None
+            or summary.evidence is not item.evidence
             or item.evidence.plan.accepted_result_identity != accepted.identity
             or item.evidence.plan.accepted_occurrence_identity
             != accepted.occurrence_identity
             or item.summary.evidence_identity != item.evidence.identity
         ):
             raise NativePublicationError(
-                "Resampling evidence belongs to another accepted fit occurrence"
+                "Ordinary statistics require exact completed resampling evidence"
             )
+        required_claims = (
+            "STRUCTURAL_INTEGRITY",
+            "INTENDED_POPULATION_TERMINAL",
+            "MINIMUM_SUCCESSFUL_COVERAGE",
+            "COMPLETE_SCOPE_SUCCESS_ROWS",
+        )
+        if any(
+            item.evidence.claim(name) is not ClaimState.SATISFIED
+            for name in required_claims
+        ):
+            raise NativePublicationError(
+                "Ordinary statistics require satisfied resampling validity claims"
+            )
+        summary.validate_integrity()
         schemes.add(scheme)
-        if item.summary.summary is not None:
-            item.summary.summary.to_record()
     mcmc = publication.mcmc
     if mcmc is not None:
         mcmc.evidence.validate_integrity()
