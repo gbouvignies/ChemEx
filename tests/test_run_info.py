@@ -442,3 +442,22 @@ def test_failed_replacement_restores_existing_run_info(
     assert existing_run.read_text(encoding="utf-8") == "schema_version = 1\n"
     assert staging_path.exists()
     assert not list(tmp_path.glob(".run_info-backup-*"))
+
+
+@pytest.mark.parametrize(
+    "content",
+    (
+        "schema_version = 3\n",
+        'schema_version = 2\nschema_kind = "foreign"\n',
+        'schema_version = "2"\n',
+    ),
+)
+def test_run_information_classifier_rejects_unknown_schema_meanings(
+    tmp_path: Path,
+    content: str,
+) -> None:
+    path = tmp_path / "run.toml"
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsupported run-information schema"):
+        run_info_module.classify_run_information(path)

@@ -6,25 +6,42 @@ legacy reporting path until the native migration gates promote these artifacts.
 
 from __future__ import annotations
 
-import ctypes
-import errno
+import hashlib
+import json
 import math
-import os
 import shutil
-import sys
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
+from chemex.atomic import publish_directory_noreplace
+from chemex.configuration.methods import Method
 from chemex.evaluation.native import EvaluationPlan, EvaluationResult
+from chemex.native_provenance import (
+    ArtifactReference,
+    ArtifactRole,
+    BudgetRecord,
+    CommittedRestartRecord,
+    NativeProvenanceError,
+    PolicyRecord,
+    PublishedStepReference,
+    SeedRecord,
+    WorkflowProvenance,
+    _published_step_from_successful_native_publication,
+    native_step_manifest_identity,
+    validate_native_step_manifest_bytes,
+)
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     CommitReceipt,
     DirectTrfExecution,
+    DirectTrfInvocation,
     DirectTrfTerminal,
     FitCommitOperation,
     FitCommitTerminal,
+    OptimizationProblem,
     accepted_occurrence_is_authoritative,
     canonical_chi_square,
     committed_values_identity,
@@ -43,7 +60,11 @@ from chemex.optimize.native_resampling import (
     SummaryTerminal,
 )
 from chemex.optimize.uncertainty import UncertaintyEvidence
-from chemex.parameters.parameterization import ActiveParameterization, ParameterRole
+from chemex.parameters.parameterization import (
+    ActiveParameterization,
+    ParameterRole,
+    SealedParameterModel,
+)
 from chemex.parameters.values import AnalysisValues, AnalysisValuesSnapshot
 from chemex.plotters.native_reporting import write_native_plots
 from chemex.printers.native_reporting import (
@@ -54,6 +75,7 @@ from chemex.printers.native_reporting import (
     write_partial_mcmc,
     write_partial_resampling,
     write_resampling,
+    write_restart_parameters,
     write_statistics,
     write_suppressed_outcome,
     write_uncertainty,
@@ -114,33 +136,42 @@ class McmcPublication:
     summary: PosteriorSummary
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class CommittedFitPublication:
     """Exact committed anchor from which ordinary fitted output may be rendered."""
 
     plan: EvaluationPlan
+    method: Method
     parameterization: ActiveParameterization
+    parameter_model: SealedParameterModel
+    starting_snapshot: AnalysisValuesSnapshot
+    primary_problem: OptimizationProblem
+    primary_invocation: DirectTrfInvocation
+    primary_execution: DirectTrfExecution
     accepted: AcceptedFitResult
     commit_receipt: CommitReceipt
     committed_snapshot: AnalysisValuesSnapshot
     commit_operation: FitCommitOperation
     analysis_values: AnalysisValues = field(repr=False, compare=False)
+    provenance: WorkflowProvenance = field(kw_only=True)
     components: tuple[ComponentDiagnostic, ...] = ()
     uncertainty: UncertaintyEvidence | None = None
     resampling: tuple[ResamplingPublication, ...] = ()
     mcmc: McmcPublication | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class EvaluationPublication:
     """Authoritative evaluate-only result with no estimate or commit semantics."""
 
     plan: EvaluationPlan
+    method: Method
     parameterization: ActiveParameterization
     evaluation_result: EvaluationResult
+    provenance: WorkflowProvenance = field(kw_only=True)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class SuppressedPublication:
     """Failure/uncommitted provenance with only genuine partial evidence."""
 
@@ -153,6 +184,19 @@ class SuppressedPublication:
     operation: (
         FitCommitOperation | DirectTrfExecution | ResamplingEvidence | McmcEvidence
     )
+    plan: EvaluationPlan
+    method: Method
+    parameterization: ActiveParameterization
+    provenance: WorkflowProvenance = field(kw_only=True)
+    primary_invocation: DirectTrfInvocation | None = field(
+        default=None,
+        kw_only=True,
+    )
+    primary_execution: DirectTrfExecution | None = field(
+        default=None,
+        kw_only=True,
+    )
+    primary_problem: OptimizationProblem | None = field(default=None, kw_only=True)
     accepted_result_identity: str | None = None
     accepted_occurrence_identity: str | None = None
     components: tuple[ComponentDiagnostic, ...] = ()
@@ -164,75 +208,174 @@ type NativePublication = (
     CommittedFitPublication | EvaluationPublication | SuppressedPublication
 )
 
-_AT_FDCWD = -100
-_RENAME_NOREPLACE = 1
-_RENAME_EXCL = 4
 
-
-def _atomic_publish_noreplace(staging: Path, destination: Path) -> None:
-    """Atomically rename a staged directory without replacing any destination."""
-    if sys.platform == "win32":
-        try:
-            os.rename(staging, destination)
-        except FileExistsError as error:
-            raise FileExistsError(
-                errno.EEXIST,
-                "Native publication destination exists",
-                destination,
-            ) from error
-        return
-
-    source_bytes = os.fsencode(staging)
-    destination_bytes = os.fsencode(destination)
-    if sys.platform == "linux":
-        function_name = "renameat2"
-        argument_types = (
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_uint,
-        )
-        arguments = (
-            _AT_FDCWD,
-            source_bytes,
-            _AT_FDCWD,
-            destination_bytes,
-            _RENAME_NOREPLACE,
-        )
-    elif sys.platform == "darwin":
-        function_name = "renamex_np"
-        argument_types = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
-        arguments = (source_bytes, destination_bytes, _RENAME_EXCL)
-    else:
-        raise OSError(
-            errno.ENOTSUP,
-            "Atomic no-replace directory rename is unavailable on this platform",
-            destination,
+def _validate_exact_provenance_records(
+    provenance: WorkflowProvenance,
+    policies: tuple[PolicyRecord, ...],
+    budgets: tuple[BudgetRecord, ...],
+    seeds: tuple[SeedRecord, ...],
+) -> None:
+    """Reject missing, forged, or unrelated execution records."""
+    if (
+        provenance.policies != policies
+        or provenance.budgets != budgets
+        or provenance.seeds != seeds
+    ):
+        raise NativePublicationError(
+            "Workflow provenance differs from exact execution records"
         )
 
-    libc = ctypes.CDLL(None, use_errno=True)
+
+def _primary_execution_records(
+    invocation: DirectTrfInvocation,
+    execution: DirectTrfExecution,
+) -> tuple[PolicyRecord, BudgetRecord]:
+    if (
+        execution.problem_identity != invocation.problem_identity
+        or execution.invocation_identity != invocation.identity
+    ):
+        raise NativePublicationError(
+            "Primary invocation and execution provenance disagree"
+        )
+    return (
+        PolicyRecord("primary_direct_trf", invocation.identity),
+        BudgetRecord(
+            "primary_direct_trf_objective_requests",
+            invocation.objective_request_budget,
+            execution.counters.objective_requests_accepted,
+        ),
+    )
+
+
+def _stochastic_execution_records(
+    resampling: tuple[ResamplingEvidence, ...],
+    mcmc: McmcEvidence | None,
+) -> tuple[tuple[PolicyRecord, ...], tuple[BudgetRecord, ...], tuple[SeedRecord, ...]]:
+    policies: list[PolicyRecord] = []
+    budgets: list[BudgetRecord] = []
+    seeds: list[SeedRecord] = []
+    for evidence in resampling:
+        plan = evidence.plan
+        name = f"resampling_{plan.scheme.value}"
+        policies.append(PolicyRecord(name, plan.identity))
+        budgets.append(
+            BudgetRecord(
+                f"{name}_replicates",
+                plan.replicate_count,
+                evidence.completed_count,
+            )
+        )
+        objective_budget = int(
+            dict(plan.strategy_settings).get("objective_request_budget", "100")
+        )
+        budgets.append(
+            BudgetRecord(
+                f"{name}_objective_requests",
+                objective_budget * plan.replicate_count,
+                None,
+            )
+        )
+        seeds.append(
+            SeedRecord(f"{name}_root", plan.root_seed, plan.seed_policy_version)
+        )
+    if mcmc is None:
+        return tuple(policies), tuple(budgets), tuple(seeds)
+    policy = mcmc.plan.policy
+    policies.append(PolicyRecord("mcmc", policy.identity))
+    budgets.append(
+        BudgetRecord(
+            "mcmc_objective_requests",
+            policy.objective_request_budget,
+            mcmc.objective_request_count,
+        )
+    )
+    seeds.append(
+        SeedRecord("mcmc_root", policy.root_seed, policy.seed_policy_version),
+    )
+    return tuple(policies), tuple(budgets), tuple(seeds)
+
+
+def _validate_provenance_context(
+    provenance: WorkflowProvenance,
+    plan: EvaluationPlan,
+    parameterization: ActiveParameterization,
+    method: Method,
+    invocation: DirectTrfInvocation | None,
+    native_execution: DirectTrfExecution | EvaluationResult,
+) -> None:
     try:
-        rename_noreplace = getattr(libc, function_name)
-    except AttributeError as error:
-        raise OSError(
-            errno.ENOSYS,
-            f"{function_name} is unavailable for atomic native publication",
-            destination,
-        ) from error
-    rename_noreplace.argtypes = argument_types
-    rename_noreplace.restype = ctypes.c_int
-    result = rename_noreplace(*arguments)
-    if result == 0:
-        return
-    error_number = ctypes.get_errno()
-    if error_number == errno.EEXIST:
-        raise FileExistsError(
-            errno.EEXIST,
-            "Native publication destination exists",
-            destination,
+        provenance.validate_execution_context(
+            parameterization,
+            plan,
+            method,
+            invocation,
+            native_execution,
         )
-    raise OSError(error_number, os.strerror(error_number), destination)
+    except NativeProvenanceError as error:
+        raise NativePublicationError(
+            "Workflow method and selection provenance, or execution provenance, "
+            "differ from execution"
+        ) from error
+
+
+def _validate_optional_primary_execution(
+    publication: SuppressedPublication,
+) -> tuple[PolicyRecord | None, BudgetRecord | None]:
+    invocation = publication.primary_invocation
+    execution = publication.primary_execution
+    if invocation is None and execution is None:
+        return None, None
+    if invocation is None or execution is None:
+        raise NativePublicationError(
+            "Suppressed primary provenance requires invocation and execution"
+        )
+    return _primary_execution_records(invocation, execution)
+
+
+def _validate_suppressed_execution_lineage(
+    publication: SuppressedPublication,
+) -> tuple[PolicyRecord | None, BudgetRecord | None]:
+    if publication.primary_execution is None:
+        raise NativePublicationError(
+            "Suppressed provenance requires the exact primary execution"
+        )
+    _validate_provenance_context(
+        publication.provenance,
+        publication.plan,
+        publication.parameterization,
+        publication.method,
+        publication.primary_invocation,
+        publication.primary_execution,
+    )
+    primary_policy, primary_budget = _validate_optional_primary_execution(publication)
+    primary_problem = publication.primary_problem
+    if primary_policy is not None:
+        if (
+            primary_problem is None
+            or primary_problem.parameterization_identity
+            != publication.parameterization.identity
+            or primary_problem.evaluator_parameterization_identity
+            != publication.parameterization.evaluator_identity
+            or primary_problem.evaluation_plan_identity != publication.plan.identity
+            or publication.primary_invocation is None
+            or publication.primary_invocation.problem_identity
+            != primary_problem.identity
+        ):
+            raise NativePublicationError(
+                "Suppressed restart scope differs from primary execution lineage"
+            )
+    elif primary_problem is not None:
+        raise NativePublicationError(
+            "Suppressed primary problem requires its invocation and execution"
+        )
+    if isinstance(publication.operation, (FitCommitOperation, DirectTrfExecution)) and (
+        primary_problem is None
+        or primary_problem.identity != publication.operation.problem_identity
+    ):
+        raise NativePublicationError(
+            "Suppressed operation differs from primary problem lineage"
+        )
+    return primary_policy, primary_budget
 
 
 def _validate_evaluation_artifacts(
@@ -259,6 +402,15 @@ def _validate_evaluation_artifacts(
 
 
 def _validate_evaluation_only(publication: EvaluationPublication) -> None:
+    _validate_provenance_context(
+        publication.provenance,
+        publication.plan,
+        publication.parameterization,
+        publication.method,
+        None,
+        publication.evaluation_result,
+    )
+    _validate_exact_provenance_records(publication.provenance, (), (), ())
     if any(
         publication.parameterization.role(param_id) is ParameterRole.FIT
         for param_id in publication.parameterization.independent_ids
@@ -294,6 +446,7 @@ def _validate_suppressed(publication: SuppressedPublication) -> None:
             "Suppressed publication requires typed lifecycle provenance"
         )
     operation = publication.operation
+    primary_policy, primary_budget = _validate_suppressed_execution_lineage(publication)
     commit_failure = (
         isinstance(operation, FitCommitOperation)
         and fit_commit_operation_is_authoritative(operation)
@@ -361,6 +514,8 @@ def _validate_suppressed(publication: SuppressedPublication) -> None:
             != publication.accepted_result_identity
             or evidence.plan.accepted_occurrence_identity
             != publication.accepted_occurrence_identity
+            or evidence.plan.parameterization is not publication.parameterization
+            or evidence.plan.source_engine.plan.identity != publication.plan.identity
         ):
             raise NativePublicationError(
                 "Suppressed workflows may retain only genuine partial resampling"
@@ -374,10 +529,55 @@ def _validate_suppressed(publication: SuppressedPublication) -> None:
             != publication.accepted_result_identity
             or publication.partial_mcmc.plan.accepted_occurrence_identity
             != publication.accepted_occurrence_identity
+            or publication.partial_mcmc.plan.parameterization
+            is not publication.parameterization
+            or publication.partial_mcmc.plan.source_engine.plan.identity
+            != publication.plan.identity
         ):
             raise NativePublicationError(
                 "Suppressed workflows may retain only genuine partial MCMC evidence"
             )
+    stochastic_policies, stochastic_budgets, stochastic_seeds = (
+        _stochastic_execution_records(
+            publication.partial_resampling,
+            publication.partial_mcmc,
+        )
+    )
+    _validate_exact_provenance_records(
+        publication.provenance,
+        (() if primary_policy is None else (primary_policy,)) + stochastic_policies,
+        (() if primary_budget is None else (primary_budget,)) + stochastic_budgets,
+        stochastic_seeds,
+    )
+
+
+def _validate_committed_parameter_state(
+    publication: CommittedFitPublication,
+) -> None:
+    accepted = publication.accepted
+    committed = publication.committed_snapshot
+    parameter_model = publication.parameter_model
+    if (
+        parameter_model.identity
+        != publication.parameterization.program.parameter_model_identity
+        or parameter_model.model_identity != committed.model_identity
+        or parameter_model.definitions.identity != committed.definitions_identity
+        or parameter_model.configuration.identity != committed.configuration_identity
+    ):
+        raise NativePublicationError(
+            "Committed publication parameter model differs from committed state"
+        )
+    starting = publication.starting_snapshot
+    if (
+        starting.occurrence_identity != accepted.source_occurrence_identity
+        or starting.revision != accepted.source_revision
+        or starting.model_identity != committed.model_identity
+        or starting.definitions_identity != committed.definitions_identity
+        or starting.configuration_identity != committed.configuration_identity
+    ):
+        raise NativePublicationError(
+            "Committed publication starting state differs from accepted provenance"
+        )
 
 
 def _validate_committed_fit(publication: CommittedFitPublication) -> None:
@@ -386,6 +586,19 @@ def _validate_committed_fit(publication: CommittedFitPublication) -> None:
     committed = publication.committed_snapshot
     operation = publication.commit_operation
     current = publication.analysis_values.snapshot()
+    _validate_committed_parameter_state(publication)
+    _validate_provenance_context(
+        publication.provenance,
+        publication.plan,
+        publication.parameterization,
+        publication.method,
+        publication.primary_invocation,
+        publication.primary_execution,
+    )
+    _primary_execution_records(
+        publication.primary_invocation,
+        publication.primary_execution,
+    )
     if not accepted_occurrence_is_authoritative(accepted):
         raise NativePublicationError(
             "Committed publication requires an authoritative accepted occurrence"
@@ -398,6 +611,18 @@ def _validate_committed_fit(publication: CommittedFitPublication) -> None:
         or operation.accepted_result_identity != accepted.identity
         or operation.accepted_occurrence_identity != accepted.occurrence_identity
         or operation.problem_identity != accepted.problem_identity
+        or publication.primary_problem.identity != accepted.problem_identity
+        or publication.primary_problem.parameterization_identity
+        != publication.parameterization.identity
+        or publication.primary_problem.evaluator_parameterization_identity
+        != publication.parameterization.evaluator_identity
+        or publication.primary_problem.evaluation_plan_identity
+        != publication.plan.identity
+        or publication.primary_invocation.problem_identity != accepted.problem_identity
+        or publication.primary_execution.problem_identity != accepted.problem_identity
+        or publication.primary_execution.invocation_identity
+        != accepted.invocation_identity
+        or publication.primary_execution.identity != accepted.execution_identity
         or current != committed
     ):
         raise NativePublicationError(
@@ -551,6 +776,27 @@ def _validate_typed_evidence(publication: CommittedFitPublication) -> None:
             raise NativePublicationError(
                 "MCMC evidence belongs to another accepted fit occurrence"
             )
+    stochastic_policies, stochastic_budgets, stochastic_seeds = (
+        _stochastic_execution_records(
+            tuple(item.evidence for item in publication.resampling),
+            None if mcmc is None else mcmc.evidence,
+        )
+    )
+    primary_policy, primary_budget = _primary_execution_records(
+        publication.primary_invocation,
+        publication.primary_execution,
+    )
+    uncertainty_policies = (
+        ()
+        if uncertainty is None
+        else (PolicyRecord("uncertainty", uncertainty.source_policy.identity),)
+    )
+    _validate_exact_provenance_records(
+        publication.provenance,
+        (primary_policy, *uncertainty_policies, *stochastic_policies),
+        (primary_budget, *stochastic_budgets),
+        stochastic_seeds,
+    )
 
 
 def _suppressed_operation_record(
@@ -625,12 +871,59 @@ def _render_suppressed(path: Path, publication: SuppressedPublication) -> None:
 def _render_committed_fit(
     path: Path,
     publication: CommittedFitPublication,
-) -> None:
+) -> CommittedRestartRecord:
     path.mkdir()
     write_parameter_reports(
         path / "Parameters",
         publication.parameterization,
         publication.accepted.evaluation_result,
+    )
+    write_restart_parameters(
+        path / "Parameters" / "restart.toml",
+        publication.parameter_model,
+        publication.parameterization,
+        publication.committed_snapshot,
+    )
+    restart_path = path / "Parameters" / "restart.toml"
+    restart = CommittedRestartRecord(
+        publication.starting_snapshot.occurrence_identity,
+        publication.starting_snapshot.revision,
+        publication.accepted.identity,
+        publication.accepted.occurrence_identity,
+        publication.commit_operation.identity,
+        publication.commit_operation.occurrence_identity,
+        publication.committed_snapshot.occurrence_identity,
+        publication.committed_snapshot.revision,
+        publication.provenance.workflow_identity,
+        publication.primary_problem.identity,
+        publication.parameterization.identity,
+        publication.parameter_model.identity,
+        publication.committed_snapshot.configuration_identity,
+        tuple(
+            (
+                param_id,
+                float(publication.committed_snapshot[param_id]).hex(),
+                float(
+                    publication.parameter_model.configuration[param_id].lower_bound
+                ).hex(),
+                float(
+                    publication.parameter_model.configuration[param_id].upper_bound
+                ).hex(),
+            )
+            for param_id in publication.parameterization.independent_ids
+        ),
+        hashlib.sha256(restart_path.read_bytes()).hexdigest(),
+    )
+    (path / "Parameters" / "restart-provenance.json").write_text(
+        json.dumps(
+            restart.to_record(),
+            allow_nan=False,
+            ensure_ascii=True,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
     )
     write_data(path / "Data", publication.plan, publication.accepted.evaluation_result)
     write_native_plots(
@@ -656,6 +949,333 @@ def _render_committed_fit(
         None if mcmc is None else mcmc.summary,
     )
     write_components(path / "Components", publication.components)
+    return restart
+
+
+def _artifact_role(relative_path: str) -> ArtifactRole:
+    if relative_path == "Parameters/restart.toml":
+        return "committed_restart_state"
+    if relative_path == "Parameters/restart-provenance.json":
+        return "committed_restart_state"
+    if relative_path == "Parameters/fitted.toml":
+        return "report_only_fitted_values"
+    if relative_path.startswith(("Diagnostics/", "Components/")):
+        return "diagnostic_provenance"
+    if relative_path.startswith("PartialEvidence/"):
+        return "partial_evidence"
+    return "product_output"
+
+
+def _write_manifest(  # noqa: C901 - deterministic TOML sections
+    path: Path,
+    fields: tuple[tuple[str, str | int], ...],
+    provenance: WorkflowProvenance,
+    *,
+    components: tuple[ComponentDiagnostic, ...] = (),
+    evidence: tuple[tuple[str, str, str, str], ...] = (),
+) -> tuple[str, str, tuple[ArtifactReference, ...]]:
+    native_threads = (
+        "auto"
+        if provenance.execution.native_threads is None
+        else provenance.execution.native_threads
+    )
+    artifacts = tuple(
+        ArtifactReference(
+            str(item.relative_to(path)),
+            _artifact_role(str(item.relative_to(path))),
+            hashlib.sha256(item.read_bytes()).hexdigest(),
+        )
+        for item in sorted(path.rglob("*"))
+        if item.is_file()
+    )
+    lines = [
+        "# Atomic native method-step manifest.",
+        "schema_version = 1",
+        'manifest_identity = ""',
+        *(f"{name} = {json.dumps(value)}" for name, value in fields),
+        "",
+        "[workflow]",
+        f"identity = {json.dumps(provenance.workflow_identity)}",
+        f"execution_identity = {json.dumps(provenance.execution_identity)}",
+        f"provenance_identity = {json.dumps(provenance.identity)}",
+        f"type = {json.dumps(provenance.workflow_type)}",
+        "",
+        "[method]",
+        f"identity = {json.dumps(provenance.method_identity)}",
+        f"parameterization_identity = {json.dumps(provenance.parameterization_identity)}",
+        f"evaluation_plan_identity = {json.dumps(provenance.evaluation_plan_identity)}",
+        f"normalized = {json.dumps(provenance.normalized_method_text)}",
+        f"normalized_sha256 = {json.dumps(provenance.normalized_method_sha256)}",
+        "",
+        "[selection]",
+        f"model = {json.dumps(provenance.selection.model_name)}",
+        f"include = {json.dumps(list(provenance.selection.include))}",
+        f"exclude = {json.dumps(list(provenance.selection.exclude))}",
+        "",
+        "[execution]",
+        f"workers = {provenance.execution.workers}",
+        f"native_threads = {json.dumps(native_threads)}"
+        if isinstance(native_threads, str)
+        else f"native_threads = {native_threads}",
+        "",
+        "[environment]",
+        *(
+            f"{name} = {json.dumps(value)}"
+            for name, value in provenance.environment.to_record().items()
+            if name != "numerical_libraries"
+        ),
+        "",
+    ]
+    for group_identity, controlled_ids in provenance.grouping_topology:
+        lines.extend(
+            (
+                "[[workflow.groups]]",
+                f"identity = {json.dumps(group_identity)}",
+                f"controlled_ids = {json.dumps(list(controlled_ids))}",
+                "",
+            )
+        )
+    for kind, name, library_version in provenance.environment.numerical_libraries:
+        lines.extend(
+            (
+                "[[environment.numerical_libraries]]",
+                f"kind = {json.dumps(kind)}",
+                f"name = {json.dumps(name)}",
+                f"version = {json.dumps(library_version)}",
+                "",
+            )
+        )
+    for policy in provenance.policies:
+        lines.extend(
+            (
+                "[[policies]]",
+                f"name = {json.dumps(policy.name)}",
+                f"identity = {json.dumps(policy.identity)}",
+                "",
+            )
+        )
+    for budget in provenance.budgets:
+        lines.extend(
+            (
+                "[[budgets]]",
+                f"name = {json.dumps(budget.name)}",
+                f"limit = {budget.limit}",
+            )
+        )
+        if budget.used is not None:
+            lines.append(f"used = {budget.used}")
+        lines.append("")
+    for seed in provenance.seeds:
+        lines.extend(
+            (
+                "[[seeds]]",
+                f"name = {json.dumps(seed.name)}",
+                f"value = {seed.value}",
+                f"policy_identity = {json.dumps(seed.policy_identity)}",
+                "",
+            )
+        )
+    for reference in provenance.baseline_references:
+        lines.extend(
+            (
+                "[[baseline_references]]",
+                f"kind = {json.dumps(reference.kind)}",
+                f"identity = {json.dumps(reference.identity)}",
+                f"occurrence_identity = {json.dumps(reference.occurrence_identity)}",
+                f"result_bundle_identity = {json.dumps(reference.result_bundle_identity)}",
+                "",
+            )
+        )
+    for component in components:
+        lines.extend(
+            (
+                "[[components]]",
+                f"identity = {json.dumps(component.identity)}",
+                f"disposition = {json.dumps(component.disposition)}",
+                f"controlled_ids = {json.dumps(list(component.controlled_ids))}",
+                'location = "Components/index.json"',
+                'authority = "diagnostic_only"',
+                "",
+            )
+        )
+    for family, identity, validity, location in evidence:
+        lines.extend(
+            (
+                "[[evidence]]",
+                f"family = {json.dumps(family)}",
+                f"identity = {json.dumps(identity)}",
+                f"validity = {json.dumps(validity)}",
+                f"location = {json.dumps(location)}",
+                "",
+            )
+        )
+    for artifact in artifacts:
+        lines.extend(
+            (
+                f"[artifacts.{json.dumps(artifact.path)}]",
+                f"role = {json.dumps(artifact.role)}",
+                f"sha256 = {json.dumps(artifact.sha256)}",
+                "",
+            )
+        )
+    manifest_path = path / "fit-manifest.toml"
+    provisional = "\n".join(lines)
+    manifest_identity = native_step_manifest_identity(tomllib.loads(provisional))
+    lines[2] = f"manifest_identity = {json.dumps(manifest_identity)}"
+    manifest_path.write_text("\n".join(lines), encoding="utf-8")
+    validate_native_step_manifest_bytes(manifest_path.read_bytes())
+    return (
+        manifest_identity,
+        hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+        artifacts,
+    )
+
+
+def _write_committed_manifest(
+    path: Path,
+    publication: CommittedFitPublication,
+    publication_occurrence_identity: str,
+    restart: CommittedRestartRecord,
+) -> tuple[str, str, tuple[ArtifactReference, ...]]:
+    evidence: list[tuple[str, str, str, str]] = []
+    if publication.uncertainty is not None:
+        evidence.append(
+            (
+                "covariance",
+                publication.uncertainty.identity,
+                "typed_claims_in_artifact",
+                "Statistics/Covariance/evidence.json",
+            )
+        )
+        if publication.uncertainty.requested_output_scope:
+            evidence.append(
+                (
+                    "constrained",
+                    publication.uncertainty.identity,
+                    "typed_claims_in_artifact",
+                    "Statistics/Constrained/evidence.json",
+                )
+            )
+    for item in publication.resampling:
+        scheme = item.evidence.plan.scheme.value
+        evidence.append(
+            (
+                f"resampling:{scheme}",
+                item.evidence.identity,
+                "required_claims_satisfied",
+                f"Statistics/Resampling/{scheme.upper()}/evidence.json",
+            )
+        )
+    if publication.mcmc is not None:
+        evidence.append(
+            (
+                "mcmc",
+                publication.mcmc.evidence.identity,
+                "integrity_validated",
+                "Statistics/MCMC/evidence.json",
+            )
+        )
+    return _write_manifest(
+        path,
+        (
+            ("lifecycle", "committed"),
+            ("authority", "committed_fit"),
+            ("publication_occurrence_identity", publication_occurrence_identity),
+            ("starting_state_kind", "workflow_starting_provenance"),
+            (
+                "starting_occurrence_identity",
+                publication.starting_snapshot.occurrence_identity,
+            ),
+            ("starting_revision", publication.starting_snapshot.revision),
+            ("accepted_result_identity", publication.accepted.identity),
+            (
+                "accepted_occurrence_identity",
+                publication.accepted.occurrence_identity,
+            ),
+            ("commit_receipt_identity", publication.commit_receipt.identity),
+            ("commit_operation_identity", publication.commit_operation.identity),
+            (
+                "commit_occurrence_identity",
+                publication.commit_operation.occurrence_identity,
+            ),
+            (
+                "committed_occurrence_identity",
+                publication.committed_snapshot.occurrence_identity,
+            ),
+            ("committed_revision", publication.committed_snapshot.revision),
+            ("problem_identity", publication.primary_problem.identity),
+            ("parameterization_identity", publication.parameterization.identity),
+            ("restart_record_identity", restart.identity),
+        ),
+        publication.provenance,
+        components=publication.components,
+        evidence=tuple(evidence),
+    )
+
+
+def _write_evaluation_manifest(
+    path: Path,
+    publication: EvaluationPublication,
+    publication_occurrence_identity: str,
+) -> tuple[str, str, tuple[ArtifactReference, ...]]:
+    return _write_manifest(
+        path,
+        (
+            ("lifecycle", "successful_no_state_change"),
+            ("authority", "evaluation_only"),
+            ("publication_occurrence_identity", publication_occurrence_identity),
+        ),
+        publication.provenance,
+    )
+
+
+def _write_suppressed_manifest(
+    path: Path,
+    publication: SuppressedPublication,
+    publication_occurrence_identity: str,
+) -> tuple[str, str, tuple[ArtifactReference, ...]]:
+    fields: list[tuple[str, str | int]] = [
+        ("lifecycle", publication.lifecycle),
+        ("authority", "diagnostic_only"),
+        ("publication_occurrence_identity", publication_occurrence_identity),
+        ("operation_identity", publication.operation.identity),
+    ]
+    if publication.accepted_result_identity is not None:
+        fields.append(
+            ("accepted_result_identity", publication.accepted_result_identity)
+        )
+    if publication.accepted_occurrence_identity is not None:
+        fields.append(
+            (
+                "accepted_occurrence_identity",
+                publication.accepted_occurrence_identity,
+            )
+        )
+    evidence = tuple(
+        (
+            f"partial_resampling:{item.plan.scheme.value}",
+            item.identity,
+            item.lifecycle.value,
+            f"PartialEvidence/Resampling/{item.plan.scheme.value.upper()}/evidence.json",
+        )
+        for item in publication.partial_resampling
+    )
+    if publication.partial_mcmc is not None:
+        evidence += (
+            (
+                "partial_mcmc",
+                publication.partial_mcmc.identity,
+                publication.partial_mcmc.lifecycle.value,
+                "PartialEvidence/MCMC/evidence.json",
+            ),
+        )
+    return _write_manifest(
+        path,
+        tuple(fields),
+        publication.provenance,
+        components=publication.components,
+        evidence=evidence,
+    )
 
 
 def _render_evaluation(path: Path, publication: EvaluationPublication) -> None:
@@ -671,10 +1291,65 @@ def _render_evaluation(path: Path, publication: EvaluationPublication) -> None:
     write_statistics(path, publication.plan, publication.evaluation_result, 0)
 
 
+def _validate_and_publish_staged_step(
+    staging: Path,
+    destination: Path,
+    manifest: tuple[str, str, tuple[ArtifactReference, ...]],
+    expected_restart: CommittedRestartRecord | None,
+) -> None:
+    """Seal the complete staged #608 tree immediately before atomic publication."""
+    manifest_identity, manifest_sha256, artifacts = manifest
+    manifest_path = staging / "fit-manifest.toml"
+    manifest_bytes = manifest_path.read_bytes()
+    record = validate_native_step_manifest_bytes(manifest_bytes)
+    if (
+        record.get("manifest_identity") != manifest_identity
+        or hashlib.sha256(manifest_bytes).hexdigest() != manifest_sha256
+    ):
+        raise NativePublicationError(
+            "Staged native manifest changed before publication"
+        )
+    expected = {item.path: item for item in artifacts}
+    actual_paths = {
+        str(item.relative_to(staging))
+        for item in staging.rglob("*")
+        if item.is_file() and item != manifest_path
+    }
+    if actual_paths != set(expected):
+        raise NativePublicationError("Staged native artifact catalogue changed")
+    for relative_path, artifact in expected.items():
+        if (
+            hashlib.sha256((staging / relative_path).read_bytes()).hexdigest()
+            != artifact.sha256
+        ):
+            raise NativePublicationError("Staged native artifact changed after hashing")
+    if record.get("lifecycle") == "committed":
+        restart_path = staging / "Parameters" / "restart.toml"
+        restart_record = CommittedRestartRecord.from_record(
+            json.loads(
+                (staging / "Parameters" / "restart-provenance.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+        )
+        if (
+            expected_restart is None
+            or restart_record != expected_restart
+            or restart_record.identity != record.get("restart_record_identity")
+            or restart_record.restart_sha256
+            != hashlib.sha256(restart_path.read_bytes()).hexdigest()
+        ):
+            raise NativePublicationError("Committed restart provenance changed")
+    # Final ownership boundary: every ChemEx renderer and manifest writer has
+    # completed above. Keep the validation adjacent to this atomic primitive;
+    # staging is private and no application callback may run in between.
+    publish_directory_noreplace(staging, destination)
+
+
 def publish_native_results(
     path: Path,
     publication: NativePublication,
-) -> None:
+) -> PublishedStepReference:
     """Validate and atomically publish one native method-step result tree."""
     if isinstance(publication, CommittedFitPublication):
         _validate_committed_fit(publication)
@@ -687,14 +1362,54 @@ def publish_native_results(
         raise FileExistsError(f"Native publication destination exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = destination.parent / f".{destination.name}.tmp-{uuid4().hex}"
+    publication_occurrence_identity = uuid4().hex
+    restart: CommittedRestartRecord | None = None
     try:
         if isinstance(publication, CommittedFitPublication):
-            _render_committed_fit(staging, publication)
+            restart = _render_committed_fit(staging, publication)
+            manifest = _write_committed_manifest(
+                staging,
+                publication,
+                publication_occurrence_identity,
+                restart,
+            )
+            lifecycle = "committed"
+            authority = "committed_fit"
+            independent_ids = publication.parameterization.independent_ids
         elif isinstance(publication, EvaluationPublication):
             _render_evaluation(staging, publication)
+            manifest = _write_evaluation_manifest(
+                staging,
+                publication,
+                publication_occurrence_identity,
+            )
+            lifecycle = "successful_no_state_change"
+            authority = "evaluation_only"
+            independent_ids = publication.parameterization.independent_ids
         else:
             _render_suppressed(staging, publication)
-        _atomic_publish_noreplace(staging, destination)
+            manifest = _write_suppressed_manifest(
+                staging,
+                publication,
+                publication_occurrence_identity,
+            )
+            lifecycle = publication.lifecycle
+            authority = "diagnostic_only"
+            independent_ids = publication.parameterization.independent_ids
+        _validate_and_publish_staged_step(staging, destination, manifest, restart)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
+    manifest_identity, manifest_sha256, artifacts = manifest
+    return _published_step_from_successful_native_publication(
+        publication,
+        publication_occurrence_identity,
+        destination,
+        lifecycle,
+        authority,
+        manifest_identity,
+        manifest_sha256,
+        publication.provenance,
+        independent_ids,
+        artifacts,
+    )
