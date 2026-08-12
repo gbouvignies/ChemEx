@@ -24,7 +24,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, fields
 from importlib.resources import files
 from pathlib import Path, PurePosixPath
-from typing import Any, Literal, cast
+from typing import Any, Literal, NamedTuple, SupportsIndex, cast
 
 from chemex.runtime.execution import NATIVE_THREAD_ENV_VARS
 
@@ -1008,48 +1008,112 @@ class LaneAttestation:
         return attestation
 
 
+class _LiveLaneBinding(NamedTuple):
+    """Immutable process-owned facts bound to one opaque live capability."""
+
+    lane_identity: str
+    lane_role: LaneRole
+    attestation_identity: str
+    environment_identity: str
+    workers: int
+    native_threads: int
+
+
+type _LiveLaneAuthorityFact = Literal[
+    "lane_identity",
+    "lane_role",
+    "attestation_identity",
+    "environment_identity",
+    "workers",
+    "native_threads",
+]
+
+
+class _LiveLaneAuthorityMismatch(LaneAuthorityError):
+    def __init__(self, fact: _LiveLaneAuthorityFact) -> None:
+        self.fact = fact
+        super().__init__(f"Live lane authority does not match required {fact}")
+
+
 class LiveLaneAuthority:
     """Non-serializable capability owned by one successfully probed process."""
 
-    __slots__ = ("_evidence", "__weakref__")
-    _evidence: LaneAttestation
+    __slots__ = ("__weakref__",)
 
     def __new__(cls) -> LiveLaneAuthority:
         raise TypeError("Live lane authority is minted only by current-process probing")
 
-    @property
-    def evidence(self) -> LaneAttestation:
-        if self not in _LIVE_LANE_AUTHORITIES:
-            raise LaneAuthorityError("Live lane authority is not process-owned")
-        return self._evidence
-
-    @property
-    def lane_identity(self) -> str:
-        return self.evidence.lane_identity
-
-    @property
-    def environment_identity(self) -> str:
-        return self.evidence.environment_identity
-
-    @property
-    def workers(self) -> int:
-        return self.evidence.workers
-
-    @property
-    def native_threads(self) -> int:
-        return self.evidence.native_threads
-
-    @property
-    def identity(self) -> str:
-        return self.evidence.identity
-
     def to_record(self) -> dict[str, object]:
         """Serialize evidence only; deserialization cannot recreate this capability."""
 
-        return self.evidence.to_record()
+        return _validate_live_lane_authority(self).to_record()
+
+    def __copy__(self) -> LiveLaneAuthority:
+        raise TypeError("Live lane authority cannot be copied")
+
+    def __deepcopy__(self, memo: object) -> LiveLaneAuthority:
+        _ = memo
+        raise TypeError("Live lane authority cannot be copied")
+
+    def __reduce_ex__(self, protocol: SupportsIndex) -> str | tuple[object, ...]:
+        _ = protocol
+        raise TypeError("Live lane authority cannot be pickled")
 
 
-_LIVE_LANE_AUTHORITIES: weakref.WeakSet[LiveLaneAuthority] = weakref.WeakSet()
+_LIVE_LANE_BINDINGS: weakref.WeakKeyDictionary[LiveLaneAuthority, _LiveLaneBinding] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _validate_live_lane_authority(
+    authority: LiveLaneAuthority,
+    *,
+    required_lane_identity: str | None = None,
+    required_lane_role: LaneRole | None = None,
+    required_attestation_identity: str | None = None,
+    required_environment_identity: str | None = None,
+    required_workers: int | None = None,
+    required_native_threads: int | None = None,
+) -> LaneAttestation:
+    """Validate one exact live token without exposing its registry binding."""
+
+    if not isinstance(authority, LiveLaneAuthority):
+        raise TypeError("Live lane validation requires current-process authority")
+    try:
+        binding = _LIVE_LANE_BINDINGS[authority]
+    except KeyError as error:
+        raise LaneAuthorityError("Live lane authority is not process-owned") from error
+    required_facts = (
+        ("lane_role", required_lane_role, binding.lane_role),
+        ("lane_identity", required_lane_identity, binding.lane_identity),
+        (
+            "attestation_identity",
+            required_attestation_identity,
+            binding.attestation_identity,
+        ),
+        (
+            "environment_identity",
+            required_environment_identity,
+            binding.environment_identity,
+        ),
+        ("workers", required_workers, binding.workers),
+        ("native_threads", required_native_threads, binding.native_threads),
+    )
+    for fact, required, observed in required_facts:
+        if required is not None and required != observed:
+            raise _LiveLaneAuthorityMismatch(fact)
+    evidence = LaneAttestation(
+        binding.lane_identity,
+        binding.environment_identity,
+        binding.workers,
+        binding.native_threads,
+        "POST_IMPORT_CURRENT_PROCESS",
+    )
+    if evidence.identity != binding.attestation_identity:
+        raise LaneAuthorityError(
+            "Live lane authority binding is internally inconsistent"
+        )
+    return evidence
 
 
 @dataclass(frozen=True, slots=True)
@@ -1175,8 +1239,14 @@ class NumericalLane:
             "POST_IMPORT_CURRENT_PROCESS",
         )
         authority = object.__new__(LiveLaneAuthority)
-        object.__setattr__(authority, "_evidence", evidence)
-        _LIVE_LANE_AUTHORITIES.add(authority)
+        _LIVE_LANE_BINDINGS[authority] = _LiveLaneBinding(
+            lane_identity=self.identity,
+            lane_role=self.role,
+            attestation_identity=evidence.identity,
+            environment_identity=environment.identity,
+            workers=evidence.workers,
+            native_threads=evidence.native_threads,
+        )
         return authority
 
     def compatibility_delta(self, other: NumericalLane) -> dict[str, tuple[str, str]]:
@@ -1524,8 +1594,8 @@ def comparison_scope(
         right, LiveLaneAuthority
     ):
         raise TypeError("Comparison scope requires live current-process lane authority")
-    left_evidence = left.evidence
-    right_evidence = right.evidence
+    left_evidence = _validate_live_lane_authority(left)
+    right_evidence = _validate_live_lane_authority(right)
     kind: ComparisonScopeKind = (
         "WITHIN_LANE_BITWISE"
         if left_evidence.lane_identity == right_evidence.lane_identity

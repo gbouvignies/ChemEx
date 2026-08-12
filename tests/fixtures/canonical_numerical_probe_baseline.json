@@ -1,0 +1,3239 @@
+{
+  "artifacts": [
+    {
+      "definition_identity": "3a9caa3e786d4d6af3143a27a3f5fd26186157fc52cc501045e1611232e8614f",
+      "evidence": {
+        "accepted": [
+          "0x1.7fffffffffef9p+0",
+          "-0x1.0000000000000p-1"
+        ],
+        "active_mask": [
+          0,
+          0
+        ],
+        "backend_diagnostics": {
+          "callback_calls": 0,
+          "diagnostic_evaluations": 18,
+          "identity": "6141cad49187cfd70835c78f9dc7a1c7fce77dcf655f1eba99b4abd8b7fbe19c",
+          "iterations": null,
+          "nfev": 6,
+          "njev": 6
+        },
+        "candidate_fingerprint": "4c17b4c45ee5757fd02b116817885a250bea490274efe5c5771357768a9cb2d2",
+        "chi_square": "0x1.0e31000000000p-88",
+        "identity": "8f1fde50e068bca92aafb7a08f8801c4f3e4de16ddc3fe6b1e9acc1b0d1cfd5c",
+        "kind": "SOLVER",
+        "lower_bounds": [
+          "-0x1.0000000000000p+2",
+          "-0x1.0000000000000p+2"
+        ],
+        "objective_accounting": {
+          "cache_served_requests": 0,
+          "failure_kinds": [],
+          "fresh_evaluations": 2,
+          "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+          "materialization_requests": 1,
+          "requests_completed": 2,
+          "requests_failed": 0,
+          "requests_received": 2,
+          "requests_refused": 0,
+          "workflow_requests": 1
+        },
+        "residuals": [
+          "-0x1.0700000000000p-44",
+          "0x0.0p+0"
+        ],
+        "start": [
+          "0x0.0p+0",
+          "0x0.0p+0"
+        ],
+        "trajectory_fingerprint": "d3fed7502fda0e7f5088ff608c5585717ad627b3dc6fc593fe253d83e0dda140",
+        "upper_bounds": [
+          "0x1.0000000000000p+2",
+          "0x1.0000000000000p+2"
+        ]
+      },
+      "identity": "b0c2c2da92eceea253d4b07d776492fa0a4338a2476b37aa4ff003e5e4cbf295",
+      "probe_id": "trf-routine-quadratic-v1",
+      "risks": [],
+      "satisfied_claims": [
+        "deterministic-trajectory-fingerprint",
+        "routine-trf-convergence",
+        "solver-request-accounting"
+      ],
+      "schema_version": 2,
+      "semantic_version": "chemex-numerical-probes-v2",
+      "terminal": "CONVERGED"
+    },
+    {
+      "definition_identity": "77d6de95605268c0d2049cc746e70c807d0aebd808d3b8dbcb96e38616703954",
+      "evidence": {
+        "accepted": [
+          "0x1.0000000000000p+0",
+          "0x1.0000000000000p+0"
+        ],
+        "active_mask": [
+          0,
+          0
+        ],
+        "backend_diagnostics": {
+          "callback_calls": 0,
+          "diagnostic_evaluations": 58,
+          "identity": "7a5fe97ad85a11de041a076cb117a57b7ab580d44d865b0b534675e1fe8cacc6",
+          "iterations": null,
+          "nfev": 20,
+          "njev": 19
+        },
+        "candidate_fingerprint": "be58104409637e1eea6d66040ab20191b577744084af40c3821d7f867aac32d6",
+        "chi_square": "0x0.0p+0",
+        "identity": "a4a0aabac0fa45997fe450b86c4f7f668515cb0f76bc8859155ffaa79fe978bf",
+        "kind": "SOLVER",
+        "lower_bounds": [
+          "-0x1.8000000000000p+1",
+          "-0x1.8000000000000p+1"
+        ],
+        "objective_accounting": {
+          "cache_served_requests": 0,
+          "failure_kinds": [],
+          "fresh_evaluations": 2,
+          "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+          "materialization_requests": 1,
+          "requests_completed": 2,
+          "requests_failed": 0,
+          "requests_received": 2,
+          "requests_refused": 0,
+          "workflow_requests": 1
+        },
+        "residuals": [
+          "0x0.0p+0",
+          "0x0.0p+0"
+        ],
+        "start": [
+          "-0x1.3333333333333p+0",
+          "0x1.0000000000000p+0"
+        ],
+        "trajectory_fingerprint": "767526074473a958ffba29c103167d26fc2944e2a0a4fee128e6895e9d93169a",
+        "upper_bounds": [
+          "0x1.8000000000000p+1",
+          "0x1.8000000000000p+1"
+        ]
+      },
+      "identity": "3aa26c5ab875a2b130147ef3aa2915177cfb1637fbf74f33b3fbfd2b00936731",
+      "probe_id": "trf-difficult-rosenbrock-v1",
+      "risks": [],
+      "satisfied_claims": [
+        "deterministic-trajectory-fingerprint",
+        "difficult-trf-convergence",
+        "solver-request-accounting"
+      ],
+      "schema_version": 2,
+      "semantic_version": "chemex-numerical-probes-v2",
+      "terminal": "CONVERGED"
+    },
+    {
+      "definition_identity": "a8404a6445c124a520a9b4c0322bb991bb4df202efa8184f6d3b29047610e404",
+      "evidence": {
+        "backend_diagnostics": {
+          "callback_calls": 0,
+          "diagnostic_evaluations": 724,
+          "identity": "24b07d04cb9ad176cc9d5658be60ca6a5f5d9fed1c82b2b056bb6899766f5846",
+          "iterations": null,
+          "nfev": 181,
+          "njev": 181
+        },
+        "identity": "a2675b301c04670684d7373a581d969664dcbc8d3b56362e5a52db2af3086d7c",
+        "kind": "GRID",
+        "objective_accounting": {
+          "cache_served_requests": 0,
+          "failure_kinds": [],
+          "fresh_evaluations": 54,
+          "identity": "db9e95f28ec8025b0284021e2491e707c30df814e96a957a72b77397d83a973b",
+          "materialization_requests": 27,
+          "requests_completed": 54,
+          "requests_failed": 0,
+          "requests_received": 54,
+          "requests_refused": 0,
+          "workflow_requests": 27
+        },
+        "ordered_seed_ordinals": [
+          9,
+          12,
+          18,
+          19,
+          21,
+          20,
+          10,
+          22,
+          11,
+          23,
+          13,
+          14,
+          0,
+          1,
+          2,
+          3,
+          5,
+          15,
+          17,
+          24,
+          25,
+          26,
+          6,
+          7,
+          8,
+          4,
+          16
+        ],
+        "seeds": [
+          {
+            "identity": "4073fd6dc82674f4310ac3f0f29a0ff374f50a672d889a6dc35e9382f9227949",
+            "ordinal": 0,
+            "seed": [
+              "-0x1.0000000000000p+1",
+              "-0x1.0000000000000p+1",
+              "-0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.fffffffffff8ep-1",
+                "-0x1.0000000000000p+0",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "fe2ef070b81ec1ef9896f3008580de6d92b5c4c2b1b05397e9edb5392cfc3c6a",
+              "chi_square": "0x1.9620000000000p-93",
+              "identity": "2063ddbfff8ad5e4f7fcfc9a981294f4b1b5d44da5d95dea4d09e56931e4e2f7",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "-0x1.c800000000000p-47",
+                "0x0.0p+0",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "-0x1.0000000000000p+1",
+                "-0x1.0000000000000p+1",
+                "-0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "b3357f698976b9c7eb6c93d30085a259248acf7ede3c670dc721ca181d4891f0",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "a76e268d9445ddc0051b8088490b57ea78d1db4a8263848751b2d1ab8f56c843",
+            "ordinal": 1,
+            "seed": [
+              "-0x1.0000000000000p+1",
+              "-0x1.0000000000000p+1",
+              "0x0.0p+0"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.fffffffffff8ep-1",
+                "-0x1.0000000000000p+0",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "fe2ef070b81ec1ef9896f3008580de6d92b5c4c2b1b05397e9edb5392cfc3c6a",
+              "chi_square": "0x1.9620000000000p-93",
+              "identity": "f0989d277e2855e220e0c9d584d7fc2707953c52b5cde6d34f40c8c3db5e001f",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "-0x1.c800000000000p-47",
+                "0x0.0p+0",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "-0x1.0000000000000p+1",
+                "-0x1.0000000000000p+1",
+                "0x0.0p+0"
+              ],
+              "trajectory_fingerprint": "60dcce00fc5713f73bf14e2e0a0cf9a2bf7c7243552db00935f07073c97b04b3",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "3844b1810e829c2366db32f8d986efe73bb55b795bbdfea027ea02d552b8a937",
+            "ordinal": 2,
+            "seed": [
+              "-0x1.0000000000000p+1",
+              "-0x1.0000000000000p+1",
+              "0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.fffffffffff8ep-1",
+                "-0x1.0000000000000p+0",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "fe2ef070b81ec1ef9896f3008580de6d92b5c4c2b1b05397e9edb5392cfc3c6a",
+              "chi_square": "0x1.9620000000000p-93",
+              "identity": "c79cc574b3838b34964782d4e62d8c8483191ab2ab3e32e2b1ba5c12ad49e5b5",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "-0x1.c800000000000p-47",
+                "0x0.0p+0",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "-0x1.0000000000000p+1",
+                "-0x1.0000000000000p+1",
+                "0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "50124cd44919478318c38f3413422497ca05f7d4b998d38fbd8c5b25b1544ee7",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "1bf59405aa7bc19321df1d0114813d995e2e2d46f6f5c5d2484bdb2e737e270a",
+            "ordinal": 3,
+            "seed": [
+              "-0x1.0000000000000p+1",
+              "0x0.0p+0",
+              "-0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.fffffffffff8ep-1",
+                "-0x1.0000000000000p+0",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "fe2ef070b81ec1ef9896f3008580de6d92b5c4c2b1b05397e9edb5392cfc3c6a",
+              "chi_square": "0x1.9620000000000p-93",
+              "identity": "af0bbf4ade2d2b64b35f0c2f42d3b5b2aab9fa5428d139e8a7212dc43bfd1415",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "-0x1.c800000000000p-47",
+                "0x0.0p+0",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "-0x1.0000000000000p+1",
+                "0x0.0p+0",
+                "-0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "5feed1399f4a1c910c331c62eab488502689a157438a4bb8890eba98d53ad41e",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "8cf1543b201d0f4591085f193b0b9395499a5dc935efcdd89994b74a1166e126",
+            "ordinal": 4,
+            "seed": [
+              "-0x1.0000000000000p+1",
+              "0x0.0p+0",
+              "0x0.0p+0"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.ffffffffffc3bp-1",
+                "-0x1.0000000000000p+0",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "35d04f1977f56bc734f0128532f0e6d1a9288c320f347edc5624013c7d051ffd",
+              "chi_square": "0x1.c6b3200000000p-87",
+              "identity": "ce7038efecdb552d1dcb24b25c151d20714c339969a1b44a77b71d71ab310936",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "-0x1.e280000000000p-44",
+                "0x0.0p+0",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "-0x1.0000000000000p+1",
+                "0x0.0p+0",
+                "0x0.0p+0"
+              ],
+              "trajectory_fingerprint": "67897c750559d25d36c89f054423a1c64575039ec1dc9487d9503e970f85e767",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "d5947345d2d82db00b7b9617d1961737a5ffcfe70d88482b3190aff5b7d44c88",
+            "ordinal": 5,
+            "seed": [
+              "-0x1.0000000000000p+1",
+              "0x0.0p+0",
+              "0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.fffffffffff8ep-1",
+                "-0x1.0000000000000p+0",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "fe2ef070b81ec1ef9896f3008580de6d92b5c4c2b1b05397e9edb5392cfc3c6a",
+              "chi_square": "0x1.9620000000000p-93",
+              "identity": "250eb4272cf087bfc8e65a44d144f74cc7a1de5f6508153f8a2999b2b52e5fd8",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "-0x1.c800000000000p-47",
+                "0x0.0p+0",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "-0x1.0000000000000p+1",
+                "0x0.0p+0",
+                "0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "aef6a9f9a10256ee4636906a6d5f4ca7b872da74efe9530f9eb33c18541f82e0",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "0b96f322f8d456fdf54b3af4a9b1b3bac442123d2625ad62c87bcc6b2866a35d",
+            "ordinal": 6,
+            "seed": [
+              "-0x1.0000000000000p+1",
+              "0x1.0000000000000p+1",
+              "-0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.fffffffffff8ep-1",
+                "-0x1.fffffffffff8ep-1",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "f2a288a27c3f65143d9a95c5ad0ab8d7e4291fa5a7e57a06d959df4298f998fe",
+              "chi_square": "0x1.9620000000000p-92",
+              "identity": "6f5b42c7fce4744cc4b19bc11514c5de0b1c8ebe02edf855a77d011e91851041",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "-0x1.c800000000000p-47",
+                "0x1.c800000000000p-47",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "-0x1.0000000000000p+1",
+                "0x1.0000000000000p+1",
+                "-0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "4fa0205888e8eb44189d082dc4663d4fa9194c34bcf2841b32142c9fefcf25a1",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "cce46f4032d155832abe5e7365a6c7c7a89ee2edad0595b3b615b89960b7403d",
+            "ordinal": 7,
+            "seed": [
+              "-0x1.0000000000000p+1",
+              "0x1.0000000000000p+1",
+              "0x0.0p+0"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.fffffffffff8ep-1",
+                "-0x1.fffffffffff8ep-1",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "f2a288a27c3f65143d9a95c5ad0ab8d7e4291fa5a7e57a06d959df4298f998fe",
+              "chi_square": "0x1.9620000000000p-92",
+              "identity": "08c1bbfe7b4e72fa4caa0e681a3612b3ba4f4e7957b9ddc3d2931acc9e2d381f",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "-0x1.c800000000000p-47",
+                "0x1.c800000000000p-47",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "-0x1.0000000000000p+1",
+                "0x1.0000000000000p+1",
+                "0x0.0p+0"
+              ],
+              "trajectory_fingerprint": "5a3af6ae1d06e6ce0ccd09f1b82aa67cb666e3372a3c6b3eaa9170dde2d8881b",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "0ef55048483fd638b20c2c2d8f8f37185c2ac5fb2e3add77a1cc0a7398749550",
+            "ordinal": 8,
+            "seed": [
+              "-0x1.0000000000000p+1",
+              "0x1.0000000000000p+1",
+              "0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.fffffffffff8ep-1",
+                "-0x1.fffffffffff8ep-1",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "f2a288a27c3f65143d9a95c5ad0ab8d7e4291fa5a7e57a06d959df4298f998fe",
+              "chi_square": "0x1.9620000000000p-92",
+              "identity": "a23c6dbfad94a184a6c0fd3f5a2081ca9dd9f38e8327eb3dfa594767a4a5f7a0",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "-0x1.c800000000000p-47",
+                "0x1.c800000000000p-47",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "-0x1.0000000000000p+1",
+                "0x1.0000000000000p+1",
+                "0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "2037a1dc7bdd20ef8a9e37a541c971a1177f64becd73415ce1f9509ad9bf39f9",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "7e732da52ed4f5c564a76470d2ab9fb5cf97114d2547fee61127074c6c9cf45b",
+            "ordinal": 9,
+            "seed": [
+              "0x0.0p+0",
+              "-0x1.0000000000000p+1",
+              "-0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.0000000000000p+0",
+                "-0x1.0000000000000p+0",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "0732c932061bdbf004ec4b756b845f26b4467ef1aa11861052df4286f5a5e238",
+              "chi_square": "0x0.0p+0",
+              "identity": "95e70c9a9b01b67d3bc0ecebeffd4d66a29464e931f6bee483795d7f01a10776",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "0x0.0p+0",
+                "0x0.0p+0",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "0x0.0p+0",
+                "-0x1.0000000000000p+1",
+                "-0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "a37bc7dc5f035d1ef014f0f4fc3af225d8972c45d44cb6d2b7363b494247c844",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "173cfec4e637689cd00dd8a25f5ae120286c9ecf43b3d15cd826fa68fe4bb28b",
+            "ordinal": 10,
+            "seed": [
+              "0x0.0p+0",
+              "-0x1.0000000000000p+1",
+              "0x0.0p+0"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.ffffffffffff6p-1",
+                "-0x1.0000000000000p+0",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 24,
+                "identity": "f516c4d26f005842cba029d2e942922cf4ed7f2dd80ba71c7205e17a280b3f5b",
+                "iterations": null,
+                "nfev": 6,
+                "njev": 6
+              },
+              "candidate_fingerprint": "7e8306a85cbb1046051876fd2785c9d32cd9c993ec5843ab15d2f110a28adc7e",
+              "chi_square": "0x1.9000000000000p-100",
+              "identity": "09d6025c90ad89f27db39a9284f1188f314aef6f499d5f7811dd35bafbb169d1",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "-0x1.4000000000000p-50",
+                "0x0.0p+0",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "0x0.0p+0",
+                "-0x1.0000000000000p+1",
+                "0x0.0p+0"
+              ],
+              "trajectory_fingerprint": "eb54802464c5401fab9d330b4990aa5c89f87546c7ae54318dba30a295a1005c",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "071bfe24125fe44b6b65e445c4bead79aa0f880f6296829c7f9496ca81e51fbd",
+            "ordinal": 11,
+            "seed": [
+              "0x0.0p+0",
+              "-0x1.0000000000000p+1",
+              "0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.ffffffffffff6p-1",
+                "-0x1.0000000000000p+0",
+                "0x1.0000000000001p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 24,
+                "identity": "f516c4d26f005842cba029d2e942922cf4ed7f2dd80ba71c7205e17a280b3f5b",
+                "iterations": null,
+                "nfev": 6,
+                "njev": 6
+              },
+              "candidate_fingerprint": "8d0289f1a0f794128cbf54ec2da4bdc0b7d5c4585df44f63aa8aa1df0dca8afe",
+              "chi_square": "0x1.9400000000000p-100",
+              "identity": "dce0d605d5588d5b1d6084337fd1d6b09dbd9cb74f0b7da91899d5367f01b2e9",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "-0x1.4000000000000p-50",
+                "0x0.0p+0",
+                "0x1.0000000000000p-53"
+              ],
+              "start": [
+                "0x0.0p+0",
+                "-0x1.0000000000000p+1",
+                "0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "084a6f2c7eee4b72c594466988f7fc1ec5b91773ce405bed4246259cb3be2bf1",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "7cf7d439088aa3be79f114ddd837033f8fe4384369d77bfb62558495ab8c4731",
+            "ordinal": 12,
+            "seed": [
+              "0x0.0p+0",
+              "0x0.0p+0",
+              "-0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.0000000000000p+0",
+                "-0x1.0000000000000p+0",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "0732c932061bdbf004ec4b756b845f26b4467ef1aa11861052df4286f5a5e238",
+              "chi_square": "0x0.0p+0",
+              "identity": "e4b91839213083c0e4fc3b035c4331beb4d42de50b591ec2458a2dd299270d7d",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "0x0.0p+0",
+                "0x0.0p+0",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "0x0.0p+0",
+                "0x0.0p+0",
+                "-0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "c14c9de2a309ebfab6c357c0bbbab97bc83e6b1caf17cac8f948e9e1d453c7fd",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "eccd89f05264acc2d79c61414eb3f20fd17d3bb980cce3f18443d87b352b9dc6",
+            "ordinal": 13,
+            "seed": [
+              "0x0.0p+0",
+              "0x0.0p+0",
+              "0x0.0p+0"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.ffffffffffff6p-1",
+                "-0x1.ffffffffffff6p-1",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 24,
+                "identity": "f516c4d26f005842cba029d2e942922cf4ed7f2dd80ba71c7205e17a280b3f5b",
+                "iterations": null,
+                "nfev": 6,
+                "njev": 6
+              },
+              "candidate_fingerprint": "a173498737f81654cb404bbc121475dcf9cd4eb8c725d60e5efc67beb47140b5",
+              "chi_square": "0x1.9000000000000p-99",
+              "identity": "930be88bf862927938517ddc14b3f6a31669e7a9beaa5405d60b1b52ab91fd70",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "-0x1.4000000000000p-50",
+                "0x1.4000000000000p-50",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "0x0.0p+0",
+                "0x0.0p+0",
+                "0x0.0p+0"
+              ],
+              "trajectory_fingerprint": "7f98df5185e85e89d0e97af83beb0c63c80a0d04b593b08c14c0587172e73797",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "36d072043baf9e494f2991f739230363f3cf19dbf79197a5164033828c3a12aa",
+            "ordinal": 14,
+            "seed": [
+              "0x0.0p+0",
+              "0x0.0p+0",
+              "0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.ffffffffffff6p-1",
+                "-0x1.ffffffffffff6p-1",
+                "0x1.0000000000001p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 24,
+                "identity": "f516c4d26f005842cba029d2e942922cf4ed7f2dd80ba71c7205e17a280b3f5b",
+                "iterations": null,
+                "nfev": 6,
+                "njev": 6
+              },
+              "candidate_fingerprint": "d413aac60d9046bb778eff1be39929c924b7e5406674d5ddb1f232d6acd67d99",
+              "chi_square": "0x1.9200000000000p-99",
+              "identity": "e293d81c67d03c3b1484301579289ba3fb64630fe7d36c142fd81211f5af2d79",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "-0x1.4000000000000p-50",
+                "0x1.4000000000000p-50",
+                "0x1.0000000000000p-53"
+              ],
+              "start": [
+                "0x0.0p+0",
+                "0x0.0p+0",
+                "0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "b46315ee1ce12525e28c963c92fcc8a8554111f0cffc99801980fddf4af18512",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "d7bb244c22fb84021a717dd82197986653fb76853fda175caa4ed3052e27e93c",
+            "ordinal": 15,
+            "seed": [
+              "0x0.0p+0",
+              "0x1.0000000000000p+1",
+              "-0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.0000000000000p+0",
+                "-0x1.fffffffffff8ep-1",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "6ab77d85b937760a40ca11b78aebe150f0757f5e7fa4dc6fa9b68e8b60247a7f",
+              "chi_square": "0x1.9620000000000p-93",
+              "identity": "ccbd72f140d618e228aeb7dec577e6cdfbf4f2bdf9efd8ad8cfaac71c1740131",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "0x0.0p+0",
+                "0x1.c800000000000p-47",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "0x0.0p+0",
+                "0x1.0000000000000p+1",
+                "-0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "11291c4c040d9e24dc89fe46efae74a5ca8bf515be9fa4653b2ea8b8dd4612da",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "58831ef58cd753db9089e699288b31517faceffb06bf008efbc92aaee80a5b73",
+            "ordinal": 16,
+            "seed": [
+              "0x0.0p+0",
+              "0x1.0000000000000p+1",
+              "0x0.0p+0"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.0000000000000p+0",
+                "-0x1.ffffffffffc3bp-1",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "7796f6c982deba40e21e76ae2d355881d43ccc1289d15ebbf67f9189027bb89d",
+              "chi_square": "0x1.c6b3200000000p-87",
+              "identity": "4afa565b0ba30b6712aef5c803a9da68a2d31d8d9de9b82e1e196f1b17bdcbcd",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "0x0.0p+0",
+                "0x1.e280000000000p-44",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "0x0.0p+0",
+                "0x1.0000000000000p+1",
+                "0x0.0p+0"
+              ],
+              "trajectory_fingerprint": "14fb3639e9a269b805f22759abaf232e061de3b5f24ad24495f503c1c0e70d92",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "3d81340b782c55f352ba0fbb28bd3a4d4128204d65843eab25f21ed82cbd20d1",
+            "ordinal": 17,
+            "seed": [
+              "0x0.0p+0",
+              "0x1.0000000000000p+1",
+              "0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.0000000000000p+0",
+                "-0x1.fffffffffff8ep-1",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "6ab77d85b937760a40ca11b78aebe150f0757f5e7fa4dc6fa9b68e8b60247a7f",
+              "chi_square": "0x1.9620000000000p-93",
+              "identity": "07ed2f7dd10bc39d1120d0cdf790b5104cccbe0883db4cfc01250d0a1a615ea4",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "0x0.0p+0",
+                "0x1.c800000000000p-47",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "0x0.0p+0",
+                "0x1.0000000000000p+1",
+                "0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "9e0aa1616e8c8ea28fce7d4884eaf87ef791b5d17bdb5706244e002da1533a7d",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "642beec87736f369fdc0ccac7131617a28c875cb77628b6e25ef86535d79ff2e",
+            "ordinal": 18,
+            "seed": [
+              "0x1.0000000000000p+1",
+              "-0x1.0000000000000p+1",
+              "-0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.0000000000000p+0",
+                "-0x1.0000000000000p+0",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "0732c932061bdbf004ec4b756b845f26b4467ef1aa11861052df4286f5a5e238",
+              "chi_square": "0x0.0p+0",
+              "identity": "8a33336cf7a3e8faa0bee960d77b5556efddac3bfbdebac7ab997fcce8e9d03a",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "0x0.0p+0",
+                "0x0.0p+0",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "0x1.0000000000000p+1",
+                "-0x1.0000000000000p+1",
+                "-0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "2c39b1588f7799f757cff561e8ec52f9b2d9922c6a049c890741ec3ffb88d777",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "9de309b18fd0ab271d8f26491b966d7bd5f0c92f1b6109611422b4825234f38c",
+            "ordinal": 19,
+            "seed": [
+              "0x1.0000000000000p+1",
+              "-0x1.0000000000000p+1",
+              "0x0.0p+0"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.0000000000000p+0",
+                "-0x1.0000000000000p+0",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 24,
+                "identity": "f516c4d26f005842cba029d2e942922cf4ed7f2dd80ba71c7205e17a280b3f5b",
+                "iterations": null,
+                "nfev": 6,
+                "njev": 6
+              },
+              "candidate_fingerprint": "0732c932061bdbf004ec4b756b845f26b4467ef1aa11861052df4286f5a5e238",
+              "chi_square": "0x0.0p+0",
+              "identity": "607865507d5f30699232cd31fe55f3749d4a2fe087947bc6a01e480ef70b20e2",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "0x0.0p+0",
+                "0x0.0p+0",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "0x1.0000000000000p+1",
+                "-0x1.0000000000000p+1",
+                "0x0.0p+0"
+              ],
+              "trajectory_fingerprint": "524f0d082649cfa95c726513403697cabc384db627e9c5c8ab5464349632575f",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "55b2d4b0a3805e351a7157b49052682a6df03be05e8af72c5921a0677593c224",
+            "ordinal": 20,
+            "seed": [
+              "0x1.0000000000000p+1",
+              "-0x1.0000000000000p+1",
+              "0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.0000000000000p+0",
+                "-0x1.0000000000000p+0",
+                "0x1.0000000000001p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 24,
+                "identity": "f516c4d26f005842cba029d2e942922cf4ed7f2dd80ba71c7205e17a280b3f5b",
+                "iterations": null,
+                "nfev": 6,
+                "njev": 6
+              },
+              "candidate_fingerprint": "df4c4162ee29f6ac9ecf2785f9e7f00a52b66af5cf0766c8ee58428a4f757fea",
+              "chi_square": "0x1.0000000000000p-106",
+              "identity": "319b2d99a02b495fc12be7876ee64c69bbe3ef63a2404df35186eb483f95cfef",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "0x0.0p+0",
+                "0x0.0p+0",
+                "0x1.0000000000000p-53"
+              ],
+              "start": [
+                "0x1.0000000000000p+1",
+                "-0x1.0000000000000p+1",
+                "0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "132b83f439358527cca2e647f4e818ded5b450576e5519cc825bc207d24c0d80",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "49ac345ae12cdfcc7bbca7e42cb694cdc9492bebfba8ba904869acc5346a6518",
+            "ordinal": 21,
+            "seed": [
+              "0x1.0000000000000p+1",
+              "0x0.0p+0",
+              "-0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.0000000000000p+0",
+                "-0x1.0000000000000p+0",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "0732c932061bdbf004ec4b756b845f26b4467ef1aa11861052df4286f5a5e238",
+              "chi_square": "0x0.0p+0",
+              "identity": "10cc0dce2c7d2e7b795f72c03c0201eff79cfc2755cd6b649d46ee5223bd0d80",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "0x0.0p+0",
+                "0x0.0p+0",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "0x1.0000000000000p+1",
+                "0x0.0p+0",
+                "-0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "9bfea974293bcc09c2c3b2ebcbd308b0d70e80bc804b9c9fdbcfbd889fbf508a",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "4c1c1e4d8671cb876f39b30e007e792c4bc0450b99de7440e315036e37536eba",
+            "ordinal": 22,
+            "seed": [
+              "0x1.0000000000000p+1",
+              "0x0.0p+0",
+              "0x0.0p+0"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.0000000000000p+0",
+                "-0x1.ffffffffffff6p-1",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 24,
+                "identity": "f516c4d26f005842cba029d2e942922cf4ed7f2dd80ba71c7205e17a280b3f5b",
+                "iterations": null,
+                "nfev": 6,
+                "njev": 6
+              },
+              "candidate_fingerprint": "37372751c1ce65fdbc9aef7b1512bb2d092cd31f742877473ae28a15f7c470ab",
+              "chi_square": "0x1.9000000000000p-100",
+              "identity": "a934bbb88fb29157406c978fa83db656b3f8108c8b872555a800f1e81e23784a",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "0x0.0p+0",
+                "0x1.4000000000000p-50",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "0x1.0000000000000p+1",
+                "0x0.0p+0",
+                "0x0.0p+0"
+              ],
+              "trajectory_fingerprint": "5d92e1633634c4494eee58ac2e20190ef5ec431e98d464134235777c123f6456",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "7770f42f645505825532d903483bb93b9dda323d1a3a68a2fa4f09c15142f119",
+            "ordinal": 23,
+            "seed": [
+              "0x1.0000000000000p+1",
+              "0x0.0p+0",
+              "0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.0000000000000p+0",
+                "-0x1.ffffffffffff6p-1",
+                "0x1.0000000000001p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 24,
+                "identity": "f516c4d26f005842cba029d2e942922cf4ed7f2dd80ba71c7205e17a280b3f5b",
+                "iterations": null,
+                "nfev": 6,
+                "njev": 6
+              },
+              "candidate_fingerprint": "cc7cdbb979f6c1fb01998dfac61af7308f0c950fd40069e6a49dfce7e83567da",
+              "chi_square": "0x1.9400000000000p-100",
+              "identity": "be0ef8760808080f0f4409c4f7bca058f1ed21d83e80b480c62136c6434db22d",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "0x0.0p+0",
+                "0x1.4000000000000p-50",
+                "0x1.0000000000000p-53"
+              ],
+              "start": [
+                "0x1.0000000000000p+1",
+                "0x0.0p+0",
+                "0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "e23f4abbd8e04486387839afc551e73cbb8df36f9adb35c40b0f1393eb988544",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "d7be950751b592e9bb39c2fce5f35e3fb9d6d88a6744e4d991700741dd78a8e4",
+            "ordinal": 24,
+            "seed": [
+              "0x1.0000000000000p+1",
+              "0x1.0000000000000p+1",
+              "-0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.0000000000000p+0",
+                "-0x1.fffffffffff8ep-1",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "6ab77d85b937760a40ca11b78aebe150f0757f5e7fa4dc6fa9b68e8b60247a7f",
+              "chi_square": "0x1.9620000000000p-93",
+              "identity": "32e1c56b64dc0636ea0e8e24233fbfb68090a76827c1fdff1f9c7a25d65c632c",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "0x0.0p+0",
+                "0x1.c800000000000p-47",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "0x1.0000000000000p+1",
+                "0x1.0000000000000p+1",
+                "-0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "2ba306be47715f19cd5ced9bd7d65ddc59a5350bc0a816ec14709b7a967dd86b",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "a0ebda44aeae568fbd8f594a0535ad6f4e831d658e0d46c19e11a4dbd3052020",
+            "ordinal": 25,
+            "seed": [
+              "0x1.0000000000000p+1",
+              "0x1.0000000000000p+1",
+              "0x0.0p+0"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.0000000000000p+0",
+                "-0x1.fffffffffff8ep-1",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "6ab77d85b937760a40ca11b78aebe150f0757f5e7fa4dc6fa9b68e8b60247a7f",
+              "chi_square": "0x1.9620000000000p-93",
+              "identity": "b63ab5e079093b30dc1094adfc637b806f80c8b1735fb0c0fe01c5aa587c27e4",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "0x0.0p+0",
+                "0x1.c800000000000p-47",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "0x1.0000000000000p+1",
+                "0x1.0000000000000p+1",
+                "0x0.0p+0"
+              ],
+              "trajectory_fingerprint": "74e65e94a5edba21afe94226655200f6e0b3c75d1cc5e1dd9e53aaa8aaba3e01",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          },
+          {
+            "identity": "5c45971a04c770632822f912fb9ab5a6510c7f28e7653b9bb6a0e3d1ea7854a0",
+            "ordinal": 26,
+            "seed": [
+              "0x1.0000000000000p+1",
+              "0x1.0000000000000p+1",
+              "0x1.0000000000000p+1"
+            ],
+            "solver": {
+              "accepted": [
+                "0x1.0000000000000p+0",
+                "-0x1.fffffffffff8ep-1",
+                "0x1.0000000000000p-1"
+              ],
+              "active_mask": [
+                0,
+                0,
+                0
+              ],
+              "backend_diagnostics": {
+                "callback_calls": 0,
+                "diagnostic_evaluations": 28,
+                "identity": "b2e2e4d51b1ce7cb29dd443788d6d9dabd66171a4df7619c88749022991ee74c",
+                "iterations": null,
+                "nfev": 7,
+                "njev": 7
+              },
+              "candidate_fingerprint": "6ab77d85b937760a40ca11b78aebe150f0757f5e7fa4dc6fa9b68e8b60247a7f",
+              "chi_square": "0x1.9620000000000p-93",
+              "identity": "bd76bed7ae15fb9c63de564da13f42cc430622ed8cf9ea76cafae473832c012a",
+              "kind": "SOLVER",
+              "lower_bounds": [
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1",
+                "-0x1.8000000000000p+1"
+              ],
+              "objective_accounting": {
+                "cache_served_requests": 0,
+                "failure_kinds": [],
+                "fresh_evaluations": 2,
+                "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+                "materialization_requests": 1,
+                "requests_completed": 2,
+                "requests_failed": 0,
+                "requests_received": 2,
+                "requests_refused": 0,
+                "workflow_requests": 1
+              },
+              "residuals": [
+                "0x0.0p+0",
+                "0x1.c800000000000p-47",
+                "0x0.0p+0"
+              ],
+              "start": [
+                "0x1.0000000000000p+1",
+                "0x1.0000000000000p+1",
+                "0x1.0000000000000p+1"
+              ],
+              "trajectory_fingerprint": "555e1599687ded49c069218404ae44909009f056bc687858d95ff61a5166fbde",
+              "upper_bounds": [
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1",
+                "0x1.8000000000000p+1"
+              ]
+            },
+            "terminal": "CONVERGED"
+          }
+        ],
+        "selected_seed_ordinal": 9,
+        "trajectory_fingerprint": "83e5bc6279616061e4e1794e25aa8ddc3d86ea712dc01ceeaedd3c55c6f215e4"
+      },
+      "identity": "da1e5f5aab27e8789ffe43fd88824fe22f221810e3cc3722c61d47afe07f2ac5",
+      "probe_id": "grid-27-seed-coverage-v1",
+      "risks": [],
+      "satisfied_claims": [
+        "grid-seed-coverage",
+        "solver-request-accounting"
+      ],
+      "schema_version": 2,
+      "semantic_version": "chemex-numerical-probes-v2",
+      "terminal": "SELECTED"
+    },
+    {
+      "definition_identity": "23655ad11bc5439deae2564b1df8a00f297b93a1971bbbe167acac31a60610b7",
+      "evidence": {
+        "backend_diagnostics": {
+          "callback_calls": 0,
+          "diagnostic_evaluations": 0,
+          "identity": "538d54d1cb038569b1e33f3400035fce17930bd151b069876a003386028d02a8",
+          "iterations": null,
+          "nfev": 0,
+          "njev": null
+        },
+        "candidates": [
+          {
+            "chi_square": "0x1.0000000000000p+0",
+            "final_vector": [
+              "0x1.0000000000000p+0",
+              "0x0.0p+0"
+            ],
+            "identity": "f2d155510db1066d98e321b94e993d5db589752cda666b4cc113d2fd3e1a060f",
+            "ordinal": 0
+          },
+          {
+            "chi_square": "0x0.0p+0",
+            "final_vector": [
+              "0x0.0p+0",
+              "0x0.0p+0"
+            ],
+            "identity": "1f9927ab9b693549aa86127f233e764051dceb0232d5e200c1bf781c73c6b780",
+            "ordinal": 1
+          },
+          {
+            "chi_square": "0x1.0000000000000p+0",
+            "final_vector": [
+              "0x0.0p+0",
+              "0x1.0000000000000p+0"
+            ],
+            "identity": "2389962901bac2c6e0282bbfd370bdb386d598e883c5ad7907c89721d14b1f59",
+            "ordinal": 2
+          },
+          {
+            "chi_square": "0x1.0000000000000p+0",
+            "final_vector": [
+              "-0x1.0000000000000p+0",
+              "0x0.0p+0"
+            ],
+            "identity": "48b0296d0b113858ac7aa144e241a4209e9ee5764436420a14a589bd66cfcef3",
+            "ordinal": 3
+          }
+        ],
+        "expected_order": [
+          1,
+          3,
+          2,
+          0
+        ],
+        "identity": "455c703cbf8910c99c98b1b02d78477153930ac0763993f7d9e6b60310e62030",
+        "kind": "GRID_ORDERING",
+        "objective_accounting": {
+          "cache_served_requests": 0,
+          "failure_kinds": [],
+          "fresh_evaluations": 0,
+          "identity": "b227cb8551136ac40087f4a088a7452bb0d3dbe29261705954249103738db2b6",
+          "materialization_requests": 0,
+          "requests_completed": 0,
+          "requests_failed": 0,
+          "requests_received": 0,
+          "requests_refused": 0,
+          "workflow_requests": 0
+        },
+        "observed_order": [
+          1,
+          3,
+          2,
+          0
+        ],
+        "selected_ordinal": 1,
+        "trajectory_fingerprint": "48ca4b9ea22fd8bc86ef184a7c88de2c7cfb5a08908c9ff92e6530fc2de1a330"
+      },
+      "identity": "15528cf2ea4d374afe85fa31196107cc39322ca7be62553ce0c399c751a32ac3",
+      "probe_id": "grid-candidate-ordering-v1",
+      "risks": [],
+      "satisfied_claims": [
+        "canonical-grid-candidate-ordering"
+      ],
+      "schema_version": 2,
+      "semantic_version": "chemex-numerical-probes-v2",
+      "terminal": "ORDERED"
+    },
+    {
+      "definition_identity": "a78f3c27aa29cbc2bfa6d414fbc6b49f8020cfabcdf185b07b6e53b245fe59a4",
+      "evidence": {
+        "final_population": [
+          {
+            "backend_objective": "0x1.4d8729831dbe3p-16",
+            "fingerprint": "5c789c97cd0d12a03a174431695f6c5c40814a036e7096aaf31517173204d3db",
+            "objective": "0x1.4d8729831dbe3p-16",
+            "population_index": 0,
+            "vector": [
+              "0x1.01b217732a6a8p-2"
+            ]
+          },
+          {
+            "backend_objective": "0x1.daac96945a5bfp-12",
+            "fingerprint": "a7be2791d4a8ff7b31a79b323a1d9980ce8ed7e777bdbdf646d26d81438343e3",
+            "objective": "0x1.daac96945a5bfp-12",
+            "population_index": 1,
+            "vector": [
+              "0x1.efd0397fd3af0p-3"
+            ]
+          },
+          {
+            "backend_objective": "0x1.e142d9d14d7bdp-15",
+            "fingerprint": "b1ae07f39dce686623a34a1824cb4f8ffbaaabf7e586203943f9246e5fb5baff",
+            "objective": "0x1.e142d9d14d7bdp-15",
+            "population_index": 2,
+            "vector": [
+              "0x1.fa3d1cf701d50p-3"
+            ]
+          },
+          {
+            "backend_objective": "0x1.af0de0058df4cp-14",
+            "fingerprint": "e067d8470a10de9907f8943112a6975d576e80990157de3965aa9e826c8468e3",
+            "objective": "0x1.af0de0058df4cp-14",
+            "population_index": 3,
+            "vector": [
+              "0x1.f849f23049ff0p-3"
+            ]
+          },
+          {
+            "backend_objective": "0x1.78cc565b4338ep-13",
+            "fingerprint": "187e6cd482321f7e63997c9714c7e88c3ce16c94582f6bd08754f8aba6c0b447",
+            "objective": "0x1.78cc565b4338ep-13",
+            "population_index": 4,
+            "vector": [
+              "0x1.05191da2e53d0p-2"
+            ]
+          }
+        ],
+        "identity": "d851c52a9fd82b0d4174c1aeeee6f846926099cdd2f40956c94b5b0caab925d7",
+        "kind": "DE_SEARCH",
+        "ordered_population_indices": [
+          0,
+          2,
+          3,
+          4,
+          1
+        ],
+        "polish": {
+          "accepted": [
+            "0x1.0000000002bdep-2"
+          ],
+          "active_mask": [
+            0
+          ],
+          "backend_diagnostics": {
+            "callback_calls": 0,
+            "diagnostic_evaluations": 6,
+            "identity": "add1708e341630b1a8f2083e59352a81e25b7d5aab62acd6b88ed2139c6b0b1e",
+            "iterations": null,
+            "nfev": 3,
+            "njev": 3
+          },
+          "candidate_fingerprint": "86042579ae0a4bfa36a1732efa493df7e0d16f76d03420f274115248323c5342",
+          "chi_square": "0x1.b3fb25e800000p-79",
+          "identity": "5a961146a816b18ce7cd73f6d6b722e12c4f105176826052608838d600f3b507",
+          "kind": "SOLVER",
+          "lower_bounds": [
+            "-0x1.0000000000000p+1"
+          ],
+          "objective_accounting": {
+            "cache_served_requests": 0,
+            "failure_kinds": [],
+            "fresh_evaluations": 2,
+            "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+            "materialization_requests": 1,
+            "requests_completed": 2,
+            "requests_failed": 0,
+            "requests_received": 2,
+            "requests_refused": 0,
+            "workflow_requests": 1
+          },
+          "residuals": [
+            "0x1.5ef0000000000p-41",
+            "0x1.b6ac000000000p-40"
+          ],
+          "start": [
+            "0x1.01b217732a6a8p-2"
+          ],
+          "trajectory_fingerprint": "10d1d58c3ff02c5f6470c21b1cd8b79d1939cc4e163bca14814a2479317361c8",
+          "upper_bounds": [
+            "0x1.0000000000000p+1"
+          ]
+        },
+        "root_seed": 591,
+        "search_accounting": {
+          "cache_served_requests": 0,
+          "failure_kinds": [],
+          "fresh_evaluations": 5,
+          "identity": "e71e76c1262ef2e2bef3d2578cf660e7eccaff2151a53e97992dd5169b6cc46e",
+          "materialization_requests": 5,
+          "requests_completed": 5,
+          "requests_failed": 0,
+          "requests_received": 5,
+          "requests_refused": 0,
+          "workflow_requests": 0
+        },
+        "search_diagnostics": {
+          "callback_calls": 6,
+          "diagnostic_evaluations": 35,
+          "identity": "0646add834f73d704ea76265997bcf6b358412d62f5fce29dff66a7020f3daf5",
+          "iterations": 6,
+          "nfev": 35,
+          "njev": null
+        },
+        "selected_population_index": 0,
+        "trajectory_fingerprint": "81a44a5c684ad738b305a5029833e47a0602228aa07fea80e17e4383ba2cb737"
+      },
+      "identity": "4a1a506d59e657d045719fba8a7e6d0ceb700477bdcb69732820292693e34b96",
+      "probe_id": "de-bounded-search-v1",
+      "risks": [],
+      "satisfied_claims": [
+        "de-seeded-replay",
+        "de-to-trf-candidate-ordering",
+        "solver-request-accounting"
+      ],
+      "schema_version": 2,
+      "semantic_version": "chemex-numerical-probes-v2",
+      "terminal": "POLISHED"
+    },
+    {
+      "definition_identity": "e4f3adfd98b85aa583a8ac2ed9483df9329a1eceb192af0fb19fa17e8340185e",
+      "evidence": {
+        "absolute_error": "0x1.9640000000000p-40",
+        "absolute_tolerance": "0x1.b7cdfd9d7bdbbp-34",
+        "actual_steps": [
+          "-0x1.a36e2eb1c4000p-13",
+          "-0x1.a36e2eb1c4000p-14",
+          "0x0.0p+0",
+          "0x1.a36e2eb1c4000p-14",
+          "0x1.a36e2eb1c4000p-13"
+        ],
+        "backend_diagnostics": {
+          "callback_calls": 0,
+          "diagnostic_evaluations": 0,
+          "identity": "538d54d1cb038569b1e33f3400035fce17930bd151b069876a003386028d02a8",
+          "iterations": null,
+          "nfev": 0,
+          "njev": null
+        },
+        "estimate": "0x1.a61298e1e2000p+0",
+        "identity": "23141ace30f17115605bbf8376f442c0f1d5832e78f82ea965b7a423eae38672",
+        "kind": "FINITE_DIFFERENCE",
+        "objective_accounting": {
+          "cache_served_requests": 0,
+          "failure_kinds": [],
+          "fresh_evaluations": 5,
+          "identity": "9025f9a628010034ca6a325e3a0c4563ba653c840763859ad3665f09d217e4db",
+          "materialization_requests": 0,
+          "requests_completed": 5,
+          "requests_failed": 0,
+          "requests_received": 5,
+          "requests_refused": 0,
+          "workflow_requests": 5
+        },
+        "point": "0x1.0000000000000p-1",
+        "sampled_values": [
+          "0x1.a5fcfd3eb4242p+0",
+          "0x1.a607caece33e1p+0",
+          "0x1.a61298e1e069cp+0",
+          "0x1.a61d671dad774p+0",
+          "0x1.a62835a04c36bp+0"
+        ],
+        "trajectory_fingerprint": "68b5c27efda570802125c3d23c29af643fe273960d5c41fb63ab03b5c59795fe",
+        "truth": "0x1.a61298e1e069cp+0",
+        "weights": [
+          "0x1.a0aaaaaaaadd3p+9",
+          "-0x1.a0aaaaaaaadd1p+12",
+          "0x0.0p+0",
+          "0x1.a0aaaaaaaadd1p+12",
+          "-0x1.a0aaaaaaaadd1p+9"
+        ]
+      },
+      "identity": "582038af31913010942780184e2d4e339c4b4a49c0d85856de1e4185ac657ced",
+      "probe_id": "finite-difference-reliability-v1",
+      "risks": [],
+      "satisfied_claims": [
+        "finite-difference-reliability",
+        "stencil-request-accounting",
+        "stencil-trajectory-fingerprint"
+      ],
+      "schema_version": 2,
+      "semantic_version": "chemex-numerical-probes-v2",
+      "terminal": "RELIABLE"
+    },
+    {
+      "definition_identity": "f561a7c8818b5aff09c2f01182398ac14ffcc933ba4563c52978612ad9133670",
+      "evidence": {
+        "accepted": [
+          "0x1.ffffffffffffbp-1"
+        ],
+        "active_mask": [
+          1
+        ],
+        "backend_diagnostics": {
+          "callback_calls": 0,
+          "diagnostic_evaluations": 12,
+          "identity": "65c9d0823000dbde3241282d729a226044dad334466ee1f8d134e93dbcb68848",
+          "iterations": null,
+          "nfev": 6,
+          "njev": 6
+        },
+        "candidate_fingerprint": "741d92ceabeac89b054a3df93ba9e3ca29546e96610a37851bee2d099423e3f4",
+        "chi_square": "0x1.0000000000004p+0",
+        "identity": "660294a68c52c82e9f6c39855fc6abf4ac0e8c89c8b5fbe2f888b8cf861da99a",
+        "kind": "SOLVER",
+        "lower_bounds": [
+          "0x0.0p+0"
+        ],
+        "objective_accounting": {
+          "cache_served_requests": 0,
+          "failure_kinds": [],
+          "fresh_evaluations": 2,
+          "identity": "6b6165e07de7ae46fd9818f8d56d308bb18b81d5273849803ada5503655f558e",
+          "materialization_requests": 1,
+          "requests_completed": 2,
+          "requests_failed": 0,
+          "requests_received": 2,
+          "requests_refused": 0,
+          "workflow_requests": 1
+        },
+        "residuals": [
+          "-0x1.0000000000002p+0"
+        ],
+        "start": [
+          "0x1.0000000000000p-1"
+        ],
+        "trajectory_fingerprint": "3f6decb27ae7c17b09f98db8f2afa78edcff9ce1883c857b5ecf65414bf9af51",
+        "upper_bounds": [
+          "0x1.0000000000000p+0"
+        ]
+      },
+      "identity": "7785985454434825d980b73cf65024c2d6f3fa1c7a85d9c5a51e496e94ec8ad1",
+      "probe_id": "trf-active-bound-v1",
+      "risks": [
+        "ACTIVE_BOUND"
+      ],
+      "satisfied_claims": [
+        "active-bound-detection",
+        "bound-safe-trf-convergence",
+        "solver-request-accounting"
+      ],
+      "schema_version": 2,
+      "semantic_version": "chemex-numerical-probes-v2",
+      "terminal": "CONVERGED"
+    },
+    {
+      "definition_identity": "2f11a47aab231bf73dd84735256cd2b3fcbbd72842770e0c5268299b913efe07",
+      "evidence": {
+        "backend_diagnostics": {
+          "callback_calls": 0,
+          "diagnostic_evaluations": 1,
+          "identity": "aeb193762c1d553ef5752f694c5da2c8cd964d57e53ff87aa29aa1a3a4ac65d8",
+          "iterations": null,
+          "nfev": 0,
+          "njev": null
+        },
+        "condition": null,
+        "condition_limit": "0x1.d1a94a2000000p+39",
+        "dimension": 2,
+        "identity": "056c7cd13e41a5c4f43383aa7ca56b34da1f2fc5360dd8b97d171528320c8447",
+        "jacobian": [
+          [
+            "0x1.0000000000000p+0",
+            "0x1.0000000000000p+0"
+          ],
+          [
+            "0x1.0000000000000p+1",
+            "0x1.0000000000000p+1"
+          ]
+        ],
+        "kind": "SPECTRAL_RISK",
+        "objective_accounting": {
+          "cache_served_requests": 0,
+          "failure_kinds": [],
+          "fresh_evaluations": 0,
+          "identity": "b227cb8551136ac40087f4a088a7452bb0d3dbe29261705954249103738db2b6",
+          "materialization_requests": 0,
+          "requests_completed": 0,
+          "requests_failed": 0,
+          "requests_received": 0,
+          "requests_refused": 0,
+          "workflow_requests": 0
+        },
+        "rank": 1,
+        "risks": [
+          "RANK_DEFICIENT"
+        ],
+        "singular_values": [
+          "0x1.94c583ada5b54p+1",
+          "0x1.6a09e667f3bccp-53"
+        ],
+        "trajectory_fingerprint": "b42da726069cd9db0b9ce42e0f855b71c9ad489d70a191ab4dd871ed4310dc87"
+      },
+      "identity": "866d3982e6c2d437bfe9c36bcf81d13d48163cc6ce9afad8b40026abd501c7f9",
+      "probe_id": "rank-deficient-linearization-v1",
+      "risks": [
+        "RANK_DEFICIENT"
+      ],
+      "satisfied_claims": [
+        "rank-risk-detection"
+      ],
+      "schema_version": 2,
+      "semantic_version": "chemex-numerical-probes-v2",
+      "terminal": "RISK_DETECTED"
+    },
+    {
+      "definition_identity": "cc95615e114ec9e3548af2599749c87da59e9a7da6851d50bd04eb5032c972a6",
+      "evidence": {
+        "backend_diagnostics": {
+          "callback_calls": 0,
+          "diagnostic_evaluations": 1,
+          "identity": "aeb193762c1d553ef5752f694c5da2c8cd964d57e53ff87aa29aa1a3a4ac65d8",
+          "iterations": null,
+          "nfev": 0,
+          "njev": null
+        },
+        "condition": "0x1.7d78400000000p+26",
+        "condition_limit": "0x1.e848000000000p+19",
+        "dimension": 2,
+        "identity": "844aa8641f70ca82f70bd4befacdbc22743b37d51ccb53b23d71280e708831fc",
+        "jacobian": [
+          [
+            "0x1.0000000000000p+0",
+            "0x0.0p+0"
+          ],
+          [
+            "0x0.0p+0",
+            "0x1.5798ee2308c3ap-27"
+          ]
+        ],
+        "kind": "SPECTRAL_RISK",
+        "objective_accounting": {
+          "cache_served_requests": 0,
+          "failure_kinds": [],
+          "fresh_evaluations": 0,
+          "identity": "b227cb8551136ac40087f4a088a7452bb0d3dbe29261705954249103738db2b6",
+          "materialization_requests": 0,
+          "requests_completed": 0,
+          "requests_failed": 0,
+          "requests_received": 0,
+          "requests_refused": 0,
+          "workflow_requests": 0
+        },
+        "rank": 2,
+        "risks": [
+          "ILL_CONDITIONED"
+        ],
+        "singular_values": [
+          "0x1.0000000000000p+0",
+          "0x1.5798ee2308c3ap-27"
+        ],
+        "trajectory_fingerprint": "dc9f885670019ba528b9d099ec42bfa6fb4ae48267d733b004d40246975a0695"
+      },
+      "identity": "01885f64d3494a08b9548030dc8a6582c7bf7b31b1e890eb26d35ed053bd4f9c",
+      "probe_id": "ill-conditioned-linearization-v1",
+      "risks": [
+        "ILL_CONDITIONED"
+      ],
+      "satisfied_claims": [
+        "conditioning-risk-detection"
+      ],
+      "schema_version": 2,
+      "semantic_version": "chemex-numerical-probes-v2",
+      "terminal": "RISK_DETECTED"
+    }
+  ],
+  "definitions": [
+    {
+      "budget": {
+        "authoritative_objective_requests": 2,
+        "backend_max_nfev": 64
+      },
+      "category": "TRF_ROUTINE",
+      "derivation": {
+        "identity": "80f9f444e460aa751bc7122811f42eb1f3b90f62ae7da7d53e33d30e8826acd5",
+        "parent_case": "analytic bounded linear residual",
+        "reduction": "Two independent coordinates retain routine TRF convergence.",
+        "source_issue": 591,
+        "source_revision": "700cb71df950fc54c268c0bca199403e5621269d"
+      },
+      "eligible_claims": [
+        "deterministic-trajectory-fingerprint",
+        "routine-trf-convergence",
+        "solver-request-accounting"
+      ],
+      "failure_expectations": [
+        {
+          "required_risks": [],
+          "terminal": "CONVERGED"
+        }
+      ],
+      "identity": "3a9caa3e786d4d6af3143a27a3f5fd26186157fc52cc501045e1611232e8614f",
+      "policy": {
+        "backend": "scipy.optimize.least_squares",
+        "bounds": [
+          [
+            {
+              "binary64": "-0x1.0000000000000p+2"
+            },
+            {
+              "binary64": "0x1.0000000000000p+2"
+            }
+          ],
+          [
+            {
+              "binary64": "-0x1.0000000000000p+2"
+            },
+            {
+              "binary64": "0x1.0000000000000p+2"
+            }
+          ]
+        ],
+        "ftol": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        },
+        "gtol": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        },
+        "maximum_chi_square": {
+          "binary64": "0x1.cd2b297d889bcp-54"
+        },
+        "method": "trf",
+        "start": [
+          {
+            "binary64": "0x0.0p+0"
+          },
+          {
+            "binary64": "0x0.0p+0"
+          }
+        ],
+        "truth": [
+          {
+            "binary64": "0x1.8000000000000p+0"
+          },
+          {
+            "binary64": "-0x1.0000000000000p-1"
+          }
+        ],
+        "truth_absolute_tolerance": {
+          "binary64": "0x1.5798ee2308c3ap-27"
+        },
+        "x_scale": {
+          "binary64": "0x1.0000000000000p+0"
+        },
+        "xtol": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        }
+      },
+      "probe_id": "trf-routine-quadratic-v1",
+      "schema_version": 2,
+      "seed": "not-applicable",
+      "semantic_version": "chemex-numerical-probes-v2",
+      "truth": {
+        "derivation_digest": "bf594f2dca14a5a28a79e6b9743e9623f8b660923a09b19de5947570cb39bc10",
+        "identity": "f5bcb4695227e70ad0c4d29c853c3bbc04494a7b3a89a82f172b6406d76218ae",
+        "kind": "ANALYTIC_DERIVATION",
+        "reference": "r(x,y)=(x-1.5,y+0.5); unique minimizer=(1.5,-0.5)."
+      }
+    },
+    {
+      "budget": {
+        "authoritative_objective_requests": 2,
+        "backend_max_nfev": 256
+      },
+      "category": "TRF_DIFFICULT",
+      "derivation": {
+        "identity": "d75969a72fedcb39a707073972d39ff6a5826e63075432e2cc60e3bab51b4002",
+        "parent_case": "Rosenbrock least-squares valley",
+        "reduction": "Canonical poor start retains curved-valley TRF behavior.",
+        "source_issue": 591,
+        "source_revision": "700cb71df950fc54c268c0bca199403e5621269d"
+      },
+      "eligible_claims": [
+        "deterministic-trajectory-fingerprint",
+        "difficult-trf-convergence",
+        "solver-request-accounting"
+      ],
+      "failure_expectations": [
+        {
+          "required_risks": [],
+          "terminal": "CONVERGED"
+        }
+      ],
+      "identity": "77d6de95605268c0d2049cc746e70c807d0aebd808d3b8dbcb96e38616703954",
+      "policy": {
+        "backend": "scipy.optimize.least_squares",
+        "bounds": [
+          [
+            {
+              "binary64": "-0x1.8000000000000p+1"
+            },
+            {
+              "binary64": "0x1.8000000000000p+1"
+            }
+          ],
+          [
+            {
+              "binary64": "-0x1.8000000000000p+1"
+            },
+            {
+              "binary64": "0x1.8000000000000p+1"
+            }
+          ]
+        ],
+        "ftol": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        },
+        "gtol": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        },
+        "maximum_chi_square": {
+          "binary64": "0x1.cd2b297d889bcp-54"
+        },
+        "method": "trf",
+        "start": [
+          {
+            "binary64": "-0x1.3333333333333p+0"
+          },
+          {
+            "binary64": "0x1.0000000000000p+0"
+          }
+        ],
+        "truth": [
+          {
+            "binary64": "0x1.0000000000000p+0"
+          },
+          {
+            "binary64": "0x1.0000000000000p+0"
+          }
+        ],
+        "truth_absolute_tolerance": {
+          "binary64": "0x1.5798ee2308c3ap-27"
+        },
+        "x_scale": {
+          "binary64": "0x1.0000000000000p+0"
+        },
+        "xtol": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        }
+      },
+      "probe_id": "trf-difficult-rosenbrock-v1",
+      "schema_version": 2,
+      "seed": "not-applicable",
+      "semantic_version": "chemex-numerical-probes-v2",
+      "truth": {
+        "derivation_digest": "e96708b77a25bb398f9641e0616036e33cb82f10e987be710d70e784e5e3eb95",
+        "identity": "5f86f8e80b4b1814656aec18af796f382990731f17b93e60d2c15279c9cc5a82",
+        "kind": "ANALYTIC_DERIVATION",
+        "reference": "r(x,y)=(10*(y-x^2),1-x); unique zero=(1,1)."
+      }
+    },
+    {
+      "budget": {
+        "authoritative_objective_requests_per_seed": 2,
+        "backend_max_nfev_per_seed": 48,
+        "seed_count": 27
+      },
+      "category": "GRID",
+      "derivation": {
+        "identity": "daa3f8df2fd59bd33fd90b6386afbdff996bbc09fbdb5e95e65cb0e5e74b78a0",
+        "parent_case": "immutable 27-seed physical-coordinate grid",
+        "reduction": "Three three-point axes retain complete Cartesian seed coverage.",
+        "source_issue": 591,
+        "source_revision": "700cb71df950fc54c268c0bca199403e5621269d"
+      },
+      "eligible_claims": [
+        "grid-seed-coverage",
+        "solver-request-accounting"
+      ],
+      "failure_expectations": [
+        {
+          "required_risks": [],
+          "terminal": "SELECTED"
+        }
+      ],
+      "identity": "a8404a6445c124a520a9b4c0322bb991bb4df202efa8184f6d3b29047610e404",
+      "policy": {
+        "backend": "scipy.optimize.least_squares",
+        "bounds": [
+          [
+            {
+              "binary64": "-0x1.8000000000000p+1"
+            },
+            {
+              "binary64": "0x1.8000000000000p+1"
+            }
+          ],
+          [
+            {
+              "binary64": "-0x1.8000000000000p+1"
+            },
+            {
+              "binary64": "0x1.8000000000000p+1"
+            }
+          ],
+          [
+            {
+              "binary64": "-0x1.8000000000000p+1"
+            },
+            {
+              "binary64": "0x1.8000000000000p+1"
+            }
+          ]
+        ],
+        "candidate_tie_break": "chi-square-then-seed-ordinal",
+        "ftol": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        },
+        "gtol": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        },
+        "maximum_chi_square": {
+          "binary64": "0x1.cd2b297d889bcp-54"
+        },
+        "method": "trf",
+        "physical_axes": [
+          [
+            {
+              "binary64": "-0x1.0000000000000p+1"
+            },
+            {
+              "binary64": "0x0.0p+0"
+            },
+            {
+              "binary64": "0x1.0000000000000p+1"
+            }
+          ],
+          [
+            {
+              "binary64": "-0x1.0000000000000p+1"
+            },
+            {
+              "binary64": "0x0.0p+0"
+            },
+            {
+              "binary64": "0x1.0000000000000p+1"
+            }
+          ],
+          [
+            {
+              "binary64": "-0x1.0000000000000p+1"
+            },
+            {
+              "binary64": "0x0.0p+0"
+            },
+            {
+              "binary64": "0x1.0000000000000p+1"
+            }
+          ]
+        ],
+        "truth": [
+          {
+            "binary64": "0x1.0000000000000p+0"
+          },
+          {
+            "binary64": "-0x1.0000000000000p+0"
+          },
+          {
+            "binary64": "0x1.0000000000000p-1"
+          }
+        ],
+        "truth_absolute_tolerance": {
+          "binary64": "0x1.5798ee2308c3ap-27"
+        },
+        "x_scale": {
+          "binary64": "0x1.0000000000000p+0"
+        },
+        "xtol": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        }
+      },
+      "probe_id": "grid-27-seed-coverage-v1",
+      "schema_version": 2,
+      "seed": "not-applicable",
+      "semantic_version": "chemex-numerical-probes-v2",
+      "truth": {
+        "derivation_digest": "11f45d8bab2dae067aa66fa022ed590a1468a4095d2551094933db10a40616bd",
+        "identity": "e360715d02a9c80e66ee66f398b10ceae934a3119edd374c284908302d604eac",
+        "kind": "ANALYTIC_DERIVATION",
+        "reference": "r(x,y,z)=(x-1,y+1,z-0.5); unique zero=(1,-1,0.5)."
+      }
+    },
+    {
+      "budget": {
+        "candidate_count": 4
+      },
+      "category": "GRID_ORDERING",
+      "derivation": {
+        "identity": "ce202bc5af4b8a91881620b0777cac6901a145733dc5abb96d52f60380c79432",
+        "parent_case": "four-candidate deterministic GRID selection",
+        "reduction": "Four analytically scored candidates isolate chi-square, final-vector, and seed-ordinal ordering.",
+        "source_issue": 591,
+        "source_revision": "700cb71df950fc54c268c0bca199403e5621269d"
+      },
+      "eligible_claims": [
+        "canonical-grid-candidate-ordering"
+      ],
+      "failure_expectations": [
+        {
+          "required_risks": [],
+          "terminal": "ORDERED"
+        }
+      ],
+      "identity": "23655ad11bc5439deae2564b1df8a00f297b93a1971bbbe167acac31a60610b7",
+      "policy": {
+        "candidate_tie_break": "chi-square-then-final-vector-then-seed-ordinal",
+        "candidates": [
+          {
+            "chi_square": {
+              "binary64": "0x1.0000000000000p+0"
+            },
+            "final_vector": [
+              {
+                "binary64": "0x1.0000000000000p+0"
+              },
+              {
+                "binary64": "0x0.0p+0"
+              }
+            ],
+            "ordinal": 0
+          },
+          {
+            "chi_square": {
+              "binary64": "0x0.0p+0"
+            },
+            "final_vector": [
+              {
+                "binary64": "0x0.0p+0"
+              },
+              {
+                "binary64": "0x0.0p+0"
+              }
+            ],
+            "ordinal": 1
+          },
+          {
+            "chi_square": {
+              "binary64": "0x1.0000000000000p+0"
+            },
+            "final_vector": [
+              {
+                "binary64": "0x0.0p+0"
+              },
+              {
+                "binary64": "0x1.0000000000000p+0"
+              }
+            ],
+            "ordinal": 2
+          },
+          {
+            "chi_square": {
+              "binary64": "0x1.0000000000000p+0"
+            },
+            "final_vector": [
+              {
+                "binary64": "-0x1.0000000000000p+0"
+              },
+              {
+                "binary64": "0x0.0p+0"
+              }
+            ],
+            "ordinal": 3
+          }
+        ],
+        "expected_order": [
+          1,
+          3,
+          2,
+          0
+        ]
+      },
+      "probe_id": "grid-candidate-ordering-v1",
+      "schema_version": 2,
+      "seed": "not-applicable",
+      "semantic_version": "chemex-numerical-probes-v2",
+      "truth": {
+        "derivation_digest": "5c30248c42441707e34c4cb40dd4f7a2b45a50a892965849a10b072040b990b5",
+        "identity": "a1bbdcb426ad69c6888d712482948691ff5845c71f03b299458ba851c8631cd9",
+        "kind": "ANALYTIC_DERIVATION",
+        "reference": "Candidates (ordinal,chi2,vector)=(0,1,(1,0)),(1,0,(0,0)),(2,1,(0,1)),(3,1,(-1,0)); lexicographic ordering by (chi2,vector,ordinal) is exactly (1,3,2,0)."
+      }
+    },
+    {
+      "budget": {
+        "de_authoritative_objective_requests": 5,
+        "de_backend_objective_calls": 128,
+        "trf_authoritative_objective_requests": 2,
+        "trf_backend_max_nfev": 48
+      },
+      "category": "DE_SEARCH",
+      "derivation": {
+        "identity": "83d660a16caf19027ccafb99d3910eb6b653c4cda7d7bf67b36c371ed08c675c",
+        "parent_case": "bounded multimodal basin search",
+        "reduction": "One selected coordinate retains oscillatory local basins, seeded DE, and separate TRF polish.",
+        "source_issue": 591,
+        "source_revision": "700cb71df950fc54c268c0bca199403e5621269d"
+      },
+      "eligible_claims": [
+        "de-seeded-replay",
+        "de-to-trf-candidate-ordering",
+        "solver-request-accounting"
+      ],
+      "failure_expectations": [
+        {
+          "required_risks": [],
+          "terminal": "POLISHED"
+        }
+      ],
+      "identity": "a78f3c27aa29cbc2bfa6d414fbc6b49f8020cfabcdf185b07b6e53b245fe59a4",
+      "policy": {
+        "absolute_tolerance": {
+          "binary64": "0x0.0p+0"
+        },
+        "backend_polish": false,
+        "bounds": [
+          [
+            {
+              "binary64": "-0x1.0000000000000p+1"
+            },
+            {
+              "binary64": "0x1.0000000000000p+1"
+            }
+          ]
+        ],
+        "de_strategy": "best1bin",
+        "maximum_chi_square": {
+          "binary64": "0x1.cd2b297d889bcp-54"
+        },
+        "maximum_generations": 6,
+        "mutation": [
+          {
+            "binary64": "0x1.0000000000000p-1"
+          },
+          {
+            "binary64": "0x1.0000000000000p+0"
+          }
+        ],
+        "oscillation_amplitude": {
+          "binary64": "0x1.0000000000000p-1"
+        },
+        "oscillation_frequency": {
+          "binary64": "0x1.4000000000000p+2"
+        },
+        "polish_ftol": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        },
+        "polish_gtol": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        },
+        "polish_x_scale": {
+          "binary64": "0x1.0000000000000p+0"
+        },
+        "polish_xtol": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        },
+        "population_multiplier": 5,
+        "recombination": {
+          "binary64": "0x1.6666666666666p-1"
+        },
+        "relative_tolerance": {
+          "binary64": "0x0.0p+0"
+        },
+        "truth": [
+          {
+            "binary64": "0x1.0000000000000p-2"
+          }
+        ],
+        "truth_absolute_tolerance": {
+          "binary64": "0x1.5798ee2308c3ap-27"
+        },
+        "updating": "immediate",
+        "workers": 1,
+        "workflow_polish": "trf"
+      },
+      "probe_id": "de-bounded-search-v1",
+      "schema_version": 2,
+      "seed": 591,
+      "semantic_version": "chemex-numerical-probes-v2",
+      "truth": {
+        "derivation_digest": "3b9dc5d9e97f5ce24ae98c528c5bc2fb07f7d30423be32cdd5d4f22ee81a3bdc",
+        "identity": "e07ddc4d862534f1b83ec047f95912fd6f7cca4605f31b983d49d6397fb56937",
+        "kind": "ANALYTIC_DERIVATION",
+        "reference": "f(x)=(x-0.25)^2+0.25 sin^2(5(x-0.25)); its non-negative first term makes x=0.25 the unique bounded global minimizer."
+      }
+    },
+    {
+      "budget": {
+        "authoritative_objective_requests": 5
+      },
+      "category": "FINITE_DIFFERENCE",
+      "derivation": {
+        "identity": "8e4e6672abfc8bea0337eb6f64a81b1dee91469924ff8a7ed3ee0b06d83dc1c7",
+        "parent_case": "analytic exponential derivative",
+        "reduction": "Five-point centered stencil retains actual-step reliability.",
+        "source_issue": 591,
+        "source_revision": "700cb71df950fc54c268c0bca199403e5621269d"
+      },
+      "eligible_claims": [
+        "finite-difference-reliability",
+        "stencil-request-accounting",
+        "stencil-trajectory-fingerprint"
+      ],
+      "failure_expectations": [
+        {
+          "required_risks": [],
+          "terminal": "RELIABLE"
+        }
+      ],
+      "identity": "e4f3adfd98b85aa583a8ac2ed9483df9329a1eceb192af0fb19fa17e8340185e",
+      "policy": {
+        "absolute_tolerance": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        },
+        "point": {
+          "binary64": "0x1.0000000000000p-1"
+        },
+        "stencil": "centered-five-point",
+        "step": {
+          "binary64": "0x1.a36e2eb1c432dp-14"
+        },
+        "weight_derivation": "lagrange-first-derivative-at-zero"
+      },
+      "probe_id": "finite-difference-reliability-v1",
+      "schema_version": 2,
+      "seed": "not-applicable",
+      "semantic_version": "chemex-numerical-probes-v2",
+      "truth": {
+        "derivation_digest": "a2bfde1e826dd79f51bda36ad1411f54cbee6bc036a1f7ba6e18cd9e561033fc",
+        "identity": "ad1d16bf57bd6757abc026ada89b5d4b4946a5b2d7b9f906e561bb01c54537ca",
+        "kind": "ANALYTIC_DERIVATION",
+        "reference": "d exp(x)/dx at x=0.5 equals exp(0.5)."
+      }
+    },
+    {
+      "budget": {
+        "authoritative_objective_requests": 2,
+        "backend_max_nfev": 64
+      },
+      "category": "BOUNDS",
+      "derivation": {
+        "identity": "21278f44f4ea47eb5cb1331f52d08554b4b54005dd3152ede69c6d6101595c48",
+        "parent_case": "bounded scalar residual",
+        "reduction": "An infeasible unconstrained optimum retains active-bound truth.",
+        "source_issue": 591,
+        "source_revision": "700cb71df950fc54c268c0bca199403e5621269d"
+      },
+      "eligible_claims": [
+        "active-bound-detection",
+        "bound-safe-trf-convergence",
+        "solver-request-accounting"
+      ],
+      "failure_expectations": [
+        {
+          "required_risks": [
+            "ACTIVE_BOUND"
+          ],
+          "terminal": "CONVERGED"
+        }
+      ],
+      "identity": "f561a7c8818b5aff09c2f01182398ac14ffcc933ba4563c52978612ad9133670",
+      "policy": {
+        "backend": "scipy.optimize.least_squares",
+        "bounds": [
+          [
+            {
+              "binary64": "0x0.0p+0"
+            },
+            {
+              "binary64": "0x1.0000000000000p+0"
+            }
+          ]
+        ],
+        "expected_active_mask": [
+          1
+        ],
+        "ftol": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        },
+        "gtol": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        },
+        "method": "trf",
+        "start": [
+          {
+            "binary64": "0x1.0000000000000p-1"
+          }
+        ],
+        "truth": [
+          {
+            "binary64": "0x1.0000000000000p+0"
+          }
+        ],
+        "truth_absolute_tolerance": {
+          "binary64": "0x1.5798ee2308c3ap-27"
+        },
+        "x_scale": {
+          "binary64": "0x1.0000000000000p+0"
+        },
+        "xtol": {
+          "binary64": "0x1.b7cdfd9d7bdbbp-34"
+        }
+      },
+      "probe_id": "trf-active-bound-v1",
+      "schema_version": 2,
+      "seed": "not-applicable",
+      "semantic_version": "chemex-numerical-probes-v2",
+      "truth": {
+        "derivation_digest": "32c4f90382bb8ca9dfd22546e6b208ef4d8723b02b270c8f849981a35e77aa4f",
+        "identity": "96386025ff951787a7ea694d7dea63b471e4ad80edb2fbad05fd491b39c3387a",
+        "kind": "ANALYTIC_DERIVATION",
+        "reference": "r(x)=x-2 on [0,1]; constrained minimizer x=1."
+      }
+    },
+    {
+      "budget": {
+        "svd_decompositions": 1
+      },
+      "category": "RANK",
+      "derivation": {
+        "identity": "d045312409b87273c492219eff846a4783cd478ed6fbaa8050fbd2ce09d595e7",
+        "parent_case": "exact rank-one Jacobian",
+        "reduction": "A duplicated column retains fail-closed rank diagnosis.",
+        "source_issue": 591,
+        "source_revision": "700cb71df950fc54c268c0bca199403e5621269d"
+      },
+      "eligible_claims": [
+        "rank-risk-detection"
+      ],
+      "failure_expectations": [
+        {
+          "required_risks": [
+            "RANK_DEFICIENT"
+          ],
+          "terminal": "RISK_DETECTED"
+        }
+      ],
+      "identity": "2f11a47aab231bf73dd84735256cd2b3fcbbd72842770e0c5268299b913efe07",
+      "policy": {
+        "conditioning_limit": {
+          "binary64": "0x1.d1a94a2000000p+39"
+        },
+        "expected_rank": 1,
+        "rank_relative_tolerance": {
+          "binary64": "0x1.19799812dea11p-40"
+        },
+        "svd_driver": "gesdd"
+      },
+      "probe_id": "rank-deficient-linearization-v1",
+      "schema_version": 2,
+      "seed": "not-applicable",
+      "semantic_version": "chemex-numerical-probes-v2",
+      "truth": {
+        "derivation_digest": "b7d5255b9f5a9b92c7ef6baab5f1ec76bf07217bae5b7d3039142c3248fa7062",
+        "identity": "d76106ed173fa5d4744334a0a056a1bdc904ac4039762e0185f9d213ffe51494",
+        "kind": "EXACT_LINEAR_ALGEBRA",
+        "reference": "J=((1,1),(2,2)); exact rank=1 < 2."
+      }
+    },
+    {
+      "budget": {
+        "svd_decompositions": 1
+      },
+      "category": "CONDITIONING",
+      "derivation": {
+        "identity": "c0e19b1b3b1b492f65fb13a2bf880f282c12ffb75dc917b280653014e7d4c486",
+        "parent_case": "exact diagonal Jacobian spectrum",
+        "reduction": "Two separated singular values retain conditioning diagnosis.",
+        "source_issue": 591,
+        "source_revision": "700cb71df950fc54c268c0bca199403e5621269d"
+      },
+      "eligible_claims": [
+        "conditioning-risk-detection"
+      ],
+      "failure_expectations": [
+        {
+          "required_risks": [
+            "ILL_CONDITIONED"
+          ],
+          "terminal": "RISK_DETECTED"
+        }
+      ],
+      "identity": "cc95615e114ec9e3548af2599749c87da59e9a7da6851d50bd04eb5032c972a6",
+      "policy": {
+        "condition_relative_tolerance": {
+          "binary64": "0x1.19799812dea11p-40"
+        },
+        "conditioning_limit": {
+          "binary64": "0x1.e848000000000p+19"
+        },
+        "expected_condition": {
+          "binary64": "0x1.7d78400000000p+26"
+        },
+        "expected_rank": 2,
+        "svd_driver": "gesdd"
+      },
+      "probe_id": "ill-conditioned-linearization-v1",
+      "schema_version": 2,
+      "seed": "not-applicable",
+      "semantic_version": "chemex-numerical-probes-v2",
+      "truth": {
+        "derivation_digest": "891aaa36a0848751cc469211234ccc7d9f3e26b360ef92cc1ecc756569caf6c9",
+        "identity": "ce411e4ac869d3f8030128f397f07861fd451436ea39d19e76007ae9d8e44717",
+        "kind": "EXACT_LINEAR_ALGEBRA",
+        "reference": "J=diag(1,1e-8); exact kappa_2(J)=1e8."
+      }
+    }
+  ],
+  "historical_qualification": "REFERENCE_MATCHED",
+  "identity": "d11f9caa404b8ce3fa96e041659939446e205aae9376b08d6a137ed40cf0bdb0",
+  "manifest_identity": "cbc5dbc9a0b432b6dbbd053f49769bb4dc84d322c409a84da26f8f892298b839",
+  "observed_attestation_identity": "3b3e0bc184826d61ec6652194486c907a5faa4c64b68ec03bbe60b63c660d687",
+  "observed_environment_identity": "cc5359f90df35ec9b60fd56e483911745209519ecce37d69e17c4edd6ea3604f",
+  "observed_lane_identity": "4f1e7dab3384f88149fd33befb09ba3e96730dc336e9427b224a39a8a7167e4f",
+  "observed_lane_role": "CANONICAL_NUMERICAL",
+  "reference_manifest_identity": "cbc5dbc9a0b432b6dbbd053f49769bb4dc84d322c409a84da26f8f892298b839",
+  "schema_version": 2,
+  "semantic_version": "chemex-numerical-probes-v2"
+}

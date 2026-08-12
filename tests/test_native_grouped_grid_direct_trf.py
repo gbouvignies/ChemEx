@@ -17,11 +17,15 @@ from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import EvaluationEngine
 from chemex.experiments.builder import build_experiments
+from chemex.optimize import direct_trf as direct_trf_owner
 from chemex.optimize.direct_trf import (
     AffineHalfSpace,
     CancellationToken,
+    ComponentProblemDerivation,
     DirectTrfConstructionError,
+    GridSeedProblemDerivation,
     OptimizationProblem,
+    ProblemDerivation,
 )
 from chemex.optimize.grid_direct_trf import (
     GridDirectTrfInvocation,
@@ -125,28 +129,56 @@ def test_grouped_grid_seed_and_components_preserve_root_affine_feasibility() -> 
         problem,
         affine_half_spaces=(restriction,),
     )
-    decomposition = FitDecomposition.from_root(
-        affine_problem,
-        parameterization,
-        engine,
-    )
+    derivations: list[ProblemDerivation] = []
+    original_derive_child = OptimizationProblem.derive_child
+
+    def track_derive_child(
+        self: OptimizationProblem,
+        *,
+        controlled_ids: tuple[str, ...],
+        start: tuple[float, ...],
+        derivation: ProblemDerivation,
+    ) -> OptimizationProblem:
+        derivations.append(derivation)
+        return original_derive_child(
+            self,
+            controlled_ids=controlled_ids,
+            start=start,
+            derivation=derivation,
+        )
+
+    with patch.object(OptimizationProblem, "derive_child", track_derive_child):
+        decomposition = FitDecomposition.from_root(
+            affine_problem,
+            parameterization,
+            engine,
+        )
+        invocation = GridDirectTrfInvocation.for_problem(
+            affine_problem,
+            axes=((controlled_id, (affine_problem.start[0],)),),
+            objective_request_budget=1,
+        )
+        (seed,) = invocation.seeds
+        assert seed.problem is not None
+        seed_decomposition = FitDecomposition.from_root(
+            seed.problem,
+            parameterization,
+            engine,
+        )
+
     assert all(
         component.problem.affine_half_spaces == (restriction,)
         for component in decomposition.components
     )
-    invocation = GridDirectTrfInvocation.for_problem(
-        affine_problem,
-        axes=((controlled_id, (affine_problem.start[0],)),),
-        objective_request_budget=1,
-    )
+    assert sum(
+        isinstance(derivation, GridSeedProblemDerivation) for derivation in derivations
+    ) == len(invocation.seeds)
+    assert sum(
+        isinstance(derivation, ComponentProblemDerivation) for derivation in derivations
+    ) == len(decomposition.components) + len(seed_decomposition.components)
     (seed,) = invocation.seeds
     assert seed.problem is not None
     assert seed.problem.affine_half_spaces == (restriction,)
-    seed_decomposition = FitDecomposition.from_root(
-        seed.problem,
-        parameterization,
-        engine,
-    )
     assert all(
         component.problem.affine_half_spaces == (restriction,)
         for component in seed_decomposition.components
@@ -185,7 +217,14 @@ def test_each_seed_uses_exact_components_and_only_selected_aggregate_commits() -
         candidate = np.asarray(x0, dtype=np.float64) * 0.9
         return _backend_result(candidate, fun(candidate))
 
-    with patch("chemex.optimize.direct_trf.least_squares", successful_backend):
+    with (
+        patch("chemex.optimize.direct_trf.least_squares", successful_backend),
+        patch.object(
+            direct_trf_owner,
+            "materialize_root_candidate",
+            wraps=direct_trf_owner.materialize_root_candidate,
+        ) as shared_materialization,
+    ):
         outcome = execute_grouped_grid_direct_trf(
             problem,
             decomposition,
@@ -202,6 +241,7 @@ def test_each_seed_uses_exact_components_and_only_selected_aggregate_commits() -
         )
 
     assert outcome.terminal is GroupedGridDirectTrfTerminal.ACCEPTED
+    assert shared_materialization.call_count == 6
     assert tuple(attempt.disposition for attempt in outcome.attempts) == (
         GridSeedDisposition.ELIGIBLE,
         GridSeedDisposition.ELIGIBLE,

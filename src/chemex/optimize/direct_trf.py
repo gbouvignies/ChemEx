@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from numbers import Real
@@ -474,6 +474,14 @@ class DePolishProblemDerivation:
         )
 
 
+type ProblemDerivation = (
+    ComponentProblemDerivation
+    | GridSeedProblemDerivation
+    | DeSearchProblemDerivation
+    | DePolishProblemDerivation
+)
+
+
 def _normalize_affine_restriction(
     restriction_id: str,
     coefficients: tuple[float, ...],
@@ -730,13 +738,7 @@ class OptimizationProblem:
     lower_bounds: tuple[float, ...]
     upper_bounds: tuple[float, ...]
     commit_scope: tuple[str, ...]
-    derivation: (
-        ComponentProblemDerivation
-        | GridSeedProblemDerivation
-        | DeSearchProblemDerivation
-        | DePolishProblemDerivation
-        | None
-    ) = None
+    derivation: ProblemDerivation | None = None
     scalarization_version: str = _SCALARIZATION_VERSION
     affine_half_spaces: tuple[AffineHalfSpace, ...] = ()
     affine_equalities: tuple[AffineEquality, ...] = ()
@@ -970,6 +972,111 @@ class OptimizationProblem:
         ):
             raise DirectTrfConstructionError(
                 "Optimization problem belongs to another parameterization"
+            )
+
+    def derive_child(
+        self,
+        *,
+        controlled_ids: tuple[str, ...],
+        start: tuple[float, ...],
+        derivation: ProblemDerivation,
+    ) -> OptimizationProblem:
+        """Construct one child while retaining every root-owned invariant."""
+        controlled = set(controlled_ids)
+        expected_controlled = tuple(
+            param_id for param_id in self.controlled_ids if param_id in controlled
+        )
+        if expected_controlled != controlled_ids:
+            raise DirectTrfConstructionError(
+                "Derived problem controls a non-canonical root coordinate subset"
+            )
+        held_items = tuple(
+            item for item in self.independent_items if item[0] not in controlled
+        )
+        root_indices = {
+            param_id: index for index, param_id in enumerate(self.controlled_ids)
+        }
+        evaluation_plan_identity = (
+            derivation.projected_plan_identity
+            if isinstance(derivation, ComponentProblemDerivation)
+            else self.evaluation_plan_identity
+        )
+        child = OptimizationProblem(
+            evaluation_plan_identity,
+            self.parameterization_identity,
+            self.evaluator_parameterization_identity,
+            self.constraint_program_identity,
+            self.configuration_identity,
+            self.source_snapshot,
+            self.independent_items,
+            controlled_ids,
+            held_items,
+            start,
+            tuple(
+                self.lower_bounds[root_indices[param_id]] for param_id in controlled_ids
+            ),
+            tuple(
+                self.upper_bounds[root_indices[param_id]] for param_id in controlled_ids
+            ),
+            self.commit_scope,
+            derivation,
+            self.scalarization_version,
+            self.affine_half_spaces,
+            self.affine_equalities,
+        )
+        self.validate_derived_problem(child)
+        return child
+
+    def validate_derived_problem(self, child: OptimizationProblem) -> None:
+        """Fail closed when a child changes root-owned scientific context."""
+        derivation = child.derivation
+        controlled = set(child.controlled_ids)
+        expected_controlled = tuple(
+            param_id for param_id in self.controlled_ids if param_id in controlled
+        )
+        root_indices = {
+            param_id: index for index, param_id in enumerate(self.controlled_ids)
+        }
+        expected_held = tuple(
+            item for item in self.independent_items if item[0] not in controlled
+        )
+        expected_plan_identity = (
+            derivation.projected_plan_identity
+            if isinstance(derivation, ComponentProblemDerivation)
+            else self.evaluation_plan_identity
+        )
+        if (
+            derivation is None
+            or derivation.root_problem_identity != self.identity
+            or derivation.root_affine_feasibility_identity
+            != self.affine_feasibility_identity
+            or expected_controlled != child.controlled_ids
+            or child.evaluation_plan_identity != expected_plan_identity
+            or child.parameterization_identity != self.parameterization_identity
+            or child.evaluator_parameterization_identity
+            != self.evaluator_parameterization_identity
+            or child.constraint_program_identity != self.constraint_program_identity
+            or child.configuration_identity != self.configuration_identity
+            or child.source_snapshot is not self.source_snapshot
+            or child.independent_items != self.independent_items
+            or child.held_items != expected_held
+            or child.lower_bounds
+            != tuple(
+                self.lower_bounds[root_indices[param_id]]
+                for param_id in child.controlled_ids
+            )
+            or child.upper_bounds
+            != tuple(
+                self.upper_bounds[root_indices[param_id]]
+                for param_id in child.controlled_ids
+            )
+            or child.commit_scope != self.commit_scope
+            or child.scalarization_version != self.scalarization_version
+            or child.affine_half_spaces != self.affine_half_spaces
+            or child.affine_equalities != self.affine_equalities
+        ):
+            raise DirectTrfConstructionError(
+                "Derived problem differs from its root-owned context"
             )
 
     @property
@@ -1394,6 +1501,18 @@ class CandidateMaterialization:
                 ),
             ),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class RootMaterializationFailure:
+    """Fresh root lifecycle failure before materialization evidence can exist."""
+
+    terminal: MaterializationTerminal
+    evaluation_count: int
+    evaluator_compatibility_identity: str
+    cache_hits: int
+    cache_misses: int
+    failure: TerminalFailure
 
 
 @dataclass(frozen=True, slots=True)
@@ -2123,95 +2242,6 @@ def _failed_outcome(execution: DirectTrfExecution) -> DirectTrfOutcome:
     return DirectTrfOutcome(terminal, execution)
 
 
-def _materialization_failure(
-    execution: DirectTrfExecution,
-    problem: OptimizationProblem,
-    invocation: DirectTrfInvocation,
-    candidate: CandidateSummary,
-    compatibility_identity: str,
-    evaluation_count: int,
-    cache_hits: int,
-    cache_misses: int,
-    failure: TerminalFailure,
-) -> DirectTrfOutcome:
-    materialization = CandidateMaterialization(
-        uuid4().hex,
-        problem.identity,
-        invocation.identity,
-        execution.identity,
-        candidate,
-        MaterializationTerminal.FAILURE,
-        evaluation_count,
-        compatibility_identity,
-        None,
-        cache_hits,
-        cache_misses,
-        failure,
-    )
-    return DirectTrfOutcome(
-        DirectTrfOutcomeTerminal.MATERIALIZATION_FAILURE,
-        execution,
-        materialization,
-    )
-
-
-def _cancelled_materialization(
-    execution: DirectTrfExecution,
-    problem: OptimizationProblem,
-    invocation: DirectTrfInvocation,
-    candidate: CandidateSummary,
-    compatibility_identity: str,
-    evaluation_count: int,
-    cache_hits: int,
-    cache_misses: int,
-) -> DirectTrfOutcome:
-    materialization = CandidateMaterialization(
-        uuid4().hex,
-        problem.identity,
-        invocation.identity,
-        execution.identity,
-        candidate,
-        MaterializationTerminal.CANCELLED,
-        evaluation_count,
-        compatibility_identity,
-        None,
-        cache_hits,
-        cache_misses,
-        TerminalFailure("cancelled", "Cancellation observed during materialization"),
-    )
-    return DirectTrfOutcome(
-        DirectTrfOutcomeTerminal.CANCELLED,
-        execution,
-        materialization,
-    )
-
-
-def _interrupted_materialization(
-    execution: DirectTrfExecution,
-    problem: OptimizationProblem,
-    invocation: DirectTrfInvocation,
-    candidate: CandidateSummary,
-    compatibility_identity: str,
-    evaluation_count: int,
-    cache_hits: int,
-    cache_misses: int,
-) -> CandidateMaterialization:
-    return CandidateMaterialization(
-        uuid4().hex,
-        problem.identity,
-        invocation.identity,
-        execution.identity,
-        candidate,
-        MaterializationTerminal.INTERRUPTED,
-        evaluation_count,
-        compatibility_identity,
-        None,
-        cache_hits,
-        cache_misses,
-        TerminalFailure("interrupted", "KeyboardInterrupt during materialization"),
-    )
-
-
 @dataclass(frozen=True, slots=True)
 class _ConvergedBackend:
     backend: BackendEvidence
@@ -2439,6 +2469,295 @@ def _validate_materialized_result(
     return chi_square
 
 
+def _materialize_candidate_lifecycle(  # noqa: C901 - ordered lifecycle gate
+    problem: OptimizationProblem,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    *,
+    vector: tuple[float, ...],
+    invocation_identity: str,
+    execution_identity: str | Callable[[EvaluationResult], str],
+    candidate_summary: CandidateSummary | None = None,
+    expected_request: _CompletedRequest | None = None,
+    cancellation: CancellationToken | None = None,
+    check_cancellation_before_evaluation: bool,
+    check_cancellation_after_validation: bool,
+) -> (
+    MaterializedDirectTrfCandidate
+    | CandidateMaterialization
+    | RootMaterializationFailure
+):
+    """Own fresh binding, evaluation, validation, and immutable evidence."""
+    token = CancellationToken() if cancellation is None else cancellation
+    static_execution_identity = (
+        execution_identity if isinstance(execution_identity, str) else None
+    )
+
+    def failed(
+        terminal: MaterializationTerminal,
+        evaluation_count: int,
+        compatibility_identity: str,
+        cache_hits: int,
+        cache_misses: int,
+        failure: TerminalFailure,
+    ) -> CandidateMaterialization | RootMaterializationFailure:
+        if candidate_summary is None or static_execution_identity is None:
+            return RootMaterializationFailure(
+                terminal,
+                evaluation_count,
+                compatibility_identity,
+                cache_hits,
+                cache_misses,
+                failure,
+            )
+        return CandidateMaterialization(
+            uuid4().hex,
+            problem.identity,
+            invocation_identity,
+            static_execution_identity,
+            candidate_summary,
+            terminal,
+            evaluation_count,
+            compatibility_identity,
+            None,
+            cache_hits,
+            cache_misses,
+            failure,
+        )
+
+    if check_cancellation_before_evaluation and token.is_cancelled:
+        return failed(
+            MaterializationTerminal.CANCELLED,
+            0,
+            engine.compatibility_identity,
+            0,
+            0,
+            TerminalFailure("cancelled", "Cancellation before root materialization"),
+        )
+    problem.validate_parameterization(parameterization)
+    if engine.plan.identity != problem.evaluation_plan_identity:
+        raise DirectTrfConstructionError(
+            "Root candidate materialization evaluator belongs to another plan"
+        )
+    canonical_vector = _canonical_vector(
+        vector,
+        dimension=len(problem.controlled_ids),
+        name="root materialization candidate",
+    )
+    if candidate_summary is not None and (
+        candidate_summary.vector != canonical_vector
+        or static_execution_identity is None
+    ):
+        raise DirectTrfConstructionError(
+            "Root materialization summary requires one static execution identity"
+        )
+    try:
+        evaluator = engine.new_evaluator()
+    except KeyboardInterrupt:
+        return failed(
+            MaterializationTerminal.INTERRUPTED,
+            0,
+            engine.compatibility_identity,
+            0,
+            0,
+            TerminalFailure(
+                "interrupted",
+                "KeyboardInterrupt during root evaluator binding",
+            ),
+        )
+    except Exception as error:  # noqa: BLE001 - binding failures fail closed
+        return failed(
+            MaterializationTerminal.FAILURE,
+            0,
+            engine.compatibility_identity,
+            0,
+            0,
+            TerminalFailure(
+                "materialization_binding_failure",
+                f"{type(error).__name__}: {error}",
+            ),
+        )
+    try:
+        lifecycle = problem.lifecycle_frame(canonical_vector, parameterization)
+        frame = EvaluationFrame.from_lifecycle_frame(parameterization, lifecycle)
+        evaluated = evaluator.evaluate(frame)
+    except KeyboardInterrupt:
+        statistics = evaluator.cache_statistics
+        return failed(
+            MaterializationTerminal.INTERRUPTED,
+            1,
+            evaluator.compatibility_identity,
+            statistics.hits,
+            statistics.misses,
+            TerminalFailure("interrupted", "KeyboardInterrupt during materialization"),
+        )
+    except Exception as error:  # noqa: BLE001 - root evaluation fails closed
+        statistics = evaluator.cache_statistics
+        return failed(
+            MaterializationTerminal.FAILURE,
+            1,
+            evaluator.compatibility_identity,
+            statistics.hits,
+            statistics.misses,
+            TerminalFailure(
+                "materialization_exception",
+                f"{type(error).__name__}: {error}",
+            ),
+        )
+    statistics = evaluator.cache_statistics
+    if token.is_cancelled:
+        return failed(
+            MaterializationTerminal.CANCELLED,
+            1,
+            evaluator.compatibility_identity,
+            statistics.hits,
+            statistics.misses,
+            TerminalFailure(
+                "cancelled",
+                "Cancellation observed during root materialization",
+            ),
+        )
+    if isinstance(evaluated, EvaluationFailure):
+        return failed(
+            MaterializationTerminal.FAILURE,
+            1,
+            evaluator.compatibility_identity,
+            statistics.hits,
+            statistics.misses,
+            TerminalFailure(evaluated.category, evaluated.message, evaluated),
+        )
+    try:
+        chi_square = (
+            _validate_materialized_result(
+                evaluated,
+                expected_request,
+                problem,
+                evaluator,
+            )
+            if expected_request is not None
+            else canonical_chi_square(evaluated.residuals)
+        )
+        if (
+            evaluated.plan_identity != problem.evaluation_plan_identity
+            or evaluated.parameterization_identity
+            != problem.evaluator_parameterization_identity
+            or evaluated.evaluator_compatibility_identity
+            != evaluator.compatibility_identity
+            or tuple(evaluated.resolved_values) != problem.commit_scope
+            or canonical_vector
+            != tuple(
+                evaluated.resolved_values[param_id]
+                for param_id in problem.controlled_ids
+            )
+        ):
+            raise ValueError("Fresh root materialization identities or scope differ")
+        if isinstance(execution_identity, str):
+            resolved_execution_identity = execution_identity
+        else:
+            resolved_execution_identity = execution_identity(evaluated)
+        summary = candidate_summary or CandidateSummary(
+            canonical_vector,
+            chi_square,
+            0,
+        )
+        if summary.chi_square != chi_square:
+            raise ValueError("Fresh root materialization objective differs")
+    except KeyboardInterrupt:
+        return failed(
+            MaterializationTerminal.INTERRUPTED,
+            1,
+            evaluator.compatibility_identity,
+            statistics.hits,
+            statistics.misses,
+            TerminalFailure(
+                "interrupted",
+                "KeyboardInterrupt during materialization validation",
+            ),
+        )
+    except Exception as error:  # noqa: BLE001 - root validation fails closed
+        return failed(
+            MaterializationTerminal.FAILURE,
+            1,
+            evaluator.compatibility_identity,
+            statistics.hits,
+            statistics.misses,
+            TerminalFailure(
+                "materialization_validation_failure",
+                f"{type(error).__name__}: {error}",
+            ),
+        )
+    if check_cancellation_after_validation and token.is_cancelled:
+        return failed(
+            MaterializationTerminal.CANCELLED,
+            1,
+            evaluator.compatibility_identity,
+            statistics.hits,
+            statistics.misses,
+            TerminalFailure(
+                "cancelled",
+                "Cancellation observed during root materialization",
+            ),
+        )
+    materialization = CandidateMaterialization(
+        uuid4().hex,
+        problem.identity,
+        invocation_identity,
+        resolved_execution_identity,
+        summary,
+        MaterializationTerminal.SUCCESS,
+        1,
+        evaluator.compatibility_identity,
+        evaluated.identity,
+        statistics.hits,
+        statistics.misses,
+    )
+    return MaterializedDirectTrfCandidate(
+        problem.identity,
+        invocation_identity,
+        resolved_execution_identity,
+        materialization,
+        canonical_vector,
+        chi_square,
+        evaluated,
+    )
+
+
+def materialize_root_candidate(
+    problem: OptimizationProblem,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    *,
+    vector: tuple[float, ...],
+    invocation_identity: str,
+    execution_identity: str | Callable[[EvaluationResult], str],
+    candidate_summary: CandidateSummary | None = None,
+    expected_request: _CompletedRequest | None = None,
+    cancellation: CancellationToken | None = None,
+) -> (
+    MaterializedDirectTrfCandidate
+    | CandidateMaterialization
+    | RootMaterializationFailure
+):
+    """Freshly materialize one validated root vector under Direct-TRF ownership."""
+    if not problem.acceptance_authority:
+        raise DirectTrfConstructionError(
+            "Root candidate materialization requires an authoritative problem"
+        )
+    return _materialize_candidate_lifecycle(
+        problem,
+        parameterization,
+        engine,
+        vector=vector,
+        invocation_identity=invocation_identity,
+        execution_identity=execution_identity,
+        candidate_summary=candidate_summary,
+        expected_request=expected_request,
+        cancellation=cancellation,
+        check_cancellation_before_evaluation=True,
+        check_cancellation_after_validation=False,
+    )
+
+
 def _materialize_candidate(
     execution: DirectTrfExecution,
     problem: OptimizationProblem,
@@ -2448,151 +2767,33 @@ def _materialize_candidate(
     request: _CompletedRequest,
     cancellation: CancellationToken,
 ) -> MaterializedDirectTrfCandidate | DirectTrfOutcome:
-    try:
-        fresh_evaluator = engine.new_evaluator()
-    except KeyboardInterrupt as error:
-        materialization = _interrupted_materialization(
-            execution,
-            problem,
-            invocation,
-            request.summary,
-            engine.compatibility_identity,
-            0,
-            0,
-            0,
-        )
-        raise DirectTrfInterrupted(execution, materialization) from error
-    except Exception as error:  # noqa: BLE001 - fresh binding must fail closed
-        return _materialization_failure(
-            execution,
-            problem,
-            invocation,
-            request.summary,
-            engine.compatibility_identity,
-            0,
-            0,
-            0,
-            TerminalFailure(
-                "materialization_binding_failure",
-                f"{type(error).__name__}: {error}",
-            ),
-        )
-    try:
-        lifecycle = problem.lifecycle_frame(request.summary.vector, parameterization)
-        frame = EvaluationFrame.from_lifecycle_frame(parameterization, lifecycle)
-        materialized = fresh_evaluator.evaluate(frame)
-    except KeyboardInterrupt as error:
-        statistics = fresh_evaluator.cache_statistics
-        materialization = _interrupted_materialization(
-            execution,
-            problem,
-            invocation,
-            request.summary,
-            fresh_evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-        )
-        raise DirectTrfInterrupted(execution, materialization) from error
-    except Exception as error:  # noqa: BLE001 - aggregate materialization fails closed
-        statistics = fresh_evaluator.cache_statistics
-        return _materialization_failure(
-            execution,
-            problem,
-            invocation,
-            request.summary,
-            fresh_evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure(
-                "materialization_exception",
-                f"{type(error).__name__}: {error}",
-            ),
-        )
-    statistics = fresh_evaluator.cache_statistics
-    if cancellation.is_cancelled:
-        return _cancelled_materialization(
-            execution,
-            problem,
-            invocation,
-            request.summary,
-            fresh_evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-        )
-    if isinstance(materialized, EvaluationFailure):
-        return _materialization_failure(
-            execution,
-            problem,
-            invocation,
-            request.summary,
-            fresh_evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure(
-                materialized.category,
-                materialized.message,
-                materialized,
-            ),
-        )
-    try:
-        chi_square = _validate_materialized_result(
-            materialized,
-            request,
-            problem,
-            fresh_evaluator,
-        )
-    except Exception as error:  # noqa: BLE001 - aggregate validation fails closed
-        return _materialization_failure(
-            execution,
-            problem,
-            invocation,
-            request.summary,
-            fresh_evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure(
-                "materialization_validation_failure",
-                f"{type(error).__name__}: {error}",
-            ),
-        )
-    if cancellation.is_cancelled:
-        return _cancelled_materialization(
-            execution,
-            problem,
-            invocation,
-            request.summary,
-            fresh_evaluator.compatibility_identity,
-            1,
-            statistics.hits,
-            statistics.misses,
-        )
-    materialization = CandidateMaterialization(
-        uuid4().hex,
-        problem.identity,
-        invocation.identity,
-        execution.identity,
-        request.summary,
-        MaterializationTerminal.SUCCESS,
-        1,
-        fresh_evaluator.compatibility_identity,
-        materialized.identity,
-        statistics.hits,
-        statistics.misses,
+    materialized = _materialize_candidate_lifecycle(
+        problem,
+        parameterization,
+        engine,
+        vector=request.summary.vector,
+        invocation_identity=invocation.identity,
+        execution_identity=execution.identity,
+        candidate_summary=request.summary,
+        expected_request=request,
+        cancellation=cancellation,
+        check_cancellation_before_evaluation=False,
+        check_cancellation_after_validation=True,
     )
-    return MaterializedDirectTrfCandidate(
-        problem.identity,
-        invocation.identity,
-        execution.identity,
-        materialization,
-        request.summary.vector,
-        chi_square,
-        materialized,
-    )
+    if isinstance(materialized, RootMaterializationFailure):
+        raise DirectTrfConstructionError(
+            "Direct TRF materialization must retain failure evidence"
+        )
+    if isinstance(materialized, CandidateMaterialization):
+        if materialized.terminal is MaterializationTerminal.INTERRUPTED:
+            raise DirectTrfInterrupted(execution, materialized)
+        terminal = (
+            DirectTrfOutcomeTerminal.CANCELLED
+            if materialized.terminal is MaterializationTerminal.CANCELLED
+            else DirectTrfOutcomeTerminal.MATERIALIZATION_FAILURE
+        )
+        return DirectTrfOutcome(terminal, execution, materialized)
+    return materialized
 
 
 def _accepted_fit_evidence(
@@ -3053,51 +3254,6 @@ def _validate_derived_candidate_for_root(
     )
 
 
-def _bind_derived_root_evaluator(
-    problem: OptimizationProblem,
-    candidate: MaterializedDirectTrfCandidate,
-    engine: EvaluationEngine,
-) -> BoundEvaluator | CandidateMaterialization:
-    try:
-        return engine.new_evaluator()
-    except KeyboardInterrupt:
-        return CandidateMaterialization(
-            uuid4().hex,
-            problem.identity,
-            candidate.invocation_identity,
-            candidate.execution_identity,
-            CandidateSummary(candidate.vector, candidate.chi_square, 0),
-            MaterializationTerminal.INTERRUPTED,
-            0,
-            engine.compatibility_identity,
-            None,
-            0,
-            0,
-            TerminalFailure(
-                "interrupted",
-                "KeyboardInterrupt during root evaluator binding",
-            ),
-        )
-    except Exception as error:  # noqa: BLE001 - root binding fails closed
-        return CandidateMaterialization(
-            uuid4().hex,
-            problem.identity,
-            candidate.invocation_identity,
-            candidate.execution_identity,
-            CandidateSummary(candidate.vector, candidate.chi_square, 0),
-            MaterializationTerminal.FAILURE,
-            0,
-            engine.compatibility_identity,
-            None,
-            0,
-            0,
-            TerminalFailure(
-                "materialization_binding_failure",
-                f"{type(error).__name__}: {error}",
-            ),
-        )
-
-
 def _materialize_derived_direct_trf_candidate_for_root(
     problem: OptimizationProblem,
     candidate: MaterializedDirectTrfCandidate,
@@ -3113,129 +3269,26 @@ def _materialize_derived_direct_trf_candidate_for_root(
         parameterization,
         engine,
     )
-    token = CancellationToken() if cancellation is None else cancellation
-    bound = _bind_derived_root_evaluator(problem, candidate, engine)
-    if isinstance(bound, CandidateMaterialization):
-        return bound
-    fresh_evaluator = bound
-    if token.is_cancelled:
-        return CandidateMaterialization(
-            uuid4().hex,
-            problem.identity,
-            candidate.invocation_identity,
-            candidate.execution_identity,
-            CandidateSummary(candidate.vector, candidate.chi_square, 0),
-            MaterializationTerminal.CANCELLED,
+    materialized = materialize_root_candidate(
+        problem,
+        parameterization,
+        engine,
+        vector=candidate.vector,
+        invocation_identity=candidate.invocation_identity,
+        execution_identity=candidate.execution_identity,
+        candidate_summary=CandidateSummary(
+            candidate.vector,
+            candidate.chi_square,
             0,
-            fresh_evaluator.compatibility_identity,
-            None,
-            0,
-            0,
-            TerminalFailure("cancelled", "Cancellation before root materialization"),
-        )
-    try:
-        lifecycle = problem.lifecycle_frame(candidate.vector, parameterization)
-        frame = EvaluationFrame.from_lifecycle_frame(parameterization, lifecycle)
-        evaluated = fresh_evaluator.evaluate(frame)
-    except KeyboardInterrupt:
-        statistics = fresh_evaluator.cache_statistics
-        return CandidateMaterialization(
-            uuid4().hex,
-            problem.identity,
-            candidate.invocation_identity,
-            candidate.execution_identity,
-            CandidateSummary(candidate.vector, candidate.chi_square, 0),
-            MaterializationTerminal.INTERRUPTED,
-            1,
-            fresh_evaluator.compatibility_identity,
-            None,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure("interrupted", "KeyboardInterrupt during materialization"),
-        )
-    except Exception as error:  # noqa: BLE001 - root evaluation fails closed
-        statistics = fresh_evaluator.cache_statistics
-        return CandidateMaterialization(
-            uuid4().hex,
-            problem.identity,
-            candidate.invocation_identity,
-            candidate.execution_identity,
-            CandidateSummary(candidate.vector, candidate.chi_square, 0),
-            MaterializationTerminal.FAILURE,
-            1,
-            fresh_evaluator.compatibility_identity,
-            None,
-            statistics.hits,
-            statistics.misses,
-            TerminalFailure(
-                "materialization_exception",
-                f"{type(error).__name__}: {error}",
-            ),
-        )
-    statistics = fresh_evaluator.cache_statistics
-    terminal: MaterializationTerminal | None = None
-    failure: TerminalFailure | None = None
-    if token.is_cancelled:
-        terminal = MaterializationTerminal.CANCELLED
-        failure = TerminalFailure(
-            "cancelled",
-            "Cancellation observed during root materialization",
-        )
-    elif isinstance(evaluated, EvaluationFailure):
-        terminal = MaterializationTerminal.FAILURE
-        failure = TerminalFailure(evaluated.category, evaluated.message, evaluated)
-    else:
-        try:
-            _validate_materialized_result(
-                evaluated,
-                request,
-                problem,
-                fresh_evaluator,
-            )
-        except Exception as error:  # noqa: BLE001 - aggregate validation fails closed
-            terminal = MaterializationTerminal.FAILURE
-            failure = TerminalFailure(
-                "materialization_validation_failure",
-                f"{type(error).__name__}: {error}",
-            )
-    if terminal is not None:
-        return CandidateMaterialization(
-            uuid4().hex,
-            problem.identity,
-            candidate.invocation_identity,
-            candidate.execution_identity,
-            CandidateSummary(candidate.vector, candidate.chi_square, 0),
-            terminal,
-            1,
-            fresh_evaluator.compatibility_identity,
-            None,
-            statistics.hits,
-            statistics.misses,
-            failure,
-        )
-    successful = cast("EvaluationResult", evaluated)
-    fresh_materialization = CandidateMaterialization(
-        uuid4().hex,
-        problem.identity,
-        candidate.invocation_identity,
-        candidate.execution_identity,
-        CandidateSummary(candidate.vector, candidate.chi_square, 0),
-        MaterializationTerminal.SUCCESS,
-        1,
-        fresh_evaluator.compatibility_identity,
-        successful.identity,
-        statistics.hits,
-        statistics.misses,
+        ),
+        expected_request=request,
+        cancellation=cancellation,
     )
-    return MaterializedDirectTrfCandidate(
-        problem.identity,
-        candidate.invocation_identity,
-        candidate.execution_identity,
-        fresh_materialization,
-        candidate.vector,
-        candidate.chi_square,
-        successful,
-    )
+    if isinstance(materialized, RootMaterializationFailure):
+        raise DirectTrfConstructionError(
+            "Referenced root materialization must retain failure evidence"
+        )
+    return materialized
 
 
 def _consume_fit_commit_authority(

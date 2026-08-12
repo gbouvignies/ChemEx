@@ -17,12 +17,15 @@ from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import EvaluationEngine
 from chemex.experiments.builder import build_experiments
+from chemex.optimize import direct_trf as direct_trf_owner
 from chemex.optimize.direct_trf import (
     AffineHalfSpace,
     CancellationToken,
+    ComponentProblemDerivation,
     DirectTrfConstructionError,
     DirectTrfInvocation,
     OptimizationProblem,
+    ProblemDerivation,
     canonical_chi_square,
     commit_accepted_fit,
     execute_direct_trf,
@@ -88,8 +91,32 @@ def test_exact_decomposition_is_deterministic_and_distinguishes_shared_coordinat
 ):
     _session, _experiments, parameterization, engine, problem = _grouped_problem()
 
-    first = FitDecomposition.from_root(problem, parameterization, engine)
-    second = FitDecomposition.from_root(problem, parameterization, engine)
+    derivations: list[ProblemDerivation] = []
+    original_derive_child = OptimizationProblem.derive_child
+
+    def track_derive_child(
+        self: OptimizationProblem,
+        *,
+        controlled_ids: tuple[str, ...],
+        start: tuple[float, ...],
+        derivation: ProblemDerivation,
+    ) -> OptimizationProblem:
+        derivations.append(derivation)
+        return original_derive_child(
+            self,
+            controlled_ids=controlled_ids,
+            start=start,
+            derivation=derivation,
+        )
+
+    with patch.object(OptimizationProblem, "derive_child", track_derive_child):
+        first = FitDecomposition.from_root(problem, parameterization, engine)
+        second = FitDecomposition.from_root(problem, parameterization, engine)
+
+    assert len(derivations) == 2 * len(first.components)
+    assert all(
+        isinstance(derivation, ComponentProblemDerivation) for derivation in derivations
+    )
 
     expected = (
         "__R1A_A_G2N_H_800_0MHZ",
@@ -262,15 +289,21 @@ def test_successful_components_compose_one_fresh_root_accepted_result_and_commit
     )
     before = session.analysis_values.snapshot()
 
-    outcome = execute_grouped_direct_trf(
-        problem,
-        decomposition,
-        invocation,
-        parameterization,
-        engine,
-    )
+    with patch.object(
+        direct_trf_owner,
+        "materialize_root_candidate",
+        wraps=direct_trf_owner.materialize_root_candidate,
+    ) as shared_materialization:
+        outcome = execute_grouped_direct_trf(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+        )
 
     assert outcome.terminal is GroupedDirectTrfTerminal.ACCEPTED
+    assert shared_materialization.call_count == 1
     assert all(
         component.disposition is ComponentDisposition.SUCCEEDED
         for component in outcome.components

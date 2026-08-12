@@ -48,11 +48,13 @@ from chemex.optimize.direct_trf import (
     AffineHalfSpace,
     CancellationToken,
     DePolishProblemDerivation,
+    DeSearchProblemDerivation,
     DirectTrfCandidateOutcome,
     DirectTrfConstructionError,
     DirectTrfInvocation,
     DirectTrfTerminal,
     OptimizationProblem,
+    ProblemDerivation,
 )
 from chemex.parameters.parameterization import ActiveParameterization
 from chemex.parameters.spin_system import SpinSystem
@@ -107,17 +109,39 @@ def test_selected_coordinate_plan_is_bounded_seeded_and_non_authoritative() -> N
     search_lower = problem.lower_bounds[pb_index]
     search_upper = problem.upper_bounds[pb_index]
 
-    invocation = DeDirectTrfInvocation.for_problem(
-        problem,
-        search_coordinates=(
-            (pb_id, search_lower, search_upper, DeCoordinateSemantics.LINEAR),
-        ),
-        root_seed=597,
-        de_objective_request_budget=6,
-        polish_objective_request_budget=5,
-        population_multiplier=4,
-        maximum_generations=3,
-    )
+    derivations: list[ProblemDerivation] = []
+    original_derive_child = OptimizationProblem.derive_child
+
+    def track_derive_child(
+        self: OptimizationProblem,
+        *,
+        controlled_ids: tuple[str, ...],
+        start: tuple[float, ...],
+        derivation: ProblemDerivation,
+    ) -> OptimizationProblem:
+        derivations.append(derivation)
+        return original_derive_child(
+            self,
+            controlled_ids=controlled_ids,
+            start=start,
+            derivation=derivation,
+        )
+
+    with patch.object(OptimizationProblem, "derive_child", track_derive_child):
+        invocation = DeDirectTrfInvocation.for_problem(
+            problem,
+            search_coordinates=(
+                (pb_id, search_lower, search_upper, DeCoordinateSemantics.LINEAR),
+            ),
+            root_seed=597,
+            de_objective_request_budget=6,
+            polish_objective_request_budget=5,
+            population_multiplier=4,
+            maximum_generations=3,
+        )
+
+    assert len(derivations) == 1
+    assert isinstance(derivations[0], DeSearchProblemDerivation)
 
     assert invocation.root_problem_identity == problem.identity
     assert tuple(item.param_id for item in invocation.search_coordinates) == (pb_id,)
@@ -592,15 +616,34 @@ def test_de_selects_canonical_restart_then_runs_one_full_trf_polish_and_commit()
         search_upper,
     )
     problem = dataclasses.replace(problem, affine_half_spaces=(restriction,))
-    invocation = DeDirectTrfInvocation.for_problem(
-        problem,
-        search_coordinates=((param_id, search_lower, search_upper, "linear"),),
-        root_seed=597,
-        de_objective_request_budget=6,
-        polish_objective_request_budget=5,
-        population_multiplier=4,
-        maximum_generations=1,
-    )
+    derivations: list[ProblemDerivation] = []
+    original_derive_child = OptimizationProblem.derive_child
+
+    def track_derive_child(
+        self: OptimizationProblem,
+        *,
+        controlled_ids: tuple[str, ...],
+        start: tuple[float, ...],
+        derivation: ProblemDerivation,
+    ) -> OptimizationProblem:
+        derivations.append(derivation)
+        return original_derive_child(
+            self,
+            controlled_ids=controlled_ids,
+            start=start,
+            derivation=derivation,
+        )
+
+    with patch.object(OptimizationProblem, "derive_child", track_derive_child):
+        invocation = DeDirectTrfInvocation.for_problem(
+            problem,
+            search_coordinates=((param_id, search_lower, search_upper, "linear"),),
+            root_seed=597,
+            de_objective_request_budget=6,
+            polish_objective_request_budget=5,
+            population_multiplier=4,
+            maximum_generations=1,
+        )
     assert invocation.search_problem.affine_half_spaces == (restriction,)
     with pytest.raises(DirectTrfConstructionError, match="feasibility"):
         dataclasses.replace(invocation.search_problem, affine_half_spaces=())
@@ -661,6 +704,7 @@ def test_de_selects_canonical_restart_then_runs_one_full_trf_polish_and_commit()
 
     before = session.analysis_values.snapshot()
     with (
+        patch.object(OptimizationProblem, "derive_child", track_derive_child),
         patch(
             "chemex.optimize.de_direct_trf.differential_evolution",
             bounded_search_backend,
@@ -673,6 +717,11 @@ def test_de_selects_canonical_restart_then_runs_one_full_trf_polish_and_commit()
             parameterization,
             engine,
         )
+
+    assert [type(derivation) for derivation in derivations] == [
+        DeSearchProblemDerivation,
+        DePolishProblemDerivation,
+    ]
 
     assert de_calls == 1
     assert outcome.terminal is DeDirectTrfTerminal.ACCEPTED

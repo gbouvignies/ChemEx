@@ -11,22 +11,15 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from uuid import uuid4
 
 import numpy as np
 
-from chemex.evaluation.native import (
-    BoundEvaluator,
-    EvaluationEngine,
-    EvaluationFailure,
-    EvaluationFrame,
-    EvaluationResult,
-)
+from chemex.evaluation.native import EvaluationEngine, EvaluationResult
+from chemex.optimize import direct_trf as direct_trf_owner
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     CancellationToken,
     CandidateMaterialization,
-    CandidateSummary,
     ComponentProblemDerivation,
     DirectTrfCandidateTerminal,
     DirectTrfConstructionError,
@@ -267,24 +260,10 @@ def _build_component(
         component_ids,
         held_items,
     )
-    child_problem = OptimizationProblem(
-        child_engine.plan.identity,
-        problem.parameterization_identity,
-        problem.evaluator_parameterization_identity,
-        problem.constraint_program_identity,
-        problem.configuration_identity,
-        problem.source_snapshot,
-        problem.independent_items,
-        component_ids,
-        held_items,
-        start,
-        lower,
-        upper,
-        problem.commit_scope,
-        derivation,
-        problem.scalarization_version,
-        problem.affine_half_spaces,
-        problem.affine_equalities,
+    child_problem = problem.derive_child(
+        controlled_ids=component_ids,
+        start=start,
+        derivation=derivation,
     )
     return FitComponent(
         component_ids,
@@ -1171,85 +1150,6 @@ def _aggregate_vector(
     return vector
 
 
-def _fresh_root_aggregate(
-    problem: OptimizationProblem,
-    parameterization: ActiveParameterization,
-    engine: EvaluationEngine,
-    vector: tuple[float, ...],
-    token: CancellationToken,
-    outcomes: tuple[FitComponentOutcome, ...],
-) -> tuple[BoundEvaluator, EvaluationResult] | GroupedDirectTrfOutcome:
-    if token.is_cancelled:
-        return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.CANCELLED, outcomes)
-    try:
-        lifecycle = problem.lifecycle_frame(vector, parameterization)
-        frame = EvaluationFrame.from_lifecycle_frame(parameterization, lifecycle)
-        evaluator = engine.new_evaluator()
-        aggregate = evaluator.evaluate(frame)
-    except KeyboardInterrupt:
-        return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.INTERRUPTED, outcomes)
-    except Exception as error:  # noqa: BLE001 - aggregate validation fails closed
-        return GroupedDirectTrfOutcome(
-            GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
-            outcomes,
-            failure=TerminalFailure(
-                "aggregate_materialization_exception",
-                f"{type(error).__name__}: {error}",
-            ),
-        )
-    if token.is_cancelled:
-        return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.CANCELLED, outcomes)
-    if isinstance(aggregate, EvaluationFailure):
-        return GroupedDirectTrfOutcome(
-            GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
-            outcomes,
-            failure=TerminalFailure(aggregate.category, aggregate.message, aggregate),
-        )
-    return evaluator, aggregate
-
-
-type _FreshAggregate = tuple[tuple[float, ...], BoundEvaluator, EvaluationResult]
-
-
-def _reconstruct_fresh_aggregate(
-    problem: OptimizationProblem,
-    decomposition: FitDecomposition,
-    parameterization: ActiveParameterization,
-    engine: EvaluationEngine,
-    outcomes: tuple[FitComponentOutcome, ...],
-    token: CancellationToken,
-) -> _FreshAggregate | GroupedDirectTrfOutcome:
-    try:
-        _check_grouped_cancellation(token)
-        vector_or_failure = _aggregate_vector(problem, decomposition, outcomes)
-        _check_grouped_cancellation(token)
-        if isinstance(vector_or_failure, TerminalFailure):
-            return GroupedDirectTrfOutcome(
-                GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
-                outcomes,
-                failure=vector_or_failure,
-            )
-        vector = vector_or_failure
-        _check_grouped_cancellation(token)
-    except _GroupedValidationCancelled:
-        return GroupedDirectTrfOutcome(
-            GroupedDirectTrfTerminal.CANCELLED,
-            outcomes,
-        )
-    fresh = _fresh_root_aggregate(
-        problem,
-        parameterization,
-        engine,
-        vector,
-        token,
-        outcomes,
-    )
-    if isinstance(fresh, GroupedDirectTrfOutcome):
-        return fresh
-    evaluator, aggregate = fresh
-    return vector, evaluator, aggregate
-
-
 def _accept_grouped_aggregate_unchecked(
     problem: OptimizationProblem,
     decomposition: FitDecomposition,
@@ -1257,11 +1157,10 @@ def _accept_grouped_aggregate_unchecked(
     engine: EvaluationEngine,
     outcomes: tuple[FitComponentOutcome, ...],
     projections: tuple[_ComponentProjection, ...],
-    vector: tuple[float, ...],
     token: CancellationToken,
-    evaluator: BoundEvaluator,
-    aggregate: EvaluationResult,
+    materialized: MaterializedDirectTrfCandidate,
 ) -> GroupedDirectTrfOutcome:
+    aggregate = materialized.evaluation_result
     for component, projection in zip(
         decomposition.components,
         projections,
@@ -1286,39 +1185,15 @@ def _accept_grouped_aggregate_unchecked(
             )
     if token.is_cancelled:
         return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.CANCELLED, outcomes)
-    chi_square = canonical_chi_square(aggregate.residuals)
-    execution_identity = _identity(
-        "native-grouped-direct-trf-execution",
-        (
-            invocation.identity,
-            tuple(outcome.identity for outcome in outcomes),
-            tuple(float(value).hex() for value in vector),
-            aggregate.identity,
-        ),
-    )
-    statistics = evaluator.cache_statistics
-    materialization = CandidateMaterialization(
-        uuid4().hex,
-        problem.identity,
-        invocation.identity,
-        execution_identity,
-        CandidateSummary(vector, chi_square, 0),
-        MaterializationTerminal.SUCCESS,
-        1,
-        evaluator.compatibility_identity,
-        aggregate.identity,
-        statistics.hits,
-        statistics.misses,
-    )
     if token.is_cancelled:
         return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.CANCELLED, outcomes)
     accepted, authority = accept_materialized_fit(
         problem=problem,
         invocation_identity=invocation.identity,
-        execution_identity=execution_identity,
-        materialization=materialization,
-        vector=vector,
-        chi_square=chi_square,
+        execution_identity=materialized.execution_identity,
+        materialization=materialized.materialization,
+        vector=materialized.vector,
+        chi_square=materialized.chi_square,
         evaluation_result=aggregate,
     )
     return GroupedDirectTrfOutcome(
@@ -1336,10 +1211,8 @@ def _accept_grouped_aggregate(
     engine: EvaluationEngine,
     outcomes: tuple[FitComponentOutcome, ...],
     projections: tuple[_ComponentProjection, ...],
-    vector: tuple[float, ...],
     token: CancellationToken,
-    evaluator: BoundEvaluator,
-    aggregate: EvaluationResult,
+    materialized: MaterializedDirectTrfCandidate,
 ) -> GroupedDirectTrfOutcome:
     try:
         return _accept_grouped_aggregate_unchecked(
@@ -1349,10 +1222,8 @@ def _accept_grouped_aggregate(
             engine,
             outcomes,
             projections,
-            vector,
             token,
-            evaluator,
-            aggregate,
+            materialized,
         )
     except KeyboardInterrupt:
         return GroupedDirectTrfOutcome(
@@ -1370,7 +1241,35 @@ def _accept_grouped_aggregate(
         )
 
 
-def materialize_grouped_direct_trf(
+def _grouped_materialization_failure(
+    failure: direct_trf_owner.RootMaterializationFailure,
+    outcomes: tuple[FitComponentOutcome, ...],
+) -> GroupedDirectTrfOutcome:
+    if failure.terminal is MaterializationTerminal.CANCELLED:
+        return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.CANCELLED, outcomes)
+    if failure.terminal is MaterializationTerminal.INTERRUPTED:
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.INTERRUPTED,
+            outcomes,
+        )
+    detail = failure.failure
+    if detail.category in {
+        "materialization_binding_failure",
+        "materialization_exception",
+    }:
+        detail = TerminalFailure(
+            "aggregate_materialization_exception",
+            detail.message,
+            detail.evaluation_failure,
+        )
+    return GroupedDirectTrfOutcome(
+        GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
+        outcomes,
+        failure=detail,
+    )
+
+
+def materialize_grouped_direct_trf(  # noqa: C901 - ordered grouped lifecycle gates
     problem: OptimizationProblem,
     decomposition: FitDecomposition,
     invocation: GroupedDirectTrfInvocation,
@@ -1430,17 +1329,47 @@ def materialize_grouped_direct_trf(
     if isinstance(projections_or_outcome, GroupedDirectTrfOutcome):
         return projections_or_outcome
     projections = projections_or_outcome
-    fresh_or_outcome = _reconstruct_fresh_aggregate(
+    try:
+        _check_grouped_cancellation(token)
+        vector_or_failure = _aggregate_vector(problem, decomposition, outcomes)
+        _check_grouped_cancellation(token)
+    except _GroupedValidationCancelled:
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.CANCELLED,
+            outcomes,
+        )
+    if isinstance(vector_or_failure, TerminalFailure):
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
+            outcomes,
+            failure=vector_or_failure,
+        )
+    vector = vector_or_failure
+    materialized = direct_trf_owner.materialize_root_candidate(
         problem,
-        decomposition,
         parameterization,
         engine,
-        outcomes,
-        token,
+        vector=vector,
+        invocation_identity=invocation.identity,
+        execution_identity=lambda aggregate: _identity(
+            "native-grouped-direct-trf-execution",
+            (
+                invocation.identity,
+                tuple(outcome.identity for outcome in outcomes),
+                tuple(float(value).hex() for value in vector),
+                aggregate.identity,
+            ),
+        ),
+        cancellation=token,
     )
-    if isinstance(fresh_or_outcome, GroupedDirectTrfOutcome):
-        return fresh_or_outcome
-    vector, evaluator, aggregate = fresh_or_outcome
+    if isinstance(materialized, direct_trf_owner.RootMaterializationFailure):
+        return _grouped_materialization_failure(materialized, outcomes)
+    if isinstance(materialized, CandidateMaterialization):
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
+            outcomes,
+            failure=materialized.failure,
+        )
     return _accept_grouped_aggregate(
         problem,
         decomposition,
@@ -1448,10 +1377,8 @@ def materialize_grouped_direct_trf(
         engine,
         outcomes,
         projections,
-        vector,
         token,
-        evaluator,
-        aggregate,
+        materialized,
     )
 
 

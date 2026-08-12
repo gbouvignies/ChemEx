@@ -380,26 +380,15 @@ def _validate_exact_search_projection(
     expected: _ExpectedSearchProjection,
 ) -> None:
     derivation = search_problem.derivation
+    try:
+        root_problem.validate_derived_problem(search_problem)
+    except DirectTrfConstructionError as error:
+        raise DirectTrfConstructionError(
+            "DE search problem is not the exact canonical root projection"
+        ) from error
     if (
-        search_problem.evaluation_plan_identity != root_problem.evaluation_plan_identity
-        or search_problem.parameterization_identity
-        != root_problem.parameterization_identity
-        or search_problem.evaluator_parameterization_identity
-        != root_problem.evaluator_parameterization_identity
-        or search_problem.constraint_program_identity
-        != root_problem.constraint_program_identity
-        or search_problem.configuration_identity != root_problem.configuration_identity
-        or search_problem.source_snapshot != root_problem.source_snapshot
-        or search_problem.independent_items != root_problem.independent_items
-        or search_problem.controlled_ids != selected_ids
-        or search_problem.held_items != expected.held_items
+        search_problem.controlled_ids != selected_ids
         or search_problem.start != expected.start
-        or search_problem.lower_bounds != expected.lower_bounds
-        or search_problem.upper_bounds != expected.upper_bounds
-        or search_problem.commit_scope != root_problem.commit_scope
-        or search_problem.scalarization_version != root_problem.scalarization_version
-        or search_problem.affine_half_spaces != root_problem.affine_half_spaces
-        or search_problem.affine_equalities != root_problem.affine_equalities
         or derivation != expected.derivation
     ):
         raise DirectTrfConstructionError(
@@ -708,30 +697,10 @@ class DeDirectTrfInvocation:
             held_items,
             start,
         )
-        search_problem = OptimizationProblem(
-            problem.evaluation_plan_identity,
-            problem.parameterization_identity,
-            problem.evaluator_parameterization_identity,
-            problem.constraint_program_identity,
-            problem.configuration_identity,
-            problem.source_snapshot,
-            problem.independent_items,
-            canonical_selected_ids,
-            held_items,
-            start,
-            tuple(
-                problem.lower_bounds[root_indices[item]]
-                for item in canonical_selected_ids
-            ),
-            tuple(
-                problem.upper_bounds[root_indices[item]]
-                for item in canonical_selected_ids
-            ),
-            problem.commit_scope,
-            derivation,
-            problem.scalarization_version,
-            problem.affine_half_spaces,
-            problem.affine_equalities,
+        search_problem = problem.derive_child(
+            controlled_ids=canonical_selected_ids,
+            start=start,
+            derivation=derivation,
         )
         population = DePopulation(
             len(coordinates),
@@ -1528,24 +1497,10 @@ def _derive_polish_problem(
         problem.controlled_ids,
         candidate.full_vector,
     )
-    child = OptimizationProblem(
-        problem.evaluation_plan_identity,
-        problem.parameterization_identity,
-        problem.evaluator_parameterization_identity,
-        problem.constraint_program_identity,
-        problem.configuration_identity,
-        problem.source_snapshot,
-        problem.independent_items,
-        problem.controlled_ids,
-        problem.held_items,
-        candidate.full_vector,
-        problem.lower_bounds,
-        problem.upper_bounds,
-        problem.commit_scope,
-        derivation,
-        problem.scalarization_version,
-        problem.affine_half_spaces,
-        problem.affine_equalities,
+    child = problem.derive_child(
+        controlled_ids=problem.controlled_ids,
+        start=candidate.full_vector,
+        derivation=derivation,
     )
     polish = DirectTrfInvocation.for_problem(
         child,
@@ -1637,6 +1592,12 @@ def _validate_de_polish_transition_lineage(
             problem.controlled_ids,
             search_candidate.full_vector,
         )
+    try:
+        problem.validate_derived_problem(polish_problem)
+    except DirectTrfConstructionError as error:
+        raise DirectTrfConstructionError(
+            "Successful TRF candidate lacks exact DE polish transition lineage"
+        ) from error
     if (
         search_candidate is None
         or polish.terminal is not DirectTrfCandidateTerminal.SUCCESS
@@ -1646,24 +1607,8 @@ def _validate_de_polish_transition_lineage(
         or materialization.terminal is not MaterializationTerminal.SUCCESS
         or not isinstance(derivation, DePolishProblemDerivation)
         or derivation != expected_derivation
-        or polish_problem.evaluation_plan_identity != problem.evaluation_plan_identity
-        or polish_problem.parameterization_identity != problem.parameterization_identity
-        or polish_problem.evaluator_parameterization_identity
-        != problem.evaluator_parameterization_identity
-        or polish_problem.constraint_program_identity
-        != problem.constraint_program_identity
-        or polish_problem.configuration_identity != problem.configuration_identity
-        or polish_problem.source_snapshot != problem.source_snapshot
-        or polish_problem.independent_items != problem.independent_items
         or polish_problem.controlled_ids != problem.controlled_ids
-        or polish_problem.held_items != problem.held_items
         or polish_problem.start != search_candidate.full_vector
-        or polish_problem.lower_bounds != problem.lower_bounds
-        or polish_problem.upper_bounds != problem.upper_bounds
-        or polish_problem.commit_scope != problem.commit_scope
-        or polish_problem.scalarization_version != problem.scalarization_version
-        or polish_problem.affine_half_spaces != problem.affine_half_spaces
-        or polish_problem.affine_equalities != problem.affine_equalities
         or polish_invocation.problem_identity != polish_problem.identity
         or polish_invocation.objective_request_budget
         != invocation.polish_objective_request_budget
