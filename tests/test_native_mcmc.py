@@ -49,6 +49,7 @@ from chemex.optimize.native_mcmc import (
     derive_posterior_summary,
     derive_retained_sample_view,
     execute_mcmc_evidence,
+    validate_raw_mcmc_capture,
 )
 from chemex.optimize.uncertainty import ParameterUnit
 from chemex.parameters.parameterization import (
@@ -565,7 +566,8 @@ def test_complete_chain_is_primary_and_flat_samples_are_derived_views() -> None:
     assert retained.is_complete
 
     diagnostics = derive_mcmc_diagnostics(evidence)
-    assert diagnostics.source_evidence_identity == evidence.identity
+    assert operation.backend_transition_evidence is not None
+    assert diagnostics.source_identity == operation.backend_transition_evidence.identity
     assert diagnostics.state_ordinals == (1, 2, 3, 4, 5)
     assert diagnostics.walker_ordinals == tuple(range(plan.policy.walkers))
     assert diagnostics.acceptance_fractions is not None
@@ -693,7 +695,7 @@ def test_fresh_validation_rejects_tampered_backend_log_density() -> None:
         first,
         log_densities=(first.log_densities[0] + 1.0, *first.log_densities[1:]),
     )
-    with pytest.raises(McmcConstructionError, match="transition"):
+    with pytest.raises(McmcConstructionError, match="capture"):
         dataclasses.replace(
             operation.raw_capture,
             states=(tampered_first, *operation.raw_capture.states[1:]),
@@ -710,16 +712,14 @@ def test_fresh_validator_rejects_backend_originated_log_density_mismatch(
         ordinal: int,
         positions: Array,
         log_densities: Array,
-        accepted_mask: Array | None,
     ) -> EnsembleState:
-        state = original(ordinal, positions, log_densities, accepted_mask)
+        state = original(ordinal, positions, log_densities)
         if ordinal != 0:
             return state
         return EnsembleState(
             state.ordinal,
             state.positions,
             (state.log_densities[0] + 1.0, *state.log_densities[1:]),
-            state.accepted,
         )
 
     monkeypatch.setattr(native_mcmc, "_ensemble_state", wrong_backend_density)
@@ -919,8 +919,242 @@ def test_zero_transition_acceptance_is_typed_unavailable() -> None:
 
     assert diagnostics.status is McmcDiagnosticStatus.UNAVAILABLE
     assert diagnostics.reason is McmcDiagnosticReason.NO_TRANSITIONS
+    assert diagnostics.observed_transition_count == 0
+    assert diagnostics.accepted_counts == (0,) * plan.policy.walkers
     assert diagnostics.acceptance_fractions is None
     assert diagnostics.mean_acceptance_fraction is None
+
+
+@pytest.mark.parametrize(
+    ("fractions", "mean"),
+    (((2.5,), -4.0), ((float("nan"),), float("nan"))),
+)
+def test_acceptance_diagnostics_reject_caller_supplied_values(
+    fractions: tuple[float, ...],
+    mean: float,
+) -> None:
+    constructor = cast("Any", native_mcmc.McmcDiagnostics)
+
+    with pytest.raises(TypeError):
+        constructor(
+            "forged-source",
+            (1,),
+            (0,),
+            McmcDiagnosticStatus.AVAILABLE,
+            None,
+            fractions,
+            mean,
+        )
+
+
+def test_acceptance_diagnostics_reject_replacement_and_serialized_tampering() -> None:
+    accepted, plan = _plan_context()
+    operation = execute_mcmc_evidence(accepted, plan)
+    source = operation.backend_transition_evidence
+    assert source is not None
+    diagnostic = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(source)
+    replace = cast("Any", dataclasses.replace)
+
+    with pytest.raises(TypeError, match="init=False"):
+        replace(diagnostic, acceptance_fractions=(2.5,))
+
+    object.__setattr__(diagnostic, "mean_acceptance_fraction", -4.0)
+    with pytest.raises(McmcConstructionError, match="content"):
+        diagnostic.validate_integrity()
+
+    canonical = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(source)
+    record = canonical.to_record()
+    record["acceptance_fractions"] = [float("nan").hex()]
+    record["mean_acceptance_fraction"] = (-4.0).hex()
+    with pytest.raises(McmcConstructionError, match="canonical backend evidence"):
+        native_mcmc.AcceptanceDiagnostics.from_record(record, source=source)
+
+
+@pytest.mark.parametrize(
+    "mask_kind",
+    ("all_true", "all_false", "alternating"),
+)
+def test_backend_mask_variants_do_not_change_primary_scientific_evidence(
+    mask_kind: str,
+) -> None:
+    accepted, plan = _plan_context()
+    operation = execute_mcmc_evidence(accepted, plan)
+    assert operation.raw_capture is not None
+    assert operation.evidence is not None
+    backend = operation.backend_transition_evidence
+    assert backend is not None
+    masks = tuple(
+        tuple(
+            True
+            if mask_kind == "all_true"
+            else False
+            if mask_kind == "all_false"
+            else (transition + walker) % 2 == 0
+            for walker in range(plan.policy.walkers)
+        )
+        for transition in range(plan.policy.total_steps)
+    )
+    variant = backend.with_observed_masks(
+        masks,
+        observation_provenance=backend.observation_provenance,
+    )
+
+    validation = validate_raw_mcmc_capture(
+        plan,
+        operation.raw_capture,
+        backend_transition_evidence=variant,
+    )
+
+    assert validation.primary_evidence is not None
+    assert validation.primary_evidence.identity == operation.evidence.identity
+    assert validation.primary_evidence.states == operation.evidence.states
+    original_diagnostic = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(
+        backend
+    )
+    variant_diagnostic = native_mcmc.AcceptanceDiagnostics.from_backend_evidence(
+        variant
+    )
+    assert variant_diagnostic.source_identity != original_diagnostic.source_identity
+    assert variant_diagnostic.identity != original_diagnostic.identity
+
+    original_selection = derive_retained_sample_view(operation.evidence)
+    variant_selection = derive_retained_sample_view(validation.primary_evidence)
+    assert variant_selection.samples == original_selection.samples
+    assert variant_selection.log_densities == original_selection.log_densities
+    output_units = (
+        ("A", ParameterUnit.DIMENSIONLESS),
+        ("B", ParameterUnit.DIMENSIONLESS),
+    )
+    original_posterior = derive_posterior_sample_evidence(
+        original_selection,
+        output_units,
+    )
+    variant_posterior = derive_posterior_sample_evidence(
+        variant_selection, output_units
+    )
+    assert variant_posterior.outcomes == original_posterior.outcomes
+    original_summary = derive_posterior_summary(original_posterior)
+    variant_summary = derive_posterior_summary(variant_posterior)
+    assert variant_summary.parameter_summaries == original_summary.parameter_summaries
+    assert variant_summary.covariance == original_summary.covariance
+    assert variant_summary.correlations == original_summary.correlations
+
+
+def test_short_chain_autocorrelation_and_dependents_are_unreliable() -> None:
+    accepted, problem, parameterization, engine = _native_context()
+    retained_steps = 16
+    policy = ExpertMcmcPolicy(
+        burn_steps=0,
+        retained_steps=retained_steps,
+        walkers=8,
+        expert_provenance="short-autocorrelation-qualification",
+    ).resolve(dimension=2, root_seed=1234)
+    plan = McmcPlan.for_accepted(
+        accepted,
+        source_problem=problem,
+        parameterization=parameterization,
+        source_engine=engine,
+        policy=policy,
+        coordinate_units=(
+            ("A", ParameterUnit.DIMENSIONLESS),
+            ("B", ParameterUnit.DIMENSIONLESS),
+        ),
+    )
+    operation = execute_mcmc_evidence(accepted, plan)
+    assert operation.evidence is not None
+    selection = derive_retained_sample_view(operation.evidence)
+    posterior = derive_posterior_sample_evidence(selection, plan.coordinate_units)
+    summary_policy = native_mcmc.PosteriorSummaryPolicy()
+    changed_window_policy = dataclasses.replace(
+        summary_policy,
+        autocorrelation_window_parameter=4.0,
+    )
+    changed_tolerance_policy = dataclasses.replace(
+        summary_policy,
+        autocorrelation_adequacy_tolerance=25.0,
+    )
+    assert changed_window_policy.identity != summary_policy.identity
+    assert changed_tolerance_policy.identity != summary_policy.identity
+    summary = derive_posterior_summary(posterior, summary_policy)
+
+    assert summary.policy_identity == summary_policy.identity
+    for item in summary.parameter_summaries:
+        for estimate in (
+            item.autocorrelation_time,
+            item.effective_sample_size,
+            item.monte_carlo_standard_error,
+        ):
+            assert estimate.status is McmcDiagnosticStatus.UNAVAILABLE
+            assert estimate.reason is McmcDiagnosticReason.UNRELIABLE_AUTOCORRELATION
+            assert estimate.value is None
+
+
+def test_long_chain_autocorrelation_and_dependents_are_reliable() -> None:
+    accepted, problem, parameterization, engine = _native_context()
+    retained_steps = 2048
+    walkers = 8
+    policy = ExpertMcmcPolicy(
+        burn_steps=256,
+        retained_steps=retained_steps,
+        walkers=walkers,
+        expert_provenance="long-autocorrelation-qualification",
+    ).resolve(dimension=2, root_seed=5678)
+    plan = McmcPlan.for_accepted(
+        accepted,
+        source_problem=problem,
+        parameterization=parameterization,
+        source_engine=engine,
+        policy=policy,
+        coordinate_units=(
+            ("A", ParameterUnit.DIMENSIONLESS),
+            ("B", ParameterUnit.DIMENSIONLESS),
+        ),
+    )
+    operation = execute_mcmc_evidence(accepted, plan)
+    assert operation.evidence is not None
+    selection = derive_retained_sample_view(operation.evidence)
+    posterior = derive_posterior_sample_evidence(selection, plan.coordinate_units)
+    summary_policy = native_mcmc.PosteriorSummaryPolicy()
+    summary = derive_posterior_summary(posterior, summary_policy)
+
+    assert summary.source_identity == posterior.identity
+    assert summary.policy_identity == summary_policy.identity
+    assert summary.included_labels == selection.sample_indices
+    sample_count = retained_steps * walkers
+    for item in summary.parameter_summaries:
+        tau = item.autocorrelation_time
+        effective = item.effective_sample_size
+        mcse = item.monte_carlo_standard_error
+        assert tau.status is McmcDiagnosticStatus.AVAILABLE
+        assert tau.reason is None
+        assert tau.value is not None
+        assert retained_steps >= (
+            summary_policy.autocorrelation_adequacy_tolerance * tau.value
+        )
+        assert effective.status is McmcDiagnosticStatus.AVAILABLE
+        assert effective.value == pytest.approx(sample_count / tau.value)
+        assert mcse.status is McmcDiagnosticStatus.AVAILABLE
+        assert mcse.value == pytest.approx(
+            item.posterior_standard_deviation / np.sqrt(effective.value)
+        )
+
+
+def test_recomputed_outer_hash_cannot_repair_altered_child_diagnostics() -> None:
+    accepted, plan = _plan_context()
+    operation = execute_mcmc_evidence(accepted, plan)
+    assert operation.evidence is not None
+    selection = derive_retained_sample_view(operation.evidence)
+    posterior = derive_posterior_sample_evidence(selection, plan.coordinate_units)
+    summary = derive_posterior_summary(posterior)
+
+    object.__setattr__(summary.acceptance, "mean_acceptance_fraction", -4.0)
+    object.__setattr__(
+        summary.acceptance, "identity", summary.acceptance._content_identity()
+    )
+    object.__setattr__(summary, "identity", summary._content_identity())
+
+    with pytest.raises(McmcConstructionError, match="Acceptance diagnostic"):
+        summary.validate_integrity()
 
 
 def test_complete_scope_posterior_outcomes_and_summary_are_canonical() -> None:

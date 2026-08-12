@@ -126,6 +126,8 @@ class McmcDiagnosticReason(StrEnum):
     ZERO_VARIANCE = "zero_variance"
     INVALID_AUTOCORRELATION = "invalid_autocorrelation"
     PARTIAL_CHAIN = "partial_chain"
+    BACKEND_TRANSITION_INCONSISTENT = "backend_transition_inconsistent"
+    UNRELIABLE_AUTOCORRELATION = "unreliable_autocorrelation"
 
 
 class McmcTrajectoryClaim(StrEnum):
@@ -955,12 +957,11 @@ def _finite_state_scalar(value: object, *, name: str) -> float:
 
 @dataclass(frozen=True, slots=True)
 class EnsembleState:
-    """One raw atomically completed backend state and its observations."""
+    """One atomically completed state with scientific position/log-density facts."""
 
     ordinal: int
     positions: tuple[tuple[float, ...], ...]
     log_densities: tuple[float, ...]
-    accepted: tuple[bool, ...]
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -985,12 +986,7 @@ class EnsembleState:
             _finite_state_scalar(value, name="MCMC state log density")
             for value in self.log_densities
         )
-        accepted = tuple(self.accepted)
-        if (
-            len(log_densities) != len(positions)
-            or len(accepted) != len(positions)
-            or any(not isinstance(value, bool) for value in accepted)
-        ):
+        if len(log_densities) != len(positions):
             raise McmcConstructionError(
                 "MCMC state payload must cover every walker exactly once"
             )
@@ -1000,12 +996,10 @@ class EnsembleState:
                 self.ordinal,
                 tuple(tuple(float(value).hex() for value in row) for row in positions),
                 tuple(float(value).hex() for value in log_densities),
-                accepted,
             ),
         )
         object.__setattr__(self, "positions", positions)
         object.__setattr__(self, "log_densities", log_densities)
-        object.__setattr__(self, "accepted", accepted)
         object.__setattr__(self, "identity", identity)
 
     def to_record(self) -> dict[str, object]:
@@ -1017,7 +1011,6 @@ class EnsembleState:
                 [float(value).hex() for value in row] for row in self.positions
             ],
             "log_densities": [float(value).hex() for value in self.log_densities],
-            "accepted": list(self.accepted),
             "identity": self.identity,
         }
 
@@ -1026,7 +1019,6 @@ class EnsembleState:
             self.ordinal,
             self.positions,
             self.log_densities,
-            self.accepted,
         )
         if expected.identity != self.identity:
             raise McmcConstructionError("MCMC ensemble-state content identity mismatch")
@@ -1041,7 +1033,6 @@ class EnsembleState:
                 "ordinal",
                 "positions",
                 "log_densities",
-                "accepted",
                 "identity",
             },
             "MCMC ensemble-state",
@@ -1051,7 +1042,6 @@ class EnsembleState:
         ordinal = record.get("ordinal")
         raw_positions = record.get("positions")
         raw_log_densities = record.get("log_densities")
-        raw_accepted = record.get("accepted")
         identity = record.get("identity")
         if (
             isinstance(ordinal, bool)
@@ -1059,13 +1049,10 @@ class EnsembleState:
             or not isinstance(raw_positions, list)
             or not all(isinstance(row, list) for row in raw_positions)
             or not isinstance(raw_log_densities, list)
-            or not isinstance(raw_accepted, list)
-            or not all(isinstance(value, bool) for value in raw_accepted)
             or not isinstance(identity, str)
         ):
             raise McmcConstructionError("Malformed MCMC ensemble-state record")
         position_rows = cast("list[list[object]]", raw_positions)
-        accepted_values = cast("list[bool]", raw_accepted)
         if any(
             not isinstance(value, str) for row in position_rows for value in row
         ) or any(not isinstance(value, str) for value in raw_log_densities):
@@ -1086,7 +1073,6 @@ class EnsembleState:
             ordinal,
             positions,
             log_densities,
-            tuple(accepted_values),
         )
         if state.identity != identity:
             raise McmcConstructionError("MCMC ensemble-state identity mismatch")
@@ -1095,7 +1081,7 @@ class EnsembleState:
 
 @dataclass(frozen=True, slots=True)
 class RawTransitionEvent:
-    """Backend-observed derivation edge between two complete states."""
+    """One non-authoritative backend accept/reject observation."""
 
     ordinal: int
     previous_state_identity: str
@@ -1148,6 +1134,190 @@ class RawTransitionEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class BackendTransitionConsistencyFailure:
+    """Structural inconsistency in a backend-declared rejected move."""
+
+    transition_ordinal: int
+    walker_ordinal: int
+    category: str
+
+
+@dataclass(frozen=True, slots=True)
+class BackendTransitionEvidence:
+    """Diagnostic-only backend masks bound to exact scientific raw states."""
+
+    source_capture: RawMcmcCapture = field(repr=False, compare=False)
+    observation_provenance: str
+    transitions: tuple[RawTransitionEvent, ...]
+    _occurrence_witness: _McmcEvidenceWitness | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    source_capture_identity: str = field(init=False)
+    consistency_failures: tuple[BackendTransitionConsistencyFailure, ...] = field(
+        init=False
+    )
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if self._occurrence_witness is None or not self.observation_provenance:
+            raise McmcConstructionError(
+                "Backend transition evidence requires canonical diagnostic provenance"
+            )
+        self.source_capture.validate_integrity()
+        transitions = tuple(self.transitions)
+        states = self.source_capture.states
+        if len(transitions) != max(0, len(states) - 1):
+            raise McmcConstructionError(
+                "Backend transition evidence must cover every complete state edge"
+            )
+        failures: list[BackendTransitionConsistencyFailure] = []
+        for transition, previous, following in zip(
+            transitions,
+            states[:-1],
+            states[1:],
+            strict=True,
+        ):
+            transition.validate_integrity()
+            if (
+                transition.ordinal != following.ordinal
+                or transition.previous_state_identity != previous.identity
+                or transition.next_state_identity != following.identity
+                or transition.proposal_count != self.source_capture.walkers
+            ):
+                raise McmcConstructionError(
+                    "Backend transition labels differ from their exact state edge"
+                )
+            for walker, accepted in enumerate(transition.accepted):
+                if not accepted and (
+                    following.positions[walker] != previous.positions[walker]
+                    or following.log_densities[walker] != previous.log_densities[walker]
+                ):
+                    failures.append(
+                        BackendTransitionConsistencyFailure(
+                            transition.ordinal,
+                            walker,
+                            "rejected_move_changed_state",
+                        )
+                    )
+        object.__setattr__(self, "transitions", transitions)
+        object.__setattr__(
+            self,
+            "source_capture_identity",
+            self.source_capture.identity,
+        )
+        object.__setattr__(self, "consistency_failures", tuple(failures))
+        object.__setattr__(self, "identity", self._content_identity())
+        if not _bind_mcmc_evidence_witness(
+            self._occurrence_witness,
+            self,
+            "backend-transition-evidence",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "Backend transition evidence occurrence witness is already bound"
+            )
+
+    def _content_identity(self) -> str:
+        return _identity(
+            "native-mcmc-backend-transition-evidence",
+            (
+                self.source_capture.identity,
+                self.observation_provenance,
+                tuple(item.identity for item in self.transitions),
+                tuple(
+                    (item.transition_ordinal, item.walker_ordinal, item.category)
+                    for item in self.consistency_failures
+                ),
+            ),
+        )
+
+    @property
+    def observed_transition_count(self) -> int:
+        return len(self.transitions)
+
+    @property
+    def is_structurally_consistent(self) -> bool:
+        return not self.consistency_failures
+
+    def validate_integrity(self) -> None:
+        self.source_capture.validate_integrity()
+        expected = BackendTransitionEvidence.from_capture(
+            self.source_capture,
+            tuple(item.accepted for item in self.transitions),
+            observation_provenance=self.observation_provenance,
+        )
+        if (
+            self._content_identity() != self.identity
+            or expected._content_identity() != self.identity
+        ):
+            raise McmcConstructionError(
+                "Backend transition diagnostic content identity mismatch"
+            )
+        if not _mcmc_evidence_occurrence_is_authoritative(
+            self._occurrence_witness,
+            self,
+            "backend-transition-evidence",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "Backend transition evidence is not its canonical occurrence"
+            )
+
+    @classmethod
+    def from_capture(
+        cls,
+        source_capture: RawMcmcCapture,
+        masks: Sequence[Sequence[bool]],
+        *,
+        observation_provenance: str,
+    ) -> BackendTransitionEvidence:
+        exact_masks = tuple(tuple(mask) for mask in masks)
+        states = source_capture.states
+        if len(exact_masks) != max(0, len(states) - 1):
+            raise McmcConstructionError(
+                "Backend masks must cover every observed transition"
+            )
+        transitions = tuple(
+            RawTransitionEvent(
+                following.ordinal,
+                previous.identity,
+                following.identity,
+                mask,
+                source_capture.walkers,
+                sum(mask),
+            )
+            for previous, following, mask in zip(
+                states[:-1],
+                states[1:],
+                exact_masks,
+                strict=True,
+            )
+        )
+        return cls(
+            source_capture,
+            observation_provenance,
+            transitions,
+            _mint_mcmc_evidence_witness("backend-transition-evidence"),
+        )
+
+    def with_observed_masks(
+        self,
+        masks: Sequence[Sequence[bool]],
+        *,
+        observation_provenance: str,
+    ) -> BackendTransitionEvidence:
+        """Create a diagnostic-only alternative without changing raw states."""
+        self.validate_integrity()
+        return self.from_capture(
+            self.source_capture,
+            masks,
+            observation_provenance=observation_provenance,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class RawMcmcCapture:
     """Execution-only backend observations with no scientific authority."""
 
@@ -1159,7 +1329,6 @@ class RawMcmcCapture:
     total_steps: int
     terminal: McmcOperationTerminal
     states: tuple[EnsembleState, ...]
-    transitions: tuple[RawTransitionEvent, ...]
     objective_request_count: int
     evaluation_request_count: int
     stage: McmcExecutionStage
@@ -1174,7 +1343,6 @@ class RawMcmcCapture:
 
     def __post_init__(self) -> None:
         states = tuple(self.states)
-        transitions = tuple(self.transitions)
         if tuple(state.ordinal for state in states) != tuple(range(len(states))):
             raise McmcConstructionError(
                 "Raw MCMC capture must contain a contiguous complete-state prefix"
@@ -1189,27 +1357,7 @@ class RawMcmcCapture:
             raise McmcConstructionError(
                 "Raw MCMC capture must come from sampler execution"
             )
-        if len(transitions) != max(0, len(states) - 1):
-            raise McmcConstructionError(
-                "Raw MCMC transitions must cover every complete state edge"
-            )
-        for transition, previous, following in zip(
-            transitions,
-            states[:-1],
-            states[1:],
-            strict=True,
-        ):
-            if (
-                transition.ordinal != following.ordinal
-                or transition.previous_state_identity != previous.identity
-                or transition.next_state_identity != following.identity
-                or transition.accepted != following.accepted
-            ):
-                raise McmcConstructionError(
-                    "Raw MCMC transition does not bind its adjacent states"
-                )
         object.__setattr__(self, "states", states)
-        object.__setattr__(self, "transitions", transitions)
         object.__setattr__(self, "identity", self._content_identity())
         if not _bind_mcmc_evidence_witness(
             self._occurrence_witness,
@@ -1233,7 +1381,6 @@ class RawMcmcCapture:
                 self.total_steps,
                 self.terminal.value,
                 tuple(state.identity for state in self.states),
-                tuple(item.identity for item in self.transitions),
                 self.objective_request_count,
                 self.evaluation_request_count,
                 self.stage.value,
@@ -1249,20 +1396,6 @@ class RawMcmcCapture:
     def validate_integrity(self) -> None:
         for state in self.states:
             state.validate_integrity()
-        for transition in self.transitions:
-            transition.validate_integrity()
-        if len(self.transitions) != max(0, len(self.states) - 1) or any(
-            transition.previous_state_identity != previous.identity
-            or transition.next_state_identity != following.identity
-            or transition.accepted != following.accepted
-            for transition, previous, following in zip(
-                self.transitions,
-                self.states[:-1],
-                self.states[1:],
-                strict=True,
-            )
-        ):
-            raise McmcConstructionError("Raw MCMC transition topology mismatch")
         if self._content_identity() != self.identity:
             raise McmcConstructionError("Raw MCMC capture content identity mismatch")
         if not _mcmc_evidence_occurrence_is_authoritative(
@@ -1287,17 +1420,6 @@ def _mint_raw_capture(
     failure_category: str | None = None,
 ) -> RawMcmcCapture:
     exact_states = tuple(states)
-    transitions = tuple(
-        RawTransitionEvent(
-            following.ordinal,
-            previous.identity,
-            following.identity,
-            following.accepted,
-            plan.policy.walkers,
-            sum(following.accepted),
-        )
-        for previous, following in zip(exact_states, exact_states[1:], strict=False)
-    )
     capture = RawMcmcCapture(
         plan.identity,
         plan.policy.identity,
@@ -1307,7 +1429,6 @@ def _mint_raw_capture(
         plan.policy.total_steps,
         terminal,
         exact_states,
-        transitions,
         objective_request_count,
         evaluation_request_count,
         stage,
@@ -1330,6 +1451,11 @@ class McmcEvidence:
     evaluation_request_count: int
     failure_category: str | None = None
     raw_capture_identity: str = ""
+    backend_transition_evidence: BackendTransitionEvidence | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     _occurrence_witness: _McmcEvidenceWitness | None = field(
         default=None,
         repr=False,
@@ -1557,6 +1683,7 @@ def _mint_primary_evidence(
     raw_capture: RawMcmcCapture,
     lifecycle: McmcEvidenceLifecycle,
     states: Sequence[EnsembleState],
+    backend_transition_evidence: BackendTransitionEvidence | None,
 ) -> McmcEvidence:
     evidence = McmcEvidence(
         plan,
@@ -1567,6 +1694,7 @@ def _mint_primary_evidence(
         raw_capture.evaluation_request_count,
         raw_capture.failure_category,
         raw_capture.identity,
+        backend_transition_evidence,
         _mint_mcmc_evidence_witness("primary-evidence"),
     )
     return evidence
@@ -1677,6 +1805,8 @@ def _fresh_authoritative_log_density(
 def validate_raw_mcmc_capture(  # noqa: C901 - state/walker validation boundary
     plan: McmcPlan,
     raw_capture: RawMcmcCapture,
+    *,
+    backend_transition_evidence: BackendTransitionEvidence | None = None,
 ) -> McmcChainValidation:
     """Freshly validate raw backend observations before minting evidence."""
     expected_state_count = plan.policy.total_steps + 1
@@ -1710,30 +1840,9 @@ def validate_raw_mcmc_capture(  # noqa: C901 - state/walker validation boundary
     validated: list[EnsembleState] = []
     failures: list[McmcValidationFailure] = []
     for state in raw_capture.states:
-        if state.ordinal > 0:
-            transition = raw_capture.transitions[state.ordinal - 1]
-            previous = raw_capture.states[state.ordinal - 1]
-            for walker, accepted in enumerate(transition.accepted):
-                unchanged = (
-                    state.positions[walker] == previous.positions[walker]
-                    and state.log_densities[walker] == previous.log_densities[walker]
-                )
-                if not accepted and not unchanged:
-                    failures.append(
-                        McmcValidationFailure(
-                            state.ordinal,
-                            walker,
-                            "rejected_transition_changed_state",
-                            "rejected walker did not preserve its prior state exactly",
-                        )
-                    )
-                    break
-            if failures:
-                break
         if (
             len(state.positions) != plan.policy.walkers
             or len(state.log_densities) != plan.policy.walkers
-            or len(state.accepted) != plan.policy.walkers
             or any(
                 len(position) != plan.policy.dimension for position in state.positions
             )
@@ -1794,7 +1903,6 @@ def validate_raw_mcmc_capture(  # noqa: C901 - state/walker validation boundary
                 state.ordinal,
                 state.positions,
                 tuple(authoritative),
-                state.accepted,
             )
         )
     primary: McmcEvidence | None = None
@@ -1809,6 +1917,7 @@ def validate_raw_mcmc_capture(  # noqa: C901 - state/walker validation boundary
             raw_capture,
             McmcEvidenceLifecycle.COMPLETED,
             tuple(validated),
+            backend_transition_evidence,
         )
     elif not failures and validated:
         primary = _mint_primary_evidence(
@@ -1816,6 +1925,7 @@ def validate_raw_mcmc_capture(  # noqa: C901 - state/walker validation boundary
             raw_capture,
             McmcEvidenceLifecycle.PARTIAL,
             tuple(validated),
+            backend_transition_evidence,
         )
     elif not failures and raw_capture.terminal is McmcOperationTerminal.COMPLETED:
         failures.append(
@@ -1845,6 +1955,7 @@ class McmcOperation:
     failure_message: str = ""
     raw_capture: RawMcmcCapture | None = None
     validation: McmcChainValidation | None = None
+    backend_transition_evidence: BackendTransitionEvidence | None = None
     _occurrence_witness: _McmcEvidenceWitness | None = field(
         default=None,
         repr=False,
@@ -1869,9 +1980,13 @@ class McmcOperation:
             raise McmcConstructionError(
                 "Non-completed MCMC operation requires typed failure evidence"
             )
-        if self.raw_capture is None or self.validation is None:
+        if (
+            self.raw_capture is None
+            or self.validation is None
+            or self.backend_transition_evidence is None
+        ):
             raise McmcConstructionError(
-                "Every MCMC operation requires zero-or-more-state raw evidence"
+                "Every MCMC operation requires raw and backend diagnostic evidence"
             )
         object.__setattr__(self, "identity", self._content_identity())
         if self._occurrence_witness is None or not _bind_mcmc_evidence_witness(
@@ -1887,6 +2002,10 @@ class McmcOperation:
     def _content_identity(self) -> str:
         capture = cast("RawMcmcCapture", self.raw_capture)
         validation = cast("McmcChainValidation", self.validation)
+        backend = cast(
+            "BackendTransitionEvidence",
+            self.backend_transition_evidence,
+        )
         return _identity(
             "native-mcmc-operation",
             (
@@ -1896,6 +2015,7 @@ class McmcOperation:
                 self.failure_message,
                 capture.identity,
                 validation.identity,
+                backend.identity,
             ),
         )
 
@@ -1914,8 +2034,21 @@ class McmcOperation:
         capture.validate_integrity()
         validation = cast("McmcChainValidation", self.validation)
         validation.validate_integrity()
+        backend = cast(
+            "BackendTransitionEvidence",
+            self.backend_transition_evidence,
+        )
+        backend.validate_integrity()
+        if backend.source_capture is not capture:
+            raise McmcConstructionError(
+                "Operation backend diagnostics differ from its raw capture"
+            )
         if self.evidence is not None:
             self.evidence.validate_integrity()
+            if self.evidence.backend_transition_evidence is not backend:
+                raise McmcConstructionError(
+                    "Operation backend diagnostics differ from primary attachment"
+                )
         if self._content_identity() != self.identity:
             raise McmcConstructionError("MCMC operation content identity mismatch")
         if not _mcmc_evidence_occurrence_is_authoritative(
@@ -1936,6 +2069,7 @@ def _mint_mcmc_operation(
     failure_message: str,
     raw_capture: RawMcmcCapture,
     validation: McmcChainValidation,
+    backend_transition_evidence: BackendTransitionEvidence,
 ) -> McmcOperation:
     return McmcOperation(
         terminal,
@@ -1944,6 +2078,7 @@ def _mint_mcmc_operation(
         failure_message,
         raw_capture,
         validation,
+        backend_transition_evidence,
         _mint_mcmc_evidence_witness("operation"),
     )
 
@@ -2022,50 +2157,164 @@ class RetainedSampleView:
 
 
 @dataclass(frozen=True, slots=True)
-class McmcDiagnostics:
-    """Acceptance diagnostics derived without altering primary chain evidence."""
+class AcceptanceDiagnostics:
+    """Canonical diagnostics derived from one exact backend mask source."""
 
-    source_evidence_identity: str
-    state_ordinals: tuple[int, ...]
-    walker_ordinals: tuple[int, ...]
-    status: McmcDiagnosticStatus
-    reason: McmcDiagnosticReason | None
-    acceptance_fractions: tuple[float, ...] | None
-    mean_acceptance_fraction: float | None
+    source: BackendTransitionEvidence = field(repr=False, compare=False)
+    _occurrence_witness: _McmcEvidenceWitness | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    source_identity: str = field(init=False)
+    state_ordinals: tuple[int, ...] = field(init=False)
+    walker_ordinals: tuple[int, ...] = field(init=False)
+    observed_transition_count: int = field(init=False)
+    accepted_counts: tuple[int, ...] = field(init=False)
+    status: McmcDiagnosticStatus = field(init=False)
+    reason: McmcDiagnosticReason | None = field(init=False)
+    acceptance_fractions: tuple[float, ...] | None = field(init=False)
+    mean_acceptance_fraction: float | None = field(init=False)
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
-        available = self.status is McmcDiagnosticStatus.AVAILABLE
         if (
-            available != (self.acceptance_fractions is not None)
-            or available != (self.mean_acceptance_fraction is not None)
-            or available == (self.reason is not None)
+            not isinstance(self.source, BackendTransitionEvidence)
+            or self._occurrence_witness is None
         ):
             raise McmcConstructionError(
-                "MCMC diagnostic availability payload is inconsistent"
+                "Acceptance diagnostics require canonical backend derivation"
             )
+        self.source.validate_integrity()
+        walker_ordinals = tuple(range(self.source.source_capture.walkers))
+        transitions = self.source.transitions
+        denominator = len(transitions)
+        accepted_counts = tuple(
+            sum(transition.accepted[walker] for transition in transitions)
+            for walker in walker_ordinals
+        )
+        if denominator == 0:
+            status = McmcDiagnosticStatus.UNAVAILABLE
+            reason = McmcDiagnosticReason.NO_TRANSITIONS
+            fractions = None
+            mean = None
+        elif not self.source.is_structurally_consistent:
+            status = McmcDiagnosticStatus.UNAVAILABLE
+            reason = McmcDiagnosticReason.BACKEND_TRANSITION_INCONSISTENT
+            fractions = None
+            mean = None
+        else:
+            status = McmcDiagnosticStatus.AVAILABLE
+            reason = None
+            fractions = tuple(count / denominator for count in accepted_counts)
+            mean = sum(fractions) / len(fractions)
+        object.__setattr__(self, "source_identity", self.source.identity)
         object.__setattr__(
             self,
-            "identity",
-            _identity(
-                "native-mcmc-acceptance-diagnostics",
-                (
-                    self.source_evidence_identity,
-                    self.state_ordinals,
-                    self.walker_ordinals,
-                    self.status.value,
-                    None if self.reason is None else self.reason.value,
-                    None
-                    if self.acceptance_fractions is None
-                    else tuple(
-                        float(value).hex() for value in self.acceptance_fractions
-                    ),
-                    None
-                    if self.mean_acceptance_fraction is None
-                    else float(self.mean_acceptance_fraction).hex(),
-                ),
+            "state_ordinals",
+            tuple(item.ordinal for item in transitions),
+        )
+        object.__setattr__(self, "walker_ordinals", walker_ordinals)
+        object.__setattr__(self, "observed_transition_count", denominator)
+        object.__setattr__(self, "accepted_counts", accepted_counts)
+        object.__setattr__(self, "status", status)
+        object.__setattr__(self, "reason", reason)
+        object.__setattr__(self, "acceptance_fractions", fractions)
+        object.__setattr__(self, "mean_acceptance_fraction", mean)
+        object.__setattr__(self, "identity", self._content_identity())
+        if not _bind_mcmc_evidence_witness(
+            self._occurrence_witness,
+            self,
+            "acceptance-diagnostics",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "Acceptance diagnostic occurrence witness is already bound"
+            )
+
+    def _content_identity(self) -> str:
+        return _identity(
+            "native-mcmc-acceptance-diagnostics",
+            (
+                self.source.identity,
+                self.state_ordinals,
+                self.walker_ordinals,
+                self.observed_transition_count,
+                self.accepted_counts,
+                self.status.value,
+                None if self.reason is None else self.reason.value,
+                None
+                if self.acceptance_fractions is None
+                else tuple(float(value).hex() for value in self.acceptance_fractions),
+                None
+                if self.mean_acceptance_fraction is None
+                else float(self.mean_acceptance_fraction).hex(),
             ),
         )
+
+    @classmethod
+    def from_backend_evidence(
+        cls,
+        source: BackendTransitionEvidence,
+    ) -> AcceptanceDiagnostics:
+        return cls(
+            source,
+            _mint_mcmc_evidence_witness("acceptance-diagnostics"),
+        )
+
+    def validate_integrity(self) -> None:
+        self.source.validate_integrity()
+        expected = self.from_backend_evidence(self.source)
+        if (
+            self._content_identity() != self.identity
+            or expected._content_identity() != self.identity
+        ):
+            raise McmcConstructionError("Acceptance diagnostic content mismatch")
+        if not _mcmc_evidence_occurrence_is_authoritative(
+            self._occurrence_witness,
+            self,
+            "acceptance-diagnostics",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "Acceptance diagnostics are not their canonical occurrence"
+            )
+
+    def to_record(self) -> dict[str, object]:
+        return {
+            "schema_version": _SCHEMA_VERSION,
+            "source_identity": self.source_identity,
+            "state_ordinals": list(self.state_ordinals),
+            "walker_ordinals": list(self.walker_ordinals),
+            "observed_transition_count": self.observed_transition_count,
+            "accepted_counts": list(self.accepted_counts),
+            "status": self.status.value,
+            "reason": None if self.reason is None else self.reason.value,
+            "acceptance_fractions": None
+            if self.acceptance_fractions is None
+            else [float(value).hex() for value in self.acceptance_fractions],
+            "mean_acceptance_fraction": None
+            if self.mean_acceptance_fraction is None
+            else float(self.mean_acceptance_fraction).hex(),
+            "identity": self.identity,
+        }
+
+    @classmethod
+    def from_record(
+        cls,
+        record: Mapping[str, object],
+        *,
+        source: BackendTransitionEvidence,
+    ) -> AcceptanceDiagnostics:
+        expected = cls.from_backend_evidence(source)
+        if record != expected.to_record():
+            raise McmcConstructionError(
+                "Stored acceptance diagnostics differ from canonical backend evidence"
+            )
+        return expected
+
+
+McmcDiagnostics = AcceptanceDiagnostics
 
 
 class PosteriorSampleDisposition(StrEnum):
@@ -2307,11 +2556,30 @@ class PosteriorSummaryPolicy:
     quantiles: tuple[float, ...] = (0.025, 0.5, 0.975)
     covariance_delta_degrees_of_freedom: int = 1
     minimum_autocorrelation_steps: int = 16
-    version: str = "mcmc-complete-scope-equal-tailed-v1"
+    minimum_autocorrelation_walkers: int = 2
+    autocorrelation_window_parameter: float = 5.0
+    autocorrelation_adequacy_tolerance: float = 50.0
+    version: str = "mcmc-complete-scope-equal-tailed-v2"
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
         quantiles = tuple(float(value) for value in self.quantiles)
+        minimum_steps = _positive_integer(
+            self.minimum_autocorrelation_steps,
+            name="Minimum autocorrelation retained steps",
+        )
+        minimum_walkers = _positive_integer(
+            self.minimum_autocorrelation_walkers,
+            name="Minimum autocorrelation retained walkers",
+        )
+        window_parameter = _finite_positive(
+            self.autocorrelation_window_parameter,
+            name="Autocorrelation window parameter",
+        )
+        adequacy_tolerance = _finite_positive(
+            self.autocorrelation_adequacy_tolerance,
+            name="Autocorrelation adequacy tolerance",
+        )
         if (
             not quantiles
             or any(not math.isfinite(value) for value in quantiles)
@@ -2327,10 +2595,22 @@ class PosteriorSummaryPolicy:
                 abs_tol=1.0e-15,
             )
             or self.covariance_delta_degrees_of_freedom != 1
-            or self.minimum_autocorrelation_steps < 2
+            or minimum_steps < 2
         ):
             raise McmcConstructionError("Posterior summary policy is invalid")
         object.__setattr__(self, "quantiles", quantiles)
+        object.__setattr__(self, "minimum_autocorrelation_steps", minimum_steps)
+        object.__setattr__(self, "minimum_autocorrelation_walkers", minimum_walkers)
+        object.__setattr__(
+            self,
+            "autocorrelation_window_parameter",
+            window_parameter,
+        )
+        object.__setattr__(
+            self,
+            "autocorrelation_adequacy_tolerance",
+            adequacy_tolerance,
+        )
         object.__setattr__(
             self,
             "identity",
@@ -2339,11 +2619,29 @@ class PosteriorSummaryPolicy:
                 (
                     tuple(float(value).hex() for value in quantiles),
                     self.covariance_delta_degrees_of_freedom,
-                    self.minimum_autocorrelation_steps,
+                    minimum_steps,
+                    minimum_walkers,
+                    float(window_parameter).hex(),
+                    float(adequacy_tolerance).hex(),
                     self.version,
                 ),
             ),
         )
+
+    def validate_integrity(self) -> None:
+        expected = PosteriorSummaryPolicy(
+            self.quantiles,
+            self.covariance_delta_degrees_of_freedom,
+            self.minimum_autocorrelation_steps,
+            self.minimum_autocorrelation_walkers,
+            self.autocorrelation_window_parameter,
+            self.autocorrelation_adequacy_tolerance,
+            self.version,
+        )
+        if expected.identity != self.identity:
+            raise McmcConstructionError(
+                "Posterior summary policy content identity mismatch"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -2483,6 +2781,8 @@ class PosteriorSummary:
 
     def validate_integrity(self) -> None:
         self.source.validate_integrity()
+        self.policy.validate_integrity()
+        self.acceptance.validate_integrity()
         expected_acceptance = derive_mcmc_diagnostics(
             self.source.selection.source_evidence
         )
@@ -2566,6 +2866,7 @@ def derive_posterior_summary(  # noqa: C901 - joint typed summary assembly
     if cancellation is not None and cancellation.is_cancelled:
         raise McmcConstructionError("Posterior summary derivation was cancelled")
     exact_policy = PosteriorSummaryPolicy() if policy is None else policy
+    exact_policy.validate_integrity()
     successful = tuple(
         outcome
         for outcome in source.outcomes
@@ -2607,6 +2908,8 @@ def derive_posterior_summary(  # noqa: C901 - joint typed summary assembly
         not source.selection.is_complete
         or not complete_grid
         or step_count < exact_policy.minimum_autocorrelation_steps
+        or len(source.selection.selected_walker_ordinals)
+        < exact_policy.minimum_autocorrelation_walkers
     ):
         reason = (
             McmcDiagnosticReason.PARTIAL_CHAIN
@@ -2626,10 +2929,19 @@ def derive_posterior_summary(  # noqa: C901 - joint typed summary assembly
             with warnings.catch_warnings():
                 warnings.simplefilter("error", RuntimeWarning)
                 tau_values = np.asarray(
-                    emcee.autocorr.integrated_time(chain, quiet=True),
+                    emcee.autocorr.integrated_time(
+                        chain,
+                        c=exact_policy.autocorrelation_window_parameter,
+                        tol=exact_policy.autocorrelation_adequacy_tolerance,
+                        quiet=False,
+                    ),
                     dtype=np.float64,
                 )
+        except emcee.autocorr.AutocorrError as error:
+            tau_values = np.asarray(error.tau, dtype=np.float64)
         except Exception:  # noqa: BLE001 - typed unavailable estimate
+            tau_values = np.full(len(source.output_scope), np.nan)
+        if tau_values.shape != (len(source.output_scope),):
             tau_values = np.full(len(source.output_scope), np.nan)
         autocorrelation_values: list[PosteriorScalarEstimate] = []
         ess_values: list[PosteriorScalarEstimate] = []
@@ -2637,6 +2949,17 @@ def derive_posterior_summary(  # noqa: C901 - joint typed summary assembly
         for index, tau in enumerate(tau_values):
             if not math.isfinite(float(tau)) or tau <= 0.0:
                 unavailable = _unavailable(McmcDiagnosticReason.INVALID_AUTOCORRELATION)
+                autocorrelation_values.append(unavailable)
+                ess_values.append(unavailable)
+                mcse_values.append(unavailable)
+                continue
+            if (
+                exact_policy.autocorrelation_adequacy_tolerance * float(tau)
+                > step_count
+            ):
+                unavailable = _unavailable(
+                    McmcDiagnosticReason.UNRELIABLE_AUTOCORRELATION
+                )
                 autocorrelation_values.append(unavailable)
                 ess_values.append(unavailable)
                 mcse_values.append(unavailable)
@@ -2832,19 +3155,12 @@ def _ensemble_state(
     ordinal: int,
     positions: Array,
     log_densities: Array,
-    accepted_mask: Array | None,
 ) -> EnsembleState:
     current = np.asarray(positions, dtype=np.float64)
-    accepted = (
-        tuple(False for _ in current)
-        if accepted_mask is None
-        else tuple(bool(value) for value in accepted_mask)
-    )
     return EnsembleState(
         ordinal,
         tuple(tuple(float(value) for value in row) for row in current),
         tuple(float(value) for value in np.asarray(log_densities, dtype=np.float64)),
-        accepted,
     )
 
 
@@ -2866,6 +3182,7 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
     signal = CancellationToken() if cancellation is None else cancellation
     log_density = _LogDensityEvaluator(plan)
     states: list[EnsembleState] = []
+    acceptance_masks: list[tuple[bool, ...]] = []
     stage = McmcExecutionStage.BEFORE_INITIALIZATION
     initialization_outcome = McmcInitializationOutcome.NOT_STARTED
 
@@ -2890,7 +3207,7 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
                 "MCMC initial ensemble has unavailable native log density"
             )
         initialization_outcome = McmcInitializationOutcome.COMPLETED
-        states.append(_ensemble_state(0, initial, initial_log_density, None))
+        states.append(_ensemble_state(0, initial, initial_log_density))
         checkpoint(McmcExecutionStage.AFTER_INITIALIZATION)
         checkpoint(McmcExecutionStage.AFTER_COMPLETE_STATE)
         move = _RecordingStretchMove(scale=plan.policy.proposal_scale)
@@ -2913,11 +3230,15 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
             checkpoint(McmcExecutionStage.BEFORE_TRANSITION)
             checkpoint(McmcExecutionStage.DURING_TRANSITION)
             sampled = next(iterator)
+            if move.last_accepted is None:
+                raise McmcExecutionError(
+                    "MCMC backend omitted its transition diagnostic mask"
+                )
+            acceptance_masks.append(tuple(bool(value) for value in move.last_accepted))
             state = _ensemble_state(
                 ordinal,
                 sampled.coords,
                 sampled.log_prob,
-                move.last_accepted,
             )
             states.append(state)
             if state_observer is not None:
@@ -2937,7 +3258,16 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
             stage,
             initialization_outcome,
         )
-        validation = validate_raw_mcmc_capture(plan, raw_capture)
+        backend_transition_evidence = BackendTransitionEvidence.from_capture(
+            raw_capture,
+            acceptance_masks,
+            observation_provenance="emcee-stretch-backend-v1",
+        )
+        validation = validate_raw_mcmc_capture(
+            plan,
+            raw_capture,
+            backend_transition_evidence=backend_transition_evidence,
+        )
         if not validation.is_complete or validation.primary_evidence is None:
             raise McmcExecutionError("fresh MCMC validation did not complete")
         checkpoint(McmcExecutionStage.BEFORE_FINAL_ASSEMBLY)
@@ -2949,6 +3279,7 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
             "",
             raw_capture,
             validation,
+            backend_transition_evidence,
         )
     except _McmcCancelled as error:
         terminal = McmcOperationTerminal.CANCELLED
@@ -2978,7 +3309,16 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
         initialization_outcome,
         category,
     )
-    validation = validate_raw_mcmc_capture(plan, raw_capture)
+    backend_transition_evidence = BackendTransitionEvidence.from_capture(
+        raw_capture,
+        acceptance_masks,
+        observation_provenance="emcee-stretch-backend-v1",
+    )
+    validation = validate_raw_mcmc_capture(
+        plan,
+        raw_capture,
+        backend_transition_evidence=backend_transition_evidence,
+    )
     return _mint_mcmc_operation(
         terminal,
         validation.primary_evidence,
@@ -2986,6 +3326,7 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
         message,
         raw_capture,
         validation,
+        backend_transition_evidence,
     )
 
 
@@ -3030,37 +3371,19 @@ def derive_mcmc_diagnostics(
     *,
     cancellation: CancellationToken | None = None,
 ) -> McmcDiagnostics:
-    """Derive acceptance diagnostics from complete transition states only."""
+    """Derive diagnostic-only acceptance observations from their backend source."""
     evidence.validate_integrity()
     if cancellation is not None and cancellation.is_cancelled:
         raise McmcConstructionError("MCMC diagnostic derivation was cancelled")
-    transitions = evidence.states[1:]
-    completed = len(transitions)
-    accepted_counts = tuple(
-        sum(state.accepted[walker] for state in transitions)
-        for walker in range(evidence.plan.policy.walkers)
-    )
-    if completed == 0:
-        return McmcDiagnostics(
-            evidence.identity,
-            (),
-            tuple(range(evidence.plan.policy.walkers)),
-            McmcDiagnosticStatus.UNAVAILABLE,
-            McmcDiagnosticReason.NO_TRANSITIONS,
-            None,
-            None,
+    source = evidence.backend_transition_evidence
+    if (
+        source is None
+        or source.source_capture_identity != evidence.raw_capture_identity
+    ):
+        raise McmcConstructionError(
+            "Primary evidence has no matching backend transition diagnostic source"
         )
-    fractions = tuple(count / completed for count in accepted_counts)
-    mean = sum(fractions) / len(fractions)
-    return McmcDiagnostics(
-        evidence.identity,
-        tuple(state.ordinal for state in transitions),
-        tuple(range(evidence.plan.policy.walkers)),
-        McmcDiagnosticStatus.AVAILABLE,
-        None,
-        fractions,
-        mean,
-    )
+    return AcceptanceDiagnostics.from_backend_evidence(source)
 
 
 def derive_mcmc_operation_diagnostics(
@@ -3072,15 +3395,11 @@ def derive_mcmc_operation_diagnostics(
     operation.validate_integrity()
     if cancellation is not None and cancellation.is_cancelled:
         raise McmcConstructionError("MCMC diagnostic derivation was cancelled")
+    source = cast("BackendTransitionEvidence", operation.backend_transition_evidence)
     if operation.evidence is not None:
-        return derive_mcmc_diagnostics(operation.evidence)
-    capture = cast("RawMcmcCapture", operation.raw_capture)
-    return McmcDiagnostics(
-        operation.identity,
-        (),
-        tuple(range(capture.walkers)),
-        McmcDiagnosticStatus.UNAVAILABLE,
-        McmcDiagnosticReason.NO_TRANSITIONS,
-        None,
-        None,
-    )
+        evidence_source = operation.evidence.backend_transition_evidence
+        if evidence_source is not source:
+            raise McmcConstructionError(
+                "Operation and primary evidence backend diagnostics differ"
+            )
+    return AcceptanceDiagnostics.from_backend_evidence(source)
