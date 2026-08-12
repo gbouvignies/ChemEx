@@ -902,6 +902,66 @@ def test_existing_destination_collision_preserves_authoritative_tree(
     assert not _staging_residue(tmp_path, output.name)
 
 
+@pytest.mark.parametrize("destination_kind", ["directory", "file", "symlink"])
+def test_destination_appearing_after_staging_preserves_competing_object(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    destination_kind: Literal["directory", "file", "symlink"],
+) -> None:
+    publication = _committed_fit()
+    output = tmp_path / "STEP"
+    symlink_target = tmp_path / "competing-target"
+    original_write_components = native_reporting.write_components
+
+    def finish_staging_then_create_destination(
+        path: Path,
+        components: tuple[ComponentDiagnostic, ...],
+    ) -> None:
+        original_write_components(path, components)
+        if destination_kind == "directory":
+            sentinel = output / "competing" / "sentinel.bin"
+            sentinel.parent.mkdir(parents=True)
+            sentinel.write_bytes(b"competing-authoritative-tree")
+        elif destination_kind == "file":
+            output.write_bytes(b"competing-authoritative-file")
+        else:
+            symlink_target.mkdir()
+            (symlink_target / "sentinel.bin").write_bytes(
+                b"competing-authoritative-symlink-target"
+            )
+            output.symlink_to(symlink_target, target_is_directory=True)
+
+    monkeypatch.setattr(
+        native_reporting,
+        "write_components",
+        finish_staging_then_create_destination,
+    )
+
+    with pytest.raises(FileExistsError, match="destination exists"):
+        publish_native_results(output, publication)
+
+    if destination_kind == "directory":
+        assert {str(item.relative_to(output)) for item in output.rglob("*")} == {
+            "competing",
+            "competing/sentinel.bin",
+        }
+        assert _tree_bytes(output) == {
+            "competing/sentinel.bin": b"competing-authoritative-tree"
+        }
+    elif destination_kind == "file":
+        assert output.read_bytes() == b"competing-authoritative-file"
+    else:
+        assert output.is_symlink()
+        assert output.readlink() == symlink_target
+        assert {
+            str(item.relative_to(symlink_target)) for item in symlink_target.rglob("*")
+        } == {"sentinel.bin"}
+        assert _tree_bytes(symlink_target) == {
+            "sentinel.bin": b"competing-authoritative-symlink-target"
+        }
+    assert not _staging_residue(tmp_path, output.name)
+
+
 def test_mid_render_failure_removes_staging_without_publishing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -928,10 +988,10 @@ def test_final_rename_failure_removes_complete_staging_tree(
     publication = _committed_fit()
     output = tmp_path / "STEP"
 
-    def fail_replace(_source: object, _destination: object) -> None:
+    def fail_rename(_source: Path, _destination: Path) -> None:
         raise OSError("injected atomic rename failure")
 
-    monkeypatch.setattr(native_reporting.os, "replace", fail_replace)
+    monkeypatch.setattr(native_reporting, "_atomic_publish_noreplace", fail_rename)
 
     with pytest.raises(OSError, match="injected atomic rename failure"):
         publish_native_results(output, publication)
