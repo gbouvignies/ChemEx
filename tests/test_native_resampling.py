@@ -420,8 +420,17 @@ def test_multi_worker_cancellation_freezes_completed_partial_evidence() -> None:
 
     assert operation.terminal.value == "cancelled"
     assert operation.evidence is not None
-    assert tuple(outcome.ordinal for outcome in operation.evidence.outcomes) == (0,)
-    assert operation.unstarted_ordinals == (1, 2, 3)
+    terminal_ordinals = tuple(
+        outcome.ordinal for outcome in operation.evidence.outcomes
+    )
+    assert 0 in terminal_ordinals
+    assert set(terminal_ordinals).isdisjoint(operation.unstarted_ordinals)
+    assert tuple(sorted((*terminal_ordinals, *operation.unstarted_ordinals))) == (
+        0,
+        1,
+        2,
+        3,
+    )
 
 
 def test_failed_replicates_remain_typed_and_summary_uses_one_common_scope() -> None:

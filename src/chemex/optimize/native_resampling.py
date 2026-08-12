@@ -1285,9 +1285,16 @@ def _execute_parallel_replicates(
         except KeyboardInterrupt:
             terminal = OperationTerminal.INTERRUPTED
         finally:
+            cancelled_before_start: set[Future[ReplicateOutcome]] = set()
             for future in pending:
-                future.cancel()
+                if future.cancel():
+                    cancelled_before_start.add(future)
             pool.shutdown(wait=True, cancel_futures=True)
+            outcomes.extend(
+                future.result()
+                for future in pending - cancelled_before_start
+                if not future.cancelled()
+            )
     outcomes.sort(key=lambda outcome: outcome.ordinal)
     return outcomes, terminal
 
