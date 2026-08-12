@@ -10,21 +10,26 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import cast
+from threading import RLock
+from typing import SupportsIndex, cast
+from weakref import WeakKeyDictionary
 
 import emcee
 import numpy as np
 
 from chemex.evaluation.native import (
+    BoundEvaluator,
     EvaluationEngine,
     EvaluationFailure,
     EvaluationFrame,
 )
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
+    CancellationToken,
     OptimizationProblem,
     accepted_occurrence_is_authoritative,
     canonical_chi_square,
@@ -50,6 +55,7 @@ class McmcPolicyKind(StrEnum):
     """Closed prospective native MCMC policy modes."""
 
     CALIBRATED = "calibrated"
+    CALIBRATION_CANDIDATE = "calibration_candidate"
     EXPERT = "expert"
 
 
@@ -76,12 +82,139 @@ class McmcOperationTerminal(StrEnum):
     """Terminal disposition of one native MCMC execution operation."""
 
     COMPLETED = "completed"
+    CANCELLED = "cancelled"
     FAILED = "failed"
     INTERRUPTED = "interrupted"
 
 
+class McmcExecutionStage(StrEnum):
+    """Last immutable checkpoint reached by one operation."""
+
+    BEFORE_INITIALIZATION = "before_initialization"
+    INITIALIZING = "initializing"
+    AFTER_INITIALIZATION = "after_initialization"
+    BEFORE_TRANSITION = "before_transition"
+    DURING_TRANSITION = "during_transition"
+    AFTER_COMPLETE_STATE = "after_complete_state"
+    FRESH_VALIDATION = "fresh_validation"
+    BEFORE_FINAL_ASSEMBLY = "before_final_assembly"
+
+
+class McmcInitializationOutcome(StrEnum):
+    """Truthful bounded-initialization disposition."""
+
+    NOT_STARTED = "not_started"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    INTERRUPTED = "interrupted"
+
+
+class McmcDiagnosticStatus(StrEnum):
+    """Typed availability of an observed or estimated diagnostic."""
+
+    AVAILABLE = "available"
+    UNAVAILABLE = "unavailable"
+
+
+class McmcDiagnosticReason(StrEnum):
+    """Closed reason for unavailable MCMC diagnostic evidence."""
+
+    NO_TRANSITIONS = "no_transitions"
+    INSUFFICIENT_STATES = "insufficient_states"
+    INSUFFICIENT_RETAINED_WINDOW = "insufficient_retained_window"
+    ZERO_VARIANCE = "zero_variance"
+    INVALID_AUTOCORRELATION = "invalid_autocorrelation"
+    PARTIAL_CHAIN = "partial_chain"
+
+
+class McmcTrajectoryClaim(StrEnum):
+    """Authority level of deterministic trajectory observations."""
+
+    ORDINARY_CAPTURE = "ordinary_capture"
+
+
 class McmcExecutionError(RuntimeError):
     """Raised internally when native evaluation cannot produce log density."""
+
+
+class _McmcCancelled(RuntimeError):
+    pass
+
+
+class _McmcEvidenceWitness:
+    """Opaque process-local witness for one canonical evidence occurrence."""
+
+    __slots__ = ("__weakref__",)
+
+    def __new__(cls) -> _McmcEvidenceWitness:
+        raise TypeError(
+            "MCMC evidence witnesses are minted only by canonical factories"
+        )
+
+    def __copy__(self) -> _McmcEvidenceWitness:
+        raise TypeError("MCMC evidence witnesses cannot be copied")
+
+    def __deepcopy__(self, _memo: object) -> _McmcEvidenceWitness:
+        raise TypeError("MCMC evidence witnesses cannot be copied")
+
+    def __reduce__(self) -> tuple[object, ...]:
+        raise TypeError("MCMC evidence witnesses cannot be serialized")
+
+    def __reduce_ex__(self, _protocol: SupportsIndex, /) -> tuple[object, ...]:
+        raise TypeError("MCMC evidence witnesses cannot be serialized")
+
+
+@dataclass(frozen=True, slots=True)
+class _McmcEvidenceBinding:
+    kind: str
+    identity: str | None = None
+    object_identity: int | None = None
+
+
+_MCMC_EVIDENCE_WITNESSES: WeakKeyDictionary[
+    _McmcEvidenceWitness,
+    _McmcEvidenceBinding,
+] = WeakKeyDictionary()
+_MCMC_EVIDENCE_WITNESSES_LOCK = RLock()
+
+
+def _mint_mcmc_evidence_witness(kind: str) -> _McmcEvidenceWitness:
+    witness = object.__new__(_McmcEvidenceWitness)
+    with _MCMC_EVIDENCE_WITNESSES_LOCK:
+        _MCMC_EVIDENCE_WITNESSES[witness] = _McmcEvidenceBinding(kind)
+    return witness
+
+
+def _bind_mcmc_evidence_witness(
+    witness: _McmcEvidenceWitness,
+    artifact: object,
+    kind: str,
+    identity: str,
+) -> bool:
+    with _MCMC_EVIDENCE_WITNESSES_LOCK:
+        binding = _MCMC_EVIDENCE_WITNESSES.get(witness)
+        if binding == _McmcEvidenceBinding(kind):
+            _MCMC_EVIDENCE_WITNESSES[witness] = _McmcEvidenceBinding(
+                kind,
+                identity,
+                id(artifact),
+            )
+            return True
+        return binding == _McmcEvidenceBinding(kind, identity, id(artifact))
+
+
+def _mcmc_evidence_occurrence_is_authoritative(
+    witness: _McmcEvidenceWitness | None,
+    artifact: object,
+    kind: str,
+    identity: str,
+) -> bool:
+    if witness is None:
+        return False
+    with _MCMC_EVIDENCE_WITNESSES_LOCK:
+        binding = _MCMC_EVIDENCE_WITNESSES.get(witness)
+    return binding == _McmcEvidenceBinding(kind, identity, id(artifact))
 
 
 def _identity(kind: str, record: object) -> str:
@@ -201,6 +334,7 @@ class ResolvedMcmcPolicy:
     burn_steps: int
     retained_steps: int
     root_seed: int
+    provenance_identity: str
     qualification_dimension_range: tuple[int, int] | None = None
     proposal_scale: float = 2.0
     thin: int = 1
@@ -215,6 +349,7 @@ class ResolvedMcmcPolicy:
     objective_request_budget: int = field(init=False)
     initialization_seed: int = field(init=False)
     sampler_seed: int = field(init=False)
+    has_calibrated_adequacy: bool = field(init=False)
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -241,6 +376,11 @@ class ResolvedMcmcPolicy:
             raise McmcConstructionError(
                 "Calibrated MCMC policy requires an explicit qualification stratum"
             )
+        if self.kind is McmcPolicyKind.CALIBRATED:
+            raise McmcConstructionError(
+                "No repository-frozen calibration reference is available for "
+                "native MCMC"
+            )
         if self.kind is McmcPolicyKind.EXPERT and qualification_range is not None:
             raise McmcConstructionError(
                 "Expert MCMC policy cannot inherit calibrated qualification"
@@ -261,6 +401,7 @@ class ResolvedMcmcPolicy:
             )
         for value, name in (
             (self.policy_version, "MCMC policy version"),
+            (self.provenance_identity, "MCMC policy provenance identity"),
             (self.sampler_version, "MCMC sampler version"),
             (self.initialization_version, "MCMC initialization version"),
             (self.proposal_version, "MCMC proposal version"),
@@ -275,6 +416,7 @@ class ResolvedMcmcPolicy:
             (
                 self.kind.value,
                 self.policy_version,
+                self.provenance_identity,
                 dimension,
                 walkers,
                 burn,
@@ -294,6 +436,7 @@ class ResolvedMcmcPolicy:
             (
                 self.kind.value,
                 self.policy_version,
+                self.provenance_identity,
                 dimension,
                 walkers,
                 burn,
@@ -328,14 +471,103 @@ class ResolvedMcmcPolicy:
         )
         object.__setattr__(self, "initialization_seed", initialization_seed)
         object.__setattr__(self, "sampler_seed", sampler_seed)
+        object.__setattr__(
+            self,
+            "has_calibrated_adequacy",
+            self.kind is McmcPolicyKind.CALIBRATED,
+        )
         object.__setattr__(self, "identity", identity)
 
 
 @dataclass(frozen=True, slots=True)
-class CalibratedMcmcPolicy:
-    """One versioned qualified topology for a bounded dimension stratum."""
+class McmcCalibrationReference:
+    """Future #604 content reference; it carries no authority by itself."""
 
+    calibration_identity: str
+    baseline_release_identity: str
+    numerical_lane_requirement: str
     policy_version: str
+    minimum_dimension: int
+    maximum_dimension: int
+    walkers: int
+    burn_steps: int
+    retained_steps: int
+    proposal_scale: float = 2.0
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        minimum = _positive_integer(
+            self.minimum_dimension,
+            name="calibration-reference minimum dimension",
+        )
+        maximum = _positive_integer(
+            self.maximum_dimension,
+            name="calibration-reference maximum dimension",
+        )
+        if minimum > maximum:
+            raise McmcConstructionError(
+                "MCMC calibration reference has an inverted dimension stratum"
+            )
+        for value, name in (
+            (self.calibration_identity, "MCMC calibration identity"),
+            (self.baseline_release_identity, "MCMC baseline release identity"),
+            (self.numerical_lane_requirement, "MCMC numerical lane requirement"),
+            (self.policy_version, "MCMC calibrated policy version"),
+        ):
+            _nonempty(value, name=name)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-mcmc-calibration-reference",
+                (
+                    self.calibration_identity,
+                    self.baseline_release_identity,
+                    self.numerical_lane_requirement,
+                    self.policy_version,
+                    minimum,
+                    maximum,
+                    self.walkers,
+                    self.burn_steps,
+                    self.retained_steps,
+                    float(self.proposal_scale).hex(),
+                ),
+            ),
+        )
+
+
+def _repository_frozen_calibration_matches(
+    reference: McmcCalibrationReference,
+    authority: object,
+) -> bool:
+    """#604 will bind exact frozen references; none exist at #600."""
+    _ = reference, authority
+    return False
+
+
+@dataclass(frozen=True, slots=True)
+class CalibratedMcmcPolicy:
+    """Future exact-reference path, deliberately unavailable before #604."""
+
+    reference: McmcCalibrationReference
+    authority: object = field(repr=False, compare=False)
+
+    def resolve(self, *, dimension: int, root_seed: int) -> ResolvedMcmcPolicy:
+        if not _repository_frozen_calibration_matches(
+            self.reference,
+            self.authority,
+        ):
+            raise McmcConstructionError(
+                "MCMC calibration reference has no exact repository-frozen authority"
+            )
+        raise AssertionError("#604 must implement calibrated MCMC policy resolution")
+
+
+@dataclass(frozen=True, slots=True)
+class CalibrationCandidateMcmcPolicy:
+    """Executable prospective shape without calibrated adequacy authority."""
+
+    candidate_identity: str
     minimum_dimension: int
     maximum_dimension: int
     walkers: int
@@ -346,31 +578,28 @@ class CalibratedMcmcPolicy:
     def resolve(self, *, dimension: int, root_seed: int) -> ResolvedMcmcPolicy:
         minimum = _positive_integer(
             self.minimum_dimension,
-            name="calibrated minimum dimension",
+            name="candidate minimum dimension",
         )
         maximum = _positive_integer(
             self.maximum_dimension,
-            name="calibrated maximum dimension",
+            name="candidate maximum dimension",
         )
-        if minimum > maximum:
+        if minimum > maximum or not minimum <= dimension <= maximum:
             raise McmcConstructionError(
-                "Calibrated MCMC dimension stratum is strictly inverted"
-            )
-        if not minimum <= dimension <= maximum:
-            raise McmcConstructionError(
-                "No calibrated MCMC policy covers the requested dimension"
+                "MCMC calibration candidate does not cover the requested dimension"
             )
         return ResolvedMcmcPolicy(
-            kind=McmcPolicyKind.CALIBRATED,
+            kind=McmcPolicyKind.CALIBRATION_CANDIDATE,
             policy_version=_nonempty(
-                self.policy_version,
-                name="MCMC policy version",
+                self.candidate_identity,
+                name="MCMC calibration candidate identity",
             ),
             dimension=dimension,
             walkers=self.walkers,
             burn_steps=self.burn_steps,
             retained_steps=self.retained_steps,
             root_seed=root_seed,
+            provenance_identity=self.candidate_identity,
             qualification_dimension_range=(minimum, maximum),
             proposal_scale=self.proposal_scale,
         )
@@ -383,6 +612,7 @@ class ExpertMcmcPolicy:
     burn_steps: int
     retained_steps: int
     walkers: int
+    expert_provenance: str
     policy_version: str = field(init=False, default="expert-v1")
 
     def resolve(self, *, dimension: int, root_seed: int) -> ResolvedMcmcPolicy:
@@ -397,7 +627,126 @@ class ExpertMcmcPolicy:
             burn_steps=self.burn_steps,
             retained_steps=self.retained_steps,
             root_seed=root_seed,
+            provenance_identity=_nonempty(
+                self.expert_provenance,
+                name="MCMC expert provenance",
+            ),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class McmcAcceptedAnchor:
+    """Exact occurrence-owned scientific context for one MCMC request."""
+
+    accepted_semantic_identity: str
+    accepted_occurrence_identity: str
+    accepted_occurrence_witness: object = field(repr=False, compare=False)
+    source_occurrence_identity: str
+    source_revision: int
+    problem_identity: str
+    parameterization_identity: str
+    evaluator_parameterization_identity: str
+    constraint_program_identity: str
+    evaluation_plan_identity: str
+    coordinate_units: tuple[tuple[str, ParameterUnit], ...]
+    held_items: tuple[tuple[str, float], ...]
+    lower_bounds: tuple[float, ...]
+    upper_bounds: tuple[float, ...]
+    affine_feasibility_identity: str
+    accepted_vector: tuple[float, ...]
+    accepted_evaluation_identity: str
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-mcmc-accepted-anchor",
+                (
+                    self.accepted_semantic_identity,
+                    self.accepted_occurrence_identity,
+                    self.source_occurrence_identity,
+                    self.source_revision,
+                    self.problem_identity,
+                    self.parameterization_identity,
+                    self.evaluator_parameterization_identity,
+                    self.constraint_program_identity,
+                    self.evaluation_plan_identity,
+                    self.coordinate_units,
+                    tuple((key, float(value).hex()) for key, value in self.held_items),
+                    tuple(float(value).hex() for value in self.lower_bounds),
+                    tuple(float(value).hex() for value in self.upper_bounds),
+                    self.affine_feasibility_identity,
+                    tuple(float(value).hex() for value in self.accepted_vector),
+                    self.accepted_evaluation_identity,
+                ),
+            ),
+        )
+
+    def validate(
+        self,
+        accepted: AcceptedFitResult,
+        problem: OptimizationProblem,
+        parameterization: ActiveParameterization,
+        engine: EvaluationEngine,
+    ) -> None:
+        """Reject any live object outside the exact frozen accepted lineage."""
+        expected = (
+            self.accepted_semantic_identity,
+            self.accepted_occurrence_identity,
+            self.source_occurrence_identity,
+            self.source_revision,
+            self.problem_identity,
+            self.parameterization_identity,
+            self.evaluator_parameterization_identity,
+            self.constraint_program_identity,
+            self.evaluation_plan_identity,
+            self.coordinate_units,
+            self.held_items,
+            self.lower_bounds,
+            self.upper_bounds,
+            self.affine_feasibility_identity,
+            self.accepted_vector,
+            self.accepted_evaluation_identity,
+        )
+        actual = (
+            accepted.identity,
+            accepted.occurrence_identity,
+            problem.source_snapshot.occurrence_identity,
+            problem.source_snapshot.revision,
+            problem.identity,
+            parameterization.identity,
+            parameterization.evaluator_identity,
+            parameterization.program.fingerprint,
+            engine.plan.identity,
+            tuple(self.coordinate_units),
+            problem.held_items,
+            problem.lower_bounds,
+            problem.upper_bounds,
+            problem.affine_feasibility_identity,
+            accepted.vector,
+            accepted.evaluation_result.identity,
+        )
+        if (
+            not accepted_occurrence_is_authoritative(accepted)
+            or accepted.occurrence_witness is not self.accepted_occurrence_witness
+            or actual != expected
+            or accepted.problem_identity != problem.identity
+            or accepted.evaluation_result.plan_identity != engine.plan.identity
+            or accepted.evaluation_result.parameterization_identity
+            != parameterization.evaluator_identity
+            or problem.evaluation_plan_identity != engine.plan.identity
+            or problem.parameterization_identity != parameterization.identity
+            or problem.evaluator_parameterization_identity
+            != parameterization.evaluator_identity
+            or problem.constraint_program_identity
+            != parameterization.program.fingerprint
+        ):
+            raise McmcConstructionError(
+                "MCMC accepted occurrence or execution context differs from its "
+                "exact anchor"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -410,8 +759,14 @@ class McmcPlan:
     source_engine: EvaluationEngine = field(repr=False, compare=False)
     policy: ResolvedMcmcPolicy
     coordinate_units: tuple[tuple[str, ParameterUnit], ...]
+    anchor: McmcAcceptedAnchor = field(init=False)
     accepted_result_identity: str = field(init=False)
     accepted_occurrence_identity: str = field(init=False)
+    accepted_occurrence_witness: object = field(
+        init=False,
+        repr=False,
+        compare=False,
+    )
     problem_identity: str = field(init=False)
     coordinate_ids: tuple[str, ...] = field(init=False)
     lower_bounds: tuple[float, ...] = field(init=False)
@@ -488,11 +843,29 @@ class McmcPlan:
             walkers=self.policy.walkers,
             seed=self.policy.initialization_seed,
         )
+        anchor = McmcAcceptedAnchor(
+            accepted.identity,
+            accepted.occurrence_identity,
+            accepted.occurrence_witness,
+            snapshot.occurrence_identity,
+            snapshot.revision,
+            problem.identity,
+            parameterization.identity,
+            parameterization.evaluator_identity,
+            parameterization.program.fingerprint,
+            engine.plan.identity,
+            units,
+            problem.held_items,
+            lower,
+            upper,
+            problem.affine_feasibility_identity,
+            accepted.vector,
+            accepted.evaluation_result.identity,
+        )
         identity = _identity(
             "native-mcmc-plan",
             (
-                accepted.identity,
-                accepted.occurrence_identity,
+                anchor.identity,
                 problem.identity,
                 parameterization.identity,
                 engine.plan.identity,
@@ -505,11 +878,17 @@ class McmcPlan:
             ),
         )
         object.__setattr__(self, "coordinate_units", units)
+        object.__setattr__(self, "anchor", anchor)
         object.__setattr__(self, "accepted_result_identity", accepted.identity)
         object.__setattr__(
             self,
             "accepted_occurrence_identity",
             accepted.occurrence_identity,
+        )
+        object.__setattr__(
+            self,
+            "accepted_occurrence_witness",
+            accepted.occurrence_witness,
         )
         object.__setattr__(self, "problem_identity", problem.identity)
         object.__setattr__(self, "coordinate_ids", coordinate_ids)
@@ -517,6 +896,31 @@ class McmcPlan:
         object.__setattr__(self, "upper_bounds", upper)
         object.__setattr__(self, "initial_ensemble", initial)
         object.__setattr__(self, "identity", identity)
+
+    def validate_integrity(self, accepted: AcceptedFitResult | None = None) -> None:
+        """Recursively recheck all live plan objects and its exact anchor."""
+        source = self.accepted if accepted is None else accepted
+        self.anchor.validate(
+            source,
+            self.source_problem,
+            self.parameterization,
+            self.source_engine,
+        )
+        expected = McmcPlan.for_accepted(
+            source,
+            source_problem=self.source_problem,
+            parameterization=self.parameterization,
+            source_engine=self.source_engine,
+            policy=self.policy,
+            coordinate_units=self.coordinate_units,
+        )
+        if (
+            expected.identity != self.identity
+            or expected.anchor.identity != self.anchor.identity
+        ):
+            raise McmcConstructionError(
+                "MCMC plan failed recursive integrity validation"
+            )
 
     @classmethod
     def for_accepted(
@@ -551,7 +955,7 @@ def _finite_state_scalar(value: object, *, name: str) -> float:
 
 @dataclass(frozen=True, slots=True)
 class EnsembleState:
-    """One atomically completed full-walker state and its log densities."""
+    """One raw atomically completed backend state and its observations."""
 
     ordinal: int
     positions: tuple[tuple[float, ...], ...]
@@ -617,6 +1021,16 @@ class EnsembleState:
             "identity": self.identity,
         }
 
+    def validate_integrity(self) -> None:
+        expected = EnsembleState(
+            self.ordinal,
+            self.positions,
+            self.log_densities,
+            self.accepted,
+        )
+        if expected.identity != self.identity:
+            raise McmcConstructionError("MCMC ensemble-state content identity mismatch")
+
     @classmethod
     def from_record(cls, record: Mapping[str, object]) -> EnsembleState:
         """Restore and content-validate one complete ensemble state."""
@@ -680,6 +1094,231 @@ class EnsembleState:
 
 
 @dataclass(frozen=True, slots=True)
+class RawTransitionEvent:
+    """Backend-observed derivation edge between two complete states."""
+
+    ordinal: int
+    previous_state_identity: str
+    next_state_identity: str
+    accepted: tuple[bool, ...]
+    proposal_count: int
+    accepted_count: int
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if self.ordinal < 1 or self.proposal_count < 0 or self.accepted_count < 0:
+            raise McmcConstructionError("Raw MCMC transition counts are invalid")
+        accepted = tuple(self.accepted)
+        if (
+            any(not isinstance(value, bool) for value in accepted)
+            or self.proposal_count != len(accepted)
+            or self.accepted_count != sum(accepted)
+        ):
+            raise McmcConstructionError(
+                "Raw MCMC transition acceptance accounting is inconsistent"
+            )
+        object.__setattr__(self, "accepted", accepted)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-mcmc-raw-transition",
+                (
+                    self.ordinal,
+                    self.previous_state_identity,
+                    self.next_state_identity,
+                    accepted,
+                    self.proposal_count,
+                    self.accepted_count,
+                ),
+            ),
+        )
+
+    def validate_integrity(self) -> None:
+        expected = RawTransitionEvent(
+            self.ordinal,
+            self.previous_state_identity,
+            self.next_state_identity,
+            self.accepted,
+            self.proposal_count,
+            self.accepted_count,
+        )
+        if expected.identity != self.identity:
+            raise McmcConstructionError("Raw MCMC transition content identity mismatch")
+
+
+@dataclass(frozen=True, slots=True)
+class RawMcmcCapture:
+    """Execution-only backend observations with no scientific authority."""
+
+    plan_identity: str
+    policy_identity: str
+    root_seed: int
+    walkers: int
+    dimension: int
+    total_steps: int
+    terminal: McmcOperationTerminal
+    states: tuple[EnsembleState, ...]
+    transitions: tuple[RawTransitionEvent, ...]
+    objective_request_count: int
+    evaluation_request_count: int
+    stage: McmcExecutionStage
+    initialization_outcome: McmcInitializationOutcome
+    failure_category: str | None = None
+    _occurrence_witness: _McmcEvidenceWitness | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        states = tuple(self.states)
+        transitions = tuple(self.transitions)
+        if tuple(state.ordinal for state in states) != tuple(range(len(states))):
+            raise McmcConstructionError(
+                "Raw MCMC capture must contain a contiguous complete-state prefix"
+            )
+        if not self.plan_identity:
+            raise McmcConstructionError("Raw MCMC capture requires a plan identity")
+        if self.objective_request_count < 0 or self.evaluation_request_count < 0:
+            raise McmcConstructionError(
+                "Raw MCMC capture request counts must be non-negative"
+            )
+        if self._occurrence_witness is None:
+            raise McmcConstructionError(
+                "Raw MCMC capture must come from sampler execution"
+            )
+        if len(transitions) != max(0, len(states) - 1):
+            raise McmcConstructionError(
+                "Raw MCMC transitions must cover every complete state edge"
+            )
+        for transition, previous, following in zip(
+            transitions,
+            states[:-1],
+            states[1:],
+            strict=True,
+        ):
+            if (
+                transition.ordinal != following.ordinal
+                or transition.previous_state_identity != previous.identity
+                or transition.next_state_identity != following.identity
+                or transition.accepted != following.accepted
+            ):
+                raise McmcConstructionError(
+                    "Raw MCMC transition does not bind its adjacent states"
+                )
+        object.__setattr__(self, "states", states)
+        object.__setattr__(self, "transitions", transitions)
+        object.__setattr__(self, "identity", self._content_identity())
+        if not _bind_mcmc_evidence_witness(
+            self._occurrence_witness,
+            self,
+            "raw-capture",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "Raw MCMC capture occurrence witness is already bound"
+            )
+
+    def _content_identity(self) -> str:
+        return _identity(
+            "native-mcmc-raw-capture",
+            (
+                self.plan_identity,
+                self.policy_identity,
+                self.root_seed,
+                self.walkers,
+                self.dimension,
+                self.total_steps,
+                self.terminal.value,
+                tuple(state.identity for state in self.states),
+                tuple(item.identity for item in self.transitions),
+                self.objective_request_count,
+                self.evaluation_request_count,
+                self.stage.value,
+                self.initialization_outcome.value,
+                self.failure_category,
+            ),
+        )
+
+    @property
+    def complete_state_count(self) -> int:
+        return len(self.states)
+
+    def validate_integrity(self) -> None:
+        for state in self.states:
+            state.validate_integrity()
+        for transition in self.transitions:
+            transition.validate_integrity()
+        if len(self.transitions) != max(0, len(self.states) - 1) or any(
+            transition.previous_state_identity != previous.identity
+            or transition.next_state_identity != following.identity
+            or transition.accepted != following.accepted
+            for transition, previous, following in zip(
+                self.transitions,
+                self.states[:-1],
+                self.states[1:],
+                strict=True,
+            )
+        ):
+            raise McmcConstructionError("Raw MCMC transition topology mismatch")
+        if self._content_identity() != self.identity:
+            raise McmcConstructionError("Raw MCMC capture content identity mismatch")
+        if not _mcmc_evidence_occurrence_is_authoritative(
+            self._occurrence_witness,
+            self,
+            "raw-capture",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "Raw MCMC capture is not the exact execution-owned occurrence"
+            )
+
+
+def _mint_raw_capture(
+    plan: McmcPlan,
+    terminal: McmcOperationTerminal,
+    states: Sequence[EnsembleState],
+    objective_request_count: int,
+    evaluation_request_count: int,
+    stage: McmcExecutionStage,
+    initialization_outcome: McmcInitializationOutcome,
+    failure_category: str | None = None,
+) -> RawMcmcCapture:
+    exact_states = tuple(states)
+    transitions = tuple(
+        RawTransitionEvent(
+            following.ordinal,
+            previous.identity,
+            following.identity,
+            following.accepted,
+            plan.policy.walkers,
+            sum(following.accepted),
+        )
+        for previous, following in zip(exact_states, exact_states[1:], strict=False)
+    )
+    capture = RawMcmcCapture(
+        plan.identity,
+        plan.policy.identity,
+        plan.policy.root_seed,
+        plan.policy.walkers,
+        plan.policy.dimension,
+        plan.policy.total_steps,
+        terminal,
+        exact_states,
+        transitions,
+        objective_request_count,
+        evaluation_request_count,
+        stage,
+        initialization_outcome,
+        failure_category,
+        _mint_mcmc_evidence_witness("raw-capture"),
+    )
+    return capture
+
+
+@dataclass(frozen=True, slots=True)
 class McmcEvidence:
     """Primary fixed-topology chain evidence preserving ensemble states."""
 
@@ -690,14 +1329,26 @@ class McmcEvidence:
     objective_request_count: int
     evaluation_request_count: int
     failure_category: str | None = None
+    raw_capture_identity: str = ""
+    _occurrence_witness: _McmcEvidenceWitness | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     plan_identity: str = field(init=False)
     accepted_result_identity: str = field(init=False)
     coordinate_ids: tuple[str, ...] = field(init=False)
     coordinate_units: tuple[tuple[str, ParameterUnit], ...] = field(init=False)
     completed_transition_count: int = field(init=False)
+    trajectory_claim: McmcTrajectoryClaim = field(init=False)
+    canonical_lane_qualified: bool = field(init=False)
     identity: str = field(init=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:  # noqa: C901 - complete evidence invariant
+        if self._occurrence_witness is None:
+            raise McmcConstructionError(
+                "Primary MCMC evidence must come from fresh native validation"
+            )
         states = tuple(self.states)
         expected_ordinals = tuple(range(len(states)))
         if not states or tuple(state.ordinal for state in states) != expected_ordinals:
@@ -750,6 +1401,7 @@ class McmcEvidence:
                 self.objective_request_count,
                 self.evaluation_request_count,
                 self.failure_category,
+                self.raw_capture_identity,
             ),
         )
         object.__setattr__(self, "states", states)
@@ -762,7 +1414,55 @@ class McmcEvidence:
         object.__setattr__(self, "coordinate_ids", self.plan.coordinate_ids)
         object.__setattr__(self, "coordinate_units", self.plan.coordinate_units)
         object.__setattr__(self, "completed_transition_count", completed)
+        object.__setattr__(
+            self,
+            "trajectory_claim",
+            McmcTrajectoryClaim.ORDINARY_CAPTURE,
+        )
+        object.__setattr__(self, "canonical_lane_qualified", False)
         object.__setattr__(self, "identity", identity)
+        if not _bind_mcmc_evidence_witness(
+            self._occurrence_witness,
+            self,
+            "primary-evidence",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "Primary MCMC evidence occurrence witness is already bound"
+            )
+
+    def validate_integrity(self) -> None:
+        """Recursively reject reconstructed or altered primary evidence."""
+        self.plan.validate_integrity()
+        for state in self.states:
+            state.validate_integrity()
+        expected_identity = _identity(
+            "native-mcmc-primary-evidence",
+            (
+                self.plan.identity,
+                self.plan.accepted_result_identity,
+                self.lifecycle.value,
+                self.terminal.value,
+                tuple(state.identity for state in self.states),
+                self.objective_request_count,
+                self.evaluation_request_count,
+                self.failure_category,
+                self.raw_capture_identity,
+            ),
+        )
+        if expected_identity != self.identity:
+            raise McmcConstructionError(
+                "Primary MCMC evidence content identity mismatch"
+            )
+        if not _mcmc_evidence_occurrence_is_authoritative(
+            self._occurrence_witness,
+            self,
+            "primary-evidence",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "Primary MCMC evidence is not its validation-owned occurrence"
+            )
 
     def to_record(self) -> dict[str, object]:
         """Serialize primary evidence without live evaluator or sampler objects."""
@@ -776,6 +1476,7 @@ class McmcEvidence:
             "objective_request_count": self.objective_request_count,
             "evaluation_request_count": self.evaluation_request_count,
             "failure_category": self.failure_category,
+            "raw_capture_identity": self.raw_capture_identity,
             "identity": self.identity,
         }
 
@@ -785,6 +1486,7 @@ class McmcEvidence:
         record: Mapping[str, object],
         *,
         plan: McmcPlan,
+        raw_capture: RawMcmcCapture | None = None,
     ) -> McmcEvidence:
         """Restore primary evidence against its exact trusted execution plan."""
         _exact_keys(
@@ -799,6 +1501,7 @@ class McmcEvidence:
                 "objective_request_count",
                 "evaluation_request_count",
                 "failure_category",
+                "raw_capture_identity",
                 "identity",
             },
             "MCMC evidence",
@@ -833,21 +1536,303 @@ class McmcEvidence:
             raise McmcConstructionError(
                 "Malformed MCMC evidence lifecycle or terminal"
             ) from error
-        evidence = cls(
-            plan,
-            lifecycle,
-            terminal,
-            tuple(
-                EnsembleState.from_record(item)
-                for item in cast("list[Mapping[str, object]]", raw_states)
+        _ = lifecycle, terminal, raw_states, objective_count, evaluation_count
+        _ = failure_category, identity
+        if raw_capture is None:
+            raise McmcConstructionError(
+                "Primary MCMC evidence reconstruction requires its raw capture and "
+                "fresh validation"
+            )
+        validation = validate_raw_mcmc_capture(plan, raw_capture)
+        expected = validation.primary_evidence
+        if expected is None or record != expected.to_record():
+            raise McmcConstructionError(
+                "Stored MCMC evidence identity differs from fresh canonical validation"
+            )
+        return expected
+
+
+def _mint_primary_evidence(
+    plan: McmcPlan,
+    raw_capture: RawMcmcCapture,
+    lifecycle: McmcEvidenceLifecycle,
+    states: Sequence[EnsembleState],
+) -> McmcEvidence:
+    evidence = McmcEvidence(
+        plan,
+        lifecycle,
+        raw_capture.terminal,
+        tuple(states),
+        raw_capture.objective_request_count,
+        raw_capture.evaluation_request_count,
+        raw_capture.failure_category,
+        raw_capture.identity,
+        _mint_mcmc_evidence_witness("primary-evidence"),
+    )
+    return evidence
+
+
+@dataclass(frozen=True, slots=True)
+class McmcValidationFailure:
+    """One typed fresh-validation failure for a state/walker observation."""
+
+    state_ordinal: int
+    walker_ordinal: int
+    category: str
+    message: str
+    backend_log_density: float | None = None
+    authoritative_log_density: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class McmcChainValidation:
+    """Fresh-workspace validation and any qualified primary-chain result."""
+
+    raw_capture_identity: str
+    validated_states: tuple[EnsembleState, ...]
+    failures: tuple[McmcValidationFailure, ...]
+    expected_state_count: int
+    primary_evidence: McmcEvidence | None
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "identity", self._content_identity())
+
+    def _content_identity(self) -> str:
+        return _identity(
+            "native-mcmc-chain-validation",
+            (
+                self.raw_capture_identity,
+                tuple(state.identity for state in self.validated_states),
+                tuple(
+                    (
+                        item.state_ordinal,
+                        item.walker_ordinal,
+                        item.category,
+                        item.message,
+                        None
+                        if item.backend_log_density is None
+                        else float(item.backend_log_density).hex(),
+                        None
+                        if item.authoritative_log_density is None
+                        else float(item.authoritative_log_density).hex(),
+                    )
+                    for item in self.failures
+                ),
+                self.expected_state_count,
+                None
+                if self.primary_evidence is None
+                else self.primary_evidence.identity,
             ),
-            objective_count,
-            evaluation_count,
-            failure_category,
         )
-        if evidence.identity != identity:
-            raise McmcConstructionError("MCMC evidence identity mismatch")
-        return evidence
+
+    def validate_integrity(self) -> None:
+        for state in self.validated_states:
+            state.validate_integrity()
+        if self.primary_evidence is not None:
+            self.primary_evidence.validate_integrity()
+        if self._content_identity() != self.identity:
+            raise McmcConstructionError("MCMC chain validation content mismatch")
+
+    @property
+    def complete_state_count(self) -> int:
+        return len(self.validated_states)
+
+    @property
+    def is_complete(self) -> bool:
+        return (
+            not self.failures
+            and self.complete_state_count == self.expected_state_count
+            and self.primary_evidence is not None
+        )
+
+
+def _fresh_authoritative_log_density(
+    plan: McmcPlan,
+    evaluator: BoundEvaluator,
+    position: tuple[float, ...],
+) -> float:
+    """Re-derive one stored state through a validation-only evaluator."""
+    candidate = np.asarray(position, dtype=np.float64)
+    if (
+        candidate.shape != (plan.policy.dimension,)
+        or not np.all(np.isfinite(candidate))
+        or np.any(candidate <= np.asarray(plan.lower_bounds))
+        or np.any(candidate >= np.asarray(plan.upper_bounds))
+    ):
+        raise McmcExecutionError("stored MCMC state is outside its frozen bounds")
+    lifecycle = plan.source_problem.lifecycle_frame(
+        candidate,
+        plan.parameterization,
+    )
+    frame = EvaluationFrame.from_lifecycle_frame(plan.parameterization, lifecycle)
+    outcome = evaluator.evaluate(frame)
+    if isinstance(outcome, EvaluationFailure):
+        raise McmcExecutionError(
+            f"fresh MCMC validation failed: {outcome.category}: {outcome.message}"
+        )
+    return -0.5 * canonical_chi_square(outcome.residuals)
+
+
+def validate_raw_mcmc_capture(  # noqa: C901 - state/walker validation boundary
+    plan: McmcPlan,
+    raw_capture: RawMcmcCapture,
+) -> McmcChainValidation:
+    """Freshly validate raw backend observations before minting evidence."""
+    expected_state_count = plan.policy.total_steps + 1
+    try:
+        plan.validate_integrity()
+        raw_capture.validate_integrity()
+    except McmcConstructionError as error:
+        return McmcChainValidation(
+            raw_capture.identity,
+            (),
+            (McmcValidationFailure(0, 0, "source_integrity_failure", str(error)),),
+            expected_state_count,
+            None,
+        )
+    if raw_capture.plan_identity != plan.identity:
+        return McmcChainValidation(
+            raw_capture.identity,
+            (),
+            (
+                McmcValidationFailure(
+                    0,
+                    0,
+                    "plan_identity_mismatch",
+                    "raw MCMC capture is not bound to the supplied frozen plan",
+                ),
+            ),
+            expected_state_count,
+            None,
+        )
+    evaluator = plan.source_engine.new_evaluator()
+    validated: list[EnsembleState] = []
+    failures: list[McmcValidationFailure] = []
+    for state in raw_capture.states:
+        if state.ordinal > 0:
+            transition = raw_capture.transitions[state.ordinal - 1]
+            previous = raw_capture.states[state.ordinal - 1]
+            for walker, accepted in enumerate(transition.accepted):
+                unchanged = (
+                    state.positions[walker] == previous.positions[walker]
+                    and state.log_densities[walker] == previous.log_densities[walker]
+                )
+                if not accepted and not unchanged:
+                    failures.append(
+                        McmcValidationFailure(
+                            state.ordinal,
+                            walker,
+                            "rejected_transition_changed_state",
+                            "rejected walker did not preserve its prior state exactly",
+                        )
+                    )
+                    break
+            if failures:
+                break
+        if (
+            len(state.positions) != plan.policy.walkers
+            or len(state.log_densities) != plan.policy.walkers
+            or len(state.accepted) != plan.policy.walkers
+            or any(
+                len(position) != plan.policy.dimension for position in state.positions
+            )
+        ):
+            failures.append(
+                McmcValidationFailure(
+                    state.ordinal,
+                    0,
+                    "state_topology_mismatch",
+                    "raw MCMC state differs from the frozen walker topology",
+                )
+            )
+            break
+        if state.ordinal == 0 and state.positions != plan.initial_ensemble:
+            failures.append(
+                McmcValidationFailure(
+                    0,
+                    0,
+                    "initial_ensemble_mismatch",
+                    "raw MCMC initial state differs from its frozen construction",
+                )
+            )
+            break
+        authoritative: list[float] = []
+        for walker, (position, backend) in enumerate(
+            zip(state.positions, state.log_densities, strict=True)
+        ):
+            try:
+                value = _fresh_authoritative_log_density(plan, evaluator, position)
+            except Exception as error:  # noqa: BLE001 - typed validation evidence
+                failures.append(
+                    McmcValidationFailure(
+                        state.ordinal,
+                        walker,
+                        "fresh_native_evaluation_failed",
+                        f"{type(error).__name__}: {error}",
+                        backend,
+                    )
+                )
+                break
+            authoritative.append(value)
+            if backend != value:
+                failures.append(
+                    McmcValidationFailure(
+                        state.ordinal,
+                        walker,
+                        "backend_log_density_mismatch",
+                        "backend log density differs from fresh native evaluation",
+                        backend,
+                        value,
+                    )
+                )
+                break
+        if failures:
+            break
+        validated.append(
+            EnsembleState(
+                state.ordinal,
+                state.positions,
+                tuple(authoritative),
+                state.accepted,
+            )
+        )
+    primary: McmcEvidence | None = None
+    complete = (
+        raw_capture.terminal is McmcOperationTerminal.COMPLETED
+        and not failures
+        and len(validated) == expected_state_count
+    )
+    if complete:
+        primary = _mint_primary_evidence(
+            plan,
+            raw_capture,
+            McmcEvidenceLifecycle.COMPLETED,
+            tuple(validated),
+        )
+    elif not failures and validated:
+        primary = _mint_primary_evidence(
+            plan,
+            raw_capture,
+            McmcEvidenceLifecycle.PARTIAL,
+            tuple(validated),
+        )
+    elif not failures and raw_capture.terminal is McmcOperationTerminal.COMPLETED:
+        failures.append(
+            McmcValidationFailure(
+                len(validated),
+                0,
+                "incomplete_completed_capture",
+                "completed raw MCMC capture does not contain its frozen topology",
+            )
+        )
+    return McmcChainValidation(
+        raw_capture.identity,
+        tuple(validated),
+        tuple(failures),
+        expected_state_count,
+        primary,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -858,10 +1843,25 @@ class McmcOperation:
     evidence: McmcEvidence | None
     failure_category: str | None = None
     failure_message: str = ""
+    raw_capture: RawMcmcCapture | None = None
+    validation: McmcChainValidation | None = None
+    _occurrence_witness: _McmcEvidenceWitness | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    identity: str = field(init=False)
 
     def __post_init__(self) -> None:
         if self.terminal is McmcOperationTerminal.COMPLETED:
-            if self.evidence is None or self.failure_category is not None:
+            if (
+                self.evidence is None
+                or self.raw_capture is None
+                or self.validation is None
+                or not self.validation.is_complete
+                or self.validation.primary_evidence is not self.evidence
+                or self.failure_category is not None
+            ):
                 raise McmcConstructionError(
                     "Completed MCMC operation requires completed evidence"
                 )
@@ -869,6 +1869,83 @@ class McmcOperation:
             raise McmcConstructionError(
                 "Non-completed MCMC operation requires typed failure evidence"
             )
+        if self.raw_capture is None or self.validation is None:
+            raise McmcConstructionError(
+                "Every MCMC operation requires zero-or-more-state raw evidence"
+            )
+        object.__setattr__(self, "identity", self._content_identity())
+        if self._occurrence_witness is None or not _bind_mcmc_evidence_witness(
+            self._occurrence_witness,
+            self,
+            "operation",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "MCMC operation must come from one canonical execution occurrence"
+            )
+
+    def _content_identity(self) -> str:
+        capture = cast("RawMcmcCapture", self.raw_capture)
+        validation = cast("McmcChainValidation", self.validation)
+        return _identity(
+            "native-mcmc-operation",
+            (
+                self.terminal.value,
+                None if self.evidence is None else self.evidence.identity,
+                self.failure_category,
+                self.failure_message,
+                capture.identity,
+                validation.identity,
+            ),
+        )
+
+    @property
+    def complete_state_count(self) -> int:
+        capture = cast("RawMcmcCapture", self.raw_capture)
+        return capture.complete_state_count
+
+    @property
+    def stage(self) -> McmcExecutionStage:
+        capture = cast("RawMcmcCapture", self.raw_capture)
+        return capture.stage
+
+    def validate_integrity(self) -> None:
+        capture = cast("RawMcmcCapture", self.raw_capture)
+        capture.validate_integrity()
+        validation = cast("McmcChainValidation", self.validation)
+        validation.validate_integrity()
+        if self.evidence is not None:
+            self.evidence.validate_integrity()
+        if self._content_identity() != self.identity:
+            raise McmcConstructionError("MCMC operation content identity mismatch")
+        if not _mcmc_evidence_occurrence_is_authoritative(
+            self._occurrence_witness,
+            self,
+            "operation",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "MCMC operation occurrence is not authoritative"
+            )
+
+
+def _mint_mcmc_operation(
+    terminal: McmcOperationTerminal,
+    evidence: McmcEvidence | None,
+    failure_category: str | None,
+    failure_message: str,
+    raw_capture: RawMcmcCapture,
+    validation: McmcChainValidation,
+) -> McmcOperation:
+    return McmcOperation(
+        terminal,
+        evidence,
+        failure_category,
+        failure_message,
+        raw_capture,
+        validation,
+        _mint_mcmc_evidence_witness("operation"),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -876,36 +1953,72 @@ class RetainedSampleView:
     """Labeled step-major/walker-minor view derived from primary topology."""
 
     source_evidence_identity: str
+    policy_identity: str
     coordinate_ids: tuple[str, ...]
     coordinate_units: tuple[tuple[str, ParameterUnit], ...]
     selected_state_ordinals: tuple[int, ...]
+    selected_walker_ordinals: tuple[int, ...]
     sample_indices: tuple[tuple[int, int], ...]
     samples: tuple[tuple[float, ...], ...]
     log_densities: tuple[float, ...]
     is_complete: bool
+    source_evidence: McmcEvidence = field(repr=False, compare=False)
+    _occurrence_witness: _McmcEvidenceWitness | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
-        object.__setattr__(
+        if self._occurrence_witness is None:
+            raise McmcConstructionError(
+                "Retained MCMC selection must be derived from primary evidence"
+            )
+        object.__setattr__(self, "identity", self._content_identity())
+        if not _bind_mcmc_evidence_witness(
+            self._occurrence_witness,
             self,
-            "identity",
-            _identity(
-                "native-mcmc-retained-sample-view",
-                (
-                    self.source_evidence_identity,
-                    self.coordinate_ids,
-                    self.coordinate_units,
-                    self.selected_state_ordinals,
-                    self.sample_indices,
-                    tuple(
-                        tuple(float(value).hex() for value in sample)
-                        for sample in self.samples
-                    ),
-                    tuple(float(value).hex() for value in self.log_densities),
-                    self.is_complete,
+            "retained-selection",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "Retained MCMC selection occurrence witness is already bound"
+            )
+
+    def _content_identity(self) -> str:
+        return _identity(
+            "native-mcmc-retained-sample-view",
+            (
+                self.source_evidence_identity,
+                self.policy_identity,
+                self.coordinate_ids,
+                self.coordinate_units,
+                self.selected_state_ordinals,
+                self.selected_walker_ordinals,
+                self.sample_indices,
+                tuple(
+                    tuple(float(value).hex() for value in sample)
+                    for sample in self.samples
                 ),
+                tuple(float(value).hex() for value in self.log_densities),
+                self.is_complete,
             ),
         )
+
+    def validate_integrity(self) -> None:
+        self.source_evidence.validate_integrity()
+        if self._content_identity() != self.identity:
+            raise McmcConstructionError("Retained MCMC selection content mismatch")
+        if not _mcmc_evidence_occurrence_is_authoritative(
+            self._occurrence_witness,
+            self,
+            "retained-selection",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "Retained MCMC selection is not its canonical derived occurrence"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -915,11 +2028,22 @@ class McmcDiagnostics:
     source_evidence_identity: str
     state_ordinals: tuple[int, ...]
     walker_ordinals: tuple[int, ...]
-    acceptance_fractions: tuple[float, ...]
-    mean_acceptance_fraction: float
+    status: McmcDiagnosticStatus
+    reason: McmcDiagnosticReason | None
+    acceptance_fractions: tuple[float, ...] | None
+    mean_acceptance_fraction: float | None
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
+        available = self.status is McmcDiagnosticStatus.AVAILABLE
+        if (
+            available != (self.acceptance_fractions is not None)
+            or available != (self.mean_acceptance_fraction is not None)
+            or available == (self.reason is not None)
+        ):
+            raise McmcConstructionError(
+                "MCMC diagnostic availability payload is inconsistent"
+            )
         object.__setattr__(
             self,
             "identity",
@@ -929,11 +2053,723 @@ class McmcDiagnostics:
                     self.source_evidence_identity,
                     self.state_ordinals,
                     self.walker_ordinals,
-                    tuple(float(value).hex() for value in self.acceptance_fractions),
-                    float(self.mean_acceptance_fraction).hex(),
+                    self.status.value,
+                    None if self.reason is None else self.reason.value,
+                    None
+                    if self.acceptance_fractions is None
+                    else tuple(
+                        float(value).hex() for value in self.acceptance_fractions
+                    ),
+                    None
+                    if self.mean_acceptance_fraction is None
+                    else float(self.mean_acceptance_fraction).hex(),
                 ),
             ),
         )
+
+
+class PosteriorSampleDisposition(StrEnum):
+    """Scope-atomic outcome for one retained state/walker label."""
+
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class PosteriorSampleFailure:
+    """Typed exclusion of one entire requested posterior row."""
+
+    category: str
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class PosteriorSampleOutcome:
+    """One labeled complete-scope success or typed whole-row failure."""
+
+    state_ordinal: int
+    walker_ordinal: int
+    disposition: PosteriorSampleDisposition
+    independent_items: tuple[tuple[str, float], ...]
+    resolved_items: tuple[tuple[str, float], ...] | None
+    failure: PosteriorSampleFailure | None
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        success = self.disposition is PosteriorSampleDisposition.SUCCESS
+        if success != (self.resolved_items is not None) or success == (
+            self.failure is not None
+        ):
+            raise McmcConstructionError(
+                "Posterior sample must contain exactly its scope-atomic payload"
+            )
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-mcmc-posterior-sample-outcome",
+                (
+                    self.state_ordinal,
+                    self.walker_ordinal,
+                    self.disposition.value,
+                    tuple(
+                        (key, float(value).hex())
+                        for key, value in self.independent_items
+                    ),
+                    None
+                    if self.resolved_items is None
+                    else tuple(
+                        (key, float(value).hex()) for key, value in self.resolved_items
+                    ),
+                    None
+                    if self.failure is None
+                    else (self.failure.category, self.failure.message),
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PosteriorSampleEvidence:
+    """All retained labels resolved atomically to one requested output scope."""
+
+    selection: RetainedSampleView = field(repr=False, compare=False)
+    output_units: tuple[tuple[str, ParameterUnit], ...]
+    outcomes: tuple[PosteriorSampleOutcome, ...]
+    _occurrence_witness: _McmcEvidenceWitness | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    selection_identity: str = field(init=False)
+    output_scope: tuple[str, ...] = field(init=False)
+    successful_labels: tuple[tuple[int, int], ...] = field(init=False)
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if self._occurrence_witness is None:
+            raise McmcConstructionError(
+                "Posterior sample evidence must come from canonical resolution"
+            )
+        units = tuple(self.output_units)
+        scope = tuple(param_id for param_id, _unit in units)
+        if (
+            not scope
+            or len(set(scope)) != len(scope)
+            or any(not isinstance(unit, ParameterUnit) for _id, unit in units)
+            or tuple(
+                (outcome.state_ordinal, outcome.walker_ordinal)
+                for outcome in self.outcomes
+            )
+            != self.selection.sample_indices
+        ):
+            raise McmcConstructionError(
+                "Posterior evidence does not exactly cover its retained labels"
+            )
+        for outcome, sample in zip(
+            self.outcomes,
+            self.selection.samples,
+            strict=True,
+        ):
+            if (
+                tuple(key for key, _value in outcome.independent_items)
+                != self.selection.coordinate_ids
+                or tuple(value for _key, value in outcome.independent_items) != sample
+                or (
+                    outcome.resolved_items is not None
+                    and tuple(key for key, _value in outcome.resolved_items) != scope
+                )
+            ):
+                raise McmcConstructionError(
+                    "Posterior outcome differs from its exact labeled complete scope"
+                )
+        successful = tuple(
+            (item.state_ordinal, item.walker_ordinal)
+            for item in self.outcomes
+            if item.disposition is PosteriorSampleDisposition.SUCCESS
+        )
+        object.__setattr__(self, "output_units", units)
+        object.__setattr__(self, "selection_identity", self.selection.identity)
+        object.__setattr__(self, "output_scope", scope)
+        object.__setattr__(self, "successful_labels", successful)
+        object.__setattr__(self, "identity", self._content_identity())
+        if not _bind_mcmc_evidence_witness(
+            self._occurrence_witness,
+            self,
+            "posterior-sample-evidence",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "Posterior sample evidence occurrence witness is already bound"
+            )
+
+    def _content_identity(self) -> str:
+        return _identity(
+            "native-mcmc-posterior-sample-evidence",
+            (
+                self.selection.identity,
+                self.output_units,
+                tuple(item.identity for item in self.outcomes),
+            ),
+        )
+
+    def validate_integrity(self) -> None:
+        self.selection.validate_integrity()
+        for outcome in self.outcomes:
+            expected = PosteriorSampleOutcome(
+                outcome.state_ordinal,
+                outcome.walker_ordinal,
+                outcome.disposition,
+                outcome.independent_items,
+                outcome.resolved_items,
+                outcome.failure,
+            )
+            if expected.identity != outcome.identity:
+                raise McmcConstructionError(
+                    "Posterior sample outcome content identity mismatch"
+                )
+        if self._content_identity() != self.identity:
+            raise McmcConstructionError("Posterior sample evidence content mismatch")
+        if not _mcmc_evidence_occurrence_is_authoritative(
+            self._occurrence_witness,
+            self,
+            "posterior-sample-evidence",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "Posterior sample evidence is not its canonical resolved occurrence"
+            )
+
+
+def derive_posterior_sample_evidence(
+    selection: RetainedSampleView,
+    output_units: Sequence[tuple[str, ParameterUnit]],
+    *,
+    cancellation: CancellationToken | None = None,
+) -> PosteriorSampleEvidence:
+    """Resolve held and constrained values for every retained labeled sample."""
+    selection.validate_integrity()
+    if cancellation is not None and cancellation.is_cancelled:
+        raise McmcConstructionError("Posterior sample derivation was cancelled")
+    plan = selection.source_evidence.plan
+    units = tuple(output_units)
+    scope = tuple(param_id for param_id, _unit in units)
+    if not scope or any(
+        param_id not in plan.parameterization.scope_ids for param_id in scope
+    ):
+        raise McmcConstructionError(
+            "Posterior output scope must be an ordered subset of the active scope"
+        )
+    outcomes: list[PosteriorSampleOutcome] = []
+    for label, sample in zip(selection.sample_indices, selection.samples, strict=True):
+        if cancellation is not None and cancellation.is_cancelled:
+            raise McmcConstructionError("Posterior sample derivation was cancelled")
+        independent_items = tuple(zip(plan.coordinate_ids, sample, strict=True))
+        try:
+            frame = plan.source_problem.lifecycle_frame(sample, plan.parameterization)
+            resolved = plan.parameterization.resolve(frame)
+            resolved_items = tuple(
+                (param_id, float(resolved[param_id])) for param_id in scope
+            )
+            if any(not math.isfinite(value) for _key, value in resolved_items):
+                raise ValueError("resolved posterior value is non-finite")
+            outcome = PosteriorSampleOutcome(
+                label[0],
+                label[1],
+                PosteriorSampleDisposition.SUCCESS,
+                independent_items,
+                resolved_items,
+                None,
+            )
+        except Exception as error:  # noqa: BLE001 - typed whole-sample evidence
+            outcome = PosteriorSampleOutcome(
+                label[0],
+                label[1],
+                PosteriorSampleDisposition.FAILED,
+                independent_items,
+                None,
+                PosteriorSampleFailure(type(error).__name__, str(error)),
+            )
+        outcomes.append(outcome)
+    evidence = PosteriorSampleEvidence(
+        selection,
+        units,
+        tuple(outcomes),
+        _mint_mcmc_evidence_witness("posterior-sample-evidence"),
+    )
+    return evidence
+
+
+@dataclass(frozen=True, slots=True)
+class PosteriorSummaryPolicy:
+    """Explicit equal-tailed complete-case summary convention."""
+
+    quantiles: tuple[float, ...] = (0.025, 0.5, 0.975)
+    covariance_delta_degrees_of_freedom: int = 1
+    minimum_autocorrelation_steps: int = 16
+    version: str = "mcmc-complete-scope-equal-tailed-v1"
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        quantiles = tuple(float(value) for value in self.quantiles)
+        if (
+            not quantiles
+            or any(not math.isfinite(value) for value in quantiles)
+            or tuple(sorted(set(quantiles))) != quantiles
+            or quantiles[0] < 0.0
+            or quantiles[-1] > 1.0
+            or len(quantiles) != 3
+            or quantiles[1] != 0.5
+            or not math.isclose(
+                quantiles[0],
+                1.0 - quantiles[2],
+                rel_tol=0.0,
+                abs_tol=1.0e-15,
+            )
+            or self.covariance_delta_degrees_of_freedom != 1
+            or self.minimum_autocorrelation_steps < 2
+        ):
+            raise McmcConstructionError("Posterior summary policy is invalid")
+        object.__setattr__(self, "quantiles", quantiles)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-mcmc-posterior-summary-policy",
+                (
+                    tuple(float(value).hex() for value in quantiles),
+                    self.covariance_delta_degrees_of_freedom,
+                    self.minimum_autocorrelation_steps,
+                    self.version,
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PosteriorScalarEstimate:
+    """One available estimate or explicit typed unavailability."""
+
+    status: McmcDiagnosticStatus
+    reason: McmcDiagnosticReason | None
+    value: float | None
+
+    def __post_init__(self) -> None:
+        available = self.status is McmcDiagnosticStatus.AVAILABLE
+        if available != (self.value is not None) or available == (
+            self.reason is not None
+        ):
+            raise McmcConstructionError(
+                "Posterior estimate availability payload is inconsistent"
+            )
+        if self.value is not None and not math.isfinite(self.value):
+            raise McmcConstructionError("Posterior estimate must be finite")
+
+
+@dataclass(frozen=True, slots=True)
+class PosteriorParameterSummary:
+    parameter_id: str
+    unit: ParameterUnit
+    quantiles: tuple[tuple[float, float], ...]
+    credible_interval_name: str
+    credible_interval: tuple[float, float]
+    posterior_standard_deviation: float
+    autocorrelation_time: PosteriorScalarEstimate
+    effective_sample_size: PosteriorScalarEstimate
+    monte_carlo_standard_error: PosteriorScalarEstimate
+
+
+@dataclass(frozen=True, slots=True)
+class PosteriorMatrixEntry:
+    parameter_a: str
+    parameter_b: str
+    value: float
+
+
+@dataclass(frozen=True, slots=True)
+class PosteriorCorrelationEntry:
+    parameter_a: str
+    parameter_b: str
+    estimate: PosteriorScalarEstimate
+
+
+def _posterior_estimate_record(item: PosteriorScalarEstimate) -> object:
+    return (
+        item.status.value,
+        None if item.reason is None else item.reason.value,
+        None if item.value is None else float(item.value).hex(),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class PosteriorSummary:
+    """Complete-case posterior summary over one exact successful sample set."""
+
+    source: PosteriorSampleEvidence = field(repr=False, compare=False)
+    policy: PosteriorSummaryPolicy = field(repr=False, compare=False)
+    included_labels: tuple[tuple[int, int], ...]
+    excluded_labels: tuple[tuple[int, int], ...]
+    parameter_summaries: tuple[PosteriorParameterSummary, ...]
+    covariance: tuple[PosteriorMatrixEntry, ...]
+    correlations: tuple[PosteriorCorrelationEntry, ...]
+    acceptance: McmcDiagnostics
+    _occurrence_witness: _McmcEvidenceWitness | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    source_identity: str = field(init=False)
+    policy_identity: str = field(init=False)
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if self._occurrence_witness is None:
+            raise McmcConstructionError(
+                "Posterior summary must come from canonical complete-case derivation"
+            )
+        object.__setattr__(self, "source_identity", self.source.identity)
+        object.__setattr__(self, "policy_identity", self.policy.identity)
+        object.__setattr__(self, "identity", self._content_identity())
+        if not _bind_mcmc_evidence_witness(
+            self._occurrence_witness,
+            self,
+            "posterior-summary",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "Posterior summary occurrence witness is already bound"
+            )
+
+    def _content_identity(self) -> str:
+        return _identity(
+            "native-mcmc-posterior-summary",
+            (
+                self.source.identity,
+                self.policy.identity,
+                self.included_labels,
+                self.excluded_labels,
+                tuple(
+                    (
+                        item.parameter_id,
+                        item.unit.value,
+                        tuple(
+                            (float(probability).hex(), float(value).hex())
+                            for probability, value in item.quantiles
+                        ),
+                        item.credible_interval_name,
+                        tuple(float(value).hex() for value in item.credible_interval),
+                        float(item.posterior_standard_deviation).hex(),
+                        _posterior_estimate_record(item.autocorrelation_time),
+                        _posterior_estimate_record(item.effective_sample_size),
+                        _posterior_estimate_record(item.monte_carlo_standard_error),
+                    )
+                    for item in self.parameter_summaries
+                ),
+                tuple(
+                    (item.parameter_a, item.parameter_b, float(item.value).hex())
+                    for item in self.covariance
+                ),
+                tuple(
+                    (
+                        item.parameter_a,
+                        item.parameter_b,
+                        _posterior_estimate_record(item.estimate),
+                    )
+                    for item in self.correlations
+                ),
+                self.acceptance.identity,
+            ),
+        )
+
+    def validate_integrity(self) -> None:
+        self.source.validate_integrity()
+        expected_acceptance = derive_mcmc_diagnostics(
+            self.source.selection.source_evidence
+        )
+        if (
+            expected_acceptance != self.acceptance
+            or self._content_identity() != self.identity
+        ):
+            raise McmcConstructionError("Posterior summary content mismatch")
+        if not _mcmc_evidence_occurrence_is_authoritative(
+            self._occurrence_witness,
+            self,
+            "posterior-summary",
+            self.identity,
+        ):
+            raise McmcConstructionError(
+                "Posterior summary is not its canonical derived occurrence"
+            )
+
+
+class PosteriorSummaryTerminal(StrEnum):
+    """Closed result of one posterior summary request."""
+
+    COMPLETED = "completed"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class PosteriorSummaryFailure:
+    """Typed reason no complete posterior summary was available."""
+
+    source_identity: str
+    category: str
+    message: str
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if not self.source_identity or not self.category or not self.message:
+            raise McmcConstructionError(
+                "Posterior summary failure requires source, category, and message"
+            )
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-mcmc-posterior-summary-failure",
+                (self.source_identity, self.category, self.message),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PosteriorSummaryOutcome:
+    """Exactly one canonical summary or typed unavailability."""
+
+    terminal: PosteriorSummaryTerminal
+    summary: PosteriorSummary | None = None
+    failure: PosteriorSummaryFailure | None = None
+
+    def __post_init__(self) -> None:
+        completed = self.terminal is PosteriorSummaryTerminal.COMPLETED
+        if completed != (self.summary is not None) or completed == (
+            self.failure is not None
+        ):
+            raise McmcConstructionError(
+                "Posterior summary outcome has an inconsistent terminal payload"
+            )
+
+
+def _unavailable(reason: McmcDiagnosticReason) -> PosteriorScalarEstimate:
+    return PosteriorScalarEstimate(McmcDiagnosticStatus.UNAVAILABLE, reason, None)
+
+
+def derive_posterior_summary(  # noqa: C901 - joint typed summary assembly
+    source: PosteriorSampleEvidence,
+    policy: PosteriorSummaryPolicy | None = None,
+    *,
+    cancellation: CancellationToken | None = None,
+) -> PosteriorSummary:
+    """Summarize only the exact common complete successful posterior rows."""
+    source.validate_integrity()
+    if cancellation is not None and cancellation.is_cancelled:
+        raise McmcConstructionError("Posterior summary derivation was cancelled")
+    exact_policy = PosteriorSummaryPolicy() if policy is None else policy
+    successful = tuple(
+        outcome
+        for outcome in source.outcomes
+        if outcome.disposition is PosteriorSampleDisposition.SUCCESS
+    )
+    if len(successful) < 2:
+        raise McmcConstructionError(
+            "Posterior summary requires at least two complete successful samples"
+        )
+    matrix = np.asarray(
+        [
+            [
+                value
+                for _key, value in cast(
+                    "tuple[tuple[str, float], ...]", item.resolved_items
+                )
+            ]
+            for item in successful
+        ],
+        dtype=np.float64,
+    )
+    if not np.all(np.isfinite(matrix)):
+        raise McmcConstructionError("Posterior complete-case matrix is non-finite")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        with np.errstate(over="raise", invalid="raise", divide="raise"):
+            covariance_matrix = np.cov(matrix, rowvar=False, ddof=1)
+    covariance_matrix = np.atleast_2d(covariance_matrix)
+    if not np.all(np.isfinite(covariance_matrix)):
+        raise McmcConstructionError("Posterior covariance is unavailable")
+    variances = np.diag(covariance_matrix)
+    labels = tuple((item.state_ordinal, item.walker_ordinal) for item in successful)
+    complete_grid = len(successful) == len(source.outcomes)
+    step_count = len(source.selection.selected_state_ordinals)
+    autocorrelation: tuple[PosteriorScalarEstimate, ...]
+    ess: tuple[PosteriorScalarEstimate, ...]
+    mcse: tuple[PosteriorScalarEstimate, ...]
+    if (
+        not source.selection.is_complete
+        or not complete_grid
+        or step_count < exact_policy.minimum_autocorrelation_steps
+    ):
+        reason = (
+            McmcDiagnosticReason.PARTIAL_CHAIN
+            if not source.selection.is_complete
+            else McmcDiagnosticReason.INSUFFICIENT_RETAINED_WINDOW
+        )
+        autocorrelation = tuple(_unavailable(reason) for _ in source.output_scope)
+        ess = tuple(_unavailable(reason) for _ in source.output_scope)
+        mcse = tuple(_unavailable(reason) for _ in source.output_scope)
+    else:
+        chain = matrix.reshape(
+            step_count,
+            len(source.selection.selected_walker_ordinals),
+            len(source.output_scope),
+        )
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", RuntimeWarning)
+                tau_values = np.asarray(
+                    emcee.autocorr.integrated_time(chain, quiet=True),
+                    dtype=np.float64,
+                )
+        except Exception:  # noqa: BLE001 - typed unavailable estimate
+            tau_values = np.full(len(source.output_scope), np.nan)
+        autocorrelation_values: list[PosteriorScalarEstimate] = []
+        ess_values: list[PosteriorScalarEstimate] = []
+        mcse_values: list[PosteriorScalarEstimate] = []
+        for index, tau in enumerate(tau_values):
+            if not math.isfinite(float(tau)) or tau <= 0.0:
+                unavailable = _unavailable(McmcDiagnosticReason.INVALID_AUTOCORRELATION)
+                autocorrelation_values.append(unavailable)
+                ess_values.append(unavailable)
+                mcse_values.append(unavailable)
+                continue
+            effective = float(matrix.shape[0] / tau)
+            standard_deviation = math.sqrt(float(variances[index]))
+            autocorrelation_values.append(
+                PosteriorScalarEstimate(
+                    McmcDiagnosticStatus.AVAILABLE,
+                    None,
+                    float(tau),
+                )
+            )
+            ess_values.append(
+                PosteriorScalarEstimate(
+                    McmcDiagnosticStatus.AVAILABLE,
+                    None,
+                    effective,
+                )
+            )
+            mcse_values.append(
+                PosteriorScalarEstimate(
+                    McmcDiagnosticStatus.AVAILABLE,
+                    None,
+                    standard_deviation / math.sqrt(effective),
+                )
+            )
+        autocorrelation = tuple(autocorrelation_values)
+        ess = tuple(ess_values)
+        mcse = tuple(mcse_values)
+    summaries: list[PosteriorParameterSummary] = []
+    for index, (param_id, unit) in enumerate(source.output_units):
+        values = matrix[:, index]
+        quantile_values = np.quantile(values, exact_policy.quantiles, method="linear")
+        quantiles = tuple(
+            (probability, float(value))
+            for probability, value in zip(
+                exact_policy.quantiles,
+                quantile_values,
+                strict=True,
+            )
+        )
+        summaries.append(
+            PosteriorParameterSummary(
+                param_id,
+                unit,
+                quantiles,
+                f"equal_tailed_{100.0 * (quantiles[-1][0] - quantiles[0][0]):g}_percent",
+                (quantiles[0][1], quantiles[-1][1]),
+                float(np.std(values, ddof=1)),
+                autocorrelation[index],
+                ess[index],
+                mcse[index],
+            )
+        )
+    covariance = tuple(
+        PosteriorMatrixEntry(param_a, param_b, float(covariance_matrix[row, column]))
+        for row, param_a in enumerate(source.output_scope)
+        for column, param_b in enumerate(source.output_scope)
+    )
+    correlations: list[PosteriorCorrelationEntry] = []
+    for row, param_a in enumerate(source.output_scope):
+        for column, param_b in enumerate(source.output_scope):
+            denominator = math.sqrt(float(variances[row])) * math.sqrt(
+                float(variances[column])
+            )
+            estimate = (
+                _unavailable(McmcDiagnosticReason.ZERO_VARIANCE)
+                if denominator == 0.0
+                else PosteriorScalarEstimate(
+                    McmcDiagnosticStatus.AVAILABLE,
+                    None,
+                    float(covariance_matrix[row, column] / denominator),
+                )
+            )
+            correlations.append(PosteriorCorrelationEntry(param_a, param_b, estimate))
+    summary = PosteriorSummary(
+        source,
+        exact_policy,
+        labels,
+        tuple(
+            (item.state_ordinal, item.walker_ordinal)
+            for item in source.outcomes
+            if item.disposition is PosteriorSampleDisposition.FAILED
+        ),
+        tuple(summaries),
+        covariance,
+        tuple(correlations),
+        derive_mcmc_diagnostics(source.selection.source_evidence),
+        _mint_mcmc_evidence_witness("posterior-summary"),
+    )
+    return summary
+
+
+def summarize_posterior_evidence(
+    source: PosteriorSampleEvidence,
+    policy: PosteriorSummaryPolicy | None = None,
+    *,
+    cancellation: CancellationToken | None = None,
+) -> PosteriorSummaryOutcome:
+    """Return a summary or durable typed unavailability without fabrication."""
+    try:
+        summary = derive_posterior_summary(
+            source,
+            policy,
+            cancellation=cancellation,
+        )
+    except McmcConstructionError as error:
+        message = str(error)
+        category = (
+            "insufficient_complete_samples"
+            if "at least two" in message
+            else "cancelled"
+            if "cancelled" in message
+            else "invalid_source_or_summary"
+        )
+        return PosteriorSummaryOutcome(
+            PosteriorSummaryTerminal.UNAVAILABLE,
+            failure=PosteriorSummaryFailure(source.identity, category, message),
+        )
+    except (FloatingPointError, OverflowError, RuntimeWarning, ValueError) as error:
+        return PosteriorSummaryOutcome(
+            PosteriorSummaryTerminal.UNAVAILABLE,
+            failure=PosteriorSummaryFailure(
+                source.identity,
+                "numerical_summary_unavailable",
+                f"{type(error).__name__}: {error}",
+            ),
+        )
+    return PosteriorSummaryOutcome(
+        PosteriorSummaryTerminal.COMPLETED,
+        summary=summary,
+    )
 
 
 class _LogDensityEvaluator:
@@ -951,8 +2787,8 @@ class _LogDensityEvaluator:
         if (
             candidate.shape != (self.plan.policy.dimension,)
             or not np.all(np.isfinite(candidate))
-            or np.any(candidate < np.asarray(self.plan.lower_bounds))
-            or np.any(candidate > np.asarray(self.plan.upper_bounds))
+            or np.any(candidate <= np.asarray(self.plan.lower_bounds))
+            or np.any(candidate >= np.asarray(self.plan.upper_bounds))
         ):
             return -np.inf
         try:
@@ -1017,30 +2853,46 @@ def _legacy_sampler_random_state(seed: int) -> object:
     return ("MT19937", keys, 624, 0, 0.0)
 
 
-def execute_mcmc_evidence(
+def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
     accepted: AcceptedFitResult,
     plan: McmcPlan,
     *,
     state_observer: Callable[[EnsembleState], None] | None = None,
+    cancellation: CancellationToken | None = None,
+    checkpoint_observer: Callable[[McmcExecutionStage, int], None] | None = None,
 ) -> McmcOperation:
     """Execute one fixed run while preserving only complete ensemble states."""
-    if accepted.identity != plan.accepted_result_identity:
-        raise McmcConstructionError(
-            "MCMC execution accepted result differs from its frozen plan"
-        )
+    plan.validate_integrity(accepted)
+    signal = CancellationToken() if cancellation is None else cancellation
     log_density = _LogDensityEvaluator(plan)
     states: list[EnsembleState] = []
+    stage = McmcExecutionStage.BEFORE_INITIALIZATION
+    initialization_outcome = McmcInitializationOutcome.NOT_STARTED
+
+    def checkpoint(next_stage: McmcExecutionStage) -> None:
+        nonlocal stage
+        stage = next_stage
+        if checkpoint_observer is not None:
+            checkpoint_observer(stage, len(states))
+        if signal.is_cancelled:
+            raise _McmcCancelled(f"MCMC cancelled at {stage.value}")
+
     try:
+        checkpoint(McmcExecutionStage.BEFORE_INITIALIZATION)
         initial = np.asarray(plan.initial_ensemble, dtype=np.float64)
-        initial_log_density = np.asarray(
-            [log_density(row) for row in initial],
-            dtype=np.float64,
-        )
+        initial_values: list[float] = []
+        for row in initial:
+            checkpoint(McmcExecutionStage.INITIALIZING)
+            initial_values.append(log_density(row))
+        initial_log_density = np.asarray(initial_values, dtype=np.float64)
         if not np.all(np.isfinite(initial_log_density)):
             raise McmcExecutionError(
                 "MCMC initial ensemble has unavailable native log density"
             )
+        initialization_outcome = McmcInitializationOutcome.COMPLETED
         states.append(_ensemble_state(0, initial, initial_log_density, None))
+        checkpoint(McmcExecutionStage.AFTER_INITIALIZATION)
+        checkpoint(McmcExecutionStage.AFTER_COMPLETE_STATE)
         move = _RecordingStretchMove(scale=plan.policy.proposal_scale)
         sampler = emcee.EnsembleSampler(
             plan.policy.walkers,
@@ -1050,16 +2902,17 @@ def execute_mcmc_evidence(
         )
         sampler.random_state = _legacy_sampler_random_state(plan.policy.sampler_seed)
         emcee_state = emcee.State(initial, log_prob=initial_log_density)
-        for ordinal, sampled in enumerate(
-            sampler.sample(
-                emcee_state,
-                iterations=plan.policy.total_steps,
-                tune=False,
-                skip_initial_state_check=True,
-                store=False,
-            ),
-            start=1,
-        ):
+        iterator = sampler.sample(
+            emcee_state,
+            iterations=plan.policy.total_steps,
+            tune=False,
+            skip_initial_state_check=True,
+            store=False,
+        )
+        for ordinal in range(1, plan.policy.total_steps + 1):
+            checkpoint(McmcExecutionStage.BEFORE_TRANSITION)
+            checkpoint(McmcExecutionStage.DURING_TRANSITION)
+            sampled = next(iterator)
             state = _ensemble_state(
                 ordinal,
                 sampled.coords,
@@ -1069,45 +2922,82 @@ def execute_mcmc_evidence(
             states.append(state)
             if state_observer is not None:
                 state_observer(state)
+            checkpoint(McmcExecutionStage.AFTER_COMPLETE_STATE)
         if log_density.objective_request_count != plan.policy.objective_request_budget:
             raise McmcExecutionError(
                 "MCMC backend request count differs from the frozen budget"
             )
-        evidence = McmcEvidence(
+        checkpoint(McmcExecutionStage.FRESH_VALIDATION)
+        raw_capture = _mint_raw_capture(
             plan,
-            McmcEvidenceLifecycle.COMPLETED,
             McmcOperationTerminal.COMPLETED,
             tuple(states),
             log_density.objective_request_count,
             log_density.evaluation_request_count,
+            stage,
+            initialization_outcome,
         )
-        return McmcOperation(McmcOperationTerminal.COMPLETED, evidence)
+        validation = validate_raw_mcmc_capture(plan, raw_capture)
+        if not validation.is_complete or validation.primary_evidence is None:
+            raise McmcExecutionError("fresh MCMC validation did not complete")
+        checkpoint(McmcExecutionStage.BEFORE_FINAL_ASSEMBLY)
+        evidence = validation.primary_evidence
+        return _mint_mcmc_operation(
+            McmcOperationTerminal.COMPLETED,
+            evidence,
+            None,
+            "",
+            raw_capture,
+            validation,
+        )
+    except _McmcCancelled as error:
+        terminal = McmcOperationTerminal.CANCELLED
+        category = "cancelled"
+        message = str(error)
+        if initialization_outcome is McmcInitializationOutcome.NOT_STARTED:
+            initialization_outcome = McmcInitializationOutcome.CANCELLED
     except KeyboardInterrupt as error:
         terminal = McmcOperationTerminal.INTERRUPTED
         category = "interrupted"
         message = str(error)
+        if initialization_outcome is McmcInitializationOutcome.NOT_STARTED:
+            initialization_outcome = McmcInitializationOutcome.INTERRUPTED
     except Exception as error:  # noqa: BLE001 - freeze typed operation failure
         terminal = McmcOperationTerminal.FAILED
         category = type(error).__name__
         message = str(error)
-    evidence = (
-        McmcEvidence(
-            plan,
-            McmcEvidenceLifecycle.PARTIAL,
-            terminal,
-            tuple(states),
-            log_density.objective_request_count,
-            log_density.evaluation_request_count,
-            category,
-        )
-        if states
-        else None
+        if initialization_outcome is McmcInitializationOutcome.NOT_STARTED:
+            initialization_outcome = McmcInitializationOutcome.FAILED
+    raw_capture = _mint_raw_capture(
+        plan,
+        terminal,
+        tuple(states),
+        log_density.objective_request_count,
+        log_density.evaluation_request_count,
+        stage,
+        initialization_outcome,
+        category,
     )
-    return McmcOperation(terminal, evidence, category, message)
+    validation = validate_raw_mcmc_capture(plan, raw_capture)
+    return _mint_mcmc_operation(
+        terminal,
+        validation.primary_evidence,
+        category,
+        message,
+        raw_capture,
+        validation,
+    )
 
 
-def derive_retained_sample_view(evidence: McmcEvidence) -> RetainedSampleView:
+def derive_retained_sample_view(
+    evidence: McmcEvidence,
+    *,
+    cancellation: CancellationToken | None = None,
+) -> RetainedSampleView:
     """Select the prospective retained window without flattening primary evidence."""
+    evidence.validate_integrity()
+    if cancellation is not None and cancellation.is_cancelled:
+        raise McmcConstructionError("Retained MCMC selection was cancelled")
     first = evidence.plan.policy.burn_steps + 1
     selected = tuple(state for state in evidence.states if state.ordinal >= first)
     ordinals = tuple(state.ordinal for state in selected)
@@ -1118,34 +3008,79 @@ def derive_retained_sample_view(evidence: McmcEvidence) -> RetainedSampleView:
     )
     samples = tuple(position for state in selected for position in state.positions)
     log_densities = tuple(value for state in selected for value in state.log_densities)
-    return RetainedSampleView(
+    retained = RetainedSampleView(
         evidence.identity,
+        evidence.plan.policy.identity,
         evidence.coordinate_ids,
         evidence.coordinate_units,
         ordinals,
+        tuple(range(evidence.plan.policy.walkers)),
         sample_indices,
         samples,
         log_densities,
         len(selected) == evidence.plan.policy.retained_steps,
+        evidence,
+        _mint_mcmc_evidence_witness("retained-selection"),
     )
+    return retained
 
 
-def derive_mcmc_diagnostics(evidence: McmcEvidence) -> McmcDiagnostics:
+def derive_mcmc_diagnostics(
+    evidence: McmcEvidence,
+    *,
+    cancellation: CancellationToken | None = None,
+) -> McmcDiagnostics:
     """Derive acceptance diagnostics from complete transition states only."""
+    evidence.validate_integrity()
+    if cancellation is not None and cancellation.is_cancelled:
+        raise McmcConstructionError("MCMC diagnostic derivation was cancelled")
     transitions = evidence.states[1:]
     completed = len(transitions)
     accepted_counts = tuple(
         sum(state.accepted[walker] for state in transitions)
         for walker in range(evidence.plan.policy.walkers)
     )
-    fractions = tuple(
-        count / completed if completed else 0.0 for count in accepted_counts
-    )
+    if completed == 0:
+        return McmcDiagnostics(
+            evidence.identity,
+            (),
+            tuple(range(evidence.plan.policy.walkers)),
+            McmcDiagnosticStatus.UNAVAILABLE,
+            McmcDiagnosticReason.NO_TRANSITIONS,
+            None,
+            None,
+        )
+    fractions = tuple(count / completed for count in accepted_counts)
     mean = sum(fractions) / len(fractions)
     return McmcDiagnostics(
         evidence.identity,
         tuple(state.ordinal for state in transitions),
         tuple(range(evidence.plan.policy.walkers)),
+        McmcDiagnosticStatus.AVAILABLE,
+        None,
         fractions,
         mean,
+    )
+
+
+def derive_mcmc_operation_diagnostics(
+    operation: McmcOperation,
+    *,
+    cancellation: CancellationToken | None = None,
+) -> McmcDiagnostics:
+    """Derive truthful diagnostics even when no primary state exists."""
+    operation.validate_integrity()
+    if cancellation is not None and cancellation.is_cancelled:
+        raise McmcConstructionError("MCMC diagnostic derivation was cancelled")
+    if operation.evidence is not None:
+        return derive_mcmc_diagnostics(operation.evidence)
+    capture = cast("RawMcmcCapture", operation.raw_capture)
+    return McmcDiagnostics(
+        operation.identity,
+        (),
+        tuple(range(capture.walkers)),
+        McmcDiagnosticStatus.UNAVAILABLE,
+        McmcDiagnosticReason.NO_TRANSITIONS,
+        None,
+        None,
     )
