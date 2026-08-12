@@ -4,21 +4,26 @@ from __future__ import annotations
 
 import copy
 import dataclasses
-import hashlib
-import json
 from collections.abc import Callable
-from threading import Event, Lock, get_ident
-from typing import Any
+from copy import deepcopy
+from threading import Event, Lock
+from types import SimpleNamespace
+from typing import Any, cast
 
 import numpy as np
 import pytest
+from pydantic import BaseModel
 
+import chemex.optimize.native_resampling as resampling_module
+from chemex.containers.data import Data
+from chemex.containers.profile import Profile, PulseSequence
 from chemex.evaluation.native import (
+    EvaluationEngine,
+    EvaluationFrame,
     EvaluationPlan,
     EvaluationResult,
-    ProfilePlan,
-    ResolvedEvaluationValues,
 )
+from chemex.nmr.spectrometer import Spectrometer
 from chemex.optimize.direct_trf import AcceptedFitResult, OptimizationProblem
 from chemex.optimize.native_resampling import (
     ClaimState,
@@ -50,49 +55,63 @@ from chemex.parameters.parameterization import (
     ParameterRole,
     ScientificFunctionBinder,
 )
+from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.values import AnalysisValuesSnapshot
+from chemex.printers.data import Printer
 from chemex.runtime import ExecutionSettings
 
 
-def _evaluation_identity(kind: str, record: object) -> str:
-    encoded = json.dumps(
-        {"schema": 1, "kind": kind, "record": record},
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode()
-    return hashlib.sha256(encoded).hexdigest()
+class _KernelSettings(BaseModel):
+    kind: str = "linear-test-kernel"
 
 
-def _profile_plan(
+class _LinearSpectrometer:
+    def __init__(self, name: str) -> None:
+        self.spin_system = SpinSystem.from_name(name)
+        self.values = {"a": 0.0, "b": 0.0}
+
+    def update(self, values: dict[str, float]) -> None:
+        self.values = dict(values)
+
+    def new_native_workspace(self) -> _LinearSpectrometer:
+        return deepcopy(self)
+
+    def native_kernel_descriptor(self) -> dict[str, object]:
+        return {"kind": "linear-test-spectrometer"}
+
+
+class _LinearPulseSequence:
+    settings = _KernelSettings()
+
+    def calculate(self, spectrometer: _LinearSpectrometer, data: Data) -> np.ndarray:
+        return spectrometer.values["a"] + spectrometer.values["b"] * np.asarray(
+            data.metadata, dtype=np.float64
+        )
+
+    def is_reference(self, metadata: np.ndarray) -> np.ndarray:
+        return metadata < 10.0
+
+
+def _profile(
     name: str,
-    *,
-    profile_ordinal: int,
-    offset: int,
     observed: tuple[float, ...],
     errors: tuple[float, ...],
+    metadata: tuple[float, ...],
     mask: tuple[bool, ...],
-) -> ProfilePlan:
-    source_identity = f"source-{name}"
-    return ProfilePlan(
-        _evaluation_identity(
-            "profile-plan",
-            (source_identity, 0, profile_ordinal, offset),
-        ),
-        source_identity,
-        0,
-        profile_ordinal,
-        offset,
-        (("a", "A"), ("b", "B")),
-        True,
-        observed,
-        errors,
-        mask,
-        f"kernel-{name}",
-        f"kernel-config-{name}",
-        f"spectrometer-{name}",
-        f"positions-{name}",
-        (len(observed),),
+) -> Profile:
+    data = Data(
+        exp=np.asarray(observed, dtype=np.float64),
+        err=np.asarray(errors, dtype=np.float64),
+        metadata=np.asarray(metadata, dtype=np.float64),
+    )
+    data.mask = np.asarray(mask, dtype=np.bool_)
+    return Profile(
+        data,
+        cast("Spectrometer", _LinearSpectrometer(name)),
+        cast("PulseSequence", _LinearPulseSequence()),
+        {"a": "A", "b": "B"},
+        cast("Printer", None),
+        is_scaled=False,
     )
 
 
@@ -101,6 +120,7 @@ def _native_context() -> tuple[
     ResamplingDatasetManifest,
     OptimizationProblem,
     ActiveParameterization,
+    EvaluationEngine,
 ]:
     binder = ScientificFunctionBinder("qualification", {})
     program = ConstraintProgram(
@@ -122,32 +142,36 @@ def _native_context() -> tuple[
         4,
         (("A", ParameterRole.FIT), ("B", ParameterRole.FIT)),
     )
-    evaluation_plan = EvaluationPlan(
-        parameterization.evaluator_identity,
-        program.fingerprint,
-        (
-            _profile_plan(
-                "P1",
-                profile_ordinal=0,
-                offset=0,
-                observed=(10.0, 20.0, 30.0, 40.0),
-                errors=(1.0, 2.0, 1.5, 0.5),
-                mask=(True, True, True, True),
-            ),
-            _profile_plan(
-                "P2",
-                profile_ordinal=1,
-                offset=4,
-                observed=(50.0,),
-                errors=(2.5,),
-                mask=(False,),
-            ),
-        ),
-        ("A", "B"),
+    snapshot = AnalysisValuesSnapshot(
+        "source-occurrence",
+        "model",
+        "definitions",
+        "configuration",
+        4,
+        (("A", 1.0), ("B", 2.0)),
     )
+    profiles = (
+        _profile(
+            "1N",
+            (10.0, 20.0, 30.0, 40.0),
+            (1.0, 2.0, 1.5, 0.5),
+            (5.0, 9.0, 15.0, 19.0),
+            (True, True, True, True),
+        ),
+        _profile("2N", (50.0,), (2.5,), (24.0,), (False,)),
+    )
+    experiments = cast("Any", (SimpleNamespace(profiles=profiles),))
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    evaluation_plan = engine.plan
+    frame = EvaluationFrame.from_lifecycle_frame(
+        parameterization,
+        parameterization.frame_from_snapshot(snapshot),
+    )
+    result = engine.new_evaluator().evaluate(frame)
+    assert isinstance(result, EvaluationResult)
     dataset = ResamplingDatasetManifest(
         evaluation_plan,
-        (11.0, 19.0, 31.0, 39.0, 49.0),
+        tuple(float(value) for value in result.normalized_calculations),
         (True, True, False, False, False),
         ("N1", "N1", "N2", "N3", "N3"),
         (
@@ -157,14 +181,6 @@ def _native_context() -> tuple[
             "position=400",
             "position=500",
         ),
-    )
-    snapshot = AnalysisValuesSnapshot(
-        "source-occurrence",
-        "model",
-        "definitions",
-        "configuration",
-        4,
-        (("A", 1.0), ("B", 2.0)),
     )
     problem = OptimizationProblem(
         evaluation_plan.identity,
@@ -180,20 +196,6 @@ def _native_context() -> tuple[
         (-100.0, -100.0),
         (100.0, 100.0),
         ("A", "B"),
-    )
-    result = EvaluationResult(
-        evaluation_plan.identity,
-        parameterization.evaluator_identity,
-        parameterization.evaluator_identity,
-        ResolvedEvaluationValues(
-            parameterization.evaluator_identity,
-            program.fingerprint,
-            (("A", 1.0), ("B", 2.0)),
-        ),
-        np.array(dataset.calculated),
-        np.array(dataset.calculated),
-        np.array((1.0, -0.5, 2.0 / 3.0, -2.0)),
-        (),
     )
     accepted = AcceptedFitResult.for_qualification(
         occurrence_identity="accepted-occurrence",
@@ -213,7 +215,7 @@ def _native_context() -> tuple[
         commit_items=problem.independent_items,
         origin_context_identity="accepted-origin",
     )
-    return accepted, dataset, problem, parameterization
+    return accepted, dataset, problem, parameterization, engine
 
 
 def _plan(
@@ -222,12 +224,13 @@ def _plan(
     count: int = 4,
     minimum: int = 2,
 ) -> tuple[AcceptedFitResult, ResamplingPlan]:
-    accepted, dataset, problem, parameterization = _native_context()
+    accepted, dataset, problem, parameterization, engine = _native_context()
     plan = ResamplingPlan.for_accepted(
         accepted,
         dataset=dataset,
         source_problem=problem,
         parameterization=parameterization,
+        source_engine=engine,
         scheme=scheme,
         replicate_count=count,
         replicate_structural_identities=tuple(
@@ -249,29 +252,18 @@ def _plan(
 
 def _success(
     prepared: ReplicateExecutionPlan,
-    *,
-    constant_b: bool = False,
+    projected: ProjectedOptimizationResult,
 ) -> ProjectedOptimizationSuccess:
-    ordinal = prepared.request.ordinal
-    return ProjectedOptimizationSuccess.for_prepared(
-        prepared,
-        candidate_vector=(float(ordinal + 1), 5.0 if constant_b else 10.0 - ordinal),
-        chi_square=float(ordinal + 1),
-    )
+    assert isinstance(projected, ProjectedOptimizationSuccess)
+    assert projected.prepared_replicate_identity == prepared.identity
+    return projected
 
 
-def _successful_factory(
-    *, constant_b: bool = False
-) -> Callable[
-    [ReplicateExecutionPlan],
-    Callable[[ReplicateExecutionPlan], ProjectedOptimizationSuccess],
+def _successful_factory() -> Callable[
+    [ReplicateExecutionPlan, ProjectedOptimizationResult],
+    ProjectedOptimizationSuccess,
 ]:
-    def factory(
-        _prepared: ReplicateExecutionPlan,
-    ) -> Callable[[ReplicateExecutionPlan], ProjectedOptimizationSuccess]:
-        return lambda exact: _success(exact, constant_b=constant_b)
-
-    return factory
+    return _success
 
 
 def _request(
@@ -305,6 +297,7 @@ def test_replicate_plan_uses_canonical_ordinals_and_identity_derived_seeds() -> 
         dataset=plan.dataset,
         source_problem=plan.source_problem,
         parameterization=plan.parameterization,
+        source_engine=plan.source_engine,
         scheme=plan.scheme,
         replicate_count=plan.replicate_count,
         replicate_structural_identities=tuple(
@@ -327,7 +320,7 @@ def test_replicate_plan_uses_canonical_ordinals_and_identity_derived_seeds() -> 
 
 
 def test_altered_source_calculation_cannot_rebind_the_accepted_native_result() -> None:
-    accepted, dataset, problem, parameterization = _native_context()
+    accepted, dataset, problem, parameterization, engine = _native_context()
     altered = dataclasses.replace(
         dataset,
         calculated=(12.0, *dataset.calculated[1:]),
@@ -339,6 +332,7 @@ def test_altered_source_calculation_cannot_rebind_the_accepted_native_result() -
             dataset=altered,
             source_problem=problem,
             parameterization=parameterization,
+            source_engine=engine,
             scheme=ResamplingScheme.MONTE_CARLO,
             replicate_count=1,
             replicate_structural_identities=("altered-source",),
@@ -353,7 +347,7 @@ def test_altered_source_calculation_cannot_rebind_the_accepted_native_result() -
 def test_source_dataset_record_rejects_an_altered_observation_with_stale_identity() -> (
     None
 ):
-    _accepted, dataset, _problem, _parameterization = _native_context()
+    _accepted, dataset, _problem, _parameterization, _engine = _native_context()
     first_profile = dataset.evaluation_plan.profiles[0]
     changed_plan = dataclasses.replace(
         dataset.evaluation_plan,
@@ -378,7 +372,7 @@ def test_source_dataset_record_rejects_an_altered_observation_with_stale_identit
 
 
 def test_seeded_generation_preserves_mc_bs_and_bsn_scientific_schemes() -> None:
-    _accepted, dataset, _problem, _parameterization = _native_context()
+    _accepted, dataset, _problem, _parameterization, _engine = _native_context()
 
     mc = generate_resampling_draw(
         dataset,
@@ -451,10 +445,8 @@ def test_altered_generated_observation_cannot_retain_or_rebind_draw_identity() -
         ("component_identities", ("foreign-component",)),
         ("component_outcome_identities", ("foreign-component-outcome",)),
         ("candidate_identity", "foreign-candidate"),
-        ("materialization_identity", "foreign-materialization"),
-        ("evaluation_identity", "foreign-evaluation"),
         ("prepared_replicate_identity", "foreign-prepared-replicate"),
-        ("requested_output_units", ("foreign-unit", "foreign-unit")),
+        ("controlled_ids", ("B", "A")),
     ),
 )
 def test_foreign_native_lineage_never_enters_successful_evidence(
@@ -463,18 +455,14 @@ def test_foreign_native_lineage_never_enters_successful_evidence(
 ) -> None:
     accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=2)
 
-    def factory(
+    def hook(
         _prepared: ReplicateExecutionPlan,
-    ) -> Callable[[ReplicateExecutionPlan], ProjectedOptimizationSuccess]:
-        def execute(exact: ReplicateExecutionPlan) -> ProjectedOptimizationSuccess:
-            return dataclasses.replace(
-                _success(exact),
-                **{field_name: foreign_value},
-            )
+        projected: ProjectedOptimizationResult,
+    ) -> ProjectedOptimizationResult:
+        assert isinstance(projected, ProjectedOptimizationSuccess)
+        return dataclasses.replace(projected, **{field_name: foreign_value})
 
-        return execute
-
-    operation = execute_resampling_evidence(accepted, plan, factory)
+    operation = execute_resampling_evidence(accepted, plan, candidate_test_hook=hook)
 
     assert operation.evidence is not None
     assert operation.evidence.successful_count == 0
@@ -486,25 +474,25 @@ def test_foreign_native_lineage_never_enters_successful_evidence(
     )
 
 
-def test_incomplete_requested_scope_never_enters_successful_evidence() -> None:
+def test_incomplete_or_reordered_controlled_scope_never_enters_successful_evidence() -> (
+    None
+):
     accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=2)
 
-    def factory(
+    def hook(
         _prepared: ReplicateExecutionPlan,
-    ) -> Callable[[ReplicateExecutionPlan], ProjectedOptimizationSuccess]:
-        return lambda exact: dataclasses.replace(
-            _success(exact),
-            requested_output_scope=("A",),
-            requested_output_units=("arbitrary",),
-        )
+        projected: ProjectedOptimizationResult,
+    ) -> ProjectedOptimizationResult:
+        assert isinstance(projected, ProjectedOptimizationSuccess)
+        return dataclasses.replace(projected, controlled_ids=("B", "A"))
 
-    operation = execute_resampling_evidence(accepted, plan, factory)
+    operation = execute_resampling_evidence(accepted, plan, candidate_test_hook=hook)
 
     assert operation.evidence is not None
     assert operation.evidence.successful_count == 0
     assert all(
         outcome.failure is not None
-        and outcome.failure.category == "requested_scope_lineage_mismatch"
+        and outcome.failure.category == "controlled_coordinates_lineage_mismatch"
         for outcome in operation.evidence.outcomes
     )
 
@@ -514,15 +502,16 @@ def test_foreign_transformed_data_with_correct_values_and_dimensions_fails_close
 ):
     accepted, plan = _plan(ResamplingScheme.BOOTSTRAP, count=2)
 
-    def factory(
+    def hook(
         _prepared: ReplicateExecutionPlan,
-    ) -> Callable[[ReplicateExecutionPlan], ProjectedOptimizationSuccess]:
-        return lambda exact: dataclasses.replace(
-            _success(exact),
-            transformed_data_identity="foreign-draw-with-identical-values",
+        projected: ProjectedOptimizationResult,
+    ) -> ProjectedOptimizationResult:
+        assert isinstance(projected, ProjectedOptimizationSuccess)
+        return dataclasses.replace(
+            projected, transformed_data_identity="foreign-draw-with-identical-values"
         )
 
-    operation = execute_resampling_evidence(accepted, plan, factory)
+    operation = execute_resampling_evidence(accepted, plan, candidate_test_hook=hook)
 
     assert operation.evidence is not None
     assert operation.evidence.successful_count == 0
@@ -540,25 +529,26 @@ def test_candidate_is_freshly_resolved_and_no_fit_or_commit_authority_is_exposed
     before = accepted
     prepared_problems: list[OptimizationProblem] = []
 
-    def factory(
+    def hook(
         prepared: ReplicateExecutionPlan,
-    ) -> Callable[[ReplicateExecutionPlan], ProjectedOptimizationSuccess]:
+        projected: ProjectedOptimizationResult,
+    ) -> ProjectedOptimizationResult:
         prepared_problems.append(prepared.problem)
-        return lambda exact: _success(exact)
+        return projected
 
     operation = execute_resampling_evidence(
         accepted,
         plan,
-        factory,
+        candidate_test_hook=hook,
     )
 
     assert accepted is before
     assert operation.evidence is not None
-    assert tuple(
-        outcome.success.resolved_items
+    assert operation.evidence.successful_count == 2
+    assert all(
+        outcome.success is not None and outcome.success.fresh_evaluation_count == 1
         for outcome in operation.evidence.outcomes
-        if outcome.success is not None
-    ) == ((("A", 1.0), ("B", 10.0)), (("A", 2.0), ("B", 9.0)))
+    )
     assert all(
         not outcome.success or not hasattr(outcome.success, "accepted_result")
         for outcome in operation.evidence.outcomes
@@ -570,94 +560,236 @@ def test_candidate_is_freshly_resolved_and_no_fit_or_commit_authority_is_exposed
     assert all(not problem.acceptance_authority for problem in prepared_problems)
 
 
-def test_out_of_bounds_candidate_fails_fresh_problem_resolution() -> None:
-    accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=2)
+def test_backend_chi_square_is_diagnostic_and_fresh_chi_square_is_authoritative() -> (
+    None
+):
+    accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=1, minimum=1)
+    backend_value = 9.87654321e123
 
-    def factory(
+    def corrupt_backend_diagnostic(
         _prepared: ReplicateExecutionPlan,
-    ) -> Callable[[ReplicateExecutionPlan], ProjectedOptimizationSuccess]:
-        return lambda exact: dataclasses.replace(
-            _success(exact),
-            candidate_vector=(101.0, 5.0),
-        )
+        projected: ProjectedOptimizationResult,
+    ) -> ProjectedOptimizationResult:
+        assert isinstance(projected, ProjectedOptimizationSuccess)
+        return dataclasses.replace(projected, backend_chi_square=backend_value)
 
-    operation = execute_resampling_evidence(accepted, plan, factory)
+    operation = execute_resampling_evidence(
+        accepted,
+        plan,
+        candidate_test_hook=corrupt_backend_diagnostic,
+    )
+
+    assert operation.evidence is not None
+    success = operation.evidence.outcomes[0].success
+    assert success is not None
+    assert success.backend_chi_square == backend_value
+    assert success.backend_chi_square_agrees is False
+    assert success.chi_square != backend_value
+    assert np.isfinite(success.chi_square)
+    assert success.fresh_evaluation_count == 1
+
+
+def test_foreign_candidate_lineage_fails_before_fresh_evaluation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=2)
+    original = EvaluationEngine.resampled
+    bound_engines: list[EvaluationEngine] = []
+
+    def record_binding(
+        engine: EvaluationEngine,
+        evaluation_plan: EvaluationPlan,
+        bindings: object,
+    ) -> EvaluationEngine:
+        result = original(engine, evaluation_plan, cast("Any", bindings))
+        bound_engines.append(result)
+        return result
+
+    def foreign_problem(
+        _prepared: ReplicateExecutionPlan,
+        projected: ProjectedOptimizationResult,
+    ) -> ProjectedOptimizationResult:
+        assert isinstance(projected, ProjectedOptimizationSuccess)
+        return dataclasses.replace(projected, problem_identity="foreign-problem")
+
+    monkeypatch.setattr(EvaluationEngine, "resampled", record_binding)
+    operation = execute_resampling_evidence(
+        accepted,
+        plan,
+        candidate_test_hook=foreign_problem,
+    )
+
+    assert operation.evidence is not None
+    assert operation.evidence.successful_count == 0
+    assert len(bound_engines) == plan.replicate_count
+
+
+def test_fresh_validation_evaluator_failure_is_typed_and_excluded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=2)
+    original = EvaluationEngine.resampled
+    binding_count = 0
+
+    def fail_validation_binding(
+        engine: EvaluationEngine,
+        evaluation_plan: EvaluationPlan,
+        bindings: object,
+    ) -> EvaluationEngine:
+        nonlocal binding_count
+        binding_count += 1
+        result = original(engine, evaluation_plan, cast("Any", bindings))
+        if binding_count % 2 == 0:
+
+            def fail_new_evaluator() -> object:
+                raise RuntimeError("fresh validation workspace failed")
+
+            result.new_evaluator = fail_new_evaluator  # type: ignore[method-assign]
+        return result
+
+    monkeypatch.setattr(EvaluationEngine, "resampled", fail_validation_binding)
+    operation = execute_resampling_evidence(accepted, plan)
 
     assert operation.evidence is not None
     assert operation.evidence.successful_count == 0
     assert all(
         outcome.failure is not None
-        and outcome.failure.category == "candidate_resolution_failure"
+        and outcome.failure.category == "fresh_evaluation_failure"
+        for outcome in operation.evidence.outcomes
+    )
+    assert summarize_resampling_evidence(operation.evidence).summary is None
+
+
+def test_each_eligible_candidate_receives_exactly_one_fresh_validation_evaluation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=3)
+    original_resampled = EvaluationEngine.resampled
+    original_new_evaluator = EvaluationEngine.new_evaluator
+    binding_count = 0
+    validation_engine_ids: set[int] = set()
+    evaluation_counts: dict[int, int] = {}
+
+    def identify_validation_engine(
+        engine: EvaluationEngine,
+        evaluation_plan: EvaluationPlan,
+        bindings: object,
+    ) -> EvaluationEngine:
+        nonlocal binding_count
+        binding_count += 1
+        result = original_resampled(engine, evaluation_plan, cast("Any", bindings))
+        if binding_count % 2 == 0:
+            validation_engine_ids.add(id(result))
+        return result
+
+    def count_validation_evaluation(engine: EvaluationEngine) -> object:
+        evaluator = original_new_evaluator(engine)
+        if id(engine) in validation_engine_ids:
+            original_evaluate = evaluator.evaluate
+
+            def counted(frame: EvaluationFrame) -> object:
+                evaluation_counts[id(engine)] = evaluation_counts.get(id(engine), 0) + 1
+                return original_evaluate(frame)
+
+            evaluator.evaluate = counted  # type: ignore[method-assign]
+        return evaluator
+
+    monkeypatch.setattr(EvaluationEngine, "resampled", identify_validation_engine)
+    monkeypatch.setattr(EvaluationEngine, "new_evaluator", count_validation_evaluation)
+    operation = execute_resampling_evidence(accepted, plan)
+
+    assert operation.evidence is not None
+    assert operation.evidence.successful_count == plan.replicate_count
+    assert tuple(evaluation_counts.values()) == (1, 1, 1)
+
+
+def test_out_of_bounds_candidate_fails_fresh_problem_resolution() -> None:
+    accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=2)
+
+    def hook(
+        _prepared: ReplicateExecutionPlan,
+        projected: ProjectedOptimizationResult,
+    ) -> ProjectedOptimizationResult:
+        assert isinstance(projected, ProjectedOptimizationSuccess)
+        return dataclasses.replace(projected, candidate_vector=(101.0, 5.0))
+
+    operation = execute_resampling_evidence(accepted, plan, candidate_test_hook=hook)
+
+    assert operation.evidence is not None
+    assert operation.evidence.successful_count == 0
+    assert all(
+        outcome.failure is not None
+        and outcome.failure.category == "candidate_vector_lineage_mismatch"
         and outcome.stage is ReplicateStage.VALIDATING
         for outcome in operation.evidence.outcomes
     )
 
 
-class _SingleOwnerExecutor:
-    def __init__(
-        self,
-        prepared: ReplicateExecutionPlan,
-        owners: list[tuple[object, int, int]],
-        owner_lock: Lock,
-        releases: tuple[Event, ...] | None,
-    ) -> None:
-        self.prepared = prepared
-        self.owners = owners
-        self.owner_lock = owner_lock
-        self.releases = releases
-        self.used = False
-
-    def __call__(self, exact: ReplicateExecutionPlan) -> ProjectedOptimizationSuccess:
-        if self.used or exact is not self.prepared:
-            raise RuntimeError("executor/workspace reused across replicates")
-        self.used = True
-        ordinal = exact.request.ordinal
-        if self.releases is not None:
-            if ordinal + 1 < len(self.releases):
-                assert self.releases[ordinal + 1].wait(timeout=1.0)
-            self.releases[ordinal].set()
-        with self.owner_lock:
-            self.owners.append((self, ordinal, get_ident()))
-        return _success(exact)
-
-
-def _isolated_factory(
-    owners: list[tuple[object, int, int]],
-    owner_lock: Lock,
-    releases: tuple[Event, ...] | None = None,
-) -> Callable[[ReplicateExecutionPlan], _SingleOwnerExecutor]:
-    return lambda prepared: _SingleOwnerExecutor(
-        prepared,
-        owners,
-        owner_lock,
-        releases,
-    )
-
-
-def test_serial_and_reordered_multi_worker_execution_use_fresh_single_owners() -> None:
+def test_serial_and_reordered_multi_worker_execution_use_fresh_single_owners(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     accepted, plan = _plan(ResamplingScheme.NUCLEUS_BOOTSTRAP)
-    serial_owners: list[tuple[object, int, int]] = []
-    parallel_owners: list[tuple[object, int, int]] = []
+    engines: list[EvaluationEngine] = []
+    evaluators: list[object] = []
+    engine_lock = Lock()
+    original_resampled = EvaluationEngine.resampled
+    original_new_evaluator = EvaluationEngine.new_evaluator
+
+    def record_resampled(
+        engine: EvaluationEngine,
+        evaluation_plan: EvaluationPlan,
+        bindings: object,
+    ) -> EvaluationEngine:
+        result = original_resampled(engine, evaluation_plan, cast("Any", bindings))
+        with engine_lock:
+            engines.append(result)
+        return result
+
+    def record_evaluator(engine: EvaluationEngine) -> object:
+        evaluator = original_new_evaluator(engine)
+        with engine_lock:
+            evaluators.append(evaluator)
+        return evaluator
+
+    monkeypatch.setattr(EvaluationEngine, "resampled", record_resampled)
+    monkeypatch.setattr(EvaluationEngine, "new_evaluator", record_evaluator)
     serial = execute_resampling_evidence(
         accepted,
         plan,
-        _isolated_factory(serial_owners, Lock()),
         execution=ExecutionSettings(workers=1),
     )
+    serial_engine_count = len(engines)
+    serial_evaluator_count = len(evaluators)
     releases = tuple(Event() for _ in plan.replicates)
+    completion_order: list[int] = []
+
+    def reverse_completion(
+        prepared: ReplicateExecutionPlan,
+        projected: ProjectedOptimizationResult,
+    ) -> ProjectedOptimizationResult:
+        ordinal = prepared.request.ordinal
+        if ordinal + 1 < len(releases):
+            assert releases[ordinal + 1].wait(timeout=5.0)
+        releases[ordinal].set()
+        completion_order.append(ordinal)
+        return projected
+
     parallel = execute_resampling_evidence(
         accepted,
         plan,
-        _isolated_factory(parallel_owners, Lock(), releases),
         execution=ExecutionSettings(workers=4),
+        candidate_test_hook=reverse_completion,
     )
 
     assert serial.evidence is not None
     assert parallel.evidence is not None
     assert serial.evidence.identity == parallel.evidence.identity
-    assert len({item[0] for item in serial_owners}) == plan.replicate_count
-    assert len({item[0] for item in parallel_owners}) == plan.replicate_count
-    assert tuple(item[1] for item in parallel_owners) == (3, 2, 1, 0)
+    assert serial_engine_count == 2 * plan.replicate_count
+    assert len(engines) == 4 * plan.replicate_count
+    assert len({id(item) for item in engines}) == len(engines)
+    assert serial_evaluator_count >= 2 * plan.replicate_count
+    assert len({id(item) for item in evaluators}) == len(evaluators)
+    assert tuple(completion_order) == (3, 2, 1, 0)
     assert tuple(outcome.ordinal for outcome in parallel.evidence.outcomes) == (
         0,
         1,
@@ -672,18 +804,19 @@ def test_serial_and_reordered_multi_worker_execution_use_fresh_single_owners() -
 def test_one_executor_failure_does_not_corrupt_other_replicate_evidence() -> None:
     accepted, plan = _plan(ResamplingScheme.MONTE_CARLO)
 
-    def factory(
+    def hook(
         prepared: ReplicateExecutionPlan,
-    ) -> Callable[[ReplicateExecutionPlan], ProjectedOptimizationSuccess]:
+        projected: ProjectedOptimizationResult,
+    ) -> ProjectedOptimizationResult:
         if prepared.request.ordinal == 1:
-            return lambda _exact: (_ for _ in ()).throw(RuntimeError("owner failed"))
-        return lambda exact: _success(exact)
+            raise RuntimeError("owner failed")
+        return projected
 
     operation = execute_resampling_evidence(
         accepted,
         plan,
-        factory,
         execution=ExecutionSettings(workers=3),
+        candidate_test_hook=hook,
     )
 
     assert operation.evidence is not None
@@ -694,53 +827,38 @@ def test_one_executor_failure_does_not_corrupt_other_replicate_evidence() -> Non
     )
 
 
-@pytest.mark.parametrize("workers", (1, 3))
-def test_shared_executor_instance_is_rejected_by_single_owner_contract(
-    workers: int,
-) -> None:
+def test_fresh_lambdas_wrapping_shared_backend_cannot_enter_authoritative_path() -> (
+    None
+):
     accepted, plan = _plan(ResamplingScheme.MONTE_CARLO)
+    shared_backend = object()
+    wrappers = tuple(lambda: shared_backend for _ in plan.replicates)
 
-    def shared(exact: ReplicateExecutionPlan) -> ProjectedOptimizationSuccess:
-        return _success(exact)
-
-    operation = execute_resampling_evidence(
-        accepted,
-        plan,
-        lambda _prepared: shared,
-        execution=ExecutionSettings(workers=workers),
-    )
-
-    assert operation.evidence is not None
-    assert operation.evidence.successful_count == 1
-    assert (
-        sum(
-            outcome.failure is not None
-            and outcome.failure.category == "executor_creation_failure"
-            for outcome in operation.evidence.outcomes
+    with pytest.raises(TypeError, match="executor_factory"):
+        execute_resampling_evidence(
+            accepted,
+            plan,
+            executor_factory=lambda prepared: wrappers[prepared.request.ordinal],
         )
-        == plan.replicate_count - 1
-    )
 
 
 def test_partial_evidence_preserves_unstarted_ordinals_and_valid_summary() -> None:
     accepted, plan = _plan(ResamplingScheme.MONTE_CARLO)
     calls = 0
 
-    def factory(
+    def hook(
         _prepared: ReplicateExecutionPlan,
-    ) -> Callable[[ReplicateExecutionPlan], ProjectedOptimizationSuccess]:
-        def execute(exact: ReplicateExecutionPlan) -> ProjectedOptimizationSuccess:
-            nonlocal calls
-            calls += 1
-            return _success(exact)
-
-        return execute
+        projected: ProjectedOptimizationResult,
+    ) -> ProjectedOptimizationResult:
+        nonlocal calls
+        calls += 1
+        return projected
 
     operation = execute_resampling_evidence(
         accepted,
         plan,
-        factory,
         cancellation_probe=lambda: calls >= 2,
+        candidate_test_hook=hook,
     )
 
     assert operation.evidence is not None
@@ -764,13 +882,25 @@ def test_partial_evidence_preserves_unstarted_ordinals_and_valid_summary() -> No
     assert summary.summary.unstarted_ordinals == (2, 3)
 
 
-def test_summary_numerical_references_and_zero_variance_are_canonical() -> None:
+def test_summary_numerical_references_and_zero_variance_are_canonical(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=3)
-    operation = execute_resampling_evidence(
-        accepted,
-        plan,
-        _successful_factory(constant_b=True),
-    )
+
+    def fixed_candidate(
+        prepared: ReplicateExecutionPlan,
+        _engine: EvaluationEngine,
+    ) -> ProjectedOptimizationResult:
+        ordinal = prepared.request.ordinal
+        return ProjectedOptimizationSuccess.for_prepared(
+            prepared,
+            candidate_vector=(float(ordinal + 1), 5.0),
+            backend_chi_square=float(ordinal + 1),
+            execution_identity=f"test-execution-{ordinal}",
+        )
+
+    monkeypatch.setattr(resampling_module, "_execute_native_candidate", fixed_candidate)
+    operation = execute_resampling_evidence(accepted, plan)
     assert operation.evidence is not None
     outcome = summarize_resampling_evidence(operation.evidence)
     assert outcome.summary is not None
@@ -808,7 +938,7 @@ def test_summary_numerical_references_and_zero_variance_are_canonical() -> None:
 
 def test_summary_record_rejects_every_independent_tampering_vector() -> None:
     accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=3)
-    operation = execute_resampling_evidence(accepted, plan, _successful_factory())
+    operation = execute_resampling_evidence(accepted, plan)
     assert operation.evidence is not None
     policy = ResamplingSummaryPolicy()
     outcome = summarize_resampling_evidence(operation.evidence, policy)
@@ -844,23 +974,45 @@ def test_summary_record_rejects_every_independent_tampering_vector() -> None:
             evidence,
             changed_policy,
         )
-    with pytest.raises(ResamplingConstructionError, match="evidence identity"):
+    with pytest.raises(TypeError, match="evidence_identity"):
         ResamplingSummaryOutcome(
             SummaryTerminal.COMPLETED,
             summary=summary,
-            claimed_evidence_identity="foreign-evidence",
+            evidence_identity="foreign-evidence",
         )
 
 
 def test_summary_constructor_cannot_accept_caller_supplied_arrays_or_claims() -> None:
     accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=2)
-    operation = execute_resampling_evidence(accepted, plan, _successful_factory())
+    operation = execute_resampling_evidence(accepted, plan)
     assert operation.evidence is not None
     summary = summarize_resampling_evidence(operation.evidence).summary
     assert summary is not None
 
-    with pytest.raises(ResamplingConstructionError, match="source evidence"):
-        dataclasses.replace(summary, _construction_key=object())
+    with pytest.raises(TypeError, match="init=False"):
+        dataclasses.replace(
+            summary,
+            covariance=(dataclasses.replace(summary.covariance[0], value=999.0),),
+        )
+    for field_name in (
+        "included_ordinals",
+        "samples",
+        "distributions",
+        "correlations",
+        "output_scope",
+        "output_units",
+        "claims",
+    ):
+        with pytest.raises(TypeError, match="init=False"):
+            dataclasses.replace(
+                summary,
+                **{field_name: getattr(summary, field_name)},
+            )
+
+    changed_policy = dataclasses.replace(summary.policy, percentile_lower=5.0)
+    recomputed = dataclasses.replace(summary, policy=changed_policy)
+    assert recomputed.policy_identity == changed_policy.identity
+    assert recomputed.identity != summary.identity
 
 
 @pytest.mark.parametrize(
@@ -870,14 +1022,13 @@ def test_summary_constructor_cannot_accept_caller_supplied_arrays_or_claims() ->
         (RuntimeError("generation failed"), ReplicateStage.GENERATING, False),
     ),
 )
-def test_pre_draw_generation_terminal_is_typed_and_factory_is_not_created(
+def test_pre_draw_generation_terminal_is_typed_and_optimizer_is_not_created(
     monkeypatch: pytest.MonkeyPatch,
     failure: BaseException,
     expected_stage: ReplicateStage,
     draw_present: bool,
 ) -> None:
     accepted, plan = _plan(ResamplingScheme.MONTE_CARLO)
-    factory_calls = 0
 
     def fail_generation(
         _dataset: ResamplingDatasetManifest,
@@ -885,20 +1036,12 @@ def test_pre_draw_generation_terminal_is_typed_and_factory_is_not_created(
     ) -> None:
         raise failure
 
-    def factory(
-        _prepared: ReplicateExecutionPlan,
-    ) -> Callable[[ReplicateExecutionPlan], ProjectedOptimizationSuccess]:
-        nonlocal factory_calls
-        factory_calls += 1
-        return _success
-
     monkeypatch.setattr(
         "chemex.optimize.native_resampling.generate_resampling_draw",
         fail_generation,
     )
-    operation = execute_resampling_evidence(accepted, plan, factory)
+    operation = execute_resampling_evidence(accepted, plan)
 
-    assert factory_calls == 0
     assert operation.evidence is not None
     first = operation.evidence.outcomes[0]
     assert first.stage is expected_stage
@@ -925,15 +1068,26 @@ def test_pre_draw_generation_terminal_is_typed_and_factory_is_not_created(
     )
 
 
-def test_interruption_after_draw_before_executor_creation_is_typed() -> None:
+def test_interruption_after_draw_before_executor_creation_is_typed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     accepted, plan = _plan(ResamplingScheme.MONTE_CARLO)
+    original = EvaluationEngine.resampled
+    calls = 0
 
-    def interrupt_factory(
-        _prepared: ReplicateExecutionPlan,
-    ) -> Callable[[ReplicateExecutionPlan], ProjectedOptimizationResult]:
-        raise KeyboardInterrupt
+    def interrupt_binding(
+        engine: EvaluationEngine,
+        evaluation_plan: EvaluationPlan,
+        bindings: object,
+    ) -> EvaluationEngine:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise KeyboardInterrupt
+        return original(engine, evaluation_plan, cast("Any", bindings))
 
-    operation = execute_resampling_evidence(accepted, plan, interrupt_factory)
+    monkeypatch.setattr(EvaluationEngine, "resampled", interrupt_binding)
+    operation = execute_resampling_evidence(accepted, plan)
 
     assert operation.evidence is not None
     first = operation.evidence.outcomes[0]
@@ -952,18 +1106,19 @@ def test_optimization_interruption_preserves_complete_ordinal_accounting(
 ) -> None:
     accepted, plan = _plan(ResamplingScheme.MONTE_CARLO)
 
-    def factory(
+    def hook(
         prepared: ReplicateExecutionPlan,
-    ) -> Callable[[ReplicateExecutionPlan], ProjectedOptimizationResult]:
+        projected: ProjectedOptimizationResult,
+    ) -> ProjectedOptimizationResult:
         if prepared.request.ordinal == 0:
-            return lambda _exact: (_ for _ in ()).throw(KeyboardInterrupt())
-        return lambda exact: _success(exact)
+            raise KeyboardInterrupt
+        return projected
 
     operation = execute_resampling_evidence(
         accepted,
         plan,
-        factory,
         execution=ExecutionSettings(workers=workers),
+        candidate_test_hook=hook,
     )
 
     assert operation.evidence is not None
@@ -983,35 +1138,32 @@ def test_optimization_interruption_preserves_complete_ordinal_accounting(
 def test_projected_failure_remains_typed_and_summary_uses_common_scope() -> None:
     accepted, plan = _plan(ResamplingScheme.BOOTSTRAP, count=3)
 
-    def factory(
+    def hook(
         prepared: ReplicateExecutionPlan,
-    ) -> Callable[[ReplicateExecutionPlan], ProjectedOptimizationResult]:
+        projected: ProjectedOptimizationResult,
+    ) -> ProjectedOptimizationResult:
         if prepared.request.ordinal != 1:
-            return lambda exact: _success(exact)
-
-        def fail(exact: ReplicateExecutionPlan) -> ProjectedOptimizationFailure:
-            return ProjectedOptimizationFailure(
-                exact.draw.identity,
-                ReplicateDisposition.FAILED,
-                "solver_unsuccessful",
-                "declared local budget exhausted",
-                optimization_projection_identity=(
-                    exact.request.optimization_projection_identity
-                ),
-                stage=ReplicateStage.EXECUTING,
-                prepared_replicate_identity=exact.identity,
-                evaluation_plan_identity=exact.evaluation_plan.identity,
-                problem_identity=exact.problem.identity,
-                invocation_identity=exact.invocation_identity,
-            )
-
-        return fail
+            return projected
+        return ProjectedOptimizationFailure(
+            prepared.draw.identity,
+            ReplicateDisposition.FAILED,
+            "solver_unsuccessful",
+            "declared local budget exhausted",
+            optimization_projection_identity=(
+                prepared.request.optimization_projection_identity
+            ),
+            stage=ReplicateStage.EXECUTING,
+            prepared_replicate_identity=prepared.identity,
+            evaluation_plan_identity=prepared.evaluation_plan.identity,
+            problem_identity=prepared.problem.identity,
+            invocation_identity=prepared.invocation_identity,
+        )
 
     operation = execute_resampling_evidence(
         accepted,
         plan,
-        factory,
         execution=ExecutionSettings(workers=2),
+        candidate_test_hook=hook,
     )
     assert operation.evidence is not None
     evidence = operation.evidence

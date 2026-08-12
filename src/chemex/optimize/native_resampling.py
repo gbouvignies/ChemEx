@@ -2,8 +2,9 @@
 
 This module is an isolated qualification seam.  It plans identity-derived
 Monte Carlo, bootstrap, and nucleus-bootstrap replicates; delegates each draw
-to an evidence-only projected optimization callback; freezes every terminal
-replicate outcome; and derives summaries from one common complete-scope sample
+to an internally bound evidence-only native optimizer; freshly evaluates every
+eligible candidate in a separate replicate-local workspace; freezes every
+terminal outcome; and derives summaries from one common complete-scope sample
 set.  Production fitting and reporting do not consume these artifacts yet.
 """
 
@@ -18,17 +19,28 @@ from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from enum import StrEnum
 from numbers import Real
-from threading import Lock
 from typing import Literal, cast
 
 import numpy as np
 
-from chemex.evaluation.native import EvaluationPlan, ProfilePlan
+from chemex.evaluation.native import (
+    EvaluationEngine,
+    EvaluationFailure,
+    EvaluationFrame,
+    EvaluationPlan,
+    EvaluationResult,
+    ProfilePlan,
+    ResampledProfileBinding,
+)
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     ComponentProblemDerivation,
+    DirectTrfCandidateTerminal,
+    DirectTrfInvocation,
     OptimizationProblem,
     accepted_occurrence_is_authoritative,
+    canonical_chi_square,
+    execute_direct_trf_candidate,
 )
 from chemex.parameters.parameterization import ActiveParameterization
 from chemex.runtime import ExecutionSettings
@@ -308,6 +320,7 @@ class ResamplingPlan:
     dataset: ResamplingDatasetManifest = field(repr=False, compare=False)
     source_problem: OptimizationProblem = field(repr=False, compare=False)
     parameterization: ActiveParameterization = field(repr=False, compare=False)
+    source_engine: EvaluationEngine = field(repr=False, compare=False)
     scheme: ResamplingScheme
     replicate_count: int
     replicate_structural_identities: tuple[str, ...]
@@ -391,6 +404,7 @@ class ResamplingPlan:
             != self.parameterization.evaluator_identity
             or self.source_problem.constraint_program_identity
             != self.parameterization.program.fingerprint
+            or self.source_engine.plan.identity != self.dataset.evaluation_plan.identity
         ):
             raise ResamplingConstructionError(
                 "Source dataset, problem, and parameterization lineage differ"
@@ -502,6 +516,7 @@ class ResamplingPlan:
         dataset: ResamplingDatasetManifest,
         source_problem: OptimizationProblem,
         parameterization: ActiveParameterization,
+        source_engine: EvaluationEngine,
         scheme: ResamplingScheme,
         replicate_count: int,
         replicate_structural_identities: Sequence[str],
@@ -524,12 +539,17 @@ class ResamplingPlan:
             source_problem,
             parameterization,
         )
+        if source_engine.plan.identity != dataset.evaluation_plan.identity:
+            raise ResamplingConstructionError(
+                "Source evaluator belongs to another EvaluationPlan"
+            )
         return cls(
             accepted.identity,
             accepted.occurrence_identity,
             dataset,
             source_problem,
             parameterization,
+            source_engine,
             scheme,
             replicate_count,
             tuple(replicate_structural_identities),
@@ -937,11 +957,14 @@ def generate_resampling_draw(
 def _transformed_evaluation_plan(
     dataset: ResamplingDatasetManifest,
     draw: ResamplingDraw,
-) -> EvaluationPlan:
+    source_engine: EvaluationEngine,
+) -> tuple[EvaluationPlan, tuple[ResampledProfileBinding, ...]]:
     source_profiles = {
-        profile.identity: profile for profile in dataset.evaluation_plan.profiles
+        profile.identity: (profile_index, profile)
+        for profile_index, profile in enumerate(dataset.evaluation_plan.profiles)
     }
     profiles: list[ProfilePlan] = []
+    bindings: list[ResampledProfileBinding] = []
     offset = 0
     index = 0
     while index < len(draw.observations):
@@ -951,7 +974,12 @@ def _transformed_evaluation_plan(
             draw.profile_blocks[stop] == block_identity
         ):
             stop += 1
-        source = source_profiles[block_identity]
+        source_profile_index, source = source_profiles[block_identity]
+        root_indices = tuple(
+            source_index - source.observation_offset
+            for source_index in draw.source_indices[index:stop]
+        )
+        binding = ResampledProfileBinding(source_profile_index, root_indices)
         source_identity = _identity(
             "native-resampling-transformed-profile-source",
             (
@@ -989,16 +1017,11 @@ def _transformed_evaluation_plan(
                 source.kernel_identity,
                 source.kernel_configuration,
                 source.spectrometer_configuration,
-                _identity(
-                    "native-resampling-observation-metadata",
-                    tuple(
-                        dataset.observation_descriptors[source_index]
-                        for source_index in draw.source_indices[index:stop]
-                    ),
-                ),
+                source_engine.resampled_observation_metadata(binding),
                 (stop - index,),
             )
         )
+        bindings.append(binding)
         offset += stop - index
         index = stop
     source_plan = dataset.evaluation_plan
@@ -1014,7 +1037,7 @@ def _transformed_evaluation_plan(
         source_plan.ordering_version,
         source_plan.failure_version,
         source_plan.diagnostics_version,
-    )
+    ), tuple(bindings)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1029,8 +1052,12 @@ class ReplicateExecutionPlan:
     source_snapshot_occurrence_identity: str
     source_snapshot_revision: int
     evaluation_plan: EvaluationPlan = field(repr=False, compare=False)
+    profile_bindings: tuple[ResampledProfileBinding, ...] = field(
+        repr=False, compare=False
+    )
     problem: OptimizationProblem = field(repr=False, compare=False)
     parameterization: ActiveParameterization = field(repr=False, compare=False)
+    invocation: DirectTrfInvocation = field(repr=False, compare=False)
     strategy: OptimizationStrategy
     workflow_identity: str
     invocation_identity: str
@@ -1049,9 +1076,12 @@ class ReplicateExecutionPlan:
             != self.parameterization.evaluator_identity
             or self.problem.constraint_program_identity
             != self.parameterization.program.fingerprint
+            or self.invocation.problem_identity != self.problem.identity
+            or self.invocation.identity != self.invocation_identity
             or self.problem.acceptance_authority
             or self.problem.commit_scope != self.output_scope
             or len(self.output_units) != len(self.output_scope)
+            or len(self.profile_bindings) != len(self.evaluation_plan.profiles)
         ):
             raise ResamplingConstructionError(
                 "Prepared replicate native lineage is internally inconsistent"
@@ -1070,6 +1100,13 @@ class ReplicateExecutionPlan:
                     self.source_snapshot_occurrence_identity,
                     self.source_snapshot_revision,
                     self.evaluation_plan.identity,
+                    tuple(
+                        (
+                            binding.root_profile_index,
+                            binding.root_observation_indices,
+                        )
+                        for binding in self.profile_bindings
+                    ),
                     self.problem.identity,
                     self.parameterization.identity,
                     self.parameterization.evaluator_identity,
@@ -1103,7 +1140,9 @@ class ReplicateExecutionPlan:
             raise ResamplingConstructionError(
                 "Prepared replicate draw differs from canonical seeded generation"
             )
-        evaluation_plan = _transformed_evaluation_plan(plan.dataset, draw)
+        evaluation_plan, profile_bindings = _transformed_evaluation_plan(
+            plan.dataset, draw, plan.source_engine
+        )
         derivation = ComponentProblemDerivation(
             plan.source_problem.identity,
             plan.source_problem.affine_feasibility_identity,
@@ -1118,6 +1157,27 @@ class ReplicateExecutionPlan:
             start=plan.source_problem.start,
             derivation=derivation,
         )
+        if plan.strategy is not OptimizationStrategy.DIRECT_TRF:
+            raise ResamplingConstructionError(
+                "Qualified resampling currently supports the closed Direct-TRF binder"
+            )
+        settings = dict(plan.strategy_settings)
+        if set(settings) - {"objective_request_budget"}:
+            raise ResamplingConstructionError(
+                "Direct-TRF resampling received unsupported strategy settings"
+            )
+        try:
+            objective_request_budget = int(
+                settings.get("objective_request_budget", "100")
+            )
+        except ValueError as error:
+            raise ResamplingConstructionError(
+                "Direct-TRF objective request budget must be an integer"
+            ) from error
+        invocation = DirectTrfInvocation.for_problem(
+            problem,
+            objective_request_budget=objective_request_budget,
+        )
         workflow_identity = _identity(
             "native-resampling-projected-workflow",
             (
@@ -1128,16 +1188,7 @@ class ReplicateExecutionPlan:
                 request.component_identities,
             ),
         )
-        invocation_identity = _identity(
-            "native-resampling-invocation-contract",
-            (
-                problem.identity,
-                workflow_identity,
-                plan.strategy.value,
-                plan.strategy_settings,
-                request.identity,
-            ),
-        )
+        invocation_identity = invocation.identity
         snapshot = problem.source_snapshot
         return cls(
             plan.identity,
@@ -1148,8 +1199,10 @@ class ReplicateExecutionPlan:
             snapshot.occurrence_identity,
             snapshot.revision,
             evaluation_plan,
+            profile_bindings,
             problem,
             plan.parameterization,
+            invocation,
             plan.strategy,
             workflow_identity,
             invocation_identity,
@@ -1169,7 +1222,7 @@ class ReplicateExecutionPlan:
 
 @dataclass(frozen=True, slots=True)
 class ProjectedOptimizationSuccess:
-    """Executor-returned native candidate evidence, not a resolved sample."""
+    """Non-authoritative optimizer candidate with exact prepared lineage."""
 
     prepared_replicate_identity: str
     accepted_result_identity: str
@@ -1189,13 +1242,11 @@ class ProjectedOptimizationSuccess:
     strategy: OptimizationStrategy
     component_identities: tuple[str, ...]
     component_outcome_identities: tuple[str, ...]
+    controlled_ids: tuple[str, ...]
     candidate_identity: str
-    materialization_identity: str
-    evaluation_identity: str
-    requested_output_scope: tuple[str, ...]
-    requested_output_units: tuple[str, ...]
     candidate_vector: tuple[float, ...]
-    chi_square: float
+    backend_chi_square: float | None
+    backend_evaluation_identity: str | None = None
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -1221,8 +1272,6 @@ class ProjectedOptimizationSuccess:
             ("invocation identity", self.invocation_identity),
             ("execution identity", self.execution_identity),
             ("candidate identity", self.candidate_identity),
-            ("materialization identity", self.materialization_identity),
-            ("evaluation identity", self.evaluation_identity),
         ):
             _non_empty_identity(value, name=name)
         if self.source_snapshot_revision < 0:
@@ -1249,21 +1298,28 @@ class ProjectedOptimizationSuccess:
             _finite(value, name=f"candidate vector[{index}]")
             for index, value in enumerate(self.candidate_vector)
         )
-        scope = _canonical_scope(self.requested_output_scope)
-        units = tuple(self.requested_output_units)
-        if len(units) != len(scope) or any(not unit for unit in units):
+        controlled_ids = _canonical_scope(self.controlled_ids)
+        if len(vector) != len(controlled_ids):
             raise ResamplingConstructionError(
-                "Projected output units must cover the requested scope"
+                "Projected candidate must cover the exact controlled-coordinate order"
             )
-        chi_square = _finite(self.chi_square, name="projected chi-square")
-        if chi_square < 0.0:
+        backend_chi_square = (
+            None
+            if self.backend_chi_square is None
+            else _finite(self.backend_chi_square, name="backend diagnostic chi-square")
+        )
+        if backend_chi_square is not None and backend_chi_square < 0.0:
             raise ResamplingConstructionError(
-                "Projected chi-square must be non-negative"
+                "Backend diagnostic chi-square must be non-negative"
             )
         object.__setattr__(self, "candidate_vector", vector)
-        object.__setattr__(self, "requested_output_scope", scope)
-        object.__setattr__(self, "requested_output_units", units)
-        object.__setattr__(self, "chi_square", chi_square)
+        object.__setattr__(self, "controlled_ids", controlled_ids)
+        object.__setattr__(self, "backend_chi_square", backend_chi_square)
+        if self.backend_evaluation_identity is not None:
+            _non_empty_identity(
+                self.backend_evaluation_identity,
+                name="backend evaluation diagnostic identity",
+            )
         object.__setattr__(
             self,
             "identity",
@@ -1288,13 +1344,15 @@ class ProjectedOptimizationSuccess:
                     self.strategy.value,
                     self.component_identities,
                     self.component_outcome_identities,
+                    controlled_ids,
                     self.candidate_identity,
-                    self.materialization_identity,
-                    self.evaluation_identity,
-                    scope,
-                    units,
                     tuple(_float_token(value) for value in vector),
-                    _float_token(chi_square),
+                    (
+                        None
+                        if backend_chi_square is None
+                        else _float_token(backend_chi_square)
+                    ),
+                    self.backend_evaluation_identity,
                 ),
             ),
         )
@@ -1305,17 +1363,18 @@ class ProjectedOptimizationSuccess:
         prepared: ReplicateExecutionPlan,
         *,
         candidate_vector: Sequence[float],
-        chi_square: float,
+        backend_chi_square: float | None,
+        execution_identity: str,
+        backend_evaluation_identity: str | None = None,
     ) -> ProjectedOptimizationSuccess:
-        """Construct exact callback evidence for a prepared native replicate."""
+        """Bind non-authoritative backend evidence to an exact prepared replicate."""
         vector = tuple(float(value) for value in candidate_vector)
-        resolved = prepared.resolve_candidate(vector)
         candidate_identity = _identity(
             "native-resampling-candidate",
             (
                 prepared.identity,
+                prepared.problem.controlled_ids,
                 tuple(_float_token(value) for value in vector),
-                _float_token(float(chi_square)),
             ),
         )
         component_outcomes = tuple(
@@ -1324,34 +1383,6 @@ class ProjectedOptimizationSuccess:
                 (prepared.identity, component_identity, candidate_identity),
             )
             for component_identity in prepared.component_identities
-        )
-        execution_identity = _identity(
-            "native-resampling-execution",
-            (
-                prepared.identity,
-                prepared.invocation_identity,
-                candidate_identity,
-                component_outcomes,
-            ),
-        )
-        evaluation_identity = _identity(
-            "native-resampling-candidate-evaluation",
-            (
-                prepared.evaluation_plan.identity,
-                prepared.parameterization.evaluator_identity,
-                candidate_identity,
-                _items_tokens(resolved),
-            ),
-        )
-        materialization_identity = _identity(
-            "native-resampling-candidate-materialization",
-            (
-                prepared.problem.identity,
-                prepared.invocation_identity,
-                execution_identity,
-                candidate_identity,
-                evaluation_identity,
-            ),
         )
         return cls(
             prepared.identity,
@@ -1372,13 +1403,11 @@ class ProjectedOptimizationSuccess:
             prepared.strategy,
             prepared.component_identities,
             component_outcomes,
+            prepared.problem.controlled_ids,
             candidate_identity,
-            materialization_identity,
-            evaluation_identity,
-            prepared.output_scope,
-            prepared.output_units,
             vector,
-            chi_square,
+            backend_chi_square,
+            backend_evaluation_identity,
         )
 
 
@@ -1441,28 +1470,10 @@ type ProjectedOptimizationResult = (
 )
 
 
-type ReplicateExecutor = Callable[
-    [ReplicateExecutionPlan],
+type CandidateEvidenceTestHook = Callable[
+    [ReplicateExecutionPlan, ProjectedOptimizationResult],
     ProjectedOptimizationResult,
 ]
-
-type ReplicateExecutorFactory = Callable[[ReplicateExecutionPlan], ReplicateExecutor]
-
-
-class _ExecutorOwnershipRegistry:
-    """Operation-local guard against reusing one executor/workspace instance."""
-
-    def __init__(self) -> None:
-        self._lock = Lock()
-        self._executors: list[ReplicateExecutor] = []
-
-    def claim(self, executor: ReplicateExecutor) -> None:
-        with self._lock:
-            if any(existing is executor for existing in self._executors):
-                raise ResamplingConstructionError(
-                    "Executor factory reused one single-owner executor instance"
-                )
-            self._executors.append(executor)
 
 
 _VALIDATED_SUCCESS_CONSTRUCTION_KEY = object()
@@ -1475,14 +1486,23 @@ class ValidatedReplicateSuccess:
     _construction_key: object = field(repr=False, compare=False)
     prepared_replicate_identity: str
     projected_outcome_identity: str
+    evaluation_identity: str
+    materialization_identity: str
     resolved_items: tuple[tuple[str, float], ...]
     chi_square: float
+    backend_chi_square: float | None
+    backend_chi_square_agrees: bool | None
+    fresh_evaluation_count: int
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
         if self._construction_key is not _VALIDATED_SUCCESS_CONSTRUCTION_KEY:
             raise ResamplingConstructionError(
                 "Successful samples require resampling-owned validation"
+            )
+        if self.fresh_evaluation_count != 1:
+            raise ResamplingConstructionError(
+                "Successful samples require exactly one fresh validation evaluation"
             )
         object.__setattr__(
             self,
@@ -1492,8 +1512,17 @@ class ValidatedReplicateSuccess:
                 (
                     self.prepared_replicate_identity,
                     self.projected_outcome_identity,
+                    self.evaluation_identity,
+                    self.materialization_identity,
                     _items_tokens(self.resolved_items),
                     _float_token(self.chi_square),
+                    (
+                        None
+                        if self.backend_chi_square is None
+                        else _float_token(self.backend_chi_square)
+                    ),
+                    self.backend_chi_square_agrees,
+                    self.fresh_evaluation_count,
                 ),
             ),
         )
@@ -1741,11 +1770,49 @@ class ResamplingOperation:
         )
 
 
+def _execute_native_candidate(
+    prepared: ReplicateExecutionPlan,
+    engine: EvaluationEngine,
+) -> ProjectedOptimizationResult:
+    """Construct and execute the closed native strategy with replicate-local state."""
+    outcome = execute_direct_trf_candidate(
+        prepared.problem,
+        prepared.invocation,
+        prepared.parameterization,
+        engine,
+    )
+    if (
+        outcome.terminal is DirectTrfCandidateTerminal.SUCCESS
+        and outcome.candidate is not None
+    ):
+        return ProjectedOptimizationSuccess.for_prepared(
+            prepared,
+            candidate_vector=outcome.candidate.vector,
+            backend_chi_square=outcome.candidate.chi_square,
+            execution_identity=outcome.execution.identity,
+            backend_evaluation_identity=outcome.candidate.evaluation_result.identity,
+        )
+    return ProjectedOptimizationFailure(
+        prepared.draw.identity,
+        ReplicateDisposition.FAILED,
+        f"direct_trf_{outcome.terminal.value}",
+        "Replicate-local Direct-TRF did not produce an eligible candidate",
+        optimization_projection_identity=(
+            prepared.request.optimization_projection_identity
+        ),
+        stage=ReplicateStage.EXECUTING,
+        prepared_replicate_identity=prepared.identity,
+        evaluation_plan_identity=prepared.evaluation_plan.identity,
+        problem_identity=prepared.problem.identity,
+        invocation_identity=prepared.invocation.identity,
+        execution_identity=outcome.execution.identity,
+    )
+
+
 def _execute_replicate(  # noqa: C901 - ordered staged ownership boundary
     plan: ResamplingPlan,
-    executor_factory: ReplicateExecutorFactory,
-    ownership: _ExecutorOwnershipRegistry,
     request: ReplicateRequest,
+    candidate_test_hook: CandidateEvidenceTestHook | None,
 ) -> ReplicateOutcome:
     draw: ResamplingDraw | None = None
     prepared: ReplicateExecutionPlan | None = None
@@ -1830,16 +1897,17 @@ def _execute_replicate(  # noqa: C901 - ordered staged ownership boundary
         )
 
     try:
-        executor = executor_factory(prepared)
-        ownership.claim(executor)
+        optimizer_engine = plan.source_engine.resampled(
+            prepared.evaluation_plan, prepared.profile_bindings
+        )
     except KeyboardInterrupt:
         return failure_outcome(
             ReplicateDisposition.INTERRUPTED,
             ReplicateStage.EXECUTOR_CREATING,
             "executor_creation_interrupted",
-            "Replicate executor creation was interrupted",
+            "Replicate-local optimizer binding was interrupted",
         )
-    except Exception as error:  # noqa: BLE001 - typed executor construction failure
+    except Exception as error:  # noqa: BLE001 - typed local binding failure
         return failure_outcome(
             ReplicateDisposition.FAILED,
             ReplicateStage.EXECUTOR_CREATING,
@@ -1848,7 +1916,10 @@ def _execute_replicate(  # noqa: C901 - ordered staged ownership boundary
         )
 
     try:
-        projected = executor(prepared)
+        native_projected = _execute_native_candidate(prepared, optimizer_engine)
+        projected = native_projected
+        if candidate_test_hook is not None:
+            projected = candidate_test_hook(prepared, projected)
     except KeyboardInterrupt:
         return failure_outcome(
             ReplicateDisposition.INTERRUPTED,
@@ -1889,29 +1960,15 @@ def _execute_replicate(  # noqa: C901 - ordered staged ownership boundary
             "invalid_projected_outcome",
             "Projected optimization returned an unsupported outcome type",
         )
-
-    try:
-        expected = ProjectedOptimizationSuccess.for_prepared(
-            prepared,
-            candidate_vector=projected.candidate_vector,
-            chi_square=projected.chi_square,
-        )
-    except KeyboardInterrupt:
-        return failure_outcome(
-            ReplicateDisposition.INTERRUPTED,
-            ReplicateStage.VALIDATING,
-            "validation_interrupted",
-            "Fresh candidate validation was interrupted",
-            projected=projected,
-        )
-    except Exception as error:  # noqa: BLE001 - ordinary constraint resolution
+    if not isinstance(native_projected, ProjectedOptimizationSuccess):
         return failure_outcome(
             ReplicateDisposition.FAILED,
             ReplicateStage.VALIDATING,
-            "candidate_resolution_failure",
-            f"{type(error).__name__}: {error}",
-            projected=projected,
+            "ineligible_native_candidate",
+            "The closed native strategy did not produce an eligible candidate",
         )
+
+    expected = native_projected
     lineage_fields = (
         (
             "prepared_replicate",
@@ -1979,22 +2036,13 @@ def _execute_replicate(  # noqa: C901 - ordered staged ownership boundary
             expected.component_outcome_identities,
         ),
         ("execution", projected.execution_identity, expected.execution_identity),
+        ("controlled_coordinates", projected.controlled_ids, expected.controlled_ids),
+        ("candidate_vector", projected.candidate_vector, expected.candidate_vector),
         ("candidate", projected.candidate_identity, expected.candidate_identity),
         (
-            "materialization",
-            projected.materialization_identity,
-            expected.materialization_identity,
-        ),
-        ("evaluation", projected.evaluation_identity, expected.evaluation_identity),
-        (
-            "requested_scope",
-            projected.requested_output_scope,
-            expected.requested_output_scope,
-        ),
-        (
-            "requested_units",
-            projected.requested_output_units,
-            expected.requested_output_units,
+            "backend_evaluation",
+            projected.backend_evaluation_identity,
+            expected.backend_evaluation_identity,
         ),
     )
     mismatch = next(
@@ -2010,29 +2058,109 @@ def _execute_replicate(  # noqa: C901 - ordered staged ownership boundary
             projected=projected,
         )
     try:
-        resolved_items = prepared.resolve_candidate(projected.candidate_vector)
+        validation_engine = plan.source_engine.resampled(
+            prepared.evaluation_plan, prepared.profile_bindings
+        )
+        validation_evaluator = validation_engine.new_evaluator()
+        lifecycle_frame = prepared.problem.lifecycle_frame(
+            projected.candidate_vector, prepared.parameterization
+        )
+        evaluation_frame = EvaluationFrame.from_lifecycle_frame(
+            prepared.parameterization, lifecycle_frame
+        )
+        evaluated = validation_evaluator.evaluate(evaluation_frame)
     except KeyboardInterrupt:
         return failure_outcome(
             ReplicateDisposition.INTERRUPTED,
             ReplicateStage.VALIDATING,
             "validation_interrupted",
-            "Fresh candidate resolution was interrupted",
+            "Fresh candidate evaluation was interrupted",
             projected=projected,
         )
-    except Exception as error:  # noqa: BLE001 - typed final resolution failure
+    except Exception as error:  # noqa: BLE001 - typed evidence materialization failure
         return failure_outcome(
             ReplicateDisposition.FAILED,
             ReplicateStage.VALIDATING,
-            "candidate_resolution_failure",
+            "fresh_evaluation_failure",
             f"{type(error).__name__}: {error}",
             projected=projected,
         )
+    if isinstance(evaluated, EvaluationFailure):
+        return failure_outcome(
+            ReplicateDisposition.FAILED,
+            ReplicateStage.VALIDATING,
+            "fresh_evaluation_failure",
+            f"{evaluated.category}: {evaluated.message}",
+            projected=projected,
+        )
+    if not isinstance(evaluated, EvaluationResult):
+        return failure_outcome(
+            ReplicateDisposition.FAILED,
+            ReplicateStage.VALIDATING,
+            "invalid_fresh_evaluation",
+            "Fresh evaluator returned an unsupported result type",
+            projected=projected,
+        )
+    try:
+        canonical_evaluation = EvaluationResult.from_record(
+            evaluated.to_record(), prepared.evaluation_plan
+        )
+        resolved_items = tuple(
+            (param_id, canonical_evaluation.resolved_values[param_id])
+            for param_id in prepared.output_scope
+        )
+        ordinary_resolved = prepared.resolve_candidate(projected.candidate_vector)
+        chi_square = canonical_chi_square(canonical_evaluation.residuals)
+        if (
+            canonical_evaluation.evaluator_compatibility_identity
+            != validation_engine.compatibility_identity
+            or canonical_evaluation.plan_identity != prepared.evaluation_plan.identity
+            or resolved_items != ordinary_resolved
+            or tuple(canonical_evaluation.resolved_values) != prepared.output_scope
+            or (
+                expected.backend_evaluation_identity is not None
+                and canonical_evaluation.identity
+                != expected.backend_evaluation_identity
+            )
+        ):
+            raise ResamplingConstructionError(
+                "Fresh evaluation differs from exact complete replicate scope"
+            )
+    except Exception as error:  # noqa: BLE001 - canonical result qualification
+        return failure_outcome(
+            ReplicateDisposition.FAILED,
+            ReplicateStage.VALIDATING,
+            "fresh_materialization_failure",
+            f"{type(error).__name__}: {error}",
+            projected=projected,
+        )
+    materialization_identity = _identity(
+        "native-resampling-fresh-materialization",
+        (
+            prepared.identity,
+            projected.candidate_identity,
+            projected.execution_identity,
+            validation_engine.compatibility_identity,
+            canonical_evaluation.identity,
+            _items_tokens(resolved_items),
+        ),
+    )
+    backend_agrees = (
+        None
+        if projected.backend_chi_square is None
+        else projected.backend_chi_square == chi_square
+    )
     success = ValidatedReplicateSuccess(
         _VALIDATED_SUCCESS_CONSTRUCTION_KEY,
         prepared.identity,
         projected.identity,
+        canonical_evaluation.identity,
+        materialization_identity,
         resolved_items,
-        projected.chi_square,
+        chi_square,
+        projected.backend_chi_square,
+        backend_agrees,
+        1,
     )
     return ReplicateOutcome(
         plan.identity,
@@ -2048,16 +2176,15 @@ def _execute_replicate(  # noqa: C901 - ordered staged ownership boundary
 
 def _execute_serial_replicates(
     plan: ResamplingPlan,
-    executor_factory: ReplicateExecutorFactory,
-    ownership: _ExecutorOwnershipRegistry,
     cancellation_probe: Callable[[], bool] | None,
+    candidate_test_hook: CandidateEvidenceTestHook | None,
 ) -> tuple[list[ReplicateOutcome], OperationTerminal]:
     outcomes: list[ReplicateOutcome] = []
     terminal = OperationTerminal.COMPLETED
     for request in plan.replicates:
         if cancellation_probe is not None and cancellation_probe():
             return outcomes, OperationTerminal.CANCELLED
-        outcome = _execute_replicate(plan, executor_factory, ownership, request)
+        outcome = _execute_replicate(plan, request, candidate_test_hook)
         outcomes.append(outcome)
         if outcome.disposition is ReplicateDisposition.CANCELLED:
             return outcomes, OperationTerminal.CANCELLED
@@ -2082,10 +2209,9 @@ def _replicate_terminal(
 
 def _execute_parallel_replicates(
     plan: ResamplingPlan,
-    executor_factory: ReplicateExecutorFactory,
-    ownership: _ExecutorOwnershipRegistry,
     execution: ExecutionSettings,
     cancellation_probe: Callable[[], bool] | None,
+    candidate_test_hook: CandidateEvidenceTestHook | None,
 ) -> tuple[list[ReplicateOutcome], OperationTerminal]:
     worker_count = min(execution.workers, plan.replicate_count)
     outcomes: list[ReplicateOutcome] = []
@@ -2099,9 +2225,8 @@ def _execute_parallel_replicates(
                 pool.submit(
                     _execute_replicate,
                     plan,
-                    executor_factory,
-                    ownership,
                     plan.replicates[next_ordinal],
+                    candidate_test_hook,
                 )
             )
             next_ordinal += 1
@@ -2125,9 +2250,8 @@ def _execute_parallel_replicates(
                         pool.submit(
                             _execute_replicate,
                             plan,
-                            executor_factory,
-                            ownership,
                             plan.replicates[next_ordinal],
+                            candidate_test_hook,
                         )
                     )
                     next_ordinal += 1
@@ -2151,10 +2275,10 @@ def _execute_parallel_replicates(
 def execute_resampling_evidence(
     accepted: AcceptedFitResult,
     plan: ResamplingPlan,
-    executor_factory: ReplicateExecutorFactory,
     *,
     execution: ExecutionSettings | None = None,
     cancellation_probe: Callable[[], bool] | None = None,
+    candidate_test_hook: CandidateEvidenceTestHook | None = None,
 ) -> ResamplingOperation:
     """Execute canonical evidence-only replicates without analysis-state authority."""
     if (
@@ -2172,24 +2296,21 @@ def execute_resampling_evidence(
         plan.parameterization,
     )
     settings = ExecutionSettings() if execution is None else execution
-    ownership = _ExecutorOwnershipRegistry()
     if cancellation_probe is not None and cancellation_probe():
         outcomes: list[ReplicateOutcome] = []
         terminal = OperationTerminal.CANCELLED
     elif settings.workers == 1:
         outcomes, terminal = _execute_serial_replicates(
             plan,
-            executor_factory,
-            ownership,
             cancellation_probe,
+            candidate_test_hook,
         )
     else:
         outcomes, terminal = _execute_parallel_replicates(
             plan,
-            executor_factory,
-            ownership,
             settings,
             cancellation_probe,
+            candidate_test_hook,
         )
     completed_ordinals = {outcome.ordinal for outcome in outcomes}
     unstarted = tuple(
@@ -2395,39 +2516,100 @@ class CorrelationEntry:
             )
 
 
-_SUMMARY_CONSTRUCTION_KEY = object()
-
-
 @dataclass(frozen=True, slots=True)
 class ResamplingSummary:
     """Canonical joint summary reconstructed from one exact evidence artifact."""
 
-    _construction_key: object = field(repr=False, compare=False)
-    evidence_identity: str
-    output_scope: tuple[str, ...]
-    output_units: tuple[str, ...]
-    included_ordinals: tuple[int, ...]
-    unstarted_ordinals: tuple[int, ...]
-    exclusions: tuple[ResamplingExclusion, ...]
-    samples: tuple[SummarySample, ...]
-    distributions: tuple[ParameterDistribution, ...]
-    covariance: tuple[CovarianceEntry, ...]
-    correlations: tuple[CorrelationEntry, ...]
-    policy_identity: str
-    policy_version: str
+    evidence: ResamplingEvidence = field(repr=False, compare=False)
+    policy: ResamplingSummaryPolicy = field(repr=False, compare=False)
+    evidence_identity: str = field(init=False)
+    output_scope: tuple[str, ...] = field(init=False)
+    output_units: tuple[str, ...] = field(init=False)
+    included_ordinals: tuple[int, ...] = field(init=False)
+    unstarted_ordinals: tuple[int, ...] = field(init=False)
+    exclusions: tuple[ResamplingExclusion, ...] = field(init=False)
+    samples: tuple[SummarySample, ...] = field(init=False)
+    distributions: tuple[ParameterDistribution, ...] = field(init=False)
+    covariance: tuple[CovarianceEntry, ...] = field(init=False)
+    correlations: tuple[CorrelationEntry, ...] = field(init=False)
+    policy_identity: str = field(init=False)
+    policy_version: str = field(init=False)
     claims: tuple[ClaimAssessment, ...] = field(init=False)
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
-        if self._construction_key is not _SUMMARY_CONSTRUCTION_KEY:
+        successful = tuple(
+            outcome for outcome in self.evidence.outcomes if outcome.success is not None
+        )
+        if len(successful) < self.evidence.plan.minimum_successful_count:
             raise ResamplingConstructionError(
-                "Resampling summaries must be constructed from source evidence"
+                "Successful complete-scope coverage is below the declared minimum"
             )
+        samples = tuple(
+            SummarySample(
+                outcome.ordinal,
+                outcome.identity,
+                outcome.success.resolved_items,
+            )
+            for outcome in successful
+            if outcome.success is not None
+        )
+        if any(
+            tuple(param_id for param_id, _value in sample.items)
+            != self.evidence.plan.output_scope
+            for sample in samples
+        ):
+            raise ResamplingConstructionError(
+                "Successful source outcomes do not share the complete scope"
+            )
+        matrix = np.asarray(
+            [[value for _param_id, value in sample.items] for sample in samples],
+            dtype=np.float64,
+        )
+        if not np.all(np.isfinite(matrix)):
+            raise ResamplingConstructionError(
+                "A source sample contains a non-finite complete-scope value"
+            )
+        distributions, covariance, correlations = _build_summary_statistics(
+            matrix,
+            self.evidence.plan.output_scope,
+            self.policy,
+        )
+        unstarted = tuple(
+            outcome.ordinal
+            for outcome in self.evidence.outcomes
+            if outcome.disposition is ReplicateDisposition.NOT_STARTED
+        )
+        exclusions = tuple(
+            ResamplingExclusion(
+                outcome.ordinal,
+                outcome.identity,
+                outcome.disposition,
+                outcome.failure.category if outcome.failure is not None else "unknown",
+            )
+            for outcome in self.evidence.outcomes
+            if outcome.failure is not None
+            and outcome.disposition is not ReplicateDisposition.NOT_STARTED
+        )
+        object.__setattr__(self, "evidence_identity", self.evidence.identity)
+        object.__setattr__(self, "output_scope", self.evidence.plan.output_scope)
+        object.__setattr__(self, "output_units", self.evidence.plan.output_units)
+        object.__setattr__(
+            self, "included_ordinals", tuple(item.ordinal for item in successful)
+        )
+        object.__setattr__(self, "unstarted_ordinals", unstarted)
+        object.__setattr__(self, "exclusions", exclusions)
+        object.__setattr__(self, "samples", samples)
+        object.__setattr__(self, "distributions", distributions)
+        object.__setattr__(self, "covariance", covariance)
+        object.__setattr__(self, "correlations", correlations)
+        object.__setattr__(self, "policy_identity", self.policy.identity)
+        object.__setattr__(self, "policy_version", self.policy.version)
         claims = (
             ClaimAssessment(
                 "COMMON_SCOPE_INCLUSION",
                 ClaimState.SATISFIED,
-                self.policy_identity,
+                self.policy.identity,
                 (
                     f"scope={','.join(self.output_scope)}",
                     f"units={','.join(self.output_units)}",
@@ -2437,13 +2619,13 @@ class ResamplingSummary:
             ClaimAssessment(
                 "MINIMUM_SUCCESSFUL_COVERAGE",
                 ClaimState.SATISFIED,
-                self.policy_identity,
+                self.policy.identity,
                 (f"included={len(self.included_ordinals)}",),
             ),
             ClaimAssessment(
                 "FINITE_EMPIRICAL_SUMMARY",
                 ClaimState.SATISFIED,
-                self.policy_identity,
+                self.policy.identity,
             ),
         )
         object.__setattr__(self, "claims", claims)
@@ -2598,74 +2780,7 @@ class ResamplingSummary:
         policy: ResamplingSummaryPolicy,
     ) -> ResamplingSummary:
         """Compute all summary fields from one common complete successful set."""
-        successful = tuple(
-            outcome for outcome in evidence.outcomes if outcome.success is not None
-        )
-        if len(successful) < evidence.plan.minimum_successful_count:
-            raise ResamplingConstructionError(
-                "Successful complete-scope coverage is below the declared minimum"
-            )
-        samples = tuple(
-            SummarySample(
-                outcome.ordinal,
-                outcome.identity,
-                outcome.success.resolved_items,
-            )
-            for outcome in successful
-            if outcome.success is not None
-        )
-        if any(
-            tuple(param_id for param_id, _value in sample.items)
-            != evidence.plan.output_scope
-            for sample in samples
-        ):
-            raise ResamplingConstructionError(
-                "Successful source outcomes do not share the complete scope"
-            )
-        matrix = np.asarray(
-            [[value for _param_id, value in sample.items] for sample in samples],
-            dtype=np.float64,
-        )
-        if not np.all(np.isfinite(matrix)):
-            raise ResamplingConstructionError(
-                "A source sample contains a non-finite complete-scope value"
-            )
-        distributions, covariance, correlations = _build_summary_statistics(
-            matrix,
-            evidence.plan.output_scope,
-            policy,
-        )
-        unstarted = tuple(
-            outcome.ordinal
-            for outcome in evidence.outcomes
-            if outcome.disposition is ReplicateDisposition.NOT_STARTED
-        )
-        exclusions = tuple(
-            ResamplingExclusion(
-                outcome.ordinal,
-                outcome.identity,
-                outcome.disposition,
-                outcome.failure.category if outcome.failure is not None else "unknown",
-            )
-            for outcome in evidence.outcomes
-            if outcome.failure is not None
-            and outcome.disposition is not ReplicateDisposition.NOT_STARTED
-        )
-        return cls(
-            _SUMMARY_CONSTRUCTION_KEY,
-            evidence.identity,
-            evidence.plan.output_scope,
-            evidence.plan.output_units,
-            tuple(outcome.ordinal for outcome in successful),
-            unstarted,
-            exclusions,
-            samples,
-            distributions,
-            covariance,
-            correlations,
-            policy.identity,
-            policy.version,
-        )
+        return cls(evidence, policy)
 
     def claim(self, name: str) -> ClaimState:
         """Return one exact named claim; unknown claims fail closed."""
@@ -2679,12 +2794,6 @@ class ResamplingSummaryOutcome:
     terminal: SummaryTerminal
     summary: ResamplingSummary | None = None
     failure: SummaryFailure | None = None
-    claimed_evidence_identity: str | None = field(
-        default=None,
-        kw_only=True,
-        repr=False,
-        compare=False,
-    )
     evidence_identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -2702,13 +2811,6 @@ class ResamplingSummaryOutcome:
             if self.failure is not None
             else ""
         )
-        if (
-            self.claimed_evidence_identity is not None
-            and self.claimed_evidence_identity != identity
-        ):
-            raise ResamplingConstructionError(
-                "Summary outcome evidence identity differs from its payload"
-            )
         object.__setattr__(self, "evidence_identity", identity)
 
 

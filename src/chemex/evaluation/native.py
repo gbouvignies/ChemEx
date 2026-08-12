@@ -1292,6 +1292,20 @@ class _Workspace:
         self.cache.clear()
 
 
+@dataclass(frozen=True, slots=True)
+class ResampledProfileBinding:
+    """Exact root-kernel rows used by one transformed resampling profile."""
+
+    root_profile_index: int
+    root_observation_indices: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        if self.root_profile_index < 0 or not self.root_observation_indices:
+            raise ValueError("Resampled profile binding requires root observations")
+        if any(index < 0 for index in self.root_observation_indices):
+            raise ValueError("Resampled observation indices must be non-negative")
+
+
 def _build_plan(
     experiments: Experiments,
     parameterization: ActiveParameterization,
@@ -1435,6 +1449,9 @@ class EvaluationEngine:
         # source objects, and callers cannot alter a future workspace by
         # mutating the legacy occurrence after it was bound.
         self._sources = tuple(deepcopy(source) for _e, _p, source in sources)
+        self._templates = tuple(
+            _NativeKernelCapability.from_profile(source) for source in self._sources
+        )
         self.compatibility_identity = _compatibility_identity(plan)
 
     @classmethod
@@ -1521,6 +1538,68 @@ class EvaluationEngine:
         )
         return EvaluationEngine(plan, self._parameterization, sources)
 
+    def resampled_observation_metadata(self, binding: ResampledProfileBinding) -> str:
+        """Return the canonical metadata descriptor for exact selected root rows."""
+        if binding.root_profile_index >= len(self._templates):
+            raise ValueError("Resampled profile names a foreign root profile")
+        metadata = self._templates[binding.root_profile_index].metadata
+        if any(index >= len(metadata) for index in binding.root_observation_indices):
+            raise ValueError("Resampled profile names a foreign root observation")
+        return _semantic_json(metadata[list(binding.root_observation_indices)].tolist())
+
+    def resampled(
+        self,
+        plan: EvaluationPlan,
+        bindings: Sequence[ResampledProfileBinding],
+    ) -> EvaluationEngine:
+        """Bind a transformed plan to fresh copies of exact trusted root kernels."""
+        if plan.parameterization_identity != self._parameterization.evaluator_identity:
+            raise ValueError("Resampled plan belongs to another parameterization")
+        if (
+            plan.constraint_program_identity
+            != self._parameterization.program.fingerprint
+            or plan.resolved_ids != self._parameterization.scope_ids
+            or len(plan.profiles) != len(bindings)
+        ):
+            raise ValueError("Resampled plan has incompatible native lineage")
+        _validate_plan_runtime_versions(plan)
+        templates: list[_NativeKernelCapability] = []
+        expected_offset = 0
+        for descriptor, binding in zip(plan.profiles, bindings, strict=True):
+            if binding.root_profile_index >= len(self.plan.profiles):
+                raise ValueError("Resampled binding names a foreign root profile")
+            root = self.plan.profiles[binding.root_profile_index]
+            if (
+                descriptor.observation_offset != expected_offset
+                or descriptor.observation_count != len(binding.root_observation_indices)
+                or descriptor.local_inputs != root.local_inputs
+                or descriptor.is_scaled != root.is_scaled
+                or descriptor.kernel_identity != root.kernel_identity
+                or descriptor.kernel_configuration != root.kernel_configuration
+                or descriptor.spectrometer_configuration
+                != root.spectrometer_configuration
+                or descriptor.observation_metadata
+                != self.resampled_observation_metadata(binding)
+                or descriptor.output_shape != (descriptor.observation_count,)
+            ):
+                raise ValueError(
+                    "Resampled plan differs from its trusted root-kernel binding"
+                )
+            template = deepcopy(self._templates[binding.root_profile_index])
+            template.metadata = np.array(
+                template.metadata[list(binding.root_observation_indices)], copy=True
+            )
+            template.output_size = descriptor.observation_count
+            templates.append(template)
+            expected_offset += descriptor.observation_count
+        engine = object.__new__(EvaluationEngine)
+        engine.plan = plan
+        engine._parameterization = self._parameterization
+        engine._sources = ()
+        engine._templates = tuple(templates)
+        engine.compatibility_identity = _compatibility_identity(plan)
+        return engine
+
     def new_evaluator(self) -> BoundEvaluator:
         """Create an empty single-owner workspace from trusted implementations."""
         return BoundEvaluator(
@@ -1528,14 +1607,8 @@ class EvaluationEngine:
             self._parameterization,
             self.compatibility_identity,
             _Workspace(
-                tuple(
-                    _NativeKernelCapability.from_profile(profile)
-                    for profile in self._sources
-                ),
-                tuple(
-                    _NativeKernelCapability.from_profile(profile)
-                    for profile in self._sources
-                ),
+                tuple(deepcopy(template) for template in self._templates),
+                tuple(deepcopy(template) for template in self._templates),
             ),
         )
 
