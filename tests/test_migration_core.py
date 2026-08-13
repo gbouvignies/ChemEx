@@ -12,6 +12,10 @@ import chemex.baselines as baselines
 import chemex.migration_core as migration_core
 from chemex.baselines import (
     ApprovedAnchorName,
+    ArtifactContent,
+    BaselinePublisher,
+    Occurrence,
+    ResultBundle,
     ScientificAnchorPublisher,
     capture_approved_scientific_anchor_legacy_observation,
 )
@@ -22,6 +26,7 @@ from chemex.migration_core import (
     migration_core_coverage_manifest,
 )
 from chemex.numerical_lanes import (
+    LaneAttestation,
     LiveLaneAuthority,
     NumericalLane,
     RuntimeEnvironment,
@@ -158,7 +163,7 @@ def test_numerical_probe_requires_the_frozen_reference_manifest(
 ) -> None:
     baseline = _canonical_probe_baseline()
 
-    assert migration_core._numerical_probe_identity(baseline) == (
+    assert migration_core._validated_numerical_probe_identity(baseline) == (
         "NumericalProbeBaseline",
         baseline.identity,
     )
@@ -167,7 +172,126 @@ def test_numerical_probe_requires_the_frozen_reference_manifest(
         "CANONICAL_NUMERICAL_PROBE_MANIFEST_IDENTITY",
         "0" * 64,
     )
-    assert migration_core._numerical_probe_identity(baseline) is None
+    assert migration_core._validated_numerical_probe_identity(baseline) is None
+
+
+def test_numerical_probe_rejects_self_consistent_alternate_authority() -> None:
+    baseline = _canonical_probe_baseline()
+    altered = NumericalProbeBaseline(
+        baseline.definitions,
+        baseline.artifacts,
+        baseline.observed_lane_identity,
+        baseline.observed_lane_role,
+        "a" * 64,
+        "b" * 64,
+        baseline.reference_manifest_identity,
+        "REFERENCE_MATCHED",
+    )
+
+    assert altered.manifest_identity == baseline.manifest_identity
+    assert altered.identity != baseline.identity
+    assert migration_core._validated_numerical_probe_identity(altered) is None
+
+
+def test_repository_frozen_authority_selection_is_exact() -> None:
+    selection = migration_core.migration_core_authority_selection()
+
+    assert selection.identity == (
+        "001b6b9e791e66677b265d8b1dd3c2d8151f4a9e0b33bdcfe5196782cecdd066"
+    )
+    assert selection.lane_identity == canonical_lanes()[0].identity
+    assert selection.attestation_identity == (
+        "3b3e0bc184826d61ec6652194486c907a5faa4c64b68ec03bbe60b63c660d687"
+    )
+    assert selection.environment_identity == (
+        "cc5359f90df35ec9b60fd56e483911745209519ecce37d69e17c4edd6ea3604f"
+    )
+
+
+def test_anchor_publications_retain_exact_attestation_and_environment_records(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    publisher, selections = _published_migration_core(monkeypatch, tmp_path)
+    authority = migration_core.migration_core_authority_selection()
+
+    for bundle_identity in selections.values():
+        published = publisher.read(bundle_identity)
+        members = {member.role: member for member in published.bundle.members}
+        attestation = LaneAttestation.from_record(
+            json.loads(
+                (
+                    published.location
+                    / "members"
+                    / members["environment:lane-attestation.json"].content_hash
+                ).read_bytes()
+            )
+        )
+        environment = RuntimeEnvironment.from_record(
+            json.loads(
+                (
+                    published.location
+                    / "members"
+                    / members["environment:runtime-environment.json"].content_hash
+                ).read_bytes()
+            )
+        )
+
+        assert attestation.identity == authority.attestation_identity
+        assert attestation.environment_identity == authority.environment_identity
+        assert environment.identity == authority.environment_identity
+
+
+def test_structurally_valid_alternate_anchor_authority_is_ineligible(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    publisher, selections = _published_migration_core(monkeypatch, tmp_path)
+    original = publisher.read(selections["anchor:cpmg-15n-ip"])
+    alternative_environment = RuntimeEnvironment(canonical_lanes()[1].semantics)
+    alternative_attestation = LaneAttestation(
+        canonical_lanes()[0].identity,
+        alternative_environment.identity,
+        1,
+        1,
+        "POST_IMPORT_CURRENT_PROCESS",
+    )
+    artifacts = []
+    for member in original.bundle.members:
+        content = (original.location / "members" / member.content_hash).read_bytes()
+        if member.role == "environment:lane-attestation.json":
+            content = _canonical_bytes(alternative_attestation.to_record())
+        elif member.role == "environment:runtime-environment.json":
+            content = _canonical_bytes(alternative_environment.to_record())
+        artifacts.append(ArtifactContent(member.role, content))
+    requested = Occurrence(
+        original.specification.identity,
+        original.case.identity,
+        original.specification.implementation.identity,
+        original.specification.lane_reference,
+        alternative_attestation.identity,
+        tuple(sorted(member.identity for member in original.case.inputs)),
+        "alternate-valid-authority",
+    )
+    bundle = ResultBundle.create(
+        requested.identity,
+        original.specification.identity,
+        original.specification.implementation,
+        tuple(artifact.member for artifact in artifacts),
+    )
+    alternate_publisher = BaselinePublisher(tmp_path / "alternate")
+    alternate_publisher.reserve(original.case, original.specification, requested)
+    alternate = alternate_publisher.publish(
+        original.case,
+        original.specification,
+        requested.succeeded(bundle),
+        bundle,
+        artifacts,
+    )
+    reconstructed = alternate_publisher.read(alternate.bundle.identity)
+    expected = migration_core_coverage_manifest().anchors[2]
+
+    assert reconstructed == alternate
+    with pytest.raises(MigrationCoreCoverageError, match="exact authority mismatch"):
+        migration_core._validate_anchor_evidence(expected, reconstructed)
 
 
 def test_compiler_fails_closed_on_missing_unresolved_or_unavailable_evidence(

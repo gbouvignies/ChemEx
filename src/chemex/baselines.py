@@ -29,8 +29,10 @@ from chemex.cli import build_parser
 from chemex.numerical_lanes import (
     LaneAttestation,
     LiveLaneAuthority,
+    RuntimeEnvironment,
     _LiveLaneAuthorityMismatch,
     _validate_live_lane_authority,
+    canonical_lanes,
 )
 from chemex.parameters.spin_system import SpinSystem
 
@@ -2373,7 +2375,7 @@ def _anchor_artifact_inventory(
     anchor: _AnchorDefinition,
     inputs: Sequence[_CapturedInput],
     *,
-    include_lane_attestation: bool = False,
+    include_lane_evidence: bool = False,
 ) -> dict[str, object]:
     if anchor.name == "cpmg-15n-ip":
         inventory = _cpmg_artifact_inventory(inputs)
@@ -2387,10 +2389,14 @@ def _anchor_artifact_inventory(
                 _approved_anchor_required_artifact_roles(anchor, inputs)
             ),
         }
-    if include_lane_attestation:
+    if include_lane_evidence:
         roles = cast("list[str]", inventory["required_roles"])
         inventory["required_roles"] = sorted(
-            (*roles, "environment:lane-attestation.json")
+            (
+                *roles,
+                "environment:lane-attestation.json",
+                "environment:runtime-environment.json",
+            )
         )
     return inventory
 
@@ -2528,6 +2534,7 @@ def _capture_legacy_anchor_observation(
         case = _case_from_anchor_inputs(anchor, captured_inputs)
         execution_settings: Mapping[str, object] | None = None
         lane_evidence: LaneAttestation | None = None
+        environment_evidence: RuntimeEnvironment | None = None
         if lane_authority is not None:
             lane_evidence = _validate_live_lane_authority(
                 lane_authority,
@@ -2541,6 +2548,16 @@ def _capture_legacy_anchor_observation(
             }:
                 raise ValueError("Live canonical lane authority conflicts with lane")
             lane_reference = lane_evidence.lane_identity
+            selected_lane = next(
+                lane
+                for lane in canonical_lanes()
+                if lane.identity == lane_evidence.lane_identity
+            )
+            environment_evidence = RuntimeEnvironment(selected_lane.semantics)
+            if environment_evidence.identity != lane_evidence.environment_identity:
+                raise ValueError(
+                    "Live canonical lane authority conflicts with environment"
+                )
             execution_settings = {
                 "native_threads": lane_evidence.native_threads,
                 "plot": "normal",
@@ -2552,7 +2569,7 @@ def _capture_legacy_anchor_observation(
             artifact_inventory=_anchor_artifact_inventory(
                 anchor,
                 captured_inputs,
-                include_lane_attestation=lane_evidence is not None,
+                include_lane_evidence=lane_evidence is not None,
             ),
             lane_reference=lane_reference,
             execution_settings=execution_settings,
@@ -2593,7 +2610,7 @@ def _capture_legacy_anchor_observation(
             argv=anchor.shipped_argv,
         )
         artifacts = _legacy_result_artifacts(output_directory, specification)
-        if lane_evidence is not None:
+        if lane_evidence is not None and environment_evidence is not None:
             artifacts = tuple(
                 sorted(
                     (
@@ -2601,6 +2618,10 @@ def _capture_legacy_anchor_observation(
                         ArtifactContent(
                             "environment:lane-attestation.json",
                             _canonical_record_bytes(lane_evidence.to_record()),
+                        ),
+                        ArtifactContent(
+                            "environment:runtime-environment.json",
+                            _canonical_record_bytes(environment_evidence.to_record()),
                         ),
                     ),
                     key=lambda item: item.role,
