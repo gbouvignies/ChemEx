@@ -212,6 +212,17 @@ def _digest(value: object, name: str) -> str:
     return result
 
 
+def _git_commit(value: object, name: str) -> str:
+    result = _text(value, name)
+    if len(result) != 40 or any(
+        character not in "0123456789abcdef" for character in result
+    ):
+        raise MigrationCoreCoverageError(
+            f"Migration-core {name} must be a full Git commit identity"
+        )
+    return result
+
+
 def _ordered_texts(value: object, name: str) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise MigrationCoreCoverageError(f"Migration-core {name} must be a list")
@@ -499,7 +510,7 @@ class MigrationCoreAnchorRelease:
             raise MigrationCoreCoverageError(
                 "Migration-core anchor release has incompatible version"
             )
-        _digest(self.repository_commit, "release repository commit")
+        _git_commit(self.repository_commit, "release repository commit")
         _relative_locator(self.publisher_root, "release publisher root")
         _relative_locator(self.source_archive_locator, "release source locator")
         _digest(self.source_archive_hash, "release source archive hash")
@@ -578,7 +589,7 @@ class MigrationCoreAnchorRelease:
         release = cls(
             schema_version,
             _text(record.get("release_version"), "anchor release version"),
-            _digest(record.get("repository_commit"), "release repository commit"),
+            _git_commit(record.get("repository_commit"), "release repository commit"),
             _relative_locator(record.get("publisher_root"), "release publisher root"),
             _relative_locator(
                 record.get("source_archive_locator"), "release source locator"
@@ -1569,13 +1580,13 @@ class MigrationCorePhasedStatus:
             (self.authority_identity, "status authority identity"),
             (self.anchor_release_hash, "status release hash"),
             (self.anchor_release_identity, "status release identity"),
-            (self.source_commit, "status source commit"),
             (self.source_archive_hash, "status source hash"),
             (self.probe_file_hash, "status probe hash"),
             (self.probe_identity, "status probe identity"),
             (self.probe_manifest_identity, "status probe manifest identity"),
         ):
             _digest(value, name)
+        _git_commit(self.source_commit, "status source commit")
         if (
             tuple(item.evidence for item in self.anchors) != _APPROVED_EVIDENCE
             or tuple(sorted(self.selected_evidence)) != self.selected_evidence
@@ -1719,7 +1730,7 @@ class MigrationCorePhasedStatus:
             _relative_locator(release.get("locator"), "status release locator"),
             _digest(release.get("archive_hash"), "status release hash"),
             _digest(release.get("identity"), "status release identity"),
-            _digest(release.get("source_commit"), "status source commit"),
+            _git_commit(release.get("source_commit"), "status source commit"),
             _relative_locator(
                 release.get("source_archive_locator"), "status source locator"
             ),
