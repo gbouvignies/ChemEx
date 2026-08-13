@@ -26,9 +26,14 @@ from chemex.baselines import (
     Occurrence,
     ResultBundle,
     ResultMember,
+    approved_scientific_anchor_case,
+    capture_approved_scientific_anchor_legacy_observation,
     capture_cpmg_15n_ip_legacy_observation,
     cpmg_15n_ip_case,
 )
+from chemex.configuration.methods import Selection, read_methods
+from chemex.configuration.parameters import read_defaults
+from chemex.experiments.builder import build_experiments
 from chemex.numerical_lanes import (
     LaneAttestation,
     LiveLaneAuthority,
@@ -36,6 +41,8 @@ from chemex.numerical_lanes import (
     RuntimeEnvironment,
     canonical_lanes,
 )
+from chemex.printers.parameters import classify_parameters, write_parameters
+from chemex.runtime import AnalysisSession
 
 
 def _inventory(roles: Sequence[str] = ("result:a", "result:b")) -> dict[str, object]:
@@ -654,6 +661,24 @@ def _write_complete_cpmg_output(
         path.write_bytes(role.encode("ascii"))
 
 
+def _write_complete_approved_anchor_output(
+    output: Path, snapshot: Path, anchor_name: baselines.ApprovedAnchorName
+) -> None:
+    anchor = baselines._approved_anchor(anchor_name)
+    inputs = baselines._capture_anchor_inputs(anchor, snapshot)
+    inventory = baselines._anchor_artifact_inventory(anchor, inputs)
+    roles = inventory["required_roles"]
+    assert isinstance(roles, list)
+    for role in roles:
+        assert isinstance(role, str)
+        if not role.startswith("legacy-output:"):
+            continue
+        relative = role.removeprefix("legacy-output:")
+        path = output / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(role.encode("ascii"))
+
+
 def test_cpmg_closed_artifact_contract_rejects_partial_and_unexpected_output(
     tmp_path: Path,
 ) -> None:
@@ -679,6 +704,129 @@ def test_cpmg_closed_artifact_contract_rejects_partial_and_unexpected_output(
     (output / "unexpected.toml").write_bytes(b"unexpected")
     with pytest.raises(ValueError, match="closed required"):
         baselines._legacy_result_artifacts(output, specification)
+
+
+@pytest.mark.parametrize(
+    ("anchor_name", "directory"),
+    (
+        ("cest-13c-label-cn", "examples/Experiments/CEST_13C_LABEL_CN"),
+        ("2st-binding", "examples/Combinations/2stBinding"),
+        ("dcest-fifu-drd", "examples/Experiments/DCEST_15N_3States"),
+    ),
+)
+def test_new_anchor_artifact_contracts_are_closed(
+    tmp_path: Path,
+    anchor_name: baselines.ApprovedAnchorName,
+    directory: str,
+) -> None:
+    anchor_directory = Path(directory)
+    anchor = baselines._approved_anchor(anchor_name)
+    inputs = baselines._capture_anchor_inputs(anchor, anchor_directory)
+    case = baselines._case_from_anchor_inputs(anchor, inputs)
+    inventory = baselines._anchor_artifact_inventory(anchor, inputs)
+    specification = baselines._anchor_legacy_specification(
+        anchor, case, artifact_inventory=inventory
+    )
+    output = tmp_path / anchor.output_directory
+    _write_complete_approved_anchor_output(output, anchor_directory, anchor_name)
+
+    artifacts = baselines._legacy_result_artifacts(output, specification)
+
+    assert len(artifacts) > 1
+    missing = output / artifacts[0].role.removeprefix("legacy-output:")
+    missing.unlink()
+    with pytest.raises(ValueError, match="closed required"):
+        baselines._legacy_result_artifacts(output, specification)
+
+    missing.write_bytes(b"restored")
+    (output / "unexpected.toml").write_bytes(b"unexpected")
+    with pytest.raises(ValueError, match="closed required"):
+        baselines._legacy_result_artifacts(output, specification)
+
+
+def test_cest_anchor_omits_only_the_empty_step1_fixed_report(tmp_path: Path) -> None:
+    anchor_directory = Path("examples/Experiments/CEST_13C_LABEL_CN")
+    anchor = baselines._approved_anchor("cest-13c-label-cn")
+    inputs = baselines._capture_anchor_inputs(anchor, anchor_directory)
+    case = baselines._case_from_anchor_inputs(anchor, inputs)
+    inventory = baselines._anchor_artifact_inventory(anchor, inputs)
+    specification = baselines._anchor_legacy_specification(
+        anchor, case, artifact_inventory=inventory
+    )
+    required_roles = inventory["required_roles"]
+    assert isinstance(required_roles, list)
+
+    session = AnalysisSession.create()
+    session.set_model(anchor.model)
+    experiments = build_experiments(
+        sorted(anchor_directory.glob("Experiments/*.toml")),
+        Selection(include=None, exclude=None),
+        session=session,
+    )
+    session.parameters.set_defaults(
+        read_defaults([anchor_directory / "Parameters/parameters.toml"])
+    )
+    step1 = read_methods([anchor_directory / "Methods/method.toml"])["STEP1"]
+    experiments.select(step1.selection)
+    session.parameters.set_parameter_status(step1)
+    classified = classify_parameters(experiments, session.parameters)
+    assert not classified.fixed
+
+    parameter_output = tmp_path / "classified"
+    write_parameters(experiments, parameter_output, session.parameters)
+    assert not (parameter_output / "Parameters/fixed.toml").exists()
+    assert "legacy-output:STEP1/Parameters/fixed.toml" not in required_roles
+
+    output = tmp_path / anchor.output_directory
+    _write_complete_approved_anchor_output(
+        output, anchor_directory, "cest-13c-label-cn"
+    )
+    artifacts = baselines._legacy_result_artifacts(output, specification)
+    assert len(artifacts) == 90
+
+    unexpected = output / "STEP1/Parameters/fixed.toml"
+    unexpected.write_bytes(b"")
+    with pytest.raises(ValueError, match="closed required"):
+        baselines._legacy_result_artifacts(output, specification)
+
+
+def test_dcest_anchor_derives_decimal_output_names_from_legacy_suffix_rules() -> None:
+    anchor_directory = Path("examples/Experiments/DCEST_15N_3States")
+    anchor = baselines._approved_anchor("dcest-fifu-drd")
+    inputs = baselines._capture_anchor_inputs(anchor, anchor_directory)
+    inventory = baselines._anchor_artifact_inventory(anchor, inputs)
+    required_roles = inventory["required_roles"]
+    assert isinstance(required_roles, list)
+
+    decimal_inputs = {
+        item.relative_path
+        for item in anchor.experiments
+        if item.relative_path in {"Experiments/1.25hz.toml", "Experiments/7.5hz.toml"}
+    }
+    assert decimal_inputs == {
+        "Experiments/1.25hz.toml",
+        "Experiments/7.5hz.toml",
+    }
+    expected = {
+        f"legacy-output:Data/{Path(path).with_suffix('').with_suffix('.dat').name}"
+        for path in decimal_inputs
+    } | {
+        f"legacy-output:Plots/{Path(path).with_suffix('').with_suffix('.fit').name}"
+        for path in decimal_inputs
+    }
+    assert expected == {
+        "legacy-output:Data/1.dat",
+        "legacy-output:Data/7.dat",
+        "legacy-output:Plots/1.fit",
+        "legacy-output:Plots/7.fit",
+    }
+    assert expected <= set(required_roles)
+    assert not {
+        "legacy-output:Data/1.25hz.dat",
+        "legacy-output:Data/7.5hz.dat",
+        "legacy-output:Plots/1.25hz.fit",
+        "legacy-output:Plots/7.5hz.fit",
+    } & set(required_roles)
 
 
 @pytest.mark.parametrize(
@@ -816,3 +964,133 @@ def test_cpmg_case_is_path_independent_and_real_anchor_runs_without_native_evalu
         CpmgBaselinePublisher(tmp_path / "evidence").read(published.bundle.identity)
         == published
     )
+
+
+@pytest.mark.parametrize(
+    ("anchor_name", "directory", "case_name"),
+    (
+        ("cpmg-15n-ip", "examples/Experiments/CPMG_15N_IP", "cpmg-15n-ip"),
+        (
+            "cest-13c-label-cn",
+            "examples/Experiments/CEST_13C_LABEL_CN",
+            "cest-13c-label-cn",
+        ),
+        ("2st-binding", "examples/Combinations/2stBinding", "2st-binding"),
+        (
+            "dcest-fifu-drd",
+            "examples/Experiments/DCEST_15N_3States",
+            "dcest-fifu-drd",
+        ),
+    ),
+)
+def test_exactly_the_four_approved_shipped_anchor_cases_are_frozen(
+    anchor_name: baselines.ApprovedAnchorName, directory: str, case_name: str
+) -> None:
+    case = approved_scientific_anchor_case(anchor_name, Path(directory))
+
+    assert case.name == case_name
+    assert case.source_authority == CaseSourceAuthority(
+        "d5ed0c87e8ce7a7f17745feea346af4dfbae7ecf",
+        "f0fb2ffc7b1a5ecd1bf7ac43956fc4861b96c058d158948b68b4e97027a6086a",
+    )
+    if anchor_name == "cpmg-15n-ip":
+        assert case.identity == (
+            "18d9a4fb78e300a474132313c898c78240be7aa6ae7eb2f3385d2fed69e6ebd3"
+        )
+        assert case == cpmg_15n_ip_case(Path(directory))
+
+
+def test_unapproved_shipped_anchor_name_is_rejected() -> None:
+    with pytest.raises(ValueError, match="approved scientific anchor"):
+        approved_scientific_anchor_case(
+            "cest-15n-label-cn", Path("examples/Experiments/CEST_15N_LABEL_CN")
+        )
+
+
+@pytest.mark.parametrize(
+    ("anchor_name", "directory", "experiment_count", "model"),
+    (
+        ("cpmg-15n-ip", "examples/Experiments/CPMG_15N_IP", 2, "2st"),
+        (
+            "cest-13c-label-cn",
+            "examples/Experiments/CEST_13C_LABEL_CN",
+            2,
+            "2st",
+        ),
+        ("2st-binding", "examples/Combinations/2stBinding", 7, "2st_binding"),
+        (
+            "dcest-fifu-drd",
+            "examples/Experiments/DCEST_15N_3States",
+            9,
+            "3st_fork",
+        ),
+    ),
+)
+def test_approved_anchors_execute_unchanged_inputs_in_canonical_lane(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    anchor_name: baselines.ApprovedAnchorName,
+    directory: str,
+    experiment_count: int,
+    model: str,
+) -> None:
+    lane = canonical_lanes()[0]
+    authority = _live_authority(monkeypatch, lane)
+    observed_inputs: list[Path] = []
+
+    def complete_fake_run(args: Namespace, **_kwargs: object) -> None:
+        assert args.model == model
+        assert args.workers == 1
+        assert args.native_threads == 1
+        assert isinstance(args.experiments, list)
+        assert isinstance(args.parameters, list)
+        assert isinstance(args.method, list)
+        assert len(args.experiments) == experiment_count
+        observed_inputs.extend((*args.experiments, *args.parameters, *args.method))
+        output = args.output
+        assert isinstance(output, Path)
+        assert output.name == (
+            "Output_FIFU_DRD" if anchor_name == "dcest-fifu-drd" else "Output"
+        )
+        if anchor_name == "cpmg-15n-ip":
+            _case, specification = _cpmg_specification(args.experiments[0].parents[1])
+            _write_complete_cpmg_output(output, specification)
+        else:
+            _write_complete_approved_anchor_output(
+                output, args.experiments[0].parents[1], anchor_name
+            )
+
+    monkeypatch.setattr(baselines, "run", complete_fake_run)
+    published = capture_approved_scientific_anchor_legacy_observation(
+        anchor_name,
+        publisher=CpmgBaselinePublisher(tmp_path / "evidence"),
+        anchor_directory=Path(directory),
+        lane_authority=authority,
+        attempt_token=f"canonical-{anchor_name}",
+    )
+
+    assert published.case == approved_scientific_anchor_case(
+        anchor_name, Path(directory)
+    )
+    assert published.occurrence.lane_reference == lane.identity
+    assert published.occurrence.lane_attestation_identity is not None
+    assert published.bundle.implementation.authority_role == (
+        "LegacyObservationImplementation"
+    )
+    required_roles = published.specification.artifact_inventory.to_record_value()[
+        "required_roles"
+    ]
+    assert tuple(member.role for member in published.bundle.members) == tuple(
+        required_roles
+    )
+    workflow = published.specification.workflow.to_record_value()
+    assert isinstance(workflow, dict)
+    assert workflow["argv"][0:3] == ["chemex", "fit", "-e"]
+    assert observed_inputs
+    for source in observed_inputs:
+        snapshot = next(parent for parent in source.parents if parent.name == "anchor")
+        assert source.is_relative_to(snapshot)
+        assert (
+            source.read_bytes()
+            == (Path(directory) / source.relative_to(snapshot)).read_bytes()
+        )
