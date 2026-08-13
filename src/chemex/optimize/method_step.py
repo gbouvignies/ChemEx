@@ -1,0 +1,2230 @@
+"""Closed qualification-only composition of one native method step.
+
+This module is deliberately not connected to the production ``run_methods``
+dispatcher.  It composes already-compiled native artifacts and preserves the
+live AnalysisValues occurrence boundary.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import weakref
+from argparse import Namespace
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from enum import StrEnum
+from pathlib import Path
+from typing import Literal, Protocol, Self, cast
+from uuid import uuid4
+
+from chemex.configuration.methods import Method
+from chemex.evaluation.native import (
+    EvaluationEngine,
+    EvaluationFailure,
+    EvaluationFrame,
+    EvaluationResult,
+)
+from chemex.native_provenance import (
+    BaselineReference,
+    BudgetRecord,
+    PolicyRecord,
+    ProvenanceEnvironment,
+    PublishedStepReference,
+    SeedRecord,
+    WorkflowProvenance,
+)
+from chemex.optimize.de_direct_trf import (
+    AcceptedDeDirectTrfResult,
+    DeDirectTrfInterrupted,
+    DeDirectTrfInvocation,
+    DeDirectTrfOutcome,
+    execute_de_direct_trf,
+    validate_de_commit_lineage,
+)
+from chemex.optimize.direct_trf import (
+    AcceptedFitResult,
+    CancellationToken,
+    DirectTrfInvocation,
+    FitCommitOperation,
+    FitCommitTerminal,
+    OptimizationProblem,
+    execute_fit_commit,
+)
+from chemex.optimize.grid_direct_trf import (
+    AcceptedGridDirectTrfResult,
+    GridDirectTrfInterrupted,
+    GridDirectTrfInvocation,
+    GridDirectTrfOutcome,
+    validate_grid_commit_lineage,
+)
+from chemex.optimize.grouped_direct_trf import (
+    FitDecomposition,
+    GroupedDirectTrfInvocation,
+    GroupedDirectTrfOutcome,
+    execute_grouped_direct_trf,
+)
+from chemex.optimize.grouped_grid_direct_trf import (
+    GroupedGridDirectTrfOutcome,
+    GroupedGridSeedOutcome,
+    execute_grouped_grid_direct_trf,
+)
+from chemex.optimize.native_mcmc import (
+    McmcEvidence,
+    McmcOperationTerminal,
+    McmcPlan,
+    PosteriorSampleEvidence,
+    PosteriorSummary,
+    ResolvedMcmcPolicy,
+    derive_posterior_sample_evidence,
+    derive_posterior_summary,
+    derive_retained_sample_view,
+    execute_mcmc_evidence,
+)
+from chemex.optimize.native_reporting import (
+    CommittedFitPublication,
+    ComponentDiagnostic,
+    EvaluationPublication,
+    McmcPublication,
+    MethodStepPrimaryRecord,
+    MethodStepPrimaryTerminal,
+    NoObjectivePublication,
+    ResamplingPublication,
+    ResamplingSummaryFailurePublication,
+    SuppressedPublication,
+    publication_provenance_records,
+    publish_native_results,
+)
+from chemex.optimize.native_resampling import (
+    OperationTerminal as ResamplingOperationTerminal,
+)
+from chemex.optimize.native_resampling import (
+    OptimizationStrategy,
+    ResamplingDatasetManifest,
+    ResamplingEvidence,
+    ResamplingPlan,
+    ResamplingScheme,
+    ResamplingSummaryPolicy,
+    SummaryFailure,
+    execute_resampling_evidence,
+    summarize_resampling_evidence,
+)
+from chemex.optimize.uncertainty import (
+    CompiledConstraintLinearizationCapabilities,
+    ParameterUnit,
+    UncertaintyEvidence,
+    UncertaintyPolicy,
+    derive_uncertainty_evidence,
+)
+from chemex.optimize.uncertainty import (
+    OperationTerminal as UncertaintyOperationTerminal,
+)
+from chemex.parameters.parameterization import (
+    ActiveParameterization,
+    ParameterRole,
+    SealedParameterModel,
+)
+from chemex.parameters.values import AnalysisValues, AnalysisValuesSnapshot
+from chemex.run_info import (
+    CapturedNativeInputs,
+    NativeRunInformation,
+    write_native_run_info,
+)
+from chemex.runtime import ExecutionSettings
+
+
+class EvaluationPurpose(StrEnum):
+    """Closed meanings of an evaluation-only method step."""
+
+    EVALUATE_ONLY = "evaluate_only"
+    NO_OPTIMIZATION_REQUIRED = "no_optimization_required"
+    NO_OBJECTIVE_DATA = "no_objective_data"
+
+
+class MethodStepLifecycle(StrEnum):
+    """Closed terminal lifecycle of one native method-step occurrence."""
+
+    SUCCESSFUL_NO_STATE_CHANGE = "successful_no_state_change"
+    NO_OBJECTIVE_DATA = "no_objective_data"
+    COMMITTED = "committed"
+    ACCEPTED_UNCOMMITTED = "accepted_uncommitted"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    INTERRUPTED = "interrupted"
+    PUBLICATION_FAILED = "publication_failed"
+
+
+class MethodStepStrategy(StrEnum):
+    """Closed primary optimization strategies supported by the composer."""
+
+    DIRECT_TRF = "direct_trf"
+    GRID_DIRECT_TRF = "grid_direct_trf"
+    DE_DIRECT_TRF = "de_direct_trf"
+
+
+class MethodStepCheckpoint(StrEnum):
+    """Occurrence-only observation points that cannot change workflow identity."""
+
+    AGGREGATE_ACCEPTED = "aggregate_accepted"
+    COMMIT_COMPLETED = "commit_completed"
+
+
+class DerivationDisposition(StrEnum):
+    """Closed terminal truth for a requested post-commit evidence stage."""
+
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    INTERRUPTED = "interrupted"
+    BLOCKED_BY_PREREQUISITE = "blocked_by_prerequisite"
+    NOT_STARTED_BY_WORKFLOW_STOP = "not_started_by_workflow_stop"
+
+
+@dataclass(frozen=True, slots=True)
+class UncertaintyDerivationRequest:
+    """Exact covariance and optional constrained-propagation request."""
+
+    policy: UncertaintyPolicy
+    constrained_scope: tuple[str, ...] = ()
+    constrained_units: tuple[tuple[str, ParameterUnit], ...] = ()
+    constrained_scales: tuple[tuple[str, float], ...] = ()
+    compiled_capabilities: CompiledConstraintLinearizationCapabilities | None = None
+    resolved_environment_identity: str = ""
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if not self.resolved_environment_identity:
+            raise ValueError("Uncertainty request requires an environment identity")
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-method-step-uncertainty-request-v1",
+                (
+                    self.policy.identity,
+                    self.constrained_scope,
+                    tuple((key, value.value) for key, value in self.constrained_units),
+                    tuple(
+                        (key, float(value).hex())
+                        for key, value in self.constrained_scales
+                    ),
+                    None
+                    if self.compiled_capabilities is None
+                    else self.compiled_capabilities.identity,
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ResamplingDerivationRequest:
+    """Exact deterministic resampling population requested after commit."""
+
+    references: tuple[bool, ...]
+    nucleus_groups: tuple[str, ...]
+    observation_descriptors: tuple[str, ...]
+    scheme: ResamplingScheme
+    replicate_count: int
+    replicate_structural_identities: tuple[str, ...]
+    replicate_component_identities: tuple[tuple[str, ...], ...]
+    root_seed: int
+    output_scope: tuple[str, ...]
+    output_units: tuple[str, ...]
+    minimum_successful_count: int
+    strategy: OptimizationStrategy
+    strategy_settings: tuple[tuple[str, str], ...]
+    summary_policy: ResamplingSummaryPolicy
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-method-step-resampling-request-v1",
+                (
+                    self.references,
+                    self.nucleus_groups,
+                    self.observation_descriptors,
+                    self.scheme.value,
+                    self.replicate_count,
+                    self.replicate_structural_identities,
+                    self.replicate_component_identities,
+                    self.root_seed,
+                    self.output_scope,
+                    self.output_units,
+                    self.minimum_successful_count,
+                    self.strategy.value,
+                    self.strategy_settings,
+                    self.summary_policy.identity,
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class McmcDerivationRequest:
+    """Exact MCMC execution and typed posterior-summary request."""
+
+    policy: ResolvedMcmcPolicy
+    coordinate_units: tuple[tuple[str, ParameterUnit], ...]
+    output_units: tuple[tuple[str, ParameterUnit], ...]
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-method-step-mcmc-request-v1",
+                (
+                    self.policy.identity,
+                    tuple((key, value.value) for key, value in self.coordinate_units),
+                    tuple((key, value.value) for key, value in self.output_units),
+                ),
+            ),
+        )
+
+
+type MethodStepDerivationRequest = (
+    UncertaintyDerivationRequest | ResamplingDerivationRequest | McmcDerivationRequest
+)
+
+
+@dataclass(frozen=True, slots=True)
+class DerivationOutcome:
+    """One requested stage disposition referencing its existing source artifacts."""
+
+    request_identity: str
+    stage: str
+    disposition: DerivationDisposition
+    operation_identity: str | None = None
+    artifact_identities: tuple[str, ...] = ()
+    message: str = ""
+    operation: object | None = field(default=None, repr=False, compare=False)
+    artifacts: tuple[object, ...] = field(default=(), repr=False, compare=False)
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if self.operation is not None and getattr(self.operation, "identity", None) != (
+            self.operation_identity
+        ):
+            raise ValueError("Derivation operation identity differs from its artifact")
+        if self.artifacts and tuple(
+            getattr(item, "identity", None) for item in self.artifacts
+        ) != (self.artifact_identities):
+            raise ValueError("Derivation artifact identities differ from their sources")
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-method-step-derivation-outcome-v1",
+                (
+                    self.request_identity,
+                    self.stage,
+                    self.disposition.value,
+                    self.operation_identity,
+                    self.artifact_identities,
+                    self.message,
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class MethodStepPublicationRequest:
+    """Exact native step-root publication destination and provenance context."""
+
+    path: Path
+    environment: ProvenanceEnvironment
+    baseline_references: tuple[BaselineReference, ...]
+    run_provenance: MethodStepRunProvenanceRequest | None = None
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        destination = Path(self.path).resolve()
+        object.__setattr__(self, "path", destination)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-method-step-publication-request-v1",
+                (
+                    str(destination),
+                    self.environment.identity,
+                    tuple(
+                        (
+                            item.kind,
+                            item.identity,
+                            item.occurrence_identity,
+                            item.result_bundle_identity,
+                        )
+                        for item in self.baseline_references
+                    ),
+                    None
+                    if self.run_provenance is None
+                    else self.run_provenance.identity,
+                    "native-step-root-no-clobber-v1",
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class MethodStepRunProvenanceRequest:
+    """Occurrence-owned #609 run-information request captured before execution."""
+
+    output_directory: Path
+    invocation_identity: str
+    inputs: CapturedNativeInputs
+    starting_snapshot: AnalysisValuesSnapshot
+    prior_steps: tuple[PublishedStepReference, ...] = ()
+    argv: tuple[str, ...] = ()
+    working_directory: Path = field(default_factory=Path.cwd)
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        output = Path(self.output_directory).resolve()
+        working = Path(self.working_directory).resolve()
+        if not self.invocation_identity.strip():
+            raise ValueError("Run-provenance invocation identity cannot be empty")
+        object.__setattr__(self, "output_directory", output)
+        object.__setattr__(self, "working_directory", working)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-method-step-run-provenance-request-v1",
+                (
+                    str(output),
+                    self.invocation_identity,
+                    self.inputs.identity,
+                    _snapshot_identity(self.starting_snapshot),
+                    tuple(item.identity for item in self.prior_steps),
+                    self.argv,
+                    str(working),
+                ),
+            ),
+        )
+
+
+type MethodStepInvocation = (
+    GroupedDirectTrfInvocation | GridDirectTrfInvocation | DeDirectTrfInvocation
+)
+type MethodStepPrimaryExecution = (
+    GroupedDirectTrfOutcome
+    | GroupedGridDirectTrfOutcome
+    | GridDirectTrfOutcome
+    | DeDirectTrfOutcome
+)
+
+
+def _identity(kind: str, record: object) -> str:
+    encoded = json.dumps(
+        (kind, record),
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+class _IdentifiedArtifact(Protocol):
+    @property
+    def identity(self) -> str: ...
+
+
+def _snapshot_identity(snapshot: AnalysisValuesSnapshot) -> str:
+    return hashlib.sha256(snapshot.to_json().encode("ascii")).hexdigest()
+
+
+def _direct_policy_semantics(invocation: DirectTrfInvocation) -> tuple[object, ...]:
+    return (
+        invocation.objective_request_budget,
+        tuple(float(value).hex() for value in invocation.x_scale),
+        tuple(
+            None if value is None else float(value).hex()
+            for value in (
+                invocation.ftol,
+                invocation.xtol,
+                invocation.gtol,
+            )
+        ),
+    )
+
+
+def _optimization_semantics(
+    problem: OptimizationProblem,
+    decomposition: FitDecomposition,
+    strategy: MethodStepStrategy,
+    invocation: MethodStepInvocation,
+) -> dict[str, object]:
+    """Value/lifecycle semantics with occurrence and runtime facts removed."""
+    problem_record = (
+        problem.evaluation_plan_identity,
+        problem.evaluator_parameterization_identity,
+        problem.constraint_program_identity,
+        problem.configuration_identity,
+        tuple((key, float(value).hex()) for key, value in problem.independent_items),
+        problem.controlled_ids,
+        tuple((key, float(value).hex()) for key, value in problem.held_items),
+        tuple(float(value).hex() for value in problem.start),
+        tuple(float(value).hex() for value in problem.lower_bounds),
+        tuple(float(value).hex() for value in problem.upper_bounds),
+        problem.commit_scope,
+        problem.affine_feasibility_identity,
+        problem.scalarization_version,
+    )
+    decomposition_record = tuple(
+        (component.controlled_ids, component.root_profile_indices)
+        for component in decomposition.components
+    )
+    if isinstance(invocation, GroupedDirectTrfInvocation):
+        invocation_record: object = tuple(
+            _direct_policy_semantics(item) for item in invocation.component_invocations
+        )
+    elif isinstance(invocation, GridDirectTrfInvocation):
+        invocation_record = (
+            tuple(axis.identity for axis in invocation.axes),
+            invocation.objective_request_budget,
+            tuple(float(value).hex() for value in invocation.x_scale),
+            tuple(
+                None if value is None else float(value).hex()
+                for value in (invocation.ftol, invocation.xtol, invocation.gtol)
+            ),
+        )
+    else:
+        invocation_record = (
+            tuple(item.identity for item in invocation.search_coordinates),
+            invocation.root_seed,
+            invocation.population.identity,
+            invocation.de_objective_request_budget,
+            invocation.polish_objective_request_budget,
+            invocation.mutation,
+            float(invocation.recombination).hex(),
+            float(invocation.tol).hex(),
+            float(invocation.atol).hex(),
+            tuple(float(value).hex() for value in invocation.polish_x_scale),
+            tuple(
+                None if value is None else float(value).hex()
+                for value in (
+                    invocation.polish_ftol,
+                    invocation.polish_xtol,
+                    invocation.polish_gtol,
+                )
+            ),
+        )
+    return {
+        "kind": "optimization",
+        "strategy": strategy.value,
+        "problem": problem_record,
+        "decomposition": decomposition_record,
+        "invocation": invocation_record,
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class MethodStepWorkflow:
+    """One immutable exact native method-step composition root."""
+
+    starting_snapshot: AnalysisValuesSnapshot = field(repr=False, compare=False)
+    parameter_model: SealedParameterModel = field(repr=False, compare=False)
+    parameterization: ActiveParameterization = field(repr=False, compare=False)
+    engine: EvaluationEngine = field(repr=False, compare=False)
+    method: Method = field(repr=False, compare=False)
+    evaluation_purpose: EvaluationPurpose | None = None
+    problem: OptimizationProblem | None = field(default=None, repr=False, compare=False)
+    decomposition: FitDecomposition | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    strategy: MethodStepStrategy | None = None
+    invocation: MethodStepInvocation | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    derivations: tuple[MethodStepDerivationRequest, ...] = ()
+    publication: MethodStepPublicationRequest | None = None
+    semantic_identity: str = field(init=False)
+    binding_identity: str = field(init=False)
+
+    def __post_init__(self) -> None:  # noqa: C901 - closed construction boundary
+        snapshot = self.starting_snapshot
+        program = self.parameterization.program
+        if (
+            self.parameter_model.identity != program.parameter_model_identity
+            or snapshot.occurrence_identity != self.parameterization.occurrence_identity
+            or snapshot.revision != self.parameterization.source_revision
+            or snapshot.model_identity != program.model_identity
+            or snapshot.definitions_identity != program.definitions_identity
+            or snapshot.configuration_identity != program.configuration_identity
+            or self.engine.plan.parameterization_identity
+            != self.parameterization.evaluator_identity
+            or self.engine.plan.constraint_program_identity != program.fingerprint
+        ):
+            raise ValueError("Method-step workflow has an incompatible starting state")
+        retained = self.engine.plan.retained_observation_count
+        if self.evaluation_purpose is not None:
+            if any(
+                value is not None
+                for value in (
+                    self.problem,
+                    self.decomposition,
+                    self.strategy,
+                    self.invocation,
+                )
+            ):
+                raise ValueError("Evaluation-only workflow cannot own optimization")
+            fitted = tuple(
+                param_id
+                for param_id in self.parameterization.independent_ids
+                if self.parameterization.role(param_id) is ParameterRole.FIT
+            )
+            if self.evaluation_purpose is EvaluationPurpose.NO_OBJECTIVE_DATA:
+                if retained:
+                    raise ValueError("NO_OBJECTIVE_DATA requires an empty objective")
+            elif retained < 1:
+                raise ValueError(
+                    "Evaluation-only workflow requires retained objective data"
+                )
+            elif (
+                self.evaluation_purpose is EvaluationPurpose.NO_OPTIMIZATION_REQUIRED
+                and fitted
+            ):
+                raise ValueError(
+                    "NO_OPTIMIZATION_REQUIRED cannot retain controlled coordinates"
+                )
+            primary_record: dict[str, object] = {
+                "kind": "evaluation_only",
+                "purpose": self.evaluation_purpose.value,
+            }
+        else:
+            if (
+                self.problem is None
+                or self.decomposition is None
+                or self.strategy is None
+                or self.invocation is None
+            ):
+                raise ValueError("Optimization workflow is missing its primary inputs")
+            if retained < 1:
+                raise ValueError("Optimization workflow requires objective data")
+            if self.problem.source_snapshot is not snapshot:
+                raise ValueError("Optimization problem has another starting state")
+            try:
+                exact_decomposition = FitDecomposition.from_root(
+                    self.problem,
+                    self.parameterization,
+                    self.engine,
+                )
+            except Exception as error:
+                raise ValueError(
+                    f"Method-step optimization decomposition is invalid: {error}"
+                ) from error
+            if (
+                not self.decomposition.components
+                or exact_decomposition.identity != self.decomposition.identity
+                or self.decomposition.root_problem_identity != self.problem.identity
+            ):
+                raise ValueError(
+                    "Method-step optimization requires its exact non-empty decomposition"
+                )
+            if self.strategy is MethodStepStrategy.DIRECT_TRF:
+                direct_invocation = cast(
+                    "GroupedDirectTrfInvocation",
+                    self.invocation,
+                )
+                supported = isinstance(self.invocation, GroupedDirectTrfInvocation)
+                supported = supported and (
+                    direct_invocation.decomposition_identity
+                    == self.decomposition.identity
+                    and direct_invocation.root_problem_identity == self.problem.identity
+                )
+                if (
+                    supported
+                    and len(
+                        {
+                            item.execution_settings
+                            for item in direct_invocation.component_invocations
+                        }
+                    )
+                    != 1
+                ):
+                    raise ValueError(
+                        "Grouped Direct TRF requires one resolved execution setting"
+                    )
+            elif self.strategy is MethodStepStrategy.GRID_DIRECT_TRF:
+                supported = isinstance(self.invocation, GridDirectTrfInvocation)
+                supported = supported and (
+                    self.invocation.root_problem_identity == self.problem.identity
+                )
+            else:
+                supported = isinstance(self.invocation, DeDirectTrfInvocation)
+                supported = supported and (
+                    self.invocation.root_problem_identity == self.problem.identity
+                    and len(self.decomposition.components) == 1
+                )
+            if not supported:
+                raise ValueError(
+                    "Primary strategy and invocation are unsupported or incompatible"
+                )
+            primary_record = _optimization_semantics(
+                self.problem,
+                self.decomposition,
+                self.strategy,
+                self.invocation,
+            )
+        ordered_derivations = tuple(
+            sorted(
+                self.derivations,
+                key=lambda item: {
+                    "uncertainty": 0,
+                    "resampling": 1,
+                    "mcmc": 2,
+                }[_derivation_stage(item)],
+            )
+        )
+        object.__setattr__(self, "derivations", ordered_derivations)
+        derivation_kinds = tuple(
+            _derivation_stage(item) for item in ordered_derivations
+        )
+        if len(set(derivation_kinds)) != len(derivation_kinds):
+            raise ValueError("Method-step derivation kinds must be unique")
+        if self.evaluation_purpose is not None and self.derivations:
+            raise ValueError("Evaluation-only workflow cannot request fit derivations")
+        for item in self.derivations:
+            if isinstance(item, ResamplingDerivationRequest) and any(
+                len(values) != self.engine.plan.observation_count
+                for values in (
+                    item.references,
+                    item.nucleus_groups,
+                    item.observation_descriptors,
+                )
+            ):
+                raise ValueError(
+                    "Resampling request metadata must cover the exact EvaluationPlan"
+                )
+        semantic_identity = _identity(
+            "native-method-step-workflow-semantics-v1",
+            {
+                "primary": primary_record,
+                "parameter_model_identity": self.parameter_model.identity,
+                "parameterization_program": program.fingerprint,
+                "evaluation_plan_identity": self.engine.plan.identity,
+                "method": self.method.model_dump(mode="json"),
+                "publication": (
+                    None
+                    if self.publication is None
+                    else "native-step-root-no-clobber-v1"
+                ),
+                "derivations": tuple(
+                    (kind, item.identity)
+                    for kind, item in zip(
+                        derivation_kinds,
+                        self.derivations,
+                        strict=True,
+                    )
+                ),
+                "failure_policy": "closed-method-step-failure-v1",
+            },
+        )
+        object.__setattr__(self, "semantic_identity", semantic_identity)
+        object.__setattr__(
+            self,
+            "binding_identity",
+            _identity(
+                "native-method-step-workflow-binding-v1",
+                {
+                    "semantic_identity": semantic_identity,
+                    "starting_state_identity": _snapshot_identity(snapshot),
+                    "occurrence_identity": snapshot.occurrence_identity,
+                    "revision": snapshot.revision,
+                    "parameterization_identity": self.parameterization.identity,
+                    "invocation_identity": (
+                        None if self.invocation is None else self.invocation.identity
+                    ),
+                    "uncertainty_environments": tuple(
+                        item.resolved_environment_identity
+                        for item in self.derivations
+                        if isinstance(item, UncertaintyDerivationRequest)
+                    ),
+                    "publication_request_identity": (
+                        None if self.publication is None else self.publication.identity
+                    ),
+                },
+            ),
+        )
+
+    @classmethod
+    def for_evaluation(
+        cls,
+        *,
+        starting_snapshot: AnalysisValuesSnapshot,
+        parameter_model: SealedParameterModel,
+        parameterization: ActiveParameterization,
+        engine: EvaluationEngine,
+        method: Method,
+        purpose: EvaluationPurpose,
+        publication: MethodStepPublicationRequest | None = None,
+    ) -> Self:
+        """Bind an explicit evaluation-only meaning to exact native inputs."""
+        return cls(
+            starting_snapshot,
+            parameter_model,
+            parameterization,
+            engine,
+            method,
+            evaluation_purpose=purpose,
+            publication=publication,
+        )
+
+    @classmethod
+    def for_optimization(
+        cls,
+        *,
+        starting_snapshot: AnalysisValuesSnapshot,
+        parameter_model: SealedParameterModel,
+        parameterization: ActiveParameterization,
+        engine: EvaluationEngine,
+        method: Method,
+        problem: OptimizationProblem,
+        decomposition: FitDecomposition,
+        strategy: MethodStepStrategy,
+        invocation: MethodStepInvocation,
+        derivations: tuple[MethodStepDerivationRequest, ...] = (),
+        publication: MethodStepPublicationRequest | None = None,
+    ) -> Self:
+        """Bind one explicit supported strategy to its exact decomposition."""
+        return cls(
+            starting_snapshot,
+            parameter_model,
+            parameterization,
+            engine,
+            method,
+            problem=problem,
+            decomposition=decomposition,
+            strategy=strategy,
+            invocation=invocation,
+            derivations=derivations,
+            publication=publication,
+        )
+
+
+@dataclass(frozen=True, slots=True, weakref_slot=True, eq=False)
+class MethodStepOutcome:
+    """Immutable occurrence evidence; live transition authority stays external."""
+
+    workflow_identity: str
+    workflow_binding_identity: str
+    occurrence_identity: str
+    starting_state_identity: str
+    lifecycle: MethodStepLifecycle
+    primary_strategy: MethodStepStrategy | None = None
+    primary_terminal: str | None = None
+    primary_execution_identity: str | None = None
+    evaluation_result_identity: str | None = None
+    evaluation_failure_identity: str | None = None
+    accepted_result_identity: str | None = None
+    commit_operation_identity: str | None = None
+    derivations: tuple[DerivationOutcome, ...] = ()
+    publication_identity: str | None = None
+    publication_failure: str = ""
+    run_provenance_identity: str | None = None
+    successor_state_identity: str | None = None
+    evaluation_result: EvaluationResult | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    evaluation_failure: EvaluationFailure | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    primary_execution: MethodStepPrimaryExecution | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    accepted_result: AcceptedFitResult | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    commit_operation: FitCommitOperation | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    publication: PublishedStepReference | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    run_provenance: NativeRunInformation | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    record_identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if self.evaluation_result is not None and (
+            self.evaluation_result_identity != self.evaluation_result.identity
+        ):
+            raise ValueError("Method-step evaluation identity differs from its result")
+        if self.evaluation_failure is not None and (
+            self.evaluation_failure_identity != self.evaluation_failure.identity
+        ):
+            raise ValueError("Method-step evaluation identity differs from its failure")
+        if self.accepted_result is not None and (
+            self.accepted_result_identity != self.accepted_result.identity
+        ):
+            raise ValueError("Method-step accepted identity differs from its result")
+        if self.commit_operation is not None and (
+            self.commit_operation_identity != self.commit_operation.identity
+        ):
+            raise ValueError("Method-step commit identity differs from its operation")
+        if self.publication is not None and (
+            self.publication_identity != self.publication.identity
+        ):
+            raise ValueError("Method-step publication identity differs from its source")
+        if self.run_provenance is not None and (
+            self.run_provenance_identity
+            != self.run_provenance.execution_occurrence_identity
+        ):
+            raise ValueError("Method-step run provenance differs from its source")
+        object.__setattr__(
+            self,
+            "record_identity",
+            _identity("native-method-step-outcome-v1", self._record_payload()),
+        )
+
+    def _record_payload(self) -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "workflow_identity": self.workflow_identity,
+            "workflow_binding_identity": self.workflow_binding_identity,
+            "occurrence_identity": self.occurrence_identity,
+            "starting_state_identity": self.starting_state_identity,
+            "lifecycle": self.lifecycle.value,
+            "primary_strategy": (
+                None if self.primary_strategy is None else self.primary_strategy.value
+            ),
+            "primary_terminal": self.primary_terminal,
+            "primary_execution_identity": self.primary_execution_identity,
+            "evaluation_result_identity": self.evaluation_result_identity,
+            "evaluation_failure_identity": self.evaluation_failure_identity,
+            "accepted_result_identity": self.accepted_result_identity,
+            "commit_operation_identity": self.commit_operation_identity,
+            "derivations": [
+                {
+                    "identity": item.identity,
+                    "request_identity": item.request_identity,
+                    "stage": item.stage,
+                    "disposition": item.disposition.value,
+                    "operation_identity": item.operation_identity,
+                    "artifact_identities": list(item.artifact_identities),
+                    "message": item.message,
+                }
+                for item in self.derivations
+            ],
+            "publication_identity": self.publication_identity,
+            "publication_failure": self.publication_failure,
+            "run_provenance_identity": self.run_provenance_identity,
+            "successor_state_identity": self.successor_state_identity,
+        }
+
+    def to_record(self) -> dict[str, object]:
+        """Serialize historical evidence without any process-local authority."""
+        return {**self._record_payload(), "identity": self.record_identity}
+
+    @classmethod
+    def from_record(cls, record: object) -> MethodStepOutcome:
+        """Restore historical evidence without recreating successor authority."""
+        if not isinstance(record, dict):
+            raise TypeError("Method-step outcome record must be a mapping")
+        typed_record = cast("dict[str, object]", record)
+        required = {
+            "schema_version",
+            "workflow_identity",
+            "workflow_binding_identity",
+            "occurrence_identity",
+            "starting_state_identity",
+            "lifecycle",
+            "primary_strategy",
+            "primary_terminal",
+            "primary_execution_identity",
+            "evaluation_result_identity",
+            "evaluation_failure_identity",
+            "accepted_result_identity",
+            "commit_operation_identity",
+            "derivations",
+            "publication_identity",
+            "publication_failure",
+            "run_provenance_identity",
+            "successor_state_identity",
+            "identity",
+        }
+        if set(typed_record) != required or typed_record.get("schema_version") != 1:
+            raise ValueError("Malformed method-step outcome record")
+        if not isinstance(typed_record.get("derivations"), list):
+            raise TypeError("Historical method-step derivations must be a list")
+        derivation_records = cast("list[object]", typed_record["derivations"])
+        derivations: list[DerivationOutcome] = []
+        for raw in derivation_records:
+            if not isinstance(raw, dict):
+                raise TypeError("Historical derivation outcome must be a mapping")
+            item = cast("dict[str, object]", raw)
+            if set(item) != {
+                "identity",
+                "request_identity",
+                "stage",
+                "disposition",
+                "operation_identity",
+                "artifact_identities",
+                "message",
+            } or not isinstance(item["artifact_identities"], list):
+                raise ValueError("Malformed historical derivation outcome")
+            derivation = DerivationOutcome(
+                str(item["request_identity"]),
+                str(item["stage"]),
+                DerivationDisposition(str(item["disposition"])),
+                cast("str | None", item["operation_identity"]),
+                tuple(str(value) for value in item["artifact_identities"]),
+                str(item["message"]),
+            )
+            if item["identity"] != derivation.identity:
+                raise ValueError("Historical derivation identity differs from payload")
+            derivations.append(derivation)
+        outcome = cls(
+            str(typed_record["workflow_identity"]),
+            str(typed_record["workflow_binding_identity"]),
+            str(typed_record["occurrence_identity"]),
+            str(typed_record["starting_state_identity"]),
+            MethodStepLifecycle(str(typed_record["lifecycle"])),
+            (
+                None
+                if typed_record["primary_strategy"] is None
+                else MethodStepStrategy(str(typed_record["primary_strategy"]))
+            ),
+            cast("str | None", typed_record["primary_terminal"]),
+            cast("str | None", typed_record["primary_execution_identity"]),
+            cast("str | None", typed_record["evaluation_result_identity"]),
+            cast("str | None", typed_record["evaluation_failure_identity"]),
+            cast("str | None", typed_record["accepted_result_identity"]),
+            cast("str | None", typed_record["commit_operation_identity"]),
+            tuple(derivations),
+            cast("str | None", typed_record["publication_identity"]),
+            str(typed_record["publication_failure"]),
+            cast("str | None", typed_record["run_provenance_identity"]),
+            cast("str | None", typed_record["successor_state_identity"]),
+        )
+        if typed_record["identity"] != outcome.record_identity:
+            raise ValueError("Method-step outcome identity differs from its payload")
+        return outcome
+
+
+_SUCCESSOR_AUTHORITIES: dict[
+    int,
+    tuple[weakref.ReferenceType[MethodStepOutcome], AnalysisValuesSnapshot, str],
+] = {}
+_PUBLICATION_SOURCES: dict[
+    int,
+    tuple[weakref.ReferenceType[PublishedStepReference], object],
+] = {}
+
+
+def _grant_successor_authority(
+    outcome: MethodStepOutcome,
+    snapshot: AnalysisValuesSnapshot,
+) -> None:
+    key = id(outcome)
+
+    def remove(_reference: weakref.ReferenceType[MethodStepOutcome]) -> None:
+        _SUCCESSOR_AUTHORITIES.pop(key, None)
+
+    _SUCCESSOR_AUTHORITIES[key] = (
+        weakref.ref(outcome, remove),
+        snapshot,
+        outcome.record_identity,
+    )
+
+
+def _retain_publication_source(
+    reference: PublishedStepReference,
+    source: object,
+) -> None:
+    key = id(reference)
+
+    def remove(_reference: weakref.ReferenceType[PublishedStepReference]) -> None:
+        _PUBLICATION_SOURCES.pop(key, None)
+
+    _PUBLICATION_SOURCES[key] = (weakref.ref(reference, remove), source)
+
+
+def require_successor_state(
+    outcome: MethodStepOutcome,
+    analysis_values: AnalysisValues,
+) -> AnalysisValuesSnapshot:
+    """Return the exact live successor or reject historical/failed evidence."""
+    binding = _SUCCESSOR_AUTHORITIES.get(id(outcome))
+    if (
+        binding is None
+        or binding[0]() is not outcome
+        or binding[2] != outcome.record_identity
+        or analysis_values.snapshot() != binding[1]
+    ):
+        raise ValueError("Method-step outcome has no live successor authority")
+    return binding[1]
+
+
+def execute_method_step(  # noqa: C901 - closed evaluation/optimization lifecycle
+    workflow: MethodStepWorkflow,
+    *,
+    analysis_values: AnalysisValues,
+    cancellation: CancellationToken | None = None,
+    checkpoint_observer: Callable[[MethodStepCheckpoint], None] | None = None,
+) -> MethodStepOutcome:
+    """Execute one exact native workflow occurrence."""
+    current = analysis_values.snapshot()
+    if current != workflow.starting_snapshot:
+        raise ValueError("Method-step workflow no longer has its exact starting state")
+    starting_state_identity = _snapshot_identity(workflow.starting_snapshot)
+    if workflow.evaluation_purpose is None:
+        return _execute_optimization(
+            workflow,
+            analysis_values=analysis_values,
+            cancellation=cancellation,
+            checkpoint_observer=checkpoint_observer,
+        )
+    if workflow.evaluation_purpose is EvaluationPurpose.NO_OBJECTIVE_DATA:
+        publication: PublishedStepReference | None = None
+        run_provenance: NativeRunInformation | None = None
+        publication_failure = ""
+        if workflow.publication is not None:
+            try:
+                publication = _publish_no_objective_method_step(workflow)
+                run_provenance = _publish_run_provenance(workflow, publication)
+            except Exception as error:  # noqa: BLE001 - typed outcome stays truthful
+                publication_failure = f"{type(error).__name__}: {error}"
+        return MethodStepOutcome(
+            workflow.semantic_identity,
+            workflow.binding_identity,
+            uuid4().hex,
+            starting_state_identity,
+            MethodStepLifecycle.NO_OBJECTIVE_DATA,
+            publication_identity=(
+                None if publication is None else publication.identity
+            ),
+            publication_failure=publication_failure,
+            run_provenance_identity=(
+                None
+                if run_provenance is None
+                else run_provenance.execution_occurrence_identity
+            ),
+            publication=publication,
+            run_provenance=run_provenance,
+        )
+    frame = EvaluationFrame.from_lifecycle_frame(
+        workflow.parameterization,
+        workflow.parameterization.frame_from_snapshot(workflow.starting_snapshot),
+    )
+    result = workflow.engine.new_evaluator().evaluate(frame)
+    if isinstance(result, EvaluationFailure):
+        publication: PublishedStepReference | None = None
+        run_provenance: NativeRunInformation | None = None
+        publication_failure = ""
+        if workflow.publication is not None:
+            try:
+                publication = _publish_evaluation_failure_method_step(workflow, result)
+                run_provenance = _publish_run_provenance(workflow, publication)
+            except Exception as error:  # noqa: BLE001 - failure evidence remains truthful
+                publication_failure = f"{type(error).__name__}: {error}"
+        return MethodStepOutcome(
+            workflow.semantic_identity,
+            workflow.binding_identity,
+            uuid4().hex,
+            starting_state_identity,
+            MethodStepLifecycle.FAILED,
+            evaluation_failure_identity=result.identity,
+            publication_identity=(
+                None if publication is None else publication.identity
+            ),
+            publication_failure=publication_failure,
+            run_provenance_identity=(
+                None
+                if run_provenance is None
+                else run_provenance.execution_occurrence_identity
+            ),
+            evaluation_failure=result,
+            publication=publication,
+            run_provenance=run_provenance,
+        )
+    publication: PublishedStepReference | None = None
+    run_provenance: NativeRunInformation | None = None
+    publication_failure = ""
+    lifecycle = MethodStepLifecycle.SUCCESSFUL_NO_STATE_CHANGE
+    if workflow.publication is not None:
+        try:
+            publication = _publish_evaluation_method_step(workflow, result)
+            run_provenance = _publish_run_provenance(workflow, publication)
+        except Exception as error:  # noqa: BLE001 - evaluated evidence remains truthful
+            lifecycle = MethodStepLifecycle.PUBLICATION_FAILED
+            publication_failure = f"{type(error).__name__}: {error}"
+    outcome = MethodStepOutcome(
+        workflow.semantic_identity,
+        workflow.binding_identity,
+        uuid4().hex,
+        starting_state_identity,
+        lifecycle,
+        evaluation_result_identity=result.identity,
+        publication_identity=(None if publication is None else publication.identity),
+        publication_failure=publication_failure,
+        run_provenance_identity=(
+            None
+            if run_provenance is None
+            else run_provenance.execution_occurrence_identity
+        ),
+        successor_state_identity=(
+            starting_state_identity
+            if lifecycle is MethodStepLifecycle.SUCCESSFUL_NO_STATE_CHANGE
+            else None
+        ),
+        evaluation_result=result,
+        publication=publication,
+        run_provenance=run_provenance,
+    )
+    if lifecycle is MethodStepLifecycle.SUCCESSFUL_NO_STATE_CHANGE:
+        _grant_successor_authority(outcome, workflow.starting_snapshot)
+    return outcome
+
+
+def _primary_execution_identity(execution: MethodStepPrimaryExecution) -> str:
+    if isinstance(execution, GroupedGridDirectTrfOutcome):
+        return _identity(
+            "native-method-step-grouped-grid-execution",
+            (
+                execution.terminal.value,
+                tuple(item.identity for item in execution.attempts),
+                None
+                if execution.accepted_result is None
+                else execution.accepted_result.identity,
+                None if execution.failure is None else execution.failure.identity,
+            ),
+        )
+    if isinstance(execution, GroupedDirectTrfOutcome):
+        return _identity(
+            "native-method-step-grouped-direct-execution",
+            (
+                execution.terminal.value,
+                tuple(item.identity for item in execution.components),
+                None
+                if execution.accepted_result is None
+                else execution.accepted_result.identity,
+                None if execution.failure is None else execution.failure.identity,
+            ),
+        )
+    if isinstance(execution, GridDirectTrfOutcome):
+        return _identity(
+            "native-method-step-grid-execution",
+            (
+                execution.terminal.value,
+                tuple(item.identity for item in execution.attempts),
+                None
+                if execution.accepted_result is None
+                else execution.accepted_result.identity,
+                None if execution.failure is None else execution.failure.identity,
+            ),
+        )
+    return _identity(
+        "native-method-step-de-execution",
+        (
+            execution.terminal.value,
+            execution.search.identity,
+            execution.accounting.identity,
+            None
+            if execution.accepted_result is None
+            else execution.accepted_result.identity,
+            None if execution.failure is None else execution.failure.identity,
+        ),
+    )
+
+
+def _execute_optimization(  # noqa: C901 - closed primary transition
+    workflow: MethodStepWorkflow,
+    *,
+    analysis_values: AnalysisValues,
+    cancellation: CancellationToken | None,
+    checkpoint_observer: Callable[[MethodStepCheckpoint], None] | None,
+) -> MethodStepOutcome:
+    problem = cast("OptimizationProblem", workflow.problem)
+    decomposition = cast("FitDecomposition", workflow.decomposition)
+    strategy = cast("MethodStepStrategy", workflow.strategy)
+    invocation = cast("MethodStepInvocation", workflow.invocation)
+    token = CancellationToken() if cancellation is None else cancellation
+    try:
+        if strategy is MethodStepStrategy.DIRECT_TRF:
+            execution: MethodStepPrimaryExecution = execute_grouped_direct_trf(
+                problem,
+                decomposition,
+                cast("GroupedDirectTrfInvocation", invocation),
+                workflow.parameterization,
+                workflow.engine,
+                cancellation=token,
+            )
+        elif strategy is MethodStepStrategy.GRID_DIRECT_TRF:
+            execution = execute_grouped_grid_direct_trf(
+                problem,
+                decomposition,
+                cast("GridDirectTrfInvocation", invocation),
+                workflow.parameterization,
+                workflow.engine,
+                cancellation=token,
+            )
+        else:
+            execution = execute_de_direct_trf(
+                problem,
+                cast("DeDirectTrfInvocation", invocation),
+                workflow.parameterization,
+                workflow.engine,
+                cancellation=token,
+            )
+    except GridDirectTrfInterrupted as error:
+        execution = error.outcome
+    except DeDirectTrfInterrupted as error:
+        execution = error.outcome
+    primary_identity = _primary_execution_identity(execution)
+    terminal = execution.terminal
+    accepted = execution.accepted_result
+    authority = execution.commit_authority
+    if accepted is None or authority is None:
+        if terminal.value == "cancelled":
+            lifecycle = MethodStepLifecycle.CANCELLED
+        elif terminal.value == "interrupted":
+            lifecycle = MethodStepLifecycle.INTERRUPTED
+        else:
+            lifecycle = MethodStepLifecycle.FAILED
+        derivations = (
+            _stopped_derivations(workflow.derivations)
+            if lifecycle
+            in {MethodStepLifecycle.CANCELLED, MethodStepLifecycle.INTERRUPTED}
+            else tuple(
+                DerivationOutcome(
+                    item.identity,
+                    _derivation_stage(item),
+                    DerivationDisposition.BLOCKED_BY_PREREQUISITE,
+                    message="Successful aggregate acceptance prerequisite was unavailable",
+                )
+                for item in workflow.derivations
+            )
+        )
+        publication: PublishedStepReference | None = None
+        run_provenance: NativeRunInformation | None = None
+        publication_failure = ""
+        if workflow.publication is not None:
+            try:
+                publication = _publish_suppressed_method_step(
+                    workflow,
+                    execution,
+                    primary_identity,
+                    lifecycle,
+                )
+                run_provenance = _publish_run_provenance(workflow, publication)
+            except Exception as error:  # noqa: BLE001 - primary evidence remains truthful
+                publication_failure = f"{type(error).__name__}: {error}"
+        return MethodStepOutcome(
+            workflow.semantic_identity,
+            workflow.binding_identity,
+            uuid4().hex,
+            _snapshot_identity(workflow.starting_snapshot),
+            lifecycle,
+            strategy,
+            terminal.value,
+            primary_identity,
+            derivations=derivations,
+            publication_identity=(
+                None if publication is None else publication.identity
+            ),
+            publication_failure=publication_failure,
+            run_provenance_identity=(
+                None
+                if run_provenance is None
+                else run_provenance.execution_occurrence_identity
+            ),
+            primary_execution=execution,
+            publication=publication,
+            run_provenance=run_provenance,
+        )
+    if checkpoint_observer is not None:
+        checkpoint_observer(MethodStepCheckpoint.AGGREGATE_ACCEPTED)
+    if token.is_cancelled:
+        derivations = _stopped_derivations(workflow.derivations)
+        publication: PublishedStepReference | None = None
+        run_provenance: NativeRunInformation | None = None
+        publication_failure = ""
+        if workflow.publication is not None:
+            try:
+                publication = _publish_suppressed_method_step(
+                    workflow,
+                    execution,
+                    primary_identity,
+                    MethodStepLifecycle.CANCELLED,
+                    accepted=accepted,
+                    terminal="cancelled",
+                )
+                run_provenance = _publish_run_provenance(workflow, publication)
+            except Exception as error:  # noqa: BLE001 - accepted evidence stays truthful
+                publication_failure = f"{type(error).__name__}: {error}"
+        return MethodStepOutcome(
+            workflow.semantic_identity,
+            workflow.binding_identity,
+            uuid4().hex,
+            _snapshot_identity(workflow.starting_snapshot),
+            MethodStepLifecycle.CANCELLED,
+            strategy,
+            "cancelled",
+            primary_identity,
+            accepted_result_identity=accepted.identity,
+            derivations=derivations,
+            publication_identity=(
+                None if publication is None else publication.identity
+            ),
+            publication_failure=publication_failure,
+            run_provenance_identity=(
+                None
+                if run_provenance is None
+                else run_provenance.execution_occurrence_identity
+            ),
+            primary_execution=execution,
+            accepted_result=accepted,
+            publication=publication,
+            run_provenance=run_provenance,
+        )
+    if strategy is MethodStepStrategy.GRID_DIRECT_TRF:
+        validate_grid_commit_lineage(
+            cast("AcceptedGridDirectTrfResult", accepted),
+            problem,
+        )
+    elif strategy is MethodStepStrategy.DE_DIRECT_TRF:
+        validate_de_commit_lineage(
+            cast("AcceptedDeDirectTrfResult", accepted),
+            problem,
+        )
+    operation = execute_fit_commit(
+        accepted,
+        authority,
+        problem=problem,
+        parameterization=workflow.parameterization,
+        analysis_values=analysis_values,
+    )
+    if checkpoint_observer is not None:
+        checkpoint_observer(MethodStepCheckpoint.COMMIT_COMPLETED)
+    committed = operation.terminal is FitCommitTerminal.COMMITTED
+    successor = operation.committed_snapshot if committed else None
+    derivations = (
+        _execute_derivations(workflow, accepted, token)
+        if committed
+        else tuple(
+            DerivationOutcome(
+                item.identity,
+                _derivation_stage(item),
+                DerivationDisposition.BLOCKED_BY_PREREQUISITE,
+                message="Successful fit commit prerequisite was unavailable",
+            )
+            for item in workflow.derivations
+        )
+    )
+    publication: PublishedStepReference | None = None
+    run_provenance: NativeRunInformation | None = None
+    publication_failure = ""
+    lifecycle = (
+        MethodStepLifecycle.COMMITTED
+        if committed
+        else MethodStepLifecycle.ACCEPTED_UNCOMMITTED
+    )
+    if workflow.publication is not None:
+        try:
+            if committed:
+                publication = _publish_committed_method_step(
+                    workflow,
+                    execution,
+                    primary_identity,
+                    accepted,
+                    operation,
+                    derivations,
+                    analysis_values,
+                )
+            else:
+                publication = _publish_suppressed_method_step(
+                    workflow,
+                    execution,
+                    primary_identity,
+                    MethodStepLifecycle.ACCEPTED_UNCOMMITTED,
+                    operation=operation,
+                    accepted=accepted,
+                )
+            run_provenance = _publish_run_provenance(workflow, publication)
+        except Exception as error:  # noqa: BLE001 - commit remains authoritative
+            if committed:
+                lifecycle = MethodStepLifecycle.PUBLICATION_FAILED
+            publication_failure = f"{type(error).__name__}: {error}"
+    outcome = MethodStepOutcome(
+        workflow.semantic_identity,
+        workflow.binding_identity,
+        uuid4().hex,
+        _snapshot_identity(workflow.starting_snapshot),
+        lifecycle,
+        strategy,
+        terminal.value,
+        primary_identity,
+        accepted_result_identity=accepted.identity,
+        commit_operation_identity=operation.identity,
+        derivations=derivations,
+        publication_identity=(None if publication is None else publication.identity),
+        publication_failure=publication_failure,
+        run_provenance_identity=(
+            None
+            if run_provenance is None
+            else run_provenance.execution_occurrence_identity
+        ),
+        successor_state_identity=(
+            None if successor is None else _snapshot_identity(successor)
+        ),
+        primary_execution=execution,
+        accepted_result=accepted,
+        commit_operation=operation,
+        publication=publication,
+        run_provenance=run_provenance,
+    )
+    if successor is not None and lifecycle is MethodStepLifecycle.COMMITTED:
+        _grant_successor_authority(outcome, successor)
+    return outcome
+
+
+def _method_step_primary_record(
+    workflow: MethodStepWorkflow,
+    execution: MethodStepPrimaryExecution,
+    aggregate_execution_identity: str,
+    accepted: AcceptedFitResult | None,
+    *,
+    terminal: MethodStepPrimaryTerminal | None = None,
+) -> MethodStepPrimaryRecord:
+    decomposition = cast("FitDecomposition", workflow.decomposition)
+    invocation = cast("MethodStepInvocation", workflow.invocation)
+    grouping = tuple(
+        (component.identity, component.controlled_ids)
+        for component in decomposition.components
+    )
+    if isinstance(invocation, GroupedDirectTrfInvocation):
+        limit = sum(
+            item.objective_request_budget for item in invocation.component_invocations
+        )
+        settings = invocation.component_invocations[0].execution_settings
+        used = None
+        seeds: tuple[SeedRecord, ...] = ()
+    elif isinstance(invocation, GridDirectTrfInvocation):
+        limit = invocation.objective_request_budget * len(invocation.seeds)
+        settings = ExecutionSettings()
+        used = None
+        seeds = ()
+    else:
+        de_execution = cast("DeDirectTrfOutcome", execution)
+        limit = (
+            invocation.de_objective_request_budget
+            + invocation.polish_objective_request_budget
+        )
+        settings = ExecutionSettings()
+        used = de_execution.accounting.de_counters.objective_requests_accepted + (
+            0
+            if de_execution.accounting.polish_counters is None
+            else de_execution.accounting.polish_counters.objective_requests_accepted
+        )
+        seeds = (
+            SeedRecord("primary_de_root", invocation.root_seed, invocation.identity),
+        )
+    strategy = cast("MethodStepStrategy", workflow.strategy)
+    return MethodStepPrimaryRecord(
+        workflow.semantic_identity,
+        cast("OptimizationProblem", workflow.problem).identity,
+        invocation.identity if accepted is None else accepted.invocation_identity,
+        (
+            aggregate_execution_identity
+            if accepted is None
+            else accepted.execution_identity
+        ),
+        aggregate_execution_identity,
+        execution.terminal.value if terminal is None else terminal,
+        grouping,
+        settings,
+        PolicyRecord(f"primary_{strategy.value}", invocation.identity),
+        BudgetRecord(f"primary_{strategy.value}_objective_requests", limit, used),
+        seeds,
+    )
+
+
+def _components_for_publication(
+    workflow: MethodStepWorkflow,
+    execution: MethodStepPrimaryExecution,
+) -> tuple[ComponentDiagnostic, ...]:
+    decomposition = cast("FitDecomposition", workflow.decomposition)
+    if isinstance(execution, GroupedDirectTrfOutcome):
+        return tuple(
+            ComponentDiagnostic(
+                item.identity,
+                item.disposition.value,
+                item.controlled_ids,
+                None if item.candidate is None else item.candidate.chi_square,
+            )
+            for item in execution.components
+        )
+    if isinstance(execution, GroupedGridDirectTrfOutcome):
+        selected = None
+        if execution.selection is not None:
+            selected = execution.selection.selected_record
+        components = (
+            tuple(
+                component
+                for attempt in execution.attempts
+                for component in attempt.components
+            )
+            if selected is None
+            else cast("GroupedGridSeedOutcome", selected).components
+        )
+        return tuple(
+            ComponentDiagnostic(
+                item.identity,
+                item.disposition.value,
+                item.controlled_ids,
+                None if item.candidate is None else item.candidate.chi_square,
+            )
+            for item in components
+        )
+    terminal = execution.terminal.value
+    disposition = (
+        "succeeded"
+        if terminal == "accepted"
+        else terminal
+        if terminal in {"cancelled", "interrupted"}
+        else "failed"
+    )
+    return tuple(
+        ComponentDiagnostic(
+            component.identity,
+            disposition,
+            component.controlled_ids,
+        )
+        for component in decomposition.components
+    )
+
+
+def _publication_evidence(
+    workflow: MethodStepWorkflow,
+    derivations: tuple[DerivationOutcome, ...],
+) -> tuple[
+    UncertaintyEvidence | None,
+    tuple[ResamplingPublication, ...],
+    McmcPublication | None,
+    tuple[ResamplingEvidence, ...],
+    tuple[ResamplingSummaryFailurePublication, ...],
+    McmcEvidence | None,
+]:
+    uncertainty: UncertaintyEvidence | None = None
+    resampling: list[ResamplingPublication] = []
+    mcmc: McmcPublication | None = None
+    partial_resampling: list[ResamplingEvidence] = []
+    resampling_summary_failures: list[ResamplingSummaryFailurePublication] = []
+    partial_mcmc: McmcEvidence | None = None
+    requests = {item.identity: item for item in workflow.derivations}
+    for outcome in derivations:
+        request = requests[outcome.request_identity]
+        if isinstance(request, UncertaintyDerivationRequest):
+            if outcome.artifacts:
+                uncertainty = cast("UncertaintyEvidence", outcome.artifacts[0])
+        elif isinstance(request, ResamplingDerivationRequest):
+            if not outcome.artifacts:
+                continue
+            evidence = cast("ResamplingEvidence", outcome.artifacts[0])
+            if outcome.disposition is DerivationDisposition.COMPLETED:
+                summary = summarize_resampling_evidence(
+                    evidence,
+                    request.summary_policy,
+                )
+                resampling.append(
+                    ResamplingPublication(
+                        evidence,
+                        summary,
+                    )
+                )
+            elif (
+                evidence.lifecycle.value == "completed"
+                and len(outcome.artifacts) > 1
+                and isinstance(outcome.artifacts[1], SummaryFailure)
+            ):
+                resampling_summary_failures.append(
+                    ResamplingSummaryFailurePublication(
+                        evidence,
+                        outcome.artifacts[1],
+                    )
+                )
+            else:
+                partial_resampling.append(evidence)
+        else:
+            if not outcome.artifacts:
+                continue
+            evidence = cast("McmcEvidence", outcome.artifacts[0])
+            if outcome.disposition is DerivationDisposition.COMPLETED:
+                posterior = cast("PosteriorSampleEvidence", outcome.artifacts[1])
+                summary = cast("PosteriorSummary", outcome.artifacts[2])
+                mcmc = McmcPublication(evidence, posterior, summary)
+            else:
+                partial_mcmc = evidence
+    return (
+        uncertainty,
+        tuple(resampling),
+        mcmc,
+        tuple(partial_resampling),
+        tuple(resampling_summary_failures),
+        partial_mcmc,
+    )
+
+
+def _method_step_provenance(
+    workflow: MethodStepWorkflow,
+    primary: MethodStepPrimaryRecord | None,
+    *,
+    policies: tuple[PolicyRecord, ...] = (),
+    budgets: tuple[BudgetRecord, ...] = (),
+    seeds: tuple[SeedRecord, ...] = (),
+) -> WorkflowProvenance:
+    request = cast("MethodStepPublicationRequest", workflow.publication)
+    grouping = (
+        (("aggregate", workflow.parameterization.independent_ids),)
+        if primary is None
+        else primary.grouping_topology
+    )
+    execution = ExecutionSettings() if primary is None else primary.execution_settings
+    return WorkflowProvenance.create_method_step(
+        parameterization=workflow.parameterization,
+        plan=workflow.engine.plan,
+        method=workflow.method,
+        semantic_workflow_identity=workflow.semantic_identity,
+        grouping_topology=grouping,
+        policies=policies,
+        budgets=budgets,
+        seeds=seeds,
+        execution=execution,
+        environment=request.environment,
+        baseline_references=request.baseline_references,
+    )
+
+
+def _publish_evaluation_method_step(
+    workflow: MethodStepWorkflow,
+    result: EvaluationResult,
+) -> PublishedStepReference:
+    request = cast("MethodStepPublicationRequest", workflow.publication)
+    provenance = _method_step_provenance(workflow, None)
+    publication = EvaluationPublication(
+        workflow.engine.plan,
+        workflow.method,
+        workflow.parameterization,
+        result,
+        provenance=provenance,
+        method_step_semantic_identity=workflow.semantic_identity,
+        allow_controlled=(
+            workflow.evaluation_purpose is EvaluationPurpose.EVALUATE_ONLY
+        ),
+    )
+    reference = publish_native_results(
+        request.path,
+        publication,
+    )
+    _retain_publication_source(reference, publication)
+    return reference
+
+
+def _publish_evaluation_failure_method_step(
+    workflow: MethodStepWorkflow,
+    failure: EvaluationFailure,
+) -> PublishedStepReference:
+    request = cast("MethodStepPublicationRequest", workflow.publication)
+    publication = SuppressedPublication(
+        "failed",
+        failure,
+        workflow.engine.plan,
+        workflow.method,
+        workflow.parameterization,
+        provenance=_method_step_provenance(workflow, None),
+        method_step_semantic_identity=workflow.semantic_identity,
+    )
+    reference = publish_native_results(request.path, publication)
+    _retain_publication_source(reference, publication)
+    return reference
+
+
+def _publish_no_objective_method_step(
+    workflow: MethodStepWorkflow,
+) -> PublishedStepReference:
+    request = cast("MethodStepPublicationRequest", workflow.publication)
+    publication = NoObjectivePublication(
+        workflow.engine.plan,
+        workflow.method,
+        workflow.parameterization,
+        workflow.semantic_identity,
+        provenance=_method_step_provenance(workflow, None),
+    )
+    reference = publish_native_results(request.path, publication)
+    _retain_publication_source(reference, publication)
+    return reference
+
+
+def _publish_suppressed_method_step(
+    workflow: MethodStepWorkflow,
+    execution: MethodStepPrimaryExecution,
+    aggregate_execution_identity: str,
+    lifecycle: MethodStepLifecycle,
+    *,
+    operation: FitCommitOperation | None = None,
+    accepted: AcceptedFitResult | None = None,
+    terminal: MethodStepPrimaryTerminal | None = None,
+) -> PublishedStepReference:
+    request = cast("MethodStepPublicationRequest", workflow.publication)
+    primary = _method_step_primary_record(
+        workflow,
+        execution,
+        aggregate_execution_identity,
+        accepted,
+        terminal=terminal,
+    )
+    provenance = _method_step_provenance(
+        workflow,
+        primary,
+        policies=(primary.policy,),
+        budgets=(primary.budget,),
+        seeds=primary.seeds,
+    )
+    suppressed_lifecycle = cast(
+        "Literal['failed', 'accepted_uncommitted', 'cancelled', 'interrupted']",
+        lifecycle.value,
+    )
+    publication = SuppressedPublication(
+        suppressed_lifecycle,
+        primary if operation is None else operation,
+        workflow.engine.plan,
+        workflow.method,
+        workflow.parameterization,
+        provenance=provenance,
+        primary_invocation=primary,
+        primary_execution=primary,
+        primary_problem=cast("OptimizationProblem", workflow.problem),
+        accepted_result_identity=(None if accepted is None else accepted.identity),
+        accepted_occurrence_identity=(
+            None if accepted is None else accepted.occurrence_identity
+        ),
+        components=_components_for_publication(workflow, execution),
+    )
+    reference = publish_native_results(
+        request.path,
+        publication,
+    )
+    _retain_publication_source(reference, publication)
+    return reference
+
+
+def _publish_run_provenance(
+    workflow: MethodStepWorkflow,
+    publication: PublishedStepReference,
+) -> NativeRunInformation | None:
+    publication_request = cast("MethodStepPublicationRequest", workflow.publication)
+    request = publication_request.run_provenance
+    if request is None:
+        return None
+    run = NativeRunInformation(
+        request.invocation_identity,
+        request.inputs,
+        workflow.parameter_model,
+        request.starting_snapshot,
+        (*request.prior_steps, publication),
+    )
+    write_native_run_info(
+        Namespace(output=request.output_directory),
+        run,
+        argv=request.argv,
+        working_directory=request.working_directory,
+    )
+    return run
+
+
+def _publish_committed_method_step(
+    workflow: MethodStepWorkflow,
+    execution: MethodStepPrimaryExecution,
+    aggregate_execution_identity: str,
+    accepted: AcceptedFitResult,
+    operation: FitCommitOperation,
+    derivations: tuple[DerivationOutcome, ...],
+    analysis_values: AnalysisValues,
+) -> PublishedStepReference:
+    request = cast("MethodStepPublicationRequest", workflow.publication)
+    if operation.receipt is None or operation.committed_snapshot is None:
+        raise ValueError("Committed publication requires exact commit artifacts")
+    primary = _method_step_primary_record(
+        workflow,
+        execution,
+        aggregate_execution_identity,
+        accepted,
+    )
+    (
+        uncertainty,
+        resampling,
+        mcmc,
+        partial_resampling,
+        resampling_summary_failures,
+        partial_mcmc,
+    ) = _publication_evidence(workflow, derivations)
+    policies, budgets, seeds = publication_provenance_records(
+        primary,
+        uncertainty=uncertainty,
+        resampling=(
+            *(item.evidence for item in resampling),
+            *partial_resampling,
+            *(item.evidence for item in resampling_summary_failures),
+        ),
+        mcmc=(partial_mcmc if mcmc is None else mcmc.evidence),
+    )
+    provenance = WorkflowProvenance.create_method_step(
+        parameterization=workflow.parameterization,
+        plan=workflow.engine.plan,
+        method=workflow.method,
+        semantic_workflow_identity=workflow.semantic_identity,
+        grouping_topology=primary.grouping_topology,
+        policies=policies,
+        budgets=budgets,
+        seeds=seeds,
+        execution=primary.execution_settings,
+        environment=request.environment,
+        baseline_references=request.baseline_references,
+    )
+    publication = CommittedFitPublication(
+        workflow.engine.plan,
+        workflow.method,
+        workflow.parameterization,
+        workflow.parameter_model,
+        workflow.starting_snapshot,
+        cast("OptimizationProblem", workflow.problem),
+        primary,
+        primary,
+        accepted,
+        operation.receipt,
+        operation.committed_snapshot,
+        operation,
+        analysis_values,
+        provenance=provenance,
+        components=_components_for_publication(workflow, execution),
+        uncertainty=uncertainty,
+        resampling=resampling,
+        mcmc=mcmc,
+        partial_resampling=partial_resampling,
+        resampling_summary_failures=resampling_summary_failures,
+        partial_mcmc=partial_mcmc,
+    )
+    reference = publish_native_results(
+        request.path,
+        publication,
+    )
+    _retain_publication_source(reference, publication)
+    return reference
+
+
+def _derivation_stage(request: MethodStepDerivationRequest) -> str:
+    if isinstance(request, UncertaintyDerivationRequest):
+        return "uncertainty"
+    if isinstance(request, ResamplingDerivationRequest):
+        return "resampling"
+    return "mcmc"
+
+
+def _stopped_derivations(
+    requests: tuple[MethodStepDerivationRequest, ...],
+) -> tuple[DerivationOutcome, ...]:
+    return tuple(
+        DerivationOutcome(
+            item.identity,
+            _derivation_stage(item),
+            DerivationDisposition.NOT_STARTED_BY_WORKFLOW_STOP,
+            message="Workflow stop was observed before the requested stage started",
+        )
+        for item in requests
+    )
+
+
+def _execute_derivations(
+    workflow: MethodStepWorkflow,
+    accepted: AcceptedFitResult,
+    cancellation: CancellationToken,
+) -> tuple[DerivationOutcome, ...]:
+    outcomes: list[DerivationOutcome] = []
+    for index, request in enumerate(workflow.derivations):
+        if cancellation.is_cancelled:
+            outcomes.extend(_stopped_derivations(workflow.derivations[index:]))
+            break
+        try:
+            if isinstance(request, UncertaintyDerivationRequest):
+                outcome = _execute_uncertainty(
+                    workflow, accepted, request, cancellation
+                )
+            elif isinstance(request, ResamplingDerivationRequest):
+                outcome = _execute_resampling(workflow, accepted, request, cancellation)
+            else:
+                outcome = _execute_mcmc(workflow, accepted, request, cancellation)
+        except KeyboardInterrupt:
+            outcomes.append(
+                DerivationOutcome(
+                    request.identity,
+                    _derivation_stage(request),
+                    DerivationDisposition.INTERRUPTED,
+                    message="Derivation was interrupted",
+                )
+            )
+            outcomes.extend(_stopped_derivations(workflow.derivations[index + 1 :]))
+            break
+        except Exception as error:  # noqa: BLE001 - branch-local typed evidence
+            outcomes.append(
+                DerivationOutcome(
+                    request.identity,
+                    _derivation_stage(request),
+                    DerivationDisposition.FAILED,
+                    message=f"{type(error).__name__}: {error}",
+                )
+            )
+            continue
+        outcomes.append(outcome)
+        if outcome.disposition in {
+            DerivationDisposition.CANCELLED,
+            DerivationDisposition.INTERRUPTED,
+        }:
+            outcomes.extend(_stopped_derivations(workflow.derivations[index + 1 :]))
+            break
+    return tuple(outcomes)
+
+
+def _execute_uncertainty(
+    workflow: MethodStepWorkflow,
+    accepted: AcceptedFitResult,
+    request: UncertaintyDerivationRequest,
+    cancellation: CancellationToken,
+) -> DerivationOutcome:
+    problem = cast("OptimizationProblem", workflow.problem)
+
+    def cancellation_probe() -> UncertaintyOperationTerminal | None:
+        return (
+            UncertaintyOperationTerminal.CANCELLED
+            if cancellation.is_cancelled
+            else None
+        )
+
+    evidence = derive_uncertainty_evidence(
+        accepted,
+        problem=problem,
+        parameterization=workflow.parameterization,
+        engine=workflow.engine,
+        policy=request.policy,
+        constrained_scope=request.constrained_scope,
+        constrained_units=request.constrained_units,
+        constrained_scales=request.constrained_scales,
+        compiled_constraint_linearization=request.compiled_capabilities,
+        cancellation_probe=cancellation_probe,
+        resolved_environment_identity=request.resolved_environment_identity,
+    )
+    terminals = {item.terminal for item in evidence.operations}
+    disposition = (
+        DerivationDisposition.CANCELLED
+        if UncertaintyOperationTerminal.CANCELLED in terminals
+        else DerivationDisposition.INTERRUPTED
+        if UncertaintyOperationTerminal.INTERRUPTED in terminals
+        else DerivationDisposition.FAILED
+        if evidence.failures
+        else DerivationDisposition.COMPLETED
+    )
+    return DerivationOutcome(
+        request.identity,
+        "uncertainty",
+        disposition,
+        artifact_identities=(evidence.identity,),
+        artifacts=(evidence,),
+    )
+
+
+def _execute_resampling(
+    workflow: MethodStepWorkflow,
+    accepted: AcceptedFitResult,
+    request: ResamplingDerivationRequest,
+    cancellation: CancellationToken,
+) -> DerivationOutcome:
+    plan = ResamplingPlan.for_accepted(
+        accepted,
+        dataset=ResamplingDatasetManifest(
+            workflow.engine.plan,
+            tuple(
+                float(value)
+                for value in accepted.evaluation_result.normalized_calculations
+            ),
+            request.references,
+            request.nucleus_groups,
+            request.observation_descriptors,
+        ),
+        source_problem=cast("OptimizationProblem", workflow.problem),
+        parameterization=workflow.parameterization,
+        source_engine=workflow.engine,
+        scheme=request.scheme,
+        replicate_count=request.replicate_count,
+        replicate_structural_identities=request.replicate_structural_identities,
+        replicate_component_identities=request.replicate_component_identities,
+        root_seed=request.root_seed,
+        output_scope=request.output_scope,
+        output_units=request.output_units,
+        minimum_successful_count=request.minimum_successful_count,
+        strategy=request.strategy,
+        strategy_settings=request.strategy_settings,
+    )
+    operation = execute_resampling_evidence(
+        accepted,
+        plan,
+        cancellation_probe=lambda: cancellation.is_cancelled,
+    )
+    artifacts: list[_IdentifiedArtifact] = []
+    if operation.evidence is not None:
+        artifacts.append(operation.evidence)
+        summary = summarize_resampling_evidence(
+            operation.evidence,
+            request.summary_policy,
+        )
+        summary_payload = (
+            summary.summary if summary.summary is not None else summary.failure
+        )
+        if summary_payload is not None:
+            artifacts.append(summary_payload)
+        summary_failed = summary.terminal.value != "completed"
+    else:
+        summary_failed = False
+    disposition = (
+        DerivationDisposition.CANCELLED
+        if operation.terminal is ResamplingOperationTerminal.CANCELLED
+        else DerivationDisposition.INTERRUPTED
+        if operation.terminal is ResamplingOperationTerminal.INTERRUPTED
+        else DerivationDisposition.FAILED
+        if summary_failed
+        else DerivationDisposition.COMPLETED
+    )
+    return DerivationOutcome(
+        request.identity,
+        "resampling",
+        disposition,
+        operation.identity,
+        tuple(item.identity for item in artifacts),
+        operation=operation,
+        artifacts=tuple(artifacts),
+    )
+
+
+def _execute_mcmc(
+    workflow: MethodStepWorkflow,
+    accepted: AcceptedFitResult,
+    request: McmcDerivationRequest,
+    cancellation: CancellationToken,
+) -> DerivationOutcome:
+    plan = McmcPlan.for_accepted(
+        accepted,
+        source_problem=cast("OptimizationProblem", workflow.problem),
+        parameterization=workflow.parameterization,
+        source_engine=workflow.engine,
+        policy=request.policy,
+        coordinate_units=request.coordinate_units,
+    )
+    operation = execute_mcmc_evidence(
+        accepted,
+        plan,
+        cancellation=cancellation,
+    )
+    artifacts: list[_IdentifiedArtifact] = []
+    if operation.evidence is not None:
+        artifacts.append(operation.evidence)
+    if operation.terminal is McmcOperationTerminal.COMPLETED:
+        evidence = cast("McmcEvidence", operation.evidence)
+        try:
+            selection = derive_retained_sample_view(
+                evidence,
+                cancellation=cancellation,
+            )
+            posterior: PosteriorSampleEvidence = derive_posterior_sample_evidence(
+                selection,
+                request.output_units,
+                cancellation=cancellation,
+            )
+            summary: PosteriorSummary = derive_posterior_summary(
+                posterior,
+                cancellation=cancellation,
+            )
+        except KeyboardInterrupt:
+            return DerivationOutcome(
+                request.identity,
+                "mcmc",
+                DerivationDisposition.INTERRUPTED,
+                operation.identity,
+                (evidence.identity,),
+                "KeyboardInterrupt: MCMC posterior derivation was interrupted",
+                operation=operation,
+                artifacts=(evidence,),
+            )
+        except Exception as error:  # noqa: BLE001 - retain completed primary evidence
+            return DerivationOutcome(
+                request.identity,
+                "mcmc",
+                (
+                    DerivationDisposition.CANCELLED
+                    if cancellation.is_cancelled
+                    else DerivationDisposition.FAILED
+                ),
+                operation.identity,
+                (evidence.identity,),
+                f"{type(error).__name__}: {error}",
+                operation=operation,
+                artifacts=(evidence,),
+            )
+        artifacts.extend((posterior, summary))
+        disposition = DerivationDisposition.COMPLETED
+    elif operation.terminal is McmcOperationTerminal.CANCELLED:
+        disposition = DerivationDisposition.CANCELLED
+    elif operation.terminal is McmcOperationTerminal.INTERRUPTED:
+        disposition = DerivationDisposition.INTERRUPTED
+    else:
+        disposition = DerivationDisposition.FAILED
+    return DerivationOutcome(
+        request.identity,
+        "mcmc",
+        disposition,
+        operation.identity,
+        tuple(item.identity for item in artifacts),
+        operation=operation,
+        artifacts=tuple(artifacts),
+    )
+
+
+__all__ = [
+    "DerivationDisposition",
+    "DerivationOutcome",
+    "EvaluationPurpose",
+    "McmcDerivationRequest",
+    "MethodStepCheckpoint",
+    "MethodStepLifecycle",
+    "MethodStepOutcome",
+    "MethodStepPublicationRequest",
+    "MethodStepRunProvenanceRequest",
+    "MethodStepStrategy",
+    "MethodStepWorkflow",
+    "ResamplingDerivationRequest",
+    "UncertaintyDerivationRequest",
+    "execute_method_step",
+    "require_successor_state",
+]

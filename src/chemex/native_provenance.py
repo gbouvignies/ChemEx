@@ -38,6 +38,7 @@ class NativeProvenanceError(ValueError):
 type StepLifecycle = Literal[
     "committed",
     "successful_no_state_change",
+    "no_objective_data",
     "failed",
     "accepted_uncommitted",
     "cancelled",
@@ -179,7 +180,7 @@ def validate_native_step_manifest_bytes(  # noqa: C901 - closed durable schema
         if authority != "committed_fit" or not common | committed <= set(record):
             raise NativeProvenanceError("Committed manifest lacks lifecycle authority")
         forbidden = {"operation_identity"}
-    elif lifecycle == "successful_no_state_change":
+    elif lifecycle in {"successful_no_state_change", "no_objective_data"}:
         if authority != "evaluation_only" or not common <= set(record):
             raise NativeProvenanceError("Evaluation manifest lacks lifecycle authority")
         forbidden = committed | {"operation_identity"}
@@ -922,6 +923,80 @@ class WorkflowProvenance:
             environment,
             baseline_references,
         )
+
+    @classmethod
+    def create_method_step(
+        cls,
+        *,
+        parameterization: ActiveParameterization,
+        plan: EvaluationPlan,
+        method: Method,
+        semantic_workflow_identity: str,
+        grouping_topology: tuple[tuple[str, tuple[str, ...]], ...],
+        policies: tuple[PolicyRecord, ...],
+        budgets: tuple[BudgetRecord, ...],
+        seeds: tuple[SeedRecord, ...],
+        execution: ExecutionSettings,
+        environment: ProvenanceEnvironment,
+        baseline_references: tuple[BaselineReference, ...],
+    ) -> WorkflowProvenance:
+        """Capture one already-compiled closed method-step composition."""
+        if (
+            not semantic_workflow_identity
+            or plan.parameterization_identity != parameterization.evaluator_identity
+            or plan.constraint_program_identity != parameterization.program.fingerprint
+        ):
+            raise NativeProvenanceError(
+                "Method-step provenance requires its exact compiled native context"
+            )
+        return cls(
+            _WORKFLOW_PROVENANCE_KEY,
+            _normalized_method_semantics(method),
+            ProfileSelectionRecord(
+                parameterization.binder.model_name,
+                tuple(profile.identity for profile in plan.profiles),
+                (),
+            ),
+            f"method_step:{semantic_workflow_identity}",
+            grouping_topology,
+            parameterization.identity,
+            plan.identity,
+            policies,
+            budgets,
+            seeds,
+            execution,
+            environment,
+            baseline_references,
+        )
+
+    def validate_method_step_context(
+        self,
+        *,
+        parameterization: ActiveParameterization,
+        plan: EvaluationPlan,
+        method: Method,
+        semantic_workflow_identity: str,
+        grouping_topology: tuple[tuple[str, tuple[str, ...]], ...],
+        execution: ExecutionSettings,
+    ) -> None:
+        """Revalidate an exact closed method-step context for publication."""
+        if (
+            self.parameterization_identity != parameterization.identity
+            or self.evaluation_plan_identity != plan.identity
+            or self.normalized_method_text != _normalized_method_semantics(method)
+            or self.selection
+            != ProfileSelectionRecord(
+                parameterization.binder.model_name,
+                tuple(profile.identity for profile in plan.profiles),
+                (),
+            )
+            or self.workflow_type != f"method_step:{semantic_workflow_identity}"
+            or self.grouping_topology != grouping_topology
+            or self.execution != execution
+        ):
+            raise NativeProvenanceError(
+                "Method-step provenance differs from its compiled execution context"
+            )
 
     @staticmethod
     def _derive_live_execution_facts(
