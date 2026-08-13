@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from argparse import Namespace
 from collections.abc import Mapping
@@ -205,3 +206,60 @@ def test_manifest_validator_rejects_incompatible_or_empty_coverage() -> None:
     truncated["requirements"].pop()
     with pytest.raises(MigrationCoreCoverageError, match="fixed audited requirements"):
         MigrationCoreCoverageManifest.from_bytes(_canonical_bytes(truncated))
+
+
+def test_canonical_capture_status_records_the_fail_closed_empirical_result() -> None:
+    record = json.loads(
+        (
+            Path(__file__).parent
+            / "fixtures"
+            / "migration_core_canonical_capture_status_v1.json"
+        ).read_text(encoding="ascii")
+    )
+    identity = record.pop("identity")
+    anchors = {anchor["anchor"]: anchor for anchor in record["anchors"]}
+    coverage = record["coverage"]
+
+    assert hashlib.sha256(_canonical_bytes(record)).hexdigest() == identity
+    assert record["status"] == "NOT_READY"
+    assert record["source"]["repository_commit"] == (
+        "09269a1d48e79d1684a69fa51ef3f603f7d23c95"
+    )
+    assert record["lane"] == {
+        "attestation_identity": (
+            "3b3e0bc184826d61ec6652194486c907a5faa4c64b68ec03bbe60b63c660d687"
+        ),
+        "attestation_method": "POST_IMPORT_CURRENT_PROCESS",
+        "environment_identity": (
+            "cc5359f90df35ec9b60fd56e483911745209519ecce37d69e17c4edd6ea3604f"
+        ),
+        "identity": (
+            "4f1e7dab3384f88149fd33befb09ba3e96730dc336e9427b224a39a8a7167e4f"
+        ),
+        "image_digest": (
+            "sha256:ed4f97e00bd6fe494f46772cc31a338d756b5bb5fe6e4e480d987af51af85550"
+        ),
+        "name": "canonical-linux-amd64-python-3.13-v1",
+        "native_threads": 1,
+        "workers": 1,
+    }
+    assert set(anchors) == {
+        "cpmg-15n-ip",
+        "cest-13c-label-cn",
+        "2st-binding",
+        "dcest-fifu-drd",
+    }
+    assert {
+        name for name, anchor in anchors.items() if anchor["status"] == "ELIGIBLE"
+    } == {"cpmg-15n-ip", "2st-binding"}
+    assert anchors["cpmg-15n-ip"]["artifact_count"] == 341
+    assert anchors["2st-binding"]["artifact_count"] == 895
+    assert anchors["cest-13c-label-cn"]["result_bundle_identity"] is None
+    assert anchors["dcest-fifu-drd"]["result_bundle_identity"] is None
+    assert coverage["manifest_identity"] == migration_core_coverage_manifest().identity
+    assert coverage["requirement_count"] == 51
+    assert coverage["eligible_requirement_count"] == 4
+    assert coverage["uncovered_requirement_count"] == 47
+    assert len(coverage["uncovered_requirement_ids"]) == 47
+    assert coverage["compiled_coverage_identity"] is None
+    assert coverage["compiler"]["status"] == "FAILED_CLOSED"
