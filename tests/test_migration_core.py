@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import tarfile
 from argparse import Namespace
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -34,6 +37,18 @@ from chemex.numerical_lanes import (
 )
 from chemex.optimize.numerical_probes import NumericalProbeBaseline
 
+_REPOSITORY_ROOT = Path(__file__).parents[1]
+_ANCHOR_RELEASE = (
+    _REPOSITORY_ROOT
+    / "tests/fixtures/migration_core_canonical_anchor_release_v1.tar.xz"
+)
+_ANCHOR_RELEASE_HASH = (
+    "95df63b1c22dcee32ee57b08e6921deb492920f3b4e4ec02604946cdbb77ea15"
+)
+_ANCHOR_RELEASE_IDENTITY = (
+    "7a82791ecf7d44252cfb502ce0738e614ba95333dc2ffe925bb9d938699e18c4"
+)
+
 
 def _canonical_bytes(record: Mapping[str, object]) -> bytes:
     return json.dumps(
@@ -51,6 +66,58 @@ def _canonical_probe_baseline() -> NumericalProbeBaseline:
     )
     assert isinstance(record, dict)
     return NumericalProbeBaseline.from_record(record)
+
+
+def _extract_anchor_release(destination: Path) -> None:
+    migration_core._safe_extract_release(_ANCHOR_RELEASE, destination)
+
+
+def _repack_anchor_release(root: Path, archive: Path) -> tuple[str, str]:
+    release_path = root / "release.json"
+    release = json.loads(release_path.read_bytes())
+    for member in release["payload_members"]:
+        path = root / member["path"]
+        if path.is_file():
+            content = path.read_bytes()
+            member["content_hash"] = hashlib.sha256(content).hexdigest()
+            member["size"] = len(content)
+    release.pop("identity")
+    release_identity = hashlib.sha256(_canonical_bytes(release)).hexdigest()
+    release["identity"] = release_identity
+    release_path.write_bytes(_canonical_bytes(release))
+    with tarfile.open(archive, mode="w:xz", preset=0) as opened:
+        for path in sorted(item for item in root.rglob("*") if item.is_file()):
+            content = path.read_bytes()
+            info = tarfile.TarInfo(path.relative_to(root).as_posix())
+            info.size = len(content)
+            info.mtime = 0
+            info.mode = 0o444
+            info.uid = 0
+            info.gid = 0
+            info.uname = ""
+            info.gname = ""
+            opened.addfile(info, io.BytesIO(content))
+    return hashlib.sha256(archive.read_bytes()).hexdigest(), release_identity
+
+
+def _cpmg_release_records(root: Path) -> tuple[dict[str, object], dict[str, object]]:
+    release = json.loads((root / "release.json").read_bytes())
+    anchor = next(
+        item for item in release["anchors"] if item["evidence"] == "anchor:cpmg-15n-ip"
+    )
+    manifest_path = root / anchor["publication_root"] / "manifest.json"
+    return release, json.loads(manifest_path.read_bytes())
+
+
+def _write_cpmg_release_records(
+    root: Path, release: Mapping[str, object], manifest: Mapping[str, object]
+) -> None:
+    anchors = release["anchors"]
+    assert isinstance(anchors, list)
+    anchor = next(item for item in anchors if item["evidence"] == "anchor:cpmg-15n-ip")
+    manifest_path = root / anchor["publication_root"] / "manifest.json"
+    manifest_path.write_bytes(_canonical_bytes(manifest))
+    (root / "release.json").write_bytes(_canonical_bytes(release))
 
 
 def _live_authority(
@@ -193,6 +260,47 @@ def test_numerical_probe_rejects_self_consistent_alternate_authority() -> None:
     assert migration_core._validated_numerical_probe_identity(altered) is None
 
 
+def test_numerical_probe_rejects_self_consistent_alternate_artifact() -> None:
+    baseline = _canonical_probe_baseline()
+    evidence = replace(
+        baseline.artifacts[0].evidence,
+        trajectory_fingerprint="a" * 64,
+    )
+    artifact = replace(baseline.artifacts[0], evidence=evidence)
+    artifacts = (artifact, *baseline.artifacts[1:])
+    capture_only = NumericalProbeBaseline(baseline.definitions, artifacts)
+    altered = NumericalProbeBaseline(
+        baseline.definitions,
+        artifacts,
+        baseline.observed_lane_identity,
+        baseline.observed_lane_role,
+        baseline.observed_attestation_identity,
+        baseline.observed_environment_identity,
+        capture_only.manifest_identity,
+        "REFERENCE_MATCHED",
+    )
+
+    assert artifact.identity != baseline.artifacts[0].identity
+    assert altered.identity != baseline.identity
+    assert migration_core._validated_numerical_probe_identity(altered) is None
+
+
+def test_selected_numerical_probe_fixture_hash_fails_closed() -> None:
+    current = replace(
+        migration_core.migration_core_current_release_selection(),
+        probe_file_hash="a" * 64,
+    )
+    status = migration_core.MigrationCorePhasedStatus.from_bytes(
+        (
+            _REPOSITORY_ROOT
+            / "tests/fixtures/migration_core_canonical_coverage_status_v3.json"
+        ).read_bytes()
+    )
+
+    with pytest.raises(MigrationCoreCoverageError, match="probe hash does not match"):
+        migration_core._load_selected_probe(_REPOSITORY_ROOT, current, status)
+
+
 def test_repository_frozen_authority_selection_is_exact() -> None:
     selection = migration_core.migration_core_authority_selection()
 
@@ -206,6 +314,297 @@ def test_repository_frozen_authority_selection_is_exact() -> None:
     assert selection.environment_identity == (
         "cc5359f90df35ec9b60fd56e483911745209519ecce37d69e17c4edd6ea3604f"
     )
+
+
+def test_durable_release_recursively_reconstructs_all_four_publications() -> None:
+    with migration_core.resolve_migration_core_anchor_release(
+        _ANCHOR_RELEASE,
+        expected_archive_hash=_ANCHOR_RELEASE_HASH,
+        expected_release_identity=_ANCHOR_RELEASE_IDENTITY,
+    ) as resolved:
+        assert resolved.release.repository_commit == (
+            "2263bd9d162323c1b26949b3c3d7428f52b1c697"
+        )
+        assert resolved.release.source_archive_hash == (
+            "20df597c93ecf965a582de907e62d95436c1dda581fb0ddd42dd5a3c48a1f50f"
+        )
+        assert {
+            evidence: (
+                published.case.identity,
+                published.specification.identity,
+                published.occurrence.identity,
+                published.occurrence.lifecycle_identity,
+                published.bundle.identity,
+                published.bundle.manifest_identity,
+                published.manifest_identity,
+                len(published.bundle.members),
+            )
+            for evidence, published in resolved.published.items()
+        } == {
+            "anchor:2st-binding": (
+                "35af1e0705653511fc3d20f7e9800deb9383af0236d965e34df85c5e16d670c6",
+                "8acab6a7ef2010ff9187cf9203e68b092e1d03e74433214849961ad8ef52c839",
+                "2c87cd4769195e59860646f380adb0d72fb05b6844b41c51e40969f922664b1a",
+                "b3f38a19395e19b1eb70398d8a9657d60ac7dc24756fa9008fbb890f5b881a91",
+                "bd7c8424f1b24b090d4e87946b45b017eb850450cd1ff6b4d582ed66757bbd44",
+                "c37e4e427530646486c761d1a695e818eca1b25b8ea1fdea0ec8912c69be5dcb",
+                "9bf207521c5c42c0317163fdd9841dda6ed3736b77ca9fe7f69a6c81d47757c9",
+                896,
+            ),
+            "anchor:cest-13c-label-cn": (
+                "e221428fe2bed8694f6400f5c10a0ae096763f008949c70eecdb685f5afe7b01",
+                "16999ec4bfe695df11dd9752de9b275daaee1c59a4574c10e88539f85a673e8d",
+                "b2aa92f23ed505402bd9419b717c8a245f06ebd525d8ff8be11fce3465f2f614",
+                "e88400280b8389de7a7def4ca736273bf707b5908a8155575b98a5653246f620",
+                "4dd0452ec492aaf920f24eea5b773723f240520bff3d3dbdf1ad5efad0b660db",
+                "9ca652014856faa7b738997517653de8b5e69a4f4576eefaf46995796956e331",
+                "74e325ad35dcc237abcdbf2434a1d11e78b6ce1bddace5d0b84aa074d5b95ac4",
+                92,
+            ),
+            "anchor:cpmg-15n-ip": (
+                "18d9a4fb78e300a474132313c898c78240be7aa6ae7eb2f3385d2fed69e6ebd3",
+                "97cde21a4efa9a2bc6ab1bb458f517b3d7ca8db70641f8b6c4ce10072b0d90f9",
+                "96fdb5d9f0425b92a892e7ea784d95481ebeebbfa62655785b79fc1ef3a3ba4b",
+                "fcd8ed5417f2106bea646e680e64e70b85f0ade60e94886545ef4c196e1c6920",
+                "cc8e5072746712f6fc1fd2f976739d1fe1d9d11c436ae9f9fdd6f34404a12eec",
+                "76c8d4507f862db64d14e9f08244d7dc28d21c955f807031ea1728a2e18c49cd",
+                "6f6f7afd96ec66c4852736928302229568ea77e6db2668d540effeb4e66a57c2",
+                342,
+            ),
+            "anchor:dcest-fifu-drd": (
+                "3c379d070b9aea9fdf9675511df717b4208f4d0d09979e62f304216a6147c241",
+                "a8aad410db1c559faf0fc220d32e6aaa247ef45a9d03c6c4de3de9f9d2d8489f",
+                "714f523c0fedb5a4bc422ddfa51e0a1fbf45bcb2ecc81444e1ce0a70ba87fbb5",
+                "a0b389ee27338fec2e4c437d22fdb3c07a773625a308b9d85a2f33f6e9004638",
+                "80d52a017bda14233ce5009f5dc22a8e76b113b8edcf28c6bb67845cc90368e3",
+                "98620feb28660dddaaa974dcb411d7876c453c7a78064e4a40edbf8aa07579a2",
+                "e01ed45d43be92bd59d53fca4299126aa2a8b686ff9c7773c079d954cc939cf8",
+                24,
+            ),
+        }
+        for anchor in resolved.release.anchors:
+            assert (
+                resolved.publisher.read(anchor.result_bundle_identity)
+                == (resolved.published[anchor.evidence])
+            )
+
+
+@pytest.mark.parametrize(
+    ("layer", "manifest_path", "release_field"),
+    (
+        ("case", ("case", "identity"), "case_identity"),
+        (
+            "execution specification",
+            ("specification", "identity"),
+            "specification_identity",
+        ),
+        ("occurrence", ("occurrence", "identity"), "occurrence_identity"),
+        (
+            "occurrence lifecycle",
+            ("occurrence", "lifecycle_identity"),
+            "occurrence_lifecycle_identity",
+        ),
+        ("result bundle", ("bundle", "identity"), "result_bundle_identity"),
+        (
+            "member manifest",
+            ("bundle", "manifest_identity"),
+            "member_manifest_identity",
+        ),
+        (
+            "publication",
+            ("manifest_identity",),
+            "publication_manifest_identity",
+        ),
+    ),
+)
+def test_release_rejects_changed_recursive_identity_after_outer_rehash(
+    tmp_path: Path,
+    layer: str,
+    manifest_path: tuple[str, ...],
+    release_field: str,
+) -> None:
+    root = tmp_path / "release"
+    root.mkdir()
+    _extract_anchor_release(root)
+    release, manifest = _cpmg_release_records(root)
+    anchors = release["anchors"]
+    assert isinstance(anchors, list)
+    anchor = next(item for item in anchors if item["evidence"] == "anchor:cpmg-15n-ip")
+    target = manifest
+    for component in manifest_path[:-1]:
+        nested = target[component]
+        assert isinstance(nested, dict)
+        target = nested
+    target[manifest_path[-1]] = "a" * 64
+    if layer == "member manifest":
+        manifest["member_manifest_identity"] = "a" * 64
+    anchor[release_field] = "a" * 64
+    _write_cpmg_release_records(root, release, manifest)
+    archive_hash, release_identity = _repack_anchor_release(
+        root, tmp_path / "altered.tar.xz"
+    )
+
+    with (
+        pytest.raises(MigrationCoreCoverageError, match="cannot be reconstructed"),
+        migration_core.resolve_migration_core_anchor_release(
+            tmp_path / "altered.tar.xz",
+            expected_archive_hash=archive_hash,
+            expected_release_identity=release_identity,
+        ),
+    ):
+        pass
+
+
+@pytest.mark.parametrize("member_kind", ("captured input", "output artifact"))
+def test_release_rejects_changed_member_byte_after_outer_rehash(
+    tmp_path: Path, member_kind: str
+) -> None:
+    root = tmp_path / "release"
+    root.mkdir()
+    _extract_anchor_release(root)
+    release, manifest = _cpmg_release_records(root)
+    anchor = next(
+        item for item in release["anchors"] if item["evidence"] == "anchor:cpmg-15n-ip"
+    )
+    if member_kind == "captured input":
+        target = next((root / anchor["input_root"]).iterdir())
+    else:
+        member = next(
+            item
+            for item in manifest["bundle"]["members"]
+            if item["role"].startswith("legacy-output:")
+        )
+        target = root / anchor["publication_root"] / "members" / member["content_hash"]
+    content = bytearray(target.read_bytes())
+    content[0] ^= 1
+    target.write_bytes(content)
+    archive_hash, release_identity = _repack_anchor_release(
+        root, tmp_path / "altered.tar.xz"
+    )
+
+    with (
+        pytest.raises(MigrationCoreCoverageError),
+        migration_core.resolve_migration_core_anchor_release(
+            tmp_path / "altered.tar.xz",
+            expected_archive_hash=archive_hash,
+            expected_release_identity=release_identity,
+        ),
+    ):
+        pass
+
+
+def test_release_rejects_wrong_hash_missing_corrupt_and_missing_member(
+    tmp_path: Path,
+) -> None:
+    with (
+        pytest.raises(MigrationCoreCoverageError, match="hash does not match"),
+        migration_core.resolve_migration_core_anchor_release(
+            _ANCHOR_RELEASE,
+            expected_archive_hash="a" * 64,
+            expected_release_identity=_ANCHOR_RELEASE_IDENTITY,
+        ),
+    ):
+        pass
+    with (
+        pytest.raises(MigrationCoreCoverageError, match="missing or unavailable"),
+        migration_core.resolve_migration_core_anchor_release(
+            tmp_path / "missing.tar.xz",
+            expected_archive_hash=_ANCHOR_RELEASE_HASH,
+            expected_release_identity=_ANCHOR_RELEASE_IDENTITY,
+        ),
+    ):
+        pass
+
+    corrupt = tmp_path / "corrupt.tar.xz"
+    corrupt.write_bytes(_ANCHOR_RELEASE.read_bytes()[:1024])
+    with (
+        pytest.raises(MigrationCoreCoverageError, match="corrupt or truncated"),
+        migration_core.resolve_migration_core_anchor_release(
+            corrupt,
+            expected_archive_hash=hashlib.sha256(corrupt.read_bytes()).hexdigest(),
+            expected_release_identity=_ANCHOR_RELEASE_IDENTITY,
+        ),
+    ):
+        pass
+
+    root = tmp_path / "release"
+    root.mkdir()
+    _extract_anchor_release(root)
+    release, manifest = _cpmg_release_records(root)
+    anchor = next(
+        item for item in release["anchors"] if item["evidence"] == "anchor:cpmg-15n-ip"
+    )
+    member = manifest["bundle"]["members"][0]
+    (root / anchor["publication_root"] / "members" / member["content_hash"]).unlink()
+    archive_hash, release_identity = _repack_anchor_release(
+        root, tmp_path / "missing-member.tar.xz"
+    )
+    with (
+        pytest.raises(MigrationCoreCoverageError, match="payload is not closed"),
+        migration_core.resolve_migration_core_anchor_release(
+            tmp_path / "missing-member.tar.xz",
+            expected_archive_hash=archive_hash,
+            expected_release_identity=release_identity,
+        ),
+    ):
+        pass
+
+
+def test_release_locator_cannot_escape_trusted_repository_root(tmp_path: Path) -> None:
+    with pytest.raises(MigrationCoreCoverageError, match="repository-relative"):
+        migration_core._repository_path(tmp_path, "../outside", "anchor release")
+
+
+def test_current_v3_status_is_derived_from_resolved_evidence() -> None:
+    current = migration_core.migration_core_current_release_selection()
+    result = migration_core.compile_current_phased_migration_core_status(
+        _REPOSITORY_ROOT
+    )
+
+    assert current.identity == (
+        "e48d9c48d6c5fda2632bfcb72d5c1869be442af00ea52c5bb0de51bb0fca3b1a"
+    )
+    assert current.status_locator.endswith(
+        "migration_core_canonical_coverage_status_v3.json"
+    )
+    assert result.authority_selection_identity == (
+        "001b6b9e791e66677b265d8b1dd3c2d8151f4a9e0b33bdcfe5196782cecdd066"
+    )
+    assert result.anchor_release_identity == _ANCHOR_RELEASE_IDENTITY
+    assert len(result.anchor_evidence) == 4
+    assert result.numerical_probe.identity == (
+        "d11f9caa404b8ce3fa96e041659939446e205aae9376b08d6a137ed40cf0bdb0"
+    )
+    assert len(result.eligible_requirement_ids) == 10
+    assert len(result.uncovered_requirement_ids) == 41
+    assert result.compiler_status == "FAILED_CLOSED"
+    assert result.compiled_coverage_identity is None
+
+
+def test_changed_requirement_selection_is_not_trusted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    status = migration_core.MigrationCorePhasedStatus.from_bytes(
+        (
+            _REPOSITORY_ROOT
+            / "tests/fixtures/migration_core_canonical_coverage_status_v3.json"
+        ).read_bytes()
+    )
+    selected = dict(status.selected_evidence)
+    selected["anchor:cpmg-15n-ip"] = "a" * 64
+    altered = replace(status, selected_evidence=tuple(sorted(selected.items())))
+    authority = migration_core.migration_core_authority_selection()
+    monkeypatch.setattr(
+        migration_core,
+        "_load_selected_authority_and_status",
+        lambda repository_root, current: (authority, altered),
+    )
+
+    with pytest.raises(
+        MigrationCoreCoverageError,
+        match="requirement-to-evidence selection is incompatible",
+    ):
+        migration_core.compile_current_phased_migration_core_status(_REPOSITORY_ROOT)
 
 
 def test_anchor_publications_retain_exact_attestation_and_environment_records(
@@ -389,14 +788,13 @@ def test_canonical_capture_status_records_the_fail_closed_empirical_result() -> 
     assert coverage["compiler"]["status"] == "FAILED_CLOSED"
 
 
-def test_current_canonical_coverage_status_records_phased_anchor_eligibility() -> None:
-    record = json.loads(
-        (
-            Path(__file__).parent
-            / "fixtures"
-            / "migration_core_canonical_coverage_status_v2.json"
-        ).read_text(encoding="ascii")
-    )
+def test_v2_status_is_historical_asserted_unresolved_evidence_only() -> None:
+    content = (
+        Path(__file__).parent
+        / "fixtures"
+        / "migration_core_canonical_coverage_status_v2.json"
+    ).read_bytes()
+    record = json.loads(content)
     identity = record.pop("identity")
     anchors = {anchor["anchor"]: anchor for anchor in record["anchors"]}
     coverage = record["coverage"]
@@ -484,3 +882,9 @@ def test_current_canonical_coverage_status_records_phased_anchor_eligibility() -
     )
     assert coverage["compiled_coverage_identity"] is None
     assert coverage["compiler"]["status"] == "FAILED_CLOSED"
+    with pytest.raises(MigrationCoreCoverageError):
+        migration_core.MigrationCorePhasedStatus.from_bytes(content)
+    assert (
+        migration_core.migration_core_current_release_selection().status_locator
+        != "tests/fixtures/migration_core_canonical_coverage_status_v2.json"
+    )
