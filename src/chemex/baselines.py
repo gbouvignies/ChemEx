@@ -27,15 +27,19 @@ from typing import Literal, cast
 from chemex.chemex import run
 from chemex.cli import build_parser
 from chemex.numerical_lanes import (
+    LaneAttestation,
     LiveLaneAuthority,
     _LiveLaneAuthorityMismatch,
     _validate_live_lane_authority,
 )
+from chemex.parameters.spin_system import SpinSystem
 
 _SCHEMA_VERSION = 1
 _SEMANTIC_VERSION = "chemex-baseline-v1"
-_CPMG_SOURCE_COMMIT = "d5ed0c87e8ce7a7f17745feea346af4dfbae7ecf"
-_CPMG_LOCKFILE_HASH = "f0fb2ffc7b1a5ecd1bf7ac43956fc4861b96c058d158948b68b4e97027a6086a"
+_ANCHOR_SOURCE_COMMIT = "d5ed0c87e8ce7a7f17745feea346af4dfbae7ecf"
+_ANCHOR_LOCKFILE_HASH = (
+    "f0fb2ffc7b1a5ecd1bf7ac43956fc4861b96c058d158948b68b4e97027a6086a"
+)
 _HASH_LENGTH = 64
 type OccurrenceLifecycle = Literal["REQUESTED", "SUCCEEDED", "FAILED"]
 # #581 permits only these closed future comparison families.  #587 needs the
@@ -47,6 +51,12 @@ type ComparisonFamily = Literal[
     "STATISTICAL_COMPARISON",
     "CALIBRATION_SENSITIVITY",
     "OPERATIONAL_PERFORMANCE",
+]
+type ApprovedAnchorName = Literal[
+    "cpmg-15n-ip",
+    "cest-13c-label-cn",
+    "2st-binding",
+    "dcest-fifu-drd",
 ]
 
 
@@ -1331,8 +1341,8 @@ class BaselinePublicationIntegrityError(RuntimeError):
     """A terminal collision did not leave readable authoritative evidence."""
 
 
-class CpmgBaselinePublisher:
-    """Reservation-backed, append-only publisher for this one CPMG anchor."""
+class BaselinePublisher:
+    """Reservation-backed, append-only publisher for baseline evidence."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -1345,7 +1355,7 @@ class CpmgBaselinePublisher:
     def _required_roles(specification: ExecutionSpecification) -> tuple[str, ...]:
         inventory = specification.artifact_inventory.to_record_value()
         if not isinstance(inventory, Mapping):
-            raise TypeError("CPMG artifact inventory must be a record")
+            raise TypeError("Scientific-anchor artifact inventory must be a record")
         if set(inventory) != {
             "closed",
             "excluded_path_components",
@@ -1353,11 +1363,18 @@ class CpmgBaselinePublisher:
             "structured_suffixes",
             "version",
         }:
-            raise ValueError("CPMG artifact inventory has unknown or missing fields")
-        if inventory.get("version") != "cpmg-structured-artifact-contract-v1":
-            raise ValueError("CPMG artifact inventory has an unsupported version")
+            raise ValueError(
+                "Scientific-anchor artifact inventory has unknown or missing fields"
+            )
+        if inventory.get("version") not in {
+            "cpmg-structured-artifact-contract-v1",
+            "approved-anchor-structured-artifact-contract-v1",
+        }:
+            raise ValueError(
+                "Scientific-anchor artifact inventory has an unsupported version"
+            )
         if inventory.get("closed") is not True:
-            raise ValueError("CPMG artifact inventory must be closed")
+            raise ValueError("Scientific-anchor artifact inventory must be closed")
         raw_roles = inventory.get("required_roles")
         raw_suffixes = inventory.get("structured_suffixes")
         raw_excluded = inventory.get("excluded_path_components")
@@ -1368,7 +1385,7 @@ class CpmgBaselinePublisher:
             or not all(isinstance(value, str) for value in raw_suffixes)
             or not all(isinstance(value, str) for value in raw_excluded)
         ):
-            raise TypeError("CPMG artifact inventory has malformed fields")
+            raise TypeError("Scientific-anchor artifact inventory has malformed fields")
         return _canonical_strings(cast("Sequence[str]", raw_roles), "artifact roles")
 
     @staticmethod
@@ -1578,7 +1595,9 @@ class CpmgBaselinePublisher:
         if tuple(item.role for item in ordered_artifacts) != self._required_roles(
             specification
         ):
-            raise ValueError("CPMG result artifacts do not match the frozen contract")
+            raise ValueError(
+                "Scientific-anchor result artifacts do not match the frozen contract"
+            )
         destination = attempt_directory / "terminal"
         staging = Path(tempfile.mkdtemp(prefix=".success-", dir=attempt_directory))
         try:
@@ -1720,10 +1739,8 @@ class CpmgBaselinePublisher:
         occurrence: Occurrence,
         bundle: ResultBundle,
     ) -> str:
-        expected_manifest_identity = (
-            CpmgBaselinePublisher._publication_manifest_identity(
-                case, specification, occurrence, bundle
-            )
+        expected_manifest_identity = BaselinePublisher._publication_manifest_identity(
+            case, specification, occurrence, bundle
         )
         if (
             specification.case_identity != case.identity
@@ -1786,6 +1803,11 @@ class CpmgBaselinePublisher:
         )
 
 
+# Compatibility names retained for #587 and early #590 callers.
+ScientificAnchorPublisher = BaselinePublisher
+CpmgBaselinePublisher = BaselinePublisher
+
+
 class LegacyAnchorExecutionError(RuntimeError):
     """Legacy product failure with a persisted failed occurrence record."""
 
@@ -1807,88 +1829,258 @@ class BaselineLifecycleConflictError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class _CapturedInput:
-    """One authoritative input captured as bytes before a CPMG attempt starts."""
+    """One authoritative input captured as bytes before an anchor attempt starts."""
 
     member: InputMember
     snapshot_relative_path: Path
     content: bytes
 
 
+@dataclass(frozen=True, slots=True)
+class _AnchorFile:
+    role: str
+    relative_path: str
+
+
+@dataclass(frozen=True, slots=True)
+class _AnchorDefinition:
+    name: ApprovedAnchorName
+    experiments: tuple[_AnchorFile, ...]
+    parameters: tuple[_AnchorFile, ...]
+    methods: tuple[_AnchorFile, ...]
+    experiment_kind: str
+    model: str
+    workflow: str
+    explicit_model: bool
+    output_directory: str
+    shipped_argv: tuple[str, ...]
+
+
+_APPROVED_ANCHORS: dict[ApprovedAnchorName, _AnchorDefinition] = {
+    "cpmg-15n-ip": _AnchorDefinition(
+        "cpmg-15n-ip",
+        (
+            _AnchorFile("experiment:500mhz", "Experiments/500mhz.toml"),
+            _AnchorFile("experiment:800mhz", "Experiments/800mhz.toml"),
+        ),
+        (_AnchorFile("parameters", "Parameters/parameters.toml"),),
+        (_AnchorFile("method", "Methods/method.toml"),),
+        "cpmg_15n_ip",
+        "2st",
+        "shipped-two-step-method",
+        False,
+        "Output",
+        (
+            "chemex",
+            "fit",
+            "-e",
+            "Experiments/*.toml",
+            "-p",
+            "Parameters/parameters.toml",
+            "-m",
+            "Methods/method.toml",
+            "-o",
+            "Output",
+        ),
+    ),
+    "cest-13c-label-cn": _AnchorDefinition(
+        "cest-13c-label-cn",
+        (
+            _AnchorFile("experiment:23hz", "Experiments/23hz.toml"),
+            _AnchorFile("experiment:23hz_ca", "Experiments/23hz_ca.toml"),
+        ),
+        (_AnchorFile("parameters", "Parameters/parameters.toml"),),
+        (_AnchorFile("method", "Methods/method.toml"),),
+        "cest_13c",
+        "2st",
+        "shipped-two-step-method",
+        False,
+        "Output",
+        (
+            "chemex",
+            "fit",
+            "-e",
+            "Experiments/*.toml",
+            "-p",
+            "Parameters/parameters.toml",
+            "-m",
+            "Methods/method.toml",
+            "-o",
+            "Output",
+        ),
+    ),
+    "2st-binding": _AnchorDefinition(
+        "2st-binding",
+        tuple(
+            _AnchorFile(f"experiment:{name}", f"Experiments/{name}.toml")
+            for name in (
+                "cest_10hz_10p_1",
+                "cest_10hz_10p_2",
+                "cest_20hz_10p",
+                "cpmg_10p",
+                "cpmg_13p",
+                "cpmg_3p",
+                "cpmg_6p",
+            )
+        ),
+        (_AnchorFile("parameters", "Parameters/params.toml"),),
+        (_AnchorFile("method", "Methods/method.toml"),),
+        "cest_15n+cpmg_15n_ip",
+        "2st_binding",
+        "shipped-two-step-method",
+        True,
+        "Output",
+        (
+            "chemex",
+            "fit",
+            "-e",
+            "Experiments/*.toml",
+            "-p",
+            "Parameters/*.toml",
+            "-m",
+            "Methods/*.toml",
+            "-d",
+            "2st_binding",
+            "-o",
+            "Output",
+        ),
+    ),
+    "dcest-fifu-drd": _AnchorDefinition(
+        "dcest-fifu-drd",
+        tuple(
+            _AnchorFile(f"experiment:{role}", relative_path)
+            for role, relative_path in (
+                ("1.25hz", "Experiments/1.25hz.toml"),
+                ("15hz", "Experiments/15hz.toml"),
+                ("7.5hz", "Experiments/7.5hz.toml"),
+                ("drd_15hz_d20", "Experiments/DRD/drd_15hz_D20.toml"),
+                ("drd_15hz_k19", "Experiments/DRD/drd_15hz_K19.toml"),
+                ("drd_15hz_k35", "Experiments/DRD/drd_15hz_K35.toml"),
+                ("drd_15hz_l32", "Experiments/DRD/drd_15hz_L32.toml"),
+                ("drd_15hz_l39", "Experiments/DRD/drd_15hz_L39.toml"),
+                ("drd_15hz_t26", "Experiments/DRD/drd_15hz_T26.toml"),
+            )
+        ),
+        (_AnchorFile("parameters", "Parameters/parameters.toml"),),
+        (_AnchorFile("method", "Methods/method.toml"),),
+        "dcest_15n",
+        "3st_fork",
+        "shipped-one-step-method",
+        True,
+        "Output_FIFU_DRD",
+        (
+            "chemex",
+            "fit",
+            "-e",
+            "Experiments/*.toml",
+            "Experiments/DRD/*.toml",
+            "-p",
+            "Parameters/parameters.toml",
+            "-m",
+            "Methods/method.toml",
+            "-d",
+            "3st_fork",
+            "-o",
+            "Output_FIFU_DRD",
+        ),
+    ),
+}
+
+
+def _approved_anchor(name: ApprovedAnchorName) -> _AnchorDefinition:
+    try:
+        return _APPROVED_ANCHORS[name]
+    except KeyError as error:
+        raise ValueError(f"Unknown approved scientific anchor: {name}") from error
+
+
 def _input_snapshot_path(anchor_directory: Path, source: Path) -> Path:
     try:
-        return source.relative_to(anchor_directory)
+        return source.resolve(strict=True).relative_to(
+            anchor_directory.resolve(strict=True)
+        )
     except ValueError as error:
         raise ValueError(
-            "CPMG anchor inputs must remain inside the anchor directory"
+            "Scientific anchor inputs must remain inside the anchor directory"
         ) from error
 
 
-def _read_cpmg_input(anchor_directory: Path, role: str, source: Path) -> _CapturedInput:
-    content = source.read_bytes()
+def _read_anchor_input(
+    anchor_directory: Path, role: str, source: Path
+) -> _CapturedInput:
+    resolved = source.resolve(strict=True)
+    content = resolved.read_bytes()
     return _CapturedInput(
         InputMember(role, _sha256(content), len(content)),
-        _input_snapshot_path(anchor_directory, source),
+        _input_snapshot_path(anchor_directory, resolved),
         content,
     )
 
 
-def _cpmg_experiment(content: bytes) -> Mapping[str, object]:
+def _anchor_experiment(content: bytes) -> Mapping[str, object]:
     try:
         decoded = tomllib.loads(content.decode("utf-8"))
     except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
-        raise ValueError("Malformed frozen CPMG experiment input") from error
+        raise ValueError(
+            "Malformed frozen scientific-anchor experiment input"
+        ) from error
     if not isinstance(decoded, Mapping):
-        raise TypeError("CPMG experiment input must be a record")
+        raise TypeError("Scientific-anchor experiment input must be a record")
     return cast("Mapping[str, object]", decoded)
+
+
+def _capture_anchor_inputs(
+    anchor: _AnchorDefinition, anchor_directory: Path
+) -> tuple[_CapturedInput, ...]:
+    """Capture one fixed anchor's shipped TOML and referenced scientific data."""
+    captured = [
+        _read_anchor_input(
+            anchor_directory, item.role, anchor_directory / item.relative_path
+        )
+        for item in (*anchor.parameters, *anchor.methods, *anchor.experiments)
+    ]
+    captured_by_role = {item.member.role: item for item in captured}
+    for experiment_input in anchor.experiments:
+        source = anchor_directory / experiment_input.relative_path
+        experiment = _anchor_experiment(captured_by_role[experiment_input.role].content)
+        data = experiment.get("data")
+        if not isinstance(data, Mapping):
+            raise TypeError("Scientific anchor experiment input has no data record")
+        profiles = data.get("profiles")
+        if not isinstance(profiles, Mapping):
+            raise TypeError("Scientific anchor experiment input has no profiles record")
+        data_path = _record_string(data.get("path"), "scientific anchor data path")
+        data_directory = source.parent / data_path
+        experiment_role = experiment_input.role.removeprefix("experiment:")
+        for profile, filenames in profiles.items():
+            profile_name = _record_string(profile, "scientific anchor profile")
+            raw_filenames = [filenames] if isinstance(filenames, str) else filenames
+            if not isinstance(raw_filenames, list) or not raw_filenames:
+                raise TypeError("Scientific anchor profile files must be non-empty")
+            for ordinal, filename in enumerate(raw_filenames, start=1):
+                role = f"data:{experiment_role}:{profile_name}"
+                if len(raw_filenames) > 1:
+                    role = f"{role}:{ordinal}"
+                captured.append(
+                    _read_anchor_input(
+                        anchor_directory,
+                        role,
+                        data_directory
+                        / _record_string(filename, "scientific anchor data filename"),
+                    )
+                )
+    result = tuple(sorted(captured, key=lambda item: item.member))
+    if len({item.member.role for item in result}) != len(result):
+        raise ValueError("Scientific anchor has duplicate frozen input roles")
+    return result
 
 
 def _capture_cpmg_inputs(anchor_directory: Path) -> tuple[_CapturedInput, ...]:
     """Capture every authoritative input exactly once before creating a snapshot."""
-    experiments = {
-        "500mhz": anchor_directory / "Experiments" / "500mhz.toml",
-        "800mhz": anchor_directory / "Experiments" / "800mhz.toml",
-    }
-    captured = [
-        _read_cpmg_input(
-            anchor_directory,
-            "parameters",
-            anchor_directory / "Parameters" / "parameters.toml",
-        ),
-        _read_cpmg_input(
-            anchor_directory, "method", anchor_directory / "Methods" / "method.toml"
-        ),
-    ]
-    experiment_inputs = {
-        name: _read_cpmg_input(anchor_directory, f"experiment:{name}", path)
-        for name, path in experiments.items()
-    }
-    captured.extend(experiment_inputs.values())
-    for name, experiment_input in experiment_inputs.items():
-        experiment = _cpmg_experiment(experiment_input.content)
-        data = experiment.get("data")
-        if not isinstance(data, Mapping):
-            raise TypeError("CPMG experiment input has no data record")
-        profiles = data.get("profiles")
-        if not isinstance(profiles, Mapping):
-            raise TypeError("CPMG experiment input has no profiles record")
-        data_path = _record_string(data.get("path"), "CPMG data path")
-        data_directory = experiments[name].parent / data_path
-        for profile, filename in profiles.items():
-            profile_name = _record_string(profile, "CPMG profile")
-            captured.append(
-                _read_cpmg_input(
-                    anchor_directory,
-                    f"data:{name}:{profile_name}",
-                    data_directory / _record_string(filename, "CPMG data filename"),
-                )
-            )
-    result = tuple(sorted(captured, key=lambda item: item.member))
-    if len({item.member.role for item in result}) != len(result):
-        raise ValueError("CPMG anchor has duplicate frozen input roles")
-    return result
+    return _capture_anchor_inputs(_APPROVED_ANCHORS["cpmg-15n-ip"], anchor_directory)
 
 
-def _materialize_cpmg_snapshot(
+def _materialize_anchor_snapshot(
     work_directory: Path, inputs: Sequence[_CapturedInput]
 ) -> Path:
     """Write the already-captured bytes into a private, read-only snapshot."""
@@ -1907,7 +2099,7 @@ def _materialize_cpmg_snapshot(
     return snapshot_directory
 
 
-def _verify_cpmg_snapshot(
+def _verify_anchor_snapshot(
     snapshot_directory: Path, inputs: Sequence[_CapturedInput]
 ) -> None:
     """Reject a snapshot changed after its input-member records were frozen."""
@@ -1915,13 +2107,13 @@ def _verify_cpmg_snapshot(
         content = (snapshot_directory / captured.snapshot_relative_path).read_bytes()
         member = InputMember(captured.member.role, _sha256(content), len(content))
         if member != captured.member:
-            raise ValueError("Frozen CPMG input snapshot drifted during execution")
+            raise ValueError("Frozen scientific-anchor input drifted during execution")
 
 
 def _case_from_cpmg_inputs(inputs: Sequence[_CapturedInput]) -> CaseDefinition:
     return CaseDefinition.create(
         "cpmg-15n-ip",
-        CaseSourceAuthority(_CPMG_SOURCE_COMMIT, _CPMG_LOCKFILE_HASH),
+        CaseSourceAuthority(_ANCHOR_SOURCE_COMMIT, _ANCHOR_LOCKFILE_HASH),
         {
             "analysis_kind": "fit",
             "anchor_role": "scientific-anchor",
@@ -1933,9 +2125,37 @@ def _case_from_cpmg_inputs(inputs: Sequence[_CapturedInput]) -> CaseDefinition:
     )
 
 
+def _case_from_anchor_inputs(
+    anchor: _AnchorDefinition, inputs: Sequence[_CapturedInput]
+) -> CaseDefinition:
+    if anchor.name == "cpmg-15n-ip":
+        return _case_from_cpmg_inputs(inputs)
+    return CaseDefinition.create(
+        anchor.name,
+        CaseSourceAuthority(_ANCHOR_SOURCE_COMMIT, _ANCHOR_LOCKFILE_HASH),
+        {
+            "analysis_kind": "fit",
+            "anchor_role": "scientific-anchor",
+            "experiment": anchor.experiment_kind,
+            "model": anchor.model,
+            "workflow": anchor.workflow,
+        },
+        tuple(item.member for item in inputs),
+    )
+
+
 def cpmg_15n_ip_case(anchor_directory: Path) -> CaseDefinition:
     """Freeze #581's first shipped anchor without retaining source paths."""
     return _case_from_cpmg_inputs(_capture_cpmg_inputs(anchor_directory))
+
+
+def approved_scientific_anchor_case(
+    name: ApprovedAnchorName, anchor_directory: Path
+) -> CaseDefinition:
+    """Freeze one of #581's exact four approved shipped scientific anchors."""
+    anchor = _approved_anchor(name)
+    inputs = _capture_anchor_inputs(anchor, anchor_directory)
+    return _case_from_anchor_inputs(anchor, inputs)
 
 
 def _cpmg_required_artifact_roles(inputs: Sequence[_CapturedInput]) -> tuple[str, ...]:
@@ -1943,7 +2163,7 @@ def _cpmg_required_artifact_roles(inputs: Sequence[_CapturedInput]) -> tuple[str
     by_role = {item.member.role: item for item in inputs}
     profiles_by_field: list[tuple[str, ...]] = []
     for field_name in ("500mhz", "800mhz"):
-        experiment = _cpmg_experiment(by_role[f"experiment:{field_name}"].content)
+        experiment = _anchor_experiment(by_role[f"experiment:{field_name}"].content)
         data = experiment.get("data")
         if not isinstance(data, Mapping):
             raise TypeError("CPMG experiment input has no data record")
@@ -1990,27 +2210,200 @@ def _cpmg_artifact_inventory(inputs: Sequence[_CapturedInput]) -> dict[str, obje
     }
 
 
-def cpmg_15n_ip_legacy_specification(
+def _anchor_profiles_by_experiment(
+    anchor: _AnchorDefinition, inputs: Sequence[_CapturedInput]
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    by_role = {item.member.role: item for item in inputs}
+    profiles_by_experiment: list[tuple[str, tuple[str, ...]]] = []
+    for experiment_file in anchor.experiments:
+        experiment = _anchor_experiment(by_role[experiment_file.role].content)
+        data = experiment.get("data")
+        if not isinstance(data, Mapping):
+            raise TypeError("Scientific anchor experiment input has no data record")
+        profiles = data.get("profiles")
+        if not isinstance(profiles, Mapping):
+            raise TypeError("Scientific anchor experiment input has no profiles record")
+        profile_names = tuple(
+            _record_string(profile, "scientific anchor profile") for profile in profiles
+        )
+        profiles_by_experiment.append(
+            (Path(experiment_file.relative_path).stem, profile_names)
+        )
+    return tuple(profiles_by_experiment)
+
+
+def _anchor_method_sections(
+    anchor: _AnchorDefinition, inputs: Sequence[_CapturedInput]
+) -> Mapping[str, object]:
+    if len(anchor.methods) != 1:
+        raise ValueError("Approved scientific anchors require one shipped method file")
+    by_role = {item.member.role: item for item in inputs}
+    try:
+        decoded = tomllib.loads(by_role[anchor.methods[0].role].content.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        raise ValueError("Malformed frozen scientific-anchor method input") from error
+    if not isinstance(decoded, Mapping):
+        raise TypeError("Scientific-anchor method input must be a record")
+    expected = (
+        ("STEP1", "STEP2")
+        if anchor.workflow == "shipped-two-step-method"
+        else ("STEP1",)
+    )
+    if tuple(decoded) != expected:
+        raise ValueError("Scientific-anchor method has unexpected frozen steps")
+    return cast("Mapping[str, object]", decoded)
+
+
+def _selected_anchor_profiles(
+    profiles: Sequence[str], method_section: object
+) -> tuple[str, ...]:
+    if not isinstance(method_section, Mapping):
+        raise TypeError("Scientific-anchor method section must be a record")
+    include = method_section.get("INCLUDE", "all")
+    if isinstance(include, str) and include.lower() in {"all", "*"}:
+        return tuple(profiles)
+    if not isinstance(include, list) or not include:
+        raise TypeError("Scientific-anchor method INCLUDE must be non-empty")
+    selection_values: list[int | str] = []
+    for item in include:
+        if isinstance(item, bool) or not isinstance(item, (int, str)):
+            raise TypeError("Scientific-anchor method profile must be text or integer")
+        selection_values.append(item)
+    selection = tuple(SpinSystem.from_name(item) for item in selection_values)
+    return tuple(
+        profile
+        for profile in profiles
+        if SpinSystem.from_name(profile).part_of(selection)
+    )
+
+
+def _anchor_fit_artifact_paths(
+    prefix: str, experiment_names: Sequence[str], *, plots: bool
+) -> tuple[str, ...]:
+    paths = [
+        *(f"{prefix}Data/{name}.dat" for name in experiment_names),
+        f"{prefix}Parameters/constrained.toml",
+        f"{prefix}Parameters/fitted.toml",
+        f"{prefix}Parameters/fixed.toml",
+        f"{prefix}statistics.toml",
+    ]
+    if plots:
+        paths.extend(f"{prefix}Plots/{name}.fit" for name in experiment_names)
+    return tuple(sorted(paths))
+
+
+def _approved_anchor_required_artifact_roles(
+    anchor: _AnchorDefinition, inputs: Sequence[_CapturedInput]
+) -> tuple[str, ...]:
+    profiles_by_experiment = _anchor_profiles_by_experiment(anchor, inputs)
+    all_profiles = tuple(
+        sorted(
+            {
+                SpinSystem.from_name(profile)
+                for _experiment, profiles in profiles_by_experiment
+                for profile in profiles
+            }
+        )
+    )
+    methods = _anchor_method_sections(anchor, inputs)
+    all_profile_names = tuple(str(profile) for profile in all_profiles)
+
+    if anchor.workflow == "shipped-one-step-method":
+        selected = set(_selected_anchor_profiles(all_profile_names, methods["STEP1"]))
+        experiment_names = tuple(
+            experiment
+            for experiment, profiles in profiles_by_experiment
+            if selected & set(profiles)
+        )
+        paths = _anchor_fit_artifact_paths("", experiment_names, plots=True)
+    else:
+        step1_selected = set(
+            _selected_anchor_profiles(all_profile_names, methods["STEP1"])
+        )
+        step1_experiments = tuple(
+            experiment
+            for experiment, profiles in profiles_by_experiment
+            if step1_selected & set(profiles)
+        )
+        all_experiments = tuple(experiment for experiment, _ in profiles_by_experiment)
+        paths = (
+            *_anchor_fit_artifact_paths("STEP1/", step1_experiments, plots=True),
+            *_anchor_fit_artifact_paths("STEP2/All/", all_experiments, plots=True),
+        )
+        group_paths: list[str] = []
+        for number, profile in enumerate(all_profile_names, start=1):
+            relevant_experiments = tuple(
+                experiment
+                for experiment, profiles in profiles_by_experiment
+                if profile in profiles
+            )
+            group_paths.extend(
+                _anchor_fit_artifact_paths(
+                    f"STEP2/Groups/{number}_{profile}/",
+                    relevant_experiments,
+                    plots=False,
+                )
+            )
+        paths = (*paths, *group_paths)
+    return _canonical_strings(
+        sorted(f"legacy-output:{path}" for path in paths),
+        "approved-anchor required artifact roles",
+    )
+
+
+def _anchor_artifact_inventory(
+    anchor: _AnchorDefinition,
+    inputs: Sequence[_CapturedInput],
+    *,
+    include_lane_attestation: bool = False,
+) -> dict[str, object]:
+    if anchor.name == "cpmg-15n-ip":
+        inventory = _cpmg_artifact_inventory(inputs)
+    else:
+        inventory = {
+            "version": "approved-anchor-structured-artifact-contract-v1",
+            "closed": True,
+            "excluded_path_components": ["run_info"],
+            "structured_suffixes": [".dat", ".fit", ".toml", ".txt"],
+            "required_roles": list(
+                _approved_anchor_required_artifact_roles(anchor, inputs)
+            ),
+        }
+    if include_lane_attestation:
+        roles = cast("list[str]", inventory["required_roles"])
+        inventory["required_roles"] = sorted(
+            (*roles, "environment:lane-attestation.json")
+        )
+    return inventory
+
+
+def _anchor_legacy_specification(
+    anchor: _AnchorDefinition,
     case: CaseDefinition,
     *,
     artifact_inventory: Mapping[str, object],
     implementation: LegacyObservationImplementation | None = None,
     lane_reference: str = "unqualified-local-lane-v1",
+    execution_settings: Mapping[str, object] | None = None,
+    include_shipped_argv: bool = False,
 ) -> ExecutionSpecification:
-    """The deliberately minimal pre-#588 execution request for the anchor."""
+    workflow: dict[str, object] = {
+        "command": "fit",
+        "method": anchor.workflow,
+        "model": anchor.model,
+    }
+    if include_shipped_argv:
+        workflow["argv"] = list(anchor.shipped_argv)
     return ExecutionSpecification.create(
         case,
         implementation or LegacyObservationImplementation.from_current_package(),
-        workflow={
-            "command": "fit",
-            "method": "shipped-two-step-method",
-            "model": "2st",
-        },
+        workflow=workflow,
         lane_reference=lane_reference,
         policy={"concurrency": "legacy-default", "implementation": "legacy-product"},
         budget={"policy": "legacy-product-default"},
         seed=None,
-        execution_settings={
+        execution_settings=execution_settings
+        or {
             "native_threads": "auto",
             "plot": "normal",
             "workers": "auto",
@@ -2021,115 +2414,181 @@ def cpmg_15n_ip_legacy_specification(
     )
 
 
-def _assert_cpmg_request(
+def cpmg_15n_ip_legacy_specification(
+    case: CaseDefinition,
+    *,
+    artifact_inventory: Mapping[str, object],
+    implementation: LegacyObservationImplementation | None = None,
+    lane_reference: str = "unqualified-local-lane-v1",
+    execution_settings: Mapping[str, object] | None = None,
+) -> ExecutionSpecification:
+    """The deliberately minimal pre-#588 execution request for the anchor."""
+    return _anchor_legacy_specification(
+        _APPROVED_ANCHORS["cpmg-15n-ip"],
+        case,
+        artifact_inventory=artifact_inventory,
+        implementation=implementation,
+        lane_reference=lane_reference,
+        execution_settings=execution_settings,
+    )
+
+
+def _assert_anchor_request(
     case: CaseDefinition,
     specification: ExecutionSpecification,
 ) -> None:
     if specification.case_identity != case.identity:
         raise ValueError("Execution specification belongs to another case")
     if specification.implementation.authority_role != "LegacyObservationImplementation":
-        raise ValueError("CPMG baseline requires the legacy observation implementation")
+        raise ValueError(
+            "Scientific-anchor baseline requires the legacy observation implementation"
+        )
 
 
 def _legacy_result_artifacts(
     output_directory: Path, specification: ExecutionSpecification
 ) -> tuple[ArtifactContent, ...]:
     inventory = specification.artifact_inventory.to_record_value()
-    required_roles = CpmgBaselinePublisher._required_roles(specification)
+    required_roles = BaselinePublisher._required_roles(specification)
     if not isinstance(inventory, Mapping):
-        raise TypeError("CPMG artifact inventory must be a record")
+        raise TypeError("Scientific-anchor artifact inventory must be a record")
     raw_suffixes = inventory.get("structured_suffixes")
     raw_excluded = inventory.get("excluded_path_components")
     if not isinstance(raw_suffixes, list) or not all(
         isinstance(suffix, str) for suffix in raw_suffixes
     ):
-        raise ValueError("CPMG artifact inventory has malformed suffixes")
+        raise ValueError("Scientific-anchor artifact inventory has malformed suffixes")
     if not isinstance(raw_excluded, list) or not all(
         isinstance(component, str) for component in raw_excluded
     ):
-        raise ValueError("CPMG artifact inventory has malformed exclusions")
+        raise ValueError(
+            "Scientific-anchor artifact inventory has malformed exclusions"
+        )
     allowed_suffixes = frozenset(raw_suffixes)
     excluded_components = frozenset(raw_excluded)
-    artifacts = tuple(
-        ArtifactContent(
-            f"legacy-output:{path.relative_to(output_directory).as_posix()}",
-            path.read_bytes(),
-        )
+    structured_files = tuple(
+        path
         for path in sorted(output_directory.rglob("*"))
         if path.is_file()
         and not (excluded_components & set(path.relative_to(output_directory).parts))
         and path.suffix in allowed_suffixes
     )
-    if tuple(item.role for item in artifacts) != required_roles:
+    artifacts = tuple(
+        ArtifactContent(
+            f"legacy-output:{path.relative_to(output_directory).as_posix()}",
+            path.read_bytes(),
+        )
+        for path in structured_files
+    )
+    required_output_roles = tuple(
+        role for role in required_roles if role.startswith("legacy-output:")
+    )
+    if tuple(item.role for item in artifacts) != required_output_roles:
         raise ValueError("Legacy anchor did not produce the closed required artifacts")
     return artifacts
 
 
-def capture_cpmg_15n_ip_legacy_observation(
+def _capture_legacy_anchor_observation(
+    anchor: _AnchorDefinition,
     *,
-    publisher: CpmgBaselinePublisher,
+    publisher: BaselinePublisher,
     anchor_directory: Path,
     lane_reference: str = "unqualified-local-lane-v1",
+    lane_authority: LiveLaneAuthority | None = None,
     attempt_token: str,
 ) -> PublishedEvidence:
-    """Run the unchanged CPMG analysis through the legacy product runner.
+    """Run one unchanged shipped analysis through the legacy product runner.
 
     The temporary output is sampled only after the legacy run ends.  No baseline
     artifact is supplied to the analysis, and a failure is never published.
     """
-    work_directory = Path(tempfile.mkdtemp(prefix="chemex-cpmg-baseline-"))
+    work_directory = Path(tempfile.mkdtemp(prefix=f"chemex-{anchor.name}-baseline-"))
     requested: Occurrence | None = None
     reserved = False
     try:
-        captured_inputs = _capture_cpmg_inputs(anchor_directory)
-        case = _case_from_cpmg_inputs(captured_inputs)
-        specification = cpmg_15n_ip_legacy_specification(
+        captured_inputs = _capture_anchor_inputs(anchor, anchor_directory)
+        case = _case_from_anchor_inputs(anchor, captured_inputs)
+        execution_settings: Mapping[str, object] | None = None
+        lane_evidence: LaneAttestation | None = None
+        if lane_authority is not None:
+            lane_evidence = _validate_live_lane_authority(
+                lane_authority,
+                required_lane_role="CANONICAL_NUMERICAL",
+                required_workers=1,
+                required_native_threads=1,
+            )
+            if lane_reference not in {
+                "unqualified-local-lane-v1",
+                lane_evidence.lane_identity,
+            }:
+                raise ValueError("Live canonical lane authority conflicts with lane")
+            lane_reference = lane_evidence.lane_identity
+            execution_settings = {
+                "native_threads": lane_evidence.native_threads,
+                "plot": "normal",
+                "workers": lane_evidence.workers,
+            }
+        specification = _anchor_legacy_specification(
+            anchor,
             case,
-            artifact_inventory=_cpmg_artifact_inventory(captured_inputs),
+            artifact_inventory=_anchor_artifact_inventory(
+                anchor,
+                captured_inputs,
+                include_lane_attestation=lane_evidence is not None,
+            ),
             lane_reference=lane_reference,
+            execution_settings=execution_settings,
+            include_shipped_argv=lane_evidence is not None,
         )
-        _assert_cpmg_request(case, specification)
-        requested = Occurrence.requested(specification, case, attempt_token)
+        _assert_anchor_request(case, specification)
+        requested = Occurrence.requested(
+            specification, case, attempt_token, lane_authority
+        )
         publisher.reserve(case, specification, requested)
         reserved = True
-        snapshot_directory = _materialize_cpmg_snapshot(work_directory, captured_inputs)
-        output_directory = work_directory / "Output"
+        snapshot_directory = _materialize_anchor_snapshot(
+            work_directory, captured_inputs
+        )
+        output_directory = work_directory / anchor.output_directory
         paths = {
             item.member.role: snapshot_directory / item.snapshot_relative_path
             for item in captured_inputs
         }
         parser = build_parser()
-        args = parser.parse_args(
-            [
-                "fit",
-                "-e",
-                str(paths["experiment:500mhz"]),
-                str(paths["experiment:800mhz"]),
-                "-p",
-                str(paths["parameters"]),
-                "-m",
-                str(paths["method"]),
-                "-o",
-                str(output_directory),
-            ]
-        )
+        command = [
+            "fit",
+            "-e",
+            *(str(paths[item.role]) for item in anchor.experiments),
+            "-p",
+            *(str(paths[item.role]) for item in anchor.parameters),
+            "-m",
+            *(str(paths[item.role]) for item in anchor.methods),
+        ]
+        if anchor.explicit_model:
+            command.extend(("-d", anchor.model))
+        if lane_authority is not None:
+            command.extend(("--workers", "1", "--native-threads", "1"))
+        command.extend(("-o", str(output_directory)))
+        args = parser.parse_args(command)
         run(
             args,
-            argv=(
-                "chemex",
-                "fit",
-                "-e",
-                "Experiments/*.toml",
-                "-p",
-                "Parameters/parameters.toml",
-                "-m",
-                "Methods/method.toml",
-                "-o",
-                "Output",
-            ),
+            argv=anchor.shipped_argv,
         )
         artifacts = _legacy_result_artifacts(output_directory, specification)
-        _verify_cpmg_snapshot(snapshot_directory, captured_inputs)
+        if lane_evidence is not None:
+            artifacts = tuple(
+                sorted(
+                    (
+                        *artifacts,
+                        ArtifactContent(
+                            "environment:lane-attestation.json",
+                            _canonical_record_bytes(lane_evidence.to_record()),
+                        ),
+                    ),
+                    key=lambda item: item.role,
+                )
+            )
+        _verify_anchor_snapshot(snapshot_directory, captured_inputs)
         bundle = ResultBundle.create(
             requested.identity,
             specification.identity,
@@ -2150,3 +2609,40 @@ def capture_cpmg_15n_ip_legacy_observation(
         raise LegacyAnchorExecutionError(failed) from error
     finally:
         shutil.rmtree(work_directory, ignore_errors=True)
+
+
+def capture_approved_scientific_anchor_legacy_observation(
+    name: ApprovedAnchorName,
+    *,
+    publisher: BaselinePublisher,
+    anchor_directory: Path,
+    lane_authority: LiveLaneAuthority,
+    attempt_token: str,
+) -> PublishedEvidence:
+    """Capture one approved anchor only under live #588 canonical-lane authority."""
+    return _capture_legacy_anchor_observation(
+        _approved_anchor(name),
+        publisher=publisher,
+        anchor_directory=anchor_directory,
+        lane_authority=lane_authority,
+        attempt_token=attempt_token,
+    )
+
+
+def capture_cpmg_15n_ip_legacy_observation(
+    *,
+    publisher: BaselinePublisher,
+    anchor_directory: Path,
+    lane_reference: str = "unqualified-local-lane-v1",
+    lane_authority: LiveLaneAuthority | None = None,
+    attempt_token: str,
+) -> PublishedEvidence:
+    """Retain #587's CPMG entry point while using the shared anchor pipeline."""
+    return _capture_legacy_anchor_observation(
+        _APPROVED_ANCHORS["cpmg-15n-ip"],
+        publisher=publisher,
+        anchor_directory=anchor_directory,
+        lane_reference=lane_reference,
+        lane_authority=lane_authority,
+        attempt_token=attempt_token,
+    )
