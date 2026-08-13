@@ -1854,6 +1854,7 @@ class _AnchorDefinition:
     explicit_model: bool
     output_directory: str
     shipped_argv: tuple[str, ...]
+    empty_fixed_parameter_scopes: tuple[str, ...] = ()
 
 
 _APPROVED_ANCHORS: dict[ApprovedAnchorName, _AnchorDefinition] = {
@@ -1908,6 +1909,7 @@ _APPROVED_ANCHORS: dict[ApprovedAnchorName, _AnchorDefinition] = {
             "-o",
             "Output",
         ),
+        ("STEP1/",),
     ),
     "2st-binding": _AnchorDefinition(
         "2st-binding",
@@ -2278,17 +2280,28 @@ def _selected_anchor_profiles(
 
 
 def _anchor_fit_artifact_paths(
-    prefix: str, experiment_names: Sequence[str], *, plots: bool
+    prefix: str,
+    experiment_names: Sequence[str],
+    *,
+    plots: bool,
+    fixed_parameters: bool = True,
 ) -> tuple[str, ...]:
     paths = [
-        *(f"{prefix}Data/{name}.dat" for name in experiment_names),
+        *(
+            f"{prefix}Data/{Path(name).with_suffix('.dat')}"
+            for name in experiment_names
+        ),
         f"{prefix}Parameters/constrained.toml",
         f"{prefix}Parameters/fitted.toml",
-        f"{prefix}Parameters/fixed.toml",
         f"{prefix}statistics.toml",
     ]
+    if fixed_parameters:
+        paths.append(f"{prefix}Parameters/fixed.toml")
     if plots:
-        paths.extend(f"{prefix}Plots/{name}.fit" for name in experiment_names)
+        paths.extend(
+            f"{prefix}Plots/{Path(name).with_suffix('.fit')}"
+            for name in experiment_names
+        )
     return tuple(sorted(paths))
 
 
@@ -2327,7 +2340,12 @@ def _approved_anchor_required_artifact_roles(
         )
         all_experiments = tuple(experiment for experiment, _ in profiles_by_experiment)
         paths = (
-            *_anchor_fit_artifact_paths("STEP1/", step1_experiments, plots=True),
+            *_anchor_fit_artifact_paths(
+                "STEP1/",
+                step1_experiments,
+                plots=True,
+                fixed_parameters="STEP1/" not in anchor.empty_fixed_parameter_scopes,
+            ),
             *_anchor_fit_artifact_paths("STEP2/All/", all_experiments, plots=True),
         )
         group_paths: list[str] = []

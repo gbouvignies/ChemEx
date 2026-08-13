@@ -31,6 +31,9 @@ from chemex.baselines import (
     capture_cpmg_15n_ip_legacy_observation,
     cpmg_15n_ip_case,
 )
+from chemex.configuration.methods import Selection, read_methods
+from chemex.configuration.parameters import read_defaults
+from chemex.experiments.builder import build_experiments
 from chemex.numerical_lanes import (
     LaneAttestation,
     LiveLaneAuthority,
@@ -38,6 +41,8 @@ from chemex.numerical_lanes import (
     RuntimeEnvironment,
     canonical_lanes,
 )
+from chemex.printers.parameters import classify_parameters, write_parameters
+from chemex.runtime import AnalysisSession
 
 
 def _inventory(roles: Sequence[str] = ("result:a", "result:b")) -> dict[str, object]:
@@ -737,6 +742,91 @@ def test_new_anchor_artifact_contracts_are_closed(
     (output / "unexpected.toml").write_bytes(b"unexpected")
     with pytest.raises(ValueError, match="closed required"):
         baselines._legacy_result_artifacts(output, specification)
+
+
+def test_cest_anchor_omits_only_the_empty_step1_fixed_report(tmp_path: Path) -> None:
+    anchor_directory = Path("examples/Experiments/CEST_13C_LABEL_CN")
+    anchor = baselines._approved_anchor("cest-13c-label-cn")
+    inputs = baselines._capture_anchor_inputs(anchor, anchor_directory)
+    case = baselines._case_from_anchor_inputs(anchor, inputs)
+    inventory = baselines._anchor_artifact_inventory(anchor, inputs)
+    specification = baselines._anchor_legacy_specification(
+        anchor, case, artifact_inventory=inventory
+    )
+    required_roles = inventory["required_roles"]
+    assert isinstance(required_roles, list)
+
+    session = AnalysisSession.create()
+    session.set_model(anchor.model)
+    experiments = build_experiments(
+        sorted(anchor_directory.glob("Experiments/*.toml")),
+        Selection(include=None, exclude=None),
+        session=session,
+    )
+    session.parameters.set_defaults(
+        read_defaults([anchor_directory / "Parameters/parameters.toml"])
+    )
+    step1 = read_methods([anchor_directory / "Methods/method.toml"])["STEP1"]
+    experiments.select(step1.selection)
+    session.parameters.set_parameter_status(step1)
+    classified = classify_parameters(experiments, session.parameters)
+    assert not classified.fixed
+
+    parameter_output = tmp_path / "classified"
+    write_parameters(experiments, parameter_output, session.parameters)
+    assert not (parameter_output / "Parameters/fixed.toml").exists()
+    assert "legacy-output:STEP1/Parameters/fixed.toml" not in required_roles
+
+    output = tmp_path / anchor.output_directory
+    _write_complete_approved_anchor_output(
+        output, anchor_directory, "cest-13c-label-cn"
+    )
+    artifacts = baselines._legacy_result_artifacts(output, specification)
+    assert len(artifacts) == 90
+
+    unexpected = output / "STEP1/Parameters/fixed.toml"
+    unexpected.write_bytes(b"")
+    with pytest.raises(ValueError, match="closed required"):
+        baselines._legacy_result_artifacts(output, specification)
+
+
+def test_dcest_anchor_derives_decimal_output_names_from_legacy_suffix_rules() -> None:
+    anchor_directory = Path("examples/Experiments/DCEST_15N_3States")
+    anchor = baselines._approved_anchor("dcest-fifu-drd")
+    inputs = baselines._capture_anchor_inputs(anchor, anchor_directory)
+    inventory = baselines._anchor_artifact_inventory(anchor, inputs)
+    required_roles = inventory["required_roles"]
+    assert isinstance(required_roles, list)
+
+    decimal_inputs = {
+        item.relative_path
+        for item in anchor.experiments
+        if item.relative_path in {"Experiments/1.25hz.toml", "Experiments/7.5hz.toml"}
+    }
+    assert decimal_inputs == {
+        "Experiments/1.25hz.toml",
+        "Experiments/7.5hz.toml",
+    }
+    expected = {
+        f"legacy-output:Data/{Path(path).with_suffix('').with_suffix('.dat').name}"
+        for path in decimal_inputs
+    } | {
+        f"legacy-output:Plots/{Path(path).with_suffix('').with_suffix('.fit').name}"
+        for path in decimal_inputs
+    }
+    assert expected == {
+        "legacy-output:Data/1.dat",
+        "legacy-output:Data/7.dat",
+        "legacy-output:Plots/1.fit",
+        "legacy-output:Plots/7.fit",
+    }
+    assert expected <= set(required_roles)
+    assert not {
+        "legacy-output:Data/1.25hz.dat",
+        "legacy-output:Data/7.5hz.dat",
+        "legacy-output:Plots/1.25hz.fit",
+        "legacy-output:Plots/7.5hz.fit",
+    } & set(required_roles)
 
 
 @pytest.mark.parametrize(

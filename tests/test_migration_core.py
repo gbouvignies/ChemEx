@@ -263,3 +263,100 @@ def test_canonical_capture_status_records_the_fail_closed_empirical_result() -> 
     assert len(coverage["uncovered_requirement_ids"]) == 47
     assert coverage["compiled_coverage_identity"] is None
     assert coverage["compiler"]["status"] == "FAILED_CLOSED"
+
+
+def test_current_canonical_coverage_status_records_phased_anchor_eligibility() -> None:
+    record = json.loads(
+        (
+            Path(__file__).parent
+            / "fixtures"
+            / "migration_core_canonical_coverage_status_v2.json"
+        ).read_text(encoding="ascii")
+    )
+    identity = record.pop("identity")
+    anchors = {anchor["anchor"]: anchor for anchor in record["anchors"]}
+    coverage = record["coverage"]
+
+    assert hashlib.sha256(_canonical_bytes(record)).hexdigest() == identity
+    assert record["status"] == "READY_TO_REVIEW_AS_PHASED_590_INFRASTRUCTURE"
+    assert record["completion_claim"] == "PHASED_INFRASTRUCTURE_ONLY"
+    assert record["source"] == {
+        "archive_sha256": (
+            "7e5677cf87dee315f05c5ea9b56ad904578e5cc904f39964c2f6d16ab14a2a1e"
+        ),
+        "case_source_authority": {
+            "authority_version": "case-source-authority-v1",
+            "identity": (
+                "2151f8713fe10a6f2bf6f9b6918c8aa4b1c1b503eb2ba3a3e925a7f35f0e4d7e"
+            ),
+            "lockfile_hash": (
+                "f0fb2ffc7b1a5ecd1bf7ac43956fc4861b96c058d158948b68b4e97027a6086a"
+            ),
+            "schema_version": 1,
+            "source_commit": "d5ed0c87e8ce7a7f17745feea346af4dfbae7ecf",
+        },
+        "execution_source_label": (
+            "cc82cba558b885cdb8f26f173a08a09294195031+working-tree@"
+            "7e5677cf87dee315f05c5ea9b56ad904578e5cc904f39964c2f6d16ab14a2a1e"
+        ),
+        "implementation_authority_identity": (
+            "f284deeb88aba9041764d7a471ad962746f92c857f3f1dc0d96d6bafc1d10eac"
+        ),
+        "implementation_source_manifest_identity": (
+            "d9829b9bb00d7403630d2416dafa0fcb2a33a8cfd7558f213d267b2081ac00a8"
+        ),
+        "repository_base_commit": "cc82cba558b885cdb8f26f173a08a09294195031",
+        "tree_sha256": (
+            "819447cbe245b015acd063992450fce3e7bdb811fb13a513233d0bb2075951bc"
+        ),
+    }
+    assert record["lane"]["identity"] == canonical_lanes()[0].identity
+    assert record["lane"]["attestation_identity"] == (
+        "3b3e0bc184826d61ec6652194486c907a5faa4c64b68ec03bbe60b63c660d687"
+    )
+    assert record["lane"]["environment_identity"] == (
+        "cc5359f90df35ec9b60fd56e483911745209519ecce37d69e17c4edd6ea3604f"
+    )
+    assert set(anchors) == {
+        "cpmg-15n-ip",
+        "cest-13c-label-cn",
+        "2st-binding",
+        "dcest-fifu-drd",
+    }
+    assert all(anchor["status"] == "ELIGIBLE" for anchor in anchors.values())
+    assert all(anchor["fresh_occurrence"] for anchor in anchors.values())
+    assert all(anchor["shipped_input_bytes_revalidated"] for anchor in anchors.values())
+    assert {
+        name: (anchor["output_artifact_count"], anchor["artifact_count"])
+        for name, anchor in anchors.items()
+    } == {
+        "cpmg-15n-ip": (340, 341),
+        "cest-13c-label-cn": (90, 91),
+        "2st-binding": (894, 895),
+        "dcest-fifu-drd": (22, 23),
+    }
+
+    assert coverage["manifest_identity"] == migration_core_coverage_manifest().identity
+    assert coverage["requirement_count"] == 51
+    assert coverage["eligible_requirement_count"] == 10
+    assert len(coverage["eligible_requirement_ids"]) == 10
+    assert coverage["uncovered_requirement_count"] == 41
+    uncovered = set(coverage["uncovered_requirement_ids"])
+    assert len(uncovered) == 41
+    missing_contracts = coverage["required_evidence_not_yet_acquired"]
+    assert {contract["evidence"] for contract in missing_contracts} == set(
+        coverage["compiler"]["reason"]
+        .removeprefix("Migration-core is missing required evidence: ")
+        .split(", ")
+    )
+    assert (
+        set().union(
+            *(set(contract["requirement_ids"]) for contract in missing_contracts)
+        )
+        == uncovered
+    )
+    assert all(
+        contract["supplying_or_qualification_tickets"] for contract in missing_contracts
+    )
+    assert coverage["compiled_coverage_identity"] is None
+    assert coverage["compiler"]["status"] == "FAILED_CLOSED"
