@@ -8,6 +8,8 @@ outcome and the explicit successor-state gate.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import json
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,11 +25,21 @@ from chemex.baselines import (
     ResultBundle,
     ResultMember,
 )
-from chemex.configuration.methods import Method, Selection, read_methods
+from chemex.configuration.methods import (
+    McmcSettings,
+    Method,
+    Selection,
+    Statistics,
+    read_methods,
+)
 from chemex.configuration.parameters import read_defaults
 from chemex.evaluation.native import EvaluationEngine, EvaluationFrame, EvaluationResult
 from chemex.experiments.builder import build_experiments
-from chemex.native_provenance import BaselineReference, ProvenanceEnvironment
+from chemex.native_provenance import (
+    BaselineReference,
+    ProvenanceEnvironment,
+    WorkflowProvenance,
+)
 from chemex.optimize.de_direct_trf import (
     DeCoordinateSemantics,
     DeDirectTrfInvocation,
@@ -55,6 +67,7 @@ from chemex.optimize.method_step import (
     McmcDerivationRequest,
     MethodStepCheckpoint,
     MethodStepLifecycle,
+    MethodStepOutcome,
     MethodStepPublicationRequest,
     MethodStepRunProvenanceRequest,
     MethodStepStrategy,
@@ -93,7 +106,7 @@ from chemex.parameters.parameterization import (
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.values import AnalysisValuesSnapshot
 from chemex.run_info import capture_native_inputs
-from chemex.runtime import AnalysisSession
+from chemex.runtime import AnalysisSession, ExecutionSettings
 
 ROOT = Path(__file__).parent.parent
 EXPERIMENT = ROOT / "examples/Experiments/RELAXATION_HZNZ/Experiments/800mhz.toml"
@@ -392,6 +405,34 @@ def test_evaluation_only_retains_objective_without_fit_acceptance_or_commit() ->
     )
 
 
+def test_pre_cancelled_evaluation_never_creates_an_evaluator() -> None:
+    session, workflow = _evaluation_workflow()
+    starting = session.analysis_values.snapshot()
+    cancellation = CancellationToken()
+    cancellation.cancel()
+
+    with patch.object(
+        workflow.engine,
+        "new_evaluator",
+        side_effect=AssertionError("evaluate-only cancellation gate was crossed"),
+    ) as evaluator_factory:
+        outcome = execute_method_step(
+            workflow,
+            analysis_values=session.analysis_values,
+            cancellation=cancellation,
+        )
+
+    assert outcome.lifecycle is MethodStepLifecycle.CANCELLED
+    assert outcome.primary_terminal == "cancelled"
+    assert outcome.evaluation_result is None
+    assert outcome.accepted_result is None
+    assert outcome.commit_operation is None
+    assert session.analysis_values.snapshot() == starting
+    evaluator_factory.assert_not_called()
+    with pytest.raises(ValueError, match="successor authority"):
+        require_successor_state(outcome, session.analysis_values)
+
+
 def test_no_objective_data_is_typed_and_does_not_evaluate_or_continue() -> None:
     session, workflow = _evaluation_workflow(
         purpose=EvaluationPurpose.NO_OBJECTIVE_DATA
@@ -476,6 +517,337 @@ def test_one_component_direct_trf_uses_decomposition_aggregate_and_one_commit() 
     assert outcome.commit_operation.receipt.new_revision == 1
     successor = require_successor_state(outcome, session.analysis_values)
     assert successor.revision == 1
+
+
+def test_mutated_different_budget_invocation_cannot_execute() -> None:
+    session, workflow = _direct_workflow()
+    decomposition = workflow.decomposition
+    assert decomposition is not None
+    replacement = GroupedDirectTrfInvocation.for_decomposition(
+        decomposition,
+        objective_request_budgets=(81,) * len(decomposition.components),
+    )
+    original_identity = workflow.semantic_identity
+    object.__setattr__(workflow, "invocation", replacement)
+
+    with pytest.raises(ValueError, match="integrity"):
+        execute_method_step(workflow, analysis_values=session.analysis_values)
+
+    assert workflow.semantic_identity == original_identity
+    assert session.analysis_values.snapshot().revision == 0
+
+
+def test_recomputed_workflow_hash_cannot_repair_stale_invocation_child() -> None:
+    session, workflow = _direct_workflow()
+    invocation = workflow.invocation
+    assert isinstance(invocation, GroupedDirectTrfInvocation)
+    stale_child = invocation.component_invocations[0]
+    object.__setattr__(
+        stale_child,
+        "objective_request_budget",
+        stale_child.objective_request_budget + 1,
+    )
+    repaired_child = dataclasses.replace(stale_child)
+    repaired_invocation = dataclasses.replace(
+        invocation,
+        component_invocations=(
+            repaired_child,
+            *invocation.component_invocations[1:],
+        ),
+    )
+    repaired_workflow = dataclasses.replace(workflow, invocation=repaired_invocation)
+    object.__setattr__(
+        workflow,
+        "semantic_identity",
+        repaired_workflow.semantic_identity,
+    )
+    object.__setattr__(
+        workflow,
+        "binding_identity",
+        repaired_workflow.binding_identity,
+    )
+
+    with pytest.raises(ValueError, match="child integrity"):
+        execute_method_step(workflow, analysis_values=session.analysis_values)
+    assert session.analysis_values.snapshot().revision == 0
+
+
+def test_dataclass_replacement_rederives_invocation_identity() -> None:
+    session, workflow = _direct_workflow()
+    decomposition = workflow.decomposition
+    assert decomposition is not None
+    replacement = GroupedDirectTrfInvocation.for_decomposition(
+        decomposition,
+        objective_request_budgets=(81,) * len(decomposition.components),
+    )
+
+    replaced = dataclasses.replace(workflow, invocation=replacement)
+
+    assert replaced.semantic_identity != workflow.semantic_identity
+    assert replaced.binding_identity != workflow.binding_identity
+    outcome = execute_method_step(replaced, analysis_values=session.analysis_values)
+    assert outcome.lifecycle is MethodStepLifecycle.COMMITTED
+
+
+def test_stale_caller_supplied_semantic_identity_cannot_execute() -> None:
+    session, original = _direct_workflow()
+    decomposition = original.decomposition
+    assert decomposition is not None
+    replacement = GroupedDirectTrfInvocation.for_decomposition(
+        decomposition,
+        objective_request_budgets=(81,) * len(decomposition.components),
+    )
+    reconstructed = dataclasses.replace(original, invocation=replacement)
+    object.__setattr__(
+        reconstructed,
+        "semantic_identity",
+        original.semantic_identity,
+    )
+
+    with pytest.raises(ValueError, match="workflow integrity"):
+        execute_method_step(reconstructed, analysis_values=session.analysis_values)
+    assert session.analysis_values.snapshot().revision == 0
+
+
+def test_mutated_committed_lifecycle_cannot_grant_successor() -> None:
+    session, workflow = _direct_workflow()
+    outcome = execute_method_step(workflow, analysis_values=session.analysis_values)
+    object.__setattr__(outcome, "lifecycle", MethodStepLifecycle.FAILED)
+
+    with pytest.raises(ValueError, match="integrity"):
+        require_successor_state(outcome, session.analysis_values)
+
+    with pytest.raises(ValueError, match="integrity"):
+        outcome.to_record()
+
+
+def _recompute_outcome_record_identity(record: dict[str, object]) -> str:
+    payload = dict(record)
+    payload.pop("identity", None)
+    return hashlib.sha256(
+        json.dumps(
+            ("native-method-step-outcome-v1", payload),
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    ).hexdigest()
+
+
+def _repair_live_outcome_record_identity(outcome: MethodStepOutcome) -> None:
+    payload = outcome._record_payload()
+    object.__setattr__(
+        outcome,
+        "record_identity",
+        hashlib.sha256(
+            json.dumps(
+                ("native-method-step-outcome-v1", payload),
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("ascii")
+        ).hexdigest(),
+    )
+
+
+def test_serialized_lifecycle_tampering_survives_no_rehashed_envelope() -> None:
+    session, workflow = _direct_workflow()
+    outcome = execute_method_step(workflow, analysis_values=session.analysis_values)
+    record = outcome.to_record()
+    record["lifecycle"] = MethodStepLifecycle.FAILED.value
+    record["identity"] = _recompute_outcome_record_identity(record)
+
+    with pytest.raises(ValueError, match="lifecycle integrity"):
+        type(outcome).from_record(record)
+
+
+def test_mutated_commit_operation_cannot_grant_successor() -> None:
+    session, workflow = _direct_workflow()
+    outcome = execute_method_step(workflow, analysis_values=session.analysis_values)
+    operation = outcome.commit_operation
+    assert operation is not None
+    tampered = dataclasses.replace(
+        operation,
+        occurrence_identity="tampered-commit-occurrence",
+        _occurrence_witness=None,
+    )
+    object.__setattr__(outcome, "commit_operation", tampered)
+    object.__setattr__(outcome, "commit_operation_identity", tampered.identity)
+    _repair_live_outcome_record_identity(outcome)
+
+    with pytest.raises(ValueError, match="integrity"):
+        require_successor_state(outcome, session.analysis_values)
+
+
+def test_mutated_successor_revision_cannot_grant_successor() -> None:
+    session, workflow = _direct_workflow()
+    outcome = execute_method_step(workflow, analysis_values=session.analysis_values)
+    operation = outcome.commit_operation
+    assert operation is not None
+    successor = operation.committed_snapshot
+    assert successor is not None
+    object.__setattr__(successor, "revision", successor.revision + 1)
+
+    with pytest.raises(ValueError, match="integrity"):
+        require_successor_state(outcome, session.analysis_values)
+
+
+def test_mutated_source_workflow_cannot_grant_successor() -> None:
+    session, workflow = _direct_workflow()
+    outcome = execute_method_step(workflow, analysis_values=session.analysis_values)
+    _foreign_session, foreign = _direct_workflow()
+    object.__setattr__(outcome, "source_workflow", foreign)
+
+    with pytest.raises(ValueError, match="integrity"):
+        require_successor_state(outcome, session.analysis_values)
+
+
+def test_mutated_outcome_starting_state_cannot_grant_successor() -> None:
+    session, workflow = _direct_workflow()
+    outcome = execute_method_step(workflow, analysis_values=session.analysis_values)
+    object.__setattr__(outcome, "starting_state_identity", "stale-starting-state")
+    _repair_live_outcome_record_identity(outcome)
+
+    with pytest.raises(ValueError, match="integrity"):
+        require_successor_state(outcome, session.analysis_values)
+
+
+def test_operational_worker_and_thread_settings_are_not_semantic(
+    tmp_path: Path,
+) -> None:
+    _session, base = _evaluation_workflow(purpose=EvaluationPurpose.EVALUATE_ONLY)
+    mcmc_one = McmcSettings(steps=8, burn=2, walkers=6, seed=641, workers=1)
+    mcmc_four = mcmc_one.model_copy(update={"workers": 4})
+    one = dataclasses.replace(
+        base,
+        method=base.method.model_copy(update={"statistics": Statistics(mcmc=mcmc_one)}),
+    )
+    four = dataclasses.replace(
+        base,
+        method=base.method.model_copy(
+            update={"statistics": Statistics(mcmc=mcmc_four)}
+        ),
+    )
+
+    assert one.semantic_identity == four.semantic_identity
+    assert one.binding_identity != four.binding_identity
+    request = _publication_request(tmp_path / "unused")
+    common = {
+        "parameterization": one.parameterization,
+        "plan": one.engine.plan,
+        "semantic_workflow_identity": one.semantic_identity,
+        "grouping_topology": (("aggregate", one.parameterization.independent_ids),),
+        "policies": (),
+        "budgets": (),
+        "seeds": (),
+        "execution": ExecutionSettings(),
+        "environment": request.environment,
+        "baseline_references": request.baseline_references,
+    }
+    provenance_one = WorkflowProvenance.create_method_step(method=one.method, **common)
+    provenance_four = WorkflowProvenance.create_method_step(
+        method=four.method, **common
+    )
+    assert provenance_one.execution_identity != provenance_four.execution_identity
+    assert provenance_one.identity != provenance_four.identity
+
+    _direct_session, direct = _direct_workflow()
+    invocation = direct.invocation
+    assert isinstance(invocation, GroupedDirectTrfInvocation)
+    with_one_thread = GroupedDirectTrfInvocation(
+        invocation.root_problem_identity,
+        invocation.decomposition_identity,
+        tuple(
+            dataclasses.replace(
+                item,
+                execution_settings=ExecutionSettings(native_threads=1),
+            )
+            for item in invocation.component_invocations
+        ),
+    )
+    with_four_threads = GroupedDirectTrfInvocation(
+        invocation.root_problem_identity,
+        invocation.decomposition_identity,
+        tuple(
+            dataclasses.replace(
+                item,
+                execution_settings=ExecutionSettings(native_threads=4),
+            )
+            for item in invocation.component_invocations
+        ),
+    )
+    thread_one = dataclasses.replace(direct, invocation=with_one_thread)
+    thread_four = dataclasses.replace(direct, invocation=with_four_threads)
+    assert thread_one.semantic_identity == thread_four.semantic_identity
+    assert thread_one.binding_identity != thread_four.binding_identity
+    decomposition = direct.decomposition
+    assert decomposition is not None
+    thread_grouping = tuple(
+        (component.identity, component.controlled_ids)
+        for component in decomposition.components
+    )
+    thread_common = {
+        "parameterization": direct.parameterization,
+        "plan": direct.engine.plan,
+        "method": direct.method,
+        "semantic_workflow_identity": thread_one.semantic_identity,
+        "grouping_topology": thread_grouping,
+        "policies": (),
+        "budgets": (),
+        "seeds": (),
+        "environment": request.environment,
+        "baseline_references": request.baseline_references,
+    }
+    thread_provenance_one = WorkflowProvenance.create_method_step(
+        execution=ExecutionSettings(native_threads=1),
+        **thread_common,
+    )
+    thread_provenance_four = WorkflowProvenance.create_method_step(
+        execution=ExecutionSettings(native_threads=4),
+        **thread_common,
+    )
+    assert (
+        thread_provenance_one.execution_identity
+        != thread_provenance_four.execution_identity
+    )
+
+
+def test_scientific_mcmc_setting_remains_semantic() -> None:
+    _session, base = _evaluation_workflow(purpose=EvaluationPurpose.EVALUATE_ONLY)
+    first = dataclasses.replace(
+        base,
+        method=base.method.model_copy(
+            update={
+                "statistics": Statistics(
+                    mcmc=McmcSettings(
+                        steps=8,
+                        burn=2,
+                        walkers=6,
+                        seed=641,
+                        workers=1,
+                    )
+                )
+            }
+        ),
+    )
+    changed = dataclasses.replace(
+        first,
+        method=first.method.model_copy(
+            update={
+                "statistics": Statistics(
+                    mcmc=McmcSettings(
+                        steps=10,
+                        burn=2,
+                        walkers=6,
+                        seed=641,
+                        workers=1,
+                    )
+                )
+            }
+        ),
+    )
+
+    assert first.semantic_identity != changed.semantic_identity
 
 
 def test_optimization_workflow_rejects_foreign_or_zero_component_decomposition() -> (
@@ -1416,7 +1788,7 @@ def test_historical_outcome_rejects_lifecycle_tampering() -> None:
     record = outcome.to_record()
     record["lifecycle"] = MethodStepLifecycle.FAILED.value
 
-    with pytest.raises(ValueError, match="identity differs"):
+    with pytest.raises(ValueError, match="integrity"):
         type(outcome).from_record(record)
 
 

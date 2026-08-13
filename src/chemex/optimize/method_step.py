@@ -12,10 +12,10 @@ import json
 import weakref
 from argparse import Namespace
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal, Protocol, Self, cast
+from typing import Any, Literal, Protocol, Self, cast
 from uuid import uuid4
 
 from chemex.configuration.methods import Method
@@ -33,6 +33,7 @@ from chemex.native_provenance import (
     PublishedStepReference,
     SeedRecord,
     WorkflowProvenance,
+    published_step_reference_identity,
 )
 from chemex.optimize.de_direct_trf import (
     AcceptedDeDirectTrfResult,
@@ -49,7 +50,9 @@ from chemex.optimize.direct_trf import (
     FitCommitOperation,
     FitCommitTerminal,
     OptimizationProblem,
+    accepted_occurrence_is_authoritative,
     execute_fit_commit,
+    fit_commit_operation_is_authoritative,
 )
 from chemex.optimize.grid_direct_trf import (
     AcceptedGridDirectTrfResult,
@@ -438,6 +441,93 @@ def _snapshot_identity(snapshot: AnalysisValuesSnapshot) -> str:
     return hashlib.sha256(snapshot.to_json().encode("ascii")).hexdigest()
 
 
+def _validate_snapshot_integrity(snapshot: AnalysisValuesSnapshot) -> None:
+    try:
+        restored = AnalysisValuesSnapshot.from_json(snapshot.to_json())
+    except Exception as error:
+        raise ValueError("Method-step snapshot integrity validation failed") from error
+    if restored != snapshot or tuple(snapshot.items()) != tuple(restored.items()):
+        raise ValueError("Method-step snapshot integrity validation failed")
+
+
+def _validate_rederived_identity(
+    value: object,
+    *,
+    identity_attribute: str = "identity",
+) -> None:
+    """Reconstruct one frozen declarative child and compare its current identity."""
+    try:
+        expected = replace(cast("Any", value))
+    except Exception as error:
+        raise ValueError(
+            f"Method-step child integrity validation failed for {type(value).__name__}"
+        ) from error
+    if getattr(expected, identity_attribute) != getattr(value, identity_attribute):
+        raise ValueError(
+            f"Method-step child integrity validation failed for {type(value).__name__}"
+        )
+
+
+def _validate_recursive_dataclass_children(  # noqa: C901 - closed evidence tree
+    value: object,
+    *,
+    seen: set[int] | None = None,
+) -> None:
+    """Reconstruct the closed native evidence tree while skipping live authorities."""
+    visited = set() if seen is None else seen
+    if id(value) in visited:
+        return
+    visited.add(id(value))
+    if isinstance(value, tuple):
+        for item in value:
+            _validate_recursive_dataclass_children(item, seen=visited)
+        return
+    if isinstance(value, AnalysisValuesSnapshot):
+        _validate_snapshot_integrity(value)
+        return
+    if isinstance(value, (AcceptedFitResult, FitCommitOperation)) or not is_dataclass(
+        value
+    ):
+        return
+    for declared in fields(value):
+        if "witness" in declared.name or "authority" in declared.name:
+            continue
+        _validate_recursive_dataclass_children(
+            getattr(value, declared.name),
+            seen=visited,
+        )
+    if type(value).__module__.startswith("chemex."):
+        reconstructed = replace(cast("Any", value))
+        for identity_attribute in ("identity", "fingerprint"):
+            if hasattr(value, identity_attribute) and getattr(
+                reconstructed, identity_attribute
+            ) != getattr(value, identity_attribute):
+                raise ValueError(
+                    "Method-step recursive child integrity validation failed for "
+                    f"{type(value).__name__}"
+                )
+
+
+def _semantic_method_record(method: Method) -> dict[str, object]:
+    """Return the closed scientific/lifecycle Method fields used by #641."""
+    record = cast("dict[str, object]", method.model_dump(mode="json"))
+    statistics = record.get("statistics")
+    if isinstance(statistics, dict):
+        mcmc = statistics.get("mcmc")
+        if isinstance(mcmc, dict):
+            # Worker allocation changes execution, not the requested posterior.
+            mcmc.pop("workers", None)
+    return record
+
+
+def _operational_method_record(method: Method) -> dict[str, object]:
+    """Return Method-owned execution controls excluded from semantic identity."""
+    mcmc = None if method.statistics is None else method.statistics.mcmc
+    return {
+        "mcmc_workers": None if mcmc is None else mcmc.workers,
+    }
+
+
 def _direct_policy_semantics(invocation: DirectTrfInvocation) -> tuple[object, ...]:
     return (
         invocation.objective_request_budget,
@@ -705,56 +795,17 @@ class MethodStepWorkflow:
                 raise ValueError(
                     "Resampling request metadata must cover the exact EvaluationPlan"
                 )
-        semantic_identity = _identity(
-            "native-method-step-workflow-semantics-v1",
-            {
-                "primary": primary_record,
-                "parameter_model_identity": self.parameter_model.identity,
-                "parameterization_program": program.fingerprint,
-                "evaluation_plan_identity": self.engine.plan.identity,
-                "method": self.method.model_dump(mode="json"),
-                "publication": (
-                    None
-                    if self.publication is None
-                    else "native-step-root-no-clobber-v1"
-                ),
-                "derivations": tuple(
-                    (kind, item.identity)
-                    for kind, item in zip(
-                        derivation_kinds,
-                        self.derivations,
-                        strict=True,
-                    )
-                ),
-                "failure_policy": "closed-method-step-failure-v1",
-            },
+        semantic_identity, binding_identity = _rederive_workflow_identities(
+            self,
+            primary_record=primary_record,
+            derivation_kinds=derivation_kinds,
         )
         object.__setattr__(self, "semantic_identity", semantic_identity)
-        object.__setattr__(
-            self,
-            "binding_identity",
-            _identity(
-                "native-method-step-workflow-binding-v1",
-                {
-                    "semantic_identity": semantic_identity,
-                    "starting_state_identity": _snapshot_identity(snapshot),
-                    "occurrence_identity": snapshot.occurrence_identity,
-                    "revision": snapshot.revision,
-                    "parameterization_identity": self.parameterization.identity,
-                    "invocation_identity": (
-                        None if self.invocation is None else self.invocation.identity
-                    ),
-                    "uncertainty_environments": tuple(
-                        item.resolved_environment_identity
-                        for item in self.derivations
-                        if isinstance(item, UncertaintyDerivationRequest)
-                    ),
-                    "publication_request_identity": (
-                        None if self.publication is None else self.publication.identity
-                    ),
-                },
-            ),
-        )
+        object.__setattr__(self, "binding_identity", binding_identity)
+
+    def validate_integrity(self) -> None:
+        """Rederive this workflow and every identity-bearing child."""
+        _validate_method_step_workflow(self)
 
     @classmethod
     def for_evaluation(
@@ -809,6 +860,255 @@ class MethodStepWorkflow:
             derivations=derivations,
             publication=publication,
         )
+
+
+def _rederive_workflow_identities(
+    workflow: MethodStepWorkflow,
+    *,
+    primary_record: dict[str, object] | None = None,
+    derivation_kinds: tuple[str, ...] | None = None,
+) -> tuple[str, str]:
+    """Compute the two workflow identities solely from current declarative fields."""
+    if primary_record is None:
+        if workflow.evaluation_purpose is not None:
+            primary_record = {
+                "kind": "evaluation_only",
+                "purpose": workflow.evaluation_purpose.value,
+            }
+        else:
+            primary_record = _optimization_semantics(
+                cast("OptimizationProblem", workflow.problem),
+                cast("FitDecomposition", workflow.decomposition),
+                cast("MethodStepStrategy", workflow.strategy),
+                cast("MethodStepInvocation", workflow.invocation),
+            )
+    if derivation_kinds is None:
+        derivation_kinds = tuple(
+            _derivation_stage(item) for item in workflow.derivations
+        )
+    semantic_identity = _identity(
+        "native-method-step-workflow-semantics-v1",
+        {
+            "primary": primary_record,
+            "parameter_model_identity": workflow.parameter_model.identity,
+            "parameterization_program": workflow.parameterization.program.fingerprint,
+            "evaluation_plan_identity": workflow.engine.plan.identity,
+            "method": _semantic_method_record(workflow.method),
+            "publication": (
+                None
+                if workflow.publication is None
+                else "native-step-root-no-clobber-v1"
+            ),
+            "derivations": tuple(
+                (kind, item.identity)
+                for kind, item in zip(
+                    derivation_kinds,
+                    workflow.derivations,
+                    strict=True,
+                )
+            ),
+            "failure_policy": "closed-method-step-failure-v1",
+        },
+    )
+    snapshot = workflow.starting_snapshot
+    binding_identity = _identity(
+        "native-method-step-workflow-binding-v1",
+        {
+            "semantic_identity": semantic_identity,
+            "starting_state_identity": _snapshot_identity(snapshot),
+            "occurrence_identity": snapshot.occurrence_identity,
+            "revision": snapshot.revision,
+            "parameterization_identity": workflow.parameterization.identity,
+            "operational_method": _operational_method_record(workflow.method),
+            "invocation_identity": (
+                None if workflow.invocation is None else workflow.invocation.identity
+            ),
+            "uncertainty_environments": tuple(
+                item.resolved_environment_identity
+                for item in workflow.derivations
+                if isinstance(item, UncertaintyDerivationRequest)
+            ),
+            "publication_request_identity": (
+                None if workflow.publication is None else workflow.publication.identity
+            ),
+        },
+    )
+    return semantic_identity, binding_identity
+
+
+def _validate_derivation_request_integrity(
+    request: MethodStepDerivationRequest,
+) -> None:
+    if isinstance(request, UncertaintyDerivationRequest):
+        _validate_rederived_identity(request.policy)
+        if request.compiled_capabilities is not None:
+            _validate_rederived_identity(request.compiled_capabilities)
+    elif isinstance(request, ResamplingDerivationRequest):
+        _validate_rederived_identity(request.summary_policy)
+    else:
+        _validate_rederived_identity(request.policy)
+    _validate_rederived_identity(request)
+
+
+def _validate_invocation_integrity(invocation: MethodStepInvocation) -> None:
+    if isinstance(invocation, GroupedDirectTrfInvocation):
+        for component in invocation.component_invocations:
+            _validate_rederived_identity(component)
+    elif isinstance(invocation, GridDirectTrfInvocation):
+        for axis in invocation.axes:
+            _validate_rederived_identity(axis)
+        for seed in invocation.seeds:
+            if seed.problem is not None:
+                _validate_snapshot_integrity(seed.problem.source_snapshot)
+                _validate_rederived_identity(seed.problem)
+            if seed.invocation is not None:
+                _validate_rederived_identity(seed.invocation)
+            _validate_rederived_identity(seed)
+    else:
+        _validate_snapshot_integrity(invocation.root_problem.source_snapshot)
+        _validate_snapshot_integrity(invocation.search_problem.source_snapshot)
+        _validate_rederived_identity(invocation.root_problem)
+        _validate_rederived_identity(invocation.search_problem)
+        for coordinate in invocation.search_coordinates:
+            _validate_rederived_identity(coordinate)
+        _validate_rederived_identity(invocation.population)
+    _validate_rederived_identity(invocation)
+
+
+def _validate_publication_request_integrity(
+    publication: MethodStepPublicationRequest,
+) -> None:
+    _validate_rederived_identity(publication.environment)
+    for reference in publication.baseline_references:
+        _validate_rederived_identity(reference)
+    if publication.run_provenance is not None:
+        run = publication.run_provenance
+        _validate_snapshot_integrity(run.starting_snapshot)
+        _validate_rederived_identity(run.inputs)
+        for reference in run.prior_steps:
+            reference.require_exact_live_publication()
+        _validate_rederived_identity(run)
+    _validate_rederived_identity(publication)
+
+
+def _validate_method_step_workflow(  # noqa: C901 - closed recursive workflow tree
+    workflow: MethodStepWorkflow,
+) -> None:
+    """Canonically rederive one workflow without trusting construction-time hashes."""
+    _validate_snapshot_integrity(workflow.starting_snapshot)
+    _validate_rederived_identity(workflow.parameter_model)
+    _validate_rederived_identity(
+        workflow.parameterization.program,
+        identity_attribute="fingerprint",
+    )
+    _validate_rederived_identity(workflow.parameterization)
+    try:
+        canonical_method = Method.model_validate(
+            workflow.method.model_dump(exclude_none=True)
+        )
+    except Exception as error:
+        raise ValueError("Method-step Method integrity validation failed") from error
+    if canonical_method.model_dump() != workflow.method.model_dump():
+        raise ValueError("Method-step Method integrity validation failed")
+    try:
+        restored_plan = type(workflow.engine.plan).from_record(
+            workflow.engine.plan.to_record()
+        )
+    except Exception as error:
+        raise ValueError(
+            "Method-step evaluation-plan integrity validation failed"
+        ) from error
+    if restored_plan.identity != workflow.engine.plan.identity:
+        raise ValueError("Method-step evaluation-plan integrity validation failed")
+    if workflow.engine._parameterization is not workflow.parameterization:
+        raise ValueError("Method-step engine integrity validation failed")
+    if workflow.problem is not None:
+        _validate_snapshot_integrity(workflow.problem.source_snapshot)
+        _validate_rederived_identity(workflow.problem)
+    if workflow.decomposition is not None:
+        for component in workflow.decomposition.components:
+            _validate_snapshot_integrity(component.problem.source_snapshot)
+            _validate_rederived_identity(component.problem)
+            _validate_rederived_identity(component)
+        _validate_rederived_identity(workflow.decomposition.partition_proof)
+        _validate_rederived_identity(workflow.decomposition)
+    if workflow.invocation is not None:
+        _validate_invocation_integrity(workflow.invocation)
+    for request in workflow.derivations:
+        _validate_derivation_request_integrity(request)
+    if workflow.publication is not None:
+        _validate_publication_request_integrity(workflow.publication)
+    retained = workflow.engine.plan.retained_observation_count
+    if workflow.evaluation_purpose is not None:
+        if any(
+            item is not None
+            for item in (
+                workflow.problem,
+                workflow.decomposition,
+                workflow.strategy,
+                workflow.invocation,
+            )
+        ) or (
+            workflow.evaluation_purpose is not EvaluationPurpose.NO_OBJECTIVE_DATA
+            and retained < 1
+        ):
+            raise ValueError("Method-step workflow integrity validation failed")
+    else:
+        problem = workflow.problem
+        decomposition = workflow.decomposition
+        strategy = workflow.strategy
+        invocation = workflow.invocation
+        if (
+            problem is None
+            or decomposition is None
+            or strategy is None
+            or invocation is None
+            or retained < 1
+            or problem.source_snapshot is not workflow.starting_snapshot
+            or decomposition.root_problem_identity != problem.identity
+            or decomposition.root_plan_identity != workflow.engine.plan.identity
+        ):
+            raise ValueError("Method-step workflow integrity validation failed")
+        if strategy is MethodStepStrategy.DIRECT_TRF:
+            compatible = (
+                isinstance(invocation, GroupedDirectTrfInvocation)
+                and invocation.root_problem_identity == problem.identity
+                and invocation.decomposition_identity == decomposition.identity
+            )
+        elif strategy is MethodStepStrategy.GRID_DIRECT_TRF:
+            compatible = (
+                isinstance(invocation, GridDirectTrfInvocation)
+                and invocation.root_problem_identity == problem.identity
+            )
+        else:
+            compatible = (
+                isinstance(invocation, DeDirectTrfInvocation)
+                and invocation.root_problem_identity == problem.identity
+                and len(decomposition.components) == 1
+            )
+        if not compatible:
+            raise ValueError("Method-step workflow integrity validation failed")
+    ordered = tuple(
+        sorted(
+            workflow.derivations,
+            key=lambda item: {"uncertainty": 0, "resampling": 1, "mcmc": 2}[
+                _derivation_stage(item)
+            ],
+        )
+    )
+    derivation_kinds = tuple(_derivation_stage(item) for item in workflow.derivations)
+    if (
+        ordered != workflow.derivations
+        or len(set(derivation_kinds)) != len(derivation_kinds)
+        or (workflow.evaluation_purpose is not None and workflow.derivations)
+    ):
+        raise ValueError("Method-step workflow integrity validation failed")
+    semantic_identity, binding_identity = _rederive_workflow_identities(workflow)
+    if (
+        semantic_identity != workflow.semantic_identity
+        or binding_identity != workflow.binding_identity
+    ):
+        raise ValueError("Method-step workflow integrity validation failed")
 
 
 @dataclass(frozen=True, slots=True, weakref_slot=True, eq=False)
@@ -867,6 +1167,12 @@ class MethodStepOutcome:
         repr=False,
         compare=False,
     )
+    source_workflow: MethodStepWorkflow | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        kw_only=True,
+    )
     record_identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -900,6 +1206,11 @@ class MethodStepOutcome:
             "record_identity",
             _identity("native-method-step-outcome-v1", self._record_payload()),
         )
+        _validate_method_step_outcome(self)
+
+    def validate_integrity(self) -> None:
+        """Rederive this outcome and every available live child."""
+        _validate_method_step_outcome(self)
 
     def _record_payload(self) -> dict[str, object]:
         return {
@@ -938,6 +1249,7 @@ class MethodStepOutcome:
 
     def to_record(self) -> dict[str, object]:
         """Serialize historical evidence without any process-local authority."""
+        self.validate_integrity()
         return {**self._record_payload(), "identity": self.record_identity}
 
     @classmethod
@@ -1023,12 +1335,265 @@ class MethodStepOutcome:
         )
         if typed_record["identity"] != outcome.record_identity:
             raise ValueError("Method-step outcome identity differs from its payload")
+        outcome.validate_integrity()
         return outcome
+
+
+def _validate_derivation_outcome_integrity(outcome: DerivationOutcome) -> None:
+    expected = DerivationOutcome(
+        outcome.request_identity,
+        outcome.stage,
+        outcome.disposition,
+        outcome.operation_identity,
+        outcome.artifact_identities,
+        outcome.message,
+        operation=outcome.operation,
+        artifacts=outcome.artifacts,
+    )
+    if expected.identity != outcome.identity:
+        raise ValueError("Method-step derivation outcome integrity validation failed")
+
+
+def _validate_published_step_integrity(
+    reference: PublishedStepReference,
+    *,
+    workflow: MethodStepWorkflow | None = None,
+) -> None:
+    _validate_recursive_dataclass_children(reference.provenance)
+    if workflow is not None:
+        reference.provenance.validate_method_step_context(
+            parameterization=workflow.parameterization,
+            plan=workflow.engine.plan,
+            method=workflow.method,
+            semantic_workflow_identity=workflow.semantic_identity,
+            grouping_topology=reference.provenance.grouping_topology,
+            execution=reference.provenance.execution,
+        )
+    expected_identity = published_step_reference_identity(
+        publication_occurrence_identity=reference.publication_occurrence_identity,
+        lifecycle=reference.lifecycle,
+        authority=reference.authority,
+        manifest_identity=reference.manifest_identity,
+        manifest_sha256=reference.manifest_sha256,
+        provenance=reference.provenance,
+        independent_ids=reference.independent_ids,
+        artifacts=reference.artifacts,
+    )
+    if expected_identity != reference.identity:
+        raise ValueError("Method-step publication integrity failed")
+    reference.require_exact_live_publication()
+
+
+def _validate_outcome_lifecycle(outcome: MethodStepOutcome) -> None:
+    lifecycle = outcome.lifecycle
+    has_evaluation = outcome.evaluation_result_identity is not None
+    has_evaluation_failure = outcome.evaluation_failure_identity is not None
+    has_primary = outcome.primary_execution_identity is not None
+    has_accepted = outcome.accepted_result_identity is not None
+    has_commit = outcome.commit_operation_identity is not None
+    has_successor = outcome.successor_state_identity is not None
+    if has_evaluation and has_evaluation_failure:
+        raise ValueError(
+            "Method-step outcome integrity has conflicting evaluation truth"
+        )
+    if lifecycle is MethodStepLifecycle.SUCCESSFUL_NO_STATE_CHANGE:
+        valid = (
+            has_evaluation
+            and has_successor
+            and not any((has_evaluation_failure, has_primary, has_accepted, has_commit))
+        )
+    elif lifecycle is MethodStepLifecycle.NO_OBJECTIVE_DATA:
+        valid = not any(
+            (
+                has_evaluation,
+                has_evaluation_failure,
+                has_primary,
+                has_accepted,
+                has_commit,
+                has_successor,
+            )
+        )
+    elif lifecycle is MethodStepLifecycle.COMMITTED:
+        valid = (
+            has_primary
+            and has_accepted
+            and has_commit
+            and has_successor
+            and outcome.primary_terminal == "accepted"
+            and not has_evaluation
+            and not has_evaluation_failure
+        )
+    elif lifecycle is MethodStepLifecycle.ACCEPTED_UNCOMMITTED:
+        valid = (
+            has_primary
+            and has_accepted
+            and has_commit
+            and not has_successor
+            and not has_evaluation
+            and not has_evaluation_failure
+        )
+    elif lifecycle is MethodStepLifecycle.PUBLICATION_FAILED:
+        committed_failure = (
+            has_primary
+            and has_accepted
+            and has_commit
+            and has_successor
+            and outcome.primary_terminal == "accepted"
+        )
+        evaluation_failure = has_evaluation and not any(
+            (has_primary, has_accepted, has_commit, has_successor)
+        )
+        valid = bool(outcome.publication_failure) and (
+            committed_failure or evaluation_failure
+        )
+    else:
+        valid = not has_successor and not has_commit
+        if lifecycle is MethodStepLifecycle.FAILED:
+            valid = valid and (has_evaluation_failure or has_primary)
+        elif lifecycle in {
+            MethodStepLifecycle.CANCELLED,
+            MethodStepLifecycle.INTERRUPTED,
+        }:
+            valid = valid and outcome.primary_terminal == lifecycle.value
+    if not valid:
+        raise ValueError("Method-step outcome lifecycle integrity validation failed")
+
+
+def _validate_method_step_outcome(  # noqa: C901 - closed recursive outcome tree
+    outcome: MethodStepOutcome,
+) -> None:
+    """Canonically rederive one outcome without trusting its stored outer hash."""
+    for derivation in outcome.derivations:
+        _validate_derivation_outcome_integrity(derivation)
+    if outcome.record_identity != _identity(
+        "native-method-step-outcome-v1",
+        outcome._record_payload(),
+    ):
+        raise ValueError("Method-step outcome integrity validation failed")
+    _validate_outcome_lifecycle(outcome)
+    workflow = outcome.source_workflow
+    if workflow is None:
+        return
+    workflow.validate_integrity()
+    if (
+        outcome.workflow_identity != workflow.semantic_identity
+        or outcome.workflow_binding_identity != workflow.binding_identity
+        or outcome.starting_state_identity
+        != _snapshot_identity(workflow.starting_snapshot)
+    ):
+        raise ValueError("Method-step outcome source-workflow integrity failed")
+    if outcome.evaluation_result is not None:
+        if (
+            outcome.evaluation_result.identity != outcome.evaluation_result_identity
+            or outcome.evaluation_result.plan_identity != workflow.engine.plan.identity
+            or outcome.evaluation_result.parameterization_identity
+            != workflow.parameterization.evaluator_identity
+        ):
+            raise ValueError("Method-step evaluation-result integrity failed")
+        type(outcome.evaluation_result).from_record(
+            outcome.evaluation_result.to_record(),
+            workflow.engine.plan,
+        )
+    if outcome.evaluation_failure is not None and (
+        outcome.evaluation_failure.identity != outcome.evaluation_failure_identity
+    ):
+        raise ValueError("Method-step evaluation-failure integrity failed")
+    if outcome.primary_execution is not None:
+        _validate_recursive_dataclass_children(outcome.primary_execution)
+        expected_primary_identity = _primary_execution_identity(
+            outcome.primary_execution
+        )
+        if expected_primary_identity != outcome.primary_execution_identity:
+            raise ValueError("Method-step primary-outcome integrity failed")
+        replace(outcome.primary_execution)
+    if outcome.accepted_result is not None:
+        accepted = outcome.accepted_result
+        reconstructed = replace(accepted, occurrence_witness=None)
+        if (
+            reconstructed.identity != accepted.identity
+            or accepted.identity != outcome.accepted_result_identity
+            or not accepted_occurrence_is_authoritative(accepted)
+            or accepted.source_occurrence_identity
+            != workflow.starting_snapshot.occurrence_identity
+            or accepted.source_revision != workflow.starting_snapshot.revision
+        ):
+            raise ValueError("Method-step accepted-result integrity failed")
+        if (
+            outcome.primary_execution is None
+            or outcome.primary_execution.accepted_result is not accepted
+        ):
+            raise ValueError("Method-step aggregate acceptance integrity failed")
+    if outcome.commit_operation is not None:
+        operation = outcome.commit_operation
+        if operation.receipt is not None:
+            _validate_rederived_identity(operation.receipt)
+        if operation.failure is not None:
+            _validate_rederived_identity(operation.failure)
+        if operation.committed_snapshot is not None:
+            _validate_snapshot_integrity(operation.committed_snapshot)
+        reconstructed = replace(operation, _occurrence_witness=None)
+        if (
+            reconstructed.identity != operation.identity
+            or operation.identity != outcome.commit_operation_identity
+            or not fit_commit_operation_is_authoritative(operation)
+            or outcome.accepted_result is None
+            or operation.accepted_result_identity != outcome.accepted_result.identity
+            or operation.accepted_occurrence_identity
+            != outcome.accepted_result.occurrence_identity
+        ):
+            raise ValueError("Method-step commit-operation integrity failed")
+    if outcome.publication is not None:
+        if outcome.publication.identity != outcome.publication_identity:
+            raise ValueError("Method-step publication integrity failed")
+        _validate_published_step_integrity(outcome.publication, workflow=workflow)
+    if outcome.run_provenance is not None:
+        run = outcome.run_provenance
+        _validate_rederived_identity(run.inputs)
+        _validate_rederived_identity(run.parameter_model)
+        _validate_snapshot_integrity(run.starting_snapshot)
+        for step in run.steps:
+            _validate_published_step_integrity(step)
+        reconstructed = replace(run)
+        if (
+            reconstructed.execution_occurrence_identity
+            != run.execution_occurrence_identity
+            or run.execution_occurrence_identity != outcome.run_provenance_identity
+            or run.parameter_model.identity != workflow.parameter_model.identity
+            or (
+                outcome.publication is not None
+                and run.steps[-1] is not outcome.publication
+            )
+        ):
+            raise ValueError("Method-step run-provenance integrity failed")
+    if outcome.successor_state_identity is not None:
+        expected_successor = (
+            outcome.commit_operation.committed_snapshot
+            if outcome.commit_operation is not None
+            else workflow.starting_snapshot
+        )
+        if (
+            expected_successor is None
+            or _snapshot_identity(expected_successor)
+            != outcome.successor_state_identity
+        ):
+            raise ValueError("Method-step successor-state integrity failed")
+
+
+@dataclass(frozen=True, slots=True)
+class _SuccessorAuthorityBinding:
+    outcome: weakref.ReferenceType[MethodStepOutcome]
+    workflow: MethodStepWorkflow
+    snapshot: AnalysisValuesSnapshot
+    outcome_record_identity: str
+    workflow_binding_identity: str
+    snapshot_identity: str
+    occurrence_identity: str
+    revision: int
 
 
 _SUCCESSOR_AUTHORITIES: dict[
     int,
-    tuple[weakref.ReferenceType[MethodStepOutcome], AnalysisValuesSnapshot, str],
+    _SuccessorAuthorityBinding,
 ] = {}
 _PUBLICATION_SOURCES: dict[
     int,
@@ -1040,15 +1605,28 @@ def _grant_successor_authority(
     outcome: MethodStepOutcome,
     snapshot: AnalysisValuesSnapshot,
 ) -> None:
+    outcome.validate_integrity()
+    workflow = outcome.source_workflow
+    if workflow is None or outcome.lifecycle not in {
+        MethodStepLifecycle.COMMITTED,
+        MethodStepLifecycle.SUCCESSFUL_NO_STATE_CHANGE,
+    }:
+        raise ValueError("Method-step outcome cannot mint successor authority")
+    _validate_snapshot_integrity(snapshot)
     key = id(outcome)
 
     def remove(_reference: weakref.ReferenceType[MethodStepOutcome]) -> None:
         _SUCCESSOR_AUTHORITIES.pop(key, None)
 
-    _SUCCESSOR_AUTHORITIES[key] = (
+    _SUCCESSOR_AUTHORITIES[key] = _SuccessorAuthorityBinding(
         weakref.ref(outcome, remove),
+        workflow,
         snapshot,
         outcome.record_identity,
+        workflow.binding_identity,
+        _snapshot_identity(snapshot),
+        snapshot.occurrence_identity,
+        snapshot.revision,
     )
 
 
@@ -1069,15 +1647,34 @@ def require_successor_state(
     analysis_values: AnalysisValues,
 ) -> AnalysisValuesSnapshot:
     """Return the exact live successor or reject historical/failed evidence."""
+    try:
+        outcome.validate_integrity()
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            "Method-step outcome integrity blocks successor authority"
+        ) from error
     binding = _SUCCESSOR_AUTHORITIES.get(id(outcome))
+    current = analysis_values.snapshot()
     if (
         binding is None
-        or binding[0]() is not outcome
-        or binding[2] != outcome.record_identity
-        or analysis_values.snapshot() != binding[1]
+        or binding.outcome() is not outcome
+        or outcome.source_workflow is not binding.workflow
+        or binding.outcome_record_identity != outcome.record_identity
+        or binding.workflow_binding_identity != binding.workflow.binding_identity
+        or outcome.lifecycle
+        not in {
+            MethodStepLifecycle.COMMITTED,
+            MethodStepLifecycle.SUCCESSFUL_NO_STATE_CHANGE,
+        }
+        or _snapshot_identity(binding.snapshot) != binding.snapshot_identity
+        or binding.snapshot.occurrence_identity != binding.occurrence_identity
+        or binding.snapshot.revision != binding.revision
+        or current != binding.snapshot
+        or current.occurrence_identity != binding.occurrence_identity
+        or current.revision != binding.revision
     ):
         raise ValueError("Method-step outcome has no live successor authority")
-    return binding[1]
+    return binding.snapshot
 
 
 def execute_method_step(  # noqa: C901 - closed evaluation/optimization lifecycle
@@ -1088,6 +1685,7 @@ def execute_method_step(  # noqa: C901 - closed evaluation/optimization lifecycl
     checkpoint_observer: Callable[[MethodStepCheckpoint], None] | None = None,
 ) -> MethodStepOutcome:
     """Execute one exact native workflow occurrence."""
+    workflow.validate_integrity()
     current = analysis_values.snapshot()
     if current != workflow.starting_snapshot:
         raise ValueError("Method-step workflow no longer has its exact starting state")
@@ -1098,6 +1696,16 @@ def execute_method_step(  # noqa: C901 - closed evaluation/optimization lifecycl
             analysis_values=analysis_values,
             cancellation=cancellation,
             checkpoint_observer=checkpoint_observer,
+        )
+    if cancellation is not None and cancellation.is_cancelled:
+        return MethodStepOutcome(
+            workflow.semantic_identity,
+            workflow.binding_identity,
+            uuid4().hex,
+            starting_state_identity,
+            MethodStepLifecycle.CANCELLED,
+            primary_terminal="cancelled",
+            source_workflow=workflow,
         )
     if workflow.evaluation_purpose is EvaluationPurpose.NO_OBJECTIVE_DATA:
         publication: PublishedStepReference | None = None
@@ -1126,6 +1734,7 @@ def execute_method_step(  # noqa: C901 - closed evaluation/optimization lifecycl
             ),
             publication=publication,
             run_provenance=run_provenance,
+            source_workflow=workflow,
         )
     frame = EvaluationFrame.from_lifecycle_frame(
         workflow.parameterization,
@@ -1161,6 +1770,7 @@ def execute_method_step(  # noqa: C901 - closed evaluation/optimization lifecycl
             evaluation_failure=result,
             publication=publication,
             run_provenance=run_provenance,
+            source_workflow=workflow,
         )
     publication: PublishedStepReference | None = None
     run_provenance: NativeRunInformation | None = None
@@ -1195,6 +1805,7 @@ def execute_method_step(  # noqa: C901 - closed evaluation/optimization lifecycl
         evaluation_result=result,
         publication=publication,
         run_provenance=run_provenance,
+        source_workflow=workflow,
     )
     if lifecycle is MethodStepLifecycle.SUCCESSFUL_NO_STATE_CHANGE:
         _grant_successor_authority(outcome, workflow.starting_snapshot)
@@ -1259,6 +1870,7 @@ def _execute_optimization(  # noqa: C901 - closed primary transition
     cancellation: CancellationToken | None,
     checkpoint_observer: Callable[[MethodStepCheckpoint], None] | None,
 ) -> MethodStepOutcome:
+    workflow.validate_integrity()
     problem = cast("OptimizationProblem", workflow.problem)
     decomposition = cast("FitDecomposition", workflow.decomposition)
     strategy = cast("MethodStepStrategy", workflow.strategy)
@@ -1356,6 +1968,7 @@ def _execute_optimization(  # noqa: C901 - closed primary transition
             primary_execution=execution,
             publication=publication,
             run_provenance=run_provenance,
+            source_workflow=workflow,
         )
     if checkpoint_observer is not None:
         checkpoint_observer(MethodStepCheckpoint.AGGREGATE_ACCEPTED)
@@ -1401,6 +2014,7 @@ def _execute_optimization(  # noqa: C901 - closed primary transition
             accepted_result=accepted,
             publication=publication,
             run_provenance=run_provenance,
+            source_workflow=workflow,
         )
     if strategy is MethodStepStrategy.GRID_DIRECT_TRF:
         validate_grid_commit_lineage(
@@ -1497,6 +2111,7 @@ def _execute_optimization(  # noqa: C901 - closed primary transition
         commit_operation=operation,
         publication=publication,
         run_provenance=run_provenance,
+        source_workflow=workflow,
     )
     if successor is not None and lifecycle is MethodStepLifecycle.COMMITTED:
         _grant_successor_authority(outcome, successor)
@@ -1724,6 +2339,7 @@ def _publish_evaluation_method_step(
     workflow: MethodStepWorkflow,
     result: EvaluationResult,
 ) -> PublishedStepReference:
+    workflow.validate_integrity()
     request = cast("MethodStepPublicationRequest", workflow.publication)
     provenance = _method_step_provenance(workflow, None)
     publication = EvaluationPublication(
@@ -1749,6 +2365,7 @@ def _publish_evaluation_failure_method_step(
     workflow: MethodStepWorkflow,
     failure: EvaluationFailure,
 ) -> PublishedStepReference:
+    workflow.validate_integrity()
     request = cast("MethodStepPublicationRequest", workflow.publication)
     publication = SuppressedPublication(
         "failed",
@@ -1767,6 +2384,7 @@ def _publish_evaluation_failure_method_step(
 def _publish_no_objective_method_step(
     workflow: MethodStepWorkflow,
 ) -> PublishedStepReference:
+    workflow.validate_integrity()
     request = cast("MethodStepPublicationRequest", workflow.publication)
     publication = NoObjectivePublication(
         workflow.engine.plan,
@@ -1790,6 +2408,7 @@ def _publish_suppressed_method_step(
     accepted: AcceptedFitResult | None = None,
     terminal: MethodStepPrimaryTerminal | None = None,
 ) -> PublishedStepReference:
+    workflow.validate_integrity()
     request = cast("MethodStepPublicationRequest", workflow.publication)
     primary = _method_step_primary_record(
         workflow,
@@ -1837,6 +2456,7 @@ def _publish_run_provenance(
     workflow: MethodStepWorkflow,
     publication: PublishedStepReference,
 ) -> NativeRunInformation | None:
+    workflow.validate_integrity()
     publication_request = cast("MethodStepPublicationRequest", workflow.publication)
     request = publication_request.run_provenance
     if request is None:
@@ -1866,6 +2486,7 @@ def _publish_committed_method_step(
     derivations: tuple[DerivationOutcome, ...],
     analysis_values: AnalysisValues,
 ) -> PublishedStepReference:
+    workflow.validate_integrity()
     request = cast("MethodStepPublicationRequest", workflow.publication)
     if operation.receipt is None or operation.committed_snapshot is None:
         raise ValueError("Committed publication requires exact commit artifacts")
@@ -1964,8 +2585,10 @@ def _execute_derivations(
     accepted: AcceptedFitResult,
     cancellation: CancellationToken,
 ) -> tuple[DerivationOutcome, ...]:
+    workflow.validate_integrity()
     outcomes: list[DerivationOutcome] = []
     for index, request in enumerate(workflow.derivations):
+        workflow.validate_integrity()
         if cancellation.is_cancelled:
             outcomes.extend(_stopped_derivations(workflow.derivations[index:]))
             break
@@ -2015,6 +2638,7 @@ def _execute_uncertainty(
     request: UncertaintyDerivationRequest,
     cancellation: CancellationToken,
 ) -> DerivationOutcome:
+    workflow.validate_integrity()
     problem = cast("OptimizationProblem", workflow.problem)
 
     def cancellation_probe() -> UncertaintyOperationTerminal | None:
@@ -2062,6 +2686,7 @@ def _execute_resampling(
     request: ResamplingDerivationRequest,
     cancellation: CancellationToken,
 ) -> DerivationOutcome:
+    workflow.validate_integrity()
     plan = ResamplingPlan.for_accepted(
         accepted,
         dataset=ResamplingDatasetManifest(
@@ -2134,6 +2759,7 @@ def _execute_mcmc(
     request: McmcDerivationRequest,
     cancellation: CancellationToken,
 ) -> DerivationOutcome:
+    workflow.validate_integrity()
     plan = McmcPlan.for_accepted(
         accepted,
         source_problem=cast("OptimizationProblem", workflow.problem),
