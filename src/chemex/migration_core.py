@@ -998,7 +998,7 @@ def _safe_extract_release(archive: Path, destination: Path) -> None:
                     )
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(content)
-    except (OSError, tarfile.TarError) as error:
+    except (EOFError, OSError, tarfile.TarError) as error:
         raise MigrationCoreCoverageError(
             "Migration-core anchor archive is corrupt or truncated"
         ) from error
