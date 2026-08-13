@@ -3561,23 +3561,47 @@ def _consume_fit_commit_authority(
         )
     with _LIVE_FIT_COMMIT_AUTHORITIES_LOCK:
         binding = _LIVE_FIT_COMMIT_AUTHORITIES.get(authority)
-        if (
-            binding is None
-            or binding.accepted_result is not accepted
-            or binding.accepted_result_identity != accepted.identity
-            or binding.accepted_occurrence_identity != accepted.occurrence_identity
-            or binding.problem_identity != problem.identity
-            or binding.snapshot_context_identity
-            != _snapshot_commit_context_identity(problem.source_snapshot)
-            or binding.source_occurrence_identity
-            != problem.source_snapshot.occurrence_identity
-            or binding.source_revision != problem.source_snapshot.revision
-            or binding.origin_context_identity != accepted.origin_context_identity
-        ):
+        if not _fit_commit_authority_binding_matches(binding, accepted, problem):
             raise DirectTrfConstructionError(
                 "Accepted result lacks its exact live Direct TRF commit authority"
             )
         del _LIVE_FIT_COMMIT_AUTHORITIES[authority]
+
+
+def _fit_commit_authority_binding_matches(
+    binding: _CommitAuthorityBinding | None,
+    accepted: AcceptedFitResult,
+    problem: OptimizationProblem,
+) -> bool:
+    return bool(
+        binding is not None
+        and binding.accepted_result is accepted
+        and binding.accepted_result_identity == accepted.identity
+        and binding.accepted_occurrence_identity == accepted.occurrence_identity
+        and binding.problem_identity == problem.identity
+        and binding.snapshot_context_identity
+        == _snapshot_commit_context_identity(problem.source_snapshot)
+        and binding.source_occurrence_identity
+        == problem.source_snapshot.occurrence_identity
+        and binding.source_revision == problem.source_snapshot.revision
+        and binding.origin_context_identity == accepted.origin_context_identity
+    )
+
+
+def fit_commit_authority_is_authoritative(
+    accepted: AcceptedFitResult,
+    authority: LiveFitCommitAuthority,
+    problem: OptimizationProblem,
+) -> bool:
+    """Check an exact live acceptance/authority pairing without consuming it."""
+    if not isinstance(authority, LiveFitCommitAuthority):
+        return False
+    with _LIVE_FIT_COMMIT_AUTHORITIES_LOCK:
+        return _fit_commit_authority_binding_matches(
+            _LIVE_FIT_COMMIT_AUTHORITIES.get(authority),
+            accepted,
+            problem,
+        )
 
 
 def commit_accepted_fit(

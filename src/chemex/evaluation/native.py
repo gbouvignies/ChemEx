@@ -1463,6 +1463,21 @@ class EvaluationEngine:
         plan, sources = _build_plan(experiments, parameterization)
         return cls(plan, parameterization, sources)
 
+    def rebind_parameterization(
+        self,
+        parameterization: ActiveParameterization,
+    ) -> EvaluationEngine:
+        """Bind the frozen plan and copied kernels to a fresh state occurrence."""
+        sources = tuple(
+            (descriptor.experiment_ordinal, descriptor.profile_ordinal, source)
+            for descriptor, source in zip(
+                self.plan.profiles,
+                self._sources,
+                strict=True,
+            )
+        )
+        return type(self)(self.plan, parameterization, sources)
+
     @classmethod
     def bind(
         cls,

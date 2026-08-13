@@ -22,6 +22,7 @@ from chemex.optimize.native_mcmc import (
 from chemex.optimize.native_resampling import (
     ResamplingEvidence,
     ResamplingSummaryOutcome,
+    SummaryFailure,
 )
 from chemex.optimize.uncertainty import UncertaintyEvidence
 from chemex.parameters.parameterization import (
@@ -110,6 +111,21 @@ def write_parameter_reports(
                 comment = f" # constrained: {expression}"
             lines.append(f"{_toml_key(param_id)} = {_toml_float(value)}{comment}")
         (path / filenames[role]).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_evaluated_parameters(
+    path: Path,
+    parameterization: ActiveParameterization,
+    result: EvaluationResult,
+) -> None:
+    """Write evaluate-only values without claiming fitted or restart authority."""
+    path.mkdir()
+    lines = ["[parameters]"]
+    for param_id in parameterization.scope_ids:
+        role = parameterization.role(param_id).value
+        value = result.resolved_values[param_id]
+        lines.append(f"{_toml_key(param_id)} = {_toml_float(value)} # {role}")
+    (path / "evaluated.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def write_restart_parameters(
@@ -565,6 +581,21 @@ def write_suppressed_outcome(
 def write_partial_resampling(path: Path, evidence: ResamplingEvidence) -> None:
     """Write genuine partial primary resampling evidence."""
     write_json(path, resampling_evidence_record(evidence))
+
+
+def write_resampling_summary_failure(path: Path, failure: SummaryFailure) -> None:
+    """Write the typed reason completed resampling lacked a usable summary."""
+    write_json(
+        path,
+        {
+            "artifact_type": "native_resampling_summary_failure",
+            "schema_version": 1,
+            "identity": failure.identity,
+            "source_evidence_identity": failure.source_evidence_identity,
+            "category": failure.category,
+            "message": failure.message,
+        },
+    )
 
 
 def write_partial_mcmc(path: Path, evidence: McmcEvidence) -> None:
