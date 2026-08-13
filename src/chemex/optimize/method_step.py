@@ -49,9 +49,11 @@ from chemex.optimize.direct_trf import (
     DirectTrfInvocation,
     FitCommitOperation,
     FitCommitTerminal,
+    LiveFitCommitAuthority,
     OptimizationProblem,
     accepted_occurrence_is_authoritative,
     execute_fit_commit,
+    fit_commit_authority_is_authoritative,
     fit_commit_operation_is_authoritative,
 )
 from chemex.optimize.grid_direct_trf import (
@@ -1111,6 +1113,79 @@ def _validate_method_step_workflow(  # noqa: C901 - closed recursive workflow tr
         raise ValueError("Method-step workflow integrity validation failed")
 
 
+@dataclass(frozen=True, slots=True)
+class _ExecutionStartWorkflowContext:
+    semantic_identity: str
+    binding_identity: str
+    starting_snapshot: AnalysisValuesSnapshot
+    starting_snapshot_object: AnalysisValuesSnapshot
+    parameter_model: SealedParameterModel
+    parameterization: ActiveParameterization
+    engine: EvaluationEngine
+    method: Method
+    problem: OptimizationProblem | None
+    decomposition: FitDecomposition | None
+    strategy: MethodStepStrategy | None
+    invocation: MethodStepInvocation | None
+    derivations: tuple[MethodStepDerivationRequest, ...]
+    publication: MethodStepPublicationRequest | None
+    evaluation_purpose: EvaluationPurpose | None
+
+
+def _pin_execution_start_workflow(
+    workflow: MethodStepWorkflow,
+) -> _ExecutionStartWorkflowContext:
+    """Capture an execution-owned context after full recursive validation."""
+    workflow.validate_integrity()
+    semantic_identity, binding_identity = _rederive_workflow_identities(workflow)
+    return _ExecutionStartWorkflowContext(
+        semantic_identity,
+        binding_identity,
+        AnalysisValuesSnapshot.from_json(workflow.starting_snapshot.to_json()),
+        workflow.starting_snapshot,
+        workflow.parameter_model,
+        workflow.parameterization,
+        workflow.engine,
+        workflow.method,
+        workflow.problem,
+        workflow.decomposition,
+        workflow.strategy,
+        workflow.invocation,
+        workflow.derivations,
+        workflow.publication,
+        workflow.evaluation_purpose,
+    )
+
+
+def _validate_execution_start_workflow(
+    workflow: MethodStepWorkflow,
+    expected: _ExecutionStartWorkflowContext,
+) -> None:
+    """Reject callback retargeting, including a fully rehashed replacement."""
+    workflow.validate_integrity()
+    semantic_identity, binding_identity = _rederive_workflow_identities(workflow)
+    if (
+        semantic_identity != expected.semantic_identity
+        or binding_identity != expected.binding_identity
+        or workflow.starting_snapshot is not expected.starting_snapshot_object
+        or workflow.starting_snapshot != expected.starting_snapshot
+        or _snapshot_identity(workflow.starting_snapshot)
+        != _snapshot_identity(expected.starting_snapshot)
+        or workflow.parameter_model is not expected.parameter_model
+        or workflow.parameterization is not expected.parameterization
+        or workflow.engine is not expected.engine
+        or workflow.method is not expected.method
+        or workflow.problem is not expected.problem
+        or workflow.decomposition is not expected.decomposition
+        or workflow.strategy is not expected.strategy
+        or workflow.invocation is not expected.invocation
+        or workflow.derivations is not expected.derivations
+        or workflow.publication is not expected.publication
+        or workflow.evaluation_purpose is not expected.evaluation_purpose
+    ):
+        raise ValueError("Method-step execution-start workflow integrity failed")
+
+
 @dataclass(frozen=True, slots=True, weakref_slot=True, eq=False)
 class MethodStepOutcome:
     """Immutable occurrence evidence; live transition authority stays external."""
@@ -1685,7 +1760,7 @@ def execute_method_step(  # noqa: C901 - closed evaluation/optimization lifecycl
     checkpoint_observer: Callable[[MethodStepCheckpoint], None] | None = None,
 ) -> MethodStepOutcome:
     """Execute one exact native workflow occurrence."""
-    workflow.validate_integrity()
+    execution_start = _pin_execution_start_workflow(workflow)
     current = analysis_values.snapshot()
     if current != workflow.starting_snapshot:
         raise ValueError("Method-step workflow no longer has its exact starting state")
@@ -1693,6 +1768,7 @@ def execute_method_step(  # noqa: C901 - closed evaluation/optimization lifecycl
     if workflow.evaluation_purpose is None:
         return _execute_optimization(
             workflow,
+            execution_start=execution_start,
             analysis_values=analysis_values,
             cancellation=cancellation,
             checkpoint_observer=checkpoint_observer,
@@ -1863,14 +1939,119 @@ def _primary_execution_identity(execution: MethodStepPrimaryExecution) -> str:
     )
 
 
+def _validate_fit_commit_boundary(
+    workflow: MethodStepWorkflow,
+    expected: _ExecutionStartWorkflowContext,
+    execution: MethodStepPrimaryExecution,
+    primary_identity: str,
+    accepted: AcceptedFitResult,
+    authority: LiveFitCommitAuthority,
+    analysis_values: AnalysisValues,
+) -> None:
+    """Prove exact workflow, acceptance, and authority lineage before commit."""
+    _validate_execution_start_workflow(workflow, expected)
+    problem = expected.problem
+    invocation = expected.invocation
+    strategy = expected.strategy
+    current = analysis_values.snapshot()
+    if (
+        problem is None
+        or invocation is None
+        or strategy is None
+        or current != expected.starting_snapshot
+        or current.occurrence_identity != expected.starting_snapshot.occurrence_identity
+        or current.revision != expected.starting_snapshot.revision
+        or problem is not workflow.problem
+        or problem.source_snapshot is not workflow.starting_snapshot
+        or _primary_execution_identity(execution) != primary_identity
+        or execution.accepted_result is not accepted
+        or execution.commit_authority is not authority
+        or not accepted_occurrence_is_authoritative(accepted)
+        or accepted.problem_identity != problem.identity
+        or accepted.parameterization_identity != expected.parameterization.identity
+        or accepted.evaluator_parameterization_identity
+        != expected.parameterization.evaluator_identity
+        or accepted.source_occurrence_identity
+        != expected.starting_snapshot.occurrence_identity
+        or accepted.source_revision != expected.starting_snapshot.revision
+        or accepted.controlled_ids != problem.controlled_ids
+        or accepted.commit_scope != problem.commit_scope
+        or accepted.evaluation_result.plan_identity != expected.engine.plan.identity
+    ):
+        raise ValueError("Method-step fit-commit boundary integrity failed")
+    reconstructed = replace(accepted, occurrence_witness=None)
+    if reconstructed.identity != accepted.identity:
+        raise ValueError("Method-step accepted-result integrity failed before commit")
+    if strategy is MethodStepStrategy.DIRECT_TRF:
+        if accepted.invocation_identity != invocation.identity:
+            raise ValueError(
+                "Method-step Direct invocation lineage changed before commit"
+            )
+    elif strategy is MethodStepStrategy.GRID_DIRECT_TRF:
+        typed = cast("AcceptedGridDirectTrfResult", accepted)
+        if typed.workflow_invocation is not invocation:
+            raise ValueError(
+                "Method-step GRID invocation lineage changed before commit"
+            )
+        validate_grid_commit_lineage(typed, problem)
+    else:
+        typed_de = cast("AcceptedDeDirectTrfResult", accepted)
+        if typed_de.workflow_invocation is not invocation:
+            raise ValueError("Method-step DE invocation lineage changed before commit")
+        validate_de_commit_lineage(typed_de, problem)
+    if not fit_commit_authority_is_authoritative(accepted, authority, problem):
+        raise ValueError("Method-step fit-commit authority pairing is no longer live")
+
+
+def _precommit_failure_outcome(
+    expected: _ExecutionStartWorkflowContext,
+    primary_identity: str,
+    accepted: AcceptedFitResult,
+    *,
+    interrupted: bool = False,
+) -> MethodStepOutcome:
+    """Retain non-authoritative acceptance diagnostics after a fenced stop."""
+    disposition = (
+        DerivationDisposition.NOT_STARTED_BY_WORKFLOW_STOP
+        if interrupted
+        else DerivationDisposition.BLOCKED_BY_PREREQUISITE
+    )
+    derivations = tuple(
+        DerivationOutcome(
+            item.identity,
+            _derivation_stage(item),
+            disposition,
+            message="Fit commit boundary validation did not permit transition",
+        )
+        for item in expected.derivations
+    )
+    return MethodStepOutcome(
+        expected.semantic_identity,
+        expected.binding_identity,
+        uuid4().hex,
+        _snapshot_identity(expected.starting_snapshot),
+        (
+            MethodStepLifecycle.INTERRUPTED
+            if interrupted
+            else MethodStepLifecycle.FAILED
+        ),
+        expected.strategy,
+        "interrupted" if interrupted else "accepted",
+        primary_identity,
+        accepted_result_identity=accepted.identity,
+        derivations=derivations,
+    )
+
+
 def _execute_optimization(  # noqa: C901 - closed primary transition
     workflow: MethodStepWorkflow,
     *,
+    execution_start: _ExecutionStartWorkflowContext,
     analysis_values: AnalysisValues,
     cancellation: CancellationToken | None,
     checkpoint_observer: Callable[[MethodStepCheckpoint], None] | None,
 ) -> MethodStepOutcome:
-    workflow.validate_integrity()
+    _validate_execution_start_workflow(workflow, execution_start)
     problem = cast("OptimizationProblem", workflow.problem)
     decomposition = cast("FitDecomposition", workflow.decomposition)
     strategy = cast("MethodStepStrategy", workflow.strategy)
@@ -1971,7 +2152,37 @@ def _execute_optimization(  # noqa: C901 - closed primary transition
             source_workflow=workflow,
         )
     if checkpoint_observer is not None:
-        checkpoint_observer(MethodStepCheckpoint.AGGREGATE_ACCEPTED)
+        try:
+            checkpoint_observer(MethodStepCheckpoint.AGGREGATE_ACCEPTED)
+        except KeyboardInterrupt:
+            return _precommit_failure_outcome(
+                execution_start,
+                primary_identity,
+                accepted,
+                interrupted=True,
+            )
+        except Exception:  # noqa: BLE001 - observer failure is a typed stop
+            return _precommit_failure_outcome(
+                execution_start,
+                primary_identity,
+                accepted,
+            )
+    try:
+        _validate_fit_commit_boundary(
+            workflow,
+            execution_start,
+            execution,
+            primary_identity,
+            accepted,
+            authority,
+            analysis_values,
+        )
+    except Exception:  # noqa: BLE001 - integrity failure is a typed stop
+        return _precommit_failure_outcome(
+            execution_start,
+            primary_identity,
+            accepted,
+        )
     if token.is_cancelled:
         derivations = _stopped_derivations(workflow.derivations)
         publication: PublishedStepReference | None = None
@@ -2016,16 +2227,6 @@ def _execute_optimization(  # noqa: C901 - closed primary transition
             run_provenance=run_provenance,
             source_workflow=workflow,
         )
-    if strategy is MethodStepStrategy.GRID_DIRECT_TRF:
-        validate_grid_commit_lineage(
-            cast("AcceptedGridDirectTrfResult", accepted),
-            problem,
-        )
-    elif strategy is MethodStepStrategy.DE_DIRECT_TRF:
-        validate_de_commit_lineage(
-            cast("AcceptedDeDirectTrfResult", accepted),
-            problem,
-        )
     operation = execute_fit_commit(
         accepted,
         authority,
@@ -2035,6 +2236,7 @@ def _execute_optimization(  # noqa: C901 - closed primary transition
     )
     if checkpoint_observer is not None:
         checkpoint_observer(MethodStepCheckpoint.COMMIT_COMPLETED)
+        _validate_execution_start_workflow(workflow, execution_start)
     committed = operation.terminal is FitCommitTerminal.COMMITTED
     successor = operation.committed_snapshot if committed else None
     derivations = (

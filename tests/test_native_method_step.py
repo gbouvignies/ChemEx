@@ -13,12 +13,13 @@ import json
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TypedDict
+from typing import Any, TypedDict
 from unittest.mock import patch
 
 import numpy as np
 import pytest
 
+import chemex.optimize.method_step as method_step_module
 from chemex.baselines import (
     LegacyObservationImplementation,
     Occurrence,
@@ -53,6 +54,7 @@ from chemex.optimize.direct_trf import (
     OptimizationProblem,
     RootMaterializationFailure,
     TerminalFailure,
+    fit_commit_authority_is_authoritative,
 )
 from chemex.optimize.grid_direct_trf import GridDirectTrfInvocation
 from chemex.optimize.grouped_direct_trf import (
@@ -939,7 +941,7 @@ def test_cancellation_before_primary_starts_blocks_commit_and_successor() -> Non
         require_successor_state(outcome, session.analysis_values)
 
 
-def test_stale_commit_retains_accepted_diagnostics_and_blocks_successor() -> None:
+def test_stale_observer_state_retains_diagnostics_without_commit_attempt() -> None:
     session, workflow = _direct_workflow()
 
     def make_stale(checkpoint: MethodStepCheckpoint) -> None:
@@ -958,13 +960,208 @@ def test_stale_commit_retains_accepted_diagnostics_and_blocks_successor() -> Non
         checkpoint_observer=make_stale,
     )
 
-    assert outcome.lifecycle is MethodStepLifecycle.ACCEPTED_UNCOMMITTED
-    assert outcome.accepted_result is not None
-    assert outcome.commit_operation is not None
-    assert outcome.commit_operation.failure is not None
-    assert outcome.commit_operation.failure.category.value == "stale_revision"
+    assert outcome.lifecycle is MethodStepLifecycle.FAILED
+    assert outcome.accepted_result_identity is not None
+    assert outcome.accepted_result is None
+    assert outcome.commit_operation is None
+    assert session.analysis_values.snapshot().revision == 1
     with pytest.raises(ValueError, match="successor authority"):
         require_successor_state(outcome, session.analysis_values)
+
+
+def test_acceptance_observer_cannot_retarget_invocation_before_commit(
+    tmp_path: Path,
+) -> None:
+    session, base = _direct_workflow(stabilize_data=True)
+    request = _uncertainty_request(base)
+    workflow = dataclasses.replace(
+        base,
+        derivations=(request,),
+        publication=_publication_request(tmp_path / "retargeted"),
+    )
+    decomposition = workflow.decomposition
+    assert decomposition is not None
+    primary_executions: list[GroupedDirectTrfOutcome] = []
+    execute_primary = method_step_module.execute_grouped_direct_trf
+
+    def capture_primary(*args: Any, **kwargs: Any) -> GroupedDirectTrfOutcome:
+        execution = execute_primary(*args, **kwargs)
+        primary_executions.append(execution)
+        return execution
+
+    def retarget(checkpoint: MethodStepCheckpoint) -> None:
+        if checkpoint is MethodStepCheckpoint.AGGREGATE_ACCEPTED:
+            object.__setattr__(
+                workflow,
+                "invocation",
+                GroupedDirectTrfInvocation.for_decomposition(
+                    decomposition,
+                    objective_request_budgets=(81,) * len(decomposition.components),
+                ),
+            )
+
+    with (
+        patch(
+            "chemex.optimize.method_step.execute_grouped_direct_trf",
+            side_effect=capture_primary,
+        ),
+        patch("chemex.optimize.method_step.execute_fit_commit") as commit,
+        patch("chemex.optimize.method_step._execute_derivations") as derivations,
+        patch(
+            "chemex.optimize.method_step._publish_committed_method_step"
+        ) as publication,
+    ):
+        outcome = execute_method_step(
+            workflow,
+            analysis_values=session.analysis_values,
+            checkpoint_observer=retarget,
+        )
+
+    assert outcome.lifecycle is MethodStepLifecycle.FAILED
+    assert outcome.accepted_result_identity is not None
+    assert outcome.commit_operation is None
+    assert session.analysis_values.snapshot().revision == 0
+    commit.assert_not_called()
+    derivations.assert_not_called()
+    publication.assert_not_called()
+    assert not (tmp_path / "retargeted").exists()
+    assert len(primary_executions) == 1
+    primary = primary_executions[0]
+    assert primary.accepted_result is not None
+    assert primary.commit_authority is not None
+    assert workflow.problem is not None
+    assert fit_commit_authority_is_authoritative(
+        primary.accepted_result,
+        primary.commit_authority,
+        workflow.problem,
+    )
+    with pytest.raises(ValueError, match="successor authority"):
+        require_successor_state(outcome, session.analysis_values)
+
+
+def test_acceptance_observer_cannot_retarget_and_rehash_workflow() -> None:
+    session, workflow = _direct_workflow()
+    decomposition = workflow.decomposition
+    assert decomposition is not None
+
+    def retarget_and_rehash(checkpoint: MethodStepCheckpoint) -> None:
+        if checkpoint is not MethodStepCheckpoint.AGGREGATE_ACCEPTED:
+            return
+        replacement = GroupedDirectTrfInvocation.for_decomposition(
+            decomposition,
+            objective_request_budgets=(81,) * len(decomposition.components),
+        )
+        repaired = dataclasses.replace(workflow, invocation=replacement)
+        object.__setattr__(workflow, "invocation", replacement)
+        object.__setattr__(workflow, "semantic_identity", repaired.semantic_identity)
+        object.__setattr__(workflow, "binding_identity", repaired.binding_identity)
+
+    with patch("chemex.optimize.method_step.execute_fit_commit") as commit:
+        outcome = execute_method_step(
+            workflow,
+            analysis_values=session.analysis_values,
+            checkpoint_observer=retarget_and_rehash,
+        )
+
+    assert outcome.lifecycle is MethodStepLifecycle.FAILED
+    assert session.analysis_values.snapshot().revision == 0
+    commit.assert_not_called()
+
+
+@pytest.mark.parametrize("mutation", ["problem", "strategy", "starting_snapshot"])
+def test_acceptance_observer_cannot_mutate_pinned_primary_context(
+    mutation: str,
+) -> None:
+    session, workflow = _direct_workflow()
+    _foreign_session, foreign = _direct_workflow()
+    assert foreign.problem is not None
+
+    def mutate(checkpoint: MethodStepCheckpoint) -> None:
+        if checkpoint is not MethodStepCheckpoint.AGGREGATE_ACCEPTED:
+            return
+        if mutation == "problem":
+            object.__setattr__(workflow, "problem", foreign.problem)
+        elif mutation == "strategy":
+            object.__setattr__(workflow, "strategy", MethodStepStrategy.GRID_DIRECT_TRF)
+        else:
+            object.__setattr__(
+                workflow.starting_snapshot,
+                "revision",
+                workflow.starting_snapshot.revision + 1,
+            )
+
+    with patch("chemex.optimize.method_step.execute_fit_commit") as commit:
+        outcome = execute_method_step(
+            workflow,
+            analysis_values=session.analysis_values,
+            checkpoint_observer=mutate,
+        )
+
+    assert outcome.lifecycle is MethodStepLifecycle.FAILED
+    assert session.analysis_values.snapshot().revision == 0
+    commit.assert_not_called()
+
+
+@pytest.mark.parametrize("observe", [False, True])
+def test_valid_acceptance_observer_preserves_exactly_one_commit(observe: bool) -> None:
+    session, workflow = _direct_workflow()
+    observed: list[MethodStepCheckpoint] = []
+
+    def record(checkpoint: MethodStepCheckpoint) -> None:
+        observed.append(checkpoint)
+
+    with patch(
+        "chemex.optimize.method_step.execute_fit_commit",
+        wraps=method_step_module.execute_fit_commit,
+    ) as commit:
+        outcome = execute_method_step(
+            workflow,
+            analysis_values=session.analysis_values,
+            checkpoint_observer=record if observe else None,
+        )
+
+    assert outcome.lifecycle is MethodStepLifecycle.COMMITTED
+    assert session.analysis_values.snapshot().revision == 1
+    commit.assert_called_once()
+    assert observed == (
+        [
+            MethodStepCheckpoint.AGGREGATE_ACCEPTED,
+            MethodStepCheckpoint.COMMIT_COMPLETED,
+        ]
+        if observe
+        else []
+    )
+
+
+@pytest.mark.parametrize(
+    ("failure", "lifecycle"),
+    [
+        (RuntimeError("observer failed"), MethodStepLifecycle.FAILED),
+        (KeyboardInterrupt(), MethodStepLifecycle.INTERRUPTED),
+    ],
+)
+def test_acceptance_observer_failure_is_typed_before_commit(
+    failure: BaseException,
+    lifecycle: MethodStepLifecycle,
+) -> None:
+    session, workflow = _direct_workflow()
+
+    def fail(checkpoint: MethodStepCheckpoint) -> None:
+        if checkpoint is MethodStepCheckpoint.AGGREGATE_ACCEPTED:
+            raise failure
+
+    with patch("chemex.optimize.method_step.execute_fit_commit") as commit:
+        outcome = execute_method_step(
+            workflow,
+            analysis_values=session.analysis_values,
+            checkpoint_observer=fail,
+        )
+
+    assert outcome.lifecycle is lifecycle
+    assert outcome.accepted_result_identity is not None
+    assert outcome.commit_operation is None
+    assert session.analysis_values.snapshot().revision == 0
+    commit.assert_not_called()
 
 
 def test_stale_first_step_cannot_compile_a_required_second_step() -> None:
@@ -1559,9 +1756,9 @@ def test_stale_commit_publication_suppresses_fitted_and_restart_output(
         checkpoint_observer=make_stale,
     )
 
-    assert outcome.lifecycle is MethodStepLifecycle.ACCEPTED_UNCOMMITTED
-    assert outcome.publication is not None, outcome.publication_failure
-    assert (output / "Diagnostics" / "outcome.json").is_file()
+    assert outcome.lifecycle is MethodStepLifecycle.FAILED
+    assert outcome.publication is None
+    assert not output.exists()
     assert not (output / "Parameters").exists()
 
 
