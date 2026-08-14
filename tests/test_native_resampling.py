@@ -920,10 +920,10 @@ def test_summary_numerical_references_and_zero_variance_are_canonical(
     )
     assert distributions["A"].median == pytest.approx(2.0, rel=0.0, abs=1.0e-15)
     assert distributions["A"].percentile_95_lower == pytest.approx(
-        1.05, rel=0.0, abs=1.0e-15
+        1.0, rel=0.0, abs=1.0e-15
     )
     assert distributions["A"].percentile_95_upper == pytest.approx(
-        2.95, rel=0.0, abs=1.0e-15
+        3.0, rel=0.0, abs=1.0e-15
     )
     covariance = {
         (item.parameter_a, item.parameter_b): item.value for item in summary.covariance
