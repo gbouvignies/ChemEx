@@ -6,8 +6,7 @@ import argparse
 import hashlib
 import json
 import math
-import platform
-import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from fractions import Fraction
 from itertools import product
@@ -21,7 +20,14 @@ from pydantic import BaseModel
 from chemex.containers.data import Data
 from chemex.containers.profile import Profile, PulseSequence
 from chemex.evaluation.native import EvaluationEngine, EvaluationFrame, EvaluationResult
+from chemex.migration_core import migration_core_authority_selection
 from chemex.nmr.spectrometer import Spectrometer
+from chemex.numerical_lanes import (
+    LaneAttestation,
+    NumericalLane,
+    RuntimeEnvironment,
+    canonical_lanes,
+)
 from chemex.optimize.direct_trf import AcceptedFitResult, OptimizationProblem
 from chemex.optimize.native_resampling import (
     OperationTerminal,
@@ -52,7 +58,7 @@ from chemex.runtime import ExecutionSettings
 # Frozen qualification specifications are intentionally kept compact and inspectable.
 # fmt: off
 
-SPECIFICATION_ID = "chemex-resampling-calibration-v1"
+SPECIFICATION_ID = "chemex-resampling-calibration-v2"
 CANDIDATE_COUNTS = (64, 128, 256)
 OUTPUT_SCOPE = ("A", "B")
 THETA = (1.0, 2.0)
@@ -89,16 +95,21 @@ def _roots(literals: str) -> tuple[int, ...]:
 ROOTS = {
     "mc": {
         "calibration": _roots("3352135948555585357 2472045721331367299 18179771078494673657 7172209355565492995 4428942634759812093 16846731500777651301 1276328454428800799 1007434282609839600 7623382162802148034 17314847138863603676 17123956007879464799 9852929745021454887 18118882682188821729 1998968888814372653 11174296571166983796 9342205682851433915"),
-        "holdout": _roots("11227737360748962646 17470780368220950770 882017822349353614 6006908154484889383 682688700279365841 8190374274261472580 18196953354430856719 15474585266757114297"),
+        "holdout": _roots("1683597629452963050 16208179182483689898 8138106942819703130 15515473093383081872 2976836775184601562 14083146987549980469 5591399098166460148 13265399871182262342"),
     },
     "bs": {
         "calibration": _roots("17119401643894300767 16464330990378071471 3287997670289142773 13004064220656459317 9175610863457614675 13493705660742239536 7566518655171357174 9129588113907940364 15581839316159386495 7621495334857864309 9939444681066633173 15450513739920280325 13405509690366816759 8661374386535711639 7796930234651015581 15997482312548809078"),
-        "holdout": _roots("10049477911408417482 12926280384734704413 3894811774098425923 14835158499454950328 14745417758411211654 16213361473081760634 9514719903799318634 2156741863032581007"),
+        "holdout": _roots("8841647693099355132 14673849892314593488 62288681685728296 9553479069377181116 1616470759781790097 3438610658747297316 796585017052296001 10339959776139241745"),
     },
     "bsn": {
         "calibration": _roots("7639148882328525895 12072455617509212606 8535324653541211058 9476519509736332819 5478984577077683145 2525069006632874260 1105367432024468405 3898413442510559254 3384662453840932065 14315773297000690354 16176071534482763393 15507941143551554954 9258971447573535519 5287528659740383302 1416814305191906398 14303118813658220336"),
-        "holdout": _roots("12671600559231941323 10264161786616261730 9189865121253494806 7938868261418550067 6646078350059218959 8516678745947789619 18038196089002735289 9413147880661201059"),
+        "holdout": _roots("10916365485830788432 16652394355300541660 2840841312473151217 11985423680230601622 4282993254360459241 16406857506768168855 12066811090466048655 677902911216112496"),
     },
+}
+V1_HOLDOUT_ROOTS = {
+    "mc": _roots("11227737360748962646 17470780368220950770 882017822349353614 6006908154484889383 682688700279365841 8190374274261472580 18196953354430856719 15474585266757114297"),
+    "bs": _roots("10049477911408417482 12926280384734704413 3894811774098425923 14835158499454950328 14745417758411211654 16213361473081760634 9514719903799318634 2156741863032581007"),
+    "bsn": _roots("12671600559231941323 10264161786616261730 9189865121253494806 7938868261418550067 6646078350059218959 8516678745947789619 18038196089002735289 9413147880661201059"),
 }
 REFERENCE_TRUTH = {
     "mc": {
@@ -117,7 +128,8 @@ REFERENCE_TRUTH = {
 
 
 def derive_root(family: str, phase: str, index: int) -> int:
-    label = f"chemex-issue-603-resampling-calibration-v1|{family}|{phase}|{index:02d}"
+    version = {"calibration": "v1", "holdout": "v2"}[phase]
+    label = f"chemex-issue-603-resampling-calibration-{version}|{family}|{phase}|{index:02d}"
     return int.from_bytes(hashlib.sha256(label.encode("ascii")).digest()[:8], "big")
 
 
@@ -343,9 +355,44 @@ def _run(fixture: NativeFixture, family: str, count: int, root: int, workers: in
     return record, operation, outcome
 
 
-def acquire() -> dict[str, object]:
-    if platform.system() != "Linux" or platform.machine() not in {"x86_64", "AMD64"} or sys.version_info[:2] != (3, 13):
-        raise RuntimeError("canonical acquisition requires Linux x86-64 and Python 3.13")
+def validate_canonical_lane_records(records: Mapping[str, object]) -> None:
+    names = {"numerical_lane", "lane_attestation", "runtime_environment"}
+    if set(records) != names or any(not isinstance(records[name], Mapping) for name in names):
+        raise RuntimeError("canonical acquisition requires complete typed lane records")
+    lane = NumericalLane.from_record(cast("Mapping[str, object]", records["numerical_lane"]))
+    attestation = LaneAttestation.from_record(cast("Mapping[str, object]", records["lane_attestation"]))
+    environment = RuntimeEnvironment.from_record(cast("Mapping[str, object]", records["runtime_environment"]))
+    expected_lane, selection = canonical_lanes()[0], migration_core_authority_selection()
+    if (
+        lane != expected_lane
+        or lane.identity != selection.lane_identity
+        or lane.role != selection.lane_role
+        or lane.semantics.image_digest != selection.image_digest
+        or attestation.identity != selection.attestation_identity
+        or attestation.lane_identity != lane.identity
+        or attestation.environment_identity != selection.environment_identity
+        or attestation.workers != selection.workers
+        or attestation.native_threads != selection.native_threads
+        or environment.identity != selection.environment_identity
+        or environment.semantics != lane.semantics
+    ):
+        raise RuntimeError("canonical acquisition lane records do not match #588")
+
+
+def attest_canonical_lane(image_digest: str) -> dict[str, object]:
+    lane = canonical_lanes()[0]
+    authority = lane.attest_current_process(image_digest)
+    records = {
+        "numerical_lane": lane.to_record(),
+        "lane_attestation": authority.to_record(),
+        "runtime_environment": RuntimeEnvironment(lane.semantics).to_record(),
+    }
+    validate_canonical_lane_records(records)
+    return records
+
+
+def acquire(image_digest: str) -> dict[str, object]:
+    lane_records = attest_canonical_lane(image_digest)
     if SUMMARY_POLICY.identity != SUMMARY_POLICY_IDENTITY:
         raise RuntimeError("frozen summary policy identity changed")
     fixture, families = native_fixture(), {}
@@ -376,14 +423,15 @@ def acquire() -> dict[str, object]:
                 holdout_status, final = holdout_decision(selected, tuple(run["status"] == "PASS" for run in holdouts))
                 family_record.update(holdout=holdouts, selection_status=holdout_status, selected_count=final)
         families[family] = family_record
-    return {"specification_id": SPECIFICATION_ID, "policy_identity": SUMMARY_POLICY_IDENTITY, "truth_fields": TRUTH_FIELDS, "truth": truth_estimands(), "families": families, "environment": {"platform": platform.platform(), "python": platform.python_version()}}
+    return {"specification_id": SPECIFICATION_ID, "policy_identity": SUMMARY_POLICY_IDENTITY, "truth_fields": TRUTH_FIELDS, "truth": truth_estimands(), "families": families, "canonical_lane": lane_records}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("output", type=Path)
-    output = parser.parse_args().output
-    output.write_text(json.dumps(acquire(), allow_nan=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    parser.add_argument("--image-digest", required=True)
+    arguments = parser.parse_args()
+    arguments.output.write_text(json.dumps(acquire(arguments.image_digest), allow_nan=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

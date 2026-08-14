@@ -3,35 +3,25 @@
 from __future__ import annotations
 
 import hashlib
-import json
-import math
-from pathlib import Path
+import inspect
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
-from chemex.migration_core import migration_core_authority_selection
+from chemex.numerical_lanes import (
+    LaneAttestation,
+    NumericalLane,
+    RuntimeEnvironment,
+    canonical_lanes,
+)
 from chemex.optimize.native_resampling import OptimizationStrategy
 from tests.qualification import capture_resampling_calibration as calibration
 
-ROOT = Path(__file__).parents[1]
-EVIDENCE = ROOT / "tests/fixtures/canonical_resampling_calibration_v1.json"
-
-
-def _canonical_hash(value: object) -> str:
-    encoded = json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("ascii")
-    return hashlib.sha256(encoded).hexdigest()
-
 
 def test_frozen_roots_match_derivation_and_are_globally_disjoint() -> None:
-    roots = []
+    active_roots = []
+    v2_holdout_roots = []
     for family, phases in calibration.ROOTS.items():
         for phase, literal_roots in phases.items():
             assert len(literal_roots) == (16 if phase == "calibration" else 8)
@@ -39,10 +29,116 @@ def test_frozen_roots_match_derivation_and_are_globally_disjoint() -> None:
                 calibration.derive_root(family, phase, index)
                 for index in range(len(literal_roots))
             )
-            roots.extend(literal_roots)
-    assert len(roots) == 72
-    assert 0 not in roots
-    assert len(set(roots)) == len(roots)
+            active_roots.extend(literal_roots)
+            if phase == "holdout":
+                v2_holdout_roots.extend(literal_roots)
+    v1_roots = [
+        root
+        for family in calibration.FAMILY_SCHEMES
+        for roots in (
+            calibration.ROOTS[family]["calibration"],
+            calibration.V1_HOLDOUT_ROOTS[family],
+        )
+        for root in roots
+    ]
+    for family, roots in calibration.V1_HOLDOUT_ROOTS.items():
+        assert roots == tuple(
+            int.from_bytes(
+                hashlib.sha256(
+                    f"chemex-issue-603-resampling-calibration-v1|{family}|holdout|{index:02d}".encode(
+                        "ascii"
+                    )
+                ).digest()[:8],
+                "big",
+            )
+            for index in range(8)
+        )
+    assert len(active_roots) == len(v1_roots) == 72
+    assert len(v2_holdout_roots) == len(set(v2_holdout_roots)) == 24
+    assert all(v2_holdout_roots)
+    assert set(v2_holdout_roots).isdisjoint(v1_roots)
+    assert 0 not in active_roots
+    assert len(set(active_roots)) == len(active_roots)
+
+
+def test_live_attestation_records_reconstruct_with_existing_types(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lane = canonical_lanes()[0]
+    environment = RuntimeEnvironment(lane.semantics)
+    observed_digests: list[str] = []
+
+    def observe_current_process(
+        cls: type[RuntimeEnvironment], image_digest: str, provenance_path: object = None
+    ) -> RuntimeEnvironment:
+        _ = cls, provenance_path
+        observed_digests.append(image_digest)
+        assert image_digest == lane.semantics.image_digest
+        return environment
+
+    monkeypatch.setattr(
+        RuntimeEnvironment,
+        "from_current_process",
+        classmethod(observe_current_process),
+    )
+    records = calibration.attest_canonical_lane(lane.semantics.image_digest)
+    reconstructed_lane = NumericalLane.from_record(
+        cast("Any", records["numerical_lane"])
+    )
+    attestation = LaneAttestation.from_record(cast("Any", records["lane_attestation"]))
+    reconstructed_environment = RuntimeEnvironment.from_record(
+        cast("Any", records["runtime_environment"])
+    )
+
+    assert observed_digests == [lane.semantics.image_digest]
+    assert reconstructed_lane == lane
+    assert attestation.lane_identity == lane.identity
+    assert attestation.environment_identity == reconstructed_environment.identity
+    calibration.validate_canonical_lane_records(records)
+
+
+def test_identity_strings_cannot_qualify_as_v2_lane_records() -> None:
+    lane = canonical_lanes()[0]
+    environment = RuntimeEnvironment(lane.semantics)
+    attestation = LaneAttestation(
+        lane.identity,
+        environment.identity,
+        lane.semantics.workers,
+        lane.semantics.native_threads,
+        "POST_IMPORT_CURRENT_PROCESS",
+    )
+    with pytest.raises(RuntimeError, match="complete typed lane records"):
+        calibration.validate_canonical_lane_records(
+            {
+                "numerical_lane": lane.identity,
+                "lane_attestation": attestation.identity,
+                "runtime_environment": environment.identity,
+            }
+        )
+
+
+def test_acquisition_cannot_construct_fixture_before_attestation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def reject_attestation(image_digest: str) -> dict[str, object]:
+        calls.append(f"attest:{image_digest}")
+        raise RuntimeError("attestation rejected")
+
+    def forbidden_fixture() -> calibration.NativeFixture:
+        calls.append("native_fixture")
+        raise AssertionError("calibration fixture constructed before attestation")
+
+    monkeypatch.setattr(calibration, "attest_canonical_lane", reject_attestation)
+    monkeypatch.setattr(calibration, "native_fixture", forbidden_fixture)
+    with pytest.raises(RuntimeError, match="attestation rejected"):
+        calibration.acquire("externally-observed-image-digest")
+    assert calls == ["attest:externally-observed-image-digest"]
+    assert (
+        inspect.signature(calibration.acquire).parameters["image_digest"].default
+        is inspect.Parameter.empty
+    )
 
 
 def test_independently_computed_truth_matches_frozen_references() -> None:
@@ -167,91 +263,3 @@ def test_replay_signature_contains_every_exact_scientific_field() -> None:
     }
     evidence.identity = "foreign-evidence"
     assert calibration.replay_signature(*pair) != signature
-
-
-def test_canonical_evidence_reconstructs_frozen_decisions() -> None:
-    record = json.loads(EVIDENCE.read_text(encoding="ascii"))
-    identity = record.pop("identity")
-    assert identity == _canonical_hash(record)
-    assert record["source"] == {
-        "dependency_lock_sha256": hashlib.sha256(
-            (ROOT / "uv.lock").read_bytes()
-        ).hexdigest(),
-        "qualification_script_sha256": hashlib.sha256(
-            Path(calibration.__file__).read_bytes()
-        ).hexdigest(),
-        "raw_acquisition_sha256": "1ac0c303f1ac0f077848f7b75b5c12987c8ddec40c9fc1c3f855e34813692c71",
-        "specification_commit": "61b6328641bc31d1b0d53e4769c39a616658f24c",
-    }
-    authority = migration_core_authority_selection()
-    lane = record["lane"]
-    assert (lane["lane_identity"], lane["attestation_identity"]) == (
-        authority.lane_identity,
-        authority.attestation_identity,
-    )
-    assert (lane["environment_identity"], lane["image_digest"]) == (
-        authority.environment_identity,
-        authority.image_digest,
-    )
-    assert (lane["workers"], lane["native_threads"]) == (1, 1)
-    specification = record["specification"]
-    assert specification["candidate_counts"] == list(calibration.CANDIDATE_COUNTS)
-    assert specification["scope"] == list(calibration.OUTPUT_SCOPE)
-    assert specification["thresholds"] == calibration.THRESHOLDS
-    assert (
-        specification["summary_policy_identity"] == calibration.SUMMARY_POLICY_IDENTITY
-    )
-    truth = {
-        "fields": list(calibration.TRUTH_FIELDS),
-        "values": calibration.truth_estimands(),
-    }
-    assert specification["truth_identity"] == _canonical_hash(truth)
-    for family, phases in calibration.ROOTS.items():
-        for phase, roots in phases.items():
-            assert specification["root_sets"][family][phase] == {
-                "count": len(roots),
-                "identity": _canonical_hash(list(roots)),
-            }
-    for family, result in record["families"].items():
-        passing = set()
-        for count in calibration.CANDIDATE_COUNTS:
-            candidate = result["candidates"][str(count)]
-            metrics = candidate["aggregate_metrics"]
-            assert set(metrics) == set(calibration.THRESHOLDS)
-            assert all(math.isfinite(value) for value in metrics.values())
-            assert metrics["failure_prevalence"] == 0.0
-            assert candidate["root_count"] == 16
-            assert not candidate["structural_disqualifiers"]
-            if candidate["status"] == "PASS":
-                passing.add(count)
-                assert candidate["passing_root_count"] == 16
-                assert all(
-                    metrics[name] <= limit
-                    for name, limit in calibration.THRESHOLDS.items()
-                )
-            else:
-                assert candidate["threshold_disqualifiers"]
-                assert all(
-                    item["root"] in calibration.ROOTS[family]["calibration"]
-                    for item in candidate["threshold_disqualifiers"]
-                )
-        expected = calibration.select_candidate(passing)
-        assert result["selection"] == {
-            "status": expected[0],
-            "selected_count": expected[1],
-        }
-        if expected[1] is None:
-            assert result["replay"] is result["holdout"] is None
-        else:
-            replay, holdout = result["replay"], result["holdout"]
-            assert replay["status"] == "PASS" and replay["exact_identity_match"]
-            assert (replay["serial_workers"], replay["parallel_workers"]) == (1, 2)
-            assert replay["root"] == calibration.ROOTS[family]["calibration"][0]
-            assert holdout["status"] == "PASS"
-            assert holdout["passing_root_count"] == holdout["root_count"] == 8
-            assert all(
-                holdout["aggregate_metrics"][name] <= limit
-                for name, limit in calibration.THRESHOLDS.items()
-            )
-            assert not holdout["structural_disqualifiers"]
-            assert not holdout["threshold_disqualifiers"]
