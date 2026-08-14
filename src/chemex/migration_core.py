@@ -18,6 +18,11 @@ from chemex.baselines import (
     CanonicalBaselineValue,
     PublishedEvidence,
 )
+from chemex.migration_core_lifecycle import (
+    FAILURE_REQUIREMENTS,
+    LifecycleProbeCapture,
+    eligible_failure_requirements,
+)
 from chemex.numerical_lanes import (
     LaneAttestation,
     RuntimeEnvironment,
@@ -33,10 +38,19 @@ _MANIFEST_VERSION = "migration-core-coverage-v1"
 _BASELINE_SEMANTIC_VERSION = "chemex-baseline-v1"
 _MANIFEST_RESOURCE = "migration_core_coverage_v1.json"
 _AUTHORITY_SELECTION_RESOURCE = "migration_core_authority_selection_v1.json"
-_CURRENT_RELEASE_SELECTION_RESOURCE = "migration_core_current_release_v1.json"
-_CURRENT_STATUS_VERSION = "migration-core-canonical-coverage-status-v3"
+_CURRENT_RELEASE_SELECTION_RESOURCES = (
+    "migration_core_current_release_v2.json",
+    "migration_core_current_release_v1.json",
+)
+_CURRENT_STATUS_VERSIONS = {
+    "migration-core-canonical-coverage-status-v3": (10, 41),
+    "migration-core-canonical-coverage-status-v4": (17, 34),
+}
 _ANCHOR_RELEASE_VERSION = "migration-core-canonical-anchor-release-v1"
-_CURRENT_RELEASE_VERSION = "migration-core-current-release-v1"
+_CURRENT_RELEASE_VERSIONS = {
+    "migration-core-current-release-v1",
+    "migration-core-current-release-v2",
+}
 _AUTHORITY_SELECTION_VERSION = "migration-core-authority-selection-v1"
 _CANONICAL_ATTESTATION_IDENTITY = (
     "3b3e0bc184826d61ec6652194486c907a5faa4c64b68ec03bbe60b63c660d687"
@@ -1257,6 +1271,31 @@ def _validated_numerical_probe_identity(
     return None
 
 
+def _validated_lifecycle_publication_safety_identity(
+    evidence: object,
+) -> tuple[str, str] | None:
+    current = migration_core_current_release_selection()
+    authority = migration_core_authority_selection()
+    if (
+        isinstance(evidence, LifecycleProbeCapture)
+        and current.lifecycle_probe_identity is not None
+        and evidence.identity == current.lifecycle_probe_identity
+        and current.lifecycle_source_commit is not None
+        and current.lifecycle_lockfile_hash is not None
+        and eligible_failure_requirements(
+            evidence,
+            source_commit=current.lifecycle_source_commit,
+            lockfile_hash=current.lifecycle_lockfile_hash,
+            lane_identity=authority.lane_identity,
+            attestation_identity=authority.attestation_identity,
+            environment_identity=authority.environment_identity,
+        )
+        == FAILURE_REQUIREMENTS
+    ):
+        return "LifecyclePublicationSafetyEvidence", evidence.identity
+    return None
+
+
 def _unavailable_identity(_evidence: object) -> tuple[str, str] | None:
     return None
 
@@ -1271,7 +1310,9 @@ _SUPPORTING_VALIDATORS: dict[str, Callable[[object], tuple[str, str] | None]] = 
     "execution:grid-single-component": _unavailable_identity,
     "execution:mcmc": _unavailable_identity,
     "execution:resampling": _unavailable_identity,
-    "probe:lifecycle-publication-safety": _unavailable_identity,
+    "probe:lifecycle-publication-safety": (
+        _validated_lifecycle_publication_safety_identity
+    ),
     "probe:numerical-optimizer-evaluator": _validated_numerical_probe_identity,
     "probe:serialization-multiprocessing-cache-replay": _unavailable_identity,
     "workload:qualified-performance": _unavailable_identity,
@@ -1413,12 +1454,17 @@ class MigrationCoreCurrentReleaseSelection:
     probe_locator: str
     probe_file_hash: str
     probe_identity: str
+    lifecycle_probe_locator: str | None = None
+    lifecycle_probe_file_hash: str | None = None
+    lifecycle_probe_identity: str | None = None
+    lifecycle_source_commit: str | None = None
+    lifecycle_lockfile_hash: str | None = None
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
         if (
             self.schema_version != _SCHEMA_VERSION
-            or self.selection_version != _CURRENT_RELEASE_VERSION
+            or self.selection_version not in _CURRENT_RELEASE_VERSIONS
         ):
             raise MigrationCoreCoverageError(
                 "Migration-core current release has incompatible version"
@@ -1441,10 +1487,31 @@ class MigrationCoreCurrentReleaseSelection:
             (self.probe_identity, "probe identity"),
         ):
             _digest(value, name)
+        lifecycle = (
+            self.lifecycle_probe_locator,
+            self.lifecycle_probe_file_hash,
+            self.lifecycle_probe_identity,
+            self.lifecycle_source_commit,
+            self.lifecycle_lockfile_hash,
+        )
+        if any(value is not None for value in lifecycle):
+            if not all(value is not None for value in lifecycle):
+                raise MigrationCoreCoverageError(
+                    "Migration-core lifecycle selection is incomplete"
+                )
+            _relative_locator(self.lifecycle_probe_locator, "lifecycle probe locator")
+            _digest(self.lifecycle_probe_file_hash, "lifecycle probe file hash")
+            _digest(self.lifecycle_probe_identity, "lifecycle probe identity")
+            _git_commit(self.lifecycle_source_commit, "lifecycle source commit")
+            _digest(self.lifecycle_lockfile_hash, "lifecycle lockfile hash")
+        if (self.selection_version.endswith("v2")) != bool(lifecycle[0]):
+            raise MigrationCoreCoverageError(
+                "Migration-core release version differs from lifecycle selection"
+            )
         object.__setattr__(self, "identity", _content_identity(self.to_record()))
 
     def to_record(self) -> dict[str, object]:
-        return {
+        record: dict[str, object] = {
             "anchor_release": {
                 "archive_hash": self.anchor_release_hash,
                 "identity": self.anchor_release_identity,
@@ -1468,27 +1535,40 @@ class MigrationCoreCurrentReleaseSelection:
             "schema_version": self.schema_version,
             "selection_version": self.selection_version,
         }
+        if self.lifecycle_probe_locator is not None:
+            record["lifecycle_probe"] = {
+                "file_hash": self.lifecycle_probe_file_hash,
+                "identity": self.lifecycle_probe_identity,
+                "locator": self.lifecycle_probe_locator,
+                "lockfile_hash": self.lifecycle_lockfile_hash,
+                "source_commit": self.lifecycle_source_commit,
+            }
+        return record
 
     @classmethod
     def from_bytes(cls, content: bytes) -> MigrationCoreCurrentReleaseSelection:
         record = _json_record_from_bytes(content, "current release selection")
-        _exact_keys(
-            record,
-            {
-                "anchor_release",
-                "authority_selection",
-                "identity",
-                "numerical_probe",
-                "phased_status",
-                "schema_version",
-                "selection_version",
-            },
-            "current release selection",
-        )
+        expected = {
+            "anchor_release",
+            "authority_selection",
+            "identity",
+            "numerical_probe",
+            "phased_status",
+            "schema_version",
+            "selection_version",
+        }
+        if "lifecycle_probe" in record:
+            expected.add("lifecycle_probe")
+        _exact_keys(record, expected, "current release selection")
         authority = _record(record.get("authority_selection"), "authority selection")
         status = _record(record.get("phased_status"), "phased status selection")
         release = _record(record.get("anchor_release"), "anchor release selection")
         probe = _record(record.get("numerical_probe"), "probe selection")
+        lifecycle = (
+            _record(record.get("lifecycle_probe"), "lifecycle probe selection")
+            if "lifecycle_probe" in record
+            else None
+        )
         for nested, name in (
             (authority, "authority selection"),
             (status, "phased status selection"),
@@ -1501,6 +1581,12 @@ class MigrationCoreCurrentReleaseSelection:
                 if name != "anchor release selection"
                 else {"archive_hash", "identity", "locator"},
                 name,
+            )
+        if lifecycle is not None:
+            _exact_keys(
+                lifecycle,
+                {"file_hash", "identity", "locator", "lockfile_hash", "source_commit"},
+                "lifecycle probe selection",
             )
         schema_version = record.get("schema_version")
         if isinstance(schema_version, bool) or not isinstance(schema_version, int):
@@ -1522,6 +1608,21 @@ class MigrationCoreCurrentReleaseSelection:
             _relative_locator(probe.get("locator"), "probe locator"),
             _digest(probe.get("file_hash"), "probe file hash"),
             _digest(probe.get("identity"), "probe identity"),
+            None
+            if lifecycle is None
+            else _relative_locator(lifecycle.get("locator"), "lifecycle probe locator"),
+            None
+            if lifecycle is None
+            else _digest(lifecycle.get("file_hash"), "lifecycle probe file hash"),
+            None
+            if lifecycle is None
+            else _digest(lifecycle.get("identity"), "lifecycle probe identity"),
+            None
+            if lifecycle is None
+            else _git_commit(lifecycle.get("source_commit"), "lifecycle source commit"),
+            None
+            if lifecycle is None
+            else _digest(lifecycle.get("lockfile_hash"), "lifecycle lockfile hash"),
         )
         if record.get("identity") != selection.identity:
             raise MigrationCoreCoverageError(
@@ -1561,7 +1662,7 @@ class MigrationCorePhasedStatus:
     def __post_init__(self) -> None:
         if (
             self.schema_version != _SCHEMA_VERSION
-            or self.record_version != _CURRENT_STATUS_VERSION
+            or self.record_version not in _CURRENT_STATUS_VERSIONS
             or self.completion_claim != "PHASED_INFRASTRUCTURE_ONLY"
             or self.compiler_status != "FAILED_CLOSED"
             or self.compiled_coverage_identity is not None
@@ -1592,8 +1693,11 @@ class MigrationCorePhasedStatus:
             or tuple(sorted(self.selected_evidence)) != self.selected_evidence
             or len({name for name, _ in self.selected_evidence})
             != len(self.selected_evidence)
-            or len(self.eligible_requirement_ids) != 10
-            or len(self.uncovered_requirement_ids) != 41
+            or (
+                len(self.eligible_requirement_ids),
+                len(self.uncovered_requirement_ids),
+            )
+            != _CURRENT_STATUS_VERSIONS[self.record_version]
             or set(self.eligible_requirement_ids) & set(self.uncovered_requirement_ids)
         ):
             raise MigrationCoreCoverageError(
@@ -1780,10 +1884,14 @@ def migration_core_current_release_selection() -> MigrationCoreCurrentReleaseSel
     """Load the sole repository-frozen current phased release selection."""
 
     try:
-        content = (
-            files("chemex").joinpath(_CURRENT_RELEASE_SELECTION_RESOURCE).read_bytes()
+        package = files("chemex")
+        resource = next(
+            item
+            for name in _CURRENT_RELEASE_SELECTION_RESOURCES
+            if (item := package.joinpath(name)).is_file()
         )
-    except OSError as error:
+        content = resource.read_bytes()
+    except (OSError, StopIteration) as error:
         raise MigrationCoreCoverageError(
             "Migration-core current release selection is unavailable"
         ) from error
@@ -1883,6 +1991,35 @@ def _load_selected_probe(
     return probe, validated_probe
 
 
+def _load_selected_lifecycle_probe(
+    repository_root: Path,
+    current: MigrationCoreCurrentReleaseSelection,
+) -> LifecycleProbeCapture | None:
+    if current.lifecycle_probe_locator is None:
+        return None
+    lifecycle_hash = current.lifecycle_probe_file_hash
+    if lifecycle_hash is None:
+        raise MigrationCoreCoverageError("Lifecycle probe selection is incomplete")
+    _, content = _read_selected_file(
+        repository_root,
+        current.lifecycle_probe_locator,
+        lifecycle_hash,
+        "lifecycle probe capture",
+    )
+    try:
+        capture = LifecycleProbeCapture.from_bytes(content)
+    except (TypeError, ValueError, json.JSONDecodeError) as error:
+        raise MigrationCoreCoverageError(
+            "Migration-core lifecycle probe capture cannot be reconstructed"
+        ) from error
+    validated = _validated_lifecycle_publication_safety_identity(capture)
+    if validated is None or capture.identity != current.lifecycle_probe_identity:
+        raise MigrationCoreCoverageError(
+            "Migration-core lifecycle probe capture is not eligible"
+        )
+    return capture
+
+
 def _validate_resolved_release_status(
     resolved: ResolvedMigrationCoreAnchorRelease,
     status: MigrationCorePhasedStatus,
@@ -1914,9 +2051,13 @@ def _derive_release_anchor_evidence(
 
 
 def _derive_requirement_partitions(
-    manifest: MigrationCoreCoverageManifest, selections: Mapping[str, str]
+    manifest: MigrationCoreCoverageManifest,
+    selections: Mapping[str, str],
+    lifecycle_probe: LifecycleProbeCapture | None,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     selected_names = set(selections) | {"probe:numerical-optimizer-evaluator"}
+    if lifecycle_probe is not None:
+        selected_names.add("probe:lifecycle-publication-safety")
     eligible = tuple(
         requirement.identifier
         for requirement in manifest.requirements
@@ -1936,13 +2077,17 @@ def _fail_closed_compiler_reason(
     resolved: ResolvedMigrationCoreAnchorRelease,
     selections: Mapping[str, str],
     probe: NumericalProbeBaseline,
+    lifecycle_probe: LifecycleProbeCapture | None,
 ) -> str:
+    supporting: dict[str, object] = {"probe:numerical-optimizer-evaluator": probe}
+    if lifecycle_probe is not None:
+        supporting["probe:lifecycle-publication-safety"] = lifecycle_probe
     try:
         compile_migration_core_coverage(
             manifest,
             resolved.publisher,
             selections,
-            {"probe:numerical-optimizer-evaluator": probe},
+            supporting,
         )
     except MigrationCoreCoverageError as error:
         return str(error)
@@ -1959,6 +2104,7 @@ def compile_current_phased_migration_core_status(
     current = migration_core_current_release_selection()
     authority, status = _load_selected_authority_and_status(repository_root, current)
     probe, validated_probe = _load_selected_probe(repository_root, current, status)
+    lifecycle_probe = _load_selected_lifecycle_probe(repository_root, current)
     archive_path = _repository_path(
         repository_root, current.anchor_release_locator, "anchor release"
     )
@@ -1972,19 +2118,23 @@ def compile_current_phased_migration_core_status(
         selections, compiled_anchors = _derive_release_anchor_evidence(
             resolved, manifest
         )
-        selected_identities = tuple(
-            sorted(
-                (
-                    *selections.items(),
-                    ("probe:numerical-optimizer-evaluator", probe.identity),
-                )
+        supporting_identities = [
+            ("probe:numerical-optimizer-evaluator", probe.identity)
+        ]
+        if lifecycle_probe is not None:
+            supporting_identities.append(
+                ("probe:lifecycle-publication-safety", lifecycle_probe.identity)
             )
+        selected_identities = tuple(
+            sorted((*selections.items(), *supporting_identities))
         )
         if selected_identities != status.selected_evidence:
             raise MigrationCoreCoverageError(
                 "Migration-core requirement-to-evidence selection is incompatible"
             )
-        eligible, uncovered = _derive_requirement_partitions(manifest, selections)
+        eligible, uncovered = _derive_requirement_partitions(
+            manifest, selections, lifecycle_probe
+        )
         if (
             eligible != status.eligible_requirement_ids
             or uncovered != status.uncovered_requirement_ids
@@ -1993,7 +2143,7 @@ def compile_current_phased_migration_core_status(
                 "Migration-core phased coverage counts are not evidence-derived"
             )
         compiler_reason = _fail_closed_compiler_reason(
-            manifest, resolved, selections, probe
+            manifest, resolved, selections, probe, lifecycle_probe
         )
         if (
             status.compiler_status != "FAILED_CLOSED"

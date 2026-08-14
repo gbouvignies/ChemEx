@@ -13,6 +13,7 @@ import pytest
 
 import chemex.baselines as baselines
 import chemex.migration_core as migration_core
+import chemex.migration_core_lifecycle as migration_core_lifecycle
 from chemex.baselines import (
     ApprovedAnchorName,
     ArtifactContent,
@@ -291,10 +292,7 @@ def test_selected_numerical_probe_fixture_hash_fails_closed() -> None:
         probe_file_hash="a" * 64,
     )
     status = migration_core.MigrationCorePhasedStatus.from_bytes(
-        (
-            _REPOSITORY_ROOT
-            / "tests/fixtures/migration_core_canonical_coverage_status_v3.json"
-        ).read_bytes()
+        (_REPOSITORY_ROOT / current.status_locator).read_bytes()
     )
 
     with pytest.raises(MigrationCoreCoverageError, match="probe hash does not match"):
@@ -555,18 +553,13 @@ def test_release_locator_cannot_escape_trusted_repository_root(tmp_path: Path) -
         migration_core._repository_path(tmp_path, "../outside", "anchor release")
 
 
-def test_current_v3_status_is_derived_from_resolved_evidence() -> None:
+def test_current_status_is_derived_from_resolved_evidence() -> None:
     current = migration_core.migration_core_current_release_selection()
     result = migration_core.compile_current_phased_migration_core_status(
         _REPOSITORY_ROOT
     )
 
-    assert current.identity == (
-        "e48d9c48d6c5fda2632bfcb72d5c1869be442af00ea52c5bb0de51bb0fca3b1a"
-    )
-    assert current.status_locator.endswith(
-        "migration_core_canonical_coverage_status_v3.json"
-    )
+    expected_counts = (17, 34) if current.lifecycle_probe_identity else (10, 41)
     assert result.authority_selection_identity == (
         "001b6b9e791e66677b265d8b1dd3c2d8151f4a9e0b33bdcfe5196782cecdd066"
     )
@@ -575,8 +568,20 @@ def test_current_v3_status_is_derived_from_resolved_evidence() -> None:
     assert result.numerical_probe.identity == (
         "d11f9caa404b8ce3fa96e041659939446e205aae9376b08d6a137ed40cf0bdb0"
     )
-    assert len(result.eligible_requirement_ids) == 10
-    assert len(result.uncovered_requirement_ids) == 41
+    assert (
+        len(result.eligible_requirement_ids),
+        len(result.uncovered_requirement_ids),
+    ) == expected_counts
+    failure_coverage = {
+        identifier
+        for identifier in result.eligible_requirement_ids
+        if identifier.startswith("migration-core.failure.")
+    }
+    assert failure_coverage == (
+        set(migration_core_lifecycle.FAILURE_REQUIREMENTS)
+        if current.lifecycle_probe_identity
+        else set()
+    )
     assert result.compiler_status == "FAILED_CLOSED"
     assert result.compiled_coverage_identity is None
 
@@ -587,7 +592,7 @@ def test_changed_requirement_selection_is_not_trusted(
     status = migration_core.MigrationCorePhasedStatus.from_bytes(
         (
             _REPOSITORY_ROOT
-            / "tests/fixtures/migration_core_canonical_coverage_status_v3.json"
+            / migration_core.migration_core_current_release_selection().status_locator
         ).read_bytes()
     )
     selected = dict(status.selected_evidence)
