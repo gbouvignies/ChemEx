@@ -112,6 +112,11 @@ from chemex.runtime import AnalysisSession, ExecutionSettings
 from tests.qualification.capture_migration_core_lifecycle import (
     observe_two_required_steps,
 )
+from tests.test_migration_core_lifecycle import (
+    LOCKFILE_HASH,
+    SOURCE_COMMIT,
+    _live_authority,
+)
 
 ROOT = Path(__file__).parent.parent
 EXPERIMENT = ROOT / "examples/Experiments/RELAXATION_HZNZ/Experiments/800mhz.toml"
@@ -260,8 +265,15 @@ def _direct_workflow(
     return session, workflow
 
 
-def test_construction_failure_stops_composed_required_downstream_step() -> None:
-    observed = observe_two_required_steps(no_objective=True)
+def test_construction_failure_stops_composed_required_downstream_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed = observe_two_required_steps(
+        no_objective=True,
+        authority=_live_authority(monkeypatch),
+        source_commit=SOURCE_COMMIT,
+        lockfile_hash=LOCKFILE_HASH,
+    )
 
     assert isinstance(observed.construction_failure, DirectTrfConstructionError)
     assert observed.constructor_entries == ("first",)
@@ -1822,8 +1834,15 @@ def test_aggregate_materialization_failure_never_accepts_or_commits() -> None:
     assert outcome.commit_operation is None
 
 
-def test_two_steps_compile_second_from_exact_committed_successor() -> None:
-    observed = observe_two_required_steps(no_objective=False)
+def test_two_steps_compile_second_from_exact_committed_successor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed = observe_two_required_steps(
+        no_objective=False,
+        authority=_live_authority(monkeypatch),
+        source_commit=SOURCE_COMMIT,
+        lockfile_hash=LOCKFILE_HASH,
+    )
     first_outcome, second_outcome = observed.outcomes
 
     assert observed.constructor_entries == ("first", "second")
