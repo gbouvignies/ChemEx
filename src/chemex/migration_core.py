@@ -39,7 +39,7 @@ _BASELINE_SEMANTIC_VERSION = "chemex-baseline-v1"
 _MANIFEST_RESOURCE = "migration_core_coverage_v1.json"
 _AUTHORITY_SELECTION_RESOURCE = "migration_core_authority_selection_v1.json"
 _CURRENT_RELEASE_SELECTION_RESOURCES = (
-    "migration_core_current_release_v2_repaired.json",
+    "migration_core_current_release_v2.json",
     "migration_core_current_release_v1.json",
 )
 _CURRENT_STATUS_VERSIONS = {
