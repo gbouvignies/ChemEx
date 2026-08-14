@@ -109,6 +109,9 @@ from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.values import AnalysisValuesSnapshot
 from chemex.run_info import capture_native_inputs
 from chemex.runtime import AnalysisSession, ExecutionSettings
+from tests.qualification.capture_migration_core_lifecycle import (
+    observe_two_required_steps,
+)
 
 ROOT = Path(__file__).parent.parent
 EXPERIMENT = ROOT / "examples/Experiments/RELAXATION_HZNZ/Experiments/800mhz.toml"
@@ -255,6 +258,16 @@ def _direct_workflow(
         derivations=derivations,
     )
     return session, workflow
+
+
+def test_construction_failure_stops_composed_required_downstream_step() -> None:
+    observed = observe_two_required_steps(no_objective=True)
+
+    assert isinstance(observed.construction_failure, DirectTrfConstructionError)
+    assert observed.constructor_entries == ("first",)
+    assert observed.executor_entries == ()
+    assert observed.outcomes == ()
+    assert observed.ending_snapshot == observed.starting_snapshot
 
 
 def _grid_workflow(
@@ -1810,53 +1823,14 @@ def test_aggregate_materialization_failure_never_accepts_or_commits() -> None:
 
 
 def test_two_steps_compile_second_from_exact_committed_successor() -> None:
-    session, first = _direct_workflow(stabilize_data=True)
-    first_outcome = execute_method_step(
-        first,
-        analysis_values=session.analysis_values,
-    )
-    successor = require_successor_state(first_outcome, session.analysis_values)
-    parameterization = session.compile_parameterization(
-        first.method,
-        set(first.parameterization.scope_ids),
-    )
-    engine = first.engine.rebind_parameterization(parameterization)
-    configuration = session.parameter_factory.sealed_configuration
-    parameter_model = session.parameter_factory.sealed_parameter_model
-    assert configuration is not None
-    assert parameter_model is not None
-    problem = OptimizationProblem.from_native(
-        engine.plan,
-        parameterization,
-        configuration,
-        successor,
-    )
-    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
-    second = MethodStepWorkflow.for_optimization(
-        starting_snapshot=successor,
-        parameter_model=parameter_model,
-        parameterization=parameterization,
-        engine=engine,
-        method=first.method,
-        problem=problem,
-        decomposition=decomposition,
-        strategy=MethodStepStrategy.DIRECT_TRF,
-        invocation=GroupedDirectTrfInvocation.for_decomposition(
-            decomposition,
-            objective_request_budgets=(80,) * len(decomposition.components),
-        ),
-    )
+    observed = observe_two_required_steps(no_objective=False)
+    first_outcome, second_outcome = observed.outcomes
 
-    second_outcome = execute_method_step(
-        second,
-        analysis_values=session.analysis_values,
-    )
-
-    assert second.starting_snapshot is successor
+    assert observed.constructor_entries == ("first", "second")
+    assert observed.executor_entries == ("first", "second")
+    assert first_outcome.lifecycle is MethodStepLifecycle.COMMITTED
     assert second_outcome.lifecycle is MethodStepLifecycle.COMMITTED
-    assert (
-        require_successor_state(second_outcome, session.analysis_values).revision == 2
-    )
+    assert observed.ending_snapshot.revision == 2
 
 
 def test_method_step_publication_can_write_existing_run_information(
