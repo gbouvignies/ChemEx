@@ -2784,7 +2784,7 @@ class ResamplingSummaryPolicy:
     percentile_lower: float = 2.5
     percentile_median: float = 50.0
     percentile_upper: float = 97.5
-    percentile_method: Literal["linear"] = "linear"
+    percentile_method: Literal["median_unbiased"] = "median_unbiased"
     covariance_delta_degrees_of_freedom: int = 1
     version: str = _SUMMARY_POLICY_VERSION
     identity: str = field(init=False)
@@ -2806,9 +2806,9 @@ class ResamplingSummaryPolicy:
             raise ResamplingConstructionError(
                 "Native resampling covariance uses the declared sample denominator"
             )
-        if self.percentile_method != "linear":
+        if self.percentile_method != "median_unbiased":
             raise ResamplingConstructionError(
-                "Native resampling percentiles use the declared linear convention"
+                "Native resampling percentiles use the declared median-unbiased convention"
             )
         _non_empty_identity(self.version, name="summary policy version")
         object.__setattr__(self, "percentile_lower", values[0])
