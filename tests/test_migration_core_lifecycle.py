@@ -135,8 +135,18 @@ def test_fixed_predicates_reconstruct_exact_typed_owner_facts(
 def test_stale_flat_counter_capture_and_altered_facts_are_ineligible(
     lifecycle_capture: LifecycleProbeCapture,
 ) -> None:
-    with pytest.raises((TypeError, ValueError)):
-        LifecycleProbeCapture.from_bytes(FIXTURE.read_bytes())
+    retained = LifecycleProbeCapture.from_bytes(FIXTURE.read_bytes())
+    current = migration_core.migration_core_current_release_selection()
+    authority = migration_core.migration_core_authority_selection()
+    assert retained.identity == current.lifecycle_probe_identity
+    assert eligible_failure_requirements(
+        retained,
+        source_commit=current.lifecycle_source_commit,
+        lockfile_hash=current.lifecycle_lockfile_hash,
+        lane_identity=authority.lane_identity,
+        attestation_identity=authority.attestation_identity,
+        environment_identity=authority.environment_identity,
+    ) == FAILURE_REQUIREMENTS
 
     raw = json.loads(lifecycle_capture.to_bytes())
     raw["records"][0].update(claims=list(FAILURE_REQUIREMENTS), passed=True)
@@ -194,11 +204,16 @@ def test_stale_flat_counter_capture_and_altered_facts_are_ineligible(
 
 def test_stale_evidence_only_selection_is_not_current() -> None:
     current = migration_core.migration_core_current_release_selection()
-    assert current.lifecycle_probe_identity is None
+    assert current.selection_version == "migration-core-current-release-v2"
+    assert current.lifecycle_probe_identity is not None
+    assert (
+        current.lifecycle_source_commit
+        == "7a180c4c609dd8683838d41cf5c411ca9dfd3a9d"
+    )
     result = migration_core.compile_current_phased_migration_core_status(
         Path(__file__).parents[1]
     )
-    assert len(result.eligible_requirement_ids) == 10
-    assert len(result.uncovered_requirement_ids) == 41
+    assert len(result.eligible_requirement_ids) == 17
+    assert len(result.uncovered_requirement_ids) == 34
     assert result.compiler_status == "FAILED_CLOSED"
 # fmt: on
