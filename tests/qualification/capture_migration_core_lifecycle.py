@@ -6,22 +6,31 @@ from __future__ import annotations
 
 # fmt: off
 import dataclasses
+import hashlib
+import json
 from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
+from uuid import uuid4
 
 import numpy as np
 
 import chemex.optimize.direct_trf as direct
 import chemex.optimize.method_step as step
 import chemex.optimize.native_resampling as resampling
-from chemex.baselines import LegacyObservationImplementation, Occurrence, ResultBundle, ResultMember
+from chemex.baselines import (
+    CanonicalBaselineValue, CaseDefinition, CaseSourceAuthority,
+    ExecutionSpecification, InputMember, LegacyObservationImplementation,
+    Occurrence, ResultBundle, ResultMember,
+)
 from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
 from chemex.evaluation.native import EvaluationEngine, EvaluationFrame, EvaluationResult
 from chemex.experiments.builder import build_experiments
+from chemex.migration_core_lifecycle import LifecycleProbeCapture, LifecycleProbeResult
 from chemex.native_provenance import BaselineReference, ProvenanceEnvironment
+from chemex.numerical_lanes import LaneAttestation, LiveLaneAuthority
 from chemex.optimize.grouped_direct_trf import FitDecomposition, GroupedDirectTrfInvocation
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.values import AnalysisValues, AnalysisValuesSnapshot
@@ -37,12 +46,18 @@ class ProbeObservation:
     probe_id: str
     starting_snapshot: AnalysisValuesSnapshot
     ending_snapshot: AnalysisValuesSnapshot
+    case: CaseDefinition
+    specification: ExecutionSpecification
+    occurrence: Occurrence
     outcome: step.MethodStepOutcome | None = None
     construction_failure: direct.DirectTrfConstructionError | None = None
     constructor_entries: tuple[str, ...] = ()
     executor_entries: tuple[str, ...] = ()
     successor_snapshot: AnalysisValuesSnapshot | None = None
     successor_denial: ValueError | None = None
+    checkpoint_entries: tuple[str, ...] = ()
+    checkpoint_failures: tuple[str, ...] = ()
+    downstream_entries: tuple[str, ...] = ()
     outcomes: tuple[step.MethodStepOutcome, ...] = ()
 def _base_workflow(
     *, no_objective: bool = False, stabilize: bool = False
@@ -114,41 +129,130 @@ def _resampling_request(workflow: step.MethodStepWorkflow) -> step.ResamplingDer
         strategy_settings=(("objective_request_budget", "80"),),
         summary_policy=resampling.ResamplingSummaryPolicy(),
     )
-def _publication(path: Path) -> step.MethodStepPublicationRequest:
-    requested = Occurrence(
-        "a" * 64, "b" * 64, "c" * 64, "unqualified-local-lane-v1", None,
-        ("d" * 64,), "issue-592-lifecycle-probe",
+def _member(role: str, path: Path) -> InputMember:
+    content = path.read_bytes()
+    return InputMember(role, hashlib.sha256(content).hexdigest(), len(content))
+
+
+def _publication(
+    path: Path, source_commit: str, lockfile_hash: str
+) -> step.MethodStepPublicationRequest:
+    implementation = LegacyObservationImplementation.from_current_package()
+    case = CaseDefinition.create(
+        "migration-core-lifecycle-publication-reference",
+        CaseSourceAuthority(source_commit, lockfile_hash),
+        {"purpose": "publication-provenance-context"},
+        (_member("experiment", EXPERIMENT),),
     )
+    specification = ExecutionSpecification.create(
+        case, implementation,
+        workflow={"purpose": "publication-provenance-context"},
+        lane_reference="unqualified-local-lane-v1", policy={}, budget={}, seed=None,
+        execution_settings={}, artifact_inventory={"roles": ["result"]},
+        roles=("qualification:publication-reference",), claims=("context-only",),
+    )
+    requested = Occurrence.requested(
+        specification, case, f"publication-reference:{uuid4().hex}"
+    )
+    content = json.dumps(requested.to_record(), sort_keys=True).encode("ascii")
     bundle = ResultBundle.create(
-        requested.identity, requested.execution_specification_identity,
-        LegacyObservationImplementation(), (ResultMember("result", "e" * 64, 1),),
+        requested.identity, specification.identity, implementation,
+        (ResultMember("result", hashlib.sha256(content).hexdigest(), len(content)),),
     )
     return step.MethodStepPublicationRequest(
         path, ProvenanceEnvironment.from_current_process(),
         (BaselineReference.from_occurrence(requested.succeeded(bundle)), BaselineReference.from_result_bundle(bundle)),
     )
+
+
+def _lineage(
+    probe_id: str, workflow: step.MethodStepWorkflow, authority: LiveLaneAuthority,
+    source_commit: str, lockfile_hash: str, *, required_steps: tuple[str, ...] = (),
+) -> tuple[CaseDefinition, ExecutionSpecification, Occurrence]:
+    attestation = LaneAttestation.from_record(authority.to_record())
+    implementation = LegacyObservationImplementation.from_current_package()
+    case = CaseDefinition.create(
+        f"migration-core-lifecycle:{probe_id}",
+        CaseSourceAuthority(source_commit, lockfile_hash),
+        {"probe_id": probe_id, "required_steps": list(required_steps)},
+        tuple(
+            _member(role, path)
+            for role, path in (
+                ("capture-runner", Path(__file__)), ("experiment", EXPERIMENT),
+                ("method", METHOD), ("parameters", PARAMETERS),
+            )
+        ),
+    )
+    specification = ExecutionSpecification.create(
+        case, implementation,
+        workflow={
+            "semantic_identity": workflow.semantic_identity,
+            "binding_identity": workflow.binding_identity,
+            "evaluation_plan_identity": workflow.engine.plan.identity,
+            "parameterization_identity": workflow.parameterization.identity,
+            "starting_occurrence_identity": workflow.starting_snapshot.occurrence_identity,
+            "starting_revision": workflow.starting_snapshot.revision,
+            "required_steps": list(required_steps),
+        },
+        lane_reference=attestation.lane_identity,
+        policy={"probe_id": probe_id},
+        budget={
+            "components": 0 if workflow.decomposition is None else len(workflow.decomposition.components),
+            "replicates": next(
+                (item.replicate_count for item in workflow.derivations if isinstance(item, step.ResamplingDerivationRequest)), 0
+            ),
+        },
+        seed=next(
+            (item.root_seed for item in workflow.derivations if isinstance(item, step.ResamplingDerivationRequest)), None
+        ),
+        execution_settings={
+            "environment_identity": attestation.environment_identity,
+            "workers": attestation.workers,
+            "native_threads": attestation.native_threads,
+        },
+        artifact_inventory={"owner_records": ["method_step", "primary", "commit", "resampling", "successor"]},
+        roles=("qualification:migration-core-lifecycle",),
+        claims=("typed-runtime-facts",),
+    )
+    occurrence = Occurrence.requested(
+        specification, case, f"{probe_id}:{uuid4().hex}", authority
+    )
+    return case, specification, occurrence
 def _observed(
     probe_id: str, session: AnalysisSession, starting: AnalysisValuesSnapshot,
-    outcome: step.MethodStepOutcome,
+    outcome: step.MethodStepOutcome, lineage: tuple[CaseDefinition, ExecutionSpecification, Occurrence],
+    checkpoint_entries: tuple[str, ...] = (), checkpoint_failures: tuple[str, ...] = (),
 ) -> ProbeObservation:
+    downstream: list[str] = []
     try:
         successor = step.require_successor_state(outcome, session.analysis_values)
     except ValueError as denial:
         return ProbeObservation(
-            probe_id, starting, session.analysis_values.snapshot(), outcome,
-            successor_denial=denial,
+            probe_id, starting, session.analysis_values.snapshot(), *lineage, outcome,
+            successor_denial=denial, checkpoint_entries=checkpoint_entries,
+            checkpoint_failures=checkpoint_failures,
         )
+    downstream.append("dependent")
     return ProbeObservation(
-        probe_id, starting, session.analysis_values.snapshot(), outcome,
-        successor_snapshot=successor,
+        probe_id, starting, session.analysis_values.snapshot(), *lineage, outcome,
+        successor_snapshot=successor, checkpoint_entries=checkpoint_entries,
+        checkpoint_failures=checkpoint_failures,
+        downstream_entries=tuple(downstream),
     )
-def observe_two_required_steps(*, no_objective: bool) -> ProbeObservation:
+def observe_two_required_steps(
+    *, no_objective: bool, authority: LiveLaneAuthority,
+    source_commit: str, lockfile_hash: str,
+) -> ProbeObservation:
     """Run one unconditional two-step production composition path."""
 
     session, template = _base_workflow(
         no_objective=no_objective, stabilize=not no_objective
     )
     starting = session.analysis_values.snapshot()
+    lineage = _lineage(
+        "construction-dependent-stop", template, authority, source_commit,
+        lockfile_hash, required_steps=("first", "second"),
+    )
     constructors: list[str] = []
     executors: list[str] = []
     outcomes: list[step.MethodStepOutcome] = []
@@ -180,22 +284,27 @@ def observe_two_required_steps(*, no_objective: bool) -> ProbeObservation:
         outcomes.append(compose_and_execute("second", step.require_successor_state(first, session.analysis_values)))
     except direct.DirectTrfConstructionError as failure:
         return ProbeObservation(
-            "construction-dependent-stop", starting, session.analysis_values.snapshot(),
+            "construction-dependent-stop", starting, session.analysis_values.snapshot(), *lineage,
             construction_failure=failure, constructor_entries=tuple(constructors),
             executor_entries=tuple(executors), outcomes=tuple(outcomes),
         )
     return ProbeObservation(
-        "successful-two-step", starting, session.analysis_values.snapshot(),
+        "successful-two-step", starting, session.analysis_values.snapshot(), *lineage,
         constructor_entries=tuple(constructors), executor_entries=tuple(executors),
         outcomes=tuple(outcomes),
     )
-def _method_probe(probe_id: str, root: Path) -> ProbeObservation:  # noqa: C901
+def _method_probe(  # noqa: C901
+    probe_id: str, root: Path, authority: LiveLaneAuthority,
+    source_commit: str, lockfile_hash: str,
+) -> ProbeObservation:
     session, workflow = _base_workflow(stabilize="resampling" in probe_id)
     starting = session.analysis_values.snapshot()
     context = nullcontext()
     kwargs: dict[str, object] = {}
+    checkpoint_entries: list[str] = []
+    checkpoint_failures: list[str] = []
     if probe_id == "primary-execution-failure":
-        workflow = dataclasses.replace(workflow, publication=_publication(root))
+        workflow = dataclasses.replace(workflow, publication=_publication(root, source_commit, lockfile_hash))
         context = patch.object(workflow.engine, "project_profiles", side_effect=RuntimeError("qualified primary failure"))
     elif probe_id == "aggregate-materialization-failure":
         failure = direct.RootMaterializationFailure(
@@ -206,7 +315,10 @@ def _method_probe(probe_id: str, root: Path) -> ProbeObservation:  # noqa: C901
     elif probe_id == "aggregate-acceptance-stop":
         def fail_acceptance(checkpoint: step.MethodStepCheckpoint) -> None:
             if checkpoint is step.MethodStepCheckpoint.AGGREGATE_ACCEPTED:
-                raise RuntimeError("qualified acceptance failure")
+                checkpoint_entries.append(checkpoint.value)
+                failure = RuntimeError("qualified acceptance failure")
+                checkpoint_failures.append(type(failure).__name__)
+                raise failure
         kwargs["checkpoint_observer"] = fail_acceptance
     elif probe_id == "accepted-commit-rejected":
         configuration = session.parameter_factory.sealed_configuration
@@ -221,7 +333,8 @@ def _method_probe(probe_id: str, root: Path) -> ProbeObservation:  # noqa: C901
         context = patch("chemex.optimize.method_step.execute_fit_commit", side_effect=reject)
     elif "resampling" in probe_id:
         workflow = dataclasses.replace(
-            workflow, derivations=(_resampling_request(workflow),), publication=_publication(root)
+            workflow, derivations=(_resampling_request(workflow),),
+            publication=_publication(root, source_commit, lockfile_hash)
         )
         if probe_id == "requested-resampling-summary-failure":
             def fail_summary(evidence: resampling.ResamplingEvidence, _policy: resampling.ResamplingSummaryPolicy):
@@ -245,11 +358,22 @@ def _method_probe(probe_id: str, root: Path) -> ProbeObservation:  # noqa: C901
             context = patch("chemex.optimize.method_step.execute_resampling_evidence", side_effect=run)
     elif probe_id == "committed-publication-failure":
         root.mkdir()
-        workflow = dataclasses.replace(workflow, publication=_publication(root))
+        workflow = dataclasses.replace(workflow, publication=_publication(root, source_commit, lockfile_hash))
+    lineage = _lineage(
+        probe_id, workflow, authority, source_commit, lockfile_hash
+    )
     with context:
         outcome = step.execute_method_step(workflow, analysis_values=session.analysis_values, **kwargs)
-    return _observed(probe_id, session, starting, outcome)
-def observe_lifecycle_probes(root: Path) -> tuple[ProbeObservation, ...]:
+    return _observed(
+        probe_id, session, starting, outcome, lineage,
+        tuple(checkpoint_entries), tuple(checkpoint_failures),
+    )
+
+
+def observe_lifecycle_probes(
+    root: Path, *, authority: LiveLaneAuthority,
+    source_commit: str, lockfile_hash: str,
+) -> tuple[ProbeObservation, ...]:
     """Run fixed operational scenarios without consulting semantic expectations."""
 
     identifiers = (
@@ -259,7 +383,87 @@ def observe_lifecycle_probes(root: Path) -> tuple[ProbeObservation, ...]:
         "requested-resampling-summary-failure",
         "interrupted-resampling-partial-publication", "committed-publication-failure",
     )
-    return (observe_two_required_steps(no_objective=True),) + tuple(
-        _method_probe(identifier, root / identifier) for identifier in identifiers
+    return (observe_two_required_steps(
+        no_objective=True, authority=authority, source_commit=source_commit,
+        lockfile_hash=lockfile_hash,
+    ),) + tuple(
+        _method_probe(
+            identifier, root / identifier, authority, source_commit, lockfile_hash
+        ) for identifier in identifiers
     )
+
+
+def _facts(observed: ProbeObservation) -> CanonicalBaselineValue:
+    outcome = observed.outcome
+    primary = None
+    commit = None
+    resampling_facts = None
+    summary_failure = None
+    if outcome is not None:
+        grouped = outcome.primary_execution
+        primary = {
+            "terminal": outcome.primary_terminal,
+            "component_dispositions": [] if grouped is None else [
+                item.disposition.value for item in grouped.components
+            ],
+        }
+        if outcome.commit_operation is not None:
+            operation = outcome.commit_operation
+            commit = {
+                "terminal": operation.terminal.value,
+                "failure_category": None if operation.failure is None else operation.failure.category.value,
+            }
+        if outcome.derivations:
+            derivation = outcome.derivations[0]
+            operation = derivation.operation
+            if isinstance(operation, resampling.ResamplingOperation):
+                evidence = operation.evidence
+                assert evidence is not None
+                resampling_facts = {
+                    "terminal": operation.terminal.value,
+                    "unstarted_ordinals": list(operation.unstarted_ordinals),
+                    "completed_count": evidence.completed_count,
+                    "successful_count": evidence.successful_count,
+                    "failed_count": evidence.failed_count,
+                    "replicate_dispositions": [item.disposition.value for item in evidence.outcomes],
+                }
+            failure = next(
+                (item for item in derivation.artifacts if isinstance(item, resampling.SummaryFailure)), None
+            )
+            summary_failure = None if failure is None else failure.category
+    return CanonicalBaselineValue.from_value({
+        "state": {
+            "starting_revision": observed.starting_snapshot.revision,
+            "ending_revision": observed.ending_snapshot.revision,
+        },
+        "construction": None if observed.construction_failure is None else {
+            "failure_category": type(observed.construction_failure).__name__,
+            "constructor_entries": list(observed.constructor_entries),
+            "executor_entries": list(observed.executor_entries),
+        },
+        "method_step": None if outcome is None else outcome.to_record(),
+        "primary": primary,
+        "checkpoint": {
+            "entries": list(observed.checkpoint_entries),
+            "failure_category": observed.checkpoint_failures[0] if observed.checkpoint_failures else None,
+        },
+        "commit": commit,
+        "resampling": resampling_facts,
+        "summary_failure_category": summary_failure,
+        "successor": {
+            "denied": observed.successor_denial is not None,
+            "downstream_entries": list(observed.downstream_entries),
+        },
+    })
+
+
+def capture_lifecycle_probes(
+    observations: tuple[ProbeObservation, ...],
+) -> LifecycleProbeCapture:
+    return LifecycleProbeCapture(tuple(
+        LifecycleProbeResult(
+            item.probe_id, item.case, item.specification, item.occurrence, _facts(item)
+        )
+        for item in observations
+    ))
 # fmt: on

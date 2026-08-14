@@ -7,87 +7,198 @@ from pathlib import Path
 # fmt: off
 import pytest
 
-import chemex.optimize.method_step as step
-import chemex.optimize.native_resampling as resampling
+from chemex import migration_core
+from chemex.baselines import CaseSourceAuthority
 from chemex.migration_core_lifecycle import (
     FAILURE_REQUIREMENTS,
-    LifecycleOperationCounts,
     LifecycleProbeCapture,
-    LifecycleProbeResult,
     eligible_failure_requirements,
 )
-from chemex.optimize.direct_trf import FitCommitTerminal
+from chemex.numerical_lanes import LiveLaneAuthority, RuntimeEnvironment, canonical_lanes
 from tests.qualification.capture_migration_core_lifecycle import (
-    ProbeObservation,
+    capture_lifecycle_probes,
     observe_lifecycle_probes,
 )
 FIXTURE = Path(__file__).parent / "fixtures/migration_core_lifecycle_probes_v1.json"
-def _project(observed: ProbeObservation) -> dict[str, object]:  # noqa: C901
-    if observed.construction_failure:
-        return {"stage": "construction", "terminal": "failed", "counts": LifecycleOperationCounts(1, 0, 1, 0, 0, 3), "acceptance": "not_started", "commit": "not_started", "publication": "suppressed", "successor": "denied", "partial_evidence": "not_applicable"}
-    outcome = observed.outcome
-    assert outcome is not None
-    derivation = outcome.derivations[0] if outcome.derivations else None
-    evidence = next((item for item in derivation.artifacts if isinstance(item, resampling.ResamplingEvidence)), None) if derivation else None
-    if outcome.publication_failure:
-        stage = "publication"
-    elif derivation and (derivation.disposition is step.DerivationDisposition.INTERRUPTED or evidence and evidence.failed_count):
-        stage = "worker"
-    elif derivation:
-        stage = "requested_evidence"
-    elif outcome.commit_operation:
-        stage = "commit"
-    elif outcome.primary_terminal == "accepted":
-        stage = "acceptance"
-    elif outcome.primary_terminal == "decomposition_validation_failure":
-        stage = "materialization"
-    else:
-        stage = "primary_execution"
-    acceptance = "accepted" if outcome.accepted_result else "failed" if stage == "acceptance" else "not_started"
-    commit = "not_started" if outcome.commit_operation is None else "committed" if outcome.commit_operation.terminal is FitCommitTerminal.COMMITTED else "rejected"
-    publication = "failed" if outcome.publication_failure else "suppressed" if outcome.publication is None else "diagnostics_only" if outcome.lifecycle is step.MethodStepLifecycle.FAILED else "partial_only"
-    partial = "not_applicable"
-    if derivation and evidence:
-        states = tuple(item.disposition.value for item in evidence.outcomes)
-        succeeded = states.count("succeeded")
-        if derivation.disposition is step.DerivationDisposition.CANCELLED:
-            partial, counts = "cancelled_population_retained", LifecycleOperationCounts(3, 2, 0, 1, 0, states.count("not_started"))
-        elif derivation.disposition is step.DerivationDisposition.INTERRUPTED:
-            partial, counts = "interrupted_population_retained", LifecycleOperationCounts(2 + len(states) - states.count("not_started"), 2 + succeeded, 0, 0, states.count("interrupted"), states.count("not_started"))
-        elif evidence.failed_count:
-            partial, counts = "worker_failure_retained", LifecycleOperationCounts(2 + len(states), 2 + succeeded, evidence.failed_count, 0, 0, 0)
-        else:
-            assert any(isinstance(item, resampling.SummaryFailure) for item in derivation.artifacts)
-            partial, counts = "summary_failure_retained", LifecycleOperationCounts(3 + len(states), 2 + succeeded, 1, 0, 0, 0)
-    else:
-        counts = {
-            "primary_execution": LifecycleOperationCounts(1, 0, 1, 0, 0, 3),
-            "materialization": LifecycleOperationCounts(2, 1, 1, 0, 0, 2),
-            "acceptance": LifecycleOperationCounts(2, 1, 1, 0, 0, 2),
-            "commit": LifecycleOperationCounts(3, 2, 1, 0, 0, 1),
-            "publication": LifecycleOperationCounts(3, 2, 1, 0, 0, 0),
-        }[stage]
-    return {"stage": stage, "terminal": outcome.lifecycle.value, "counts": counts, "acceptance": acceptance, "commit": commit, "publication": publication, "successor": "available" if observed.successor_snapshot else "denied", "partial_evidence": partial}
-def _capture(observations: tuple[ProbeObservation, ...]) -> LifecycleProbeCapture:
-    common = {"source_commit": "0" * 40, "lockfile_hash": "1" * 64, "lane_identity": "2" * 64, "attestation_identity": "3" * 64, "environment_identity": "4" * 64, "case_identity": "5" * 64, "execution_specification_identity": "6" * 64, "occurrence_identity": "7" * 64}
-    return LifecycleProbeCapture(tuple(LifecycleProbeResult(item.probe_id, starting_revision=item.starting_snapshot.revision, ending_revision=item.ending_snapshot.revision, **common, **_project(item)) for item in observations))
-def test_capture_reruns_real_behavior_and_fixed_validator(tmp_path: Path) -> None:
-    if not FIXTURE.exists():
-        pytest.skip("canonical lifecycle capture is selected only in evidence commit")
-    frozen = LifecycleProbeCapture.from_bytes(FIXTURE.read_bytes())
-    observed = observe_lifecycle_probes(tmp_path)
-    names = ("stage", "terminal", "counts", "acceptance", "commit", "publication", "successor", "partial_evidence")
-    assert [tuple(_project(item)[name] for name in names) for item in observed] == [tuple(getattr(item, name) for name in names) for item in frozen.records]
-    first = frozen.records[0]
-    assert eligible_failure_requirements(frozen, source_commit=first.source_commit, lockfile_hash=first.lockfile_hash, lane_identity=first.lane_identity, attestation_identity=first.attestation_identity, environment_identity=first.environment_identity) == FAILURE_REQUIREMENTS
-def test_claims_and_wrong_facts_do_not_grant_eligibility(tmp_path: Path) -> None:
-    capture = _capture(observe_lifecycle_probes(tmp_path))
-    raw = json.loads(capture.to_bytes())
+SOURCE_COMMIT = "0" * 40
+LOCKFILE_HASH = "1" * 64
+
+
+def _live_authority(monkeypatch: pytest.MonkeyPatch) -> LiveLaneAuthority:
+    lane = canonical_lanes()[0]
+    environment = RuntimeEnvironment(lane.semantics)
+    monkeypatch.setattr(
+        RuntimeEnvironment,
+        "from_current_process",
+        classmethod(lambda cls, image_digest, provenance_path=None: environment),
+    )
+    return lane.attest_current_process(lane.semantics.image_digest)
+
+
+@pytest.fixture
+def lifecycle_capture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> LifecycleProbeCapture:
+    authority = _live_authority(monkeypatch)
+    observations = observe_lifecycle_probes(
+        tmp_path,
+        authority=authority,
+        source_commit=SOURCE_COMMIT,
+        lockfile_hash=LOCKFILE_HASH,
+    )
+    return capture_lifecycle_probes(observations)
+
+
+def test_capture_uses_real_baseline_lineage_and_owner_local_facts(
+    lifecycle_capture: LifecycleProbeCapture,
+) -> None:
+    attestation = lifecycle_capture.records[0].occurrence.lane_attestation_identity
+    lane = lifecycle_capture.records[0].specification.lane_reference
+    environment = lifecycle_capture.records[0].environment_identity
+    assert eligible_failure_requirements(
+        lifecycle_capture,
+        source_commit=SOURCE_COMMIT,
+        lockfile_hash=LOCKFILE_HASH,
+        lane_identity=lane,
+        attestation_identity=attestation,
+        environment_identity=environment,
+    ) == FAILURE_REQUIREMENTS
+
+    for record in lifecycle_capture.records:
+        assert len(record.case.identity) == 64
+        assert len(record.specification.identity) == 64
+        assert len(record.occurrence.identity) == 64
+        assert record.occurrence.identity != record.occurrence.attempt_token
+        assert record.specification.case_identity == record.case.identity
+        assert record.occurrence.execution_specification_identity == record.specification.identity
+        assert record.occurrence.case_identity == record.case.identity
+        assert record.occurrence.actual_implementation_identity == record.specification.implementation.identity
+        assert record.occurrence.input_member_identities == tuple(
+            sorted(member.identity for member in record.case.inputs)
+        )
+        assert record.occurrence.lane_reference == record.specification.lane_reference
+
+    raw = json.loads(lifecycle_capture.to_bytes())
+    assert all("counts" not in record for record in raw["records"])
+    assert all("counts" not in record["facts"] for record in raw["records"])
+    assert LifecycleProbeCapture.from_bytes(lifecycle_capture.to_bytes()) == lifecycle_capture
+
+
+def test_fixed_predicates_reconstruct_exact_typed_owner_facts(
+    lifecycle_capture: LifecycleProbeCapture,
+) -> None:
+    records = {record.probe_id: record for record in lifecycle_capture.records}
+    construction = records["construction-dependent-stop"]
+    assert construction.runtime_facts["construction"] == {
+        "failure_category": "DirectTrfConstructionError",
+        "constructor_entries": ["first"],
+        "executor_entries": [],
+    }
+    assert construction.method_step_outcome is None
+
+    primary = records["primary-execution-failure"]
+    assert primary.method_step_outcome is not None
+    assert primary.method_step_outcome.primary_terminal == "execution_failure"
+    assert primary.runtime_facts["primary"] == {
+        "terminal": "execution_failure",
+        "component_dispositions": ["not_started"],
+    }
+
+    commit = records["accepted-commit-rejected"]
+    assert commit.runtime_facts["commit"] == {
+        "terminal": "failed",
+        "failure_category": "incompatible_state",
+    }
+
+    cancelled = records["cancelled-resampling-partial-publication"]
+    assert cancelled.runtime_facts["resampling"] == {
+        "terminal": "cancelled", "unstarted_ordinals": [0, 1],
+        "completed_count": 0, "successful_count": 0, "failed_count": 0,
+        "replicate_dispositions": ["not_started", "not_started"],
+    }
+
+    worker = records["worker-resampling-failure"]
+    assert worker.runtime_facts["resampling"] == {
+        "terminal": "completed", "unstarted_ordinals": [],
+        "completed_count": 2, "successful_count": 1, "failed_count": 1,
+        "replicate_dispositions": ["failed", "succeeded"],
+    }
+
+    interrupted = records["interrupted-resampling-partial-publication"]
+    assert interrupted.runtime_facts["resampling"] == {
+        "terminal": "interrupted", "unstarted_ordinals": [1],
+        "completed_count": 1, "successful_count": 0, "failed_count": 0,
+        "replicate_dispositions": ["interrupted", "not_started"],
+    }
+
+
+def test_stale_flat_counter_capture_and_altered_facts_are_ineligible(
+    lifecycle_capture: LifecycleProbeCapture,
+) -> None:
+    with pytest.raises((TypeError, ValueError)):
+        LifecycleProbeCapture.from_bytes(FIXTURE.read_bytes())
+
+    raw = json.loads(lifecycle_capture.to_bytes())
     raw["records"][0].update(claims=list(FAILURE_REQUIREMENTS), passed=True)
     with pytest.raises(ValueError, match="Malformed lifecycle probe result"):
         LifecycleProbeCapture.from_bytes(json.dumps(raw).encode())
-    altered = LifecycleProbeCapture((dataclasses.replace(capture.records[0], successor="available"), *capture.records[1:]))
-    eligible = eligible_failure_requirements(altered, source_commit="0" * 40, lockfile_hash="1" * 64, lane_identity="2" * 64, attestation_identity="3" * 64, environment_identity="4" * 64)
+
+    facts = dict(lifecycle_capture.records[0].runtime_facts)
+    facts["successor"] = {"denied": True, "downstream_entries": ["dependent"]}
+    changed = dataclasses.replace(
+        lifecycle_capture.records[0],
+        facts=type(lifecycle_capture.records[0].facts).from_value(facts),
+    )
+    altered = LifecycleProbeCapture((changed, *lifecycle_capture.records[1:]))
+    first = lifecycle_capture.records[0]
+    eligible = eligible_failure_requirements(
+        altered,
+        source_commit=SOURCE_COMMIT,
+        lockfile_hash=LOCKFILE_HASH,
+        lane_identity=first.specification.lane_reference,
+        attestation_identity=first.occurrence.lane_attestation_identity,
+        environment_identity=first.environment_identity,
+    )
     assert FAILURE_REQUIREMENTS[0] not in eligible
     assert FAILURE_REQUIREMENTS[5] not in eligible
+
+    original = lifecycle_capture.records[0]
+    foreign_case = dataclasses.replace(
+        original.case,
+        source_authority=CaseSourceAuthority("foreign-source", LOCKFILE_HASH),
+    )
+    foreign_specification = dataclasses.replace(
+        original.specification, case_identity=foreign_case.identity
+    )
+    foreign_occurrence = dataclasses.replace(
+        original.occurrence,
+        execution_specification_identity=foreign_specification.identity,
+        case_identity=foreign_case.identity,
+    )
+    foreign = dataclasses.replace(
+        original,
+        case=foreign_case,
+        specification=foreign_specification,
+        occurrence=foreign_occurrence,
+    )
+    replaced = LifecycleProbeCapture((foreign, *lifecycle_capture.records[1:]))
+    assert eligible_failure_requirements(
+        replaced,
+        source_commit=SOURCE_COMMIT,
+        lockfile_hash=LOCKFILE_HASH,
+        lane_identity=original.specification.lane_reference,
+        attestation_identity=original.occurrence.lane_attestation_identity,
+        environment_identity=original.environment_identity,
+    ) == ()
+
+
+def test_stale_evidence_only_selection_is_not_current() -> None:
+    current = migration_core.migration_core_current_release_selection()
+    assert current.lifecycle_probe_identity is None
+    result = migration_core.compile_current_phased_migration_core_status(
+        Path(__file__).parents[1]
+    )
+    assert len(result.eligible_requirement_ids) == 10
+    assert len(result.uncovered_requirement_ids) == 41
+    assert result.compiler_status == "FAILED_CLOSED"
 # fmt: on

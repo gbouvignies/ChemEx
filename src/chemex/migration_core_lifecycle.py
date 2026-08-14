@@ -1,64 +1,57 @@
-"""Compact lifecycle-result records and fixed semantic checks for #592."""
+"""Compact lifecycle evidence and fixed semantic predicates for #592."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, field, fields
-from typing import Any, Literal, cast
+from dataclasses import dataclass, field
+from typing import cast
 
-# fmt: off
-type _Stage = Literal["acceptance", "commit", "construction", "materialization", "primary_execution", "publication", "requested_evidence", "worker"]
-type _Terminal = Literal["accepted_uncommitted", "committed", "failed", "publication_failed"]
-type _Acceptance = Literal["accepted", "failed", "not_started"]
-type _Commit = Literal["committed", "not_started", "rejected"]
-type _Publication = Literal["diagnostics_only", "failed", "partial_only", "suppressed"]
-type _Successor = Literal["available", "denied"]
-type _PartialEvidence = Literal["cancelled_population_retained", "interrupted_population_retained", "not_applicable", "summary_failure_retained", "worker_failure_retained"]
-# fmt: on
+from chemex.baselines import (
+    CanonicalBaselineValue,
+    CaseDefinition,
+    ExecutionSpecification,
+    Occurrence,
+)
+from chemex.optimize.method_step import MethodStepOutcome
 
-FAILURE_REQUIREMENTS = (
-    "migration-core.failure.construction",
-    "migration-core.failure.execution",
-    "migration-core.failure.materialization",
-    "migration-core.failure.commit",
-    "migration-core.failure.partial-stochastic-evidence",
-    "migration-core.failure.workflow-stop",
-    "migration-core.failure.publication",
+FAILURE_REQUIREMENTS = tuple(
+    f"migration-core.failure.{name}"
+    for name in (
+        "construction",
+        "execution",
+        "materialization",
+        "commit",
+        "partial-stochastic-evidence",
+        "workflow-stop",
+        "publication",
+    )
 )
 CAPTURE_VERSION = "migration-core-lifecycle-probes-v1"
-
-
-@dataclass(frozen=True, slots=True)
-class _ProbeDefinition:
-    identifier: str
-    requirement_indexes: tuple[int, ...]
-    stage: _Stage
-    terminal: _Terminal
-    revisions: tuple[int, int]
-    counts: tuple[int, int, int, int, int, int]
-    dispositions: tuple[
-        _Acceptance, _Commit, _Publication, _Successor, _PartialEvidence
-    ]
-
-
-# Fixed claim semantics are deliberately separate from capture execution.
-# fmt: off
-_PROBES = tuple(_ProbeDefinition(*row) for row in (
-    ("construction-dependent-stop", (0, 5), "construction", "failed", (0, 0), (1, 0, 1, 0, 0, 3), ("not_started", "not_started", "suppressed", "denied", "not_applicable")),
-    ("primary-execution-failure", (1, 6), "primary_execution", "failed", (0, 0), (1, 0, 1, 0, 0, 3), ("not_started", "not_started", "diagnostics_only", "denied", "not_applicable")),
-    ("aggregate-materialization-failure", (2, 5), "materialization", "failed", (0, 0), (2, 1, 1, 0, 0, 2), ("not_started", "not_started", "suppressed", "denied", "not_applicable")),
-    ("aggregate-acceptance-stop", (3, 5, 6), "acceptance", "failed", (0, 0), (2, 1, 1, 0, 0, 2), ("failed", "not_started", "suppressed", "denied", "not_applicable")),
-    ("accepted-commit-rejected", (3, 5, 6), "commit", "accepted_uncommitted", (0, 0), (3, 2, 1, 0, 0, 1), ("accepted", "rejected", "suppressed", "denied", "not_applicable")),
-    ("cancelled-resampling-partial-publication", (4, 6), "requested_evidence", "committed", (0, 1), (3, 2, 0, 1, 0, 2), ("accepted", "committed", "partial_only", "available", "cancelled_population_retained")),
-    ("worker-resampling-failure", (1, 4), "worker", "committed", (0, 1), (4, 3, 1, 0, 0, 0), ("accepted", "committed", "partial_only", "available", "worker_failure_retained")),
-    ("requested-resampling-summary-failure", (4,), "requested_evidence", "committed", (0, 1), (5, 4, 1, 0, 0, 0), ("accepted", "committed", "partial_only", "available", "summary_failure_retained")),
-    ("interrupted-resampling-partial-publication", (4, 5), "worker", "committed", (0, 1), (3, 2, 0, 0, 1, 1), ("accepted", "committed", "partial_only", "available", "interrupted_population_retained")),
-    ("committed-publication-failure", (5, 6), "publication", "publication_failed", (0, 1), (3, 2, 1, 0, 0, 0), ("accepted", "committed", "failed", "denied", "not_applicable")),
-))
-# fmt: on
-_PROBE_BY_ID = {probe.identifier: probe for probe in _PROBES}
+_PROBE_IDS = (
+    "construction-dependent-stop",
+    "primary-execution-failure",
+    "aggregate-materialization-failure",
+    "aggregate-acceptance-stop",
+    "accepted-commit-rejected",
+    "cancelled-resampling-partial-publication",
+    "worker-resampling-failure",
+    "requested-resampling-summary-failure",
+    "interrupted-resampling-partial-publication",
+    "committed-publication-failure",
+)
+_FACT_KEYS = {
+    "state",
+    "construction",
+    "method_step",
+    "primary",
+    "checkpoint",
+    "commit",
+    "resampling",
+    "summary_failure_category",
+    "successor",
+}
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -73,96 +66,99 @@ def _identity(kind: str, value: object) -> str:
     ).hexdigest()
 
 
-def _text(record: Mapping[str, object], key: str) -> str:
-    value = record.get(key)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"Lifecycle probe {key} must be a non-empty string")
-    return value
-
-
-def _count(record: Mapping[str, object], key: str) -> int:
-    value = record.get(key)
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError(f"Lifecycle probe {key} must be a non-negative integer")
-    return value
-
-
-@dataclass(frozen=True, slots=True)
-class LifecycleOperationCounts:
-    attempted: int
-    completed: int
-    failed: int
-    cancelled: int
-    interrupted: int
-    unstarted: int
-
-    def __post_init__(self) -> None:
-        values = tuple(asdict(self).values())
-        if any(isinstance(value, bool) or value < 0 for value in values):
-            raise ValueError("Lifecycle operation counts must be non-negative integers")
-        if sum(values[1:5]) > self.attempted:
-            raise ValueError("Lifecycle terminal counts exceed attempted operations")
-
-    def to_record(self) -> dict[str, int]:
-        return cast("dict[str, int]", asdict(self))
-
-    @classmethod
-    def from_record(cls, record: Mapping[str, object]) -> LifecycleOperationCounts:
-        names = tuple(item.name for item in fields(cls))
-        if set(record) != set(names):
-            raise ValueError("Lifecycle counts have unknown or missing fields")
-        return cls(*(_count(record, name) for name in names))
+def _record(value: object, name: str) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        raise TypeError(f"Lifecycle probe {name} must be a record")
+    return cast("Mapping[str, object]", value)
 
 
 @dataclass(frozen=True, slots=True)
 class LifecycleProbeResult:
-    """One compact typed terminal artifact emitted by a probe occurrence."""
+    """One probe's existing baseline lineage and owner-structured runtime facts."""
 
     probe_id: str
-    source_commit: str
-    lockfile_hash: str
-    lane_identity: str
-    attestation_identity: str
-    environment_identity: str
-    case_identity: str
-    execution_specification_identity: str
-    occurrence_identity: str
-    starting_revision: int
-    ending_revision: int
-    stage: _Stage
-    terminal: _Terminal
-    counts: LifecycleOperationCounts
-    acceptance: _Acceptance
-    commit: _Commit
-    publication: _Publication
-    successor: _Successor
-    partial_evidence: _PartialEvidence
+    case: CaseDefinition
+    specification: ExecutionSpecification
+    occurrence: Occurrence
+    facts: CanonicalBaselineValue
     identity: str = field(init=False)
 
-    # fmt: off
     def __post_init__(self) -> None:
-        text_values = (
-            self.probe_id, self.source_commit, self.lockfile_hash, self.lane_identity,
-            self.attestation_identity, self.environment_identity, self.case_identity,
-            self.execution_specification_identity, self.occurrence_identity,
+        expected_inputs = tuple(sorted(member.identity for member in self.case.inputs))
+        if self.probe_id not in _PROBE_IDS:
+            raise ValueError("Lifecycle result contains an unknown probe")
+        if (
+            self.specification.case_identity != self.case.identity
+            or self.occurrence.execution_specification_identity
+            != self.specification.identity
+            or self.occurrence.case_identity != self.case.identity
+            or self.occurrence.actual_implementation_identity
+            != self.specification.implementation.identity
+            or self.occurrence.lane_reference != self.specification.lane_reference
+            or self.occurrence.input_member_identities != expected_inputs
+            or self.occurrence.lifecycle != "REQUESTED"
+        ):
+            raise ValueError("Lifecycle occurrence lineage is inconsistent")
+        facts = self.runtime_facts
+        policy = self.specification.policy.to_record_value()
+        workflow = self.specification.workflow.to_record_value()
+        settings = self.specification.execution_settings.to_record_value()
+        state = facts.get("state")
+        if (
+            set(facts) != _FACT_KEYS
+            or not isinstance(policy, Mapping)
+            or policy.get("probe_id") != self.probe_id
+            or not isinstance(workflow, Mapping)
+            or not isinstance(settings, Mapping)
+            or not isinstance(settings.get("environment_identity"), str)
+            or not isinstance(state, Mapping)
+            or workflow.get("starting_revision") != state.get("starting_revision")
+        ):
+            raise ValueError("Lifecycle execution specification is incompatible")
+        outcome = self.method_step_outcome
+        if outcome is not None and (
+            workflow.get("semantic_identity") != outcome.workflow_identity
+            or workflow.get("binding_identity") != outcome.workflow_binding_identity
+        ):
+            raise ValueError("Lifecycle outcome belongs to another workflow")
+        object.__setattr__(
+            self, "identity", _identity("lifecycle-probe-result-v1", self._payload())
         )
-        if any(not value for value in text_values):
-            raise ValueError("Lifecycle result identities must be non-empty")
-        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in (self.starting_revision, self.ending_revision)):
-            raise ValueError("Lifecycle revisions must be non-negative integers")
-        allowed = tuple({getattr(probe, name) for probe in _PROBES} for name in ("stage", "terminal")) + tuple({probe.dispositions[index] for probe in _PROBES} for index in range(5))
-        actual = (
-            self.stage, self.terminal, self.acceptance, self.commit,
-            self.publication, self.successor, self.partial_evidence,
+
+    @property
+    def runtime_facts(self) -> Mapping[str, object]:
+        value = self.facts.to_record_value()
+        if not isinstance(value, Mapping):
+            raise TypeError("Lifecycle runtime facts must be a record")
+        return cast("Mapping[str, object]", value)
+
+    @property
+    def method_step_outcome(self) -> MethodStepOutcome | None:
+        value = self.runtime_facts.get("method_step")
+        return (
+            None
+            if value is None
+            else MethodStepOutcome.from_record(dict(_record(value, "method step")))
         )
-        if any(value not in choices for value, choices in zip(actual, allowed, strict=True)):
-            raise ValueError("Lifecycle result contains an unknown terminal value")
-        object.__setattr__(self, "identity", _identity("lifecycle-probe-result-v1", self._payload()))
+
+    @property
+    def environment_identity(self) -> str:
+        settings = self.specification.execution_settings.to_record_value()
+        if not isinstance(settings, Mapping) or not isinstance(
+            settings.get("environment_identity"), str
+        ):
+            raise TypeError("Lifecycle environment identity is unavailable")
+        typed = cast("Mapping[str, object]", settings)
+        return cast("str", typed["environment_identity"])
 
     def _payload(self) -> dict[str, object]:
-        result = {item.name: getattr(self, item.name) for item in fields(self) if item.name != "identity"}
-        result["counts"] = self.counts.to_record()
-        return result
+        return {
+            "probe_id": self.probe_id,
+            "case": self.case.to_record(),
+            "specification": self.specification.to_record(),
+            "occurrence": self.occurrence.to_record(),
+            "facts": self.facts.to_record_value(),
+        }
 
     def to_record(self) -> dict[str, object]:
         return {
@@ -174,23 +170,42 @@ class LifecycleProbeResult:
 
     @classmethod
     def from_record(cls, record: Mapping[str, object]) -> LifecycleProbeResult:
-        names = {item.name for item in fields(cls)}
-        if set(record) != names | {"artifact_type", "schema_version"} or record.get("artifact_type") != "migration_core_lifecycle_probe_result" or record.get("schema_version") != 1:
+        if (
+            set(record)
+            != {
+                "artifact_type",
+                "schema_version",
+                "probe_id",
+                "case",
+                "specification",
+                "occurrence",
+                "facts",
+                "identity",
+            }
+            or record.get("artifact_type") != "migration_core_lifecycle_probe_result"
+            or record.get("schema_version") != 1
+        ):
             raise ValueError("Malformed lifecycle probe result")
-        counts = record.get("counts")
-        if not isinstance(counts, Mapping):
-            raise TypeError("Lifecycle probe counts must be a record")
-        kwargs: dict[str, Any] = {name: _text(record, name) for name in names - {"identity", "counts", "starting_revision", "ending_revision"}}
+        case = CaseDefinition.from_record(_record(record.get("case"), "case"))
+        specification = ExecutionSpecification.from_record(
+            _record(record.get("specification"), "specification")
+        )
+        occurrence = Occurrence.from_record(
+            _record(record.get("occurrence"), "occurrence"), specification
+        )
+        probe_id = record.get("probe_id")
+        if not isinstance(probe_id, str):
+            raise TypeError("Lifecycle probe ID must be a string")
         result = cls(
-            **kwargs,
-            starting_revision=_count(record, "starting_revision"),
-            ending_revision=_count(record, "ending_revision"),
-            counts=LifecycleOperationCounts.from_record(cast("Mapping[str, object]", counts)),
+            probe_id,
+            case,
+            specification,
+            occurrence,
+            CanonicalBaselineValue.from_record(record.get("facts"), "runtime facts"),
         )
         if record.get("identity") != result.identity:
             raise ValueError("Lifecycle probe result identity does not match payload")
         return result
-    # fmt: on
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,12 +214,17 @@ class LifecycleProbeCapture:
     capture_version: str = CAPTURE_VERSION
     identity: str = field(init=False)
 
-    # fmt: off
     def __post_init__(self) -> None:
         identifiers = tuple(record.probe_id for record in self.records)
-        if self.capture_version != CAPTURE_VERSION or len(set(identifiers)) != len(identifiers):
-            raise ValueError("Lifecycle capture version or probe identities are invalid")
-        object.__setattr__(self, "identity", _identity("lifecycle-probe-capture-v1", self._payload()))
+        if self.capture_version != CAPTURE_VERSION or len(set(identifiers)) != len(
+            identifiers
+        ):
+            raise ValueError(
+                "Lifecycle capture version or probe identities are invalid"
+            )
+        object.__setattr__(
+            self, "identity", _identity("lifecycle-probe-capture-v1", self._payload())
+        )
 
     def _payload(self) -> dict[str, object]:
         return {
@@ -213,21 +233,144 @@ class LifecycleProbeCapture:
         }
 
     def to_bytes(self) -> bytes:
-        return _canonical_bytes({"schema_version": 1, **self._payload(), "identity": self.identity})
+        return _canonical_bytes(
+            {"schema_version": 1, **self._payload(), "identity": self.identity}
+        )
 
     @classmethod
     def from_bytes(cls, content: bytes) -> LifecycleProbeCapture:
         raw = json.loads(content)
-        if not isinstance(raw, Mapping) or set(raw) != {"capture_version", "identity", "records", "schema_version"} or raw.get("schema_version") != 1:
+        if (
+            not isinstance(raw, Mapping)
+            or set(raw) != {"capture_version", "identity", "records", "schema_version"}
+            or raw.get("schema_version") != 1
+            or not isinstance(raw.get("records"), list)
+        ):
             raise ValueError("Malformed lifecycle probe capture")
-        records = raw.get("records")
-        if not isinstance(records, list) or not all(isinstance(item, Mapping) for item in records):
-            raise ValueError("Lifecycle probe capture records must be a list")
-        capture = cls(tuple(LifecycleProbeResult.from_record(cast("Mapping[str, object]", item)) for item in records))
+        records = cast("list[object]", raw["records"])
+        capture = cls(
+            tuple(
+                LifecycleProbeResult.from_record(_record(item, "result"))
+                for item in records
+            )
+        )
         if raw.get("identity") != capture.identity:
             raise ValueError("Lifecycle probe capture identity does not match payload")
         return capture
-    # fmt: on
+
+
+@dataclass(frozen=True, slots=True)
+class _Expectation:
+    probe_id: str
+    requirements: tuple[int, ...]
+    ending_revision: int
+    outcome: tuple[str, str, bool, bool, bool] | None
+    construction: tuple[str, tuple[str, ...], tuple[str, ...]] | None
+    primary: tuple[str, tuple[str, ...]] | None
+    checkpoint: tuple[tuple[str, ...], str | None]
+    commit: tuple[str, str | None] | None
+    resampling: (
+        tuple[str, tuple[int, ...], tuple[int, int, int], tuple[str, ...]] | None
+    )
+    derivation: str | None
+    summary_failure: str | None
+    successor: tuple[bool, tuple[str, ...]]
+    publication_failed: bool = False
+
+
+# Each count below belongs only to ResamplingEvidence; there is no cross-stage total.
+# fmt: off
+_EXPECTATIONS = tuple(_Expectation(*row) for row in (
+    ("construction-dependent-stop", (0, 5), 0, None, ("DirectTrfConstructionError", ("first",), ()), None, ((), None), None, None, None, None, (False, ())),
+    ("primary-execution-failure", (1, 6), 0, ("failed", "execution_failure", False, False, True), None, ("execution_failure", ("not_started",)), ((), None), None, None, None, None, (True, ())),
+    ("aggregate-materialization-failure", (2, 5), 0, ("failed", "decomposition_validation_failure", False, False, False), None, ("decomposition_validation_failure", ("succeeded",)), ((), None), None, None, None, None, (True, ())),
+    ("aggregate-acceptance-stop", (3, 5, 6), 0, ("failed", "accepted", True, False, False), None, ("accepted", ()), (("aggregate_accepted",), "RuntimeError"), None, None, None, None, (True, ())),
+    ("accepted-commit-rejected", (3, 5, 6), 0, ("accepted_uncommitted", "accepted", True, True, False), None, ("accepted", ("succeeded",)), ((), None), ("failed", "incompatible_state"), None, None, None, (True, ())),
+    ("cancelled-resampling-partial-publication", (4, 6), 1, ("committed", "accepted", True, True, True), None, ("accepted", ("succeeded",)), ((), None), ("committed", None), ("cancelled", (0, 1), (0, 0, 0), ("not_started", "not_started")), "cancelled", "insufficient_successful_coverage", (False, ("dependent",))),
+    ("worker-resampling-failure", (1, 4), 1, ("committed", "accepted", True, True, True), None, ("accepted", ("succeeded",)), ((), None), ("committed", None), ("completed", (), (2, 1, 1), ("failed", "succeeded")), "failed", "non_finite_summary_arithmetic", (False, ("dependent",))),
+    ("requested-resampling-summary-failure", (4,), 1, ("committed", "accepted", True, True, True), None, ("accepted", ("succeeded",)), ((), None), ("committed", None), ("completed", (), (2, 2, 0), ("succeeded", "succeeded")), "failed", "qualification_summary_failure", (False, ("dependent",))),
+    ("interrupted-resampling-partial-publication", (4, 5), 1, ("committed", "accepted", True, True, True), None, ("accepted", ("succeeded",)), ((), None), ("committed", None), ("interrupted", (1,), (1, 0, 0), ("interrupted", "not_started")), "interrupted", "insufficient_successful_coverage", (False, ("dependent",))),
+    ("committed-publication-failure", (5, 6), 1, ("publication_failed", "accepted", True, True, False), None, ("accepted", ("succeeded",)), ((), None), ("committed", None), None, None, None, (True, ()), True),
+))
+# fmt: on
+
+
+def _owned_facts(expected: _Expectation) -> dict[str, object]:
+    construction = expected.construction
+    primary = expected.primary
+    commit = expected.commit
+    resampling = expected.resampling
+    return {
+        "state": {"starting_revision": 0, "ending_revision": expected.ending_revision},
+        "construction": None
+        if construction is None
+        else {
+            "failure_category": construction[0],
+            "constructor_entries": list(construction[1]),
+            "executor_entries": list(construction[2]),
+        },
+        "primary": None
+        if primary is None
+        else {
+            "terminal": primary[0],
+            "component_dispositions": list(primary[1]),
+        },
+        "checkpoint": {
+            "entries": list(expected.checkpoint[0]),
+            "failure_category": expected.checkpoint[1],
+        },
+        "commit": None
+        if commit is None
+        else {
+            "terminal": commit[0],
+            "failure_category": commit[1],
+        },
+        "resampling": None
+        if resampling is None
+        else {
+            "terminal": resampling[0],
+            "unstarted_ordinals": list(resampling[1]),
+            "completed_count": resampling[2][0],
+            "successful_count": resampling[2][1],
+            "failed_count": resampling[2][2],
+            "replicate_dispositions": list(resampling[3]),
+        },
+        "summary_failure_category": expected.summary_failure,
+        "successor": {
+            "denied": expected.successor[0],
+            "downstream_entries": list(expected.successor[1]),
+        },
+    }
+
+
+def _matches(record: LifecycleProbeResult, expected: _Expectation) -> bool:
+    facts = dict(record.runtime_facts)
+    facts.pop("method_step")
+    if facts != _owned_facts(expected):
+        return False
+    outcome = record.method_step_outcome
+    if expected.outcome is None:
+        return outcome is None
+    if outcome is None:
+        return False
+    lifecycle, primary, accepted, committed, published = expected.outcome
+    if (
+        outcome.lifecycle.value != lifecycle
+        or outcome.primary_terminal != primary
+        or (outcome.accepted_result_identity is not None) != accepted
+        or (outcome.commit_operation_identity is not None) != committed
+        or (outcome.publication_identity is not None) != published
+        or bool(outcome.publication_failure) != expected.publication_failed
+    ):
+        return False
+    if expected.derivation is None:
+        return not outcome.derivations
+    return (
+        len(outcome.derivations) == 1
+        and outcome.derivations[0].stage == "resampling"
+        and outcome.derivations[0].disposition.value == expected.derivation
+        and outcome.derivations[0].operation_identity is not None
+    )
 
 
 def eligible_failure_requirements(
@@ -236,35 +379,47 @@ def eligible_failure_requirements(
     source_commit: str,
     lockfile_hash: str,
     lane_identity: str,
-    attestation_identity: str,
+    attestation_identity: str | None,
     environment_identity: str,
 ) -> tuple[str, ...]:
-    """Map only fixed terminal semantics—not claims or stored verdicts—to coverage."""
+    """Map reconstructed lineage and owner-local facts to fixed requirements."""
 
-    # fmt: off
     records = {record.probe_id: record for record in capture.records}
-    if set(records) != set(_PROBE_BY_ID) or not all(
-        (record.source_commit, record.lockfile_hash, record.lane_identity, record.attestation_identity, record.environment_identity)
-        == (source_commit, lockfile_hash, lane_identity, attestation_identity, environment_identity)
-        for record in records.values()
-    ):
+    if set(records) != set(_PROBE_IDS):
         return ()
 
-    def matches(probe: _ProbeDefinition) -> bool:
-        result = records[probe.identifier]
-        return (result.stage, result.terminal, (result.starting_revision, result.ending_revision), tuple(asdict(result.counts).values()), (result.acceptance, result.commit, result.publication, result.successor, result.partial_evidence)) == (probe.stage, probe.terminal, probe.revisions, probe.counts, probe.dispositions)
+    def provenance(record: LifecycleProbeResult) -> bool:
+        source = record.case.source_authority
+        settings = record.specification.execution_settings.to_record_value()
+        return (
+            source.source_commit == source_commit
+            and source.lockfile_hash == lockfile_hash
+            and record.specification.lane_reference == lane_identity
+            and record.occurrence.lane_attestation_identity == attestation_identity
+            and isinstance(settings, Mapping)
+            and settings.get("environment_identity") == environment_identity
+            and settings.get("workers") == settings.get("native_threads") == 1
+        )
 
+    if not all(provenance(record) for record in records.values()):
+        return ()
+    valid = {
+        expected.probe_id: _matches(records[expected.probe_id], expected)
+        for expected in _EXPECTATIONS
+    }
     return tuple(
         requirement
         for index, requirement in enumerate(FAILURE_REQUIREMENTS)
-        if all(matches(probe) for probe in _PROBES if index in probe.requirement_indexes)
+        if all(
+            valid[expected.probe_id]
+            for expected in _EXPECTATIONS
+            if index in expected.requirements
+        )
     )
-    # fmt: on
 
 
 __all__ = [
     "FAILURE_REQUIREMENTS",
-    "LifecycleOperationCounts",
     "LifecycleProbeCapture",
     "LifecycleProbeResult",
     "eligible_failure_requirements",
