@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import inspect
+from collections.abc import Mapping
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -15,8 +17,15 @@ from chemex.numerical_lanes import (
     RuntimeEnvironment,
     canonical_lanes,
 )
-from chemex.optimize.native_resampling import OptimizationStrategy
 from tests.qualification import capture_resampling_calibration as calibration
+
+
+def test_module_import_defers_calibration_machinery() -> None:
+    reloaded = importlib.reload(calibration)
+    assert not reloaded._CALIBRATION_MACHINERY_IMPORTED
+    assert reloaded.SUMMARY_POLICY is None
+    assert reloaded.FAMILY_SCHEMES is None
+    assert reloaded._LinearPulseSequence.settings is None
 
 
 def test_frozen_roots_match_derivation_and_are_globally_disjoint() -> None:
@@ -34,7 +43,7 @@ def test_frozen_roots_match_derivation_and_are_globally_disjoint() -> None:
                 v2_holdout_roots.extend(literal_roots)
     v1_roots = [
         root
-        for family in calibration.FAMILY_SCHEMES
+        for family in ("mc", "bs", "bsn")
         for roots in (
             calibration.ROOTS[family]["calibration"],
             calibration.V1_HOLDOUT_ROOTS[family],
@@ -94,7 +103,7 @@ def test_live_attestation_records_reconstruct_with_existing_types(
     assert reconstructed_lane == lane
     assert attestation.lane_identity == lane.identity
     assert attestation.environment_identity == reconstructed_environment.identity
-    calibration.validate_canonical_lane_records(records)
+    calibration.reconstruct_canonical_lane_records(records)
 
 
 def test_identity_strings_cannot_qualify_as_v2_lane_records() -> None:
@@ -108,7 +117,7 @@ def test_identity_strings_cannot_qualify_as_v2_lane_records() -> None:
         "POST_IMPORT_CURRENT_PROCESS",
     )
     with pytest.raises(RuntimeError, match="complete typed lane records"):
-        calibration.validate_canonical_lane_records(
+        calibration.reconstruct_canonical_lane_records(
             {
                 "numerical_lane": lane.identity,
                 "lane_attestation": attestation.identity,
@@ -117,24 +126,40 @@ def test_identity_strings_cannot_qualify_as_v2_lane_records() -> None:
         )
 
 
-def test_acquisition_cannot_construct_fixture_before_attestation(
+def test_acquisition_imports_machinery_only_after_attestation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
 
-    def reject_attestation(image_digest: str) -> dict[str, object]:
+    def accept_attestation(image_digest: str) -> dict[str, object]:
         calls.append(f"attest:{image_digest}")
-        raise RuntimeError("attestation rejected")
+        return {}
+
+    def import_machinery() -> None:
+        calls.append("import_calibration_machinery")
+
+    def reject_reconstruction(records: Mapping[str, object]) -> None:
+        _ = records
+        calls.append("validate_lane_records")
+        raise RuntimeError("lane reconstruction rejected")
 
     def forbidden_fixture() -> calibration.NativeFixture:
         calls.append("native_fixture")
         raise AssertionError("calibration fixture constructed before attestation")
 
-    monkeypatch.setattr(calibration, "attest_canonical_lane", reject_attestation)
+    monkeypatch.setattr(calibration, "attest_canonical_lane", accept_attestation)
+    monkeypatch.setattr(calibration, "_import_calibration_machinery", import_machinery)
+    monkeypatch.setattr(
+        calibration, "validate_canonical_lane_records", reject_reconstruction
+    )
     monkeypatch.setattr(calibration, "native_fixture", forbidden_fixture)
-    with pytest.raises(RuntimeError, match="attestation rejected"):
+    with pytest.raises(RuntimeError, match="lane reconstruction rejected"):
         calibration.acquire("externally-observed-image-digest")
-    assert calls == ["attest:externally-observed-image-digest"]
+    assert calls == [
+        "attest:externally-observed-image-digest",
+        "import_calibration_machinery",
+        "validate_lane_records",
+    ]
     assert (
         inspect.signature(calibration.acquire).parameters["image_digest"].default
         is inspect.Parameter.empty
@@ -154,6 +179,7 @@ def test_independently_computed_truth_matches_frozen_references() -> None:
 
 
 def test_fixture_and_policy_are_exactly_frozen_without_running_replicates() -> None:
+    calibration._import_calibration_machinery()
     assert calibration.CANDIDATE_COUNTS == (64, 128, 256)
     assert (calibration.OUTPUT_SCOPE, calibration.THETA) == (("A", "B"), (1.0, 2.0))
     assert calibration.X == (-2, -1, 0, 1, 2, 3)
@@ -187,7 +213,7 @@ def test_fixture_and_policy_are_exactly_frozen_without_running_replicates() -> N
             calibration.ROOTS[family]["calibration"][0],
         )
         assert plan.scheme is scheme
-        assert plan.strategy is OptimizationStrategy.DIRECT_TRF
+        assert plan.strategy is calibration.OptimizationStrategy.DIRECT_TRF
         assert plan.strategy_settings == ()
         assert plan.output_scope == calibration.OUTPUT_SCOPE
         assert plan.minimum_successful_count == plan.replicate_count == 64

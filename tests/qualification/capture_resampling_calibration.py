@@ -14,46 +14,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
-import numpy as np
-from pydantic import BaseModel
-
-from chemex.containers.data import Data
-from chemex.containers.profile import Profile, PulseSequence
-from chemex.evaluation.native import EvaluationEngine, EvaluationFrame, EvaluationResult
-from chemex.migration_core import migration_core_authority_selection
-from chemex.nmr.spectrometer import Spectrometer
 from chemex.numerical_lanes import (
     LaneAttestation,
     NumericalLane,
     RuntimeEnvironment,
     canonical_lanes,
 )
-from chemex.optimize.direct_trf import AcceptedFitResult, OptimizationProblem
-from chemex.optimize.native_resampling import (
-    OperationTerminal,
-    OptimizationStrategy,
-    ReplicateDisposition,
-    ResamplingDatasetManifest,
-    ResamplingLifecycle,
-    ResamplingOperation,
-    ResamplingPlan,
-    ResamplingScheme,
-    ResamplingSummaryOutcome,
-    ResamplingSummaryPolicy,
-    SummaryTerminal,
-    execute_resampling_evidence,
-    summarize_resampling_evidence,
-)
-from chemex.parameters.parameterization import (
-    ActiveParameterization,
-    ConstraintProgram,
-    ParameterRole,
-    ScientificFunctionBinder,
-)
-from chemex.parameters.spin_system import SpinSystem
-from chemex.parameters.values import AnalysisValuesSnapshot
-from chemex.printers.data import Printer
-from chemex.runtime import ExecutionSettings
 
 # Frozen qualification specifications are intentionally kept compact and inspectable.
 # fmt: off
@@ -71,7 +37,7 @@ ERRORS = (1, 1, 1, 1, 1, 1)
 REFERENCES = (True, False, False, True, False, False)
 NUCLEUS_GROUPS = ("N1", "N2", "N3", "N1", "N2", "N3")
 PROFILE_INDICES = ((0, 1, 2), (3, 4, 5))
-SUMMARY_POLICY = ResamplingSummaryPolicy()
+SUMMARY_POLICY: Any = None
 SUMMARY_POLICY_IDENTITY = "83b0a16dbfd6df67337bd7d17ed9fc7cd8e82283688fa0946fce7d88edf7ae44"
 THRESHOLDS = {
     "bias": 0.50,
@@ -81,11 +47,8 @@ THRESHOLDS = {
     "q97.5": 0.90,
     "failure_prevalence": 0.0,
 }
-FAMILY_SCHEMES = {
-    "mc": ResamplingScheme.MONTE_CARLO,
-    "bs": ResamplingScheme.BOOTSTRAP,
-    "bsn": ResamplingScheme.NUCLEUS_BOOTSTRAP,
-}
+FAMILY_SCHEMES: Any = None
+_CALIBRATION_MACHINERY_IMPORTED = False
 
 
 def _roots(literals: str) -> tuple[int, ...]:
@@ -225,10 +188,6 @@ def replay_equal(left: tuple[ResamplingOperation, ResamplingSummaryOutcome], rig
     return "unsupported" not in left_signature and left_signature == right_signature
 
 
-class _KernelSettings(BaseModel):
-    kind: str = "issue-603-linear-kernel"
-
-
 class _LinearSpectrometer:
     def __init__(self, name: str) -> None:
         self.spin_system = SpinSystem.from_name(name)
@@ -245,13 +204,79 @@ class _LinearSpectrometer:
 
 
 class _LinearPulseSequence:
-    settings = _KernelSettings()
+    settings: Any = None
 
     def calculate(self, spectrometer: _LinearSpectrometer, data: Data) -> np.ndarray:
         return spectrometer.values["a"] + spectrometer.values["b"] * np.asarray(data.metadata, dtype=np.float64)
 
     def is_reference(self, metadata: np.ndarray) -> np.ndarray:
         return metadata == metadata[0]
+
+
+def _import_calibration_machinery() -> None:
+    global ActiveParameterization, AnalysisValuesSnapshot, AcceptedFitResult
+    global ConstraintProgram, Data, EvaluationEngine, EvaluationFrame, EvaluationResult
+    global ExecutionSettings, FAMILY_SCHEMES, OperationTerminal, OptimizationProblem
+    global OptimizationStrategy, ParameterRole, Printer, Profile, PulseSequence
+    global ReplicateDisposition, ResamplingDatasetManifest, ResamplingLifecycle
+    global ResamplingOperation, ResamplingPlan, ResamplingScheme
+    global ResamplingSummaryOutcome, SUMMARY_POLICY, ScientificFunctionBinder
+    global Spectrometer, SpinSystem, SummaryTerminal, _CALIBRATION_MACHINERY_IMPORTED
+    global execute_resampling_evidence, migration_core_authority_selection, np
+    global summarize_resampling_evidence
+    if _CALIBRATION_MACHINERY_IMPORTED:
+        return
+
+    import numpy as np
+    from pydantic import BaseModel
+
+    from chemex.containers.data import Data
+    from chemex.containers.profile import Profile, PulseSequence
+    from chemex.evaluation.native import (
+        EvaluationEngine,
+        EvaluationFrame,
+        EvaluationResult,
+    )
+    from chemex.migration_core import migration_core_authority_selection
+    from chemex.nmr.spectrometer import Spectrometer
+    from chemex.optimize.direct_trf import AcceptedFitResult, OptimizationProblem
+    from chemex.optimize.native_resampling import (
+        OperationTerminal,
+        OptimizationStrategy,
+        ReplicateDisposition,
+        ResamplingDatasetManifest,
+        ResamplingLifecycle,
+        ResamplingOperation,
+        ResamplingPlan,
+        ResamplingScheme,
+        ResamplingSummaryOutcome,
+        ResamplingSummaryPolicy,
+        SummaryTerminal,
+        execute_resampling_evidence,
+        summarize_resampling_evidence,
+    )
+    from chemex.parameters.parameterization import (
+        ActiveParameterization,
+        ConstraintProgram,
+        ParameterRole,
+        ScientificFunctionBinder,
+    )
+    from chemex.parameters.spin_system import SpinSystem
+    from chemex.parameters.values import AnalysisValuesSnapshot
+    from chemex.printers.data import Printer
+    from chemex.runtime import ExecutionSettings
+
+    class _KernelSettings(BaseModel):
+        kind: str = "issue-603-linear-kernel"
+
+    _LinearPulseSequence.settings = _KernelSettings()
+    SUMMARY_POLICY = ResamplingSummaryPolicy()
+    FAMILY_SCHEMES = {
+        "mc": ResamplingScheme.MONTE_CARLO,
+        "bs": ResamplingScheme.BOOTSTRAP,
+        "bsn": ResamplingScheme.NUCLEUS_BOOTSTRAP,
+    }
+    _CALIBRATION_MACHINERY_IMPORTED = True
 
 
 def _profile(name: str, indices: tuple[int, ...]) -> Profile:
@@ -355,26 +380,39 @@ def _run(fixture: NativeFixture, family: str, count: int, root: int, workers: in
     return record, operation, outcome
 
 
-def validate_canonical_lane_records(records: Mapping[str, object]) -> None:
+def reconstruct_canonical_lane_records(
+    records: Mapping[str, object],
+) -> tuple[NumericalLane, LaneAttestation, RuntimeEnvironment]:
     names = {"numerical_lane", "lane_attestation", "runtime_environment"}
     if set(records) != names or any(not isinstance(records[name], Mapping) for name in names):
         raise RuntimeError("canonical acquisition requires complete typed lane records")
     lane = NumericalLane.from_record(cast("Mapping[str, object]", records["numerical_lane"]))
     attestation = LaneAttestation.from_record(cast("Mapping[str, object]", records["lane_attestation"]))
     environment = RuntimeEnvironment.from_record(cast("Mapping[str, object]", records["runtime_environment"]))
-    expected_lane, selection = canonical_lanes()[0], migration_core_authority_selection()
+    expected_lane = canonical_lanes()[0]
     if (
         lane != expected_lane
-        or lane.identity != selection.lane_identity
+        or attestation.lane_identity != lane.identity
+        or attestation.environment_identity != environment.identity
+        or attestation.workers != environment.semantics.workers
+        or attestation.native_threads != environment.semantics.native_threads
+        or environment.semantics != lane.semantics
+    ):
+        raise RuntimeError("canonical acquisition lane records are internally inconsistent")
+    return lane, attestation, environment
+
+
+def validate_canonical_lane_records(records: Mapping[str, object]) -> None:
+    lane, attestation, environment = reconstruct_canonical_lane_records(records)
+    selection = migration_core_authority_selection()
+    if (
+        lane.identity != selection.lane_identity
         or lane.role != selection.lane_role
         or lane.semantics.image_digest != selection.image_digest
         or attestation.identity != selection.attestation_identity
-        or attestation.lane_identity != lane.identity
-        or attestation.environment_identity != selection.environment_identity
+        or environment.identity != selection.environment_identity
         or attestation.workers != selection.workers
         or attestation.native_threads != selection.native_threads
-        or environment.identity != selection.environment_identity
-        or environment.semantics != lane.semantics
     ):
         raise RuntimeError("canonical acquisition lane records do not match #588")
 
@@ -387,12 +425,14 @@ def attest_canonical_lane(image_digest: str) -> dict[str, object]:
         "lane_attestation": authority.to_record(),
         "runtime_environment": RuntimeEnvironment(lane.semantics).to_record(),
     }
-    validate_canonical_lane_records(records)
+    reconstruct_canonical_lane_records(records)
     return records
 
 
 def acquire(image_digest: str) -> dict[str, object]:
     lane_records = attest_canonical_lane(image_digest)
+    _import_calibration_machinery()
+    validate_canonical_lane_records(lane_records)
     if SUMMARY_POLICY.identity != SUMMARY_POLICY_IDENTITY:
         raise RuntimeError("frozen summary policy identity changed")
     fixture, families = native_fixture(), {}
