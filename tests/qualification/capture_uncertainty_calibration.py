@@ -825,17 +825,18 @@ def select_correlation_policy(source: Any, scales: Mapping[str, float], selected
         evidence = _correlation_evidence(source, policy, counts, "canonical")
         entries = tuple(evidence.entries[left][right] for left, right in pairs)
         claims = {item.name: item.state for item in evidence.claims}
-        error = sum(item.outcome != outcome or item.value != value for item, outcome, value in zip(entries, expected_outcomes, expected_values, strict=True)) + sum(item.raw_value is None or abs(cast("float", item.raw_value) - truth) > TOL["correlation_interior_eps"] * 2.0**-52 for item, truth in zip(entries, truth_raw, strict=True))
-        error += int(claims.get("CORRELATION_ENTRY_VALIDITY") is not ClaimState.VIOLATED or claims.get("CORRELATION_SCOPE_REPORTABILITY") is not ClaimState.VIOLATED or evidence.scope_reportable)
-        summaries[multiplier] = error, tuple(item.outcome for item in entries), evidence.identity
+        endpoint_error = sum(item.outcome != outcome or item.value != value for item, outcome, value in zip(entries, expected_outcomes, expected_values, strict=True)); raw_error = sum(item.raw_value is None or abs(cast("float", item.raw_value) - truth) > TOL["correlation_interior_eps"] * 2.0**-52 for item, truth in zip(entries, truth_raw, strict=True)); claim_error = int(claims.get("CORRELATION_ENTRY_VALIDITY") is not ClaimState.VIOLATED or claims.get("CORRELATION_SCOPE_REPORTABILITY") is not ClaimState.VIOLATED or evidence.scope_reportable)
+        error = endpoint_error + raw_error + claim_error; reasons = tuple(reason for failed, reason in ((endpoint_error, "endpoint_misclassification"), (raw_error, "raw_truth_mismatch"), (claim_error, "claim_state_misclassification")) if failed)
+        summaries[multiplier] = error, tuple(item.outcome for item in entries), evidence.identity, reasons
         if error == 0:
             qualified.append(multiplier)
     status = _threshold_outcome(CORRELATION_GRID, qualified, 2.0**12)
     if status != "SELECTED":
-        return None, {"status": status}
+        candidates = tuple({"candidate": value, "status": "QUALIFIED" if summaries[value][0] == 0 else "DISQUALIFIED", "error": summaries[value][0], "cost": 1, "outcomes": summaries[value][1], "typed_evidence_identity": summaries[value][2], "reasons": summaries[value][3] or ("smallest_multiplier_tie_break",)} for value in CORRELATION_GRID)
+        return None, {"status": status, "qualified_count": len(qualified), "truth_raw": truth_raw, "candidate_summaries": candidates, "rejected_neighbors": tuple(item for item in candidates if item["status"] == "DISQUALIFIED")}
     chosen = qualified[0]
     index = CORRELATION_GRID.index(chosen)
-    neighbors = tuple({"candidate": CORRELATION_GRID[i], "status": "QUALIFIED" if CORRELATION_GRID[i] in qualified else "DISQUALIFIED", "error": summaries[CORRELATION_GRID[i]][0], "cost": 1, "reasons": ("endpoint_misclassification",) if summaries[CORRELATION_GRID[i]][0] else ("smallest_multiplier_tie_break",)} for i in (index - 1, index + 1) if 0 <= i < len(CORRELATION_GRID))
+    neighbors = tuple({"candidate": CORRELATION_GRID[i], "status": "QUALIFIED" if CORRELATION_GRID[i] in qualified else "DISQUALIFIED", "error": summaries[CORRELATION_GRID[i]][0], "cost": 1, "reasons": summaries[CORRELATION_GRID[i]][3] or ("smallest_multiplier_tie_break",)} for i in (index - 1, index + 1) if 0 <= i < len(CORRELATION_GRID))
     return chosen, {"status": status, "value": chosen, "truth_error": 0, "cost": 1, "frontier": ((chosen, 0, 1),), "typed_evidence_identity": summaries[chosen][2], "truth_raw": truth_raw, "outcomes": summaries[chosen][1], "rejected_neighbors": neighbors}
 def compose_uncertainty_policy(name: str, scales: tuple[float, ...], fd: tuple[float, float, int, int], driver: str, rank: tuple[float, float], weak: float, cluster: float, conditioning: float, correlation: float) -> Any:
     params = tuple(chr(65 + i) for i in range(len(scales)))
@@ -1063,15 +1064,15 @@ def acquire_canonical(environment: str) -> dict[str, object]:
     cluster, cluster_record = select_cluster_policy(c_observations[1], counts)
     conditioning, conditioning_record = select_conditioning_policy(c_observations[2], c_observations[3], counts)
     correlation, correlation_record = select_correlation_policy(source, scales, phase_ab, counts)
+    phases = {"scales": scales, "finite_difference": fd, "svd_driver": driver, "rank": rank, "weak": weak, "cluster": cluster, "conditioning": conditioning, "correlation": correlation}
+    metrics = {"scale": scale_record, "finite_difference": fd_record, "driver": driver_record, "rank": rank_record, "phase_c_cases": (*c_records, c5_record), "weak": weak_record, "cluster": cluster_record, "conditioning": conditioning_record, "correlation": correlation_record}
     if None in {weak, cluster, conditioning, correlation}:
-        return _compact_result("UNSUPPORTED_OR_SATURATED", counts, weak=weak_record, cluster=cluster_record, conditioning=conditioning_record, correlation=correlation_record)
+        return _compact_result("UNSUPPORTED_OR_SATURATED", counts, selected_phase_policies=phases, policy={"status": "UNAVAILABLE", "reason": "incomplete_phase_c_selection"}, policy_digest=None, decisive_metrics=metrics, composed={"status": "NOT_RUN", "reason": "no_qualified_complete_policy"}, holdouts=tuple({"case": name, "status": "NOT_RUN"} for name in HOLDOUT_CASES), compatibility={"status": "NOT_RUN", "reason": "no_qualified_complete_policy"})
     selected = replace(compose_uncertainty_policy("A1", (scales["state_population"], scales["exchange_rate"]), fd, driver, rank, cast("float", weak), cast("float", cluster), cast("float", conditioning), cast("float", correlation)), calibration_identity=f"{SPECIFICATION_ID}:{_scale_catalogue_digest(scales)}")
     valid, composed = validate_composed_cases(selected, environment, counts)
     if not valid:
         return _compact_result("COMPOSED_VALIDATION_FAILED", counts, policy=policy_record(selected), composed=composed)
     passed, holdouts = run_holdouts(selected, environment, counts)
-    phases = {"scales": scales, "finite_difference": fd, "svd_driver": driver, "rank": rank, "weak": weak, "cluster": cluster, "conditioning": conditioning, "correlation": correlation}
-    metrics = {"scale": scale_record, "finite_difference": fd_record, "driver": driver_record, "rank": rank_record, "phase_c_cases": (*c_records, c5_record), "weak": weak_record, "cluster": cluster_record, "conditioning": conditioning_record, "correlation": correlation_record}
     serialized = policy_record(selected)
     digest = hashlib.sha256(json.dumps(serialized, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return _compact_result("QUALIFIED" if passed else "HOLDOUT_FAILED_POLICY_UNAVAILABLE", counts, selected_phase_policies=phases, policy=serialized, policy_digest=digest, decisive_metrics=metrics, composed=composed, holdouts=holdouts)
