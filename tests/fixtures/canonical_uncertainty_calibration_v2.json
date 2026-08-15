@@ -92,16 +92,41 @@
     }
   },
   "compatibility": {
-    "reason": "no_qualified_complete_policy",
+    "reason": "composed_validation_failed",
     "status": "NOT_RUN"
   },
-  "composed": {
-    "reason": "no_qualified_complete_policy",
-    "status": "NOT_RUN"
-  },
+  "composed": [
+    {
+      "case": "A1",
+      "evidence_identity": "6315834883079e7ca234b2da6c4dc80164fd57eff56c583a0076d6f0ffb9f22d",
+      "passed": true,
+      "policy_identity": "a3d41ead8cad64ee9d9d21aeb76357621ba5057c5bbdbdc37c4c40cd9f603377"
+    },
+    {
+      "case": "A2",
+      "evidence_identity": "1a226d9bb91166ef597239c20c5b6b2c05a01f8d0ba96302cf85bbaa081058f8",
+      "passed": true,
+      "policy_identity": "a354dd09329900421aa3211d45d82b271c3c8719cfb142efaa1620f363d64318"
+    },
+    {
+      "case": "F1-absolute",
+      "chi_square": 0.19990990990990976,
+      "correlation_reportable": false,
+      "covariance_truth": null,
+      "evidence_identity": "8a50569abbcdfb001392e5d525ed0a3360a710d703cefeb343028f06406ce479",
+      "g": 1,
+      "m": 4,
+      "marginal_reportable": false,
+      "n": 2,
+      "nu": 1,
+      "passed": false,
+      "phi": 1.0,
+      "policy_identity": "34b14b28582a9f88d09e26f2ee3320e1536fd18155c1b47c1347b1813791a73b"
+    }
+  ],
   "counts": {
-    "correlation": 15,
-    "evaluation": 1460,
+    "correlation": 16,
+    "evaluation": 1478,
     "offline": 2121687,
     "scalar": 395,
     "svd": 16
@@ -111,14 +136,14 @@
       "cost": 1,
       "frontier": [
         [
-          5.820766091346741e-11,
+          5.820766091346741E-11,
           0.0,
           1
         ]
       ],
       "rejected_neighbors": [
         {
-          "candidate": 2.3283064365386963e-10,
+          "candidate": 2.3283064365386963E-10,
           "cost": 1,
           "error": 0,
           "projector_error": 0.0,
@@ -128,7 +153,7 @@
           "status": "QUALIFIED"
         },
         {
-          "candidate": 1.4551915228366852e-11,
+          "candidate": 1.4551915228366852E-11,
           "cost": 1,
           "error": 1,
           "projector_error": 0.0,
@@ -140,14 +165,14 @@
       ],
       "status": "SELECTED",
       "truth_error": 0.0,
-      "value": 5.820766091346741e-11
+      "value": 5.820766091346741E-11
     },
     "conditioning": {
       "cost": 2,
       "frontier": [
         [
           1048576.0,
-          1.164153218269348e-16,
+          1.164153218269348E-16,
           2
         ]
       ],
@@ -172,526 +197,392 @@
         }
       ],
       "status": "SELECTED",
-      "truth_error": 1.164153218269348e-16,
+      "truth_error": 1.164153218269348E-16,
       "value": 1048576.0
     },
     "correlation": {
+      "calculation_identity": "62cfe87f2aaa0f35b0139f0c4442fd5a74d3ee424aeb0e42f5c6f4c337ecdd6a",
       "candidate_summaries": [
         {
+          "calculation_identity": "389f94064bb1e4bba4069acd707211a5b9e627acc53ce5b10799b207c71cc270",
           "candidate": 0.0,
           "cost": 1,
-          "error": 7,
+          "error": 2,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "endpoint_misclassification"
           ],
           "status": "DISQUALIFIED",
-          "typed_evidence_identity": "c561f7d3f232bf35f8ca6932452b3aa5196519bbcb64a62910b20f43774dfb04"
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
         },
         {
+          "calculation_identity": "56ce445635c7aace8d39b7d4ea7ffa0f1b5dc5a9ddd2d4924362c8272f3ac9fd",
           "candidate": 1.0,
           "cost": 1,
-          "error": 7,
+          "error": 2,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "endpoint_misclassification"
           ],
           "status": "DISQUALIFIED",
-          "typed_evidence_identity": "c7e8daaeb6beaab46effb435f24fc6a28bc87f0bc2a5593a1652ad02315957d0"
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
         },
         {
+          "calculation_identity": "54f66c929918b516b0dcbb46e84c63164d5b9b3d7a70a0acc5b0b159f914a283",
           "candidate": 2.0,
           "cost": 1,
-          "error": 7,
+          "error": 2,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "endpoint_misclassification"
           ],
           "status": "DISQUALIFIED",
-          "typed_evidence_identity": "69920e8f8ed355eba2b0f6a41a188de7bf61c0dc2d6ceba0e577a51454c95d72"
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
         },
         {
+          "calculation_identity": "0a42ca421563b692337f9713a4b8acdc79686ed7c4c2b452295e1acfb72c85e7",
           "candidate": 4.0,
           "cost": 1,
-          "error": 7,
+          "error": 2,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "endpoint_misclassification"
           ],
           "status": "DISQUALIFIED",
-          "typed_evidence_identity": "2f9f0004f5ad6b701495139c8d11729e84f05b160beb81eb5ff4784d5237bf11"
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
         },
         {
+          "calculation_identity": "0970d5d1d7eed94dd736a47836d87ae65969dacaa54ab4482268cbf3b5758de0",
           "candidate": 8.0,
           "cost": 1,
-          "error": 7,
+          "error": 2,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "endpoint_misclassification"
           ],
           "status": "DISQUALIFIED",
-          "typed_evidence_identity": "6ee7fab89785fed7da9d6a33002d47a8429196ce64eaf44bcbd5fe1bd0546582"
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
         },
         {
+          "calculation_identity": "6cba4c53e1b10a95559676f7d4fd9e4c686b76ef97eea5627793345fb5444533",
           "candidate": 16.0,
           "cost": 1,
-          "error": 7,
+          "error": 2,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "endpoint_misclassification"
           ],
           "status": "DISQUALIFIED",
-          "typed_evidence_identity": "4ed171f5a77e8ef6f245437163e8b3d87b79230ae37b3bd4a0f3ce6d0a98823e"
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
         },
         {
+          "calculation_identity": "087ca2d8993d578718e4785e238ea0915932164c56fb311733d1869c56fa3734",
           "candidate": 32.0,
           "cost": 1,
-          "error": 7,
+          "error": 2,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "endpoint_misclassification"
           ],
           "status": "DISQUALIFIED",
-          "typed_evidence_identity": "d3782bb0e1010706d2d5e1cc26479abb6a06fdbaaec7c6bbb7ef1c4d988b533f"
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
         },
         {
+          "calculation_identity": "62cfe87f2aaa0f35b0139f0c4442fd5a74d3ee424aeb0e42f5c6f4c337ecdd6a",
           "candidate": 64.0,
           "cost": 1,
-          "error": 7,
+          "error": 0,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "CORRELATION_RANGE_VIOLATION"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "smallest_multiplier_tie_break"
           ],
-          "status": "DISQUALIFIED",
-          "typed_evidence_identity": "63d1d9b3b12532621ab6285583b765bcc52bdab4ffad35abb15b6edda5707cff"
+          "status": "QUALIFIED",
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            null
+          ]
         },
         {
+          "calculation_identity": "58d2c421b82b2e18d84ab1764dd6036fe6711b6b2096ea6efefa38caac161dfa",
           "candidate": 128.0,
           "cost": 1,
-          "error": 7,
+          "error": 1,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "endpoint_misclassification"
           ],
           "status": "DISQUALIFIED",
-          "typed_evidence_identity": "94584b74b43a7b627dca730b978b6bbb3179d6069c92df64d26e9f590f16f5f6"
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            1.0
+          ]
         },
         {
+          "calculation_identity": "609fd8e8cafa46ab87d8dce544fd54b06c97d702205ab1a58a500260eecfe9f9",
           "candidate": 256.0,
           "cost": 1,
-          "error": 7,
+          "error": 1,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "endpoint_misclassification"
           ],
           "status": "DISQUALIFIED",
-          "typed_evidence_identity": "2a90d0038113cbb6849eebca9057c0229aa3c26a04f6f7e2328365206a9feda5"
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            1.0
+          ]
         },
         {
+          "calculation_identity": "8ffb2f0fc93e1a9835f8dc17c4620f7560be5b7cc6bfb50d30c8708f4a5ee731",
           "candidate": 512.0,
           "cost": 1,
-          "error": 7,
+          "error": 1,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "endpoint_misclassification"
           ],
           "status": "DISQUALIFIED",
-          "typed_evidence_identity": "a37adcd94063ea8174df8318cd6b9fb98880c0ae8e82a8ebc3bec4885b94c8db"
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            1.0
+          ]
         },
         {
+          "calculation_identity": "e4bdad5e82f5a4b17bce49a80950782d136354390a822c7541345bedb1bb2e57",
           "candidate": 1024.0,
           "cost": 1,
-          "error": 7,
+          "error": 1,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "endpoint_misclassification"
           ],
           "status": "DISQUALIFIED",
-          "typed_evidence_identity": "ffabc9d805c364341180f5b738a7edfa5b53ad3edc82fe1b0fba5181a81efb31"
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            1.0
+          ]
         },
         {
+          "calculation_identity": "12908964d871354769f55e15522ebb5d25fcf2322270a43f26e6d84acd2b7ac2",
           "candidate": 2048.0,
           "cost": 1,
-          "error": 7,
+          "error": 1,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "endpoint_misclassification"
           ],
           "status": "DISQUALIFIED",
-          "typed_evidence_identity": "fd2ad79bb1b8f85aed30f8fd89645bc3270993b2e94465082bfc792a84a3bacf"
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            1.0
+          ]
         },
         {
+          "calculation_identity": "20b18e8c999bc12dcdfa573e35dbdf4acac697f60a91c10578f565bc8228043b",
           "candidate": 4096.0,
           "cost": 1,
-          "error": 7,
+          "error": 1,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "endpoint_misclassification"
           ],
           "status": "DISQUALIFIED",
-          "typed_evidence_identity": "54172077b8782e414221ed2c102dc7f76cb165b71fef0ee17c65448dfc5808fb"
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            1.0
+          ]
         }
       ],
-      "qualified_count": 0,
+      "case": "C5",
+      "cost": 1,
+      "frontier": [
+        [
+          64.0,
+          0,
+          1
+        ]
+      ],
+      "outcomes": [
+        "AVAILABLE",
+        "ENDPOINT_CANONICALIZED",
+        "ENDPOINT_CANONICALIZED",
+        "CORRELATION_RANGE_VIOLATION"
+      ],
+      "passed": true,
       "rejected_neighbors": [
         {
-          "candidate": 0.0,
-          "cost": 1,
-          "error": 7,
-          "outcomes": [
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
-          ],
-          "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
-          ],
-          "status": "DISQUALIFIED",
-          "typed_evidence_identity": "c561f7d3f232bf35f8ca6932452b3aa5196519bbcb64a62910b20f43774dfb04"
-        },
-        {
-          "candidate": 1.0,
-          "cost": 1,
-          "error": 7,
-          "outcomes": [
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
-          ],
-          "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
-          ],
-          "status": "DISQUALIFIED",
-          "typed_evidence_identity": "c7e8daaeb6beaab46effb435f24fc6a28bc87f0bc2a5593a1652ad02315957d0"
-        },
-        {
-          "candidate": 2.0,
-          "cost": 1,
-          "error": 7,
-          "outcomes": [
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
-          ],
-          "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
-          ],
-          "status": "DISQUALIFIED",
-          "typed_evidence_identity": "69920e8f8ed355eba2b0f6a41a188de7bf61c0dc2d6ceba0e577a51454c95d72"
-        },
-        {
-          "candidate": 4.0,
-          "cost": 1,
-          "error": 7,
-          "outcomes": [
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
-          ],
-          "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
-          ],
-          "status": "DISQUALIFIED",
-          "typed_evidence_identity": "2f9f0004f5ad6b701495139c8d11729e84f05b160beb81eb5ff4784d5237bf11"
-        },
-        {
-          "candidate": 8.0,
-          "cost": 1,
-          "error": 7,
-          "outcomes": [
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
-          ],
-          "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
-          ],
-          "status": "DISQUALIFIED",
-          "typed_evidence_identity": "6ee7fab89785fed7da9d6a33002d47a8429196ce64eaf44bcbd5fe1bd0546582"
-        },
-        {
-          "candidate": 16.0,
-          "cost": 1,
-          "error": 7,
-          "outcomes": [
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
-          ],
-          "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
-          ],
-          "status": "DISQUALIFIED",
-          "typed_evidence_identity": "4ed171f5a77e8ef6f245437163e8b3d87b79230ae37b3bd4a0f3ce6d0a98823e"
-        },
-        {
+          "calculation_identity": "087ca2d8993d578718e4785e238ea0915932164c56fb311733d1869c56fa3734",
           "candidate": 32.0,
           "cost": 1,
-          "error": 7,
+          "error": 2,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "endpoint_misclassification"
           ],
           "status": "DISQUALIFIED",
-          "typed_evidence_identity": "d3782bb0e1010706d2d5e1cc26479abb6a06fdbaaec7c6bbb7ef1c4d988b533f"
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
         },
         {
-          "candidate": 64.0,
-          "cost": 1,
-          "error": 7,
-          "outcomes": [
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
-          ],
-          "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
-          ],
-          "status": "DISQUALIFIED",
-          "typed_evidence_identity": "63d1d9b3b12532621ab6285583b765bcc52bdab4ffad35abb15b6edda5707cff"
-        },
-        {
+          "calculation_identity": "58d2c421b82b2e18d84ab1764dd6036fe6711b6b2096ea6efefa38caac161dfa",
           "candidate": 128.0,
           "cost": 1,
-          "error": 7,
+          "error": 1,
           "outcomes": [
             "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED"
           ],
           "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
+            "endpoint_misclassification"
           ],
           "status": "DISQUALIFIED",
-          "typed_evidence_identity": "94584b74b43a7b627dca730b978b6bbb3179d6069c92df64d26e9f590f16f5f6"
-        },
-        {
-          "candidate": 256.0,
-          "cost": 1,
-          "error": 7,
-          "outcomes": [
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
-          ],
-          "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
-          ],
-          "status": "DISQUALIFIED",
-          "typed_evidence_identity": "2a90d0038113cbb6849eebca9057c0229aa3c26a04f6f7e2328365206a9feda5"
-        },
-        {
-          "candidate": 512.0,
-          "cost": 1,
-          "error": 7,
-          "outcomes": [
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
-          ],
-          "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
-          ],
-          "status": "DISQUALIFIED",
-          "typed_evidence_identity": "a37adcd94063ea8174df8318cd6b9fb98880c0ae8e82a8ebc3bec4885b94c8db"
-        },
-        {
-          "candidate": 1024.0,
-          "cost": 1,
-          "error": 7,
-          "outcomes": [
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
-          ],
-          "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
-          ],
-          "status": "DISQUALIFIED",
-          "typed_evidence_identity": "ffabc9d805c364341180f5b738a7edfa5b53ad3edc82fe1b0fba5181a81efb31"
-        },
-        {
-          "candidate": 2048.0,
-          "cost": 1,
-          "error": 7,
-          "outcomes": [
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
-          ],
-          "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
-          ],
-          "status": "DISQUALIFIED",
-          "typed_evidence_identity": "fd2ad79bb1b8f85aed30f8fd89645bc3270993b2e94465082bfc792a84a3bacf"
-        },
-        {
-          "candidate": 4096.0,
-          "cost": 1,
-          "error": 7,
-          "outcomes": [
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE",
-            "AVAILABLE"
-          ],
-          "reasons": [
-            "endpoint_misclassification",
-            "raw_truth_mismatch",
-            "claim_state_misclassification"
-          ],
-          "status": "DISQUALIFIED",
-          "typed_evidence_identity": "54172077b8782e414221ed2c102dc7f76cb165b71fef0ee17c65448dfc5808fb"
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            1.0
+          ]
         }
       ],
-      "status": "UNSUPPORTED",
+      "status": "SELECTED",
+      "truth_error": 0,
       "truth_raw": [
         0.75,
         1.0000000000000142,
         -1.0000000000000142,
-        1.0000000000000568
-      ]
+        1.0000000000000284
+      ],
+      "value": 64.0
     },
     "driver": {
       "cases": [
@@ -713,8 +604,8 @@
           "rank": 2,
           "rank_identity": "7f25290ffd2bce1fcf9d9c48eaec9039b11fe40f103d21bb17e518e1e6ac3739",
           "spectrum": [
-            1e-09,
-            2e-21
+            1E-9,
+            2E-21
           ],
           "spectrum_error": 0.0,
           "status": "QUALIFIED"
@@ -731,16 +622,16 @@
               1.0
             ]
           ],
-          "derivative_error": 9.313225746154785e-10,
+          "derivative_error": 9.313225746154785E-10,
           "jacobian_identity": "1e7a2cb9250681724b888b4b6457eb694ed4ce531fc8d10f1a098f74d2dd93e2",
           "policy_identity": "58bb2c1074efaf7d774bb514f0a7fdf90465be6ee19a1244c6429c4968f437fe",
           "rank": 2,
           "rank_identity": "814f469d861182fb4b4d49a0b8072e01a33ae30423fe8e5d52b4cc31cabadeaf",
           "spectrum": [
             0.9999999999999999,
-            5e-13
+            5E-13
           ],
-          "spectrum_error": 1.1102230246251565e-16,
+          "spectrum_error": 1.1102230246251565E-16,
           "status": "QUALIFIED"
         },
         {
@@ -755,16 +646,16 @@
               1.0
             ]
           ],
-          "derivative_error": 1.241763432820638e-09,
+          "derivative_error": 1.241763432820638E-9,
           "jacobian_identity": "b1ac9698eeb5e48bc5a8899296100bc15dc4362fccb638cb011c868dc235cae2",
           "policy_identity": "58bb2c1074efaf7d774bb514f0a7fdf90465be6ee19a1244c6429c4968f437fe",
           "rank": 2,
           "rank_identity": "f3d4b573c8d3b90bf58cbe764430a8cdf5b287ce8d24d06c6d6008baac7a616b",
           "spectrum": [
             5.291502622129182,
-            6.473657049138936e-16
+            6.473657049138936E-16
           ],
-          "spectrum_error": 6.473657049138936e-16,
+          "spectrum_error": 6.473657049138936E-16,
           "status": "QUALIFIED"
         }
       ],
@@ -773,7 +664,7 @@
       "frontier": [
         [
           "gesvd",
-          6.473657049138936e-16,
+          6.473657049138936E-16,
           3
         ]
       ],
@@ -785,11 +676,11 @@
             "spectrum_error_cost_driver_order"
           ],
           "status": "QUALIFIED_REJECTED",
-          "truth_error": 6.473657049138936e-16
+          "truth_error": 6.473657049138936E-16
         }
       ],
       "status": "SELECTED",
-      "truth_error": 6.473657049138936e-16
+      "truth_error": 6.473657049138936E-16
     },
     "finite_difference": {
       "frontier": [
@@ -797,7 +688,7 @@
           0.0003662109375,
           132,
           [
-            3.552713678800501e-15,
+            3.552713678800501E-15,
             2.0,
             16,
             16
@@ -807,7 +698,7 @@
           0.0003786067280823903,
           128,
           [
-            3.552713678800501e-15,
+            3.552713678800501E-15,
             4096.0,
             16,
             16
@@ -945,15 +836,15 @@
             1.0
           ]
         ],
-        "derivative_error": 9.313225746154785e-10,
+        "derivative_error": 9.313225746154785E-10,
         "jacobian_identity": "d811c8e7752f82f8b35f9962c2b636a7b4cab0a1b7a59056504a9e0cf8d00e6c",
         "policy_identity": "8d0d732f30a2b3568523fd28ea005fe3d82717d9d6948768c7b9b94516143f65",
         "rank": 3,
         "rank_identity": "f540217d8f1d05dd87eafab3d4b0b37790dfd7ee558d7213fb7c87007733dc09",
         "spectrum": [
           0.9999999999999999,
-          1.9999999999999995e-06,
-          1.9999999999999996e-07
+          0.0000019999999999999995,
+          1.9999999999999996E-7
         ],
         "status": "ACQUIRED"
       },
@@ -981,7 +872,7 @@
             1.0
           ]
         ],
-        "derivative_error": 1.4901161194443703e-09,
+        "derivative_error": 1.4901161194443703E-9,
         "jacobian_identity": "3c6f7e472e2fc45a1b3679afdc40e2dc70d37e71678c3d7ba656d773f75871d6",
         "policy_identity": "86fd466abf273fc7b5c599fdfec36c13edc859c7687d5ac0fd6fdc63ae64a51f",
         "rank": 5,
@@ -1007,14 +898,14 @@
             1.0
           ]
         ],
-        "derivative_error": 9.313225746154785e-10,
+        "derivative_error": 9.313225746154785E-10,
         "jacobian_identity": "10093bc29e476d890484fd1aefdb22907ae24ae21d7bfc915a7253f9233d243f",
         "policy_identity": "4f4ea4af977a7b375bea02f0ba5e31e8c44181275bcd86dc43d5e66fafc897e1",
         "rank": 2,
         "rank_identity": "53f9ab7c6e38bb07e54620c7a4033f94b92033115365262e7bd0f5134a9c8fb6",
         "spectrum": [
           0.9999999999999999,
-          1.9999999999999995e-06
+          0.0000019999999999999995
         ],
         "status": "ACQUIRED"
       },
@@ -1030,22 +921,400 @@
             1.0
           ]
         ],
-        "derivative_error": 9.313225746154785e-10,
+        "derivative_error": 9.313225746154785E-10,
         "jacobian_identity": "797759d8e35ed197d15085f3a97fa8967cf97a073a7259a42a20003099c86cb8",
         "policy_identity": "4f4ea4af977a7b375bea02f0ba5e31e8c44181275bcd86dc43d5e66fafc897e1",
         "rank": 2,
         "rank_identity": "2ade4cdae833657c86cb82ba1057ae7ae60430513687ffbc9b68650c5ce5dc19",
         "spectrum": [
           0.9999999999999999,
-          4.999999999999999e-07
+          4.999999999999999E-7
         ],
         "status": "ACQUIRED"
       },
       {
+        "calculation_identity": "62cfe87f2aaa0f35b0139f0c4442fd5a74d3ee424aeb0e42f5c6f4c337ecdd6a",
+        "candidate_summaries": [
+          {
+            "calculation_identity": "389f94064bb1e4bba4069acd707211a5b9e627acc53ce5b10799b207c71cc270",
+            "candidate": 0.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "56ce445635c7aace8d39b7d4ea7ffa0f1b5dc5a9ddd2d4924362c8272f3ac9fd",
+            "candidate": 1.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "54f66c929918b516b0dcbb46e84c63164d5b9b3d7a70a0acc5b0b159f914a283",
+            "candidate": 2.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "0a42ca421563b692337f9713a4b8acdc79686ed7c4c2b452295e1acfb72c85e7",
+            "candidate": 4.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "0970d5d1d7eed94dd736a47836d87ae65969dacaa54ab4482268cbf3b5758de0",
+            "candidate": 8.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "6cba4c53e1b10a95559676f7d4fd9e4c686b76ef97eea5627793345fb5444533",
+            "candidate": 16.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "087ca2d8993d578718e4785e238ea0915932164c56fb311733d1869c56fa3734",
+            "candidate": 32.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "62cfe87f2aaa0f35b0139f0c4442fd5a74d3ee424aeb0e42f5c6f4c337ecdd6a",
+            "candidate": 64.0,
+            "cost": 1,
+            "error": 0,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "smallest_multiplier_tie_break"
+            ],
+            "status": "QUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "58d2c421b82b2e18d84ab1764dd6036fe6711b6b2096ea6efefa38caac161dfa",
+            "candidate": 128.0,
+            "cost": 1,
+            "error": 1,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              1.0
+            ]
+          },
+          {
+            "calculation_identity": "609fd8e8cafa46ab87d8dce544fd54b06c97d702205ab1a58a500260eecfe9f9",
+            "candidate": 256.0,
+            "cost": 1,
+            "error": 1,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              1.0
+            ]
+          },
+          {
+            "calculation_identity": "8ffb2f0fc93e1a9835f8dc17c4620f7560be5b7cc6bfb50d30c8708f4a5ee731",
+            "candidate": 512.0,
+            "cost": 1,
+            "error": 1,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              1.0
+            ]
+          },
+          {
+            "calculation_identity": "e4bdad5e82f5a4b17bce49a80950782d136354390a822c7541345bedb1bb2e57",
+            "candidate": 1024.0,
+            "cost": 1,
+            "error": 1,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              1.0
+            ]
+          },
+          {
+            "calculation_identity": "12908964d871354769f55e15522ebb5d25fcf2322270a43f26e6d84acd2b7ac2",
+            "candidate": 2048.0,
+            "cost": 1,
+            "error": 1,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              1.0
+            ]
+          },
+          {
+            "calculation_identity": "20b18e8c999bc12dcdfa573e35dbdf4acac697f60a91c10578f565bc8228043b",
+            "candidate": 4096.0,
+            "cost": 1,
+            "error": 1,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              1.0
+            ]
+          }
+        ],
         "case": "C5",
-        "evidence_identity": "2292b65035ed0eee7b7fcda6d4bf77c51fa08745d1985dfd4eea529d1c214afd",
+        "cost": 1,
+        "frontier": [
+          [
+            64.0,
+            0,
+            1
+          ]
+        ],
+        "outcomes": [
+          "AVAILABLE",
+          "ENDPOINT_CANONICALIZED",
+          "ENDPOINT_CANONICALIZED",
+          "CORRELATION_RANGE_VIOLATION"
+        ],
         "passed": true,
-        "policy_identity": "8d0d732f30a2b3568523fd28ea005fe3d82717d9d6948768c7b9b94516143f65"
+        "rejected_neighbors": [
+          {
+            "calculation_identity": "087ca2d8993d578718e4785e238ea0915932164c56fb311733d1869c56fa3734",
+            "candidate": 32.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "58d2c421b82b2e18d84ab1764dd6036fe6711b6b2096ea6efefa38caac161dfa",
+            "candidate": 128.0,
+            "cost": 1,
+            "error": 1,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              1.0
+            ]
+          }
+        ],
+        "status": "SELECTED",
+        "truth_error": 0,
+        "truth_raw": [
+          0.75,
+          1.0000000000000142,
+          -1.0000000000000142,
+          1.0000000000000284
+        ],
+        "value": 64.0
       }
     ],
     "rank": {
@@ -1054,7 +1323,7 @@
         [
           [
             0.0,
-            9.094947017729282e-13
+            9.094947017729282E-13
           ],
           0.0,
           3
@@ -1062,7 +1331,7 @@
       ],
       "policy": [
         0.0,
-        9.094947017729282e-13
+        9.094947017729282E-13
       ],
       "qualified_count": 1,
       "rejected_neighbors": [
@@ -1077,8 +1346,8 @@
         },
         {
           "candidate": [
-            1.52587890625e-05,
-            9.094947017729282e-13
+            0.0000152587890625,
+            9.094947017729282E-13
           ],
           "cost": 3,
           "decisive_reasons": [
@@ -1090,7 +1359,7 @@
         {
           "candidate": [
             0.0,
-            3.637978807091713e-12
+            3.637978807091713E-12
           ],
           "cost": 3,
           "decisive_reasons": [
@@ -1102,7 +1371,7 @@
         {
           "candidate": [
             0.0,
-            2.2737367544323206e-13
+            2.2737367544323206E-13
           ],
           "cost": 3,
           "decisive_reasons": [
@@ -1125,14 +1394,14 @@
               1,
               2
             ],
-            "relative_envelope": 1e-12,
-            "unperturbed_error": 1.0097419586828951e-28,
+            "relative_envelope": 1E-12,
+            "unperturbed_error": 1.0097419586828951E-28,
             "unstable_modes": [
               1
             ],
             "weak_entries": [
-              -4.999999999999999e-13,
-              1.4999999999999999e-12
+              -4.999999999999999E-13,
+              1.4999999999999999E-12
             ]
           },
           "perturbation_error": 0.0,
@@ -1146,9 +1415,9 @@
           "evidence_identity": "9b3956285ab261429f3c443c0e080dbdcb355a622024156c02c881ff3f826e9a",
           "passed": true,
           "perturbation": null,
-          "perturbation_error": 6.473657049138936e-16,
+          "perturbation_error": 6.473657049138936E-16,
           "policy_identity": "4f4ea4af977a7b375bea02f0ba5e31e8c44181275bcd86dc43d5e66fafc897e1",
-          "projector_error": 2.5565945335559395e-16,
+          "projector_error": 2.5565945335559395E-16,
           "rank_identity": "fc39bec1916d2f00828d4927f38ba695bf4ba6ae97662b9b33ff5a4e38efce92"
         }
       ]
@@ -1168,7 +1437,7 @@
                 "cost_abs_k_k"
               ],
               "status": "QUALIFIED_REJECTED",
-              "truth_error": 9.189797442572786e-05
+              "truth_error": 0.00009189797442572786
             },
             {
               "cost": 4,
@@ -1182,7 +1451,7 @@
           ],
           "scale": 1.0,
           "status": "SELECTED",
-          "truth_error": 3.928878454252815e-05
+          "truth_error": 0.00003928878454252815
         },
         "A4-argument-1": {
           "candidate_identity": "df2d2bca43cbd22d1e527e7ae699763ba69138e32458c68b5d3e3189a04745fb",
@@ -1197,7 +1466,7 @@
                 "cost_abs_k_k"
               ],
               "status": "QUALIFIED_REJECTED",
-              "truth_error": 5.1925258754595545e-05
+              "truth_error": 0.000051925258754595545
             },
             {
               "cost": 4,
@@ -1211,7 +1480,7 @@
           ],
           "scale": 2.0,
           "status": "SELECTED",
-          "truth_error": 9.127007501186197e-05
+          "truth_error": 0.00009127007501186197
         },
         "A4-output": {
           "Q0": 4.0,
@@ -1235,12 +1504,12 @@
                 "cost_abs_k_k"
               ],
               "status": "QUALIFIED_REJECTED",
-              "truth_error": 5.1925258754595545e-05
+              "truth_error": 0.000051925258754595545
             }
           ],
           "scale": 4.0,
           "status": "SELECTED",
-          "truth_error": 9.127007501186197e-05
+          "truth_error": 0.00009127007501186197
         },
         "chemical_shift": {
           "candidate_identity": "35df5089a8c389407d443baaef06364c17797f1fdb2796bc1ea56aa4b0473d2d",
@@ -1729,14 +1998,14 @@
       "cost": 1,
       "frontier": [
         [
-          2.384185791015625e-07,
+          2.384185791015625E-7,
           0,
           1
         ]
       ],
       "rejected_neighbors": [
         {
-          "candidate": 9.5367431640625e-07,
+          "candidate": 9.5367431640625E-7,
           "cost": 1,
           "error": 0,
           "reasons": [
@@ -1745,7 +2014,7 @@
           "status": "QUALIFIED"
         },
         {
-          "candidate": 5.960464477539063e-08,
+          "candidate": 5.960464477539063E-8,
           "cost": 1,
           "error": 1,
           "reasons": [
@@ -1756,7 +2025,7 @@
       ],
       "status": "SELECTED",
       "truth_error": 0,
-      "value": 2.384185791015625e-07
+      "value": 2.384185791015625E-7
     }
   },
   "holdouts": [
@@ -1786,14 +2055,48 @@
     }
   ],
   "policy": {
-    "reason": "incomplete_phase_c_selection",
-    "status": "UNAVAILABLE"
+    "affine_feasibility_policy": "canonical-root-affine-halfspace-zeta-gt-3-v1",
+    "calibration_identity": "chemex-uncertainty-calibration-v1:1d614dac0a5e50665b2390a4df1bb97b9d8e8e871f61a2c02666eb991c5a0631",
+    "conditioning_limit": 1048576.0,
+    "coordinate_scales": [
+      [
+        "A",
+        1.0
+      ],
+      [
+        "B",
+        100.0
+      ]
+    ],
+    "coordinate_units": [
+      [
+        "A",
+        "dimensionless"
+      ],
+      [
+        "B",
+        "dimensionless"
+      ]
+    ],
+    "correlation_roundoff_multiplier": 64.0,
+    "identity": "a3d41ead8cad64ee9d9d21aeb76357621ba5057c5bbdbdc37c4c40cd9f603377",
+    "larger_step_extent": 0,
+    "numerical_compatibility_requirement": "canonical-linux-amd64-python-3.13;bounded-python-3.14-replay",
+    "rank_absolute_tolerance": 0.0,
+    "rank_relative_tolerance": 9.094947017729282E-13,
+    "relative_step_tolerance": 0.0,
+    "residual_variance_scaling": "absolute_observation_uncertainties",
+    "roundoff_multiplier": 2.0,
+    "singular_value_cluster_relative_tolerance": 5.820766091346741E-11,
+    "smaller_step_extent": 2,
+    "svd_driver": "gesvd",
+    "weak_relative_tolerance": 2.384185791015625E-7
   },
-  "policy_digest": null,
+  "policy_digest": "88b1e9cd3d75618d302c1241734c60dfa814ab77383ccd2f4955bbf2cad0f17d",
   "selected_phase_policies": {
-    "cluster": 5.820766091346741e-11,
+    "cluster": 5.820766091346741E-11,
     "conditioning": 1048576.0,
-    "correlation": null,
+    "correlation": 64.0,
     "finite_difference": [
       0.0,
       2.0,
@@ -1802,7 +2105,7 @@
     ],
     "rank": [
       0.0,
-      9.094947017729282e-13
+      9.094947017729282E-13
     ],
     "scales": {
       "A4-argument-0": 1.0,
@@ -1826,10 +2129,10 @@
       "transverse_relaxation": 10.0
     },
     "svd_driver": "gesvd",
-    "weak": 2.384185791015625e-07
+    "weak": 2.384185791015625E-7
   },
-  "source_digest": "de96e1be28b7fa9203eaf0438370d21ac683f9e5267a9800d24c543694bd1a3e",
-  "specification_digest": "ed9117bc4ff7b721e7dbf19efe3fe05200a59abfbc3d737f24fc5b66fab1b213",
+  "source_digest": "5c69cbb3b2b04ea9dfe6960dab3628b9a5389f647a74227576be391f25b22786",
+  "specification_digest": "59a213912da115bc025745266a38802f716c7d64a97753e19c13d7f05d53a680",
   "specification_id": "chemex-uncertainty-calibration-v1",
-  "status": "UNSUPPORTED_OR_SATURATED"
+  "status": "COMPOSED_VALIDATION_FAILED"
 }
