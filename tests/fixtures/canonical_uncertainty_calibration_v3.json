@@ -1,0 +1,2235 @@
+{
+  "canonical_provenance": {
+    "lane_attestation": {
+      "environment_identity": "cc5359f90df35ec9b60fd56e483911745209519ecce37d69e17c4edd6ea3604f",
+      "identity": "3b3e0bc184826d61ec6652194486c907a5faa4c64b68ec03bbe60b63c660d687",
+      "lane_identity": "4f1e7dab3384f88149fd33befb09ba3e96730dc336e9427b224a39a8a7167e4f",
+      "method": "POST_IMPORT_CURRENT_PROCESS",
+      "native_threads": 1,
+      "schema_version": 2,
+      "semantic_version": "chemex-numerical-lane-v2",
+      "workers": 1
+    },
+    "numerical_lane": {
+      "identity": "4f1e7dab3384f88149fd33befb09ba3e96730dc336e9427b224a39a8a7167e4f",
+      "name": "canonical-linux-amd64-python-3.13-v1",
+      "role": "CANONICAL_NUMERICAL",
+      "schema_version": 2,
+      "semantic_version": "chemex-numerical-lane-v2",
+      "semantics": {
+        "build_context_hash": "d503eb97c3d27456511f0c29f1e05d11be60c82002086cff5fc44d82d1e4d2d2",
+        "build_recipe_hash": "af852fa2b39b40c39f9b84a8f8ae50246c66ba315656b22c5807bf59fb85e71a",
+        "dependency_lock_hash": "cc7a8e08d8fb8f1ea4255b63452598f6dbe041a8b4024de0f3af065020088004",
+        "floating_point_mode": "binary64-round-nearest-gradual-underflow",
+        "identity": "fb5b0bb751cdff616af36d4e526d230d89075134fbfa07901d724a63dfe4f2ff",
+        "image_digest": "sha256:ed4f97e00bd6fe494f46772cc31a338d756b5bb5fe6e4e480d987af51af85550",
+        "isa": "x86-64-v3",
+        "loaded_library_manifest_hash": "75742eab438a8751791453118367c31db931e5e2286ff2f1eb4a570e1fdc5ab7",
+        "native_threads": 1,
+        "numpy_blas": "{\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"version\":\"0.3.33.112.0\"}",
+        "numpy_dispatch_restrictions": "AVX512_ICL,AVX512_SPR,X86_V4",
+        "numpy_installation_hash": "ef9f711f7522187954f60626030e606a5c7dd5fbf191e2450a651c8a836a64c5",
+        "numpy_lapack": "{\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"version\":\"0.3.33.112.0\"}",
+        "numpy_version": "2.5.1",
+        "openblas_configuration": "[[\"numpy.libs/libscipy_openblas64_-017048f4.so\",\"OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"Haswell\",1],[\"scipy.libs/libscipy_openblas-5f890258.so\",\"OpenBLAS 0.3.31.dev DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"Haswell\",1]]",
+        "openblas_core": "Haswell",
+        "os_package_manifest_hash": "ce667a3190a438795434c70db1a47a2de1070401464d13b63e4283e61eea3500",
+        "platform": "linux/amd64",
+        "platform_manifest": "debian:bookworm-slim@sha256:362e64223cc0da95422b3b13c045186fc0a81250e765d31c025fbddf257f6143",
+        "python_abi": "cpython-313-x86_64-linux-gnu",
+        "python_executable_hash": "f3862e58e9edf17cbf447b59792f55cc021804da963861490564daa3700b7bc5",
+        "python_implementation": "CPython",
+        "python_source_hash": "e6190f52699b534ee203d9f417bdbca05a92f23e35c19c691a50ed2942835385",
+        "python_version": "3.13.5",
+        "scipy_blas": "{\"cython blas ilp64\":false,\"has ilp64\":false,\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.31.dev DYNAMIC_ARCH NO_AFFINITY SkylakeX MAX_THREADS=64\",\"version\":\"0.3.31.dev\"}",
+        "scipy_installation_hash": "6cd1d7cf95262076650dceeb850395429d7e928d25daa9ccbda751e5f8c79e8c",
+        "scipy_lapack": "{\"has ilp64\":false,\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.31.dev DYNAMIC_ARCH NO_AFFINITY SkylakeX MAX_THREADS=64\",\"version\":\"0.3.31.dev\"}",
+        "scipy_version": "1.18.0",
+        "uv_version": "0.11.15",
+        "uv_wheel_hash": "98edf1bdaf82447014852051d93e3ee95012509c567bf057fd117e6bdbd9a807",
+        "wheel_manifest_hash": "a3538dfe59b3d1e9cdd71e2c7b52a59038e69f0bf8079f96e632ddfc82aeb84d",
+        "workers": 1
+      }
+    },
+    "runtime_environment": {
+      "identity": "cc5359f90df35ec9b60fd56e483911745209519ecce37d69e17c4edd6ea3604f",
+      "schema_version": 2,
+      "semantic_version": "chemex-numerical-lane-v2",
+      "semantics": {
+        "build_context_hash": "d503eb97c3d27456511f0c29f1e05d11be60c82002086cff5fc44d82d1e4d2d2",
+        "build_recipe_hash": "af852fa2b39b40c39f9b84a8f8ae50246c66ba315656b22c5807bf59fb85e71a",
+        "dependency_lock_hash": "cc7a8e08d8fb8f1ea4255b63452598f6dbe041a8b4024de0f3af065020088004",
+        "floating_point_mode": "binary64-round-nearest-gradual-underflow",
+        "identity": "fb5b0bb751cdff616af36d4e526d230d89075134fbfa07901d724a63dfe4f2ff",
+        "image_digest": "sha256:ed4f97e00bd6fe494f46772cc31a338d756b5bb5fe6e4e480d987af51af85550",
+        "isa": "x86-64-v3",
+        "loaded_library_manifest_hash": "75742eab438a8751791453118367c31db931e5e2286ff2f1eb4a570e1fdc5ab7",
+        "native_threads": 1,
+        "numpy_blas": "{\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"version\":\"0.3.33.112.0\"}",
+        "numpy_dispatch_restrictions": "AVX512_ICL,AVX512_SPR,X86_V4",
+        "numpy_installation_hash": "ef9f711f7522187954f60626030e606a5c7dd5fbf191e2450a651c8a836a64c5",
+        "numpy_lapack": "{\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"version\":\"0.3.33.112.0\"}",
+        "numpy_version": "2.5.1",
+        "openblas_configuration": "[[\"numpy.libs/libscipy_openblas64_-017048f4.so\",\"OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"Haswell\",1],[\"scipy.libs/libscipy_openblas-5f890258.so\",\"OpenBLAS 0.3.31.dev DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"Haswell\",1]]",
+        "openblas_core": "Haswell",
+        "os_package_manifest_hash": "ce667a3190a438795434c70db1a47a2de1070401464d13b63e4283e61eea3500",
+        "platform": "linux/amd64",
+        "platform_manifest": "debian:bookworm-slim@sha256:362e64223cc0da95422b3b13c045186fc0a81250e765d31c025fbddf257f6143",
+        "python_abi": "cpython-313-x86_64-linux-gnu",
+        "python_executable_hash": "f3862e58e9edf17cbf447b59792f55cc021804da963861490564daa3700b7bc5",
+        "python_implementation": "CPython",
+        "python_source_hash": "e6190f52699b534ee203d9f417bdbca05a92f23e35c19c691a50ed2942835385",
+        "python_version": "3.13.5",
+        "scipy_blas": "{\"cython blas ilp64\":false,\"has ilp64\":false,\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.31.dev DYNAMIC_ARCH NO_AFFINITY SkylakeX MAX_THREADS=64\",\"version\":\"0.3.31.dev\"}",
+        "scipy_installation_hash": "6cd1d7cf95262076650dceeb850395429d7e928d25daa9ccbda751e5f8c79e8c",
+        "scipy_lapack": "{\"has ilp64\":false,\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.31.dev DYNAMIC_ARCH NO_AFFINITY SkylakeX MAX_THREADS=64\",\"version\":\"0.3.31.dev\"}",
+        "scipy_version": "1.18.0",
+        "uv_version": "0.11.15",
+        "uv_wheel_hash": "98edf1bdaf82447014852051d93e3ee95012509c567bf057fd117e6bdbd9a807",
+        "wheel_manifest_hash": "a3538dfe59b3d1e9cdd71e2c7b52a59038e69f0bf8079f96e632ddfc82aeb84d",
+        "workers": 1
+      }
+    }
+  },
+  "compatibility": {
+    "reason": "composed_validation_failed",
+    "status": "NOT_RUN"
+  },
+  "composed": [
+    {
+      "case": "A1",
+      "evidence_identity": "2182d0e2b3e31f38daaea7ea2ba3ca7615f71f147b4d75861e6dfcec435b9520",
+      "passed": true,
+      "policy_identity": "ea3558aa7d11933e4596ce3accc068af42ed92d8d780bd35b09a41c5bb77d143"
+    },
+    {
+      "case": "A2",
+      "evidence_identity": "1c98f02f4dddb52fc880422c7f4a3ccf97eecb2d1d574957be85aa69b2c5c8cf",
+      "passed": true,
+      "policy_identity": "3e6c32ff26a7c5954ccc29604cf0d7eec3c37adf7b05ffda7d51cb00d4dfd8f8"
+    },
+    {
+      "case": "F1-absolute",
+      "chi_square": 0.19990990990990976,
+      "correlation_reportable": false,
+      "covariance_truth": null,
+      "evidence_identity": "31c4bc08a8c30bd67a7031116a69af1267f157d740662d9c693a47dd7dec97e6",
+      "g": 1,
+      "m": 4,
+      "marginal_reportable": false,
+      "n": 2,
+      "nu": 1,
+      "passed": true,
+      "phi": 1.0,
+      "policy_identity": "979987520f051d99d0184ae4e6dd658115a39bf13a63be3e62fa3ba436e545f7"
+    },
+    {
+      "case": "F1-estimated",
+      "chi_square": 0.19990990990990976,
+      "correlation_reportable": false,
+      "covariance_truth": null,
+      "evidence_identity": "c878fa832066b56fca54881f1c2a9ea6056a0af459a7060c6f7cca57cabc1bf1",
+      "g": 1,
+      "m": 4,
+      "marginal_reportable": false,
+      "n": 2,
+      "nu": 1,
+      "passed": true,
+      "phi": 0.19990990990990976,
+      "policy_identity": "58f3c8da4c68c7a0401eb4ef87b9ffff01f1601b7f63723a3d9b197f8b003993"
+    },
+    {
+      "case": "F2",
+      "constraint_jacobian_identity": "81184f9f3802349c8ea1ce1d1d916e32d5a087a1521772d37431038cfdddb721",
+      "correlation_identity": null,
+      "evidence_identity": "db29e1ac77679b0d34c2c30337070848d3e4b40b27937f96a179db82232acec9",
+      "local_covariance_error": 1.3877787807814457e-16,
+      "marginal_identity": "f8772841a27dbce9e1a623cfce90f442f67f83f3c5f32339f5f69fc8ebd19b78",
+      "partial_error": 4.733702319015265e-11,
+      "passed": false,
+      "policy_identity": "4d8519f315599b525caa93fe7141a55bfa45636b722f6f533bac123b387b9d3f",
+      "propagated_covariance_error": 1.6153300919086178e-11,
+      "propagation_identity": "9e1a4aead929243a4e16740516a85cd7d557730bfb518d219651cb1391b00a9c",
+      "zero_gradient_row": 4
+    }
+  ],
+  "counts": {
+    "correlation": 17,
+    "evaluation": 1564,
+    "offline": 2121687,
+    "scalar": 436,
+    "svd": 22
+  },
+  "decisive_metrics": {
+    "cluster": {
+      "cost": 1,
+      "frontier": [
+        [
+          5.820766091346741e-11,
+          0.0,
+          1
+        ]
+      ],
+      "rejected_neighbors": [
+        {
+          "candidate": 2.3283064365386963e-10,
+          "cost": 1,
+          "error": 0,
+          "projector_error": 0.0,
+          "reasons": [
+            "smallest_threshold_tie_break"
+          ],
+          "status": "QUALIFIED"
+        },
+        {
+          "candidate": 1.4551915228366852e-11,
+          "cost": 1,
+          "error": 1,
+          "projector_error": 0.0,
+          "reasons": [
+            "cluster_or_projector_misclassification"
+          ],
+          "status": "DISQUALIFIED"
+        }
+      ],
+      "status": "SELECTED",
+      "truth_error": 0.0,
+      "value": 5.820766091346741e-11
+    },
+    "conditioning": {
+      "cost": 2,
+      "frontier": [
+        [
+          1048576.0,
+          1.164153218269348e-16,
+          2
+        ]
+      ],
+      "rejected_neighbors": [
+        {
+          "candidate": 262144.0,
+          "cost": 2,
+          "error": 1,
+          "reasons": [
+            "conditioning_misclassification"
+          ],
+          "status": "DISQUALIFIED"
+        },
+        {
+          "candidate": 4194304.0,
+          "cost": 2,
+          "error": 1,
+          "reasons": [
+            "conditioning_misclassification"
+          ],
+          "status": "DISQUALIFIED"
+        }
+      ],
+      "status": "SELECTED",
+      "truth_error": 1.164153218269348e-16,
+      "value": 1048576.0
+    },
+    "correlation": {
+      "calculation_identity": "62cfe87f2aaa0f35b0139f0c4442fd5a74d3ee424aeb0e42f5c6f4c337ecdd6a",
+      "candidate_summaries": [
+        {
+          "calculation_identity": "389f94064bb1e4bba4069acd707211a5b9e627acc53ce5b10799b207c71cc270",
+          "candidate": 0.0,
+          "cost": 1,
+          "error": 2,
+          "outcomes": [
+            "AVAILABLE",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
+          ],
+          "reasons": [
+            "endpoint_misclassification"
+          ],
+          "status": "DISQUALIFIED",
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "calculation_identity": "56ce445635c7aace8d39b7d4ea7ffa0f1b5dc5a9ddd2d4924362c8272f3ac9fd",
+          "candidate": 1.0,
+          "cost": 1,
+          "error": 2,
+          "outcomes": [
+            "AVAILABLE",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
+          ],
+          "reasons": [
+            "endpoint_misclassification"
+          ],
+          "status": "DISQUALIFIED",
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "calculation_identity": "54f66c929918b516b0dcbb46e84c63164d5b9b3d7a70a0acc5b0b159f914a283",
+          "candidate": 2.0,
+          "cost": 1,
+          "error": 2,
+          "outcomes": [
+            "AVAILABLE",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
+          ],
+          "reasons": [
+            "endpoint_misclassification"
+          ],
+          "status": "DISQUALIFIED",
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "calculation_identity": "0a42ca421563b692337f9713a4b8acdc79686ed7c4c2b452295e1acfb72c85e7",
+          "candidate": 4.0,
+          "cost": 1,
+          "error": 2,
+          "outcomes": [
+            "AVAILABLE",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
+          ],
+          "reasons": [
+            "endpoint_misclassification"
+          ],
+          "status": "DISQUALIFIED",
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "calculation_identity": "0970d5d1d7eed94dd736a47836d87ae65969dacaa54ab4482268cbf3b5758de0",
+          "candidate": 8.0,
+          "cost": 1,
+          "error": 2,
+          "outcomes": [
+            "AVAILABLE",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
+          ],
+          "reasons": [
+            "endpoint_misclassification"
+          ],
+          "status": "DISQUALIFIED",
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "calculation_identity": "6cba4c53e1b10a95559676f7d4fd9e4c686b76ef97eea5627793345fb5444533",
+          "candidate": 16.0,
+          "cost": 1,
+          "error": 2,
+          "outcomes": [
+            "AVAILABLE",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
+          ],
+          "reasons": [
+            "endpoint_misclassification"
+          ],
+          "status": "DISQUALIFIED",
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "calculation_identity": "087ca2d8993d578718e4785e238ea0915932164c56fb311733d1869c56fa3734",
+          "candidate": 32.0,
+          "cost": 1,
+          "error": 2,
+          "outcomes": [
+            "AVAILABLE",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
+          ],
+          "reasons": [
+            "endpoint_misclassification"
+          ],
+          "status": "DISQUALIFIED",
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "calculation_identity": "62cfe87f2aaa0f35b0139f0c4442fd5a74d3ee424aeb0e42f5c6f4c337ecdd6a",
+          "candidate": 64.0,
+          "cost": 1,
+          "error": 0,
+          "outcomes": [
+            "AVAILABLE",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "CORRELATION_RANGE_VIOLATION"
+          ],
+          "reasons": [
+            "smallest_multiplier_tie_break"
+          ],
+          "status": "QUALIFIED",
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            null
+          ]
+        },
+        {
+          "calculation_identity": "58d2c421b82b2e18d84ab1764dd6036fe6711b6b2096ea6efefa38caac161dfa",
+          "candidate": 128.0,
+          "cost": 1,
+          "error": 1,
+          "outcomes": [
+            "AVAILABLE",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED"
+          ],
+          "reasons": [
+            "endpoint_misclassification"
+          ],
+          "status": "DISQUALIFIED",
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            1.0
+          ]
+        },
+        {
+          "calculation_identity": "609fd8e8cafa46ab87d8dce544fd54b06c97d702205ab1a58a500260eecfe9f9",
+          "candidate": 256.0,
+          "cost": 1,
+          "error": 1,
+          "outcomes": [
+            "AVAILABLE",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED"
+          ],
+          "reasons": [
+            "endpoint_misclassification"
+          ],
+          "status": "DISQUALIFIED",
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            1.0
+          ]
+        },
+        {
+          "calculation_identity": "8ffb2f0fc93e1a9835f8dc17c4620f7560be5b7cc6bfb50d30c8708f4a5ee731",
+          "candidate": 512.0,
+          "cost": 1,
+          "error": 1,
+          "outcomes": [
+            "AVAILABLE",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED"
+          ],
+          "reasons": [
+            "endpoint_misclassification"
+          ],
+          "status": "DISQUALIFIED",
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            1.0
+          ]
+        },
+        {
+          "calculation_identity": "e4bdad5e82f5a4b17bce49a80950782d136354390a822c7541345bedb1bb2e57",
+          "candidate": 1024.0,
+          "cost": 1,
+          "error": 1,
+          "outcomes": [
+            "AVAILABLE",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED"
+          ],
+          "reasons": [
+            "endpoint_misclassification"
+          ],
+          "status": "DISQUALIFIED",
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            1.0
+          ]
+        },
+        {
+          "calculation_identity": "12908964d871354769f55e15522ebb5d25fcf2322270a43f26e6d84acd2b7ac2",
+          "candidate": 2048.0,
+          "cost": 1,
+          "error": 1,
+          "outcomes": [
+            "AVAILABLE",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED"
+          ],
+          "reasons": [
+            "endpoint_misclassification"
+          ],
+          "status": "DISQUALIFIED",
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            1.0
+          ]
+        },
+        {
+          "calculation_identity": "20b18e8c999bc12dcdfa573e35dbdf4acac697f60a91c10578f565bc8228043b",
+          "candidate": 4096.0,
+          "cost": 1,
+          "error": 1,
+          "outcomes": [
+            "AVAILABLE",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED"
+          ],
+          "reasons": [
+            "endpoint_misclassification"
+          ],
+          "status": "DISQUALIFIED",
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            1.0
+          ]
+        }
+      ],
+      "case": "C5",
+      "cost": 1,
+      "frontier": [
+        [
+          64.0,
+          0,
+          1
+        ]
+      ],
+      "outcomes": [
+        "AVAILABLE",
+        "ENDPOINT_CANONICALIZED",
+        "ENDPOINT_CANONICALIZED",
+        "CORRELATION_RANGE_VIOLATION"
+      ],
+      "passed": true,
+      "rejected_neighbors": [
+        {
+          "calculation_identity": "087ca2d8993d578718e4785e238ea0915932164c56fb311733d1869c56fa3734",
+          "candidate": 32.0,
+          "cost": 1,
+          "error": 2,
+          "outcomes": [
+            "AVAILABLE",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION",
+            "CORRELATION_RANGE_VIOLATION"
+          ],
+          "reasons": [
+            "endpoint_misclassification"
+          ],
+          "status": "DISQUALIFIED",
+          "values": [
+            0.75,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "calculation_identity": "58d2c421b82b2e18d84ab1764dd6036fe6711b6b2096ea6efefa38caac161dfa",
+          "candidate": 128.0,
+          "cost": 1,
+          "error": 1,
+          "outcomes": [
+            "AVAILABLE",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED",
+            "ENDPOINT_CANONICALIZED"
+          ],
+          "reasons": [
+            "endpoint_misclassification"
+          ],
+          "status": "DISQUALIFIED",
+          "values": [
+            0.75,
+            1.0,
+            -1.0,
+            1.0
+          ]
+        }
+      ],
+      "status": "SELECTED",
+      "truth_error": 0,
+      "truth_raw": [
+        0.75,
+        1.0000000000000142,
+        -1.0000000000000142,
+        1.0000000000000284
+      ],
+      "value": 64.0
+    },
+    "driver": {
+      "cases": [
+        {
+          "case": "B1",
+          "coordinate_scales": [
+            [
+              "A",
+              1.0
+            ],
+            [
+              "B",
+              1.0
+            ]
+          ],
+          "derivative_error": 0.0,
+          "jacobian_identity": "ea1f60b8b5d167212fc10cdff0cfcec90f8cdfc642b8d2f8fca37e6f1e4a0408",
+          "policy_identity": "b0b4b2a604fe85c75abd96d11c7890bf190e35e14833f0bef6cd98ac663fafc3",
+          "rank": 2,
+          "rank_identity": "99b06466fec3b893144a6c4a075f756dfaef7a2986aebab2115d5946da5cb6fa",
+          "spectrum": [
+            1e-09,
+            2e-21
+          ],
+          "spectrum_error": 0.0,
+          "status": "QUALIFIED"
+        },
+        {
+          "case": "B2",
+          "coordinate_scales": [
+            [
+              "A",
+              1.0
+            ],
+            [
+              "B",
+              1.0
+            ]
+          ],
+          "derivative_error": 9.313225746154785e-10,
+          "jacobian_identity": "f67848e8362a3e3a2060388591280ed29bba82d92c73acfc6bcace3322200da5",
+          "policy_identity": "b0b4b2a604fe85c75abd96d11c7890bf190e35e14833f0bef6cd98ac663fafc3",
+          "rank": 2,
+          "rank_identity": "580b5c694e0d104893cacb2b5636714f7a8ff34ec3510465e94561f0ff73ca69",
+          "spectrum": [
+            0.9999999999999999,
+            5e-13
+          ],
+          "spectrum_error": 1.1102230246251565e-16,
+          "status": "QUALIFIED"
+        },
+        {
+          "case": "B3",
+          "coordinate_scales": [
+            [
+              "A",
+              1.0
+            ],
+            [
+              "B",
+              1.0
+            ]
+          ],
+          "derivative_error": 1.241763432820638e-09,
+          "jacobian_identity": "c24928d5b9d6d9c98eb1a494617d52026d26b805adb2f4f16ff3321338dfa5de",
+          "policy_identity": "b0b4b2a604fe85c75abd96d11c7890bf190e35e14833f0bef6cd98ac663fafc3",
+          "rank": 2,
+          "rank_identity": "b45553ae2fe64d82d28083734540d6322b590dcab3da01214fcb4aaafa8ca156",
+          "spectrum": [
+            5.291502622129182,
+            6.473657049138936e-16
+          ],
+          "spectrum_error": 6.473657049138936e-16,
+          "status": "QUALIFIED"
+        },
+        {
+          "case": "B4",
+          "coordinate_scales": [
+            [
+              "A",
+              1.0
+            ],
+            [
+              "B",
+              1.0
+            ]
+          ],
+          "derivative_error": 9.313225746154785e-10,
+          "jacobian_identity": "297c49293f1c747e214346644580c7f444e02b06a37e4b3e2725f6db23c17c0f",
+          "policy_identity": "b0b4b2a604fe85c75abd96d11c7890bf190e35e14833f0bef6cd98ac663fafc3",
+          "rank": 2,
+          "rank_identity": "9a3ae27f4552e94fe9e1ec233e1e811cfe381b453f4fe8f668961158226fe58c",
+          "spectrum": [
+            0.9999999999999999,
+            0.00024414062499999997
+          ],
+          "spectrum_error": 1.1102230246251565e-16,
+          "status": "QUALIFIED"
+        },
+        {
+          "case": "F1-absolute",
+          "coordinate_scales": [
+            [
+              "A",
+              1.0
+            ],
+            [
+              "B",
+              1.0
+            ]
+          ],
+          "derivative_error": 0.00024910123958137313,
+          "jacobian_identity": "41b6105711eee519cb865e8770be843b1a1e0395b74099b2ea221643b1facbb0",
+          "policy_identity": "b0b4b2a604fe85c75abd96d11c7890bf190e35e14833f0bef6cd98ac663fafc3",
+          "rank": 2,
+          "rank_identity": "653fe980a94f7b385a41d1bcf19e7df709db321841baed5321d15f6384dc3257",
+          "spectrum": [
+            3.7657132308149213,
+            2.1770063067962517e-11
+          ],
+          "spectrum_error": 2.1770063067962517e-11,
+          "status": "QUALIFIED"
+        }
+      ],
+      "cost": 5,
+      "driver": "gesvd",
+      "frontier": [
+        [
+          "gesvd",
+          2.1770063067962517e-11,
+          5
+        ]
+      ],
+      "rejected_neighbors": [
+        {
+          "cost": 5,
+          "driver": "gesdd",
+          "reasons": [
+            "spectrum_error_cost_driver_order"
+          ],
+          "status": "QUALIFIED_REJECTED",
+          "truth_error": 2.1770063067962517e-11
+        }
+      ],
+      "status": "SELECTED",
+      "truth_error": 2.1770063067962517e-11
+    },
+    "finite_difference": {
+      "frontier": [
+        [
+          0.0003662109375,
+          132,
+          [
+            3.552713678800501e-15,
+            2.0,
+            16,
+            16
+          ]
+        ],
+        [
+          0.0003786067280823903,
+          128,
+          [
+            3.552713678800501e-15,
+            4096.0,
+            16,
+            16
+          ]
+        ]
+      ],
+      "metrics": [
+        0,
+        0.0003662109375,
+        0.006660469930365639,
+        132
+      ],
+      "policy": [
+        0.0,
+        2.0,
+        2,
+        0
+      ],
+      "rejected_neighbors": [
+        {
+          "candidate": [
+            0.00390625,
+            2.0,
+            2,
+            0
+          ],
+          "metrics": [
+            0,
+            0.0003786067280823903,
+            0.006885543825787079,
+            128
+          ],
+          "reasons": [
+            "pareto_or_tie_break"
+          ],
+          "status": "QUALIFIED_REJECTED"
+        },
+        {
+          "candidate": [
+            0.0,
+            1.0,
+            2,
+            0
+          ],
+          "metrics": null,
+          "reasons": [
+            "truth_or_reliability"
+          ],
+          "status": "DISQUALIFIED"
+        },
+        {
+          "candidate": [
+            0.0,
+            4.0,
+            2,
+            0
+          ],
+          "metrics": [
+            0,
+            0.0003786067280823903,
+            0.006885543825787079,
+            128
+          ],
+          "reasons": [
+            "pareto_or_tie_break"
+          ],
+          "status": "QUALIFIED_REJECTED"
+        },
+        {
+          "candidate": [
+            0.0,
+            2.0,
+            0,
+            0
+          ],
+          "metrics": null,
+          "reasons": [
+            "truth_or_reliability"
+          ],
+          "status": "DISQUALIFIED"
+        },
+        {
+          "candidate": [
+            0.0,
+            2.0,
+            4,
+            0
+          ],
+          "metrics": [
+            0,
+            0.0003662109375,
+            0.006660469930365639,
+            132
+          ],
+          "reasons": [
+            "pareto_or_tie_break"
+          ],
+          "status": "QUALIFIED_REJECTED"
+        },
+        {
+          "candidate": [
+            0.0,
+            2.0,
+            2,
+            2
+          ],
+          "metrics": [
+            0,
+            0.0003662109375,
+            0.006660469930365639,
+            132
+          ],
+          "reasons": [
+            "pareto_or_tie_break"
+          ],
+          "status": "QUALIFIED_REJECTED"
+        }
+      ],
+      "status": "SELECTED"
+    },
+    "phase_c_cases": [
+      {
+        "case": "C1",
+        "coordinate_scales": [
+          [
+            "A",
+            1.0
+          ],
+          [
+            "B",
+            1.0
+          ],
+          [
+            "C",
+            1.0
+          ]
+        ],
+        "derivative_error": 9.313225746154785e-10,
+        "jacobian_identity": "c2f4ac0d32cf8af542a47b92f61e58a178fe54b6cc751eedf927ac0f0ea59b22",
+        "policy_identity": "bcbef9b9fedd7aa7860447d0e08865471980e17877d64f750d794c70e8a788e8",
+        "rank": 3,
+        "rank_identity": "1de9d46361d23e24ed47ae455368280847832df9b88b24e81055ea79c45e30c0",
+        "spectrum": [
+          0.9999999999999999,
+          1.9999999999999995e-06,
+          1.9999999999999996e-07
+        ],
+        "status": "ACQUIRED"
+      },
+      {
+        "case": "C2",
+        "coordinate_scales": [
+          [
+            "A",
+            1.0
+          ],
+          [
+            "B",
+            1.0
+          ],
+          [
+            "C",
+            1.0
+          ],
+          [
+            "D",
+            1.0
+          ],
+          [
+            "E",
+            1.0
+          ]
+        ],
+        "derivative_error": 1.4901161194443703e-09,
+        "jacobian_identity": "f24c16f41a90221eebbdd174e831ec892a7401276675dfc0932cf212fa3f457c",
+        "policy_identity": "d62f12522b1e80065069ebc01bda9ef06cd71e11703ba71e9be414e45563b200",
+        "rank": 5,
+        "rank_identity": "e58fd619161d0ab8be5f813f9e3527c17b31aa30cf5f954743cf5209bb12ca07",
+        "spectrum": [
+          3.9999999999999996,
+          3.9999999997999995,
+          1.9999999999999998,
+          1.9999999899999998,
+          0.9999999999999999
+        ],
+        "status": "ACQUIRED"
+      },
+      {
+        "case": "C3",
+        "coordinate_scales": [
+          [
+            "A",
+            1.0
+          ],
+          [
+            "B",
+            1.0
+          ]
+        ],
+        "derivative_error": 9.313225746154785e-10,
+        "jacobian_identity": "515fdb5cbfa5da675804bf047cbe54b5601056724f03ac6eb3bc6eb168b9cba5",
+        "policy_identity": "76d352124a4444c72ea2237692cf3322cb57d82a177b108da43ef71b96b3ad51",
+        "rank": 2,
+        "rank_identity": "80d757393f712d0b61986adea8e8e7093fe5395fe87a100a1734fd1170dadd05",
+        "spectrum": [
+          0.9999999999999999,
+          1.9999999999999995e-06
+        ],
+        "status": "ACQUIRED"
+      },
+      {
+        "case": "C4",
+        "coordinate_scales": [
+          [
+            "A",
+            1.0
+          ],
+          [
+            "B",
+            1.0
+          ]
+        ],
+        "derivative_error": 9.313225746154785e-10,
+        "jacobian_identity": "d7538d21545bd5ef62e7667aa67f12bef6e94f54bb60e2bb8df7ab71ff34d390",
+        "policy_identity": "76d352124a4444c72ea2237692cf3322cb57d82a177b108da43ef71b96b3ad51",
+        "rank": 2,
+        "rank_identity": "a93c762add7226d8b09f828e09ec871b212f3d5979e942a8e7ac62e265ba18dc",
+        "spectrum": [
+          0.9999999999999999,
+          4.999999999999999e-07
+        ],
+        "status": "ACQUIRED"
+      },
+      {
+        "calculation_identity": "62cfe87f2aaa0f35b0139f0c4442fd5a74d3ee424aeb0e42f5c6f4c337ecdd6a",
+        "candidate_summaries": [
+          {
+            "calculation_identity": "389f94064bb1e4bba4069acd707211a5b9e627acc53ce5b10799b207c71cc270",
+            "candidate": 0.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "56ce445635c7aace8d39b7d4ea7ffa0f1b5dc5a9ddd2d4924362c8272f3ac9fd",
+            "candidate": 1.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "54f66c929918b516b0dcbb46e84c63164d5b9b3d7a70a0acc5b0b159f914a283",
+            "candidate": 2.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "0a42ca421563b692337f9713a4b8acdc79686ed7c4c2b452295e1acfb72c85e7",
+            "candidate": 4.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "0970d5d1d7eed94dd736a47836d87ae65969dacaa54ab4482268cbf3b5758de0",
+            "candidate": 8.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "6cba4c53e1b10a95559676f7d4fd9e4c686b76ef97eea5627793345fb5444533",
+            "candidate": 16.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "087ca2d8993d578718e4785e238ea0915932164c56fb311733d1869c56fa3734",
+            "candidate": 32.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "62cfe87f2aaa0f35b0139f0c4442fd5a74d3ee424aeb0e42f5c6f4c337ecdd6a",
+            "candidate": 64.0,
+            "cost": 1,
+            "error": 0,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "smallest_multiplier_tie_break"
+            ],
+            "status": "QUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "58d2c421b82b2e18d84ab1764dd6036fe6711b6b2096ea6efefa38caac161dfa",
+            "candidate": 128.0,
+            "cost": 1,
+            "error": 1,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              1.0
+            ]
+          },
+          {
+            "calculation_identity": "609fd8e8cafa46ab87d8dce544fd54b06c97d702205ab1a58a500260eecfe9f9",
+            "candidate": 256.0,
+            "cost": 1,
+            "error": 1,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              1.0
+            ]
+          },
+          {
+            "calculation_identity": "8ffb2f0fc93e1a9835f8dc17c4620f7560be5b7cc6bfb50d30c8708f4a5ee731",
+            "candidate": 512.0,
+            "cost": 1,
+            "error": 1,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              1.0
+            ]
+          },
+          {
+            "calculation_identity": "e4bdad5e82f5a4b17bce49a80950782d136354390a822c7541345bedb1bb2e57",
+            "candidate": 1024.0,
+            "cost": 1,
+            "error": 1,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              1.0
+            ]
+          },
+          {
+            "calculation_identity": "12908964d871354769f55e15522ebb5d25fcf2322270a43f26e6d84acd2b7ac2",
+            "candidate": 2048.0,
+            "cost": 1,
+            "error": 1,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              1.0
+            ]
+          },
+          {
+            "calculation_identity": "20b18e8c999bc12dcdfa573e35dbdf4acac697f60a91c10578f565bc8228043b",
+            "candidate": 4096.0,
+            "cost": 1,
+            "error": 1,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              1.0
+            ]
+          }
+        ],
+        "case": "C5",
+        "cost": 1,
+        "frontier": [
+          [
+            64.0,
+            0,
+            1
+          ]
+        ],
+        "outcomes": [
+          "AVAILABLE",
+          "ENDPOINT_CANONICALIZED",
+          "ENDPOINT_CANONICALIZED",
+          "CORRELATION_RANGE_VIOLATION"
+        ],
+        "passed": true,
+        "rejected_neighbors": [
+          {
+            "calculation_identity": "087ca2d8993d578718e4785e238ea0915932164c56fb311733d1869c56fa3734",
+            "candidate": 32.0,
+            "cost": 1,
+            "error": 2,
+            "outcomes": [
+              "AVAILABLE",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION",
+              "CORRELATION_RANGE_VIOLATION"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "calculation_identity": "58d2c421b82b2e18d84ab1764dd6036fe6711b6b2096ea6efefa38caac161dfa",
+            "candidate": 128.0,
+            "cost": 1,
+            "error": 1,
+            "outcomes": [
+              "AVAILABLE",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED",
+              "ENDPOINT_CANONICALIZED"
+            ],
+            "reasons": [
+              "endpoint_misclassification"
+            ],
+            "status": "DISQUALIFIED",
+            "values": [
+              0.75,
+              1.0,
+              -1.0,
+              1.0
+            ]
+          }
+        ],
+        "status": "SELECTED",
+        "truth_error": 0,
+        "truth_raw": [
+          0.75,
+          1.0000000000000142,
+          -1.0000000000000142,
+          1.0000000000000284
+        ],
+        "value": 64.0
+      }
+    ],
+    "rank": {
+      "cost": 3,
+      "frontier": [
+        [
+          [
+            0.0,
+            1.4551915228366852e-11
+          ],
+          0.0,
+          3
+        ]
+      ],
+      "policy": [
+        0.0,
+        1.4551915228366852e-11
+      ],
+      "qualified_count": 311,
+      "rejected_neighbors": [
+        {
+          "candidate": null,
+          "cost": 0,
+          "decisive_reasons": [
+            "no_immediate_neighbor"
+          ],
+          "error": null,
+          "status": "GRID_EDGE"
+        },
+        {
+          "candidate": [
+            1.52587890625e-05,
+            1.4551915228366852e-11
+          ],
+          "cost": 3,
+          "decisive_reasons": [
+            "deterministic_tie_break"
+          ],
+          "error": 0.0,
+          "status": "QUALIFIED"
+        },
+        {
+          "candidate": [
+            0.0,
+            5.820766091346741e-11
+          ],
+          "cost": 3,
+          "decisive_reasons": [
+            "deterministic_tie_break"
+          ],
+          "error": 0.0,
+          "status": "QUALIFIED"
+        },
+        {
+          "candidate": [
+            0.0,
+            3.637978807091713e-12
+          ],
+          "cost": 3,
+          "decisive_reasons": [
+            "rank_misclassification"
+          ],
+          "error": 1.0,
+          "status": "DISQUALIFIED"
+        }
+      ],
+      "selection_truth_cases": [
+        "B4",
+        "B3",
+        "F1-absolute"
+      ],
+      "status": "SELECTED",
+      "truth_error": 0.0,
+      "typed_truth_cases": [
+        {
+          "case": "B4",
+          "covariance_available": true,
+          "evidence_identity": "f9df0a5a4bf17dcb8a2a2da0bd1405a5d2c954242be3590598da1d113416d6ae",
+          "normalized_spectrum": [
+            1.0,
+            0.000244140625
+          ],
+          "passed": true,
+          "policy_identity": "76d352124a4444c72ea2237692cf3322cb57d82a177b108da43ef71b96b3ad51",
+          "projector_error": 0.0,
+          "rank_identity": "93b545fd298bb1606fd38a4bfe60caa6d3117106e817977aece06e85320a5a06",
+          "resolved_mode_error": 0.0
+        },
+        {
+          "case": "B3",
+          "covariance_available": false,
+          "evidence_identity": "b80438b0d6d0fcac0e17309e33e6c6c581e78fdd33be583ed5d4fd4db275e934",
+          "normalized_spectrum": [
+            1.0,
+            1.223406187510133e-16
+          ],
+          "passed": true,
+          "policy_identity": "76d352124a4444c72ea2237692cf3322cb57d82a177b108da43ef71b96b3ad51",
+          "projector_error": 2.5565945335559395e-16,
+          "rank_identity": "4ec2b20c9ceb3ce3760a7dbcae087b4bcd7a1b783b064c669fc4fea481d508f2",
+          "resolved_mode_error": 0.0
+        },
+        {
+          "case": "F1-absolute",
+          "chi_square": 0.19990990990990976,
+          "correlation_reportable": false,
+          "covariance_available": false,
+          "covariance_truth": null,
+          "evidence_identity": "3680a2df59eedffa81bf1415f5996c14531d9500c6124cb50ae400d534182391",
+          "g": 1,
+          "m": 4,
+          "marginal_reportable": false,
+          "n": 2,
+          "normalized_spectrum": [
+            1.0,
+            5.7811261064219045e-12
+          ],
+          "nu": 1,
+          "passed": true,
+          "phi": 1.0,
+          "policy_identity": "76d352124a4444c72ea2237692cf3322cb57d82a177b108da43ef71b96b3ad51",
+          "projector_error": 3.030603546403312e-12,
+          "rank_identity": "e666f5fc41f1170ccca03911ab13f5aa06a2acaccff7971ac1a26cd37be62f1f",
+          "resolved_mode_error": 0.0
+        }
+      ]
+    },
+    "scale": {
+      "families": {
+        "A4-argument-0": {
+          "candidate_identity": "dbbfedb5af9c180789c5bc3c38945700565f05548e9d51ff5eef0410d35e6d56",
+          "cost": 4,
+          "exponent": 0,
+          "q0": 1.0,
+          "rejected_neighbors": [
+            {
+              "cost": 4,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 9.189797442572786e-05
+            },
+            {
+              "cost": 4,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.00011578377798566797
+            }
+          ],
+          "scale": 1.0,
+          "status": "SELECTED",
+          "truth_error": 3.928878454252815e-05
+        },
+        "A4-argument-1": {
+          "candidate_identity": "df2d2bca43cbd22d1e527e7ae699763ba69138e32458c68b5d3e3189a04745fb",
+          "cost": 4,
+          "exponent": 0,
+          "q0": 2.0,
+          "rejected_neighbors": [
+            {
+              "cost": 4,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 5.1925258754595545e-05
+            },
+            {
+              "cost": 4,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0002958515632612292
+            }
+          ],
+          "scale": 2.0,
+          "status": "SELECTED",
+          "truth_error": 9.127007501186197e-05
+        },
+        "A4-output": {
+          "Q0": 4.0,
+          "candidate_identity": "2a504e8592a0e9634372bf72a43353d634f9c11b6698264b20b1a2ba6599c2f3",
+          "cost": 8,
+          "exponent": 0,
+          "rejected_neighbors": [
+            {
+              "cost": 8,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.00014693964004928547
+            },
+            {
+              "cost": 8,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 5.1925258754595545e-05
+            }
+          ],
+          "scale": 4.0,
+          "status": "SELECTED",
+          "truth_error": 9.127007501186197e-05
+        },
+        "chemical_shift": {
+          "candidate_identity": "35df5089a8c389407d443baaef06364c17797f1fdb2796bc1ea56aa4b0473d2d",
+          "cost": 7,
+          "exponent": 0,
+          "family": "chemical_shift",
+          "q0": 1.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.00016276041666666666
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0004069010416666667
+            }
+          ],
+          "scale": 1.0,
+          "status": "SELECTED",
+          "truth_error": 0.0003662109375
+        },
+        "chemical_shift_difference": {
+          "candidate_identity": "6d4e331c861e5bf65c65a3b479150b20827b8a672f0dfc380a2415bd583ed6a3",
+          "cost": 7,
+          "exponent": 0,
+          "family": "chemical_shift_difference",
+          "q0": 1.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.00016276041666666666
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0004069010416666667
+            }
+          ],
+          "scale": 1.0,
+          "status": "SELECTED",
+          "truth_error": 0.0003662109375
+        },
+        "coupling": {
+          "candidate_identity": "c2c951383250767ba30be92b93516b092613265303678eb471d7476257fa9344",
+          "cost": 7,
+          "exponent": 0,
+          "family": "coupling",
+          "q0": 100.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0005137126815194886
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.000455220773195227
+            }
+          ],
+          "scale": 100.0,
+          "status": "SELECTED",
+          "truth_error": 0.00018310529412701726
+        },
+        "cross_relaxation": {
+          "candidate_identity": "a9dce98f40810619440a9d583438ff083d9800419b90d2c8d5175207d256cb2c",
+          "cost": 7,
+          "exponent": 0,
+          "family": "cross_relaxation",
+          "q0": 10.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0006917320812741914
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.000773112600048383
+            }
+          ],
+          "scale": 10.0,
+          "status": "SELECTED",
+          "truth_error": 0.0002746586687862873
+        },
+        "directional_exchange_rate": {
+          "candidate_identity": "85f87bd52d7b3b04b5cee8c332b88f2a506239cc210d357526d38e394716d56b",
+          "cost": 7,
+          "exponent": 0,
+          "family": "directional_exchange_rate",
+          "q0": 100.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0005137126815194886
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.000455220773195227
+            }
+          ],
+          "scale": 100.0,
+          "status": "SELECTED",
+          "truth_error": 0.00018310529412701726
+        },
+        "dissociation_rate": {
+          "candidate_identity": "f954a820dfd35ffede6253b7640bf8f332c22c9900217791d7e291e169135788",
+          "cost": 7,
+          "exponent": 0,
+          "family": "dissociation_rate",
+          "q0": 100.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0005137126815194886
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.000455220773195227
+            }
+          ],
+          "scale": 100.0,
+          "status": "SELECTED",
+          "truth_error": 0.00018310529412701726
+        },
+        "equilibrium_ratio": {
+          "candidate_identity": "b7f7656fc31e0eed17e09211a8bab472592d3aea0708ca7e4650ae4eb19eb6f1",
+          "cost": 7,
+          "exponent": 0,
+          "family": "equilibrium_ratio",
+          "q0": 1.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.00016276041666666666
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0004069010416666667
+            }
+          ],
+          "scale": 1.0,
+          "status": "SELECTED",
+          "truth_error": 0.0003662109375
+        },
+        "exchange_rate": {
+          "candidate_identity": "faf63dc7df05fbfd1dac25f2ac6e99be8ac2162094ce2aec679e141ceab68047",
+          "cost": 7,
+          "exponent": 0,
+          "family": "exchange_rate",
+          "q0": 100.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0005137126815194886
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.000455220773195227
+            }
+          ],
+          "scale": 100.0,
+          "status": "SELECTED",
+          "truth_error": 0.00018310529412701726
+        },
+        "generated_hydrogen_exchange_rate": {
+          "candidate_identity": "3416ebabf25c6fc9961e14261056efa11400a0ccb6a43e5b10ed9e0468866808",
+          "cost": 7,
+          "exponent": 0,
+          "family": "generated_hydrogen_exchange_rate",
+          "q0": 1.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.00016276041666666666
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0004069010416666667
+            }
+          ],
+          "scale": 1.0,
+          "status": "SELECTED",
+          "truth_error": 0.0003662109375
+        },
+        "hydrogen_exchange_rate": {
+          "candidate_identity": "8674c626a1e36f2adea22b5287d47c39945ef801a28e13ed802db18c7e8eef7f",
+          "cost": 7,
+          "exponent": 0,
+          "family": "hydrogen_exchange_rate",
+          "q0": 1.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.00016276041666666666
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0004069010416666667
+            }
+          ],
+          "scale": 1.0,
+          "status": "SELECTED",
+          "truth_error": 0.0003662109375
+        },
+        "longitudinal_relaxation": {
+          "candidate_identity": "cacb665930ccaeb1e080f41dff516e93c4873520f20b7ed66e32eb5a2642cc8b",
+          "cost": 7,
+          "exponent": 0,
+          "family": "longitudinal_relaxation",
+          "q0": 1.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.00016276041666666666
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0004069010416666667
+            }
+          ],
+          "scale": 1.0,
+          "status": "SELECTED",
+          "truth_error": 0.0003662109375
+        },
+        "order_parameter": {
+          "candidate_identity": "0d704868de8ea55a345a1ea5d14b4b529d4f8e10e918ae34e9795066d912a6d1",
+          "cost": 7,
+          "exponent": 0,
+          "family": "order_parameter",
+          "q0": 1.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.00016276041666666666
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0004069010416666667
+            }
+          ],
+          "scale": 1.0,
+          "status": "SELECTED",
+          "truth_error": 0.0003662109375
+        },
+        "phase_factor": {
+          "candidate_identity": "7d5b1ba1ca36052f88c170131fa4169ce30eb01701d4fbe6390f9d79cee371ce",
+          "cost": 7,
+          "exponent": 0,
+          "family": "phase_factor",
+          "q0": 1.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.00016276041666666666
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0004069010416666667
+            }
+          ],
+          "scale": 1.0,
+          "status": "SELECTED",
+          "truth_error": 0.0003662109375
+        },
+        "solvent_fraction": {
+          "candidate_identity": "6d0fed7b467587842da1cede45179131c3674ad8bb7c52deecc93a269d284b79",
+          "cost": 7,
+          "exponent": 0,
+          "family": "solvent_fraction",
+          "q0": 1.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.00016276041666666666
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0004069010416666667
+            }
+          ],
+          "scale": 1.0,
+          "status": "SELECTED",
+          "truth_error": 0.0003662109375
+        },
+        "state_population": {
+          "candidate_identity": "890c85e4a62d52d3d0cff0cab388692806d70b7a189e58fb96f00132a1afa245",
+          "cost": 7,
+          "exponent": 0,
+          "family": "state_population",
+          "q0": 1.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.00016276041666666666
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0004069010416666667
+            }
+          ],
+          "scale": 1.0,
+          "status": "SELECTED",
+          "truth_error": 0.0003662109375
+        },
+        "transverse_relaxation": {
+          "candidate_identity": "a9646ac8d22911b7927f174e508d16dcf39e5760b1640e4e15f56bbf92e6cb7d",
+          "cost": 7,
+          "exponent": 0,
+          "family": "transverse_relaxation",
+          "q0": 10.0,
+          "rejected_neighbors": [
+            {
+              "cost": 7,
+              "exponent": -1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.0006917320812741914
+            },
+            {
+              "cost": 7,
+              "exponent": 1,
+              "reasons": [
+                "cost_abs_k_k"
+              ],
+              "status": "QUALIFIED_REJECTED",
+              "truth_error": 0.000773112600048383
+            }
+          ],
+          "scale": 10.0,
+          "status": "SELECTED",
+          "truth_error": 0.0002746586687862873
+        }
+      },
+      "status": "SELECTED"
+    },
+    "weak": {
+      "cost": 1,
+      "frontier": [
+        [
+          2.384185791015625e-07,
+          0,
+          1
+        ]
+      ],
+      "rejected_neighbors": [
+        {
+          "candidate": 9.5367431640625e-07,
+          "cost": 1,
+          "error": 0,
+          "reasons": [
+            "smallest_threshold_tie_break"
+          ],
+          "status": "QUALIFIED"
+        },
+        {
+          "candidate": 5.960464477539063e-08,
+          "cost": 1,
+          "error": 1,
+          "reasons": [
+            "weak_misclassification"
+          ],
+          "status": "DISQUALIFIED"
+        }
+      ],
+      "status": "SELECTED",
+      "truth_error": 0,
+      "value": 2.384185791015625e-07
+    }
+  },
+  "holdouts": [
+    {
+      "case": "H1",
+      "status": "NOT_RUN"
+    },
+    {
+      "case": "H2",
+      "status": "NOT_RUN"
+    },
+    {
+      "case": "H3",
+      "status": "NOT_RUN"
+    },
+    {
+      "case": "H4",
+      "status": "NOT_RUN"
+    },
+    {
+      "case": "H5",
+      "status": "NOT_RUN"
+    },
+    {
+      "case": "H6",
+      "status": "NOT_RUN"
+    }
+  ],
+  "policy": {
+    "affine_feasibility_policy": "canonical-root-affine-halfspace-zeta-gt-3-v1",
+    "calibration_identity": "chemex-uncertainty-calibration-v3:1d614dac0a5e50665b2390a4df1bb97b9d8e8e871f61a2c02666eb991c5a0631",
+    "conditioning_limit": 1048576.0,
+    "coordinate_scales": [
+      [
+        "A",
+        1.0
+      ],
+      [
+        "B",
+        100.0
+      ]
+    ],
+    "coordinate_units": [
+      [
+        "A",
+        "dimensionless"
+      ],
+      [
+        "B",
+        "dimensionless"
+      ]
+    ],
+    "correlation_roundoff_multiplier": 64.0,
+    "identity": "ea3558aa7d11933e4596ce3accc068af42ed92d8d780bd35b09a41c5bb77d143",
+    "larger_step_extent": 0,
+    "numerical_compatibility_requirement": "canonical-linux-amd64-python-3.13;bounded-python-3.14-replay",
+    "rank_absolute_tolerance": 0.0,
+    "rank_relative_tolerance": 1.4551915228366852e-11,
+    "relative_step_tolerance": 0.0,
+    "residual_variance_scaling": "absolute_observation_uncertainties",
+    "roundoff_multiplier": 2.0,
+    "singular_value_cluster_relative_tolerance": 5.820766091346741e-11,
+    "smaller_step_extent": 2,
+    "svd_driver": "gesvd",
+    "weak_relative_tolerance": 2.384185791015625e-07
+  },
+  "policy_digest": "d5a42efd796d4cb5afc31af069157b9fa0d700f61534b94226bdcd4ccd44840d",
+  "selected_phase_policies": {
+    "cluster": 5.820766091346741e-11,
+    "conditioning": 1048576.0,
+    "correlation": 64.0,
+    "finite_difference": [
+      0.0,
+      2.0,
+      2,
+      0
+    ],
+    "rank": [
+      0.0,
+      1.4551915228366852e-11
+    ],
+    "scales": {
+      "A4-argument-0": 1.0,
+      "A4-argument-1": 2.0,
+      "A4-output": 4.0,
+      "chemical_shift": 1.0,
+      "chemical_shift_difference": 1.0,
+      "coupling": 100.0,
+      "cross_relaxation": 10.0,
+      "directional_exchange_rate": 100.0,
+      "dissociation_rate": 100.0,
+      "equilibrium_ratio": 1.0,
+      "exchange_rate": 100.0,
+      "generated_hydrogen_exchange_rate": 1.0,
+      "hydrogen_exchange_rate": 1.0,
+      "longitudinal_relaxation": 1.0,
+      "order_parameter": 1.0,
+      "phase_factor": 1.0,
+      "solvent_fraction": 1.0,
+      "state_population": 1.0,
+      "transverse_relaxation": 10.0
+    },
+    "svd_driver": "gesvd",
+    "weak": 2.384185791015625e-07
+  },
+  "source_digest": "8015729a614ad1128a8d30a9dbba5557d86c6a3864feeaa5514324397182d752",
+  "specification_digest": "4cae4629318008d1f8fff41657bd4cb01784d03247b700025c57f89dee76fbf9",
+  "specification_id": "chemex-uncertainty-calibration-v3",
+  "status": "COMPOSED_VALIDATION_FAILED"
+}

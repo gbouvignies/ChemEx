@@ -201,6 +201,40 @@ def test_canonical_v2_fixture_records_corrected_fail_closed_result() -> None:
     )
 
 
+def test_canonical_v3_fixture_records_frozen_f2_failure() -> None:
+    fixture_path = (
+        calibration.Path(__file__).parent
+        / "fixtures"
+        / "canonical_uncertainty_calibration_v3.json"
+    )
+    record = json.loads(fixture_path.read_text())
+    rank = record["decisive_metrics"]["rank"]
+    composed = record["composed"]
+    assert (
+        hashlib.sha256(fixture_path.read_bytes()).hexdigest()
+        == "cb149ef426d4c32bfaa2b84b5c26170ada1a3fb1b66b5221a447c9fd4a178c5c"
+        and record["source_digest"]
+        == hashlib.sha256(
+            calibration.Path(calibration.__file__).read_bytes()
+        ).hexdigest()
+        and record["specification_id"] == calibration.SPECIFICATION_ID
+        and record["specification_digest"] == calibration.frozen_digest()
+        and record["status"] == "COMPOSED_VALIDATION_FAILED"
+        and record["selected_phase_policies"]["rank"] == [0.0, 2.0**-36]
+        and record["selected_phase_policies"]["correlation"] == 64.0
+        and rank["selection_truth_cases"] == ["B4", "B3", "F1-absolute"]
+        and all(item["passed"] for item in rank["typed_truth_cases"])
+        and [item["case"] for item in composed]
+        == ["A1", "A2", "F1-absolute", "F1-estimated", "F2"]
+        and all(item["passed"] for item in composed[:-1])
+        and composed[-1]["passed"] is False
+        and composed[-1]["partial_error"] > 64.0 * 2.0**-52
+        and all(item["status"] == "NOT_RUN" for item in record["holdouts"])
+        and record["compatibility"]
+        == {"reason": "composed_validation_failed", "status": "NOT_RUN"}
+    )
+
+
 def test_catalogue_partition_is_executable_complete_and_disjoint() -> None:
     actual = calibration.actual_catalogue_names()
     supported, unsupported = calibration.catalogue_partition()
