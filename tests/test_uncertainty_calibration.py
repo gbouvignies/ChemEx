@@ -50,14 +50,17 @@ def test_a0_order_threshold_ambiguity_and_rank_neighbors(monkeypatch: pytest.Mon
     observations = tuple(SimpleNamespace(singular_values=spectrum) for spectrum in ((1.0e-9, 2.0e-21), (1.0, 5.0e-13), (math.sqrt(28.0), 0.0)))
     rank, rank_record = calibration.select_rank_policy(observations, empty_counts())
     neighbors = cast("tuple[dict[str, object], ...]", rank_record["rejected_neighbors"])
-    assert rank is not None and len(neighbors) == 4 and all({"status", "decisive_reasons", "error", "cost"} <= set(item) for item in neighbors)
+    assert rank == (0.0, 2.0**-40) and rank_record["policy"] == rank and len(neighbors) == 4 and all({"status", "decisive_reasons", "error", "cost"} <= set(item) for item in neighbors)
 def test_b_consumes_selected_a_and_c_consumes_selected_ab(monkeypatch: pytest.MonkeyPatch) -> None:
     phase_a = selected_policy(0.0); counts = empty_counts(); scales = {calibration.BC_SCALE_FAMILY: 1.0}
     b, b_record = calibration._spectral_observation("B1", scales, phase_a, "gesvd", (0.0, 0.0), "environment", counts)
     scaled_b, scaled_record = calibration._spectral_observation("B1", {calibration.BC_SCALE_FAMILY: 2.0}, phase_a, "gesvd", (0.0, 0.0), "environment", counts)
     phase_ab = replace(phase_a, rank_relative_tolerance=2.0**-40, weak_relative_tolerance=2.0**-40)
+    final_weak_b2, _record = calibration._spectral_observation("B2", scales, replace(phase_ab, weak_relative_tolerance=2.0**-22), "gesvd", (0.0, 2.0**-40), "environment", counts)
+    provisional_b2, _record = calibration._spectral_observation("B2", scales, phase_ab, "gesvd", (0.0, 2.0**-40), "environment", counts)
     assert b is not None and scaled_b is not None and b.source_policy.relative_step_tolerance == phase_a.relative_step_tolerance and b_record["policy_identity"] == b.source_policy.identity
     assert scaled_record["policy_identity"] != b_record["policy_identity"] and scaled_b.singular_values[0] == pytest.approx(2.0 * b.singular_values[0])
+    assert provisional_b2 is not None and final_weak_b2 is not None and (provisional_b2.singular_values, provisional_b2.threshold, provisional_b2.rank, provisional_b2.identifiable_projector, provisional_b2.null_projector) == (final_weak_b2.singular_values, final_weak_b2.threshold, final_weak_b2.rank, final_weak_b2.identifiable_projector, final_weak_b2.null_projector)
     for name in ("C1", "C2", "C3", "C4"):
         diagnostic, record = calibration._spectral_observation(name, scales, phase_ab, "gesvd", (0.0, 2.0**-40), "environment", counts)
         assert diagnostic is not None and diagnostic.source_policy.rank_relative_tolerance == phase_ab.rank_relative_tolerance and record["policy_identity"] == diagnostic.source_policy.identity
@@ -70,6 +73,16 @@ def test_b_consumes_selected_a_and_c_consumes_selected_ab(monkeypatch: pytest.Mo
     driver, qualified_record, _observations = calibration.select_svd_driver(scales, phase_a, "environment", counts); assert driver in calibration.SVD_DRIVERS and all(item["status"] == "QUALIFIED" for item in cast("tuple[dict[str, object], ...]", qualified_record["cases"]))
     monkeypatch.setattr(calibration, "_spectral_observation", lambda name, *_a: (SimpleNamespace(singular_values=(1.0, 0.0)), {"case": name, "status": "DISQUALIFIED"})); driver, record, _observations = calibration.select_svd_driver(scales, phase_a, "environment", empty_counts())
     assert driver is None and record["status"] == "UNSUPPORTED"
+def test_phase_c_replaces_provisional_weak_before_canonical_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
+    provisional, final = 2.0**-40, 2.0**-22; seen: dict[str, Any] = {}; scales = {"state_population": 1.0, "exchange_rate": 100.0, calibration.BC_SCALE_FAMILY: 1.0}; fd = (2.0**-24, 256.0, 8, 8)
+    monkeypatch.setattr(calibration, "select_scales", lambda _counts: (scales, {"status": "SELECTED"}, (), ())); monkeypatch.setattr(calibration, "calibrate_finite_differences", lambda *_a: (fd, {"status": "SELECTED", "policy": fd})); monkeypatch.setattr(calibration, "select_svd_driver", lambda *_a: ("gesvd", {"status": "SELECTED", "driver": "gesvd"}, ())); monkeypatch.setattr(calibration, "select_rank_policy", lambda *_a: ((0.0, provisional), {"status": "SELECTED", "policy": (0.0, provisional)}))
+    def rank_truth(_scales: object, policy: Any, *_a: object) -> tuple[bool, tuple[dict[str, object], ...]]: seen["phase_ab"] = policy; return True, ({"case": "B2", "passed": True}, {"case": "B3", "passed": True})
+    monkeypatch.setattr(calibration, "validate_rank_truth_cases", rank_truth); monkeypatch.setattr(calibration, "_spectral_observation", lambda name, *_a: (object(), {"case": name, "status": "ACQUIRED"})); monkeypatch.setattr(calibration, "_derive_case", lambda name, *_a, **_k: (SimpleNamespace(constrained_propagation=object()), {"case": name, "passed": True})); monkeypatch.setattr(calibration, "select_weak_policy", lambda *_a: (final, {"status": "SELECTED", "value": final})); monkeypatch.setattr(calibration, "select_cluster_policy", lambda *_a: (2.0**-32, {"status": "SELECTED", "value": 2.0**-32})); monkeypatch.setattr(calibration, "select_conditioning_policy", lambda *_a: (2.0**20, {"status": "SELECTED", "value": 2.0**20})); monkeypatch.setattr(calibration, "select_correlation_policy", lambda *_a: (64.0, {"status": "SELECTED", "value": 64.0}))
+    def composed(policy: Any, *_a: object) -> tuple[bool, tuple[dict[str, object], ...]]: seen["composed"] = policy; return True, tuple({"case": name, "passed": True} for name in calibration.COMPOSED_CASES)
+    monkeypatch.setattr(calibration, "validate_composed_cases", composed); monkeypatch.setattr(calibration, "run_holdouts", lambda policy, *_a: (seen.__setitem__("holdout", policy) is None, tuple({"case": name, "passed": True} for name in calibration.HOLDOUT_CASES)))
+    result = calibration.acquire_canonical("environment"); policy = cast("dict[str, object]", result["policy"]); phases = cast("dict[str, object]", result["selected_phase_policies"]); metrics = cast("dict[str, dict[str, object]]", result["decisive_metrics"])
+    assert seen["phase_ab"].weak_relative_tolerance == provisional and provisional in calibration.WEAK_GRID and final in calibration.WEAK_GRID and final != provisional
+    assert seen["composed"].weak_relative_tolerance == seen["holdout"].weak_relative_tolerance == policy["weak_relative_tolerance"] == phases["weak"] == metrics["weak"]["value"] == final
 def test_both_scalings_and_h3_h5_use_real_typed_evidence() -> None:
     policy = selected_policy(2.0**-20)
     for scaling in (calibration.ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES, calibration.ResidualVarianceScaling.ESTIMATED_COMMON_RESIDUAL_VARIANCE):

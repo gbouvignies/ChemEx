@@ -1044,7 +1044,7 @@ def acquire_canonical(environment: str) -> dict[str, object]:
     rank, rank_record = select_rank_policy(rank_observations, counts)
     if rank is None:
         return _compact_result(cast("str", rank_record["status"]), counts, svd_driver=driver_record, rank=rank_record)
-    phase_ab = replace(phase_a, svd_driver=driver, rank_absolute_tolerance=rank[0], rank_relative_tolerance=rank[1])
+    phase_ab = replace(phase_a, svd_driver=driver, rank_absolute_tolerance=rank[0], rank_relative_tolerance=rank[1], weak_relative_tolerance=rank[1])
     rank_truth_passed, rank_truth = validate_rank_truth_cases(scales, phase_ab, environment, counts)
     rank_record = {**rank_record, "typed_truth_cases": rank_truth}
     if not rank_truth_passed:
