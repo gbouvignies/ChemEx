@@ -33,8 +33,8 @@ COUNTS = (17, 10_296, 2, 400, 27, 27, 27, 14)
 BC_SCALE_FAMILY = "equilibrium_ratio"; COMPOSED_CASES = ("A1", "A2", "F1-absolute", "F1-estimated", "F2", "F2-boundary-2", "F2-boundary-4"); HOLDOUT_CASES = ("H1", "H2", "H3", "H4", "H5", "H6"); COMPATIBILITY_CASES = ("A1", "A2", "F2", "H4", "C5")
 TOL = {"derivative": 2.0**-24, "covariance": 2.0e-6, "holdout_covariance": 5.0e-6, "projector": 2.0e-12, "holdout_projector": 5.0e-12, "conditioning": 2.0e-13, "holdout_conditioning": 5.0e-13, "correlation_interior_eps": 8.0, "boundary_eps": 128.0, "boundary_zeta": 3.0, "partial_eps": 64.0, "truth_uncertainty": 1.0 / 16.0}
 CEILINGS = {"canonical": {"evaluation": 28_000, "scalar": 4_000, "svd": 32, "correlation": 24, "offline": 12_000_000}, "compatibility": {"evaluation": 751, "scalar": 266, "svd": 4, "correlation": 4, "offline": 0}}
-PLANNED_BY_ROLE = {"canonical": {"evaluation": 25_609, "scalar": 3_320, "svd": 28, "correlation": 23}, "compatibility": {"evaluation": 751, "scalar": 266, "svd": 4, "correlation": 3}}
-PLANNED_MAXIMUM = {"evaluation": 26_360, "scalar": 3_586, "svd": 32, "correlation": 26, "offline": 12_000_000}
+PLANNED_BY_ROLE = {"canonical": {"evaluation": 25_609, "scalar": 3_320, "svd": 30, "correlation": 23}, "compatibility": {"evaluation": 751, "scalar": 266, "svd": 4, "correlation": 3}}
+PLANNED_MAXIMUM = {"evaluation": 26_360, "scalar": 3_586, "svd": 34, "correlation": 26, "offline": 12_000_000}
 SUPPORTED = (
     ("solvent_fraction", "fraction", 1.0, "1", ("d2o",)),
     ("state_population", "fraction", 1.0, "1", ("pa", "pb", "pc", "pd", "pe", "pf", "pop_b")),
@@ -73,6 +73,10 @@ def frozen_digest() -> str:
     return hashlib.sha256(repr(record).encode()).hexdigest()
 def finite_difference_policies() -> Iterator[tuple[float, float, int, int]]:
     return product(TAU_REL, KAPPA, EXTENTS, EXTENTS)
+def _scale_candidate_identity(family: str, q0: float, exponent: int, scale: float) -> str:
+    return hashlib.sha256(repr((family, float(q0).hex(), exponent, float(scale).hex())).encode()).hexdigest()
+def _scale_catalogue_digest(scales: Mapping[str, float]) -> str:
+    return hashlib.sha256(repr(tuple((name, float(value).hex()) for name, value in sorted(scales.items()))).encode()).hexdigest()
 def classify_scale_name(name: str) -> tuple[str, str, float, str]:
     for family, stratum, q0, unit, patterns in SUPPORTED:
         if name in patterns or any(item.endswith("*") and name.startswith(item[:-1]) for item in patterns):
@@ -521,13 +525,13 @@ def _score(trajectories: tuple[tuple[object, ...], ...], scales: tuple[float, ..
     if false or not all(result[0] for result in results):
         return None
     return false, max(result[2] for result in results), sum(result[2] for result in results), sum(result[3] for result in results)
-def _qualifier_failure(rows: Mapping[tuple[object, ...], tuple[bool, tuple[object, ...] | None]], axes: tuple[tuple[object, ...], ...]) -> str | None:
-    keys = tuple(key for passed, key in rows.values() if passed and key is not None)
-    if len(keys) != len(set(keys)):
+def _qualifier_failure(rows: Mapping[tuple[object, ...], tuple[bool, tuple[object, ...] | None, str | None]], axes: tuple[tuple[object, ...], ...]) -> str | None:
+    identities = tuple(identity for passed, _key, identity in rows.values() if passed and identity is not None)
+    if len(identities) != len(set(identities)):
         return "AMBIGUOUS_SELECTION"
     for axis, grid in enumerate(axes):
         groups: dict[tuple[object, ...], list[tuple[int, bool]]] = {}
-        for candidate, (passed, _key) in rows.items():
+        for candidate, (passed, _key, _identity) in rows.items():
             groups.setdefault(candidate[:axis] + candidate[axis + 1 :], []).append((grid.index(candidate[axis]), passed))
         for group in groups.values():
             flags = tuple(passed for _index, passed in sorted(group))
@@ -546,9 +550,9 @@ def _select_one_scale(label: str, q0: float, trajectories: tuple[tuple[object, .
         if summaries:
             best = min(summaries)
             candidates.append((best[0], abs(exponent), exponent, q, best))
-            outcomes[(exponent,)] = (True, (best[0], abs(exponent), exponent))
+            outcomes[(exponent,)] = (True, (best[0], abs(exponent), exponent), hashlib.sha256(repr(("scale", label, float(q).hex())).encode()).hexdigest())
         else:
-            outcomes[(exponent,)] = (False, None)
+            outcomes[(exponent,)] = (False, None, None)
     if failure := _qualifier_failure(outcomes, (SCALE_EXPONENTS,)):
         return None, {"status": failure, "family": label}
     if not candidates:
@@ -561,7 +565,7 @@ def _select_one_scale(label: str, q0: float, trajectories: tuple[tuple[object, .
     for exponent in (selected[2] - 1, selected[2] + 1):
         item = by_exponent.get(exponent)
         neighbors.append({"exponent": exponent, "status": "QUALIFIED_REJECTED" if item else "DISQUALIFIED", "cost": None if item is None else item[0], "truth_error": None if item is None else item[4][1], "reasons": ("cost_abs_k_k",) if item else ("truth_or_reliability",)})
-    return selected[3], {"status": "SELECTED", "q0": q0, "exponent": selected[2], "scale": selected[3], "cost": selected[0], "truth_error": selected[4][1], "rejected_neighbors": tuple(neighbors)}
+    return selected[3], {"status": "SELECTED", "q0": q0, "exponent": selected[2], "scale": selected[3], "candidate_identity": _scale_candidate_identity(label, q0, selected[2], selected[3]), "cost": selected[0], "truth_error": selected[4][1], "rejected_neighbors": tuple(neighbors)}
 def select_scales(counts: dict[str, int]) -> tuple[dict[str, float] | None, dict[str, object], tuple[tuple[object, ...], ...], tuple[tuple[object, ...], ...]]:
     selected, summaries, retained = {}, {}, []
     trajectories_by_q0 = {q0: _union_trajectories("S_CENTER", q0, counts, "canonical") + _union_trajectories("S_BOUND", q0, counts, "canonical") for q0 in {item[2] for item in SUPPORTED}}
@@ -572,7 +576,7 @@ def select_scales(counts: dict[str, int]) -> tuple[dict[str, float] | None, dict
             return None, record, (), ()
         selections[q0] = value, record
     for family, _stratum, q0, _unit, _patterns in SUPPORTED:
-        selected[family], summaries[family] = selections[q0]
+        selected[family] = selections[q0][0]; summaries[family] = {**selections[q0][1], "family": family, "candidate_identity": _scale_candidate_identity(family, q0, cast("int", selections[q0][1]["exponent"]), selected[family])}
         retained.extend(trajectories_by_q0[q0])
     scalar = _scalar_trajectories(counts, "canonical")
     function_scales = []
@@ -584,15 +588,15 @@ def select_scales(counts: dict[str, int]) -> tuple[dict[str, float] | None, dict
         summaries[f"A4-argument-{column}"] = record
     # Output scale uses the same A0 rule, with Q replacing q in the truth envelope.
     output_candidates = []
-    output_outcomes: dict[tuple[object, ...], tuple[bool, tuple[object, ...] | None]] = {}
+    output_outcomes: dict[tuple[object, ...], tuple[bool, tuple[object, ...] | None, str | None]] = {}
     for exponent in SCALE_EXPONENTS:
         output = math.ldexp(4.0, exponent)
         best = min(((score[3], score[1], score[2], policy) for policy in finite_difference_policies() if (score := _score(scalar, tuple(function_scales), (output, output), policy, counts)) is not None), default=None)
         if best is not None:
             output_candidates.append((best[0], abs(exponent), exponent, output, best))
-            output_outcomes[(exponent,)] = (True, (best[0], abs(exponent), exponent))
+            output_outcomes[(exponent,)] = (True, (best[0], abs(exponent), exponent), hashlib.sha256(repr(("scale", "A4-output", float(output).hex())).encode()).hexdigest())
         else:
-            output_outcomes[(exponent,)] = (False, None)
+            output_outcomes[(exponent,)] = (False, None, None)
     if failure := _qualifier_failure(output_outcomes, (SCALE_EXPONENTS,)):
         return None, {"status": failure, "family": "A4-output"}, (), ()
     if not output_candidates:
@@ -602,7 +606,7 @@ def select_scales(counts: dict[str, int]) -> tuple[dict[str, float] | None, dict
     output_choice = min(output_candidates, key=lambda item: item[:3])
     selected["A4-argument-0"], selected["A4-argument-1"], selected["A4-output"] = *function_scales, output_choice[3]
     output_by_k = {item[2]: item for item in output_candidates}
-    summaries["A4-output"] = {"status": "SELECTED", "Q0": 4.0, "exponent": output_choice[2], "scale": output_choice[3], "cost": output_choice[0], "truth_error": output_choice[4][1], "rejected_neighbors": tuple({"exponent": exponent, "status": "QUALIFIED_REJECTED" if exponent in output_by_k else "DISQUALIFIED", "cost": None if exponent not in output_by_k else output_by_k[exponent][0], "truth_error": None if exponent not in output_by_k else output_by_k[exponent][4][1], "reasons": ("cost_abs_k_k",) if exponent in output_by_k else ("truth_or_reliability",)} for exponent in (output_choice[2] - 1, output_choice[2] + 1))}
+    summaries["A4-output"] = {"status": "SELECTED", "Q0": 4.0, "exponent": output_choice[2], "scale": output_choice[3], "candidate_identity": _scale_candidate_identity("A4-output", 4.0, output_choice[2], output_choice[3]), "cost": output_choice[0], "truth_error": output_choice[4][1], "rejected_neighbors": tuple({"exponent": exponent, "status": "QUALIFIED_REJECTED" if exponent in output_by_k else "DISQUALIFIED", "cost": None if exponent not in output_by_k else output_by_k[exponent][0], "truth_error": None if exponent not in output_by_k else output_by_k[exponent][4][1], "reasons": ("cost_abs_k_k",) if exponent in output_by_k else ("truth_or_reliability",)} for exponent in (output_choice[2] - 1, output_choice[2] + 1))}
     return selected, {"status": "SELECTED", "families": summaries}, tuple(retained), scalar
 def calibrate_finite_differences(scales: Mapping[str, float], family_trajectories: tuple[tuple[object, ...], ...], scalar: tuple[tuple[object, ...], ...], counts: dict[str, int]) -> tuple[tuple[float, float, int, int] | None, dict[str, object]]:
     normalization = _union_trajectories("A3", 1.0, counts, "canonical")
@@ -616,12 +620,12 @@ def calibrate_finite_differences(scales: Mapping[str, float], family_trajectorie
     for policy in finite_difference_policies():
         score = _score(trajectories, q, outputs, policy, counts)
         if score is None:
-            outcomes[policy] = (False, None)
+            outcomes[policy] = (False, None, None)
             continue
         edge = policy == (2.0**-8, 2.0**12, 16, 16)
         non_edge |= not edge
         key = (*score, policy[0], policy[1], policy[3], policy[2], policy)
-        outcomes[policy] = (True, key)
+        outcomes[policy] = (True, key, hashlib.sha256(repr(("finite_difference", policy)).encode()).hexdigest())
         if best is None or key < best:
             best = key
         point = (score[1], score[3], policy)
@@ -670,15 +674,16 @@ def select_svd_driver(scales: Mapping[str, float], phase_a: Any, environment: st
         observations, summaries = [], []
         for name in ("B1", "B2", "B3"):
             diagnostic, summary = _spectral_observation(name, scales, phase_a, driver, (0.0, 0.0), environment, counts)
-            if diagnostic is None:
+            if diagnostic is None or summary.get("status") != "ACQUIRED":
                 observations = []
                 summaries.append(summary)
                 break
             observations.append(diagnostic)
             summaries.append(summary)
         if observations:
-            error = max(abs(value - truth) / max(1.0, abs(truth)) for diagnostic, exact in zip(observations, expected, strict=True) for value, truth in zip(diagnostic.singular_values, exact, strict=True))
-            records.append((error, 3, SVD_DRIVERS.index(driver), driver, tuple(observations), tuple(summaries)))
+            case_errors = tuple(max(abs(value - truth) / max(1.0, abs(truth)) for value, truth in zip(diagnostic.singular_values, exact, strict=True)) for diagnostic, exact in zip(observations, expected, strict=True)); summaries = [{**summary, "status": "QUALIFIED" if summary["derivative_error"] <= 1.0 and error <= TOL["covariance"] else "DISQUALIFIED", "spectrum_error": error} for summary, error in zip(summaries, case_errors, strict=True)]
+            if all(summary["status"] == "QUALIFIED" for summary in summaries):
+                records.append((max(case_errors), 3, SVD_DRIVERS.index(driver), driver, tuple(observations), tuple(summaries)))
     if not records:
         return None, {"status": "UNSUPPORTED", "reasons": ("no_driver_qualified",)}, ()
     selected = min(records, key=lambda item: item[:4])
@@ -694,7 +699,7 @@ def select_rank_policy(observations: tuple[Any, ...], counts: dict[str, int]) ->
         reasons = () if error == 0 else ("rank_misclassification",)
         status = "QUALIFIED" if not reasons else "DISQUALIFIED"
         summaries[(absolute, relative)] = status, reasons, 3, float(error)
-        outcomes[(absolute, relative)] = (not reasons, (0.0, 0, absolute, relative, repr((absolute, relative))) if not reasons else None)
+        outcomes[(absolute, relative)] = (not reasons, (0.0, 0, absolute, relative, repr((absolute, relative))) if not reasons else None, hashlib.sha256(repr(("rank", absolute, relative)).encode()).hexdigest() if not reasons else None)
         if not reasons:
             qualified.append((absolute, relative))
     if failure := _qualifier_failure(outcomes, (RANK_GRID, RANK_GRID)):
@@ -717,19 +722,30 @@ def select_rank_policy(observations: tuple[Any, ...], counts: dict[str, int]) ->
             else:
                 neighbors.append({"candidate": None, "status": "GRID_EDGE", "decisive_reasons": ("no_immediate_neighbor",), "error": None, "cost": 0})
     return selected, {"status": "SELECTED", "policy": selected, "qualified_count": len(qualified), "truth_error": 0.0, "cost": 3, "frontier": ((selected, 0.0, 3),), "rejected_neighbors": tuple(neighbors)}
+def _b2_perturbation_truth(diagnostic: Any, selected: Any, counts: dict[str, int]) -> tuple[bool, Any, Any, dict[str, object]]:
+    scaled = np.asarray(diagnostic.source_jacobian.matrix) * np.asarray(diagnostic.source_jacobian.coordinate_scales)[None, :]; largest = diagnostic.singular_values[0]; delta = 1.0e-12 * largest
+    matrices = tuple(scaled + np.asarray(((0.0, 0.0), (0.0, sign * delta))) for sign in (-1.0, 1.0)); spectra, rights = [], []
+    with _charged_svd(counts, "canonical"):
+        for matrix in matrices:
+            _left, singular, right = uncertainty_module.svd(matrix, full_matrices=False, compute_uv=True, overwrite_a=False, check_finite=True, lapack_driver=selected.svd_driver); spectra.append(tuple(float(value) for value in singular)); rights.append(np.asarray(right))
+    ranks = tuple(sum(value > diagnostic.threshold for value in spectrum) for spectrum in spectra); unstable = tuple(index for index in range(len(spectra[0])) if (spectra[0][index] > diagnostic.threshold) != (spectra[1][index] > diagnostic.threshold))
+    null = np.outer(rights[0][unstable[0]], rights[0][unstable[0]]) if unstable else np.zeros((2, 2)); identifiable = np.eye(2) - null
+    weak_entries = tuple(float(matrix[1, 1] / largest) for matrix in matrices); unperturbed_error = float(np.max(np.abs(scaled / largest - np.diag((1.0, 5.0e-13))))); truth_null = np.diag((0.0, 1.0)); projector_error = max(float(np.linalg.norm(null - truth_null, ord=2)), float(np.linalg.norm(np.outer(rights[1][1], rights[1][1]) - truth_null, ord=2)))
+    passed = ranks == (1, 2) and unstable == (1,) and weak_entries[0] < 0.0 < weak_entries[1] and unperturbed_error <= TOL["derivative"] and projector_error <= TOL["projector"] and diagnostic.rank == 1
+    return passed, null, identifiable, {"relative_envelope": 1.0e-12, "unperturbed_error": unperturbed_error, "weak_entries": weak_entries, "ranks": ranks, "unstable_modes": unstable}
 def validate_rank_truth_cases(scales: Mapping[str, float], selected: Any, environment: str, counts: dict[str, int]) -> tuple[bool, tuple[dict[str, object], ...]]:
     records = []
     for name in ("B2", "B3"):
         evidence, record = _derive_case(name, selected, environment, counts, "canonical", coordinate_scales=_bc_scales(name, scales))
         diagnostic = evidence.rank_diagnostic
-        expected_null = np.diag((0.0, 1.0)) if name == "B2" else np.asarray(((0.5, -0.5), (-0.5, 0.5)))
-        expected_identifiable = np.eye(2) - expected_null
+        perturbation_passed, perturbation_null, perturbation_identifiable, perturbation = _b2_perturbation_truth(diagnostic, selected, counts) if name == "B2" and diagnostic is not None else (True, None, None, None)
+        expected_null = perturbation_null if name == "B2" else np.asarray(((0.5, -0.5), (-0.5, 0.5))); expected_identifiable = perturbation_identifiable if name == "B2" else np.eye(2) - expected_null
         projector_error = math.inf if diagnostic is None else max(float(np.linalg.norm(np.asarray(diagnostic.null_projector) - expected_null, ord=2)), float(np.linalg.norm(np.asarray(diagnostic.identifiable_projector) - expected_identifiable, ord=2)))
         typed = diagnostic is not None and diagnostic.rank == 1 and diagnostic.controlled_ids == ("A", "B") and any(item.classification.endswith("null") for item in diagnostic.subspaces)
         unavailable = evidence.covariance is None and evidence.marginal_errors is None and evidence.correlations is None and any(item.category == "rank_deficient" for item in evidence.failures)
         perturbation_error = math.inf if diagnostic is None else abs(diagnostic.singular_values[1] - (5.0e-13 * scales[BC_SCALE_FAMILY] if name == "B2" else 0.0))
-        passed = bool(record["passed"]) and typed and unavailable and projector_error <= TOL["projector"] and perturbation_error <= 512.0 * 2.0**-52 * max(1.0, scales[BC_SCALE_FAMILY])
-        records.append({**record, "passed": passed, "rank_identity": None if diagnostic is None else diagnostic.identity, "projector_error": projector_error, "perturbation_error": perturbation_error, "covariance_available": evidence.covariance is not None})
+        passed = bool(record["passed"]) and typed and unavailable and perturbation_passed and projector_error <= TOL["projector"] and perturbation_error <= 512.0 * 2.0**-52 * max(1.0, scales[BC_SCALE_FAMILY])
+        records.append({**record, "passed": passed, "rank_identity": None if diagnostic is None else diagnostic.identity, "projector_error": projector_error, "perturbation_error": perturbation_error, "perturbation": perturbation, "covariance_available": evidence.covariance is not None})
     return all(record["passed"] for record in records), tuple(records)
 def _threshold_outcome(grid: tuple[float, ...], qualified: list[float], edge: float) -> str:
     if not qualified:
@@ -835,7 +851,7 @@ def policy_from_record(record: Mapping[str, object]) -> Any:
 def _case_policy(name: str, selected: Any, scales: tuple[float, ...] | None = None) -> Any:
     scales = _setup(name)[1] if scales is None else scales
     fd = (selected.relative_step_tolerance, selected.roundoff_multiplier, selected.smaller_step_extent, selected.larger_step_extent)
-    return compose_uncertainty_policy(name, scales, fd, selected.svd_driver, (selected.rank_absolute_tolerance, selected.rank_relative_tolerance), selected.weak_relative_tolerance, selected.singular_value_cluster_relative_tolerance, selected.conditioning_limit, selected.correlation_roundoff_multiplier)
+    return replace(compose_uncertainty_policy(name, scales, fd, selected.svd_driver, (selected.rank_absolute_tolerance, selected.rank_relative_tolerance), selected.weak_relative_tolerance, selected.singular_value_cluster_relative_tolerance, selected.conditioning_limit, selected.correlation_roundoff_multiplier), calibration_identity=selected.calibration_identity)
 def _correlation_evidence(source: Any, policy: Any, counts: dict[str, int], role: str) -> Any:
     _spend(counts, role, "correlation")
     return _correlations(source_identity=source.identity, accepted_result_identity=source.accepted_result_identity, accepted_occurrence_identity=source.accepted_occurrence_identity, source_family="constrained_propagation", output_ids=source.output_ids, units=source.output_units, covariance=source.covariance, residual_variance_degenerate=False, source_reportable=source.source_covariance.usable and source.claim("LOCAL_FIRST_ORDER_DEGENERACY") is ClaimState.SATISFIED, policy=policy, inherited_claims=source.claims, source_artifact=source)
@@ -1049,7 +1065,7 @@ def acquire_canonical(environment: str) -> dict[str, object]:
     correlation, correlation_record = select_correlation_policy(source, scales, phase_ab, counts)
     if None in {weak, cluster, conditioning, correlation}:
         return _compact_result("UNSUPPORTED_OR_SATURATED", counts, weak=weak_record, cluster=cluster_record, conditioning=conditioning_record, correlation=correlation_record)
-    selected = compose_uncertainty_policy("A1", (scales["state_population"], scales["exchange_rate"]), fd, driver, rank, cast("float", weak), cast("float", cluster), cast("float", conditioning), cast("float", correlation))
+    selected = replace(compose_uncertainty_policy("A1", (scales["state_population"], scales["exchange_rate"]), fd, driver, rank, cast("float", weak), cast("float", cluster), cast("float", conditioning), cast("float", correlation)), calibration_identity=f"{SPECIFICATION_ID}:{_scale_catalogue_digest(scales)}")
     valid, composed = validate_composed_cases(selected, environment, counts)
     if not valid:
         return _compact_result("COMPOSED_VALIDATION_FAILED", counts, policy=policy_record(selected), composed=composed)
@@ -1068,7 +1084,7 @@ def policy_from_canonical_record(record: Mapping[str, object]) -> Any:
     if any(metrics[name]["status"] != "SELECTED" for name in ("scale", "finite_difference", "driver", "rank", "weak", "cluster", "conditioning", "correlation")):
         raise RuntimeError("canonical phase selection is incomplete")
     driver_cases = cast("tuple[Mapping[str, object], ...]", metrics["driver"].get("cases", ())); rank_cases = cast("tuple[Mapping[str, object], ...]", metrics["rank"].get("typed_truth_cases", ())); phase_c = cast("tuple[Mapping[str, object], ...]", metrics.get("phase_c_cases", ()))
-    if tuple(item.get("case") for item in driver_cases) != ("B1", "B2", "B3") or tuple(item.get("case") for item in rank_cases) != ("B2", "B3") or tuple(item.get("case") for item in phase_c) != ("C1", "C2", "C3", "C4", "C5") or not all(item.get("passed", item.get("status") == "ACQUIRED") is True for item in (*rank_cases, *phase_c)):
+    if tuple(item.get("case") for item in driver_cases) != ("B1", "B2", "B3") or not all(item.get("status") == "QUALIFIED" for item in driver_cases) or tuple(item.get("case") for item in rank_cases) != ("B2", "B3") or tuple(item.get("case") for item in phase_c) != ("C1", "C2", "C3", "C4", "C5") or not all(item.get("passed", item.get("status") == "ACQUIRED") is True for item in (*rank_cases, *phase_c)):
         raise RuntimeError("canonical typed phase evidence is incomplete")
     composed = cast("tuple[Mapping[str, object], ...]", record["composed"]); holdouts = cast("tuple[Mapping[str, object], ...]", record["holdouts"])
     if tuple(item.get("case") for item in composed) != COMPOSED_CASES or tuple(item.get("case") for item in holdouts) != HOLDOUT_CASES or not all(item.get("passed") is True for item in (*composed, *holdouts)):
@@ -1083,7 +1099,9 @@ def policy_from_canonical_record(record: Mapping[str, object]) -> Any:
     scales = cast("Mapping[str, float]", phases["scales"])
     q0 = {family: base for family, _stratum, base, _unit, _patterns in SUPPORTED} | {"A4-argument-0": 1.0, "A4-argument-1": 2.0, "A4-output": 4.0}
     exact &= set(scales) == set(q0) and all(scales[name] in tuple(math.ldexp(base, exponent) for exponent in SCALE_EXPONENTS) for name, base in q0.items())
-    exact &= dict(policy.coordinate_scales) == {"A": scales["state_population"], "B": scales["exchange_rate"]}
+    scale_records = cast("Mapping[str, Mapping[str, object]]", metrics["scale"].get("families", {})); supported_q0 = {family: base for family, _stratum, base, _unit, _patterns in SUPPORTED}
+    exact &= supported_q0.keys() <= scale_records.keys() and all((item := scale_records[family]).get("status") == "SELECTED" and item.get("family") == family and item.get("q0") == base and item.get("exponent") in SCALE_EXPONENTS and item.get("scale") == scales[family] == math.ldexp(base, cast("int", item["exponent"])) and item.get("candidate_identity") == _scale_candidate_identity(family, base, cast("int", item["exponent"]), scales[family]) for family, base in supported_q0.items())
+    exact &= policy.calibration_identity == f"{SPECIFICATION_ID}:{_scale_catalogue_digest(scales)}" and dict(policy.coordinate_scales) == {"A": scales["state_population"], "B": scales["exchange_rate"]}
     if digest != record["policy_digest"] or not exact:
         raise RuntimeError("serialized policy is not the canonical selected policy")
     return policy
