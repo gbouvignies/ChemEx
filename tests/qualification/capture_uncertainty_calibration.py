@@ -22,7 +22,7 @@ from chemex.numerical_lanes import (
 )
 
 # Frozen #581 inputs.
-SPECIFICATION_ID = "chemex-uncertainty-calibration-v1"
+SPECIFICATION_ID = "chemex-uncertainty-calibration-v3"
 SCALE_EXPONENTS = tuple(range(-8, 9))
 TAU_REL = (0.0,) + tuple(2.0**-p for p in range(8, 49, 2))
 KAPPA = tuple(2.0**p for p in range(13))
@@ -35,6 +35,10 @@ CONDITION_GRID = (1.0,) + tuple(2.0**p for p in range(2, 53, 2))
 CORRELATION_GRID = (0.0,) + tuple(2.0**p for p in range(13))
 COUNTS = (17, 10_296, 2, 400, 27, 27, 27, 14)
 BC_SCALE_FAMILY = "equilibrium_ratio"
+# B1 and B2 remain SVD-driver resolution diagnostics. Numerical rank is selected
+# only from the clearly resolved B4 case and the structural-null B3/F1 cases.
+DRIVER_CASES = ("B1", "B2", "B3", "B4", "A3")
+RANK_TRUTH_CASES = ("B4", "B3", "A3")
 COMPOSED_CASES = (
     "A1",
     "A2",
@@ -98,6 +102,7 @@ TOL = {
     "covariance": 2.0e-6,
     "holdout_covariance": 5.0e-6,
     "projector": 2.0e-12,
+    "rank_projector": 2.0**-36,
     "holdout_projector": 5.0e-12,
     "conditioning": 2.0e-13,
     "holdout_conditioning": 5.0e-13,
@@ -111,7 +116,7 @@ CEILINGS = {
     "canonical": {
         "evaluation": 28_000,
         "scalar": 4_000,
-        "svd": 32,
+        "svd": 36,
         "correlation": 24,
         "offline": 12_000_000,
     },
@@ -124,13 +129,13 @@ CEILINGS = {
     },
 }
 PLANNED_BY_ROLE = {
-    "canonical": {"evaluation": 25_609, "scalar": 3_320, "svd": 30, "correlation": 22},
+    "canonical": {"evaluation": 25_666, "scalar": 3_320, "svd": 33, "correlation": 22},
     "compatibility": {"evaluation": 751, "scalar": 266, "svd": 4, "correlation": 2},
 }
 PLANNED_MAXIMUM = {
-    "evaluation": 26_360,
+    "evaluation": 26_417,
     "scalar": 3_586,
-    "svd": 34,
+    "svd": 37,
     "correlation": 24,
     "offline": 12_000_000,
 }
@@ -561,6 +566,7 @@ def _matrix(name: str) -> tuple[tuple[float, ...], ...]:
         "B1": ((1.0e-9, 0.0), (0.0, 2.0e-21)),
         "B2": ((1.0, 0.0), (0.0, 5.0e-13)),
         "B3": ((1.0, 1.0), (2.0, 2.0), (3.0, 3.0)),
+        "B4": ((1.0, 0.0), (0.0, 2.0**-12)),
         "C1": ((1.0, 0.0, 0.0), (0.0, 2.0e-6, 0.0), (0.0, 0.0, 2.0e-7)),
         "C3": ((1.0, 0.0), (0.0, 2.0e-6)),
         "C4": ((1.0, 0.0), (0.0, 5.0e-7)),
@@ -584,7 +590,7 @@ def _setup(
         return (0.25 * q0,), (q0,), (-10.0 * q0,), (10.0 * q0,), ()
     if name == "S_BOUND":
         return (0.0,), (q0,), (0.0,), (10.0 * q0,), ()
-    if name in {"B1", "B2", "B3", "C1", "C2", "C3", "C4", "H6"}:
+    if name in {"B1", "B2", "B3", "B4", "C1", "C2", "C3", "C4", "H6"}:
         size = len(_matrix(name)[0])
         return (0.0,) * size, (1.0,) * size, (-10.0,) * size, (10.0,) * size, ()
     setups = {
@@ -1718,6 +1724,7 @@ def _spectral_observation(
     environment: str,
     counts: dict[str, int],
 ) -> tuple[Any | None, dict[str, object]]:
+    case = "F1-absolute" if name == "A3" else name
     parameterization, engine, problem, accepted, _requested = _fixture(
         name, counts, "canonical"
     )
@@ -1752,7 +1759,7 @@ def _spectral_observation(
         )
     if evidence.residual_jacobian is None or evidence.rank_diagnostic is None:
         return None, {
-            "case": name,
+            "case": case,
             "status": "DISQUALIFIED",
             "reasons": tuple(item.category for item in evidence.failures),
         }
@@ -1763,7 +1770,7 @@ def _spectral_observation(
     )
     diagnostic = evidence.rank_diagnostic
     return diagnostic, {
-        "case": name,
+        "case": case,
         "status": "ACQUIRED",
         "policy_identity": policy.identity,
         "coordinate_scales": policy.coordinate_scales,
@@ -1780,10 +1787,18 @@ def select_svd_driver(
 ) -> tuple[str | None, dict[str, object], tuple[Any, ...]]:
     records = []
     q = scales[BC_SCALE_FAMILY]
-    expected = ((1.0e-9 * q, 2.0e-21 * q), (q, 5.0e-13 * q), (math.sqrt(28.0) * q, 0.0))
+    f1_truth = truth_jacobian("A3")
+    f1_largest = math.sqrt(sum(value * value for row in f1_truth for value in row))
+    expected = (
+        (1.0e-9 * q, 2.0e-21 * q),
+        (q, 5.0e-13 * q),
+        (math.sqrt(28.0) * q, 0.0),
+        (q, 2.0**-12 * q),
+        (f1_largest * q, 0.0),
+    )
     for driver in SVD_DRIVERS:
         observations, summaries = [], []
-        for name in ("B1", "B2", "B3"):
+        for name in DRIVER_CASES:
             diagnostic, summary = _spectral_observation(
                 name, scales, phase_a, driver, (0.0, 0.0), environment, counts
             )
@@ -1817,7 +1832,7 @@ def select_svd_driver(
                 records.append(
                     (
                         max(case_errors),
-                        3,
+                        len(DRIVER_CASES),
                         SVD_DRIVERS.index(driver),
                         driver,
                         tuple(observations),
@@ -1932,82 +1947,17 @@ def select_rank_policy(
     }
 
 
-def _b2_perturbation_truth(
-    diagnostic: Any, selected: Any, counts: dict[str, int]
-) -> tuple[bool, Any, Any, dict[str, object]]:
-    scaled = (
-        np.asarray(diagnostic.source_jacobian.matrix)
-        * np.asarray(diagnostic.source_jacobian.coordinate_scales)[None, :]
-    )
-    largest = diagnostic.singular_values[0]
-    delta = 1.0e-12 * largest
-    matrices = tuple(
-        scaled + np.asarray(((0.0, 0.0), (0.0, sign * delta))) for sign in (-1.0, 1.0)
-    )
-    spectra, rights = [], []
-    with _charged_svd(counts, "canonical"):
-        for matrix in matrices:
-            _left, singular, right = uncertainty_module.svd(
-                matrix,
-                full_matrices=False,
-                compute_uv=True,
-                overwrite_a=False,
-                check_finite=True,
-                lapack_driver=selected.svd_driver,
-            )
-            spectra.append(tuple(float(value) for value in singular))
-            rights.append(np.asarray(right))
-    ranks = tuple(
-        sum(value > diagnostic.threshold for value in spectrum) for spectrum in spectra
-    )
-    unstable = tuple(
-        index
-        for index in range(len(spectra[0]))
-        if (spectra[0][index] > diagnostic.threshold)
-        != (spectra[1][index] > diagnostic.threshold)
-    )
-    null = (
-        np.outer(rights[0][unstable[0]], rights[0][unstable[0]])
-        if unstable
-        else np.zeros((2, 2))
-    )
-    identifiable = np.eye(2) - null
-    weak_entries = tuple(float(matrix[1, 1] / largest) for matrix in matrices)
-    unperturbed_error = float(
-        np.max(np.abs(scaled / largest - np.diag((1.0, 5.0e-13))))
-    )
-    truth_null = np.diag((0.0, 1.0))
-    projector_error = max(
-        float(np.linalg.norm(null - truth_null, ord=2)),
-        float(np.linalg.norm(np.outer(rights[1][1], rights[1][1]) - truth_null, ord=2)),
-    )
-    passed = (
-        ranks == (1, 2)
-        and unstable == (1,)
-        and weak_entries[0] < 0.0 < weak_entries[1]
-        and unperturbed_error <= TOL["derivative"]
-        and projector_error <= TOL["projector"]
-        and diagnostic.rank == 1
-    )
-    return (
-        passed,
-        null,
-        identifiable,
-        {
-            "relative_envelope": 1.0e-12,
-            "unperturbed_error": unperturbed_error,
-            "weak_entries": weak_entries,
-            "ranks": ranks,
-            "unstable_modes": unstable,
-        },
-    )
-
-
 def validate_rank_truth_cases(
     scales: Mapping[str, float], selected: Any, environment: str, counts: dict[str, int]
 ) -> tuple[bool, tuple[dict[str, object], ...]]:
     records = []
-    for name in ("B2", "B3"):
+    expected_nulls = {
+        "B4": np.zeros((2, 2)),
+        "B3": np.asarray(((0.5, -0.5), (-0.5, 0.5))),
+        "A3": np.asarray(((0.9, 0.3), (0.3, 0.1))),
+    }
+    expected_ranks = {"B4": 2, "B3": 1, "A3": 1}
+    for name in RANK_TRUTH_CASES:
         evidence, record = _derive_case(
             name,
             selected,
@@ -2017,24 +1967,9 @@ def validate_rank_truth_cases(
             coordinate_scales=_bc_scales(name, scales),
         )
         diagnostic = evidence.rank_diagnostic
-        (
-            perturbation_passed,
-            perturbation_null,
-            perturbation_identifiable,
-            perturbation,
-        ) = (
-            _b2_perturbation_truth(diagnostic, selected, counts)
-            if name == "B2" and diagnostic is not None
-            else (True, None, None, None)
-        )
-        expected_null = (
-            perturbation_null
-            if name == "B2"
-            else np.asarray(((0.5, -0.5), (-0.5, 0.5)))
-        )
-        expected_identifiable = (
-            perturbation_identifiable if name == "B2" else np.eye(2) - expected_null
-        )
+        expected_rank = expected_ranks[name]
+        expected_null = expected_nulls[name]
+        expected_identifiable = np.eye(2) - expected_null
         projector_error = (
             math.inf
             if diagnostic is None
@@ -2055,43 +1990,44 @@ def validate_rank_truth_cases(
         )
         typed = (
             diagnostic is not None
-            and diagnostic.rank == 1
+            and diagnostic.rank == expected_rank
             and diagnostic.controlled_ids == ("A", "B")
-            and any(
-                item.classification.endswith("null") for item in diagnostic.subspaces
-            )
         )
-        unavailable = (
-            evidence.covariance is None
+        availability = (
+            evidence.covariance is not None
+            and evidence.marginal_errors is not None
+            and evidence.correlations is not None
+            if expected_rank == 2
+            else evidence.covariance is None
             and evidence.marginal_errors is None
             and evidence.correlations is None
             and any(item.category == "rank_deficient" for item in evidence.failures)
         )
-        perturbation_error = (
+        resolved_mode_error = (
             math.inf
             if diagnostic is None
-            else abs(
-                diagnostic.singular_values[1]
-                - (5.0e-13 * scales[BC_SCALE_FAMILY] if name == "B2" else 0.0)
-            )
+            else abs(diagnostic.normalized_singular_values[1] - 2.0**-12)
+            if name == "B4"
+            else 0.0
         )
         passed = (
             bool(record["passed"])
             and typed
-            and unavailable
-            and perturbation_passed
-            and projector_error <= TOL["projector"]
-            and perturbation_error
-            <= 512.0 * 2.0**-52 * max(1.0, scales[BC_SCALE_FAMILY])
+            and availability
+            and projector_error <= TOL["rank_projector"]
+            and resolved_mode_error <= TOL["covariance"]
         )
         records.append(
             {
                 **record,
+                "case": "F1-absolute" if name == "A3" else name,
                 "passed": passed,
                 "rank_identity": None if diagnostic is None else diagnostic.identity,
                 "projector_error": projector_error,
-                "perturbation_error": perturbation_error,
-                "perturbation": perturbation,
+                "resolved_mode_error": resolved_mode_error,
+                "normalized_spectrum": None
+                if diagnostic is None
+                else diagnostic.normalized_singular_values,
                 "covariance_available": evidence.covariance is not None,
             }
         )
@@ -3198,7 +3134,10 @@ def acquire_canonical(environment: str) -> dict[str, object]:
         return _compact_result(
             "UNSUPPORTED", counts, finite_difference=fd_record, svd_driver=driver_record
         )
-    rank, rank_record = select_rank_policy(rank_observations, counts)
+    rank, rank_record = select_rank_policy(
+        tuple(rank_observations[DRIVER_CASES.index(name)] for name in RANK_TRUTH_CASES),
+        counts,
+    )
     if rank is None:
         return _compact_result(
             cast("str", rank_record["status"]),
@@ -3216,7 +3155,11 @@ def acquire_canonical(environment: str) -> dict[str, object]:
     rank_truth_passed, rank_truth = validate_rank_truth_cases(
         scales, phase_ab, environment, counts
     )
-    rank_record = {**rank_record, "typed_truth_cases": rank_truth}
+    rank_record = {
+        **rank_record,
+        "selection_truth_cases": ("B4", "B3", "F1-absolute"),
+        "typed_truth_cases": rank_truth,
+    }
     if not rank_truth_passed:
         return _compact_result(
             "UNSUPPORTED", counts, phase="B", svd_driver=driver_record, rank=rank_record
@@ -3362,11 +3305,14 @@ def policy_from_canonical_record(record: Mapping[str, object]) -> Any:
     rank_cases = cast(
         "tuple[Mapping[str, object], ...]", metrics["rank"].get("typed_truth_cases", ())
     )
+    rank_selection_cases = tuple(metrics["rank"].get("selection_truth_cases", ()))
     phase_c = cast("tuple[Mapping[str, object], ...]", metrics.get("phase_c_cases", ()))
     if (
-        tuple(item.get("case") for item in driver_cases) != ("B1", "B2", "B3")
+        tuple(item.get("case") for item in driver_cases)
+        != ("B1", "B2", "B3", "B4", "F1-absolute")
         or not all(item.get("status") == "QUALIFIED" for item in driver_cases)
-        or tuple(item.get("case") for item in rank_cases) != ("B2", "B3")
+        or rank_selection_cases != ("B4", "B3", "F1-absolute")
+        or tuple(item.get("case") for item in rank_cases) != ("B4", "B3", "F1-absolute")
         or tuple(item.get("case") for item in phase_c) != ("C1", "C2", "C3", "C4", "C5")
         or not all(
             item.get("passed", item.get("status") == "ACQUIRED") is True

@@ -15,7 +15,7 @@ import pytest
 from tests.qualification import capture_uncertainty_calibration as calibration
 
 
-def selected_policy(rank: float = 2.0**-40) -> Any:
+def selected_policy(rank: float = 2.0**-36) -> Any:
     calibration._import_machinery()
     return calibration.compose_uncertainty_policy(
         "A1",
@@ -47,7 +47,7 @@ def canonical_record(policy: Any) -> dict[str, object]:
         "scales": scales,
         "finite_difference": (2.0**-24, 256.0, 8, 8),
         "svd_driver": "gesvd",
-        "rank": (0.0, 2.0**-40),
+        "rank": (0.0, 2.0**-36),
         "weak": 2.0**-22,
         "cluster": 2.0**-32,
         "conditioning": 2.0**20,
@@ -76,14 +76,16 @@ def canonical_record(policy: Any) -> dict[str, object]:
             "status": "SELECTED",
             "driver": "gesvd",
             "cases": tuple(
-                {"case": name, "status": "QUALIFIED"} for name in ("B1", "B2", "B3")
+                {"case": name, "status": "QUALIFIED"}
+                for name in ("B1", "B2", "B3", "B4", "F1-absolute")
             ),
         },
         "rank": {
             "status": "SELECTED",
             "policy": phases["rank"],
+            "selection_truth_cases": ("B4", "B3", "F1-absolute"),
             "typed_truth_cases": tuple(
-                {"case": name, "passed": True} for name in ("B2", "B3")
+                {"case": name, "passed": True} for name in ("B4", "B3", "F1-absolute")
             ),
         },
         "phase_c_cases": tuple(
@@ -124,9 +126,10 @@ def canonical_record(policy: Any) -> dict[str, object]:
 
 def test_frozen_wayfinder_populations_and_digest() -> None:
     assert (
-        calibration.COUNTS == (17, 10_296, 2, 400, 27, 27, 27, 14)
+        calibration.SPECIFICATION_ID == "chemex-uncertainty-calibration-v3"
+        and calibration.COUNTS == (17, 10_296, 2, 400, 27, 27, 27, 14)
         and len(tuple(calibration.finite_difference_policies())) == 10_296
-        and calibration.PLANNED_BY_ROLE["canonical"]["svd"] == 30
+        and calibration.PLANNED_BY_ROLE["canonical"]["svd"] == 33
         and calibration.PLANNED_BY_ROLE["canonical"]["correlation"] == 22
         and calibration.PLANNED_BY_ROLE["compatibility"]["svd"] == 4
     )
@@ -136,6 +139,13 @@ def test_frozen_wayfinder_populations_and_digest() -> None:
         and (0.0, 1.0, 12, 4) in calibration.finite_difference_policies()
     )
     assert len(calibration.RANK_GRID) ** 2 == 400
+    assert (
+        calibration.DRIVER_CASES == ("B1", "B2", "B3", "B4", "A3")
+        and calibration.RANK_TRUTH_CASES == ("B4", "B3", "A3")
+        and calibration._matrix("B4") == ((1.0, 0.0), (0.0, 2.0**-12))
+        and calibration.TOL["rank_projector"] == 2.0**-36
+        and calibration.HOLDOUT_CASES == ("H1", "H2", "H3", "H4", "H5", "H6")
+    )
     source = calibration.Path(calibration.__file__).read_bytes()
     digest = calibration.frozen_digest()
     changed_source = source.replace(
@@ -157,11 +167,13 @@ def test_canonical_v2_fixture_records_corrected_fail_closed_result() -> None:
     record = json.loads(fixture_path.read_text())
     correlation = record["decisive_metrics"]["correlation"]
     assert (
-        record["source_digest"]
-        == hashlib.sha256(
-            calibration.Path(calibration.__file__).read_bytes()
-        ).hexdigest()
-        and record["specification_digest"] == calibration.frozen_digest()
+        hashlib.sha256(fixture_path.read_bytes()).hexdigest()
+        == "7c80669542738b4b9fd09a26831db7f86418873bff843f32fe9329956e4f0509"
+        and record["source_digest"]
+        == "5c69cbb3b2b04ea9dfe6960dab3628b9a5389f647a74227576be391f25b22786"
+        and record["specification_id"] == "chemex-uncertainty-calibration-v1"
+        and record["specification_digest"]
+        == "59a213912da115bc025745266a38802f716c7d64a97753e19c13d7f05d53a680"
         and record["status"] == "COMPOSED_VALIDATION_FAILED"
         and record["selected_phase_policies"]["correlation"] == 64.0
         and correlation["status"] == "SELECTED"
@@ -213,6 +225,7 @@ def test_all_frozen_truths_are_executable() -> None:
         "B1",
         "B2",
         "B3",
+        "B4",
         "C1",
         "C2",
         "C3",
@@ -279,12 +292,16 @@ def test_a0_order_threshold_ambiguity_and_rank_neighbors(
     )
     observations = tuple(
         SimpleNamespace(singular_values=spectrum)
-        for spectrum in ((1.0e-9, 2.0e-21), (1.0, 5.0e-13), (math.sqrt(28.0), 0.0))
+        for spectrum in (
+            (1.0, 2.0**-12),
+            (math.sqrt(28.0), 0.0),
+            (3.7657132308149213, 2.1770112142674706e-11),
+        )
     )
     rank, rank_record = calibration.select_rank_policy(observations, empty_counts())
     neighbors = cast("tuple[dict[str, object], ...]", rank_record["rejected_neighbors"])
     assert (
-        rank == (0.0, 2.0**-40)
+        rank == (0.0, 2.0**-36)
         and rank_record["policy"] == rank
         and len(neighbors) == 4
         and all(
@@ -313,19 +330,19 @@ def test_b_consumes_selected_a_and_c_consumes_selected_ab(
         counts,
     )
     phase_ab = replace(
-        phase_a, rank_relative_tolerance=2.0**-40, weak_relative_tolerance=2.0**-40
+        phase_a, rank_relative_tolerance=2.0**-36, weak_relative_tolerance=2.0**-36
     )
     final_weak_b2, _record = calibration._spectral_observation(
         "B2",
         scales,
         replace(phase_ab, weak_relative_tolerance=2.0**-22),
         "gesvd",
-        (0.0, 2.0**-40),
+        (0.0, 2.0**-36),
         "environment",
         counts,
     )
     provisional_b2, _record = calibration._spectral_observation(
-        "B2", scales, phase_ab, "gesvd", (0.0, 2.0**-40), "environment", counts
+        "B2", scales, phase_ab, "gesvd", (0.0, 2.0**-36), "environment", counts
     )
     assert (
         b is not None
@@ -356,7 +373,7 @@ def test_b_consumes_selected_a_and_c_consumes_selected_ab(
     )
     for name in ("C1", "C2", "C3", "C4"):
         diagnostic, record = calibration._spectral_observation(
-            name, scales, phase_ab, "gesvd", (0.0, 2.0**-40), "environment", counts
+            name, scales, phase_ab, "gesvd", (0.0, 2.0**-36), "environment", counts
         )
         assert (
             diagnostic is not None
@@ -369,16 +386,14 @@ def test_b_consumes_selected_a_and_c_consumes_selected_ab(
     )
     assert (
         passed
-        and tuple(item["case"] for item in rank_cases) == ("B2", "B3")
-        and all(not item["covariance_available"] for item in rank_cases)
-    )
-    perturbation = cast("dict[str, Any]", rank_cases[0]["perturbation"])
-    assert (
-        perturbation["relative_envelope"] == 1.0e-12
-        and perturbation["unperturbed_error"] <= calibration.TOL["derivative"]
-        and perturbation["weak_entries"] == pytest.approx((-5.0e-13, 1.5e-12))
-        and perturbation["ranks"] == (1, 2)
-        and perturbation["unstable_modes"] == (1,)
+        and tuple(item["case"] for item in rank_cases) == ("B4", "B3", "F1-absolute")
+        and tuple(item["covariance_available"] for item in rank_cases)
+        == (True, False, False)
+        and all(
+            item["projector_error"] <= calibration.TOL["rank_projector"]
+            for item in rank_cases
+        )
+        and rank_cases[0]["normalized_spectrum"][1] == pytest.approx(2.0**-12)
     )
     assert calibration._h4_spectral_case(
         selected_policy(), "environment", counts, "canonical"
@@ -407,7 +422,7 @@ def test_b_consumes_selected_a_and_c_consumes_selected_ab(
 def test_phase_c_replaces_provisional_weak_before_canonical_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    provisional, final = 2.0**-40, 2.0**-22
+    provisional, final = 2.0**-36, 2.0**-22
     seen: dict[str, Any] = {}
     scales = {
         family: q0 for family, _stratum, q0, _unit, _patterns in calibration.SUPPORTED
@@ -418,7 +433,8 @@ def test_phase_c_replaces_provisional_weak_before_canonical_evidence(
         "status": "SELECTED",
         "driver": "gesvd",
         "cases": tuple(
-            {"case": name, "status": "QUALIFIED"} for name in ("B1", "B2", "B3")
+            {"case": name, "status": "QUALIFIED"}
+            for name in ("B1", "B2", "B3", "B4", "F1-absolute")
         ),
     }
     monkeypatch.setattr(
@@ -430,7 +446,13 @@ def test_phase_c_replaces_provisional_weak_before_canonical_evidence(
         lambda *_a: (fd, {"status": "SELECTED", "policy": fd}),
     )
     monkeypatch.setattr(
-        calibration, "select_svd_driver", lambda *_a: ("gesvd", driver_record, ())
+        calibration,
+        "select_svd_driver",
+        lambda *_a: (
+            "gesvd",
+            driver_record,
+            tuple(object() for _name in calibration.DRIVER_CASES),
+        ),
     )
     monkeypatch.setattr(
         calibration,
@@ -440,17 +462,15 @@ def test_phase_c_replaces_provisional_weak_before_canonical_evidence(
             {"status": "SELECTED", "policy": (0.0, provisional)},
         ),
     )
-    b2 = {
-        "case": "B2",
-        "passed": True,
-        "perturbation": {"ranks": (1, 2), "unstable_modes": (1,)},
-    }
+    rank_cases = tuple(
+        {"case": name, "passed": True} for name in ("B4", "B3", "F1-absolute")
+    )
 
     def rank_truth(
         _scales: object, policy: Any, *_a: object
     ) -> tuple[bool, tuple[dict[str, object], ...]]:
         seen["phase_ab"] = policy
-        return True, (b2, {"case": "B3", "passed": True})
+        return True, rank_cases
 
     monkeypatch.setattr(calibration, "validate_rank_truth_cases", rank_truth)
     monkeypatch.setattr(
@@ -564,8 +584,9 @@ def test_phase_c_replaces_provisional_weak_before_canonical_evidence(
     assert (
         terminal_metrics["scale"] is scale_record
         and terminal_metrics["driver"] is driver_record
-        and terminal_metrics["rank"]["typed_truth_cases"][0]["perturbation"]
-        == b2["perturbation"]
+        and terminal_metrics["rank"]["selection_truth_cases"]
+        == ("B4", "B3", "F1-absolute")
+        and terminal_metrics["rank"]["typed_truth_cases"] == rank_cases
         and terminal_metrics["correlation"] is correlation_record
     )
     assert (
@@ -853,6 +874,8 @@ def test_compatibility_is_bound_to_canonical_selected_policy(
         {"case": "B1", "status": "QUALIFIED"},
         {"case": "B2", "status": "DISQUALIFIED"},
         {"case": "B3", "status": "QUALIFIED"},
+        {"case": "B4", "status": "QUALIFIED"},
+        {"case": "F1-absolute", "status": "QUALIFIED"},
     )
     with pytest.raises(RuntimeError, match="typed phase evidence"):
         calibration.policy_from_canonical_record(failed_driver)
