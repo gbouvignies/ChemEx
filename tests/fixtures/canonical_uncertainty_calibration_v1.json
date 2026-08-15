@@ -1,0 +1,209 @@
+{
+  "canonical_provenance": {
+    "lane_attestation": {
+      "environment_identity": "cc5359f90df35ec9b60fd56e483911745209519ecce37d69e17c4edd6ea3604f",
+      "identity": "3b3e0bc184826d61ec6652194486c907a5faa4c64b68ec03bbe60b63c660d687",
+      "lane_identity": "4f1e7dab3384f88149fd33befb09ba3e96730dc336e9427b224a39a8a7167e4f",
+      "method": "POST_IMPORT_CURRENT_PROCESS",
+      "native_threads": 1,
+      "schema_version": 2,
+      "semantic_version": "chemex-numerical-lane-v2",
+      "workers": 1
+    },
+    "numerical_lane": {
+      "identity": "4f1e7dab3384f88149fd33befb09ba3e96730dc336e9427b224a39a8a7167e4f",
+      "name": "canonical-linux-amd64-python-3.13-v1",
+      "role": "CANONICAL_NUMERICAL",
+      "schema_version": 2,
+      "semantic_version": "chemex-numerical-lane-v2",
+      "semantics": {
+        "build_context_hash": "d503eb97c3d27456511f0c29f1e05d11be60c82002086cff5fc44d82d1e4d2d2",
+        "build_recipe_hash": "af852fa2b39b40c39f9b84a8f8ae50246c66ba315656b22c5807bf59fb85e71a",
+        "dependency_lock_hash": "cc7a8e08d8fb8f1ea4255b63452598f6dbe041a8b4024de0f3af065020088004",
+        "floating_point_mode": "binary64-round-nearest-gradual-underflow",
+        "identity": "fb5b0bb751cdff616af36d4e526d230d89075134fbfa07901d724a63dfe4f2ff",
+        "image_digest": "sha256:ed4f97e00bd6fe494f46772cc31a338d756b5bb5fe6e4e480d987af51af85550",
+        "isa": "x86-64-v3",
+        "loaded_library_manifest_hash": "75742eab438a8751791453118367c31db931e5e2286ff2f1eb4a570e1fdc5ab7",
+        "native_threads": 1,
+        "numpy_blas": "{\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"version\":\"0.3.33.112.0\"}",
+        "numpy_dispatch_restrictions": "AVX512_ICL,AVX512_SPR,X86_V4",
+        "numpy_installation_hash": "ef9f711f7522187954f60626030e606a5c7dd5fbf191e2450a651c8a836a64c5",
+        "numpy_lapack": "{\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"version\":\"0.3.33.112.0\"}",
+        "numpy_version": "2.5.1",
+        "openblas_configuration": "[[\"numpy.libs/libscipy_openblas64_-017048f4.so\",\"OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"Haswell\",1],[\"scipy.libs/libscipy_openblas-5f890258.so\",\"OpenBLAS 0.3.31.dev DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"Haswell\",1]]",
+        "openblas_core": "Haswell",
+        "os_package_manifest_hash": "ce667a3190a438795434c70db1a47a2de1070401464d13b63e4283e61eea3500",
+        "platform": "linux/amd64",
+        "platform_manifest": "debian:bookworm-slim@sha256:362e64223cc0da95422b3b13c045186fc0a81250e765d31c025fbddf257f6143",
+        "python_abi": "cpython-313-x86_64-linux-gnu",
+        "python_executable_hash": "f3862e58e9edf17cbf447b59792f55cc021804da963861490564daa3700b7bc5",
+        "python_implementation": "CPython",
+        "python_source_hash": "e6190f52699b534ee203d9f417bdbca05a92f23e35c19c691a50ed2942835385",
+        "python_version": "3.13.5",
+        "scipy_blas": "{\"cython blas ilp64\":false,\"has ilp64\":false,\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.31.dev DYNAMIC_ARCH NO_AFFINITY SkylakeX MAX_THREADS=64\",\"version\":\"0.3.31.dev\"}",
+        "scipy_installation_hash": "6cd1d7cf95262076650dceeb850395429d7e928d25daa9ccbda751e5f8c79e8c",
+        "scipy_lapack": "{\"has ilp64\":false,\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.31.dev DYNAMIC_ARCH NO_AFFINITY SkylakeX MAX_THREADS=64\",\"version\":\"0.3.31.dev\"}",
+        "scipy_version": "1.18.0",
+        "uv_version": "0.11.15",
+        "uv_wheel_hash": "98edf1bdaf82447014852051d93e3ee95012509c567bf057fd117e6bdbd9a807",
+        "wheel_manifest_hash": "a3538dfe59b3d1e9cdd71e2c7b52a59038e69f0bf8079f96e632ddfc82aeb84d",
+        "workers": 1
+      }
+    },
+    "runtime_environment": {
+      "identity": "cc5359f90df35ec9b60fd56e483911745209519ecce37d69e17c4edd6ea3604f",
+      "schema_version": 2,
+      "semantic_version": "chemex-numerical-lane-v2",
+      "semantics": {
+        "build_context_hash": "d503eb97c3d27456511f0c29f1e05d11be60c82002086cff5fc44d82d1e4d2d2",
+        "build_recipe_hash": "af852fa2b39b40c39f9b84a8f8ae50246c66ba315656b22c5807bf59fb85e71a",
+        "dependency_lock_hash": "cc7a8e08d8fb8f1ea4255b63452598f6dbe041a8b4024de0f3af065020088004",
+        "floating_point_mode": "binary64-round-nearest-gradual-underflow",
+        "identity": "fb5b0bb751cdff616af36d4e526d230d89075134fbfa07901d724a63dfe4f2ff",
+        "image_digest": "sha256:ed4f97e00bd6fe494f46772cc31a338d756b5bb5fe6e4e480d987af51af85550",
+        "isa": "x86-64-v3",
+        "loaded_library_manifest_hash": "75742eab438a8751791453118367c31db931e5e2286ff2f1eb4a570e1fdc5ab7",
+        "native_threads": 1,
+        "numpy_blas": "{\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"version\":\"0.3.33.112.0\"}",
+        "numpy_dispatch_restrictions": "AVX512_ICL,AVX512_SPR,X86_V4",
+        "numpy_installation_hash": "ef9f711f7522187954f60626030e606a5c7dd5fbf191e2450a651c8a836a64c5",
+        "numpy_lapack": "{\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"version\":\"0.3.33.112.0\"}",
+        "numpy_version": "2.5.1",
+        "openblas_configuration": "[[\"numpy.libs/libscipy_openblas64_-017048f4.so\",\"OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"Haswell\",1],[\"scipy.libs/libscipy_openblas-5f890258.so\",\"OpenBLAS 0.3.31.dev DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\",\"Haswell\",1]]",
+        "openblas_core": "Haswell",
+        "os_package_manifest_hash": "ce667a3190a438795434c70db1a47a2de1070401464d13b63e4283e61eea3500",
+        "platform": "linux/amd64",
+        "platform_manifest": "debian:bookworm-slim@sha256:362e64223cc0da95422b3b13c045186fc0a81250e765d31c025fbddf257f6143",
+        "python_abi": "cpython-313-x86_64-linux-gnu",
+        "python_executable_hash": "f3862e58e9edf17cbf447b59792f55cc021804da963861490564daa3700b7bc5",
+        "python_implementation": "CPython",
+        "python_source_hash": "e6190f52699b534ee203d9f417bdbca05a92f23e35c19c691a50ed2942835385",
+        "python_version": "3.13.5",
+        "scipy_blas": "{\"cython blas ilp64\":false,\"has ilp64\":false,\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.31.dev DYNAMIC_ARCH NO_AFFINITY SkylakeX MAX_THREADS=64\",\"version\":\"0.3.31.dev\"}",
+        "scipy_installation_hash": "6cd1d7cf95262076650dceeb850395429d7e928d25daa9ccbda751e5f8c79e8c",
+        "scipy_lapack": "{\"has ilp64\":false,\"name\":\"scipy-openblas\",\"openblas configuration\":\"OpenBLAS 0.3.31.dev DYNAMIC_ARCH NO_AFFINITY SkylakeX MAX_THREADS=64\",\"version\":\"0.3.31.dev\"}",
+        "scipy_version": "1.18.0",
+        "uv_version": "0.11.15",
+        "uv_wheel_hash": "98edf1bdaf82447014852051d93e3ee95012509c567bf057fd117e6bdbd9a807",
+        "wheel_manifest_hash": "a3538dfe59b3d1e9cdd71e2c7b52a59038e69f0bf8079f96e632ddfc82aeb84d",
+        "workers": 1
+      }
+    }
+  },
+  "cluster": {
+    "cost": 1,
+    "frontier": [
+      [
+        5.820766091346741e-11,
+        0.0,
+        1
+      ]
+    ],
+    "rejected_neighbors": [
+      {
+        "candidate": 2.3283064365386963e-10,
+        "cost": 1,
+        "error": 0,
+        "projector_error": 0.0,
+        "reasons": [
+          "smallest_threshold_tie_break"
+        ],
+        "status": "QUALIFIED"
+      },
+      {
+        "candidate": 1.4551915228366852e-11,
+        "cost": 1,
+        "error": 1,
+        "projector_error": 0.0,
+        "reasons": [
+          "cluster_or_projector_misclassification"
+        ],
+        "status": "DISQUALIFIED"
+      }
+    ],
+    "status": "SELECTED",
+    "truth_error": 0.0,
+    "value": 5.820766091346741e-11
+  },
+  "conditioning": {
+    "cost": 2,
+    "frontier": [
+      [
+        1048576.0,
+        1.164153218269348e-16,
+        2
+      ]
+    ],
+    "rejected_neighbors": [
+      {
+        "candidate": 262144.0,
+        "cost": 2,
+        "error": 1,
+        "reasons": [
+          "conditioning_misclassification"
+        ],
+        "status": "DISQUALIFIED"
+      },
+      {
+        "candidate": 4194304.0,
+        "cost": 2,
+        "error": 1,
+        "reasons": [
+          "conditioning_misclassification"
+        ],
+        "status": "DISQUALIFIED"
+      }
+    ],
+    "status": "SELECTED",
+    "truth_error": 1.164153218269348e-16,
+    "value": 1048576.0
+  },
+  "correlation": {
+    "status": "UNSUPPORTED"
+  },
+  "counts": {
+    "correlation": 15,
+    "evaluation": 1460,
+    "offline": 2121687,
+    "scalar": 395,
+    "svd": 16
+  },
+  "source_digest": "5ea1977e56b2a8fef72c0f6d1a78689f619149ef2a3f367d61fc3824cc8d79d9",
+  "specification_digest": "ed9117bc4ff7b721e7dbf19efe3fe05200a59abfbc3d737f24fc5b66fab1b213",
+  "specification_id": "chemex-uncertainty-calibration-v1",
+  "status": "UNSUPPORTED_OR_SATURATED",
+  "weak": {
+    "cost": 1,
+    "frontier": [
+      [
+        2.384185791015625e-07,
+        0,
+        1
+      ]
+    ],
+    "rejected_neighbors": [
+      {
+        "candidate": 9.5367431640625e-07,
+        "cost": 1,
+        "error": 0,
+        "reasons": [
+          "smallest_threshold_tie_break"
+        ],
+        "status": "QUALIFIED"
+      },
+      {
+        "candidate": 5.960464477539063e-08,
+        "cost": 1,
+        "error": 1,
+        "reasons": [
+          "weak_misclassification"
+        ],
+        "status": "DISQUALIFIED"
+      }
+    ],
+    "status": "SELECTED",
+    "truth_error": 0,
+    "value": 2.384185791015625e-07
+  }
+}
