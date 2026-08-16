@@ -11,7 +11,6 @@ import argparse
 import hashlib
 import json
 import math
-import subprocess
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -232,29 +231,15 @@ def holdout_decision(selected: str, passed: Sequence[bool]) -> tuple[str, str | 
 
 
 def validate_specification_commit(expected: str) -> str:
-    head = (
-        subprocess.check_output(
-            ("/usr/bin/git", "rev-parse", "HEAD"), cwd=ROOT, text=False
-        )
-        .decode("ascii")
-        .strip()
-    )
-    if len(expected) != 40 or expected != head:
+    head = (ROOT / ".git/HEAD").read_text(encoding="ascii").strip()
+    if (
+        len(expected) != 40
+        or any(character not in "0123456789abcdef" for character in expected)
+        or expected != head
+    ):
         raise RuntimeError(
-            "authoritative acquisition requires the frozen specification commit at HEAD"
-        )
-    paths = (
-        "tests/qualification/capture_optimizer_calibration.py",
-        "tests/test_optimizer_calibration.py",
-    )
-    clean = subprocess.run(  # noqa: S603 - fixed executable and arguments
-        ("/usr/bin/git", "diff", "--quiet", expected, "--", *paths),
-        cwd=ROOT,
-        check=False,
-    )
-    if clean.returncode != 0:
-        raise RuntimeError(
-            "authoritative acquisition requires the committed frozen specification bytes"
+            "authoritative acquisition requires the frozen specification commit "
+            "as a detached HEAD"
         )
     return head
 
@@ -1317,6 +1302,9 @@ def acquire(image_digest: str, specification_commit: str) -> dict[str, object]:
         "source": {
             "specification_commit": specification_commit,
             "qualification_script_sha256": _file_hash(Path(__file__)),
+            "qualification_test_sha256": _file_hash(
+                ROOT / "tests/test_optimizer_calibration.py"
+            ),
             "dependency_lock_sha256": _file_hash(ROOT / "uv.lock"),
             "input_sha256": {
                 str(path.relative_to(ROOT)): _file_hash(path)

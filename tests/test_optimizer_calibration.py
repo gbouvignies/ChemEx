@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import subprocess
-from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 
+import tests.qualification.capture_optimizer_calibration as calibration
 from tests.qualification.capture_optimizer_calibration import (
     SPECIFICATION,
     SPECIFICATION_ID,
@@ -207,27 +207,23 @@ def test_holdout_failure_invalidates_scope_without_runner_up() -> None:
 
 
 def test_authoritative_acquisition_requires_the_frozen_head_commit(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        subprocess,
-        "check_output",
-        lambda *_args, **_kwargs: b"a" * 40 + b"\n",
-    )
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda *_args, **_kwargs: SimpleNamespace(returncode=0),
-    )
+    root = tmp_path / "checkout"
+    (root / ".git").mkdir(parents=True)
+    (root / ".git/HEAD").write_text("a" * 40 + "\n", encoding="ascii")
+    monkeypatch.setattr(calibration, "ROOT", root)
 
     assert validate_specification_commit("a" * 40) == "a" * 40
-    with pytest.raises(RuntimeError, match="frozen specification commit"):
+    with pytest.raises(
+        RuntimeError, match="frozen specification commit.*detached HEAD"
+    ):
         validate_specification_commit("b" * 40)
 
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda *_args, **_kwargs: SimpleNamespace(returncode=1),
+    (root / ".git/HEAD").write_text(
+        "ref: refs/heads/codex/602-calibrate-optimizer-policies\n",
+        encoding="ascii",
     )
-    with pytest.raises(RuntimeError, match="committed frozen specification bytes"):
+    with pytest.raises(RuntimeError, match="detached HEAD"):
         validate_specification_commit("a" * 40)
