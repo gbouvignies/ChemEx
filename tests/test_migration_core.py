@@ -195,7 +195,7 @@ def test_versioned_manifest_covers_the_complete_migration_core_audit() -> None:
     manifest = migration_core_coverage_manifest()
     identifiers = {requirement.identifier for requirement in manifest.requirements}
 
-    assert manifest.manifest_version == "migration-core-coverage-v1"
+    assert manifest.manifest_version == "migration-core-coverage-v2"
     assert len(manifest.anchors) == 4
     assert len(manifest.supporting_evidence) == 11
     assert {
@@ -554,12 +554,10 @@ def test_release_locator_cannot_escape_trusted_repository_root(tmp_path: Path) -
 
 
 def test_current_status_is_derived_from_resolved_evidence() -> None:
-    current = migration_core.migration_core_current_release_selection()
     result = migration_core.compile_current_phased_migration_core_status(
         _REPOSITORY_ROOT
     )
 
-    expected_counts = (17, 34) if current.lifecycle_probe_identity else (10, 41)
     assert result.authority_selection_identity == (
         "001b6b9e791e66677b265d8b1dd3c2d8151f4a9e0b33bdcfe5196782cecdd066"
     )
@@ -571,19 +569,43 @@ def test_current_status_is_derived_from_resolved_evidence() -> None:
     assert (
         len(result.eligible_requirement_ids),
         len(result.uncovered_requirement_ids),
-    ) == expected_counts
+    ) == (17, 34)
     failure_coverage = {
         identifier
         for identifier in result.eligible_requirement_ids
         if identifier.startswith("migration-core.failure.")
     }
-    assert failure_coverage == (
-        set(migration_core_lifecycle.FAILURE_REQUIREMENTS)
-        if current.lifecycle_probe_identity
-        else set()
-    )
+    assert failure_coverage == set(migration_core_lifecycle.FAILURE_REQUIREMENTS)
+    assert result.unqualified_requirement_ids == ()
     assert result.compiler_status == "FAILED_CLOSED"
     assert result.compiled_coverage_identity is None
+
+
+def test_bounded_calibrations_qualify_only_their_demonstrated_claims() -> None:
+    uncertainty = (
+        _REPOSITORY_ROOT / "tests/fixtures/canonical_uncertainty_calibration_v3.json"
+    ).read_bytes()
+    resampling = (
+        _REPOSITORY_ROOT / "tests/fixtures/canonical_resampling_calibration_v2.json"
+    ).read_bytes()
+
+    assert migration_core.qualified_migration_core_requirements(
+        "execution:covariance-constrained-uncertainty", uncertainty
+    ) == {
+        "migration-core.covariance.analytic-normalization",
+        "migration-core.covariance.both-scaling-policies",
+        "migration-core.covariance.conditioning",
+        "migration-core.covariance.correlation",
+        "migration-core.covariance.propagation-degeneracy",
+        "migration-core.covariance.rank",
+    }
+    assert migration_core.qualified_migration_core_requirements(
+        "execution:resampling", resampling
+    ) == {
+        "migration-core.resampling.bootstrap-truth-probe",
+        "migration-core.resampling.mc-truth-probe",
+        "migration-core.resampling.serial-two-worker-replay",
+    }
 
 
 def test_changed_requirement_selection_is_not_trusted(
@@ -721,7 +743,7 @@ def test_compiler_fails_closed_on_missing_unresolved_or_unavailable_evidence(
 def test_manifest_validator_rejects_incompatible_or_empty_coverage() -> None:
     manifest = migration_core_coverage_manifest()
     incompatible = json.loads(manifest.to_bytes())
-    incompatible["manifest_version"] = "migration-core-coverage-v2"
+    incompatible["manifest_version"] = "migration-core-coverage-v3"
     with pytest.raises(MigrationCoreCoverageError, match="incompatible version"):
         MigrationCoreCoverageManifest.from_bytes(_canonical_bytes(incompatible))
 
@@ -784,7 +806,9 @@ def test_canonical_capture_status_records_the_fail_closed_empirical_result() -> 
     assert anchors["2st-binding"]["artifact_count"] == 895
     assert anchors["cest-13c-label-cn"]["result_bundle_identity"] is None
     assert anchors["dcest-fifu-drd"]["result_bundle_identity"] is None
-    assert coverage["manifest_identity"] == migration_core_coverage_manifest().identity
+    assert coverage["manifest_identity"] == (
+        "c79d318b753eed1e863c6e5e99bbee7f7c1f7cc19ad8c00dc15acf983a6e69c8"
+    )
     assert coverage["requirement_count"] == 51
     assert coverage["eligible_requirement_count"] == 4
     assert coverage["uncovered_requirement_count"] == 47
@@ -863,7 +887,9 @@ def test_v2_status_is_historical_asserted_unresolved_evidence_only() -> None:
         "dcest-fifu-drd": (22, 23),
     }
 
-    assert coverage["manifest_identity"] == migration_core_coverage_manifest().identity
+    assert coverage["manifest_identity"] == (
+        "c79d318b753eed1e863c6e5e99bbee7f7c1f7cc19ad8c00dc15acf983a6e69c8"
+    )
     assert coverage["requirement_count"] == 51
     assert coverage["eligible_requirement_count"] == 10
     assert len(coverage["eligible_requirement_ids"]) == 10

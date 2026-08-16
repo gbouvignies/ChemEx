@@ -1,0 +1,484 @@
+{
+  "anchors": [
+    {
+      "artifact_inventory_version": "approved-anchor-structured-artifact-contract-v1",
+      "case_identity": "35af1e0705653511fc3d20f7e9800deb9383af0236d965e34df85c5e16d670c6",
+      "case_name": "2st-binding",
+      "evidence": "anchor:2st-binding",
+      "workflow": {
+        "argv": [
+          "chemex",
+          "fit",
+          "-e",
+          "Experiments/*.toml",
+          "-p",
+          "Parameters/*.toml",
+          "-m",
+          "Methods/*.toml",
+          "-d",
+          "2st_binding",
+          "-o",
+          "Output"
+        ],
+        "command": "fit",
+        "method": "shipped-two-step-method",
+        "model": "2st_binding"
+      }
+    },
+    {
+      "artifact_inventory_version": "approved-anchor-structured-artifact-contract-v1",
+      "case_identity": "e221428fe2bed8694f6400f5c10a0ae096763f008949c70eecdb685f5afe7b01",
+      "case_name": "cest-13c-label-cn",
+      "evidence": "anchor:cest-13c-label-cn",
+      "workflow": {
+        "argv": [
+          "chemex",
+          "fit",
+          "-e",
+          "Experiments/*.toml",
+          "-p",
+          "Parameters/parameters.toml",
+          "-m",
+          "Methods/method.toml",
+          "-o",
+          "Output"
+        ],
+        "command": "fit",
+        "method": "shipped-two-step-method",
+        "model": "2st"
+      }
+    },
+    {
+      "artifact_inventory_version": "cpmg-structured-artifact-contract-v1",
+      "case_identity": "18d9a4fb78e300a474132313c898c78240be7aa6ae7eb2f3385d2fed69e6ebd3",
+      "case_name": "cpmg-15n-ip",
+      "evidence": "anchor:cpmg-15n-ip",
+      "workflow": {
+        "argv": [
+          "chemex",
+          "fit",
+          "-e",
+          "Experiments/*.toml",
+          "-p",
+          "Parameters/parameters.toml",
+          "-m",
+          "Methods/method.toml",
+          "-o",
+          "Output"
+        ],
+        "command": "fit",
+        "method": "shipped-two-step-method",
+        "model": "2st"
+      }
+    },
+    {
+      "artifact_inventory_version": "approved-anchor-structured-artifact-contract-v1",
+      "case_identity": "3c379d070b9aea9fdf9675511df717b4208f4d0d09979e62f304216a6147c241",
+      "case_name": "dcest-fifu-drd",
+      "evidence": "anchor:dcest-fifu-drd",
+      "workflow": {
+        "argv": [
+          "chemex",
+          "fit",
+          "-e",
+          "Experiments/*.toml",
+          "Experiments/DRD/*.toml",
+          "-p",
+          "Parameters/parameters.toml",
+          "-m",
+          "Methods/method.toml",
+          "-d",
+          "3st_fork",
+          "-o",
+          "Output_FIFU_DRD"
+        ],
+        "command": "fit",
+        "method": "shipped-one-step-method",
+        "model": "3st_fork"
+      }
+    }
+  ],
+  "supporting_evidence": [
+    {
+      "evidence": "execution:covariance-constrained-uncertainty",
+      "evidence_type": "UncertaintyCalibrationEvidence",
+      "source_issue": 601
+    },
+    {
+      "evidence": "execution:de-trf-search",
+      "evidence_type": "DeDirectTrfOutcome",
+      "source_issue": 597
+    },
+    {
+      "evidence": "execution:fit-component-aggregation",
+      "evidence_type": "GroupedDirectTrfOutcome",
+      "source_issue": 594
+    },
+    {
+      "evidence": "execution:grid-decomposed",
+      "evidence_type": "GroupedGridDirectTrfOutcome",
+      "source_issue": 596
+    },
+    {
+      "evidence": "execution:grid-single-component",
+      "evidence_type": "GridDirectTrfOutcome",
+      "source_issue": 595
+    },
+    {
+      "evidence": "execution:mcmc",
+      "evidence_type": "tuple[McmcOperation,...]",
+      "source_issue": 600
+    },
+    {
+      "evidence": "execution:resampling",
+      "evidence_type": "ResamplingCalibrationEvidence",
+      "source_issue": 603
+    },
+    {
+      "evidence": "probe:lifecycle-publication-safety",
+      "evidence_type": "LifecyclePublicationSafetyEvidence",
+      "source_issue": 592
+    },
+    {
+      "evidence": "probe:numerical-optimizer-evaluator",
+      "evidence_type": "NumericalProbeBaseline",
+      "source_issue": 591
+    },
+    {
+      "evidence": "probe:serialization-multiprocessing-cache-replay",
+      "evidence_type": "SerializationMultiprocessingCacheReplayEvidence",
+      "source_issue": 593
+    },
+    {
+      "evidence": "workload:qualified-performance",
+      "evidence_type": "QualifiedPerformanceEvidence",
+      "source_issue": 605
+    }
+  ],
+  "baseline_semantic_version": "chemex-baseline-v1",
+  "manifest_version": "migration-core-coverage-v2",
+  "requirements": [
+    {
+      "evidence": [
+        "anchor:2st-binding"
+      ],
+      "identifier": "migration-core.anchor.2st-binding.canonical-completion"
+    },
+    {
+      "evidence": [
+        "anchor:cest-13c-label-cn"
+      ],
+      "identifier": "migration-core.anchor.cest-13c-label-cn.canonical-completion"
+    },
+    {
+      "evidence": [
+        "anchor:cpmg-15n-ip"
+      ],
+      "identifier": "migration-core.anchor.cpmg-15n-ip.canonical-completion"
+    },
+    {
+      "evidence": [
+        "anchor:dcest-fifu-drd"
+      ],
+      "identifier": "migration-core.anchor.dcest-fifu-drd.canonical-completion"
+    },
+    {
+      "evidence": [
+        "anchor:2st-binding",
+        "anchor:cest-13c-label-cn",
+        "anchor:cpmg-15n-ip",
+        "anchor:dcest-fifu-drd"
+      ],
+      "identifier": "migration-core.anchor-set.canonical-environment-authority"
+    },
+    {
+      "evidence": [
+        "anchor:2st-binding",
+        "anchor:cest-13c-label-cn",
+        "anchor:cpmg-15n-ip",
+        "anchor:dcest-fifu-drd"
+      ],
+      "identifier": "migration-core.anchor-set.closed-artifact-integrity"
+    },
+    {
+      "evidence": [
+        "anchor:2st-binding",
+        "anchor:cest-13c-label-cn",
+        "anchor:cpmg-15n-ip",
+        "anchor:dcest-fifu-drd"
+      ],
+      "identifier": "migration-core.anchor-set.exact-lineage-identities"
+    },
+    {
+      "evidence": [
+        "anchor:2st-binding",
+        "anchor:cest-13c-label-cn",
+        "anchor:cpmg-15n-ip",
+        "anchor:dcest-fifu-drd"
+      ],
+      "identifier": "migration-core.anchor-set.shipped-workflow-identities"
+    },
+    {
+      "evidence": [
+        "probe:numerical-optimizer-evaluator"
+      ],
+      "identifier": "migration-core.direct-trf.routine-behavior"
+    },
+    {
+      "evidence": [
+        "probe:numerical-optimizer-evaluator"
+      ],
+      "identifier": "migration-core.direct-trf.legacy-outlier-behavior"
+    },
+    {
+      "evidence": [
+        "execution:grid-single-component"
+      ],
+      "identifier": "migration-core.grid-trf.coupled-execution"
+    },
+    {
+      "evidence": [
+        "execution:grid-single-component"
+      ],
+      "identifier": "migration-core.grid-trf.immutable-27-seed-physical-grid"
+    },
+    {
+      "evidence": [
+        "execution:grid-decomposed"
+      ],
+      "identifier": "migration-core.grid-trf.decomposed-execution"
+    },
+    {
+      "evidence": [
+        "execution:de-trf-search"
+      ],
+      "identifier": "migration-core.de-trf.reduced-poor-start-dcest"
+    },
+    {
+      "evidence": [
+        "execution:de-trf-search"
+      ],
+      "identifier": "migration-core.de-trf.deterministic-compact-roots"
+    },
+    {
+      "evidence": [
+        "execution:fit-component-aggregation"
+      ],
+      "identifier": "migration-core.grouped.exact-component-execution"
+    },
+    {
+      "evidence": [
+        "execution:fit-component-aggregation"
+      ],
+      "identifier": "migration-core.grouped.fresh-aggregate-materialization"
+    },
+    {
+      "evidence": [
+        "execution:fit-component-aggregation"
+      ],
+      "identifier": "migration-core.grouped.aggregate-validation"
+    },
+    {
+      "evidence": [
+        "execution:covariance-constrained-uncertainty"
+      ],
+      "identifier": "migration-core.covariance.both-scaling-policies"
+    },
+    {
+      "evidence": [
+        "execution:covariance-constrained-uncertainty",
+        "probe:numerical-optimizer-evaluator"
+      ],
+      "identifier": "migration-core.covariance.finite-difference-reliability"
+    },
+    {
+      "evidence": [
+        "execution:covariance-constrained-uncertainty"
+      ],
+      "identifier": "migration-core.covariance.rank"
+    },
+    {
+      "evidence": [
+        "execution:covariance-constrained-uncertainty"
+      ],
+      "identifier": "migration-core.covariance.conditioning"
+    },
+    {
+      "evidence": [
+        "execution:covariance-constrained-uncertainty"
+      ],
+      "identifier": "migration-core.covariance.boundary"
+    },
+    {
+      "evidence": [
+        "execution:covariance-constrained-uncertainty"
+      ],
+      "identifier": "migration-core.covariance.correlation"
+    },
+    {
+      "evidence": [
+        "execution:covariance-constrained-uncertainty"
+      ],
+      "identifier": "migration-core.covariance.analytic-normalization"
+    },
+    {
+      "evidence": [
+        "execution:covariance-constrained-uncertainty"
+      ],
+      "identifier": "migration-core.covariance.constrained-propagation"
+    },
+    {
+      "evidence": [
+        "execution:covariance-constrained-uncertainty"
+      ],
+      "identifier": "migration-core.covariance.propagation-degeneracy"
+    },
+    {
+      "evidence": [
+        "execution:resampling"
+      ],
+      "identifier": "migration-core.resampling.mc-truth-probe"
+    },
+    {
+      "evidence": [
+        "execution:resampling"
+      ],
+      "identifier": "migration-core.resampling.bootstrap-truth-probe"
+    },
+    {
+      "evidence": [
+        "execution:resampling"
+      ],
+      "identifier": "migration-core.resampling.nucleus-bootstrap-truth-probe"
+    },
+    {
+      "evidence": [
+        "execution:resampling",
+        "probe:serialization-multiprocessing-cache-replay"
+      ],
+      "identifier": "migration-core.resampling.serial-two-worker-replay"
+    },
+    {
+      "evidence": [
+        "execution:mcmc"
+      ],
+      "identifier": "migration-core.mcmc.bounded-analytic-probe"
+    },
+    {
+      "evidence": [
+        "execution:mcmc"
+      ],
+      "identifier": "migration-core.mcmc.realistic-probe"
+    },
+    {
+      "evidence": [
+        "execution:mcmc",
+        "probe:serialization-multiprocessing-cache-replay"
+      ],
+      "identifier": "migration-core.mcmc.complete-chain-replay"
+    },
+    {
+      "evidence": [
+        "execution:mcmc"
+      ],
+      "identifier": "migration-core.mcmc.truth-backed-statistical-comparison"
+    },
+    {
+      "evidence": [
+        "probe:lifecycle-publication-safety"
+      ],
+      "identifier": "migration-core.failure.construction"
+    },
+    {
+      "evidence": [
+        "probe:lifecycle-publication-safety"
+      ],
+      "identifier": "migration-core.failure.execution"
+    },
+    {
+      "evidence": [
+        "probe:lifecycle-publication-safety"
+      ],
+      "identifier": "migration-core.failure.materialization"
+    },
+    {
+      "evidence": [
+        "probe:lifecycle-publication-safety"
+      ],
+      "identifier": "migration-core.failure.commit"
+    },
+    {
+      "evidence": [
+        "probe:lifecycle-publication-safety"
+      ],
+      "identifier": "migration-core.failure.partial-stochastic-evidence"
+    },
+    {
+      "evidence": [
+        "probe:lifecycle-publication-safety"
+      ],
+      "identifier": "migration-core.failure.workflow-stop"
+    },
+    {
+      "evidence": [
+        "probe:lifecycle-publication-safety"
+      ],
+      "identifier": "migration-core.failure.publication"
+    },
+    {
+      "evidence": [
+        "probe:serialization-multiprocessing-cache-replay"
+      ],
+      "identifier": "migration-core.operational.serialization"
+    },
+    {
+      "evidence": [
+        "probe:serialization-multiprocessing-cache-replay"
+      ],
+      "identifier": "migration-core.operational.multiprocessing"
+    },
+    {
+      "evidence": [
+        "probe:serialization-multiprocessing-cache-replay"
+      ],
+      "identifier": "migration-core.operational.cache"
+    },
+    {
+      "evidence": [
+        "probe:serialization-multiprocessing-cache-replay"
+      ],
+      "identifier": "migration-core.operational.deterministic-replay"
+    },
+    {
+      "evidence": [
+        "workload:qualified-performance"
+      ],
+      "identifier": "migration-core.performance.fixed-work-profile"
+    },
+    {
+      "evidence": [
+        "workload:qualified-performance"
+      ],
+      "identifier": "migration-core.performance.fixed-work-grid"
+    },
+    {
+      "evidence": [
+        "workload:qualified-performance"
+      ],
+      "identifier": "migration-core.performance.fixed-work-serialization"
+    },
+    {
+      "evidence": [
+        "workload:qualified-performance"
+      ],
+      "identifier": "migration-core.performance.fixed-work-resampling"
+    },
+    {
+      "evidence": [
+        "workload:qualified-performance"
+      ],
+      "identifier": "migration-core.performance.fixed-work-mcmc"
+    }
+  ],
+  "schema_version": 1
+}
