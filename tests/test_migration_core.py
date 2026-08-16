@@ -569,14 +569,19 @@ def test_current_status_is_derived_from_resolved_evidence() -> None:
     assert (
         len(result.eligible_requirement_ids),
         len(result.uncovered_requirement_ids),
-    ) == (17, 34)
+    ) == (30, 21)
     failure_coverage = {
         identifier
         for identifier in result.eligible_requirement_ids
         if identifier.startswith("migration-core.failure.")
     }
     assert failure_coverage == set(migration_core_lifecycle.FAILURE_REQUIREMENTS)
-    assert result.unqualified_requirement_ids == ()
+    assert set(result.unqualified_requirement_ids) == {
+        "migration-core.covariance.boundary",
+        "migration-core.covariance.constrained-propagation",
+        "migration-core.covariance.finite-difference-reliability",
+        "migration-core.resampling.nucleus-bootstrap-truth-probe",
+    }
     assert result.compiler_status == "FAILED_CLOSED"
     assert result.compiled_coverage_identity is None
 
@@ -606,6 +611,23 @@ def test_bounded_calibrations_qualify_only_their_demonstrated_claims() -> None:
         "migration-core.resampling.mc-truth-probe",
         "migration-core.resampling.serial-two-worker-replay",
     }
+    assert not migration_core.qualified_migration_core_requirements(
+        "execution:covariance-constrained-uncertainty", uncertainty + b" "
+    )
+
+
+def test_selected_supporting_evidence_hash_fails_closed() -> None:
+    current = migration_core.migration_core_current_release_selection()
+    altered = replace(current.supporting_evidence[0], file_hash="a" * 64)
+    current = replace(
+        current,
+        supporting_evidence=(altered, *current.supporting_evidence[1:]),
+    )
+
+    with pytest.raises(
+        MigrationCoreCoverageError, match="selection hash does not match"
+    ):
+        migration_core._load_selected_supporting_evidence(_REPOSITORY_ROOT, current)
 
 
 def test_changed_requirement_selection_is_not_trusted(

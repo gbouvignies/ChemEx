@@ -202,9 +202,9 @@ def test_stale_flat_counter_capture_and_altered_facts_are_ineligible(
     ) == ()
 
 
-def test_stale_evidence_only_selection_is_not_current() -> None:
+def test_current_selection_retains_exact_lifecycle_evidence() -> None:
     current = migration_core.migration_core_current_release_selection()
-    assert current.selection_version == "migration-core-current-release-v2"
+    assert current.selection_version == "migration-core-current-release-v3"
     assert current.lifecycle_probe_identity is not None
     assert (
         current.lifecycle_source_commit
@@ -213,7 +213,7 @@ def test_stale_evidence_only_selection_is_not_current() -> None:
     result = migration_core.compile_current_phased_migration_core_status(
         Path(__file__).parents[1]
     )
-    assert len(result.eligible_requirement_ids) == 17
-    assert len(result.uncovered_requirement_ids) == 34
+    assert len(result.eligible_requirement_ids) == 30
+    assert len(result.uncovered_requirement_ids) == 21
     assert result.compiler_status == "FAILED_CLOSED"
 # fmt: on

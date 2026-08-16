@@ -75,6 +75,13 @@ _UNCERTAINTY_CALIBRATION_FILE_HASH = (
 _RESAMPLING_CALIBRATION_FILE_HASH = (
     "f1ccbe45222351a2f9fd138d4250dfba80c8d84f3c658de2d33a2acd0bd5622b"
 )
+_OPERATIONAL_CAPTURE_IDENTITY = (
+    "8a0394e50bef697dce880ee35bf7d77d2f8ffa3c8fc8e81ab0a6afbb4d15a59a"
+)
+_OPERATIONAL_SOURCE_COMMIT = "fb156f86f431a90c65d1a7285bdb6532ab2c51ec"
+_OPERATIONAL_LOCKFILE_HASH = (
+    "cc7a8e08d8fb8f1ea4255b63452598f6dbe041a8b4024de0f3af065020088004"
+)
 _APPROVED_EVIDENCE = (
     "anchor:2st-binding",
     "anchor:cest-13c-label-cn",
@@ -1541,25 +1548,14 @@ def _validated_resampling_calibration_identity(
 def _validated_operational_replay_identity(
     evidence: object,
 ) -> tuple[str, str] | None:
-    current = migration_core_current_release_selection()
     authority = migration_core_authority_selection()
     if (
         isinstance(evidence, OperationalReplayCapture)
-        and current.operational_source_commit is not None
-        and current.operational_lockfile_hash is not None
-        and evidence.identity
-        == next(
-            (
-                item.identity
-                for item in current.supporting_evidence
-                if item.evidence == "probe:serialization-multiprocessing-cache-replay"
-            ),
-            None,
-        )
+        and evidence.identity == _OPERATIONAL_CAPTURE_IDENTITY
         and eligible_operational_requirements(
             evidence,
-            source_commit=current.operational_source_commit,
-            lockfile_hash=current.operational_lockfile_hash,
+            source_commit=_OPERATIONAL_SOURCE_COMMIT,
+            lockfile_hash=_OPERATIONAL_LOCKFILE_HASH,
             lane_identity=authority.lane_identity,
             attestation_identity=authority.attestation_identity,
             environment_identity=authority.environment_identity,
@@ -1621,17 +1617,11 @@ def _supporting_qualified_requirements(
         evidence_name == "probe:serialization-multiprocessing-cache-replay"
         and isinstance(evidence, OperationalReplayCapture)
     ):
-        current = migration_core_current_release_selection()
         authority = migration_core_authority_selection()
-        if (
-            current.operational_source_commit is None
-            or current.operational_lockfile_hash is None
-        ):
-            return frozenset()
         return eligible_operational_requirements(
             evidence,
-            source_commit=current.operational_source_commit,
-            lockfile_hash=current.operational_lockfile_hash,
+            source_commit=_OPERATIONAL_SOURCE_COMMIT,
+            lockfile_hash=_OPERATIONAL_LOCKFILE_HASH,
             lane_identity=authority.lane_identity,
             attestation_identity=authority.attestation_identity,
             environment_identity=authority.environment_identity,
@@ -1873,6 +1863,8 @@ class MigrationCoreCurrentReleaseSelection:
                 or tuple(sorted(self.supporting_evidence)) != self.supporting_evidence
                 or not all(operational_source)
                 or not all(lifecycle)
+                or self.operational_source_commit != _OPERATIONAL_SOURCE_COMMIT
+                or self.operational_lockfile_hash != _OPERATIONAL_LOCKFILE_HASH
             ):
                 raise MigrationCoreCoverageError(
                     "Migration-core current release has incomplete qualified evidence"
