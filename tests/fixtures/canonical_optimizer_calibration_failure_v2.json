@@ -1,0 +1,53 @@
+{
+  "acquisition": {
+    "adaptive_extension": false,
+    "authoritative_round": 1,
+    "host": "asterix",
+    "host_checkout_guard": "PASS",
+    "in_container_source_guard": "NOT_REACHED",
+    "native_machine": "x86_64",
+    "retry_count": 0,
+    "retuned": false,
+    "scientific_execution_started": false,
+    "v1_observations_used": false,
+    "version": 2
+  },
+  "canonical_lane": {
+    "image_digest": "sha256:ed4f97e00bd6fe494f46772cc31a338d756b5bb5fe6e4e480d987af51af85550",
+    "native_threads": 1,
+    "platform": "linux/amd64",
+    "workers": 1
+  },
+  "eligibility": {
+    "eligible_claims": [],
+    "migration_core_coverage_after": 30,
+    "migration_core_coverage_before": 30,
+    "migration_core_coverage_change": 0,
+    "reason": "the frozen v2 qualification module failed to import before source guarding or scientific execution",
+    "status": "INELIGIBLE_NO_RESULT_RECORD"
+  },
+  "failure": {
+    "error_type": "ModuleNotFoundError",
+    "message": "No module named 'tests'",
+    "stage": "qualification-module-import"
+  },
+  "identity": "13a6060a5d7532f221c32ef72fe8633d7113d8c616a6c35044fc96b7a3afe443",
+  "prospective_authority": {
+    "source_manifest_sha256": "0eeef43990ed66dd0541ab39224378ea556f404d1763b14d47ec4a7a9e4fc47c",
+    "specification_commit": "220b3de5eaebaf1f4a19fa31877e412e522c77c7",
+    "specification_id": "chemex-optimizer-calibration-v2",
+    "specification_identity": "c8db7972f1d43262b3935e33c2b711d6f392b5f3fcb9e78339079de31ca0c9c3"
+  },
+  "record_version": "canonical-optimizer-calibration-failure-v2",
+  "schema_version": 1,
+  "scientific_stages": {
+    "coupled_grid_trf": "NOT_STARTED",
+    "de_trf": "NOT_STARTED",
+    "decomposed_grouped_grid_trf": "NOT_STARTED",
+    "difficult_direct_trf": "NOT_STARTED",
+    "grouped_holdout": "UNOPENED",
+    "routine_direct_trf": "NOT_STARTED",
+    "truth_probes": "NOT_STARTED"
+  },
+  "status": "ARCHITECTURAL_FAILURE"
+}

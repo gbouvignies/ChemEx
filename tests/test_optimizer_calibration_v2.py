@@ -11,6 +11,9 @@ import pytest
 
 import tests.qualification.capture_optimizer_calibration_v2 as calibration
 
+ROOT = Path(__file__).parent.parent
+FAILED_ROUND = ROOT / "tests/fixtures/canonical_optimizer_calibration_failure_v2.json"
+
 
 def _matched_truth() -> dict[str, object]:
     return {
@@ -281,3 +284,27 @@ def test_native_preflight_exercises_acquisition_through_final_identity(
         "resource_ceiling_passed": True,
     }
     json.dumps(record, allow_nan=False)
+
+
+def test_v2_import_failure_is_content_identified_and_ineligible() -> None:
+    record = json.loads(FAILED_ROUND.read_text(encoding="utf-8"))
+    identity = record.pop("identity")
+    encoded = json.dumps(
+        record,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+
+    assert identity == hashlib.sha256(encoded).hexdigest()
+    assert record["status"] == "ARCHITECTURAL_FAILURE"
+    assert record["failure"] == {
+        "error_type": "ModuleNotFoundError",
+        "message": "No module named 'tests'",
+        "stage": "qualification-module-import",
+    }
+    assert record["acquisition"]["scientific_execution_started"] is False
+    assert record["scientific_stages"]["grouped_holdout"] == "UNOPENED"
+    assert record["eligibility"]["eligible_claims"] == []
+    assert record["eligibility"]["migration_core_coverage_change"] == 0
