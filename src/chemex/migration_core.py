@@ -42,6 +42,8 @@ _SCHEMA_VERSION = 1
 _MANIFEST_VERSION = "migration-core-coverage-v2"
 _BASELINE_SEMANTIC_VERSION = "chemex-baseline-v1"
 _MANIFEST_RESOURCE = "migration_core_coverage_v2.json"
+_MANIFEST_FILE_HASH = "c2afd64c22168f3b9c20329a5c8762cf4080fcaec822585754731e306c1a910a"
+_MANIFEST_IDENTITY = "636e6dbaaf461b2f718a8c65f29f40503409fef7618b88e1da806a6dded76a32"
 _AUTHORITY_SELECTION_RESOURCE = "migration_core_authority_selection_v1.json"
 _CURRENT_RELEASE_SELECTION_RESOURCES = (
     "migration_core_current_release_v3.json",
@@ -1192,10 +1194,25 @@ class CompiledMigrationCoreCoverage:
         return tuple(sorted(item.result_bundle_identity for item in self.evidence))
 
 
+def _validated_migration_core_manifest(
+    content: bytes,
+) -> MigrationCoreCoverageManifest:
+    if hashlib.sha256(content).hexdigest() != _MANIFEST_FILE_HASH:
+        raise MigrationCoreCoverageError(
+            "Migration-core coverage manifest hash does not match"
+        )
+    manifest = MigrationCoreCoverageManifest.from_bytes(content)
+    if manifest.identity != _MANIFEST_IDENTITY:
+        raise MigrationCoreCoverageError(
+            "Migration-core coverage manifest identity does not match"
+        )
+    return manifest
+
+
 def migration_core_coverage_manifest() -> MigrationCoreCoverageManifest:
-    """Load the one shipped, versioned #590 coverage manifest."""
+    """Load the one exact shipped and versioned #590 coverage manifest."""
     content = files("chemex").joinpath(_MANIFEST_RESOURCE).read_bytes()
-    return MigrationCoreCoverageManifest.from_bytes(content)
+    return _validated_migration_core_manifest(content)
 
 
 def _file_hash(path: Path, name: str) -> str:

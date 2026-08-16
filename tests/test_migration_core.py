@@ -780,6 +780,17 @@ def test_manifest_validator_rejects_incompatible_or_empty_coverage() -> None:
         MigrationCoreCoverageManifest.from_bytes(_canonical_bytes(truncated))
 
 
+def test_current_manifest_rejects_same_version_requirement_remapping() -> None:
+    manifest = migration_core_coverage_manifest()
+    remapped = json.loads(manifest.to_bytes())
+    remapped["requirements"][0]["evidence"] = ["anchor:cpmg-15n-ip"]
+    content = _canonical_bytes(remapped)
+    with pytest.raises(
+        MigrationCoreCoverageError, match="manifest hash does not match"
+    ):
+        migration_core._validated_migration_core_manifest(content)
+
+
 def test_canonical_capture_status_records_the_fail_closed_empirical_result() -> None:
     record = json.loads(
         (
