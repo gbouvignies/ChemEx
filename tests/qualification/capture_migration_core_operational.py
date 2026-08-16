@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Any, Protocol, cast
 
 from tests.qualification.native_evaluation_process import (
     evaluation_request,
@@ -36,13 +37,19 @@ from chemex.evaluation.native import (
 )
 from chemex.experiments.builder import build_experiments
 from chemex.migration_core_operational import OperationalReplayCapture
-from chemex.numerical_lanes import LiveLaneAuthority, canonical_lanes
+from chemex.numerical_lanes import canonical_lanes
 from chemex.parameters.spin_system import SpinSystem
 from chemex.runtime import AnalysisSession
 
 ROOT = Path(__file__).parents[2]
 EXPERIMENT = ROOT / "examples/Experiments/DCEST_15N_HD_EXCH/Experiments/3hz.toml"
 PARAMETERS = ROOT / "examples/Experiments/DCEST_15N_HD_EXCH/Parameters/parameters.toml"
+
+
+class LaneAuthority(Protocol):
+    """Attestation capability exposed by the frozen canonical image."""
+
+    def to_record(self) -> dict[str, object]: ...
 
 
 def _member(role: str, path: Path) -> InputMember:
@@ -218,7 +225,7 @@ def capture(
     *,
     source_commit: str,
     lockfile_hash: str,
-    authority: LiveLaneAuthority,
+    authority: LaneAuthority,
 ) -> OperationalReplayCapture:
     lane = canonical_lanes()[0]
     authority_record = authority.to_record()
@@ -262,7 +269,7 @@ def capture(
         specification,
         case,
         f"migration-core-operational-replay:{source_commit}",
-        authority,
+        cast(Any, authority),
     )
     facts = CanonicalBaselineValue.from_value(_capture_facts())
     facts_content = json.dumps(
