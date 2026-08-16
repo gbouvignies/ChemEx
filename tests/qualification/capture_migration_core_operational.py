@@ -93,7 +93,7 @@ def _receipt(content: bytes) -> dict[str, object]:
     return record
 
 
-def _capture_facts() -> dict[str, object]:
+def _capture_facts() -> dict[str, dict[str, object]]:
     engine, frame, request = _selected_evaluation()
     expected = engine.new_evaluator().evaluate(frame)
     if not isinstance(expected, EvaluationResult):
@@ -177,7 +177,7 @@ def _capture_facts() -> dict[str, object]:
         "serialization": {
             "plan_round_trip": restored_plan == engine.plan,
             "frame_round_trip": restored_frame == frame,
-            "result_round_trip": restored_result == expected,
+            "result_round_trip": restored_result.to_record() == expected.to_record(),
         },
         "multiprocessing": {
             "fresh_worker_ownership": (
