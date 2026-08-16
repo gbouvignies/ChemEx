@@ -1,8 +1,7 @@
-"""Capture compact canonical operational evidence for issues #593 and #590."""
+"""Build compact operational evidence after canonical lane attestation."""
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import os
@@ -37,7 +36,7 @@ from chemex.evaluation.native import (
 )
 from chemex.experiments.builder import build_experiments
 from chemex.migration_core_operational import OperationalReplayCapture
-from chemex.numerical_lanes import canonical_lanes
+from chemex.numerical_lanes import LiveLaneAuthority, canonical_lanes
 from chemex.parameters.spin_system import SpinSystem
 from chemex.runtime import AnalysisSession
 
@@ -216,10 +215,12 @@ def _capture_facts() -> dict[str, object]:
 
 
 def capture(
-    *, source_commit: str, lockfile_hash: str, image_digest: str
+    *,
+    source_commit: str,
+    lockfile_hash: str,
+    authority: LiveLaneAuthority,
 ) -> OperationalReplayCapture:
     lane = canonical_lanes()[0]
-    authority = lane.attest_current_process(image_digest)
     authority_record = authority.to_record()
     implementation = LegacyObservationImplementation.from_current_package()
     case = CaseDefinition.create(
@@ -228,6 +229,10 @@ def capture(
         {"purpose": "serialization-multiprocessing-cache-replay"},
         (
             _member("capture-runner", Path(__file__)),
+            _member(
+                "attestation-first-runner",
+                Path(__file__).with_name("seal_migration_core_operational.py"),
+            ),
             _member(
                 "process-boundary-helper",
                 ROOT / "tests/qualification/native_evaluation_process.py",
@@ -287,23 +292,3 @@ def capture(
         bundle,
         facts,
     )
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("output", type=Path)
-    parser.add_argument("--source-commit", required=True)
-    parser.add_argument("--lockfile-hash", required=True)
-    parser.add_argument("--image-digest", required=True)
-    arguments = parser.parse_args()
-    arguments.output.write_bytes(
-        capture(
-            source_commit=arguments.source_commit,
-            lockfile_hash=arguments.lockfile_hash,
-            image_digest=arguments.image_digest,
-        ).to_bytes()
-    )
-
-
-if __name__ == "__main__":
-    main()
