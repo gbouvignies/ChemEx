@@ -23,6 +23,11 @@ from chemex.migration_core_lifecycle import (
     LifecycleProbeCapture,
     eligible_failure_requirements,
 )
+from chemex.migration_core_operational import (
+    OPERATIONAL_REQUIREMENTS,
+    OperationalReplayCapture,
+    eligible_operational_requirements,
+)
 from chemex.numerical_lanes import (
     LaneAttestation,
     RuntimeEnvironment,
@@ -34,22 +39,27 @@ from chemex.optimize.numerical_probes import (
 )
 
 _SCHEMA_VERSION = 1
-_MANIFEST_VERSION = "migration-core-coverage-v1"
+_MANIFEST_VERSION = "migration-core-coverage-v2"
 _BASELINE_SEMANTIC_VERSION = "chemex-baseline-v1"
-_MANIFEST_RESOURCE = "migration_core_coverage_v1.json"
+_MANIFEST_RESOURCE = "migration_core_coverage_v2.json"
+_MANIFEST_FILE_HASH = "c2afd64c22168f3b9c20329a5c8762cf4080fcaec822585754731e306c1a910a"
+_MANIFEST_IDENTITY = "636e6dbaaf461b2f718a8c65f29f40503409fef7618b88e1da806a6dded76a32"
 _AUTHORITY_SELECTION_RESOURCE = "migration_core_authority_selection_v1.json"
 _CURRENT_RELEASE_SELECTION_RESOURCES = (
+    "migration_core_current_release_v3.json",
     "migration_core_current_release_v2.json",
     "migration_core_current_release_v1.json",
 )
 _CURRENT_STATUS_VERSIONS = {
     "migration-core-canonical-coverage-status-v3": (10, 41),
     "migration-core-canonical-coverage-status-v4": (17, 34),
+    "migration-core-canonical-coverage-status-v5": (30, 21),
 }
 _ANCHOR_RELEASE_VERSION = "migration-core-canonical-anchor-release-v1"
 _CURRENT_RELEASE_VERSIONS = {
     "migration-core-current-release-v1",
     "migration-core-current-release-v2",
+    "migration-core-current-release-v3",
 }
 _AUTHORITY_SELECTION_VERSION = "migration-core-authority-selection-v1"
 _CANONICAL_ATTESTATION_IDENTITY = (
@@ -60,6 +70,19 @@ _CANONICAL_ENVIRONMENT_IDENTITY = (
 )
 _CANONICAL_NUMERICAL_PROBE_BASELINE_IDENTITY = (
     "d11f9caa404b8ce3fa96e041659939446e205aae9376b08d6a137ed40cf0bdb0"
+)
+_UNCERTAINTY_CALIBRATION_FILE_HASH = (
+    "cb149ef426d4c32bfaa2b84b5c26170ada1a3fb1b66b5221a447c9fd4a178c5c"
+)
+_RESAMPLING_CALIBRATION_FILE_HASH = (
+    "f1ccbe45222351a2f9fd138d4250dfba80c8d84f3c658de2d33a2acd0bd5622b"
+)
+_OPERATIONAL_CAPTURE_IDENTITY = (
+    "8a0394e50bef697dce880ee35bf7d77d2f8ffa3c8fc8e81ab0a6afbb4d15a59a"
+)
+_OPERATIONAL_SOURCE_COMMIT = "fb156f86f431a90c65d1a7285bdb6532ab2c51ec"
+_OPERATIONAL_LOCKFILE_HASH = (
+    "cc7a8e08d8fb8f1ea4255b63452598f6dbe041a8b4024de0f3af065020088004"
 )
 _APPROVED_EVIDENCE = (
     "anchor:2st-binding",
@@ -134,6 +157,39 @@ _AUDITED_REQUIREMENTS = (
     "migration-core.performance.fixed-work-mcmc",
 )
 
+_QUALIFIED_UNCERTAINTY_REQUIREMENTS = frozenset(
+    {
+        "migration-core.covariance.analytic-normalization",
+        "migration-core.covariance.both-scaling-policies",
+        "migration-core.covariance.conditioning",
+        "migration-core.covariance.correlation",
+        "migration-core.covariance.propagation-degeneracy",
+        "migration-core.covariance.rank",
+    }
+)
+_QUALIFIED_RESAMPLING_REQUIREMENTS = frozenset(
+    {
+        "migration-core.resampling.bootstrap-truth-probe",
+        "migration-core.resampling.mc-truth-probe",
+        "migration-core.resampling.serial-two-worker-replay",
+    }
+)
+_QUALIFIED_NUMERICAL_PROBE_REQUIREMENTS = frozenset(
+    {
+        "migration-core.covariance.finite-difference-reliability",
+        "migration-core.direct-trf.legacy-outlier-behavior",
+        "migration-core.direct-trf.routine-behavior",
+    }
+)
+_EXPECTED_UNQUALIFIED_REQUIREMENTS = frozenset(
+    {
+        "migration-core.covariance.boundary",
+        "migration-core.covariance.constrained-propagation",
+        "migration-core.covariance.finite-difference-reliability",
+        "migration-core.resampling.nucleus-bootstrap-truth-probe",
+    }
+)
+
 
 class MigrationCoreCoverageError(ValueError):
     """The fixed migration-core coverage cannot be compiled authoritatively."""
@@ -192,6 +248,178 @@ def _json_record_from_bytes(content: bytes, name: str) -> Mapping[str, object]:
             f"Migration-core {name} is malformed"
         ) from error
     return _record(decoded, name)
+
+
+def _canonical_provenance_matches(record: Mapping[str, object]) -> bool:
+    try:
+        lane = _record(record.get("numerical_lane"), "numerical lane")
+        attestation = _record(record.get("lane_attestation"), "lane attestation")
+        environment = _record(record.get("runtime_environment"), "runtime environment")
+    except MigrationCoreCoverageError:
+        return False
+    authority = migration_core_authority_selection()
+    return (
+        lane.get("identity") == authority.lane_identity
+        and lane.get("role") == authority.lane_role
+        and attestation.get("identity") == authority.attestation_identity
+        and attestation.get("environment_identity") == authority.environment_identity
+        and attestation.get("workers") == authority.workers
+        and attestation.get("native_threads") == authority.native_threads
+        and environment.get("identity") == authority.environment_identity
+    )
+
+
+def _qualified_uncertainty_requirements(content: bytes) -> frozenset[str]:
+    if hashlib.sha256(content).hexdigest() != _UNCERTAINTY_CALIBRATION_FILE_HASH:
+        return frozenset()
+    try:
+        record = _json_record_from_bytes(content, "uncertainty calibration")
+        provenance = _record(
+            record.get("canonical_provenance"), "uncertainty provenance"
+        )
+        phases = _record(
+            record.get("selected_phase_policies"), "uncertainty selections"
+        )
+        metrics = _record(record.get("decisive_metrics"), "uncertainty metrics")
+        composed = record.get("composed")
+        holdouts = record.get("holdouts")
+    except MigrationCoreCoverageError:
+        return frozenset()
+    if not isinstance(composed, list) or not isinstance(holdouts, list):
+        return frozenset()
+    composed_by_case = {
+        item.get("case"): item
+        for value in composed
+        if isinstance(value, Mapping)
+        for item in (cast("Mapping[str, object]", value),)
+    }
+    selected_metrics = (
+        "scale",
+        "finite_difference",
+        "driver",
+        "rank",
+        "weak",
+        "cluster",
+        "conditioning",
+        "correlation",
+    )
+    try:
+        all_selected = all(
+            _record(metrics.get(name), f"uncertainty {name}").get("status")
+            == "SELECTED"
+            for name in selected_metrics
+        )
+    except MigrationCoreCoverageError:
+        return frozenset()
+    if (
+        record.get("specification_id") != "chemex-uncertainty-calibration-v3"
+        or record.get("source_digest")
+        != "8015729a614ad1128a8d30a9dbba5557d86c6a3864feeaa5514324397182d752"
+        or record.get("specification_digest")
+        != "4cae4629318008d1f8fff41657bd4cb01784d03247b700025c57f89dee76fbf9"
+        or record.get("policy_digest")
+        != "d5a42efd796d4cb5afc31af069157b9fa0d700f61534b94226bdcd4ccd44840d"
+        or record.get("status") != "COMPOSED_VALIDATION_FAILED"
+        or not _canonical_provenance_matches(provenance)
+        or not all_selected
+        or phases.get("finite_difference") != [0.0, 2.0, 2, 0]
+        or phases.get("rank") != [0.0, 2.0**-36]
+        or phases.get("conditioning") != 2.0**20
+        or phases.get("correlation") != 64.0
+        or tuple(composed_by_case)
+        != (
+            "A1",
+            "A2",
+            "F1-absolute",
+            "F1-estimated",
+            "F2",
+        )
+        or not all(
+            composed_by_case[name].get("passed") is True
+            for name in ("A1", "A2", "F1-absolute", "F1-estimated")
+        )
+        or composed_by_case["F2"].get("passed") is not False
+        or composed_by_case["F2"].get("partial_error") != 4.733702319015265e-11
+        or not all(
+            isinstance(item, Mapping) and item.get("status") == "NOT_RUN"
+            for item in holdouts
+        )
+        or record.get("compatibility")
+        != {"reason": "composed_validation_failed", "status": "NOT_RUN"}
+    ):
+        return frozenset()
+    return _QUALIFIED_UNCERTAINTY_REQUIREMENTS
+
+
+def _qualified_resampling_requirements(content: bytes) -> frozenset[str]:
+    if hashlib.sha256(content).hexdigest() != _RESAMPLING_CALIBRATION_FILE_HASH:
+        return frozenset()
+    try:
+        record = _json_record_from_bytes(content, "resampling calibration")
+        lane = _record(record.get("canonical_lane"), "resampling lane")
+        source = _record(record.get("source"), "resampling source")
+        families = _record(record.get("families"), "resampling families")
+        mc = _record(families.get("mc"), "MC calibration")
+        bs = _record(families.get("bs"), "BS calibration")
+        bsn = _record(families.get("bsn"), "BSN calibration")
+    except MigrationCoreCoverageError:
+        return frozenset()
+
+    def qualified_family(family: Mapping[str, object]) -> bool:
+        selection = family.get("selection")
+        holdout = family.get("holdout")
+        replay = family.get("replay")
+        return (
+            isinstance(selection, Mapping)
+            and selection.get("status") == "SELECTED"
+            and selection.get("selected_count") == 128
+            and isinstance(holdout, Mapping)
+            and holdout.get("status") == "PASS"
+            and isinstance(replay, Mapping)
+            and replay.get("status") == "PASS"
+            and replay.get("serial_workers") == 1
+            and replay.get("parallel_workers") == 2
+            and replay.get("exact_identity_match") is True
+        )
+
+    bsn_selection = bsn.get("selection")
+    if (
+        record.get("schema_version") != 1
+        or record.get("record_version") != "canonical-resampling-calibration-v2"
+        or record.get("identity")
+        != "3adb78c1c9910d16bd5201f9ef0984bf8974417632fbae2c3af5518f78fa70c4"
+        or source.get("dependency_lock_sha256")
+        != "cc7a8e08d8fb8f1ea4255b63452598f6dbe041a8b4024de0f3af065020088004"
+        or source.get("qualification_script_sha256")
+        != "6b6c6709dba53316da120992f199d9701e4a7f6e3e2e3c674e88e548b2e1dcec"
+        or source.get("specification_commit")
+        != "65517c1242a387635bdaeaa96b05f547e0a72fcd"
+        or not _canonical_provenance_matches(lane)
+        or not qualified_family(mc)
+        or not qualified_family(bs)
+        or not isinstance(bsn_selection, Mapping)
+        or bsn_selection.get("status") != "NO_ADEQUATE_CANDIDATE"
+        or bsn_selection.get("selected_count") is not None
+        or bsn.get("holdout") is not None
+        or bsn.get("replay") is not None
+    ):
+        return frozenset()
+    return _QUALIFIED_RESAMPLING_REQUIREMENTS
+
+
+def qualified_migration_core_requirements(
+    evidence: str, content: bytes
+) -> frozenset[str]:
+    """Return only claims qualified by an exact immutable evidence payload."""
+
+    validators = {
+        "execution:covariance-constrained-uncertainty": (
+            _qualified_uncertainty_requirements
+        ),
+        "execution:resampling": _qualified_resampling_requirements,
+    }
+    validator = validators.get(evidence)
+    return frozenset() if validator is None else validator(content)
 
 
 def _record(value: object, name: str) -> Mapping[str, object]:
@@ -966,10 +1194,25 @@ class CompiledMigrationCoreCoverage:
         return tuple(sorted(item.result_bundle_identity for item in self.evidence))
 
 
+def _validated_migration_core_manifest(
+    content: bytes,
+) -> MigrationCoreCoverageManifest:
+    if hashlib.sha256(content).hexdigest() != _MANIFEST_FILE_HASH:
+        raise MigrationCoreCoverageError(
+            "Migration-core coverage manifest hash does not match"
+        )
+    manifest = MigrationCoreCoverageManifest.from_bytes(content)
+    if manifest.identity != _MANIFEST_IDENTITY:
+        raise MigrationCoreCoverageError(
+            "Migration-core coverage manifest identity does not match"
+        )
+    return manifest
+
+
 def migration_core_coverage_manifest() -> MigrationCoreCoverageManifest:
-    """Load the one shipped, versioned #590 coverage manifest."""
+    """Load the one exact shipped and versioned #590 coverage manifest."""
     content = files("chemex").joinpath(_MANIFEST_RESOURCE).read_bytes()
-    return MigrationCoreCoverageManifest.from_bytes(content)
+    return _validated_migration_core_manifest(content)
 
 
 def _file_hash(path: Path, name: str) -> str:
@@ -1296,6 +1539,50 @@ def _validated_lifecycle_publication_safety_identity(
     return None
 
 
+def _validated_uncertainty_calibration_identity(
+    evidence: object,
+) -> tuple[str, str] | None:
+    if isinstance(evidence, bytes) and qualified_migration_core_requirements(
+        "execution:covariance-constrained-uncertainty", evidence
+    ):
+        return "UncertaintyCalibrationEvidence", hashlib.sha256(evidence).hexdigest()
+    return None
+
+
+def _validated_resampling_calibration_identity(
+    evidence: object,
+) -> tuple[str, str] | None:
+    if isinstance(evidence, bytes) and qualified_migration_core_requirements(
+        "execution:resampling", evidence
+    ):
+        record = _json_record_from_bytes(evidence, "resampling calibration")
+        return "ResamplingCalibrationEvidence", _digest(
+            record.get("identity"), "resampling evidence identity"
+        )
+    return None
+
+
+def _validated_operational_replay_identity(
+    evidence: object,
+) -> tuple[str, str] | None:
+    authority = migration_core_authority_selection()
+    if (
+        isinstance(evidence, OperationalReplayCapture)
+        and evidence.identity == _OPERATIONAL_CAPTURE_IDENTITY
+        and eligible_operational_requirements(
+            evidence,
+            source_commit=_OPERATIONAL_SOURCE_COMMIT,
+            lockfile_hash=_OPERATIONAL_LOCKFILE_HASH,
+            lane_identity=authority.lane_identity,
+            attestation_identity=authority.attestation_identity,
+            environment_identity=authority.environment_identity,
+        )
+        == OPERATIONAL_REQUIREMENTS
+    ):
+        return "SerializationMultiprocessingCacheReplayEvidence", evidence.identity
+    return None
+
+
 def _unavailable_identity(_evidence: object) -> tuple[str, str] | None:
     return None
 
@@ -1303,20 +1590,60 @@ def _unavailable_identity(_evidence: object) -> tuple[str, str] | None:
 _SUPPORTING_VALIDATORS: dict[str, Callable[[object], tuple[str, str] | None]] = {
     # Exact reduced-case and policy fingerprints are empirical release inputs.
     # Broad successful native objects deliberately cannot mint these selections.
-    "execution:covariance-constrained-uncertainty": _unavailable_identity,
+    "execution:covariance-constrained-uncertainty": (
+        _validated_uncertainty_calibration_identity
+    ),
     "execution:de-trf-search": _unavailable_identity,
     "execution:fit-component-aggregation": _unavailable_identity,
     "execution:grid-decomposed": _unavailable_identity,
     "execution:grid-single-component": _unavailable_identity,
     "execution:mcmc": _unavailable_identity,
-    "execution:resampling": _unavailable_identity,
+    "execution:resampling": _validated_resampling_calibration_identity,
     "probe:lifecycle-publication-safety": (
         _validated_lifecycle_publication_safety_identity
     ),
     "probe:numerical-optimizer-evaluator": _validated_numerical_probe_identity,
-    "probe:serialization-multiprocessing-cache-replay": _unavailable_identity,
+    "probe:serialization-multiprocessing-cache-replay": (
+        _validated_operational_replay_identity
+    ),
     "workload:qualified-performance": _unavailable_identity,
 }
+
+
+def _supporting_qualified_requirements(
+    evidence_name: str, evidence: object
+) -> frozenset[str]:
+    if evidence_name == "probe:numerical-optimizer-evaluator":
+        return (
+            _QUALIFIED_NUMERICAL_PROBE_REQUIREMENTS
+            if _validated_numerical_probe_identity(evidence) is not None
+            else frozenset()
+        )
+    if evidence_name == "probe:lifecycle-publication-safety":
+        return (
+            frozenset(FAILURE_REQUIREMENTS)
+            if _validated_lifecycle_publication_safety_identity(evidence) is not None
+            else frozenset()
+        )
+    if evidence_name in {
+        "execution:covariance-constrained-uncertainty",
+        "execution:resampling",
+    } and isinstance(evidence, bytes):
+        return qualified_migration_core_requirements(evidence_name, evidence)
+    if (
+        evidence_name == "probe:serialization-multiprocessing-cache-replay"
+        and isinstance(evidence, OperationalReplayCapture)
+    ):
+        authority = migration_core_authority_selection()
+        return eligible_operational_requirements(
+            evidence,
+            source_commit=_OPERATIONAL_SOURCE_COMMIT,
+            lockfile_hash=_OPERATIONAL_LOCKFILE_HASH,
+            lane_identity=authority.lane_identity,
+            attestation_identity=authority.attestation_identity,
+            environment_identity=authority.environment_identity,
+        )
+    return frozenset()
 
 
 def _supporting_native_identity(
@@ -1351,6 +1678,35 @@ def _compiled_evidence(
         published.bundle.implementation.identity,
         published.manifest_identity,
     )
+
+
+def _qualified_coverage_items(
+    manifest: MigrationCoreCoverageManifest,
+    evidence_identities: Mapping[str, str],
+    qualified_requirements: Mapping[str, frozenset[str]],
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    items: list[tuple[str, tuple[str, ...]]] = []
+    for requirement in manifest.requirements:
+        unqualified = tuple(
+            evidence
+            for evidence in requirement.evidence
+            if evidence in qualified_requirements
+            and requirement.identifier not in qualified_requirements[evidence]
+        )
+        if unqualified:
+            raise MigrationCoreCoverageError(
+                f"Evidence {', '.join(unqualified)} does not qualify requirement "
+                f"{requirement.identifier}"
+            )
+        items.append(
+            (
+                requirement.identifier,
+                tuple(
+                    evidence_identities[evidence] for evidence in requirement.evidence
+                ),
+            )
+        )
+    return tuple(items)
 
 
 def compile_migration_core_coverage(
@@ -1409,17 +1765,17 @@ def compile_migration_core_coverage(
             )
         )
     native = tuple(native_items)
+    qualified_requirements = {
+        name: _supporting_qualified_requirements(name, evidence)
+        for name, evidence in supporting_evidence.items()
+    }
     evidence_identities = {
         **{name: published.bundle.identity for name, published in resolved.items()},
         **{item.evidence: item.identity for item in native},
     }
 
-    coverage = tuple(
-        (
-            requirement.identifier,
-            tuple(evidence_identities[evidence] for evidence in requirement.evidence),
-        )
-        for requirement in manifest.requirements
+    coverage = _qualified_coverage_items(
+        manifest, evidence_identities, qualified_requirements
     )
     if len(coverage) != len(manifest.requirements):
         raise MigrationCoreCoverageError(
@@ -1434,6 +1790,49 @@ def compile_migration_core_coverage(
         ),
         native,
     )
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class MigrationCoreSupportingEvidenceSelection:
+    """One immutable repository file selected as supporting evidence."""
+
+    evidence: str
+    locator: str
+    file_hash: str
+    identity: str
+
+    def __post_init__(self) -> None:
+        if self.evidence not in _APPROVED_SUPPORTING_EVIDENCE:
+            raise MigrationCoreCoverageError(
+                "Migration-core selects unapproved supporting evidence"
+            )
+        _relative_locator(self.locator, "supporting evidence locator")
+        _digest(self.file_hash, "supporting evidence file hash")
+        _digest(self.identity, "supporting evidence identity")
+
+    def to_record(self) -> dict[str, object]:
+        return {
+            "evidence": self.evidence,
+            "file_hash": self.file_hash,
+            "identity": self.identity,
+            "locator": self.locator,
+        }
+
+    @classmethod
+    def from_record(
+        cls, record: Mapping[str, object]
+    ) -> MigrationCoreSupportingEvidenceSelection:
+        _exact_keys(
+            record,
+            {"evidence", "file_hash", "identity", "locator"},
+            "supporting evidence selection",
+        )
+        return cls(
+            _text(record.get("evidence"), "supporting evidence name"),
+            _relative_locator(record.get("locator"), "supporting evidence locator"),
+            _digest(record.get("file_hash"), "supporting evidence file hash"),
+            _digest(record.get("identity"), "supporting evidence identity"),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1459,7 +1858,40 @@ class MigrationCoreCurrentReleaseSelection:
     lifecycle_probe_identity: str | None = None
     lifecycle_source_commit: str | None = None
     lifecycle_lockfile_hash: str | None = None
+    supporting_evidence: tuple[MigrationCoreSupportingEvidenceSelection, ...] = ()
+    operational_source_commit: str | None = None
+    operational_lockfile_hash: str | None = None
     identity: str = field(init=False)
+
+    def _validate_extensions(self, lifecycle: tuple[str | None, ...]) -> None:
+        expected_supporting = (
+            "execution:covariance-constrained-uncertainty",
+            "execution:resampling",
+            "probe:serialization-multiprocessing-cache-replay",
+        )
+        operational_source = (
+            self.operational_source_commit,
+            self.operational_lockfile_hash,
+        )
+        if self.selection_version == "migration-core-current-release-v3":
+            if (
+                tuple(item.evidence for item in self.supporting_evidence)
+                != expected_supporting
+                or tuple(sorted(self.supporting_evidence)) != self.supporting_evidence
+                or not all(operational_source)
+                or not all(lifecycle)
+                or self.operational_source_commit != _OPERATIONAL_SOURCE_COMMIT
+                or self.operational_lockfile_hash != _OPERATIONAL_LOCKFILE_HASH
+            ):
+                raise MigrationCoreCoverageError(
+                    "Migration-core current release has incomplete qualified evidence"
+                )
+            _git_commit(self.operational_source_commit, "operational source commit")
+            _digest(self.operational_lockfile_hash, "operational lockfile hash")
+        elif self.supporting_evidence or any(operational_source):
+            raise MigrationCoreCoverageError(
+                "Historical migration-core release selects later evidence"
+            )
 
     def __post_init__(self) -> None:
         if (
@@ -1504,10 +1936,13 @@ class MigrationCoreCurrentReleaseSelection:
             _digest(self.lifecycle_probe_identity, "lifecycle probe identity")
             _git_commit(self.lifecycle_source_commit, "lifecycle source commit")
             _digest(self.lifecycle_lockfile_hash, "lifecycle lockfile hash")
-        if (self.selection_version.endswith("v2")) != bool(lifecycle[0]):
+        if (self.selection_version.endswith("v2")) != bool(
+            lifecycle[0]
+        ) and self.selection_version != "migration-core-current-release-v3":
             raise MigrationCoreCoverageError(
                 "Migration-core release version differs from lifecycle selection"
             )
+        self._validate_extensions(lifecycle)
         object.__setattr__(self, "identity", _content_identity(self.to_record()))
 
     def to_record(self) -> dict[str, object]:
@@ -1543,6 +1978,14 @@ class MigrationCoreCurrentReleaseSelection:
                 "lockfile_hash": self.lifecycle_lockfile_hash,
                 "source_commit": self.lifecycle_source_commit,
             }
+        if self.supporting_evidence:
+            record["supporting_evidence"] = [
+                item.to_record() for item in self.supporting_evidence
+            ]
+            record["operational_source"] = {
+                "lockfile_hash": self.operational_lockfile_hash,
+                "source_commit": self.operational_source_commit,
+            }
         return record
 
     @classmethod
@@ -1559,6 +2002,8 @@ class MigrationCoreCurrentReleaseSelection:
         }
         if "lifecycle_probe" in record:
             expected.add("lifecycle_probe")
+        if "supporting_evidence" in record or "operational_source" in record:
+            expected.update({"supporting_evidence", "operational_source"})
         _exact_keys(record, expected, "current release selection")
         authority = _record(record.get("authority_selection"), "authority selection")
         status = _record(record.get("phased_status"), "phased status selection")
@@ -1569,6 +2014,16 @@ class MigrationCoreCurrentReleaseSelection:
             if "lifecycle_probe" in record
             else None
         )
+        raw_supporting = record.get("supporting_evidence", [])
+        operational_source = (
+            _record(record.get("operational_source"), "operational source")
+            if "operational_source" in record
+            else None
+        )
+        if not isinstance(raw_supporting, list):
+            raise MigrationCoreCoverageError(
+                "Migration-core supporting evidence selection must be a list"
+            )
         for nested, name in (
             (authority, "authority selection"),
             (status, "phased status selection"),
@@ -1587,6 +2042,12 @@ class MigrationCoreCurrentReleaseSelection:
                 lifecycle,
                 {"file_hash", "identity", "locator", "lockfile_hash", "source_commit"},
                 "lifecycle probe selection",
+            )
+        if operational_source is not None:
+            _exact_keys(
+                operational_source,
+                {"lockfile_hash", "source_commit"},
+                "operational source",
             )
         schema_version = record.get("schema_version")
         if isinstance(schema_version, bool) or not isinstance(schema_version, int):
@@ -1623,6 +2084,22 @@ class MigrationCoreCurrentReleaseSelection:
             None
             if lifecycle is None
             else _digest(lifecycle.get("lockfile_hash"), "lifecycle lockfile hash"),
+            tuple(
+                MigrationCoreSupportingEvidenceSelection.from_record(
+                    _record(item, "supporting evidence selection")
+                )
+                for item in raw_supporting
+            ),
+            None
+            if operational_source is None
+            else _git_commit(
+                operational_source.get("source_commit"), "operational source commit"
+            ),
+            None
+            if operational_source is None
+            else _digest(
+                operational_source.get("lockfile_hash"), "operational lockfile hash"
+            ),
         )
         if record.get("identity") != selection.identity:
             raise MigrationCoreCoverageError(
@@ -1653,6 +2130,7 @@ class MigrationCorePhasedStatus:
     selected_evidence: tuple[tuple[str, str], ...]
     eligible_requirement_ids: tuple[str, ...]
     uncovered_requirement_ids: tuple[str, ...]
+    unqualified_requirement_ids: tuple[str, ...]
     compiler_status: str
     compiler_reason: str
     compiled_coverage_identity: None
@@ -1660,10 +2138,15 @@ class MigrationCorePhasedStatus:
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
+        expected_claim = (
+            "MIGRATION_CORE_MATRIX_COMPLETE_WITH_EXPLICIT_UNCOVERED_SCOPE"
+            if self.record_version == "migration-core-canonical-coverage-status-v5"
+            else "PHASED_INFRASTRUCTURE_ONLY"
+        )
         if (
             self.schema_version != _SCHEMA_VERSION
             or self.record_version not in _CURRENT_STATUS_VERSIONS
-            or self.completion_claim != "PHASED_INFRASTRUCTURE_ONLY"
+            or self.completion_claim != expected_claim
             or self.compiler_status != "FAILED_CLOSED"
             or self.compiled_coverage_identity is not None
         ):
@@ -1699,6 +2182,17 @@ class MigrationCorePhasedStatus:
             )
             != _CURRENT_STATUS_VERSIONS[self.record_version]
             or set(self.eligible_requirement_ids) & set(self.uncovered_requirement_ids)
+            or not set(self.unqualified_requirement_ids)
+            <= set(self.uncovered_requirement_ids)
+            or (
+                self.record_version == "migration-core-canonical-coverage-status-v5"
+                and set(self.unqualified_requirement_ids)
+                != _EXPECTED_UNQUALIFIED_REQUIREMENTS
+            )
+            or (
+                self.record_version != "migration-core-canonical-coverage-status-v5"
+                and self.unqualified_requirement_ids
+            )
         ):
             raise MigrationCoreCoverageError(
                 "Migration-core phased status has malformed coverage selections"
@@ -1706,6 +2200,24 @@ class MigrationCorePhasedStatus:
         object.__setattr__(self, "identity", _content_identity(self.to_record()))
 
     def to_record(self) -> dict[str, object]:
+        coverage: dict[str, object] = {
+            "compiled_coverage_identity": self.compiled_coverage_identity,
+            "compiler": {
+                "reason": self.compiler_reason,
+                "status": self.compiler_status,
+            },
+            "eligible_requirement_ids": list(self.eligible_requirement_ids),
+            "requirement_count": len(_AUDITED_REQUIREMENTS),
+            "selected_evidence": [
+                {"evidence": name, "identity": identity}
+                for name, identity in self.selected_evidence
+            ],
+            "uncovered_requirement_ids": list(self.uncovered_requirement_ids),
+        }
+        if self.unqualified_requirement_ids:
+            coverage["unqualified_requirement_ids"] = list(
+                self.unqualified_requirement_ids
+            )
         return {
             "anchor_release": {
                 "anchors": [item.to_record() for item in self.anchors],
@@ -1721,20 +2233,7 @@ class MigrationCorePhasedStatus:
                 "locator": self.authority_locator,
             },
             "completion_claim": self.completion_claim,
-            "coverage": {
-                "compiled_coverage_identity": self.compiled_coverage_identity,
-                "compiler": {
-                    "reason": self.compiler_reason,
-                    "status": self.compiler_status,
-                },
-                "eligible_requirement_ids": list(self.eligible_requirement_ids),
-                "requirement_count": len(_AUDITED_REQUIREMENTS),
-                "selected_evidence": [
-                    {"evidence": name, "identity": identity}
-                    for name, identity in self.selected_evidence
-                ],
-                "uncovered_requirement_ids": list(self.uncovered_requirement_ids),
-            },
+            "coverage": coverage,
             "numerical_probe": {
                 "file_hash": self.probe_file_hash,
                 "identity": self.probe_identity,
@@ -1767,6 +2266,7 @@ class MigrationCorePhasedStatus:
         probe = _record(record.get("numerical_probe"), "status probe")
         coverage = _record(record.get("coverage"), "status coverage")
         compiler = _record(coverage.get("compiler"), "status compiler")
+        record_version = _text(record.get("record_version"), "status version")
         _exact_keys(authority, {"identity", "locator"}, "status authority")
         _exact_keys(
             release,
@@ -1786,29 +2286,30 @@ class MigrationCorePhasedStatus:
             {"file_hash", "identity", "locator", "manifest_identity"},
             "status probe",
         )
-        _exact_keys(
-            coverage,
-            {
-                "compiled_coverage_identity",
-                "compiler",
-                "eligible_requirement_ids",
-                "requirement_count",
-                "selected_evidence",
-                "uncovered_requirement_ids",
-            },
-            "status coverage",
-        )
+        coverage_keys = {
+            "compiled_coverage_identity",
+            "compiler",
+            "eligible_requirement_ids",
+            "requirement_count",
+            "selected_evidence",
+            "uncovered_requirement_ids",
+        }
+        if record_version == "migration-core-canonical-coverage-status-v5":
+            coverage_keys.add("unqualified_requirement_ids")
+        _exact_keys(coverage, coverage_keys, "status coverage")
         _exact_keys(compiler, {"reason", "status"}, "status compiler")
         raw_anchors = release.get("anchors")
         raw_selected = coverage.get("selected_evidence")
         raw_eligible = coverage.get("eligible_requirement_ids")
         raw_uncovered = coverage.get("uncovered_requirement_ids")
+        raw_unqualified = coverage.get("unqualified_requirement_ids", [])
         schema_version = record.get("schema_version")
         if (
             not isinstance(raw_anchors, list)
             or not isinstance(raw_selected, list)
             or not isinstance(raw_eligible, list)
             or not isinstance(raw_uncovered, list)
+            or not isinstance(raw_unqualified, list)
             or isinstance(schema_version, bool)
             or not isinstance(schema_version, int)
             or coverage.get("requirement_count") != len(_AUDITED_REQUIREMENTS)
@@ -1828,7 +2329,7 @@ class MigrationCorePhasedStatus:
             )
         status = cls(
             schema_version,
-            _text(record.get("record_version"), "status version"),
+            record_version,
             _relative_locator(authority.get("locator"), "status authority locator"),
             _digest(authority.get("identity"), "status authority identity"),
             _relative_locator(release.get("locator"), "status release locator"),
@@ -1852,6 +2353,7 @@ class MigrationCorePhasedStatus:
             tuple(selections),
             tuple(_text(item, "eligible requirement") for item in raw_eligible),
             tuple(_text(item, "uncovered requirement") for item in raw_uncovered),
+            tuple(_text(item, "unqualified requirement") for item in raw_unqualified),
             _text(compiler.get("status"), "status compiler terminal"),
             _text(compiler.get("reason"), "status compiler reason"),
             cast("None", coverage.get("compiled_coverage_identity")),
@@ -1875,6 +2377,7 @@ class DerivedMigrationCorePhasedCoverage:
     numerical_probe: CompiledMigrationCoreSupportingEvidence
     eligible_requirement_ids: tuple[str, ...]
     uncovered_requirement_ids: tuple[str, ...]
+    unqualified_requirement_ids: tuple[str, ...]
     compiler_status: str
     compiler_reason: str
     compiled_coverage_identity: None = None
@@ -2020,6 +2523,38 @@ def _load_selected_lifecycle_probe(
     return capture
 
 
+def _load_selected_supporting_evidence(
+    repository_root: Path,
+    current: MigrationCoreCurrentReleaseSelection,
+) -> dict[str, object]:
+    supporting: dict[str, object] = {}
+    for selection in current.supporting_evidence:
+        _, content = _read_selected_file(
+            repository_root,
+            selection.locator,
+            selection.file_hash,
+            f"{selection.evidence} selection",
+        )
+        if selection.evidence == "probe:serialization-multiprocessing-cache-replay":
+            try:
+                evidence: object = OperationalReplayCapture.from_bytes(content)
+            except (TypeError, ValueError, json.JSONDecodeError) as error:
+                raise MigrationCoreCoverageError(
+                    "Migration-core operational replay cannot be reconstructed"
+                ) from error
+        else:
+            evidence = content
+        _evidence_type, identity = _supporting_native_identity(
+            selection.evidence, evidence
+        )
+        if identity != selection.identity:
+            raise MigrationCoreCoverageError(
+                f"Evidence {selection.evidence} differs from its frozen selection"
+            )
+        supporting[selection.evidence] = evidence
+    return supporting
+
+
 def _validate_resolved_release_status(
     resolved: ResolvedMigrationCoreAnchorRelease,
     status: MigrationCorePhasedStatus,
@@ -2053,41 +2588,47 @@ def _derive_release_anchor_evidence(
 def _derive_requirement_partitions(
     manifest: MigrationCoreCoverageManifest,
     selections: Mapping[str, str],
-    lifecycle_probe: LifecycleProbeCapture | None,
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    selected_names = set(selections) | {"probe:numerical-optimizer-evaluator"}
-    if lifecycle_probe is not None:
-        selected_names.add("probe:lifecycle-publication-safety")
-    eligible = tuple(
-        requirement.identifier
-        for requirement in manifest.requirements
-        if set(requirement.evidence) <= selected_names
-    )
-    eligible_set = set(eligible)
-    uncovered = tuple(
-        requirement.identifier
-        for requirement in manifest.requirements
-        if requirement.identifier not in eligible_set
-    )
-    return eligible, uncovered
+    supporting_evidence: Mapping[str, object],
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    selected_names = set(selections) | set(supporting_evidence)
+    qualified = {
+        name: _supporting_qualified_requirements(name, evidence)
+        for name, evidence in supporting_evidence.items()
+    }
+    eligible_items: list[str] = []
+    uncovered_items: list[str] = []
+    unqualified_items: list[str] = []
+    for requirement in manifest.requirements:
+        required = set(requirement.evidence)
+        if not required <= selected_names:
+            uncovered_items.append(requirement.identifier)
+            continue
+        unqualified = tuple(
+            evidence
+            for evidence in requirement.evidence
+            if evidence in qualified
+            and requirement.identifier not in qualified[evidence]
+        )
+        if unqualified:
+            uncovered_items.append(requirement.identifier)
+            unqualified_items.append(requirement.identifier)
+        else:
+            eligible_items.append(requirement.identifier)
+    return tuple(eligible_items), tuple(uncovered_items), tuple(unqualified_items)
 
 
 def _fail_closed_compiler_reason(
     manifest: MigrationCoreCoverageManifest,
     resolved: ResolvedMigrationCoreAnchorRelease,
     selections: Mapping[str, str],
-    probe: NumericalProbeBaseline,
-    lifecycle_probe: LifecycleProbeCapture | None,
+    supporting_evidence: Mapping[str, object],
 ) -> str:
-    supporting: dict[str, object] = {"probe:numerical-optimizer-evaluator": probe}
-    if lifecycle_probe is not None:
-        supporting["probe:lifecycle-publication-safety"] = lifecycle_probe
     try:
         compile_migration_core_coverage(
             manifest,
             resolved.publisher,
             selections,
-            supporting,
+            supporting_evidence,
         )
     except MigrationCoreCoverageError as error:
         return str(error)
@@ -2105,6 +2646,10 @@ def compile_current_phased_migration_core_status(
     authority, status = _load_selected_authority_and_status(repository_root, current)
     probe, validated_probe = _load_selected_probe(repository_root, current, status)
     lifecycle_probe = _load_selected_lifecycle_probe(repository_root, current)
+    supporting_evidence = _load_selected_supporting_evidence(repository_root, current)
+    supporting_evidence["probe:numerical-optimizer-evaluator"] = probe
+    if lifecycle_probe is not None:
+        supporting_evidence["probe:lifecycle-publication-safety"] = lifecycle_probe
     archive_path = _repository_path(
         repository_root, current.anchor_release_locator, "anchor release"
     )
@@ -2119,12 +2664,9 @@ def compile_current_phased_migration_core_status(
             resolved, manifest
         )
         supporting_identities = [
-            ("probe:numerical-optimizer-evaluator", probe.identity)
+            (name, _supporting_native_identity(name, evidence)[1])
+            for name, evidence in supporting_evidence.items()
         ]
-        if lifecycle_probe is not None:
-            supporting_identities.append(
-                ("probe:lifecycle-publication-safety", lifecycle_probe.identity)
-            )
         selected_identities = tuple(
             sorted((*selections.items(), *supporting_identities))
         )
@@ -2132,18 +2674,19 @@ def compile_current_phased_migration_core_status(
             raise MigrationCoreCoverageError(
                 "Migration-core requirement-to-evidence selection is incompatible"
             )
-        eligible, uncovered = _derive_requirement_partitions(
-            manifest, selections, lifecycle_probe
+        eligible, uncovered, unqualified = _derive_requirement_partitions(
+            manifest, selections, supporting_evidence
         )
         if (
             eligible != status.eligible_requirement_ids
             or uncovered != status.uncovered_requirement_ids
+            or unqualified != status.unqualified_requirement_ids
         ):
             raise MigrationCoreCoverageError(
                 "Migration-core phased coverage counts are not evidence-derived"
             )
         compiler_reason = _fail_closed_compiler_reason(
-            manifest, resolved, selections, probe, lifecycle_probe
+            manifest, resolved, selections, supporting_evidence
         )
         if (
             status.compiler_status != "FAILED_CLOSED"
@@ -2165,6 +2708,7 @@ def compile_current_phased_migration_core_status(
             probe_reference,
             eligible,
             uncovered,
+            unqualified,
             "FAILED_CLOSED",
             compiler_reason,
         )
