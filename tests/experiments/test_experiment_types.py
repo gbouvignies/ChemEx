@@ -82,7 +82,7 @@ def test_all_discovered_experiment_types_register_through_public_surface() -> No
     register_experiments()
     registered = experiment_types.registered_experiment_types()
 
-    assert len(expected_names) == 37
+    assert len(expected_names) == 38
     assert set(registered) == expected_names
     assert all(name == adapter.name for name, adapter in registered.items())
 
