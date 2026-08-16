@@ -13,6 +13,9 @@ import tests.qualification.capture_optimizer_calibration_v2 as calibration
 
 ROOT = Path(__file__).parent.parent
 FAILED_ROUND = ROOT / "tests/fixtures/canonical_optimizer_calibration_failure_v2.json"
+FAILED_LAUNCH_2 = (
+    ROOT / "tests/fixtures/canonical_optimizer_calibration_failure_v2_launch2.json"
+)
 
 
 def _matched_truth() -> dict[str, object]:
@@ -308,3 +311,31 @@ def test_v2_import_failure_is_content_identified_and_ineligible() -> None:
     assert record["scientific_stages"]["grouped_holdout"] == "UNOPENED"
     assert record["eligibility"]["eligible_claims"] == []
     assert record["eligibility"]["migration_core_coverage_change"] == 0
+
+
+def test_v2_lane_attestation_failure_is_separate_and_pre_scientific() -> None:
+    first_launch_bytes = FAILED_ROUND.read_bytes()
+    record = json.loads(FAILED_LAUNCH_2.read_text(encoding="utf-8"))
+    identity = record.pop("identity")
+    encoded = json.dumps(
+        record,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+
+    assert identity == hashlib.sha256(encoded).hexdigest()
+    assert record["failure"] == {
+        "error_type": "LaneAuthorityError",
+        "message": "build-context manifest does not describe the running filesystem",
+        "stage": "canonical-lane-attestation",
+    }
+    assert record["acquisition"]["in_container_source_guard"] == "PASS"
+    assert (
+        record["acquisition"]["authoritative_scientific_acquisition_started"] is False
+    )
+    assert record["scientific_stages"]["truth_probes"] == "NOT_STARTED"
+    assert record["scientific_stages"]["grouped_holdout"] == "UNOPENED"
+    assert record["eligibility"]["eligible_claims"] == []
+    assert first_launch_bytes == FAILED_ROUND.read_bytes()
