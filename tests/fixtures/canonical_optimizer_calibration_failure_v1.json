@@ -1,0 +1,63 @@
+{
+  "acquisition": {
+    "adaptive_extension": false,
+    "authoritative_round": 1,
+    "host": "asterix",
+    "native_architecture": "x86_64",
+    "remote_checkout": "/tmp/chemex-602-authoritative.IPYlOr/repo",
+    "retry_count": 0,
+    "retuned": false,
+    "scientific_work_reached_final_record_assembly": true
+  },
+  "eligibility": {
+    "eligible_claims": [],
+    "migration_core_coverage_change": 0,
+    "reason": "authoritative result record was not content-identified or serialized",
+    "status": "INELIGIBLE_NO_RESULT_RECORD"
+  },
+  "failure": {
+    "additional_architectural_implications": [
+      "Representative Direct TRF candidates had no scientific adequacy threshold beyond typed convergence and finite output, so any recovered policy would remain unqualified.",
+      "The in-container detached-HEAD guard did not itself reject dirty tracked bytes; exact external checkout guards and recorded source hashes make this occurrence auditable but reveal a missing executable seam.",
+      "Round-level resource ceilings were declared but not summed and enforced by the runner; only invocation-level objective-request budgets were executable.",
+      "The decomposed grouped GRID holdout was the selected calibration case replay, not an independent untouched holdout, so that scope would remain unsupported."
+    ],
+    "category": "RESULT_SERIALIZATION_ARCHITECTURE",
+    "exception_message": "Out of range float values are not JSON compliant: inf",
+    "exception_type": "ValueError",
+    "implication": "A disqualified candidate used an infinity sentinel in the in-memory record; canonical JSON correctly rejected the non-finite value after the sole authoritative round had completed its frozen work.",
+    "result_file": "tests/fixtures/canonical_optimizer_calibration_v1.json",
+    "result_file_disposition": "ABSENT",
+    "stage": "FINAL_CONTENT_IDENTIFICATION",
+    "trace_site": "tests/qualification/capture_optimizer_calibration.py:_identity"
+  },
+  "identity": "e44f5976305e58f1b079db00e8f0ef4c8916c54511aa2754cc3e922e553d5de7",
+  "identity_algorithm": "sha256-canonical-json-without-identity-v1",
+  "lane": {
+    "attestation_identity": "3b3e0bc184826d61ec6652194486c907a5faa4c64b68ec03bbe60b63c660d687",
+    "environment_identity": "cc5359f90df35ec9b60fd56e483911745209519ecce37d69e17c4edd6ea3604f",
+    "image_digest": "sha256:ed4f97e00bd6fe494f46772cc31a338d756b5bb5fe6e4e480d987af51af85550",
+    "lane_identity": "4f1e7dab3384f88149fd33befb09ba3e96730dc336e9427b224a39a8a7167e4f",
+    "name": "canonical-linux-amd64-python-3.13-v1",
+    "native_threads": 1,
+    "workers": 1
+  },
+  "record_version": "canonical-optimizer-calibration-failure-v1",
+  "schema_version": 1,
+  "source": {
+    "dependency_lock_sha256": "cc7a8e08d8fb8f1ea4255b63452598f6dbe041a8b4024de0f3af065020088004",
+    "qualification_script_sha256": "1739929766d134b159a5b34c327ac5c0bc7a18679f40a5b80b9dbfe88bdeb00f",
+    "qualification_test_sha256": "cdab8e4e788fb1960d1199c33c4764064cf6867bd8550a988994a83a201bb847",
+    "specification_commit": "374104b7f03a0617768aa20d7637c177a8d5e315",
+    "specification_id": "chemex-optimizer-calibration-v1",
+    "specification_identity": "7210f451e44ce5311afdea46dc5131afd3328919c728c27128358e2b08ee91d8"
+  },
+  "status": "ARCHITECTURAL_FAILURE",
+  "unsupported_scopes": [
+    "direct-trf-policy-selection",
+    "grid-trf-policy-selection",
+    "de-trf-policy-selection",
+    "grouped-transition-accounting-qualification",
+    "migration-core-602-claims"
+  ]
+}
