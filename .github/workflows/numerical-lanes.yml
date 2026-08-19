@@ -6,7 +6,8 @@ on:
       - ".dockerignore"
       - ".github/workflows/numerical-lanes.yml"
       - "pyproject.toml"
-      - "src/chemex/numerical_lanes/**"
+      - "src/chemex/**"
+      - "tests/qualification/capture_numerical_lane_application.py"
       - "uv.lock"
   workflow_dispatch:
 
@@ -24,15 +25,27 @@ jobs:
           - python-version: "3.13.5"
             python-source-sha256: e6190f52699b534ee203d9f417bdbca05a92f23e35c19c691a50ed2942835385
             role: CANONICAL_NUMERICAL
-            lane-name: canonical-linux-amd64-python-3.13-v1
-            manifest: canonical-linux-amd64-python-3.13-v1.json
+            lane-name: canonical-linux-amd64-python-3.13-v2
+            manifest: canonical-linux-amd64-python-3.13-v2.json
           - python-version: "3.14.5"
             python-source-sha256: 9c22bfe9939a6c5418fc74b289a5f1cc41859ae82ac6b163016b5844bd0a86bc
             role: PYTHON_COMPATIBILITY
-            lane-name: compatibility-linux-amd64-python-3.14-v1
-            manifest: compatibility-linux-amd64-python-3.14-v1.json
+            lane-name: compatibility-linux-amd64-python-3.14-v2
+            manifest: compatibility-linux-amd64-python-3.14-v2.json
     steps:
       - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Build independently identified application wheels
+        run: |
+          mkdir -p diagnostic/wheel-a diagnostic/wheel-b
+          uv build --wheel --out-dir diagnostic/wheel-a
+          git worktree add --detach "$RUNNER_TEMP/chemex-implementation-b" "$GITHUB_SHA"
+          printf '\n# Numerical-lane implementation-boundary diagnostic B.\n' \
+            >> "$RUNNER_TEMP/chemex-implementation-b/src/chemex/messages.py"
+          uv build --directory "$RUNNER_TEMP/chemex-implementation-b" \
+            --wheel --out-dir "$PWD/diagnostic/wheel-b"
 
       - name: Set up Docker with containerd image store
         uses: docker/setup-docker-action@v5
@@ -55,29 +68,111 @@ jobs:
             "chemex-numerical-lane:${{ matrix.python-version }}" \
             "${{ matrix.python-version }}" \
             "${{ matrix.python-source-sha256 }}"
-      - name: Capture and re-attest the built image
+      - name: Exercise independent implementation and lane authority
         run: |
           image="chemex-numerical-lane:${{ matrix.python-version }}"
           image_digest="$(docker image inspect --format '{{.Id}}' "$image")"
-          docker run --rm --platform linux/amd64 "$image" \
-            .venv/bin/python -m chemex.numerical_lanes capture \
+          wheel_a="$(find diagnostic/wheel-a -name '*.whl' -print -quit)"
+          wheel_b="$(find diagnostic/wheel-b -name '*.whl' -print -quit)"
+          digest_a="$(sha256sum "$wheel_a" | cut -d ' ' -f 1)"
+          digest_b="$(sha256sum "$wheel_b" | cut -d ' ' -f 1)"
+          docker run --rm --platform linux/amd64 \
+            --volume "$PWD/$wheel_a:/implementation/chemex.whl:ro" \
+            --volume "$PWD:/qualification:ro" \
+            --tmpfs /run/chemex-application \
+            "$image" \
+            /opt/python/bin/python3 \
+            /opt/chemex-numerical-lane/build-context/src/chemex/numerical_lanes/launcher.py \
+            --implementation-wheel /implementation/chemex.whl \
+            --implementation-sha256 "$digest_a" \
+            --application-directory /run/chemex-application \
+            --qualification-root /qualification \
+            --module tests.qualification.capture_numerical_lane_application \
+            -- \
             --name "${{ matrix.lane-name }}" \
             --role "${{ matrix.role }}" \
             --image-digest "$image_digest" \
-            > "${{ matrix.manifest }}"
-          docker run --rm --platform linux/amd64 \
-            --volume "$PWD/${{ matrix.manifest }}:/tmp/lane.json:ro" \
+            > "diagnostic/implementation-a.json"
+          if docker run --rm --platform linux/amd64 \
+            --volume "$PWD/$wheel_b:/implementation/chemex.whl:ro" \
+            --volume "$PWD:/qualification:ro" \
+            --tmpfs /run/chemex-application \
             "$image" \
-            .venv/bin/python -m chemex.numerical_lanes attest \
-            --manifest /tmp/lane.json \
+            /opt/python/bin/python3 \
+            /opt/chemex-numerical-lane/build-context/src/chemex/numerical_lanes/launcher.py \
+            --implementation-wheel /implementation/chemex.whl \
+            --implementation-sha256 "$digest_a" \
+            --application-directory /run/chemex-application \
+            --qualification-root /qualification \
+            --module tests.qualification.capture_numerical_lane_application \
+            -- --name "${{ matrix.lane-name }}" --role "${{ matrix.role }}" \
             --image-digest "$image_digest" \
-            > "${{ matrix.manifest }}.attestation.json"
+            > /dev/null 2> diagnostic/implementation-mismatch.txt; then
+            echo "implementation B unexpectedly matched implementation A" >&2
+            exit 1
+          fi
+          grep -F "implementation wheel SHA-256 does not match" \
+            diagnostic/implementation-mismatch.txt
+          docker run --rm --platform linux/amd64 \
+            --volume "$PWD/$wheel_b:/implementation/chemex.whl:ro" \
+            --volume "$PWD:/qualification:ro" \
+            --tmpfs /run/chemex-application \
+            "$image" \
+            /opt/python/bin/python3 \
+            /opt/chemex-numerical-lane/build-context/src/chemex/numerical_lanes/launcher.py \
+            --implementation-wheel /implementation/chemex.whl \
+            --implementation-sha256 "$digest_b" \
+            --application-directory /run/chemex-application \
+            --qualification-root /qualification \
+            --module tests.qualification.capture_numerical_lane_application \
+            -- --name "${{ matrix.lane-name }}" --role "${{ matrix.role }}" \
+            --image-digest "$image_digest" \
+            > "diagnostic/implementation-b.json"
+          jq -e --slurp '
+            .[0].lane.identity == .[1].lane.identity and
+            .[0].environment.identity == .[1].environment.identity and
+            .[0].attestation.identity == .[1].attestation.identity and
+            .[0].implementation.identity != .[1].implementation.identity and
+            .[0].implementation_wheel_sha256 != .[1].implementation_wheel_sha256 and
+            .[0].application_module_sha256 != .[1].application_module_sha256
+          ' diagnostic/implementation-a.json diagnostic/implementation-b.json
+          jq '.lane' diagnostic/implementation-a.json \
+            > "diagnostic/${{ matrix.manifest }}"
+
+      - name: Reject lane-owned numerical drift
+        run: |
+          image="chemex-numerical-lane:${{ matrix.python-version }}"
+          image_digest="$(docker image inspect --format '{{.Id}}' "$image")"
+          wheel="$(find diagnostic/wheel-a -name '*.whl' -print -quit)"
+          digest="$(sha256sum "$wheel" | cut -d ' ' -f 1)"
+          if docker run --rm --platform linux/amd64 \
+            --env OMP_NUM_THREADS=2 \
+            --volume "$PWD/$wheel:/implementation/chemex.whl:ro" \
+            --volume "$PWD:/qualification:ro" \
+            --tmpfs /run/chemex-application \
+            "$image" \
+            /opt/python/bin/python3 \
+            /opt/chemex-numerical-lane/build-context/src/chemex/numerical_lanes/launcher.py \
+            --implementation-wheel /implementation/chemex.whl \
+            --implementation-sha256 "$digest" \
+            --application-directory /run/chemex-application \
+            --qualification-root /qualification \
+            --module tests.qualification.capture_numerical_lane_application \
+            -- --name "${{ matrix.lane-name }}" --role "${{ matrix.role }}" \
+            --image-digest "$image_digest" \
+            > /dev/null 2> diagnostic/lane-drift.txt; then
+            echo "lane-owned native-thread drift unexpectedly attested" >&2
+            exit 1
+          fi
+          grep -F "declared and actual native-thread counts differ" \
+            diagnostic/lane-drift.txt
       - uses: actions/upload-artifact@v4
         with:
           name: diagnostic-lane-${{ matrix.python-version }}
           path: |
-            ${{ matrix.manifest }}
-            ${{ matrix.manifest }}.attestation.json
+            diagnostic/${{ matrix.manifest }}
+            diagnostic/implementation-*.json
+            diagnostic/*.txt
 
   validate-compatibility:
     name: Diagnostic 3.13/3.14 structural comparison
@@ -103,8 +198,8 @@ jobs:
       - name: Reject non-Python structural drift
         run: |
           uv run python -m chemex.numerical_lanes validate-compatibility \
-            --canonical diagnostic-lanes/canonical-linux-amd64-python-3.13-v1.json \
-            --compatibility diagnostic-lanes/compatibility-linux-amd64-python-3.14-v1.json
+            --canonical diagnostic-lanes/canonical-linux-amd64-python-3.13-v2.json \
+            --compatibility diagnostic-lanes/compatibility-linux-amd64-python-3.14-v2.json
 
 # This hosted workflow validates recipe buildability and fail-closed attestation.
 # Per #581, its artifacts are diagnostic and cannot qualify canonical evidence.

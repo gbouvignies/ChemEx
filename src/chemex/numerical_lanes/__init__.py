@@ -26,8 +26,6 @@ from importlib.resources import files
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal, NamedTuple, SupportsIndex, cast
 
-from chemex.runtime.execution import NATIVE_THREAD_ENV_VARS
-
 _SCHEMA_VERSION = 2
 _SEMANTIC_VERSION = "chemex-numerical-lane-v2"
 _HASH_LENGTH = 64
@@ -39,13 +37,27 @@ _BUILD_CONTEXT_MANIFEST_PATH = Path(
 _OS_PACKAGE_MANIFEST_PATH = Path("/opt/chemex-numerical-lane/os-package-manifest.txt")
 _WHEEL_MANIFEST_PATH = Path("/opt/chemex-numerical-lane/wheel-manifest.txt")
 _WHEELHOUSE_PATH = Path("/opt/chemex-numerical-lane/wheels")
-_BUILD_ROOT = Path("/workspace")
+_BUILD_ROOT = Path("/opt/chemex-numerical-lane/build-context")
 _FPSTATE_PATH = Path("/opt/chemex-numerical-lane/libchemex_fpstate.so")
+_HISTORICAL_RECIPE_HASH = (
+    "af852fa2b39b40c39f9b84a8f8ae50246c66ba315656b22c5807bf59fb85e71a"
+)
+_HISTORICAL_LANE_NAMES = {
+    "CANONICAL_NUMERICAL": "canonical-linux-amd64-python-3.13-v1",
+    "PYTHON_COMPATIBILITY": "compatibility-linux-amd64-python-3.14-v1",
+}
+_PROSPECTIVE_LANE_NAMES = {
+    "CANONICAL_NUMERICAL": "canonical-linux-amd64-python-3.13-v2",
+    "PYTHON_COMPATIBILITY": "compatibility-linux-amd64-python-3.14-v2",
+}
 _PLATFORM_MANIFEST = (
     "debian:bookworm-slim@sha256:"
     "362e64223cc0da95422b3b13c045186fc0a81250e765d31c025fbddf257f6143"
 )
 _LOCKFILE_HASH = "cc7a8e08d8fb8f1ea4255b63452598f6dbe041a8b4024de0f3af065020088004"
+_PROSPECTIVE_LOCKFILE_HASH = (
+    "a632a77d8ef4d074b6c2bc26e1e05a826251d475468b7f5dc5c8efe30ee46735"
+)
 _UV_VERSION = "0.11.15"
 _UV_WHEEL_HASH = "98edf1bdaf82447014852051d93e3ee95012509c567bf057fd117e6bdbd9a807"
 _OPENBLAS_CORE = "Haswell"
@@ -84,6 +96,13 @@ _NUMPY_DISPATCH_RESTRICTIONS = tuple(
             "X86_V4",
         }
     )
+)
+NATIVE_THREAD_ENV_VARS = (
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
 )
 _COMPATIBILITY_ALLOWED_FIELDS = {
     "image_digest",
@@ -303,7 +322,7 @@ def _current_build_context_hash() -> str:
     try:
         relative_names.extend(
             path.relative_to(_BUILD_ROOT).as_posix()
-            for path in (_BUILD_ROOT / "src").rglob("*")
+            for path in (_BUILD_ROOT / "src/chemex/numerical_lanes").rglob("*")
             if path.is_file()
             and path.suffix != ".pyc"
             and not (
@@ -1153,11 +1172,25 @@ class NumericalLane:
         environment = RuntimeEnvironment.from_current_process(
             image_digest, provenance_path
         )
-        cls._validate_canonical_contract(role, environment.semantics)
+        cls._validate_canonical_contract(name, role, environment.semantics)
         return cls(name, role, environment.semantics)
 
     @staticmethod
-    def _validate_canonical_contract(role: LaneRole, semantics: LaneSemantics) -> None:
+    def _validate_canonical_contract(
+        name: str, role: LaneRole, semantics: LaneSemantics
+    ) -> None:
+        historical_name = _HISTORICAL_LANE_NAMES[role]
+        prospective_name = _PROSPECTIVE_LANE_NAMES[role]
+        if name == historical_name:
+            expected_recipe_hash = _HISTORICAL_RECIPE_HASH
+            expected_lockfile_hash = _LOCKFILE_HASH
+        elif name == prospective_name:
+            expected_recipe_hash = _recipe_hash()
+            expected_lockfile_hash = _PROSPECTIVE_LOCKFILE_HASH
+        else:
+            raise LaneAuthorityError(
+                f"Numerical lane contract rejected: unexpected {role} lane name {name}"
+            )
         expected_version = "3.13.5" if role == "CANONICAL_NUMERICAL" else "3.14.5"
         expected_source = (
             "e6190f52699b534ee203d9f417bdbca05a92f23e35c19c691a50ed2942835385"
@@ -1165,8 +1198,8 @@ class NumericalLane:
             else "9c22bfe9939a6c5418fc74b289a5f1cc41859ae82ac6b163016b5844bd0a86bc"
         )
         expected = {
-            "build_recipe_hash": _recipe_hash(),
-            "dependency_lock_hash": _LOCKFILE_HASH,
+            "build_recipe_hash": expected_recipe_hash,
+            "dependency_lock_hash": expected_lockfile_hash,
             "floating_point_mode": _FLOATING_POINT_MODE,
             "isa": _ISA,
             "native_threads": 1,
@@ -1610,30 +1643,27 @@ def comparison_scope(
     )
 
 
-def canonical_lanes(
-    manifest_directory: Path | None = None,
+def _load_lane_pair(
+    names: tuple[str, str], manifest_directory: Path | None
 ) -> tuple[NumericalLane, NumericalLane]:
-    """Load the frozen canonical and compatibility lane manifests."""
-
     directory = (
         manifest_directory
         if manifest_directory is not None
         else Path(str(files(__package__).joinpath("manifests")))
     )
-    names = (
-        "canonical-linux-amd64-python-3.13-v1.json",
-        "compatibility-linux-amd64-python-3.14-v1.json",
-    )
     lanes: list[NumericalLane] = []
-    for name in names:
+    for lane_name in names:
+        filename = f"{lane_name}.json"
         try:
-            raw = _strict_json_loads((directory / name).read_text(encoding="ascii"))
+            raw = _strict_json_loads((directory / filename).read_text(encoding="ascii"))
         except (OSError, UnicodeDecodeError, ValueError) as error:
             raise LaneAuthorityError(
-                f"frozen numerical-lane manifest is unavailable: {name}"
+                f"frozen numerical-lane manifest is unavailable: {filename}"
             ) from error
         lane = NumericalLane.from_record(_record_mapping(raw, "numerical lane"))
-        NumericalLane._validate_canonical_contract(lane.role, lane.semantics)
+        if lane.name != lane_name:
+            raise LaneAuthorityError("frozen numerical-lane name is invalid")
+        NumericalLane._validate_canonical_contract(lane.name, lane.role, lane.semantics)
         lanes.append(lane)
     if (
         lanes[0].role != "CANONICAL_NUMERICAL"
@@ -1642,3 +1672,31 @@ def canonical_lanes(
         raise LaneAuthorityError("frozen numerical-lane roles are invalid")
     lanes[0].validate_compatibility_lane(lanes[1])
     return lanes[0], lanes[1]
+
+
+def canonical_lanes(
+    manifest_directory: Path | None = None,
+) -> tuple[NumericalLane, NumericalLane]:
+    """Load the immutable historical #588 v1 lane manifests."""
+
+    return _load_lane_pair(
+        (
+            _HISTORICAL_LANE_NAMES["CANONICAL_NUMERICAL"],
+            _HISTORICAL_LANE_NAMES["PYTHON_COMPATIBILITY"],
+        ),
+        manifest_directory,
+    )
+
+
+def prospective_lanes(
+    manifest_directory: Path | None = None,
+) -> tuple[NumericalLane, NumericalLane]:
+    """Load prospective v2 manifests without reinterpreting historical authority."""
+
+    return _load_lane_pair(
+        (
+            _PROSPECTIVE_LANE_NAMES["CANONICAL_NUMERICAL"],
+            _PROSPECTIVE_LANE_NAMES["PYTHON_COMPATIBILITY"],
+        ),
+        manifest_directory,
+    )
