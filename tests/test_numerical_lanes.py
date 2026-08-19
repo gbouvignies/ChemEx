@@ -328,6 +328,7 @@ def test_hosted_lane_integration_preserves_wheel_filenames() -> None:
     assert 'wheel_a_name="$(basename "$wheel_a")"' in workflow
     assert 'wheel_b_name="$(basename "$wheel_b")"' in workflow
     assert 'wheel_name="$(basename "$wheel")"' in workflow
+    assert workflow.count("--tmpfs /run/chemex-application:exec") == 4
 
 
 def test_prospective_lane_uses_its_own_minimal_dependency_lock() -> None:
