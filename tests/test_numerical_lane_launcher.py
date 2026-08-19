@@ -5,6 +5,7 @@ import csv
 import hashlib
 import io
 import json
+import os
 import subprocess
 import sys
 import zipfile
@@ -13,7 +14,13 @@ from pathlib import Path
 _LAUNCHER = Path(__file__).parents[1] / "src/chemex/numerical_lanes/launcher.py"
 
 
-def _wheel(path: Path, marker: str, *, preload_attestor: bool = False) -> Path:
+def _wheel(
+    path: Path,
+    marker: str,
+    *,
+    preload_attestor: bool = False,
+    path_hook: bool = False,
+) -> Path:
     files = {
         "chemex/__init__.py": (
             "from . import numerical_lanes\n" if preload_attestor else ""
@@ -32,6 +39,8 @@ def _wheel(path: Path, marker: str, *, preload_attestor: bool = False) -> Path:
             "Tag: py3-none-any\n"
         ),
     }
+    if path_hook:
+        files["application-overlay.pth"] = "/untrusted\n"
     rows: list[tuple[str, str, str]] = []
     for name, content in files.items():
         data = content.encode("utf-8")
@@ -69,6 +78,7 @@ print(json.dumps({
     "attestor": str(Path(numerical_lanes.__file__).resolve()),
     "implementation": os.environ["CHEMEX_IMPLEMENTATION_WHEEL_SHA256"],
     "marker": MARKER,
+    "pythonpath": os.environ.get("PYTHONPATH"),
 }, sort_keys=True))
 """.lstrip(),
         encoding="ascii",
@@ -78,9 +88,18 @@ print(json.dumps({
 def _run_launcher(
     wheel: Path, expected_sha256: str, qualification_root: Path, apps: Path
 ) -> subprocess.CompletedProcess[str]:
+    overlay = qualification_root / "untrusted-overlay"
+    overlay.mkdir(exist_ok=True)
+    (overlay / "sitecustomize.py").write_text(
+        f"from pathlib import Path\nPath({str(qualification_root / 'ambient-import-ran')!r}).touch()\n",
+        encoding="ascii",
+    )
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(overlay)
     return subprocess.run(  # noqa: S603 - the repository interpreter is fixed
         [
             sys.executable,
+            "-I",
             str(_LAUNCHER),
             "--implementation-wheel",
             str(wheel),
@@ -96,6 +115,7 @@ def _run_launcher(
         check=False,
         capture_output=True,
         text=True,
+        env=environment,
     )
 
 
@@ -128,6 +148,9 @@ def test_launcher_separates_implementation_identity_from_lane_attestor(
     assert record_a["marker"] == "A"
     assert record_b["marker"] == "B"
     assert record_a["implementation"] != record_b["implementation"]
+    assert record_a["pythonpath"] is None
+    assert record_b["pythonpath"] is None
+    assert not (qualification_root / "ambient-import-ran").exists()
     assert record_a["attestor"] == record_b["attestor"]
     assert record_a["attestor"] == str((_LAUNCHER.parent / "__init__.py").resolve())
 
@@ -146,3 +169,29 @@ def test_launcher_rejects_application_preloading_its_attestor(tmp_path: Path) ->
 
     assert result.returncode != 0
     assert "application wheel attestor was imported" in result.stderr
+
+
+def test_launcher_requires_isolation_and_rejects_path_hooks(tmp_path: Path) -> None:
+    without_isolation = subprocess.run(  # noqa: S603
+        [sys.executable, str(_LAUNCHER)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    (tmp_path / "wheel").mkdir()
+    wheel = _wheel(
+        tmp_path / "wheel/chemex-1.0-py3-none-any.whl",
+        "path-hook",
+        path_hook=True,
+    )
+    qualification_root = tmp_path / "qualification"
+    _qualification_module(qualification_root)
+
+    path_hook = _run_launcher(
+        wheel, _sha256(wheel), qualification_root, tmp_path / "apps"
+    )
+
+    assert without_isolation.returncode != 0
+    assert "Python isolated mode (-I) is required" in without_isolation.stderr
+    assert path_hook.returncode != 0
+    assert "may not install Python path hooks" in path_hook.stderr

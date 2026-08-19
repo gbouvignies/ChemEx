@@ -82,6 +82,7 @@ jobs:
             --tmpfs /run/chemex-application \
             "$image" \
             /opt/python/bin/python3 \
+            -I \
             /opt/chemex-numerical-lane/build-context/src/chemex/numerical_lanes/launcher.py \
             --implementation-wheel /implementation/chemex.whl \
             --implementation-sha256 "$digest_a" \
@@ -99,6 +100,7 @@ jobs:
             --tmpfs /run/chemex-application \
             "$image" \
             /opt/python/bin/python3 \
+            -I \
             /opt/chemex-numerical-lane/build-context/src/chemex/numerical_lanes/launcher.py \
             --implementation-wheel /implementation/chemex.whl \
             --implementation-sha256 "$digest_a" \
@@ -119,6 +121,7 @@ jobs:
             --tmpfs /run/chemex-application \
             "$image" \
             /opt/python/bin/python3 \
+            -I \
             /opt/chemex-numerical-lane/build-context/src/chemex/numerical_lanes/launcher.py \
             --implementation-wheel /implementation/chemex.whl \
             --implementation-sha256 "$digest_b" \
@@ -152,6 +155,7 @@ jobs:
             --tmpfs /run/chemex-application \
             "$image" \
             /opt/python/bin/python3 \
+            -I \
             /opt/chemex-numerical-lane/build-context/src/chemex/numerical_lanes/launcher.py \
             --implementation-wheel /implementation/chemex.whl \
             --implementation-sha256 "$digest" \

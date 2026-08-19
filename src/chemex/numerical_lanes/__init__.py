@@ -1167,7 +1167,7 @@ class NumericalLane:
         image_digest: str,
         provenance_path: Path = _PROVENANCE_PATH,
     ) -> NumericalLane:
-        """Capture a candidate lane, accepting only #588's intended environment."""
+        """Capture a candidate matching an explicit historical or prospective lane."""
 
         environment = RuntimeEnvironment.from_current_process(
             image_digest, provenance_path

@@ -14,7 +14,7 @@ import sys
 import tempfile
 import venv
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import ModuleType
 
 _IMPLEMENTATION_DIGEST_ENV = "CHEMEX_IMPLEMENTATION_WHEEL_SHA256"
@@ -50,11 +50,24 @@ def _verify_wheel(path: Path, expected_sha256: str) -> Path:
         raise LaneLaunchError("implementation SHA-256 is invalid")
     if _sha256(wheel) != expected_sha256:
         raise LaneLaunchError("implementation wheel SHA-256 does not match")
+    try:
+        with zipfile.ZipFile(wheel) as archive:
+            for name in archive.namelist():
+                member = PurePosixPath(name)
+                if ".data/" in name:
+                    raise LaneLaunchError(
+                        "implementation wheel uses an unsupported install layout"
+                    )
+                if len(member.parts) == 1 and (
+                    member.suffix == ".pth"
+                    or member.name in {"sitecustomize.py", "usercustomize.py"}
+                ):
+                    raise LaneLaunchError(
+                        "implementation wheel may not install Python path hooks"
+                    )
+    except zipfile.BadZipFile as error:
+        raise LaneLaunchError("implementation wheel is invalid") from error
     return wheel
-
-
-def _application_python(prefix: Path) -> Path:
-    return prefix / "bin/python"
 
 
 def _verify_installed_implementation(wheel: Path) -> None:
@@ -124,12 +137,18 @@ def _install_and_reexec(args: argparse.Namespace, original_args: list[str]) -> N
     prefix = Path(
         tempfile.mkdtemp(prefix="chemex-application-", dir=application_directory)
     ).resolve()
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith("PYTHON")
+    }
     try:
         venv.EnvBuilder(with_pip=True, system_site_packages=True).create(prefix)
-        python = _application_python(prefix)
+        python = prefix / "bin/python"
         subprocess.run(  # noqa: S603 - the executable belongs to the new venv
             [
                 str(python),
+                "-I",
                 "-m",
                 "pip",
                 "install",
@@ -140,12 +159,14 @@ def _install_and_reexec(args: argparse.Namespace, original_args: list[str]) -> N
             ],
             check=True,
             capture_output=True,
+            env=environment,
             text=True,
         )
         subprocess.run(  # noqa: S603 - the executable belongs to the new venv
-            [str(python), "-m", "pip", "check"],
+            [str(python), "-I", "-m", "pip", "check"],
             check=True,
             capture_output=True,
+            env=environment,
             text=True,
         )
     except (OSError, subprocess.CalledProcessError) as error:
@@ -154,14 +175,13 @@ def _install_and_reexec(args: argparse.Namespace, original_args: list[str]) -> N
             "exact implementation wheel installation failed"
         ) from error
 
-    environment = dict(os.environ)
     environment[_INSTALLED_STAGE_ENV] = "1"
     environment[_APPLICATION_PREFIX_ENV] = str(prefix)
     environment[_IMPLEMENTATION_DIGEST_ENV] = args.implementation_sha256
     try:
         os.execve(  # noqa: S606 - replacing this process is the authority boundary
             str(python),
-            [str(python), str(Path(__file__).resolve()), *original_args],
+            [str(python), "-I", str(Path(__file__).resolve()), *original_args],
             environment,
         )
     except OSError:
@@ -252,6 +272,12 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if not sys.flags.isolated:
+        print(
+            "numerical lane launcher: Python isolated mode (-I) is required",
+            file=sys.stderr,
+        )
+        return 1
     original_args = list(sys.argv[1:] if argv is None else argv)
     args = _parser().parse_args(original_args)
     try:
