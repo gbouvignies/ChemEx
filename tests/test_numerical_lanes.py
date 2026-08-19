@@ -319,6 +319,17 @@ def test_docker_context_admits_only_lane_owned_source() -> None:
     assert "!src/chemex/numerical_lanes/**" in dockerignore.splitlines()
 
 
+def test_hosted_lane_integration_preserves_wheel_filenames() -> None:
+    workflow = (
+        Path(__file__).parents[1] / ".github/workflows/numerical-lanes.yml"
+    ).read_text(encoding="ascii")
+
+    assert "/implementation/chemex.whl" not in workflow
+    assert 'wheel_a_name="$(basename "$wheel_a")"' in workflow
+    assert 'wheel_b_name="$(basename "$wheel_b")"' in workflow
+    assert 'wheel_name="$(basename "$wheel")"' in workflow
+
+
 def test_prospective_lane_uses_its_own_minimal_dependency_lock() -> None:
     repository = Path(__file__).parents[1]
     environment = repository / "src/chemex/numerical_lanes/environment"

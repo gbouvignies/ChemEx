@@ -52,8 +52,18 @@ def _verify_wheel(path: Path, expected_sha256: str) -> Path:
         raise LaneLaunchError("implementation wheel SHA-256 does not match")
     try:
         with zipfile.ZipFile(wheel) as archive:
+            top_level: set[str] = set()
             for name in archive.namelist():
                 member = PurePosixPath(name)
+                if (
+                    not member.parts
+                    or member.is_absolute()
+                    or any(part in {".", ".."} for part in member.parts)
+                ):
+                    raise LaneLaunchError(
+                        "implementation wheel contains a noncanonical path"
+                    )
+                top_level.add(member.parts[0])
                 if ".data/" in name:
                     raise LaneLaunchError(
                         "implementation wheel uses an unsupported install layout"
@@ -65,6 +75,15 @@ def _verify_wheel(path: Path, expected_sha256: str) -> Path:
                     raise LaneLaunchError(
                         "implementation wheel may not install Python path hooks"
                     )
+            metadata_roots = {
+                name
+                for name in top_level
+                if name.startswith("chemex-") and name.endswith(".dist-info")
+            }
+            if len(metadata_roots) != 1 or top_level != {"chemex", *metadata_roots}:
+                raise LaneLaunchError(
+                    "implementation wheel may contain only the ChemEx package and metadata"
+                )
     except zipfile.BadZipFile as error:
         raise LaneLaunchError("implementation wheel is invalid") from error
     return wheel
@@ -250,7 +269,19 @@ def _run_qualification(args: argparse.Namespace) -> None:
 
         _load_lane_attestor()
         os.chdir(qualification_root)
-        sys.path.insert(0, str(qualification_root))
+        sys.path.append(str(qualification_root))
+        try:
+            qualification_spec = importlib.util.find_spec(args.module)
+        except (ImportError, AttributeError, ValueError) as error:
+            raise LaneLaunchError("qualification module is unavailable") from error
+        if (
+            qualification_spec is None
+            or qualification_spec.origin is None
+            or not Path(qualification_spec.origin)
+            .resolve()
+            .is_relative_to(qualification_root)
+        ):
+            raise LaneLaunchError("qualification module is outside the exact checkout")
         arguments = list(args.arguments)
         if arguments[:1] == ["--"]:
             arguments.pop(0)

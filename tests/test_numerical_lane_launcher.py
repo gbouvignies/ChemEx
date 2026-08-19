@@ -20,6 +20,7 @@ def _wheel(
     *,
     preload_attestor: bool = False,
     path_hook: bool = False,
+    shadow_dependency: bool = False,
 ) -> Path:
     files = {
         "chemex/__init__.py": (
@@ -41,6 +42,8 @@ def _wheel(
     }
     if path_hook:
         files["application-overlay.pth"] = "/untrusted\n"
+    if shadow_dependency:
+        files["numpy/__init__.py"] = "SHADOWED = True\n"
     rows: list[tuple[str, str, str]] = []
     for name, content in files.items():
         data = content.encode("utf-8")
@@ -61,25 +64,34 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _qualification_module(root: Path) -> None:
+def _qualification_module(root: Path, *, shadow_dependency: bool = False) -> None:
     module_root = root / "tests/qualification"
     module_root.mkdir(parents=True)
     (root / "tests/__init__.py").write_text("", encoding="ascii")
+    if shadow_dependency:
+        (root / "fractions.py").write_text("SHADOWED = True\n", encoding="ascii")
+    dependency_import = "import fractions\n" if shadow_dependency else ""
+    dependency_record = (
+        '    "dependency_path": str(Path(fractions.__file__).resolve()),\n'
+        if shadow_dependency
+        else ""
+    )
     (module_root / "probe.py").write_text(
-        """
+        f"""
 import json
 import os
 from pathlib import Path
+{dependency_import}
 
 from chemex.application_probe import MARKER
 import chemex.numerical_lanes as numerical_lanes
 
-print(json.dumps({
+print(json.dumps({{
     "attestor": str(Path(numerical_lanes.__file__).resolve()),
     "implementation": os.environ["CHEMEX_IMPLEMENTATION_WHEEL_SHA256"],
     "marker": MARKER,
-    "pythonpath": os.environ.get("PYTHONPATH"),
-}, sort_keys=True))
+{dependency_record}    "pythonpath": os.environ.get("PYTHONPATH"),
+}}, sort_keys=True))
 """.lstrip(),
         encoding="ascii",
     )
@@ -195,3 +207,34 @@ def test_launcher_requires_isolation_and_rejects_path_hooks(tmp_path: Path) -> N
     assert "Python isolated mode (-I) is required" in without_isolation.stderr
     assert path_hook.returncode != 0
     assert "may not install Python path hooks" in path_hook.stderr
+
+
+def test_launcher_rejects_wheel_that_shadows_lane_dependency(tmp_path: Path) -> None:
+    (tmp_path / "wheel").mkdir()
+    wheel = _wheel(
+        tmp_path / "wheel/chemex-1.0-py3-none-any.whl",
+        "shadow-dependency",
+        shadow_dependency=True,
+    )
+    qualification_root = tmp_path / "qualification"
+    _qualification_module(qualification_root)
+
+    result = _run_launcher(wheel, _sha256(wheel), qualification_root, tmp_path / "apps")
+
+    assert result.returncode != 0
+    assert "may contain only the ChemEx package and metadata" in result.stderr
+
+
+def test_qualification_checkout_cannot_shadow_lane_dependency(tmp_path: Path) -> None:
+    (tmp_path / "wheel").mkdir()
+    wheel = _wheel(
+        tmp_path / "wheel/chemex-1.0-py3-none-any.whl", "qualification-shadow"
+    )
+    qualification_root = tmp_path / "qualification"
+    _qualification_module(qualification_root, shadow_dependency=True)
+
+    result = _run_launcher(wheel, _sha256(wheel), qualification_root, tmp_path / "apps")
+
+    assert result.returncode == 0, result.stderr
+    dependency_path = Path(json.loads(result.stdout)["dependency_path"])
+    assert not dependency_path.is_relative_to(qualification_root)
