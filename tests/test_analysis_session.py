@@ -373,6 +373,11 @@ def test_run_uses_explicit_session_for_fit_flow(
         "write_run_info",
         lambda *_args, **_kwargs: recorded.setdefault("run_info", True),
     )
+    monkeypatch.setattr(
+        chemex_module,
+        "write_run_outcome",
+        lambda _path, status, **_kwargs: recorded.setdefault("outcome", status),
+    )
     monkeypatch.setattr(chemex_module.os, "environ", recorded_env)
 
     args = make_args("fit")
@@ -393,6 +398,7 @@ def test_run_uses_explicit_session_for_fit_flow(
     np.testing.assert_equal(recorded["build"][2], session)
     assert recorded["run_methods"][4] is session
     assert recorded["run_info"] is True
+    assert recorded["outcome"] == "complete"
 
 
 def test_run_continues_when_native_configuration_is_unavailable(
@@ -415,6 +421,11 @@ def test_run_continues_when_native_configuration_is_unavailable(
         lambda *_args, **_kwargs: fit_ran.append(True),
     )
     monkeypatch.setattr(chemex_module, "write_run_info", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        chemex_module,
+        "write_run_outcome",
+        lambda *_args, **_kwargs: None,
+    )
 
     chemex_module.run(make_args("fit"), session=session)
 

@@ -53,6 +53,20 @@ reconstructs them from the independent parameters and model. `inputs/` contains
 lightweight copies of the user-provided experiment, parameter, and method TOML
 files. Raw experimental data files are not copied.
 
+`outcome.toml` is the lifecycle marker for the current invocation. It has
+`schema_version = 1` and a `status` of `running`, `complete`, or `incomplete`.
+ChemEx writes `complete` only after every requested method step and statistics
+analysis succeeds. Incomplete outcomes also identify the failure or interruption
+when available. A process kill may leave `running`, which is not a successful
+outcome.
+
+When reusing an output directory, ChemEx clears its known result locations for
+every currently planned method step before the first step starts. This includes
+`Parameters/`, `Data/`, `Plots/`, `Grid/`, `Groups/`, `All/`, `Statistics/`, and
+`statistics.toml`; `run_info/` and unknown user-created paths are not cleared.
+Partial new output can remain after a writer failure, but `outcome.toml` will not
+report that invocation as complete.
+
 ### `Parameters/`
 
 Contains results of the fitting as three files: `fitted.toml`, `fixed.toml`, and `constrained.toml`, which list parameters that were fitted, fixed, and constrained, respectively.
@@ -155,7 +169,10 @@ The `diagnostics.toml` files record execution details for reproducibility. MC,
 BS, and BSN diagnostics include the native Direct TRF engine, root seed, and
 effective worker count. An incomplete analysis instead writes the successful
 sample rows, `failures.tsv`, and an explicit incomplete diagnostic; complete
-summary, correlation, and plot files are suppressed. MCMC diagnostics also
+summary, correlation, and plot files are suppressed. A failure while publishing
+an MC, BS, or BSN summary, correlation table, plot, or final diagnostic likewise
+retains only truthful completed sample/failure rows and atomically terminalizes
+the diagnostic as incomplete. MCMC diagnostics also
 include the direct emcee sampler engine, timing information, effective worker
 count and root seed, acceptance fractions, burn-in decisions, and
 autocorrelation estimates. Failed or interrupted MCMC suppresses every

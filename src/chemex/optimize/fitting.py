@@ -1,5 +1,6 @@
 """The fitting module contains the code for fitting the experimental data."""
 
+import shutil
 from pathlib import Path
 
 from chemex.configuration.methods import Methods, Statistics
@@ -35,6 +36,39 @@ from chemex.optimize.resampling import (
     run_resampling_statistics,
 )
 from chemex.runtime import AnalysisSession, ExecutionSettings
+
+_CHEMEX_RESULT_PATHS = (
+    "Parameters",
+    "Data",
+    "Plots",
+    "Grid",
+    "Groups",
+    "All",
+    "Statistics",
+    "statistics.toml",
+)
+
+
+def invalidate_planned_outputs(methods: Methods, path: Path) -> None:
+    """Remove only ChemEx-owned results for every method step planned now."""
+    if len(methods) > 1:
+        output_root = path.resolve()
+        step_roots = tuple(path / section for section in methods)
+        if any(
+            not step_root.resolve().is_relative_to(output_root)
+            for step_root in step_roots
+        ):
+            msg = "A planned method step root is outside the output directory"
+            raise ValueError(msg)
+    else:
+        step_roots = (path,)
+    for step_root in step_roots:
+        for name in _CHEMEX_RESULT_PATHS:
+            result_path = step_root / name
+            if result_path.is_symlink() or result_path.is_file():
+                result_path.unlink()
+            elif result_path.is_dir():
+                shutil.rmtree(result_path)
 
 
 def _run_statistics(
@@ -233,6 +267,7 @@ def run_methods(
                 )
             except KeyboardInterrupt:
                 print_calculation_stopped_error()
+                raise
         else:
             legacy_fitmethod = (
                 "least_squares" if method.fitmethod == "trf" else method.fitmethod

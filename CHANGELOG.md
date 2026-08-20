@@ -8,6 +8,12 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 ## [Unreleased]
 
 ### Changed
+- Fit output now has a success-last `run_info/outcome.toml` lifecycle marker.
+  Reruns eagerly invalidate only known ChemEx result locations for every planned
+  method step, preventing earlier deterministic or later statistics-family
+  results from surviving as current after a failure. MC, BS, and BSN publication
+  failures now retain truthful completed samples while removing complete-only
+  summaries, correlations, and plots and publishing incomplete diagnostics.
 - Routed Direct TRF, grouped Direct, GRID, and grouped GRID method steps through
   the native parameterization, evaluation, aggregate acceptance, and atomic
   commit stack in the production `chemex fit` path. Existing v1 method TOML,
