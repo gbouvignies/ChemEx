@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import math
+import tomllib
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+import chemex.optimize.direct_trf as direct_trf_module
+import chemex.optimize.native_resampling as native_resampling_module
 from chemex.chemex import run
 from chemex.cli import build_parser
+from chemex.optimize.resampling import NativeResamplingIncompleteError
 from chemex.runtime import AnalysisSession
 
 ROOT = Path(__file__).parent.parent
@@ -23,6 +27,7 @@ def _fit_arguments(
     *,
     include: tuple[str, ...] = ("G2N-HN",),
     plot_level: str = "nothing",
+    workers: int = 1,
 ):
     return build_parser().parse_args(
         [
@@ -40,7 +45,7 @@ def _fit_arguments(
             "--plot",
             plot_level,
             "--workers",
-            "1",
+            str(workers),
         ]
     )
 
@@ -120,6 +125,325 @@ GRID = ["[R1A_A] = (1.0, 3.0)"]
         encoding="utf-8",
     )
     return path
+
+
+def _statistics_method(path: Path, statistics: str) -> Path:
+    path.write_text(
+        f"""[DEFAULT]
+FIX = ["PB", "KEX_AB"]
+STATISTICS = {{ {statistics} }}
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_real_mc_fit_is_wholly_native_and_writes_product_statistics(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 2')
+    session = AnalysisSession.create()
+
+    with (
+        patch(
+            "chemex.parameters.database.ParameterStore.build_lmfit_params",
+            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
+        ),
+        patch(
+            "lmfit.Minimizer.minimize",
+            side_effect=AssertionError("legacy lmfit optimizer was called"),
+        ),
+        patch(
+            "chemex.containers.experiments.Experiments.residuals",
+            side_effect=AssertionError("legacy evaluation was called"),
+        ),
+        patch(
+            "chemex.optimize.fitting.run_resampling_statistics",
+            side_effect=AssertionError("legacy resampling was called"),
+        ),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    statistics = output / "Statistics" / "MonteCarlo"
+    assert (statistics / "summary.toml").is_file()
+    assert (statistics / "correlations.tsv").is_file()
+    assert (statistics / "plots.pdf").stat().st_size > 0
+    samples = (statistics / "samples.tsv").read_text(encoding="utf-8")
+    assert len(samples.splitlines()) == 3
+    diagnostics = (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    assert "requested_samples = 2" in diagnostics
+    assert "completed_samples = 2" in diagnostics
+    assert 'engine = "native direct TRF"' in diagnostics
+    assert "root_seed = 0" in diagnostics
+    assert 'status = "complete"' in diagnostics
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    assert "(error not calculated)" in fitted
+
+
+def test_native_statistics_filter_resolution_fails_closed_before_lmfit(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 1')
+    session = AnalysisSession.create()
+
+    with (
+        patch.object(
+            session,
+            "resolve_current_values",
+            side_effect=RuntimeError("native values unavailable"),
+        ),
+        patch("chemex.containers.experiments.Experiments.filter") as legacy_filter,
+        pytest.raises(RuntimeError, match="native values unavailable"),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    legacy_filter.assert_not_called()
+
+
+def test_real_bs_fit_uses_native_refits_and_writes_bootstrap_products(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"BS" = 2')
+    session = AnalysisSession.create()
+
+    with (
+        patch(
+            "lmfit.Minimizer.minimize",
+            side_effect=AssertionError("legacy lmfit optimizer was called"),
+        ),
+        patch(
+            "chemex.containers.experiments.Experiments.residuals",
+            side_effect=AssertionError("legacy evaluation was called"),
+        ),
+        patch(
+            "chemex.optimize.fitting.run_resampling_statistics",
+            side_effect=AssertionError("legacy resampling was called"),
+        ),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    statistics = output / "Statistics" / "Bootstrap"
+    assert (
+        len((statistics / "samples.tsv").read_text(encoding="utf-8").splitlines()) == 3
+    )
+    assert (statistics / "summary.toml").is_file()
+    assert (statistics / "correlations.tsv").is_file()
+    assert (statistics / "diagnostics.toml").is_file()
+    assert (statistics / "plots.pdf").stat().st_size > 0
+
+
+def test_real_bsn_fit_uses_native_nucleus_resampling_products(tmp_path: Path) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"BSN" = 2')
+    session = AnalysisSession.create()
+
+    with (
+        patch(
+            "lmfit.Minimizer.minimize",
+            side_effect=AssertionError("legacy lmfit optimizer was called"),
+        ),
+        patch(
+            "chemex.containers.experiments.Experiments.residuals",
+            side_effect=AssertionError("legacy evaluation was called"),
+        ),
+        patch(
+            "chemex.optimize.fitting.run_resampling_statistics",
+            side_effect=AssertionError("legacy resampling was called"),
+        ),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    statistics = output / "Statistics" / "BootstrapNS"
+    assert (
+        len((statistics / "samples.tsv").read_text(encoding="utf-8").splitlines()) == 3
+    )
+    assert (statistics / "summary.toml").is_file()
+    assert (statistics / "correlations.tsv").is_file()
+    assert (statistics / "diagnostics.toml").is_file()
+    assert (statistics / "plots.pdf").stat().st_size > 0
+
+
+def test_seeded_native_mc_products_are_ordered_across_worker_counts(
+    tmp_path: Path,
+) -> None:
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 3')
+    serial = tmp_path / "Serial"
+    parallel = tmp_path / "Parallel"
+
+    run(_fit_arguments(serial, method, workers=1), session=AnalysisSession.create())
+    run(_fit_arguments(parallel, method, workers=2), session=AnalysisSession.create())
+
+    serial_samples = (serial / "Statistics" / "MonteCarlo" / "samples.tsv").read_text(
+        encoding="utf-8"
+    )
+    parallel_samples = (
+        parallel / "Statistics" / "MonteCarlo" / "samples.tsv"
+    ).read_text(encoding="utf-8")
+    assert serial_samples == parallel_samples
+    parallel_diagnostics = (
+        parallel / "Statistics" / "MonteCarlo" / "diagnostics.toml"
+    ).read_text(encoding="utf-8")
+    assert "workers = 2" in parallel_diagnostics
+    assert "root_seed = 0" in parallel_diagnostics
+
+
+def test_native_statistics_do_not_mutate_committed_central_values(
+    tmp_path: Path,
+) -> None:
+    central_session = AnalysisSession.create()
+    statistics_session = AnalysisSession.create()
+    statistics_method = _statistics_method(
+        tmp_path / "method.toml",
+        '"MC" = 1, "BS" = 1, "BSN" = 1',
+    )
+
+    run(_fit_arguments(tmp_path / "Central"), session=central_session)
+    run(
+        _fit_arguments(tmp_path / "Statistics", statistics_method),
+        session=statistics_session,
+    )
+
+    central = central_session.analysis_values.snapshot()
+    after_statistics = statistics_session.analysis_values.snapshot()
+    assert central.revision == after_statistics.revision == 1
+    assert central.items() == after_statistics.items()
+
+
+def test_failed_native_replicate_keeps_central_fit_and_suppresses_complete_products(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 2')
+    session = AnalysisSession.create()
+    real_least_squares = direct_trf_module.least_squares
+    call_count = 0
+
+    def fail_first_replicate(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise RuntimeError("invalid replicate backend")
+        return real_least_squares(*args, **kwargs)
+
+    with (
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=fail_first_replicate,
+        ),
+        pytest.raises(NativeResamplingIncompleteError, match="1 of 2"),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    fitted_record = next(line for line in fitted.splitlines() if "=" in line)
+    fitted_value = float(fitted_record.split("=", 1)[1].split()[0])
+    assert fitted_value == pytest.approx(2.34742, rel=5.0e-6)
+    statistics = output / "Statistics" / "MonteCarlo"
+    assert (
+        len((statistics / "samples.tsv").read_text(encoding="utf-8").splitlines()) == 2
+    )
+    failures = (statistics / "failures.tsv").read_text(encoding="utf-8")
+    assert "direct_trf_solver_unsuccessful" in failures
+    diagnostics = (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    assert 'status = "incomplete"' in diagnostics
+    assert "requested_samples = 2" in diagnostics
+    assert "completed_samples = 1" in diagnostics
+    assert "failed_samples = 1" in diagnostics
+    assert "unstarted_samples = 0" in diagnostics
+    assert 'samples_file = "samples.tsv"' in diagnostics
+    assert 'failures_file = "failures.tsv"' in diagnostics
+    assert not (statistics / "summary.toml").exists()
+    assert not (statistics / "correlations.tsv").exists()
+    assert not (statistics / "plots.pdf").exists()
+
+
+def test_interrupted_native_statistics_report_truthful_disposition_counts(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 3')
+    session = AnalysisSession.create()
+    real_generate = native_resampling_module.generate_resampling_draw
+
+    def interrupt_second_draw(dataset, request):
+        if request.ordinal == 1:
+            raise KeyboardInterrupt
+        return real_generate(dataset, request)
+
+    with (
+        patch(
+            "chemex.optimize.native_resampling.generate_resampling_draw",
+            side_effect=interrupt_second_draw,
+        ),
+        pytest.raises(NativeResamplingIncompleteError, match="1 of 3"),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    statistics = output / "Statistics" / "MonteCarlo"
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    disposition_counts = {
+        "completed": diagnostics["completed_samples"],
+        "failed": diagnostics["failed_samples"],
+        "cancelled": diagnostics["cancelled_samples"],
+        "interrupted": diagnostics["interrupted_samples"],
+        "unstarted": diagnostics["unstarted_samples"],
+    }
+    assert disposition_counts == {
+        "completed": 1,
+        "failed": 0,
+        "cancelled": 0,
+        "interrupted": 1,
+        "unstarted": 1,
+    }
+    assert sum(disposition_counts.values()) == diagnostics["requested_samples"]
+    failures = (statistics / "failures.tsv").read_text(encoding="utf-8")
+    assert "\tinterrupted\t" in failures
+    assert "\tnot_started\t" in failures
+    assert not (statistics / "summary.toml").exists()
+    assert not (statistics / "correlations.tsv").exists()
+    assert not (statistics / "plots.pdf").exists()
+
+
+def test_native_statistics_setup_failure_publishes_incomplete_diagnostics(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 2')
+    session = AnalysisSession.create()
+
+    with (
+        patch(
+            "chemex.optimize.resampling._native_dataset",
+            side_effect=RuntimeError("manifest unavailable"),
+        ),
+        pytest.raises(RuntimeError, match="manifest unavailable"),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    statistics = output / "Statistics" / "MonteCarlo"
+    diagnostics = (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    assert 'status = "incomplete"' in diagnostics
+    assert 'terminal = "failed"' in diagnostics
+    assert "completed_samples = 0" in diagnostics
+    assert "failed_samples = 0" in diagnostics
+    assert "unstarted_samples = 2" in diagnostics
+    assert 'failure_type = "RuntimeError"' in diagnostics
+    assert 'failure_message = "manifest unavailable"' in diagnostics
+    assert "samples_file" not in diagnostics
+    assert "failures_file" not in diagnostics
+    assert not (statistics / "summary.toml").exists()
+    assert not (statistics / "correlations.tsv").exists()
+    assert not (statistics / "plots.pdf").exists()
 
 
 def test_real_grid_fit_uses_native_cartesian_trf_and_writes_grid_output(
@@ -314,7 +638,7 @@ FIX = ["R1A_A", "PB", "KEX_AB"]
     assert "1.00000000e+32" not in data
 
 
-def test_statistics_fallback_maps_explicit_trf_to_legacy_least_squares(
+def test_explicit_trf_with_statistics_uses_native_production_dispatch(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
@@ -328,31 +652,14 @@ STATISTICS = { "MC" = 1 }
     )
     session = AnalysisSession.create()
 
-    with patch("chemex.optimize.fitting._fit_groups") as fit_groups:
+    with patch(
+        "chemex.optimize.fitting._fit_groups",
+        side_effect=AssertionError("legacy grouped fit was called"),
+    ):
         run(_fit_arguments(output, method), session=session)
 
-    fit_groups.assert_called_once()
-    assert fit_groups.call_args.args[3] == "least_squares"
-
-
-def test_statistics_fallback_preserves_omitted_legacy_fitmethod(
-    tmp_path: Path,
-) -> None:
-    output = tmp_path / "Output"
-    method = tmp_path / "method.toml"
-    method.write_text(
-        """[DEFAULT]
-STATISTICS = { "MC" = 1 }
-""",
-        encoding="utf-8",
-    )
-    session = AnalysisSession.create()
-
-    with patch("chemex.optimize.fitting._fit_groups") as fit_groups:
-        run(_fit_arguments(output, method), session=session)
-
-    fit_groups.assert_called_once()
-    assert fit_groups.call_args.args[3] == "leastsq"
+    assert session.analysis_values.snapshot().revision == 1
+    assert (output / "Statistics" / "MonteCarlo" / "samples.tsv").is_file()
 
 
 def test_grid_with_statistics_remains_wholly_on_legacy_dispatch(

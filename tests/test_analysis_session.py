@@ -138,6 +138,7 @@ class FakeExperiments:
         self.filtered = 0
         self.selections: list[Selection] = []
         self.parameter_store = parameter_store
+        self.param_ids: set[str] = set()
 
     def filter(self) -> None:
         self.filtered += 1

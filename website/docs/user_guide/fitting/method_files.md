@@ -169,6 +169,10 @@ Results are stored in the `grid.toml` file, with 1D and 2D plots generated. If m
 
 ChemEx offers additional methods for estimating uncertainty, including Monte Carlo, bootstrap, nucleus-specific bootstrap, and MCMC analyses.
 
+MC, BS, and BSN start from the accepted native Direct TRF fit. Their refits are
+evaluation-only successors: they cannot update the committed central parameter
+values or populate the generic fitted-parameter error field.
+
 ### Monte Carlo Simulations
 
 In Monte Carlo simulations, the fit is run once, Gaussian noise is added to generated profiles, and fitting is repeated. After N simulations, the distribution of fitted parameters provides an uncertainty estimate.
@@ -213,6 +217,13 @@ To perform multiple analyses:
 [STEP1]
 STATISTICS = {"MC"= 100, "BS"= 100}
 ```
+
+ChemEx runs every requested MC, BS, and BSN replicate. A failed or interrupted
+replicate makes that analysis incomplete: successful rows and failure
+diagnostics remain available, but ChemEx does not publish a complete summary,
+correlation matrix, or plots. The native root seed is recorded in
+`diagnostics.toml`; serial and worker execution preserve the same ordered
+results.
 
 For MCMC, the compact form sets the number of sampler steps:
 

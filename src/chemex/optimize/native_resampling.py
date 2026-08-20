@@ -1,11 +1,12 @@
 """Deterministic native resampling evidence qualification (#599).
 
-This module is an isolated qualification seam.  It plans identity-derived
-Monte Carlo, bootstrap, and nucleus-bootstrap replicates; delegates each draw
-to an internally bound evidence-only native optimizer; freshly evaluates every
-eligible candidate in a separate replicate-local workspace; freezes every
-terminal outcome; and derives summaries from one common complete-scope sample
-set.  Production fitting and reporting do not consume these artifacts yet.
+This module plans identity-derived Monte Carlo, bootstrap, and
+nucleus-bootstrap replicates; delegates each draw to an internally bound
+evidence-only native optimizer; freshly evaluates every eligible candidate in a
+separate replicate-local workspace; freezes every terminal outcome; and derives
+summaries from one common complete-scope sample set. The production adapter
+consumes the execution artifacts without exposing qualification policy objects
+through the method-file surface.
 """
 
 from __future__ import annotations
@@ -48,7 +49,7 @@ from chemex.runtime.execution import native_thread_environment
 from chemex.typing import Array
 
 _SCHEMA_VERSION = 1
-_SEED_POLICY_VERSION = "sha256-structural-u64-v1"
+_SEED_POLICY_VERSION = "sha256-product-stable-structural-u64-v2"
 _RNG_ALGORITHM = "numpy-pcg64-v1"
 _GENERATION_POLICY_VERSION = "chemex-mc-bs-bsn-v1"
 _SUMMARY_POLICY_VERSION = "complete-scope-percentile-v1"
@@ -317,6 +318,7 @@ class ResamplingPlan:
 
     accepted_result_identity: str
     accepted_occurrence_identity: str
+    accepted_vector: tuple[float, ...]
     dataset: ResamplingDatasetManifest = field(repr=False, compare=False)
     source_problem: OptimizationProblem = field(repr=False, compare=False)
     parameterization: ActiveParameterization = field(repr=False, compare=False)
@@ -341,6 +343,14 @@ class ResamplingPlan:
 
     def __post_init__(self) -> None:  # noqa: C901 - complete plan invariant
         count = _positive_integer(self.replicate_count, name="replicate count")
+        accepted_vector = tuple(
+            _finite(value, name=f"accepted vector[{index}]")
+            for index, value in enumerate(self.accepted_vector)
+        )
+        if len(accepted_vector) != len(self.source_problem.controlled_ids):
+            raise ResamplingConstructionError(
+                "Accepted resampling vector must cover the controlled coordinates"
+            )
         minimum = _positive_integer(
             self.minimum_successful_count,
             name="minimum successful replicate count",
@@ -438,6 +448,7 @@ class ResamplingPlan:
             (
                 self.accepted_result_identity,
                 self.accepted_occurrence_identity,
+                tuple(_float_token(value) for value in accepted_vector),
                 self.scheme.value,
                 count,
                 structural_identities,
@@ -457,13 +468,22 @@ class ResamplingPlan:
                 self.generation_policy_version,
             ),
         )
+        seed_stage_identity = _identity(
+            "native-resampling-seed-stage",
+            (
+                self.scheme.value,
+                self.seed_policy_version,
+                self.rng_algorithm,
+                self.generation_policy_version,
+            ),
+        )
         requests: list[ReplicateRequest] = []
         for ordinal, (structural_identity, components) in enumerate(
             zip(structural_identities, component_identities, strict=True)
         ):
             seed = _derive_seed(
                 root_seed=root_seed,
-                stage_identity=identity,
+                stage_identity=seed_stage_identity,
                 work_unit_kind="resampling-replicate",
                 structural_identity=structural_identity,
             )
@@ -486,6 +506,7 @@ class ResamplingPlan:
                 "Distinct resampling work units produced a derived-seed collision"
             )
         object.__setattr__(self, "replicate_count", count)
+        object.__setattr__(self, "accepted_vector", accepted_vector)
         object.__setattr__(
             self,
             "replicate_structural_identities",
@@ -546,6 +567,7 @@ class ResamplingPlan:
         return cls(
             accepted.identity,
             accepted.occurrence_identity,
+            accepted.vector,
             dataset,
             source_problem,
             parameterization,
@@ -585,7 +607,6 @@ def _validate_accepted_source(
         )
         != dataset.calculated
         or accepted.controlled_ids != source_problem.controlled_ids
-        or accepted.vector != source_problem.start
         or accepted.commit_scope != source_problem.commit_scope
         or accepted.commit_items
         != accepted.evaluation_result.resolved_values.ordered_items()
@@ -1154,7 +1175,7 @@ class ReplicateExecutionPlan:
         )
         problem = plan.source_problem.derive_child(
             controlled_ids=plan.source_problem.controlled_ids,
-            start=plan.source_problem.start,
+            start=plan.accepted_vector,
             derivation=derivation,
         )
         if plan.strategy is not OptimizationStrategy.DIRECT_TRF:
@@ -2688,6 +2709,7 @@ def execute_resampling_evidence(
         not accepted_occurrence_is_authoritative(accepted)
         or accepted.identity != plan.accepted_result_identity
         or accepted.occurrence_identity != plan.accepted_occurrence_identity
+        or accepted.vector != plan.accepted_vector
     ):
         raise ResamplingConstructionError(
             "Resampling execution requires the plan's exact authoritative anchor"

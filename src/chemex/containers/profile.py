@@ -90,6 +90,13 @@ class Profile:
         parameter_values = self._get_parameter_values(params)
         self.spectrometer.update(parameter_values)
 
+    def update_spectrometer_from_values(
+        self,
+        parameter_values: Mapping[str, float],
+    ) -> None:
+        """Update the spectrometer directly from stable native parameter values."""
+        self.spectrometer.update(self._local_parameter_values(parameter_values))
+
     def calculate_unscaled(self, parameter_values: Mapping[str, float]) -> Array:
         """Run only this profile's scientific calculation.
 
@@ -138,6 +145,14 @@ class Profile:
         """Apply a filter to the data, if a filterer is available."""
         if self.filterer is not None:
             self.update_spectrometer(params)
+            self.filterer.filter(self.data)
+            self.data.mark_dirty()
+            self.clear_cache()
+
+    def filter_from_values(self, parameter_values: Mapping[str, float]) -> None:
+        """Apply the configured filter using resolved native parameter values."""
+        if self.filterer is not None:
+            self.update_spectrometer_from_values(parameter_values)
             self.filterer.filter(self.data)
             self.data.mark_dirty()
             self.clear_cache()

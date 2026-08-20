@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Protocol
 
 from chemex.configuration.methods import Method
@@ -190,6 +191,15 @@ class AnalysisSession:
         except Exception:  # noqa: BLE001 - checkpoint-1 isolation boundary
             return None
         return candidate
+
+    def resolve_current_values(
+        self,
+        required_ids: set[str],
+    ) -> Mapping[str, float]:
+        """Resolve current stable values without an lmfit fallback."""
+        parameterization = self.compile_current_parameterization(required_ids)
+        frame = parameterization.frame_from_snapshot(self.analysis_values.snapshot())
+        return parameterization.resolve(frame)
 
     def sync_parameter_store_from_analysis_values(
         self,

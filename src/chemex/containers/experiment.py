@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Self
@@ -88,6 +88,11 @@ class Experiment:
     def filter(self, params: ParametersLF) -> None:
         for profile in self.profiles:
             profile.filter(params)
+
+    def filter_from_values(self, parameter_values: Mapping[str, float]) -> None:
+        """Apply profile filters from resolved native parameter values."""
+        for profile in self.profiles:
+            profile.filter_from_values(parameter_values)
 
     def _any_duplicate(self) -> bool:
         return any(profile.any_duplicate() for profile in self.profiles)

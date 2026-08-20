@@ -4,7 +4,7 @@ This module contains the Experiments class and functions for generating differen
 types of simulated experiment datasets for statistical analysis.
 """
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from hashlib import blake2b
 from itertools import chain
 from pathlib import Path
@@ -255,6 +255,11 @@ class Experiments:
         params = self.parameter_store.build_lmfit_params(self.param_ids)
         for experiment in self:
             experiment.filter(params)
+
+    def filter_from_values(self, parameter_values: Mapping[str, float]) -> None:
+        """Apply all data filters from resolved native parameter values."""
+        for experiment in self:
+            experiment.filter_from_values(parameter_values)
 
     def get_relevant_subset(self, param_ids: set[str]) -> Self:
         """Get a subset of experiments relevant to specified parameter IDs.

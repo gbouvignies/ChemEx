@@ -26,10 +26,14 @@ from chemex.optimize.minimizer import (
     minimize_with_report,
 )
 from chemex.optimize.native_deterministic import (
+    NativeDeterministicFit,
     run_native_deterministic,
     uses_native_deterministic,
 )
-from chemex.optimize.resampling import run_resampling_statistics
+from chemex.optimize.resampling import (
+    run_native_resampling_statistics,
+    run_resampling_statistics,
+)
 from chemex.runtime import AnalysisSession, ExecutionSettings
 
 
@@ -123,6 +127,28 @@ def _fit_groups(
         execute_post_fit_groups(experiments, path, plot)
 
 
+def _run_native_statistics(
+    experiments: Experiments,
+    path: Path,
+    statistics: Statistics,
+    fit: NativeDeterministicFit,
+    *,
+    session: AnalysisSession,
+) -> None:
+    committed = session.analysis_values.snapshot()
+    try:
+        run_native_resampling_statistics(
+            experiments,
+            path,
+            statistics,
+            fit,
+            execution=session.execution,
+        )
+    finally:
+        if session.analysis_values.snapshot() != committed:
+            raise RuntimeError("Native statistics mutated the committed central fit")
+
+
 def run_methods(
     experiments: Experiments,
     methods: Methods,
@@ -157,13 +183,25 @@ def run_methods(
         path_sect = path / section if len(methods) > 1 else path
 
         if use_native_deterministic:
-            run_native_deterministic(
+            fit = run_native_deterministic(
                 experiments,
                 method,
                 path_sect,
                 plot_level,
                 session=session,
             )
+            if method.statistics is not None:
+                if fit is None:
+                    raise RuntimeError(
+                        "Native resampling requires a committed deterministic fit"
+                    )
+                _run_native_statistics(
+                    experiments,
+                    path_sect,
+                    method.statistics,
+                    fit,
+                    session=session,
+                )
             continue
 
         if method.grid:
