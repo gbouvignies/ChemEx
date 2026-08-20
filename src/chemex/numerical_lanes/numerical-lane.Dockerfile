@@ -55,7 +55,6 @@ RUN curl --fail --location --output /tmp/Python.tgz \
 
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} \
     PATH=/opt/python/bin:${PATH} \
-    PYTHONPATH=/workspace/src \
     OMP_NUM_THREADS=1 \
     OPENBLAS_NUM_THREADS=1 \
     OPENBLAS_CORETYPE=Haswell \
@@ -65,8 +64,14 @@ ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} \
     CHEMEX_NUMERICAL_LANE_WORKERS=1 \
     NPY_DISABLE_CPU_FEATURES=X86_V4,AVX512_ICL,AVX512_SPR
 
-COPY pyproject.toml uv.lock /workspace/
-WORKDIR /workspace
+COPY src/chemex/numerical_lanes \
+    /opt/chemex-numerical-lane/build-context/src/chemex/numerical_lanes
+WORKDIR /opt/chemex-numerical-lane/build-context
+RUN install -m 0444 \
+        src/chemex/numerical_lanes/environment/pyproject.toml pyproject.toml \
+    && install -m 0444 \
+        src/chemex/numerical_lanes/environment/uv.lock uv.lock \
+    && rm -rf src/chemex/numerical_lanes/environment
 
 # Download the exact runtime wheels selected from uv's locked export, retain
 # their hashes as evidence, and install only from that closed wheelhouse.
@@ -86,19 +91,16 @@ RUN printf '%s\n' \
         -exec sha256sum {} + \
         | sed 's#  .*/#  #' | LC_ALL=C sort \
         > /opt/chemex-numerical-lane/wheel-manifest.txt \
-    && /opt/python/bin/python3 -m venv /workspace/.venv \
-    && /workspace/.venv/bin/python -m pip install --disable-pip-version-check \
+    && /opt/python/bin/python3 -m pip install --disable-pip-version-check \
         --no-index --only-binary=:all: --require-hashes \
         --find-links /opt/chemex-numerical-lane/wheels \
         --requirement /tmp/runtime-requirements.txt \
     && rm -rf /root/.cache /tmp/*
 
-COPY src /workspace/src
-
 # Read the actual x86 floating-point control words rather than treating NumPy's
 # error policy as hardware state.
 RUN cc -shared -fPIC -O2 \
-        src/chemex/numerical_lanes/fpstate.c \
+        /opt/chemex-numerical-lane/build-context/src/chemex/numerical_lanes/fpstate.c \
         -o /opt/chemex-numerical-lane/libchemex_fpstate.so
 
 # These manifests are content-addressed build evidence. Absolute paths never
@@ -106,7 +108,7 @@ RUN cc -shared -fPIC -O2 \
 RUN dpkg-query --show --showformat='${Package}\t${Version}\t${Architecture}\n' \
         | LC_ALL=C sort \
         > /opt/chemex-numerical-lane/os-package-manifest.txt \
-    && find pyproject.toml uv.lock src -type f \
+    && find pyproject.toml uv.lock src/chemex/numerical_lanes -type f \
         ! -path '*/manifests/*.json' ! -name '*.pyc' -print0 \
         | LC_ALL=C sort -z | xargs -0 sha256sum \
         > /opt/chemex-numerical-lane/build-context-manifest.txt \
@@ -129,4 +131,6 @@ RUN dpkg-query --show --showformat='${Package}\t${Version}\t${Architecture}\n' \
         /opt/chemex-numerical-lane/os-package-manifest.txt \
         /opt/chemex-numerical-lane/provenance.json \
         /opt/chemex-numerical-lane/wheel-manifest.txt \
-    && chmod -R a-w /opt/chemex-numerical-lane/wheels
+    && chmod -R a-w \
+        /opt/chemex-numerical-lane/build-context \
+        /opt/chemex-numerical-lane/wheels

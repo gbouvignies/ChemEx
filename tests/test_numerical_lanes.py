@@ -22,10 +22,13 @@ from chemex.numerical_lanes import (
     canonical_lanes,
     compare_values,
     comparison_scope,
+    prospective_lanes,
 )
 
 
-def _semantics(*, compatibility: bool = False) -> LaneSemantics:
+def _semantics(
+    *, compatibility: bool = False, prospective: bool = False
+) -> LaneSemantics:
     python_version = "3.14.5" if compatibility else "3.13.5"
     python_digits = "314" if compatibility else "313"
     python_source_hash = (
@@ -42,8 +45,16 @@ def _semantics(*, compatibility: bool = False) -> LaneSemantics:
         python_executable_hash=differing * 64,
         platform="linux/amd64",
         platform_manifest=numerical_lanes._PLATFORM_MANIFEST,
-        dependency_lock_hash=numerical_lanes._LOCKFILE_HASH,
-        build_recipe_hash=numerical_lanes._recipe_hash(),
+        dependency_lock_hash=(
+            numerical_lanes._PROSPECTIVE_LOCKFILE_HASH
+            if prospective
+            else numerical_lanes._LOCKFILE_HASH
+        ),
+        build_recipe_hash=(
+            numerical_lanes._recipe_hash()
+            if prospective
+            else numerical_lanes._HISTORICAL_RECIPE_HASH
+        ),
         build_context_hash="3" * 64,
         uv_version=numerical_lanes._UV_VERSION,
         uv_wheel_hash=numerical_lanes._UV_WHEEL_HASH,
@@ -208,6 +219,126 @@ def test_shipped_lane_manifests_are_the_declared_compatibility_pair() -> None:
     python_313.validate_compatibility_lane(python_314)
     assert python_313.role == "CANONICAL_NUMERICAL"
     assert python_314.role == "PYTHON_COMPATIBILITY"
+
+
+def test_historical_lane_manifests_do_not_depend_on_the_live_recipe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(numerical_lanes, "_recipe_hash", lambda: "f" * 64)
+
+    python_313, python_314 = canonical_lanes()
+
+    assert python_313.identity == (
+        "4f1e7dab3384f88149fd33befb09ba3e96730dc336e9427b224a39a8a7167e4f"
+    )
+    assert python_314.identity == (
+        "a5d59a28c5a47fffa47b9d551e77cb6cb142489fafd4b535fe495a93eea7ae4e"
+    )
+
+
+def test_prospective_build_context_excludes_application_source_and_rejects_lane_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "build-context"
+    lane_source = root / "src/chemex/numerical_lanes/__init__.py"
+    application_source = root / "src/chemex/optimize/direct_trf.py"
+    lane_source.parent.mkdir(parents=True)
+    application_source.parent.mkdir(parents=True)
+    (root / "pyproject.toml").write_text("[project]\n", encoding="ascii")
+    (root / "uv.lock").write_text("version = 1\n", encoding="ascii")
+    lane_source.write_text("LANE = 1\n", encoding="ascii")
+    application_source.write_text("APPLICATION = 1\n", encoding="ascii")
+    members = (root / "pyproject.toml", lane_source, root / "uv.lock")
+    manifest = tmp_path / "build-context-manifest.txt"
+    manifest.write_text(
+        "".join(
+            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  "
+            f"{path.relative_to(root).as_posix()}\n"
+            for path in members
+        ),
+        encoding="ascii",
+    )
+    expected = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    monkeypatch.setattr(numerical_lanes, "_BUILD_ROOT", root)
+    monkeypatch.setattr(numerical_lanes, "_BUILD_CONTEXT_MANIFEST_PATH", manifest)
+
+    assert numerical_lanes._current_build_context_hash() == expected
+    application_source.write_text("APPLICATION = 2\n", encoding="ascii")
+    assert numerical_lanes._current_build_context_hash() == expected
+
+    lane_source.write_text("LANE = 2\n", encoding="ascii")
+    with pytest.raises(LaneAuthorityError, match="member content does not match"):
+        numerical_lanes._current_build_context_hash()
+
+
+def test_shipped_prospective_lanes_publish_captured_v2_authority() -> None:
+    python_313, python_314 = prospective_lanes()
+
+    assert (
+        python_313.name,
+        python_313.role,
+        python_313.identity,
+    ) == (
+        "canonical-linux-amd64-python-3.13-v2",
+        "CANONICAL_NUMERICAL",
+        "953168c14885b9278a71dadf694633dd10cf3740bedfe00c4abb706fc0974329",
+    )
+    assert (
+        python_314.name,
+        python_314.role,
+        python_314.identity,
+    ) == (
+        "compatibility-linux-amd64-python-3.14-v2",
+        "PYTHON_COMPATIBILITY",
+        "9a61179c29d9126690a6a9e0f0f7a6c0281c52ea64a3eac0f71a4bbf75cf06e3",
+    )
+    python_313.validate_compatibility_lane(python_314)
+
+
+def test_prospective_lane_rejects_lane_owned_recipe_drift() -> None:
+    semantics = replace(_semantics(), build_recipe_hash="f" * 64)
+
+    with pytest.raises(LaneAuthorityError, match="build_recipe_hash"):
+        NumericalLane._validate_canonical_contract(
+            "canonical-linux-amd64-python-3.13-v2",
+            "CANONICAL_NUMERICAL",
+            semantics,
+        )
+
+
+def test_docker_context_admits_only_lane_owned_source() -> None:
+    dockerignore = (Path(__file__).parents[1] / ".dockerignore").read_text(
+        encoding="ascii"
+    )
+
+    assert "!src/**" not in dockerignore.splitlines()
+    assert "!pyproject.toml" not in dockerignore.splitlines()
+    assert "!uv.lock" not in dockerignore.splitlines()
+    assert "!src/chemex/numerical_lanes/**" in dockerignore.splitlines()
+
+
+def test_hosted_lane_integration_preserves_wheel_filenames() -> None:
+    workflow = (
+        Path(__file__).parents[1] / ".github/workflows/numerical-lanes.yml"
+    ).read_text(encoding="ascii")
+
+    assert "/implementation/chemex.whl" not in workflow
+    assert 'wheel_a_name="$(basename "$wheel_a")"' in workflow
+    assert 'wheel_b_name="$(basename "$wheel_b")"' in workflow
+    assert 'wheel_name="$(basename "$wheel")"' in workflow
+    assert workflow.count("--tmpfs /run/chemex-application:exec") == 4
+
+
+def test_prospective_lane_uses_its_own_minimal_dependency_lock() -> None:
+    repository = Path(__file__).parents[1]
+    environment = repository / "src/chemex/numerical_lanes/environment"
+
+    assert hashlib.sha256((environment / "uv.lock").read_bytes()).hexdigest() == (
+        numerical_lanes._PROSPECTIVE_LOCKFILE_HASH
+    )
+    pyproject = (environment / "pyproject.toml").read_text(encoding="ascii")
+    assert 'name = "chemex-numerical-lane-environment"' in pyproject
+    assert "[dependency-groups]" not in pyproject
 
 
 def test_canonical_manifest_loader_rejects_duplicate_json_members(
