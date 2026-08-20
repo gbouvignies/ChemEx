@@ -30,13 +30,13 @@ from chemex.optimize.mcmc_engine import (
 )
 from chemex.optimize.native_deterministic import NativeDeterministicFit
 from chemex.optimize.native_mcmc import (
-    ExpertMcmcPolicy,
     McmcDiagnosticStatus,
     McmcEvidence,
     McmcOperationTerminal,
     McmcPlan,
     derive_mcmc_diagnostics,
     execute_mcmc_evidence,
+    resolve_product_mcmc_policy,
 )
 from chemex.optimize.statistics_plot import write_mcmc_plots
 from chemex.optimize.uncertainty import ParameterUnit
@@ -160,6 +160,17 @@ _TIMING_KEYS = (
 class NativeMcmcIncompleteError(RuntimeError):
     """Raised when native product MCMC cannot publish a complete chain."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        terminal: str = "failed",
+        completed_steps: int = 0,
+    ) -> None:
+        super().__init__(message)
+        self.terminal = terminal
+        self.completed_steps = completed_steps
+
 
 def resolve_mcmc_settings(
     settings: McmcSettings,
@@ -205,6 +216,35 @@ def _format_parameter_ids(
 ) -> tuple[str, ...]:
     parameters = parameter_store.get_parameters(parameter_ids)
     return tuple(str(parameters[param_id].param_name) for param_id in parameter_ids)
+
+
+def _native_coordinate_units(
+    parameter_ids: tuple[str, ...],
+    parameter_store: ParameterStore,
+) -> tuple[tuple[str, ParameterUnit], ...]:
+    """Project established ChemEx parameter families to evidence units."""
+    parameters = parameter_store.get_parameters(parameter_ids)
+    units: list[tuple[str, ParameterUnit]] = []
+    for param_id in parameter_ids:
+        name = parameters[param_id].param_name.name
+        if name.startswith(("R1", "R2", "ETA", "SIGMA", "MU", "KEX")) or (
+            len(name) == 3 and name[0] == "K" and name[1:].isalpha()
+        ):
+            unit = ParameterUnit.RATE_PER_SECOND
+        elif name.startswith(("CS_", "DW_", "DWM_", "DWP_")):
+            unit = ParameterUnit.CHEMICAL_SHIFT_PPM
+        elif name.startswith("J_"):
+            unit = ParameterUnit.FREQUENCY_HZ
+        elif name in {"PA", "PB", "PC", "PD", "PE", "PF", "D2O"}:
+            unit = ParameterUnit.FRACTION
+        elif name.startswith("DH_"):
+            unit = ParameterUnit.ENERGY_PER_MOLE
+        elif name.startswith("DS_"):
+            unit = ParameterUnit.ENTROPY_PER_MOLE_KELVIN
+        else:
+            unit = ParameterUnit.DIMENSIONLESS
+        units.append((param_id, unit))
+    return tuple(units)
 
 
 def _find_unbounded_parameter_ids(
@@ -983,13 +1023,10 @@ def run_native_mcmc(
 
     timings: dict[str, float] = {}
     try:
-        policy = ExpertMcmcPolicy(
-            burn_steps=0,
-            retained_steps=effective.steps,
-            walkers=effective.walkers,
-            expert_provenance="chemex-product-method-v1",
-        ).resolve(
+        policy = resolve_product_mcmc_policy(
             dimension=len(fit.problem.controlled_ids),
+            walkers=effective.walkers,
+            steps=effective.steps,
             root_seed=root_seed,
         )
         plan = McmcPlan.for_accepted(
@@ -998,9 +1035,9 @@ def run_native_mcmc(
             parameterization=fit.parameterization,
             source_engine=fit.engine,
             policy=policy,
-            coordinate_units=tuple(
-                (param_id, ParameterUnit.DIMENSIONLESS)
-                for param_id in fit.problem.controlled_ids
+            coordinate_units=_native_coordinate_units(
+                fit.problem.controlled_ids,
+                experiments.parameter_store,
             ),
         )
         phase_start = perf_counter()
@@ -1018,22 +1055,13 @@ def run_native_mcmc(
             or operation.evidence is None
         ):
             error = NativeMcmcIncompleteError(
-                f"Native MCMC {operation.terminal.value}: {operation.failure_message}"
-            )
-            completed_steps = (
-                0
-                if operation.evidence is None
-                else operation.evidence.completed_transition_count
-            )
-            _write_native_mcmc_state_diagnostics(
-                statistic_path,
-                settings=effective,
-                root_seed=root_seed,
-                parameter_ids=fit.problem.controlled_ids,
-                status="incomplete",
+                f"Native MCMC {operation.terminal.value}: {operation.failure_message}",
                 terminal=operation.terminal.value,
-                completed_steps=completed_steps,
-                failure=error,
+                completed_steps=(
+                    0
+                    if operation.evidence is None
+                    else operation.evidence.completed_transition_count
+                ),
             )
             raise error
         phase_start = perf_counter()
@@ -1049,20 +1077,27 @@ def run_native_mcmc(
             root_seed=root_seed,
         )
     except (Exception, KeyboardInterrupt) as error:
-        if not isinstance(error, NativeMcmcIncompleteError):
-            _clear_mcmc_artifacts(statistic_path)
-            _write_native_mcmc_state_diagnostics(
-                statistic_path,
-                settings=effective,
-                root_seed=root_seed,
-                parameter_ids=fit.problem.controlled_ids,
-                status="incomplete",
-                terminal=(
-                    "interrupted" if isinstance(error, KeyboardInterrupt) else "failed"
-                ),
-                completed_steps=0,
-                failure=error,
-            )
+        _clear_mcmc_artifacts(statistic_path)
+        terminal = (
+            error.terminal
+            if isinstance(error, NativeMcmcIncompleteError)
+            else "interrupted"
+            if isinstance(error, KeyboardInterrupt)
+            else "failed"
+        )
+        completed_steps = (
+            error.completed_steps if isinstance(error, NativeMcmcIncompleteError) else 0
+        )
+        _write_native_mcmc_state_diagnostics(
+            statistic_path,
+            settings=effective,
+            root_seed=root_seed,
+            parameter_ids=fit.problem.controlled_ids,
+            status="incomplete",
+            terminal=terminal,
+            completed_steps=completed_steps,
+            failure=error,
+        )
         raise
     else:
         return result

@@ -14,6 +14,7 @@ from typing import Any, cast
 import numpy as np
 import pytest
 from pydantic import BaseModel
+from scipy.stats import truncnorm
 
 import chemex.optimize.native_mcmc as native_mcmc
 from chemex.containers.data import Data
@@ -46,6 +47,7 @@ from chemex.optimize.native_mcmc import (
     PosteriorSampleDisposition,
     ProposalKind,
     ResolvedMcmcPolicy,
+    build_accepted_point_ensemble,
     build_bounded_latin_hypercube,
     derive_mcmc_diagnostics,
     derive_mcmc_operation_diagnostics,
@@ -53,6 +55,7 @@ from chemex.optimize.native_mcmc import (
     derive_posterior_summary,
     derive_retained_sample_view,
     execute_mcmc_evidence,
+    resolve_product_mcmc_policy,
     validate_raw_mcmc_capture,
 )
 from chemex.optimize.uncertainty import ParameterUnit
@@ -446,6 +449,62 @@ def test_initial_ensemble_rejects_transposed_or_unrepresentably_narrow_bounds() 
         build_bounded_latin_hypercube((lower,), (upper,), walkers=4, seed=1)
 
 
+def test_product_initial_ensemble_is_seeded_accepted_point_jitter() -> None:
+    first = build_accepted_point_ensemble(
+        (1.0, 2.0),
+        (0.0, 1.0),
+        (2.0, 3.0),
+        walkers=8,
+        seed=612,
+    )
+    second = build_accepted_point_ensemble(
+        (1.0, 2.0),
+        (0.0, 1.0),
+        (2.0, 3.0),
+        walkers=8,
+        seed=612,
+    )
+    positions = np.asarray(first)
+
+    assert first == second
+    assert np.all(positions > np.asarray((0.0, 1.0)))
+    assert np.all(positions < np.asarray((2.0, 3.0)))
+    np.testing.assert_allclose(
+        positions.mean(axis=0),
+        (1.0, 2.0),
+        atol=2.0e-4,
+    )
+
+
+def test_product_policy_initializes_from_exact_accepted_fit() -> None:
+    accepted, problem, parameterization, engine = _native_context()
+    policy = resolve_product_mcmc_policy(
+        dimension=2,
+        walkers=8,
+        steps=3,
+        root_seed=612,
+    )
+    plan = McmcPlan.for_accepted(
+        accepted,
+        source_problem=problem,
+        parameterization=parameterization,
+        source_engine=engine,
+        policy=policy,
+        coordinate_units=(
+            ("A", ParameterUnit.DIMENSIONLESS),
+            ("B", ParameterUnit.DIMENSIONLESS),
+        ),
+    )
+
+    assert policy.kind is McmcPolicyKind.PRODUCT
+    assert policy.initialization is InitializationKind.ACCEPTED_POINT_JITTER
+    np.testing.assert_allclose(
+        np.asarray(plan.initial_ensemble).mean(axis=0),
+        accepted.vector,
+        atol=2.0e-4,
+    )
+
+
 def test_plan_binds_initial_ensemble_to_exact_accepted_native_lineage() -> None:
     accepted, problem, parameterization, engine = _native_context()
 
@@ -633,6 +692,49 @@ def test_complete_chain_is_primary_and_flat_samples_are_derived_views() -> None:
         1.0,
     )
     assert diagnostics.mean_acceptance_fraction == 0.625
+
+
+def test_seeded_native_chain_recovers_known_truncated_normal_posterior() -> None:
+    accepted, problem, parameterization, engine = _native_context(fit_b=False)
+    policy = resolve_product_mcmc_policy(
+        dimension=1,
+        walkers=8,
+        steps=6000,
+        root_seed=657,
+    )
+    plan = McmcPlan.for_accepted(
+        accepted,
+        source_problem=problem,
+        parameterization=parameterization,
+        source_engine=engine,
+        policy=policy,
+        coordinate_units=(("A", ParameterUnit.DIMENSIONLESS),),
+    )
+
+    operation = execute_mcmc_evidence(accepted, plan)
+
+    assert operation.terminal is McmcOperationTerminal.COMPLETED
+    assert operation.evidence is not None
+    samples = np.asarray(
+        [
+            position[0]
+            for state in operation.evidence.states[1001:]
+            for position in state.positions
+        ]
+    )
+    # With B fixed at 1.5, the three unit-error residuals are
+    # A - (1.0, 1.5, 2.0), hence N(1.5, 1/3) truncated to [0, 2].
+    mean = 1.5
+    standard_deviation = 1.0 / np.sqrt(3.0)
+    distribution = truncnorm(
+        (0.0 - mean) / standard_deviation,
+        (2.0 - mean) / standard_deviation,
+        loc=mean,
+        scale=standard_deviation,
+    )
+
+    assert samples.mean() == pytest.approx(distribution.mean(), abs=0.04)
+    assert samples.std(ddof=1) == pytest.approx(distribution.std(), abs=0.025)
 
 
 def test_interruption_preserves_only_a_contiguous_complete_state_prefix() -> None:

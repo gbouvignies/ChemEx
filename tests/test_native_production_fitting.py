@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from unittest.mock import patch
@@ -9,12 +11,14 @@ import pytest
 
 import chemex.optimize.direct_trf as direct_trf_module
 import chemex.optimize.fitting as fitting_module
+import chemex.optimize.mcmc as mcmc_module
 import chemex.optimize.native_mcmc as native_mcmc_module
 import chemex.optimize.native_resampling as native_resampling_module
 from chemex.chemex import run
 from chemex.cli import build_parser
 from chemex.optimize.mcmc import NativeMcmcIncompleteError
 from chemex.optimize.resampling import NativeResamplingIncompleteError
+from chemex.optimize.uncertainty import ParameterUnit
 from chemex.runtime import AnalysisSession
 
 ROOT = Path(__file__).parent.parent
@@ -51,6 +55,36 @@ def _fit_arguments(
             "--workers",
             str(workers),
         ]
+    )
+
+
+def _run_real_fit_cli(output: Path, method: Path, parameters: Path) -> None:
+    subprocess.run(  # noqa: S603 - fixed local CLI and repository-owned fixtures
+        [
+            sys.executable,
+            "-m",
+            "chemex",
+            "fit",
+            "-e",
+            str(EXPERIMENT),
+            "-p",
+            str(parameters),
+            "-m",
+            str(method),
+            "-o",
+            str(output),
+            "--include",
+            "G2N-HN",
+            "--plot",
+            "nothing",
+            "--workers",
+            "1",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
 
 
@@ -198,6 +232,11 @@ def test_real_compact_mcmc_fit_is_wholly_native_and_writes_products(
             "chemex.optimize.mcmc_engine.run_emcee_sampler",
             side_effect=AssertionError("legacy MCMC wrapper was called"),
         ),
+        patch.object(
+            mcmc_module,
+            "execute_mcmc_evidence",
+            wraps=mcmc_module.execute_mcmc_evidence,
+        ) as native_sampler,
     ):
         run(
             _fit_arguments(output, method, parameters=parameters),
@@ -218,6 +257,47 @@ def test_real_compact_mcmc_fit_is_wholly_native_and_writes_products(
     assert diagnostics["steps"] == 2
     assert diagnostics["walkers"] == 32
     assert "lmfit_version" not in diagnostics
+    plan = native_sampler.call_args.args[1]
+    assert plan.coordinate_units[0][1] is ParameterUnit.RATE_PER_SECOND
+
+
+def test_compact_mcmc_form_runs_through_real_chemex_cli(tmp_path: Path) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MCMC" = 2')
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+
+    _run_real_fit_cli(output, method, parameters)
+
+    diagnostics = tomllib.loads(
+        (output / "Statistics" / "MCMC" / "diagnostics.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert diagnostics["status"] == "complete"
+    assert diagnostics["engine"] == "native MCMC"
+    assert diagnostics["steps"] == 2
+
+
+def test_seeded_nested_mcmc_settings_run_through_real_chemex_cli(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+
+    _run_real_fit_cli(output, method, parameters)
+
+    diagnostics = tomllib.loads(
+        (output / "Statistics" / "MCMC" / "diagnostics.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert diagnostics["status"] == "complete"
+    assert diagnostics["root_seed"] == 612
+    assert diagnostics["requested_burn"] == 1
+    assert diagnostics["thin"] == 2
+    assert diagnostics["walkers"] == 4
+    assert diagnostics["workers"] == 1
 
 
 def test_seeded_nested_native_mcmc_replays_across_worker_counts(
@@ -340,6 +420,42 @@ def test_interrupted_native_mcmc_publishes_only_incomplete_diagnostics(
     assert diagnostics["status"] == "incomplete"
     assert diagnostics["terminal"] == "interrupted"
     assert diagnostics["completed_steps"] == 0
+    assert not (statistics / "summary.toml").exists()
+    assert not (statistics / "samples.tsv").exists()
+    assert not (statistics / "correlations.tsv").exists()
+    assert not (statistics / "plots.pdf").exists()
+
+
+def test_native_mcmc_postprocessing_failure_replaces_running_diagnostics(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    session = AnalysisSession.create()
+
+    with (
+        patch.object(
+            mcmc_module,
+            "_native_result_from_evidence",
+            side_effect=NativeMcmcIncompleteError("missing acceptance diagnostics"),
+        ),
+        pytest.raises(NativeMcmcIncompleteError, match="acceptance diagnostics"),
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=session,
+        )
+
+    assert session.analysis_values.snapshot().revision == 1
+    statistics = output / "Statistics" / "MCMC"
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    assert diagnostics["status"] == "incomplete"
+    assert diagnostics["terminal"] == "failed"
+    assert diagnostics["completed_steps"] == 0
+    assert "acceptance diagnostics" in diagnostics["failure_message"]
     assert not (statistics / "summary.toml").exists()
     assert not (statistics / "samples.tsv").exists()
     assert not (statistics / "correlations.tsv").exists()

@@ -46,8 +46,10 @@ from chemex.typing import Array
 _SCHEMA_VERSION = 1
 _SEED_POLICY_VERSION = "sha256-structural-u64-v1"
 _RNG_ALGORITHM = "numpy-pcg64-lhs+seedsequence-mt19937-emcee-v1"
+_PRODUCT_RNG_ALGORITHM = "numpy-pcg64-accepted-jitter+seedsequence-mt19937-emcee-v1"
 _SAMPLER_VERSION = "chemex-emcee-ensemble-v1"
 _INITIALIZATION_VERSION = "bounded-latin-hypercube-v1"
+_PRODUCT_INITIALIZATION_VERSION = "accepted-point-jitter-v1"
 _PROPOSAL_VERSION = "emcee-stretch-v1"
 _MAX_U64 = (1 << 64) - 1
 
@@ -62,12 +64,14 @@ class McmcPolicyKind(StrEnum):
     CALIBRATED = "calibrated"
     CALIBRATION_CANDIDATE = "calibration_candidate"
     EXPERT = "expert"
+    PRODUCT = "product"
 
 
 class InitializationKind(StrEnum):
     """Closed native ensemble initialization constructions."""
 
     BOUNDED_LATIN_HYPERCUBE = "bounded_latin_hypercube"
+    ACCEPTED_POINT_JITTER = "accepted_point_jitter"
 
 
 class ProposalKind(StrEnum):
@@ -514,6 +518,60 @@ def build_bounded_latin_hypercube(
     return tuple(tuple(float(value) for value in row) for row in positions)
 
 
+def build_accepted_point_ensemble(
+    accepted: Sequence[float],
+    lower_bounds: Sequence[float],
+    upper_bounds: Sequence[float],
+    *,
+    walkers: int,
+    seed: int,
+) -> tuple[tuple[float, ...], ...]:
+    """Reproduce the product contract of jittering the committed central fit."""
+    walker_count = _positive_integer(walkers, name="MCMC walker count")
+    rng_seed = _unsigned_seed(seed, name="MCMC initialization seed")
+    center = np.asarray(tuple(accepted), dtype=np.float64)
+    lower = np.asarray(tuple(lower_bounds), dtype=np.float64)
+    upper = np.asarray(tuple(upper_bounds), dtype=np.float64)
+    if (
+        center.ndim != 1
+        or lower.ndim != 1
+        or upper.ndim != 1
+        or center.shape != lower.shape
+        or center.shape != upper.shape
+        or center.size < 1
+        or not np.all(np.isfinite(center))
+        or not np.all(np.isfinite(lower))
+        or not np.all(np.isfinite(upper))
+        or not np.all(lower < upper)
+        or not np.all((center >= lower) & (center <= upper))
+    ):
+        raise McmcConstructionError(
+            "Accepted-point MCMC initialization requires a finite accepted vector "
+            "inside finite strictly ordered bounds"
+        )
+    interior_lower = np.nextafter(lower, upper)
+    interior_upper = np.nextafter(upper, lower)
+    if not np.all(interior_lower < interior_upper):
+        raise McmcConstructionError(
+            "Accepted-point MCMC initialization has no representable open interval"
+        )
+    scale = np.maximum.reduce(
+        (
+            np.abs(center) * 1.0e-4,
+            (upper - lower) * 1.0e-4,
+            np.full_like(center, 1.0e-8),
+        )
+    )
+    rng = np.random.Generator(np.random.PCG64(rng_seed))
+    positions = center + rng.standard_normal((walker_count, center.size)) * scale
+    positions = np.clip(positions, interior_lower, interior_upper)
+    if not np.all((positions > lower) & (positions < upper)):
+        raise McmcConstructionError(
+            "Accepted-point MCMC initialization reached a closed bound"
+        )
+    return tuple(tuple(float(value) for value in row) for row in positions)
+
+
 @dataclass(frozen=True, slots=True)
 class ResolvedMcmcPolicy:
     """Complete immutable MCMC topology and work allocation fixed pre-run."""
@@ -572,9 +630,11 @@ class ResolvedMcmcPolicy:
                 "No repository-frozen calibration reference is available for "
                 "native MCMC"
             )
-        if self.kind is McmcPolicyKind.EXPERT and qualification_range is not None:
+        if self.kind in {McmcPolicyKind.EXPERT, McmcPolicyKind.PRODUCT} and (
+            qualification_range is not None
+        ):
             raise McmcConstructionError(
-                "Expert MCMC policy cannot inherit calibrated qualification"
+                "Non-calibrated MCMC policy cannot inherit calibrated qualification"
             )
         proposal_scale = _finite_positive(
             self.proposal_scale,
@@ -825,6 +885,29 @@ class ExpertMcmcPolicy:
         )
 
 
+def resolve_product_mcmc_policy(
+    *,
+    dimension: int,
+    walkers: int,
+    steps: int,
+    root_seed: int,
+) -> ResolvedMcmcPolicy:
+    """Resolve the frozen v1 product method without qualification policy modes."""
+    return ResolvedMcmcPolicy(
+        kind=McmcPolicyKind.PRODUCT,
+        policy_version="product-method-v1",
+        dimension=dimension,
+        walkers=walkers,
+        burn_steps=0,
+        retained_steps=steps,
+        root_seed=root_seed,
+        provenance_identity="chemex-product-method-v1",
+        initialization=InitializationKind.ACCEPTED_POINT_JITTER,
+        initialization_version=_PRODUCT_INITIALIZATION_VERSION,
+        rng_algorithm=_PRODUCT_RNG_ALGORITHM,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class McmcAcceptedAnchor:
     """Exact occurrence-owned scientific context for one MCMC request."""
@@ -1028,12 +1111,21 @@ class McmcPlan:
             )
         lower = tuple(problem.lower_bounds)
         upper = tuple(problem.upper_bounds)
-        initial = build_bounded_latin_hypercube(
-            lower,
-            upper,
-            walkers=self.policy.walkers,
-            seed=self.policy.initialization_seed,
-        )
+        if self.policy.initialization is InitializationKind.ACCEPTED_POINT_JITTER:
+            initial = build_accepted_point_ensemble(
+                accepted.vector,
+                lower,
+                upper,
+                walkers=self.policy.walkers,
+                seed=self.policy.initialization_seed,
+            )
+        else:
+            initial = build_bounded_latin_hypercube(
+                lower,
+                upper,
+                walkers=self.policy.walkers,
+                seed=self.policy.initialization_seed,
+            )
         anchor = McmcAcceptedAnchor(
             accepted.identity,
             accepted.occurrence_identity,

@@ -195,8 +195,8 @@ MCMC analysis samples the posterior distribution after the native deterministic
 fit has converged and committed. It consumes that accepted native problem and
 evaluation engine directly, uses ChemEx's weighted residuals as the likelihood,
 and uses the fitted-parameter bounds as uniform priors. Initial walkers are
-placed reproducibly inside those bounds with a seeded bounded Latin-hypercube
-construction.
+placed reproducibly by applying small seeded perturbations to the committed
+fitted values and clipping them into the open bounded intervals.
 
 Every fitted parameter sampled by MCMC must have finite lower and upper bounds,
 with the lower bound strictly smaller than the upper bound. ChemEx rejects an

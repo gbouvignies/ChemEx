@@ -61,3 +61,17 @@ def test_statistics_rejects_mcmc_update_parameters_state_mutation() -> None:
         ValidationError, match="cannot mutate the committed central fit"
     ):
         Statistics.model_validate({"MCMC": {"STEPS": 100, "UPDATE_PARAMETERS": True}})
+
+
+@pytest.mark.parametrize("seed", (0, (1 << 64) - 1))
+def test_statistics_accepts_unsigned_64_bit_mcmc_seed_boundaries(seed: int) -> None:
+    statistics = Statistics.model_validate({"MCMC": {"STEPS": 100, "SEED": seed}})
+
+    assert statistics.mcmc is not None
+    assert statistics.mcmc.seed == seed
+
+
+@pytest.mark.parametrize("seed", (-1, 1 << 64))
+def test_statistics_rejects_out_of_range_mcmc_seed(seed: int) -> None:
+    with pytest.raises(ValidationError, match="unsigned 64-bit integer"):
+        Statistics.model_validate({"MCMC": {"STEPS": 100, "SEED": seed}})
