@@ -103,9 +103,6 @@ class StubSession:
     ) -> None:
         return None
 
-    def try_resolve_current_values(self, _required_ids: set[str]) -> None:
-        return None
-
 
 class WriterParameterStore:
     def __init__(self, parameters: dict[str, ParamSetting]) -> None:

@@ -192,16 +192,6 @@ class AnalysisSession:
             return None
         return candidate
 
-    def try_resolve_current_values(
-        self,
-        required_ids: set[str],
-    ) -> Mapping[str, float] | None:
-        """Best-effort current-value resolution for legacy-compatible paths."""
-        try:
-            return self.resolve_current_values(required_ids)
-        except Exception:  # noqa: BLE001 - legacy filtering remains the fallback
-            return None
-
     def resolve_current_values(
         self,
         required_ids: set[str],

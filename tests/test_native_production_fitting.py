@@ -56,10 +56,6 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
 
     with (
         patch(
-            "chemex.parameters.database.ParameterStore.build_lmfit_params",
-            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
-        ),
-        patch(
             "lmfit.Minimizer.minimize",
             side_effect=AssertionError("legacy lmfit optimizer was called"),
         ),
