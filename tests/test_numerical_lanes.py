@@ -271,30 +271,28 @@ def test_prospective_build_context_excludes_application_source_and_rejects_lane_
         numerical_lanes._current_build_context_hash()
 
 
-def test_prospective_lanes_are_explicit_and_do_not_replace_historical_lanes(
-    tmp_path: Path,
-) -> None:
-    prospective = (
-        NumericalLane(
-            "canonical-linux-amd64-python-3.13-v2",
-            "CANONICAL_NUMERICAL",
-            _semantics(prospective=True),
-        ),
-        NumericalLane(
-            "compatibility-linux-amd64-python-3.14-v2",
-            "PYTHON_COMPATIBILITY",
-            _semantics(compatibility=True, prospective=True),
-        ),
+def test_shipped_prospective_lanes_publish_captured_v2_authority() -> None:
+    python_313, python_314 = prospective_lanes()
+
+    assert (
+        python_313.name,
+        python_313.role,
+        python_313.identity,
+    ) == (
+        "canonical-linux-amd64-python-3.13-v2",
+        "CANONICAL_NUMERICAL",
+        "953168c14885b9278a71dadf694633dd10cf3740bedfe00c4abb706fc0974329",
     )
-    for lane in prospective:
-        (tmp_path / f"{lane.name}.json").write_text(
-            json.dumps(lane.to_record()), encoding="ascii"
-        )
-
-    loaded = prospective_lanes(tmp_path)
-
-    assert loaded == prospective
-    assert all(lane.name.endswith("-v1") for lane in canonical_lanes())
+    assert (
+        python_314.name,
+        python_314.role,
+        python_314.identity,
+    ) == (
+        "compatibility-linux-amd64-python-3.14-v2",
+        "PYTHON_COMPATIBILITY",
+        "9a61179c29d9126690a6a9e0f0f7a6c0281c52ea64a3eac0f71a4bbf75cf06e3",
+    )
+    python_313.validate_compatibility_lane(python_314)
 
 
 def test_prospective_lane_rejects_lane_owned_recipe_drift() -> None:
