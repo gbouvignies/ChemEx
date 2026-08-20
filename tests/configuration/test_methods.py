@@ -54,3 +54,10 @@ def test_statistics_parse_mcmc_auto_burn_case_insensitive() -> None:
 
     assert statistics.mcmc is not None
     assert statistics.mcmc.burn == "auto"
+
+
+def test_statistics_rejects_mcmc_update_parameters_state_mutation() -> None:
+    with pytest.raises(
+        ValidationError, match="cannot mutate the committed central fit"
+    ):
+        Statistics.model_validate({"MCMC": {"STEPS": 100, "UPDATE_PARAMETERS": True}})

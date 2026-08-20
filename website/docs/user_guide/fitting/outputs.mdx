@@ -156,7 +156,9 @@ BS, and BSN diagnostics include the native Direct TRF engine, root seed, and
 effective worker count. An incomplete analysis instead writes the successful
 sample rows, `failures.tsv`, and an explicit incomplete diagnostic; complete
 summary, correlation, and plot files are suppressed. MCMC diagnostics also
-include the direct emcee sampler engine, timing information, acceptance
-fractions, burn-in decisions, and autocorrelation estimates. These diagnostics
-are the best place to confirm that [`--workers`](multicore_execution.md) was
-applied as intended.
+include the direct emcee sampler engine, timing information, effective worker
+count and root seed, acceptance fractions, burn-in decisions, and
+autocorrelation estimates. Failed or interrupted MCMC suppresses every
+complete-chain product and leaves only an explicit incomplete diagnostic. These
+diagnostics are the best place to confirm that
+[`--workers`](multicore_execution.md) was applied as intended.

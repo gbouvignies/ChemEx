@@ -50,6 +50,12 @@ class McmcSettings(BaseModel):
 
     @model_validator(mode="after")
     def validate_sample_window(self) -> Self:
+        if self.update_parameters:
+            msg = "MCMC posterior sampling cannot mutate the committed central fit"
+            raise ValueError(msg)
+        if self.seed is not None and not 0 <= self.seed < 1 << 64:
+            msg = "MCMC seed must be an unsigned 64-bit integer"
+            raise ValueError(msg)
         burn = 0 if self.burn == "auto" else self.burn
         if burn >= self.steps:
             msg = "MCMC burn must be smaller than steps"

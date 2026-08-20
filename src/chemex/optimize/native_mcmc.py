@@ -1,8 +1,8 @@
-"""Prospective native fixed-topology MCMC evidence qualification (#600).
+"""Native fixed-topology MCMC execution and evidence from #600.
 
-This module is an isolated qualification seam. Production method parsing,
-workflow orchestration, reporting, and parameter-state mutation do not consume
-these artifacts yet.
+Qualification policy and evidence types remain isolated from the public method
+surface. The production adapter consumes the accepted-fit execution evidence
+without exposing calibrated or expert product modes or mutating fit state.
 """
 
 from __future__ import annotations
@@ -13,9 +13,11 @@ import math
 import secrets
 import warnings
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from enum import StrEnum
-from threading import RLock
+from threading import Lock, RLock, local
 from typing import SupportsIndex, cast
 from weakref import WeakKeyDictionary
 
@@ -37,6 +39,8 @@ from chemex.optimize.direct_trf import (
 )
 from chemex.optimize.uncertainty import ParameterUnit
 from chemex.parameters.parameterization import ActiveParameterization
+from chemex.runtime import ExecutionSettings
+from chemex.runtime.execution import native_thread_environment
 from chemex.typing import Array
 
 _SCHEMA_VERSION = 1
@@ -3600,14 +3604,26 @@ def summarize_posterior_evidence(
 class _LogDensityEvaluator:
     def __init__(self, plan: McmcPlan) -> None:
         self.plan = plan
-        self.evaluator = plan.source_engine.new_evaluator()
+        self._worker_state = local()
+        self._count_lock = Lock()
         self.objective_request_count = 0
         self.evaluation_request_count = 0
 
+    def _evaluator(self) -> BoundEvaluator:
+        evaluator = getattr(self._worker_state, "evaluator", None)
+        if evaluator is None:
+            evaluator = self.plan.source_engine.new_evaluator()
+            self._worker_state.evaluator = evaluator
+        return cast("BoundEvaluator", evaluator)
+
     def __call__(self, vector: Array) -> float:
-        if self.objective_request_count >= self.plan.policy.objective_request_budget:
-            raise McmcExecutionError("MCMC objective-request budget exhausted")
-        self.objective_request_count += 1
+        with self._count_lock:
+            if (
+                self.objective_request_count
+                >= self.plan.policy.objective_request_budget
+            ):
+                raise McmcExecutionError("MCMC objective-request budget exhausted")
+            self.objective_request_count += 1
         candidate = np.asarray(vector, dtype=np.float64)
         if (
             candidate.shape != (self.plan.policy.dimension,)
@@ -3629,8 +3645,9 @@ class _LogDensityEvaluator:
             raise McmcExecutionError(
                 f"MCMC candidate frame failed: {type(error).__name__}: {error}"
             ) from error
-        outcome = self.evaluator.evaluate(frame)
-        self.evaluation_request_count += 1
+        outcome = self._evaluator().evaluate(frame)
+        with self._count_lock:
+            self.evaluation_request_count += 1
         if isinstance(outcome, EvaluationFailure):
             if outcome.validity == "INVALID_TRIAL":
                 return -np.inf
@@ -3678,6 +3695,7 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
     state_observer: Callable[[EnsembleState], None] | None = None,
     cancellation: CancellationToken | None = None,
     checkpoint_observer: Callable[[McmcExecutionStage, int], None] | None = None,
+    execution: ExecutionSettings | None = None,
 ) -> McmcOperation:
     """Execute one fixed run while preserving only complete ensemble states."""
     plan.validate_integrity(accepted)
@@ -3690,6 +3708,7 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
     states: list[EnsembleState] = []
     stage = McmcExecutionStage.BEFORE_INITIALIZATION
     initialization_outcome = McmcInitializationOutcome.NOT_STARTED
+    execution_settings = ExecutionSettings() if execution is None else execution
 
     def checkpoint(next_stage: McmcExecutionStage) -> None:
         nonlocal stage
@@ -3700,60 +3719,78 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
             raise _McmcCancelled(f"MCMC cancelled at {stage.value}")
 
     try:
-        checkpoint(McmcExecutionStage.BEFORE_INITIALIZATION)
-        initial = np.asarray(plan.initial_ensemble, dtype=np.float64)
-        initial_values: list[float] = []
-        for row in initial:
-            checkpoint(McmcExecutionStage.INITIALIZING)
-            initial_values.append(log_density(row))
-        initial_log_density = np.asarray(initial_values, dtype=np.float64)
-        if not np.all(np.isfinite(initial_log_density)):
-            raise McmcExecutionError(
-                "MCMC initial ensemble has unavailable native log density"
-            )
-        initialization_outcome = McmcInitializationOutcome.COMPLETED
-        states.append(_ensemble_state(0, initial, initial_log_density))
-        checkpoint(McmcExecutionStage.AFTER_INITIALIZATION)
-        checkpoint(McmcExecutionStage.AFTER_COMPLETE_STATE)
-        move = _RecordingStretchMove(scale=plan.policy.proposal_scale)
-        sampler = emcee.EnsembleSampler(
-            plan.policy.walkers,
-            plan.policy.dimension,
-            log_density,
-            moves=move,
-        )
-        sampler.random_state = _legacy_sampler_random_state(plan.policy.sampler_seed)
-        emcee_state = emcee.State(initial, log_prob=initial_log_density)
-        iterator = sampler.sample(
-            emcee_state,
-            iterations=plan.policy.total_steps,
-            tune=False,
-            skip_initial_state_check=True,
-            store=False,
-        )
-        for ordinal in range(1, plan.policy.total_steps + 1):
-            checkpoint(McmcExecutionStage.BEFORE_TRANSITION)
-            checkpoint(McmcExecutionStage.DURING_TRANSITION)
-            sampled = next(iterator)
-            if move.last_accepted is None:
-                raise McmcExecutionError(
-                    "MCMC backend omitted its transition diagnostic mask"
+        with ExitStack() as stack:
+            stack.enter_context(
+                native_thread_environment(
+                    execution_settings.native_thread_env(
+                        parallel=execution_settings.is_parallel,
+                    )
                 )
-            state = _ensemble_state(
-                ordinal,
-                sampled.coords,
-                sampled.log_prob,
             )
-            _record_backend_execution_transition(
-                backend_observation,
-                states[-1],
-                state,
-                tuple(bool(value) for value in move.last_accepted),
+            pool = (
+                stack.enter_context(
+                    ThreadPoolExecutor(max_workers=execution_settings.workers)
+                )
+                if execution_settings.is_parallel
+                else None
             )
-            states.append(state)
-            if state_observer is not None:
-                state_observer(state)
+            checkpoint(McmcExecutionStage.BEFORE_INITIALIZATION)
+            initial = np.asarray(plan.initial_ensemble, dtype=np.float64)
+            initial_values: list[float] = []
+            for row in initial:
+                checkpoint(McmcExecutionStage.INITIALIZING)
+                initial_values.append(log_density(row))
+            initial_log_density = np.asarray(initial_values, dtype=np.float64)
+            if not np.all(np.isfinite(initial_log_density)):
+                raise McmcExecutionError(
+                    "MCMC initial ensemble has unavailable native log density"
+                )
+            initialization_outcome = McmcInitializationOutcome.COMPLETED
+            states.append(_ensemble_state(0, initial, initial_log_density))
+            checkpoint(McmcExecutionStage.AFTER_INITIALIZATION)
             checkpoint(McmcExecutionStage.AFTER_COMPLETE_STATE)
+            move = _RecordingStretchMove(scale=plan.policy.proposal_scale)
+            sampler = emcee.EnsembleSampler(
+                plan.policy.walkers,
+                plan.policy.dimension,
+                log_density,
+                moves=move,
+                pool=pool,
+            )
+            sampler.random_state = _legacy_sampler_random_state(
+                plan.policy.sampler_seed
+            )
+            emcee_state = emcee.State(initial, log_prob=initial_log_density)
+            iterator = sampler.sample(
+                emcee_state,
+                iterations=plan.policy.total_steps,
+                tune=False,
+                skip_initial_state_check=True,
+                store=False,
+            )
+            for ordinal in range(1, plan.policy.total_steps + 1):
+                checkpoint(McmcExecutionStage.BEFORE_TRANSITION)
+                checkpoint(McmcExecutionStage.DURING_TRANSITION)
+                sampled = next(iterator)
+                if move.last_accepted is None:
+                    raise McmcExecutionError(
+                        "MCMC backend omitted its transition diagnostic mask"
+                    )
+                state = _ensemble_state(
+                    ordinal,
+                    sampled.coords,
+                    sampled.log_prob,
+                )
+                _record_backend_execution_transition(
+                    backend_observation,
+                    states[-1],
+                    state,
+                    tuple(bool(value) for value in move.last_accepted),
+                )
+                states.append(state)
+                if state_observer is not None:
+                    state_observer(state)
+                checkpoint(McmcExecutionStage.AFTER_COMPLETE_STATE)
         if log_density.objective_request_count != plan.policy.objective_request_budget:
             raise McmcExecutionError(
                 "MCMC backend request count differs from the frozen budget"

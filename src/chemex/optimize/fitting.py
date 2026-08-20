@@ -9,11 +9,11 @@ from chemex.messages import (
     print_fitmethod,
     print_grid_statistic_warning,
     print_group_name,
+    print_mcmc_no_vary_warning,
     print_minimizing,
     print_no_data,
     print_running_statistics,
     print_step_name,
-    print_value_error,
 )
 from chemex.optimize.gridding import run_grid
 from chemex.optimize.grouping import create_groups
@@ -21,7 +21,7 @@ from chemex.optimize.helper import (
     execute_post_fit,
     execute_post_fit_groups,
 )
-from chemex.optimize.mcmc import run_mcmc
+from chemex.optimize.mcmc import run_native_mcmc
 from chemex.optimize.minimizer import (
     minimize_with_report,
 )
@@ -55,25 +55,6 @@ def _run_statistics(
         statistics,
         execution=execution,
     )
-    parameter_store = experiments.parameter_store
-
-    if statistics.mcmc is None:
-        return
-
-    print_running_statistics("MCMC")
-    try:
-        params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
-        run_mcmc(
-            experiments,
-            params_lf,
-            statistics.mcmc,
-            path,
-            execution=execution,
-        )
-    except KeyboardInterrupt:
-        print_calculation_stopped_error()
-    except ValueError:
-        print_value_error()
 
 
 def _fit_groups(
@@ -144,9 +125,51 @@ def _run_native_statistics(
             fit,
             execution=session.execution,
         )
+        if statistics.mcmc is not None:
+            print_running_statistics("MCMC")
+            run_native_mcmc(
+                experiments,
+                fit,
+                statistics.mcmc,
+                path,
+                execution=session.execution,
+            )
     finally:
         if session.analysis_values.snapshot() != committed:
             raise RuntimeError("Native statistics mutated the committed central fit")
+
+
+def _requests_only_mcmc(statistics: Statistics) -> bool:
+    return (
+        statistics.mcmc is not None
+        and statistics.mc is None
+        and statistics.bs is None
+        and statistics.bsn is None
+    )
+
+
+def _run_requested_native_statistics(
+    experiments: Experiments,
+    path: Path,
+    statistics: Statistics | None,
+    fit: NativeDeterministicFit | None,
+    *,
+    session: AnalysisSession,
+) -> None:
+    if statistics is None:
+        return
+    if fit is None:
+        if _requests_only_mcmc(statistics):
+            print_mcmc_no_vary_warning()
+            return
+        raise RuntimeError("Native resampling requires a committed deterministic fit")
+    _run_native_statistics(
+        experiments,
+        path,
+        statistics,
+        fit,
+        session=session,
+    )
 
 
 def run_methods(
@@ -190,18 +213,13 @@ def run_methods(
                 plot_level,
                 session=session,
             )
-            if method.statistics is not None:
-                if fit is None:
-                    raise RuntimeError(
-                        "Native resampling requires a committed deterministic fit"
-                    )
-                _run_native_statistics(
-                    experiments,
-                    path_sect,
-                    method.statistics,
-                    fit,
-                    session=session,
-                )
+            _run_requested_native_statistics(
+                experiments,
+                path_sect,
+                method.statistics,
+                fit,
+                session=session,
+            )
             continue
 
         if method.grid:

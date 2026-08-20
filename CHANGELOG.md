@@ -19,9 +19,14 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   refits with stable ordered seeds across serial and worker execution. Existing
   STATISTICS syntax and output directories are preserved; incomplete analyses
   retain explicit samples/failures diagnostics without publishing complete
-  summaries or plots. MCMC-bearing steps and explicit legacy optimizer
-  spellings without native statistics remain on the legacy path pending their
-  dedicated migrations.
+  summaries or plots. MCMC now also starts from the single committed native
+  deterministic fit and samples ChemEx weighted residuals through the native
+  evaluation engine, with seeded serial/worker replay and the existing compact
+  and nested method forms. Native MCMC requires finite, strictly ordered bounds
+  and rejects `UPDATE_PARAMETERS = true`; failed or interrupted chains publish
+  incomplete diagnostics without summary, sample, correlation, or plot files.
+  Explicit legacy optimizer spellings without native statistics remain on their
+  compatibility path.
 
 ### Infrastructure
 - Removed the unused `B1FieldConfig` model and its `default_distribution_config`

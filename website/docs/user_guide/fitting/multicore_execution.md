@@ -35,9 +35,8 @@ simulation runs, plotting, and output writing are not controlled by
 `--workers`.
 
 Workers are active only while the parallel statistics task is running. Native
-MC, BS, and BSN refits use worker threads; MCMC may show multiple Python
-processes. The earlier deterministic fit and later output-writing phase remain
-serial.
+MC, BS, BSN, and MCMC use worker threads with isolated native evaluators. The
+earlier deterministic fit and later output-writing phase remain serial.
 
 ## Command-Line Controls
 
@@ -49,7 +48,7 @@ Controls the number of ChemEx worker slots used by fit statistics.
 | ---- | ------- |
 | `auto` | Conservative default, capped at 8 workers. |
 | `1` | Serial execution. Useful for debugging and reproducibility checks. |
-| `N` | Use `N` worker slots (threads for native MC/BS/BSN; processes may be used for MCMC). |
+| `N` | Use `N` worker slots for native statistics. |
 | `0` | Use all CPUs visible to the current process. |
 
 For long MCMC runs on a dedicated machine, it can be reasonable to set an
@@ -127,6 +126,8 @@ settings:
 
 ```toml
 sampler = "emcee via ChemEx direct EnsembleSampler"
+engine = "native MCMC"
 workers = 8
+root_seed = 1234
 sampling_seconds = 120.42
 ```

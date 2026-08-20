@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import dataclasses
 import pickle
+import threading
+import time
 from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any, cast
@@ -63,6 +65,7 @@ from chemex.parameters.parameterization import (
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.values import AnalysisValuesSnapshot
 from chemex.printers.data import Printer
+from chemex.runtime import ExecutionSettings
 from chemex.typing import Array
 
 
@@ -232,6 +235,48 @@ def _same_semantics_foreign_occurrence(
         commit_items=accepted.commit_items,
         origin_context_identity=accepted.origin_context_identity,
     )
+
+
+def test_seeded_native_mcmc_workers_execute_in_parallel_without_changing_chain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accepted, plan = _plan_context()
+    main_thread = threading.get_ident()
+    worker_threads: set[int] = set()
+    worker_lock = threading.Lock()
+    original_calculate = _LinearPulseSequence.calculate
+
+    def record_worker(
+        pulse_sequence: _LinearPulseSequence,
+        spectrometer: _LinearSpectrometer,
+        data: Data,
+    ) -> Array:
+        thread_id = threading.get_ident()
+        if thread_id != main_thread:
+            with worker_lock:
+                worker_threads.add(thread_id)
+            time.sleep(0.002)
+        return original_calculate(pulse_sequence, spectrometer, data)
+
+    monkeypatch.setattr(_LinearPulseSequence, "calculate", record_worker)
+
+    parallel = execute_mcmc_evidence(
+        accepted,
+        plan,
+        execution=ExecutionSettings(workers=2),
+    )
+    serial = execute_mcmc_evidence(
+        accepted,
+        plan,
+        execution=ExecutionSettings(workers=1),
+    )
+
+    assert parallel.terminal is McmcOperationTerminal.COMPLETED
+    assert serial.terminal is McmcOperationTerminal.COMPLETED
+    assert parallel.evidence is not None
+    assert serial.evidence is not None
+    assert len(worker_threads) == 2
+    assert parallel.evidence.states == serial.evidence.states
 
 
 def test_arbitrary_settings_cannot_mint_calibrated_authority() -> None:

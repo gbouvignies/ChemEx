@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -27,7 +28,18 @@ from chemex.optimize.mcmc_engine import (
     McmcProblem,
     run_emcee_sampler,
 )
+from chemex.optimize.native_deterministic import NativeDeterministicFit
+from chemex.optimize.native_mcmc import (
+    ExpertMcmcPolicy,
+    McmcDiagnosticStatus,
+    McmcEvidence,
+    McmcOperationTerminal,
+    McmcPlan,
+    derive_mcmc_diagnostics,
+    execute_mcmc_evidence,
+)
 from chemex.optimize.statistics_plot import write_mcmc_plots
+from chemex.optimize.uncertainty import ParameterUnit
 from chemex.parameters.database import ParameterStore
 from chemex.runtime import ExecutionSettings
 from chemex.runtime.execution import native_thread_env, native_thread_environment
@@ -143,6 +155,10 @@ _TIMING_KEYS = (
     "output_total_seconds",
     "total_seconds",
 )
+
+
+class NativeMcmcIncompleteError(RuntimeError):
+    """Raised when native product MCMC cannot publish a complete chain."""
 
 
 def resolve_mcmc_settings(
@@ -691,6 +707,9 @@ def _write_diagnostics(
     parameter_store: ParameterStore,
     unbounded_parameter_ids: tuple[str, ...],
     timings: Mapping[str, float],
+    *,
+    engine: str,
+    root_seed: int | None = None,
 ) -> None:
     acceptance = result.acceptance_fraction
     unbounded_parameters = list(
@@ -698,8 +717,9 @@ def _write_diagnostics(
     )
     requested_burn = '"auto"' if settings.burn == "auto" else str(settings.burn)
     lines = [
+        'status = "complete"',
+        f"engine = {_quote_toml_string(engine)}",
         'sampler = "emcee via ChemEx direct EnsembleSampler"',
-        f"lmfit_version = {_quote_toml_string(_package_version('lmfit'))}",
         f"emcee_version = {_quote_toml_string(_package_version('emcee'))}",
         'credible_interval = "95% equal-tailed"',
         'convergence_diagnostic = "integrated_autocorrelation_time"',
@@ -722,6 +742,8 @@ def _write_diagnostics(
         f"acceptance_fraction_max = {_format_toml_float(float(np.max(acceptance)))}",
         f"unbounded_parameters = {_format_toml_string_list(unbounded_parameters)}",
     ]
+    if root_seed is not None:
+        lines.append(f"root_seed = {root_seed}")
     if result.burn_in_warning is not None:
         lines.append(f"burn_in_warning = {_quote_toml_string(result.burn_in_warning)}")
     _extend_autocorrelation_diagnostics(lines, result, settings)
@@ -741,6 +763,9 @@ def write_mcmc_outputs(
     parameter_store: ParameterStore,
     unbounded_parameter_ids: tuple[str, ...] = (),
     timings: dict[str, float] | None = None,
+    *,
+    engine: str = "legacy MCMC",
+    root_seed: int | None = None,
 ) -> None:
     timings = {} if timings is None else timings
     output_start = perf_counter()
@@ -781,7 +806,266 @@ def write_mcmc_outputs(
         parameter_store,
         unbounded_parameter_ids,
         timings,
+        engine=engine,
+        root_seed=root_seed,
     )
+
+
+def _clear_mcmc_artifacts(path: Path) -> None:
+    for name in (
+        "summary.toml",
+        "samples.tsv",
+        "correlations.tsv",
+        "diagnostics.toml",
+        "plots.pdf",
+    ):
+        (path / name).unlink(missing_ok=True)
+
+
+def _write_native_mcmc_state_diagnostics(
+    path: Path,
+    *,
+    settings: EffectiveMcmcSettings,
+    root_seed: int,
+    parameter_ids: tuple[str, ...],
+    status: str,
+    terminal: str | None = None,
+    completed_steps: int | None = None,
+    failure: BaseException | None = None,
+) -> None:
+    requested_burn = '"auto"' if settings.burn == "auto" else str(settings.burn)
+    lines = [
+        f"status = {_quote_toml_string(status)}",
+        'engine = "native MCMC"',
+        'sampler = "emcee via ChemEx direct EnsembleSampler"',
+        f"steps = {settings.steps}",
+        f"requested_burn = {requested_burn}",
+        f"thin = {settings.thin}",
+        f"walkers = {settings.walkers}",
+        f"workers = {settings.workers}",
+        f"root_seed = {root_seed}",
+        f"parameters = {_format_toml_string_list(list(parameter_ids))}",
+    ]
+    if terminal is not None:
+        lines.append(f"terminal = {_quote_toml_string(terminal)}")
+    if completed_steps is not None:
+        lines.append(f"completed_steps = {completed_steps}")
+    if failure is not None:
+        message = str(failure).replace("\n", " ")
+        lines.extend(
+            (
+                f"failure_type = {_quote_toml_string(type(failure).__name__)}",
+                f"failure_message = {_quote_toml_string(message)}",
+            )
+        )
+    (path / "diagnostics.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _native_result_from_evidence(
+    evidence: McmcEvidence,
+    settings: EffectiveMcmcSettings,
+) -> McmcResult:
+    raw_chain = np.asarray(
+        [state.positions for state in evidence.states[1:]],
+        dtype=float,
+    )
+    raw_lnprob = np.asarray(
+        [state.log_densities for state in evidence.states[1:]],
+        dtype=float,
+    )
+    diagnostics = derive_mcmc_diagnostics(evidence)
+    if (
+        diagnostics.status is not McmcDiagnosticStatus.AVAILABLE
+        or diagnostics.acceptance_fractions is None
+    ):
+        msg = "Native MCMC completed without authoritative acceptance diagnostics"
+        raise NativeMcmcIncompleteError(msg)
+    autocorrelation_time, tentative_autocorrelation_time, autocorrelation_warning = (
+        _estimate_autocorrelation_time(raw_chain)
+    )
+    burn_autocorrelation_time = (
+        autocorrelation_time
+        if autocorrelation_time is not None
+        else tentative_autocorrelation_time
+    )
+    retained_chain, retained_lnprob, discarded_steps, burn_in_warning = (
+        _apply_sample_window(
+            raw_chain,
+            raw_lnprob,
+            burn=settings.burn,
+            thin=settings.thin,
+            autocorrelation_time=burn_autocorrelation_time,
+            autocorrelation_time_reliable=autocorrelation_time is not None,
+        )
+    )
+    samples = retained_chain.reshape((-1, len(evidence.coordinate_ids)))
+    return McmcResult(
+        var_names=evidence.coordinate_ids,
+        chain=retained_chain,
+        lnprob=retained_lnprob,
+        summary=_summarize_chain(
+            evidence.coordinate_ids,
+            samples,
+            autocorrelation_time,
+            settings.thin,
+        ),
+        correlations=_correlation_matrix(samples),
+        acceptance_fraction=np.asarray(
+            diagnostics.acceptance_fractions,
+            dtype=float,
+        ),
+        autocorrelation_time=autocorrelation_time,
+        discarded_steps=discarded_steps,
+        burn_in_warning=burn_in_warning,
+        tentative_autocorrelation_time=tentative_autocorrelation_time,
+        autocorrelation_warning=autocorrelation_warning,
+        raw_chain=raw_chain,
+        raw_lnprob=raw_lnprob,
+    )
+
+
+def run_native_mcmc(
+    experiments: Experiments,
+    fit: NativeDeterministicFit,
+    settings: McmcSettings,
+    path: Path,
+    *,
+    execution: ExecutionSettings | None = None,
+) -> McmcResult:
+    """Run product MCMC directly from one committed native deterministic fit."""
+    effective = resolve_mcmc_settings(
+        settings,
+        nvarys=len(fit.problem.controlled_ids),
+        execution=execution,
+    )
+    root_seed = secrets.randbits(64) if effective.seed is None else effective.seed
+    statistic_path = path / "Statistics" / "MCMC"
+    statistic_path.mkdir(parents=True, exist_ok=True)
+    _clear_mcmc_artifacts(statistic_path)
+    _write_native_mcmc_state_diagnostics(
+        statistic_path,
+        settings=effective,
+        root_seed=root_seed,
+        parameter_ids=fit.problem.controlled_ids,
+        status="running",
+    )
+    lower = np.asarray(fit.problem.lower_bounds, dtype=float)
+    upper = np.asarray(fit.problem.upper_bounds, dtype=float)
+    invalid_bounds = ~np.isfinite(lower) | ~np.isfinite(upper) | (lower >= upper)
+    if np.any(invalid_bounds):
+        parameter_names = _format_parameter_ids(
+            tuple(
+                param_id
+                for param_id, invalid in zip(
+                    fit.problem.controlled_ids,
+                    invalid_bounds,
+                    strict=True,
+                )
+                if invalid
+            ),
+            experiments.parameter_store,
+        )
+        error = ValueError(
+            "Native MCMC requires finite lower and upper bounds with lower < upper "
+            f"for every fitted parameter; affected: {', '.join(parameter_names)}"
+        )
+        _write_native_mcmc_state_diagnostics(
+            statistic_path,
+            settings=effective,
+            root_seed=root_seed,
+            parameter_ids=fit.problem.controlled_ids,
+            status="incomplete",
+            terminal="failed",
+            completed_steps=0,
+            failure=error,
+        )
+        raise error
+
+    timings: dict[str, float] = {}
+    try:
+        policy = ExpertMcmcPolicy(
+            burn_steps=0,
+            retained_steps=effective.steps,
+            walkers=effective.walkers,
+            expert_provenance="chemex-product-method-v1",
+        ).resolve(
+            dimension=len(fit.problem.controlled_ids),
+            root_seed=root_seed,
+        )
+        plan = McmcPlan.for_accepted(
+            fit.accepted,
+            source_problem=fit.problem,
+            parameterization=fit.parameterization,
+            source_engine=fit.engine,
+            policy=policy,
+            coordinate_units=tuple(
+                (param_id, ParameterUnit.DIMENSIONLESS)
+                for param_id in fit.problem.controlled_ids
+            ),
+        )
+        phase_start = perf_counter()
+        operation = execute_mcmc_evidence(
+            fit.accepted,
+            plan,
+            execution=ExecutionSettings(
+                workers=effective.workers,
+                native_threads=effective.native_threads,
+            ),
+        )
+        timings["sampling_seconds"] = perf_counter() - phase_start
+        if (
+            operation.terminal is not McmcOperationTerminal.COMPLETED
+            or operation.evidence is None
+        ):
+            error = NativeMcmcIncompleteError(
+                f"Native MCMC {operation.terminal.value}: {operation.failure_message}"
+            )
+            completed_steps = (
+                0
+                if operation.evidence is None
+                else operation.evidence.completed_transition_count
+            )
+            _write_native_mcmc_state_diagnostics(
+                statistic_path,
+                settings=effective,
+                root_seed=root_seed,
+                parameter_ids=fit.problem.controlled_ids,
+                status="incomplete",
+                terminal=operation.terminal.value,
+                completed_steps=completed_steps,
+                failure=error,
+            )
+            raise error
+        phase_start = perf_counter()
+        result = _native_result_from_evidence(operation.evidence, effective)
+        timings["result_processing_seconds"] = perf_counter() - phase_start
+        write_mcmc_outputs(
+            result,
+            effective,
+            path,
+            experiments.parameter_store,
+            timings=timings,
+            engine="native MCMC",
+            root_seed=root_seed,
+        )
+    except (Exception, KeyboardInterrupt) as error:
+        if not isinstance(error, NativeMcmcIncompleteError):
+            _clear_mcmc_artifacts(statistic_path)
+            _write_native_mcmc_state_diagnostics(
+                statistic_path,
+                settings=effective,
+                root_seed=root_seed,
+                parameter_ids=fit.problem.controlled_ids,
+                status="incomplete",
+                terminal=(
+                    "interrupted" if isinstance(error, KeyboardInterrupt) else "failed"
+                ),
+                completed_steps=0,
+                failure=error,
+            )
+        raise
+    else:
+        return result
 
 
 def run_mcmc(

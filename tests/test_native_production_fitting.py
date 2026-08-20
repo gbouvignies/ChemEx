@@ -8,9 +8,12 @@ from unittest.mock import patch
 import pytest
 
 import chemex.optimize.direct_trf as direct_trf_module
+import chemex.optimize.fitting as fitting_module
+import chemex.optimize.native_mcmc as native_mcmc_module
 import chemex.optimize.native_resampling as native_resampling_module
 from chemex.chemex import run
 from chemex.cli import build_parser
+from chemex.optimize.mcmc import NativeMcmcIncompleteError
 from chemex.optimize.resampling import NativeResamplingIncompleteError
 from chemex.runtime import AnalysisSession
 
@@ -25,6 +28,7 @@ def _fit_arguments(
     output: Path,
     method: Path = METHOD,
     *,
+    parameters: Path = PARAMETERS,
     include: tuple[str, ...] = ("G2N-HN",),
     plot_level: str = "nothing",
     workers: int = 1,
@@ -35,7 +39,7 @@ def _fit_arguments(
             "-e",
             str(EXPERIMENT),
             "-p",
-            str(PARAMETERS),
+            str(parameters),
             "-m",
             str(method),
             "-o",
@@ -136,6 +140,271 @@ STATISTICS = {{ {statistics} }}
         encoding="utf-8",
     )
     return path
+
+
+def _bounded_parameters(path: Path) -> Path:
+    path.write_text(
+        PARAMETERS.read_text(encoding="utf-8")
+        + """
+
+[R1A_A]
+G2N-HN = [1.5, 0.1, 5.0]
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _nested_mcmc_method(path: Path, *, workers: int) -> Path:
+    path.write_text(
+        f"""[DEFAULT]
+FIX = ["PB", "KEX_AB"]
+
+[DEFAULT.STATISTICS.MCMC]
+STEPS = 5
+BURN = 1
+THIN = 2
+WALKERS = 4
+SEED = 612
+WORKERS = {workers}
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_real_compact_mcmc_fit_is_wholly_native_and_writes_products(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MCMC" = 2')
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    session = AnalysisSession.create()
+
+    with (
+        patch(
+            "chemex.parameters.database.ParameterStore.build_lmfit_params",
+            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
+        ),
+        patch(
+            "lmfit.Minimizer.minimize",
+            side_effect=AssertionError("legacy lmfit optimizer was called"),
+        ),
+        patch(
+            "chemex.containers.experiments.Experiments.residuals",
+            side_effect=AssertionError("legacy evaluation was called"),
+        ),
+        patch(
+            "chemex.optimize.mcmc_engine.run_emcee_sampler",
+            side_effect=AssertionError("legacy MCMC wrapper was called"),
+        ),
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=session,
+        )
+
+    assert session.analysis_values.snapshot().revision == 1
+    statistics = output / "Statistics" / "MCMC"
+    assert (statistics / "summary.toml").is_file()
+    assert (statistics / "samples.tsv").is_file()
+    assert (statistics / "correlations.tsv").is_file()
+    assert (statistics / "plots.pdf").stat().st_size > 0
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    assert diagnostics["status"] == "complete"
+    assert diagnostics["engine"] == "native MCMC"
+    assert diagnostics["steps"] == 2
+    assert diagnostics["walkers"] == 32
+    assert "lmfit_version" not in diagnostics
+
+
+def test_seeded_nested_native_mcmc_replays_across_worker_counts(
+    tmp_path: Path,
+) -> None:
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    serial_method = _nested_mcmc_method(tmp_path / "serial.toml", workers=1)
+    parallel_method = _nested_mcmc_method(tmp_path / "parallel.toml", workers=2)
+    serial = tmp_path / "Serial"
+    parallel = tmp_path / "Parallel"
+
+    run(
+        _fit_arguments(serial, serial_method, parameters=parameters),
+        session=AnalysisSession.create(),
+    )
+    run(
+        _fit_arguments(parallel, parallel_method, parameters=parameters),
+        session=AnalysisSession.create(),
+    )
+
+    serial_samples = (serial / "Statistics" / "MCMC" / "samples.tsv").read_text(
+        encoding="utf-8"
+    )
+    parallel_samples = (parallel / "Statistics" / "MCMC" / "samples.tsv").read_text(
+        encoding="utf-8"
+    )
+    assert serial_samples == parallel_samples
+    diagnostics = tomllib.loads(
+        (parallel / "Statistics" / "MCMC" / "diagnostics.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert diagnostics["root_seed"] == 612
+    assert diagnostics["workers"] == 2
+    assert diagnostics["requested_burn"] == 1
+    assert diagnostics["thin"] == 2
+    assert diagnostics["retained_steps"] == 2
+    assert diagnostics["retained_samples"] == 8
+    summary = tomllib.loads(
+        (parallel / "Statistics" / "MCMC" / "summary.toml").read_text(encoding="utf-8")
+    )
+    posterior = next(iter(summary.values()))
+    assert posterior["prior_lower"] == pytest.approx(0.1)
+    assert posterior["prior_upper"] == pytest.approx(5.0)
+    assert 0.1 < posterior["median"] < 5.0
+    assert posterior["standard_deviation"] > 0.0
+
+
+def test_native_mcmc_preserves_committed_central_fit(tmp_path: Path) -> None:
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
+    central_session = AnalysisSession.create()
+    mcmc_session = AnalysisSession.create()
+
+    run(
+        _fit_arguments(tmp_path / "Central", parameters=parameters),
+        session=central_session,
+    )
+    run(
+        _fit_arguments(tmp_path / "Mcmc", method, parameters=parameters),
+        session=mcmc_session,
+    )
+
+    central = central_session.analysis_values.snapshot()
+    sampled = mcmc_session.analysis_values.snapshot()
+    assert central.revision == sampled.revision == 1
+    assert central.items() == sampled.items()
+
+
+def test_unbounded_native_mcmc_fails_closed_after_committing_central_fit(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MCMC" = 2')
+    session = AnalysisSession.create()
+
+    with pytest.raises(ValueError, match="finite lower and upper bounds"):
+        run(_fit_arguments(output, method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    statistics = output / "Statistics" / "MCMC"
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    assert diagnostics["status"] == "incomplete"
+    assert diagnostics["terminal"] == "failed"
+    assert "finite lower and upper bounds" in diagnostics["failure_message"]
+    assert not (statistics / "summary.toml").exists()
+    assert not (statistics / "samples.tsv").exists()
+    assert not (statistics / "correlations.tsv").exists()
+    assert not (statistics / "plots.pdf").exists()
+
+
+def test_interrupted_native_mcmc_publishes_only_incomplete_diagnostics(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    session = AnalysisSession.create()
+
+    with (
+        patch.object(
+            native_mcmc_module._RecordingStretchMove,
+            "propose",
+            side_effect=KeyboardInterrupt,
+        ),
+        pytest.raises(NativeMcmcIncompleteError, match="interrupted"),
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=session,
+        )
+
+    assert session.analysis_values.snapshot().revision == 1
+    statistics = output / "Statistics" / "MCMC"
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    assert diagnostics["status"] == "incomplete"
+    assert diagnostics["terminal"] == "interrupted"
+    assert diagnostics["completed_steps"] == 0
+    assert not (statistics / "summary.toml").exists()
+    assert not (statistics / "samples.tsv").exists()
+    assert not (statistics / "correlations.tsv").exists()
+    assert not (statistics / "plots.pdf").exists()
+
+
+def test_mixed_mc_and_mcmc_use_one_native_central_fit_without_legacy_fallback(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(
+        tmp_path / "method.toml",
+        '"MC" = 1, "MCMC" = {STEPS = 2, BURN = 0, WALKERS = 4, SEED = 612}',
+    )
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    session = AnalysisSession.create()
+
+    with (
+        patch.object(
+            fitting_module,
+            "run_native_deterministic",
+            wraps=fitting_module.run_native_deterministic,
+        ) as native_central,
+        patch(
+            "chemex.parameters.database.ParameterStore.build_lmfit_params",
+            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
+        ),
+        patch(
+            "lmfit.Minimizer.minimize",
+            side_effect=AssertionError("legacy lmfit optimizer was called"),
+        ),
+        patch(
+            "chemex.containers.experiments.Experiments.residuals",
+            side_effect=AssertionError("legacy evaluation was called"),
+        ),
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=session,
+        )
+
+    native_central.assert_called_once()
+    assert session.analysis_values.snapshot().revision == 1
+    assert (output / "Statistics" / "MonteCarlo" / "summary.toml").is_file()
+    assert (output / "Statistics" / "MCMC" / "summary.toml").is_file()
+
+
+def test_native_mcmc_without_fitted_parameters_keeps_documented_skip_behavior(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """[DEFAULT]
+FIX = ["R1A_A", "PB", "KEX_AB"]
+STATISTICS = {"MCMC" = 2}
+""",
+        encoding="utf-8",
+    )
+    session = AnalysisSession.create()
+
+    run(_fit_arguments(output, method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 0
+    assert not (output / "Statistics" / "MCMC").exists()
 
 
 def test_real_mc_fit_is_wholly_native_and_writes_product_statistics(
