@@ -42,15 +42,14 @@ def run_fit(
     else:
         methods = {"": Method()}
 
-    # Native statistics occurrences must fail closed before any lmfit value carrier
-    # can be constructed by the compatibility filter path.
-    native_statistics = any(
-        method.statistics is not None and uses_native_deterministic(method)
-        for method in methods.values()
+    # Native occurrences must fail closed before any lmfit value carrier can be
+    # constructed by the compatibility filter path.
+    native_occurrence = any(
+        uses_native_deterministic(method) for method in methods.values()
     )
     resolved_values = (
         session.resolve_current_values(experiments.param_ids)
-        if native_statistics
+        if native_occurrence
         else session.try_resolve_current_values(experiments.param_ids)
     )
     if resolved_values is None:
