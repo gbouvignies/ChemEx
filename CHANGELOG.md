@@ -7,6 +7,17 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 
 ## [Unreleased]
 
+### Changed
+- Routed Direct TRF, grouped Direct, GRID, and grouped GRID method steps through
+  the native parameterization, evaluation, aggregate acceptance, and atomic
+  commit stack in the production `chemex fit` path. Existing v1 method TOML,
+  ordered role inheritance, profile selection, calculated-data files, and
+  output paths are preserved. Native deterministic fits do not populate the
+  legacy generic `stderr` field; family-qualified uncertainty output remains
+  part of the dedicated output-contract migration;
+  statistics-bearing steps and explicit legacy optimizer spellings remain on
+  the legacy path pending their dedicated migration.
+
 ### Infrastructure
 - Removed the unused `B1FieldConfig` model and its `default_distribution_config`
   helper from `b1_config.py`; the flat-table `b1_frq` schema it implemented was
@@ -21,15 +32,11 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   (`add_multiple`/`add_multiple_mf`, `sort`, `set_values`, `set_defaults`,
   `fix_all`, `reset`); parameter semantics and fit/simulate behavior are
   unchanged.
-- Simplified the fit and simulation workflow: `AnalysisSession` is no longer
-  threaded through lower-level `optimize/*` helpers (`run_methods`,
-  `execute_post_fit`, `execute_simulation`, `execute_post_fit_groups`,
-  `run_grid`). Execution policy is now passed explicitly through
-  `ExecutionSettings` only where needed (`run_methods` through `_fit_groups` to
-  `_run_statistics`), and parameter access continues through
-  `Experiments.parameter_store`. This intentionally narrows these lower-level
-  function signatures for any direct caller; CLI, TOML, output, and scientific
-  behavior are unchanged.
+- Kept `AnalysisSession` at the `run_methods` orchestration boundary so native
+  deterministic steps can use revisioned analysis values and stale-safe commit;
+  lower-level output helpers still access parameters through
+  `Experiments.parameter_store`, and statistics execution still receives the
+  session's explicit `ExecutionSettings`.
 
 ## [2026.06.1] - 2026-06-26
 

@@ -1,8 +1,7 @@
-"""Exact fit-component GRID to native Direct TRF qualification (#596).
+"""Exact fit-component GRID to native Direct TRF execution.
 
-This isolated qualification path composes the grouped Direct TRF contract with
-the Cartesian GRID contract.  It is intentionally not wired into production
-dispatch.
+This composes the grouped Direct TRF contract with the production Cartesian
+GRID contract and preserves one aggregate commit boundary.
 """
 
 from __future__ import annotations

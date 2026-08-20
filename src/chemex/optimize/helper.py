@@ -17,6 +17,7 @@ from chemex.messages import (
 )
 from chemex.parameters.database import ParameterStore
 from chemex.printers.parameters import write_parameters
+from chemex.typing import Array
 
 
 def calculate_statistics(
@@ -24,10 +25,18 @@ def calculate_statistics(
     params_lf: ParametersLF,
 ) -> dict[str, int | float]:
     residuals = experiments.residuals(params_lf)
-    ndata = len(residuals)
     nvarys = len(
         [param for param in params_lf.values() if param.vary and not param.expr],
     )
+    return calculate_statistics_from_residuals(residuals, nvarys)
+
+
+def calculate_statistics_from_residuals(
+    residuals: Array,
+    nvarys: int,
+) -> dict[str, int | float]:
+    """Calculate established fit statistics from an authoritative residual vector."""
+    ndata = len(residuals)
     chisqr = sum(residuals**2)
     redchi = chisqr / max(1, ndata - nvarys)
     aic = chisqr + 2 * nvarys
@@ -50,10 +59,20 @@ def calculate_statistics(
 def _write_statistics(
     experiments: Experiments,
     path: Path,
+    *,
+    residuals: Array | None = None,
+    nvarys: int | None = None,
 ) -> None:
     """Write fitting statistics to a file."""
-    params_lf = experiments.parameter_store.build_lmfit_params(experiments.param_ids)
-    stats = calculate_statistics(experiments, params_lf)
+    if residuals is None:
+        params_lf = experiments.parameter_store.build_lmfit_params(
+            experiments.param_ids
+        )
+        stats = calculate_statistics(experiments, params_lf)
+    else:
+        if nvarys is None:
+            raise ValueError("Native residual statistics require a variable count")
+        stats = calculate_statistics_from_residuals(residuals, nvarys)
     filename = path / "statistics.toml"
     with filename.open("w", encoding="utf-8") as f:
         f.write(f'"number of data points"                = {stats["ndata"]}\n')
@@ -71,13 +90,21 @@ def _write_statistics(
 def _write_files(
     experiments: Experiments,
     path: Path,
+    *,
+    residuals: Array | None = None,
+    nvarys: int | None = None,
 ) -> None:
     """Write the results of the fit to output files."""
     print_writing_results(path)
     path.mkdir(parents=True, exist_ok=True)
     write_parameters(experiments, path, parameter_store=experiments.parameter_store)
     experiments.write(path)
-    _write_statistics(experiments, path=path)
+    _write_statistics(
+        experiments,
+        path=path,
+        residuals=residuals,
+        nvarys=nvarys,
+    )
 
 
 def _write_simulation_files(
@@ -120,8 +147,10 @@ def execute_post_fit(
     path: Path,
     *,
     plot: bool = False,
+    residuals: Array | None = None,
+    nvarys: int | None = None,
 ) -> None:
-    _write_files(experiments, path)
+    _write_files(experiments, path, residuals=residuals, nvarys=nvarys)
     if plot:
         _write_plots(experiments, path)
 
@@ -142,15 +171,27 @@ def execute_post_fit_groups(
     experiments: Experiments,
     path: Path,
     plot: str,
+    *,
+    residuals: Array | None = None,
+    nvarys: int | None = None,
 ) -> None:
     print_group_name("All groups")
-    params_lf = experiments.parameter_store.build_lmfit_params(experiments.param_ids)
-    statistics = calculate_statistics(experiments, params_lf)
+    if residuals is None:
+        params_lf = experiments.parameter_store.build_lmfit_params(
+            experiments.param_ids
+        )
+        statistics = calculate_statistics(experiments, params_lf)
+    else:
+        if nvarys is None:
+            raise ValueError("Native residual statistics require a variable count")
+        statistics = calculate_statistics_from_residuals(residuals, nvarys)
     print_chi2(statistics["chisqr"], statistics["redchi"])
     execute_post_fit(
         experiments,
         path / "All",
         plot=(plot != "nothing"),
+        residuals=residuals,
+        nvarys=nvarys,
     )
 
 

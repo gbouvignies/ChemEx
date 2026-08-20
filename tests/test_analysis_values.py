@@ -404,12 +404,10 @@ def test_model_change_is_rejected_after_analysis_values_are_initialized() -> Non
     assert session.analysis_values.snapshot() == snapshot
 
 
-def test_shipped_fit_remains_legacy_authoritative_and_mirrors_accepted_values(
+def test_shipped_fit_is_native_authoritative_and_mirrors_committed_values(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     candidate_output = tmp_path / "candidate-enabled"
-    legacy_only_output = tmp_path / "legacy-only"
     session = AnalysisSession.create()
 
     chemex_module.run(_shipped_args("fit", candidate_output), session=session)
@@ -422,20 +420,6 @@ def test_shipped_fit_remains_legacy_authoritative_and_mirrors_accepted_values(
     )
     assert list((candidate_output / "Data").rglob("*.dat"))
     assert list((candidate_output / "Parameters").rglob("*.toml"))
-
-    def disable_native_candidate(*_args: object, **_kwargs: object) -> None:
-        msg = "native candidate disabled for parity reference"
-        raise RuntimeError(msg)
-
-    monkeypatch.setattr(AnalysisValues, "initialize", disable_native_candidate)
-    chemex_module.run(
-        _shipped_args("fit", legacy_only_output),
-        session=AnalysisSession.create(),
-    )
-
-    assert _authoritative_output_contents(candidate_output) == (
-        _authoritative_output_contents(legacy_only_output)
-    )
 
 
 def test_shipped_simulation_survives_native_initialization_failure(

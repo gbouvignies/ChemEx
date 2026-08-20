@@ -130,6 +130,53 @@ class AnalysisSession:
             required_ids,
         )
 
+    def compile_current_parameterization(
+        self,
+        required_ids: set[str],
+    ) -> ActiveParameterization:
+        """Compile the effective inherited v1 roles in the active catalog."""
+        parameter_model = self.parameter_factory.sealed_parameter_model
+        if parameter_model is None:
+            msg = "The sealed native parameter model is unavailable"
+            raise RuntimeError(msg)
+        parameters = self.parameters.get_parameters(required_ids)
+        fit: list[str] = []
+        fix: list[str] = []
+        constraints: list[str] = []
+        for param_id, parameter in parameters.items():
+            declaration = parameter_model.declarations[param_id]
+            if declaration.model_expression:
+                continue
+            selector = str(parameter.param_name)
+            if parameter.expr:
+                expression = parameter.expr
+                for dependency in sorted(
+                    parameter.dependencies,
+                    key=len,
+                    reverse=True,
+                ):
+                    dependency_name = parameters[dependency].param_name
+                    expression = expression.replace(
+                        dependency,
+                        f"[{dependency_name}]",
+                    )
+                constraints.append(f"[{selector}] = {expression}")
+            elif parameter.vary:
+                fit.append(selector)
+            else:
+                fix.append(selector)
+        effective_method = Method(
+            fit=fit,
+            fix=fix,
+            constraints=constraints,
+        )
+        return compile_active_parameterization(
+            parameter_model,
+            self.analysis_values.snapshot(),
+            effective_method,
+            required_ids,
+        )
+
     def try_compile_parameterization(
         self,
         method: Method,
@@ -143,6 +190,18 @@ class AnalysisSession:
         except Exception:  # noqa: BLE001 - checkpoint-1 isolation boundary
             return None
         return candidate
+
+    def sync_parameter_store_from_analysis_values(
+        self,
+        resolved_values: dict[str, float] | None = None,
+    ) -> None:
+        """Mirror committed and resolved native values into current output state."""
+        snapshot = self.analysis_values.snapshot()
+        values = dict(snapshot.items()) if resolved_values is None else resolved_values
+        parameters = self.parameters.get_parameters(values)
+        for parameter in parameters.values():
+            parameter.stderr = None
+        self.parameters.database.set_values(values)
 
 
 def ensure_plugins_registered() -> None:

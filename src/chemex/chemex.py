@@ -52,8 +52,7 @@ def run_fit(
         methods,
         args.output,
         args.plot,
-        execution=session.execution,
-        preview_parameterization=session.try_compile_parameterization,
+        session=session,
     )
 
 

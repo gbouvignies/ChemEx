@@ -1,9 +1,8 @@
 """The fitting module contains the code for fitting the experimental data."""
 
-from collections.abc import Callable
 from pathlib import Path
 
-from chemex.configuration.methods import Method, Methods, Statistics
+from chemex.configuration.methods import Methods, Statistics
 from chemex.containers.experiments import Experiments
 from chemex.messages import (
     print_calculation_stopped_error,
@@ -26,8 +25,12 @@ from chemex.optimize.mcmc import run_mcmc
 from chemex.optimize.minimizer import (
     minimize_with_report,
 )
+from chemex.optimize.native_deterministic import (
+    run_native_deterministic,
+    uses_native_deterministic,
+)
 from chemex.optimize.resampling import run_resampling_statistics
-from chemex.runtime import ExecutionSettings
+from chemex.runtime import AnalysisSession, ExecutionSettings
 
 
 def _run_statistics(
@@ -126,8 +129,7 @@ def run_methods(
     path: Path,
     plot_level: str,
     *,
-    execution: ExecutionSettings | None = None,
-    preview_parameterization: Callable[[Method, set[str]], object] | None = None,
+    session: AnalysisSession,
 ) -> None:
     parameter_store = experiments.parameter_store
 
@@ -142,10 +144,9 @@ def run_methods(
             print_no_data()
             continue
 
-        print_fitmethod(method.fitmethod)
-
-        if preview_parameterization is not None:
-            preview_parameterization(method, experiments.param_ids)
+        print_fitmethod(
+            "trf" if uses_native_deterministic(method) else method.fitmethod
+        )
 
         # Update the parameter "vary" and "expr" status
         parameter_store.set_parameter_status(method)
@@ -155,6 +156,16 @@ def run_methods(
             method.statistics = None
 
         path_sect = path / section if len(methods) > 1 else path
+
+        if uses_native_deterministic(method):
+            run_native_deterministic(
+                experiments,
+                method,
+                path_sect,
+                plot_level,
+                session=session,
+            )
+            continue
 
         if method.grid:
             try:
@@ -168,11 +179,14 @@ def run_methods(
             except KeyboardInterrupt:
                 print_calculation_stopped_error()
         else:
+            legacy_fitmethod = (
+                "least_squares" if method.fitmethod == "trf" else method.fitmethod
+            )
             _fit_groups(
                 experiments,
                 path_sect,
                 plot_level,
-                method.fitmethod,
+                legacy_fitmethod,
                 method.statistics,
-                execution=execution,
+                execution=session.execution,
             )

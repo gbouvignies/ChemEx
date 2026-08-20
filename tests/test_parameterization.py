@@ -1078,7 +1078,7 @@ def test_incomplete_and_program_mismatched_frames_are_distinct_failures() -> Non
     assert raised.value.code == "program_mismatch"
 
 
-def test_native_compilation_failure_cannot_veto_real_legacy_fit(
+def test_native_compilation_failure_cannot_fall_back_to_legacy_fit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1088,10 +1088,10 @@ def test_native_compilation_failure_cannot_veto_real_legacy_fit(
     def fail_preview(*_args: object, **_kwargs: object) -> None:
         nonlocal preview_calls
         preview_calls += 1
-        msg = "native preview failed"
+        msg = "native compilation failed"
         raise RuntimeError(msg)
 
-    monkeypatch.setattr(session, "compile_parameterization", fail_preview)
+    monkeypatch.setattr(session, "compile_current_parameterization", fail_preview)
     args = Namespace(
         commands="fit",
         model="2st",
@@ -1106,8 +1106,9 @@ def test_native_compilation_failure_cannot_veto_real_legacy_fit(
         native_threads=1,
     )
 
-    chemex_module.run(args, session=session)
+    with pytest.raises(RuntimeError, match="native compilation failed"):
+        chemex_module.run(args, session=session)
 
-    assert list((tmp_path / "Data").rglob("*.dat"))
-    assert list((tmp_path / "Parameters").rglob("*.toml"))
-    assert preview_calls > 0
+    assert not (tmp_path / "Data").exists()
+    assert not (tmp_path / "Parameters").exists()
+    assert preview_calls == 1

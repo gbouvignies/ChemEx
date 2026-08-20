@@ -926,7 +926,7 @@ def test_capture_conflict_reports_the_winning_persisted_occurrence(
     assert publisher.terminal_occurrence(case, specification, requested) == persisted
 
 
-def test_cpmg_case_is_path_independent_and_real_anchor_runs_without_native_evaluation(
+def test_legacy_anchor_capture_fails_closed_after_native_product_activation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from chemex.evaluation.native import EvaluationEngine
@@ -947,23 +947,15 @@ def test_cpmg_case_is_path_independent_and_real_anchor_runs_without_native_evalu
     monkeypatch.setattr(
         EvaluationEngine, "from_experiments", native_evaluation_is_forbidden
     )
-    published = capture_cpmg_15n_ip_legacy_observation(
-        publisher=CpmgBaselinePublisher(tmp_path / "evidence"),
-        anchor_directory=source,
-        attempt_token="real-cpmg-anchor",  # noqa: S106 - opaque persisted attempt key
-    )
+    with pytest.raises(LegacyAnchorExecutionError) as raised:
+        capture_cpmg_15n_ip_legacy_observation(
+            publisher=CpmgBaselinePublisher(tmp_path / "evidence"),
+            anchor_directory=source,
+            attempt_token="real-cpmg-anchor",  # noqa: S106 - persisted attempt key
+        )
 
-    assert published.occurrence.lifecycle == "SUCCEEDED"
-    assert published.specification.roles == ("Scientific anchor",)
-    assert (
-        published.bundle.implementation.authority_role
-        == "LegacyObservationImplementation"
-    )
-    assert len(published.bundle.members) == 340
-    assert (
-        CpmgBaselinePublisher(tmp_path / "evidence").read(published.bundle.identity)
-        == published
-    )
+    assert raised.value.occurrence.lifecycle == "FAILED"
+    assert raised.value.occurrence.failure_code == "AssertionError"
 
 
 @pytest.mark.parametrize(
