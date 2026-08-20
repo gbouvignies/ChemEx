@@ -354,6 +354,9 @@ def test_failed_native_replicate_keeps_central_fit_and_suppresses_complete_produ
     assert "requested_samples = 2" in diagnostics
     assert "completed_samples = 1" in diagnostics
     assert "failed_samples = 1" in diagnostics
+    assert "unstarted_samples = 0" in diagnostics
+    assert 'samples_file = "samples.tsv"' in diagnostics
+    assert 'failures_file = "failures.tsv"' in diagnostics
     assert not (statistics / "summary.toml").exists()
     assert not (statistics / "correlations.tsv").exists()
     assert not (statistics / "plots.pdf").exists()
@@ -382,8 +385,11 @@ def test_native_statistics_setup_failure_publishes_incomplete_diagnostics(
     assert 'terminal = "failed"' in diagnostics
     assert "completed_samples = 0" in diagnostics
     assert "failed_samples = 0" in diagnostics
+    assert "unstarted_samples = 2" in diagnostics
     assert 'failure_type = "RuntimeError"' in diagnostics
     assert 'failure_message = "manifest unavailable"' in diagnostics
+    assert "samples_file" not in diagnostics
+    assert "failures_file" not in diagnostics
     assert not (statistics / "summary.toml").exists()
     assert not (statistics / "correlations.tsv").exists()
     assert not (statistics / "plots.pdf").exists()

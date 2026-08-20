@@ -502,7 +502,12 @@ def _write_native_state_diagnostics(
     if failed_samples is not None:
         lines.append(f"failed_samples = {failed_samples}")
     if status == "incomplete":
-        lines.extend(('samples_file = "samples.tsv"', 'failures_file = "failures.tsv"'))
+        accounted = (successful_samples or 0) + (failed_samples or 0)
+        lines.append(f"unstarted_samples = {method.iterations - accounted}")
+        if (path / "samples.tsv").is_file():
+            lines.append('samples_file = "samples.tsv"')
+        if (path / "failures.tsv").is_file():
+            lines.append('failures_file = "failures.tsv"')
     if failure is not None:
         message = str(failure).replace("\n", " ")
         lines.extend(
