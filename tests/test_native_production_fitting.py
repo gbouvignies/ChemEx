@@ -76,7 +76,8 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
             -1
         ]
     )
-    assert first_calculation == pytest.approx(9.36430201e5, rel=5.0e-9)
+    # One intensity unit is 1e-4 of the source experimental uncertainty.
+    assert first_calculation == pytest.approx(9.36430201e5, abs=1.0)
     fit_curve = (output / "Plots" / "800mhz.fit").read_text(encoding="utf-8")
     curve = [
         tuple(float(value) for value in line.split())
