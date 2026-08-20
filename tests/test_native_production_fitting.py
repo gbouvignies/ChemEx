@@ -96,6 +96,20 @@ def _read_outcome(output: Path) -> dict[str, object]:
     )
 
 
+def _assert_truthful_resampling_summary(path: Path) -> None:
+    summary = tomllib.loads(path.read_text(encoding="utf-8"))
+    distribution = next(iter(summary.values()))
+    assert {
+        "percentile_68_lower",
+        "percentile_68_upper",
+        "half_percentile_68_width",
+    } <= distribution.keys()
+    assert distribution["percentile_68_lower"] <= distribution["median"]
+    assert distribution["percentile_68_upper"] >= distribution["median"]
+    assert distribution["half_percentile_68_width"] >= 0.0
+    assert "stderr" not in distribution
+
+
 def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     tmp_path: Path,
 ) -> None:
@@ -139,6 +153,27 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     time_2, intensity_2 = curve[-1]
     fitted_curve_rate = -math.log(intensity_2 / intensity_1) / (time_2 - time_1)
     assert fitted_curve_rate == pytest.approx(fitted_value, rel=1.0e-3)
+
+
+def test_parameters_used_supports_real_cli_restart_round_trip(tmp_path: Path) -> None:
+    first_output = tmp_path / "First"
+    restarted_output = tmp_path / "Restarted"
+
+    _run_real_fit_cli(first_output, METHOD, PARAMETERS)
+    restart_parameters = first_output / "run_info" / "parameters_used.toml"
+    _run_real_fit_cli(restarted_output, METHOD, restart_parameters)
+
+    def fitted_value(output: Path) -> float:
+        fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+        record = next(line for line in fitted.splitlines() if "=" in line)
+        return float(record.split("=", 1)[1].split()[0])
+
+    first_value = fitted_value(first_output)
+    restarted_value = fitted_value(restarted_output)
+    # fitted.toml is rendered to 5 decimal places in scientific notation; this
+    # allows roughly one final rendered digit of solver/platform variation.
+    assert first_value == pytest.approx(2.34742, rel=5.0e-6)
+    assert restarted_value == pytest.approx(first_value, rel=5.0e-6)
 
 
 def test_failed_deterministic_rerun_invalidates_prior_results_and_is_incomplete(
@@ -364,6 +399,9 @@ def test_real_compact_mcmc_fit_is_wholly_native_and_writes_products(
     assert diagnostics["steps"] == 2
     assert diagnostics["walkers"] == 32
     assert "lmfit_version" not in diagnostics
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    assert "(error not calculated)" in fitted
+    assert "±" not in fitted
     plan = native_sampler.call_args.args[1]
     assert plan.coordinate_units[0][1] is ParameterUnit.UNSPECIFIED
 
@@ -451,6 +489,10 @@ def test_seeded_nested_native_mcmc_replays_across_worker_counts(
     assert posterior["prior_upper"] == pytest.approx(5.0)
     assert 0.1 < posterior["median"] < 5.0
     assert posterior["standard_deviation"] > 0.0
+    assert posterior["credible_interval_68_lower"] <= posterior["median"]
+    assert posterior["credible_interval_68_upper"] >= posterior["median"]
+    assert posterior["half_credible_interval_68_width"] >= 0.0
+    assert "stderr" not in posterior
 
 
 def test_native_mcmc_preserves_committed_central_fit(tmp_path: Path) -> None:
@@ -704,6 +746,7 @@ def test_real_mc_fit_is_wholly_native_and_writes_product_statistics(
     assert (statistics / "summary.toml").is_file()
     assert (statistics / "correlations.tsv").is_file()
     assert (statistics / "plots.pdf").stat().st_size > 0
+    _assert_truthful_resampling_summary(statistics / "summary.toml")
     samples = (statistics / "samples.tsv").read_text(encoding="utf-8")
     assert len(samples.splitlines()) == 3
     diagnostics = (statistics / "diagnostics.toml").read_text(encoding="utf-8")
@@ -769,6 +812,7 @@ def test_real_bs_fit_uses_native_refits_and_writes_bootstrap_products(
     assert (statistics / "correlations.tsv").is_file()
     assert (statistics / "diagnostics.toml").is_file()
     assert (statistics / "plots.pdf").stat().st_size > 0
+    _assert_truthful_resampling_summary(statistics / "summary.toml")
 
 
 def test_real_bsn_fit_uses_native_nucleus_resampling_products(tmp_path: Path) -> None:
@@ -801,6 +845,7 @@ def test_real_bsn_fit_uses_native_nucleus_resampling_products(tmp_path: Path) ->
     assert (statistics / "correlations.tsv").is_file()
     assert (statistics / "diagnostics.toml").is_file()
     assert (statistics / "plots.pdf").stat().st_size > 0
+    _assert_truthful_resampling_summary(statistics / "summary.toml")
 
 
 def test_seeded_native_mc_products_are_ordered_across_worker_counts(

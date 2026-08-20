@@ -148,6 +148,61 @@ def test_write_run_info_captures_inputs_parameters_and_runtime(
     assert "PA" not in parameters["GLOBAL"]
 
 
+def test_archived_tomls_are_immutable_byte_copies_alongside_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    original_bytes = {
+        "experiments": b'[experiment]\r\nname = "relaxation_hznz"\r\n',
+        "parameters": b"[GLOBAL]\r\nPB = 0.1\r\n",
+        "methods": b'[DEFAULT]\r\nFITMETHOD = "trf"\r\n',
+    }
+    sources = {category: tmp_path / f"{category}.toml" for category in original_bytes}
+    for category, source in sources.items():
+        source.write_bytes(original_bytes[category])
+    output = tmp_path / "Output"
+    experiments = SimpleNamespace(
+        param_ids=set(),
+        parameter_store=ParameterStore({}),
+    )
+    monkeypatch.setattr(run_info_module, "_git_metadata", lambda: None)
+
+    run_info_module.write_run_info(
+        Namespace(
+            experiments=[sources["experiments"]],
+            parameters=[sources["parameters"]],
+            method=[sources["methods"]],
+            output=output,
+        ),
+        experiments,
+        argv=["chemex", "fit"],
+        working_directory=tmp_path,
+    )
+
+    run_info = output / "run_info"
+    run_path = run_info / "run.toml"
+    run_bytes = run_path.read_bytes()
+    run = tomllib.loads(run_bytes.decode())
+    archived = {
+        category: run_info / run["inputs"][category][0]["copied_path"]
+        for category in original_bytes
+    }
+    for category, path in archived.items():
+        assert path.read_bytes() == original_bytes[category]
+
+    for source in sources.values():
+        source.write_bytes(b"[changed]\nvalue = true\n")
+    run_info_module.write_run_outcome(output, "complete")
+
+    assert run_path.read_bytes() == run_bytes
+    assert tomllib.loads((run_info / "outcome.toml").read_text(encoding="utf-8")) == {
+        "schema_version": 1,
+        "status": "complete",
+    }
+    for category, path in archived.items():
+        assert path.read_bytes() == original_bytes[category]
+
+
 def test_run_info_uses_chemex_path_semantics_for_literal_tilde(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

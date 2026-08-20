@@ -47,11 +47,12 @@ The output directory typically includes the following files and subdirectories:
 Records how the fit was started. `run.toml` contains runtime and command-line
 metadata grouped into run, ChemEx, Python, command, inputs, and optional Git
 sections. `parameters_used.toml` contains the parsed independent starting
-parameters needed to restart the fit, including values and bounds. Parameters
+parameters needed to restart or re-run the fit, including values and bounds. Use
+this file as the parameter input for a subsequent `chemex fit`. Parameters
 calculated from expressions are not written separately because ChemEx
 reconstructs them from the independent parameters and model. `inputs/` contains
-lightweight copies of the user-provided experiment, parameter, and method TOML
-files. Raw experimental data files are not copied.
+byte copies of the user-provided experiment, parameter, and method TOML files as
+captured for the run. Raw experimental data files are not copied.
 
 `outcome.toml` is the lifecycle marker for the current invocation. It has
 `schema_version = 1` and a `status` of `running`, `complete`, or `incomplete`.
@@ -69,7 +70,11 @@ report that invocation as complete.
 
 ### `Parameters/`
 
-Contains results of the fitting as three files: `fitted.toml`, `fixed.toml`, and `constrained.toml`, which list parameters that were fitted, fixed, and constrained, respectively.
+Contains result reports as three files: `fitted.toml`, `fixed.toml`, and
+`constrained.toml`, which list parameters that were fitted, fixed, and
+constrained, respectively. These reports are not promised to form a complete,
+bound-preserving restart bundle; use `run_info/parameters_used.toml` when
+restarting or re-running a fit.
 
 #### Example Files
 
@@ -80,16 +85,19 @@ import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
 
 ```toml
 [GLOBAL]
-KEX_AB =  3.81511e+02 # ±8.90870e+00
-PB     =  7.02971e-02 # ±1.14784e-03
+KEX_AB =  3.81511e+02 # (error not calculated)
+PB     =  7.02971e-02 # (error not calculated)
 
 [DW_AB]
-15N =  2.00075e+00 # ±2.30817e-02
-31N =  1.98968e+00 # ±1.90842e-02
+15N =  2.00075e+00 # (error not calculated)
+31N =  1.98968e+00 # (error not calculated)
 ```
 
 :::note
-Uncertainties (if calculated) are shown as comments preceded by "±", based on the covariance matrix from the Levenberg-Marquardt optimization.
+Native deterministic fits do not automatically assign a generic standard error.
+When no family-qualified uncertainty is rendered here, fitted values are marked
+`(error not calculated)`. Resampling and MCMC uncertainty summaries are reported
+separately under `Statistics/` and are not copied into this generic comment.
 :::
 
 </TabItem>
@@ -106,12 +114,13 @@ Uncertainties (if calculated) are shown as comments preceded by "±", based on t
 
 ```toml
 [GLOBAL]
-KAB =  2.68192e+01 # ±3.06068e-01 ([KEX_AB] * [PB])
-KBA =  3.54692e+02 # ±8.28245e+00 ([KEX_AB] * [PA])
+KAB =  2.68192e+01 # ([KEX_AB] * [PB])
+KBA =  3.54692e+02 # ([KEX_AB] * [PA])
 ```
 
 :::note
-Propagated uncertainties and applied constraints are provided in comments.
+Applied constraints are provided in comments. Statistical interval widths are
+not attached as generic constrained-parameter errors.
 :::
 
 </TabItem>
@@ -179,3 +188,12 @@ autocorrelation estimates. Failed or interrupted MCMC suppresses every
 complete-chain product and leaves only an explicit incomplete diagnostic. These
 diagnostics are the best place to confirm that
 [`--workers`](multicore_execution.md) was applied as intended.
+
+MC, BS, and BSN `summary.toml` files describe their empirical fitted-sample
+distributions with the mean, median, standard deviation, 95% percentile bounds,
+68% percentile bounds, and `half_percentile_68_width`. MCMC summaries describe
+the posterior with the mean, median, standard deviation, 95% equal-tailed and
+68% credible-interval bounds, and `half_credible_interval_68_width`.
+`mcse_mean`, when available, is the Monte Carlo standard error of the estimated
+posterior mean; it is distinct from posterior interval width. None of these
+statistical summaries mutates the committed central fit.

@@ -111,9 +111,9 @@ class McmcSummary:
     median: float
     eti_95_lower: float
     eti_95_upper: float
-    lower_1sigma: float
-    upper_1sigma: float
-    stderr: float
+    credible_interval_68_lower: float
+    credible_interval_68_upper: float
+    half_credible_interval_68_width: float
     effective_sample_size: float | None = None
     mcse_mean: float | None = None
 
@@ -320,7 +320,7 @@ def _summarize_chain(
     quantiles = np.percentile(samples, [2.5, 15.87, 50.0, 84.13, 97.5], axis=0)
     summaries: list[McmcSummary] = []
     for index, name in enumerate(var_names):
-        lower_95, lower, median, upper, upper_95 = quantiles[:, index]
+        lower_95, lower_68, median, upper_68, upper_95 = quantiles[:, index]
         values = samples[:, index]
         standard_deviation = float(np.std(values, ddof=1)) if len(values) > 1 else 0.0
         effective_sample_size = None
@@ -339,9 +339,9 @@ def _summarize_chain(
                 median=float(median),
                 eti_95_lower=float(lower_95),
                 eti_95_upper=float(upper_95),
-                lower_1sigma=float(lower),
-                upper_1sigma=float(upper),
-                stderr=0.5 * float(upper - lower),
+                credible_interval_68_lower=float(lower_68),
+                credible_interval_68_upper=float(upper_68),
+                half_credible_interval_68_width=0.5 * float(upper_68 - lower_68),
                 effective_sample_size=effective_sample_size,
                 mcse_mean=mcse_mean,
             ),
@@ -664,9 +664,18 @@ def _write_summary(
                 f"median = {_format_toml_float(summary.median)}",
                 f"eti_95_lower = {_format_toml_float(summary.eti_95_lower)}",
                 f"eti_95_upper = {_format_toml_float(summary.eti_95_upper)}",
-                f"lower_1sigma = {_format_toml_float(summary.lower_1sigma)}",
-                f"upper_1sigma = {_format_toml_float(summary.upper_1sigma)}",
-                f"stderr = {_format_toml_float(summary.stderr)}",
+                (
+                    "credible_interval_68_lower = "
+                    f"{_format_toml_float(summary.credible_interval_68_lower)}"
+                ),
+                (
+                    "credible_interval_68_upper = "
+                    f"{_format_toml_float(summary.credible_interval_68_upper)}"
+                ),
+                (
+                    "half_credible_interval_68_width = "
+                    f"{_format_toml_float(summary.half_credible_interval_68_width)}"
+                ),
             ],
         )
         if summary.effective_sample_size is not None:
@@ -1151,7 +1160,6 @@ def run_mcmc(
         updated_params = params.copy()
         for summary in result.summary:
             updated_params[summary.parameter_id].value = summary.median
-            updated_params[summary.parameter_id].stderr = summary.stderr
         updated_params.update_constraints()
         parameter_store.update_from_parameters(updated_params)
     return result
