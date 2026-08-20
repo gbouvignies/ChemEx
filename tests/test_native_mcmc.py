@@ -505,6 +505,20 @@ def test_product_policy_initializes_from_exact_accepted_fit() -> None:
     )
 
 
+@pytest.mark.parametrize("walkers", (2, 3))
+def test_one_dimensional_product_policy_preserves_two_walker_minimum(
+    walkers: int,
+) -> None:
+    policy = resolve_product_mcmc_policy(
+        dimension=1,
+        walkers=walkers,
+        steps=2,
+        root_seed=612,
+    )
+
+    assert policy.walkers == walkers
+
+
 def test_plan_binds_initial_ensemble_to_exact_accepted_native_lineage() -> None:
     accepted, problem, parameterization, engine = _native_context()
 

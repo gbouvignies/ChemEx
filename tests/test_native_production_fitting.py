@@ -258,7 +258,7 @@ def test_real_compact_mcmc_fit_is_wholly_native_and_writes_products(
     assert diagnostics["walkers"] == 32
     assert "lmfit_version" not in diagnostics
     plan = native_sampler.call_args.args[1]
-    assert plan.coordinate_units[0][1] is ParameterUnit.RATE_PER_SECOND
+    assert plan.coordinate_units[0][1] is ParameterUnit.UNSPECIFIED
 
 
 def test_compact_mcmc_form_runs_through_real_chemex_cli(tmp_path: Path) -> None:
@@ -438,9 +438,9 @@ def test_native_mcmc_postprocessing_failure_replaces_running_diagnostics(
         patch.object(
             mcmc_module,
             "_native_result_from_evidence",
-            side_effect=NativeMcmcIncompleteError("missing acceptance diagnostics"),
+            side_effect=RuntimeError("missing acceptance diagnostics"),
         ),
-        pytest.raises(NativeMcmcIncompleteError, match="acceptance diagnostics"),
+        pytest.raises(RuntimeError, match="acceptance diagnostics"),
     ):
         run(
             _fit_arguments(output, method, parameters=parameters),
@@ -454,7 +454,7 @@ def test_native_mcmc_postprocessing_failure_replaces_running_diagnostics(
     )
     assert diagnostics["status"] == "incomplete"
     assert diagnostics["terminal"] == "failed"
-    assert diagnostics["completed_steps"] == 0
+    assert diagnostics["completed_steps"] == 5
     assert "acceptance diagnostics" in diagnostics["failure_message"]
     assert not (statistics / "summary.toml").exists()
     assert not (statistics / "samples.tsv").exists()

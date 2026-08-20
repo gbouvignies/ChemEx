@@ -128,6 +128,7 @@ class OperationTerminal(StrEnum):
 class ParameterUnit(StrEnum):
     """Closed unit vocabulary carried by uncertainty evidence."""
 
+    UNSPECIFIED = "unspecified"
     DIMENSIONLESS = "dimensionless"
     FRACTION = "fraction"
     RATE_PER_SECOND = "s^-1"

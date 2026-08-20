@@ -642,9 +642,14 @@ class ResolvedMcmcPolicy:
         )
         if proposal_scale <= 1.0:
             raise McmcConstructionError("MCMC stretch proposal scale must exceed one")
-        if walkers < max(4, 2 * dimension):
+        minimum_walkers = (
+            2 * dimension
+            if self.kind is McmcPolicyKind.PRODUCT
+            else max(4, 2 * dimension)
+        )
+        if walkers < minimum_walkers:
             raise McmcConstructionError(
-                "MCMC walker count must be at least max(4, 2 * dimension)"
+                f"MCMC walker count must be at least {minimum_walkers}"
             )
         if self.thin != 1:
             raise McmcConstructionError(
