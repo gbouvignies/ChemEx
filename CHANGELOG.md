@@ -14,9 +14,14 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   ordered role inheritance, profile selection, calculated-data files, and
   output paths are preserved. Native deterministic fits do not populate the
   legacy generic `stderr` field; family-qualified uncertainty output remains
-  part of the dedicated output-contract migration;
-  statistics-bearing steps and explicit legacy optimizer spellings remain on
-  the legacy path pending their dedicated migration.
+  part of the dedicated output-contract migration. MC, BS, and BSN statistics
+  now start from that committed native fit and run wholly native Direct TRF
+  refits with stable ordered seeds across serial and worker execution. Existing
+  STATISTICS syntax and output directories are preserved; incomplete analyses
+  retain explicit samples/failures diagnostics without publishing complete
+  summaries or plots. MCMC-bearing steps and explicit legacy optimizer
+  spellings without native statistics remain on the legacy path pending their
+  dedicated migrations.
 
 ### Infrastructure
 - Removed the unused `B1FieldConfig` model and its `default_distribution_config`

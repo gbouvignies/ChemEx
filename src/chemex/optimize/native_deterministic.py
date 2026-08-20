@@ -1,5 +1,6 @@
 """Production composition for native deterministic method steps."""
 
+from dataclasses import dataclass
 from itertools import product
 from pathlib import Path
 from typing import cast
@@ -10,7 +11,7 @@ from chemex.configuration.methods import Method
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import EvaluationEngine, EvaluationResult
 from chemex.messages import print_group_name, print_minimizing
-from chemex.optimize.direct_trf import OptimizationProblem
+from chemex.optimize.direct_trf import AcceptedFitResult, OptimizationProblem
 from chemex.optimize.grid_direct_trf import GridDirectTrfInvocation
 from chemex.optimize.gridding import (
     GridResult,
@@ -46,10 +47,27 @@ from chemex.typing import Array
 _TRF_EVALUATIONS_PER_COORDINATE = 100
 
 
+@dataclass(frozen=True, slots=True)
+class NativeDeterministicFit:
+    """Accepted production fit context available to native successor analyses."""
+
+    accepted: AcceptedFitResult
+    problem: OptimizationProblem
+    parameterization: ActiveParameterization
+    engine: EvaluationEngine
+
+    @property
+    def objective_request_budget(self) -> int:
+        """Return the accepted occurrence's native Direct TRF request budget."""
+        return _objective_request_budget(self.problem)
+
+
 def uses_native_deterministic(method: Method) -> bool:
     """Return whether one whole method occurrence uses native TRF."""
-    if method.statistics is not None:
+    if method.statistics is not None and method.statistics.mcmc is not None:
         return False
+    if method.statistics is not None:
+        return not method.grid
     if "fitmethod" not in method.model_fields_set:
         return True
     return method.fitmethod in {"trf", "least_squares"}
@@ -272,7 +290,7 @@ def run_native_deterministic(
     plot: str,
     *,
     session: AnalysisSession,
-) -> None:
+) -> NativeDeterministicFit | None:
     """Execute one complete deterministic method occurrence natively."""
     parameter_model = session.parameter_factory.sealed_parameter_model
     configuration = session.parameter_factory.sealed_configuration
@@ -311,7 +329,7 @@ def run_native_deterministic(
             residuals=result.residuals,
             nvarys=0,
         )
-        return
+        return None
 
     problem = OptimizationProblem.from_native(
         engine.plan,
@@ -366,6 +384,7 @@ def run_native_deterministic(
     if accepted is None:
         raise RuntimeError("Committed native fit lacks its accepted result")
     result = accepted.evaluation_result
+    fit = NativeDeterministicFit(accepted, problem, parameterization, engine)
     session.sync_parameter_store_from_analysis_values(
         dict(result.resolved_values.ordered_items())
     )
@@ -395,7 +414,7 @@ def run_native_deterministic(
                 residuals=result.residuals,
                 nvarys=variable_count,
             )
-        return
+        return fit
 
     _write_direct_output(
         experiments,
@@ -407,3 +426,4 @@ def run_native_deterministic(
         variable_count,
         aggregate_output=aggregate_output,
     )
+    return fit

@@ -286,6 +286,7 @@ def test_run_fit_creates_run_info(
         SimpleNamespace(
             execution=None,
             try_compile_parameterization=lambda *_args: None,
+            try_resolve_current_values=lambda *_args: None,
         ),
         argv=["chemex", "fit"],
     )

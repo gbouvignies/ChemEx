@@ -17,10 +17,10 @@ chemex fit -e Experiments/*.toml \
            -o Output
 ```
 
-By default, `--workers auto` chooses a conservative number of worker processes,
-up to 8 CPUs. This gives typical workstations useful parallelism without
-starting an unexpectedly large number of Python processes. Use `--workers 1` for
-serial execution, or `--workers 0` to explicitly use all CPUs visible to ChemEx.
+By default, `--workers auto` chooses a conservative number of worker slots, up
+to 8 CPUs. This gives typical workstations useful parallelism without starting
+an unexpectedly large worker pool. Use `--workers 1` for serial execution, or
+`--workers 0` to explicitly use all CPUs visible to ChemEx.
 
 ## What Runs in Parallel
 
@@ -34,16 +34,16 @@ The normal deterministic fit still runs as one optimization task. Grid searches,
 simulation runs, plotting, and output writing are not controlled by
 `--workers`.
 
-Worker processes are created only while the parallel statistics task is running.
-For example, Activity Monitor or `top` should show multiple Python processes
-during MCMC sampling, but not necessarily during the earlier deterministic fit
-or the later output-writing phase.
+Workers are active only while the parallel statistics task is running. Native
+MC, BS, and BSN refits use worker threads; MCMC may show multiple Python
+processes. The earlier deterministic fit and later output-writing phase remain
+serial.
 
 ## Command-Line Controls
 
 ### `--workers N|auto`
 
-Controls the number of ChemEx worker processes used by fit statistics.
+Controls the number of ChemEx worker slots used by fit statistics.
 
 | Value | Meaning |
 | ---- | ------- |
@@ -68,9 +68,9 @@ chemex fit -e Experiments/*.toml \
 Controls native numerical library threads, such as BLAS or OpenMP threads.
 
 The default, `--native-threads auto`, leaves native thread settings untouched for
-serial runs. When ChemEx starts multiple worker processes, it sets native
+serial runs. When ChemEx starts multiple workers, it sets native numerical
 threads to 1 inside the worker-pool context. This avoids oversubscription, where
-each Python worker also starts many native threads.
+each ChemEx worker also starts many BLAS or OpenMP threads.
 
 Most users should keep the default. Use an explicit value only when you are
 benchmarking a specific machine:

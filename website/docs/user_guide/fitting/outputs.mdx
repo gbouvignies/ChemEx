@@ -145,15 +145,18 @@ Contains goodness-of-fit statistics, such as χ<sup>2</sup>.
 
 Contains optional uncertainty-analysis outputs requested with the `STATISTICS`
 method-file key. Monte Carlo and bootstrap methods write `summary.toml`,
-`samples.tsv`, `correlations.tsv`, and `diagnostics.toml` under
+`samples.tsv`, `correlations.tsv`, `diagnostics.toml`, and `plots.pdf` under
 `Statistics/MonteCarlo/`, `Statistics/Bootstrap/`, and `Statistics/BootstrapNS/`.
 MCMC writes the same file set under `Statistics/MCMC/`, plus a `plots.pdf`
 report with posterior distributions, walker traces, log-probability traces, and
 autocorrelation diagnostics.
 
-The `diagnostics.toml` files record execution details for reproducibility. For
-parallel statistics, they include the effective worker count. MCMC diagnostics
-also include the direct emcee sampler engine, timing information, acceptance
+The `diagnostics.toml` files record execution details for reproducibility. MC,
+BS, and BSN diagnostics include the native Direct TRF engine, root seed, and
+effective worker count. An incomplete analysis instead writes the successful
+sample rows, `failures.tsv`, and an explicit incomplete diagnostic; complete
+summary, correlation, and plot files are suppressed. MCMC diagnostics also
+include the direct emcee sampler engine, timing information, acceptance
 fractions, burn-in decisions, and autocorrelation estimates. These diagnostics
 are the best place to confirm that [`--workers`](multicore_execution.md) was
 applied as intended.

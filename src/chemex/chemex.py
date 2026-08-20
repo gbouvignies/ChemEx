@@ -36,7 +36,11 @@ def run_fit(
     argv: Sequence[str] | None = None,
 ) -> None:
     # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
-    experiments.filter()
+    resolved_values = session.try_resolve_current_values(experiments.param_ids)
+    if resolved_values is None:
+        experiments.filter()
+    else:
+        experiments.filter_from_values(resolved_values)
 
     if args.method is not None:
         print_reading_methods()

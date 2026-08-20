@@ -103,6 +103,9 @@ class StubSession:
     ) -> None:
         return None
 
+    def try_resolve_current_values(self, _required_ids: set[str]) -> None:
+        return None
+
 
 class WriterParameterStore:
     def __init__(self, parameters: dict[str, ParamSetting]) -> None:
@@ -138,6 +141,7 @@ class FakeExperiments:
         self.filtered = 0
         self.selections: list[Selection] = []
         self.parameter_store = parameter_store
+        self.param_ids: set[str] = set()
 
     def filter(self) -> None:
         self.filtered += 1
