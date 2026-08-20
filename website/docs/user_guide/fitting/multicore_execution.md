@@ -49,7 +49,7 @@ Controls the number of ChemEx worker slots used by fit statistics.
 | ---- | ------- |
 | `auto` | Conservative default, capped at 8 workers. |
 | `1` | Serial execution. Useful for debugging and reproducibility checks. |
-| `N` | Use `N` worker processes. |
+| `N` | Use `N` worker slots (threads for native MC/BS/BSN; processes may be used for MCMC). |
 | `0` | Use all CPUs visible to the current process. |
 
 For long MCMC runs on a dedicated machine, it can be reasonable to set an

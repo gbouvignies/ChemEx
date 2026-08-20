@@ -184,6 +184,27 @@ def test_real_mc_fit_is_wholly_native_and_writes_product_statistics(
     assert "(error not calculated)" in fitted
 
 
+def test_native_statistics_filter_resolution_fails_closed_before_lmfit(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 1')
+    session = AnalysisSession.create()
+
+    with (
+        patch.object(
+            session,
+            "resolve_current_values",
+            side_effect=RuntimeError("native values unavailable"),
+        ),
+        patch("chemex.containers.experiments.Experiments.filter") as legacy_filter,
+        pytest.raises(RuntimeError, match="native values unavailable"),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    legacy_filter.assert_not_called()
+
+
 def test_real_bs_fit_uses_native_refits_and_writes_bootstrap_products(
     tmp_path: Path,
 ) -> None:
@@ -337,6 +358,36 @@ def test_failed_native_replicate_keeps_central_fit_and_suppresses_complete_produ
     assert "requested_samples = 2" in diagnostics
     assert "completed_samples = 1" in diagnostics
     assert "failed_samples = 1" in diagnostics
+    assert not (statistics / "summary.toml").exists()
+    assert not (statistics / "correlations.tsv").exists()
+    assert not (statistics / "plots.pdf").exists()
+
+
+def test_native_statistics_setup_failure_publishes_incomplete_diagnostics(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 2')
+    session = AnalysisSession.create()
+
+    with (
+        patch(
+            "chemex.optimize.resampling._native_dataset",
+            side_effect=RuntimeError("manifest unavailable"),
+        ),
+        pytest.raises(RuntimeError, match="manifest unavailable"),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    statistics = output / "Statistics" / "MonteCarlo"
+    diagnostics = (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    assert 'status = "incomplete"' in diagnostics
+    assert 'terminal = "failed"' in diagnostics
+    assert "completed_samples = 0" in diagnostics
+    assert "failed_samples = 0" in diagnostics
+    assert 'failure_type = "RuntimeError"' in diagnostics
+    assert 'failure_message = "manifest unavailable"' in diagnostics
     assert not (statistics / "summary.toml").exists()
     assert not (statistics / "correlations.tsv").exists()
     assert not (statistics / "plots.pdf").exists()

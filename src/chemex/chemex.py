@@ -20,6 +20,7 @@ from chemex.messages import (
 )
 from chemex.optimize.fitting import run_methods
 from chemex.optimize.helper import execute_simulation
+from chemex.optimize.native_deterministic import uses_native_deterministic
 from chemex.run_info import write_run_info
 from chemex.runtime import (
     AnalysisSession,
@@ -35,18 +36,27 @@ def run_fit(
     *,
     argv: Sequence[str] | None = None,
 ) -> None:
-    # Filter datapoints out if necessary (e.g., on-resonance filter CEST)
-    resolved_values = session.try_resolve_current_values(experiments.param_ids)
-    if resolved_values is None:
-        experiments.filter()
-    else:
-        experiments.filter_from_values(resolved_values)
-
     if args.method is not None:
         print_reading_methods()
         methods = read_methods(args.method)
     else:
         methods = {"": Method()}
+
+    # Native statistics occurrences must fail closed before any lmfit value carrier
+    # can be constructed by the compatibility filter path.
+    native_statistics = any(
+        method.statistics is not None and uses_native_deterministic(method)
+        for method in methods.values()
+    )
+    resolved_values = (
+        session.resolve_current_values(experiments.param_ids)
+        if native_statistics
+        else session.try_resolve_current_values(experiments.param_ids)
+    )
+    if resolved_values is None:
+        experiments.filter()
+    else:
+        experiments.filter_from_values(resolved_values)
 
     write_run_info(args, experiments, argv=argv)
 

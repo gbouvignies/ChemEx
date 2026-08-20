@@ -196,15 +196,20 @@ class AnalysisSession:
         self,
         required_ids: set[str],
     ) -> Mapping[str, float] | None:
-        """Resolve current stable values without constructing lmfit Parameters."""
+        """Best-effort current-value resolution for legacy-compatible paths."""
         try:
-            parameterization = self.compile_current_parameterization(required_ids)
-            frame = parameterization.frame_from_snapshot(
-                self.analysis_values.snapshot()
-            )
-            return parameterization.resolve(frame)
+            return self.resolve_current_values(required_ids)
         except Exception:  # noqa: BLE001 - legacy filtering remains the fallback
             return None
+
+    def resolve_current_values(
+        self,
+        required_ids: set[str],
+    ) -> Mapping[str, float]:
+        """Resolve current stable values without an lmfit fallback."""
+        parameterization = self.compile_current_parameterization(required_ids)
+        frame = parameterization.frame_from_snapshot(self.analysis_values.snapshot())
+        return parameterization.resolve(frame)
 
     def sync_parameter_store_from_analysis_values(
         self,

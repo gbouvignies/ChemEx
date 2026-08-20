@@ -472,53 +472,45 @@ def _write_native_failures(path: Path, outcomes: Sequence[ReplicateOutcome]) -> 
             )
 
 
-def _write_incomplete_native_diagnostics(
-    path: Path,
-    *,
-    method: _ResamplingMethod,
-    successful_samples: int,
-    failed_samples: int,
-    workers: int,
-    terminal: str,
-    parameter_ids: tuple[str, ...],
-    root_seed: int,
-) -> None:
-    lines = [
-        f"method = {_quote_toml_string(method.message)}",
-        'fitmethod = "trf"',
-        'engine = "native direct TRF"',
-        'status = "incomplete"',
-        f"terminal = {_quote_toml_string(terminal)}",
-        f"requested_samples = {method.iterations}",
-        f"completed_samples = {successful_samples}",
-        f"failed_samples = {failed_samples}",
-        f"workers = {workers}",
-        f"parameters = {_format_toml_string_list(list(parameter_ids))}",
-        f"root_seed = {root_seed}",
-        'samples_file = "samples.tsv"',
-        'failures_file = "failures.tsv"',
-    ]
-    (path / "diagnostics.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def _write_running_native_diagnostics(
+def _write_native_state_diagnostics(
     path: Path,
     *,
     method: _ResamplingMethod,
     workers: int,
     parameter_ids: tuple[str, ...],
     root_seed: int,
+    status: str,
+    successful_samples: int | None = None,
+    failed_samples: int | None = None,
+    terminal: str | None = None,
+    failure: BaseException | None = None,
 ) -> None:
     lines = [
         f"method = {_quote_toml_string(method.message)}",
         'fitmethod = "trf"',
         'engine = "native direct TRF"',
-        'status = "running"',
+        f"status = {_quote_toml_string(status)}",
         f"requested_samples = {method.iterations}",
         f"workers = {workers}",
         f"parameters = {_format_toml_string_list(list(parameter_ids))}",
         f"root_seed = {root_seed}",
     ]
+    if terminal is not None:
+        lines.append(f"terminal = {_quote_toml_string(terminal)}")
+    if successful_samples is not None:
+        lines.append(f"completed_samples = {successful_samples}")
+    if failed_samples is not None:
+        lines.append(f"failed_samples = {failed_samples}")
+    if status == "incomplete":
+        lines.extend(('samples_file = "samples.tsv"', 'failures_file = "failures.tsv"'))
+    if failure is not None:
+        message = str(failure).replace("\n", " ")
+        lines.extend(
+            (
+                f"failure_type = {_quote_toml_string(type(failure).__name__)}",
+                f"failure_message = {_quote_toml_string(message)}",
+            )
+        )
     (path / "diagnostics.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -551,52 +543,82 @@ def _run_native_resampling_method(
         list(parameter_ids), experiments.parameter_store
     )
     worker_count = min(execution.workers, method.iterations)
-    _write_running_native_diagnostics(
+    _write_native_state_diagnostics(
         statistic_path,
         method=method,
         workers=worker_count,
         parameter_ids=parameter_ids,
         root_seed=root_seed,
+        status="running",
     )
-    dataset = _native_dataset(experiments, fit)
-    width = max(6, len(str(method.iterations)))
-    plan = ResamplingPlan.for_accepted(
-        fit.accepted,
-        dataset=dataset,
-        source_problem=fit.problem,
-        parameterization=fit.parameterization,
-        source_engine=fit.engine,
-        scheme=ResamplingScheme(method.statistic_name),
-        replicate_count=method.iterations,
-        replicate_structural_identities=tuple(
-            f"production-replicate-{index:0{width}d}"
-            for index in range(method.iterations)
-        ),
-        replicate_component_identities=tuple(
-            (f"production-direct-trf-{index:0{width}d}",)
-            for index in range(method.iterations)
-        ),
-        root_seed=root_seed,
-        output_scope=fit.problem.commit_scope,
-        output_units=("native",) * len(fit.problem.commit_scope),
-        minimum_successful_count=method.iterations,
-        strategy_settings=(
-            (
-                "objective_request_budget",
-                str(fit.objective_request_budget),
+    try:
+        dataset = _native_dataset(experiments, fit)
+        width = max(6, len(str(method.iterations)))
+        plan = ResamplingPlan.for_accepted(
+            fit.accepted,
+            dataset=dataset,
+            source_problem=fit.problem,
+            parameterization=fit.parameterization,
+            source_engine=fit.engine,
+            scheme=ResamplingScheme(method.statistic_name),
+            replicate_count=method.iterations,
+            replicate_structural_identities=tuple(
+                f"production-replicate-{index:0{width}d}"
+                for index in range(method.iterations)
             ),
-        ),
-    )
-    operation = execute_resampling_evidence(
-        fit.accepted,
-        plan,
-        execution=execution,
-    )
+            replicate_component_identities=tuple(
+                (f"production-direct-trf-{index:0{width}d}",)
+                for index in range(method.iterations)
+            ),
+            root_seed=root_seed,
+            output_scope=fit.problem.commit_scope,
+            output_units=("native",) * len(fit.problem.commit_scope),
+            minimum_successful_count=method.iterations,
+            strategy_settings=(
+                (
+                    "objective_request_budget",
+                    str(fit.objective_request_budget),
+                ),
+            ),
+        )
+        operation = execute_resampling_evidence(
+            fit.accepted,
+            plan,
+            execution=execution,
+        )
+    except (Exception, KeyboardInterrupt) as error:
+        terminal = "interrupted" if isinstance(error, KeyboardInterrupt) else "failed"
+        _write_native_state_diagnostics(
+            statistic_path,
+            method=method,
+            workers=worker_count,
+            parameter_ids=parameter_ids,
+            root_seed=root_seed,
+            status="incomplete",
+            successful_samples=0,
+            failed_samples=0,
+            terminal=terminal,
+            failure=error,
+        )
+        raise
     evidence = operation.evidence
     if evidence is None:
-        raise NativeResamplingIncompleteError(
+        error = NativeResamplingIncompleteError(
             f"Native {method.message} produced no replicate evidence"
         )
+        _write_native_state_diagnostics(
+            statistic_path,
+            method=method,
+            workers=worker_count,
+            parameter_ids=parameter_ids,
+            root_seed=root_seed,
+            status="incomplete",
+            successful_samples=0,
+            failed_samples=0,
+            terminal=operation.terminal.value,
+            failure=error,
+        )
+        raise error
     successful = tuple(
         outcome.success for outcome in evidence.outcomes if outcome.success is not None
     )
@@ -621,15 +643,16 @@ def _run_native_resampling_method(
     )
     if not complete:
         _write_native_failures(statistic_path, evidence.outcomes)
-        _write_incomplete_native_diagnostics(
+        _write_native_state_diagnostics(
             statistic_path,
             method=method,
-            successful_samples=evidence.successful_count,
-            failed_samples=method.iterations - evidence.successful_count,
             workers=worker_count,
-            terminal=operation.terminal.value,
             parameter_ids=parameter_ids,
             root_seed=root_seed,
+            status="incomplete",
+            successful_samples=evidence.successful_count,
+            failed_samples=method.iterations - evidence.successful_count,
+            terminal=operation.terminal.value,
         )
         raise NativeResamplingIncompleteError(
             f"Native {method.message} completed {evidence.successful_count} of "
