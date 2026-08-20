@@ -352,3 +352,29 @@ STATISTICS = { "MC" = 1 }
 
     fit_groups.assert_called_once()
     assert fit_groups.call_args.args[3] == "leastsq"
+
+
+def test_grid_with_statistics_remains_wholly_on_legacy_dispatch(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """[DEFAULT]
+GRID = ["[R1A_A] = (1.0, 3.0)"]
+STATISTICS = { "MC" = 1 }
+""",
+        encoding="utf-8",
+    )
+    session = AnalysisSession.create()
+
+    with (
+        patch(
+            "chemex.optimize.fitting.run_native_deterministic",
+            side_effect=AssertionError("native deterministic dispatch was called"),
+        ),
+        patch("chemex.optimize.fitting.run_grid") as run_grid,
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    run_grid.assert_called_once()

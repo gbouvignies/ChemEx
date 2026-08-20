@@ -144,9 +144,8 @@ def run_methods(
             print_no_data()
             continue
 
-        print_fitmethod(
-            "trf" if uses_native_deterministic(method) else method.fitmethod
-        )
+        use_native_deterministic = uses_native_deterministic(method)
+        print_fitmethod("trf" if use_native_deterministic else method.fitmethod)
 
         # Update the parameter "vary" and "expr" status
         parameter_store.set_parameter_status(method)
@@ -157,7 +156,7 @@ def run_methods(
 
         path_sect = path / section if len(methods) > 1 else path
 
-        if uses_native_deterministic(method):
+        if use_native_deterministic:
             run_native_deterministic(
                 experiments,
                 method,

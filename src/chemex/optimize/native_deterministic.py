@@ -48,7 +48,7 @@ _TRF_EVALUATIONS_PER_COORDINATE = 100
 
 def uses_native_deterministic(method: Method) -> bool:
     """Return whether one whole method occurrence uses native TRF."""
-    if method.statistics is not None and not method.grid:
+    if method.statistics is not None:
         return False
     if "fitmethod" not in method.model_fields_set:
         return True
