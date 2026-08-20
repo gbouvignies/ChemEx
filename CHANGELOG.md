@@ -8,6 +8,16 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 ## [Unreleased]
 
 ### Changed
+- Renamed misleading statistical summary fields without changing sampling or
+  fitted values. MC, BS, and BSN now use `percentile_68_lower`,
+  `percentile_68_upper`, and `half_percentile_68_width` instead of
+  `lower_1sigma`, `upper_1sigma`, and `stderr`. MCMC now uses
+  `credible_interval_68_lower`, `credible_interval_68_upper`, and
+  `half_credible_interval_68_width`; genuine `mcse_mean` remains the Monte Carlo
+  standard error of the posterior mean. Native deterministic fitted-parameter
+  reports continue to state `(error not calculated)`. Clarified that
+  `run_info/parameters_used.toml` is the bound-preserving restart input, while
+  the fitted/fixed/constrained parameter files are result reports.
 - Fit output now has a success-last `run_info/outcome.toml` lifecycle marker.
   Reruns eagerly invalidate only known ChemEx result locations for every planned
   method step, preventing earlier deterministic or later statistics-family

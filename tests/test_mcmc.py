@@ -413,9 +413,9 @@ def test_run_mcmc_passes_execution_workers_to_direct_sampler(
                 median=0.15,
                 eti_95_lower=0.10,
                 eti_95_upper=0.20,
-                lower_1sigma=0.10,
-                upper_1sigma=0.20,
-                stderr=0.05,
+                credible_interval_68_lower=0.10,
+                credible_interval_68_upper=0.20,
+                half_credible_interval_68_width=0.05,
             ),
         ),
         correlations=np.array([[1.0]]),
@@ -594,9 +594,9 @@ def test_write_mcmc_outputs(tmp_path: Path) -> None:
                 median=0.25,
                 eti_95_lower=0.11,
                 eti_95_upper=0.39,
-                lower_1sigma=0.12,
-                upper_1sigma=0.38,
-                stderr=0.13,
+                credible_interval_68_lower=0.12,
+                credible_interval_68_upper=0.38,
+                half_credible_interval_68_width=0.13,
                 effective_sample_size=2.0,
                 mcse_mean=0.09,
             ),
@@ -607,9 +607,9 @@ def test_write_mcmc_outputs(tmp_path: Path) -> None:
                 median=275.0,
                 eti_95_lower=205.0,
                 eti_95_upper=345.0,
-                lower_1sigma=210.0,
-                upper_1sigma=340.0,
-                stderr=65.0,
+                credible_interval_68_lower=210.0,
+                credible_interval_68_upper=340.0,
+                half_credible_interval_68_width=65.0,
                 effective_sample_size=1.3333333333,
                 mcse_mean=56.2916512459,
             ),
@@ -646,7 +646,12 @@ def test_write_mcmc_outputs(tmp_path: Path) -> None:
     assert 'credible_interval = "95% equal-tailed"' in summary
     assert "median = 2.50000e-01" in summary
     assert "eti_95_lower = 1.10000e-01" in summary
+    assert "credible_interval_68_lower = 1.20000e-01" in summary
+    assert "credible_interval_68_upper = 3.80000e-01" in summary
+    assert "half_credible_interval_68_width = 1.30000e-01" in summary
     assert "effective_sample_size = 2.00000e+00" in summary
+    assert "mcse_mean = 9.00000e-02" in summary
+    assert "stderr" not in summary
     assert "[PB]\t[KEX_AB]\tlnprob" in samples
     assert "2.00000e-01\t2.50000e+02\t-2.00000e+00" in samples
     assert "[PB]" in correlations
@@ -702,9 +707,9 @@ def test_write_mcmc_outputs_reports_tentative_autocorrelation_time(
                 median=0.45,
                 eti_95_lower=0.31,
                 eti_95_upper=0.59,
-                lower_1sigma=0.32,
-                upper_1sigma=0.58,
-                stderr=0.13,
+                credible_interval_68_lower=0.32,
+                credible_interval_68_upper=0.58,
+                half_credible_interval_68_width=0.13,
             ),
         ),
         correlations=np.array([[1.0]]),

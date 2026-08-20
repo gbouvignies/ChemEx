@@ -313,9 +313,13 @@ Statistics/
     plots.pdf
 ```
 
-For Monte Carlo and bootstrap methods, `samples.tsv` contains one fitted-parameter row per synthetic dataset plus χ², `summary.toml` reports percentile-based parameter summaries, and `correlations.tsv` reports parameter correlations across the fitted synthetic datasets. Missing values are written as `nan`. Their `plots.pdf` reports provide a summary page, one-dimensional sample distributions, a χ² distribution, and two-dimensional sample distributions for parameter pairs with `|r| >= 0.5`.
+For Monte Carlo and bootstrap methods, `samples.tsv` contains one fitted-parameter row per synthetic dataset plus χ². `summary.toml` reports empirical-distribution quantities: mean, median, standard deviation, 95% percentile bounds, 68% percentile bounds, and `half_percentile_68_width`. `correlations.tsv` reports parameter correlations across the fitted synthetic datasets. Missing values are written as `nan`. Their `plots.pdf` reports provide a summary page, one-dimensional sample distributions, a χ² distribution, and two-dimensional sample distributions for parameter pairs with `|r| >= 0.5`.
 
-For MCMC, `summary.toml` reports the uniform prior implied by each parameter's bounds, posterior mean, median, standard deviation, a 95% equal-tailed credible interval, the 68.26% interval used for `stderr`, and effective sample size/Monte Carlo standard error when the autocorrelation estimate passes emcee's reliability threshold. MCMC diagnostics include sampler versions, retained samples, acceptance fractions, reliable or tentative autocorrelation time, recommended chain lengths, and burn-in decisions. The `plots.pdf` report provides a summary page, one-dimensional posterior distributions, walker traces, the log-probability trace, an autocorrelation monitor, and two-dimensional posterior distributions for parameter pairs with `|r| >= 0.5`.
+For MCMC, `summary.toml` reports the uniform prior implied by each parameter's bounds, posterior mean, median, standard deviation, 95% equal-tailed and 68% credible-interval bounds, and `half_credible_interval_68_width`. Effective sample size and `mcse_mean` are included when the autocorrelation estimate passes emcee's reliability threshold; `mcse_mean` is the Monte Carlo standard error of the estimated posterior mean, not a posterior interval width. MCMC diagnostics include sampler versions, retained samples, acceptance fractions, reliable or tentative autocorrelation time, recommended chain lengths, and burn-in decisions. The `plots.pdf` report provides a summary page, one-dimensional posterior distributions, walker traces, the log-probability trace, an autocorrelation monitor, and two-dimensional posterior distributions for parameter pairs with `|r| >= 0.5`.
+
+MC, BS, BSN, and MCMC summaries remain separate statistical results. They do not
+mutate the committed central fit or populate a generic error in
+`Parameters/fitted.toml`.
 
 If MCMC setup, sampling, processing, or output fails or is interrupted,
 `diagnostics.toml` records an explicit incomplete terminal state. ChemEx does not

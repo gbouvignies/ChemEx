@@ -212,7 +212,7 @@ def _write_resampling_summary(
             ],
         )
         if len(values) > 0:
-            lower_95, lower, median, upper, upper_95 = np.percentile(
+            lower_95, lower_68, median, upper_68, upper_95 = np.percentile(
                 values,
                 [2.5, 15.87, 50.0, 84.13, 97.5],
             )
@@ -226,9 +226,12 @@ def _write_resampling_summary(
                     f"median = {_format_toml_float(float(median))}",
                     f"percentile_95_lower = {_format_toml_float(float(lower_95))}",
                     f"percentile_95_upper = {_format_toml_float(float(upper_95))}",
-                    f"lower_1sigma = {_format_toml_float(float(lower))}",
-                    f"upper_1sigma = {_format_toml_float(float(upper))}",
-                    f"stderr = {_format_toml_float(0.5 * float(upper - lower))}",
+                    f"percentile_68_lower = {_format_toml_float(float(lower_68))}",
+                    f"percentile_68_upper = {_format_toml_float(float(upper_68))}",
+                    (
+                        "half_percentile_68_width = "
+                        f"{_format_toml_float(0.5 * float(upper_68 - lower_68))}"
+                    ),
                 ],
             )
         lines.append("")
