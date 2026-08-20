@@ -81,6 +81,51 @@ def test_rejected_candidate_survives_final_assembly_and_content_identity() -> No
     assert identity == calibration._identity("canonical-optimizer-calibration", record)
 
 
+def test_attestation_loads_published_v2_manifest_from_exact_checkout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Authority:
+        @staticmethod
+        def to_record() -> dict[str, object]:
+            return {"identity": "attestation"}
+
+    class Lane:
+        identity = calibration.EXPECTED_CANONICAL_LANE_IDENTITY
+        semantics = object()
+
+        @staticmethod
+        def attest_current_process(_image_digest: str) -> Authority:
+            return Authority()
+
+        def to_record(self) -> dict[str, object]:
+            return {"identity": self.identity}
+
+    class Environment:
+        def __init__(self, _semantics: object) -> None:
+            pass
+
+        @staticmethod
+        def to_record() -> dict[str, object]:
+            return {"identity": "environment"}
+
+    observed: list[Path] = []
+
+    def lanes(manifest_directory: Path) -> tuple[Lane, Lane]:
+        observed.append(manifest_directory)
+        lane = Lane()
+        return lane, lane
+
+    monkeypatch.setattr(calibration, "prospective_lanes", lanes)
+    monkeypatch.setattr(calibration, "RuntimeEnvironment", Environment)
+
+    _authority, records = calibration._attest("sha256:" + "a" * 64)
+
+    assert observed == [calibration.ROOT / "src/chemex/numerical_lanes/manifests"]
+    assert cast("dict[str, object]", records["numerical_lane"])["identity"] == (
+        calibration.EXPECTED_CANONICAL_LANE_IDENTITY
+    )
+
+
 def test_resource_ceiling_sums_objective_requests_and_fails_closed() -> None:
     stratum = {
         "candidates": (

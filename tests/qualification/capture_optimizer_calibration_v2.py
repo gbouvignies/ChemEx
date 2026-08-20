@@ -102,7 +102,8 @@ def derive_de_root(phase: str, index: int) -> int:
 
 def _attest(image_digest: str) -> tuple[object, dict[str, object]]:
     """Attest only the published #652 canonical Python 3.13 v2 lane."""
-    lane = prospective_lanes()[0]
+    manifest_directory = ROOT / "src/chemex/numerical_lanes/manifests"
+    lane = prospective_lanes(manifest_directory)[0]
     if lane.identity != EXPECTED_CANONICAL_LANE_IDENTITY:
         raise RuntimeError("published canonical v2 lane identity changed")
     authority = lane.attest_current_process(image_digest)
