@@ -6,11 +6,29 @@ import ctypes
 import errno
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 _AT_FDCWD = -100
 _RENAME_NOREPLACE = 1
 _RENAME_EXCL = 4
+
+
+def write_text_atomic(destination: Path, content: str) -> None:
+    """Replace one text file atomically from a same-directory temporary file."""
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=destination.parent,
+        prefix=f".{destination.name}-",
+        text=True,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            output.write(content)
+        temporary.replace(destination)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def publish_directory_noreplace(staging: Path, destination: Path) -> None:

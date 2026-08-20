@@ -16,10 +16,10 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import blake2b, sha256
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 from chemex import __version__
-from chemex.atomic import publish_directory_noreplace
+from chemex.atomic import publish_directory_noreplace, write_text_atomic
 from chemex.containers.experiments import Experiments
 from chemex.native_provenance import (
     ArtifactReference,
@@ -39,6 +39,7 @@ from chemex.parameters.values import AnalysisValuesSnapshot
 
 SCHEMA_VERSION = 1
 _INPUT_CATEGORIES = ("experiments", "parameters", "methods")
+RunOutcomeStatus = Literal["running", "complete", "incomplete"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -592,6 +593,45 @@ def _serialize_run(
     return "\n".join(lines)
 
 
+def _serialize_outcome(
+    status: RunOutcomeStatus,
+    failure: BaseException | None = None,
+) -> str:
+    lines = [
+        f"schema_version = {SCHEMA_VERSION}",
+        f"status = {_quote_string(status)}",
+    ]
+    if failure is not None:
+        reported_terminal = getattr(failure, "terminal", None)
+        terminal = (
+            str(reported_terminal)
+            if reported_terminal in {"failed", "interrupted"}
+            else "interrupted"
+            if isinstance(failure, KeyboardInterrupt)
+            else "failed"
+        )
+        message = str(failure).replace("\n", " ")
+        lines.extend(
+            (
+                f"terminal = {_quote_string(terminal)}",
+                f"failure_type = {_quote_string(type(failure).__name__)}",
+                f"failure_message = {_quote_string(message)}",
+            )
+        )
+    return "\n".join(lines) + "\n"
+
+
+def write_run_outcome(
+    output_directory: Path,
+    status: RunOutcomeStatus,
+    *,
+    failure: BaseException | None = None,
+) -> None:
+    """Atomically replace the lifecycle marker for the current fit invocation."""
+    outcome_path = Path(output_directory) / "run_info" / "outcome.toml"
+    write_text_atomic(outcome_path, _serialize_outcome(status, failure))
+
+
 def write_run_info(
     args: Namespace,
     experiments: Experiments,
@@ -636,6 +676,10 @@ def write_run_info(
             git_metadata=git_metadata,
         )
         (staging_path / "run.toml").write_text(run_text, encoding="utf-8")
+        (staging_path / "outcome.toml").write_text(
+            _serialize_outcome("running"),
+            encoding="utf-8",
+        )
 
         _replace_run_info(staging_path, run_info_path)
 

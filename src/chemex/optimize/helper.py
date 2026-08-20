@@ -128,6 +128,7 @@ def _write_plots(experiments: Experiments, path: Path) -> None:
         experiments.plot(path=path_)
     except KeyboardInterrupt:
         print_plotting_canceled()
+        raise
 
 
 def _write_simulation_plots(experiments: Experiments, path: Path) -> None:

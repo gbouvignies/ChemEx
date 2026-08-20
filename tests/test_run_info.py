@@ -272,12 +272,24 @@ def test_run_fit_creates_run_info(
 
     monkeypatch.setattr(run_info_module, "_git_metadata", lambda: None)
     monkeypatch.setattr(chemex_module, "print_start_fit", lambda: None)
+
+    def observe_running_outcome(
+        _experiments: object,
+        _methods: object,
+        path: Path,
+        _plot: object,
+        **_kwargs: object,
+    ) -> None:
+        outcome = tomllib.loads(
+            (path / "run_info" / "outcome.toml").read_text(encoding="utf-8")
+        )
+        assert outcome == {"schema_version": 1, "status": "running"}
+        run_methods_calls.append(path)
+
     monkeypatch.setattr(
         chemex_module,
         "run_methods",
-        lambda _experiments, _methods, path, _plot, **_kwargs: run_methods_calls.append(
-            path
-        ),
+        observe_running_outcome,
     )
 
     chemex_module.run_fit(
@@ -294,6 +306,10 @@ def test_run_fit_creates_run_info(
     assert run_methods_calls == [output]
     assert (output / "run_info" / "run.toml").exists()
     assert (output / "run_info" / "parameters_used.toml").exists()
+    outcome = tomllib.loads(
+        (output / "run_info" / "outcome.toml").read_text(encoding="utf-8")
+    )
+    assert outcome == {"schema_version": 1, "status": "complete"}
 
 
 def test_git_metadata_is_optional_when_git_is_unavailable(

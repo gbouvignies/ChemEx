@@ -18,10 +18,10 @@ from chemex.messages import (
     print_running_simulations,
     print_start_fit,
 )
-from chemex.optimize.fitting import run_methods
+from chemex.optimize.fitting import invalidate_planned_outputs, run_methods
 from chemex.optimize.helper import execute_simulation
 from chemex.optimize.native_deterministic import uses_native_deterministic
-from chemex.run_info import write_run_info
+from chemex.run_info import write_run_info, write_run_outcome
 from chemex.runtime import (
     AnalysisSession,
     ExecutionSettings,
@@ -42,28 +42,40 @@ def run_fit(
     else:
         methods = {"": Method()}
 
-    # Native statistics occurrences must fail closed before any lmfit value
-    # carrier can be constructed by the compatibility filter path.
-    native_statistics = any(
-        method.statistics is not None and uses_native_deterministic(method)
-        for method in methods.values()
-    )
-    if native_statistics:
-        resolved_values = session.resolve_current_values(experiments.param_ids)
-        experiments.filter_from_values(resolved_values)
-    else:
-        experiments.filter()
-
     write_run_info(args, experiments, argv=argv)
 
-    print_start_fit()
-    run_methods(
-        experiments,
-        methods,
-        args.output,
-        args.plot,
-        session=session,
-    )
+    try:
+        invalidate_planned_outputs(methods, args.output)
+
+        # Native statistics occurrences must fail closed before any lmfit value
+        # carrier can be constructed by the compatibility filter path.
+        native_statistics = any(
+            method.statistics is not None and uses_native_deterministic(method)
+            for method in methods.values()
+        )
+        if native_statistics:
+            resolved_values = session.resolve_current_values(experiments.param_ids)
+            experiments.filter_from_values(resolved_values)
+        else:
+            experiments.filter()
+
+        print_start_fit()
+        run_methods(
+            experiments,
+            methods,
+            args.output,
+            args.plot,
+            session=session,
+        )
+        write_run_outcome(args.output, "complete")
+    except (Exception, KeyboardInterrupt) as error:
+        try:
+            write_run_outcome(args.output, "incomplete", failure=error)
+        except (Exception, KeyboardInterrupt) as outcome_error:  # noqa: BLE001
+            error.add_note(
+                f"ChemEx could not publish the incomplete run outcome: {outcome_error}"
+            )
+        raise
 
 
 def run_sim(

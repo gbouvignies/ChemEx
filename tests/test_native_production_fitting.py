@@ -14,6 +14,8 @@ import chemex.optimize.fitting as fitting_module
 import chemex.optimize.mcmc as mcmc_module
 import chemex.optimize.native_mcmc as native_mcmc_module
 import chemex.optimize.native_resampling as native_resampling_module
+import chemex.optimize.resampling as resampling_module
+import chemex.run_info as run_info_module
 from chemex.chemex import run
 from chemex.cli import build_parser
 from chemex.optimize.mcmc import NativeMcmcIncompleteError
@@ -88,6 +90,12 @@ def _run_real_fit_cli(output: Path, method: Path, parameters: Path) -> None:
     )
 
 
+def _read_outcome(output: Path) -> dict[str, object]:
+    return tomllib.loads(
+        (output / "run_info" / "outcome.toml").read_text(encoding="utf-8")
+    )
+
+
 def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     tmp_path: Path,
 ) -> None:
@@ -131,6 +139,105 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     time_2, intensity_2 = curve[-1]
     fitted_curve_rate = -math.log(intensity_2 / intensity_1) / (time_2 - time_1)
     assert fitted_curve_rate == pytest.approx(fitted_value, rel=1.0e-3)
+
+
+def test_failed_deterministic_rerun_invalidates_prior_results_and_is_incomplete(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    run(
+        _fit_arguments(output, plot_level="normal"),
+        session=AnalysisSession.create(),
+    )
+    user_file = output / "notes.txt"
+    user_file.write_text("keep me\n", encoding="utf-8")
+
+    with (
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=RuntimeError("rerun backend failed"),
+        ),
+        pytest.raises(RuntimeError, match="did not commit"),
+    ):
+        run(_fit_arguments(output), session=AnalysisSession.create())
+
+    outcome = _read_outcome(output)
+    assert outcome["schema_version"] == 1
+    assert outcome["status"] == "incomplete"
+    assert outcome["terminal"] == "failed"
+    assert outcome["failure_type"] == "RuntimeError"
+    assert not (output / "Parameters").exists()
+    assert not (output / "Data").exists()
+    assert not (output / "Plots").exists()
+    assert not (output / "statistics.toml").exists()
+    assert user_file.read_text(encoding="utf-8") == "keep me\n"
+
+
+def test_data_writer_failure_after_commit_cannot_complete_or_retain_stale_results(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    run(_fit_arguments(output), session=AnalysisSession.create())
+    stale_parameter = output / "Parameters" / "stale.toml"
+    stale_data = output / "Data" / "stale.dat"
+    stale_parameter.write_text("old parameter\n", encoding="utf-8")
+    stale_data.write_text("old data\n", encoding="utf-8")
+    session = AnalysisSession.create()
+
+    with (
+        patch(
+            "chemex.containers.experiments.Experiments.write",
+            side_effect=RuntimeError("data writer failed"),
+        ),
+        pytest.raises(RuntimeError, match="data writer failed"),
+    ):
+        run(_fit_arguments(output), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    assert _read_outcome(output) == {
+        "schema_version": 1,
+        "status": "incomplete",
+        "terminal": "failed",
+        "failure_type": "RuntimeError",
+        "failure_message": "data writer failed",
+    }
+    assert (output / "Parameters" / "fitted.toml").is_file()
+    assert not stale_parameter.exists()
+    assert not stale_data.exists()
+    assert not (output / "statistics.toml").exists()
+
+
+def test_final_complete_outcome_write_failure_is_terminal_and_propagates(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    real_atomic_write = run_info_module.write_text_atomic
+
+    def fail_complete_outcome(destination: Path, content: str) -> None:
+        if 'status = "complete"' in content:
+            raise OSError("complete outcome publication failed")
+        real_atomic_write(destination, content)
+
+    session = AnalysisSession.create()
+    with (
+        patch.object(
+            run_info_module,
+            "write_text_atomic",
+            side_effect=fail_complete_outcome,
+        ),
+        pytest.raises(OSError, match="complete outcome publication failed"),
+    ):
+        run(_fit_arguments(output), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    assert (output / "Parameters" / "fitted.toml").is_file()
+    assert _read_outcome(output) == {
+        "schema_version": 1,
+        "status": "incomplete",
+        "terminal": "failed",
+        "failure_type": "OSError",
+        "failure_message": "complete outcome publication failed",
+    }
 
 
 def test_real_grouped_direct_fit_uses_native_aggregate_commit(
@@ -424,6 +531,7 @@ def test_interrupted_native_mcmc_publishes_only_incomplete_diagnostics(
     assert not (statistics / "samples.tsv").exists()
     assert not (statistics / "correlations.tsv").exists()
     assert not (statistics / "plots.pdf").exists()
+    assert _read_outcome(output)["terminal"] == "interrupted"
 
 
 def test_native_mcmc_postprocessing_failure_replaces_running_diagnostics(
@@ -501,6 +609,47 @@ def test_mixed_mc_and_mcmc_use_one_native_central_fit_without_legacy_fallback(
     assert session.analysis_values.snapshot().revision == 1
     assert (output / "Statistics" / "MonteCarlo" / "summary.toml").is_file()
     assert (output / "Statistics" / "MCMC" / "summary.toml").is_file()
+
+
+def test_failed_mixed_statistics_rerun_removes_later_family_outputs_eagerly(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(
+        tmp_path / "method.toml",
+        '"MC" = 1, "BS" = 1, "MCMC" = {STEPS = 2, BURN = 0, WALKERS = 4, SEED = 612}',
+    )
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    run(
+        _fit_arguments(output, method, parameters=parameters),
+        session=AnalysisSession.create(),
+    )
+    assert _read_outcome(output) == {"schema_version": 1, "status": "complete"}
+    assert (output / "Statistics" / "Bootstrap" / "diagnostics.toml").is_file()
+    assert (output / "Statistics" / "MCMC" / "diagnostics.toml").is_file()
+
+    with (
+        patch(
+            "chemex.optimize.resampling._native_dataset",
+            side_effect=RuntimeError("MC setup failed"),
+        ),
+        pytest.raises(RuntimeError, match="MC setup failed"),
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=AnalysisSession.create(),
+        )
+
+    monte_carlo = output / "Statistics" / "MonteCarlo"
+    assert (
+        tomllib.loads((monte_carlo / "diagnostics.toml").read_text(encoding="utf-8"))[
+            "status"
+        ]
+        == "incomplete"
+    )
+    assert not (output / "Statistics" / "Bootstrap").exists()
+    assert not (output / "Statistics" / "MCMC").exists()
+    assert _read_outcome(output)["status"] == "incomplete"
 
 
 def test_native_mcmc_without_fitted_parameters_keeps_documented_skip_behavior(
@@ -831,6 +980,126 @@ def test_native_statistics_setup_failure_publishes_incomplete_diagnostics(
     assert not (statistics / "plots.pdf").exists()
 
 
+@pytest.mark.parametrize(
+    ("family", "directory"),
+    (
+        ("MC", "MonteCarlo"),
+        ("BS", "Bootstrap"),
+        ("BSN", "BootstrapNS"),
+    ),
+)
+def test_native_resampling_publication_failure_is_terminal_and_fail_closed(
+    tmp_path: Path,
+    family: str,
+    directory: str,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(
+        tmp_path / "method.toml",
+        f'"{family}" = 1',
+    )
+
+    with (
+        patch(
+            "chemex.optimize.resampling._write_resampling_correlations",
+            side_effect=RuntimeError("correlation publication failed"),
+        ),
+        pytest.raises(RuntimeError, match="correlation publication failed"),
+    ):
+        run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    statistics = output / "Statistics" / directory
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    assert diagnostics["status"] == "incomplete"
+    assert diagnostics["terminal"] == "failed"
+    assert diagnostics["completed_samples"] == 1
+    assert diagnostics["failed_samples"] == 0
+    assert diagnostics["cancelled_samples"] == 0
+    assert diagnostics["interrupted_samples"] == 0
+    assert diagnostics["unstarted_samples"] == 0
+    assert diagnostics["failure_type"] == "RuntimeError"
+    assert diagnostics["failure_message"] == "correlation publication failed"
+    assert (
+        len((statistics / "samples.tsv").read_text(encoding="utf-8").splitlines()) == 2
+    )
+    assert not (statistics / "summary.toml").exists()
+    assert not (statistics / "correlations.tsv").exists()
+    assert not (statistics / "plots.pdf").exists()
+    assert _read_outcome(output)["status"] == "incomplete"
+
+
+def test_native_resampling_materialization_failure_replaces_running_diagnostics(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 1')
+
+    with (
+        patch.object(
+            resampling_module,
+            "_as_sample_array",
+            side_effect=RuntimeError("sample materialization failed"),
+        ),
+        pytest.raises(RuntimeError, match="sample materialization failed"),
+    ):
+        run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    statistics = output / "Statistics" / "MonteCarlo"
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    assert diagnostics["status"] == "incomplete"
+    assert diagnostics["completed_samples"] == 1
+    assert diagnostics["failure_message"] == "sample materialization failed"
+    assert not (statistics / "samples.tsv").exists()
+    assert not (statistics / "summary.toml").exists()
+    assert not (statistics / "correlations.tsv").exists()
+    assert not (statistics / "plots.pdf").exists()
+    assert _read_outcome(output)["status"] == "incomplete"
+
+
+def test_resampling_diagnostics_failure_preserves_original_publication_error(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 1')
+    real_atomic_write = resampling_module.write_text_atomic
+
+    def fail_incomplete_diagnostics(destination: Path, content: str) -> None:
+        if (
+            destination.name == "diagnostics.toml"
+            and 'status = "incomplete"' in content
+        ):
+            raise OSError("incomplete diagnostics publication failed")
+        real_atomic_write(destination, content)
+
+    with (
+        patch.object(
+            resampling_module,
+            "_write_resampling_correlations",
+            side_effect=RuntimeError("correlation publication failed"),
+        ),
+        patch.object(
+            resampling_module,
+            "write_text_atomic",
+            side_effect=fail_incomplete_diagnostics,
+        ),
+        pytest.raises(RuntimeError, match="correlation publication failed"),
+    ):
+        run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    statistics = output / "Statistics" / "MonteCarlo"
+    assert not (statistics / "diagnostics.toml").exists()
+    assert not (statistics / "summary.toml").exists()
+    assert not (statistics / "correlations.tsv").exists()
+    assert not (statistics / "plots.pdf").exists()
+    outcome = _read_outcome(output)
+    assert outcome["status"] == "incomplete"
+    assert outcome["failure_message"] == "correlation publication failed"
+
+
 def test_real_grid_fit_uses_native_cartesian_trf_and_writes_grid_output(
     tmp_path: Path,
 ) -> None:
@@ -908,6 +1177,79 @@ FIX = ["PB", "KEX_AB"]
         )
         assert "PB" in fixed
         assert "KEX_AB" in fixed
+
+
+def test_failed_second_step_rerun_eagerly_invalidates_every_planned_step(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """[STEP1]
+FIX = ["PB", "KEX_AB"]
+
+[STEP2]
+""",
+        encoding="utf-8",
+    )
+    run(_fit_arguments(output, method), session=AnalysisSession.create())
+    stale_step1 = output / "STEP1" / "Parameters" / "stale.toml"
+    stale_step2 = output / "STEP2" / "Parameters" / "stale.toml"
+    user_file = output / "STEP2" / "notes.txt"
+    stale_step1.write_text("old step 1\n", encoding="utf-8")
+    stale_step2.write_text("old step 2\n", encoding="utf-8")
+    user_file.write_text("keep me\n", encoding="utf-8")
+    real_least_squares = direct_trf_module.least_squares
+    call_count = 0
+
+    def fail_second_step(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise RuntimeError("step 2 backend failed")
+        return real_least_squares(*args, **kwargs)
+
+    session = AnalysisSession.create()
+    with (
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=fail_second_step,
+        ),
+        pytest.raises(RuntimeError, match="did not commit"),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    assert (output / "STEP1" / "Parameters" / "fitted.toml").is_file()
+    assert not stale_step1.exists()
+    assert not (output / "STEP2" / "Parameters").exists()
+    assert not stale_step2.exists()
+    assert user_file.read_text(encoding="utf-8") == "keep me\n"
+    assert _read_outcome(output)["status"] == "incomplete"
+
+
+def test_planned_invalidation_rejects_a_step_root_outside_the_output(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    external_result = tmp_path / "external" / "Parameters" / "keep.toml"
+    external_result.parent.mkdir(parents=True)
+    external_result.write_text("keep me\n", encoding="utf-8")
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """["../external"]
+FIX = ["PB", "KEX_AB"]
+
+[SAFE]
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="outside the output directory"):
+        run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    assert external_result.read_text(encoding="utf-8") == "keep me\n"
+    assert _read_outcome(output)["status"] == "incomplete"
 
 
 def test_native_step_clears_generic_error_from_preceding_legacy_step(
