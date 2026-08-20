@@ -321,6 +321,11 @@ def test_native_preflight_exercises_acquisition_through_final_identity(
         cast("dict[str, object]", record["source"])["implementation_wheel_sha256"]
         == "d" * 64
     )
+    implementation = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", record["source"])["implementation"],
+    )
+    assert len(cast("str", implementation["identity"])) == 64
     routine_qualification = cast(
         "dict[str, object]", strata["routine_direct_trf"]["qualification"]
     )

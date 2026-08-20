@@ -20,6 +20,7 @@ from typing import Any, cast
 
 import tests.qualification.capture_optimizer_calibration as v1
 
+from chemex.baselines import LegacyObservationImplementation
 from chemex.numerical_lanes import RuntimeEnvironment, prospective_lanes
 
 ROOT = Path(__file__).parents[2]
@@ -136,6 +137,7 @@ def _source_authority(
     )
     return {
         **source_guard,
+        "implementation": LegacyObservationImplementation.from_current_package().to_record(),
         "implementation_wheel_sha256": _implementation_wheel_sha256(),
         "qualification_script_sha256": v1._file_hash(Path(__file__)),
         "qualification_test_sha256": v1._file_hash(
