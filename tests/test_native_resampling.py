@@ -671,6 +671,7 @@ def test_each_eligible_candidate_receives_exactly_one_fresh_validation_evaluatio
     original_resampled = EvaluationEngine.resampled
     original_new_evaluator = EvaluationEngine.new_evaluator
     binding_count = 0
+    validation_engines: list[EvaluationEngine] = []
     validation_engine_ids: set[int] = set()
     evaluation_counts: dict[int, int] = {}
 
@@ -683,6 +684,8 @@ def test_each_eligible_candidate_receives_exactly_one_fresh_validation_evaluatio
         binding_count += 1
         result = original_resampled(engine, evaluation_plan, cast("Any", bindings))
         if binding_count % 2 == 0:
+            # Keep engines alive so CPython cannot reuse their IDs during the test.
+            validation_engines.append(result)
             validation_engine_ids.add(id(result))
         return result
 
