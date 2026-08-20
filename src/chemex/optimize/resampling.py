@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import multiprocessing
+from collections import Counter
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,7 @@ from chemex.optimize.minimizer import minimize
 from chemex.optimize.native_deterministic import NativeDeterministicFit
 from chemex.optimize.native_resampling import (
     OperationTerminal,
+    ReplicateDisposition,
     ReplicateOutcome,
     ResamplingDatasetManifest,
     ResamplingPlan,
@@ -482,6 +484,9 @@ def _write_native_state_diagnostics(
     status: str,
     successful_samples: int | None = None,
     failed_samples: int | None = None,
+    cancelled_samples: int | None = None,
+    interrupted_samples: int | None = None,
+    unstarted_samples: int | None = None,
     terminal: str | None = None,
     failure: BaseException | None = None,
 ) -> None:
@@ -497,13 +502,17 @@ def _write_native_state_diagnostics(
     ]
     if terminal is not None:
         lines.append(f"terminal = {_quote_toml_string(terminal)}")
-    if successful_samples is not None:
-        lines.append(f"completed_samples = {successful_samples}")
-    if failed_samples is not None:
-        lines.append(f"failed_samples = {failed_samples}")
+    sample_counts = (
+        ("completed_samples", successful_samples),
+        ("failed_samples", failed_samples),
+        ("cancelled_samples", cancelled_samples),
+        ("interrupted_samples", interrupted_samples),
+        ("unstarted_samples", unstarted_samples),
+    )
+    lines.extend(
+        f"{name} = {count}" for name, count in sample_counts if count is not None
+    )
     if status == "incomplete":
-        accounted = (successful_samples or 0) + (failed_samples or 0)
-        lines.append(f"unstarted_samples = {method.iterations - accounted}")
         if (path / "samples.tsv").is_file():
             lines.append('samples_file = "samples.tsv"')
         if (path / "failures.tsv").is_file():
@@ -602,6 +611,9 @@ def _run_native_resampling_method(
             status="incomplete",
             successful_samples=0,
             failed_samples=0,
+            cancelled_samples=0,
+            interrupted_samples=0,
+            unstarted_samples=method.iterations,
             terminal=terminal,
             failure=error,
         )
@@ -620,6 +632,9 @@ def _run_native_resampling_method(
             status="incomplete",
             successful_samples=0,
             failed_samples=0,
+            cancelled_samples=0,
+            interrupted_samples=0,
+            unstarted_samples=method.iterations,
             terminal=operation.terminal.value,
             failure=error,
         )
@@ -648,6 +663,9 @@ def _run_native_resampling_method(
     )
     if not complete:
         _write_native_failures(statistic_path, evidence.outcomes)
+        disposition_counts = Counter(
+            outcome.disposition for outcome in evidence.outcomes
+        )
         _write_native_state_diagnostics(
             statistic_path,
             method=method,
@@ -655,8 +673,11 @@ def _run_native_resampling_method(
             parameter_ids=parameter_ids,
             root_seed=root_seed,
             status="incomplete",
-            successful_samples=evidence.successful_count,
-            failed_samples=method.iterations - evidence.successful_count,
+            successful_samples=disposition_counts[ReplicateDisposition.SUCCEEDED],
+            failed_samples=disposition_counts[ReplicateDisposition.FAILED],
+            cancelled_samples=disposition_counts[ReplicateDisposition.CANCELLED],
+            interrupted_samples=disposition_counts[ReplicateDisposition.INTERRUPTED],
+            unstarted_samples=disposition_counts[ReplicateDisposition.NOT_STARTED],
             terminal=operation.terminal.value,
         )
         raise NativeResamplingIncompleteError(

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import math
+import tomllib
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 import chemex.optimize.direct_trf as direct_trf_module
+import chemex.optimize.native_resampling as native_resampling_module
 from chemex.chemex import run
 from chemex.cli import build_parser
 from chemex.optimize.resampling import NativeResamplingIncompleteError
@@ -357,6 +359,55 @@ def test_failed_native_replicate_keeps_central_fit_and_suppresses_complete_produ
     assert "unstarted_samples = 0" in diagnostics
     assert 'samples_file = "samples.tsv"' in diagnostics
     assert 'failures_file = "failures.tsv"' in diagnostics
+    assert not (statistics / "summary.toml").exists()
+    assert not (statistics / "correlations.tsv").exists()
+    assert not (statistics / "plots.pdf").exists()
+
+
+def test_interrupted_native_statistics_report_truthful_disposition_counts(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 3')
+    session = AnalysisSession.create()
+    real_generate = native_resampling_module.generate_resampling_draw
+
+    def interrupt_second_draw(dataset, request):
+        if request.ordinal == 1:
+            raise KeyboardInterrupt
+        return real_generate(dataset, request)
+
+    with (
+        patch(
+            "chemex.optimize.native_resampling.generate_resampling_draw",
+            side_effect=interrupt_second_draw,
+        ),
+        pytest.raises(NativeResamplingIncompleteError, match="1 of 3"),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    statistics = output / "Statistics" / "MonteCarlo"
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    disposition_counts = {
+        "completed": diagnostics["completed_samples"],
+        "failed": diagnostics["failed_samples"],
+        "cancelled": diagnostics["cancelled_samples"],
+        "interrupted": diagnostics["interrupted_samples"],
+        "unstarted": diagnostics["unstarted_samples"],
+    }
+    assert disposition_counts == {
+        "completed": 1,
+        "failed": 0,
+        "cancelled": 0,
+        "interrupted": 1,
+        "unstarted": 1,
+    }
+    assert sum(disposition_counts.values()) == diagnostics["requested_samples"]
+    failures = (statistics / "failures.tsv").read_text(encoding="utf-8")
+    assert "\tinterrupted\t" in failures
+    assert "\tnot_started\t" in failures
     assert not (statistics / "summary.toml").exists()
     assert not (statistics / "correlations.tsv").exists()
     assert not (statistics / "plots.pdf").exists()
