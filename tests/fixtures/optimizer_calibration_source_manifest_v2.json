@@ -721,12 +721,12 @@
     "src/chemex/uncertainty.py": "1cdbf81e0e3d4f2bb1b0a90c58095849d9cf739aabb8ee4ce4cc31842f062129",
     "tests/fixtures/canonical_numerical_probe_baseline.json": "007a8a3ba8b596a0d999ffb55ac44ef5b85aa48eed9610ca5644db4b4891da02",
     "tests/qualification/capture_optimizer_calibration.py": "1739929766d134b159a5b34c327ac5c0bc7a18679f40a5b80b9dbfe88bdeb00f",
-    "tests/qualification/capture_optimizer_calibration_v2.py": "6623616216a5478d6f16754ead8834b9bec9a321bed26f345ac4e104f58dd650",
+    "tests/qualification/capture_optimizer_calibration_v2.py": "4282c5010ce0d3f91717e976f8aec5d2a87e4aab631f34bc553b67aeaec38d00",
     "tests/test_optimizer_calibration.py": "cdab8e4e788fb1960d1199c33c4764064cf6867bd8550a988994a83a201bb847",
-    "tests/test_optimizer_calibration_v2.py": "baae5fce8b28835fec82b9f3ef891ac126c1b940c88ea42447d4e7a21d4ec17f",
+    "tests/test_optimizer_calibration_v2.py": "ba8d3ee219478054209385f4fb5751efb719928f15fb74fb1805706752c5a279",
     "uv.lock": "cc7a8e08d8fb8f1ea4255b63452598f6dbe041a8b4024de0f3af065020088004"
   },
   "schema_version": 1,
   "scope": "tracked optimizer source, qualification authority, dependency lock, and frozen case inputs",
-  "source_parent_commit": "1d7b804e7efd8cc386e814d14eb8066fc48a8708"
+  "source_parent_commit": "abcf71c7fdff3c8a90263b78ac3e824c07445576"
 }
