@@ -621,30 +621,10 @@ def print_no_duplicate_warning(filename: Path) -> None:
 
 
 FITMETHOD_ERROR_MESSAGE = """\
-  - "FITMETHOD" must be one of:
-        "leastsq": Levenberg-Marquardt (default)
-        "least_squares": least-squares minimization (Trust Region Reflective method)
-        "differential_evolution": differential evolution
-        "brute": brute force method
-        "basinhopping": basinhopping
-        "ampgo": Adaptive Memory Programming for Global Optimization
-        "nelder": Nelder-Mead
-        "lbfgsb": L-BFGS-B
-        "powell": Powell
-        "cg": Conjugate-Gradient
-        "newton": Newton-CG
-        "cobyla": Cobyla
-        "bfgs": BFGS
-        "tnc": Truncated Newton
-        "trust-ncg": Newton-CG trust-region
-        "trust-exact": nearly exact trust-region
-        "trust-krylov": Newton GLTR trust-region
-        "trust-constr": trust-region for constrained optimization
-        "dogleg": Dog-leg trust-region
-        "slsqp": Sequential Linear Squares Programming
-        "emcee": Maximum likelihood via Monte-Carlo Markov Chain
-        "shgo": Simplicial Homology Global Optimization
-        "dual_annealing": Dual Annealing optimization"""
+  - "FITMETHOD" supports only "trf" (the default).
+    "least_squares" is accepted temporarily as an alias for "trf".
+    Historical optimizer names, including "leastsq" and
+    "differential_evolution", are not supported."""
 
 INCLUDE_ERROR_MESSAGE = """\
   - "INCLUDE" must be a list of nuclei to be included or '*' to select all the profiles.

@@ -50,6 +50,10 @@ from chemex.typing import Array
 ROOT = Path(__file__).parent.parent
 EXPERIMENT = ROOT / "examples/Experiments/DCEST_15N_HD_EXCH/Experiments/3hz.toml"
 PARAMETERS = ROOT / "examples/Experiments/DCEST_15N_HD_EXCH/Parameters/parameters.toml"
+CEST_EXPERIMENT = ROOT / "examples/Experiments/CEST_13C_LABEL_CN/Experiments/23hz.toml"
+CEST_PARAMETERS = (
+    ROOT / "examples/Experiments/CEST_13C_LABEL_CN/Parameters/parameters.toml"
+)
 
 
 def _shipped_dcest(*names: str) -> tuple[AnalysisSession, Experiments]:
@@ -77,6 +81,37 @@ def _evaluation_frame(
         parameterization,
         parameterization.frame_from_snapshot(session.analysis_values.snapshot()),
     )
+
+
+def test_cest_infinite_sweep_width_sentinel_has_a_stable_native_plan() -> None:
+    identities: list[str] = []
+    for _ in range(2):
+        session = AnalysisSession.create()
+        session.set_model("2st")
+        experiments = build_experiments(
+            [CEST_EXPERIMENT],
+            Selection(
+                include=[SpinSystem.from_name("L18CB")],
+                exclude=None,
+            ),
+            session=session,
+        )
+        session.parameters.set_defaults(read_defaults([CEST_PARAMETERS]))
+        assert session.try_build_analysis_values()
+        parameterization = session.compile_current_parameterization(
+            experiments.param_ids
+        )
+        engine = EvaluationEngine.from_experiments(
+            experiments,
+            parameterization,
+        )
+        identities.append(engine.plan.identity)
+        outcome = engine.new_evaluator().evaluate(
+            _evaluation_frame(session, parameterization)
+        )
+        assert isinstance(outcome, EvaluationResult)
+
+    assert identities[0] == identities[1]
 
 
 def test_shipped_two_profile_dcest_plan_matches_legacy_completely() -> None:

@@ -41,8 +41,13 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   and nested method forms. Native MCMC requires finite, strictly ordered bounds
   and rejects `UPDATE_PARAMETERS = true`; failed or interrupted chains publish
   incomplete diagnostics without summary, sample, correlation, or plot files.
-  Explicit legacy optimizer spellings without native statistics remain on their
-  compatibility path.
+  The public `FITMETHOD` surface is now closed to `trf`; omitted values default
+  to `trf`, and `least_squares` remains a temporary canonicalized alias. Legacy
+  and arbitrary optimizer spellings fail during method validation. Ordinary
+  filtering, revision-zero model/default resolution, simulation
+  back-calculation, and native fit publication no longer construct lmfit
+  parameter containers. `GRID` with `STATISTICS` keeps its warning and native
+  GRID-only compatibility behavior.
 
 ### Infrastructure
 - Removed the unused `B1FieldConfig` model and its `default_distribution_config`

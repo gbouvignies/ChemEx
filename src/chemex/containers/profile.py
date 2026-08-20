@@ -120,9 +120,16 @@ class Profile:
 
     def calculate(self, params: ParametersLF) -> Array:
         """Calculate and return the Array."""
-        self.data.calc_unscaled = self.calculate_unscaled(
+        return self.calculate_from_values(
             {param_id: params[param_id].value for param_id in self.param_ids}
         )
+
+    def calculate_from_values(
+        self,
+        parameter_values: Mapping[str, float],
+    ) -> Array:
+        """Calculate and publish data from resolved native parameter values."""
+        self.data.calc_unscaled = self.calculate_unscaled(parameter_values)
         if self.is_scaled:
             self.data.calc = self.data.scale * self.data.calc_unscaled
         else:

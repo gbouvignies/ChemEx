@@ -13,12 +13,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier
 from typing import cast
+from unittest.mock import patch
 
 import pytest
 from lmfit import Parameters as LmfitParameters
 
 from chemex import chemex as chemex_module
-from chemex.configuration.methods import Selection
+from chemex.configuration.methods import Method, Selection
 from chemex.configuration.parameters import read_defaults
 from chemex.experiments.builder import build_experiments
 from chemex.parameters.legacy_adapter import LegacyValuesAdapter
@@ -42,6 +43,8 @@ SHIPPED_PARAMETERS = (
     ROOT / "examples/Experiments/RELAXATION_HZNZ/Parameters/parameters.toml"
 )
 SHIPPED_METHOD = ROOT / "examples/Experiments/RELAXATION_HZNZ/Methods/method.toml"
+CPMG_EXPERIMENT = ROOT / "examples/Experiments/CPMG_15N_IP/Experiments/500mhz.toml"
+CPMG_PARAMETERS = ROOT / "examples/Experiments/CPMG_15N_IP/Parameters/parameters.toml"
 
 
 def _configuration() -> SealedConfiguration:
@@ -69,6 +72,43 @@ def _build_shipped_session(
     session.parameters.set_defaults(read_defaults([SHIPPED_PARAMETERS]))
     assert session.try_build_analysis_values()
     return session
+
+
+def test_revision_zero_model_values_and_constraints_resolve_without_lmfit() -> None:
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    experiments = build_experiments(
+        [CPMG_EXPERIMENT],
+        Selection(include=[SpinSystem.from_name("15N-HN")], exclude=None),
+        session=session,
+    )
+
+    with patch(
+        "chemex.parameters.database.ParameterCatalog.build_lmfit_params",
+        side_effect=AssertionError("legacy lmfit Parameters were constructed"),
+    ):
+        session.parameters.set_defaults(read_defaults([CPMG_PARAMETERS]))
+        assert session.try_build_analysis_values()
+        initial = session.resolve_current_values(experiments.param_ids)
+
+        session.parameters.set_parameter_status(
+            Method(constraints=["[PB] = [KEX_AB] / 10000.0"])
+        )
+        constrained = session.resolve_current_values(experiments.param_ids)
+
+    assert initial["__PB"] == pytest.approx(0.07)
+    assert initial["__PA"] == pytest.approx(0.93)
+    assert initial["__KAB"] == pytest.approx(28.0)
+    assert initial["__KBA"] == pytest.approx(372.0)
+    assert constrained["__PB"] == pytest.approx(0.04)
+    assert constrained["__PA"] == pytest.approx(0.96)
+    assert constrained["__KAB"] == pytest.approx(16.0)
+    assert constrained["__KBA"] == pytest.approx(384.0)
+
+    stored = session.parameters.get_parameters({"__PB", "__PA", "__KAB", "__KBA"})
+    assert stored["__PA"].value == pytest.approx(0.93)
+    assert stored["__KAB"].value == pytest.approx(28.0)
+    assert stored["__KBA"].value == pytest.approx(372.0)
 
 
 def _shipped_args(command: str, output: Path) -> Namespace:
@@ -422,12 +462,12 @@ def test_shipped_fit_is_native_authoritative_and_mirrors_committed_values(
     assert list((candidate_output / "Parameters").rglob("*.toml"))
 
 
-def test_shipped_simulation_survives_native_initialization_failure(
+def test_shipped_simulation_fails_closed_on_native_initialization_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     candidate_output = tmp_path / "candidate-enabled"
-    legacy_only_output = tmp_path / "legacy-only"
+    failed_output = tmp_path / "failed"
     session = AnalysisSession.create()
 
     chemex_module.run(_shipped_args("simulate", candidate_output), session=session)
@@ -445,20 +485,18 @@ def test_shipped_simulation_survives_native_initialization_failure(
 
     monkeypatch.setattr(AnalysisValues, "initialize", fail_native_initialization)
 
-    legacy_session = AnalysisSession.create()
-    chemex_module.run(
-        _shipped_args("simulate", legacy_only_output),
-        session=legacy_session,
-    )
+    failed_session = AnalysisSession.create()
+    with pytest.raises(RuntimeError, match="native initialization failed"):
+        chemex_module.run(
+            _shipped_args("simulate", failed_output),
+            session=failed_session,
+        )
 
-    assert list((legacy_only_output / "Data").rglob("*.dat"))
-    assert _authoritative_output_contents(candidate_output) == (
-        _authoritative_output_contents(legacy_only_output)
-    )
+    assert not failed_output.exists()
     assert isinstance(
-        legacy_session.parameter_factory.native_construction_error,
+        failed_session.parameter_factory.native_construction_error,
         RuntimeError,
     )
-    assert isinstance(legacy_session.legacy_values_adapter.failure, RuntimeError)
+    assert isinstance(failed_session.legacy_values_adapter.failure, RuntimeError)
     with pytest.raises(RuntimeError, match="not initialized"):
-        legacy_session.analysis_values.snapshot()
+        failed_session.analysis_values.snapshot()

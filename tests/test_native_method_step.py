@@ -124,6 +124,18 @@ PARAMETERS = ROOT / "examples/Experiments/RELAXATION_HZNZ/Parameters/parameters.
 METHOD = ROOT / "examples/Experiments/RELAXATION_HZNZ/Methods/method.toml"
 
 
+def test_semantic_method_record_excludes_materialized_profile_selection() -> None:
+    method = Method(include=["G2N-HN"], exclude=["H3N-HN"])
+
+    record = method_step_module._semantic_method_record(method)
+
+    assert "include" not in record
+    assert "exclude" not in record
+    assert record["fitmethod"] == "trf"
+    reconstruction = method_step_module._method_reconstruction_record(method)
+    assert Method.model_validate(reconstruction) == method
+
+
 class _OptimizationInputs(TypedDict):
     starting_snapshot: AnalysisValuesSnapshot
     parameter_model: SealedParameterModel

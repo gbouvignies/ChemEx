@@ -35,7 +35,7 @@ class FitExperiments:
         self.param_ids = param_ids
         self.filter_calls = 0
 
-    def filter(self) -> None:
+    def filter_from_values(self, _values: object) -> None:
         self.filter_calls += 1
 
 
@@ -352,7 +352,7 @@ def test_run_fit_creates_run_info(
         experiments,
         SimpleNamespace(
             execution=None,
-            try_compile_parameterization=lambda *_args: None,
+            resolve_current_values=lambda *_args: {parameter.id_: parameter.value},
         ),
         argv=["chemex", "fit"],
     )

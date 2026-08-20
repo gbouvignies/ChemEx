@@ -11,7 +11,11 @@ from chemex.configuration.methods import Method
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import EvaluationEngine, EvaluationResult
 from chemex.messages import print_group_name, print_minimizing
-from chemex.optimize.direct_trf import AcceptedFitResult, OptimizationProblem
+from chemex.optimize.direct_trf import (
+    AcceptedFitResult,
+    DirectTrfInvocation,
+    OptimizationProblem,
+)
 from chemex.optimize.grid_direct_trf import GridDirectTrfInvocation
 from chemex.optimize.gridding import (
     GridResult,
@@ -23,6 +27,7 @@ from chemex.optimize.gridding import (
 from chemex.optimize.grouped_direct_trf import (
     FitDecomposition,
     GroupedDirectTrfInvocation,
+    GroupedDirectTrfOutcome,
 )
 from chemex.optimize.grouped_grid_direct_trf import GroupedGridDirectTrfOutcome
 from chemex.optimize.grouping import Group, create_groups
@@ -43,8 +48,10 @@ from chemex.parameters.parameterization import ActiveParameterization, Parameter
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
 
-# Match scipy.optimize.least_squares' default maximum when max_nfev is omitted.
-_TRF_EVALUATIONS_PER_COORDINATE = 100
+# Preserve the retained product's historical total objective-request ceiling.
+# lmfit's least_squares wrapper used 2000 * (nvars + 1) and counted numerical
+# Jacobian requests in that total.  Native Direct records the same total itself.
+_TRF_OBJECTIVE_REQUESTS_PER_DIMENSION = 2000
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,17 +71,17 @@ class NativeDeterministicFit:
 
 def uses_native_deterministic(method: Method) -> bool:
     """Return whether one whole method occurrence uses native TRF."""
-    if method.statistics is not None and method.statistics.mcmc is not None:
-        return not method.grid
-    if method.statistics is not None:
-        return not method.grid
-    if "fitmethod" not in method.model_fields_set:
-        return True
-    return method.fitmethod in {"trf", "least_squares"}
+    return method.fitmethod == "trf"
 
 
 def _objective_request_budget(problem: OptimizationProblem) -> int:
-    return _TRF_EVALUATIONS_PER_COORDINATE * max(1, len(problem.controlled_ids))
+    coordinate_count = max(1, len(problem.controlled_ids))
+    return _TRF_OBJECTIVE_REQUESTS_PER_DIMENSION * (coordinate_count + 1)
+
+
+def _product_x_scale(problem: OptimizationProblem) -> tuple[float, ...]:
+    """Scale native product coordinates without changing physical semantics."""
+    return tuple(max(1.0, abs(value)) for value in problem.start)
 
 
 def _has_controlled_parameters(parameterization: ActiveParameterization) -> bool:
@@ -154,12 +161,18 @@ def _build_invocation(
                 (param_id, tuple(values.tolist())) for param_id, values in grid.items()
             ),
             objective_request_budget=_objective_request_budget(problem),
+            x_scale=_product_x_scale(problem),
         )
         return MethodStepStrategy.GRID_DIRECT_TRF, invocation
-    invocation = GroupedDirectTrfInvocation.for_decomposition(
-        decomposition,
-        objective_request_budgets=tuple(
-            _objective_request_budget(component.problem)
+    invocation = GroupedDirectTrfInvocation(
+        decomposition.root_problem_identity,
+        decomposition.identity,
+        tuple(
+            DirectTrfInvocation.for_problem(
+                component.problem,
+                objective_request_budget=_objective_request_budget(component.problem),
+                x_scale=_product_x_scale(component.problem),
+            )
             for component in decomposition.components
         ),
     )
@@ -374,9 +387,28 @@ def run_native_deterministic(
     print_minimizing()
     outcome = execute_method_step(workflow, analysis_values=session.analysis_values)
     if outcome.lifecycle is not MethodStepLifecycle.COMMITTED:
+        primary = outcome.primary_execution
+        failures = (
+            tuple(
+                (component.controlled_ids, component.failure)
+                for component in primary.components
+                if component.failure is not None
+            )
+            if isinstance(primary, GroupedDirectTrfOutcome)
+            else ()
+        )
+        detail = (
+            ""
+            if not failures
+            else ": "
+            + "; ".join(
+                f"{controlled_ids!r}: {failure.category}: {failure.message}"
+                for controlled_ids, failure in failures
+            )
+        )
         msg = (
             "Native deterministic fit did not commit: "
-            f"{outcome.primary_terminal or outcome.lifecycle.value}"
+            f"{outcome.primary_terminal or outcome.lifecycle.value}{detail}"
         )
         raise RuntimeError(msg)
 

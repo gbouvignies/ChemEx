@@ -91,7 +91,7 @@ class Selection:
 
 class Method(BaseModel):
     model_config = ConfigDict(str_to_lower=True, extra="forbid")
-    fitmethod: str = "leastsq"
+    fitmethod: Literal["trf"] = "trf"
     include: SelectionType = None
     exclude: SelectionType = None
     fit: list[str] = Field(default_factory=list)
@@ -101,6 +101,21 @@ class Method(BaseModel):
     statistics: Statistics | None = None
 
     _key_to_lower = model_validator(mode="before")(key_to_lower)
+
+    @field_validator("fitmethod", mode="before")
+    @classmethod
+    def canonicalize_fitmethod(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.lower()
+            if normalized == "least_squares":
+                return "trf"
+            if normalized == "trf":
+                return normalized
+        msg = (
+            "FITMETHOD supports only 'trf'; 'least_squares' is accepted as a "
+            "temporary alias"
+        )
+        raise ValueError(msg)
 
     @field_validator("include", "exclude", mode="before")
     @classmethod
@@ -136,6 +151,6 @@ def read_methods(filenames: Iterable[Path]) -> Methods:
             except ValidationError as error:
                 options = {option for err in error.errors() for option in err["loc"]}
                 print_method_error(filename, section, options)
-                sys.exit()
+                sys.exit(1)
             methods[section] = method
     return methods

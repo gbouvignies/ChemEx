@@ -85,4 +85,4 @@ PARAMETER_WITH_NO_BOUNDS = <initial_value>
 PARAMETER_WITH_BOUNDS = [<initial_value>, <lower_bound>, <upper_bound>]
 ```
 
-Setting bounds helps prevent parameters from reaching unrealistic values during χ<sup>2</sup> minimization. However, avoid overly strict bounds as they can hinder convergence. Some minimization algorithms, such as `differential_evolution`, require finite bounds for all fitted parameters.
+Setting bounds helps prevent parameters from reaching unrealistic values during χ<sup>2</sup> minimization. However, avoid overly strict bounds as they can hinder convergence. The supported `trf` fit method honors finite bounds when they are supplied.

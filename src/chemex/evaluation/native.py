@@ -217,32 +217,38 @@ def _identity(kind: str, record: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _semantic_value(value: object) -> object:
+def _semantic_value(value: object, *, allow_infinity: bool = False) -> object:
     """Encode finite scientific values without repr or runtime identity."""
     if value is None or isinstance(value, (bool, str)):
         return value
     if isinstance(value, Real):
         if isinstance(value, bool):
             return value
-        return {"binary64": _canonical_float(float(value))}
+        scalar = float(value)
+        if allow_infinity and math.isinf(scalar):
+            return {"infinity": "positive" if scalar > 0.0 else "negative"}
+        return {"binary64": _canonical_float(scalar)}
     if isinstance(value, np.ndarray):
         raw_values = cast("Any", value).tolist()
-        return _semantic_value(raw_values)
+        return _semantic_value(raw_values, allow_infinity=allow_infinity)
     if isinstance(value, Mapping):
         return {
-            str(key): _semantic_value(item)
+            str(key): _semantic_value(item, allow_infinity=allow_infinity)
             for key, item in sorted(value.items(), key=lambda item: str(item[0]))
         }
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        return [_semantic_value(item) for item in value]
+        return [_semantic_value(item, allow_infinity=allow_infinity) for item in value]
     raise TypeError(
         f"Unsupported native scientific descriptor value: {type(value).__name__}"
     )
 
 
-def _semantic_json(value: object) -> str:
+def _semantic_json(value: object, *, allow_infinity: bool = False) -> str:
     return json.dumps(
-        _semantic_value(value), ensure_ascii=True, separators=(",", ":"), sort_keys=True
+        _semantic_value(value, allow_infinity=allow_infinity),
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
     )
 
 
@@ -250,7 +256,13 @@ def _kernel_configuration(profile: Profile) -> str:
     settings = getattr(profile.pulse_sequence, "settings", None)
     if not hasattr(settings, "model_dump"):
         raise ValueError("Native profile kernels must expose immutable settings")
-    return _semantic_json(settings.model_dump(mode="json"))
+    # Pulse settings may use infinity as an explicit configuration sentinel
+    # (for example, CEST's unbounded sweep width).  It is fingerprinted as a
+    # stable token here; evaluated values and observations remain finite-only.
+    return _semantic_json(
+        settings.model_dump(mode="json"),
+        allow_infinity=True,
+    )
 
 
 def _observation_metadata(profile: Profile) -> str:
@@ -878,7 +890,12 @@ def _validate_result_relationships(
             item.normalization_factor
         ) != _canonical_float(expected_factor):
             raise ValueError("Evaluation result has inconsistent normalization")
-        with np.errstate(all="raise"):
+        with np.errstate(
+            divide="raise",
+            over="raise",
+            under="ignore",
+            invalid="raise",
+        ):
             expected_normalized = item.normalization_factor * unscaled[start:stop]
             expected_residuals = (
                 normalized[start:stop][retained]
@@ -1787,7 +1804,12 @@ class BoundEvaluator:
         else:
             scale = 1.0
         try:
-            with np.errstate(all="raise"):
+            with np.errstate(
+                divide="raise",
+                over="raise",
+                under="ignore",
+                invalid="raise",
+            ):
                 normalized = _readonly(scale * unscaled)
                 residuals = _readonly(
                     (normalized[retained] - exp[retained]) / err[retained]
@@ -1972,7 +1994,12 @@ class BoundEvaluator:
             )
         self._in_flight = True
         try:
-            with np.errstate(all="raise"):
+            with np.errstate(
+                divide="raise",
+                over="raise",
+                under="ignore",
+                invalid="raise",
+            ):
                 return self._evaluate_impl(frame)
         except FloatingPointError as error:
             return self._failure(

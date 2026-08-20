@@ -6,7 +6,7 @@ from argparse import Namespace
 from collections.abc import Sequence
 
 from chemex.cli import build_parser
-from chemex.configuration.methods import Method, Selection, read_methods
+from chemex.configuration.methods import Method, Methods, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
 from chemex.experiments.builder import build_experiments
@@ -20,7 +20,6 @@ from chemex.messages import (
 )
 from chemex.optimize.fitting import invalidate_planned_outputs, run_methods
 from chemex.optimize.helper import execute_simulation
-from chemex.optimize.native_deterministic import uses_native_deterministic
 from chemex.run_info import write_run_info, write_run_outcome
 from chemex.runtime import (
     AnalysisSession,
@@ -35,29 +34,18 @@ def run_fit(
     session: AnalysisSession,
     *,
     argv: Sequence[str] | None = None,
+    methods: Methods | None = None,
 ) -> None:
-    if args.method is not None:
-        print_reading_methods()
-        methods = read_methods(args.method)
-    else:
-        methods = {"": Method()}
+    if methods is None:
+        methods = _read_fit_methods(args)
 
     write_run_info(args, experiments, argv=argv)
 
     try:
         invalidate_planned_outputs(methods, args.output)
 
-        # Native statistics occurrences must fail closed before any lmfit value
-        # carrier can be constructed by the compatibility filter path.
-        native_statistics = any(
-            method.statistics is not None and uses_native_deterministic(method)
-            for method in methods.values()
-        )
-        if native_statistics:
-            resolved_values = session.resolve_current_values(experiments.param_ids)
-            experiments.filter_from_values(resolved_values)
-        else:
-            experiments.filter()
+        resolved_values = session.resolve_current_values(experiments.param_ids)
+        experiments.filter_from_values(resolved_values)
 
         print_start_fit()
         run_methods(
@@ -89,8 +77,21 @@ def run_sim(
     plot = args.plot == "normal"
 
     session.parameters.fix_all()
+    resolved_values = session.resolve_current_values(experiments.param_ids)
 
-    execute_simulation(experiments, path, plot=plot)
+    execute_simulation(
+        experiments,
+        path,
+        parameter_values=resolved_values,
+        plot=plot,
+    )
+
+
+def _read_fit_methods(args: Namespace) -> Methods:
+    if args.method is None:
+        return {"": Method()}
+    print_reading_methods()
+    return read_methods(args.method)
 
 
 def run(
@@ -124,16 +125,27 @@ def run(
         msg = "Experiments parameter store does not match the active session"
         raise ValueError(msg)
 
+    methods = _read_fit_methods(args) if args.commands == "fit" else None
+
     # Read initial values of fitting/fixed parameters
     print_reading_defaults()
     defaults = read_defaults(args.parameters)
     session.parameters.set_defaults(defaults)
-    session.try_build_analysis_values()
+    if not session.try_build_analysis_values():
+        construction_error = getattr(
+            session.parameter_factory,
+            "native_construction_error",
+            None,
+        )
+        msg = "Native parameter initialization failed"
+        if construction_error is None:
+            raise RuntimeError(msg)
+        raise RuntimeError(f"{msg}: {construction_error}") from construction_error
 
     if args.commands == "simulate":
         run_sim(args, experiments, session)
     else:
-        run_fit(args, experiments, session, argv=argv)
+        run_fit(args, experiments, session, argv=argv, methods=methods)
 
 
 def main() -> None:

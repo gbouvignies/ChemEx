@@ -6,6 +6,30 @@ from pydantic import ValidationError
 from chemex.configuration.methods import Method, Statistics
 
 
+def test_fitmethod_defaults_to_canonical_trf() -> None:
+    method = Method()
+
+    assert method.fitmethod == "trf"
+
+
+@pytest.mark.parametrize("fitmethod", ("trf", "TRF", "least_squares"))
+def test_fitmethod_accepts_only_trf_surface_and_canonicalizes_alias(
+    fitmethod: str,
+) -> None:
+    method = Method.model_validate({"FITMETHOD": fitmethod})
+
+    assert method.fitmethod == "trf"
+
+
+@pytest.mark.parametrize(
+    "fitmethod",
+    ("leastsq", "differential_evolution", "nelder", "arbitrary"),
+)
+def test_fitmethod_rejects_legacy_and_arbitrary_spellings(fitmethod: str) -> None:
+    with pytest.raises(ValidationError, match="FITMETHOD supports only 'trf'"):
+        Method.model_validate({"FITMETHOD": fitmethod})
+
+
 def test_statistics_parse_mcmc_short_form() -> None:
     statistics = Statistics.model_validate({"MCMC": 5000})
 

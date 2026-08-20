@@ -162,9 +162,20 @@ class Experiments:
         params_lf = self.parameter_store.build_lmfit_params(self.param_ids)
         self.residuals(params_lf)
 
-    def prepare_for_simulation(self) -> None:
+    def back_calculate_from_values(
+        self,
+        parameter_values: Mapping[str, float],
+    ) -> None:
+        """Back calculate every selected profile from native resolved values."""
+        for experiment in self:
+            experiment.back_calculate_from_values(parameter_values)
+
+    def prepare_for_simulation(
+        self,
+        parameter_values: Mapping[str, float],
+    ) -> None:
         """Prepare each experiment in the collection for simulation."""
-        self.back_calculate()
+        self.back_calculate_from_values(parameter_values)
         for experiment in self:
             experiment.prepare_for_simulation()
 

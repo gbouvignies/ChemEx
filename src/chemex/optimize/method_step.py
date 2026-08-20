@@ -511,7 +511,14 @@ def _validate_recursive_dataclass_children(  # noqa: C901 - closed evidence tree
 
 def _semantic_method_record(method: Method) -> dict[str, object]:
     """Return the closed scientific/lifecycle Method fields used by #641."""
-    record = cast("dict[str, object]", method.model_dump(mode="json"))
+    # Profile selection has already been materialized in the evaluation plan,
+    # whose identity captures the selected profiles and observations.  Exclude
+    # the parsed SpinSystem objects here just as normalized method provenance
+    # does, avoiding a second and non-canonical serialization of that state.
+    record = cast(
+        "dict[str, object]",
+        method.model_dump(mode="json", exclude={"include", "exclude"}),
+    )
     statistics = record.get("statistics")
     if isinstance(statistics, dict):
         mcmc = statistics.get("mcmc")
@@ -527,6 +534,21 @@ def _operational_method_record(method: Method) -> dict[str, object]:
     return {
         "mcmc_workers": None if mcmc is None else mcmc.workers,
     }
+
+
+def _method_reconstruction_record(method: Method) -> dict[str, object]:
+    """Return validation input without serializing SpinSystem internals."""
+    record = cast(
+        "dict[str, object]",
+        method.model_dump(exclude={"include", "exclude"}, exclude_none=True),
+    )
+    for field_name in ("include", "exclude"):
+        selection = getattr(method, field_name)
+        if isinstance(selection, list):
+            record[field_name] = [str(item) for item in selection]
+        elif selection is not None:
+            record[field_name] = selection
+    return record
 
 
 def _direct_policy_semantics(invocation: DirectTrfInvocation) -> tuple[object, ...]:
@@ -1004,12 +1026,11 @@ def _validate_method_step_workflow(  # noqa: C901 - closed recursive workflow tr
     )
     _validate_rederived_identity(workflow.parameterization)
     try:
-        canonical_method = Method.model_validate(
-            workflow.method.model_dump(exclude_none=True)
-        )
+        method_record = _method_reconstruction_record(workflow.method)
+        canonical_method = Method.model_validate(method_record)
     except Exception as error:
         raise ValueError("Method-step Method integrity validation failed") from error
-    if canonical_method.model_dump() != workflow.method.model_dump():
+    if _method_reconstruction_record(canonical_method) != method_record:
         raise ValueError("Method-step Method integrity validation failed")
     try:
         restored_plan = type(workflow.engine.plan).from_record(

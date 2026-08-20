@@ -7,11 +7,13 @@ import tomllib
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 
 import chemex.optimize.direct_trf as direct_trf_module
 import chemex.optimize.fitting as fitting_module
 import chemex.optimize.mcmc as mcmc_module
+import chemex.optimize.native_deterministic as native_deterministic_module
 import chemex.optimize.native_mcmc as native_mcmc_module
 import chemex.optimize.native_resampling as native_resampling_module
 import chemex.optimize.resampling as resampling_module
@@ -58,6 +60,83 @@ def _fit_arguments(
             str(workers),
         ]
     )
+
+
+def _simulation_arguments(output: Path):
+    return build_parser().parse_args(
+        [
+            "simulate",
+            "-e",
+            str(EXPERIMENT),
+            "-p",
+            str(PARAMETERS),
+            "-o",
+            str(output),
+            "--include",
+            "G2N-HN",
+            "--plot",
+            "nothing",
+        ]
+    )
+
+
+def test_product_trf_uses_legacy_request_ceiling_and_physical_coordinate_scale() -> (
+    None
+):
+    problem = type(
+        "Problem",
+        (),
+        {
+            "controlled_ids": ("a", "b", "c", "d"),
+            "start": (0.01, -2.0, 0.0, 150.0),
+        },
+    )()
+
+    assert (
+        native_deterministic_module._objective_request_budget(
+            problem  # ty: ignore[invalid-argument-type]
+        )
+        == 10000
+    )
+    assert native_deterministic_module._product_x_scale(
+        problem  # ty: ignore[invalid-argument-type]
+    ) == (1.0, 2.0, 1.0, 150.0)
+
+
+def test_real_simulation_uses_native_values_and_preserves_back_calculation(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+
+    with (
+        patch(
+            "chemex.parameters.database.ParameterStore.build_lmfit_params",
+            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
+        ),
+        patch(
+            "chemex.containers.experiments.Experiments.residuals",
+            side_effect=AssertionError("legacy residual evaluation was entered"),
+        ),
+    ):
+        run(_simulation_arguments(output), session=session)
+
+    data_path = output / "Data" / "800mhz.dat"
+    calculated = np.loadtxt(data_path, comments="#", skiprows=2, usecols=1)
+    legacy_calculated = np.array(
+        [
+            1.18750357e06,
+            9.66031999e05,
+            7.85819221e05,
+            6.39171094e05,
+            5.19835478e05,
+            4.22730273e05,
+            3.43723059e05,
+        ]
+    )
+    np.testing.assert_allclose(calculated, legacy_calculated, rtol=1.0e-6)
+    assert (output / "Parameters" / "fixed.toml").is_file()
+    assert (output / "Parameters" / "constrained.toml").is_file()
 
 
 def _run_real_fit_cli(output: Path, method: Path, parameters: Path) -> None:
@@ -118,6 +197,10 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
 
     with (
         patch(
+            "chemex.parameters.database.ParameterStore.build_lmfit_params",
+            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
+        ),
+        patch(
             "lmfit.Minimizer.minimize",
             side_effect=AssertionError("legacy lmfit optimizer was called"),
         ),
@@ -153,6 +236,78 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     time_2, intensity_2 = curve[-1]
     fitted_curve_rate = -math.log(intensity_2 / intensity_1) / (time_2 - time_1)
     assert fitted_curve_rate == pytest.approx(fitted_value, rel=1.0e-3)
+
+
+def test_explicit_trf_and_least_squares_alias_have_identical_native_product_output(
+    tmp_path: Path,
+) -> None:
+    outputs: dict[str, Path] = {}
+    with (
+        patch(
+            "chemex.parameters.database.ParameterStore.build_lmfit_params",
+            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
+        ),
+        patch(
+            "lmfit.Minimizer.minimize",
+            side_effect=AssertionError("legacy lmfit optimizer was called"),
+        ),
+        patch(
+            "chemex.containers.experiments.Experiments.residuals",
+            side_effect=AssertionError("legacy evaluation was called"),
+        ),
+    ):
+        for spelling in ("trf", "least_squares"):
+            method = tmp_path / f"{spelling}.toml"
+            method.write_text(
+                f'[DEFAULT]\nFITMETHOD = "{spelling}"\nFIX = ["PB", "KEX_AB"]\n',
+                encoding="utf-8",
+            )
+            output = tmp_path / spelling
+            run(
+                _fit_arguments(output, method),
+                session=AnalysisSession.create(),
+            )
+            outputs[spelling] = output
+
+    for relative in (
+        Path("Parameters/fitted.toml"),
+        Path("Data/800mhz.dat"),
+        Path("statistics.toml"),
+    ):
+        assert (outputs["least_squares"] / relative).read_bytes() == (
+            outputs["trf"] / relative
+        ).read_bytes()
+
+
+@pytest.mark.parametrize("fitmethod", ("leastsq", "differential_evolution"))
+def test_invalid_fitmethod_fails_before_defaults_and_output_invalidation(
+    tmp_path: Path,
+    fitmethod: str,
+) -> None:
+    output = tmp_path / "Output"
+    output.mkdir()
+    sentinel = output / "Data"
+    sentinel.mkdir()
+    preserved = sentinel / "preserved.dat"
+    preserved.write_text("existing result\n", encoding="utf-8")
+    method = tmp_path / "method.toml"
+    method.write_text(
+        f'[DEFAULT]\nFITMETHOD = "{fitmethod}"\n',
+        encoding="utf-8",
+    )
+
+    with (
+        patch(
+            "chemex.parameters.database.ParameterStore.set_defaults",
+            side_effect=AssertionError("parameter defaults were resolved"),
+        ),
+        pytest.raises(SystemExit) as raised,
+    ):
+        run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    assert raised.value.code == 1
+    assert preserved.read_text(encoding="utf-8") == "existing result\n"
+    assert not (output / "run_info").exists()
 
 
 def test_parameters_used_supports_real_cli_restart_round_trip(tmp_path: Path) -> None:
@@ -1152,9 +1307,19 @@ def test_real_grid_fit_uses_native_cartesian_trf_and_writes_grid_output(
     session = AnalysisSession.create()
     method = _grid_method(tmp_path / "method.toml")
 
-    with patch(
-        "lmfit.Minimizer.minimize",
-        side_effect=AssertionError("legacy lmfit optimizer was called"),
+    with (
+        patch(
+            "chemex.parameters.database.ParameterStore.build_lmfit_params",
+            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
+        ),
+        patch(
+            "chemex.containers.experiments.Experiments.residuals",
+            side_effect=AssertionError("legacy evaluation was called"),
+        ),
+        patch(
+            "lmfit.Minimizer.minimize",
+            side_effect=AssertionError("legacy lmfit optimizer was called"),
+        ),
     ):
         run(_fit_arguments(output, method), session=session)
 
@@ -1297,34 +1462,6 @@ FIX = ["PB", "KEX_AB"]
     assert _read_outcome(output)["status"] == "incomplete"
 
 
-def test_native_step_clears_generic_error_from_preceding_legacy_step(
-    tmp_path: Path,
-) -> None:
-    output = tmp_path / "Output"
-    method = tmp_path / "method.toml"
-    method.write_text(
-        """[LEGACY]
-FITMETHOD = "leastsq"
-FIX = ["PB", "KEX_AB"]
-
-[NATIVE]
-""",
-        encoding="utf-8",
-    )
-    session = AnalysisSession.create()
-
-    run(_fit_arguments(output, method), session=session)
-
-    legacy = (output / "LEGACY" / "Parameters" / "fitted.toml").read_text(
-        encoding="utf-8"
-    )
-    native = (output / "NATIVE" / "Parameters" / "fitted.toml").read_text(
-        encoding="utf-8"
-    )
-    assert "±" in legacy
-    assert "(error not calculated)" in native
-
-
 def test_native_backend_failure_cannot_commit_or_publish_fitted_output(
     tmp_path: Path,
 ) -> None:
@@ -1434,8 +1571,9 @@ STATISTICS = { "MC" = 1 }
     assert (output / "Statistics" / "MonteCarlo" / "samples.tsv").is_file()
 
 
-def test_grid_with_statistics_remains_wholly_on_legacy_dispatch(
+def test_grid_with_statistics_warns_and_runs_native_grid_only(
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     output = tmp_path / "Output"
     method = tmp_path / "method.toml"
@@ -1450,11 +1588,22 @@ STATISTICS = { "MC" = 1 }
 
     with (
         patch(
-            "chemex.optimize.fitting.run_native_deterministic",
-            side_effect=AssertionError("native deterministic dispatch was called"),
+            "chemex.optimize.gridding.run_grid",
+            side_effect=AssertionError("legacy GRID dispatch was called"),
         ),
-        patch("chemex.optimize.fitting.run_grid") as run_grid,
+        patch(
+            "chemex.parameters.database.ParameterStore.build_lmfit_params",
+            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
+        ),
+        patch(
+            "chemex.optimize.fitting.run_native_resampling_statistics",
+            side_effect=AssertionError("statistics after GRID were entered"),
+        ),
     ):
         run(_fit_arguments(output, method), session=session)
 
-    run_grid.assert_called_once()
+    captured = capsys.readouterr()
+    assert "GRID" in captured.out
+    assert "STATISTICS" in captured.out
+    assert (output / "Grid").is_dir()
+    assert not (output / "Statistics").exists()
