@@ -354,16 +354,14 @@ def test_run_uses_explicit_session_for_fit_flow(
         path: Path,
         plot_level: str,
         *,
-        execution: ExecutionSettings | None = None,
-        preview_parameterization: object | None = None,
+        session: StubSession,
     ) -> None:
         recorded["run_methods"] = (
             experiments_arg,
             methods,
             path,
             plot_level,
-            execution,
-            preview_parameterization,
+            session,
         )
 
     monkeypatch.setattr(chemex_module, "build_experiments", fake_build_experiments)
@@ -392,8 +390,7 @@ def test_run_uses_explicit_session_for_fit_flow(
     np.testing.assert_equal(session.build_analysis_values_calls, 1)
     np.testing.assert_equal(experiments.filtered, 1)
     np.testing.assert_equal(recorded["build"][2], session)
-    np.testing.assert_equal(recorded["run_methods"][4], session.execution)
-    assert recorded["run_methods"][5] == session.try_compile_parameterization
+    assert recorded["run_methods"][4] is session
     assert recorded["run_info"] is True
 
 
@@ -582,10 +579,10 @@ def test_run_methods_passes_execution_to_fit_groups(
 
     fitting_module.run_methods(
         experiments,
-        {"": Method()},
+        {"": Method(fitmethod="leastsq")},
         Path("Output"),
         "normal",
-        execution=session.execution,
+        session=session,
     )
 
     np.testing.assert_equal(len(experiments.selections), 1)
@@ -614,7 +611,7 @@ def test_run_methods_skips_fit_when_selection_removes_all_profiles(
         {"": Method(include=["1H"])},
         Path("Output"),
         "normal",
-        execution=session.execution,
+        session=session,
     )
 
     np.testing.assert_equal(calls, ["no_data"])

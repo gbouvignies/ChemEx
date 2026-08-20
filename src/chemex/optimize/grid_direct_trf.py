@@ -1,8 +1,7 @@
-"""Single-component Cartesian GRID to native Direct TRF qualification (#595).
+"""Single-component Cartesian GRID to native Direct TRF execution.
 
-This module is intentionally not wired into production dispatch.  It plans
-physical-coordinate Cartesian seeds rooted in one immutable native problem;
-execution and selection are added at the same public qualification seam.
+This plans physical-coordinate Cartesian seeds rooted in one immutable native
+problem and executes the production deterministic multistart workflow.
 """
 
 from __future__ import annotations

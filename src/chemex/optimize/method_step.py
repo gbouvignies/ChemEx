@@ -1,8 +1,7 @@
-"""Closed qualification-only composition of one native method step.
+"""Closed composition of one native method step.
 
-This module is deliberately not connected to the production ``run_methods``
-dispatcher.  It composes already-compiled native artifacts and preserves the
-live AnalysisValues occurrence boundary.
+The production deterministic dispatcher composes already-compiled native
+artifacts here while preserving the live AnalysisValues occurrence boundary.
 """
 
 from __future__ import annotations

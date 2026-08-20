@@ -1,7 +1,7 @@
-"""Bounded native Direct-TRF qualification path for issue #586.
+"""Bounded native Direct-TRF execution for ChemEx deterministic fitting.
 
-This is deliberately not a production dispatcher or a generic optimizer layer.
-It connects the native parameterization and evaluation contracts to one closed
+This is not a generic optimizer layer. It connects the native parameterization
+and evaluation contracts to one closed
 SciPy ``least_squares(method="trf")`` invocation, fresh result materialization,
 and the existing revision-checked Analysis Values commit boundary.
 """

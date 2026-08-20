@@ -1,7 +1,7 @@
-"""Exact native fit-component decomposition for grouped Direct TRF (#594).
+"""Exact native fit-component decomposition for grouped Direct TRF.
 
-This remains an isolated qualification path.  It does not dispatch production
-fits or alter the legacy grouped-fit implementation.
+The production deterministic dispatcher composes this closed decomposition with
+the native Direct TRF executor and one aggregate commit.
 """
 
 from __future__ import annotations
