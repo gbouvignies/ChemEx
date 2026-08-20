@@ -191,9 +191,17 @@ Nucleus-specific bootstrap can create datasets of varying sizes, unlike standard
 
 ### MCMC Analysis
 
-MCMC analysis samples the posterior distribution after the normal fit has converged. It uses the fitted parameters as the starting point, ChemEx's weighted residuals as the likelihood, and the parameter bounds as uniform priors.
+MCMC analysis samples the posterior distribution after the native deterministic
+fit has converged and committed. It consumes that accepted native problem and
+evaluation engine directly, uses ChemEx's weighted residuals as the likelihood,
+and uses the fitted-parameter bounds as uniform priors. Initial walkers are
+placed reproducibly by applying small seeded perturbations to the committed
+fitted values and clipping them into the open bounded intervals.
 
-For meaningful MCMC results, set finite lower and upper bounds for the fitted parameters in the parameter file. Parameters without finite bounds are still accepted, but ChemEx will print a warning because the implied prior is weakly constrained.
+Every fitted parameter sampled by MCMC must have finite lower and upper bounds,
+with the lower bound strictly smaller than the upper bound. ChemEx rejects an
+unbounded or empty interval before sampling, writes an incomplete diagnostic,
+and leaves the committed central fit unchanged.
 
 ### Syntax
 
@@ -268,6 +276,10 @@ is `auto`. Set `WORKERS` in the method file only when this MCMC step needs a
 specific positive worker count. Command-line `--workers 0` means all available
 CPUs, but method-file `WORKERS` must be a positive integer.
 
+`UPDATE_PARAMETERS = true` is rejected. Posterior summaries are evidence about
+the committed central fit and never replace its authoritative parameter values
+or generic fitted-parameter errors.
+
 See [Multicore Execution](multicore_execution.md) for performance guidance and
 the interaction between `--workers` and `--native-threads`.
 
@@ -304,3 +316,8 @@ Statistics/
 For Monte Carlo and bootstrap methods, `samples.tsv` contains one fitted-parameter row per synthetic dataset plus χ², `summary.toml` reports percentile-based parameter summaries, and `correlations.tsv` reports parameter correlations across the fitted synthetic datasets. Missing values are written as `nan`. Their `plots.pdf` reports provide a summary page, one-dimensional sample distributions, a χ² distribution, and two-dimensional sample distributions for parameter pairs with `|r| >= 0.5`.
 
 For MCMC, `summary.toml` reports the uniform prior implied by each parameter's bounds, posterior mean, median, standard deviation, a 95% equal-tailed credible interval, the 68.26% interval used for `stderr`, and effective sample size/Monte Carlo standard error when the autocorrelation estimate passes emcee's reliability threshold. MCMC diagnostics include sampler versions, retained samples, acceptance fractions, reliable or tentative autocorrelation time, recommended chain lengths, and burn-in decisions. The `plots.pdf` report provides a summary page, one-dimensional posterior distributions, walker traces, the log-probability trace, an autocorrelation monitor, and two-dimensional posterior distributions for parameter pairs with `|r| >= 0.5`.
+
+If MCMC setup, sampling, processing, or output fails or is interrupted,
+`diagnostics.toml` records an explicit incomplete terminal state. ChemEx does not
+publish `summary.toml`, `samples.tsv`, `correlations.tsv`, or `plots.pdf` for an
+incomplete chain.

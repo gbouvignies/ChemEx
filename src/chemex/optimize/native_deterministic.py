@@ -65,7 +65,7 @@ class NativeDeterministicFit:
 def uses_native_deterministic(method: Method) -> bool:
     """Return whether one whole method occurrence uses native TRF."""
     if method.statistics is not None and method.statistics.mcmc is not None:
-        return False
+        return not method.grid
     if method.statistics is not None:
         return not method.grid
     if "fitmethod" not in method.model_fields_set:

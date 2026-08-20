@@ -747,56 +747,6 @@ def test_resampling_statistics_use_execution_workers(
     assert samples.count("\n") == 3
 
 
-def test_run_statistics_dispatches_mcmc_without_resampling(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    recorded: dict[str, object] = {}
-    execution = ExecutionSettings(workers=4)
-    experiments = SimpleNamespace(
-        param_ids=["__PB"],
-        parameter_store=StatisticsParameterStore(),
-    )
-
-    def fail_generate_exp_for_statistics(*_args, **_kwargs) -> None:
-        pytest.fail("MCMC should not generate resampled experiments")
-
-    def fake_run_mcmc(
-        experiments_arg: object,
-        params_arg: object,
-        settings_arg: object,
-        path_arg: Path,
-        *,
-        execution: object | None = None,
-    ) -> None:
-        recorded["experiments"] = experiments_arg
-        recorded["params"] = params_arg
-        recorded["settings"] = settings_arg
-        recorded["path"] = path_arg
-        recorded["execution"] = execution
-
-    monkeypatch.setattr(
-        resampling_module,
-        "generate_exp_for_statistics",
-        fail_generate_exp_for_statistics,
-    )
-    monkeypatch.setattr(fitting_module, "run_mcmc", fake_run_mcmc)
-
-    fitting_module._run_statistics(
-        experiments,
-        tmp_path,
-        "leastsq",
-        fitting_module.Statistics(mcmc=100),
-        execution=execution,
-    )
-
-    np.testing.assert_equal(recorded["experiments"], experiments)
-    assert "__PB" in recorded["params"]
-    assert recorded["settings"].steps == 100
-    np.testing.assert_equal(recorded["path"], tmp_path)
-    np.testing.assert_equal(recorded["execution"], execution)
-
-
 def test_resampling_summary_and_correlations_are_written(tmp_path: Path) -> None:
     store = WriterParameterStore(
         {
