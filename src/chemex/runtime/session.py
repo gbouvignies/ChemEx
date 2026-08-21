@@ -81,7 +81,7 @@ class AnalysisSession:
         self.model.reset()
 
     def try_build_analysis_values(self) -> bool:
-        """Seal configuration and initialize the non-authoritative native values."""
+        """Seal configuration and initialize authoritative native analysis values."""
         try:
             model_free_parameter_model = (
                 self.parameter_factory.build_model_free_parameter_model()

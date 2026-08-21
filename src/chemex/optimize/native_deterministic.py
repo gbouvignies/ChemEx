@@ -69,11 +69,6 @@ class NativeDeterministicFit:
         return _objective_request_budget(self.problem)
 
 
-def uses_native_deterministic(method: Method) -> bool:
-    """Return whether one whole method occurrence uses native TRF."""
-    return method.fitmethod == "trf"
-
-
 def _objective_request_budget(problem: OptimizationProblem) -> int:
     coordinate_count = max(1, len(problem.controlled_ids))
     return _TRF_OBJECTIVE_REQUESTS_PER_DIMENSION * (coordinate_count + 1)

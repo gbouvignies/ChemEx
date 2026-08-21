@@ -5,6 +5,8 @@ from collections.abc import Callable
 import pytest
 
 from tests.qualification.compare_lmfit_removal_pr1 import (
+    _BINDING_ACCEPTED_FAILURE_SCOPE,
+    _BINDING_ACCEPTED_NUMERICAL_SIGNATURE,
     _CEST_ACCEPTED_FAILURE_SCOPE,
     _CEST_ACCEPTED_NUMERICAL_SIGNATURE,
     CASES,
@@ -117,6 +119,103 @@ def test_cest_accepted_difference_rejects_an_unrelated_numerical_state() -> None
     )
 
     assert disposition == {"status": "FAIL"}
+
+
+def test_binding_accepted_difference_is_explicit_and_not_a_parity_pass() -> None:
+    case = next(case for case in CASES if case.slug == "2st-binding")
+
+    disposition = _comparison_disposition(
+        case,
+        False,
+        {"STEP2/All/statistics.toml": (37771.2, 35802.6)},
+        _BINDING_ACCEPTED_FAILURE_SCOPE,
+        dict(_BINDING_ACCEPTED_NUMERICAL_SIGNATURE),
+    )
+
+    assert disposition["status"] == "ACCEPTED_DIFFERENCE"
+    assert disposition["parity_status"] == "FAIL"
+    assert disposition["objective_semantics_parity"] == "PASS"
+    assert disposition["diagnosed_legacy_chi_square"] == pytest.approx(
+        37771.20405101328
+    )
+    assert disposition["diagnosed_native_chi_square"] == pytest.approx(
+        35802.60988668793
+    )
+
+
+def test_binding_accepted_difference_rejects_a_step1_failure() -> None:
+    case = next(case for case in CASES if case.slug == "2st-binding")
+
+    disposition = _comparison_disposition(
+        case,
+        False,
+        {"STEP2/All/statistics.toml": (37771.2, 35802.6)},
+        _BINDING_ACCEPTED_FAILURE_SCOPE | {"data:STEP1/All/Data/cpmg_10p.dat:[513N]"},
+        dict(_BINDING_ACCEPTED_NUMERICAL_SIGNATURE),
+    )
+
+    assert disposition == {"status": "FAIL"}
+
+
+@pytest.mark.parametrize(
+    "unexpected_failure",
+    (
+        "data:STEP2/All/Data/cest_20hz_10p.dat:[575N]",
+        ("parameter:STEP2/All/Parameters/fitted.toml:('[DW_AB]', '575N')"),
+    ),
+)
+def test_binding_accepted_difference_rejects_an_unrelated_step2_failure(
+    unexpected_failure: str,
+) -> None:
+    case = next(case for case in CASES if case.slug == "2st-binding")
+
+    disposition = _comparison_disposition(
+        case,
+        False,
+        {"STEP2/All/statistics.toml": (37771.2, 35802.6)},
+        _BINDING_ACCEPTED_FAILURE_SCOPE | {unexpected_failure},
+        dict(_BINDING_ACCEPTED_NUMERICAL_SIGNATURE),
+    )
+
+    assert disposition == {"status": "FAIL"}
+
+
+def test_binding_accepted_difference_rejects_a_changed_objective() -> None:
+    case = next(case for case in CASES if case.slug == "2st-binding")
+
+    disposition = _comparison_disposition(
+        case,
+        False,
+        {"STEP2/All/statistics.toml": (37771.2, 35803.0)},
+        _BINDING_ACCEPTED_FAILURE_SCOPE,
+        dict(_BINDING_ACCEPTED_NUMERICAL_SIGNATURE),
+    )
+
+    assert disposition == {"status": "FAIL"}
+
+
+def test_binding_accepted_difference_rejects_an_unrelated_numerical_state() -> None:
+    case = next(case for case in CASES if case.slug == "2st-binding")
+    signature = dict(_BINDING_ACCEPTED_NUMERICAL_SIGNATURE)
+    signature["native_560n_dw_ab"] = -0.08
+
+    disposition = _comparison_disposition(
+        case,
+        False,
+        {"STEP2/All/statistics.toml": (37771.2, 35802.6)},
+        _BINDING_ACCEPTED_FAILURE_SCOPE,
+        signature,
+    )
+
+    assert disposition == {"status": "FAIL"}
+
+
+def test_successful_parity_remains_pass_parity() -> None:
+    case = next(case for case in CASES if case.slug == "2st-binding")
+
+    disposition = _comparison_disposition(case, True, {}, frozenset(), {})
+
+    assert disposition == {"status": "PASS_PARITY"}
 
 
 @pytest.mark.parametrize(

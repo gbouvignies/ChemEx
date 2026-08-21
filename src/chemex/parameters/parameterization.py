@@ -1,8 +1,8 @@
 """Immutable native parameter roles, constraints, and resolved scalar values.
 
-This module is a non-authoritative migration seam.  It compiles the currently
-supported method declarations beside the legacy lmfit path and never mutates
-parameter definitions, configuration, or committed Analysis Values.
+This module compiles active v1 method roles for authoritative native evaluation
+without mutating parameter definitions, configuration, or committed Analysis
+Values.
 """
 
 from __future__ import annotations

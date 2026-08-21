@@ -126,11 +126,11 @@ class ParameterFactory:
 
     @property
     def native_construction_error(self) -> Exception | None:
-        """Return the failure that disabled the non-authoritative native candidate."""
+        """Return the failure that prevented native parameter construction."""
         return self._native_construction_error
 
     def disable_native_candidate(self, error: Exception) -> None:
-        """Record the first native failure without disturbing legacy construction."""
+        """Record the first native construction failure for fail-closed reporting."""
         if self._native_construction_error is None:
             self._native_construction_error = error
 
@@ -375,7 +375,7 @@ class ParameterFactory:
         )
 
     def try_seal_definitions(self) -> bool:
-        """Seal definitions without allowing the native candidate to veto legacy."""
+        """Attempt to seal definitions and retain the first construction failure."""
         if self._native_construction_error is not None:
             return False
         try:
@@ -386,7 +386,7 @@ class ParameterFactory:
         return True
 
     def try_seal_configuration(self) -> bool:
-        """Seal configuration without allowing the native candidate to veto legacy."""
+        """Attempt to seal configuration and retain the first construction failure."""
         if self._native_construction_error is not None:
             return False
         try:

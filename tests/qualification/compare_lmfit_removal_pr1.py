@@ -95,7 +95,7 @@ CASES = (
     ),
 )
 
-# This is the one case-specific #657 disposition established by same-vector
+# This CEST case-specific #657 disposition was established by same-vector
 # cross-evaluation on Asterix.  It is deliberately not a tolerance waiver:
 # legacy-parity remains failed, while the independently diagnosed same objective
 # has a reproducible lower native basin.  The published statistics values below
@@ -163,6 +163,86 @@ _CEST_SIGNATURE_ABSOLUTE_LIMITS = {
     "legacy_l18cd1_chi_square": 0.01,
     "native_l18cd1_chi_square": 0.01,
 }
+
+# The repaired mixed CEST/CPMG parameterization restores all intended R2_B
+# coordinates.  The remaining eight-residue STEP2 difference was independently
+# shown on Asterix to be two stable basins of the same objective.  This scope is
+# exact and compactly generated so a new STEP1, residue, profile, or parameter
+# discrepancy cannot inherit the disposition.
+_BINDING_ACCEPTED_DIFFERENCE = {
+    "statistics_path": "STEP2/All/statistics.toml",
+    "published_legacy_chi_square": 37771.2,
+    "published_native_chi_square": 35802.6,
+    "diagnosed_legacy_chi_square": 37771.20405101328,
+    "diagnosed_native_chi_square": 35802.60988668793,
+}
+_BINDING_DIFFERENT_GROUPS = (
+    ("31_513N", "513N"),
+    ("59_551N", "551N"),
+    ("63_555N", "555N"),
+    ("66_558N", "558N"),
+    ("67_559N", "559N"),
+    ("68_560N", "560N"),
+    ("74_571N", "571N"),
+    ("75_572N", "572N"),
+)
+_BINDING_DATASETS = (
+    "cest_10hz_10p_1",
+    "cest_10hz_10p_2",
+    "cest_20hz_10p",
+    "cpmg_10p",
+    "cpmg_13p",
+    "cpmg_3p",
+    "cpmg_6p",
+)
+_BINDING_PARAMETER_FAILURES = {
+    residue: {
+        "constrained.toml": (
+            ('["R1_B, B0->800.0MHZ"]', "[CS_B]") if residue != "572N" else ("[CS_B]",)
+        ),
+        "fitted.toml": (
+            (
+                '["R1_A, B0->800.0MHZ"]',
+                '["R2_A, B0->800.0MHZ"]',
+                '["R2_B, B0->800.0MHZ"]',
+                "[DW_AB]",
+            )
+            if residue != "572N"
+            else ('["R2_B, B0->800.0MHZ"]', "[DW_AB]")
+        ),
+    }
+    for _group, residue in _BINDING_DIFFERENT_GROUPS
+}
+_BINDING_ACCEPTED_FAILURE_SCOPE = frozenset(
+    {
+        f"data:{root}/Data/{dataset}.dat:[{residue}]"
+        for group, residue in _BINDING_DIFFERENT_GROUPS
+        for root in ("STEP2/All", f"STEP2/Groups/{group}")
+        for dataset in _BINDING_DATASETS
+    }
+    | {
+        f"parameter:{root}/Parameters/{filename}:{(identifier, residue)!r}"
+        for group, residue in _BINDING_DIFFERENT_GROUPS
+        for root in ("STEP2/All", f"STEP2/Groups/{group}")
+        for filename, identifiers in _BINDING_PARAMETER_FAILURES[residue].items()
+        for identifier in identifiers
+    }
+)
+_BINDING_ACCEPTED_NUMERICAL_SIGNATURE = {
+    "legacy_513n_r2_b": 6.59550,
+    "native_513n_r2_b": 3.42548,
+    "legacy_513n_dw_ab": -0.0720231,
+    "native_513n_dw_ab": 0.0749041,
+    "legacy_560n_r2_b": 3.51575,
+    "native_560n_r2_b": 5.25795,
+    "legacy_560n_dw_ab": 0.0737021,
+    "native_560n_dw_ab": -0.0605078,
+}
+# These limits fingerprint product-output rounding only.  They do not alter the
+# original parameter/data parity tolerances, which continue to fail.
+_BINDING_SIGNATURE_ABSOLUTE_LIMITS = dict.fromkeys(
+    _BINDING_ACCEPTED_NUMERICAL_SIGNATURE, 0.001
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,30 +396,84 @@ def _comparison_disposition(
 ) -> dict[str, object]:
     if parity_passed:
         return {"status": "PASS_PARITY"}
-    if case.slug != "cest-13c-label-cn":
+    if case.slug == "cest-13c-label-cn":
+        path = str(_CEST_ACCEPTED_DIFFERENCE["statistics_path"])
+        observed = published_chi_squares.get(path)
+        expected = (
+            float(_CEST_ACCEPTED_DIFFERENCE["published_legacy_chi_square"]),
+            float(_CEST_ACCEPTED_DIFFERENCE["published_native_chi_square"]),
+        )
+        signature_matches = numerical_signature.keys() == (
+            _CEST_ACCEPTED_NUMERICAL_SIGNATURE.keys()
+        ) and all(
+            math.isclose(
+                numerical_signature[name],
+                expected_value,
+                rel_tol=0.0,
+                abs_tol=_CEST_SIGNATURE_ABSOLUTE_LIMITS[name],
+            )
+            for name, expected_value in _CEST_ACCEPTED_NUMERICAL_SIGNATURE.items()
+        )
+        if (
+            observed != expected
+            or parity_failure_scope != _CEST_ACCEPTED_FAILURE_SCOPE
+            or not signature_matches
+        ):
+            return {"status": "FAIL"}
+        return {
+            "status": "ACCEPTED_DIFFERENCE",
+            "parity_status": "FAIL",
+            "objective_semantics_parity": "PASS",
+            "observed_numerical_signature": numerical_signature,
+            "disposition": (
+                "Frozen legacy observation is not the normative optimum; native and "
+                "legacy evaluate the same objective, and native TRF reproducibly "
+                "reaches the lower accepted basin."
+            ),
+            "diagnosed_legacy_chi_square": _CEST_ACCEPTED_DIFFERENCE[
+                "diagnosed_legacy_chi_square"
+            ],
+            "diagnosed_native_chi_square": _CEST_ACCEPTED_DIFFERENCE[
+                "diagnosed_native_chi_square"
+            ],
+            "diagnosed_legacy_l18cd1_chi_square": _CEST_ACCEPTED_DIFFERENCE[
+                "diagnosed_legacy_l18cd1_chi_square"
+            ],
+            "diagnosed_native_l18cd1_chi_square": _CEST_ACCEPTED_DIFFERENCE[
+                "diagnosed_native_l18cd1_chi_square"
+            ],
+        }
+    if case.slug != "2st-binding":
         return {"status": "FAIL"}
 
-    path = str(_CEST_ACCEPTED_DIFFERENCE["statistics_path"])
+    path = str(_BINDING_ACCEPTED_DIFFERENCE["statistics_path"])
     observed = published_chi_squares.get(path)
     expected = (
-        float(_CEST_ACCEPTED_DIFFERENCE["published_legacy_chi_square"]),
-        float(_CEST_ACCEPTED_DIFFERENCE["published_native_chi_square"]),
+        float(_BINDING_ACCEPTED_DIFFERENCE["published_legacy_chi_square"]),
+        float(_BINDING_ACCEPTED_DIFFERENCE["published_native_chi_square"]),
     )
     signature_matches = numerical_signature.keys() == (
-        _CEST_ACCEPTED_NUMERICAL_SIGNATURE.keys()
+        _BINDING_ACCEPTED_NUMERICAL_SIGNATURE.keys()
     ) and all(
         math.isclose(
             numerical_signature[name],
             expected_value,
             rel_tol=0.0,
-            abs_tol=_CEST_SIGNATURE_ABSOLUTE_LIMITS[name],
+            abs_tol=_BINDING_SIGNATURE_ABSOLUTE_LIMITS[name],
         )
-        for name, expected_value in _CEST_ACCEPTED_NUMERICAL_SIGNATURE.items()
+        for name, expected_value in _BINDING_ACCEPTED_NUMERICAL_SIGNATURE.items()
+    )
+    diagnosed_legacy = float(
+        _BINDING_ACCEPTED_DIFFERENCE["diagnosed_legacy_chi_square"]
+    )
+    diagnosed_native = float(
+        _BINDING_ACCEPTED_DIFFERENCE["diagnosed_native_chi_square"]
     )
     if (
         observed != expected
-        or parity_failure_scope != _CEST_ACCEPTED_FAILURE_SCOPE
+        or parity_failure_scope != _BINDING_ACCEPTED_FAILURE_SCOPE
         or not signature_matches
+        or diagnosed_native >= diagnosed_legacy
     ):
         return {"status": "FAIL"}
     return {
@@ -350,20 +484,10 @@ def _comparison_disposition(
         "disposition": (
             "Frozen legacy observation is not the normative optimum; native and "
             "legacy evaluate the same objective, and native TRF reproducibly reaches "
-            "the lower accepted basin."
+            "the lower accepted STEP2 basin."
         ),
-        "diagnosed_legacy_chi_square": _CEST_ACCEPTED_DIFFERENCE[
-            "diagnosed_legacy_chi_square"
-        ],
-        "diagnosed_native_chi_square": _CEST_ACCEPTED_DIFFERENCE[
-            "diagnosed_native_chi_square"
-        ],
-        "diagnosed_legacy_l18cd1_chi_square": _CEST_ACCEPTED_DIFFERENCE[
-            "diagnosed_legacy_l18cd1_chi_square"
-        ],
-        "diagnosed_native_l18cd1_chi_square": _CEST_ACCEPTED_DIFFERENCE[
-            "diagnosed_native_l18cd1_chi_square"
-        ],
+        "diagnosed_legacy_chi_square": diagnosed_legacy,
+        "diagnosed_native_chi_square": diagnosed_native,
     }
 
 
@@ -409,6 +533,44 @@ def _cest_numerical_signature(
             ("native", native_values),
         )
     }
+
+
+def _binding_numerical_signature(
+    path: str,
+    legacy: str,
+    native: str,
+) -> dict[str, float]:
+    if path != "STEP2/All/Parameters/fitted.toml":
+        return {}
+    legacy_values = {item.identifier: item.value for item in _parameter_values(legacy)}
+    native_values = {item.identifier: item.value for item in _parameter_values(native)}
+    identifiers = {
+        "513n_r2_b": ('["R2_B, B0->800.0MHZ"]', "513N"),
+        "513n_dw_ab": ("[DW_AB]", "513N"),
+        "560n_r2_b": ('["R2_B, B0->800.0MHZ"]', "560N"),
+        "560n_dw_ab": ("[DW_AB]", "560N"),
+    }
+    return {
+        f"{implementation}_{name}": values[identifier]
+        for name, identifier in identifiers.items()
+        for implementation, values in (
+            ("legacy", legacy_values),
+            ("native", native_values),
+        )
+    }
+
+
+def _case_numerical_signature(
+    case: Case,
+    path: str,
+    legacy: str,
+    native: str,
+) -> dict[str, float]:
+    if case.slug == "cest-13c-label-cn":
+        return _cest_numerical_signature(path, legacy, native)
+    if case.slug == "2st-binding":
+        return _binding_numerical_signature(path, legacy, native)
+    return {}
 
 
 def _compare_output_schema(path: str, legacy: str, native: str) -> None:
@@ -577,20 +739,18 @@ def compare_case(
         if path.endswith(".dat"):
             fraction, detail, failures = _compare_data(path, legacy, native)
             parity_failure_scope.update(failures)
-            if case.slug == "cest-13c-label-cn":
-                numerical_signature.update(
-                    _cest_numerical_signature(path, legacy, native)
-                )
+            numerical_signature.update(
+                _case_numerical_signature(case, path, legacy, native)
+            )
             if fraction > worst_data_fraction:
                 worst_data_fraction = fraction
                 worst_data_detail = detail
         elif "Parameters" in Path(path).parts:
             fraction, detail, failures = _compare_parameters(path, legacy, native, case)
             parity_failure_scope.update(failures)
-            if case.slug == "cest-13c-label-cn":
-                numerical_signature.update(
-                    _cest_numerical_signature(path, legacy, native)
-                )
+            numerical_signature.update(
+                _case_numerical_signature(case, path, legacy, native)
+            )
             if fraction > worst_parameter_fraction:
                 worst_parameter_fraction = fraction
                 worst_parameter_detail = detail
