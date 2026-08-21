@@ -1147,6 +1147,39 @@ def test_product_request_does_not_hide_structural_capability_errors() -> None:
         )
 
 
+def test_scaled_svd_preserves_full_rank_when_information_condition_overflows() -> None:
+    policy = dataclasses.replace(
+        _qualification_policy("a"),
+        coordinate_scales=(("a", 1.0), ("b", 1.0)),
+        coordinate_units=(
+            ("a", ParameterUnit.UNSPECIFIED),
+            ("b", ParameterUnit.UNSPECIFIED),
+        ),
+        rank_relative_tolerance=0.0,
+    )
+
+    with patch.object(
+        uncertainty_module,
+        "svd",
+        return_value=(np.eye(2), np.array((1.0e200, 1.0)), np.eye(2)),
+    ):
+        analysis, failure = uncertainty_module._analyze_scaled_jacobian(
+            np.eye(2),
+            (1.0, 1.0),
+            policy=policy,
+            source_identity="overflowing-information-condition",
+            cancellation_probe=None,
+        )
+
+    assert analysis is not None
+    assert analysis.rank == 2
+    assert analysis.jacobian_condition == pytest.approx(1.0e200)
+    assert analysis.information_condition is not None
+    assert math.isinf(analysis.information_condition)
+    assert failure is not None
+    assert failure.category == "non_finite_information_condition"
+
+
 def test_malformed_non_finite_svd_output_is_a_typed_covariance_failure() -> None:
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
     malformed_svd = (

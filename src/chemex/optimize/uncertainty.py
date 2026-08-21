@@ -2679,6 +2679,8 @@ class RootAnchoredBlockCovariance:
                 return "rank deficient"
             if self.failure.category == "insufficient_effective_observations":
                 return "insufficient information"
+            if self.failure.category == "non_finite_information_condition":
+                return "poorly conditioned"
             return "derivative unavailable"
         states = {item.name: item.state for item in self.claims}
         if states.get("CONDITIONING_ADEQUACY") is not ClaimState.SATISFIED:
@@ -2802,7 +2804,11 @@ class RootAnchoredBlockCovarianceEvidence:
         }
 
 
-def _failed_block_claims(category: str) -> tuple[ClaimAssessment, ...]:
+def _failed_block_claims(
+    category: str,
+    *,
+    full_rank: bool = False,
+) -> tuple[ClaimAssessment, ...]:
     """Build the canonical closed claim surface for a failed block."""
     return (
         ClaimAssessment("AUTHORITATIVE_LINEAGE", ClaimState.SATISFIED),
@@ -2815,9 +2821,13 @@ def _failed_block_claims(category: str) -> tuple[ClaimAssessment, ...]:
         ),
         ClaimAssessment(
             "FULL_COLUMN_RANK",
-            ClaimState.VIOLATED
-            if category == "rank_deficient"
-            else ClaimState.INDETERMINATE,
+            ClaimState.SATISFIED
+            if full_rank
+            else (
+                ClaimState.VIOLATED
+                if category == "rank_deficient"
+                else ClaimState.INDETERMINATE
+            ),
         ),
         ClaimAssessment("COVARIANCE_ARITHMETIC_INTEGRITY", ClaimState.INDETERMINATE),
         ClaimAssessment("USABLE_LOCAL_COVARIANCE", ClaimState.VIOLATED),
@@ -2938,6 +2948,9 @@ def derive_root_anchored_block_covariance(  # noqa: C901
                 source_identity=jacobian.identity,
                 cancellation_probe=None,
             )
+            if analysis is not None:
+                rank = analysis.rank
+                condition = analysis.jacobian_condition
             if analysis_failure is not None:
                 failure = EvidenceFailure(
                     "block_covariance",
@@ -2946,8 +2959,6 @@ def derive_root_anchored_block_covariance(  # noqa: C901
                     jacobian.identity,
                 )
             elif analysis is not None:
-                rank = analysis.rank
-                condition = analysis.jacobian_condition
                 reduction, reduction_failure = _reduce_scaled_covariance(
                     analysis,
                     scales,
@@ -2967,7 +2978,10 @@ def derive_root_anchored_block_covariance(  # noqa: C901
                 elif reduction is not None:
                     _variance_scale, _unscaled, factor, covariance = reduction
             if failure is not None:
-                claims = _failed_block_claims(failure.category)
+                claims = _failed_block_claims(
+                    failure.category,
+                    full_rank=(rank == len(scope)),
+                )
             else:
                 if covariance is None or condition is None:
                     raise ValueError("Successful block covariance lacks its arrays")
@@ -4326,6 +4340,7 @@ def _analyze_scaled_jacobian(
         )[np.newaxis, :]
     )
     _raise_if_terminated(cancellation_probe)
+    analysis_failure: EvidenceFailure | None = None
     try:
         _left, singular_array, right_transpose_array = svd(
             scaled,
@@ -4388,7 +4403,7 @@ def _analyze_scaled_jacobian(
             )
             information_condition = condition * condition
             if not math.isfinite(information_condition):
-                return None, EvidenceFailure(
+                analysis_failure = EvidenceFailure(
                     "covariance",
                     "non_finite_information_condition",
                     "Squared Jacobian condition is non-finite",
@@ -4411,7 +4426,7 @@ def _analyze_scaled_jacobian(
             condition,
             information_condition,
         ),
-        None,
+        analysis_failure,
     )
 
 
@@ -4614,7 +4629,7 @@ def _covariance_from_jacobian(
         source_identity=jacobian.identity,
         cancellation_probe=cancellation_probe,
     )
-    if analysis_failure is not None or analysis is None:
+    if analysis is None:
         return None, None, analysis_failure
     singular_values = analysis.singular_values
     largest = singular_values[0] if singular_values else 0.0
@@ -4679,6 +4694,8 @@ def _covariance_from_jacobian(
     terminal = _cancellation_terminal(cancellation_probe)
     if terminal is not None:
         raise DerivationTermination(terminal, rank_diagnostic)
+    if analysis_failure is not None:
+        return None, rank_diagnostic, analysis_failure
     reduction, reduction_failure = _reduce_scaled_covariance(
         analysis,
         jacobian.coordinate_scales,
