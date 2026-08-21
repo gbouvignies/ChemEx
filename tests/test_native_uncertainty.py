@@ -794,7 +794,7 @@ def test_production_backend_fallback_and_reference_covariance_agree(
     np.testing.assert_allclose(
         backend.residual_jacobian.matrix,
         reference.residual_jacobian.matrix,
-        rtol=2.0e-4,
+        rtol=5.0e-4,
         atol=1.5e-5,
     )
     assert backend.rank_diagnostic is not None

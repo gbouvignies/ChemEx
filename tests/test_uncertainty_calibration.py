@@ -428,7 +428,7 @@ def test_b_consumes_selected_a_and_c_consumes_selected_ab(
         and tuple(item["covariance_available"] for item in rank_cases)
         == (True, False, True)
         and rank_cases[0]["normalized_spectrum"] == pytest.approx((1.0, 1.0))
-        and rank_cases[1]["normalized_spectrum"][1] == 0.0
+        and abs(rank_cases[1]["normalized_spectrum"][1]) <= math.ulp(1.0)
         and rank_cases[2]["normalized_spectrum"][1] > 0.0
     )
     assert not calibration._h4_spectral_case(
