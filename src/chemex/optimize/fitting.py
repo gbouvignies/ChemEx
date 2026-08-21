@@ -159,6 +159,7 @@ def run_methods(
             path_sect,
             plot_level,
             session=session,
+            step_name=section if len(methods) > 1 else "",
         )
         _run_requested_native_statistics(
             experiments,

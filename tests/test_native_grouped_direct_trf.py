@@ -39,6 +39,11 @@ from chemex.optimize.grouped_direct_trf import (
     execute_grouped_direct_trf,
     materialize_grouped_direct_trf,
 )
+from chemex.optimize.progress import (
+    FitProgressContext,
+    ProgressEvent,
+    ProgressPhase,
+)
 from chemex.parameters.parameterization import ActiveParameterization
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
@@ -350,6 +355,44 @@ def test_successful_components_compose_one_fresh_root_accepted_result_and_commit
             analysis_values=session.analysis_values,
         )
     assert session.analysis_values.snapshot() == committed
+
+
+def test_grouped_direct_progress_identifies_each_group_in_order() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    invocation = GroupedDirectTrfInvocation.for_decomposition(
+        decomposition,
+        objective_request_budgets=(80,) * len(decomposition.components),
+    )
+    observed: list[tuple[FitProgressContext, ProgressEvent]] = []
+
+    outcome = execute_grouped_direct_trf(
+        problem,
+        decomposition,
+        invocation,
+        parameterization,
+        engine,
+        progress_observer=lambda context, event: observed.append((context, event)),
+    )
+
+    assert outcome.terminal is GroupedDirectTrfTerminal.ACCEPTED
+    started = [item for item in observed if item[1].phase is ProgressPhase.STARTED]
+    terminated = [
+        item for item in observed if item[1].phase is ProgressPhase.TERMINATED
+    ]
+    assert [context.group_ordinal for context, _event in started] == list(
+        range(1, len(decomposition.components) + 1)
+    )
+    assert all(
+        context.group_total == len(decomposition.components)
+        for context, _event in started
+    )
+    assert [context.controlled_ids for context, _event in started] == [
+        component.controlled_ids for component in decomposition.components
+    ]
+    assert [context for context, _event in terminated] == [
+        context for context, _event in started
+    ]
 
 
 def test_fresh_root_validation_rejects_an_inconsistent_component_result() -> None:

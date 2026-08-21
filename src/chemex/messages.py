@@ -15,11 +15,16 @@ Typical usage example:
 """
 
 from collections import Counter
+from collections.abc import Callable, Mapping
+from contextlib import suppress
+from dataclasses import replace
 from pathlib import Path
+from time import monotonic
 
 from pydantic import ValidationError
 from rich import box
 from rich.console import Console
+from rich.live import Live
 from rich.padding import Padding
 from rich.panel import Panel
 from rich.rule import Rule
@@ -28,8 +33,297 @@ from rich.table import Table
 from rich.text import Text
 
 from chemex import __version__
+from chemex.optimize.progress import (
+    FitProgressContext,
+    ProgressEvent,
+    ProgressPhase,
+    ProgressRateLimiter,
+    ProgressUpdate,
+)
 
 console = Console()
+
+
+class MinimizationProgressReporter:
+    """Own Rich rendering and UX policy for one visible deterministic fit."""
+
+    def __init__(
+        self,
+        output_console: Console,
+        *,
+        interactive: bool,
+        retained_observation_count: int,
+        controlled_parameter_count: int,
+        step_name: str = "",
+        group_labels: Mapping[frozenset[str], str] | None = None,
+        grid: bool = False,
+        enabled: bool = True,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
+        self._console = output_console
+        self._interactive = interactive
+        self._retained_observation_count = retained_observation_count
+        self._controlled_parameter_count = controlled_parameter_count
+        self._step_name = step_name
+        self._group_labels = {} if group_labels is None else dict(group_labels)
+        self._grid = grid
+        self._enabled = enabled
+        self._clock = clock
+        self._started_at: float | None = None
+        self._live: Live | None = None
+        self._limiters: dict[FitProgressContext, ProgressRateLimiter] = {}
+        self._noninteractive_limiter = ProgressRateLimiter(interactive=False)
+        self._noninteractive_started = False
+        self._noninteractive_reported_best: dict[FitProgressContext, float] = {}
+        self._grid_limiter = ProgressRateLimiter(interactive=interactive)
+        self._grid_started = False
+        self._completed_by_context: dict[FitProgressContext, int] = {}
+        self._finished = False
+        self._active = False
+
+    @property
+    def is_active(self) -> bool:
+        """Whether the reporter currently owns an active rendering scope."""
+        return self._active
+
+    def __enter__(self) -> "MinimizationProgressReporter":
+        self._active = True
+        if not self._enabled:
+            return self
+        self._started_at = self._clock()
+        if self._interactive:
+            try:
+                self._live = Live(
+                    "",
+                    console=self._console,
+                    auto_refresh=False,
+                    transient=True,
+                )
+                self._live.start(refresh=True)
+            except Exception:  # noqa: BLE001 - reporting is non-scientific
+                self._disable()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        _exc_value: BaseException | None,
+        _traceback: object,
+    ) -> bool:
+        if self._enabled and exc_type is not None and not self._finished:
+            status = (
+                "interrupted" if issubclass(exc_type, KeyboardInterrupt) else "failed"
+            )
+            self._stop_live()
+            with suppress(Exception):
+                self._render_final(None, status)
+        else:
+            self._stop_live()
+        self._active = False
+        return False
+
+    def observe(self, context: FitProgressContext, event: ProgressEvent) -> None:
+        """Observe one contextual scalar event without affecting the fit."""
+        if not self._enabled:
+            return
+        try:
+            event = replace(event, elapsed_seconds=self._elapsed())
+            self._completed_by_context[context] = max(
+                event.objective_evaluations_completed,
+                self._completed_by_context.get(context, 0),
+            )
+            update = (
+                self._observe_grid(event)
+                if self._grid
+                else (
+                    self._limiter(context).observe(event)
+                    if self._interactive
+                    else self._observe_noninteractive(context, event)
+                )
+            )
+            if event.phase is ProgressPhase.TERMINATED and context.group_total == 1:
+                update = None
+            if update is not None:
+                self._render(
+                    _format_progress(
+                        context,
+                        update,
+                        self._context_label(context),
+                        self._step_name,
+                    )
+                )
+        except KeyboardInterrupt:
+            self._stop_live()
+            raise
+        except Exception:  # noqa: BLE001 - reporting failure is non-scientific
+            self._disable()
+
+    def finish(
+        self,
+        *,
+        final_chi_square: float | None,
+        terminal_status: str,
+    ) -> None:
+        """Close live rendering and emit one persistent aggregate terminal line."""
+        if not self._enabled or self._finished:
+            return
+        self._finished = True
+        self._stop_live()
+        try:
+            self._render_final(final_chi_square, terminal_status)
+        except KeyboardInterrupt:
+            raise
+        except Exception:  # noqa: BLE001 - reporting is non-scientific
+            self._disable()
+
+    def _limiter(self, context: FitProgressContext) -> ProgressRateLimiter:
+        return self._limiters.setdefault(
+            context,
+            ProgressRateLimiter(interactive=self._interactive),
+        )
+
+    def _observe_grid(self, event: ProgressEvent) -> ProgressUpdate | None:
+        if event.phase is ProgressPhase.STARTED:
+            if self._grid_started:
+                return None
+            self._grid_started = True
+            return self._grid_limiter.observe(event)
+        if event.phase is ProgressPhase.TERMINATED:
+            return None
+        probe = replace(
+            event,
+            current_chi_square=None,
+            best_chi_square=None,
+        )
+        selected = self._grid_limiter.observe(probe)
+        return None if selected is None else ProgressUpdate(event, None)
+
+    def _observe_noninteractive(
+        self,
+        context: FitProgressContext,
+        event: ProgressEvent,
+    ) -> ProgressUpdate | None:
+        phase = (
+            ProgressPhase.STARTED
+            if not self._noninteractive_started
+            else ProgressPhase.EVALUATED
+        )
+        self._noninteractive_started = True
+        elapsed = event.elapsed_seconds
+        probe = replace(
+            event,
+            phase=phase,
+            current_chi_square=None,
+            best_chi_square=None,
+            elapsed_seconds=elapsed,
+            terminal_status=None,
+        )
+        if self._noninteractive_limiter.observe(probe) is None:
+            return None
+        previous = self._noninteractive_reported_best.get(context)
+        best = event.best_chi_square
+        relative_change = (
+            None
+            if best is None or previous is None
+            else 0.0
+            if previous == 0.0
+            else (best - previous) / abs(previous)
+        )
+        if best is not None:
+            self._noninteractive_reported_best[context] = best
+        return ProgressUpdate(
+            replace(event, phase=phase, elapsed_seconds=elapsed, terminal_status=None),
+            relative_change,
+        )
+
+    def _context_label(self, context: FitProgressContext) -> str:
+        return self._group_labels.get(frozenset(context.controlled_ids), "")
+
+    def _elapsed(self) -> float:
+        return (
+            0.0
+            if self._started_at is None
+            else max(0.0, self._clock() - self._started_at)
+        )
+
+    def _render(self, line: str) -> None:
+        text = Text(line)
+        if self._live is not None:
+            self._live.update(text, refresh=True)
+        else:
+            self._console.print(text)
+
+    def _render_final(self, chi_square: float | None, status: str) -> None:
+        reduced = (
+            None
+            if chi_square is None
+            else chi_square
+            / max(
+                1,
+                self._retained_observation_count - self._controlled_parameter_count,
+            )
+        )
+        parts = [f"eval {sum(self._completed_by_context.values())} total"]
+        if chi_square is not None:
+            parts.append(f"final χ² {_format_scalar(chi_square)}")
+        if reduced is not None:
+            parts.append(f"red. χ² {_format_scalar(reduced)}")
+        parts.extend((f"{self._elapsed():.1f} s", status))
+        prefix = f"[{self._step_name}] " if self._step_name else ""
+        self._console.print(Text(prefix + " · ".join(parts)))
+
+    def _stop_live(self) -> None:
+        if self._live is None:
+            return
+        live, self._live = self._live, None
+        with suppress(Exception):
+            live.stop()
+
+    def _disable(self) -> None:
+        self._enabled = False
+        self._stop_live()
+
+
+def _format_scalar(value: float) -> str:
+    return f"{value:.6g}"
+
+
+def _format_progress(
+    context: FitProgressContext,
+    update: ProgressUpdate,
+    group_label: str,
+    step_name: str,
+) -> str:
+    event = update.event
+    labels: list[str] = [step_name] if step_name else []
+    if context.grid_seed_ordinal is not None and context.grid_seed_total is not None:
+        labels.append(
+            f"GRID seed {context.grid_seed_ordinal}/{context.grid_seed_total}"
+        )
+    if context.group_total > 1:
+        labels.append(f"group {context.group_ordinal}/{context.group_total}")
+        if group_label:
+            labels.append(group_label)
+    prefix = f"[{' · '.join(labels)}] " if labels else ""
+    parts = [
+        (
+            f"eval {event.objective_evaluations_completed}/"
+            f"{event.objective_request_budget}"
+        )
+    ]
+    if event.best_chi_square is None:
+        parts.append("starting")
+    else:
+        parts.append(f"best χ² {_format_scalar(event.best_chi_square)}")
+        reduced = event.reduced_chi_square
+        if reduced is not None:
+            parts.append(f"red. χ² {_format_scalar(reduced)}")
+    if update.relative_best_change is not None:
+        parts.append(f"Δχ² {100.0 * update.relative_best_change:+.2f}%")
+    parts.append(f"{event.elapsed_seconds:.1f} s")
+    if event.terminal_status:
+        parts.append(event.terminal_status)
+    return prefix + " · ".join(parts)
 
 
 LOGO = r"""
@@ -228,17 +522,17 @@ def print_section(name: str) -> None:
 
 def print_chi2_table_header() -> None:
     """Print the header for the chi-squared table."""
-    header = Text(f"{'Iteration':>9s}  {'χ²':>12s}  {'Reduced χ²':>12s}")
+    header = Text(f"{'Evaluation':>10s}  {'χ²':>12s}  {'Reduced χ²':>12s}")
     console.print()
     console.print(Padding.indent(header, 5), style="bold")
     console.print(Padding.indent("─" * 39, 4))
 
 
 def print_chi2_table_line(iteration: int, chisqr: float, redchi: float) -> None:
-    """Print a line in the chi-squared table with iteration and chi-squared values.
+    """Print a line in the chi-squared table with evaluation and chi-squared values.
 
     Args:
-        iteration (int): Iteration number.
+        iteration (int): Objective evaluation number (legacy keyword name).
         chisqr (float): Chi-squared value.
         redchi (float): Reduced chi-squared value.
 
@@ -251,7 +545,7 @@ def print_chi2_table_footer(iteration: int, chisqr: float, redchi: float) -> Non
     """Print the footer for the chi-squared table.
 
     Args:
-        iteration (int): Iteration number.
+        iteration (int): Objective evaluation number (legacy keyword name).
         chisqr (float): Chi-squared value.
         redchi (float): Reduced chi-squared value.
 

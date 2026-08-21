@@ -8,6 +8,12 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 ## [Unreleased]
 
 ### Changed
+- Native deterministic minimization once again reports fit progress. The Rich
+  display shows objective evaluations, best and reduced chi-square, relative
+  improvement, elapsed time, and applicable step/group or aggregated GRID
+  context; objective evaluations are no longer mislabeled as solver iterations.
+  Internal MC, BS, and BSN refits remain under the existing statistics-level
+  reporting rather than opening a progress stream for every replicate.
 - Removed the unreachable legacy optimizer, MCMC, resampling, parameter-container,
   and live legacy-observation compatibility paths. ChemEx deterministic fitting
   now uses bounded SciPy TRF exclusively through the native ChemEx parameter and

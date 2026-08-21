@@ -58,6 +58,7 @@ from chemex.optimize.direct_trf import (
     materialize_root_candidate,
 )
 from chemex.optimize.grouped_direct_trf import FitDecomposition
+from chemex.optimize.progress import ProgressEvent, ProgressPhase
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     compile_active_parameterization,
@@ -653,6 +654,122 @@ def test_cpmg_step1_direct_trf_preserves_requests_and_reuses_profile_kernels() -
     assert outcome.execution.counters.objective_evaluations_completed == 126
     assert kernel_calls == 360
     assert outcome.candidate.chi_square == pytest.approx(285.8191490381348)
+
+
+def test_direct_trf_reports_objective_evaluations_without_iteration_terminology() -> (
+    None
+):
+    _session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    events: list[ProgressEvent] = []
+
+    outcome = execute_direct_trf(
+        problem,
+        invocation,
+        parameterization,
+        engine,
+        progress_observer=events.append,
+    )
+
+    assert outcome.terminal is DirectTrfOutcomeTerminal.ACCEPTED
+    assert events[0].phase is ProgressPhase.STARTED
+    assert events[-1].phase is ProgressPhase.TERMINATED
+    evaluated = [event for event in events if event.phase is ProgressPhase.EVALUATED]
+    assert len(evaluated) == outcome.execution.counters.objective_evaluations_completed
+    assert [event.objective_evaluations_completed for event in evaluated] == list(
+        range(1, len(evaluated) + 1)
+    )
+    assert all(event.current_chi_square is not None for event in evaluated)
+    assert all(event.best_chi_square is not None for event in evaluated)
+    assert events[-1].terminal_status == "accepted"
+    assert not any("iteration" in name for name in ProgressEvent.__dataclass_fields__)
+
+
+def test_progress_observation_has_no_numerical_or_kernel_effect() -> None:
+    disabled = _qualification_fit()
+    enabled = _qualification_fit()
+    (
+        disabled_parameterization,
+        disabled_engine,
+        disabled_problem,
+        disabled_invocation,
+    ) = disabled[2:]
+    enabled_parameterization, enabled_engine, enabled_problem, enabled_invocation = (
+        enabled[2:]
+    )
+    pulse_type = type(next(iter(disabled[1])).profiles[0].pulse_sequence)
+    original_calculate = cast("Callable[..., Array]", pulse_type.calculate)
+    kernel_calls = [0, 0]
+    active_run = 0
+
+    def counted_kernel(self: object, spectrometer: object, data: object) -> Array:
+        kernel_calls[active_run] += 1
+        return original_calculate(self, spectrometer, data)
+
+    events: list[ProgressEvent] = []
+
+    with patch.object(pulse_type, "calculate", counted_kernel):
+        without_progress = execute_direct_trf(
+            disabled_problem,
+            disabled_invocation,
+            disabled_parameterization,
+            disabled_engine,
+        )
+        active_run = 1
+        with_progress = execute_direct_trf(
+            enabled_problem,
+            enabled_invocation,
+            enabled_parameterization,
+            enabled_engine,
+            progress_observer=events.append,
+        )
+
+    assert len(events) > 2
+    assert kernel_calls[0] == kernel_calls[1]
+    assert without_progress.terminal is with_progress.terminal
+    assert without_progress.execution.counters == with_progress.execution.counters
+    assert without_progress.execution.backend == with_progress.execution.backend
+    assert without_progress.accepted_result is not None
+    assert with_progress.accepted_result is not None
+    first = without_progress.accepted_result
+    second = with_progress.accepted_result
+    assert first.vector == second.vector
+    assert first.chi_square == second.chi_square
+    assert first.evaluation_result.residuals.tobytes() == (
+        second.evaluation_result.residuals.tobytes()
+    )
+    assert without_progress.materialization is not None
+    assert with_progress.materialization is not None
+    assert without_progress.materialization.cache_hits == (
+        with_progress.materialization.cache_hits
+    )
+    assert without_progress.materialization.cache_misses == (
+        with_progress.materialization.cache_misses
+    )
+
+
+def test_progress_observer_failure_is_suppressed_after_first_event() -> None:
+    _session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    observer_calls = 0
+
+    def failing_observer(_event: ProgressEvent) -> None:
+        nonlocal observer_calls
+        observer_calls += 1
+        raise RuntimeError("non-scientific progress failure")
+
+    outcome = execute_direct_trf(
+        problem,
+        invocation,
+        parameterization,
+        engine,
+        progress_observer=failing_observer,
+    )
+
+    assert outcome.terminal is DirectTrfOutcomeTerminal.ACCEPTED
+    assert observer_calls == 1
 
 
 def test_live_commit_authority_is_atomic_under_concurrent_use() -> None:

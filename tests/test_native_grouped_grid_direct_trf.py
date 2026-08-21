@@ -38,6 +38,11 @@ from chemex.optimize.grouped_grid_direct_trf import (
     commit_grouped_grid_accepted_fit,
     execute_grouped_grid_direct_trf,
 )
+from chemex.optimize.progress import (
+    FitProgressContext,
+    ProgressEvent,
+    ProgressPhase,
+)
 from chemex.parameters.parameterization import ActiveParameterization
 from chemex.parameters.values import StaleAnalysisValuesError
 from chemex.runtime import AnalysisSession
@@ -317,6 +322,46 @@ def test_each_seed_uses_exact_components_and_only_selected_aggregate_commits() -
             analysis_values=session.analysis_values,
         )
     assert session.analysis_values.snapshot() == committed
+
+
+def test_grouped_grid_progress_includes_seed_and_group_ordinals() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_grid_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    (axis_id,) = problem.controlled_ids[:1]
+    invocation = GridDirectTrfInvocation.for_problem(
+        problem,
+        axes=((axis_id, (problem.start[0], problem.start[0] * 1.1)),),
+        objective_request_budget=10,
+    )
+    observed: list[tuple[FitProgressContext, ProgressEvent]] = []
+
+    def successful_backend(
+        fun: Callable[[Array], Array], x0: Array, **_kwargs: object
+    ) -> object:
+        candidate = np.asarray(x0, dtype=np.float64) * 0.9
+        return _backend_result(candidate, fun(candidate))
+
+    with patch("chemex.optimize.direct_trf.least_squares", successful_backend):
+        outcome = execute_grouped_grid_direct_trf(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+            progress_observer=lambda context, event: observed.append((context, event)),
+        )
+
+    assert outcome.terminal is GroupedGridDirectTrfTerminal.ACCEPTED
+    contexts = [
+        context for context, event in observed if event.phase is ProgressPhase.STARTED
+    ]
+    assert len(contexts) == len(invocation.seeds) * len(decomposition.components)
+    assert [context.grid_seed_ordinal for context in contexts] == [
+        seed_ordinal
+        for seed_ordinal in range(1, len(invocation.seeds) + 1)
+        for _component in decomposition.components
+    ]
+    assert all(context.grid_seed_total == len(invocation.seeds) for context in contexts)
 
 
 def test_selection_orders_whole_aggregates_and_never_combines_marginal_minima() -> None:

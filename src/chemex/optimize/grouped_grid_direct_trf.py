@@ -52,6 +52,7 @@ from chemex.optimize.grouped_direct_trf import (
     _validate_component_projections,
     execute_direct_trf_components,
 )
+from chemex.optimize.progress import ContextualProgressObserver
 from chemex.parameters.parameterization import ActiveParameterization
 from chemex.parameters.values import AnalysisValues
 
@@ -309,6 +310,9 @@ def _execute_seed(
     parameterization: ActiveParameterization,
     engine: EvaluationEngine,
     token: CancellationToken,
+    progress_observer: ContextualProgressObserver | None,
+    grid_seed_ordinal: int,
+    grid_seed_total: int,
 ) -> GroupedGridSeedOutcome:
     if seed.rejection is not None:
         disposition = (
@@ -352,6 +356,9 @@ def _execute_seed(
         parameterization,
         engine,
         cancellation=token,
+        progress_observer=progress_observer,
+        grid_seed_ordinal=grid_seed_ordinal,
+        grid_seed_total=grid_seed_total,
     )
     if any(
         component.disposition is not ComponentDisposition.SUCCEEDED
@@ -735,6 +742,7 @@ def _execute_all_seeds(
     parameterization: ActiveParameterization,
     engine: EvaluationEngine,
     token: CancellationToken,
+    progress_observer: ContextualProgressObserver | None,
 ) -> tuple[GroupedGridSeedOutcome, ...] | GroupedGridDirectTrfOutcome:
     attempted: list[GroupedGridSeedOutcome] = []
     for index, seed in enumerate(invocation.seeds):
@@ -775,6 +783,9 @@ def _execute_all_seeds(
                 parameterization,
                 engine,
                 token,
+                progress_observer,
+                index + 1,
+                len(invocation.seeds),
             )
         except KeyboardInterrupt as error:
             attempt = _seed_exception(
@@ -904,6 +915,7 @@ def execute_grouped_grid_direct_trf(
     engine: EvaluationEngine,
     *,
     cancellation: CancellationToken | None = None,
+    progress_observer: ContextualProgressObserver | None = None,
 ) -> GroupedGridDirectTrfOutcome:
     """Run exact components per seed and accept only the best root aggregate."""
     _validate_context(problem, decomposition, invocation, parameterization, engine)
@@ -915,6 +927,7 @@ def execute_grouped_grid_direct_trf(
         parameterization,
         engine,
         token,
+        progress_observer,
     )
     if isinstance(seed_execution, GroupedGridDirectTrfOutcome):
         return seed_execution
