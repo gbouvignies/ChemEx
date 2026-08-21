@@ -217,29 +217,29 @@ def _build_fit_session() -> tuple[AnalysisSession, set[str]]:
     return session, experiments.param_ids
 
 
-def _legacy_roles_and_values(
+def _presentation_roles_and_values(
     session: AnalysisSession,
     method: Method,
     required_ids: set[str],
 ) -> tuple[dict[str, ParameterRole], dict[str, float]]:
     session.parameters.set_parameter_status(method)
-    parameters = session.parameters.build_lmfit_params(required_ids)
+    parameters = session.parameters.get_parameters(required_ids)
     roles = {
         param_id: (
             ParameterRole.DERIVED
-            if parameter.expr is not None
+            if parameter.expr
             else ParameterRole.FIT
             if parameter.vary
             else ParameterRole.FIX
         )
         for param_id, parameter in parameters.items()
     }
-    return roles, parameters.valuesdict()
+    return roles, dict(session.resolve_current_values(required_ids))
 
 
 def _assert_complete_shipped_parity(
     native_session: AnalysisSession,
-    legacy_session: AnalysisSession,
+    presentation_session: AnalysisSession,
     method: Method,
     required_ids: set[str],
 ) -> None:
@@ -249,18 +249,22 @@ def _assert_complete_shipped_parity(
         required_ids,
     )
     resolved = parameterization.resolve(parameterization.frame_from_snapshot(snapshot))
-    legacy_roles, legacy_values = _legacy_roles_and_values(
-        legacy_session,
+    presentation_roles, presentation_values = _presentation_roles_and_values(
+        presentation_session,
         method,
         required_ids,
     )
 
-    assert parameterization.scope_ids == tuple(legacy_roles)
+    assert parameterization.scope_ids == tuple(presentation_roles)
     assert {
         param_id: parameterization.role(param_id)
         for param_id in parameterization.scope_ids
-    } == legacy_roles
-    assert dict(resolved) == pytest.approx(legacy_values, rel=1e-13, abs=1e-13)
+    } == presentation_roles
+    assert dict(resolved) == pytest.approx(
+        presentation_values,
+        rel=1e-13,
+        abs=1e-13,
+    )
     assert native_session.analysis_values.snapshot() == snapshot
 
 
@@ -362,13 +366,13 @@ def test_shipped_method_compiles_roles_and_resolves_without_mutation() -> None:
 
 def test_shipped_dcest_constraint_roles_and_values_match_legacy_completely() -> None:
     native_session, required_ids = _build_dcest_session()
-    legacy_session, legacy_required_ids = _build_dcest_session()
-    assert legacy_required_ids == required_ids
+    presentation_session, presentation_required_ids = _build_dcest_session()
+    assert presentation_required_ids == required_ids
     method = read_methods([DCEST_METHOD])["STEP1"]
 
     _assert_complete_shipped_parity(
         native_session,
-        legacy_session,
+        presentation_session,
         method,
         required_ids,
     )
@@ -376,13 +380,13 @@ def test_shipped_dcest_constraint_roles_and_values_match_legacy_completely() -> 
 
 def test_shipped_fix_roles_and_values_match_legacy_completely() -> None:
     native_session, required_ids = _build_fit_session()
-    legacy_session, legacy_required_ids = _build_fit_session()
-    assert legacy_required_ids == required_ids
+    presentation_session, presentation_required_ids = _build_fit_session()
+    assert presentation_required_ids == required_ids
     method = read_methods([FIT_METHOD])["DEFAULT"]
 
     _assert_complete_shipped_parity(
         native_session,
-        legacy_session,
+        presentation_session,
         method,
         required_ids,
     )
@@ -705,8 +709,8 @@ def test_shadowed_constraint_still_receives_public_syntax_validation() -> None:
 
 def test_real_model_free_scientific_expression_matches_legacy_resolution() -> None:
     native_session, required_ids = _build_mf_session()
-    legacy_session, legacy_required_ids = _build_mf_session()
-    assert legacy_required_ids == required_ids
+    presentation_session, presentation_required_ids = _build_mf_session()
+    assert presentation_required_ids == required_ids
     snapshot = native_session.analysis_values.snapshot()
     configuration = native_session.parameter_factory.sealed_configuration
     assert configuration is not None
@@ -733,7 +737,7 @@ def test_real_model_free_scientific_expression_matches_legacy_resolution() -> No
     )
     _assert_complete_shipped_parity(
         native_session,
-        legacy_session,
+        presentation_session,
         method,
         required_ids,
     )

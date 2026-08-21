@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import cast
 
 import chemex.messages as application_module
-from chemex.baselines import LegacyObservationImplementation
 from chemex.numerical_lanes import LaneRole, NumericalLane, RuntimeEnvironment
 
 
@@ -35,7 +34,6 @@ def main() -> None:
     )
     environment = RuntimeEnvironment.from_current_process(args.image_digest)
     authority = lane.attest_current_process(args.image_digest)
-    implementation = LegacyObservationImplementation.from_current_package()
     module_path = Path(application_module.__file__).resolve()
     print(
         json.dumps(
@@ -46,7 +44,6 @@ def main() -> None:
                 "application_module_path": str(module_path),
                 "attestation": authority.to_record(),
                 "environment": environment.to_record(),
-                "implementation": implementation.to_record(),
                 "implementation_wheel_sha256": os.environ[
                     "CHEMEX_IMPLEMENTATION_WHEEL_SHA256"
                 ],

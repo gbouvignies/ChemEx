@@ -1,20 +1,13 @@
-"""Module offering a framework for managing NMR analysis parameters.
-
-It includes classes and methods for indexing, updating, and retrieving parameters,
-handling parameter constraints, and integration with the lmfit library for
-optimization. Additionally, it supports grid definition for parameter exploration and
-ensures physical validity of J couplings.
-"""
+"""Index, configure, and expose ChemEx analysis parameters."""
 
 import re
 import sys
 from collections import Counter, defaultdict
 from collections.abc import Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 import numpy as np
-from lmfit import Parameters as ParametersLF
 
 from chemex.configuration.methods import Method
 from chemex.configuration.parameters import DefaultListType
@@ -25,14 +18,9 @@ from chemex.messages import (
     print_warning_negative_jch,
     print_warning_positive_jnh,
 )
-from chemex.nmr.rates import rate_functions
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import Parameters, ParamSetting
-from chemex.parameters.userfunctions import user_function_registry
 from chemex.typing import Array
-
-if TYPE_CHECKING:
-    from chemex.parameters.legacy_adapter import LegacyValuesAdapter
 
 _PARAM_NAME = r"\[(.+?)\]"
 _FLOAT = r"[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?"
@@ -143,11 +131,7 @@ def _convert_grid_expression_to_values(grid_expression: str) -> Array:
 
 @dataclass
 class ParameterCatalog:
-    """Manages a collection of parameter settings for NMR data analysis.
-
-    This class is responsible for storing, updating, and retrieving various
-    parameter settings, including their values, expressions, and dependencies.
-    It also interfaces with the lmfit library for optimization purposes.
+    """Manage parameter settings, expressions, and dependencies.
 
     Attributes:
         _parameters (Parameters): The parameters managed by the catalog.
@@ -209,54 +193,6 @@ class ParameterCatalog:
             for param_id, parameter in self._parameters.items()
             if param_id in relevant_ids
         }
-
-    def build_lmfit_params(
-        self,
-        param_ids: Iterable[str] | None = None,
-        *,
-        model_name: str,
-    ) -> ParametersLF:
-        """Construct lmfit Parameters from the catalog's parameters.
-
-        This method converts the internal parameter representation to the format
-        required by the lmfit library for optimization.
-
-        Args:
-            param_ids (Iterable[str] | None): Specific parameter IDs to include.
-                                              If None, includes all parameters.
-            model_name (str): Name of the active kinetic model.
-
-        Returns:
-            ParametersLF: lmfit-compatible parameter collection.
-
-        """
-        if param_ids is None:
-            param_ids = set(self._parameters)
-
-        parameters = self.get_parameters(param_ids)
-
-        parameter_args = (parameter.args for parameter in parameters.values())
-
-        usersyms = rate_functions | user_function_registry.get(model_name)
-        lmfit_params = ParametersLF(usersyms=usersyms)
-        lmfit_params.add_many(*parameter_args)
-        lmfit_params.update_constraints()
-
-        for id_, lf_param in lmfit_params.items():
-            lf_param.stderr = parameters[id_].stderr
-
-        return lmfit_params
-
-    def update_from_lmfit_params(self, parameters: ParametersLF) -> None:
-        """Update catalog parameters from lmfit Parameters.
-
-        Args:
-            parameters (ParametersLF): lmfit Parameters to update from.
-
-        """
-        for param_id, parameter in parameters.items():
-            self._parameters[param_id].value = parameter.value
-            self._parameters[param_id].stderr = parameter.stderr
 
     def get_matching_ids(self, param_name: ParamName) -> set[str]:
         """Find parameter IDs matching a specified parameter name.
@@ -568,11 +504,6 @@ class ParameterStore:
     _defaults_applied: bool = field(default=False, init=False, repr=False)
     _defaults: DefaultListType = field(default_factory=list, init=False, repr=False)
     _configuration_locked: bool = field(default=False, init=False, repr=False)
-    _legacy_values_adapter: "LegacyValuesAdapter | None" = field(
-        default=None,
-        init=False,
-        repr=False,
-    )
 
     @property
     def database(self) -> ParameterCatalog:
@@ -592,10 +523,6 @@ class ParameterStore:
     def lock_configuration(self) -> None:
         """Reject later definition/default mutations while values remain mutable."""
         self._configuration_locked = True
-
-    def attach_legacy_values_adapter(self, adapter: "LegacyValuesAdapter") -> None:
-        """Attach the session's one-way legacy-to-native values edge."""
-        self._legacy_values_adapter = adapter
 
     def _ensure_configuration_open(self) -> None:
         if self._configuration_locked:
@@ -648,35 +575,9 @@ class ParameterStore:
         """
         return self.database.get_value(param_id)
 
-    def build_lmfit_params(self, param_ids: Iterable[str]) -> ParametersLF:
-        """Build lmfit Parameters from the active catalog.
-
-        Args:
-            param_ids (Iterable[str]): IDs of parameters to include.
-
-        Returns:
-            ParametersLF: lmfit-compatible parameters.
-
-        """
-        return self.database.build_lmfit_params(param_ids, model_name=self.model.name)
-
     def sort(self) -> None:
         """Sort parameters in the active catalog."""
         self.database.sort()
-
-    def update_from_parameters(self, parameters: ParametersLF) -> None:
-        """Update the active catalog from lmfit Parameters.
-
-        Args:
-            parameters (ParametersLF): lmfit Parameters to update from.
-
-        """
-        self.database.update_from_lmfit_params(parameters)
-        if self._legacy_values_adapter is not None:
-            try:
-                self._legacy_values_adapter.try_commit(parameters)
-            except Exception as error:  # noqa: BLE001 - legacy authority boundary
-                self._legacy_values_adapter.disable(error)
 
     def set_values(self, par_values: dict[str, float]) -> None:
         """Set the values of specific parameters in the active catalog.
@@ -686,11 +587,6 @@ class ParameterStore:
 
         """
         self.database.set_values(par_values)
-        if self._legacy_values_adapter is not None:
-            try:
-                self._legacy_values_adapter.try_commit_values(par_values)
-            except Exception as error:  # noqa: BLE001 - legacy authority boundary
-                self._legacy_values_adapter.disable(error)
 
     def set_defaults(self, defaults: DefaultListType) -> None:
         """Set defaults for parameters in both catalogs.

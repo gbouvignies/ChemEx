@@ -9,8 +9,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from chemex.models.loader import register_kinetic_settings
 from chemex.experiments.loader import register_experiments
+from chemex.models.loader import register_kinetic_settings
 
 register_kinetic_settings()
 register_experiments()
@@ -19,6 +19,7 @@ register_experiments()
 def profile_loop_overhead():
     """Profile the overhead in the CPMG ncyc loop."""
     from chemex.configuration.methods import Selection
+    from chemex.configuration.parameters import read_defaults
     from chemex.experiments.builder import build_experiments
     from chemex.runtime import AnalysisSession
 
@@ -40,8 +41,12 @@ def profile_loop_overhead():
     )
 
     profile = list(experiments)[0].profiles[0]
-    params = session.parameters.build_lmfit_params(experiments.param_ids)
-    profile.update_spectrometer(params)
+    session.parameters.set_defaults(
+        read_defaults([example_dir / "Parameters" / "parameters.toml"])
+    )
+    assert session.try_build_analysis_values()
+    values = session.resolve_current_values(experiments.param_ids)
+    profile.update_spectrometer_from_values(values)
 
     spectrometer = profile.spectrometer
     data = profile.data
@@ -142,7 +147,7 @@ def profile_loop_overhead():
     # Calculate overhead vs computation
     computation = t_echo + t_reduce + t_chain + t_detect
     overhead = t_loop + t_phases + t_dict
-    print(f"\nSummary:")
+    print("\nSummary:")
     print(f"  Pure computation: {computation:.4f} ms ({computation/t_total*100:.1f}%)")
     print(f"  Python overhead: {overhead:.4f} ms ({overhead/t_total*100:.1f}%)")
 
@@ -204,7 +209,7 @@ def profile_loop_overhead():
 
     # Check the impact
     time_saved = (t_total - t_cached) * 48 * 2000 / 1000  # seconds
-    print(f"\nFor 48 profiles × 2000 iterations:")
+    print("\nFor 48 profiles × 2000 iterations:")
     print(f"  Potential time saved: {time_saved:.1f} seconds")
 
 

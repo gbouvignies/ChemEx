@@ -3,7 +3,6 @@ from __future__ import annotations
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Self
 
 import numpy as np
 import pytest
@@ -120,10 +119,6 @@ class WriterParameterStore:
 
 
 class StatisticsParameterStore(StubParameters):
-    def build_lmfit_params(self, param_ids: object) -> dict[str, SimpleNamespace]:
-        _ = param_ids
-        return {"__PB": SimpleNamespace(name="__PB", vary=True)}
-
     def get_parameters(self, param_ids: object) -> dict[str, ParamSetting]:
         parameters = {
             "__PB": ParamSetting(ParamName("PB"), value=0.15, vary=True),
@@ -588,9 +583,9 @@ def test_run_methods_skips_fit_when_selection_removes_all_profiles(
     )
 
     def fail_if_called(*_args, **_kwargs) -> None:
-        pytest.fail("_fit_groups should not run when no profiles remain selected")
+        pytest.fail("native fitting should not run when no profiles remain selected")
 
-    monkeypatch.setattr(fitting_module, "_fit_groups", fail_if_called)
+    monkeypatch.setattr(fitting_module, "run_native_deterministic", fail_if_called)
 
     fitting_module.run_methods(
         experiments,
@@ -603,133 +598,6 @@ def test_run_methods_skips_fit_when_selection_removes_all_profiles(
     np.testing.assert_equal(calls, ["no_data"])
     np.testing.assert_equal(len(experiments.selections), 1)
     np.testing.assert_equal(session.parameters.status_calls, [])
-
-
-def test_run_statistics_uses_session_for_header(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    session = StubSession()
-    session.parameters = StatisticsParameterStore()
-    experiments = SimpleNamespace(
-        param_ids=["__PB"],
-        parameter_store=session.parameters,
-    )
-
-    monkeypatch.setattr(resampling_module, "track", lambda _iterable, **_kwargs: [])
-
-    fitting_module._run_statistics(
-        experiments,
-        tmp_path,
-        "leastsq",
-        fitting_module.Statistics(mc=1),
-    )
-
-    assert not (tmp_path / "monte_carlo.out").exists()
-    assert (tmp_path / "Statistics" / "MonteCarlo" / "samples.tsv").read_text(
-        encoding="utf-8"
-    ) == "[PB]\tchisqr\n"
-    assert (tmp_path / "Statistics" / "MonteCarlo" / "summary.toml").exists()
-    assert (tmp_path / "Statistics" / "MonteCarlo" / "correlations.tsv").exists()
-    assert (tmp_path / "Statistics" / "MonteCarlo" / "plots.pdf").stat().st_size > 0
-    diagnostics = (
-        tmp_path / "Statistics" / "MonteCarlo" / "diagnostics.toml"
-    ).read_text(encoding="utf-8")
-    assert 'method = "Monte Carlo"' in diagnostics
-    assert "requested_samples = 1" in diagnostics
-    assert "completed_samples = 0" in diagnostics
-    assert "workers = 1" in diagnostics
-    assert 'samples_file = "samples.tsv"' in diagnostics
-    assert 'summary_file = "summary.toml"' in diagnostics
-    assert 'correlations_file = "correlations.tsv"' in diagnostics
-    assert 'plots_file = "plots.pdf"' in diagnostics
-
-
-def test_resampling_statistics_use_execution_workers(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    captured: dict[str, object] = {}
-
-    class Store:
-        def build_lmfit_params(
-            self,
-            _param_ids: object,
-        ) -> dict[str, SimpleNamespace]:
-            return {"__PB": SimpleNamespace(name="__PB", vary=True, value=0.25)}
-
-    class FakePool:
-        def __init__(
-            self,
-            *,
-            processes: int,
-            initializer: object,
-            initargs: tuple[object, ...],
-        ) -> None:
-            captured["processes"] = processes
-            self.initializer = initializer
-            self.initargs = initargs
-
-        def __enter__(self) -> Self:
-            self.initializer(*self.initargs)
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            return None
-
-        def imap(self, function: object, iterable: object) -> object:
-            return map(function, iterable)
-
-    experiments = SimpleNamespace(
-        param_ids=["__PB"],
-        parameter_store=Store(),
-    )
-
-    monkeypatch.setattr(resampling_module.multiprocessing, "Pool", FakePool)
-    monkeypatch.setattr(
-        resampling_module,
-        "generate_exp_for_statistics",
-        lambda experiments_arg, _statistic_name: experiments_arg,
-    )
-    monkeypatch.setattr(
-        resampling_module,
-        "minimize",
-        lambda _experiments, params, _fitmethod: params,
-    )
-    monkeypatch.setattr(
-        resampling_module,
-        "calculate_statistics",
-        lambda _experiments, _params: {"chisqr": 2.0},
-    )
-    monkeypatch.setattr(
-        resampling_module,
-        "write_resampling_plots",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        resampling_module,
-        "track",
-        lambda iterable, **_kwargs: iterable,
-    )
-
-    resampling_module.run_resampling_statistics(
-        experiments,
-        tmp_path,
-        "leastsq",
-        fitting_module.Statistics(mc=2),
-        execution=ExecutionSettings(workers=3),
-    )
-
-    assert captured["processes"] == 2
-    diagnostics = (
-        tmp_path / "Statistics" / "MonteCarlo" / "diagnostics.toml"
-    ).read_text(encoding="utf-8")
-    samples = (tmp_path / "Statistics" / "MonteCarlo" / "samples.tsv").read_text(
-        encoding="utf-8"
-    )
-    assert "workers = 2" in diagnostics
-    assert "completed_samples = 2" in diagnostics
-    assert samples.count("\n") == 3
 
 
 def test_resampling_summary_and_correlations_are_written(tmp_path: Path) -> None:

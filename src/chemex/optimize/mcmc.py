@@ -1,33 +1,19 @@
 from __future__ import annotations
 
 import secrets
-from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
+from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from math import ceil
 from pathlib import Path
 from time import perf_counter
-from types import TracebackType
-from typing import Any, Self, cast
+from typing import cast
 
 import emcee.autocorr as emcee_autocorr
-import emcee.ensemble as emcee_ensemble
 import numpy as np
-from lmfit.parameter import Parameters
-from rich.progress import Progress, TaskID
 
 from chemex.configuration.methods import McmcBurnSetting, McmcSettings
 from chemex.containers.experiments import Experiments
-from chemex.messages import (
-    print_mcmc_no_vary_warning,
-    print_mcmc_unbounded_warning,
-)
-from chemex.optimize.mcmc_engine import (
-    EmceeSamplerResult,
-    McmcProblem,
-    run_emcee_sampler,
-)
 from chemex.optimize.native_deterministic import NativeDeterministicFit
 from chemex.optimize.native_mcmc import (
     McmcDiagnosticStatus,
@@ -42,53 +28,7 @@ from chemex.optimize.statistics_plot import write_mcmc_plots
 from chemex.optimize.uncertainty import ParameterUnit
 from chemex.parameters.database import ParameterStore
 from chemex.runtime import ExecutionSettings
-from chemex.runtime.execution import native_thread_env, native_thread_environment
 from chemex.typing import Array
-
-
-class _RichEmceeProgressBar:
-    def __init__(self, total: int) -> None:
-        self._total = total
-        self._progress = Progress()
-        self._task_id: TaskID | None = None
-
-    def __enter__(self) -> Self:
-        self._progress.start()
-        self._task_id = self._progress.add_task("   ", total=self._total)
-        return self
-
-    def __exit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        _exc: BaseException | None,
-        _traceback: TracebackType | None,
-    ) -> None:
-        self._progress.stop()
-
-    def update(self, count: int) -> None:
-        if self._task_id is not None:
-            self._progress.update(self._task_id, advance=count)
-
-
-@contextmanager
-def _use_rich_emcee_progress() -> Iterator[None]:
-    original_get_progress_bar = emcee_ensemble.get_progress_bar
-
-    def get_progress_bar(
-        display: bool | str,
-        total: int,
-        **_kwargs: object,
-    ) -> object:
-        if display:
-            return _RichEmceeProgressBar(total)
-        return original_get_progress_bar(display, total, **_kwargs)
-
-    emcee_ensemble_dynamic = cast("Any", emcee_ensemble)
-    emcee_ensemble_dynamic.get_progress_bar = get_progress_bar
-    try:
-        yield
-    finally:
-        emcee_ensemble_dynamic.get_progress_bar = original_get_progress_bar
 
 
 @dataclass(frozen=True)
@@ -202,113 +142,12 @@ def resolve_mcmc_settings(
     )
 
 
-def _varying_parameter_ids(params: Parameters) -> tuple[str, ...]:
-    return tuple(
-        name
-        for name, parameter in params.items()
-        if parameter.vary and not parameter.expr
-    )
-
-
 def _format_parameter_ids(
     parameter_ids: tuple[str, ...],
     parameter_store: ParameterStore,
 ) -> tuple[str, ...]:
     parameters = parameter_store.get_parameters(parameter_ids)
     return tuple(str(parameters[param_id].param_name) for param_id in parameter_ids)
-
-
-def _find_unbounded_parameter_ids(
-    params: Parameters,
-    var_names: tuple[str, ...],
-) -> tuple[str, ...]:
-    return tuple(
-        name
-        for name in var_names
-        if not np.isfinite(params[name].min) or not np.isfinite(params[name].max)
-    )
-
-
-def _validate_parameter_bounds(params: Parameters, var_names: tuple[str, ...]) -> None:
-    for name in var_names:
-        parameter = params[name]
-        if (
-            np.isfinite(parameter.min)
-            and np.isfinite(parameter.max)
-            and parameter.min >= parameter.max
-        ):
-            msg = f"MCMC parameter {name!r} has an empty bounded interval"
-            raise ValueError(msg)
-
-
-def _parameter_bound(value: float | None, fallback: float) -> float:
-    if value is None:
-        return fallback
-    bound = float(value)
-    if np.isnan(bound):
-        return fallback
-    return bound
-
-
-def _parameter_bounds(params: Parameters, var_names: tuple[str, ...]) -> Array:
-    return np.asarray(
-        [
-            (
-                _parameter_bound(params[name].min, -np.inf),
-                _parameter_bound(params[name].max, np.inf),
-            )
-            for name in var_names
-        ],
-        dtype=float,
-    )
-
-
-def _jitter_scale(
-    value: float,
-    lower: float,
-    upper: float,
-    stderr: float | None,
-) -> float:
-    scales = [abs(value) * 1.0e-4, 1.0e-8]
-    if np.isfinite(lower) and np.isfinite(upper):
-        scales.append((upper - lower) * 1.0e-4)
-    if stderr is not None and np.isfinite(stderr) and stderr > 0.0:
-        scales.append(stderr * 1.0e-2)
-    return max(scales)
-
-
-def _clip_to_bounds(values: Array, lower: float, upper: float) -> Array:
-    if np.isfinite(lower) and np.isfinite(upper):
-        width = upper - lower
-        eps = max(width * 1.0e-10, np.finfo(float).eps)
-        return np.clip(values, lower + eps, upper - eps)
-    if np.isfinite(lower):
-        return np.maximum(values, lower + np.finfo(float).eps)
-    if np.isfinite(upper):
-        return np.minimum(values, upper - np.finfo(float).eps)
-    return values
-
-
-def _initial_positions(
-    params: Parameters,
-    var_names: tuple[str, ...],
-    *,
-    nwalkers: int,
-    seed: int | None,
-) -> Array:
-    rng = np.random.default_rng(seed)
-    positions = np.empty((nwalkers, len(var_names)), dtype=float)
-
-    for index, name in enumerate(var_names):
-        parameter = params[name]
-        value = float(parameter.value)
-        lower = float(parameter.min)
-        upper = float(parameter.max)
-        scale = _jitter_scale(value, lower, upper, parameter.stderr)
-        values = value + scale * rng.standard_normal(nwalkers)
-        positions[:, index] = _clip_to_bounds(values, lower, upper)
-
-    return positions
 
 
 def _summarize_chain(
@@ -450,54 +289,6 @@ def _apply_sample_window(
         msg = "MCMC settings did not retain any samples"
         raise ValueError(msg)
     return retained_chain, retained_lnprob, discarded_steps, warning
-
-
-def _result_from_emcee(
-    result: EmceeSamplerResult,
-    settings: EffectiveMcmcSettings,
-) -> McmcResult:
-    var_names = result.var_names
-    chain = result.chain
-    lnprob = result.lnprob
-    autocorrelation_time, tentative_autocorrelation_time, autocorrelation_warning = (
-        _estimate_autocorrelation_time(chain)
-    )
-    burn_in_autocorrelation_time = (
-        autocorrelation_time
-        if autocorrelation_time is not None
-        else tentative_autocorrelation_time
-    )
-    retained_chain, retained_lnprob, discarded_steps, burn_in_warning = (
-        _apply_sample_window(
-            chain,
-            lnprob,
-            burn=settings.burn,
-            thin=settings.thin,
-            autocorrelation_time=burn_in_autocorrelation_time,
-            autocorrelation_time_reliable=autocorrelation_time is not None,
-        )
-    )
-    samples = retained_chain.reshape((-1, len(var_names)))
-    return McmcResult(
-        var_names=var_names,
-        chain=retained_chain,
-        lnprob=retained_lnprob,
-        summary=_summarize_chain(
-            var_names,
-            samples,
-            autocorrelation_time,
-            settings.thin,
-        ),
-        correlations=_correlation_matrix(samples),
-        acceptance_fraction=result.acceptance_fraction,
-        autocorrelation_time=autocorrelation_time,
-        discarded_steps=discarded_steps,
-        burn_in_warning=burn_in_warning,
-        tentative_autocorrelation_time=tentative_autocorrelation_time,
-        autocorrelation_warning=autocorrelation_warning,
-        raw_chain=chain,
-        raw_lnprob=lnprob,
-    )
 
 
 def _quote_toml_string(value: str) -> str:
@@ -725,16 +516,12 @@ def _write_diagnostics(
     settings: EffectiveMcmcSettings,
     path: Path,
     parameter_store: ParameterStore,
-    unbounded_parameter_ids: tuple[str, ...],
     timings: Mapping[str, float],
     *,
     engine: str,
     root_seed: int | None = None,
 ) -> None:
     acceptance = result.acceptance_fraction
-    unbounded_parameters = list(
-        _format_parameter_ids(unbounded_parameter_ids, parameter_store),
-    )
     requested_burn = '"auto"' if settings.burn == "auto" else str(settings.burn)
     lines = [
         'status = "complete"',
@@ -760,7 +547,7 @@ def _write_diagnostics(
         f"acceptance_fraction_mean = {_format_toml_float(float(np.mean(acceptance)))}",
         f"acceptance_fraction_min = {_format_toml_float(float(np.min(acceptance)))}",
         f"acceptance_fraction_max = {_format_toml_float(float(np.max(acceptance)))}",
-        f"unbounded_parameters = {_format_toml_string_list(unbounded_parameters)}",
+        "unbounded_parameters = []",
     ]
     if root_seed is not None:
         lines.append(f"root_seed = {root_seed}")
@@ -768,11 +555,6 @@ def _write_diagnostics(
         lines.append(f"burn_in_warning = {_quote_toml_string(result.burn_in_warning)}")
     _extend_autocorrelation_diagnostics(lines, result, settings)
     _extend_timing_diagnostics(lines, timings)
-    if unbounded_parameters:
-        lines.append(
-            'warning = "Finite lower and upper bounds are recommended for MCMC."',
-        )
-
     (path / "diagnostics.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -781,10 +563,9 @@ def write_mcmc_outputs(
     settings: EffectiveMcmcSettings,
     path: Path,
     parameter_store: ParameterStore,
-    unbounded_parameter_ids: tuple[str, ...] = (),
     timings: dict[str, float] | None = None,
     *,
-    engine: str = "legacy MCMC",
+    engine: str = "native MCMC",
     root_seed: int | None = None,
 ) -> None:
     timings = {} if timings is None else timings
@@ -824,7 +605,6 @@ def write_mcmc_outputs(
         settings,
         path_mcmc,
         parameter_store,
-        unbounded_parameter_ids,
         timings,
         engine=engine,
         root_seed=root_seed,
@@ -1088,78 +868,3 @@ def run_native_mcmc(
         raise
     else:
         return result
-
-
-def run_mcmc(
-    experiments: Experiments,
-    params: Parameters,
-    settings: McmcSettings,
-    path: Path,
-    *,
-    execution: ExecutionSettings | None = None,
-) -> McmcResult | None:
-    var_names = _varying_parameter_ids(params)
-    if not var_names:
-        print_mcmc_no_vary_warning()
-        return None
-
-    effective_settings = resolve_mcmc_settings(
-        settings,
-        nvarys=len(var_names),
-        execution=execution,
-    )
-    _validate_parameter_bounds(params, var_names)
-
-    parameter_store = experiments.parameter_store
-    unbounded_parameter_ids = _find_unbounded_parameter_ids(params, var_names)
-    if unbounded_parameter_ids:
-        print_mcmc_unbounded_warning(
-            list(_format_parameter_ids(unbounded_parameter_ids, parameter_store)),
-        )
-
-    timings: dict[str, float] = {}
-    phase_start = perf_counter()
-    with _use_rich_emcee_progress():
-        env = native_thread_env(
-            effective_settings.native_threads,
-            parallel=effective_settings.workers > 1,
-        )
-        with native_thread_environment(env):
-            result_emcee = run_emcee_sampler(
-                McmcProblem(
-                    experiments=experiments,
-                    params=params,
-                    var_names=var_names,
-                    bounds=_parameter_bounds(params, var_names),
-                ),
-                _initial_positions(
-                    params,
-                    var_names,
-                    nwalkers=effective_settings.walkers,
-                    seed=effective_settings.seed,
-                ),
-                steps=effective_settings.steps,
-                workers=effective_settings.workers,
-                seed=effective_settings.seed,
-                progress=True,
-            )
-    timings["sampling_seconds"] = perf_counter() - phase_start
-
-    phase_start = perf_counter()
-    result = _result_from_emcee(result_emcee, effective_settings)
-    timings["result_processing_seconds"] = perf_counter() - phase_start
-    write_mcmc_outputs(
-        result,
-        effective_settings,
-        path,
-        parameter_store,
-        unbounded_parameter_ids,
-        timings=timings,
-    )
-    if effective_settings.update_parameters:
-        updated_params = params.copy()
-        for summary in result.summary:
-            updated_params[summary.parameter_id].value = summary.median
-        updated_params.update_constraints()
-        parameter_store.update_from_parameters(updated_params)
-    return result

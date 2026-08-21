@@ -126,10 +126,6 @@ class ParamSetting:
     def id_(self) -> str:
         return self.param_name.id_
 
-    @property
-    def args(self) -> tuple[str, float | None, bool | None, float, float, str]:
-        return self.id_, self.value, self.vary, self.min, self.max, self.expr
-
     def set(self, default_setting: DefaultSetting) -> None:
         self.value = default_setting.value
         if default_setting.min is not None:

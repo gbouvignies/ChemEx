@@ -1,8 +1,4 @@
-"""Behavioral tests for session-owned revisioned analysis values.
-
-The primary seam is the native AnalysisValues snapshot/commit API. Integration
-tests below exercise the real session construction and legacy adapter paths.
-"""
+"""Behavioral tests for session-owned revisioned analysis values."""
 
 from __future__ import annotations
 
@@ -13,16 +9,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier
 from typing import cast
-from unittest.mock import patch
 
 import pytest
-from lmfit import Parameters as LmfitParameters
 
 from chemex import chemex as chemex_module
 from chemex.configuration.methods import Method, Selection
 from chemex.configuration.parameters import read_defaults
 from chemex.experiments.builder import build_experiments
-from chemex.parameters.legacy_adapter import LegacyValuesAdapter
 from chemex.parameters.sealed import ParamConfig, SealedConfiguration
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.values import (
@@ -83,18 +76,14 @@ def test_revision_zero_model_values_and_constraints_resolve_without_lmfit() -> N
         session=session,
     )
 
-    with patch(
-        "chemex.parameters.database.ParameterCatalog.build_lmfit_params",
-        side_effect=AssertionError("legacy lmfit Parameters were constructed"),
-    ):
-        session.parameters.set_defaults(read_defaults([CPMG_PARAMETERS]))
-        assert session.try_build_analysis_values()
-        initial = session.resolve_current_values(experiments.param_ids)
+    session.parameters.set_defaults(read_defaults([CPMG_PARAMETERS]))
+    assert session.try_build_analysis_values()
+    initial = session.resolve_current_values(experiments.param_ids)
 
-        session.parameters.set_parameter_status(
-            Method(constraints=["[PB] = [KEX_AB] / 10000.0"])
-        )
-        constrained = session.resolve_current_values(experiments.param_ids)
+    session.parameters.set_parameter_status(
+        Method(constraints=["[PB] = [KEX_AB] / 10000.0"])
+    )
+    constrained = session.resolve_current_values(experiments.param_ids)
 
     assert initial["__PB"] == pytest.approx(0.07)
     assert initial["__PA"] == pytest.approx(0.93)
@@ -264,7 +253,7 @@ def test_invalid_or_incomplete_commits_leave_values_and_revision_unchanged(
     assert values.snapshot() == initial
 
 
-def test_real_shipped_configuration_initializes_session_values_from_legacy() -> None:
+def test_real_shipped_configuration_initializes_session_values() -> None:
     session = _build_shipped_session()
     snapshot = session.analysis_values.snapshot()
 
@@ -276,109 +265,14 @@ def test_real_shipped_configuration_initializes_session_values_from_legacy() -> 
     )
 
 
-def test_single_legacy_adapter_commits_lmfit_values_to_native_state() -> None:
-    values = AnalysisValues()
-    values.initialize("2st", _configuration())
-    parameters = LmfitParameters()
-    parameters.add("__PB", value=0.12)
-    adapter = LegacyValuesAdapter(values)
-
-    assert adapter.try_commit(parameters)
-
-    snapshot = values.snapshot()
-    assert snapshot.revision == 1
-    assert snapshot["__PB"] == 0.12
-    assert adapter.failure is None
-
-
-def test_legacy_adapter_ignores_normal_pre_initialization_mutation() -> None:
-    values = AnalysisValues()
-    parameters = LmfitParameters()
-    parameters.add("__PB", value=0.12)
-    adapter = LegacyValuesAdapter(values)
-
-    assert not adapter.try_commit(parameters)
-    assert adapter.failure is None
-
-    values.initialize("2st", _configuration())
-    assert adapter.try_commit(parameters)
-    assert values.snapshot()["__PB"] == 0.12
-
-
-def test_real_legacy_store_update_mirrors_through_the_single_adapter() -> None:
-    session = _build_shipped_session()
-    initial = session.analysis_values.snapshot()
-    parameters = session.parameters.build_lmfit_params(("__PB",))
-    parameters["__PB"].value = 0.12
-
-    session.parameters.update_from_parameters(parameters)
-
-    committed = session.analysis_values.snapshot()
-    assert session.parameters.get_value("__PB") == 0.12
-    assert committed["__PB"] == 0.12
-    assert committed.revision == initial.revision + 1
-
-
-def test_legacy_mapping_mutation_uses_the_same_values_adapter() -> None:
-    session = _build_shipped_session()
-    initial = session.analysis_values.snapshot()
-
-    session.parameters.set_values({"__PB": 0.13})
-
-    committed = session.analysis_values.snapshot()
-    assert session.parameters.get_value("__PB") == 0.13
-    assert committed["__PB"] == 0.13
-    assert committed.revision == initial.revision + 1
-
-
-def test_native_commit_failure_cannot_veto_legacy_authoritative_mutation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    session = _build_shipped_session()
-    initial = session.analysis_values.snapshot()
-    parameters = session.parameters.build_lmfit_params(("__PB",))
-    parameters["__PB"].value = 0.14
-
-    def fail_native_commit(*_args: object, **_kwargs: object) -> None:
-        msg = "native candidate failed"
-        raise RuntimeError(msg)
-
-    monkeypatch.setattr(AnalysisValues, "commit", fail_native_commit)
-
-    session.parameters.update_from_parameters(parameters)
-
-    assert session.parameters.get_value("__PB") == 0.14
-    assert session.analysis_values.snapshot() == initial
-    assert isinstance(session.legacy_values_adapter.failure, RuntimeError)
-
-
-def test_adapter_failure_cannot_veto_legacy_authoritative_mutation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    session = _build_shipped_session()
-    initial = session.analysis_values.snapshot()
-    parameters = session.parameters.build_lmfit_params(("__PB",))
-    parameters["__PB"].value = 0.16
-
-    def fail_adapter(*_args: object, **_kwargs: object) -> bool:
-        msg = "legacy edge failed"
-        raise RuntimeError(msg)
-
-    monkeypatch.setattr(LegacyValuesAdapter, "try_commit", fail_adapter)
-
-    session.parameters.update_from_parameters(parameters)
-
-    assert session.parameters.get_value("__PB") == 0.16
-    assert session.analysis_values.snapshot() == initial
-    assert isinstance(session.legacy_values_adapter.failure, RuntimeError)
-
-
 def test_session_reset_rebuilds_values_at_revision_zero() -> None:
     session = _build_shipped_session()
     initial = session.analysis_values.snapshot()
-    parameters = session.parameters.build_lmfit_params(("__PB",))
-    parameters["__PB"].value = 0.12
-    session.parameters.update_from_parameters(parameters)
+    session.analysis_values.commit(
+        {"__PB": 0.12},
+        expected=initial,
+        scope=("__PB",),
+    )
     assert session.analysis_values.snapshot().revision == 1
 
     session.reset()
@@ -497,6 +391,5 @@ def test_shipped_simulation_fails_closed_on_native_initialization_failure(
         failed_session.parameter_factory.native_construction_error,
         RuntimeError,
     )
-    assert isinstance(failed_session.legacy_values_adapter.failure, RuntimeError)
     with pytest.raises(RuntimeError, match="not initialized"):
         failed_session.analysis_values.snapshot()

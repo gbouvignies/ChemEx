@@ -137,7 +137,6 @@ jobs:
             .[0].lane.identity == .[1].lane.identity and
             .[0].environment.identity == .[1].environment.identity and
             .[0].attestation.identity == .[1].attestation.identity and
-            .[0].implementation.identity != .[1].implementation.identity and
             .[0].implementation_wheel_sha256 != .[1].implementation_wheel_sha256 and
             .[0].application_module_sha256 != .[1].application_module_sha256
           ' diagnostic/implementation-a.json diagnostic/implementation-b.json

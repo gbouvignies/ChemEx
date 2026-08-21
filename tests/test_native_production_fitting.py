@@ -109,17 +109,7 @@ def test_real_simulation_uses_native_values_and_preserves_back_calculation(
     output = tmp_path / "Output"
     session = AnalysisSession.create()
 
-    with (
-        patch(
-            "chemex.parameters.database.ParameterStore.build_lmfit_params",
-            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
-        ),
-        patch(
-            "chemex.containers.experiments.Experiments.residuals",
-            side_effect=AssertionError("legacy residual evaluation was entered"),
-        ),
-    ):
-        run(_simulation_arguments(output), session=session)
+    run(_simulation_arguments(output), session=session)
 
     data_path = output / "Data" / "800mhz.dat"
     calculated = np.loadtxt(data_path, comments="#", skiprows=2, usecols=1)
@@ -195,21 +185,7 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     output = tmp_path / "Output"
     session = AnalysisSession.create()
 
-    with (
-        patch(
-            "chemex.parameters.database.ParameterStore.build_lmfit_params",
-            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
-        ),
-        patch(
-            "lmfit.Minimizer.minimize",
-            side_effect=AssertionError("legacy lmfit optimizer was called"),
-        ),
-        patch(
-            "chemex.containers.experiments.Experiments.residuals",
-            side_effect=AssertionError("legacy evaluation was called"),
-        ),
-    ):
-        run(_fit_arguments(output, plot_level="normal"), session=session)
+    run(_fit_arguments(output, plot_level="normal"), session=session)
 
     assert session.analysis_values.snapshot().revision == 1
     fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
@@ -242,32 +218,18 @@ def test_explicit_trf_and_least_squares_alias_have_identical_native_product_outp
     tmp_path: Path,
 ) -> None:
     outputs: dict[str, Path] = {}
-    with (
-        patch(
-            "chemex.parameters.database.ParameterStore.build_lmfit_params",
-            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
-        ),
-        patch(
-            "lmfit.Minimizer.minimize",
-            side_effect=AssertionError("legacy lmfit optimizer was called"),
-        ),
-        patch(
-            "chemex.containers.experiments.Experiments.residuals",
-            side_effect=AssertionError("legacy evaluation was called"),
-        ),
-    ):
-        for spelling in ("trf", "least_squares"):
-            method = tmp_path / f"{spelling}.toml"
-            method.write_text(
-                f'[DEFAULT]\nFITMETHOD = "{spelling}"\nFIX = ["PB", "KEX_AB"]\n',
-                encoding="utf-8",
-            )
-            output = tmp_path / spelling
-            run(
-                _fit_arguments(output, method),
-                session=AnalysisSession.create(),
-            )
-            outputs[spelling] = output
+    for spelling in ("trf", "least_squares"):
+        method = tmp_path / f"{spelling}.toml"
+        method.write_text(
+            f'[DEFAULT]\nFITMETHOD = "{spelling}"\nFIX = ["PB", "KEX_AB"]\n',
+            encoding="utf-8",
+        )
+        output = tmp_path / spelling
+        run(
+            _fit_arguments(output, method),
+            session=AnalysisSession.create(),
+        )
+        outputs[spelling] = output
 
     for relative in (
         Path("Parameters/fitted.toml"),
@@ -436,14 +398,10 @@ def test_real_grouped_direct_fit_uses_native_aggregate_commit(
     output = tmp_path / "Output"
     session = AnalysisSession.create()
 
-    with patch(
-        "lmfit.Minimizer.minimize",
-        side_effect=AssertionError("legacy lmfit optimizer was called"),
-    ):
-        run(
-            _fit_arguments(output, include=("G2N-HN", "H3N-HN")),
-            session=session,
-        )
+    run(
+        _fit_arguments(output, include=("G2N-HN", "H3N-HN")),
+        session=session,
+    )
 
     assert session.analysis_values.snapshot().revision == 1
     group_outputs = tuple((output / "Groups").glob("*/Parameters/fitted.toml"))
@@ -512,29 +470,11 @@ def test_real_compact_mcmc_fit_is_wholly_native_and_writes_products(
     parameters = _bounded_parameters(tmp_path / "parameters.toml")
     session = AnalysisSession.create()
 
-    with (
-        patch(
-            "chemex.parameters.database.ParameterStore.build_lmfit_params",
-            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
-        ),
-        patch(
-            "lmfit.Minimizer.minimize",
-            side_effect=AssertionError("legacy lmfit optimizer was called"),
-        ),
-        patch(
-            "chemex.containers.experiments.Experiments.residuals",
-            side_effect=AssertionError("legacy evaluation was called"),
-        ),
-        patch(
-            "chemex.optimize.mcmc_engine.run_emcee_sampler",
-            side_effect=AssertionError("legacy MCMC wrapper was called"),
-        ),
-        patch.object(
-            mcmc_module,
-            "execute_mcmc_evidence",
-            wraps=mcmc_module.execute_mcmc_evidence,
-        ) as native_sampler,
-    ):
+    with patch.object(
+        mcmc_module,
+        "execute_mcmc_evidence",
+        wraps=mcmc_module.execute_mcmc_evidence,
+    ) as native_sampler:
         run(
             _fit_arguments(output, method, parameters=parameters),
             session=session,
@@ -778,25 +718,11 @@ def test_mixed_mc_and_mcmc_use_one_native_central_fit_without_legacy_fallback(
     parameters = _bounded_parameters(tmp_path / "parameters.toml")
     session = AnalysisSession.create()
 
-    with (
-        patch.object(
-            fitting_module,
-            "run_native_deterministic",
-            wraps=fitting_module.run_native_deterministic,
-        ) as native_central,
-        patch(
-            "chemex.parameters.database.ParameterStore.build_lmfit_params",
-            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
-        ),
-        patch(
-            "lmfit.Minimizer.minimize",
-            side_effect=AssertionError("legacy lmfit optimizer was called"),
-        ),
-        patch(
-            "chemex.containers.experiments.Experiments.residuals",
-            side_effect=AssertionError("legacy evaluation was called"),
-        ),
-    ):
+    with patch.object(
+        fitting_module,
+        "run_native_deterministic",
+        wraps=fitting_module.run_native_deterministic,
+    ) as native_central:
         run(
             _fit_arguments(output, method, parameters=parameters),
             session=session,
@@ -876,25 +802,7 @@ def test_real_mc_fit_is_wholly_native_and_writes_product_statistics(
     method = _statistics_method(tmp_path / "method.toml", '"MC" = 2')
     session = AnalysisSession.create()
 
-    with (
-        patch(
-            "chemex.parameters.database.ParameterStore.build_lmfit_params",
-            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
-        ),
-        patch(
-            "lmfit.Minimizer.minimize",
-            side_effect=AssertionError("legacy lmfit optimizer was called"),
-        ),
-        patch(
-            "chemex.containers.experiments.Experiments.residuals",
-            side_effect=AssertionError("legacy evaluation was called"),
-        ),
-        patch(
-            "chemex.optimize.fitting.run_resampling_statistics",
-            side_effect=AssertionError("legacy resampling was called"),
-        ),
-    ):
-        run(_fit_arguments(output, method), session=session)
+    run(_fit_arguments(output, method), session=session)
 
     assert session.analysis_values.snapshot().revision == 1
     statistics = output / "Statistics" / "MonteCarlo"
@@ -914,7 +822,7 @@ def test_real_mc_fit_is_wholly_native_and_writes_product_statistics(
     assert "(error not calculated)" in fitted
 
 
-def test_native_statistics_filter_resolution_fails_closed_before_lmfit(
+def test_native_statistics_filter_resolution_fails_closed_before_filtering(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
@@ -927,12 +835,14 @@ def test_native_statistics_filter_resolution_fails_closed_before_lmfit(
             "resolve_current_values",
             side_effect=RuntimeError("native values unavailable"),
         ),
-        patch("chemex.containers.experiments.Experiments.filter") as legacy_filter,
+        patch(
+            "chemex.containers.experiments.Experiments.filter_from_values"
+        ) as filter_from_values,
         pytest.raises(RuntimeError, match="native values unavailable"),
     ):
         run(_fit_arguments(output, method), session=session)
 
-    legacy_filter.assert_not_called()
+    filter_from_values.assert_not_called()
 
 
 def test_real_bs_fit_uses_native_refits_and_writes_bootstrap_products(
@@ -942,21 +852,7 @@ def test_real_bs_fit_uses_native_refits_and_writes_bootstrap_products(
     method = _statistics_method(tmp_path / "method.toml", '"BS" = 2')
     session = AnalysisSession.create()
 
-    with (
-        patch(
-            "lmfit.Minimizer.minimize",
-            side_effect=AssertionError("legacy lmfit optimizer was called"),
-        ),
-        patch(
-            "chemex.containers.experiments.Experiments.residuals",
-            side_effect=AssertionError("legacy evaluation was called"),
-        ),
-        patch(
-            "chemex.optimize.fitting.run_resampling_statistics",
-            side_effect=AssertionError("legacy resampling was called"),
-        ),
-    ):
-        run(_fit_arguments(output, method), session=session)
+    run(_fit_arguments(output, method), session=session)
 
     assert session.analysis_values.snapshot().revision == 1
     statistics = output / "Statistics" / "Bootstrap"
@@ -975,21 +871,7 @@ def test_real_bsn_fit_uses_native_nucleus_resampling_products(tmp_path: Path) ->
     method = _statistics_method(tmp_path / "method.toml", '"BSN" = 2')
     session = AnalysisSession.create()
 
-    with (
-        patch(
-            "lmfit.Minimizer.minimize",
-            side_effect=AssertionError("legacy lmfit optimizer was called"),
-        ),
-        patch(
-            "chemex.containers.experiments.Experiments.residuals",
-            side_effect=AssertionError("legacy evaluation was called"),
-        ),
-        patch(
-            "chemex.optimize.fitting.run_resampling_statistics",
-            side_effect=AssertionError("legacy resampling was called"),
-        ),
-    ):
-        run(_fit_arguments(output, method), session=session)
+    run(_fit_arguments(output, method), session=session)
 
     assert session.analysis_values.snapshot().revision == 1
     statistics = output / "Statistics" / "BootstrapNS"
@@ -1307,21 +1189,7 @@ def test_real_grid_fit_uses_native_cartesian_trf_and_writes_grid_output(
     session = AnalysisSession.create()
     method = _grid_method(tmp_path / "method.toml")
 
-    with (
-        patch(
-            "chemex.parameters.database.ParameterStore.build_lmfit_params",
-            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
-        ),
-        patch(
-            "chemex.containers.experiments.Experiments.residuals",
-            side_effect=AssertionError("legacy evaluation was called"),
-        ),
-        patch(
-            "lmfit.Minimizer.minimize",
-            side_effect=AssertionError("legacy lmfit optimizer was called"),
-        ),
-    ):
-        run(_fit_arguments(output, method), session=session)
+    run(_fit_arguments(output, method), session=session)
 
     assert session.analysis_values.snapshot().revision == 1
     assert (output / "Grid" / "grid.out").is_file()
@@ -1335,18 +1203,14 @@ def test_real_grouped_grid_fit_uses_one_native_aggregate_commit(
     session = AnalysisSession.create()
     method = _grid_method(tmp_path / "method.toml")
 
-    with patch(
-        "lmfit.Minimizer.minimize",
-        side_effect=AssertionError("legacy lmfit optimizer was called"),
-    ):
-        run(
-            _fit_arguments(
-                output,
-                method,
-                include=("G2N-HN", "H3N-HN"),
-            ),
-            session=session,
-        )
+    run(
+        _fit_arguments(
+            output,
+            method,
+            include=("G2N-HN", "H3N-HN"),
+        ),
+        session=session,
+    )
 
     assert session.analysis_values.snapshot().revision == 1
     group_grid_outputs = tuple((output / "Grid" / "Groups").glob("*.out"))
@@ -1370,11 +1234,7 @@ FIX = ["PB", "KEX_AB"]
     )
     session = AnalysisSession.create()
 
-    with patch(
-        "lmfit.Minimizer.minimize",
-        side_effect=AssertionError("legacy lmfit optimizer was called"),
-    ):
-        run(_fit_arguments(output, method), session=session)
+    run(_fit_arguments(output, method), session=session)
 
     assert session.analysis_values.snapshot().revision == 2
     for step in ("STEP1", "STEP2"):
@@ -1473,10 +1333,6 @@ def test_native_backend_failure_cannot_commit_or_publish_fitted_output(
             "chemex.optimize.direct_trf.least_squares",
             side_effect=RuntimeError("backend failed"),
         ),
-        patch(
-            "lmfit.Minimizer.minimize",
-            side_effect=AssertionError("legacy lmfit optimizer was called"),
-        ),
         pytest.raises(RuntimeError, match="did not commit"),
     ):
         run(_fit_arguments(output), session=session)
@@ -1500,18 +1356,14 @@ CONSTRAINTS = ["[R1A_A, NUC->G2N-H] = 2.0"]
     )
     session = AnalysisSession.create()
 
-    with patch(
-        "lmfit.Minimizer.minimize",
-        side_effect=AssertionError("legacy lmfit optimizer was called"),
-    ):
-        run(
-            _fit_arguments(
-                output,
-                method,
-                include=("G2N-HN", "H3N-HN"),
-            ),
-            session=session,
-        )
+    run(
+        _fit_arguments(
+            output,
+            method,
+            include=("G2N-HN", "H3N-HN"),
+        ),
+        session=session,
+    )
 
     assert session.analysis_values.snapshot().revision == 1
     constrained = tuple((output / "All" / "Parameters").glob("constrained.toml"))
@@ -1534,11 +1386,7 @@ FIX = ["R1A_A", "PB", "KEX_AB"]
     )
     session = AnalysisSession.create()
 
-    with patch(
-        "lmfit.Minimizer.minimize",
-        side_effect=AssertionError("legacy lmfit optimizer was called"),
-    ):
-        run(_fit_arguments(output, method), session=session)
+    run(_fit_arguments(output, method), session=session)
 
     assert session.analysis_values.snapshot().revision == 0
     assert (output / "Parameters" / "fixed.toml").is_file()
@@ -1561,11 +1409,7 @@ STATISTICS = { "MC" = 1 }
     )
     session = AnalysisSession.create()
 
-    with patch(
-        "chemex.optimize.fitting._fit_groups",
-        side_effect=AssertionError("legacy grouped fit was called"),
-    ):
-        run(_fit_arguments(output, method), session=session)
+    run(_fit_arguments(output, method), session=session)
 
     assert session.analysis_values.snapshot().revision == 1
     assert (output / "Statistics" / "MonteCarlo" / "samples.tsv").is_file()
@@ -1586,19 +1430,9 @@ STATISTICS = { "MC" = 1 }
     )
     session = AnalysisSession.create()
 
-    with (
-        patch(
-            "chemex.optimize.gridding.run_grid",
-            side_effect=AssertionError("legacy GRID dispatch was called"),
-        ),
-        patch(
-            "chemex.parameters.database.ParameterStore.build_lmfit_params",
-            side_effect=AssertionError("legacy lmfit Parameters were constructed"),
-        ),
-        patch(
-            "chemex.optimize.fitting.run_native_resampling_statistics",
-            side_effect=AssertionError("statistics after GRID were entered"),
-        ),
+    with patch(
+        "chemex.optimize.fitting.run_native_resampling_statistics",
+        side_effect=AssertionError("statistics after GRID were entered"),
     ):
         run(_fit_arguments(output, method), session=session)
 

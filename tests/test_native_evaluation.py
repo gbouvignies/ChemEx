@@ -1,9 +1,4 @@
-"""Qualification tests for the #585 native evaluation boundary.
-
-The public seam is an immutable evaluation plan bound to an isolated evaluator.
-Legacy Profile residuals remain the independent scientific oracle at this
-checkpoint.
-"""
+"""Qualification tests for the ChemEx-owned evaluation boundary."""
 
 from __future__ import annotations
 
@@ -83,6 +78,25 @@ def _evaluation_frame(
     )
 
 
+def _direct_profile_evaluation(
+    session: AnalysisSession,
+    experiments: Experiments,
+) -> tuple[dict[str, float], Array]:
+    """Evaluate through the supported resolved-value profile seam."""
+    values = dict(session.resolve_current_values(experiments.param_ids))
+    experiments.back_calculate_from_values(values)
+    residuals = np.concatenate(
+        [
+            ((profile.data.calc - profile.data.exp) / profile.data.err)[
+                profile.data.mask
+            ]
+            for experiment in experiments
+            for profile in experiment.profiles
+        ]
+    )
+    return values, residuals
+
+
 def test_cest_infinite_sweep_width_sentinel_has_a_stable_native_plan() -> None:
     identities: list[str] = []
     for _ in range(2):
@@ -114,9 +128,9 @@ def test_cest_infinite_sweep_width_sentinel_has_a_stable_native_plan() -> None:
     assert identities[0] == identities[1]
 
 
-def test_shipped_two_profile_dcest_plan_matches_legacy_completely() -> None:
+def test_shipped_two_profile_dcest_plan_matches_direct_profiles_completely() -> None:
     native_session, native_experiments = _shipped_dcest("1N", "2N")
-    legacy_session, legacy_experiments = _shipped_dcest("1N", "2N")
+    direct_session, direct_experiments = _shipped_dcest("1N", "2N")
     parameterization = native_session.compile_parameterization(
         Method(), native_experiments.param_ids
     )
@@ -124,20 +138,20 @@ def test_shipped_two_profile_dcest_plan_matches_legacy_completely() -> None:
     evaluator = native.new_evaluator()
     outcome = evaluator.evaluate(_evaluation_frame(native_session, parameterization))
     assert isinstance(outcome, EvaluationResult)
-    legacy_parameters = legacy_session.parameters.build_lmfit_params(
-        legacy_experiments.param_ids
+    direct_values, direct_residuals = _direct_profile_evaluation(
+        direct_session,
+        direct_experiments,
     )
-    legacy_residuals = legacy_experiments.residuals(legacy_parameters)
-    legacy_profiles = next(iter(legacy_experiments)).profiles
+    direct_profiles = next(iter(direct_experiments)).profiles
     assert [item.profile_ordinal for item in native.plan.profiles] == [0, 1]
-    assert outcome.resolved_values == pytest.approx(legacy_parameters.valuesdict())
+    assert outcome.resolved_values == pytest.approx(direct_values)
     # The isolated native workspace has bitwise-identical pulse-entry inputs,
     # but the SciPy/BLAS propagator path is allowed a few binary64 ulps across
     # independent workspace executions on Linux.  Keep this separate from the
     # deliberate ordered-normalization tolerance below.
     np.testing.assert_allclose(
         outcome.unscaled_calculations,
-        np.concatenate([profile.data.calc_unscaled for profile in legacy_profiles]),
+        np.concatenate([profile.data.calc_unscaled for profile in direct_profiles]),
         rtol=6.0e-16,
         atol=0.0,
     )
@@ -145,18 +159,18 @@ def test_shipped_two_profile_dcest_plan_matches_legacy_completely() -> None:
     # ordered binary64 reduction.  The DCEST difference is confined to scale.
     np.testing.assert_allclose(
         outcome.normalized_calculations,
-        np.concatenate([profile.data.calc for profile in legacy_profiles]),
+        np.concatenate([profile.data.calc for profile in direct_profiles]),
         rtol=6.0e-16,
         atol=1.2e-8,
     )
-    np.testing.assert_allclose(outcome.residuals, legacy_residuals, rtol=6.0e-13)
+    np.testing.assert_allclose(outcome.residuals, direct_residuals, rtol=6.0e-13)
     np.testing.assert_allclose(
         [item.normalization_factor for item in outcome.profiles],
-        [profile.data.scale for profile in legacy_profiles],
+        [profile.data.scale for profile in direct_profiles],
         rtol=6.0e-16,
     )
     assert [item.retained_observation_indices for item in outcome.profiles] == [
-        tuple(np.flatnonzero(profile.data.mask)) for profile in legacy_profiles
+        tuple(np.flatnonzero(profile.data.mask)) for profile in direct_profiles
     ]
     repeated = evaluator.evaluate(_evaluation_frame(native_session, parameterization))
     assert isinstance(repeated, EvaluationResult)
@@ -275,12 +289,12 @@ def test_spectrometer_native_kernel_descriptor_is_immutable_by_value() -> None:
         descriptor["jeff_i"]["dephasing"] = True
 
 
-def test_native_snapshot_failure_does_not_disable_legacy_dcest() -> None:
+def test_native_snapshot_failure_does_not_disable_direct_profile_calculation() -> None:
     normal_session, normal_experiments = _shipped_dcest()
-    normal_parameters = normal_session.parameters.build_lmfit_params(
-        normal_experiments.param_ids
+    _normal_values, normal_residuals = _direct_profile_evaluation(
+        normal_session,
+        normal_experiments,
     )
-    normal_residuals = normal_experiments.residuals(normal_parameters)
     normal_profile = next(iter(normal_experiments)).profiles[0]
     normal_calculation = normal_profile.data.calc.copy()
 
@@ -299,10 +313,10 @@ def test_native_snapshot_failure_does_not_disable_legacy_dcest() -> None:
     with pytest.raises(ValueError, match="Native construction is unavailable"):
         failed_spectrometer.new_native_workspace()
 
-    failed_parameters = failed_session.parameters.build_lmfit_params(
-        failed_experiments.param_ids
+    failed_values, failed_residuals = _direct_profile_evaluation(
+        failed_session,
+        failed_experiments,
     )
-    failed_residuals = failed_experiments.residuals(failed_parameters)
     np.testing.assert_array_equal(failed_profile.data.calc, normal_calculation)
     np.testing.assert_array_equal(failed_residuals, normal_residuals)
     parameterization = failed_session.compile_parameterization(
@@ -311,7 +325,7 @@ def test_native_snapshot_failure_does_not_disable_legacy_dcest() -> None:
     with pytest.raises(ValueError, match="Native construction is unavailable"):
         EvaluationEngine.from_experiments(failed_experiments, parameterization)
 
-    failed_profile.calculate(failed_parameters)
+    failed_profile.calculate_from_values(failed_values)
     assert not failed_spectrometer.try_finalize_native_construction()
     with pytest.raises(ValueError, match="native snapshot failed"):
         failed_spectrometer.native_kernel_descriptor()
@@ -392,10 +406,8 @@ def test_later_profile_invalid_trial_is_atomic_resets_workspace_and_isolates_leg
     assert isinstance(recovered, EvaluationResult)
     assert isinstance(fresh, EvaluationResult)
     np.testing.assert_array_equal(recovered.residuals, fresh.residuals)
-    legacy = experiments.residuals(
-        session.parameters.build_lmfit_params(experiments.param_ids)
-    )
-    np.testing.assert_allclose(legacy, recovered.residuals, rtol=6.0e-13)
+    _direct_values, direct = _direct_profile_evaluation(session, experiments)
+    np.testing.assert_allclose(direct, recovered.residuals, rtol=6.0e-13)
 
 
 def test_later_profile_implementation_failure_poisoning_requires_fresh_evaluator() -> (
@@ -461,9 +473,9 @@ def test_one_evaluation_frame_has_identical_complete_results_across_evaluators()
     np.testing.assert_array_equal(first.residuals, second.residuals)
 
 
-def test_native_plan_matches_legacy_complete_profile_evaluation() -> None:
+def test_native_plan_matches_direct_complete_profile_evaluation() -> None:
     native_session, native_experiments = _shipped_dcest()
-    legacy_session, legacy_experiments = _shipped_dcest()
+    direct_session, direct_experiments = _shipped_dcest()
     parameterization = native_session.compile_parameterization(
         Method(), native_experiments.param_ids
     )
@@ -479,36 +491,36 @@ def test_native_plan_matches_legacy_complete_profile_evaluation() -> None:
     outcome = engine.new_evaluator().evaluate(frame)
     assert isinstance(outcome, EvaluationResult)
 
-    legacy_parameters = legacy_session.parameters.build_lmfit_params(
-        legacy_experiments.param_ids
+    direct_values, direct_residuals = _direct_profile_evaluation(
+        direct_session,
+        direct_experiments,
     )
-    legacy_residuals = legacy_experiments.residuals(legacy_parameters)
-    legacy_profile = next(iter(legacy_experiments)).profiles[0]
+    direct_profile = next(iter(direct_experiments)).profiles[0]
 
     assert outcome.plan_identity == engine.plan.identity
-    assert outcome.resolved_values == pytest.approx(legacy_parameters.valuesdict())
+    assert outcome.resolved_values == pytest.approx(direct_values)
     # Native and legacy calculate through separate isolated Spectrometers.
     # Their pulse-entry scalar values, matrices, weights, and detection vector
     # are bitwise-identical; Linux SciPy/BLAS propagator reductions may differ
     # by a few ulps between those independent executions.
     np.testing.assert_allclose(
         outcome.unscaled_calculations,
-        legacy_profile.data.calc_unscaled,
+        direct_profile.data.calc_unscaled,
         rtol=6.0e-16,
         atol=0.0,
     )
     np.testing.assert_allclose(
         outcome.normalized_calculations,
-        legacy_profile.data.calc,
+        direct_profile.data.calc,
         rtol=6.0e-16,
         atol=1.2e-8,
     )
-    np.testing.assert_allclose(outcome.residuals, legacy_residuals, rtol=6.0e-13)
+    np.testing.assert_allclose(outcome.residuals, direct_residuals, rtol=6.0e-13)
     assert outcome.profiles[0].normalization_factor == pytest.approx(
-        legacy_profile.data.scale, rel=6.0e-16
+        direct_profile.data.scale, rel=6.0e-16
     )
     assert outcome.profiles[0].retained_observation_indices == tuple(
-        np.flatnonzero(legacy_profile.data.mask)
+        np.flatnonzero(direct_profile.data.mask)
     )
 
 
@@ -567,9 +579,7 @@ def test_native_private_workspace_has_bitwise_identical_dcest_pulse_inputs() -> 
             .new_evaluator()
             .evaluate(frame)
         )
-        legacy_experiments.residuals(
-            legacy_session.parameters.build_lmfit_params(legacy_experiments.param_ids)
-        )
+        _direct_profile_evaluation(legacy_session, legacy_experiments)
     assert isinstance(outcome, EvaluationResult)
     native, legacy = captured
     assert native["settings"] == legacy["settings"]
@@ -699,7 +709,7 @@ def test_native_normalization_uses_the_no_epsilon_572_formula() -> None:
         / np.dot(unscaled / profile.data.err, unscaled / profile.data.err)
     )
     assert outcome.profiles[0].normalization_factor == pytest.approx(expected)
-    profile.calculate(session.parameters.build_lmfit_params(experiments.param_ids))
+    profile.calculate_from_values(session.resolve_current_values(experiments.param_ids))
     assert profile.data.scale != expected
 
 
@@ -803,7 +813,7 @@ def test_non_finite_kernel_output_is_an_invalid_trial_without_partial_result() -
     assert EvaluationFailure.from_record(outcome.to_record(), restored_plan) == outcome
 
 
-def test_native_failure_is_qualification_only_and_cannot_veto_legacy() -> None:
+def test_native_engine_construction_failure_does_not_break_direct_profiles() -> None:
     session, experiments = _shipped_dcest()
     parameterization = session.compile_parameterization(Method(), experiments.param_ids)
     with (
@@ -814,10 +824,8 @@ def test_native_failure_is_qualification_only_and_cannot_veto_legacy() -> None:
         pytest.raises(ValueError, match="native qualification failure"),
     ):
         EvaluationEngine.from_experiments(experiments, parameterization)
-    legacy = experiments.residuals(
-        session.parameters.build_lmfit_params(experiments.param_ids)
-    )
-    assert legacy.size and np.all(np.isfinite(legacy))
+    _values, direct = _direct_profile_evaluation(session, experiments)
+    assert direct.size and np.all(np.isfinite(direct))
 
 
 @pytest.mark.parametrize(
@@ -1041,7 +1049,7 @@ def test_descriptor_is_history_independent_and_evaluator_rejects_reentry_and_pid
     parameterization = session.compile_parameterization(Method(), experiments.param_ids)
     first = EvaluationEngine.from_experiments(experiments, parameterization).plan
     profile = next(iter(experiments)).profiles[0]
-    profile.calculate(session.parameters.build_lmfit_params(experiments.param_ids))
+    profile.calculate_from_values(session.resolve_current_values(experiments.param_ids))
     second = EvaluationEngine.from_experiments(experiments, parameterization).plan
     assert first.identity == second.identity
     evaluator = EvaluationEngine.from_experiments(
@@ -1072,12 +1080,13 @@ def test_dcest_construction_descriptor_precedes_and_survives_pulse_history() -> 
     parameterization = session.compile_parameterization(Method(), experiments.param_ids)
     profile = next(iter(experiments)).profiles[0]
     initial = dict(profile.spectrometer.native_kernel_descriptor())
-    profile.calculate(session.parameters.build_lmfit_params(experiments.param_ids))
-    after_legacy = dict(profile.spectrometer.native_kernel_descriptor())
+    values = session.resolve_current_values(experiments.param_ids)
+    profile.calculate_from_values(values)
+    after_direct = dict(profile.spectrometer.native_kernel_descriptor())
     before_plan = EvaluationEngine.from_experiments(experiments, parameterization).plan
-    profile.calculate(session.parameters.build_lmfit_params(experiments.param_ids))
+    profile.calculate_from_values(values)
     after_plan = EvaluationEngine.from_experiments(experiments, parameterization).plan
-    assert initial == after_legacy
+    assert initial == after_direct
     assert before_plan.identity == after_plan.identity
 
 
@@ -1103,9 +1112,9 @@ def test_native_workspace_cannot_mutate_authoritative_profile_or_metadata() -> N
     profile = next(iter(experiments)).profiles[0]
     metadata = profile.data.metadata.copy()
     profile.data.mask[0] = False
-    legacy_params = session.parameters.build_lmfit_params(experiments.param_ids)
-    profile.calculate(legacy_params)
-    legacy_unscaled = profile.data.calc_unscaled.copy()
+    values = session.resolve_current_values(experiments.param_ids)
+    profile.calculate_from_values(values)
+    direct_unscaled = profile.data.calc_unscaled.copy()
     offset = profile.spectrometer.offset_i
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     baseline = engine.new_evaluator().evaluate(
@@ -1155,8 +1164,8 @@ def test_native_workspace_cannot_mutate_authoritative_profile_or_metadata() -> N
     np.testing.assert_array_equal(
         baseline.unscaled_calculations, repeated.unscaled_calculations
     )
-    profile.calculate(legacy_params)
-    np.testing.assert_array_equal(profile.data.calc_unscaled, legacy_unscaled)
+    profile.calculate_from_values(values)
+    np.testing.assert_array_equal(profile.data.calc_unscaled, direct_unscaled)
 
 
 def test_normalization_overflow_is_typed_under_hostile_numpy_settings() -> None:

@@ -1,4 +1,4 @@
-"""Pace where user functions used by lmfit are stored."""
+"""Registry for functions available to scientific constraint expressions."""
 
 from collections.abc import Callable
 from typing import Any, ClassVar
@@ -11,7 +11,7 @@ SettingMakerType = Callable[[Conditions], SettingsType]
 
 
 class Registry:
-    """Registry for storing all the user functions for lmfit constraints."""
+    """Registry for storing functions used by parameter constraints."""
 
     user_function_registry: ClassVar[dict[str, Any]] = {}
 

@@ -2,7 +2,7 @@
 
 The public seams are the canonical optimization problem/invocation, the typed
 terminal outcome, accepted-result materialization, and revision-checked commit.
-The production lmfit runner remains outside this qualification harness.
+The production runner uses the native deterministic implementation qualified here.
 """
 
 from __future__ import annotations
@@ -368,14 +368,12 @@ def test_shared_root_materialization_preserves_later_cancellation_and_interrupti
     assert interrupted.evaluation_count == 1
 
 
-def _legacy_values(
+def _presentation_values(
     session: AnalysisSession, scope: tuple[str, ...]
-) -> dict[str, float]:
+) -> dict[str, float | None]:
     return {
         param_id: parameter.value
-        for param_id, parameter in session.parameters.build_lmfit_params(
-            set(scope)
-        ).items()
+        for param_id, parameter in session.parameters.get_parameters(set(scope)).items()
     }
 
 
@@ -429,7 +427,7 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
         _qualification_fit()
     )
     before = session.analysis_values.snapshot()
-    legacy_before = _legacy_values(session, problem.commit_scope)
+    presentation_before = _presentation_values(session, problem.commit_scope)
 
     first = execute_direct_trf(problem, invocation, parameterization, engine)
     second = execute_direct_trf(problem, invocation, parameterization, engine)
@@ -469,7 +467,7 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
     assert first.materialization.identity == second.materialization.identity
     assert first.accepted_result.identity == second.accepted_result.identity
     assert session.analysis_values.snapshot() == before
-    assert _legacy_values(session, problem.commit_scope) == legacy_before
+    assert _presentation_values(session, problem.commit_scope) == presentation_before
 
     receipt = commit_accepted_fit(
         first.accepted_result,
@@ -545,7 +543,7 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
             analysis_values=session.analysis_values,
         )
     assert session.analysis_values.snapshot() == committed
-    assert _legacy_values(session, problem.commit_scope) == legacy_before
+    assert _presentation_values(session, problem.commit_scope) == presentation_before
 
 
 def test_live_commit_authority_is_atomic_under_concurrent_use() -> None:
@@ -556,7 +554,7 @@ def test_live_commit_authority_is_atomic_under_concurrent_use() -> None:
     assert outcome.accepted_result is not None
     assert outcome.commit_authority is not None
     before = session.analysis_values.snapshot()
-    legacy_before = _legacy_values(session, problem.commit_scope)
+    presentation_before = _presentation_values(session, problem.commit_scope)
     barrier = Barrier(2)
 
     def commit_once() -> object:
@@ -582,7 +580,7 @@ def test_live_commit_authority_is_atomic_under_concurrent_use() -> None:
     assert len(errors) == len(receipts) == 1
     assert "exact live Direct TRF commit authority" in str(errors[0])
     assert session.analysis_values.snapshot().revision == before.revision + 1
-    assert _legacy_values(session, problem.commit_scope) == legacy_before
+    assert _presentation_values(session, problem.commit_scope) == presentation_before
 
 
 def test_commit_rejects_absent_foreign_or_wrongly_bound_live_authority() -> None:
@@ -596,7 +594,7 @@ def test_commit_rejects_absent_foreign_or_wrongly_bound_live_authority() -> None
     assert second.accepted_result is not None
     assert second.commit_authority is not None
     before = session.analysis_values.snapshot()
-    legacy_before = _legacy_values(session, problem.commit_scope)
+    presentation_before = _presentation_values(session, problem.commit_scope)
 
     with pytest.raises(TypeError, match="minted only"):
         LiveFitCommitAuthority()
@@ -666,7 +664,7 @@ def test_commit_rejects_absent_foreign_or_wrongly_bound_live_authority() -> None
         )
 
     assert session.analysis_values.snapshot() == before
-    assert _legacy_values(session, problem.commit_scope) == legacy_before
+    assert _presentation_values(session, problem.commit_scope) == presentation_before
 
 
 def test_canonical_scalarization_and_candidate_order_are_explicit() -> None:
@@ -800,7 +798,7 @@ def test_non_convergence_keeps_last_iterate_diagnostic_and_commits_nothing() -> 
         _qualification_fit()
     )
     before = session.analysis_values.snapshot()
-    legacy_before = _legacy_values(session, problem.commit_scope)
+    presentation_before = _presentation_values(session, problem.commit_scope)
 
     def non_converged(
         fun: Callable[[Array], Array], x0: Array, **settings: object
@@ -845,7 +843,7 @@ def test_non_convergence_keeps_last_iterate_diagnostic_and_commits_nothing() -> 
     assert outcome.materialization is None
     assert outcome.accepted_result is None
     assert session.analysis_values.snapshot() == before
-    assert _legacy_values(session, problem.commit_scope) == legacy_before
+    assert _presentation_values(session, problem.commit_scope) == presentation_before
 
 
 def test_invocation_execution_settings_drive_the_solver_environment() -> None:
@@ -965,7 +963,7 @@ def test_exact_start_preflight_interruption_freezes_typed_attempt_evidence() -> 
         _qualification_fit()
     )
     before = session.analysis_values.snapshot()
-    legacy_before = _legacy_values(session, problem.commit_scope)
+    presentation_before = _presentation_values(session, problem.commit_scope)
     pulse_type = type(next(iter(experiments)).profiles[0].pulse_sequence)
 
     with (
@@ -987,7 +985,7 @@ def test_exact_start_preflight_interruption_freezes_typed_attempt_evidence() -> 
     assert execution.failure.category == "interrupted"
     assert interrupted.value.materialization is None
     assert session.analysis_values.snapshot() == before
-    assert _legacy_values(session, problem.commit_scope) == legacy_before
+    assert _presentation_values(session, problem.commit_scope) == presentation_before
 
 
 def test_cancellation_after_exact_start_preflight_never_enters_solver() -> None:
@@ -995,7 +993,7 @@ def test_cancellation_after_exact_start_preflight_never_enters_solver() -> None:
         _qualification_fit()
     )
     before = session.analysis_values.snapshot()
-    legacy_before = _legacy_values(session, problem.commit_scope)
+    presentation_before = _presentation_values(session, problem.commit_scope)
     token = CancellationToken()
     pulse_type = type(next(iter(experiments)).profiles[0].pulse_sequence)
     original = cast("Callable[..., Array]", pulse_type.calculate)
@@ -1035,7 +1033,7 @@ def test_cancellation_after_exact_start_preflight_never_enters_solver() -> None:
     assert outcome.materialization is None
     assert outcome.accepted_result is None
     assert session.analysis_values.snapshot() == before
-    assert _legacy_values(session, problem.commit_scope) == legacy_before
+    assert _presentation_values(session, problem.commit_scope) == presentation_before
 
 
 def test_cancellation_after_a_valid_last_iterate_suppresses_materialization() -> None:
@@ -1076,7 +1074,7 @@ def test_native_problem_construction_failure_leaves_legacy_state_untouched() -> 
         _qualification_fit()
     )
     before = session.analysis_values.snapshot()
-    legacy_before = _legacy_values(session, parameterization.scope_ids)
+    presentation_before = _presentation_values(session, parameterization.scope_ids)
     incomplete_plan = dataclasses.replace(engine.plan, resolved_ids=())
     configuration = session.parameter_factory.sealed_configuration
     assert configuration is not None
@@ -1090,7 +1088,9 @@ def test_native_problem_construction_failure_leaves_legacy_state_untouched() -> 
         )
 
     assert session.analysis_values.snapshot() == before
-    assert _legacy_values(session, parameterization.scope_ids) == legacy_before
+    assert (
+        _presentation_values(session, parameterization.scope_ids) == presentation_before
+    )
 
 
 def test_native_preflight_evaluation_failure_leaves_legacy_state_untouched() -> None:
@@ -1098,7 +1098,7 @@ def test_native_preflight_evaluation_failure_leaves_legacy_state_untouched() -> 
         _qualification_fit()
     )
     before = session.analysis_values.snapshot()
-    legacy_before = _legacy_values(session, problem.commit_scope)
+    presentation_before = _presentation_values(session, problem.commit_scope)
     pulse_type = type(next(iter(experiments)).profiles[0].pulse_sequence)
 
     with patch.object(
@@ -1113,7 +1113,7 @@ def test_native_preflight_evaluation_failure_leaves_legacy_state_untouched() -> 
     assert outcome.materialization is None
     assert outcome.accepted_result is None
     assert session.analysis_values.snapshot() == before
-    assert _legacy_values(session, problem.commit_scope) == legacy_before
+    assert _presentation_values(session, problem.commit_scope) == presentation_before
 
 
 def test_fresh_materialization_failure_cannot_accept_or_commit_last_iterate() -> None:
@@ -1121,7 +1121,7 @@ def test_fresh_materialization_failure_cannot_accept_or_commit_last_iterate() ->
         _qualification_fit()
     )
     before = session.analysis_values.snapshot()
-    legacy_before = _legacy_values(session, problem.commit_scope)
+    presentation_before = _presentation_values(session, problem.commit_scope)
     pulse_type = type(next(iter(experiments)).profiles[0].pulse_sequence)
     original = cast("Callable[..., Array]", pulse_type.calculate)
     fail_materialization = False
@@ -1156,7 +1156,7 @@ def test_fresh_materialization_failure_cannot_accept_or_commit_last_iterate() ->
     assert outcome.materialization.terminal is MaterializationTerminal.FAILURE
     assert outcome.accepted_result is None
     assert session.analysis_values.snapshot() == before
-    assert _legacy_values(session, problem.commit_scope) == legacy_before
+    assert _presentation_values(session, problem.commit_scope) == presentation_before
 
 
 def test_materialization_interruption_freezes_typed_evidence_and_commits_nothing() -> (
@@ -1166,7 +1166,7 @@ def test_materialization_interruption_freezes_typed_evidence_and_commits_nothing
         _qualification_fit()
     )
     before = session.analysis_values.snapshot()
-    legacy_before = _legacy_values(session, problem.commit_scope)
+    presentation_before = _presentation_values(session, problem.commit_scope)
     pulse_type = type(next(iter(experiments)).profiles[0].pulse_sequence)
     original = cast("Callable[..., Array]", pulse_type.calculate)
     interrupt_materialization = False
@@ -1207,7 +1207,7 @@ def test_materialization_interruption_freezes_typed_evidence_and_commits_nothing
     )
     assert interrupted.value.materialization.evaluation_count == 1
     assert session.analysis_values.snapshot() == before
-    assert _legacy_values(session, problem.commit_scope) == legacy_before
+    assert _presentation_values(session, problem.commit_scope) == presentation_before
 
 
 def test_cancellation_during_materialization_suppresses_accepted_result() -> None:

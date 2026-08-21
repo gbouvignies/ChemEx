@@ -44,6 +44,11 @@ from chemex.runtime import AnalysisSession
 ROOT = Path(__file__).parents[2]
 EXPERIMENT = ROOT / "examples/Experiments/DCEST_15N_HD_EXCH/Experiments/3hz.toml"
 PARAMETERS = ROOT / "examples/Experiments/DCEST_15N_HD_EXCH/Parameters/parameters.toml"
+FROZEN_LEGACY_IMPLEMENTATION = LegacyObservationImplementation(
+    package_version="2026.6.1",
+    lmfit_version="1.3.4",
+    source_manifest_hash="b16ee859a1e747043650b3d3529843856192bc8fad5d8a4c8d49b99157410ad5",
+)
 
 
 class LaneAuthority(Protocol):
@@ -229,7 +234,7 @@ def capture(
 ) -> OperationalReplayCapture:
     lane = canonical_lanes()[0]
     authority_record = authority.to_record()
-    implementation = LegacyObservationImplementation.from_current_package()
+    implementation = FROZEN_LEGACY_IMPLEMENTATION
     case = CaseDefinition.create(
         "migration-core-operational-replay",
         CaseSourceAuthority(source_commit, lockfile_hash),
