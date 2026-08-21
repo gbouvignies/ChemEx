@@ -186,7 +186,7 @@ def _qualification_policy(controlled_id: str) -> UncertaintyPolicy:
         roundoff_multiplier=64.0,
         smaller_step_extent=8,
         larger_step_extent=8,
-        svd_driver="gesvd",
+        svd_driver="gesdd",
         rank_absolute_tolerance=0.0,
         rank_relative_tolerance=1.0e-12,
         weak_relative_tolerance=1.0e-6,
@@ -1304,7 +1304,7 @@ def test_noncontiguous_partition_scopes_map_to_root_coordinates_independently() 
 
 def test_dimension_aware_rank_threshold_handles_exact_and_near_rank_spectra() -> None:
     policy = _qualification_policy("a")
-    assert policy.svd_driver == "gesvd"
+    assert policy.svd_driver == "gesdd"
     exact = np.asarray(((1.0, 1.0), (2.0, 2.0), (3.0, 3.0)))
     exact_analysis, exact_failure = uncertainty_module._analyze_scaled_jacobian(
         exact,
@@ -1335,6 +1335,17 @@ def test_dimension_aware_rank_threshold_handles_exact_and_near_rank_spectra() ->
     assert near_failure is None
     assert near_analysis is not None
     assert near_analysis.rank == 2
+
+    gesvd_analysis, gesvd_failure = uncertainty_module._analyze_scaled_jacobian(
+        near,
+        (1.0, 1.0),
+        policy=dataclasses.replace(policy, svd_driver="gesvd"),
+        source_identity="near-rank-spectrum-gesvd",
+        cancellation_probe=None,
+    )
+    assert gesvd_failure is None
+    assert gesvd_analysis is not None
+    assert gesvd_analysis.rank == near_analysis.rank
 
 
 def test_rank_deficiency_is_diagnostic_and_never_manufactures_uncertainty() -> None:
@@ -2105,6 +2116,158 @@ def test_authoritative_artifacts_reject_inconsistent_reconstruction() -> None:
             entries=(
                 dataclasses.replace(evidence.marginal_errors.entries[0], value=42.0),
             ),
+        )
+
+
+def test_artifact_reconstruction_does_not_replay_numerical_algorithms() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    controlled_id = problem.controlled_ids[0]
+    derived_id = "__R1A_B_G2N_H_800_0MHZ"
+    evidence = derive_uncertainty_evidence(
+        accepted,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=_qualification_policy(controlled_id),
+        constrained_scope=(derived_id,),
+        constrained_units=((derived_id, ParameterUnit.RATE_PER_SECOND),),
+        constrained_scales=((derived_id, 1.0),),
+        compiled_constraint_linearization=compile_constraint_linearization_capabilities(
+            parameterization,
+            (derived_id,),
+            (),
+        ),
+        resolved_environment_identity="artifact-no-replay",
+    )
+    rank = evidence.rank_diagnostic
+    covariance = evidence.covariance
+    propagation = evidence.constrained_propagation
+    assert rank is not None
+    assert covariance is not None
+    assert propagation is not None
+
+    with (
+        patch(
+            "chemex.optimize.uncertainty.svd",
+            side_effect=AssertionError("SVD replayed"),
+        ),
+        patch(
+            "chemex.optimize.uncertainty._invariant_singular_subspaces",
+            side_effect=AssertionError("projectors replayed"),
+        ),
+    ):
+        dataclasses.replace(rank)
+    with (
+        patch(
+            "chemex.optimize.uncertainty.svd",
+            side_effect=AssertionError("SVD replayed"),
+        ),
+        patch(
+            "chemex.optimize.uncertainty._canonical_covariance_reduction",
+            side_effect=AssertionError("covariance replayed"),
+        ),
+    ):
+        dataclasses.replace(covariance)
+    with (
+        patch(
+            "chemex.optimize.uncertainty._pairwise_sum",
+            side_effect=AssertionError("G @ L replayed"),
+        ),
+        patch(
+            "chemex.optimize.uncertainty._gram_matrix",
+            side_effect=AssertionError("propagated Gram replayed"),
+        ),
+    ):
+        dataclasses.replace(propagation)
+
+
+def test_covariance_producer_rejects_finite_internally_inconsistent_arrays() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    original = uncertainty_module._canonical_covariance_reduction
+
+    def inconsistent_reduction(*args: object, **kwargs: object):
+        unscaled, factor, covariance = original(*args, **kwargs)
+        return (
+            tuple(tuple(4.0 * value for value in row) for row in unscaled),
+            tuple(tuple(2.0 * value for value in row) for row in factor),
+            tuple(tuple(4.0 * value for value in row) for row in covariance),
+        )
+
+    with patch.object(
+        uncertainty_module,
+        "_canonical_covariance_reduction",
+        side_effect=inconsistent_reduction,
+    ):
+        evidence = derive_uncertainty_evidence(
+            accepted,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=_qualification_policy(problem.controlled_ids[0]),
+            resolved_environment_identity="inconsistent-covariance-producer",
+        )
+
+    assert evidence.covariance is None
+    assert any(
+        failure.category == "invalid_covariance_arithmetic"
+        and "Covariance factor is inconsistent with its retained source"
+        in failure.message
+        for failure in evidence.failures
+    )
+
+
+def test_constraint_producer_rejects_coherently_corrupted_factor_and_gram() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    derived_id = "__R1A_B_G2N_H_800_0MHZ"
+    original = uncertainty_module._propagated_factor_and_covariance
+
+    def inconsistent_propagation(*args: object, **kwargs: object):
+        factor, covariance = original(*args, **kwargs)
+        return (
+            tuple(tuple(2.0 * value for value in row) for row in factor),
+            tuple(tuple(4.0 * value for value in row) for row in covariance),
+        )
+
+    with patch.object(
+        uncertainty_module,
+        "_propagated_factor_and_covariance",
+        side_effect=inconsistent_propagation,
+    ):
+        evidence = derive_uncertainty_evidence(
+            accepted,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=_qualification_policy(problem.controlled_ids[0]),
+            constrained_scope=(derived_id,),
+            constrained_units=((derived_id, ParameterUnit.RATE_PER_SECOND),),
+            constrained_scales=((derived_id, 1.0),),
+            compiled_constraint_linearization=(
+                compile_constraint_linearization_capabilities(
+                    parameterization,
+                    (derived_id,),
+                    (),
+                )
+            ),
+            resolved_environment_identity="inconsistent-propagation-producer",
+        )
+
+    assert evidence.constrained_propagation is None
+    assert any(
+        failure.category == "gram_propagation_failure"
+        and "Constrained covariance factor is inconsistent with its retained source"
+        in failure.message
+        for failure in evidence.failures
+    )
+
+
+def test_matrix_relation_validation_is_relative_for_small_covariances() -> None:
+    with pytest.raises(ArithmeticError, match="retained source"):
+        uncertainty_module._validate_matrix_relation(
+            ((2.0e-20,),),
+            np.asarray(((1.0e-20,),), dtype=np.float64),
+            name="Small covariance",
+            reduction_dimension=1,
         )
 
 

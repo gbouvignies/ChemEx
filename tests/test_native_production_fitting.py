@@ -305,6 +305,10 @@ def test_real_direct_fit_reports_objective_evaluation_progress(
     rendered = capsys.readouterr().out
     assert "eval 0/" in rendered
     assert "final χ²" in rendered
+    minimizing_terminal = rendered.index("final χ²")
+    uncertainty_start = rendered.index("Estimating parameter uncertainties")
+    uncertainty_terminal = rendered.index("covariance available")
+    assert minimizing_terminal < uncertainty_start < uncertainty_terminal
     assert "iteration" not in rendered.lower()
 
 
@@ -631,6 +635,7 @@ def test_interrupted_block_fallback_preserves_committed_root_evidence(
 
 def test_shared_parameter_coupling_is_not_split_into_covariance_blocks(
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     output = tmp_path / "Output"
     method = tmp_path / "method.toml"
@@ -659,6 +664,7 @@ FIX = ["KEX_AB"]
     assert "# ±" not in fitted
     assert "error unavailable: rank deficient" in fitted
     assert not (output / "Statistics" / "Covariance" / "blocks.json").exists()
+    assert "uncertainty unavailable: rank deficient" in capsys.readouterr().out
 
 
 def test_unsupported_scientific_constraint_keeps_product_fitted_errors(

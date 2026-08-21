@@ -1258,32 +1258,39 @@ class SingularSubspaceEvidence:
         )
 
 
-def _recomputed_scaled_svd(
-    source: ResidualJacobianEvidence,
-    policy: UncertaintyPolicy,
-) -> tuple[tuple[float, ...], tuple[tuple[float, ...], ...]]:
-    matrix = np.asarray(source.matrix, dtype=np.float64)
-    column_norms = np.linalg.norm(matrix, axis=0)
-    scaled = matrix * (1.0 / column_norms)[np.newaxis, :]
-    _left, singular_values, right_transpose = svd(
-        scaled,
-        full_matrices=False,
-        compute_uv=True,
-        overwrite_a=False,
-        check_finite=True,
-        lapack_driver=policy.svd_driver,
-    )
-    dimension = len(source.controlled_ids)
-    return (
-        tuple(
-            _finite(value, name=f"recomputed singular value[{index}]")
-            for index, value in enumerate(singular_values)
-        ),
-        _canonical_matrix(
-            right_transpose,
-            rows=dimension,
-            columns=dimension,
-            name="recomputed right singular vectors",
+def _rank_construction_digest(
+    source_jacobian_identity: str,
+    policy_identity: str,
+    singular_values: Sequence[float],
+    normalized_singular_values: Sequence[float],
+    scaled_column_norms: Sequence[float],
+    equilibration_scales: Sequence[float],
+    threshold: float,
+    weak_threshold: float,
+    rank: int,
+    identifiable_projector: Sequence[Sequence[float]],
+    null_projector: Sequence[Sequence[float]],
+    weak_projector: Sequence[Sequence[float]],
+    subspaces: Sequence[SingularSubspaceEvidence],
+) -> str:
+    dimension = len(singular_values)
+    projector_shape = (dimension, dimension)
+    return _identity(
+        "native-rank-controlled-construction-v1",
+        (
+            source_jacobian_identity,
+            policy_identity,
+            _vector_tokens(singular_values),
+            _vector_tokens(normalized_singular_values),
+            _vector_tokens(scaled_column_norms),
+            _vector_tokens(equilibration_scales),
+            _float_token(threshold),
+            _float_token(weak_threshold),
+            rank,
+            _binary64_matrix_digest(identifiable_projector, projector_shape),
+            _binary64_matrix_digest(null_projector, projector_shape),
+            _binary64_matrix_digest(weak_projector, projector_shape),
+            tuple(item.identity for item in subspaces),
         ),
     )
 
@@ -1331,9 +1338,15 @@ class RankDiagnostic:
         metadata={"record": False},
         kw_only=True,
     )
+    _construction_digest: str = field(
+        repr=False,
+        compare=False,
+        metadata={"record": False},
+        kw_only=True,
+    )
     identity: str = field(init=False)
 
-    def __post_init__(self) -> None:  # noqa: C901 - complete SVD integrity chain
+    def __post_init__(self) -> None:  # noqa: C901 - closed structural integrity
         source = self.source_jacobian
         _validate_accepted_anchor(
             source.accepted_anchor,
@@ -1391,39 +1404,21 @@ class RankDiagnostic:
         expected_normalized = tuple(
             0.0 if largest == 0.0 else value / largest for value in self.singular_values
         )
-        source_matrix = np.asarray(source.matrix)
-        expected_source_norms = np.linalg.norm(source_matrix, axis=0)
-        expected_equilibration = 1.0 / expected_source_norms
-        scaled = source_matrix * expected_equilibration[np.newaxis, :]
-        expected_norms = tuple(
-            float(np.linalg.norm(scaled[:, index])) for index in range(dimension)
-        )
-        recomputed_singular, recomputed_right_t = _recomputed_scaled_svd(
-            source,
-            self.source_policy,
-        )
         tolerance = 512.0 * _EPSILON * max(1, dimension)
         if (
             self.normalized_singular_values != expected_normalized
             or self.weak_threshold != expected_weak_threshold
             or self.source_policy.identity != source.source_policy.identity
-            or not np.allclose(
-                self.scaled_column_norms, expected_norms, rtol=tolerance, atol=0.0
+            or any(
+                value <= 0.0 or not math.isfinite(value)
+                for value in self.scaled_column_norms
             )
-            or not np.allclose(
-                self.equilibration_scales,
-                expected_equilibration,
-                rtol=tolerance,
-                atol=0.0,
-            )
-            or not np.allclose(
-                self.singular_values,
-                recomputed_singular,
-                rtol=tolerance,
-                atol=0.0,
+            or any(
+                value <= 0.0 or not math.isfinite(value)
+                for value in self.equilibration_scales
             )
         ):
-            raise ValueError("SVD/rank numerical evidence does not derive from J_z")
+            raise ValueError("SVD/rank controlled construction is inconsistent")
         identity_matrix = np.eye(dimension)
         for name, candidate in (
             ("identifiable", identifiable),
@@ -1431,11 +1426,8 @@ class RankDiagnostic:
             ("weak", weak),
         ):
             array = np.asarray(candidate)
-            if not (
-                np.allclose(array, array.T, rtol=0.0, atol=tolerance)
-                and np.allclose(array @ array, array, rtol=0.0, atol=tolerance)
-            ):
-                raise ValueError(f"{name} subspace evidence is not a projector")
+            if not np.allclose(array, array.T, rtol=0.0, atol=tolerance):
+                raise ValueError(f"{name} subspace evidence is not symmetric")
         if not np.allclose(
             np.asarray(identifiable) + np.asarray(null),
             identity_matrix,
@@ -1455,20 +1447,7 @@ class RankDiagnostic:
             raise ValueError(
                 "Singular subspaces violate the declared clustering policy"
             )
-        recomputed_subspaces = _invariant_singular_subspaces(
-            np.asarray(recomputed_right_t, dtype=np.float64).T,
-            recomputed_singular,
-            rank_threshold=self.threshold,
-            weak_threshold=self.weak_threshold,
-            cluster_relative_tolerance=(
-                self.source_policy.singular_value_cluster_relative_tolerance
-            ),
-        )
-        for item, expected_subspace in zip(
-            self.subspaces,
-            recomputed_subspaces,
-            strict=True,
-        ):
+        for item in self.subspaces:
             if item.singular_values != tuple(
                 self.singular_values[index] for index in item.indices
             ):
@@ -1483,51 +1462,24 @@ class RankDiagnostic:
             )
             if item.classification != expected_classification:
                 raise ValueError("Singular subspace classification is inconsistent")
-            item_projector = np.asarray(item.projector)
-            if (
-                item.indices != expected_subspace.indices
-                or item.singular_values != expected_subspace.singular_values
-                or item.classification != expected_subspace.classification
-                or not np.allclose(
-                    item_projector,
-                    expected_subspace.projector,
-                    rtol=0.0,
-                    atol=tolerance,
-                )
-            ):
-                raise ValueError(
-                    "Singular projector does not match its invariant spectrum"
-                )
-        expected_weak = sum(
-            (
-                np.asarray(item.projector)
-                for item in self.subspaces
-                if item.classification.endswith("_weak")
-            ),
-            start=np.zeros((dimension, dimension), dtype=np.float64),
-        )
-        if not np.allclose(
-            weak,
-            expected_weak,
-            rtol=0.0,
-            atol=tolerance,
-        ):
-            raise ValueError("Weak-subspace projector is inconsistent")
-        expected_null = sum(
-            (
-                np.asarray(item.projector)
-                for item in self.subspaces
-                if item.classification.endswith("_null")
-            ),
-            start=np.zeros((dimension, dimension), dtype=np.float64),
-        )
-        if not np.allclose(
+        if self._construction_digest != _rank_construction_digest(
+            self.source_jacobian_identity,
+            self.source_policy.identity,
+            self.singular_values,
+            self.normalized_singular_values,
+            self.scaled_column_norms,
+            self.equilibration_scales,
+            self.threshold,
+            self.weak_threshold,
+            self.rank,
+            identifiable,
             null,
-            expected_null,
-            rtol=0.0,
-            atol=tolerance,
+            weak,
+            self.subspaces,
         ):
-            raise ValueError("Null projector does not match diagnostic subspaces")
+            raise ValueError(
+                "Rank projector/spectrum evidence differs from controlled construction"
+            )
         object.__setattr__(self, "identifiable_projector", identifiable)
         object.__setattr__(self, "null_projector", null)
         object.__setattr__(self, "weak_projector", weak)
@@ -1571,6 +1523,35 @@ class RankDiagnostic:
                 ),
             ),
         )
+
+
+def _covariance_construction_digest(
+    source_jacobian_identity: str,
+    rank_diagnostic_identity: str,
+    residual_variance_scale: float,
+    jacobian_condition: float,
+    information_condition: float,
+    unscaled_covariance: Sequence[Sequence[float]],
+    factor: Sequence[Sequence[float]],
+    covariance: Sequence[Sequence[float]],
+    claims: Sequence[ClaimAssessment],
+) -> str:
+    dimension = len(covariance)
+    shape = (dimension, dimension)
+    return _identity(
+        "native-covariance-controlled-construction-v1",
+        (
+            source_jacobian_identity,
+            rank_diagnostic_identity,
+            _float_token(residual_variance_scale),
+            _float_token(jacobian_condition),
+            _float_token(information_condition),
+            _binary64_matrix_digest(unscaled_covariance, shape),
+            _binary64_matrix_digest(factor, shape),
+            _binary64_matrix_digest(covariance, shape),
+            tuple((item.name, item.state.value, item.detail) for item in claims),
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1637,6 +1618,12 @@ class CovarianceEvidence:
         kw_only=True,
     )
     source_engine: EvaluationEngine = field(
+        repr=False,
+        compare=False,
+        metadata={"record": False},
+        kw_only=True,
+    )
+    _construction_digest: str = field(
         repr=False,
         compare=False,
         metadata={"record": False},
@@ -1722,26 +1709,6 @@ class CovarianceEvidence:
             or self.factorization != _FACTOR_VERSION
         ):
             raise ValueError("Covariance derivation lineage is internally inconsistent")
-        recomputed_singular, recomputed_right_t = _recomputed_scaled_svd(
-            source,
-            policy,
-        )
-        if recomputed_singular != rank_source.singular_values:
-            raise ValueError("Covariance SVD kernel differs from rank evidence")
-        expected_unscaled, expected_factor, expected_covariance = (
-            _canonical_covariance_reduction(
-                rank_source.singular_values,
-                recomputed_right_t,
-                rank_source.equilibration_scales,
-                expected_scale,
-            )
-        )
-        if (
-            unscaled != expected_unscaled
-            or factor != expected_factor
-            or covariance != expected_covariance
-        ):
-            raise ValueError("Covariance arrays do not match the canonical reduction")
         expected_jacobian_condition = self.singular_values[0] / self.singular_values[-1]
         if (
             self.jacobian_condition != expected_jacobian_condition
@@ -1749,17 +1716,30 @@ class CovarianceEvidence:
             != expected_jacobian_condition * expected_jacobian_condition
         ):
             raise ValueError("Covariance conditioning claims do not match the spectrum")
-        expected_claims = _canonical_covariance_claims(
-            accepted,
-            problem,
+        tolerance = 512.0 * _EPSILON * max(1, dimension)
+        for name, candidate in (
+            ("unscaled covariance", unscaled),
+            ("scaled covariance", covariance),
+        ):
+            array = np.asarray(candidate)
+            if not np.allclose(array, array.T, rtol=0.0, atol=tolerance):
+                raise ValueError(f"{name} is not symmetric")
+            if np.any(np.diag(array) < 0.0):
+                raise ValueError(f"{name} has negative marginal variance")
+        if self._construction_digest != _covariance_construction_digest(
+            self.source_jacobian_identity,
+            self.rank_diagnostic_identity,
+            self.residual_variance_scale,
+            self.jacobian_condition,
+            self.information_condition,
+            unscaled,
+            factor,
             covariance,
-            expected_scale,
-            expected_jacobian_condition,
-            policy,
-            engine,
-        )
-        if self.claims != expected_claims:
-            raise ValueError("Covariance claims are inconsistent")
+            self.claims,
+        ):
+            raise ValueError(
+                "Covariance claims or arrays differ from controlled construction"
+            )
         object.__setattr__(self, "unscaled_covariance", unscaled)
         object.__setattr__(self, "factor", factor)
         object.__setattr__(self, "covariance", covariance)
@@ -2303,6 +2283,27 @@ class ConstraintJacobianEvidence:
         )
 
 
+def _constrained_propagation_construction_digest(
+    source_covariance_identity: str,
+    source_constraint_jacobian_identity: str,
+    factor: Sequence[Sequence[float]],
+    covariance: Sequence[Sequence[float]],
+    claims: Sequence[ClaimAssessment],
+) -> str:
+    rows = len(covariance)
+    columns = len(factor[0]) if factor else 0
+    return _identity(
+        "native-constrained-controlled-construction-v1",
+        (
+            source_covariance_identity,
+            source_constraint_jacobian_identity,
+            _binary64_matrix_digest(factor, (rows, columns)),
+            _binary64_matrix_digest(covariance, (rows, rows)),
+            tuple((item.name, item.state.value, item.detail) for item in claims),
+        ),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ConstrainedPropagationEvidence:
     request_identity: str
@@ -2330,6 +2331,12 @@ class ConstrainedPropagationEvidence:
         kw_only=True,
     )
     accepted_anchor: AcceptedFitResult = field(
+        repr=False,
+        compare=False,
+        metadata={"record": False},
+        kw_only=True,
+    )
+    _construction_digest: str = field(
         repr=False,
         compare=False,
         metadata={"record": False},
@@ -2373,31 +2380,30 @@ class ConstrainedPropagationEvidence:
             or self.output_scales != source_jacobian.output_scales
         ):
             raise ValueError("Constrained propagation lineage is inconsistent")
-        expected_factor = tuple(
-            tuple(
-                _finite(
-                    _pairwise_sum(
-                        tuple(
-                            source_jacobian.matrix[row][inner]
-                            * source_covariance.factor[inner][column]
-                            for inner in range(columns)
-                        )
-                    ),
-                    name="validated propagated factor",
-                )
-                for column in range(columns)
+        covariance_array = np.asarray(covariance)
+        tolerance = 512.0 * _EPSILON * max(1, rows, columns)
+        if not np.allclose(
+            covariance_array,
+            covariance_array.T,
+            rtol=0.0,
+            atol=tolerance,
+        ):
+            raise ValueError("Constrained covariance is not symmetric")
+        if np.any(np.diag(covariance_array) < 0.0):
+            raise ValueError("Constrained covariance has negative marginal variance")
+        if self._construction_digest != (
+            _constrained_propagation_construction_digest(
+                self.source_covariance_identity,
+                self.source_constraint_jacobian_identity,
+                factor,
+                covariance,
+                self.claims,
             )
-            for row in range(rows)
-        )
-        if factor != expected_factor or covariance != _gram_matrix(expected_factor):
-            raise ValueError("Constrained covariance differs from G_S L")
-        expected_claims = _canonical_constrained_propagation_claims(
-            source_covariance,
-            source_jacobian,
-            source_covariance.source_policy,
-        )
-        if self.claims != expected_claims:
-            raise ValueError("Constrained propagation claims are inconsistent")
+        ):
+            raise ValueError(
+                "Constrained propagation claims or arrays differ from controlled "
+                "construction"
+            )
         object.__setattr__(self, "factor", factor)
         object.__setattr__(self, "covariance", covariance)
         object.__setattr__(
@@ -3325,6 +3331,46 @@ def _gram_matrix(factor: Sequence[Sequence[float]]) -> tuple[tuple[float, ...], 
     return tuple(tuple(row) for row in result)
 
 
+def _validate_matrix_relation(
+    actual: Sequence[Sequence[float]] | Array,
+    expected: Array,
+    *,
+    name: str,
+    reduction_dimension: int,
+) -> None:
+    """Check one controlled numerical relationship at its producer boundary."""
+    actual_array = np.asarray(actual, dtype=np.float64)
+    magnitude = float(np.max(np.abs(expected), initial=0.0))
+    tolerance = 512.0 * _EPSILON * max(1, reduction_dimension)
+    absolute_tolerance = max(
+        tolerance * magnitude,
+        np.finfo(np.float64).smallest_subnormal,
+    )
+    if not np.allclose(
+        actual_array,
+        expected,
+        rtol=tolerance,
+        atol=absolute_tolerance,
+    ):
+        raise ArithmeticError(f"{name} is inconsistent with its retained source")
+
+
+def _validate_gram_relation(
+    factor: Sequence[Sequence[float]],
+    covariance: Sequence[Sequence[float]],
+    *,
+    name: str,
+) -> None:
+    """Check a producer's factor/Gram relationship with one native matmul."""
+    factor_array = np.asarray(factor, dtype=np.float64)
+    _validate_matrix_relation(
+        covariance,
+        factor_array @ factor_array.T,
+        name=name,
+        reduction_dimension=factor_array.shape[1],
+    )
+
+
 def _canonical_covariance_reduction(
     singular_values: Sequence[float],
     right_transpose: Sequence[Sequence[float]],
@@ -3442,6 +3488,26 @@ def _invariant_singular_subspaces(
             projector(indices),
         )
         for indices in groups
+    )
+
+
+def _validate_projector_relation(
+    right: Array,
+    indices: Sequence[int],
+    projector: Sequence[Sequence[float]],
+    *,
+    name: str,
+) -> None:
+    """Check that a retained projector represents the declared SVD columns."""
+    columns = np.asarray(right[:, tuple(indices)], dtype=np.float64)
+    if columns.ndim == 1:
+        columns = columns[:, np.newaxis]
+    expected = columns @ columns.T
+    _validate_matrix_relation(
+        projector,
+        expected,
+        name=name,
+        reduction_dimension=right.shape[0],
     )
 
 
@@ -4906,6 +4972,32 @@ def _reduce_scaled_covariance(
             coordinate_scales,
             residual_variance_scale,
         )
+        right = np.asarray(analysis.right_transpose, dtype=np.float64).T
+        scales = np.asarray(coordinate_scales, dtype=np.float64)
+        spectrum = np.asarray(analysis.singular_values, dtype=np.float64)
+        expected_unscaled_factor = (
+            scales[:, np.newaxis] * right / spectrum[np.newaxis, :]
+        )
+        expected_factor = math.sqrt(residual_variance_scale) * (
+            expected_unscaled_factor
+        )
+        _validate_matrix_relation(
+            factor,
+            expected_factor,
+            name="Covariance factor",
+            reduction_dimension=len(coordinate_scales),
+        )
+        _validate_matrix_relation(
+            unscaled,
+            expected_unscaled_factor @ expected_unscaled_factor.T,
+            name="Unscaled covariance",
+            reduction_dimension=len(coordinate_scales),
+        )
+        _validate_gram_relation(
+            factor,
+            covariance,
+            name="Scaled covariance",
+        )
     except (ArithmeticError, TypeError, ValueError) as error:
         return None, EvidenceFailure(
             "covariance",
@@ -5105,6 +5197,50 @@ def _covariance_from_jacobian(
         weak_threshold=weak_threshold,
         cluster_relative_tolerance=(policy.singular_value_cluster_relative_tolerance),
     )
+    _validate_projector_relation(
+        right,
+        tuple(range(rank)),
+        identifiable_projector,
+        name="Identifiable projector",
+    )
+    _validate_projector_relation(
+        right,
+        tuple(range(rank, coordinate_count)),
+        null_projector,
+        name="Null projector",
+    )
+    _validate_projector_relation(
+        right,
+        tuple(
+            index
+            for index, value in enumerate(singular_values)
+            if threshold < value <= weak_threshold
+        ),
+        weak_projector,
+        name="Weak projector",
+    )
+    for index, subspace in enumerate(subspaces):
+        _validate_projector_relation(
+            right,
+            subspace.indices,
+            subspace.projector,
+            name=f"Diagnostic projector[{index}]",
+        )
+    rank_construction_digest = _rank_construction_digest(
+        jacobian.identity,
+        policy.identity,
+        singular_values,
+        normalized,
+        analysis.scaled_column_norms,
+        analysis.equilibration_scales,
+        threshold,
+        weak_threshold,
+        rank,
+        identifiable_projector,
+        null_projector,
+        weak_projector,
+        subspaces,
+    )
     rank_diagnostic = RankDiagnostic(
         request_identity,
         accepted.identity,
@@ -5124,6 +5260,7 @@ def _covariance_from_jacobian(
         subspaces,
         source_jacobian=jacobian,
         source_policy=policy,
+        _construction_digest=rank_construction_digest,
     )
     terminal = _cancellation_terminal(cancellation_probe)
     if terminal is not None:
@@ -5155,6 +5292,17 @@ def _covariance_from_jacobian(
         jacobian_condition,
         policy,
         engine,
+    )
+    covariance_construction_digest = _covariance_construction_digest(
+        jacobian.identity,
+        rank_diagnostic.identity,
+        residual_variance_scale,
+        jacobian_condition,
+        information_condition,
+        unscaled_covariance,
+        factor,
+        covariance,
+        claims,
     )
     covariance_evidence = CovarianceEvidence(
         request_identity,
@@ -5194,6 +5342,7 @@ def _covariance_from_jacobian(
         source_problem=problem,
         source_policy=policy,
         source_engine=engine,
+        _construction_digest=covariance_construction_digest,
     )
     return covariance_evidence, rank_diagnostic, None
 
@@ -6122,10 +6271,32 @@ def _propagate_constraints(
         covariance.factor,
         residual_variance_degenerate=(covariance.residual_variance_scale == 0.0),
     )
+    expected_factor = np.asarray(
+        constraint_jacobian.matrix,
+        dtype=np.float64,
+    ) @ np.asarray(covariance.factor, dtype=np.float64)
+    _validate_matrix_relation(
+        factor,
+        expected_factor,
+        name="Constrained covariance factor",
+        reduction_dimension=len(covariance.controlled_ids),
+    )
+    _validate_gram_relation(
+        factor,
+        propagated,
+        name="Constrained covariance",
+    )
     claims = _canonical_constrained_propagation_claims(
         covariance,
         constraint_jacobian,
         policy,
+    )
+    construction_digest = _constrained_propagation_construction_digest(
+        covariance.identity,
+        constraint_jacobian.identity,
+        factor,
+        propagated,
+        claims,
     )
     return ConstrainedPropagationEvidence(
         request_identity,
@@ -6143,6 +6314,7 @@ def _propagate_constraints(
         source_covariance=covariance,
         source_constraint_jacobian=constraint_jacobian,
         accepted_anchor=accepted,
+        _construction_digest=construction_digest,
     )
 
 

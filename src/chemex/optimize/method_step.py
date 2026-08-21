@@ -46,6 +46,7 @@ from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     CancellationToken,
     DirectTrfInvocation,
+    FinalResidualJacobianEvidence,
     FitCommitOperation,
     FitCommitTerminal,
     LiveFitCommitAuthority,
@@ -486,6 +487,9 @@ def _validate_recursive_dataclass_children(  # noqa: C901 - closed evidence tree
         return
     if isinstance(value, AnalysisValuesSnapshot):
         _validate_snapshot_integrity(value)
+        return
+    if isinstance(value, FinalResidualJacobianEvidence):
+        value.validate_integrity()
         return
     if isinstance(value, (AcceptedFitResult, FitCommitOperation)) or not is_dataclass(
         value
@@ -1604,6 +1608,8 @@ def _validate_method_step_outcome(  # noqa: C901 - closed recursive outcome tree
         replace(outcome.primary_execution)
     if outcome.accepted_result is not None:
         accepted = outcome.accepted_result
+        if accepted.final_residual_jacobian is not None:
+            accepted.final_residual_jacobian.validate_integrity()
         reconstructed = replace(accepted, occurrence_witness=None)
         if (
             reconstructed.identity != accepted.identity
@@ -1779,6 +1785,9 @@ def execute_method_step(  # noqa: C901 - closed evaluation/optimization lifecycl
     analysis_values: AnalysisValues,
     cancellation: CancellationToken | None = None,
     checkpoint_observer: Callable[[MethodStepCheckpoint], None] | None = None,
+    commit_completed_observer: (
+        Callable[[AcceptedFitResult, FitCommitOperation], None] | None
+    ) = None,
     progress_observer: ContextualProgressObserver | None = None,
 ) -> MethodStepOutcome:
     """Execute one exact native workflow occurrence."""
@@ -1794,6 +1803,7 @@ def execute_method_step(  # noqa: C901 - closed evaluation/optimization lifecycl
             analysis_values=analysis_values,
             cancellation=cancellation,
             checkpoint_observer=checkpoint_observer,
+            commit_completed_observer=commit_completed_observer,
             progress_observer=progress_observer,
         )
     if cancellation is not None and cancellation.is_cancelled:
@@ -2073,6 +2083,9 @@ def _execute_optimization(  # noqa: C901 - closed primary transition
     analysis_values: AnalysisValues,
     cancellation: CancellationToken | None,
     checkpoint_observer: Callable[[MethodStepCheckpoint], None] | None,
+    commit_completed_observer: (
+        Callable[[AcceptedFitResult, FitCommitOperation], None] | None
+    ),
     progress_observer: ContextualProgressObserver | None,
 ) -> MethodStepOutcome:
     _validate_execution_start_workflow(workflow, execution_start)
@@ -2263,6 +2276,13 @@ def _execute_optimization(  # noqa: C901 - closed primary transition
     if checkpoint_observer is not None:
         checkpoint_observer(MethodStepCheckpoint.COMMIT_COMPLETED)
         _validate_execution_start_workflow(workflow, execution_start)
+    if commit_completed_observer is not None:
+        try:
+            commit_completed_observer(accepted, operation)
+        except KeyboardInterrupt:
+            token.cancel()
+        except Exception:  # noqa: BLE001, S110 - reporting is non-scientific
+            pass
     committed = operation.terminal is FitCommitTerminal.COMMITTED
     successor = operation.committed_snapshot if committed else None
     derivations = (

@@ -1246,6 +1246,7 @@ def _compose_partitioned_final_jacobian(
             != tuple(float(value) for value in candidate.evaluation_result.residuals)
         ):
             return None
+        retained_matrix = np.asarray(retained.matrix, dtype=np.float64)
         child_offset = 0
         for root_profile_index in component.root_profile_indices:
             root_start, root_stop = row_ranges[root_profile_index]
@@ -1254,10 +1255,10 @@ def _compose_partitioned_final_jacobian(
             if child_stop > retained.shape[0]:
                 return None
             for child_column, param_id in enumerate(component.controlled_ids):
-                matrix[root_start:root_stop, root_columns[param_id]] = np.asarray(
-                    retained.matrix,
-                    dtype=np.float64,
-                )[child_offset:child_stop, child_column]
+                matrix[root_start:root_stop, root_columns[param_id]] = retained_matrix[
+                    child_offset:child_stop,
+                    child_column,
+                ]
             child_offset = child_stop
         if child_offset != retained.shape[0]:
             return None

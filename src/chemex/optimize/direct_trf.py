@@ -100,7 +100,28 @@ class FinalResidualJacobianEvidence:
     trust_region_scale_policy: str = "trust-region-only"
     identity: str = field(init=False)
 
-    def __post_init__(self) -> None:
+    def _identity_from_digest(self, matrix_digest: str) -> str:
+        return _identity(
+            "native-final-residual-jacobian-evidence",
+            (
+                _BACKEND_JACOBIAN_VERSION,
+                self.source.value,
+                self.controlled_ids,
+                _vector_tokens(self.final_vector),
+                _vector_tokens(self.final_residuals),
+                self.shape,
+                matrix_digest,
+                self.source_identities,
+                self.derivative_method,
+                self.diff_step_policy,
+                self.loss_policy,
+                self.backend_identity,
+                self.external_coordinate_policy,
+                self.trust_region_scale_policy,
+            ),
+        )
+
+    def _validate_scope_and_semantics(self) -> None:
         rows, columns = self.shape
         if (
             rows < 1
@@ -113,6 +134,33 @@ class FinalResidualJacobianEvidence:
             or any(len(row) != columns for row in self.matrix)
         ):
             raise ValueError("Final residual Jacobian has inconsistent scope")
+        if (
+            self.derivative_method != "numerical 2-point"
+            or self.diff_step_policy != "scipy-default-relative-step"
+            or self.loss_policy != "linear"
+            or not self.backend_identity.startswith("scipy-")
+            or "least_squares:method=trf" not in self.backend_identity
+            or self.external_coordinate_policy != "physical-external-unscaled"
+            or self.trust_region_scale_policy != "trust-region-only"
+            or (
+                self.source is ResidualJacobianSource.FIT_PARTITION_COMPOSITION
+                and not self.source_identities
+            )
+        ):
+            raise ValueError("Final residual Jacobian has incompatible semantics")
+
+    def validate_integrity(self) -> None:
+        """Validate immutable scope, semantics, digest, and identity without copying J."""
+        self._validate_scope_and_semantics()
+        matrix_digest = _binary64_matrix_digest(self.matrix, self.shape)
+        if (
+            matrix_digest != self.matrix_binary64_sha256
+            or self._identity_from_digest(matrix_digest) != self.identity
+        ):
+            raise ValueError("Final residual Jacobian integrity validation failed")
+
+    def __post_init__(self) -> None:
+        self._validate_scope_and_semantics()
         vector = tuple(
             _finite_binary64(value, name=f"final vector[{index}]")
             for index, value in enumerate(self.final_vector)
@@ -131,20 +179,6 @@ class FinalResidualJacobianEvidence:
             )
             for row_index, row in enumerate(self.matrix)
         )
-        if (
-            self.derivative_method != "numerical 2-point"
-            or self.diff_step_policy != "scipy-default-relative-step"
-            or self.loss_policy != "linear"
-            or not self.backend_identity.startswith("scipy-")
-            or "least_squares:method=trf" not in self.backend_identity
-            or self.external_coordinate_policy != "physical-external-unscaled"
-            or self.trust_region_scale_policy != "trust-region-only"
-            or (
-                self.source is ResidualJacobianSource.FIT_PARTITION_COMPOSITION
-                and not self.source_identities
-            )
-        ):
-            raise ValueError("Final residual Jacobian has incompatible semantics")
         object.__setattr__(self, "final_vector", vector)
         object.__setattr__(self, "final_residuals", residuals)
         object.__setattr__(self, "matrix", matrix)
@@ -153,25 +187,7 @@ class FinalResidualJacobianEvidence:
         object.__setattr__(
             self,
             "identity",
-            _identity(
-                "native-final-residual-jacobian-evidence",
-                (
-                    _BACKEND_JACOBIAN_VERSION,
-                    self.source.value,
-                    self.controlled_ids,
-                    _vector_tokens(vector),
-                    _vector_tokens(residuals),
-                    self.shape,
-                    matrix_digest,
-                    self.source_identities,
-                    self.derivative_method,
-                    self.diff_step_policy,
-                    self.loss_policy,
-                    self.backend_identity,
-                    self.external_coordinate_policy,
-                    self.trust_region_scale_policy,
-                ),
-            ),
+            self._identity_from_digest(matrix_digest),
         )
 
 

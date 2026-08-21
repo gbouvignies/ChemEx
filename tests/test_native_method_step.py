@@ -50,6 +50,8 @@ from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     CancellationToken,
     DirectTrfConstructionError,
+    FinalResidualJacobianEvidence,
+    FitCommitOperation,
     MaterializationTerminal,
     OptimizationProblem,
     RootMaterializationFailure,
@@ -556,6 +558,37 @@ def test_one_component_direct_trf_uses_decomposition_aggregate_and_one_commit() 
     assert outcome.commit_operation.receipt.new_revision == 1
     successor = require_successor_state(outcome, session.analysis_values)
     assert successor.revision == 1
+
+
+def test_live_outcome_integrity_does_not_reconstruct_retained_jacobian() -> None:
+    session, workflow = _direct_workflow()
+    outcome = execute_method_step(workflow, analysis_values=session.analysis_values)
+    accepted = outcome.accepted_result
+    assert accepted is not None
+    assert accepted.final_residual_jacobian is not None
+
+    with patch.object(
+        FinalResidualJacobianEvidence,
+        "__post_init__",
+        side_effect=AssertionError("retained Jacobian reconstructed"),
+    ):
+        record = outcome.to_record()
+
+    assert record["accepted_result_identity"] == accepted.identity
+
+
+def test_live_outcome_integrity_rejects_mutated_retained_jacobian_content() -> None:
+    session, workflow = _direct_workflow()
+    outcome = execute_method_step(workflow, analysis_values=session.analysis_values)
+    accepted = outcome.accepted_result
+    assert accepted is not None
+    retained = accepted.final_residual_jacobian
+    assert retained is not None
+    changed_row = (retained.matrix[0][0] + 1.0, *retained.matrix[0][1:])
+    object.__setattr__(retained, "matrix", (changed_row, *retained.matrix[1:]))
+
+    with pytest.raises(ValueError, match="Jacobian integrity"):
+        outcome.to_record()
 
 
 def test_mutated_different_budget_invocation_cannot_execute() -> None:
@@ -1168,6 +1201,74 @@ def test_valid_acceptance_observer_preserves_exactly_one_commit(observe: bool) -
         if observe
         else []
     )
+
+
+def test_commit_completed_observer_runs_before_post_fit_derivations() -> None:
+    session, base = _direct_workflow()
+    workflow = dataclasses.replace(base, derivations=(_uncertainty_request(base),))
+    events: list[str] = []
+
+    def observe_commit(
+        accepted: AcceptedFitResult,
+        operation: FitCommitOperation,
+    ) -> None:
+        assert accepted.identity == operation.accepted_result_identity
+        events.append("commit_completed")
+
+    original_execute = method_step_module._execute_uncertainty
+
+    def observe_derivation(*args: object, **kwargs: object):
+        events.append("uncertainty_started")
+        return original_execute(*args, **kwargs)
+
+    with patch.object(
+        method_step_module,
+        "_execute_uncertainty",
+        side_effect=observe_derivation,
+    ):
+        outcome = execute_method_step(
+            workflow,
+            analysis_values=session.analysis_values,
+            commit_completed_observer=observe_commit,
+        )
+
+    assert outcome.lifecycle is MethodStepLifecycle.COMMITTED
+    assert events == ["commit_completed", "uncertainty_started"]
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_disposition"),
+    [
+        (RuntimeError("reporting failed"), DerivationDisposition.COMPLETED),
+        (
+            KeyboardInterrupt(),
+            DerivationDisposition.NOT_STARTED_BY_WORKFLOW_STOP,
+        ),
+    ],
+)
+def test_commit_progress_observer_cannot_invalidate_committed_science(
+    failure: BaseException,
+    expected_disposition: DerivationDisposition,
+) -> None:
+    session, base = _direct_workflow()
+    workflow = dataclasses.replace(base, derivations=(_uncertainty_request(base),))
+
+    def fail_after_commit(
+        _accepted: AcceptedFitResult,
+        _operation: FitCommitOperation,
+    ) -> None:
+        raise failure
+
+    outcome = execute_method_step(
+        workflow,
+        analysis_values=session.analysis_values,
+        commit_completed_observer=fail_after_commit,
+    )
+
+    assert outcome.lifecycle is MethodStepLifecycle.COMMITTED
+    assert outcome.commit_operation is not None
+    assert outcome.derivations[0].disposition is expected_disposition
+    assert require_successor_state(outcome, session.analysis_values).revision == 1
 
 
 @pytest.mark.parametrize(

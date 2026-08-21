@@ -13,6 +13,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+import chemex.optimize.grouped_direct_trf as grouped_direct_trf_owner
 from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
@@ -382,6 +383,58 @@ def test_successful_components_compose_one_fresh_root_accepted_result_and_commit
             analysis_values=session.analysis_values,
         )
     assert session.analysis_values.snapshot() == committed
+
+
+def test_root_jacobian_composition_converts_each_component_matrix_once() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem(
+        Method(fit=["PB"], fix=["KEX_AB"])
+    )
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    assert len(decomposition.components) == 1
+    invocation = GroupedDirectTrfInvocation.for_decomposition(
+        decomposition,
+        objective_request_budgets=(100,),
+    )
+    components = execute_direct_trf_components(
+        decomposition,
+        invocation,
+        parameterization,
+        engine,
+    )
+    retained_matrices = tuple(
+        component.final_residual_jacobian.matrix
+        for component in components
+        if component.final_residual_jacobian is not None
+    )
+    assert len(retained_matrices) == 1
+    conversions: list[object] = []
+    numpy_owner = grouped_direct_trf_owner.np
+
+    class NumpyConversionProbe:
+        def __getattr__(self, name: str) -> object:
+            return getattr(numpy_owner, name)
+
+        def asarray(
+            self,
+            value: object,
+            dtype: type[np.float64] | np.dtype[np.float64] | None = None,
+        ) -> Array:
+            if any(value is matrix for matrix in retained_matrices):
+                conversions.append(value)
+            return numpy_owner.asarray(value, dtype=dtype)
+
+    with patch.object(grouped_direct_trf_owner, "np", NumpyConversionProbe()):
+        outcome = materialize_grouped_direct_trf(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+            components,
+        )
+
+    assert outcome.terminal is GroupedDirectTrfTerminal.ACCEPTED
+    assert conversions == list(retained_matrices)
 
 
 def test_grouped_direct_progress_identifies_each_group_in_order() -> None:

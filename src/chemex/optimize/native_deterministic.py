@@ -12,6 +12,7 @@ from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import EvaluationEngine, EvaluationResult
 from chemex.messages import (
     MinimizationProgressReporter,
+    UncertaintyProgressReporter,
     console,
     print_group_name,
     print_minimizing,
@@ -20,6 +21,8 @@ from chemex.native_provenance import ProvenanceEnvironment
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     DirectTrfInvocation,
+    FitCommitOperation,
+    FitCommitTerminal,
     OptimizationProblem,
 )
 from chemex.optimize.grid_direct_trf import GridDirectTrfInvocation
@@ -114,7 +117,7 @@ def _product_uncertainty_request(
     policy = UncertaintyPolicy(
         calibration_identity="native-product-local-covariance-numerics-v2",
         numerical_compatibility_requirement=(
-            "binary64-retained-scipy-2point-gesvd-column-equilibrated-v1"
+            "binary64-retained-scipy-2point-gesdd-column-equilibrated-v1"
         ),
         coordinate_scales=tuple((param_id, 1.0) for param_id in problem.controlled_ids),
         coordinate_units=tuple(
@@ -127,7 +130,7 @@ def _product_uncertainty_request(
         roundoff_multiplier=64.0,
         smaller_step_extent=8,
         larger_step_extent=8,
-        svd_driver="gesvd",
+        svd_driver="gesdd",
         # Legacy qualification knobs; covariance rank uses sigma_max*max(m,n)*eps.
         rank_absolute_tolerance=0.0,
         rank_relative_tolerance=0.0,
@@ -273,6 +276,27 @@ def _product_block_uncertainty(
         )
 
 
+def _uncertainty_progress_status(
+    evidence: UncertaintyEvidence | None,
+    block_evidence: RootAnchoredBlockCovarianceEvidence | None,
+    uncertainty: ParameterUncertaintyView,
+    controlled_ids: tuple[str, ...],
+) -> str:
+    """Summarize fitted covariance availability without overstating constraints."""
+    if evidence is not None and evidence.covariance is not None:
+        return "covariance available"
+    if block_evidence is not None and any(
+        block.covariance is not None for block in block_evidence.blocks
+    ):
+        return "covariance partially available"
+    reasons = dict(uncertainty.unavailable_reasons)
+    reason = next(
+        (reasons[param_id] for param_id in controlled_ids if param_id in reasons),
+        "insufficient information",
+    )
+    return f"uncertainty unavailable: {reason}"
+
+
 def _has_controlled_parameters(parameterization: ActiveParameterization) -> bool:
     return any(
         parameterization.role(param_id) is ParameterRole.FIT
@@ -308,6 +332,47 @@ def _materialize_evaluation(
                 for local_name, param_id in profile.name_map.items()
             }
         )
+
+
+def _execute_with_phase_progress(
+    workflow: MethodStepWorkflow,
+    session: AnalysisSession,
+    progress: MinimizationProgressReporter,
+    uncertainty_progress: UncertaintyProgressReporter,
+) -> MethodStepOutcome:
+    """Close minimization at commit and time the following uncertainty phase."""
+    minimization_finished = False
+
+    def finish_minimization_at_commit(
+        accepted: AcceptedFitResult,
+        operation: FitCommitOperation,
+    ) -> None:
+        nonlocal minimization_finished
+        progress.finish(
+            final_chi_square=accepted.chi_square,
+            terminal_status=operation.terminal.value,
+        )
+        minimization_finished = True
+        if operation.terminal is FitCommitTerminal.COMMITTED:
+            uncertainty_progress.start()
+
+    print_minimizing()
+    with progress:
+        outcome = execute_method_step(
+            workflow,
+            analysis_values=session.analysis_values,
+            progress_observer=progress.observe,
+            commit_completed_observer=finish_minimization_at_commit,
+        )
+        if not minimization_finished:
+            accepted_result = outcome.accepted_result
+            progress.finish(
+                final_chi_square=(
+                    None if accepted_result is None else accepted_result.chi_square
+                ),
+                terminal_status=outcome.lifecycle.value,
+            )
+    return outcome
 
 
 def _project_residuals(
@@ -609,20 +674,13 @@ def run_native_deterministic(
         group_labels=group_labels,
         grid=bool(method.grid),
     )
-    print_minimizing()
-    with progress:
-        outcome = execute_method_step(
-            workflow,
-            analysis_values=session.analysis_values,
-            progress_observer=progress.observe,
-        )
-        accepted_result = outcome.accepted_result
-        progress.finish(
-            final_chi_square=(
-                None if accepted_result is None else accepted_result.chi_square
-            ),
-            terminal_status=outcome.lifecycle.value,
-        )
+    uncertainty_progress = UncertaintyProgressReporter(console)
+    outcome = _execute_with_phase_progress(
+        workflow,
+        session,
+        progress,
+        uncertainty_progress,
+    )
     if outcome.lifecycle is MethodStepLifecycle.INTERRUPTED:
         raise KeyboardInterrupt("Native deterministic fit interrupted")
     if outcome.lifecycle is not MethodStepLifecycle.COMMITTED:
@@ -689,6 +747,14 @@ def run_native_deterministic(
             uncertainty.standard_errors + block_errors + block_constrained_errors,
             uncertainty.unavailable_reasons + block_unavailable,
         )
+    uncertainty_progress.finish(
+        _uncertainty_progress_status(
+            uncertainty_evidence,
+            block_uncertainty,
+            uncertainty,
+            problem.controlled_ids,
+        )
+    )
     fit = NativeDeterministicFit(
         accepted,
         problem,
