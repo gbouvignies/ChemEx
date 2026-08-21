@@ -1237,6 +1237,7 @@ def _render_committed_fit(
         path / "Parameters",
         publication.parameterization,
         publication.accepted.evaluation_result,
+        publication.uncertainty,
     )
     write_restart_parameters(
         path / "Parameters" / "restart.toml",

@@ -85,19 +85,23 @@ import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
 
 ```toml
 [GLOBAL]
-KEX_AB =  3.81511e+02 # (error not calculated)
-PB     =  7.02971e-02 # (error not calculated)
+KEX_AB =  3.81511e+02 # ±1.23456e+01
+PB     =  7.02971e-02 # ±2.10432e-03
 
 [DW_AB]
-15N =  2.00075e+00 # (error not calculated)
-31N =  1.98968e+00 # (error not calculated)
+15N =  2.00075e+00 # ±3.45678e-02
+31N =  1.98968e+00 # ±3.21098e-02
 ```
 
 :::note
-Native deterministic fits do not automatically assign a generic standard error.
-When no family-qualified uncertainty is rendered here, fitted values are marked
-`(error not calculated)`. Resampling and MCMC uncertainty summaries are reported
-separately under `Statistics/` and are not copied into this generic comment.
+An ordinary deterministic fit derives a fresh local covariance at its accepted
+point and displays its covariance-derived standard errors here when the evidence
+is usable. Experimental observation uncertainties are interpreted as absolute
+standard deviations, so ChemEx does not multiply covariance by reduced
+chi-square. Reduced chi-square remains a goodness-of-fit diagnostic. If local
+covariance is unavailable because of rank, conditioning, boundary, or derivative
+limitations, the comment gives a concise reason instead. MC, BS, BSN, and MCMC
+summaries remain separate under `Statistics/` and never replace these errors.
 :::
 
 </TabItem>
@@ -114,13 +118,16 @@ separately under `Statistics/` and are not copied into this generic comment.
 
 ```toml
 [GLOBAL]
-KAB =  2.68192e+01 # ([KEX_AB] * [PB])
-KBA =  3.54692e+02 # ([KEX_AB] * [PA])
+KAB =  2.68192e+01 # ±1.10421e+00 ([KEX_AB] * [PB])
+KBA =  3.54692e+02 # ±1.14863e+01 ([KEX_AB] * [PA])
 ```
 
 :::note
-Applied constraints are provided in comments. Statistical interval widths are
-not attached as generic constrained-parameter errors.
+Applied constraints are provided in comments. ChemEx propagates the accepted
+local covariance through supported arithmetic constraint expressions and shows
+the resulting covariance-derived standard error. Scientific-function
+expressions without a qualified analytic derivative fail closed for that
+derived error; fitted independent-parameter errors remain available.
 :::
 
 </TabItem>
@@ -166,8 +173,18 @@ Contains goodness-of-fit statistics, such as χ<sup>2</sup>.
 
 ### `Statistics/`
 
-Contains optional uncertainty-analysis outputs requested with the `STATISTICS`
-method-file key. Monte Carlo and bootstrap methods write `summary.toml`,
+Contains automatic deterministic covariance diagnostics as well as optional
+uncertainty analyses requested with the `STATISTICS` method-file key.
+`Statistics/Covariance/evidence.json` records the covariance policy,
+accepted-point identity, parameter order, Jacobian/rank/conditioning/boundary
+diagnostics, covariance-derived marginal errors, correlations, and typed
+failures. `Statistics/Constrained/evidence.json` records supported constrained
+propagation. For grouped fits, `Statistics/Covariance/blocks.json` records any
+root-anchored independent-block derivations used to isolate an unavailable
+group. If derivation is interrupted after the fit commits,
+`Statistics/Covariance/status.json` records the incomplete uncertainty stage.
+
+Monte Carlo and bootstrap methods write `summary.toml`,
 `samples.tsv`, `correlations.tsv`, `diagnostics.toml`, and `plots.pdf` under
 `Statistics/MonteCarlo/`, `Statistics/Bootstrap/`, and `Statistics/BootstrapNS/`.
 MCMC writes the same file set under `Statistics/MCMC/`, plus a `plots.pdf`

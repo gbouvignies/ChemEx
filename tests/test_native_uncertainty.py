@@ -26,6 +26,7 @@ from chemex.evaluation.native import (
     EvaluationResult,
 )
 from chemex.experiments.builder import build_experiments
+from chemex.optimize import native_deterministic as native_deterministic_module
 from chemex.optimize import uncertainty as uncertainty_module
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
@@ -1109,6 +1110,22 @@ def test_absolute_observation_uncertainties_do_not_apply_residual_scaling() -> N
         evidence.covariance.claim("RESIDUAL_VARIANCE_NONDEGENERACY")
         is ClaimState.NOT_APPLICABLE
     )
+
+
+def test_product_request_excludes_unsupported_scientific_function_propagation() -> None:
+    parameterization, _engine, problem = _hd_problem(Method())
+
+    request, unsupported = native_deterministic_module._product_uncertainty_request(
+        problem,
+        parameterization,
+    )
+
+    assert unsupported
+    assert set(unsupported).isdisjoint(request.constrained_scope)
+    assert request.policy.residual_variance_scaling is (
+        ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES
+    )
+    assert request.policy.coordinate_scales
 
 
 def test_malformed_non_finite_svd_output_is_a_typed_covariance_failure() -> None:

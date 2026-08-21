@@ -2549,6 +2549,263 @@ class UncertaintyEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class RootAnchoredBlockCovariance:
+    """One independent covariance block derived from the root linearization."""
+
+    controlled_ids: tuple[str, ...]
+    rank: int
+    jacobian_condition: float | None
+    covariance: tuple[tuple[float, ...], ...] | None
+    marginal_errors: tuple[ScalarEvidenceEntry, ...]
+    correlations: tuple[tuple[CorrelationEntry, ...], ...]
+    unavailable_reason: str = ""
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        dimension = len(self.controlled_ids)
+        if dimension < 1 or not 0 <= self.rank <= dimension:
+            raise ValueError("Root-anchored covariance block has invalid rank")
+        if (
+            len(self.marginal_errors) != dimension
+            or tuple(item.param_id for item in self.marginal_errors)
+            != self.controlled_ids
+        ):
+            raise ValueError("Root-anchored block marginal scope is invalid")
+        if self.covariance is None:
+            if not self.unavailable_reason or any(
+                item.value is not None for item in self.marginal_errors
+            ):
+                raise ValueError("Unavailable covariance block has usable marginals")
+            covariance: tuple[tuple[float, ...], ...] = ()
+        else:
+            covariance = _canonical_matrix(
+                self.covariance,
+                rows=dimension,
+                columns=dimension,
+                name="root-anchored block covariance",
+            )
+            if self.unavailable_reason:
+                raise ValueError("Available covariance block has an unavailable reason")
+        object.__setattr__(self, "covariance", covariance or None)
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-root-anchored-block-covariance",
+                (
+                    self.controlled_ids,
+                    self.rank,
+                    None
+                    if self.jacobian_condition is None
+                    else _float_token(self.jacobian_condition),
+                    () if self.covariance is None else _matrix_tokens(self.covariance),
+                    tuple(
+                        (item.param_id, item.value, item.outcome, item.raw_value)
+                        for item in self.marginal_errors
+                    ),
+                    tuple(
+                        tuple(
+                            (item.value, item.outcome, item.raw_value) for item in row
+                        )
+                        for row in self.correlations
+                    ),
+                    self.unavailable_reason,
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RootAnchoredBlockCovarianceEvidence:
+    """Failure-isolated covariance blocks anchored to one accepted root result."""
+
+    accepted_result_identity: str
+    accepted_occurrence_identity: str
+    source_jacobian_identity: str
+    policy_identity: str
+    blocks: tuple[RootAnchoredBlockCovariance, ...]
+    source_bundle: UncertaintyEvidence = field(repr=False, compare=False)
+    identity: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        source = self.source_bundle
+        jacobian = source.residual_jacobian
+        if (
+            jacobian is None
+            or self.accepted_result_identity != source.accepted_result_identity
+            or self.accepted_occurrence_identity != source.accepted_occurrence_identity
+            or self.source_jacobian_identity != jacobian.identity
+            or self.policy_identity != source.policy_identity
+            or tuple(
+                param_id for block in self.blocks for param_id in block.controlled_ids
+            )
+            != jacobian.controlled_ids
+        ):
+            raise ValueError("Root-anchored block evidence has inconsistent lineage")
+        object.__setattr__(
+            self,
+            "identity",
+            _identity(
+                "native-root-anchored-block-covariance-evidence",
+                (
+                    self.accepted_result_identity,
+                    self.accepted_occurrence_identity,
+                    self.source_jacobian_identity,
+                    self.policy_identity,
+                    tuple(item.identity for item in self.blocks),
+                ),
+            ),
+        )
+
+    def to_record(self) -> dict[str, object]:
+        """Serialize failure-isolated blocks without mutable runtime sources."""
+        return {
+            "artifact_type": "native_root_anchored_block_covariance_evidence",
+            "schema_version": _SCHEMA_VERSION,
+            "accepted_result_identity": self.accepted_result_identity,
+            "accepted_occurrence_identity": self.accepted_occurrence_identity,
+            "source_jacobian_identity": self.source_jacobian_identity,
+            "policy_identity": self.policy_identity,
+            "identity": self.identity,
+            "blocks": [_record_value(item) for item in self.blocks],
+        }
+
+
+def derive_root_anchored_block_covariance(  # noqa: C901 - typed block derivation
+    evidence: UncertaintyEvidence,
+    block_scopes: Sequence[Sequence[str]],
+) -> RootAnchoredBlockCovarianceEvidence | None:
+    """Derive independent full-rank blocks when the joint root is unavailable."""
+    jacobian = evidence.residual_jacobian
+    if jacobian is None or (
+        evidence.marginal_errors is not None
+        and evidence.marginal_errors.scope_reportable
+    ):
+        return None
+    scopes = tuple(tuple(scope) for scope in block_scopes)
+    if len(scopes) < 2:
+        return None
+    if (
+        tuple(param_id for scope in scopes for param_id in scope)
+        != jacobian.controlled_ids
+    ):
+        raise ValueError("Block covariance scopes must partition root coordinates")
+    policy = evidence.source_policy
+    matrix = np.asarray(jacobian.matrix, dtype=np.float64)
+    accepted = evidence.accepted_anchor
+    problem = evidence.source_problem
+    coordinate_index = {
+        param_id: index for index, param_id in enumerate(jacobian.controlled_ids)
+    }
+    variance_scale, variance_failure = _residual_variance_scale(
+        accepted,
+        degrees_of_freedom=(
+            jacobian.residual_count
+            - len(jacobian.controlled_ids)
+            - sum(
+                1
+                for profile in evidence.source_engine.plan.profiles
+                if profile.is_scaled
+            )
+        ),
+        policy=policy,
+    )
+    if variance_failure is not None or variance_scale is None:
+        return None
+    blocks: list[RootAnchoredBlockCovariance] = []
+    for scope in scopes:
+        indices = tuple(coordinate_index[param_id] for param_id in scope)
+        scales = tuple(jacobian.coordinate_scales[index] for index in indices)
+        scaled = matrix[:, indices] * np.asarray(scales)[np.newaxis, :]
+        _left, singular_array, right_transpose = svd(
+            scaled,
+            full_matrices=False,
+            compute_uv=True,
+            overwrite_a=False,
+            check_finite=True,
+            lapack_driver=policy.svd_driver,
+        )
+        singular = tuple(float(value) for value in singular_array)
+        largest = singular[0] if singular else 0.0
+        threshold = policy.rank_absolute_tolerance + (
+            policy.rank_relative_tolerance * largest
+        )
+        rank = sum(value > threshold for value in singular)
+        unavailable_reason = ""
+        condition: float | None = None
+        covariance: tuple[tuple[float, ...], ...] | None = None
+        correlations: tuple[tuple[CorrelationEntry, ...], ...] = ()
+        if rank != len(scope):
+            unavailable_reason = "rank deficient"
+        else:
+            condition = largest / singular[-1]
+            if condition > policy.conditioning_limit:
+                unavailable_reason = "poorly conditioned"
+            else:
+                _unscaled, _factor, covariance = _canonical_covariance_reduction(
+                    singular,
+                    right_transpose,
+                    scales,
+                    variance_scale,
+                )
+                for local_index, root_index in enumerate(indices):
+                    variance = covariance[local_index][local_index]
+                    if variance <= 0.0 or not math.isfinite(variance):
+                        unavailable_reason = "insufficient information"
+                        covariance = None
+                        break
+                    standard_error = math.sqrt(variance)
+                    value = accepted.vector[root_index]
+                    lower = problem.lower_bounds[root_index]
+                    upper = problem.upper_bounds[root_index]
+                    separation = min(value - lower, upper - value) / standard_error
+                    if (
+                        not math.isfinite(separation)
+                        or separation <= _BOUNDARY_THRESHOLD
+                    ):
+                        unavailable_reason = "boundary limited"
+                        covariance = None
+                        break
+        if covariance is None:
+            marginal = tuple(
+                ScalarEvidenceEntry(param_id, None, "UNAVAILABLE") for param_id in scope
+            )
+        else:
+            marginal = tuple(
+                ScalarEvidenceEntry(
+                    param_id,
+                    math.sqrt(covariance[index][index]),
+                    "AVAILABLE",
+                )
+                for index, param_id in enumerate(scope)
+            )
+            correlations = _expected_correlation_entries(
+                covariance,
+                residual_variance_degenerate=False,
+                policy=policy,
+            )
+        blocks.append(
+            RootAnchoredBlockCovariance(
+                scope,
+                rank,
+                condition,
+                covariance,
+                marginal,
+                correlations,
+                unavailable_reason,
+            )
+        )
+    return RootAnchoredBlockCovarianceEvidence(
+        evidence.accepted_result_identity,
+        evidence.accepted_occurrence_identity,
+        jacobian.identity,
+        evidence.policy_identity,
+        tuple(blocks),
+        evidence,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class _DerivativeValue:
     value: float
     gradient: tuple[float, ...]

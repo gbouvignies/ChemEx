@@ -1237,7 +1237,7 @@ def test_covariance_and_constrained_evidence_are_separate_from_central_reports(
     ).lower()
     assert "stderr" not in central_reports
     assert "standard error" not in central_reports
-    assert "±" not in central_reports
+    assert "±" in central_reports
 
 
 def test_resampling_and_posterior_evidence_keep_family_specific_semantics(

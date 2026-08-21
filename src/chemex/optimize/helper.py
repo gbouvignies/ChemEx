@@ -14,8 +14,17 @@ from chemex.messages import (
     print_plotting_canceled,
     print_writing_results,
 )
+from chemex.optimize.uncertainty import (
+    RootAnchoredBlockCovarianceEvidence,
+    UncertaintyEvidence,
+)
 from chemex.parameters.database import ParameterStore
-from chemex.printers.parameters import write_parameters
+from chemex.printers.native_reporting import (
+    write_block_uncertainty,
+    write_json,
+    write_uncertainty,
+)
+from chemex.printers.parameters import ParameterUncertaintyView, write_parameters
 from chemex.typing import Array
 
 
@@ -73,11 +82,20 @@ def _write_files(
     *,
     residuals: Array,
     nvarys: int,
+    uncertainty: ParameterUncertaintyView | None = None,
+    uncertainty_evidence: UncertaintyEvidence | None = None,
+    uncertainty_status: tuple[str, str] | None = None,
+    block_uncertainty: RootAnchoredBlockCovarianceEvidence | None = None,
 ) -> None:
     """Write the results of the fit to output files."""
     print_writing_results(path)
     path.mkdir(parents=True, exist_ok=True)
-    write_parameters(experiments, path, parameter_store=experiments.parameter_store)
+    write_parameters(
+        experiments,
+        path,
+        parameter_store=experiments.parameter_store,
+        uncertainty=uncertainty,
+    )
     experiments.write(path)
     _write_statistics(
         experiments,
@@ -85,6 +103,25 @@ def _write_files(
         residuals=residuals,
         nvarys=nvarys,
     )
+    if uncertainty_evidence is not None:
+        statistics_path = path / "Statistics"
+        statistics_path.mkdir(exist_ok=True)
+        write_uncertainty(statistics_path, uncertainty_evidence)
+        write_block_uncertainty(statistics_path, block_uncertainty)
+    elif uncertainty_status is not None:
+        terminal, reason = uncertainty_status
+        covariance_path = path / "Statistics" / "Covariance"
+        covariance_path.mkdir(parents=True, exist_ok=True)
+        write_json(
+            covariance_path / "status.json",
+            {
+                "artifact_type": "native_covariance_derivation_status",
+                "schema_version": 1,
+                "status": "incomplete",
+                "terminal": terminal,
+                "reason": reason,
+            },
+        )
 
 
 def _write_simulation_files(
@@ -130,8 +167,21 @@ def execute_post_fit(
     plot: bool = False,
     residuals: Array,
     nvarys: int,
+    uncertainty: ParameterUncertaintyView | None = None,
+    uncertainty_evidence: UncertaintyEvidence | None = None,
+    uncertainty_status: tuple[str, str] | None = None,
+    block_uncertainty: RootAnchoredBlockCovarianceEvidence | None = None,
 ) -> None:
-    _write_files(experiments, path, residuals=residuals, nvarys=nvarys)
+    _write_files(
+        experiments,
+        path,
+        residuals=residuals,
+        nvarys=nvarys,
+        uncertainty=uncertainty,
+        uncertainty_evidence=uncertainty_evidence,
+        uncertainty_status=uncertainty_status,
+        block_uncertainty=block_uncertainty,
+    )
     if plot:
         _write_plots(experiments, path)
 
@@ -156,6 +206,10 @@ def execute_post_fit_groups(
     *,
     residuals: Array,
     nvarys: int,
+    uncertainty: ParameterUncertaintyView | None = None,
+    uncertainty_evidence: UncertaintyEvidence | None = None,
+    uncertainty_status: tuple[str, str] | None = None,
+    block_uncertainty: RootAnchoredBlockCovarianceEvidence | None = None,
 ) -> None:
     print_group_name("All groups")
     statistics = calculate_statistics_from_residuals(residuals, nvarys)
@@ -166,6 +220,10 @@ def execute_post_fit_groups(
         plot=(plot != "nothing"),
         residuals=residuals,
         nvarys=nvarys,
+        uncertainty=uncertainty,
+        uncertainty_evidence=uncertainty_evidence,
+        uncertainty_status=uncertainty_status,
+        block_uncertainty=block_uncertainty,
     )
 
 

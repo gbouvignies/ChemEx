@@ -8,6 +8,16 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 ## [Unreleased]
 
 ### Changed
+- Ordinary successful native deterministic fits now derive fresh accepted-point
+  covariance evidence and report covariance-derived standard errors in
+  `Parameters/fitted.toml`. Observation uncertainties are treated as absolute
+  experimental standard deviations, so covariance is not scaled by reduced
+  chi-square. Supported arithmetic constraints receive propagated errors;
+  rank, conditioning, boundary, or derivative limitations withhold errors with
+  a concise reason while preserving fitted central values. Full covariance,
+  correlation, constrained, and independent-block diagnostics are written
+  under `Statistics/` without populating the legacy generic `stderr` field or
+  mixing deterministic errors with MC, BS, BSN, or MCMC summaries.
 - Native deterministic minimization once again reports fit progress. The Rich
   display shows objective evaluations, best and reduced chi-square, relative
   improvement, elapsed time, and applicable step/group or aggregated GRID
@@ -28,8 +38,7 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   `lower_1sigma`, `upper_1sigma`, and `stderr`. MCMC now uses
   `credible_interval_68_lower`, `credible_interval_68_upper`, and
   `half_credible_interval_68_width`; genuine `mcse_mean` remains the Monte Carlo
-  standard error of the posterior mean. Native deterministic fitted-parameter
-  reports continue to state `(error not calculated)`. Clarified that
+  standard error of the posterior mean. Clarified that
   `run_info/parameters_used.toml` is the bound-preserving restart input, while
   the fitted/fixed/constrained parameter files are result reports.
 - Fit output now has a success-last `run_info/outcome.toml` lifecycle marker.
@@ -43,8 +52,7 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   commit stack in the production `chemex fit` path. Existing v1 method TOML,
   ordered role inheritance, profile selection, calculated-data files, and
   output paths are preserved. Native deterministic fits do not populate the
-  legacy generic `stderr` field; family-qualified uncertainty output remains
-  part of the dedicated output-contract migration. MC, BS, and BSN statistics
+  legacy generic `stderr` field. MC, BS, and BSN statistics
   now start from that committed native fit and run wholly native Direct TRF
   refits with stable ordered seeds across serial and worker execution. Existing
   STATISTICS syntax and output directories are preserved; incomplete analyses
