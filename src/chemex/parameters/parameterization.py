@@ -1017,6 +1017,32 @@ def _validate_model_derivation_authority(
             )
 
 
+def _validate_estimation_authority(
+    rules: Sequence[_RoleRule],
+    declarations: SealedParameterDeclarations,
+    active_ids: set[str],
+) -> None:
+    for rule in rules:
+        if rule.role is not ParameterRole.FIT:
+            continue
+        unsupported_matches = tuple(
+            param_id
+            for param_id in rule.matches
+            if param_id in active_ids
+            and declarations[param_id].model_expression
+            and not declarations[param_id].supports_estimation
+        )
+        if unsupported_matches:
+            raise IncompatibleParameterizationInputError(
+                "Method rule cannot estimate a parameter that lacks scientific "
+                "estimation support",
+                selector=rule.selector,
+                role=rule.role.value,
+                ordinal=rule.ordinal,
+                param_ids=unsupported_matches,
+            )
+
+
 def _replace_selectors(right: str) -> tuple[str, Mapping[str, str]]:
     selectors = _scan_selectors(right)
     replacements: dict[str, str] = {}
@@ -1598,6 +1624,7 @@ def compile_active_parameterization(
         binder,
         required,
     )
+    _validate_estimation_authority(rules, parameter_model.declarations, active)
     _validate_rules_in_active_scope(rules, active)
 
     scope_ids = tuple(

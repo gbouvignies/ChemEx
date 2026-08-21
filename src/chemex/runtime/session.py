@@ -16,6 +16,7 @@ from chemex.parameters.factory import ParameterFactory
 from chemex.parameters.legacy_adapter import LegacyValuesAdapter
 from chemex.parameters.parameterization import (
     ActiveParameterization,
+    ModelDerivationOverrideError,
     build_initial_analysis_values,
     compile_active_parameterization,
 )
@@ -185,10 +186,18 @@ class AnalysisSession:
         constraints: list[str] = []
         for param_id, parameter in parameters.items():
             declaration = parameter_model.declarations[param_id]
-            if declaration.model_expression:
+            if declaration.model_owned:
+                if parameter.vary or parameter.expr != declaration.model_expression:
+                    raise ModelDerivationOverrideError(
+                        "Current parameter role cannot override a model-owned "
+                        "derivation",
+                        param_ids=(param_id,),
+                    )
                 continue
             selector = str(parameter.param_name)
             if parameter.expr:
+                if parameter.expr == declaration.model_expression:
+                    continue
                 expression = parameter.expr
                 for dependency in sorted(
                     parameter.dependencies,
@@ -198,7 +207,7 @@ class AnalysisSession:
                     dependency_name = parameters[dependency].param_name
                     expression = expression.replace(
                         dependency,
-                        f"[{dependency_name}]",
+                        str(dependency_name),
                     )
                 constraints.append(f"[{selector}] = {expression}")
             elif parameter.vary:
@@ -216,6 +225,15 @@ class AnalysisSession:
             effective_method,
             required_ids,
         )
+
+    def apply_current_parameter_roles(
+        self,
+        method: Method,
+        required_ids: set[str],
+    ) -> None:
+        """Validate explicit method intent, then update inherited v1 roles."""
+        self.compile_parameterization(method, required_ids)
+        self.parameters.set_parameter_status(method)
 
     def try_compile_parameterization(
         self,

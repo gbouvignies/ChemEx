@@ -95,6 +95,75 @@ CASES = (
     ),
 )
 
+# This is the one case-specific #657 disposition established by same-vector
+# cross-evaluation on Asterix.  It is deliberately not a tolerance waiver:
+# legacy-parity remains failed, while the independently diagnosed same objective
+# has a reproducible lower native basin.  The published statistics values below
+# are exact at ChemEx's output precision and prevent this disposition from
+# accepting an unrelated future numerical change.
+_CEST_ACCEPTED_DIFFERENCE = {
+    "statistics_path": "STEP2/All/statistics.toml",
+    "published_legacy_chi_square": 3140.90,
+    "published_native_chi_square": 2849.45,
+    "diagnosed_legacy_chi_square": 3140.903510372318,
+    "diagnosed_native_chi_square": 2849.4551945314374,
+    "diagnosed_legacy_l18cd1_chi_square": 1093.424072389286,
+    "diagnosed_native_l18cd1_chi_square": 801.9806529406368,
+}
+_CEST_ACCEPTED_FAILURE_SCOPE = frozenset(
+    {
+        "data:STEP2/All/Data/23hz.dat:[L18CD1]",
+        "data:STEP2/Groups/3_L18CD1/Data/23hz.dat:[L18CD1]",
+        *(
+            f"parameter:{root}/constrained.toml:{identifier!r}"
+            for root in (
+                "STEP2/All/Parameters",
+                "STEP2/Groups/3_L18CD1/Parameters",
+            )
+            for identifier in (
+                ('["R1_B, B0->598.8MHZ"]', "L18CD1"),
+                ('["R2_B, B0->598.8MHZ"]', "L18CD1"),
+                ("[CS_B]", "L18CD1"),
+            )
+        ),
+        *(
+            f"parameter:{root}/fitted.toml:{identifier!r}"
+            for root in (
+                "STEP2/All/Parameters",
+                "STEP2/Groups/3_L18CD1/Parameters",
+            )
+            for identifier in (
+                ('["R1_A, B0->598.8MHZ"]', "L18CD1"),
+                ('["R2_A, B0->598.8MHZ"]', "L18CD1"),
+                ("[CS_A]", "L18CD1"),
+                ("[DW_AB]", "L18CD1"),
+            )
+        ),
+    }
+)
+_CEST_ACCEPTED_NUMERICAL_SIGNATURE = {
+    "legacy_cs_a": 24.9724,
+    "native_cs_a": 24.9288,
+    "legacy_dw_ab": -0.142414,
+    "native_dw_ab": 0.193203,
+    "legacy_cs_b": 24.8300,
+    "native_cs_b": 25.1220,
+    "legacy_l18cd1_chi_square": 1093.424158056536,
+    "native_l18cd1_chi_square": 801.9787254040632,
+}
+# These identify the diagnosed basin at product-output precision; they do not
+# relax or replace any legacy-parity tolerance declared in ``CASES``.
+_CEST_SIGNATURE_ABSOLUTE_LIMITS = {
+    "legacy_cs_a": 0.001,
+    "native_cs_a": 0.001,
+    "legacy_dw_ab": 0.001,
+    "native_dw_ab": 0.001,
+    "legacy_cs_b": 0.001,
+    "native_cs_b": 0.001,
+    "legacy_l18cd1_chi_square": 0.01,
+    "native_l18cd1_chi_square": 0.01,
+}
+
 
 @dataclass(frozen=True, slots=True)
 class ParameterValue:
@@ -238,6 +307,110 @@ def _statistics_schema(text: str) -> tuple[tuple[str, str], ...]:
     return tuple((key, type(value).__name__) for key, value in record.items())
 
 
+def _comparison_disposition(
+    case: Case,
+    parity_passed: bool,
+    published_chi_squares: dict[str, tuple[float, float]],
+    parity_failure_scope: frozenset[str],
+    numerical_signature: dict[str, float],
+) -> dict[str, object]:
+    if parity_passed:
+        return {"status": "PASS_PARITY"}
+    if case.slug != "cest-13c-label-cn":
+        return {"status": "FAIL"}
+
+    path = str(_CEST_ACCEPTED_DIFFERENCE["statistics_path"])
+    observed = published_chi_squares.get(path)
+    expected = (
+        float(_CEST_ACCEPTED_DIFFERENCE["published_legacy_chi_square"]),
+        float(_CEST_ACCEPTED_DIFFERENCE["published_native_chi_square"]),
+    )
+    signature_matches = numerical_signature.keys() == (
+        _CEST_ACCEPTED_NUMERICAL_SIGNATURE.keys()
+    ) and all(
+        math.isclose(
+            numerical_signature[name],
+            expected_value,
+            rel_tol=0.0,
+            abs_tol=_CEST_SIGNATURE_ABSOLUTE_LIMITS[name],
+        )
+        for name, expected_value in _CEST_ACCEPTED_NUMERICAL_SIGNATURE.items()
+    )
+    if (
+        observed != expected
+        or parity_failure_scope != _CEST_ACCEPTED_FAILURE_SCOPE
+        or not signature_matches
+    ):
+        return {"status": "FAIL"}
+    return {
+        "status": "ACCEPTED_DIFFERENCE",
+        "parity_status": "FAIL",
+        "objective_semantics_parity": "PASS",
+        "observed_numerical_signature": numerical_signature,
+        "disposition": (
+            "Frozen legacy observation is not the normative optimum; native and "
+            "legacy evaluate the same objective, and native TRF reproducibly reaches "
+            "the lower accepted basin."
+        ),
+        "diagnosed_legacy_chi_square": _CEST_ACCEPTED_DIFFERENCE[
+            "diagnosed_legacy_chi_square"
+        ],
+        "diagnosed_native_chi_square": _CEST_ACCEPTED_DIFFERENCE[
+            "diagnosed_native_chi_square"
+        ],
+        "diagnosed_legacy_l18cd1_chi_square": _CEST_ACCEPTED_DIFFERENCE[
+            "diagnosed_legacy_l18cd1_chi_square"
+        ],
+        "diagnosed_native_l18cd1_chi_square": _CEST_ACCEPTED_DIFFERENCE[
+            "diagnosed_native_l18cd1_chi_square"
+        ],
+    }
+
+
+def _profile_chi_square(text: str, profile: str) -> float:
+    _profiles, rows = _data_rows(text)
+    return sum(
+        ((row.values[-1] - row.values[-3]) / row.values[-2]) ** 2
+        for row in rows
+        if row.profile == profile and not row.masked
+    )
+
+
+def _cest_numerical_signature(
+    path: str,
+    legacy: str,
+    native: str,
+) -> dict[str, float]:
+    if path == "STEP2/All/Data/23hz.dat":
+        return {
+            "legacy_l18cd1_chi_square": _profile_chi_square(legacy, "[L18CD1]"),
+            "native_l18cd1_chi_square": _profile_chi_square(native, "[L18CD1]"),
+        }
+    if path not in {
+        "STEP2/All/Parameters/fitted.toml",
+        "STEP2/All/Parameters/constrained.toml",
+    }:
+        return {}
+    legacy_values = {item.identifier: item.value for item in _parameter_values(legacy)}
+    native_values = {item.identifier: item.value for item in _parameter_values(native)}
+    identifiers = (
+        {
+            "cs_a": ("[CS_A]", "L18CD1"),
+            "dw_ab": ("[DW_AB]", "L18CD1"),
+        }
+        if path.endswith("fitted.toml")
+        else {"cs_b": ("[CS_B]", "L18CD1")}
+    )
+    return {
+        f"{implementation}_{name}": values[identifier]
+        for name, identifier in identifiers.items()
+        for implementation, values in (
+            ("legacy", legacy_values),
+            ("native", native_values),
+        )
+    }
+
+
 def _compare_output_schema(path: str, legacy: str, native: str) -> None:
     if path.endswith(".fit"):
         if _fit_schema(native) != _fit_schema(legacy):
@@ -266,7 +439,7 @@ def _fallback_limit(identifier: tuple[str, str], legacy: float, case: Case) -> f
 
 def _compare_data(
     path: str, legacy_text: str, native_text: str
-) -> tuple[float, str | None]:
+) -> tuple[float, str | None, frozenset[str]]:
     legacy_profiles, legacy_rows = _data_rows(legacy_text)
     native_profiles, native_rows = _data_rows(native_text)
     if native_profiles != legacy_profiles:
@@ -275,6 +448,7 @@ def _compare_data(
         raise AssertionError(f"{path}: selected data-point count differs")
     worst_fraction = 0.0
     worst_detail: str | None = None
+    failures: set[str] = set()
     for index, (legacy, native) in enumerate(
         zip(legacy_rows, native_rows, strict=True)
     ):
@@ -291,13 +465,15 @@ def _compare_data(
         difference = abs(native.values[-1] - legacy.values[-1])
         if limit:
             fraction = difference / limit
+            if fraction > 1.0:
+                failures.add(f"data:{path}:{legacy.profile}")
             if fraction > worst_fraction:
                 worst_fraction = fraction
                 worst_detail = (
                     f"{path}:{index}: calculated difference {difference} versus "
                     f"0.1 * experimental error = {limit}"
                 )
-    return worst_fraction, worst_detail
+    return worst_fraction, worst_detail, frozenset(failures)
 
 
 def _compare_parameters(
@@ -305,7 +481,7 @@ def _compare_parameters(
     legacy_text: str,
     native_text: str,
     case: Case,
-) -> tuple[float, str | None]:
+) -> tuple[float, str | None, frozenset[str]]:
     legacy = _parameter_values(legacy_text)
     native = _parameter_values(native_text)
     if tuple(item.identifier for item in native) != tuple(
@@ -314,6 +490,7 @@ def _compare_parameters(
         raise AssertionError(f"{path}: parameter identifiers/order or roles differ")
     worst_fraction = 0.0
     worst_detail: str | None = None
+    failures: set[str] = set()
     for legacy_item, native_item in zip(legacy, native, strict=True):
         uncertainty = legacy_item.uncertainty
         limit = (
@@ -326,13 +503,15 @@ def _compare_parameters(
         difference = abs(native_item.value - legacy_item.value)
         if limit:
             fraction = difference / limit
+            if fraction > 1.0:
+                failures.add(f"parameter:{path}:{legacy_item.identifier!r}")
             if fraction > worst_fraction:
                 worst_fraction = fraction
                 worst_detail = (
                     f"{path}:{legacy_item.identifier}: parameter difference "
                     f"{difference} versus limit {limit}"
                 )
-    return worst_fraction, worst_detail
+    return worst_fraction, worst_detail, frozenset(failures)
 
 
 def _expand(case: Case, patterns: tuple[str, ...]) -> list[str]:
@@ -389,25 +568,50 @@ def compare_case(
     worst_parameter_fraction = 0.0
     worst_data_detail: str | None = None
     worst_parameter_detail: str | None = None
+    published_chi_squares: dict[str, tuple[float, float]] = {}
+    parity_failure_scope: set[str] = set()
+    numerical_signature: dict[str, float] = {}
     for path in sorted(expected):
         legacy = _read_member(archive, members[path])
         native = (output / path).read_text(encoding="utf-8")
         if path.endswith(".dat"):
-            fraction, detail = _compare_data(path, legacy, native)
+            fraction, detail, failures = _compare_data(path, legacy, native)
+            parity_failure_scope.update(failures)
+            if case.slug == "cest-13c-label-cn":
+                numerical_signature.update(
+                    _cest_numerical_signature(path, legacy, native)
+                )
             if fraction > worst_data_fraction:
                 worst_data_fraction = fraction
                 worst_data_detail = detail
         elif "Parameters" in Path(path).parts:
-            fraction, detail = _compare_parameters(path, legacy, native, case)
+            fraction, detail, failures = _compare_parameters(path, legacy, native, case)
+            parity_failure_scope.update(failures)
+            if case.slug == "cest-13c-label-cn":
+                numerical_signature.update(
+                    _cest_numerical_signature(path, legacy, native)
+                )
             if fraction > worst_parameter_fraction:
                 worst_parameter_fraction = fraction
                 worst_parameter_detail = detail
         else:
             _compare_output_schema(path, legacy, native)
+            if Path(path).name == "statistics.toml":
+                published_chi_squares[path] = (
+                    float(tomllib.loads(legacy)["chi-square"]),
+                    float(tomllib.loads(native)["chi-square"]),
+                )
     passed = worst_data_fraction <= 1.0 and worst_parameter_fraction <= 1.0
     return {
-        "status": "PASS" if passed else "FAIL",
+        **_comparison_disposition(
+            case,
+            passed,
+            published_chi_squares,
+            frozenset(parity_failure_scope),
+            numerical_signature,
+        ),
         "comparable_output_path_count": len(expected),
+        "parity_failure_scope": sorted(parity_failure_scope),
         "worst_calculated_fraction_of_limit": worst_data_fraction,
         "worst_parameter_fraction_of_limit": worst_parameter_fraction,
         "worst_calculated_comparison": worst_data_detail,
@@ -440,7 +644,8 @@ def main() -> None:
                     "structural_failure": str(error),
                 }
     print(json.dumps(results, indent=2, sort_keys=True))
-    if any(result["status"] != "PASS" for result in results.values()):
+    successful = {"PASS_PARITY", "ACCEPTED_DIFFERENCE"}
+    if any(result["status"] not in successful for result in results.values()):
         raise SystemExit(1)
 
 

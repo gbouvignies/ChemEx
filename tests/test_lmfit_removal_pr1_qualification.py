@@ -5,7 +5,10 @@ from collections.abc import Callable
 import pytest
 
 from tests.qualification.compare_lmfit_removal_pr1 import (
+    _CEST_ACCEPTED_FAILURE_SCOPE,
+    _CEST_ACCEPTED_NUMERICAL_SIGNATURE,
     CASES,
+    _comparison_disposition,
     _data_rows,
     _fallback_limit,
     _fit_schema,
@@ -48,6 +51,72 @@ def test_fit_and_statistics_schema_preserve_structure_without_numerical_parity()
         ("number", "int"),
         ("score", "float"),
     )
+
+
+def test_cest_accepted_difference_is_explicit_and_not_a_parity_pass() -> None:
+    case = next(case for case in CASES if case.slug == "cest-13c-label-cn")
+
+    disposition = _comparison_disposition(
+        case,
+        False,
+        {"STEP2/All/statistics.toml": (3140.90, 2849.45)},
+        _CEST_ACCEPTED_FAILURE_SCOPE,
+        dict(_CEST_ACCEPTED_NUMERICAL_SIGNATURE),
+    )
+
+    assert disposition["status"] == "ACCEPTED_DIFFERENCE"
+    assert disposition["parity_status"] == "FAIL"
+    assert disposition["objective_semantics_parity"] == "PASS"
+    assert disposition["diagnosed_legacy_l18cd1_chi_square"] == pytest.approx(
+        1093.424072389286
+    )
+    assert disposition["diagnosed_native_l18cd1_chi_square"] == pytest.approx(
+        801.9806529406368
+    )
+
+
+def test_cest_accepted_difference_rejects_an_unrecorded_objective() -> None:
+    case = next(case for case in CASES if case.slug == "cest-13c-label-cn")
+
+    disposition = _comparison_disposition(
+        case,
+        False,
+        {"STEP2/All/statistics.toml": (3140.90, 2850.00)},
+        _CEST_ACCEPTED_FAILURE_SCOPE,
+        dict(_CEST_ACCEPTED_NUMERICAL_SIGNATURE),
+    )
+
+    assert disposition == {"status": "FAIL"}
+
+
+def test_cest_accepted_difference_rejects_an_unrelated_parity_failure() -> None:
+    case = next(case for case in CASES if case.slug == "cest-13c-label-cn")
+
+    disposition = _comparison_disposition(
+        case,
+        False,
+        {"STEP2/All/statistics.toml": (3140.90, 2849.45)},
+        _CEST_ACCEPTED_FAILURE_SCOPE | {"data:STEP1/Data/23hz.dat:[I28CG2]"},
+        dict(_CEST_ACCEPTED_NUMERICAL_SIGNATURE),
+    )
+
+    assert disposition == {"status": "FAIL"}
+
+
+def test_cest_accepted_difference_rejects_an_unrelated_numerical_state() -> None:
+    case = next(case for case in CASES if case.slug == "cest-13c-label-cn")
+    signature = dict(_CEST_ACCEPTED_NUMERICAL_SIGNATURE)
+    signature["native_dw_ab"] = 0.3
+
+    disposition = _comparison_disposition(
+        case,
+        False,
+        {"STEP2/All/statistics.toml": (3140.90, 2849.45)},
+        _CEST_ACCEPTED_FAILURE_SCOPE,
+        signature,
+    )
+
+    assert disposition == {"status": "FAIL"}
 
 
 @pytest.mark.parametrize(

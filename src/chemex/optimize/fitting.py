@@ -228,8 +228,6 @@ def run_methods(
     *,
     session: AnalysisSession,
 ) -> None:
-    parameter_store = experiments.parameter_store
-
     for index, (section, method) in enumerate(methods.items(), start=1):
         if section:
             print_step_name(section, index, len(methods))
@@ -249,7 +247,10 @@ def run_methods(
         print_fitmethod(effective_method.fitmethod)
 
         # Update the parameter "vary" and "expr" status
-        parameter_store.set_parameter_status(effective_method)
+        session.apply_current_parameter_roles(
+            effective_method,
+            experiments.param_ids,
+        )
 
         path_sect = path / section if len(methods) > 1 else path
 

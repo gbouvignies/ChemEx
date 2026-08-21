@@ -67,6 +67,109 @@ FIT_PARAMETERS = (
     ROOT / "examples/Experiments/RELAXATION_HZNZ/Parameters/parameters.toml"
 )
 FIT_METHOD = ROOT / "examples/Experiments/RELAXATION_HZNZ/Methods/method.toml"
+BINDING_ROOT = ROOT / "examples/Combinations/2stBinding"
+BINDING_EXPERIMENTS = tuple(sorted((BINDING_ROOT / "Experiments").glob("*.toml")))
+BINDING_PARAMETERS = BINDING_ROOT / "Parameters/params.toml"
+BINDING_METHOD = BINDING_ROOT / "Methods/method.toml"
+
+_BINDING_STEP1_R2_B_IDS = {
+    "__R2_B_486N_800_0MHZ",
+    "__R2_B_488N_800_0MHZ",
+    "__R2_B_489N_800_0MHZ",
+    "__R2_B_489NE_800_0MHZ",
+    "__R2_B_491N_800_0MHZ",
+    "__R2_B_492N_800_0MHZ",
+    "__R2_B_493N_800_0MHZ",
+    "__R2_B_494N_800_0MHZ",
+    "__R2_B_495N_800_0MHZ",
+    "__R2_B_496N_800_0MHZ",
+    "__R2_B_497N_800_0MHZ",
+    "__R2_B_498N_800_0MHZ",
+    "__R2_B_499N_800_0MHZ",
+}
+_BINDING_STEP2_R2_B_IDS = {
+    f"__R2_B_{spin}_800_0MHZ"
+    for spin in (
+        "480N",
+        "481N",
+        "482N",
+        "483N",
+        "484N",
+        "485N",
+        "486N",
+        "488N",
+        "489N",
+        "489NE",
+        "491N",
+        "492N",
+        "493N",
+        "494N",
+        "495N",
+        "496N",
+        "497N",
+        "498N",
+        "499N",
+        "500N",
+        "501N",
+        "502N",
+        "503N",
+        "504N",
+        "505N",
+        "506N",
+        "509N",
+        "510N",
+        "511N",
+        "512N",
+        "513N",
+        "514N",
+        "515N",
+        "516N",
+        "518N",
+        "520N",
+        "521N",
+        "522N",
+        "523N",
+        "524N",
+        "526N",
+        "527N",
+        "528N",
+        "529N",
+        "530N",
+        "532N",
+        "533N",
+        "535N",
+        "537N",
+        "538N",
+        "540N",
+        "541N",
+        "543N",
+        "544N",
+        "545N",
+        "546N",
+        "547N",
+        "550N",
+        "551N",
+        "552N",
+        "553N",
+        "554N",
+        "555N",
+        "556N",
+        "557N",
+        "558N",
+        "559N",
+        "560N",
+        "566N",
+        "567N",
+        "568N",
+        "569N",
+        "570N",
+        "571N",
+        "572N",
+        "573N",
+        "574N",
+        "575N",
+    )
+}
 
 
 def _build_dcest_session() -> tuple[AnalysisSession, set[str]]:
@@ -346,6 +449,151 @@ def test_sealing_retains_model_derivation_when_estimation_is_supported() -> None
 
     assert declarations[definition.param_id].supports_estimation
     assert declarations[definition.param_id].model_expression == "1.0 - __PB"
+
+
+def test_non_model_owned_baseline_expression_can_compile_as_fit() -> None:
+    declarations = (
+        ParameterDeclaration("__A", False),
+        ParameterDeclaration("__B", True, "__A", model_owned=False),
+    )
+    parameter_model, snapshot = _native_fixture(declarations)
+
+    parameterization = compile_active_parameterization(
+        parameter_model,
+        snapshot,
+        Method(fit=("B",)),
+        {"__B"},
+    )
+
+    declaration = parameter_model.declarations["__B"]
+    assert declaration.model_expression == "__A"
+    assert declaration.supports_estimation
+    assert not declaration.model_owned
+    assert parameterization.role("__B") is ParameterRole.FIT
+
+
+def test_non_model_owned_baseline_expression_remains_active_constraint() -> None:
+    declarations = (
+        ParameterDeclaration("__A", False),
+        ParameterDeclaration("__B", True, "__A", model_owned=False),
+    )
+    parameter_model, snapshot = _native_fixture(
+        declarations,
+        values={"__A": 3.0, "__B": 20.0},
+    )
+
+    parameterization = compile_active_parameterization(
+        parameter_model,
+        snapshot,
+        Method(constraints=("[B] = [A]",)),
+        {"__B"},
+    )
+    resolved = parameterization.resolve(parameterization.frame_from_snapshot(snapshot))
+
+    assert parameterization.role("__B") is ParameterRole.DERIVED
+    assert resolved["__B"] == pytest.approx(3.0)
+
+
+def test_model_owned_expression_cannot_compile_as_fit() -> None:
+    declarations = (
+        ParameterDeclaration("__A", False),
+        ParameterDeclaration("__B", True, "__A", model_owned=True),
+    )
+    parameter_model, snapshot = _native_fixture(declarations)
+
+    with pytest.raises(ModelDerivationOverrideError):
+        compile_active_parameterization(
+            parameter_model,
+            snapshot,
+            Method(fit=("B",)),
+            {"__B"},
+        )
+
+
+@pytest.mark.parametrize(
+    "method",
+    (
+        Method(fit=("PA",)),
+        Method(fix=("PA",)),
+        Method(constraints=("[PA] = 0.5",)),
+    ),
+)
+def test_product_role_application_rejects_model_owned_override(method: Method) -> None:
+    session, required_ids = _build_dcest_session()
+
+    with pytest.raises(ModelDerivationOverrideError):
+        session.apply_current_parameter_roles(method, required_ids)
+
+
+def test_non_estimable_declaration_cannot_compile_as_fit() -> None:
+    declarations = (
+        ParameterDeclaration("__A", False),
+        ParameterDeclaration("__B", False, "__A", model_owned=False),
+    )
+    parameter_model, snapshot = _native_fixture(declarations)
+
+    with pytest.raises(IncompatibleParameterizationInputError) as raised:
+        compile_active_parameterization(
+            parameter_model,
+            snapshot,
+            Method(fit=("B",)),
+            {"__B"},
+        )
+
+    assert raised.value.context["param_ids"] == ("__B",)
+
+
+def test_binding_current_roles_compile_all_estimable_r2_b_coordinates() -> None:
+    session = AnalysisSession.create()
+    session.set_model("2st_binding")
+    experiments = build_experiments(
+        BINDING_EXPERIMENTS,
+        Selection(include=None, exclude=None),
+        session=session,
+    )
+    session.parameters.set_defaults(read_defaults([BINDING_PARAMETERS]))
+    assert session.try_build_analysis_values(), repr(
+        session.parameter_factory.native_construction_error
+    )
+    methods = read_methods([BINDING_METHOD])
+
+    experiments.select(methods["STEP1"].selection)
+    session.apply_current_parameter_roles(methods["STEP1"], experiments.param_ids)
+    step1 = session.compile_current_parameterization(experiments.param_ids)
+    step1_fit_ids = {
+        param_id
+        for param_id in step1.independent_ids
+        if step1.role(param_id) is ParameterRole.FIT
+    }
+    step1_r2_b_ids = {
+        param_id for param_id in step1_fit_ids if param_id.startswith("__R2_B_")
+    }
+
+    assert len(step1_fit_ids) == 53
+    assert step1_r2_b_ids == _BINDING_STEP1_R2_B_IDS
+    for param_id in _BINDING_STEP1_R2_B_IDS:
+        declaration = session.parameter_factory.sealed_parameter_model.declarations[
+            param_id
+        ]
+        assert declaration.model_expression
+        assert declaration.supports_estimation
+        assert not declaration.model_owned
+
+    experiments.select(methods["STEP2"].selection)
+    session.apply_current_parameter_roles(methods["STEP2"], experiments.param_ids)
+    step2 = session.compile_current_parameterization(experiments.param_ids)
+    step2_fit_ids = {
+        param_id
+        for param_id in step2.independent_ids
+        if step2.role(param_id) is ParameterRole.FIT
+    }
+    step2_r2_b_ids = {
+        param_id for param_id in step2_fit_ids if param_id.startswith("__R2_B_")
+    }
+
+    assert len(step2_fit_ids) == 312
+    assert len(_BINDING_STEP2_R2_B_IDS) == 78
+    assert step2_r2_b_ids == _BINDING_STEP2_R2_B_IDS
 
 
 def test_constraint_chain_is_deterministic_and_freshly_reresolves() -> None:
