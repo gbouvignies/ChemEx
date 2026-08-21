@@ -103,6 +103,9 @@ class StubSession:
     ) -> None:
         return None
 
+    def resolve_current_values(self, _required_ids: set[str]) -> dict[str, float]:
+        return {}
+
 
 class WriterParameterStore:
     def __init__(self, parameters: dict[str, ParamSetting]) -> None:
@@ -141,6 +144,9 @@ class FakeExperiments:
         self.param_ids: set[str] = set()
 
     def filter(self) -> None:
+        self.filtered += 1
+
+    def filter_from_values(self, _values: object) -> None:
         self.filtered += 1
 
     def select(self, selection: Selection) -> None:
@@ -401,7 +407,7 @@ def test_run_uses_explicit_session_for_fit_flow(
     assert recorded["outcome"] == "complete"
 
 
-def test_run_continues_when_native_configuration_is_unavailable(
+def test_run_fails_closed_when_native_configuration_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = StubSession()
@@ -427,9 +433,10 @@ def test_run_continues_when_native_configuration_is_unavailable(
         lambda *_args, **_kwargs: None,
     )
 
-    chemex_module.run(make_args("fit"), session=session)
+    with pytest.raises(RuntimeError, match="Native parameter initialization failed"):
+        chemex_module.run(make_args("fit"), session=session)
 
-    assert fit_ran == [True]
+    assert fit_ran == []
     assert session.parameter_factory.seal_configuration_calls == 1
     assert session.build_analysis_values_calls == 1
 
@@ -455,9 +462,15 @@ def test_run_uses_explicit_session_for_simulation_flow(
         experiments_arg: FakeExperiments,
         path: Path,
         *,
+        parameter_values: object,
         plot: bool = False,
     ) -> None:
-        recorded["simulation"] = (experiments_arg, path, plot)
+        recorded["simulation"] = (
+            experiments_arg,
+            path,
+            parameter_values,
+            plot,
+        )
 
     monkeypatch.setattr(chemex_module, "build_experiments", fake_build_experiments)
     monkeypatch.setattr(chemex_module, "read_defaults", lambda _filenames: defaults)
@@ -471,6 +484,7 @@ def test_run_uses_explicit_session_for_simulation_flow(
     np.testing.assert_equal(session.build_analysis_values_calls, 1)
     np.testing.assert_equal(session.parameters.fix_all_calls, 1)
     np.testing.assert_equal(recorded["build"][2], session)
+    assert recorded["simulation"] == (experiments, Path("Output"), {}, True)
 
 
 def test_run_rejects_experiments_built_under_a_different_session(
@@ -560,46 +574,6 @@ def test_main_dispatches_analysis_commands(monkeypatch: pytest.MonkeyPatch) -> N
     chemex_module.main()
 
     np.testing.assert_equal(calls, ["logo", "plugins", "run"])
-
-
-def test_run_methods_passes_execution_to_fit_groups(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    session = StubSession()
-    experiments = FakeExperiments(parameter_store=session.parameters)
-    recorded: dict[str, object] = {}
-
-    def fake_fit_groups(
-        experiments_arg: FakeExperiments,
-        path: Path,
-        plot: str,
-        fitmethod: str,
-        statistics: object,
-        *,
-        execution: ExecutionSettings | None = None,
-    ) -> None:
-        recorded["fit_groups"] = (
-            experiments_arg,
-            path,
-            plot,
-            fitmethod,
-            statistics,
-            execution,
-        )
-
-    monkeypatch.setattr(fitting_module, "_fit_groups", fake_fit_groups)
-
-    fitting_module.run_methods(
-        experiments,
-        {"": Method(fitmethod="leastsq")},
-        Path("Output"),
-        "normal",
-        session=session,
-    )
-
-    np.testing.assert_equal(len(experiments.selections), 1)
-    np.testing.assert_equal(len(session.parameters.status_calls), 1)
-    np.testing.assert_equal(recorded["fit_groups"][5], session.execution)
 
 
 def test_run_methods_skips_fit_when_selection_removes_all_profiles(
@@ -811,7 +785,12 @@ def test_execute_post_fit_writes_parameters_from_experiments_store(
         lambda *_args, **_kwargs: None,
     )
 
-    helper_module.execute_post_fit(experiments, tmp_path)
+    helper_module.execute_post_fit(
+        experiments,
+        tmp_path,
+        residuals=np.array([], dtype=float),
+        nvarys=0,
+    )
 
     np.testing.assert_equal(int((tmp_path / "Parameters" / "fixed.toml").exists()), 1)
 

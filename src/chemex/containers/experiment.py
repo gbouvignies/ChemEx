@@ -56,6 +56,14 @@ class Experiment:
     def residuals(self, params: ParametersLF) -> Array:
         return np.concatenate([profile.residuals(params) for profile in self.profiles])
 
+    def back_calculate_from_values(
+        self,
+        parameter_values: Mapping[str, float],
+    ) -> None:
+        """Publish calculated profile values from a native resolved mapping."""
+        for profile in self.profiles:
+            profile.calculate_from_values(parameter_values)
+
     def plot(self, output_stem: Path) -> None:
         self.plotter.plot(output_stem, self.profiles)
 

@@ -1927,7 +1927,7 @@ def test_native_run_information_archives_each_method_section(
     tmp_path: Path,
 ) -> None:
     run_state = _committed_fit()
-    first = _evaluation_only(Method(fitmethod="leastsq", fix=["R1A_A", "PB", "KEX_AB"]))
+    first = _evaluation_only(Method(fix=["R1A_A", "PB", "KEX_AB"]))
     second = _evaluation_only(Method(fitmethod="trf", fix=["R1A_A", "PB", "KEX_AB"]))
     output = tmp_path / "Output"
     steps = (

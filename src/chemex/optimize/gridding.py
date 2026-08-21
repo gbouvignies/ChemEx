@@ -280,7 +280,25 @@ def run_grid(
     plot_grid_1d(grids_1d, path / "Grid", parameter_store=parameter_store)
     plot_grid_2d(grids_2d, path / "Grid", parameter_store=parameter_store)
 
+    params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
+    residuals = experiments.residuals(params_lf)
+    nvarys = sum(
+        parameter.vary and not parameter.expr for parameter in params_lf.values()
+    )
+
     if len(groups) > 1:
-        execute_post_fit_groups(experiments, path, plot)
+        execute_post_fit_groups(
+            experiments,
+            path,
+            plot,
+            residuals=residuals,
+            nvarys=nvarys,
+        )
     else:
-        execute_post_fit(experiments, path, plot=plot != "nothing")
+        execute_post_fit(
+            experiments,
+            path,
+            plot=plot != "nothing",
+            residuals=residuals,
+            nvarys=nvarys,
+        )

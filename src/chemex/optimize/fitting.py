@@ -3,10 +3,9 @@
 import shutil
 from pathlib import Path
 
-from chemex.configuration.methods import Methods, Statistics
+from chemex.configuration.methods import Method, Methods, Statistics
 from chemex.containers.experiments import Experiments
 from chemex.messages import (
-    print_calculation_stopped_error,
     print_fitmethod,
     print_grid_statistic_warning,
     print_group_name,
@@ -16,7 +15,6 @@ from chemex.messages import (
     print_running_statistics,
     print_step_name,
 )
-from chemex.optimize.gridding import run_grid
 from chemex.optimize.grouping import create_groups
 from chemex.optimize.helper import (
     execute_post_fit,
@@ -29,7 +27,6 @@ from chemex.optimize.minimizer import (
 from chemex.optimize.native_deterministic import (
     NativeDeterministicFit,
     run_native_deterministic,
-    uses_native_deterministic,
 )
 from chemex.optimize.resampling import (
     run_native_resampling_statistics,
@@ -123,10 +120,17 @@ def _fit_groups(
         )
 
         parameter_store.update_from_parameters(best_lmfit_params)
+        residuals = group.experiments.residuals(best_lmfit_params)
+        nvarys = sum(
+            parameter.vary and not parameter.expr
+            for parameter in best_lmfit_params.values()
+        )
         execute_post_fit(
             group.experiments,
             group_path,
             plot=plot_flg,
+            residuals=residuals,
+            nvarys=nvarys,
         )
 
         # Run Monte Carlo and/or bootstrap analysis
@@ -139,7 +143,17 @@ def _fit_groups(
         )
 
     if len(groups) > 1:
-        execute_post_fit_groups(experiments, path, plot)
+        params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
+        execute_post_fit_groups(
+            experiments,
+            path,
+            plot,
+            residuals=experiments.residuals(params_lf),
+            nvarys=sum(
+                parameter.vary and not parameter.expr
+                for parameter in params_lf.values()
+            ),
+        )
 
 
 def _run_native_statistics(
@@ -214,8 +228,6 @@ def run_methods(
     *,
     session: AnalysisSession,
 ) -> None:
-    parameter_store = experiments.parameter_store
-
     for index, (section, method) in enumerate(methods.items(), start=1):
         if section:
             print_step_name(section, index, len(methods))
@@ -227,56 +239,32 @@ def run_methods(
             print_no_data()
             continue
 
-        use_native_deterministic = uses_native_deterministic(method)
-        print_fitmethod("trf" if use_native_deterministic else method.fitmethod)
-
-        # Update the parameter "vary" and "expr" status
-        parameter_store.set_parameter_status(method)
-
+        effective_method: Method = method
         if method.grid and method.statistics:
             print_grid_statistic_warning()
-            method.statistics = None
+            effective_method = method.model_copy(update={"statistics": None})
+
+        print_fitmethod(effective_method.fitmethod)
+
+        # Update the parameter "vary" and "expr" status
+        session.apply_current_parameter_roles(
+            effective_method,
+            experiments.param_ids,
+        )
 
         path_sect = path / section if len(methods) > 1 else path
 
-        if use_native_deterministic:
-            fit = run_native_deterministic(
-                experiments,
-                method,
-                path_sect,
-                plot_level,
-                session=session,
-            )
-            _run_requested_native_statistics(
-                experiments,
-                path_sect,
-                method.statistics,
-                fit,
-                session=session,
-            )
-            continue
-
-        if method.grid:
-            try:
-                run_grid(
-                    experiments,
-                    method.grid,
-                    path_sect,
-                    plot_level,
-                    method.fitmethod,
-                )
-            except KeyboardInterrupt:
-                print_calculation_stopped_error()
-                raise
-        else:
-            legacy_fitmethod = (
-                "least_squares" if method.fitmethod == "trf" else method.fitmethod
-            )
-            _fit_groups(
-                experiments,
-                path_sect,
-                plot_level,
-                legacy_fitmethod,
-                method.statistics,
-                execution=session.execution,
-            )
+        fit = run_native_deterministic(
+            experiments,
+            effective_method,
+            path_sect,
+            plot_level,
+            session=session,
+        )
+        _run_requested_native_statistics(
+            experiments,
+            path_sect,
+            effective_method.statistics,
+            fit,
+            session=session,
+        )

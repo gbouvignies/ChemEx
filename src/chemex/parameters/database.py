@@ -9,7 +9,7 @@ ensures physical validity of J couplings.
 import re
 import sys
 from collections import Counter, defaultdict
-from collections.abc import Hashable, Iterable, Sequence
+from collections.abc import Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
@@ -566,6 +566,7 @@ class ParameterStore:
     _database: ParameterCatalog
     _database_mf: ParameterCatalog
     _defaults_applied: bool = field(default=False, init=False, repr=False)
+    _defaults: DefaultListType = field(default_factory=list, init=False, repr=False)
     _configuration_locked: bool = field(default=False, init=False, repr=False)
     _legacy_values_adapter: "LegacyValuesAdapter | None" = field(
         default=None,
@@ -703,19 +704,29 @@ class ParameterStore:
             msg = "Parameter defaults have already been applied"
             raise RuntimeError(msg)
         self._defaults_applied = False
+        self._defaults = list(defaults)
         self._database_mf.set_defaults(defaults)
 
         if self.model.model_free:
             self._defaults_applied = True
             return
 
-        params_mf = self._database_mf.build_lmfit_params(model_name=self.model.name)
-        self.database.set_values(params_mf.valuesdict())
-
         self.database.set_defaults(defaults)
 
         self.database.check_params()
         self._defaults_applied = True
+
+    def seed_from_model_free_values(self, values: Mapping[str, float]) -> None:
+        """Apply native model-free values before explicit ordinary defaults."""
+        self._ensure_configuration_open()
+        if self.model.model_free:
+            return
+        if not self._defaults_applied:
+            msg = "Parameter defaults must be parsed before model-free initialization"
+            raise RuntimeError(msg)
+        self._database.set_values(dict(values))
+        self._database.set_defaults(self._defaults)
+        self._database.check_params()
 
     def set_vary(self, section_names: Sequence[str], vary: bool) -> Counter[str]:
         """Set variability of parameters in the active catalog by section name.
@@ -770,6 +781,7 @@ class ParameterStore:
         self._database.clear()
         self._database_mf.clear()
         self._defaults_applied = False
+        self._defaults.clear()
         self._configuration_locked = False
 
 

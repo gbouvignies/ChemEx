@@ -16,6 +16,7 @@ from chemex.parameters.factory import ParameterFactory
 from chemex.parameters.legacy_adapter import LegacyValuesAdapter
 from chemex.parameters.parameterization import (
     ActiveParameterization,
+    ModelDerivationOverrideError,
     build_initial_analysis_values,
     compile_active_parameterization,
 )
@@ -80,7 +81,42 @@ class AnalysisSession:
         self.model.reset()
 
     def try_build_analysis_values(self) -> bool:
-        """Seal configuration and initialize the non-authoritative native values."""
+        """Seal configuration and initialize authoritative native analysis values."""
+        try:
+            model_free_parameter_model = (
+                self.parameter_factory.build_model_free_parameter_model()
+            )
+            if model_free_parameter_model is not None:
+                model_free_values = AnalysisValues()
+                model_free_configuration = model_free_parameter_model.configuration
+                model_free_initial_values = (
+                    build_initial_analysis_values(model_free_parameter_model)
+                    if any(
+                        item.effective_value is None
+                        for item in model_free_configuration
+                    )
+                    else None
+                )
+                model_free_values.initialize(
+                    self.model.spec.identity,
+                    model_free_configuration,
+                    _native_initial_values=model_free_initial_values,
+                )
+                model_free_snapshot = model_free_values.snapshot()
+                model_free_parameterization = compile_active_parameterization(
+                    model_free_parameter_model,
+                    model_free_snapshot,
+                    Method(),
+                    set(model_free_parameter_model.declarations),
+                )
+                resolved_model_free_values = model_free_parameterization.resolve(
+                    model_free_parameterization.frame_from_snapshot(model_free_snapshot)
+                )
+                self.parameters.seed_from_model_free_values(resolved_model_free_values)
+        except Exception as error:  # noqa: BLE001 - native initialization boundary
+            self.parameter_factory.disable_native_candidate(error)
+            self.legacy_values_adapter.disable(error)
+            return False
         if not self.parameter_factory.try_seal_configuration():
             return False
         configuration = self.parameter_factory.sealed_configuration
@@ -102,6 +138,10 @@ class AnalysisSession:
                 configuration,
                 _native_initial_values=initial_values,
             )
+            resolved_values = self.resolve_current_values(
+                set(parameter_model.declarations)
+            )
+            self.sync_parameter_store_from_analysis_values(dict(resolved_values))
         except Exception as error:  # noqa: BLE001 - checkpoint-1 isolation boundary
             self.parameter_factory.disable_native_candidate(error)
             self.legacy_values_adapter.disable(error)
@@ -146,10 +186,18 @@ class AnalysisSession:
         constraints: list[str] = []
         for param_id, parameter in parameters.items():
             declaration = parameter_model.declarations[param_id]
-            if declaration.model_expression:
+            if declaration.model_owned:
+                if parameter.vary or parameter.expr != declaration.model_expression:
+                    raise ModelDerivationOverrideError(
+                        "Current parameter role cannot override a model-owned "
+                        "derivation",
+                        param_ids=(param_id,),
+                    )
                 continue
             selector = str(parameter.param_name)
             if parameter.expr:
+                if parameter.expr == declaration.model_expression:
+                    continue
                 expression = parameter.expr
                 for dependency in sorted(
                     parameter.dependencies,
@@ -159,7 +207,7 @@ class AnalysisSession:
                     dependency_name = parameters[dependency].param_name
                     expression = expression.replace(
                         dependency,
-                        f"[{dependency_name}]",
+                        str(dependency_name),
                     )
                 constraints.append(f"[{selector}] = {expression}")
             elif parameter.vary:
@@ -177,6 +225,15 @@ class AnalysisSession:
             effective_method,
             required_ids,
         )
+
+    def apply_current_parameter_roles(
+        self,
+        method: Method,
+        required_ids: set[str],
+    ) -> None:
+        """Validate explicit method intent, then update inherited v1 roles."""
+        self.compile_parameterization(method, required_ids)
+        self.parameters.set_parameter_status(method)
 
     def try_compile_parameterization(
         self,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 import numpy as np
@@ -60,19 +60,11 @@ def _write_statistics(
     experiments: Experiments,
     path: Path,
     *,
-    residuals: Array | None = None,
-    nvarys: int | None = None,
+    residuals: Array,
+    nvarys: int,
 ) -> None:
     """Write fitting statistics to a file."""
-    if residuals is None:
-        params_lf = experiments.parameter_store.build_lmfit_params(
-            experiments.param_ids
-        )
-        stats = calculate_statistics(experiments, params_lf)
-    else:
-        if nvarys is None:
-            raise ValueError("Native residual statistics require a variable count")
-        stats = calculate_statistics_from_residuals(residuals, nvarys)
+    stats = calculate_statistics_from_residuals(residuals, nvarys)
     filename = path / "statistics.toml"
     with filename.open("w", encoding="utf-8") as f:
         f.write(f'"number of data points"                = {stats["ndata"]}\n')
@@ -91,8 +83,8 @@ def _write_files(
     experiments: Experiments,
     path: Path,
     *,
-    residuals: Array | None = None,
-    nvarys: int | None = None,
+    residuals: Array,
+    nvarys: int,
 ) -> None:
     """Write the results of the fit to output files."""
     print_writing_results(path)
@@ -148,8 +140,8 @@ def execute_post_fit(
     path: Path,
     *,
     plot: bool = False,
-    residuals: Array | None = None,
-    nvarys: int | None = None,
+    residuals: Array,
+    nvarys: int,
 ) -> None:
     _write_files(experiments, path, residuals=residuals, nvarys=nvarys)
     if plot:
@@ -160,9 +152,10 @@ def execute_simulation(
     experiments: Experiments,
     path: Path,
     *,
+    parameter_values: Mapping[str, float],
     plot: bool = False,
 ) -> None:
-    experiments.prepare_for_simulation()
+    experiments.prepare_for_simulation(parameter_values)
     _write_simulation_files(experiments, path)
     if plot:
         _write_simulation_plots(experiments, path)
@@ -173,19 +166,11 @@ def execute_post_fit_groups(
     path: Path,
     plot: str,
     *,
-    residuals: Array | None = None,
-    nvarys: int | None = None,
+    residuals: Array,
+    nvarys: int,
 ) -> None:
     print_group_name("All groups")
-    if residuals is None:
-        params_lf = experiments.parameter_store.build_lmfit_params(
-            experiments.param_ids
-        )
-        statistics = calculate_statistics(experiments, params_lf)
-    else:
-        if nvarys is None:
-            raise ValueError("Native residual statistics require a variable count")
-        statistics = calculate_statistics_from_residuals(residuals, nvarys)
+    statistics = calculate_statistics_from_residuals(residuals, nvarys)
     print_chi2(statistics["chisqr"], statistics["redchi"])
     execute_post_fit(
         experiments,

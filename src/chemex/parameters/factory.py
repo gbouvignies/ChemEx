@@ -89,6 +89,14 @@ class ParameterFactory:
         str,
         list[ParameterDeclarationContribution],
     ] = field(default_factory=dict)
+    _model_free_definition_contributions: dict[
+        str,
+        list[DefinitionContribution],
+    ] = field(default_factory=dict)
+    _model_free_declaration_contributions: dict[
+        str,
+        list[ParameterDeclarationContribution],
+    ] = field(default_factory=dict)
     _sealed_definitions: SealedDefinitions | None = field(default=None, repr=False)
     _sealed_configuration: SealedConfiguration | None = field(default=None, repr=False)
     _sealed_parameter_model: SealedParameterModel | None = field(
@@ -118,11 +126,11 @@ class ParameterFactory:
 
     @property
     def native_construction_error(self) -> Exception | None:
-        """Return the failure that disabled the non-authoritative native candidate."""
+        """Return the failure that prevented native parameter construction."""
         return self._native_construction_error
 
     def disable_native_candidate(self, error: Exception) -> None:
-        """Record the first native failure without disturbing legacy construction."""
+        """Record the first native construction failure for fail-closed reporting."""
         if self._native_construction_error is None:
             self._native_construction_error = error
 
@@ -159,8 +167,12 @@ class ParameterFactory:
         parameters: Parameters,
         *,
         contributor: str,
+        contributions: dict[str, list[DefinitionContribution]] | None = None,
     ) -> None:
         """Extract ParamDefinition contributions from parameters before legacy merge."""
+        target = (
+            self._definition_contributions if contributions is None else contributions
+        )
         for param_id, param_setting in parameters.items():
             contribution = DefinitionContribution(
                 definition=ParamDefinition(
@@ -176,7 +188,7 @@ class ParameterFactory:
                 ),
                 contributor=contributor,
             )
-            self._definition_contributions.setdefault(param_id, []).append(contribution)
+            target.setdefault(param_id, []).append(contribution)
 
     def _collect_declarations(
         self,
@@ -184,7 +196,13 @@ class ParameterFactory:
         *,
         contributor: str,
         model_owned_ids: frozenset[str],
+        contributions: (
+            dict[str, list[ParameterDeclarationContribution]] | None
+        ) = None,
     ) -> None:
+        target = (
+            self._declaration_contributions if contributions is None else contributions
+        )
         for param_id, parameter in parameters.items():
             contribution = ParameterDeclarationContribution(
                 param_id=param_id,
@@ -193,9 +211,7 @@ class ParameterFactory:
                 contributor=contributor,
                 model_owned=param_id in model_owned_ids and bool(parameter.expr),
             )
-            self._declaration_contributions.setdefault(param_id, []).append(
-                contribution
-            )
+            target.setdefault(param_id, []).append(contribution)
 
     def create_parameters(
         self,
@@ -258,6 +274,23 @@ class ParameterFactory:
                     contributor=construction_context,
                     model_owned_ids=model_owned_ids,
                 )
+                if not self.parameter_store.model.model_free:
+                    model_free_owned_ids = frozenset(
+                        name_map_mf[name]
+                        for name in kinetic_names
+                        if name in name_map_mf
+                    )
+                    self._collect_definitions(
+                        parameters_mf,
+                        contributor=construction_context,
+                        contributions=self._model_free_definition_contributions,
+                    )
+                    self._collect_declarations(
+                        parameters_mf,
+                        contributor=construction_context,
+                        model_owned_ids=model_free_owned_ids,
+                        contributions=self._model_free_declaration_contributions,
+                    )
             except Exception as error:  # noqa: BLE001 - checkpoint-1 isolation boundary
                 self._native_construction_error = error
 
@@ -318,8 +351,31 @@ class ParameterFactory:
             declarations=declarations,
         )
 
+    def build_model_free_parameter_model(self) -> SealedParameterModel | None:
+        """Build the native model-free bootstrap used by ordinary models."""
+        if self.parameter_store.model.model_free:
+            return None
+        definitions = canonicalize_definitions(
+            self._model_free_definition_contributions,
+        )
+        configuration = build_sealed_configuration(
+            definitions,
+            self.parameter_store._database_mf._parameters,
+        )
+        declarations = seal_parameter_declarations(
+            definitions,
+            self._model_free_declaration_contributions,
+        )
+        return SealedParameterModel(
+            model_name=self.parameter_store.model.name,
+            model_identity=self.parameter_store.model.identity,
+            definitions=definitions,
+            configuration=configuration,
+            declarations=declarations,
+        )
+
     def try_seal_definitions(self) -> bool:
-        """Seal definitions without allowing the native candidate to veto legacy."""
+        """Attempt to seal definitions and retain the first construction failure."""
         if self._native_construction_error is not None:
             return False
         try:
@@ -330,7 +386,7 @@ class ParameterFactory:
         return True
 
     def try_seal_configuration(self) -> bool:
-        """Seal configuration without allowing the native candidate to veto legacy."""
+        """Attempt to seal configuration and retain the first construction failure."""
         if self._native_construction_error is not None:
             return False
         try:
@@ -361,6 +417,8 @@ class ParameterFactory:
         self._settings_cache.clear()
         self._definition_contributions.clear()
         self._declaration_contributions.clear()
+        self._model_free_definition_contributions.clear()
+        self._model_free_declaration_contributions.clear()
         self._sealed_definitions = None
         self._sealed_configuration = None
         self._sealed_parameter_model = None
