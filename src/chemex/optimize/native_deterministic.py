@@ -241,6 +241,28 @@ def _product_uncertainty_result(
     raise RuntimeError("Committed native fit lacks requested uncertainty evidence")
 
 
+def _product_block_uncertainty(
+    evidence: UncertaintyEvidence | None,
+    decomposition: FitDecomposition,
+) -> tuple[
+    RootAnchoredBlockCovarianceEvidence | None,
+    tuple[str, str] | None,
+]:
+    """Derive proof-bound block evidence without invalidating a committed fit."""
+    if evidence is None:
+        return None, None
+    try:
+        return (
+            derive_root_anchored_block_covariance(
+                evidence,
+                decomposition.partition_proof,
+            ),
+            None,
+        )
+    except KeyboardInterrupt:
+        return None, ("interrupted", "block derivation interrupted")
+
+
 def _has_controlled_parameters(parameterization: ActiveParameterization) -> bool:
     return any(
         parameterization.role(param_id) is ParameterRole.FIT
@@ -626,17 +648,11 @@ def run_native_deterministic(
         uncertainty_request.constrained_scope,
         unsupported_constrained_ids,
     )
-    block_uncertainty = (
-        None
-        if uncertainty_evidence is None
-        else derive_root_anchored_block_covariance(
-            uncertainty_evidence,
-            tuple(
-                (component.controlled_ids, component.root_profile_indices)
-                for component in decomposition.components
-            ),
-        )
+    block_uncertainty, block_status = _product_block_uncertainty(
+        uncertainty_evidence,
+        decomposition,
     )
+    uncertainty_status = block_status or uncertainty_status
     if block_uncertainty is not None:
         block_errors = tuple(
             (entry.param_id, entry.value)

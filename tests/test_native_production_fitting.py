@@ -33,6 +33,9 @@ EXAMPLE = ROOT / "examples/Experiments/RELAXATION_HZNZ"
 EXPERIMENT = EXAMPLE / "Experiments/800mhz.toml"
 PARAMETERS = EXAMPLE / "Parameters/parameters.toml"
 METHOD = EXAMPLE / "Methods/method.toml"
+DCEST_EXAMPLE = ROOT / "examples/Experiments/DCEST_15N_HD_EXCH"
+DCEST_EXPERIMENT = DCEST_EXAMPLE / "Experiments/3hz.toml"
+DCEST_PARAMETERS = DCEST_EXAMPLE / "Parameters/parameters.toml"
 
 
 def _fit_arguments(
@@ -533,7 +536,6 @@ def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
 ) -> None:
     output = tmp_path / "Output"
     original_svd = uncertainty_module.svd
-    original_block_derivation = uncertainty_module.derive_root_anchored_block_covariance
     covariance_svd_call = 0
 
     def one_bad_block_svd(*args, **kwargs):
@@ -545,17 +547,7 @@ def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
             singular[-1] = 0.0
         return left, singular, right
 
-    def reverse_block_order(evidence, scopes):
-        return original_block_derivation(evidence, tuple(reversed(scopes)))
-
-    with (
-        patch("chemex.optimize.uncertainty.svd", side_effect=one_bad_block_svd),
-        patch.object(
-            native_deterministic_module,
-            "derive_root_anchored_block_covariance",
-            side_effect=reverse_block_order,
-        ),
-    ):
+    with patch("chemex.optimize.uncertainty.svd", side_effect=one_bad_block_svd):
         run(
             _fit_arguments(output, include=("G2N-HN", "H3N-HN")),
             session=AnalysisSession.create(),
@@ -585,10 +577,48 @@ def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
             encoding="utf-8"
         )
     )
+    assert len(blocks["partition_proof_identity"]) == 64
     assert sorted(block["unavailable_reason"] for block in blocks["blocks"]) == [
         "",
         "rank deficient",
     ]
+
+
+def test_interrupted_block_fallback_preserves_committed_root_evidence(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+    original_svd = uncertainty_module.svd
+
+    def rank_deficient_svd(*args, **kwargs):
+        left, singular, right = original_svd(*args, **kwargs)
+        singular = np.array(singular, copy=True)
+        singular[-1] = 0.0
+        return left, singular, right
+
+    with (
+        patch("chemex.optimize.uncertainty.svd", side_effect=rank_deficient_svd),
+        patch.object(
+            native_deterministic_module,
+            "derive_root_anchored_block_covariance",
+            side_effect=KeyboardInterrupt,
+        ),
+    ):
+        run(
+            _fit_arguments(output, include=("G2N-HN", "H3N-HN")),
+            session=session,
+        )
+
+    assert session.analysis_values.snapshot().revision == 1
+    covariance_path = output / "All" / "Statistics" / "Covariance"
+    assert (covariance_path / "evidence.json").is_file()
+    assert not (covariance_path / "blocks.json").exists()
+    status = json.loads((covariance_path / "status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "incomplete"
+    assert status["terminal"] == "interrupted"
+    assert status["reason"] == "block derivation interrupted"
+    assert (output / "All" / "Parameters" / "fitted.toml").is_file()
 
 
 def test_shared_parameter_coupling_is_not_split_into_covariance_blocks(
@@ -621,6 +651,54 @@ FIX = ["KEX_AB"]
     assert "# ±" not in fitted
     assert "error unavailable: rank deficient" in fitted
     assert not (output / "Statistics" / "Covariance" / "blocks.json").exists()
+
+
+def test_unsupported_scientific_constraint_keeps_product_fitted_errors(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """[DEFAULT]
+FIT = ["D2O"]
+FIX = ["CS_A", "DW_AB", "KDH", "PHI", "R1_A", "R2_A", "R2_B"]
+""",
+        encoding="utf-8",
+    )
+    arguments = build_parser().parse_args(
+        [
+            "fit",
+            "-e",
+            str(DCEST_EXPERIMENT),
+            "-p",
+            str(DCEST_PARAMETERS),
+            "-m",
+            str(method),
+            "-o",
+            str(output),
+            "-d",
+            "2st_hd",
+            "--include",
+            "1N",
+            "--plot",
+            "nothing",
+            "--workers",
+            "1",
+        ]
+    )
+
+    run(arguments, session=AnalysisSession.create())
+
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    constrained = (output / "Parameters" / "constrained.toml").read_text(
+        encoding="utf-8"
+    )
+    assert "# ±" in fitted
+    assert "error unavailable: unsupported constrained derivative" in constrained
+    constrained_evidence = (
+        output / "Statistics" / "Constrained" / "evidence.json"
+    ).read_text(encoding="utf-8")
+    assert "unsupported constrained derivative" not in constrained_evidence
 
 
 def test_real_grouped_direct_progress_has_one_bounded_noninteractive_stream(

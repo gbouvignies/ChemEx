@@ -108,7 +108,7 @@ def _write_files(
         statistics_path.mkdir(exist_ok=True)
         write_uncertainty(statistics_path, uncertainty_evidence)
         write_block_uncertainty(statistics_path, block_uncertainty)
-    elif uncertainty_status is not None:
+    if uncertainty_status is not None:
         terminal, reason = uncertainty_status
         covariance_path = path / "Statistics" / "Covariance"
         covariance_path.mkdir(parents=True, exist_ok=True)

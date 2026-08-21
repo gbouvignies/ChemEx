@@ -40,6 +40,7 @@ from chemex.optimize.direct_trf import (
     OptimizationProblem,
     accepted_occurrence_is_authoritative,
 )
+from chemex.optimize.grouped_direct_trf import FitPartitionProof
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     BinaryExpression,
@@ -2702,13 +2703,16 @@ class RootAnchoredBlockCovarianceEvidence:
     accepted_occurrence_identity: str
     source_jacobian_identity: str
     source_constraint_jacobian_identity: str | None
+    partition_proof_identity: str
     policy_identity: str
     blocks: tuple[RootAnchoredBlockCovariance, ...]
     source_bundle: UncertaintyEvidence = field(repr=False, compare=False)
+    source_partition_proof: FitPartitionProof = field(repr=False, compare=False)
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
         source = self.source_bundle
+        proof = self.source_partition_proof
         jacobian = source.residual_jacobian
         if (
             jacobian is None
@@ -2722,6 +2726,11 @@ class RootAnchoredBlockCovarianceEvidence:
                 if source.constraint_jacobian is None
                 else source.constraint_jacobian.identity
             )
+            or self.partition_proof_identity != proof.identity
+            or proof.root_plan_identity != source.source_engine.plan.identity
+            or proof.constraint_program_identity
+            != source.source_parameterization.program.fingerprint
+            or proof.controlled_ids != jacobian.controlled_ids
         ):
             raise ValueError("Root-anchored block evidence has inconsistent lineage")
         flattened = tuple(
@@ -2740,6 +2749,17 @@ class RootAnchoredBlockCovarianceEvidence:
             for block in self.blocks
         ):
             raise ValueError("Root-anchored block coordinates violate root order")
+        block_scopes = tuple(
+            (block.controlled_ids, block.root_profile_indices) for block in self.blocks
+        )
+        proof_scopes = tuple(
+            (controlled_ids, profile_indices)
+            for _component_id, controlled_ids, profile_indices, _bounds in (
+                proof.component_records
+            )
+        )
+        if block_scopes != proof_scopes:
+            raise ValueError("Root-anchored blocks differ from the partition proof")
         object.__setattr__(
             self,
             "identity",
@@ -2750,6 +2770,7 @@ class RootAnchoredBlockCovarianceEvidence:
                     self.accepted_occurrence_identity,
                     self.source_jacobian_identity,
                     self.source_constraint_jacobian_identity,
+                    self.partition_proof_identity,
                     self.policy_identity,
                     tuple(item.identity for item in self.blocks),
                 ),
@@ -2767,6 +2788,7 @@ class RootAnchoredBlockCovarianceEvidence:
             "source_constraint_jacobian_identity": (
                 self.source_constraint_jacobian_identity
             ),
+            "partition_proof_identity": self.partition_proof_identity,
             "policy_identity": self.policy_identity,
             "identity": self.identity,
             "blocks": [
@@ -2804,7 +2826,7 @@ def _failed_block_claims(category: str) -> tuple[ClaimAssessment, ...]:
 
 def derive_root_anchored_block_covariance(  # noqa: C901
     evidence: UncertaintyEvidence,
-    block_scopes: Sequence[tuple[Sequence[str], Sequence[int]]],
+    partition_proof: FitPartitionProof,
 ) -> RootAnchoredBlockCovarianceEvidence | None:
     """Derive independent full-rank blocks when the joint root is unavailable."""
     jacobian = evidence.residual_jacobian
@@ -2818,9 +2840,35 @@ def derive_root_anchored_block_covariance(  # noqa: C901
         is not ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES
     ):
         return None
+    if (
+        partition_proof.root_plan_identity != evidence.source_engine.plan.identity
+        or partition_proof.constraint_program_identity
+        != evidence.source_parameterization.program.fingerprint
+        or partition_proof.controlled_ids != jacobian.controlled_ids
+    ):
+        raise ValueError("Block covariance requires the exact root partition proof")
+    root_bounds = {
+        param_id: (float(lower).hex(), float(upper).hex())
+        for param_id, lower, upper in zip(
+            evidence.source_problem.controlled_ids,
+            evidence.source_problem.lower_bounds,
+            evidence.source_problem.upper_bounds,
+            strict=True,
+        )
+    }
+    if any(
+        bounds
+        != tuple((param_id, *root_bounds[param_id]) for param_id in controlled_ids)
+        for _component_id, controlled_ids, _profiles, bounds in (
+            partition_proof.component_records
+        )
+    ):
+        raise ValueError("Block covariance partition bounds differ from the root")
     scopes = tuple(
-        (tuple(controlled_ids), tuple(profile_indices))
-        for controlled_ids, profile_indices in block_scopes
+        (controlled_ids, profile_indices)
+        for _component_id, controlled_ids, profile_indices, _bounds in (
+            partition_proof.component_records
+        )
     )
     if len(scopes) < 2:
         return None
@@ -2883,72 +2931,41 @@ def derive_root_anchored_block_covariance(  # noqa: C901
             )
             claims = _failed_block_claims(failure.category)
         else:
-            scaled = matrix[np.ix_(rows, indices)] * np.asarray(scales)[np.newaxis, :]
-            try:
-                _left, singular_array, right_transpose = svd(
-                    scaled,
-                    full_matrices=False,
-                    compute_uv=True,
-                    overwrite_a=False,
-                    check_finite=True,
-                    lapack_driver=policy.svd_driver,
-                )
-                singular = tuple(
-                    _finite(value, name=f"block singular value[{index}]")
-                    for index, value in enumerate(singular_array)
-                )
-                spectrum_error = _singular_spectrum_error(singular, len(scope))
-                if spectrum_error is not None:
-                    failure = EvidenceFailure(
-                        "block_covariance",
-                        spectrum_error[0],
-                        spectrum_error[1],
-                        jacobian.identity,
-                    )
-                else:
-                    largest = singular[0]
-                    threshold = _finite(
-                        policy.rank_absolute_tolerance
-                        + policy.rank_relative_tolerance * largest,
-                        name="block rank threshold",
-                    )
-                    rank = sum(value > threshold for value in singular)
-                    if rank != len(scope):
-                        failure = EvidenceFailure(
-                            "block_covariance",
-                            "rank_deficient",
-                            f"Scaled block Jacobian rank {rank} is below {len(scope)}",
-                            jacobian.identity,
-                        )
-                    else:
-                        condition = _finite(
-                            largest / singular[-1],
-                            name="block Jacobian condition",
-                        )
-                        _unscaled, factor, covariance = _canonical_covariance_reduction(
-                            singular,
-                            right_transpose,
-                            scales,
-                            1.0,
-                        )
-                        if _has_positive_scale_zero_variance(covariance, 1.0):
-                            failure = EvidenceFailure(
-                                "block_covariance",
-                                "covariance_factor_underflow",
-                                "Positive-scale block covariance produced zero variance",
-                                jacobian.identity,
-                            )
-                            covariance = None
-                            factor = None
-            except Exception as error:  # noqa: BLE001 - third-party/arithmetic fence
+            analysis, analysis_failure = _analyze_scaled_jacobian(
+                matrix[np.ix_(rows, indices)],
+                scales,
+                policy=policy,
+                source_identity=jacobian.identity,
+                cancellation_probe=None,
+            )
+            if analysis_failure is not None:
                 failure = EvidenceFailure(
                     "block_covariance",
-                    "invalid_covariance_arithmetic",
-                    str(error),
+                    analysis_failure.category,
+                    analysis_failure.message,
                     jacobian.identity,
                 )
-                covariance = None
-                factor = None
+            elif analysis is not None:
+                rank = analysis.rank
+                condition = analysis.jacobian_condition
+                reduction, reduction_failure = _reduce_scaled_covariance(
+                    analysis,
+                    scales,
+                    accepted,
+                    degrees_of_freedom=(len(rows) - len(scope) - normalization_count),
+                    policy=policy,
+                    source_identity=jacobian.identity,
+                    cancellation_probe=None,
+                )
+                if reduction_failure is not None:
+                    failure = EvidenceFailure(
+                        "block_covariance",
+                        reduction_failure.category,
+                        reduction_failure.message,
+                        jacobian.identity,
+                    )
+                elif reduction is not None:
+                    _variance_scale, _unscaled, factor, covariance = reduction
             if failure is not None:
                 claims = _failed_block_claims(failure.category)
             else:
@@ -3064,9 +3081,11 @@ def derive_root_anchored_block_covariance(  # noqa: C901
         evidence.accepted_occurrence_identity,
         jacobian.identity,
         None if constraint_jacobian is None else constraint_jacobian.identity,
+        partition_proof.identity,
         evidence.policy_identity,
         tuple(blocks),
         evidence,
+        partition_proof,
     )
 
 
@@ -4278,6 +4297,183 @@ def _full_dimensional_feasible_interior_claim(
     return ClaimAssessment("FULL_DIMENSIONAL_FEASIBLE_INTERIOR", state, detail)
 
 
+@dataclass(frozen=True, slots=True)
+class _ScaledSvdAnalysis:
+    singular_values: tuple[float, ...]
+    right_transpose: tuple[tuple[float, ...], ...]
+    scaled_column_norms: tuple[float, ...]
+    threshold: float
+    rank: int
+    jacobian_condition: float | None
+    information_condition: float | None
+
+
+def _analyze_scaled_jacobian(
+    matrix: Array,
+    coordinate_scales: Sequence[float],
+    *,
+    policy: UncertaintyPolicy,
+    source_identity: str,
+    cancellation_probe: Callable[[], OperationTerminal | None] | None,
+) -> tuple[_ScaledSvdAnalysis | None, EvidenceFailure | None]:
+    """Run the one canonical checked scaled-SVD analysis kernel."""
+    dimension = len(coordinate_scales)
+    scaled = (
+        np.asarray(matrix, dtype=np.float64)
+        * np.asarray(
+            coordinate_scales,
+            dtype=np.float64,
+        )[np.newaxis, :]
+    )
+    _raise_if_terminated(cancellation_probe)
+    try:
+        _left, singular_array, right_transpose_array = svd(
+            scaled,
+            full_matrices=False,
+            compute_uv=True,
+            overwrite_a=False,
+            check_finite=True,
+            lapack_driver=policy.svd_driver,
+        )
+    except Exception as error:  # noqa: BLE001 - declared third-party kernel fence
+        return None, EvidenceFailure(
+            "covariance",
+            "svd_failure",
+            str(error),
+            source_identity,
+        )
+    _raise_if_terminated(cancellation_probe)
+    try:
+        singular_values = tuple(
+            _finite(value, name=f"singular value[{index}]")
+            for index, value in enumerate(singular_array)
+        )
+        spectrum_error = _singular_spectrum_error(singular_values, dimension)
+        if spectrum_error is not None:
+            return None, EvidenceFailure(
+                "covariance",
+                spectrum_error[0],
+                spectrum_error[1],
+                source_identity,
+            )
+        right_transpose = _canonical_matrix(
+            right_transpose_array,
+            rows=dimension,
+            columns=dimension,
+            name="right singular vectors",
+        )
+        largest = singular_values[0] if singular_values else 0.0
+        threshold = _finite(
+            policy.rank_absolute_tolerance + policy.rank_relative_tolerance * largest,
+            name="rank threshold",
+        )
+        rank = sum(value > threshold for value in singular_values)
+        column_norms = tuple(
+            _finite(
+                math.sqrt(
+                    _pairwise_sum(
+                        tuple(float(value) ** 2 for value in scaled[:, index])
+                    )
+                ),
+                name=f"scaled column norm[{index}]",
+            )
+            for index in range(dimension)
+        )
+        condition: float | None = None
+        information_condition: float | None = None
+        if rank == dimension:
+            condition = _finite(
+                largest / singular_values[-1],
+                name="Jacobian condition",
+            )
+            information_condition = condition * condition
+            if not math.isfinite(information_condition):
+                return None, EvidenceFailure(
+                    "covariance",
+                    "non_finite_information_condition",
+                    "Squared Jacobian condition is non-finite",
+                    source_identity,
+                )
+    except (ArithmeticError, TypeError, ValueError) as error:
+        return None, EvidenceFailure(
+            "covariance",
+            "invalid_covariance_arithmetic",
+            str(error),
+            source_identity,
+        )
+    return (
+        _ScaledSvdAnalysis(
+            singular_values,
+            right_transpose,
+            column_norms,
+            threshold,
+            rank,
+            condition,
+            information_condition,
+        ),
+        None,
+    )
+
+
+def _reduce_scaled_covariance(
+    analysis: _ScaledSvdAnalysis,
+    coordinate_scales: Sequence[float],
+    accepted: AcceptedFitResult,
+    *,
+    degrees_of_freedom: int,
+    policy: UncertaintyPolicy,
+    source_identity: str,
+    cancellation_probe: Callable[[], OperationTerminal | None] | None,
+) -> tuple[
+    tuple[
+        float,
+        tuple[tuple[float, ...], ...],
+        tuple[tuple[float, ...], ...],
+        tuple[tuple[float, ...], ...],
+    ]
+    | None,
+    EvidenceFailure | None,
+]:
+    """Run the one canonical residual-scale and covariance reduction kernel."""
+    if analysis.rank != len(coordinate_scales):
+        return None, EvidenceFailure(
+            "covariance",
+            "rank_deficient",
+            f"Scaled Jacobian rank {analysis.rank} is below {len(coordinate_scales)}",
+            source_identity,
+        )
+    residual_variance_scale, variance_failure = _residual_variance_scale(
+        accepted,
+        degrees_of_freedom=degrees_of_freedom,
+        policy=policy,
+    )
+    if variance_failure is not None or residual_variance_scale is None:
+        return None, variance_failure
+    _raise_if_terminated(cancellation_probe)
+    try:
+        unscaled, factor, covariance = _canonical_covariance_reduction(
+            analysis.singular_values,
+            analysis.right_transpose,
+            coordinate_scales,
+            residual_variance_scale,
+        )
+    except (ArithmeticError, TypeError, ValueError) as error:
+        return None, EvidenceFailure(
+            "covariance",
+            "invalid_covariance_arithmetic",
+            str(error),
+            source_identity,
+        )
+    if _has_positive_scale_zero_variance(covariance, residual_variance_scale):
+        return None, EvidenceFailure(
+            "covariance",
+            "covariance_factor_underflow",
+            "Positive-scale full-rank covariance factor produced zero variance",
+            source_identity,
+        )
+    return (residual_variance_scale, unscaled, factor, covariance), None
+
+
 def _canonical_covariance_claims(
     accepted: AcceptedFitResult,
     problem: OptimizationProblem,
@@ -4368,7 +4564,7 @@ def _canonical_covariance_claims(
     )
 
 
-def _covariance_from_jacobian(  # noqa: C901 - ordered scientific derivation gates
+def _covariance_from_jacobian(
     accepted: AcceptedFitResult,
     jacobian: ResidualJacobianEvidence,
     *,
@@ -4411,68 +4607,25 @@ def _covariance_from_jacobian(  # noqa: C901 - ordered scientific derivation gat
                 jacobian.identity,
             ),
         )
-    matrix = np.asarray(jacobian.matrix, dtype=np.float64)
-    scales = np.asarray(jacobian.coordinate_scales, dtype=np.float64)
-    scaled = matrix * scales[np.newaxis, :]
-    _raise_if_terminated(cancellation_probe)
-    try:
-        _left, singular_array, right_transpose = svd(
-            scaled,
-            full_matrices=False,
-            compute_uv=True,
-            overwrite_a=False,
-            check_finite=True,
-            lapack_driver=policy.svd_driver,
-        )
-    except Exception as error:  # noqa: BLE001 - declared third-party kernel fence
-        return (
-            None,
-            None,
-            EvidenceFailure(
-                "covariance",
-                "svd_failure",
-                str(error),
-                jacobian.identity,
-            ),
-        )
-    _raise_if_terminated(cancellation_probe)
-    singular_values = tuple(
-        _finite(value, name=f"singular value[{index}]")
-        for index, value in enumerate(singular_array)
+    analysis, analysis_failure = _analyze_scaled_jacobian(
+        np.asarray(jacobian.matrix, dtype=np.float64),
+        jacobian.coordinate_scales,
+        policy=policy,
+        source_identity=jacobian.identity,
+        cancellation_probe=cancellation_probe,
     )
-    spectrum_error = _singular_spectrum_error(singular_values, coordinate_count)
-    if spectrum_error is not None:
-        return (
-            None,
-            None,
-            EvidenceFailure(
-                "covariance",
-                spectrum_error[0],
-                spectrum_error[1],
-                jacobian.identity,
-            ),
-        )
+    if analysis_failure is not None or analysis is None:
+        return None, None, analysis_failure
+    singular_values = analysis.singular_values
     largest = singular_values[0] if singular_values else 0.0
-    threshold = (
-        policy.rank_absolute_tolerance + policy.rank_relative_tolerance * largest
-    )
-    threshold = _finite(threshold, name="rank threshold")
-    rank = sum(value > threshold for value in singular_values)
+    threshold = analysis.threshold
+    rank = analysis.rank
     normalized = tuple(
         0.0 if largest == 0.0 else value / largest for value in singular_values
     )
-    column_norms = tuple(
-        _finite(
-            math.sqrt(
-                _pairwise_sum(tuple(float(value) ** 2 for value in scaled[:, index]))
-            ),
-            name=f"scaled column norm[{index}]",
-        )
-        for index in range(coordinate_count)
-    )
     # Individual vectors inside a repeated/clustered singular subspace are not
     # authoritative.  Only projectors are retained below.
-    right = np.asarray(right_transpose.T, dtype=np.float64)
+    right = np.asarray(analysis.right_transpose, dtype=np.float64).T
     weak_threshold = _finite(
         max(threshold, policy.weak_relative_tolerance * largest),
         name="weak-subspace threshold",
@@ -4512,7 +4665,7 @@ def _covariance_from_jacobian(  # noqa: C901 - ordered scientific derivation gat
         jacobian.controlled_ids,
         singular_values,
         normalized,
-        column_norms,
+        analysis.scaled_column_norms,
         threshold,
         weak_threshold,
         rank,
@@ -4526,57 +4679,23 @@ def _covariance_from_jacobian(  # noqa: C901 - ordered scientific derivation gat
     terminal = _cancellation_terminal(cancellation_probe)
     if terminal is not None:
         raise DerivationTermination(terminal, rank_diagnostic)
-    if rank != coordinate_count:
-        return (
-            None,
-            rank_diagnostic,
-            EvidenceFailure(
-                "covariance",
-                "rank_deficient",
-                f"Scaled Jacobian rank {rank} is below {coordinate_count}",
-                jacobian.identity,
-            ),
-        )
-    smallest = singular_values[-1]
-    jacobian_condition = _finite(largest / smallest, name="Jacobian condition")
-    information_condition = jacobian_condition * jacobian_condition
-    if not math.isfinite(information_condition):
-        return (
-            None,
-            rank_diagnostic,
-            EvidenceFailure(
-                "covariance",
-                "non_finite_information_condition",
-                "Squared Jacobian condition is non-finite",
-                jacobian.identity,
-            ),
-        )
-    residual_variance_scale, variance_failure = _residual_variance_scale(
+    reduction, reduction_failure = _reduce_scaled_covariance(
+        analysis,
+        jacobian.coordinate_scales,
         accepted,
         degrees_of_freedom=degrees_of_freedom,
         policy=policy,
+        source_identity=jacobian.identity,
+        cancellation_probe=cancellation_probe,
     )
-    if variance_failure is not None or residual_variance_scale is None:
-        return None, rank_diagnostic, variance_failure
-    _raise_if_terminated(cancellation_probe)
+    if reduction_failure is not None or reduction is None:
+        return None, rank_diagnostic, reduction_failure
+    residual_variance_scale, unscaled_covariance, factor, covariance = reduction
+    if analysis.jacobian_condition is None or analysis.information_condition is None:
+        raise ValueError("Full-rank covariance lacks condition diagnostics")
+    jacobian_condition = analysis.jacobian_condition
+    information_condition = analysis.information_condition
     chi_square = _finite(accepted.chi_square, name="accepted chi-square")
-    unscaled_covariance, factor, covariance = _canonical_covariance_reduction(
-        singular_values,
-        right_transpose,
-        jacobian.coordinate_scales,
-        residual_variance_scale,
-    )
-    if _has_positive_scale_zero_variance(covariance, residual_variance_scale):
-        return (
-            None,
-            rank_diagnostic,
-            EvidenceFailure(
-                "covariance",
-                "covariance_factor_underflow",
-                "Positive-scale full-rank covariance factor produced zero variance",
-                jacobian.identity,
-            ),
-        )
     claims = _canonical_covariance_claims(
         accepted,
         problem,
