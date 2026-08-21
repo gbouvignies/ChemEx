@@ -6,7 +6,7 @@ import json
 import math
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from scipy import stats
 
@@ -34,7 +34,10 @@ from chemex.parameters.parameterization import (
     SealedParameterModel,
 )
 from chemex.parameters.values import AnalysisValuesSnapshot
-from chemex.printers.parameters import parameter_uncertainty_view
+from chemex.printers.parameters import (
+    parameter_uncertainty_view,
+    uncertainty_unavailable_reason,
+)
 
 
 class ComponentDiagnosticRecord(Protocol):
@@ -371,7 +374,20 @@ def write_block_uncertainty(
         return
     covariance_path = path / "Covariance"
     covariance_path.mkdir(exist_ok=True)
-    write_json(covariance_path / "blocks.json", evidence.to_record())
+    record = evidence.to_record()
+    blocks = record["blocks"]
+    if not isinstance(blocks, list):
+        raise TypeError("Block covariance record has an invalid payload")
+    for block, block_record in zip(evidence.blocks, blocks, strict=True):
+        if not isinstance(block_record, dict):
+            raise TypeError("Block covariance record has an invalid block")
+        typed_block_record = cast("dict[str, object]", block_record)
+        typed_block_record["unavailable_reason"] = (
+            ""
+            if block.unavailable_kind is None
+            else uncertainty_unavailable_reason(block.unavailable_kind)
+        )
+    write_json(covariance_path / "blocks.json", record)
 
 
 def resampling_evidence_record(evidence: ResamplingEvidence) -> dict[str, object]:

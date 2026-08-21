@@ -28,6 +28,7 @@ from chemex.optimize.direct_trf import (
     DirectTrfInterrupted,
     DirectTrfInvocation,
     DirectTrfTerminal,
+    FinalResidualJacobianEvidence,
     GridSeedProblemDerivation,
     GridSelectionProvenance,
     LiveFitCommitAuthority,
@@ -539,6 +540,9 @@ class GridCandidateRecord(Protocol):
     @property
     def identity(self) -> str: ...
 
+    @property
+    def final_residual_jacobian(self) -> FinalResidualJacobianEvidence | None: ...
+
     def validate_for_grid_selection(
         self,
         problem: OptimizationProblem,
@@ -615,6 +619,13 @@ class GridSeedOutcome:
                 ),
             ),
         )
+
+    @property
+    def final_residual_jacobian(self) -> FinalResidualJacobianEvidence | None:
+        direct = self.direct_outcome
+        if direct is None or direct.execution.backend is None:
+            return None
+        return direct.execution.backend.final_residual_jacobian
 
     def validate_for_grid_selection(
         self,
@@ -869,6 +880,7 @@ class AcceptedGridDirectTrfResult(AcceptedFitResult):
             selected_seed,
             selected_outcome,
             fresh_candidate,
+            final_residual_jacobian=accepted.final_residual_jacobian,
             occurrence_witness=accepted.occurrence_witness,
         )
 
@@ -1441,6 +1453,7 @@ def _finalize_grid_candidates(
         chi_square=promoted.chi_square,
         evaluation_result=promoted.evaluation_result,
         authority_context_identity=provenance.identity,
+        final_residual_jacobian=selected.final_residual_jacobian,
     )
     accepted = AcceptedGridDirectTrfResult.from_accepted(
         root_accepted,

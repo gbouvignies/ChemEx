@@ -26,11 +26,13 @@ from chemex.optimize.direct_trf import (
     DirectTrfInterrupted,
     DirectTrfInvocation,
     DirectTrfTerminal,
+    FinalResidualJacobianEvidence,
     LiveFitCommitAuthority,
     MaterializationTerminal,
     MaterializedDirectTrfCandidate,
     ObjectiveScalarizationError,
     OptimizationProblem,
+    ResidualJacobianSource,
     TerminalFailure,
     accept_materialized_fit,
     canonical_chi_square,
@@ -630,6 +632,12 @@ class FitComponentOutcome:
         repr=False,
         compare=False,
     )
+    final_residual_jacobian: FinalResidualJacobianEvidence | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        kw_only=True,
+    )
     failure: TerminalFailure | None = None
     identity: str = field(init=False)
 
@@ -638,6 +646,16 @@ class FitComponentOutcome:
             self.candidate is not None
         ):
             raise ValueError("Only a successful component may expose a candidate")
+        if self.final_residual_jacobian is not None and (
+            self.candidate is None
+            or self.final_residual_jacobian.controlled_ids != self.controlled_ids
+            or self.final_residual_jacobian.final_vector != self.candidate.vector
+            or self.final_residual_jacobian.final_residuals
+            != tuple(
+                float(value) for value in self.candidate.evaluation_result.residuals
+            )
+        ):
+            raise ValueError("Component final Jacobian differs from its candidate")
         if self.disposition is ComponentDisposition.NOT_STARTED and (
             self.execution_identity is not None or self.failure is not None
         ):
@@ -653,6 +671,9 @@ class FitComponentOutcome:
                     self.disposition.value,
                     self.execution_identity,
                     None if self.candidate is None else self.candidate.identity,
+                    None
+                    if self.final_residual_jacobian is None
+                    else self.final_residual_jacobian.identity,
                     None if self.failure is None else self.failure.identity,
                 ),
             ),
@@ -852,6 +873,11 @@ def execute_direct_trf_components(
                     ComponentDisposition.SUCCEEDED,
                     result.execution.identity,
                     result.candidate,
+                    final_residual_jacobian=(
+                        None
+                        if result.execution.backend is None
+                        else result.execution.backend.final_residual_jacobian
+                    ),
                 )
             )
         elif result.terminal is DirectTrfCandidateTerminal.CANCELLED:
@@ -1175,6 +1201,80 @@ def _aggregate_vector(
     return vector
 
 
+def _compose_partitioned_final_jacobian(
+    problem: OptimizationProblem,
+    decomposition: FitDecomposition,
+    engine: EvaluationEngine,
+    outcomes: tuple[FitComponentOutcome, ...],
+    aggregate: EvaluationResult,
+) -> FinalResidualJacobianEvidence | None:
+    """Compose exact independent component Jacobians in canonical root order."""
+    proof = decomposition.partition_proof
+    if (
+        not decomposition.components
+        or proof.controlled_ids != problem.controlled_ids
+        or proof.root_plan_identity != engine.plan.identity
+        or len(outcomes) != len(decomposition.components)
+    ):
+        return None
+    row_ranges: list[tuple[int, int]] = []
+    offset = 0
+    for profile in engine.plan.profiles:
+        count = len(profile.retained_observation_indices)
+        row_ranges.append((offset, offset + count))
+        offset += count
+    if offset != aggregate.residuals.size:
+        return None
+    root_columns = {
+        param_id: index for index, param_id in enumerate(problem.controlled_ids)
+    }
+    matrix = np.zeros((offset, len(problem.controlled_ids)), dtype=np.float64)
+    source_identities: list[str] = [proof.identity]
+    for component, outcome in zip(
+        decomposition.components,
+        outcomes,
+        strict=True,
+    ):
+        retained = outcome.final_residual_jacobian
+        candidate = outcome.candidate
+        if (
+            retained is None
+            or candidate is None
+            or retained.controlled_ids != component.controlled_ids
+            or retained.final_vector != candidate.vector
+            or retained.final_residuals
+            != tuple(float(value) for value in candidate.evaluation_result.residuals)
+        ):
+            return None
+        child_offset = 0
+        for root_profile_index in component.root_profile_indices:
+            root_start, root_stop = row_ranges[root_profile_index]
+            count = root_stop - root_start
+            child_stop = child_offset + count
+            if child_stop > retained.shape[0]:
+                return None
+            for child_column, param_id in enumerate(component.controlled_ids):
+                matrix[root_start:root_stop, root_columns[param_id]] = np.asarray(
+                    retained.matrix,
+                    dtype=np.float64,
+                )[child_offset:child_stop, child_column]
+            child_offset = child_stop
+        if child_offset != retained.shape[0]:
+            return None
+        source_identities.append(retained.identity)
+    return FinalResidualJacobianEvidence(
+        ResidualJacobianSource.FIT_PARTITION_COMPOSITION,
+        problem.controlled_ids,
+        tuple(
+            aggregate.resolved_values[param_id] for param_id in problem.controlled_ids
+        ),
+        tuple(float(value) for value in aggregate.residuals),
+        matrix.shape,
+        tuple(tuple(float(value) for value in row) for row in matrix),
+        tuple(source_identities),
+    )
+
+
 def _accept_grouped_aggregate_unchecked(
     problem: OptimizationProblem,
     decomposition: FitDecomposition,
@@ -1210,6 +1310,13 @@ def _accept_grouped_aggregate_unchecked(
             )
     if token.is_cancelled:
         return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.CANCELLED, outcomes)
+    final_residual_jacobian = _compose_partitioned_final_jacobian(
+        problem,
+        decomposition,
+        engine,
+        outcomes,
+        aggregate,
+    )
     if token.is_cancelled:
         return GroupedDirectTrfOutcome(GroupedDirectTrfTerminal.CANCELLED, outcomes)
     accepted, authority = accept_materialized_fit(
@@ -1220,6 +1327,7 @@ def _accept_grouped_aggregate_unchecked(
         vector=materialized.vector,
         chi_square=materialized.chi_square,
         evaluation_result=aggregate,
+        final_residual_jacobian=final_residual_jacobian,
     )
     return GroupedDirectTrfOutcome(
         GroupedDirectTrfTerminal.ACCEPTED,

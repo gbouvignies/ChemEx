@@ -50,6 +50,7 @@ from chemex.optimize.direct_trf import (
     MaterializationTerminal,
     ObjectiveScalarizationError,
     OptimizationProblem,
+    ResidualJacobianSource,
     RootMaterializationFailure,
     canonical_chi_square,
     commit_accepted_fit,
@@ -403,7 +404,96 @@ def _backend_result(
         cost=0.5 * float(np.dot(residuals, residuals)),
         optimality=optimality,
         active_mask=np.zeros_like(candidate, dtype=np.int64),
+        jac=np.zeros((residuals.size, candidate.size), dtype=np.float64),
     )
+
+
+def test_accepted_fit_retains_exact_final_backend_residual_jacobian() -> None:
+    (
+        _session,
+        _experiments,
+        parameterization,
+        engine,
+        problem,
+        invocation,
+    ) = _qualification_fit()
+
+    outcome = execute_direct_trf(
+        problem,
+        invocation,
+        parameterization,
+        engine,
+    )
+
+    accepted = outcome.accepted_result
+    assert accepted is not None
+    retained = accepted.final_residual_jacobian
+    assert retained is not None
+    assert retained.source is ResidualJacobianSource.SCIPY_FINAL_2_POINT
+    assert retained.controlled_ids == problem.controlled_ids
+    assert retained.final_vector == accepted.vector
+    assert retained.final_residuals == tuple(accepted.evaluation_result.residuals)
+    assert retained.shape == (
+        accepted.evaluation_result.residuals.size,
+        len(problem.controlled_ids),
+    )
+    assert retained.derivative_method == "numerical 2-point"
+    assert retained.diff_step_policy == "scipy-default-relative-step"
+    assert retained.loss_policy == "linear"
+    assert retained.external_coordinate_policy == "physical-external-unscaled"
+    assert retained.trust_region_scale_policy == "trust-region-only"
+    assert len(retained.matrix_binary64_sha256) == 64
+    assert np.isfinite(np.asarray(retained.matrix)).all()
+    assert outcome.execution.backend is not None
+    assert outcome.execution.backend.final_residual_jacobian is retained
+
+
+@pytest.mark.parametrize("malformation", ("wrong-shape", "non-finite"))
+def test_malformed_final_backend_jacobian_fails_closed(malformation: str) -> None:
+    (
+        _session,
+        _experiments,
+        parameterization,
+        engine,
+        problem,
+        invocation,
+    ) = _qualification_fit()
+
+    def malformed_backend(
+        fun: Callable[[Array], Array],
+        x0: Array,
+        **_settings: object,
+    ) -> object:
+        candidate = np.asarray(x0, dtype=np.float64) * 0.9
+        residuals = fun(candidate)
+        result = _backend_result(
+            candidate,
+            residuals,
+            status=1,
+            success=True,
+            message="converged",
+            optimality=0.0,
+        )
+        result.jac = (
+            np.zeros((residuals.size, candidate.size + 1), dtype=np.float64)
+            if malformation == "wrong-shape"
+            else np.full((residuals.size, candidate.size), np.nan)
+        )
+        return result
+
+    with patch("chemex.optimize.direct_trf.least_squares", malformed_backend):
+        outcome = execute_direct_trf(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert outcome.terminal is DirectTrfOutcomeTerminal.SOLVER_UNSUCCESSFUL
+    assert outcome.execution.terminal is DirectTrfTerminal.IMPLEMENTATION_FAILURE
+    assert outcome.execution.failure is not None
+    assert outcome.execution.failure.category == "malformed_backend_result"
+    assert outcome.accepted_result is None
 
 
 def _one_request_converged_backend(

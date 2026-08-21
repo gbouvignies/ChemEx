@@ -1,9 +1,9 @@
 """ChemEx-owned accepted-point uncertainty evidence qualification (#598).
 
-This module is deliberately separate from backend execution evidence.  It
-linearizes the complete native residual map again at one accepted external
-coordinate vector, constructs full-rank scaled-SVD covariance, and derives
-typed marginal, correlation, and constrained-propagation artifacts.
+This module is deliberately separate from backend execution evidence. It binds
+an exact accepted-point residual Jacobian (retained or independently derived),
+then freshly constructs rank, scaled-SVD covariance, marginal, correlation, and
+constrained-propagation artifacts.
 
 Production deterministic fitting consumes these artifacts after the accepted
 result has committed. Central estimates remain separate from this report-only
@@ -37,7 +37,9 @@ from chemex.evaluation.native import (
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     DirectTrfConstructionError,
+    FinalResidualJacobianEvidence,
     OptimizationProblem,
+    ResidualJacobianSource,
     accepted_occurrence_is_authoritative,
 )
 from chemex.optimize.grouped_direct_trf import FitPartitionProof
@@ -55,11 +57,11 @@ from chemex.parameters.parameterization import (
 )
 from chemex.typing import Array
 
-_SCHEMA_VERSION = 1
-_RESIDUAL_LINEARIZATION_VERSION = "external-real-finite-difference-v1"
+_SCHEMA_VERSION = 2
+_RESIDUAL_LINEARIZATION_VERSION = "accepted-residual-jacobian-v2"
 _CONSTRAINT_LINEARIZATION_VERSION = "constraint-forward-chain-v1"
-_COVARIANCE_VERSION = "full-rank-direct-scaled-svd-factor-gram-v3"
-_FACTOR_VERSION = "direct-scaled-svd-factor-gram-v3"
+_COVARIANCE_VERSION = "column-equilibrated-full-rank-svd-factor-gram-v4"
+_FACTOR_VERSION = "column-equilibrated-svd-factor-gram-v4"
 _REDUCTION_VERSION = "fixed-pairwise-binary64-v1"
 _MARGINAL_VERSION = "covariance-diagonal-square-root-v1"
 _CORRELATION_VERSION = "ordered-double-division-v1"
@@ -75,6 +77,20 @@ class UncertaintyConstructionError(ValueError):
 
 class MissingFunctionLinearizationCapability(UncertaintyConstructionError):
     """A constrained output requires an undeclared scientific-function partial."""
+
+
+class UncertaintyUnavailableKind(StrEnum):
+    """Closed product classifications for unavailable uncertainty claims."""
+
+    RANK_DEFICIENT = "rank_deficient"
+    INSUFFICIENT_INFORMATION = "insufficient_information"
+    BOUNDARY_LIMITED = "boundary_limited"
+    NORMALIZATION_INVALID = "normalization_invalid"
+    JACOBIAN_UNAVAILABLE = "jacobian_unavailable"
+    COVARIANCE_NUMERICAL_FAILURE = "covariance_numerical_failure"
+    UNSUPPORTED_CONSTRAINED_DERIVATIVE = "unsupported_constrained_derivative"
+    DERIVATION_STOPPED = "derivation_stopped"
+    CONSTRAINED_PROPAGATION_UNAVAILABLE = "constrained_propagation_unavailable"
 
 
 class FunctionPartialFailure(UncertaintyConstructionError):
@@ -201,6 +217,19 @@ def _matrix_tokens(
     matrix: Sequence[Sequence[float]],
 ) -> tuple[tuple[str, ...], ...]:
     return tuple(_vector_tokens(row) for row in matrix)
+
+
+def _binary64_matrix_digest(
+    matrix: Sequence[Sequence[float]],
+    shape: tuple[int, int],
+) -> str:
+    """Hash canonical little-endian binary64 rows without token expansion."""
+    digest = hashlib.sha256()
+    digest.update(f"{shape[0]}x{shape[1]}:".encode("ascii"))
+    dtype = np.dtype("<f8")
+    for row in matrix:
+        digest.update(np.asarray(row, dtype=dtype).tobytes(order="C"))
+    return digest.hexdigest()
 
 
 def _canonical_matrix(
@@ -559,6 +588,10 @@ class UncertaintyPolicy:
     conditioning_limit: float
     correlation_roundoff_multiplier: float
     affine_feasibility_policy: str
+    residual_jacobian_strategy: Literal[
+        "high-quality-reference",
+        "retained-backend-or-accepted-2-point",
+    ] = "high-quality-reference"
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -637,6 +670,13 @@ class UncertaintyPolicy:
             raise UncertaintyConstructionError(
                 "Affine-feasibility semantics must be explicit"
             )
+        if self.residual_jacobian_strategy not in {
+            "high-quality-reference",
+            "retained-backend-or-accepted-2-point",
+        }:
+            raise UncertaintyConstructionError(
+                "Residual-Jacobian strategy is not supported"
+            )
         object.__setattr__(self, "coordinate_scales", scales)
         object.__setattr__(self, "coordinate_units", units)
         object.__setattr__(self, "relative_step_tolerance", relative)
@@ -680,6 +720,7 @@ class UncertaintyPolicy:
                     _float_token(conditioning),
                     _float_token(correlation_roundoff),
                     self.affine_feasibility_policy,
+                    self.residual_jacobian_strategy,
                     _float_token(_BOUNDARY_THRESHOLD),
                     _RESIDUAL_LINEARIZATION_VERSION,
                     _CONSTRAINT_LINEARIZATION_VERSION,
@@ -901,10 +942,24 @@ class ResidualJacobianEvidence:
     controlled_ids: tuple[str, ...]
     accepted_vector: tuple[float, ...]
     coordinate_scales: tuple[float, ...]
-    matrix: tuple[tuple[float, ...], ...]
+    matrix: tuple[tuple[float, ...], ...] = field(
+        repr=False,
+        metadata={"record": False},
+    )
     columns: tuple[LinearizationColumn, ...]
     trajectory_fingerprint: str
+    matrix_shape: tuple[int, int] = field(init=False)
+    matrix_binary64_sha256: str = field(init=False)
+    method: str = "high-quality-fresh"
+    evaluation_count: int = 0
     complete_reliable: bool = True
+    source_final_jacobian: FinalResidualJacobianEvidence | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"record": False},
+        kw_only=True,
+    )
     accepted_anchor: AcceptedFitResult = field(
         repr=False,
         compare=False,
@@ -925,7 +980,7 @@ class ResidualJacobianEvidence:
     )
     identity: str = field(init=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:  # noqa: C901 - source-specific integrity chain
         _validate_accepted_anchor(
             self.accepted_anchor,
             self.accepted_result_identity,
@@ -939,12 +994,12 @@ class ResidualJacobianEvidence:
             columns=coordinate_count,
             name="residual Jacobian",
         )
-        if (
+        common_invalid = (
             residual_count < 1
             or coordinate_count < 1
-            or len(self.columns) != coordinate_count
             or len(self.coordinate_scales) != coordinate_count
-        ):
+        )
+        if common_invalid:
             raise ValueError("Residual Jacobian has inconsistent scope")
         if (
             self.accepted_vector != self.accepted_anchor.vector
@@ -970,68 +1025,131 @@ class ResidualJacobianEvidence:
             or self.source_policy.calibration_identity != self.calibration_identity
             or self.source_policy.numerical_compatibility_requirement
             != self.numerical_compatibility_requirement
-            or tuple(item.param_id for item in self.columns) != self.controlled_ids
             or any(value <= 0.0 for value in self.coordinate_scales)
-            or any(len(item.fine_estimate) != residual_count for item in self.columns)
-            or any(
-                len(item.companion_estimate) != residual_count for item in self.columns
-            )
         ):
             raise ValueError("Residual Jacobian provenance is internally inconsistent")
-        derived_matrix = tuple(
-            tuple(column.fine_estimate[row] for column in self.columns)
-            for row in range(residual_count)
-        )
-        expected_trajectory = _identity(
-            "residual-linearization-trajectory",
-            tuple(
-                (item.param_id, item.trajectory_fingerprint) for item in self.columns
-            ),
-        )
-        if (
-            matrix != derived_matrix
-            or not self.complete_reliable
-            or self.trajectory_fingerprint != expected_trajectory
-        ):
-            raise ValueError("Residual Jacobian differs from its accepted columns")
-        evaluator = self.source_engine.new_evaluator()
-        base = _evaluate_vector(
-            self.accepted_anchor.vector,
-            problem=self.source_problem,
-            parameterization=self.source_parameterization,
-            evaluator=evaluator,
-        )
-        if (
-            isinstance(base, EvaluationFailure)
-            or base.identity != self.accepted_evaluation_identity
-        ):
-            raise ValueError("Residual Jacobian baseline cannot be replayed")
-        base_residuals = tuple(float(value) for value in base.residuals)
-        for column, (param_id, scale, declared) in enumerate(
-            zip(
-                self.controlled_ids,
-                self.coordinate_scales,
-                self.columns,
-                strict=True,
+        if self.method == "high-quality-fresh":
+            derived_matrix = tuple(
+                tuple(column.fine_estimate[row] for column in self.columns)
+                for row in range(residual_count)
             )
-        ):
-            replayed, _trajectory, failure = _linearize_residual_column(
-                self.accepted_anchor,
+            expected_trajectory = _identity(
+                "residual-linearization-trajectory",
+                tuple(
+                    (item.param_id, item.trajectory_fingerprint)
+                    for item in self.columns
+                ),
+            )
+            if (
+                len(self.columns) != coordinate_count
+                or tuple(item.param_id for item in self.columns) != self.controlled_ids
+                or any(
+                    len(item.fine_estimate) != residual_count
+                    or len(item.companion_estimate) != residual_count
+                    for item in self.columns
+                )
+                or matrix != derived_matrix
+                or self.source_final_jacobian is not None
+                or self.evaluation_count < 1
+                or self.trajectory_fingerprint != expected_trajectory
+            ):
+                raise ValueError("Residual Jacobian differs from its accepted columns")
+            evaluator = self.source_engine.new_evaluator()
+            base = _evaluate_vector(
+                self.accepted_anchor.vector,
                 problem=self.source_problem,
                 parameterization=self.source_parameterization,
                 evaluator=evaluator,
-                policy=self.source_policy,
-                base_residuals=base_residuals,
-                column=column,
-                param_id=param_id,
-                scale=scale,
-                cancellation_probe=None,
             )
-            if failure is not None or replayed != declared:
-                raise ValueError(
-                    "Residual Jacobian stencil evidence cannot be replayed"
+            if (
+                isinstance(base, EvaluationFailure)
+                or base.identity != self.accepted_evaluation_identity
+            ):
+                raise ValueError("Residual Jacobian baseline cannot be replayed")
+            base_residuals = tuple(float(value) for value in base.residuals)
+            for column, (param_id, scale, declared) in enumerate(
+                zip(
+                    self.controlled_ids,
+                    self.coordinate_scales,
+                    self.columns,
+                    strict=True,
                 )
+            ):
+                replayed, _trajectory, failure = _linearize_residual_column(
+                    self.accepted_anchor,
+                    problem=self.source_problem,
+                    parameterization=self.source_parameterization,
+                    evaluator=evaluator,
+                    policy=self.source_policy,
+                    base_residuals=base_residuals,
+                    column=column,
+                    param_id=param_id,
+                    scale=scale,
+                    cancellation_probe=None,
+                )
+                if failure is not None or replayed != declared:
+                    raise ValueError(
+                        "Residual Jacobian stencil evidence cannot be replayed"
+                    )
+        elif self.method == "retained-scipy-final-2-point":
+            retained = self.source_final_jacobian
+            if (
+                retained is None
+                or retained is not self.accepted_anchor.final_residual_jacobian
+                or retained.source
+                not in {
+                    ResidualJacobianSource.SCIPY_FINAL_2_POINT,
+                    ResidualJacobianSource.FIT_PARTITION_COMPOSITION,
+                }
+                or retained.controlled_ids != self.controlled_ids
+                or retained.final_vector != self.accepted_vector
+                or retained.final_residuals
+                != tuple(
+                    float(value)
+                    for value in self.accepted_anchor.evaluation_result.residuals
+                )
+                or retained.matrix != matrix
+                or self.columns
+                or self.evaluation_count != 0
+                or self.trajectory_fingerprint != retained.identity
+            ):
+                raise ValueError("Retained residual Jacobian lineage is invalid")
+        elif self.method == "accepted-point-2-point":
+            derived_matrix = tuple(
+                tuple(column.fine_estimate[row] for column in self.columns)
+                for row in range(residual_count)
+            )
+            expected_trajectory = _identity(
+                "accepted-point-2-point-trajectory",
+                tuple(
+                    (item.param_id, item.trajectory_fingerprint)
+                    for item in self.columns
+                ),
+            )
+            if (
+                len(self.columns) != coordinate_count
+                or tuple(item.param_id for item in self.columns) != self.controlled_ids
+                or any(
+                    len(item.fine_estimate) != residual_count
+                    or item.fine_estimate != item.companion_estimate
+                    or len(item.represented_displacements) != 1
+                    for item in self.columns
+                )
+                or matrix != derived_matrix
+                or self.source_final_jacobian is not None
+                or self.evaluation_count != coordinate_count
+                or self.trajectory_fingerprint != expected_trajectory
+            ):
+                raise ValueError("Accepted-point 2-point evidence is inconsistent")
+        else:
+            raise ValueError("Residual Jacobian method is not supported")
+        if not self.complete_reliable:
+            raise ValueError("Residual Jacobian is not complete and reliable")
         object.__setattr__(self, "matrix", matrix)
+        matrix_shape = (residual_count, coordinate_count)
+        matrix_digest = _binary64_matrix_digest(matrix, matrix_shape)
+        object.__setattr__(self, "matrix_shape", matrix_shape)
+        object.__setattr__(self, "matrix_binary64_sha256", matrix_digest)
         object.__setattr__(
             self,
             "identity",
@@ -1055,9 +1173,14 @@ class ResidualJacobianEvidence:
                     self.controlled_ids,
                     _vector_tokens(self.accepted_vector),
                     _vector_tokens(self.coordinate_scales),
-                    _matrix_tokens(matrix),
+                    matrix_digest,
                     tuple(column.identity for column in self.columns),
                     self.trajectory_fingerprint,
+                    self.method,
+                    self.evaluation_count,
+                    None
+                    if self.source_final_jacobian is None
+                    else self.source_final_jacobian.identity,
                     self.complete_reliable,
                     _RESIDUAL_LINEARIZATION_VERSION,
                 ),
@@ -1085,7 +1208,12 @@ class SingularSubspaceEvidence:
         "clustered_weak",
         "clustered_null",
     ]
-    projector: tuple[tuple[float, ...], ...]
+    projector: tuple[tuple[float, ...], ...] = field(
+        repr=False,
+        metadata={"record": False},
+    )
+    projector_shape: tuple[int, int] = field(init=False)
+    projector_binary64_sha256: str = field(init=False)
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -1104,6 +1232,10 @@ class SingularSubspaceEvidence:
         ):
             raise ValueError("Singular subspace evidence has inconsistent membership")
         object.__setattr__(self, "projector", projector)
+        projector_shape = (dimension, dimension)
+        projector_digest = _binary64_matrix_digest(projector, projector_shape)
+        object.__setattr__(self, "projector_shape", projector_shape)
+        object.__setattr__(self, "projector_binary64_sha256", projector_digest)
         object.__setattr__(
             self,
             "identity",
@@ -1113,7 +1245,7 @@ class SingularSubspaceEvidence:
                     self.indices,
                     _vector_tokens(self.singular_values),
                     self.classification,
-                    _matrix_tokens(projector),
+                    projector_digest,
                 ),
             ),
         )
@@ -1123,10 +1255,9 @@ def _recomputed_scaled_svd(
     source: ResidualJacobianEvidence,
     policy: UncertaintyPolicy,
 ) -> tuple[tuple[float, ...], tuple[tuple[float, ...], ...]]:
-    scaled = (
-        np.asarray(source.matrix, dtype=np.float64)
-        * np.asarray(source.coordinate_scales, dtype=np.float64)[np.newaxis, :]
-    )
+    matrix = np.asarray(source.matrix, dtype=np.float64)
+    column_norms = np.linalg.norm(matrix, axis=0)
+    scaled = matrix * (1.0 / column_norms)[np.newaxis, :]
     _left, singular_values, right_transpose = svd(
         scaled,
         full_matrices=False,
@@ -1160,13 +1291,27 @@ class RankDiagnostic:
     singular_values: tuple[float, ...]
     normalized_singular_values: tuple[float, ...]
     scaled_column_norms: tuple[float, ...]
+    equilibration_scales: tuple[float, ...]
     threshold: float
     weak_threshold: float
     rank: int
-    identifiable_projector: tuple[tuple[float, ...], ...]
-    null_projector: tuple[tuple[float, ...], ...]
-    weak_projector: tuple[tuple[float, ...], ...]
+    identifiable_projector: tuple[tuple[float, ...], ...] = field(
+        repr=False,
+        metadata={"record": False},
+    )
+    null_projector: tuple[tuple[float, ...], ...] = field(
+        repr=False,
+        metadata={"record": False},
+    )
+    weak_projector: tuple[tuple[float, ...], ...] = field(
+        repr=False,
+        metadata={"record": False},
+    )
     subspaces: tuple[SingularSubspaceEvidence, ...]
+    projector_shape: tuple[int, int] = field(init=False)
+    identifiable_projector_binary64_sha256: str = field(init=False)
+    null_projector_binary64_sha256: str = field(init=False)
+    weak_projector_binary64_sha256: str = field(init=False)
     source_jacobian: ResidualJacobianEvidence = field(
         repr=False,
         compare=False,
@@ -1213,6 +1358,7 @@ class RankDiagnostic:
             or len(self.singular_values) != dimension
             or len(self.normalized_singular_values) != dimension
             or len(self.scaled_column_norms) != dimension
+            or len(self.equilibration_scales) != dimension
             or not 0 <= self.rank <= dimension
             or any(
                 value < 0.0 or not math.isfinite(value)
@@ -1222,9 +1368,9 @@ class RankDiagnostic:
             or self.rank
             != sum(value > self.threshold for value in self.singular_values)
             or self.threshold
-            != self.source_policy.rank_absolute_tolerance
-            + self.source_policy.rank_relative_tolerance
-            * (self.singular_values[0] if self.singular_values else 0.0)
+            != (self.singular_values[0] if self.singular_values else 0.0)
+            * max(source.residual_count, dimension)
+            * _EPSILON
         ):
             raise ValueError("SVD/rank evidence has inconsistent lineage or spectrum")
         largest = self.singular_values[0] if self.singular_values else 0.0
@@ -1238,10 +1384,10 @@ class RankDiagnostic:
         expected_normalized = tuple(
             0.0 if largest == 0.0 else value / largest for value in self.singular_values
         )
-        scaled = (
-            np.asarray(source.matrix)
-            * np.asarray(source.coordinate_scales)[np.newaxis, :]
-        )
+        source_matrix = np.asarray(source.matrix)
+        expected_source_norms = np.linalg.norm(source_matrix, axis=0)
+        expected_equilibration = 1.0 / expected_source_norms
+        scaled = source_matrix * expected_equilibration[np.newaxis, :]
         expected_norms = tuple(
             float(np.linalg.norm(scaled[:, index])) for index in range(dimension)
         )
@@ -1256,6 +1402,12 @@ class RankDiagnostic:
             or self.source_policy.identity != source.source_policy.identity
             or not np.allclose(
                 self.scaled_column_norms, expected_norms, rtol=tolerance, atol=0.0
+            )
+            or not np.allclose(
+                self.equilibration_scales,
+                expected_equilibration,
+                rtol=tolerance,
+                atol=0.0,
             )
             or not np.allclose(
                 self.singular_values,
@@ -1284,10 +1436,7 @@ class RankDiagnostic:
             atol=tolerance,
         ):
             raise ValueError("Identifiable and null projectors are not complementary")
-        covered = tuple(index for item in self.subspaces for index in item.indices)
-        if covered != tuple(range(dimension)):
-            raise ValueError("Singular subspaces do not partition parameter order")
-        expected_groups = _singular_cluster_indices(
+        expected_groups = _diagnostic_singular_groups(
             self.singular_values,
             rank_threshold=self.threshold,
             weak_threshold=self.weak_threshold,
@@ -1299,7 +1448,6 @@ class RankDiagnostic:
             raise ValueError(
                 "Singular subspaces violate the declared clustering policy"
             )
-        subspace_sum = np.zeros((dimension, dimension), dtype=np.float64)
         recomputed_subspaces = _invariant_singular_subspaces(
             np.asarray(recomputed_right_t, dtype=np.float64).T,
             recomputed_singular,
@@ -1343,14 +1491,6 @@ class RankDiagnostic:
                 raise ValueError(
                     "Singular projector does not match its invariant spectrum"
                 )
-            subspace_sum += item_projector
-        if not np.allclose(
-            subspace_sum,
-            identity_matrix,
-            rtol=0.0,
-            atol=tolerance,
-        ):
-            raise ValueError("Singular invariant-subspace projectors are incomplete")
         expected_weak = sum(
             (
                 np.asarray(item.projector)
@@ -1366,14 +1506,6 @@ class RankDiagnostic:
             atol=tolerance,
         ):
             raise ValueError("Weak-subspace projector is inconsistent")
-        expected_identifiable = sum(
-            (
-                np.asarray(item.projector)
-                for item in self.subspaces
-                if not item.classification.endswith("_null")
-            ),
-            start=np.zeros((dimension, dimension), dtype=np.float64),
-        )
         expected_null = sum(
             (
                 np.asarray(item.projector)
@@ -1382,26 +1514,31 @@ class RankDiagnostic:
             ),
             start=np.zeros((dimension, dimension), dtype=np.float64),
         )
-        if not (
-            np.allclose(
-                identifiable,
-                expected_identifiable,
-                rtol=0.0,
-                atol=tolerance,
-            )
-            and np.allclose(
-                null,
-                expected_null,
-                rtol=0.0,
-                atol=tolerance,
-            )
+        if not np.allclose(
+            null,
+            expected_null,
+            rtol=0.0,
+            atol=tolerance,
         ):
-            raise ValueError(
-                "Identifiable/null projectors do not match classified subspaces"
-            )
+            raise ValueError("Null projector does not match diagnostic subspaces")
         object.__setattr__(self, "identifiable_projector", identifiable)
         object.__setattr__(self, "null_projector", null)
         object.__setattr__(self, "weak_projector", weak)
+        projector_shape = (dimension, dimension)
+        identifiable_digest = _binary64_matrix_digest(
+            identifiable,
+            projector_shape,
+        )
+        null_digest = _binary64_matrix_digest(null, projector_shape)
+        weak_digest = _binary64_matrix_digest(weak, projector_shape)
+        object.__setattr__(self, "projector_shape", projector_shape)
+        object.__setattr__(
+            self,
+            "identifiable_projector_binary64_sha256",
+            identifiable_digest,
+        )
+        object.__setattr__(self, "null_projector_binary64_sha256", null_digest)
+        object.__setattr__(self, "weak_projector_binary64_sha256", weak_digest)
         object.__setattr__(
             self,
             "identity",
@@ -1416,12 +1553,13 @@ class RankDiagnostic:
                     _vector_tokens(self.singular_values),
                     _vector_tokens(self.normalized_singular_values),
                     _vector_tokens(self.scaled_column_norms),
+                    _vector_tokens(self.equilibration_scales),
                     _float_token(self.threshold),
                     _float_token(self.weak_threshold),
                     self.rank,
-                    _matrix_tokens(identifiable),
-                    _matrix_tokens(null),
-                    _matrix_tokens(weak),
+                    identifiable_digest,
+                    null_digest,
+                    weak_digest,
                     tuple(item.identity for item in self.subspaces),
                 ),
             ),
@@ -1563,7 +1701,7 @@ class CovarianceEvidence:
             or self.controlled_ids != source.controlled_ids
             or self.controlled_ids != accepted.controlled_ids
             or self.accepted_vector != accepted.vector
-            or self.coordinate_scales != source.coordinate_scales
+            or self.coordinate_scales != rank_source.equilibration_scales
             or self.units != tuple(unit for _param_id, unit in policy.coordinate_units)
             or self.residual_variance_scaling is not policy.residual_variance_scaling
             or self.retained_residual_count != expected_residual_count
@@ -1587,7 +1725,7 @@ class CovarianceEvidence:
             _canonical_covariance_reduction(
                 rank_source.singular_values,
                 recomputed_right_t,
-                source.coordinate_scales,
+                rank_source.equilibration_scales,
                 expected_scale,
             )
         )
@@ -2670,31 +2808,35 @@ class RootAnchoredBlockCovariance:
         )
 
     @property
-    def unavailable_reason(self) -> str:
-        """Map typed block evidence to the closed product reason vocabulary."""
+    def unavailable_kind(self) -> UncertaintyUnavailableKind | None:
+        """Classify unavailable block evidence without rendering product text."""
         if self.scope_reportable:
-            return ""
+            return None
         if self.failure is not None:
             if self.failure.category == "rank_deficient":
-                return "rank deficient"
-            if self.failure.category == "insufficient_effective_observations":
-                return "insufficient information"
-            if self.failure.category == "non_finite_information_condition":
-                return "poorly conditioned"
-            return "derivative unavailable"
+                return UncertaintyUnavailableKind.RANK_DEFICIENT
+            if self.failure.category in {
+                "insufficient_effective_observations",
+                "non_positive_nominal_residual_degrees_of_freedom",
+            }:
+                return UncertaintyUnavailableKind.INSUFFICIENT_INFORMATION
+            if self.failure.stage == "residual_linearization":
+                return UncertaintyUnavailableKind.JACOBIAN_UNAVAILABLE
+            return UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE
         states = {item.name: item.state for item in self.claims}
-        if states.get("CONDITIONING_ADEQUACY") is not ClaimState.SATISFIED:
-            return "poorly conditioned"
+        if states.get("PROFILED_NORMALIZATION_REGULARITY") is ClaimState.VIOLATED:
+            return UncertaintyUnavailableKind.NORMALIZATION_INVALID
         if any(
             states.get(name) is not ClaimState.SATISFIED
             for name in (
                 "FULL_DIMENSIONAL_FEASIBLE_INTERIOR",
                 "INTERIOR_POINT",
                 "BOUNDARY_SEPARATION",
+                "CONTROLLED_AFFINE_SEPARATION",
             )
         ):
-            return "boundary limited"
-        return "insufficient information"
+            return UncertaintyUnavailableKind.BOUNDARY_LIMITED
+        return UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE
 
 
 @dataclass(frozen=True, slots=True)
@@ -2797,7 +2939,11 @@ class RootAnchoredBlockCovarianceEvidence:
                 {
                     **cast(dict[str, object], _record_value(item)),
                     "scope_reportable": item.scope_reportable,
-                    "unavailable_reason": item.unavailable_reason,
+                    "unavailable_kind": (
+                        None
+                        if item.unavailable_kind is None
+                        else item.unavailable_kind.value
+                    ),
                 }
                 for item in self.blocks
             ],
@@ -2832,6 +2978,24 @@ def _failed_block_claims(
         ClaimAssessment("COVARIANCE_ARITHMETIC_INTEGRITY", ClaimState.INDETERMINATE),
         ClaimAssessment("USABLE_LOCAL_COVARIANCE", ClaimState.VIOLATED),
     )
+
+
+def _partition_coordinate_indices(
+    root_controlled_ids: tuple[str, ...],
+    scopes: tuple[tuple[str, ...], ...],
+) -> tuple[tuple[int, ...], ...]:
+    """Map each proven scope independently into canonical root coordinates."""
+    flattened = tuple(param_id for scope in scopes for param_id in scope)
+    if len(set(flattened)) != len(flattened) or set(flattened) != set(
+        root_controlled_ids
+    ):
+        raise ValueError("Block covariance scopes must partition root coordinates")
+    root_order = {param_id: index for index, param_id in enumerate(root_controlled_ids)}
+    if any(
+        tuple(sorted(scope, key=root_order.__getitem__)) != scope for scope in scopes
+    ):
+        raise ValueError("Block covariance coordinates must preserve root order")
+    return tuple(tuple(root_order[param_id] for param_id in scope) for scope in scopes)
 
 
 def derive_root_anchored_block_covariance(  # noqa: C901
@@ -2882,24 +3046,14 @@ def derive_root_anchored_block_covariance(  # noqa: C901
     )
     if len(scopes) < 2:
         return None
-    flattened = tuple(param_id for scope, _profiles in scopes for param_id in scope)
-    if len(set(flattened)) != len(flattened) or set(flattened) != set(
-        jacobian.controlled_ids
-    ):
-        raise ValueError("Block covariance scopes must partition root coordinates")
-    root_order = {
-        param_id: index for index, param_id in enumerate(jacobian.controlled_ids)
-    }
-    if any(
-        tuple(sorted(scope, key=root_order.__getitem__)) != scope
-        for scope, _profiles in scopes
-    ):
-        raise ValueError("Block covariance coordinates must preserve root order")
+    coordinate_indices = _partition_coordinate_indices(
+        jacobian.controlled_ids,
+        tuple(scope for scope, _profiles in scopes),
+    )
     policy = evidence.source_policy
     matrix = np.asarray(jacobian.matrix, dtype=np.float64)
     accepted = evidence.accepted_anchor
     problem = evidence.source_problem
-    coordinate_index = root_order
     profile_rows: list[tuple[int, ...]] = []
     row_offset = 0
     for profile in evidence.source_engine.plan.profiles:
@@ -2910,14 +3064,17 @@ def derive_root_anchored_block_covariance(  # noqa: C901
         raise ValueError("Root residual rows do not match the evaluation profile plan")
     constraint_jacobian = evidence.constraint_jacobian
     blocks: list[RootAnchoredBlockCovariance] = []
-    for scope, profile_indices in scopes:
+    for (scope, profile_indices), indices in zip(
+        scopes,
+        coordinate_indices,
+        strict=True,
+    ):
         if (
             len(set(profile_indices)) != len(profile_indices)
             or tuple(sorted(profile_indices)) != profile_indices
             or any(not 0 <= index < len(profile_rows) for index in profile_indices)
         ):
             raise ValueError("Block covariance profile scope is invalid")
-        indices = tuple(coordinate_index[param_id] for param_id in scope)
         rows = tuple(row for index in profile_indices for row in profile_rows[index])
         scales = tuple(jacobian.coordinate_scales[index] for index in indices)
         normalization_count = sum(
@@ -2961,7 +3118,7 @@ def derive_root_anchored_block_covariance(  # noqa: C901
             elif analysis is not None:
                 reduction, reduction_failure = _reduce_scaled_covariance(
                     analysis,
-                    scales,
+                    analysis.equilibration_scales,
                     accepted,
                     degrees_of_freedom=(len(rows) - len(scope) - normalization_count),
                     policy=policy,
@@ -3247,7 +3404,7 @@ def _invariant_singular_subspaces(
 ) -> tuple[SingularSubspaceEvidence, ...]:
     """Retain projectors, never basis orientation, for clustered directions."""
 
-    groups = _singular_cluster_indices(
+    groups = _diagnostic_singular_groups(
         singular_values,
         rank_threshold=rank_threshold,
         weak_threshold=weak_threshold,
@@ -3278,6 +3435,33 @@ def _invariant_singular_subspaces(
             projector(indices),
         )
         for indices in groups
+    )
+
+
+def _diagnostic_singular_groups(
+    singular_values: tuple[float, ...],
+    *,
+    rank_threshold: float,
+    weak_threshold: float,
+    cluster_relative_tolerance: float,
+) -> tuple[tuple[int, ...], ...]:
+    """Retain only clusters and weak/null modes needing interpretation."""
+    return tuple(
+        indices
+        for indices in _singular_cluster_indices(
+            singular_values,
+            rank_threshold=rank_threshold,
+            weak_threshold=weak_threshold,
+            cluster_relative_tolerance=cluster_relative_tolerance,
+        )
+        if len(indices) > 1
+        or _singular_direction_class(
+            singular_values,
+            indices[0],
+            rank_threshold=rank_threshold,
+            weak_threshold=weak_threshold,
+        )
+        != "identifiable"
     )
 
 
@@ -3895,6 +4079,217 @@ def _linearize_residuals(
             matrix,
             tuple(column_evidence),
             trajectory_fingerprint,
+            evaluation_count=1
+            + 4 * sum(item.attempt_count for item in column_evidence),
+            accepted_anchor=accepted,
+            source_problem=problem,
+            source_parameterization=parameterization,
+            source_engine=engine,
+            source_policy=policy,
+        ),
+        None,
+    )
+
+
+def _retained_residual_jacobian(
+    accepted: AcceptedFitResult,
+    *,
+    problem: OptimizationProblem,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    policy: UncertaintyPolicy,
+    request_identity: str,
+) -> tuple[ResidualJacobianEvidence | None, EvidenceFailure | None]:
+    """Bind an exact accepted retained Jacobian into uncertainty evidence."""
+    retained = accepted.final_residual_jacobian
+    if retained is None:
+        return None, None
+    try:
+        evidence = ResidualJacobianEvidence(
+            request_identity,
+            accepted.identity,
+            accepted.occurrence_identity,
+            accepted.evaluation_result.identity,
+            problem.identity,
+            problem.source_snapshot.occurrence_identity,
+            problem.source_snapshot.revision,
+            parameterization.identity,
+            parameterization.evaluator_identity,
+            parameterization.program.fingerprint,
+            engine.plan.identity,
+            policy.identity,
+            policy.calibration_identity,
+            policy.numerical_compatibility_requirement,
+            problem.controlled_ids,
+            accepted.vector,
+            tuple(value for _param_id, value in policy.coordinate_scales),
+            retained.matrix,
+            (),
+            retained.identity,
+            method="retained-scipy-final-2-point",
+            evaluation_count=0,
+            source_final_jacobian=retained,
+            accepted_anchor=accepted,
+            source_problem=problem,
+            source_parameterization=parameterization,
+            source_engine=engine,
+            source_policy=policy,
+        )
+    except (ArithmeticError, TypeError, ValueError) as error:
+        return None, EvidenceFailure(
+            "residual_linearization",
+            "retained_jacobian_lineage_mismatch",
+            str(error),
+            accepted.identity,
+        )
+    return evidence, None
+
+
+def _accepted_point_two_point_jacobian(
+    accepted: AcceptedFitResult,
+    *,
+    problem: OptimizationProblem,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    policy: UncertaintyPolicy,
+    request_identity: str,
+    cancellation_probe: Callable[[], OperationTerminal | None] | None,
+) -> tuple[ResidualJacobianEvidence | None, EvidenceFailure | None]:
+    """Evaluate one SciPy-style bound-aware perturbation per coordinate."""
+    _raise_if_terminated(cancellation_probe)
+    evaluator = engine.new_evaluator()
+    base_residuals = tuple(
+        float(value) for value in accepted.evaluation_result.residuals
+    )
+    columns: list[LinearizationColumn] = []
+    sqrt_epsilon = math.sqrt(_EPSILON)
+    for column, param_id in enumerate(problem.controlled_ids):
+        _raise_if_terminated(cancellation_probe)
+        center = accepted.vector[column]
+        feasibility = problem.coordinate_line_feasibility(accepted.vector, column)
+        nominal = sqrt_epsilon * max(1.0, abs(center))
+        preferred = nominal if center >= 0.0 else -nominal
+        displacement: float | None = None
+        orientation = ""
+        for candidate, label in (
+            (preferred, "forward" if preferred > 0.0 else "backward"),
+            (-preferred, "backward" if preferred > 0.0 else "forward"),
+        ):
+            limit = (
+                feasibility.maximum_displacement
+                if candidate > 0.0
+                else -feasibility.minimum_displacement
+            )
+            if limit <= 0.0:
+                continue
+            magnitude = min(abs(candidate), limit)
+            proposed = magnitude if candidate > 0.0 else -magnitude
+            if center + proposed == center:
+                adjacent = float(
+                    np.nextafter(
+                        center,
+                        math.inf if proposed > 0.0 else -math.inf,
+                    )
+                    - center
+                )
+                if abs(adjacent) > limit:
+                    continue
+                proposed = adjacent
+            displacement = proposed
+            orientation = label
+            break
+        if displacement is None or displacement == 0.0:
+            return None, EvidenceFailure(
+                "residual_linearization",
+                "exhausted_exact_feasible_distance",
+                f"No nonzero feasible 2-point displacement exists for {param_id}",
+                accepted.identity,
+            )
+        vector = list(accepted.vector)
+        vector[column] = center + displacement
+        evaluated = _evaluate_vector(
+            tuple(vector),
+            problem=problem,
+            parameterization=parameterization,
+            evaluator=evaluator,
+        )
+        if isinstance(evaluated, EvaluationFailure):
+            return None, EvidenceFailure(
+                "residual_linearization",
+                "accepted_point_2point_evaluation_failed",
+                f"{param_id}: {evaluated.category}",
+                accepted.identity,
+            )
+        perturbed = tuple(float(value) for value in evaluated.residuals)
+        derivative = tuple(
+            (value - base) / displacement
+            for value, base in zip(perturbed, base_residuals, strict=True)
+        )
+        trajectory = _identity(
+            "accepted-point-2-point-column",
+            (
+                param_id,
+                orientation,
+                _float_token(nominal),
+                _float_token(displacement),
+                feasibility.identity,
+                evaluated.identity,
+            ),
+        )
+        columns.append(
+            LinearizationColumn(
+                param_id,
+                orientation,
+                nominal,
+                (
+                    feasibility.minimum_displacement,
+                    feasibility.maximum_displacement,
+                ),
+                feasibility.lower_limiters,
+                feasibility.upper_limiters,
+                (displacement,),
+                derivative,
+                derivative,
+                0.0,
+                _max_norm(derivative),
+                0.0,
+                1,
+                "successful-scipy-style-2-point",
+                trajectory,
+            )
+        )
+    matrix = tuple(
+        tuple(column.fine_estimate[row] for column in columns)
+        for row in range(len(base_residuals))
+    )
+    trajectory_fingerprint = _identity(
+        "accepted-point-2-point-trajectory",
+        tuple((item.param_id, item.trajectory_fingerprint) for item in columns),
+    )
+    return (
+        ResidualJacobianEvidence(
+            request_identity,
+            accepted.identity,
+            accepted.occurrence_identity,
+            accepted.evaluation_result.identity,
+            problem.identity,
+            problem.source_snapshot.occurrence_identity,
+            problem.source_snapshot.revision,
+            parameterization.identity,
+            parameterization.evaluator_identity,
+            parameterization.program.fingerprint,
+            engine.plan.identity,
+            policy.identity,
+            policy.calibration_identity,
+            policy.numerical_compatibility_requirement,
+            problem.controlled_ids,
+            accepted.vector,
+            tuple(value for _param_id, value in policy.coordinate_scales),
+            matrix,
+            tuple(columns),
+            trajectory_fingerprint,
+            method="accepted-point-2-point",
+            evaluation_count=len(columns),
             accepted_anchor=accepted,
             source_problem=problem,
             source_parameterization=parameterization,
@@ -4316,6 +4711,7 @@ class _ScaledSvdAnalysis:
     singular_values: tuple[float, ...]
     right_transpose: tuple[tuple[float, ...], ...]
     scaled_column_norms: tuple[float, ...]
+    equilibration_scales: tuple[float, ...]
     threshold: float
     rank: int
     jacobian_condition: float | None
@@ -4332,13 +4728,33 @@ def _analyze_scaled_jacobian(
 ) -> tuple[_ScaledSvdAnalysis | None, EvidenceFailure | None]:
     """Run the one canonical checked scaled-SVD analysis kernel."""
     dimension = len(coordinate_scales)
-    scaled = (
-        np.asarray(matrix, dtype=np.float64)
-        * np.asarray(
-            coordinate_scales,
-            dtype=np.float64,
-        )[np.newaxis, :]
-    )
+    physical = np.asarray(matrix, dtype=np.float64)
+    try:
+        column_norms_array = np.linalg.norm(physical, axis=0)
+        if (
+            column_norms_array.shape != (dimension,)
+            or not np.isfinite(column_norms_array).all()
+        ):
+            raise ValueError("Jacobian column norms are non-finite")
+        if np.any(column_norms_array == 0.0):
+            zero_ids = tuple(
+                index for index, value in enumerate(column_norms_array) if value == 0.0
+            )
+            return None, EvidenceFailure(
+                "covariance",
+                "rank_deficient",
+                f"Residual Jacobian has zero columns {zero_ids!r}",
+                source_identity,
+            )
+        equilibration_array = 1.0 / column_norms_array
+        scaled = physical * equilibration_array[np.newaxis, :]
+    except (ArithmeticError, TypeError, ValueError) as error:
+        return None, EvidenceFailure(
+            "covariance",
+            "invalid_jacobian_column_equilibration",
+            str(error),
+            source_identity,
+        )
     _raise_if_terminated(cancellation_probe)
     analysis_failure: EvidenceFailure | None = None
     try:
@@ -4379,7 +4795,7 @@ def _analyze_scaled_jacobian(
         )
         largest = singular_values[0] if singular_values else 0.0
         threshold = _finite(
-            policy.rank_absolute_tolerance + policy.rank_relative_tolerance * largest,
+            largest * max(physical.shape) * _EPSILON,
             name="rank threshold",
         )
         rank = sum(value > threshold for value in singular_values)
@@ -4421,6 +4837,7 @@ def _analyze_scaled_jacobian(
             singular_values,
             right_transpose,
             column_norms,
+            tuple(float(value) for value in equilibration_array),
             threshold,
             rank,
             condition,
@@ -4539,7 +4956,6 @@ def _canonical_covariance_claims(
         ),
     )
     required = (
-        conditioning.state,
         ClaimState.SATISFIED,
         full_dimensional_interior.state,
         interior.state,
@@ -4681,6 +5097,7 @@ def _covariance_from_jacobian(
         singular_values,
         normalized,
         analysis.scaled_column_norms,
+        analysis.equilibration_scales,
         threshold,
         weak_threshold,
         rank,
@@ -4698,7 +5115,7 @@ def _covariance_from_jacobian(
         return None, rank_diagnostic, analysis_failure
     reduction, reduction_failure = _reduce_scaled_covariance(
         analysis,
-        jacobian.coordinate_scales,
+        analysis.equilibration_scales,
         accepted,
         degrees_of_freedom=degrees_of_freedom,
         policy=policy,
@@ -4736,7 +5153,7 @@ def _covariance_from_jacobian(
         accepted.controlled_ids,
         tuple(unit for _param_id, unit in policy.coordinate_units),
         accepted.vector,
-        jacobian.coordinate_scales,
+        analysis.equilibration_scales,
         policy.residual_variance_scaling,
         residual_count,
         coordinate_count,
@@ -5570,7 +5987,7 @@ def _canonical_constrained_propagation_claims(
             raise ValueError("invalid scaled constraint-output singular spectrum")
         largest = gradient_singular[0] if gradient_singular else 0.0
         rank_threshold = _finite(
-            policy.rank_absolute_tolerance + policy.rank_relative_tolerance * largest,
+            largest * max(scaled_gradient.shape) * _EPSILON,
             name="constraint-output rank threshold",
         )
         output_rank = sum(value > rank_threshold for value in gradient_singular)
@@ -5838,15 +6255,37 @@ def _derive_covariance_branch(  # noqa: C901 - ordered cancellation phase ledger
     residual_failure: EvidenceFailure | None = None
     residual_terminal: OperationTerminal | None = None
     try:
-        residual_jacobian, residual_failure = _linearize_residuals(
-            accepted,
-            problem=problem,
-            parameterization=parameterization,
-            engine=engine,
-            policy=policy,
-            request_identity=residual_request,
-            cancellation_probe=cancellation_probe,
-        )
+        if policy.residual_jacobian_strategy == "retained-backend-or-accepted-2-point":
+            residual_jacobian, _retained_failure = _retained_residual_jacobian(
+                accepted,
+                problem=problem,
+                parameterization=parameterization,
+                engine=engine,
+                policy=policy,
+                request_identity=residual_request,
+            )
+            if residual_jacobian is None:
+                residual_jacobian, residual_failure = (
+                    _accepted_point_two_point_jacobian(
+                        accepted,
+                        problem=problem,
+                        parameterization=parameterization,
+                        engine=engine,
+                        policy=policy,
+                        request_identity=residual_request,
+                        cancellation_probe=cancellation_probe,
+                    )
+                )
+        else:
+            residual_jacobian, residual_failure = _linearize_residuals(
+                accepted,
+                problem=problem,
+                parameterization=parameterization,
+                engine=engine,
+                policy=policy,
+                request_identity=residual_request,
+                cancellation_probe=cancellation_probe,
+            )
     except DerivationTermination as termination:
         residual_terminal = termination.terminal
     except (ArithmeticError, TypeError, ValueError) as error:

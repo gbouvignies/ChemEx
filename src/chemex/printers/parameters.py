@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from chemex.containers.experiments import Experiments
-from chemex.optimize.uncertainty import UncertaintyEvidence
+from chemex.optimize.uncertainty import (
+    UncertaintyEvidence,
+    UncertaintyUnavailableKind,
+)
 from chemex.parameters.database import ParameterStore
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import ParamSetting
@@ -30,6 +33,66 @@ class ParameterUncertaintyView:
         return dict(self.unavailable_reasons).get(param_id)
 
 
+_UNAVAILABLE_REASON_TEXT = {
+    UncertaintyUnavailableKind.RANK_DEFICIENT: "rank deficient",
+    UncertaintyUnavailableKind.INSUFFICIENT_INFORMATION: "insufficient information",
+    UncertaintyUnavailableKind.BOUNDARY_LIMITED: "boundary limited",
+    UncertaintyUnavailableKind.NORMALIZATION_INVALID: "normalization invalid",
+    UncertaintyUnavailableKind.JACOBIAN_UNAVAILABLE: "Jacobian unavailable",
+    UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE: (
+        "covariance numerical failure"
+    ),
+    UncertaintyUnavailableKind.UNSUPPORTED_CONSTRAINED_DERIVATIVE: (
+        "unsupported constrained derivative"
+    ),
+    UncertaintyUnavailableKind.DERIVATION_STOPPED: ("derivation interrupted/cancelled"),
+    UncertaintyUnavailableKind.CONSTRAINED_PROPAGATION_UNAVAILABLE: (
+        "constrained propagation unavailable"
+    ),
+}
+
+if set(_UNAVAILABLE_REASON_TEXT) != set(UncertaintyUnavailableKind):
+    raise RuntimeError("Uncertainty unavailability vocabulary is not exhaustive")
+
+
+def uncertainty_unavailable_reason(kind: UncertaintyUnavailableKind) -> str:
+    """Return the one human-readable phrase for a typed claim classification."""
+    return _UNAVAILABLE_REASON_TEXT[kind]
+
+
+def _controlled_unavailability_kind(
+    evidence: UncertaintyEvidence,
+) -> UncertaintyUnavailableKind:
+    categories = {failure.category for failure in evidence.failures}
+    if categories & {"cancelled", "interrupted"}:
+        return UncertaintyUnavailableKind.DERIVATION_STOPPED
+    if "rank_deficient" in categories:
+        return UncertaintyUnavailableKind.RANK_DEFICIENT
+    if categories & {
+        "insufficient_effective_observations",
+        "non_positive_nominal_residual_degrees_of_freedom",
+    }:
+        return UncertaintyUnavailableKind.INSUFFICIENT_INFORMATION
+    covariance = evidence.covariance
+    if covariance is not None:
+        claims = {item.name: item.state.value for item in covariance.claims}
+        if claims.get("PROFILED_NORMALIZATION_REGULARITY") == "violated":
+            return UncertaintyUnavailableKind.NORMALIZATION_INVALID
+        if any(
+            claims.get(name) in {"violated", "indeterminate"}
+            for name in (
+                "FULL_DIMENSIONAL_FEASIBLE_INTERIOR",
+                "INTERIOR_POINT",
+                "BOUNDARY_SEPARATION",
+                "CONTROLLED_AFFINE_SEPARATION",
+            )
+        ):
+            return UncertaintyUnavailableKind.BOUNDARY_LIMITED
+    if any(failure.stage == "residual_linearization" for failure in evidence.failures):
+        return UncertaintyUnavailableKind.JACOBIAN_UNAVAILABLE
+    return UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE
+
+
 def parameter_uncertainty_view(
     evidence: UncertaintyEvidence,
     unsupported_constrained_ids: tuple[str, ...] = (),
@@ -45,25 +108,9 @@ def parameter_uncertainty_view(
             if entry.value is not None
         )
     else:
-        reason = "unavailable"
-        failure_categories = {failure.category for failure in evidence.failures}
-        if "rank_deficient" in failure_categories:
-            reason = "rank deficient"
-        elif any("observation" in category for category in failure_categories):
-            reason = "insufficient information"
-        elif any(
-            failure.stage == "residual_linearization" for failure in evidence.failures
-        ):
-            reason = "derivative unavailable"
-        elif evidence.covariance is not None and not evidence.covariance.usable:
-            claims = {
-                item.name: item.state.value for item in evidence.covariance.claims
-            }
-            reason = (
-                "poorly conditioned"
-                if claims.get("CONDITIONING_ADEQUACY") == "violated"
-                else "boundary limited"
-            )
+        reason = uncertainty_unavailable_reason(
+            _controlled_unavailability_kind(evidence)
+        )
         unavailable_reasons.extend(
             (param_id, reason) for param_id in evidence.accepted_anchor.controlled_ids
         )
@@ -76,11 +123,21 @@ def parameter_uncertainty_view(
         )
     elif evidence.requested_output_scope:
         unavailable_reasons.extend(
-            (param_id, "constrained propagation unavailable")
+            (
+                param_id,
+                uncertainty_unavailable_reason(
+                    UncertaintyUnavailableKind.CONSTRAINED_PROPAGATION_UNAVAILABLE
+                ),
+            )
             for param_id in evidence.requested_output_scope
         )
     unavailable_reasons.extend(
-        (param_id, "unsupported constrained derivative")
+        (
+            param_id,
+            uncertainty_unavailable_reason(
+                UncertaintyUnavailableKind.UNSUPPORTED_CONSTRAINED_DERIVATIVE
+            ),
+        )
         for param_id in unsupported_constrained_ids
     )
     return ParameterUncertaintyView(

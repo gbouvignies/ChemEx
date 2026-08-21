@@ -106,6 +106,7 @@ def _backend_result(
         cost=0.5 * float(np.dot(residuals, residuals)),
         optimality=0.0,
         active_mask=np.zeros_like(candidate, dtype=np.int64),
+        jac=np.zeros((residuals.size, candidate.size), dtype=np.float64),
     )
 
 
@@ -764,6 +765,7 @@ def test_foreign_grouped_seed_evidence_is_rejected_before_grid_selection() -> No
     wrong_controlled = dataclasses.replace(
         first_outcome,
         controlled_ids=("foreign-control",),
+        final_residual_jacobian=None,
     )
     wrong_child_component = dataclasses.replace(
         first_fit_component,

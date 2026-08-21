@@ -555,6 +555,13 @@ def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
 
     group_outputs = sorted((output / "Groups").glob("*/Parameters/fitted.toml"))
     assert len(group_outputs) == 2
+    assert (output / "All" / "Statistics" / "Covariance" / "evidence.json").is_file()
+    assert all(
+        not (
+            path.parent.parent / "Statistics" / "Covariance" / "evidence.json"
+        ).exists()
+        for path in group_outputs
+    )
     reports = tuple(path.read_text(encoding="utf-8") for path in group_outputs)
     assert sum("# ±" in report for report in reports) == 1
     assert sum("error unavailable: rank deficient" in report for report in reports) == 1

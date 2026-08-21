@@ -47,6 +47,7 @@ from chemex.optimize.method_step import (
     DerivationDisposition,
     EvaluationPurpose,
     MethodStepLifecycle,
+    MethodStepOutcome,
     MethodStepStrategy,
     MethodStepWorkflow,
     UncertaintyDerivationRequest,
@@ -66,6 +67,7 @@ from chemex.parameters.parameterization import ActiveParameterization, Parameter
 from chemex.printers.parameters import (
     ParameterUncertaintyView,
     parameter_uncertainty_view,
+    uncertainty_unavailable_reason,
 )
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
@@ -109,13 +111,11 @@ def _product_uncertainty_request(
     """Resolve the normal absolute-observation-sigma covariance policy."""
     environment = ProvenanceEnvironment.from_current_process()
     policy = UncertaintyPolicy(
-        calibration_identity="native-product-local-covariance-numerics-v1",
+        calibration_identity="native-product-local-covariance-numerics-v2",
         numerical_compatibility_requirement=(
-            "binary64-scipy-economical-svd-fixed-pairwise-v1"
+            "binary64-retained-scipy-2point-gesvd-column-equilibrated-v1"
         ),
-        coordinate_scales=tuple(
-            zip(problem.controlled_ids, _product_x_scale(problem), strict=True)
-        ),
+        coordinate_scales=tuple((param_id, 1.0) for param_id in problem.controlled_ids),
         coordinate_units=tuple(
             (param_id, ParameterUnit.UNSPECIFIED) for param_id in problem.controlled_ids
         ),
@@ -126,14 +126,16 @@ def _product_uncertainty_request(
         roundoff_multiplier=64.0,
         smaller_step_extent=8,
         larger_step_extent=8,
-        svd_driver="gesdd",
+        svd_driver="gesvd",
+        # Legacy qualification knobs; covariance rank uses sigma_max*max(m,n)*eps.
         rank_absolute_tolerance=0.0,
-        rank_relative_tolerance=1.0e-12,
+        rank_relative_tolerance=0.0,
         weak_relative_tolerance=1.0e-6,
         singular_value_cluster_relative_tolerance=1.0e-10,
         conditioning_limit=1.0e12,
         correlation_roundoff_multiplier=64.0,
         affine_feasibility_policy="canonical-root-affine-halfspace-zeta-gt-3-v1",
+        residual_jacobian_strategy="retained-backend-or-accepted-2-point",
     )
     constraints = {
         item.target_id: item for item in parameterization.program.constraints
@@ -195,7 +197,7 @@ def _product_uncertainty_request(
 
 
 def _product_uncertainty_result(
-    outcome: object,
+    outcome: MethodStepOutcome,
     controlled_ids: tuple[str, ...],
     supported_constrained_ids: tuple[str, ...],
     unsupported_constrained_ids: tuple[str, ...],
@@ -204,8 +206,7 @@ def _product_uncertainty_result(
     ParameterUncertaintyView,
     tuple[str, str] | None,
 ]:
-    derivations = getattr(outcome, "derivations", ())
-    for derivation in derivations:
+    for derivation in outcome.derivations:
         for artifact in derivation.artifacts:
             if isinstance(artifact, UncertaintyEvidence):
                 return (
@@ -459,6 +460,9 @@ def _write_direct_output(
     """Write established per-group and aggregate output from native evidence."""
     plot_flg = (plot == "normal" and not aggregate_output) or plot == "all"
     controlled_by_path = dict(group_scopes)
+    group_diagnostics = None if aggregate_output else uncertainty_evidence
+    group_status = None if aggregate_output else uncertainty_status
+    group_blocks = None if aggregate_output else block_uncertainty
     for group in groups:
         if message := group.message:
             print_group_name(message)
@@ -469,9 +473,9 @@ def _write_direct_output(
             residuals=_project_residuals(group.experiments, experiments, result),
             nvarys=len(controlled_by_path[group.path]),
             uncertainty=uncertainty,
-            uncertainty_evidence=uncertainty_evidence,
-            uncertainty_status=uncertainty_status,
-            block_uncertainty=block_uncertainty,
+            uncertainty_evidence=group_diagnostics,
+            uncertainty_status=group_status,
+            block_uncertainty=group_blocks,
         )
     if aggregate_output:
         execute_post_fit_groups(
@@ -661,9 +665,9 @@ def run_native_deterministic(
             if entry.value is not None
         )
         block_unavailable = tuple(
-            (param_id, block.unavailable_reason)
+            (param_id, uncertainty_unavailable_reason(block.unavailable_kind))
             for block in block_uncertainty.blocks
-            if block.unavailable_reason
+            if block.unavailable_kind is not None
             for param_id in block.controlled_ids
         )
         block_constrained_errors = tuple(

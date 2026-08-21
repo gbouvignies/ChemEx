@@ -547,6 +547,7 @@ def _trf_backend_result(candidate: Array, residuals: Array) -> SimpleNamespace:
         cost=0.5 * float(np.dot(residuals, residuals)),
         optimality=0.0,
         active_mask=np.zeros_like(candidate, dtype=np.int64),
+        jac=np.zeros((residuals.size, candidate.size), dtype=np.float64),
     )
 
 

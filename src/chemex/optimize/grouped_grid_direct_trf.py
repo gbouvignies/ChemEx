@@ -19,6 +19,7 @@ from chemex.optimize.direct_trf import (
     ComponentProblemDerivation,
     DirectTrfConstructionError,
     DirectTrfInvocation,
+    FinalResidualJacobianEvidence,
     GridSeedProblemDerivation,
     LiveFitCommitAuthority,
     OptimizationProblem,
@@ -152,6 +153,11 @@ class GroupedGridSeedOutcome:
     ) -> None:
         """Prove exact grouped component ownership before GRID selection."""
         _validate_grouped_grid_seed(self, problem, invocation, seed)
+
+    @property
+    def final_residual_jacobian(self) -> FinalResidualJacobianEvidence | None:
+        """Grouped GRID falls back unless exact root composition is retained."""
+        return None
 
 
 @dataclass(frozen=True, slots=True)

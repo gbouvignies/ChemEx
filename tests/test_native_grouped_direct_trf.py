@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import math
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,7 +16,7 @@ import pytest
 from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
-from chemex.evaluation.native import EvaluationEngine
+from chemex.evaluation.native import EvaluationEngine, EvaluationFrame, EvaluationResult
 from chemex.experiments.builder import build_experiments
 from chemex.optimize import direct_trf as direct_trf_owner
 from chemex.optimize.direct_trf import (
@@ -319,6 +320,32 @@ def test_successful_components_compose_one_fresh_root_accepted_result_and_commit
     assert outcome.accepted_result is not None
     assert outcome.commit_authority is not None
     accepted = outcome.accepted_result
+    retained = accepted.final_residual_jacobian
+    assert retained is not None
+    assert retained.source.value == "fit-partition-composition"
+    assert retained.controlled_ids == problem.controlled_ids
+    base = np.asarray(accepted.evaluation_result.residuals, dtype=np.float64)
+    independent_columns: list[Array] = []
+    evaluator = engine.new_evaluator()
+    for index, value in enumerate(accepted.vector):
+        step = math.sqrt(np.finfo(np.float64).eps) * max(1.0, abs(value))
+        candidate = list(accepted.vector)
+        candidate[index] += step
+        frame = EvaluationFrame.from_lifecycle_frame(
+            parameterization,
+            problem.lifecycle_frame(tuple(candidate), parameterization),
+        )
+        evaluated = evaluator.evaluate(frame)
+        assert isinstance(evaluated, EvaluationResult)
+        independent_columns.append(
+            (np.asarray(evaluated.residuals, dtype=np.float64) - base) / step
+        )
+    np.testing.assert_allclose(
+        retained.matrix,
+        np.column_stack(independent_columns),
+        rtol=2.0e-6,
+        atol=2.0e-8,
+    )
     selected = {
         param_id: component.candidate.vector[index]
         for component in outcome.components
@@ -465,7 +492,11 @@ def test_fresh_root_validation_rejects_an_inconsistent_component_result() -> Non
         parameterization,
         engine,
         (
-            dataclasses.replace(first, candidate=out_of_bounds_candidate),
+            dataclasses.replace(
+                first,
+                candidate=out_of_bounds_candidate,
+                final_residual_jacobian=None,
+            ),
             *components[1:],
         ),
     )
@@ -567,7 +598,13 @@ def test_component_vector_cannot_be_retargeted_to_transposed_controlled_ids() ->
         invocation,
         parameterization,
         engine,
-        (dataclasses.replace(component, controlled_ids=transposed_ownership),),
+        (
+            dataclasses.replace(
+                component,
+                controlled_ids=transposed_ownership,
+                final_residual_jacobian=None,
+            ),
+        ),
     )
 
     assert outcome.terminal is GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE
@@ -594,6 +631,7 @@ def _backend_result(
         cost=0.5 * float(np.dot(residuals, residuals)),
         optimality=0.0 if success else 1.0,
         active_mask=np.zeros_like(candidate, dtype=np.int64),
+        jac=np.zeros((residuals.size, candidate.size), dtype=np.float64),
     )
 
 
