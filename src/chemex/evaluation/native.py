@@ -1294,25 +1294,39 @@ class _NativeKernelCapability:
 
 
 @dataclass(slots=True)
+class _ProfileWorkspace:
+    template: _NativeKernelCapability
+    profile: _NativeKernelCapability = field(init=False)
+    cache: OrderedDict[tuple[float, ...], _CachedProfile] = field(
+        default_factory=OrderedDict
+    )
+
+    def __post_init__(self) -> None:
+        self.profile = deepcopy(self.template)
+
+    def reset(self) -> None:
+        self.profile = deepcopy(self.template)
+        self.cache.clear()
+
+
+@dataclass(slots=True)
 class _Workspace:
-    templates: tuple[_NativeKernelCapability, ...]
-    profiles: tuple[_NativeKernelCapability, ...]
-    profile_caches: tuple[OrderedDict[tuple[float, ...], _CachedProfile], ...]
+    profile_workspaces: tuple[_ProfileWorkspace, ...]
     resolved_values: dict[str, float] | None = None
     hits: int = 0
     misses: int = 0
     poisoned: bool = False
 
     def clear_caches(self) -> None:
-        for cache in self.profile_caches:
-            cache.clear()
+        for workspace in self.profile_workspaces:
+            workspace.cache.clear()
 
     def clear_resolution(self) -> None:
         self.resolved_values = None
 
     def reset(self) -> None:
-        self.profiles = tuple(deepcopy(profile) for profile in self.templates)
-        self.clear_caches()
+        for workspace in self.profile_workspaces:
+            workspace.reset()
         self.clear_resolution()
 
 
@@ -1646,9 +1660,10 @@ class EvaluationEngine:
             self._parameterization,
             self.compatibility_identity,
             _Workspace(
-                tuple(deepcopy(template) for template in self._templates),
-                tuple(deepcopy(template) for template in self._templates),
-                tuple(OrderedDict() for _template in self._templates),
+                tuple(
+                    _ProfileWorkspace(deepcopy(template))
+                    for template in self._templates
+                ),
             ),
         )
 
@@ -1676,7 +1691,9 @@ class BoundEvaluator:
         return CacheStatistics(
             self._workspace.hits,
             self._workspace.misses,
-            sum(len(cache) for cache in self._workspace.profile_caches),
+            sum(
+                len(workspace.cache) for workspace in self._workspace.profile_workspaces
+            ),
         )
 
     def _failure(
@@ -1934,13 +1951,17 @@ class BoundEvaluator:
         resolved: Mapping[str, float],
     ) -> list[_CachedProfile] | EvaluationFailure:
         results: list[_CachedProfile] = []
-        for descriptor, profile, cache in zip(
+        for descriptor, workspace in zip(
             self.plan.profiles,
-            self._workspace.profiles,
-            self._workspace.profile_caches,
+            self._workspace.profile_workspaces,
             strict=True,
         ):
-            cached = self._cached_profile(descriptor, profile, cache, resolved)
+            cached = self._cached_profile(
+                descriptor,
+                workspace.profile,
+                workspace.cache,
+                resolved,
+            )
             if isinstance(cached, EvaluationFailure):
                 return cached
             results.append(cached)
