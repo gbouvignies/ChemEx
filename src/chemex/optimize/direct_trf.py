@@ -2220,7 +2220,6 @@ class CancellationToken:
 class _CompletedRequest:
     summary: CandidateSummary
     residuals: tuple[float, ...]
-    evaluation_identity: str
 
 
 class _AttemptStop(RuntimeError):
@@ -2299,7 +2298,7 @@ class _LiveAttempt:
                     f"{type(error).__name__}: {error}",
                 ),
             ) from error
-        outcome = self.evaluator.evaluate(frame)
+        outcome = self.evaluator.evaluate_residuals(frame)
         self.completed += 1
         if isinstance(outcome, EvaluationFailure):
             terminal = (
@@ -2318,7 +2317,7 @@ class _LiveAttempt:
         try:
             residuals = tuple(
                 _finite_binary64(value, name=f"residual[{index}]")
-                for index, value in enumerate(outcome.residuals)
+                for index, value in enumerate(outcome)
             )
             chi_square = canonical_chi_square(residuals)
         except (TypeError, ValueError, ObjectiveScalarizationError) as error:
@@ -2330,7 +2329,7 @@ class _LiveAttempt:
                 ),
             ) from error
         summary = CandidateSummary(vector, chi_square, self.received)
-        request = _CompletedRequest(summary, residuals, outcome.identity)
+        request = _CompletedRequest(summary, residuals)
         self.requests.append(request)
         if self.best is None or summary.ordering_key() < self.best.ordering_key():
             self.best = summary
@@ -2705,8 +2704,7 @@ def _validate_materialized_result(
             "Fresh materialization differs from converged request evidence"
         )
     if (
-        materialized.identity != request.evaluation_identity
-        or materialized.plan_identity != problem.evaluation_plan_identity
+        materialized.plan_identity != problem.evaluation_plan_identity
         or materialized.parameterization_identity
         != problem.evaluator_parameterization_identity
         or materialized.evaluator_compatibility_identity
@@ -3509,7 +3507,6 @@ def _validate_derived_candidate_for_root(
     return _CompletedRequest(
         materialization.candidate,
         tuple(float(value) for value in evaluation.residuals),
-        evaluation.identity,
     )
 
 

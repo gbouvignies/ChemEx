@@ -29,6 +29,7 @@ from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import (
     BoundEvaluator,
     EvaluationEngine,
+    EvaluationFailure,
     EvaluationFrame,
     EvaluationResult,
 )
@@ -38,6 +39,7 @@ from chemex.optimize.direct_trf import (
     AffineHalfSpace,
     CancellationToken,
     CandidateSummary,
+    DirectTrfCandidateTerminal,
     DirectTrfConstructionError,
     DirectTrfInterrupted,
     DirectTrfInvocation,
@@ -52,8 +54,10 @@ from chemex.optimize.direct_trf import (
     canonical_chi_square,
     commit_accepted_fit,
     execute_direct_trf,
+    execute_direct_trf_candidate,
     materialize_root_candidate,
 )
+from chemex.optimize.grouped_direct_trf import FitDecomposition
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     compile_active_parameterization,
@@ -69,6 +73,7 @@ ROOT = Path(__file__).parent.parent
 EXPERIMENT = ROOT / "examples/Experiments/RELAXATION_HZNZ/Experiments/800mhz.toml"
 PARAMETERS = ROOT / "examples/Experiments/RELAXATION_HZNZ/Parameters/parameters.toml"
 METHOD = ROOT / "examples/Experiments/RELAXATION_HZNZ/Methods/method.toml"
+CPMG_ROOT = ROOT / "examples/Experiments/CPMG_15N_IP"
 
 
 def _qualification_fit(
@@ -544,6 +549,110 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
         )
     assert session.analysis_values.snapshot() == committed
     assert _presentation_values(session, problem.commit_scope) == presentation_before
+
+
+def test_solver_requests_use_lean_residuals_and_acceptance_materializes_fresh() -> None:
+    _session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    complete_calls = 0
+    residual_calls = 0
+    original_evaluate = BoundEvaluator.evaluate
+    original_evaluate_residuals = BoundEvaluator.evaluate_residuals
+
+    def counted_complete(
+        evaluator: BoundEvaluator,
+        frame: EvaluationFrame,
+    ) -> EvaluationResult | EvaluationFailure:
+        nonlocal complete_calls
+        complete_calls += 1
+        return original_evaluate(evaluator, frame)
+
+    def counted_residuals(
+        evaluator: BoundEvaluator,
+        frame: EvaluationFrame,
+    ) -> Array | EvaluationFailure:
+        nonlocal residual_calls
+        residual_calls += 1
+        return original_evaluate_residuals(evaluator, frame)
+
+    with (
+        patch.object(BoundEvaluator, "evaluate", counted_complete),
+        patch.object(BoundEvaluator, "evaluate_residuals", counted_residuals),
+    ):
+        outcome = execute_direct_trf(problem, invocation, parameterization, engine)
+
+    assert outcome.terminal is DirectTrfOutcomeTerminal.ACCEPTED
+    assert outcome.materialization is not None
+    assert outcome.materialization.evaluation_count == 1
+    assert outcome.materialization.cache_hits == 0
+    assert outcome.execution.counters.solver_requests_received == 16
+    assert complete_calls == 2  # one preflight and one fresh accepted materialization
+    assert residual_calls == outcome.execution.counters.objective_evaluations_completed
+
+
+def test_cpmg_step1_direct_trf_preserves_requests_and_reuses_profile_kernels() -> None:
+    method = read_methods([CPMG_ROOT / "Methods/method.toml"])["STEP1"]
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    experiments = build_experiments(
+        sorted((CPMG_ROOT / "Experiments").glob("*.toml")),
+        method.selection,
+        session=session,
+    )
+    session.parameters.set_defaults(
+        read_defaults([CPMG_ROOT / "Parameters/parameters.toml"])
+    )
+    assert session.try_build_analysis_values()
+    parameterization = session.compile_parameterization(method, experiments.param_ids)
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    configuration = session.parameter_factory.sealed_configuration
+    assert configuration is not None
+    root_problem = OptimizationProblem.from_native(
+        engine.plan,
+        parameterization,
+        configuration,
+        session.analysis_values.snapshot(),
+    )
+    decomposition = FitDecomposition.from_root(
+        root_problem,
+        parameterization,
+        engine,
+    )
+    assert len(decomposition.components) == 1
+    component = decomposition.components[0]
+    component_engine = engine.project_profiles(component.root_profile_indices)
+    invocation = DirectTrfInvocation.for_problem(
+        component.problem,
+        objective_request_budget=2000 * (len(component.controlled_ids) + 1),
+        x_scale=tuple(max(1.0, abs(value)) for value in component.problem.start),
+    )
+    pulse_type = type(next(iter(experiments)).profiles[0].pulse_sequence)
+    original_calculate = pulse_type.calculate
+    kernel_calls = 0
+
+    def counted_kernel(self: object, spectrometer: object, data: object) -> Array:
+        nonlocal kernel_calls
+        kernel_calls += 1
+        return original_calculate(self, spectrometer, data)
+
+    with patch.object(pulse_type, "calculate", counted_kernel):
+        outcome = execute_direct_trf_candidate(
+            component.problem,
+            invocation,
+            parameterization,
+            component_engine,
+        )
+
+    assert outcome.terminal is DirectTrfCandidateTerminal.SUCCESS
+    assert outcome.candidate is not None
+    assert outcome.execution.backend is not None
+    assert outcome.execution.backend.nfev == 7
+    assert outcome.execution.backend.njev == 7
+    assert outcome.execution.counters.solver_requests_received == 126
+    assert outcome.execution.counters.objective_evaluations_completed == 126
+    assert kernel_calls == 360
+    assert outcome.candidate.chi_square == pytest.approx(285.8191490381348)
 
 
 def test_live_commit_authority_is_atomic_under_concurrent_use() -> None:

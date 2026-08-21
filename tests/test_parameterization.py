@@ -18,7 +18,6 @@ from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
 from chemex.experiments.builder import build_experiments
 from chemex.models.factory import model_factory
-from chemex.nmr.rates import rate_functions
 from chemex.parameters.database import ParameterIndex
 from chemex.parameters.name import ParamName
 from chemex.parameters.parameterization import (
@@ -36,6 +35,7 @@ from chemex.parameters.parameterization import (
     ParameterDeclaration,
     ParameterDeclarationContribution,
     ParameterRole,
+    ScientificFunctionBinder,
     SealedParameterDeclarations,
     SealedParameterModel,
     UnsupportedConstraintExpressionError,
@@ -1140,7 +1140,7 @@ def test_scientific_function_identity_tracks_same_metadata_implementation_change
         second.resolve(first_frame)
 
 
-def test_mutated_bound_scientific_function_cannot_change_compiled_program(
+def test_mutated_scientific_function_is_rejected_at_fresh_binding_boundary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class MutableScientificFunction:
@@ -1177,42 +1177,47 @@ def test_mutated_bound_scientific_function_cannot_change_compiled_program(
     function.scale = 3.0
 
     with pytest.raises(ConstraintProgramMismatchError) as raised:
-        parameterization.resolve(frame)
+        dataclasses.replace(
+            parameterization,
+            occurrence_identity="fresh-binding-occurrence",
+        )
 
     assert raised.value.code == "program_mismatch"
     assert raised.value.context["function_id"] == "mutable"
 
 
-def test_mutated_shipped_rate_class_state_cannot_change_compiled_program(
+def test_valid_scientific_functions_validate_once_per_bound_occurrence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    declarations = (
-        ParameterDeclaration("__H", False),
-        ParameterDeclaration("__TAUC", False),
-        ParameterDeclaration("__S2", False),
-        ParameterDeclaration("__R2", False, 'nh(__H, __TAUC, __S2)["r2_i"]'),
+    validation_calls = 0
+    original_validate = ScientificFunctionBinder.validate_implementations
+
+    def counted_validate(binder: ScientificFunctionBinder) -> None:
+        nonlocal validation_calls
+        validation_calls += 1
+        original_validate(binder)
+
+    monkeypatch.setattr(
+        ScientificFunctionBinder,
+        "validate_implementations",
+        counted_validate,
     )
+    declarations = (ParameterDeclaration("__A", False),)
     parameter_model, snapshot = _native_fixture(
         declarations,
-        values={"__H": 800.0, "__TAUC": 5.0, "__S2": 0.9, "__R2": 0.0},
+        values={"__A": 2.0},
     )
     parameterization = compile_active_parameterization(
         parameter_model,
         snapshot,
         Method(),
-        {"__R2"},
+        {"__A"},
     )
     frame = parameterization.frame_from_snapshot(snapshot)
-    parameterization.resolve(frame)
-    rate_type = type(rate_functions["nh"])
-
-    monkeypatch.setattr(rate_type, "gi", rate_type.gi * 1.01)
-
-    with pytest.raises(ConstraintProgramMismatchError) as raised:
+    for _ in range(200):
         parameterization.resolve(frame)
 
-    assert raised.value.code == "program_mismatch"
-    assert raised.value.context["function_id"] == "nh"
+    assert validation_calls == 1
 
 
 def test_malformed_scientific_function_component_is_typed(

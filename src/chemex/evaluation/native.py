@@ -30,7 +30,6 @@ from chemex.parameters.parameterization import (
     ActiveParameterization,
     IndependentValueFrame,
     ParameterizationError,
-    ResolvedParameterValues,
 )
 from chemex.typing import Array
 
@@ -43,6 +42,7 @@ _ORDERING_VERSION = "experiment-profile-row-v1"
 _FAILURE_VERSION = "typed-failure-v1"
 _DIAGNOSTICS_VERSION = "no-contractual-diagnostics-v1"
 _COMPATIBILITY_VERSION = "chemex-profile-kernel-v1"
+_PROFILE_CACHE_CAPACITY = 5
 type FailureStage = Literal[
     "frame",
     "resolution",
@@ -1294,19 +1294,40 @@ class _NativeKernelCapability:
 
 
 @dataclass(slots=True)
-class _Workspace:
-    templates: tuple[_NativeKernelCapability, ...]
-    profiles: tuple[_NativeKernelCapability, ...]
-    cache: OrderedDict[tuple[object, ...], _CachedProfile] = field(
+class _ProfileWorkspace:
+    template: _NativeKernelCapability
+    profile: _NativeKernelCapability = field(init=False)
+    cache: OrderedDict[tuple[float, ...], _CachedProfile] = field(
         default_factory=OrderedDict
     )
+
+    def __post_init__(self) -> None:
+        self.profile = deepcopy(self.template)
+
+    def reset(self) -> None:
+        self.profile = deepcopy(self.template)
+        self.cache.clear()
+
+
+@dataclass(slots=True)
+class _Workspace:
+    profile_workspaces: tuple[_ProfileWorkspace, ...]
+    resolved_values: dict[str, float] | None = None
     hits: int = 0
     misses: int = 0
     poisoned: bool = False
 
+    def clear_caches(self) -> None:
+        for workspace in self.profile_workspaces:
+            workspace.cache.clear()
+
+    def clear_resolution(self) -> None:
+        self.resolved_values = None
+
     def reset(self) -> None:
-        self.profiles = tuple(deepcopy(profile) for profile in self.templates)
-        self.cache.clear()
+        for workspace in self.profile_workspaces:
+            workspace.reset()
+        self.clear_resolution()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1639,8 +1660,10 @@ class EvaluationEngine:
             self._parameterization,
             self.compatibility_identity,
             _Workspace(
-                tuple(deepcopy(template) for template in self._templates),
-                tuple(deepcopy(template) for template in self._templates),
+                tuple(
+                    _ProfileWorkspace(deepcopy(template))
+                    for template in self._templates
+                ),
             ),
         )
 
@@ -1668,7 +1691,9 @@ class BoundEvaluator:
         return CacheStatistics(
             self._workspace.hits,
             self._workspace.misses,
-            len(self._workspace.cache),
+            sum(
+                len(workspace.cache) for workspace in self._workspace.profile_workspaces
+            ),
         )
 
     def _failure(
@@ -1699,7 +1724,8 @@ class BoundEvaluator:
             raise RuntimeError("Undeclared native evaluation failure")
         if validity in {"INVALID_PLAN_OR_BINDING", "IMPLEMENTATION_FAILURE"}:
             self._workspace.poisoned = True
-            self._workspace.cache.clear()
+            self._workspace.clear_caches()
+            self._workspace.clear_resolution()
         elif validity == "INVALID_TRIAL":
             self._workspace.reset()
         return EvaluationFailure(
@@ -1716,7 +1742,7 @@ class BoundEvaluator:
         self,
         descriptor: ProfilePlan,
         profile: _NativeKernelCapability,
-        resolved: ResolvedParameterValues,
+        resolved: Mapping[str, float],
     ) -> Array | EvaluationFailure:
         """Run and validate the narrow unscaled profile kernel."""
         try:
@@ -1834,13 +1860,11 @@ class BoundEvaluator:
         self,
         descriptor: ProfilePlan,
         profile: _NativeKernelCapability,
-        resolved: ResolvedParameterValues,
+        cache: OrderedDict[tuple[float, ...], _CachedProfile],
+        resolved: Mapping[str, float],
     ) -> _CachedProfile | EvaluationFailure:
         try:
-            key = (
-                descriptor.identity,
-                *(resolved[param_id] for param_id in descriptor.param_ids),
-            )
+            key = tuple(resolved[param_id] for param_id in descriptor.param_ids)
         except Exception as error:  # noqa: BLE001 - cache integrity fence
             return self._failure(
                 "cache",
@@ -1849,9 +1873,9 @@ class BoundEvaluator:
                 profile_identity=descriptor.identity,
                 message=str(error),
             )
-        cached = self._workspace.cache.get(key)
+        cached = cache.get(key)
         if cached is not None:
-            self._workspace.cache.move_to_end(key)
+            cache.move_to_end(key)
             self._workspace.hits += 1
             return cached
         self._workspace.misses += 1
@@ -1861,17 +1885,16 @@ class BoundEvaluator:
         cached = self._normalize_profile(descriptor, unscaled)
         if isinstance(cached, EvaluationFailure):
             return cached
-        self._workspace.cache[key] = cached
-        self._workspace.cache.move_to_end(key)
-        while len(self._workspace.cache) > 5:
-            self._workspace.cache.popitem(last=False)
+        cache[key] = cached
+        cache.move_to_end(key)
+        while len(cache) > _PROFILE_CACHE_CAPACITY:
+            cache.popitem(last=False)
         return cached
 
-    def _evaluate_impl(
+    def _resolve_frame(
         self,
         frame: EvaluationFrame,
-    ) -> EvaluationResult | EvaluationFailure:
-        """Resolve once and atomically return a complete result or typed failure."""
+    ) -> dict[str, float] | EvaluationFailure:
         if get_ident() != self._owner:
             return self._failure(
                 "binding", "workspace_owner_violation", "INVALID_REQUEST"
@@ -1902,7 +1925,10 @@ class BoundEvaluator:
                 self._parameterization.source_revision,
                 frame._items,
             )
-            resolved = self._parameterization.resolve(lifecycle_frame)
+            resolved = self._parameterization._resolve_values(
+                lifecycle_frame,
+                self._workspace.resolved_values,
+            )
         except ParameterizationError as error:
             return self._failure(
                 "resolution",
@@ -1917,17 +1943,39 @@ class BoundEvaluator:
                 "IMPLEMENTATION_FAILURE",
                 message=str(error),
             )
-        unscaled_parts: list[Array] = []
-        normalized_parts: list[Array] = []
-        residual_parts: list[Array] = []
-        profiles: list[ProfileEvaluation] = []
-        residual_offset = 0
-        for descriptor, profile in zip(
-            self.plan.profiles, self._workspace.profiles, strict=True
+        self._workspace.resolved_values = resolved
+        return resolved
+
+    def _evaluate_profiles(
+        self,
+        resolved: Mapping[str, float],
+    ) -> list[_CachedProfile] | EvaluationFailure:
+        results: list[_CachedProfile] = []
+        for descriptor, workspace in zip(
+            self.plan.profiles,
+            self._workspace.profile_workspaces,
+            strict=True,
         ):
-            cached = self._cached_profile(descriptor, profile, resolved)
+            cached = self._cached_profile(
+                descriptor,
+                workspace.profile,
+                workspace.cache,
+                resolved,
+            )
             if isinstance(cached, EvaluationFailure):
                 return cached
+            results.append(cached)
+        return results
+
+    def _complete_result(
+        self,
+        resolved: Mapping[str, float],
+        cached_profiles: Sequence[_CachedProfile],
+        residuals: Array,
+    ) -> EvaluationResult:
+        residual_offset = 0
+        profiles: list[ProfileEvaluation] = []
+        for descriptor, cached in zip(self.plan.profiles, cached_profiles, strict=True):
             retained = descriptor.retained_observation_indices
             profiles.append(
                 ProfileEvaluation(
@@ -1942,32 +1990,54 @@ class BoundEvaluator:
                 )
             )
             residual_offset += len(retained)
-            unscaled_parts.append(cached.unscaled)
-            normalized_parts.append(cached.normalized)
-            residual_parts.append(cached.residuals)
-        try:
-            return EvaluationResult(
-                self.plan.identity,
+        return EvaluationResult(
+            self.plan.identity,
+            self._parameterization.evaluator_identity,
+            self.compatibility_identity,
+            ResolvedEvaluationValues(
                 self._parameterization.evaluator_identity,
-                self.compatibility_identity,
-                ResolvedEvaluationValues(
-                    self._parameterization.evaluator_identity,
-                    self._parameterization.program.fingerprint,
-                    resolved._items,
+                self._parameterization.program.fingerprint,
+                tuple(
+                    (param_id, resolved[param_id])
+                    for param_id in self._parameterization.scope_ids
                 ),
-                _readonly(
-                    np.concatenate(unscaled_parts) if unscaled_parts else np.empty(0)
-                ),
-                _readonly(
-                    np.concatenate(normalized_parts)
-                    if normalized_parts
-                    else np.empty(0)
-                ),
-                _readonly(
-                    np.concatenate(residual_parts) if residual_parts else np.empty(0)
-                ),
-                tuple(profiles),
+            ),
+            _readonly(
+                np.concatenate([item.unscaled for item in cached_profiles])
+                if cached_profiles
+                else np.empty(0)
+            ),
+            _readonly(
+                np.concatenate([item.normalized for item in cached_profiles])
+                if cached_profiles
+                else np.empty(0)
+            ),
+            residuals,
+            tuple(profiles),
+        )
+
+    def _evaluate_impl(
+        self,
+        frame: EvaluationFrame,
+        *,
+        materialize: bool,
+    ) -> EvaluationResult | Array | EvaluationFailure:
+        """Run the shared scientific path, optionally materializing full evidence."""
+        resolved = self._resolve_frame(frame)
+        if isinstance(resolved, EvaluationFailure):
+            return resolved
+        cached_profiles = self._evaluate_profiles(resolved)
+        if isinstance(cached_profiles, EvaluationFailure):
+            return cached_profiles
+        try:
+            residuals = _readonly(
+                np.concatenate([item.residuals for item in cached_profiles])
+                if cached_profiles
+                else np.empty(0)
             )
+            if not materialize:
+                return residuals
+            return self._complete_result(resolved, cached_profiles, residuals)
         except Exception as error:  # noqa: BLE001 - result integrity fence
             return self._failure(
                 "result",
@@ -1976,8 +2046,12 @@ class BoundEvaluator:
                 message=str(error),
             )
 
-    def evaluate(self, frame: EvaluationFrame) -> EvaluationResult | EvaluationFailure:
-        """Fence one complete call under the declared single-owner contract."""
+    def _fenced_evaluate(
+        self,
+        frame: EvaluationFrame,
+        *,
+        materialize: bool,
+    ) -> EvaluationResult | Array | EvaluationFailure:
         if os.getpid() != self._owner_pid:
             return self._failure(
                 "binding", "workspace_process_violation", "INVALID_PLAN_OR_BINDING"
@@ -2000,7 +2074,7 @@ class BoundEvaluator:
                 under="ignore",
                 invalid="raise",
             ):
-                return self._evaluate_impl(frame)
+                return self._evaluate_impl(frame, materialize=materialize)
         except FloatingPointError as error:
             return self._failure(
                 "residual", "non_finite_residual", "INVALID_TRIAL", message=str(error)
@@ -2014,3 +2088,17 @@ class BoundEvaluator:
             )
         finally:
             self._in_flight = False
+
+    def evaluate(self, frame: EvaluationFrame) -> EvaluationResult | EvaluationFailure:
+        """Fence one complete call under the declared single-owner contract."""
+        return cast(
+            "EvaluationResult | EvaluationFailure",
+            self._fenced_evaluate(frame, materialize=True),
+        )
+
+    def evaluate_residuals(self, frame: EvaluationFrame) -> Array | EvaluationFailure:
+        """Evaluate one ephemeral solver request without publication evidence."""
+        return cast(
+            "Array | EvaluationFailure",
+            self._fenced_evaluate(frame, materialize=False),
+        )
