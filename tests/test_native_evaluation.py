@@ -24,6 +24,7 @@ from chemex.evaluation.native import (
     _parameterization_failure_validity,
 )
 from chemex.experiments.builder import build_experiments
+from chemex.parameters import parameterization as parameterization_module
 from chemex.parameters.parameterization import (
     AmbiguousParameterReferenceError,
     ConstraintCycleError,
@@ -692,6 +693,189 @@ def test_workspace_reuse_cache_and_fresh_workspace_are_scientifically_identical(
         first.residuals[0] = 0.0
 
 
+def test_profile_local_caches_reuse_and_invalidate_only_resolved_dependencies() -> None:
+    session, experiments = _shipped_dcest("1N", "2N", "3N", "4N", "5N", "6N", "7N")
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    evaluator = engine.new_evaluator()
+    frame = _evaluation_frame(session, parameterization)
+    pulse_type = type(next(iter(experiments)).profiles[0].pulse_sequence)
+    original = pulse_type.calculate
+    calls: list[object] = []
+
+    def counted(self: object, spectrometer: object, data: object) -> Array:
+        calls.append(self)
+        return original(self, spectrometer, data)
+
+    def perturbed(param_id: str) -> EvaluationFrame:
+        return EvaluationFrame(
+            frame.parameterization_identity,
+            tuple(
+                (item_id, value * 1.000001 if item_id == param_id else value)
+                for item_id, value in frame._items
+            ),
+        )
+
+    with patch.object(pulse_type, "calculate", counted):
+        first = evaluator.evaluate(frame)
+        assert isinstance(first, EvaluationResult)
+        assert len(calls) == 7
+
+        calls.clear()
+        repeated = evaluator.evaluate(frame)
+        assert isinstance(repeated, EvaluationResult)
+        assert len(calls) == 0
+
+        calls.clear()
+        local = evaluator.evaluate(perturbed("__R2_A_1N_800_2MHZ"))
+        assert isinstance(local, EvaluationResult)
+        assert len(calls) == 1
+
+        calls.clear()
+        constrained = evaluator.evaluate(perturbed("__DW_AB_2N"))
+        assert isinstance(constrained, EvaluationResult)
+        assert len(calls) == 1
+
+        calls.clear()
+        global_change = evaluator.evaluate(perturbed("__D2O__0_1000"))
+        assert isinstance(global_change, EvaluationResult)
+        assert len(calls) == 7
+
+        fresh = engine.new_evaluator()
+        assert fresh.cache_statistics == dataclasses.replace(
+            evaluator.cache_statistics,
+            hits=0,
+            misses=0,
+            entries=0,
+        )
+        calls.clear()
+        fresh_result = fresh.evaluate(frame)
+        assert isinstance(fresh_result, EvaluationResult)
+        assert len(calls) == 7
+
+    assert evaluator.cache_statistics.entries == 16
+    np.testing.assert_array_equal(first.residuals, repeated.residuals)
+
+
+def test_solver_residual_evaluation_matches_complete_result_without_materializing_it() -> (
+    None
+):
+    session, experiments = _shipped_dcest("1N", "2N")
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    frame = _evaluation_frame(session, parameterization)
+    complete = engine.new_evaluator().evaluate(frame)
+    assert isinstance(complete, EvaluationResult)
+
+    with patch(
+        "chemex.evaluation.native.EvaluationResult",
+        side_effect=AssertionError(
+            "solver trials must not materialize complete results"
+        ),
+    ):
+        residuals = engine.new_evaluator().evaluate_residuals(frame)
+
+    assert isinstance(residuals, np.ndarray)
+    np.testing.assert_array_equal(residuals, complete.residuals)
+
+
+def test_profile_local_cache_capacity_remains_bounded() -> None:
+    session, experiments = _shipped_dcest()
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    evaluator = EvaluationEngine.from_experiments(
+        experiments, parameterization
+    ).new_evaluator()
+    frame = _evaluation_frame(session, parameterization)
+    param_id = "__R2_A_1N_800_2MHZ"
+
+    for ordinal in range(7):
+        outcome = evaluator.evaluate(
+            EvaluationFrame(
+                frame.parameterization_identity,
+                tuple(
+                    (
+                        item_id,
+                        value * (1.0 + ordinal * 1.0e-6)
+                        if item_id == param_id
+                        else value,
+                    )
+                    for item_id, value in frame._items
+                ),
+            )
+        )
+        assert isinstance(outcome, EvaluationResult)
+
+    assert 0 < evaluator.cache_statistics.entries <= 5
+
+
+def test_repeated_trial_resolution_reuses_unchanged_constraint_values() -> None:
+    session, experiments = _shipped_dcest("1N", "2N", "3N", "4N", "5N", "6N", "7N")
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    frame = _evaluation_frame(session, parameterization)
+    changed_id = "__D2O__0_1000"
+    changed_frame = EvaluationFrame(
+        frame.parameterization_identity,
+        tuple(
+            (param_id, value * 1.000001 if param_id == changed_id else value)
+            for param_id, value in frame._items
+        ),
+    )
+    original = parameterization_module._evaluate_expression
+    counts = {"reused": 0, "fresh": 0}
+    phase = "reused"
+
+    def counted(*args: object, **kwargs: object) -> float:
+        counts[phase] += 1
+        return original(*args, **kwargs)
+
+    reused = engine.new_evaluator()
+    with patch.object(parameterization_module, "_evaluate_expression", counted):
+        initial = reused.evaluate(frame)
+        initial_count = counts["reused"]
+        changed = reused.evaluate(changed_frame)
+        changed_count = counts["reused"] - initial_count
+        phase = "fresh"
+        fresh = engine.new_evaluator().evaluate(changed_frame)
+
+    assert isinstance(initial, EvaluationResult)
+    assert isinstance(changed, EvaluationResult)
+    assert isinstance(fresh, EvaluationResult)
+    assert 0 < changed_count < initial_count
+    assert counts["fresh"] == initial_count
+    assert changed.resolved_values == fresh.resolved_values
+    np.testing.assert_array_equal(changed.residuals, fresh.residuals)
+
+
+def test_solver_residual_failure_classification_matches_complete_evaluation() -> None:
+    session, experiments = _shipped_dcest()
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    frame = _evaluation_frame(session, parameterization)
+
+    with patch.object(
+        type(parameterization),
+        "_resolve_values",
+        side_effect=ConstraintDomainError("outside scientific domain"),
+    ):
+        complete = engine.new_evaluator().evaluate(frame)
+        residuals = engine.new_evaluator().evaluate_residuals(frame)
+
+    assert isinstance(complete, EvaluationFailure)
+    assert isinstance(residuals, EvaluationFailure)
+    assert (
+        residuals.stage,
+        residuals.category,
+        residuals.validity,
+        residuals.message,
+    ) == (
+        complete.stage,
+        complete.category,
+        complete.validity,
+        complete.message,
+    )
+
+
 def test_native_normalization_uses_the_no_epsilon_572_formula() -> None:
     session, experiments = _shipped_dcest()
     profile = next(iter(experiments)).profiles[0]
@@ -1273,7 +1457,7 @@ def test_evaluator_maps_declared_parameterization_failures(
         experiments, parameterization
     ).new_evaluator()
     with patch.object(
-        type(parameterization), "resolve", side_effect=error_type("test")
+        type(parameterization), "_resolve_values", side_effect=error_type("test")
     ):
         outcome = evaluator.evaluate(_evaluation_frame(session, parameterization))
     assert isinstance(outcome, EvaluationFailure)

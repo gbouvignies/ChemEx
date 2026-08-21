@@ -646,8 +646,22 @@ class ActiveParameterization:
         repr=False,
         compare=False,
     )
+    _ordered_constraints: tuple[CompiledConstraint, ...] = field(
+        init=False,
+        repr=False,
+        compare=False,
+    )
+    _affected_constraint_positions: Mapping[str, tuple[int, ...]] = field(
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
+        # Validate the exact callable references once, when this immutable
+        # parameterization occurrence becomes executable. Repeated resolution
+        # then uses the already-bound functions without source introspection.
+        self.binder.validate_implementations()
         roles = tuple(self._roles)
         role_index = MappingProxyType(dict(roles))
         if tuple(role_index) != self.program.scope_ids:
@@ -655,6 +669,37 @@ class ActiveParameterization:
             raise ValueError(msg)
         object.__setattr__(self, "_roles", roles)
         object.__setattr__(self, "_role_index", role_index)
+        constraints = {item.target_id: item for item in self.program.constraints}
+        ordered_constraints = tuple(
+            constraints[target_id] for target_id in self.program.evaluation_order
+        )
+        outgoing: dict[str, list[str]] = {}
+        for constraint in ordered_constraints:
+            for dependency in constraint.dependencies:
+                outgoing.setdefault(dependency, []).append(constraint.target_id)
+        positions = {
+            constraint.target_id: position
+            for position, constraint in enumerate(ordered_constraints)
+        }
+        affected: dict[str, tuple[int, ...]] = {}
+        for independent_id in self.program.independent_ids:
+            pending = list(outgoing.get(independent_id, ()))
+            targets: set[str] = set()
+            while pending:
+                target_id = pending.pop()
+                if target_id in targets:
+                    continue
+                targets.add(target_id)
+                pending.extend(outgoing.get(target_id, ()))
+            affected[independent_id] = tuple(
+                sorted(positions[target_id] for target_id in targets)
+            )
+        object.__setattr__(self, "_ordered_constraints", ordered_constraints)
+        object.__setattr__(
+            self,
+            "_affected_constraint_positions",
+            MappingProxyType(affected),
+        )
         object.__setattr__(
             self,
             "identity",
@@ -740,23 +785,47 @@ class ActiveParameterization:
             _items=items,
         )
 
-    def resolve(self, frame: IndependentValueFrame) -> ResolvedParameterValues:
+    def _resolve_values(
+        self,
+        frame: IndependentValueFrame,
+        previous: Mapping[str, float] | None = None,
+    ) -> dict[str, float]:
         _validate_frame(self, frame)
-        self.binder.validate_implementations()
-        values = {
+        independent_values = {
             param_id: _finite_scalar(value, param_id=param_id)
             for param_id, value in frame._items
         }
-        constraints = {item.target_id: item for item in self.program.constraints}
-        for position, target_id in enumerate(self.program.evaluation_order):
-            constraint = constraints[target_id]
-            values[target_id] = _evaluate_expression(
+        if previous is None:
+            values = independent_values
+            constraint_positions = range(len(self._ordered_constraints))
+        else:
+            values = dict(previous)
+            changed_ids = {
+                param_id
+                for param_id, value in independent_values.items()
+                if value != previous[param_id]
+            }
+            values.update(independent_values)
+            constraint_positions = sorted(
+                {
+                    position
+                    for param_id in changed_ids
+                    for position in self._affected_constraint_positions[param_id]
+                }
+            )
+        for position in constraint_positions:
+            constraint = self._ordered_constraints[position]
+            values[constraint.target_id] = _evaluate_expression(
                 constraint.expression,
                 values,
                 self.binder,
-                target_id=target_id,
+                target_id=constraint.target_id,
                 position=position,
             )
+        return values
+
+    def resolve(self, frame: IndependentValueFrame) -> ResolvedParameterValues:
+        values = self._resolve_values(frame)
         return ResolvedParameterValues(
             parameterization_identity=self.identity,
             program_fingerprint=self.program.fingerprint,

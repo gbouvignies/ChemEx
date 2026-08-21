@@ -1936,6 +1936,19 @@ def test_real_de_and_real_trf_match_analytical_boundary_optimum() -> None:
             residuals[1] = evaluated.resolved_values[unselected_id] - unselected_target
             return dataclasses.replace(evaluated, residuals=residuals)
 
+        def evaluate_residuals(
+            self,
+            frame: EvaluationFrame,
+        ) -> Array | EvaluationFailure:
+            evaluated = self._delegate.evaluate_residuals(frame)
+            if isinstance(evaluated, EvaluationFailure):
+                return evaluated
+            values = dict(frame._items)
+            residuals = np.zeros_like(evaluated)
+            residuals[0] = values[selected_id] - target_below_bound
+            residuals[1] = values[unselected_id] - unselected_target
+            return residuals
+
     def analytical_new_evaluator() -> AnalyticalBoundaryEvaluator:
         return AnalyticalBoundaryEvaluator(original_new_evaluator())
 
