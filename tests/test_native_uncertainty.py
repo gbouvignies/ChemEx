@@ -1128,6 +1128,25 @@ def test_product_request_excludes_unsupported_scientific_function_propagation() 
     assert request.policy.coordinate_scales
 
 
+def test_product_request_does_not_hide_structural_capability_errors() -> None:
+    parameterization, _engine, problem = _hd_problem(Method())
+
+    with (
+        patch.object(
+            native_deterministic_module,
+            "compile_constraint_linearization_capabilities",
+            side_effect=uncertainty_module.UncertaintyConstructionError("malformed"),
+        ),
+        pytest.raises(
+            uncertainty_module.UncertaintyConstructionError, match="malformed"
+        ),
+    ):
+        native_deterministic_module._product_uncertainty_request(
+            problem,
+            parameterization,
+        )
+
+
 def test_malformed_non_finite_svd_output_is_a_typed_covariance_failure() -> None:
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
     malformed_svd = (

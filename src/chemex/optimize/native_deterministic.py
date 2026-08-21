@@ -53,10 +53,10 @@ from chemex.optimize.method_step import (
     execute_method_step,
 )
 from chemex.optimize.uncertainty import (
+    MissingFunctionLinearizationCapability,
     ParameterUnit,
     ResidualVarianceScaling,
     RootAnchoredBlockCovarianceEvidence,
-    UncertaintyConstructionError,
     UncertaintyEvidence,
     UncertaintyPolicy,
     compile_constraint_linearization_capabilities,
@@ -169,7 +169,7 @@ def _product_uncertainty_request(
                 (param_id,),
                 (),
             )
-        except UncertaintyConstructionError:
+        except MissingFunctionLinearizationCapability:
             unsupported.append(param_id)
         else:
             supported.append(param_id)
@@ -197,6 +197,7 @@ def _product_uncertainty_request(
 def _product_uncertainty_result(
     outcome: object,
     controlled_ids: tuple[str, ...],
+    supported_constrained_ids: tuple[str, ...],
     unsupported_constrained_ids: tuple[str, ...],
 ) -> tuple[
     UncertaintyEvidence | None,
@@ -229,6 +230,7 @@ def _product_uncertainty_result(
             view = ParameterUncertaintyView(
                 unavailable_reasons=(
                     *((param_id, reason) for param_id in controlled_ids),
+                    *((param_id, reason) for param_id in supported_constrained_ids),
                     *(
                         (param_id, "unsupported constrained derivative")
                         for param_id in unsupported_constrained_ids
@@ -621,6 +623,7 @@ def run_native_deterministic(
     uncertainty_evidence, uncertainty, uncertainty_status = _product_uncertainty_result(
         outcome,
         problem.controlled_ids,
+        uncertainty_request.constrained_scope,
         unsupported_constrained_ids,
     )
     block_uncertainty = (
@@ -628,7 +631,10 @@ def run_native_deterministic(
         if uncertainty_evidence is None
         else derive_root_anchored_block_covariance(
             uncertainty_evidence,
-            tuple(component.controlled_ids for component in decomposition.components),
+            tuple(
+                (component.controlled_ids, component.root_profile_indices)
+                for component in decomposition.components
+            ),
         )
     )
     if block_uncertainty is not None:
@@ -644,8 +650,14 @@ def run_native_deterministic(
             if block.unavailable_reason
             for param_id in block.controlled_ids
         )
+        block_constrained_errors = tuple(
+            (entry.param_id, entry.value)
+            for block in block_uncertainty.blocks
+            for entry in block.constrained_marginal_errors
+            if entry.value is not None
+        )
         uncertainty = ParameterUncertaintyView(
-            uncertainty.standard_errors + block_errors,
+            uncertainty.standard_errors + block_errors + block_constrained_errors,
             uncertainty.unavailable_reasons + block_unavailable,
         )
     fit = NativeDeterministicFit(

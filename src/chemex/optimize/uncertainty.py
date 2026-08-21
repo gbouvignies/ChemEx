@@ -5,8 +5,9 @@ linearizes the complete native residual map again at one accepted external
 coordinate vector, constructs full-rank scaled-SVD covariance, and derives
 typed marginal, correlation, and constrained-propagation artifacts.
 
-The entry point remains an isolated qualification seam; production fitting and
-reporting do not consume these artifacts yet.
+Production deterministic fitting consumes these artifacts after the accepted
+result has committed. Central estimates remain separate from this report-only
+evidence.
 """
 
 from __future__ import annotations
@@ -69,6 +70,10 @@ _BOUNDARY_THRESHOLD = 3.0
 
 class UncertaintyConstructionError(ValueError):
     """Raised only for malformed policy or artifact construction."""
+
+
+class MissingFunctionLinearizationCapability(UncertaintyConstructionError):
+    """A constrained output requires an undeclared scientific-function partial."""
 
 
 class FunctionPartialFailure(UncertaintyConstructionError):
@@ -496,7 +501,7 @@ def compile_constraint_linearization_capabilities(
     required_keys = _required_function_keys(parameterization, scope)
     missing = required_keys - selected_keys
     if missing:
-        raise UncertaintyConstructionError(
+        raise MissingFunctionLinearizationCapability(
             "Compiled constraint linearization lacks capabilities for "
             f"{sorted(missing, key=repr)!r}"
         )
@@ -2553,17 +2558,27 @@ class RootAnchoredBlockCovariance:
     """One independent covariance block derived from the root linearization."""
 
     controlled_ids: tuple[str, ...]
+    root_profile_indices: tuple[int, ...]
     rank: int
     jacobian_condition: float | None
     covariance: tuple[tuple[float, ...], ...] | None
+    factor: tuple[tuple[float, ...], ...] | None
     marginal_errors: tuple[ScalarEvidenceEntry, ...]
     correlations: tuple[tuple[CorrelationEntry, ...], ...]
-    unavailable_reason: str = ""
+    constrained_marginal_errors: tuple[ScalarEvidenceEntry, ...]
+    claims: tuple[ClaimAssessment, ...]
+    failure: EvidenceFailure | None = None
+    constrained_failure: EvidenceFailure | None = None
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
         dimension = len(self.controlled_ids)
-        if dimension < 1 or not 0 <= self.rank <= dimension:
+        if (
+            dimension < 1
+            or not 0 <= self.rank <= dimension
+            or len(set(self.root_profile_indices)) != len(self.root_profile_indices)
+            or tuple(sorted(self.root_profile_indices)) != self.root_profile_indices
+        ):
             raise ValueError("Root-anchored covariance block has invalid rank")
         if (
             len(self.marginal_errors) != dimension
@@ -2571,12 +2586,17 @@ class RootAnchoredBlockCovariance:
             != self.controlled_ids
         ):
             raise ValueError("Root-anchored block marginal scope is invalid")
+        claim_states = {item.name: item.state for item in self.claims}
+        if len(claim_states) != len(self.claims):
+            raise ValueError("Root-anchored block claims must be unique")
+        reportable = claim_states.get("USABLE_LOCAL_COVARIANCE") is ClaimState.SATISFIED
         if self.covariance is None:
-            if not self.unavailable_reason or any(
-                item.value is not None for item in self.marginal_errors
-            ):
+            if self.failure is None or self.factor is not None or reportable:
+                raise ValueError("Unavailable covariance block lacks typed failure")
+            if any(item.value is not None for item in self.marginal_errors):
                 raise ValueError("Unavailable covariance block has usable marginals")
             covariance: tuple[tuple[float, ...], ...] = ()
+            factor: tuple[tuple[float, ...], ...] = ()
         else:
             covariance = _canonical_matrix(
                 self.covariance,
@@ -2584,9 +2604,18 @@ class RootAnchoredBlockCovariance:
                 columns=dimension,
                 name="root-anchored block covariance",
             )
-            if self.unavailable_reason:
-                raise ValueError("Available covariance block has an unavailable reason")
+            if self.factor is None or self.failure is not None:
+                raise ValueError("Available covariance block has inconsistent evidence")
+            factor = _canonical_matrix(
+                self.factor,
+                rows=dimension,
+                columns=dimension,
+                name="root-anchored block covariance factor",
+            )
+        if reportable != all(item.value is not None for item in self.marginal_errors):
+            raise ValueError("Block reportability and marginal values disagree")
         object.__setattr__(self, "covariance", covariance or None)
+        object.__setattr__(self, "factor", factor or None)
         object.__setattr__(
             self,
             "identity",
@@ -2594,11 +2623,13 @@ class RootAnchoredBlockCovariance:
                 "native-root-anchored-block-covariance",
                 (
                     self.controlled_ids,
+                    self.root_profile_indices,
                     self.rank,
                     None
                     if self.jacobian_condition is None
                     else _float_token(self.jacobian_condition),
                     () if self.covariance is None else _matrix_tokens(self.covariance),
+                    () if self.factor is None else _matrix_tokens(self.factor),
                     tuple(
                         (item.param_id, item.value, item.outcome, item.raw_value)
                         for item in self.marginal_errors
@@ -2609,10 +2640,58 @@ class RootAnchoredBlockCovariance:
                         )
                         for row in self.correlations
                     ),
-                    self.unavailable_reason,
+                    tuple(
+                        (item.param_id, item.value, item.outcome, item.raw_value)
+                        for item in self.constrained_marginal_errors
+                    ),
+                    tuple(
+                        (item.name, item.state.value, item.detail)
+                        for item in self.claims
+                    ),
+                    None if self.failure is None else self.failure.identity,
+                    None
+                    if self.constrained_failure is None
+                    else self.constrained_failure.identity,
                 ),
             ),
         )
+
+    @property
+    def scope_reportable(self) -> bool:
+        """Whether this block satisfies the canonical covariance claims."""
+        return (
+            next(
+                item.state
+                for item in self.claims
+                if item.name == "USABLE_LOCAL_COVARIANCE"
+            )
+            is ClaimState.SATISFIED
+        )
+
+    @property
+    def unavailable_reason(self) -> str:
+        """Map typed block evidence to the closed product reason vocabulary."""
+        if self.scope_reportable:
+            return ""
+        if self.failure is not None:
+            if self.failure.category == "rank_deficient":
+                return "rank deficient"
+            if self.failure.category == "insufficient_effective_observations":
+                return "insufficient information"
+            return "derivative unavailable"
+        states = {item.name: item.state for item in self.claims}
+        if states.get("CONDITIONING_ADEQUACY") is not ClaimState.SATISFIED:
+            return "poorly conditioned"
+        if any(
+            states.get(name) is not ClaimState.SATISFIED
+            for name in (
+                "FULL_DIMENSIONAL_FEASIBLE_INTERIOR",
+                "INTERIOR_POINT",
+                "BOUNDARY_SEPARATION",
+            )
+        ):
+            return "boundary limited"
+        return "insufficient information"
 
 
 @dataclass(frozen=True, slots=True)
@@ -2622,6 +2701,7 @@ class RootAnchoredBlockCovarianceEvidence:
     accepted_result_identity: str
     accepted_occurrence_identity: str
     source_jacobian_identity: str
+    source_constraint_jacobian_identity: str | None
     policy_identity: str
     blocks: tuple[RootAnchoredBlockCovariance, ...]
     source_bundle: UncertaintyEvidence = field(repr=False, compare=False)
@@ -2636,12 +2716,30 @@ class RootAnchoredBlockCovarianceEvidence:
             or self.accepted_occurrence_identity != source.accepted_occurrence_identity
             or self.source_jacobian_identity != jacobian.identity
             or self.policy_identity != source.policy_identity
-            or tuple(
-                param_id for block in self.blocks for param_id in block.controlled_ids
+            or self.source_constraint_jacobian_identity
+            != (
+                None
+                if source.constraint_jacobian is None
+                else source.constraint_jacobian.identity
             )
-            != jacobian.controlled_ids
         ):
             raise ValueError("Root-anchored block evidence has inconsistent lineage")
+        flattened = tuple(
+            param_id for block in self.blocks for param_id in block.controlled_ids
+        )
+        if len(set(flattened)) != len(flattened) or set(flattened) != set(
+            jacobian.controlled_ids
+        ):
+            raise ValueError("Root-anchored blocks must partition root coordinates")
+        root_order = {
+            param_id: index for index, param_id in enumerate(jacobian.controlled_ids)
+        }
+        if any(
+            tuple(sorted(block.controlled_ids, key=root_order.__getitem__))
+            != block.controlled_ids
+            for block in self.blocks
+        ):
+            raise ValueError("Root-anchored block coordinates violate root order")
         object.__setattr__(
             self,
             "identity",
@@ -2651,6 +2749,7 @@ class RootAnchoredBlockCovarianceEvidence:
                     self.accepted_result_identity,
                     self.accepted_occurrence_identity,
                     self.source_jacobian_identity,
+                    self.source_constraint_jacobian_identity,
                     self.policy_identity,
                     tuple(item.identity for item in self.blocks),
                 ),
@@ -2665,15 +2764,47 @@ class RootAnchoredBlockCovarianceEvidence:
             "accepted_result_identity": self.accepted_result_identity,
             "accepted_occurrence_identity": self.accepted_occurrence_identity,
             "source_jacobian_identity": self.source_jacobian_identity,
+            "source_constraint_jacobian_identity": (
+                self.source_constraint_jacobian_identity
+            ),
             "policy_identity": self.policy_identity,
             "identity": self.identity,
-            "blocks": [_record_value(item) for item in self.blocks],
+            "blocks": [
+                {
+                    **cast(dict[str, object], _record_value(item)),
+                    "scope_reportable": item.scope_reportable,
+                    "unavailable_reason": item.unavailable_reason,
+                }
+                for item in self.blocks
+            ],
         }
 
 
-def derive_root_anchored_block_covariance(  # noqa: C901 - typed block derivation
+def _failed_block_claims(category: str) -> tuple[ClaimAssessment, ...]:
+    """Build the canonical closed claim surface for a failed block."""
+    return (
+        ClaimAssessment("AUTHORITATIVE_LINEAGE", ClaimState.SATISFIED),
+        ClaimAssessment("LOCAL_LINEARIZATION_REGULARITY", ClaimState.SATISFIED),
+        ClaimAssessment(
+            "EFFECTIVE_OBSERVATION_SUFFICIENCY",
+            ClaimState.VIOLATED
+            if category == "insufficient_effective_observations"
+            else ClaimState.SATISFIED,
+        ),
+        ClaimAssessment(
+            "FULL_COLUMN_RANK",
+            ClaimState.VIOLATED
+            if category == "rank_deficient"
+            else ClaimState.INDETERMINATE,
+        ),
+        ClaimAssessment("COVARIANCE_ARITHMETIC_INTEGRITY", ClaimState.INDETERMINATE),
+        ClaimAssessment("USABLE_LOCAL_COVARIANCE", ClaimState.VIOLATED),
+    )
+
+
+def derive_root_anchored_block_covariance(  # noqa: C901
     evidence: UncertaintyEvidence,
-    block_scopes: Sequence[Sequence[str]],
+    block_scopes: Sequence[tuple[Sequence[str], Sequence[int]]],
 ) -> RootAnchoredBlockCovarianceEvidence | None:
     """Derive independent full-rank blocks when the joint root is unavailable."""
     jacobian = evidence.residual_jacobian
@@ -2682,91 +2813,165 @@ def derive_root_anchored_block_covariance(  # noqa: C901 - typed block derivatio
         and evidence.marginal_errors.scope_reportable
     ):
         return None
-    scopes = tuple(tuple(scope) for scope in block_scopes)
+    if (
+        evidence.source_policy.residual_variance_scaling
+        is not ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES
+    ):
+        return None
+    scopes = tuple(
+        (tuple(controlled_ids), tuple(profile_indices))
+        for controlled_ids, profile_indices in block_scopes
+    )
     if len(scopes) < 2:
         return None
-    if (
-        tuple(param_id for scope in scopes for param_id in scope)
-        != jacobian.controlled_ids
+    flattened = tuple(param_id for scope, _profiles in scopes for param_id in scope)
+    if len(set(flattened)) != len(flattened) or set(flattened) != set(
+        jacobian.controlled_ids
     ):
         raise ValueError("Block covariance scopes must partition root coordinates")
+    root_order = {
+        param_id: index for index, param_id in enumerate(jacobian.controlled_ids)
+    }
+    if any(
+        tuple(sorted(scope, key=root_order.__getitem__)) != scope
+        for scope, _profiles in scopes
+    ):
+        raise ValueError("Block covariance coordinates must preserve root order")
     policy = evidence.source_policy
     matrix = np.asarray(jacobian.matrix, dtype=np.float64)
     accepted = evidence.accepted_anchor
     problem = evidence.source_problem
-    coordinate_index = {
-        param_id: index for index, param_id in enumerate(jacobian.controlled_ids)
-    }
-    variance_scale, variance_failure = _residual_variance_scale(
-        accepted,
-        degrees_of_freedom=(
-            jacobian.residual_count
-            - len(jacobian.controlled_ids)
-            - sum(
-                1
-                for profile in evidence.source_engine.plan.profiles
-                if profile.is_scaled
-            )
-        ),
-        policy=policy,
-    )
-    if variance_failure is not None or variance_scale is None:
-        return None
+    coordinate_index = root_order
+    profile_rows: list[tuple[int, ...]] = []
+    row_offset = 0
+    for profile in evidence.source_engine.plan.profiles:
+        retained_count = len(profile.retained_observation_indices)
+        profile_rows.append(tuple(range(row_offset, row_offset + retained_count)))
+        row_offset += retained_count
+    if row_offset != jacobian.residual_count:
+        raise ValueError("Root residual rows do not match the evaluation profile plan")
+    constraint_jacobian = evidence.constraint_jacobian
     blocks: list[RootAnchoredBlockCovariance] = []
-    for scope in scopes:
+    for scope, profile_indices in scopes:
+        if (
+            len(set(profile_indices)) != len(profile_indices)
+            or tuple(sorted(profile_indices)) != profile_indices
+            or any(not 0 <= index < len(profile_rows) for index in profile_indices)
+        ):
+            raise ValueError("Block covariance profile scope is invalid")
         indices = tuple(coordinate_index[param_id] for param_id in scope)
+        rows = tuple(row for index in profile_indices for row in profile_rows[index])
         scales = tuple(jacobian.coordinate_scales[index] for index in indices)
-        scaled = matrix[:, indices] * np.asarray(scales)[np.newaxis, :]
-        _left, singular_array, right_transpose = svd(
-            scaled,
-            full_matrices=False,
-            compute_uv=True,
-            overwrite_a=False,
-            check_finite=True,
-            lapack_driver=policy.svd_driver,
+        normalization_count = sum(
+            evidence.source_engine.plan.profiles[index].is_scaled
+            for index in profile_indices
         )
-        singular = tuple(float(value) for value in singular_array)
-        largest = singular[0] if singular else 0.0
-        threshold = policy.rank_absolute_tolerance + (
-            policy.rank_relative_tolerance * largest
-        )
-        rank = sum(value > threshold for value in singular)
-        unavailable_reason = ""
+        failure: EvidenceFailure | None = None
+        constrained_failure: EvidenceFailure | None = None
+        claims: tuple[ClaimAssessment, ...]
+        rank = 0
         condition: float | None = None
         covariance: tuple[tuple[float, ...], ...] | None = None
+        factor: tuple[tuple[float, ...], ...] | None = None
         correlations: tuple[tuple[CorrelationEntry, ...], ...] = ()
-        if rank != len(scope):
-            unavailable_reason = "rank deficient"
+        if len(rows) - normalization_count < len(scope):
+            failure = EvidenceFailure(
+                "block_covariance",
+                "insufficient_effective_observations",
+                "m - g is smaller than the block controlled-coordinate count",
+                jacobian.identity,
+            )
+            claims = _failed_block_claims(failure.category)
         else:
-            condition = largest / singular[-1]
-            if condition > policy.conditioning_limit:
-                unavailable_reason = "poorly conditioned"
-            else:
-                _unscaled, _factor, covariance = _canonical_covariance_reduction(
-                    singular,
-                    right_transpose,
-                    scales,
-                    variance_scale,
+            scaled = matrix[np.ix_(rows, indices)] * np.asarray(scales)[np.newaxis, :]
+            try:
+                _left, singular_array, right_transpose = svd(
+                    scaled,
+                    full_matrices=False,
+                    compute_uv=True,
+                    overwrite_a=False,
+                    check_finite=True,
+                    lapack_driver=policy.svd_driver,
                 )
-                for local_index, root_index in enumerate(indices):
-                    variance = covariance[local_index][local_index]
-                    if variance <= 0.0 or not math.isfinite(variance):
-                        unavailable_reason = "insufficient information"
-                        covariance = None
-                        break
-                    standard_error = math.sqrt(variance)
-                    value = accepted.vector[root_index]
-                    lower = problem.lower_bounds[root_index]
-                    upper = problem.upper_bounds[root_index]
-                    separation = min(value - lower, upper - value) / standard_error
-                    if (
-                        not math.isfinite(separation)
-                        or separation <= _BOUNDARY_THRESHOLD
-                    ):
-                        unavailable_reason = "boundary limited"
-                        covariance = None
-                        break
-        if covariance is None:
+                singular = tuple(
+                    _finite(value, name=f"block singular value[{index}]")
+                    for index, value in enumerate(singular_array)
+                )
+                spectrum_error = _singular_spectrum_error(singular, len(scope))
+                if spectrum_error is not None:
+                    failure = EvidenceFailure(
+                        "block_covariance",
+                        spectrum_error[0],
+                        spectrum_error[1],
+                        jacobian.identity,
+                    )
+                else:
+                    largest = singular[0]
+                    threshold = _finite(
+                        policy.rank_absolute_tolerance
+                        + policy.rank_relative_tolerance * largest,
+                        name="block rank threshold",
+                    )
+                    rank = sum(value > threshold for value in singular)
+                    if rank != len(scope):
+                        failure = EvidenceFailure(
+                            "block_covariance",
+                            "rank_deficient",
+                            f"Scaled block Jacobian rank {rank} is below {len(scope)}",
+                            jacobian.identity,
+                        )
+                    else:
+                        condition = _finite(
+                            largest / singular[-1],
+                            name="block Jacobian condition",
+                        )
+                        _unscaled, factor, covariance = _canonical_covariance_reduction(
+                            singular,
+                            right_transpose,
+                            scales,
+                            1.0,
+                        )
+                        if _has_positive_scale_zero_variance(covariance, 1.0):
+                            failure = EvidenceFailure(
+                                "block_covariance",
+                                "covariance_factor_underflow",
+                                "Positive-scale block covariance produced zero variance",
+                                jacobian.identity,
+                            )
+                            covariance = None
+                            factor = None
+            except Exception as error:  # noqa: BLE001 - third-party/arithmetic fence
+                failure = EvidenceFailure(
+                    "block_covariance",
+                    "invalid_covariance_arithmetic",
+                    str(error),
+                    jacobian.identity,
+                )
+                covariance = None
+                factor = None
+            if failure is not None:
+                claims = _failed_block_claims(failure.category)
+            else:
+                if covariance is None or condition is None:
+                    raise ValueError("Successful block covariance lacks its arrays")
+                claims = _canonical_covariance_claims(
+                    accepted,
+                    problem,
+                    covariance,
+                    1.0,
+                    condition,
+                    policy,
+                    evidence.source_engine,
+                    indices,
+                    frozenset(profile_indices),
+                )
+        reportable = (
+            next(
+                item.state for item in claims if item.name == "USABLE_LOCAL_COVARIANCE"
+            )
+            is ClaimState.SATISFIED
+        )
+        if covariance is None or not reportable:
             marginal = tuple(
                 ScalarEvidenceEntry(param_id, None, "UNAVAILABLE") for param_id in scope
             )
@@ -2784,21 +2989,81 @@ def derive_root_anchored_block_covariance(  # noqa: C901 - typed block derivatio
                 residual_variance_degenerate=False,
                 policy=policy,
             )
+        constrained: list[ScalarEvidenceEntry] = []
+        if constraint_jacobian is not None:
+            scope_set = set(scope)
+            eligible = tuple(
+                (output_id, row)
+                for output_id, row, dependencies in zip(
+                    constraint_jacobian.output_ids,
+                    constraint_jacobian.matrix,
+                    constraint_jacobian.structural_dependencies,
+                    strict=True,
+                )
+                if dependencies and set(dependencies) <= scope_set
+            )
+            if reportable and factor is not None and eligible:
+                gradient = tuple(
+                    tuple(row[index] for index in indices)
+                    for _output_id, row in eligible
+                )
+                try:
+                    _propagated_factor, propagated = _propagated_factor_and_covariance(
+                        gradient, factor
+                    )
+                    constrained.extend(
+                        ScalarEvidenceEntry(
+                            output_id,
+                            math.sqrt(propagated[index][index]),
+                            "AVAILABLE",
+                        )
+                        for index, (output_id, _row) in enumerate(eligible)
+                        if propagated[index][index] > 0.0
+                        and math.isfinite(propagated[index][index])
+                    )
+                    available_ids = {entry.param_id for entry in constrained}
+                    constrained.extend(
+                        ScalarEvidenceEntry(output_id, None, "INVALID_VARIANCE")
+                        for output_id, _row in eligible
+                        if output_id not in available_ids
+                    )
+                except (ArithmeticError, TypeError, ValueError) as error:
+                    constrained_failure = EvidenceFailure(
+                        "block_constrained_propagation",
+                        "gram_propagation_failure",
+                        str(error),
+                        constraint_jacobian.identity,
+                    )
+                    constrained.extend(
+                        ScalarEvidenceEntry(output_id, None, "UNAVAILABLE")
+                        for output_id, _row in eligible
+                    )
+            else:
+                constrained.extend(
+                    ScalarEvidenceEntry(output_id, None, "UNAVAILABLE")
+                    for output_id, _row in eligible
+                )
         blocks.append(
             RootAnchoredBlockCovariance(
                 scope,
+                profile_indices,
                 rank,
                 condition,
                 covariance,
+                factor,
                 marginal,
                 correlations,
-                unavailable_reason,
+                tuple(constrained),
+                claims,
+                failure,
+                constrained_failure,
             )
         )
     return RootAnchoredBlockCovarianceEvidence(
         evidence.accepted_result_identity,
         evidence.accepted_occurrence_identity,
         jacobian.identity,
+        None if constraint_jacobian is None else constraint_jacobian.identity,
         evidence.policy_identity,
         tuple(blocks),
         evidence,
@@ -3610,12 +3875,17 @@ def _linearize_residuals(
 def _profiled_normalization_regular(
     accepted: AcceptedFitResult,
     engine: EvaluationEngine,
+    profile_indices: frozenset[int] | None = None,
 ) -> bool:
-    for descriptor, profile in zip(
-        engine.plan.profiles,
-        accepted.evaluation_result.profiles,
-        strict=True,
+    for index, (descriptor, profile) in enumerate(
+        zip(
+            engine.plan.profiles,
+            accepted.evaluation_result.profiles,
+            strict=True,
+        )
     ):
+        if profile_indices is not None and index not in profile_indices:
+            continue
         if not descriptor.is_scaled:
             continue
         retained = descriptor.retained_observation_indices
@@ -3643,18 +3913,20 @@ def _box_boundary_claims(
     problem: OptimizationProblem,
     covariance: tuple[tuple[float, ...], ...],
     residual_variance_scale: float,
+    controlled_indices: tuple[int, ...] | None = None,
 ) -> tuple[ClaimAssessment, ClaimAssessment]:
+    indices = (
+        tuple(range(len(problem.controlled_ids)))
+        if controlled_indices is None
+        else controlled_indices
+    )
     strict_interior = True
     separation = ClaimState.SATISFIED
     details: list[str] = []
-    for index, (value, lower, upper) in enumerate(
-        zip(
-            accepted.vector,
-            problem.lower_bounds,
-            problem.upper_bounds,
-            strict=True,
-        )
-    ):
+    for local_index, root_index in enumerate(indices):
+        value = accepted.vector[root_index]
+        lower = problem.lower_bounds[root_index]
+        upper = problem.upper_bounds[root_index]
         if not lower <= value <= upper:
             return (
                 ClaimAssessment("INTERIOR_POINT", ClaimState.VIOLATED),
@@ -3668,17 +3940,17 @@ def _box_boundary_claims(
         ):
             if math.isinf(slack):
                 continue
-            variance = covariance[index][index]
+            variance = covariance[local_index][local_index]
             if residual_variance_scale == 0.0 or variance == 0.0:
                 separation = ClaimState.INDETERMINATE
-                details.append(f"{label}[{index}]: zero scaled variance")
+                details.append(f"{label}[{root_index}]: zero scaled variance")
                 continue
             if variance < 0.0 or not math.isfinite(variance):
                 separation = ClaimState.INDETERMINATE
-                details.append(f"{label}[{index}]: invalid directional variance")
+                details.append(f"{label}[{root_index}]: invalid directional variance")
                 continue
             zeta = float(slack / math.sqrt(variance))
-            details.append(f"{label}[{index}] zeta={zeta.hex()}")
+            details.append(f"{label}[{root_index}] zeta={zeta.hex()}")
             if not math.isfinite(zeta):
                 separation = ClaimState.INDETERMINATE
             elif zeta <= _BOUNDARY_THRESHOLD:
@@ -3751,6 +4023,7 @@ def _affine_feasibility_claim(
     affine_feasibility_policy: str,
     *,
     controlled_only: bool = False,
+    controlled_indices: tuple[int, ...] | None = None,
 ) -> ClaimAssessment:
     claim_name = (
         "CONTROLLED_AFFINE_SEPARATION" if controlled_only else "AFFINE_FEASIBILITY"
@@ -3761,7 +4034,12 @@ def _affine_feasibility_claim(
             ClaimState.NOT_APPLICABLE,
             affine_feasibility_policy,
         )
-    controlled_ids = set(problem.controlled_ids)
+    indices = (
+        tuple(range(len(problem.controlled_ids)))
+        if controlled_indices is None
+        else controlled_indices
+    )
+    controlled_ids = {problem.controlled_ids[index] for index in indices}
     accepted_controlled = dict(
         zip(problem.controlled_ids, accepted.vector, strict=True)
     )
@@ -3845,6 +4123,7 @@ def _boundary_claims(
     covariance: tuple[tuple[float, ...], ...],
     residual_variance_scale: float,
     affine_feasibility_policy: str,
+    controlled_indices: tuple[int, ...] | None = None,
 ) -> tuple[
     ClaimAssessment,
     ClaimAssessment,
@@ -3856,6 +4135,7 @@ def _boundary_claims(
         problem,
         covariance,
         residual_variance_scale,
+        controlled_indices,
     )
     if box[0].state is ClaimState.VIOLATED and any(
         not lower <= value <= upper
@@ -3878,6 +4158,7 @@ def _boundary_claims(
             covariance,
             residual_variance_scale,
             affine_feasibility_policy,
+            controlled_indices=controlled_indices,
         )
     controlled_affine = _affine_feasibility_claim(
         accepted,
@@ -3886,6 +4167,7 @@ def _boundary_claims(
         residual_variance_scale,
         affine_feasibility_policy,
         controlled_only=True,
+        controlled_indices=controlled_indices,
     )
     return (*box, affine, controlled_affine)
 
@@ -3930,8 +4212,14 @@ def _full_dimensional_feasible_interior_claim(
     accepted: AcceptedFitResult,
     problem: OptimizationProblem,
     box_interior: ClaimAssessment,
+    controlled_indices: tuple[int, ...] | None = None,
 ) -> ClaimAssessment:
-    controlled_ids = set(problem.controlled_ids)
+    indices = (
+        tuple(range(len(problem.controlled_ids)))
+        if controlled_indices is None
+        else controlled_indices
+    )
+    controlled_ids = {problem.controlled_ids[index] for index in indices}
     controlled_frame_indices = tuple(
         index
         for index, (param_id, _value) in enumerate(problem.independent_items)
@@ -3998,6 +4286,8 @@ def _canonical_covariance_claims(
     jacobian_condition: float,
     policy: UncertaintyPolicy,
     engine: EvaluationEngine,
+    controlled_indices: tuple[int, ...] | None = None,
+    profile_indices: frozenset[int] | None = None,
 ) -> tuple[ClaimAssessment, ...]:
     interior, boundary, affine, controlled_affine = _boundary_claims(
         accepted,
@@ -4005,11 +4295,13 @@ def _canonical_covariance_claims(
         covariance,
         residual_variance_scale,
         policy.affine_feasibility_policy,
+        controlled_indices,
     )
     full_dimensional_interior = _full_dimensional_feasible_interior_claim(
         accepted,
         problem,
         interior,
+        controlled_indices,
     )
     conditioning = ClaimAssessment(
         "CONDITIONING_ADEQUACY",
@@ -4021,7 +4313,7 @@ def _canonical_covariance_claims(
     normalization = ClaimAssessment(
         "PROFILED_NORMALIZATION_REGULARITY",
         ClaimState.SATISFIED
-        if _profiled_normalization_regular(accepted, engine)
+        if _profiled_normalization_regular(accepted, engine, profile_indices)
         else ClaimState.VIOLATED,
     )
     variance_nondegeneracy = ClaimAssessment(
@@ -5207,6 +5499,46 @@ def _canonical_constrained_propagation_claims(
     )
 
 
+def _propagated_factor_and_covariance(
+    gradient: tuple[tuple[float, ...], ...],
+    covariance_factor: tuple[tuple[float, ...], ...],
+    *,
+    residual_variance_degenerate: bool = False,
+) -> tuple[tuple[tuple[float, ...], ...], tuple[tuple[float, ...], ...]]:
+    """Apply the canonical factor/Gram propagation arithmetic."""
+    dimension = len(covariance_factor)
+    factor = tuple(
+        tuple(
+            _finite(
+                _pairwise_sum(
+                    tuple(
+                        gradient[row][inner] * covariance_factor[inner][column]
+                        for inner in range(dimension)
+                    )
+                ),
+                name=f"propagated factor[{row},{column}]",
+            )
+            for column in range(dimension)
+        )
+        for row in range(len(gradient))
+    )
+    propagated = _gram_matrix(factor)
+    if not residual_variance_degenerate:
+        for index, row in enumerate(factor):
+            if any(value != 0.0 for value in gradient[index]) and all(
+                value == 0.0 for value in row
+            ):
+                raise ArithmeticError(
+                    "Nonzero constraint-gradient row collapsed to a zero propagated "
+                    "factor"
+                )
+            if any(value != 0.0 for value in row) and propagated[index][index] == 0.0:
+                raise ArithmeticError(
+                    "Nonzero propagated factor row underflowed to zero variance"
+                )
+    return factor, propagated
+
+
 def _propagate_constraints(
     accepted: AcceptedFitResult,
     covariance: CovarianceEvidence,
@@ -5215,36 +5547,11 @@ def _propagate_constraints(
     request_identity: str,
     policy: UncertaintyPolicy,
 ) -> ConstrainedPropagationEvidence:
-    gradient = constraint_jacobian.matrix
-    factor = tuple(
-        tuple(
-            _finite(
-                _pairwise_sum(
-                    tuple(
-                        gradient[row][inner] * covariance.factor[inner][column]
-                        for inner in range(len(covariance.controlled_ids))
-                    )
-                ),
-                name=f"propagated factor[{row},{column}]",
-            )
-            for column in range(len(covariance.controlled_ids))
-        )
-        for row in range(len(constraint_jacobian.output_ids))
+    factor, propagated = _propagated_factor_and_covariance(
+        constraint_jacobian.matrix,
+        covariance.factor,
+        residual_variance_degenerate=(covariance.residual_variance_scale == 0.0),
     )
-    propagated = _gram_matrix(factor)
-    residual_variance_degenerate = covariance.residual_variance_scale == 0.0
-    if not residual_variance_degenerate:
-        for index, row in enumerate(factor):
-            if any(value != 0.0 for value in gradient[index]) and all(
-                value == 0.0 for value in row
-            ):
-                raise ArithmeticError(
-                    "Nonzero constraint-gradient row collapsed to a zero propagated factor"
-                )
-            if any(value != 0.0 for value in row) and propagated[index][index] == 0.0:
-                raise ArithmeticError(
-                    "Nonzero propagated factor row underflowed to zero variance"
-                )
     claims = _canonical_constrained_propagation_claims(
         covariance,
         constraint_jacobian,

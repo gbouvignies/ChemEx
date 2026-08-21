@@ -533,6 +533,7 @@ def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
 ) -> None:
     output = tmp_path / "Output"
     original_svd = uncertainty_module.svd
+    original_block_derivation = uncertainty_module.derive_root_anchored_block_covariance
     covariance_svd_call = 0
 
     def one_bad_block_svd(*args, **kwargs):
@@ -544,7 +545,17 @@ def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
             singular[-1] = 0.0
         return left, singular, right
 
-    with patch("chemex.optimize.uncertainty.svd", side_effect=one_bad_block_svd):
+    def reverse_block_order(evidence, scopes):
+        return original_block_derivation(evidence, tuple(reversed(scopes)))
+
+    with (
+        patch("chemex.optimize.uncertainty.svd", side_effect=one_bad_block_svd),
+        patch.object(
+            native_deterministic_module,
+            "derive_root_anchored_block_covariance",
+            side_effect=reverse_block_order,
+        ),
+    ):
         run(
             _fit_arguments(output, include=("G2N-HN", "H3N-HN")),
             session=AnalysisSession.create(),
@@ -555,6 +566,20 @@ def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
     reports = tuple(path.read_text(encoding="utf-8") for path in group_outputs)
     assert sum("# ±" in report for report in reports) == 1
     assert sum("error unavailable: rank deficient" in report for report in reports) == 1
+    constrained_reports = tuple(
+        (path.parent / "constrained.toml").read_text(encoding="utf-8")
+        for path in group_outputs
+    )
+    assert tuple("# ±" in report for report in reports) == tuple(
+        "# ±" in report for report in constrained_reports
+    )
+    assert (
+        sum(
+            "error unavailable: constrained propagation unavailable" in report
+            for report in constrained_reports
+        )
+        == 1
+    )
     blocks = json.loads(
         (output / "All" / "Statistics" / "Covariance" / "blocks.json").read_text(
             encoding="utf-8"
@@ -564,6 +589,38 @@ def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
         "",
         "rank deficient",
     ]
+
+
+def test_shared_parameter_coupling_is_not_split_into_covariance_blocks(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """[DEFAULT]
+FIT = ["PB"]
+FIX = ["KEX_AB"]
+""",
+        encoding="utf-8",
+    )
+    original_svd = uncertainty_module.svd
+
+    def rank_deficient_svd(*args, **kwargs):
+        left, singular, right = original_svd(*args, **kwargs)
+        singular = np.array(singular, copy=True)
+        singular[-1] = 0.0
+        return left, singular, right
+
+    with patch("chemex.optimize.uncertainty.svd", side_effect=rank_deficient_svd):
+        run(
+            _fit_arguments(output, method, include=("G2N-HN", "H3N-HN")),
+            session=AnalysisSession.create(),
+        )
+
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    assert "# ±" not in fitted
+    assert "error unavailable: rank deficient" in fitted
+    assert not (output / "Statistics" / "Covariance" / "blocks.json").exists()
 
 
 def test_real_grouped_direct_progress_has_one_bounded_noninteractive_stream(
@@ -664,6 +721,11 @@ def test_interrupted_covariance_keeps_committed_fit_and_invalidates_stale_eviden
     assert session.analysis_values.snapshot().revision == 1
     fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
     assert "error unavailable: derivation interrupted" in fitted
+    constrained = (output / "Parameters" / "constrained.toml").read_text(
+        encoding="utf-8"
+    )
+    assert "error unavailable: derivation interrupted" in constrained
+    assert "# ±" not in constrained
     covariance_path = output / "Statistics" / "Covariance"
     assert not (covariance_path / "evidence.json").exists()
     status = json.loads((covariance_path / "status.json").read_text(encoding="utf-8"))
