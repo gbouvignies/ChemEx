@@ -1871,8 +1871,16 @@ def test_native_run_information_archives_replay_complete_provenance(
         == sha256(publication.provenance.normalized_method_text.encode()).hexdigest()
     )
     assert run["workflow_records"]["path"] == "workflows.json"
-    assert "lmfit" not in (run_info / "run.toml").read_text().lower()
-    assert "numdifftools" not in (run_info / "run.toml").read_text().lower()
+    assert set(run["environment"]) == {
+        "identity",
+        "chemex_version",
+        "python_version",
+        "python_implementation",
+        "platform",
+        "numpy_version",
+        "scipy_version",
+        "emcee_version",
+    }
 
     copied_experiment = run["inputs"]["experiments"][0]
     archived_experiment = run_info / copied_experiment["copied_path"]

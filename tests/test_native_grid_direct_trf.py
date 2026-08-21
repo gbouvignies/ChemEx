@@ -311,14 +311,12 @@ def _backend_result(
     )
 
 
-def _legacy_values(
+def _presentation_values(
     session: AnalysisSession, scope: tuple[str, ...]
-) -> dict[str, float]:
+) -> dict[str, float | None]:
     return {
         param_id: parameter.value
-        for param_id, parameter in session.parameters.build_lmfit_params(
-            set(scope)
-        ).items()
+        for param_id, parameter in session.parameters.get_parameters(set(scope)).items()
     }
 
 
@@ -396,7 +394,7 @@ def test_failed_seed_continues_and_canonical_tie_commits_only_selected_once() ->
     assert grid_selection.selected_seed_identity == outcome.attempts[2].seed_identity
     assert grid_selection.selected_seed_ordinal == 2
     assert session.analysis_values.snapshot() == before
-    legacy_before = _legacy_values(session, problem.commit_scope)
+    presentation_before = _presentation_values(session, problem.commit_scope)
 
     replaced_provenance = (
         dataclasses.replace(
@@ -442,7 +440,9 @@ def test_failed_seed_continues_and_canonical_tie_commits_only_selected_once() ->
                 analysis_values=session.analysis_values,
             )
         assert session.analysis_values.snapshot() == before
-        assert _legacy_values(session, problem.commit_scope) == legacy_before
+        assert (
+            _presentation_values(session, problem.commit_scope) == presentation_before
+        )
 
     invalid_origin = dataclasses.replace(
         outcome.accepted_result,
@@ -461,7 +461,7 @@ def test_failed_seed_continues_and_canonical_tie_commits_only_selected_once() ->
             analysis_values=session.analysis_values,
         )
     assert session.analysis_values.snapshot() == before
-    assert _legacy_values(session, problem.commit_scope) == legacy_before
+    assert _presentation_values(session, problem.commit_scope) == presentation_before
 
     receipt = commit_grid_accepted_fit(
         outcome.accepted_result,
@@ -541,7 +541,7 @@ def test_plain_base_evidence_cannot_recreate_grid_commit_authority() -> None:
     assert replaced_evidence is not accepted
     assert replaced_evidence.identity == accepted.identity
     before = session.analysis_values.snapshot()
-    legacy_before = _legacy_values(session, problem.commit_scope)
+    presentation_before = _presentation_values(session, problem.commit_scope)
 
     for reconstructed in (plain_evidence, replaced_evidence):
         with pytest.raises(
@@ -586,7 +586,7 @@ def test_plain_base_evidence_cannot_recreate_grid_commit_authority() -> None:
         ).identity
     )
     assert session.analysis_values.snapshot() == before
-    assert _legacy_values(session, problem.commit_scope) == legacy_before
+    assert _presentation_values(session, problem.commit_scope) == presentation_before
 
 
 def test_grid_commit_rejects_foreign_direct_origin_authority_atomically() -> None:
@@ -628,7 +628,7 @@ def test_grid_commit_rejects_foreign_direct_origin_authority_atomically() -> Non
     assert grid_outcome.commit_authority is not None
     assert direct_outcome.commit_authority is not None
     before = session.analysis_values.snapshot()
-    legacy_before = _legacy_values(session, problem.commit_scope)
+    presentation_before = _presentation_values(session, problem.commit_scope)
 
     with pytest.raises(
         DirectTrfConstructionError,
@@ -643,7 +643,7 @@ def test_grid_commit_rejects_foreign_direct_origin_authority_atomically() -> Non
         )
 
     assert session.analysis_values.snapshot() == before
-    assert _legacy_values(session, problem.commit_scope) == legacy_before
+    assert _presentation_values(session, problem.commit_scope) == presentation_before
 
 
 def test_selection_requires_one_exact_canonical_seed_candidate_record() -> None:

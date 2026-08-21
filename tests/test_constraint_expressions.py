@@ -34,8 +34,6 @@ def test_constraint_reference_uses_non_self_match_when_available() -> None:
     catalog.set_expressions(["PB, NUC->L55HD2 = [PB]"])
 
     assert get_expression(catalog, local_pb.id_) == global_pb.id_
-    params = catalog.build_lmfit_params(model_name="2st")
-    assert params[local_pb.id_].expr == global_pb.id_
 
 
 def test_constraint_reference_exits_on_missing_match(

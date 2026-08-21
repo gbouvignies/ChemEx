@@ -48,9 +48,8 @@ from chemex.parameters.parameterization import ActiveParameterization, Parameter
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
 
-# Preserve the retained product's historical total objective-request ceiling.
-# lmfit's least_squares wrapper used 2000 * (nvars + 1) and counted numerical
-# Jacobian requests in that total.  Native Direct records the same total itself.
+# The finalized #573/#664 policy uses 2000 * (nvars + 1), with numerical
+# Jacobian requests counted in the same total objective-request ceiling.
 _TRF_OBJECTIVE_REQUESTS_PER_DIMENSION = 2000
 
 

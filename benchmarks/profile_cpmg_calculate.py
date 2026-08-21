@@ -9,8 +9,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from chemex.models.loader import register_kinetic_settings
 from chemex.experiments.loader import register_experiments
+from chemex.models.loader import register_kinetic_settings
 
 register_kinetic_settings()
 register_experiments()
@@ -19,6 +19,7 @@ register_experiments()
 def profile_cpmg_calculate():
     """Profile the components of CPMG pulse_sequence.calculate."""
     from chemex.configuration.methods import Selection
+    from chemex.configuration.parameters import read_defaults
     from chemex.experiments.builder import build_experiments
     from chemex.runtime import AnalysisSession
 
@@ -40,8 +41,12 @@ def profile_cpmg_calculate():
     )
 
     profile = list(experiments)[0].profiles[0]
-    params = session.parameters.build_lmfit_params(experiments.param_ids)
-    profile.update_spectrometer(params)
+    session.parameters.set_defaults(
+        read_defaults([example_dir / "Parameters" / "parameters.toml"])
+    )
+    assert session.try_build_analysis_values()
+    values = session.resolve_current_values(experiments.param_ids)
+    profile.update_spectrometer_from_values(values)
 
     spectrometer = profile.spectrometer
     data = profile.data
@@ -105,7 +110,7 @@ def profile_cpmg_calculate():
     for _ in range(1000):
         echo = d_cp[ncyc] @ p180 @ d_cp[ncyc]
     elapsed = time.perf_counter() - start
-    print(f"\nDetailed breakdown (1000 iter):")
+    print("\nDetailed breakdown (1000 iter):")
     print(f"  echo = d_cp @ p180 @ d_cp: {elapsed/1000*1000:.4f} ms")
 
     start = time.perf_counter()

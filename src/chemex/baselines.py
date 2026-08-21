@@ -1,16 +1,8 @@
-"""Small content-addressed baseline evidence harness for migration checkpoint 2.
-
-The types in this module describe one approved ChemEx analysis without changing
-the product runner.  They deliberately do not provide numerical lanes, gates,
-calibration, optimizer execution, or a general artifact store.  The one runner
-below invokes the existing lmfit-backed product path and freezes its output as
-an observation, never as scientific truth.
-"""
+"""Frozen content-addressed baseline records from the optimizer migration."""
 
 from __future__ import annotations
 
 import hashlib
-import importlib.metadata
 import json
 import math
 import os
@@ -24,15 +16,10 @@ from numbers import Real
 from pathlib import Path
 from typing import Literal, cast
 
-from chemex.chemex import run
-from chemex.cli import build_parser
 from chemex.numerical_lanes import (
-    LaneAttestation,
     LiveLaneAuthority,
-    RuntimeEnvironment,
     _LiveLaneAuthorityMismatch,
     _validate_live_lane_authority,
-    canonical_lanes,
 )
 from chemex.parameters.spin_system import SpinSystem
 
@@ -519,24 +506,6 @@ class LegacyObservationImplementation:
     source_manifest_hash: str = "0" * _HASH_LENGTH
     authority_role: str = "LegacyObservationImplementation"
     identity: str = field(init=False)
-
-    @classmethod
-    def from_current_package(cls) -> LegacyObservationImplementation:
-        package_root = Path(__file__).parent
-        members = tuple(
-            sorted(
-                (
-                    path.relative_to(package_root).as_posix(),
-                    _sha256(path.read_bytes()),
-                )
-                for path in package_root.rglob("*.py")
-            )
-        )
-        return cls(
-            package_version=importlib.metadata.version("chemex"),
-            lmfit_version=importlib.metadata.version("lmfit"),
-            source_manifest_hash=_identity("legacy-package-source", members),
-        )
 
     def __post_init__(self) -> None:
         if self.authority_role != "LegacyObservationImplementation":
@@ -1810,14 +1779,6 @@ ScientificAnchorPublisher = BaselinePublisher
 CpmgBaselinePublisher = BaselinePublisher
 
 
-class LegacyAnchorExecutionError(RuntimeError):
-    """Legacy product failure with a persisted failed occurrence record."""
-
-    def __init__(self, occurrence: Occurrence) -> None:
-        self.occurrence = occurrence
-        super().__init__(f"Legacy anchor execution failed: {occurrence.failure_code}")
-
-
 class BaselineLifecycleConflictError(RuntimeError):
     """An operation lost a race; its occurrence keeps the persisted terminal truth."""
 
@@ -2406,7 +2367,7 @@ def _anchor_legacy_specification(
     case: CaseDefinition,
     *,
     artifact_inventory: Mapping[str, object],
-    implementation: LegacyObservationImplementation | None = None,
+    implementation: LegacyObservationImplementation,
     lane_reference: str = "unqualified-local-lane-v1",
     execution_settings: Mapping[str, object] | None = None,
     include_shipped_argv: bool = False,
@@ -2420,7 +2381,7 @@ def _anchor_legacy_specification(
         workflow["argv"] = list(anchor.shipped_argv)
     return ExecutionSpecification.create(
         case,
-        implementation or LegacyObservationImplementation.from_current_package(),
+        implementation,
         workflow=workflow,
         lane_reference=lane_reference,
         policy={"concurrency": "legacy-default", "implementation": "legacy-product"},
@@ -2442,7 +2403,7 @@ def cpmg_15n_ip_legacy_specification(
     case: CaseDefinition,
     *,
     artifact_inventory: Mapping[str, object],
-    implementation: LegacyObservationImplementation | None = None,
+    implementation: LegacyObservationImplementation,
     lane_reference: str = "unqualified-local-lane-v1",
     execution_settings: Mapping[str, object] | None = None,
 ) -> ExecutionSpecification:
@@ -2510,178 +2471,3 @@ def _legacy_result_artifacts(
     if tuple(item.role for item in artifacts) != required_output_roles:
         raise ValueError("Legacy anchor did not produce the closed required artifacts")
     return artifacts
-
-
-def _capture_legacy_anchor_observation(
-    anchor: _AnchorDefinition,
-    *,
-    publisher: BaselinePublisher,
-    anchor_directory: Path,
-    lane_reference: str = "unqualified-local-lane-v1",
-    lane_authority: LiveLaneAuthority | None = None,
-    attempt_token: str,
-) -> PublishedEvidence:
-    """Run one unchanged shipped analysis through the legacy product runner.
-
-    The temporary output is sampled only after the legacy run ends.  No baseline
-    artifact is supplied to the analysis, and a failure is never published.
-    """
-    work_directory = Path(tempfile.mkdtemp(prefix=f"chemex-{anchor.name}-baseline-"))
-    requested: Occurrence | None = None
-    reserved = False
-    try:
-        captured_inputs = _capture_anchor_inputs(anchor, anchor_directory)
-        case = _case_from_anchor_inputs(anchor, captured_inputs)
-        execution_settings: Mapping[str, object] | None = None
-        lane_evidence: LaneAttestation | None = None
-        environment_evidence: RuntimeEnvironment | None = None
-        if lane_authority is not None:
-            lane_evidence = _validate_live_lane_authority(
-                lane_authority,
-                required_lane_role="CANONICAL_NUMERICAL",
-                required_workers=1,
-                required_native_threads=1,
-            )
-            if lane_reference not in {
-                "unqualified-local-lane-v1",
-                lane_evidence.lane_identity,
-            }:
-                raise ValueError("Live canonical lane authority conflicts with lane")
-            lane_reference = lane_evidence.lane_identity
-            selected_lane = next(
-                lane
-                for lane in canonical_lanes()
-                if lane.identity == lane_evidence.lane_identity
-            )
-            environment_evidence = RuntimeEnvironment(selected_lane.semantics)
-            if environment_evidence.identity != lane_evidence.environment_identity:
-                raise ValueError(
-                    "Live canonical lane authority conflicts with environment"
-                )
-            execution_settings = {
-                "native_threads": lane_evidence.native_threads,
-                "plot": "normal",
-                "workers": lane_evidence.workers,
-            }
-        specification = _anchor_legacy_specification(
-            anchor,
-            case,
-            artifact_inventory=_anchor_artifact_inventory(
-                anchor,
-                captured_inputs,
-                include_lane_evidence=lane_evidence is not None,
-            ),
-            lane_reference=lane_reference,
-            execution_settings=execution_settings,
-            include_shipped_argv=lane_evidence is not None,
-        )
-        _assert_anchor_request(case, specification)
-        requested = Occurrence.requested(
-            specification, case, attempt_token, lane_authority
-        )
-        publisher.reserve(case, specification, requested)
-        reserved = True
-        snapshot_directory = _materialize_anchor_snapshot(
-            work_directory, captured_inputs
-        )
-        output_directory = work_directory / anchor.output_directory
-        paths = {
-            item.member.role: snapshot_directory / item.snapshot_relative_path
-            for item in captured_inputs
-        }
-        parser = build_parser()
-        command = [
-            "fit",
-            "-e",
-            *(str(paths[item.role]) for item in anchor.experiments),
-            "-p",
-            *(str(paths[item.role]) for item in anchor.parameters),
-            "-m",
-            *(str(paths[item.role]) for item in anchor.methods),
-        ]
-        if anchor.explicit_model:
-            command.extend(("-d", anchor.model))
-        if lane_authority is not None:
-            command.extend(("--workers", "1", "--native-threads", "1"))
-        command.extend(("-o", str(output_directory)))
-        args = parser.parse_args(command)
-        run(
-            args,
-            argv=anchor.shipped_argv,
-        )
-        artifacts = _legacy_result_artifacts(output_directory, specification)
-        if lane_evidence is not None and environment_evidence is not None:
-            artifacts = tuple(
-                sorted(
-                    (
-                        *artifacts,
-                        ArtifactContent(
-                            "environment:lane-attestation.json",
-                            _canonical_record_bytes(lane_evidence.to_record()),
-                        ),
-                        ArtifactContent(
-                            "environment:runtime-environment.json",
-                            _canonical_record_bytes(environment_evidence.to_record()),
-                        ),
-                    ),
-                    key=lambda item: item.role,
-                )
-            )
-        _verify_anchor_snapshot(snapshot_directory, captured_inputs)
-        bundle = ResultBundle.create(
-            requested.identity,
-            specification.identity,
-            specification.implementation,
-            tuple(artifact.member for artifact in artifacts),
-        )
-        return publisher.publish(
-            case, specification, requested.succeeded(bundle), bundle, artifacts
-        )
-    except BaselineLifecycleConflictError:
-        raise
-    except Exception as error:
-        if requested is None or not reserved:
-            raise
-        failed = publisher.record_failure(
-            case, specification, requested, type(error).__name__
-        )
-        raise LegacyAnchorExecutionError(failed) from error
-    finally:
-        shutil.rmtree(work_directory, ignore_errors=True)
-
-
-def capture_approved_scientific_anchor_legacy_observation(
-    name: ApprovedAnchorName,
-    *,
-    publisher: BaselinePublisher,
-    anchor_directory: Path,
-    lane_authority: LiveLaneAuthority,
-    attempt_token: str,
-) -> PublishedEvidence:
-    """Capture one approved anchor only under live #588 canonical-lane authority."""
-    return _capture_legacy_anchor_observation(
-        _approved_anchor(name),
-        publisher=publisher,
-        anchor_directory=anchor_directory,
-        lane_authority=lane_authority,
-        attempt_token=attempt_token,
-    )
-
-
-def capture_cpmg_15n_ip_legacy_observation(
-    *,
-    publisher: BaselinePublisher,
-    anchor_directory: Path,
-    lane_reference: str = "unqualified-local-lane-v1",
-    lane_authority: LiveLaneAuthority | None = None,
-    attempt_token: str,
-) -> PublishedEvidence:
-    """Retain #587's CPMG entry point while using the shared anchor pipeline."""
-    return _capture_legacy_anchor_observation(
-        _APPROVED_ANCHORS["cpmg-15n-ip"],
-        publisher=publisher,
-        anchor_directory=anchor_directory,
-        lane_reference=lane_reference,
-        lane_authority=lane_authority,
-        attempt_token=attempt_token,
-    )

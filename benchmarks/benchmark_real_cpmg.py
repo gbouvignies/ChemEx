@@ -8,11 +8,13 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # Must import model registration first
-from chemex.models.loader import register_kinetic_settings
 from chemex.experiments.loader import register_experiments
+from chemex.models.loader import register_kinetic_settings
 
 register_kinetic_settings()
 register_experiments()
@@ -21,6 +23,7 @@ register_experiments()
 def load_real_experiment():
     """Load the real CPMG experiment from examples."""
     from chemex.configuration.methods import Selection
+    from chemex.configuration.parameters import read_defaults
     from chemex.experiments.builder import build_experiments
     from chemex.runtime import AnalysisSession
 
@@ -39,6 +42,10 @@ def load_real_experiment():
         selection,
         session=session,
     )
+    session.parameters.set_defaults(
+        read_defaults([example_dir / "Parameters" / "parameters.toml"])
+    )
+    assert session.try_build_analysis_values()
 
     return experiments, session
 
@@ -59,21 +66,31 @@ def benchmark_residual_calculation():
     print(f"Total profiles loaded: {len(all_profiles)}")
     print(f"Total data points: {sum(len(p.data.exp) for p in all_profiles)}")
 
-    # Get parameters (built from experiment param_ids)
-    params = session.parameters.build_lmfit_params(experiments.param_ids)
-    print(f"Total parameters: {len(params)}")
+    # Resolve the native parameter values used by the experiment.
+    values = session.resolve_current_values(experiments.param_ids)
+    print(f"Total parameters: {len(values)}")
+
+    def residuals() -> np.ndarray:
+        return np.concatenate(
+            [
+                ((profile.calculate_from_values(values) - profile.data.exp) / profile.data.err)[
+                    profile.data.mask
+                ]
+                for profile in all_profiles
+            ]
+        )
 
     # Warm up
     print("\nWarming up...")
     for _ in range(3):
-        experiments.residuals(params)
+        residuals()
 
     # Benchmark single residual calculation (what minimizer calls)
     print("\n--- Benchmark: Single Residual Calculation ---")
     iterations = 100
     start = time.perf_counter()
     for _ in range(iterations):
-        experiments.residuals(params)
+        residuals()
     elapsed = time.perf_counter() - start
 
     time_per_call = elapsed / iterations * 1000  # ms
@@ -92,7 +109,7 @@ def benchmark_residual_calculation():
     profile = all_profiles[0]
     start = time.perf_counter()
     for _ in range(iterations):
-        profile.update_spectrometer(params)
+        profile.update_spectrometer_from_values(values)
     elapsed = time.perf_counter() - start
     print(f"update_spectrometer: {elapsed/iterations*1000:.4f} ms")
 
@@ -105,7 +122,7 @@ def benchmark_residual_calculation():
 
     # Time _build_base_liouvillian specifically
     liouvillian = profile.spectrometer.liouvillian
-    par_values = profile._get_parameter_values(params)
+    par_values = profile._local_parameter_values(values)
 
     start = time.perf_counter()
     for _ in range(iterations):
@@ -154,7 +171,7 @@ def benchmark_residual_calculation():
     time_saved_per_call = (old_time - new_time) / iterations  # seconds
     total_time_saved = time_saved_per_call * total_calls
 
-    print(f"\n--- Impact on Full Fit ---")
+    print("\n--- Impact on Full Fit ---")
     print(f"Profiles: {num_profiles}")
     print(f"Iterations: {num_iterations}")
     print(f"Total _build_base_liouvillian calls: {total_calls}")

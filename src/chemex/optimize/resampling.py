@@ -2,28 +2,18 @@
 
 from __future__ import annotations
 
-import multiprocessing
 from collections import Counter
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-from rich.progress import track
 
 from chemex.atomic import write_text_atomic
 from chemex.configuration.methods import Statistics
-from chemex.containers.experiments import Experiments, generate_exp_for_statistics
-from chemex.messages import (
-    print_calculation_stopped_error,
-    print_running_statistics,
-    print_value_error,
-)
-from chemex.optimize.helper import (
-    calculate_statistics,
-)
-from chemex.optimize.minimizer import minimize
+from chemex.containers.experiments import Experiments
+from chemex.messages import print_running_statistics
 from chemex.optimize.native_deterministic import NativeDeterministicFit
 from chemex.optimize.native_resampling import (
     OperationTerminal,
@@ -36,7 +26,6 @@ from chemex.optimize.native_resampling import (
 )
 from chemex.optimize.statistics_plot import write_resampling_plots
 from chemex.runtime import ExecutionSettings
-from chemex.runtime.execution import native_thread_environment
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,28 +34,6 @@ class _ResamplingMethod:
     message: str
     directory: str
     iterations: int
-
-
-@dataclass(frozen=True, slots=True)
-class _ResamplingContext:
-    experiments: Experiments
-    statistic_name: str
-    fitmethod: str
-    parameter_ids: tuple[str, ...]
-
-
-@dataclass(slots=True)
-class _WorkerState:
-    context: _ResamplingContext | None = None
-
-    def initialize(self, context: _ResamplingContext) -> None:
-        self.context = context
-
-    def clear(self) -> None:
-        self.context = None
-
-
-_WORKER_STATE = _WorkerState()
 
 
 class NativeResamplingIncompleteError(RuntimeError):
@@ -91,14 +58,6 @@ def _resampling_methods(statistics: Statistics) -> tuple[_ResamplingMethod, ...]
             )
         )
     return tuple(methods)
-
-
-def _initialize_worker(context: _ResamplingContext) -> None:
-    _WORKER_STATE.initialize(context)
-
-
-def _clear_worker() -> None:
-    _WORKER_STATE.clear()
 
 
 def _quote_toml_string(value: str) -> str:
@@ -130,62 +89,6 @@ def _format_parameter_names(
         str(parameters[param_id].param_name) if param_id in parameters else param_id
         for param_id in parameter_ids
     )
-
-
-def _sample_parameter_values(
-    params_lf: Any,
-    parameter_ids: tuple[str, ...],
-) -> list[float]:
-    return [
-        float(params_lf[param_id].value) if param_id in params_lf else np.nan
-        for param_id in parameter_ids
-    ]
-
-
-def _calculate_resampling_sample(
-    context: _ResamplingContext,
-) -> tuple[list[float], float]:
-    parameter_store = context.experiments.parameter_store
-    exp_stat = generate_exp_for_statistics(context.experiments, context.statistic_name)
-    params_lf = parameter_store.build_lmfit_params(exp_stat.param_ids)
-    params_fit = minimize(exp_stat, params_lf, context.fitmethod)
-    stats = calculate_statistics(exp_stat, params_fit)
-    chisqr = stats.get("chisqr", 1e32)
-    return _sample_parameter_values(params_fit, context.parameter_ids), float(chisqr)
-
-
-def _calculate_worker_sample(_index: int) -> tuple[list[float], float]:
-    context = _WORKER_STATE.context
-    if context is None:
-        msg = "Resampling worker context is not initialized"
-        raise RuntimeError(msg)
-    return _calculate_resampling_sample(context)
-
-
-def _iter_resampling_samples(
-    context: _ResamplingContext,
-    iterations: int,
-    *,
-    execution: ExecutionSettings,
-) -> Iterator[tuple[list[float], float]]:
-    if execution.workers == 1 or iterations == 1:
-        for _index in range(iterations):
-            yield _calculate_resampling_sample(context)
-        return
-
-    worker_count = min(execution.workers, iterations)
-    try:
-        with (
-            native_thread_environment(execution.native_thread_env(parallel=True)),
-            multiprocessing.Pool(
-                processes=worker_count,
-                initializer=_initialize_worker,
-                initargs=(context,),
-            ) as pool,
-        ):
-            yield from pool.imap(_calculate_worker_sample, range(iterations))
-    finally:
-        _clear_worker()
 
 
 def _as_sample_array(sample_rows: list[list[float]], width: int) -> np.ndarray:
@@ -305,124 +208,6 @@ def _write_resampling_diagnostics(
     if status is not None:
         lines.append(f"status = {_quote_toml_string(status)}")
     write_text_atomic(path / "diagnostics.toml", "\n".join(lines) + "\n")
-
-
-def _run_resampling_method(
-    experiments: Experiments,
-    path: Path,
-    fitmethod: str,
-    method: _ResamplingMethod,
-    parameter_ids: tuple[str, ...],
-    *,
-    execution: ExecutionSettings,
-) -> None:
-    parameter_store = experiments.parameter_store
-    statistic_path = path / "Statistics" / method.directory
-    statistic_path.mkdir(parents=True, exist_ok=True)
-    samples_tsv = statistic_path / "samples.tsv"
-    sample_rows: list[list[float]] = []
-    chisqr_rows: list[float] = []
-    parameter_names = _format_parameter_names(list(parameter_ids), parameter_store)
-    completed_samples = 0
-    context = _ResamplingContext(
-        experiments=experiments,
-        statistic_name=method.statistic_name,
-        fitmethod=fitmethod,
-        parameter_ids=parameter_ids,
-    )
-    worker_count = min(execution.workers, method.iterations)
-
-    with samples_tsv.open(mode="w", encoding="utf-8") as file_tsv:
-        file_tsv.write("\t".join((*parameter_names, "chisqr")) + "\n")
-
-        try:
-            samples = _iter_resampling_samples(
-                context,
-                method.iterations,
-                execution=execution,
-            )
-            for sample_values, chisqr in track(
-                samples,
-                total=method.iterations,
-                description="   ",
-            ):
-                file_tsv.write(
-                    "\t".join(
-                        _format_tsv_float(value)
-                        for value in (*sample_values, float(chisqr))
-                    )
-                    + "\n",
-                )
-                sample_rows.append(sample_values)
-                chisqr_rows.append(float(chisqr))
-                completed_samples += 1
-        except KeyboardInterrupt:
-            print_calculation_stopped_error()
-        except ValueError:
-            print_value_error()
-        finally:
-            file_tsv.flush()
-            samples = _as_sample_array(sample_rows, len(parameter_ids))
-            _write_resampling_summary(
-                statistic_path,
-                parameter_names=parameter_names,
-                samples=samples,
-            )
-            correlations = _write_resampling_correlations(
-                statistic_path,
-                parameter_names=parameter_names,
-                samples=samples,
-            )
-            write_resampling_plots(
-                statistic_path,
-                method=method.message,
-                fitmethod=fitmethod,
-                parameter_names=parameter_names,
-                samples=samples,
-                chisqr_values=np.asarray(chisqr_rows, dtype=float),
-                correlations=correlations,
-                requested_samples=method.iterations,
-                completed_samples=completed_samples,
-            )
-            _write_resampling_diagnostics(
-                statistic_path,
-                method=method.message,
-                fitmethod=fitmethod,
-                requested_samples=method.iterations,
-                completed_samples=completed_samples,
-                workers=worker_count,
-                parameter_ids=list(parameter_ids),
-            )
-
-
-def run_resampling_statistics(
-    experiments: Experiments,
-    path: Path,
-    fitmethod: str,
-    statistics: Statistics,
-    *,
-    execution: ExecutionSettings | None = None,
-) -> None:
-    if statistics.mc is None and statistics.bs is None and statistics.bsn is None:
-        return
-
-    execution = ExecutionSettings() if execution is None else execution
-    methods = _resampling_methods(statistics)
-
-    parameter_store = experiments.parameter_store
-    params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
-    parameter_ids = tuple(param.name for param in params_lf.values() if param.vary)
-
-    for method in methods:
-        print_running_statistics(method.message)
-        _run_resampling_method(
-            experiments,
-            path,
-            fitmethod,
-            method,
-            parameter_ids,
-            execution=execution,
-        )
 
 
 def _native_dataset(

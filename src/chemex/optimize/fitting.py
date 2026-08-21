@@ -8,31 +8,18 @@ from chemex.containers.experiments import Experiments
 from chemex.messages import (
     print_fitmethod,
     print_grid_statistic_warning,
-    print_group_name,
     print_mcmc_no_vary_warning,
-    print_minimizing,
     print_no_data,
     print_running_statistics,
     print_step_name,
 )
-from chemex.optimize.grouping import create_groups
-from chemex.optimize.helper import (
-    execute_post_fit,
-    execute_post_fit_groups,
-)
 from chemex.optimize.mcmc import run_native_mcmc
-from chemex.optimize.minimizer import (
-    minimize_with_report,
-)
 from chemex.optimize.native_deterministic import (
     NativeDeterministicFit,
     run_native_deterministic,
 )
-from chemex.optimize.resampling import (
-    run_native_resampling_statistics,
-    run_resampling_statistics,
-)
-from chemex.runtime import AnalysisSession, ExecutionSettings
+from chemex.optimize.resampling import run_native_resampling_statistics
+from chemex.runtime import AnalysisSession
 
 _CHEMEX_RESULT_PATHS = (
     "Parameters",
@@ -66,94 +53,6 @@ def invalidate_planned_outputs(methods: Methods, path: Path) -> None:
                 result_path.unlink()
             elif result_path.is_dir():
                 shutil.rmtree(result_path)
-
-
-def _run_statistics(
-    experiments: Experiments,
-    path: Path,
-    fitmethod: str,
-    statistics: Statistics | None = None,
-    *,
-    execution: ExecutionSettings | None = None,
-) -> None:
-    if statistics is None:
-        return
-
-    run_resampling_statistics(
-        experiments,
-        path,
-        fitmethod,
-        statistics,
-        execution=execution,
-    )
-
-
-def _fit_groups(
-    experiments: Experiments,
-    path: Path,
-    plot: str,
-    fitmethod: str,
-    statistics: Statistics | None,
-    *,
-    execution: ExecutionSettings | None = None,
-) -> None:
-    parameter_store = experiments.parameter_store
-    groups = create_groups(experiments)
-
-    plot_flg = (plot == "normal" and len(groups) == 1) or plot == "all"
-
-    print_minimizing()
-
-    for group in groups:
-        group_lmfit_params = parameter_store.build_lmfit_params(
-            group.experiments.param_ids,
-        )
-        group_path = path / group.path
-
-        if message := group.message:
-            print_group_name(message)
-
-        best_lmfit_params = minimize_with_report(
-            group.experiments,
-            group_lmfit_params,
-            fitmethod,
-        )
-
-        parameter_store.update_from_parameters(best_lmfit_params)
-        residuals = group.experiments.residuals(best_lmfit_params)
-        nvarys = sum(
-            parameter.vary and not parameter.expr
-            for parameter in best_lmfit_params.values()
-        )
-        execute_post_fit(
-            group.experiments,
-            group_path,
-            plot=plot_flg,
-            residuals=residuals,
-            nvarys=nvarys,
-        )
-
-        # Run Monte Carlo and/or bootstrap analysis
-        _run_statistics(
-            group.experiments,
-            group_path,
-            fitmethod,
-            statistics,
-            execution=execution,
-        )
-
-    if len(groups) > 1:
-        params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
-        execute_post_fit_groups(
-            experiments,
-            path,
-            plot,
-            residuals=experiments.residuals(params_lf),
-            nvarys=sum(
-                parameter.vary and not parameter.expr
-                for parameter in params_lf.values()
-            ),
-        )
 
 
 def _run_native_statistics(

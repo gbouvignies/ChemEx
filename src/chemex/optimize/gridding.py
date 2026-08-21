@@ -1,29 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
-from itertools import combinations, permutations, product
+from itertools import combinations, permutations
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from lmfit.parameter import Parameters
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.colors import LogNorm
 from matplotlib.pyplot import get_cmap
-from rich.progress import track
 
-from chemex.containers.experiments import Experiments
-from chemex.messages import print_group_name, print_running_grid
-from chemex.optimize.grouping import Group, create_groups
-from chemex.optimize.helper import (
-    calculate_statistics,
-    execute_post_fit,
-    execute_post_fit_groups,
-    print_header,
-    print_values,
-)
-from chemex.optimize.minimizer import minimize
 from chemex.parameters.database import ParameterStore
 from chemex.typing import Array
 
@@ -32,65 +18,6 @@ from chemex.typing import Array
 class GridResult:
     grid: dict[str, Array]
     chisqr: Array
-
-
-def _set_param_values(
-    params: Parameters,
-    fnames: Iterable[str],
-    values: tuple[float, ...],
-) -> None:
-    for fname, value in zip(fnames, values, strict=True):
-        params[fname].value = value
-
-
-def run_group_grid(
-    group: Group,
-    grid: dict[str, Array],
-    path: Path,
-    fitmethod: str,
-) -> GridResult:
-    parameter_store = group.experiments.parameter_store
-    group_ids = group.experiments.param_ids
-    group_params = parameter_store.build_lmfit_params(group_ids)
-    group_grid = {
-        param_id: values for param_id, values in grid.items() if param_id in group_ids
-    }
-
-    grid_ids = tuple(group_grid)
-    shape = tuple(len(values) for values in group_grid.values())
-    grid_size = np.prod(shape)
-
-    basename = group.path if group.path != Path() else Path("grid")
-    filename = path / "Grid" / f"{basename}.out"
-    filename.parent.mkdir(parents=True, exist_ok=True)
-
-    best_chisqr = np.inf
-    best_params = group_params
-
-    with filename.open("w", encoding="utf-8") as fileout:
-        fileout.write(print_header(group_grid, parameter_store=parameter_store))
-
-        chisqr_list: list[float] = []
-
-        grid_values = product(*group_grid.values())
-
-        for values in track(grid_values, total=float(grid_size), description="   "):
-            _set_param_values(group_params, grid_ids, values)
-            optimized_params = minimize(group.experiments, group_params, fitmethod)
-            stats = calculate_statistics(group.experiments, optimized_params)
-            chisqr: float = stats.get("chisqr", np.inf)
-            chisqr_list.append(chisqr)
-            fileout.write(print_values(values, chisqr))
-            fileout.flush()
-
-            if chisqr < best_chisqr:
-                best_chisqr = chisqr
-                best_params = optimized_params
-
-    chisqr_array = np.array(chisqr_list).reshape(shape)
-    parameter_store.update_from_parameters(best_params)
-
-    return GridResult(group_grid, chisqr_array)
 
 
 def _reshape_chisqr(
@@ -147,18 +74,6 @@ def combine_grids(
         results.append(result)
 
     return results
-
-
-def set_params_from_grid(
-    grids_1d: Iterable[GridResult],
-    *,
-    parameter_store: ParameterStore,
-) -> None:
-    par_values = {}
-    for grid_result in grids_1d:
-        id_, values = next(iter(grid_result.grid.items()))
-        par_values[id_] = values[grid_result.chisqr.argmin()]
-    parameter_store.set_values(par_values)
 
 
 def make_grids_nd(
@@ -250,55 +165,3 @@ def plot_grid_2d(
             ax.set_ylabel(str(parameters[id_y].param_name))
             pdf.savefig()
             plt.close()
-
-
-def run_grid(
-    experiments: Experiments,
-    grid_raw: list[str],
-    path: Path,
-    plot: str,
-    fitmethod: str,
-) -> None:
-    print_running_grid()
-
-    parameter_store = experiments.parameter_store
-    grid = parameter_store.parse_grid(grid_raw)
-
-    groups = create_groups(experiments)
-
-    grid_results: list[GridResult] = []
-    for group in groups:
-        if message := group.message:
-            print_group_name(message)
-        grid_result = run_group_grid(group, grid, path, fitmethod)
-        grid_results.append(grid_result)
-
-    grids_combined = combine_grids(grid, grid_results)
-    grids_1d = make_grids_nd(grid, grids_combined, 1, parameter_store=parameter_store)
-    grids_2d = make_grids_nd(grid, grids_combined, 2, parameter_store=parameter_store)
-    set_params_from_grid(grids_1d, parameter_store=parameter_store)
-    plot_grid_1d(grids_1d, path / "Grid", parameter_store=parameter_store)
-    plot_grid_2d(grids_2d, path / "Grid", parameter_store=parameter_store)
-
-    params_lf = parameter_store.build_lmfit_params(experiments.param_ids)
-    residuals = experiments.residuals(params_lf)
-    nvarys = sum(
-        parameter.vary and not parameter.expr for parameter in params_lf.values()
-    )
-
-    if len(groups) > 1:
-        execute_post_fit_groups(
-            experiments,
-            path,
-            plot,
-            residuals=residuals,
-            nvarys=nvarys,
-        )
-    else:
-        execute_post_fit(
-            experiments,
-            path,
-            plot=plot != "nothing",
-            residuals=residuals,
-            nvarys=nvarys,
-        )

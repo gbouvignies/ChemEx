@@ -13,7 +13,6 @@ from chemex.parameters.database import (
     create_parameter_store,
 )
 from chemex.parameters.factory import ParameterFactory
-from chemex.parameters.legacy_adapter import LegacyValuesAdapter
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     ModelDerivationOverrideError,
@@ -51,12 +50,9 @@ class AnalysisSession:
         self.analysis_values = (
             AnalysisValues() if analysis_values is None else analysis_values
         )
-        self.legacy_values_adapter = LegacyValuesAdapter(self.analysis_values)
         self.parameters = (
             create_parameter_store(self.model) if parameters is None else parameters
         )
-        if isinstance(self.parameters, ParameterStore):
-            self.parameters.attach_legacy_values_adapter(self.legacy_values_adapter)
         self.parameter_factory = (
             ParameterFactory(self.parameters)
             if parameter_factory is None
@@ -77,7 +73,6 @@ class AnalysisSession:
         self.parameter_factory.reset()
         self.parameters.reset()
         self.analysis_values.reset()
-        self.legacy_values_adapter.reset()
         self.model.reset()
 
     def try_build_analysis_values(self) -> bool:
@@ -115,7 +110,6 @@ class AnalysisSession:
                 self.parameters.seed_from_model_free_values(resolved_model_free_values)
         except Exception as error:  # noqa: BLE001 - native initialization boundary
             self.parameter_factory.disable_native_candidate(error)
-            self.legacy_values_adapter.disable(error)
             return False
         if not self.parameter_factory.try_seal_configuration():
             return False
@@ -124,7 +118,6 @@ class AnalysisSession:
         if configuration is None or parameter_model is None:
             error = RuntimeError("Sealed native parameter model is unavailable")
             self.parameter_factory.disable_native_candidate(error)
-            self.legacy_values_adapter.disable(error)
             return False
         model_identity = self.model.spec.identity
         try:
@@ -144,7 +137,6 @@ class AnalysisSession:
             self.sync_parameter_store_from_analysis_values(dict(resolved_values))
         except Exception as error:  # noqa: BLE001 - checkpoint-1 isolation boundary
             self.parameter_factory.disable_native_candidate(error)
-            self.legacy_values_adapter.disable(error)
             return False
         return True
 
@@ -240,7 +232,7 @@ class AnalysisSession:
         method: Method,
         required_ids: set[str],
     ) -> ActiveParameterization | None:
-        """Best-effort native preview that cannot veto the legacy occurrence."""
+        """Best-effort native parameterization preview."""
         try:
             candidate = self.compile_parameterization(method, required_ids)
             frame = candidate.frame_from_snapshot(self.analysis_values.snapshot())
@@ -253,7 +245,7 @@ class AnalysisSession:
         self,
         required_ids: set[str],
     ) -> Mapping[str, float]:
-        """Resolve current stable values without an lmfit fallback."""
+        """Resolve current stable values through native parameterization."""
         parameterization = self.compile_current_parameterization(required_ids)
         frame = parameterization.frame_from_snapshot(self.analysis_values.snapshot())
         return parameterization.resolve(frame)

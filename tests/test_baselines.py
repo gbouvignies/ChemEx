@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import shutil
-from argparse import Namespace
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -21,14 +20,10 @@ from chemex.baselines import (
     CpmgBaselinePublisher,
     ExecutionSpecification,
     InputMember,
-    LegacyAnchorExecutionError,
     LegacyObservationImplementation,
     Occurrence,
     ResultBundle,
-    ResultMember,
     approved_scientific_anchor_case,
-    capture_approved_scientific_anchor_legacy_observation,
-    capture_cpmg_15n_ip_legacy_observation,
     cpmg_15n_ip_case,
 )
 from chemex.configuration.methods import Selection, read_methods
@@ -648,6 +643,7 @@ def _cpmg_specification(anchor: Path) -> tuple[CaseDefinition, ExecutionSpecific
     return case, baselines.cpmg_15n_ip_legacy_specification(
         case,
         artifact_inventory=baselines._cpmg_artifact_inventory(inputs),
+        implementation=LegacyObservationImplementation(),
     )
 
 
@@ -725,7 +721,10 @@ def test_new_anchor_artifact_contracts_are_closed(
     case = baselines._case_from_anchor_inputs(anchor, inputs)
     inventory = baselines._anchor_artifact_inventory(anchor, inputs)
     specification = baselines._anchor_legacy_specification(
-        anchor, case, artifact_inventory=inventory
+        anchor,
+        case,
+        artifact_inventory=inventory,
+        implementation=LegacyObservationImplementation(),
     )
     output = tmp_path / anchor.output_directory
     _write_complete_approved_anchor_output(output, anchor_directory, anchor_name)
@@ -751,7 +750,10 @@ def test_cest_anchor_omits_only_the_empty_step1_fixed_report(tmp_path: Path) -> 
     case = baselines._case_from_anchor_inputs(anchor, inputs)
     inventory = baselines._anchor_artifact_inventory(anchor, inputs)
     specification = baselines._anchor_legacy_specification(
-        anchor, case, artifact_inventory=inventory
+        anchor,
+        case,
+        artifact_inventory=inventory,
+        implementation=LegacyObservationImplementation(),
     )
     required_roles = inventory["required_roles"]
     assert isinstance(required_roles, list)
@@ -830,135 +832,6 @@ def test_dcest_anchor_derives_decimal_output_names_from_legacy_suffix_rules() ->
 
 
 @pytest.mark.parametrize(
-    "relative",
-    (
-        Path("Parameters/parameters.toml"),
-        Path("Experiments/500mhz.toml"),
-        Path("Data/500MHz/1N-HN.out"),
-    ),
-)
-def test_snapshot_drift_suppresses_publication(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, relative: Path
-) -> None:
-    anchor = tmp_path / "anchor"
-    shutil.copytree(Path("examples/Experiments/CPMG_15N_IP"), anchor)
-    publisher = CpmgBaselinePublisher(tmp_path / "evidence")
-    original_create = ResultBundle.create
-    created = 0
-
-    def observe_bundle_create(
-        occurrence_identity: str,
-        execution_specification_identity: str,
-        implementation: LegacyObservationImplementation,
-        members: Sequence[ResultMember],
-    ) -> ResultBundle:
-        nonlocal created
-        created += 1
-        return original_create(
-            occurrence_identity,
-            execution_specification_identity,
-            implementation,
-            members,
-        )
-
-    monkeypatch.setattr(ResultBundle, "create", staticmethod(observe_bundle_create))
-
-    def mutate_snapshot(args: Namespace, **_kwargs: object) -> None:
-        experiments = args.experiments
-        assert isinstance(experiments, list)
-        snapshot = experiments[0].parents[1]
-        _case, specification = _cpmg_specification(snapshot)
-        _write_complete_cpmg_output(args.output, specification)
-        target = snapshot / relative
-        target.chmod(0o644)
-        target.write_bytes(target.read_bytes() + b"\nmutated")
-
-    monkeypatch.setattr(baselines, "run", mutate_snapshot)
-    with pytest.raises(LegacyAnchorExecutionError) as error:
-        capture_cpmg_15n_ip_legacy_observation(
-            publisher=publisher,
-            anchor_directory=anchor,
-            attempt_token=f"drift-{relative.name}",
-        )
-
-    assert error.value.occurrence.lifecycle == "FAILED"
-    assert created == 0
-    assert not tuple(publisher.root.glob("attempts/*/terminal/success"))
-
-
-def test_capture_conflict_reports_the_winning_persisted_occurrence(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    anchor = Path("examples/Experiments/CPMG_15N_IP")
-    publisher = CpmgBaselinePublisher(tmp_path / "evidence")
-
-    def complete_fake_run(args: Namespace, **_kwargs: object) -> None:
-        experiments = args.experiments
-        assert isinstance(experiments, list)
-        _case, specification = _cpmg_specification(experiments[0].parents[1])
-        _write_complete_cpmg_output(args.output, specification)
-
-    original_publish = publisher.publish
-
-    def publish_then_report_conflict(
-        case: CaseDefinition,
-        specification: ExecutionSpecification,
-        occurrence: Occurrence,
-        bundle: ResultBundle,
-        artifacts: Sequence[ArtifactContent],
-    ) -> baselines.PublishedEvidence:
-        original_publish(case, specification, occurrence, bundle, artifacts)
-        raise FileExistsError("competing publication")
-
-    monkeypatch.setattr(baselines, "run", complete_fake_run)
-    monkeypatch.setattr(publisher, "publish", publish_then_report_conflict)
-    with pytest.raises(BaselineLifecycleConflictError) as error:
-        capture_cpmg_15n_ip_legacy_observation(
-            publisher=publisher,
-            anchor_directory=anchor,
-            attempt_token="winner-is-persisted",  # noqa: S106 - persisted attempt key
-        )
-
-    persisted = error.value.occurrence
-    assert persisted.lifecycle == "SUCCEEDED"
-    case, specification = _cpmg_specification(anchor)
-    requested = Occurrence.requested(specification, case, persisted.attempt_token)
-    assert publisher.terminal_occurrence(case, specification, requested) == persisted
-
-
-def test_legacy_anchor_capture_fails_closed_after_native_product_activation(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    from chemex.evaluation.native import EvaluationEngine
-
-    source = Path("examples/Experiments/CPMG_15N_IP")
-    relocated = tmp_path / "relocated-anchor"
-    shutil.copytree(source, relocated)
-    reference = cpmg_15n_ip_case(source)
-    assert cpmg_15n_ip_case(relocated).identity == reference.identity
-    assert str(source) not in json.dumps(reference.to_record())
-    parameters = relocated / "Parameters" / "parameters.toml"
-    parameters.write_bytes(parameters.read_bytes() + b"\n# changed scientific input\n")
-    assert cpmg_15n_ip_case(relocated).identity != reference.identity
-
-    def native_evaluation_is_forbidden(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("legacy baseline must not invoke native evaluation")
-
-    monkeypatch.setattr(
-        EvaluationEngine, "from_experiments", native_evaluation_is_forbidden
-    )
-    with pytest.raises(LegacyAnchorExecutionError) as raised:
-        capture_cpmg_15n_ip_legacy_observation(
-            publisher=CpmgBaselinePublisher(tmp_path / "evidence"),
-            anchor_directory=source,
-            attempt_token="real-cpmg-anchor",  # noqa: S106 - persisted attempt key
-        )
-
-    assert raised.value.occurrence.lifecycle == "FAILED"
-    assert raised.value.occurrence.failure_code == "AssertionError"
-
-
-@pytest.mark.parametrize(
     ("anchor_name", "directory", "case_name"),
     (
         ("cpmg-15n-ip", "examples/Experiments/CPMG_15N_IP", "cpmg-15n-ip"),
@@ -996,93 +869,4 @@ def test_unapproved_shipped_anchor_name_is_rejected() -> None:
     with pytest.raises(ValueError, match="approved scientific anchor"):
         approved_scientific_anchor_case(
             "cest-15n-label-cn", Path("examples/Experiments/CEST_15N_LABEL_CN")
-        )
-
-
-@pytest.mark.parametrize(
-    ("anchor_name", "directory", "experiment_count", "model"),
-    (
-        ("cpmg-15n-ip", "examples/Experiments/CPMG_15N_IP", 2, "2st"),
-        (
-            "cest-13c-label-cn",
-            "examples/Experiments/CEST_13C_LABEL_CN",
-            2,
-            "2st",
-        ),
-        ("2st-binding", "examples/Combinations/2stBinding", 7, "2st_binding"),
-        (
-            "dcest-fifu-drd",
-            "examples/Experiments/DCEST_15N_3States",
-            9,
-            "3st_fork",
-        ),
-    ),
-)
-def test_approved_anchors_execute_unchanged_inputs_in_canonical_lane(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    anchor_name: baselines.ApprovedAnchorName,
-    directory: str,
-    experiment_count: int,
-    model: str,
-) -> None:
-    lane = canonical_lanes()[0]
-    authority = _live_authority(monkeypatch, lane)
-    observed_inputs: list[Path] = []
-
-    def complete_fake_run(args: Namespace, **_kwargs: object) -> None:
-        assert args.model == model
-        assert args.workers == 1
-        assert args.native_threads == 1
-        assert isinstance(args.experiments, list)
-        assert isinstance(args.parameters, list)
-        assert isinstance(args.method, list)
-        assert len(args.experiments) == experiment_count
-        observed_inputs.extend((*args.experiments, *args.parameters, *args.method))
-        output = args.output
-        assert isinstance(output, Path)
-        assert output.name == (
-            "Output_FIFU_DRD" if anchor_name == "dcest-fifu-drd" else "Output"
-        )
-        if anchor_name == "cpmg-15n-ip":
-            _case, specification = _cpmg_specification(args.experiments[0].parents[1])
-            _write_complete_cpmg_output(output, specification)
-        else:
-            _write_complete_approved_anchor_output(
-                output, args.experiments[0].parents[1], anchor_name
-            )
-
-    monkeypatch.setattr(baselines, "run", complete_fake_run)
-    published = capture_approved_scientific_anchor_legacy_observation(
-        anchor_name,
-        publisher=CpmgBaselinePublisher(tmp_path / "evidence"),
-        anchor_directory=Path(directory),
-        lane_authority=authority,
-        attempt_token=f"canonical-{anchor_name}",
-    )
-
-    assert published.case == approved_scientific_anchor_case(
-        anchor_name, Path(directory)
-    )
-    assert published.occurrence.lane_reference == lane.identity
-    assert published.occurrence.lane_attestation_identity is not None
-    assert published.bundle.implementation.authority_role == (
-        "LegacyObservationImplementation"
-    )
-    required_roles = published.specification.artifact_inventory.to_record_value()[
-        "required_roles"
-    ]
-    assert tuple(member.role for member in published.bundle.members) == tuple(
-        required_roles
-    )
-    workflow = published.specification.workflow.to_record_value()
-    assert isinstance(workflow, dict)
-    assert workflow["argv"][0:3] == ["chemex", "fit", "-e"]
-    assert observed_inputs
-    for source in observed_inputs:
-        snapshot = next(parent for parent in source.parents if parent.name == "anchor")
-        assert source.is_relative_to(snapshot)
-        assert (
-            source.read_bytes()
-            == (Path(directory) / source.relative_to(snapshot)).read_bytes()
         )

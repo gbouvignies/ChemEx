@@ -2,7 +2,7 @@
 
 The public seams are the immutable two-stage workflow invocation, typed search
 and polish outcomes, and the existing revision-checked Direct TRF commit
-boundary.  Legacy optimizer dispatch remains outside this qualification.
+boundary. DE remains qualification-only and is not dispatched by production.
 """
 
 from __future__ import annotations

@@ -19,7 +19,9 @@ Provide the method file to ChemEx using the `-m` or `--method` option.
 solver. Omit it or set `FITMETHOD = "trf"`. The spelling `"least_squares"` is
 accepted temporarily as an alias and is canonicalized to `"trf"`; historical
 optimizer names fail during method-file validation, before fit outputs are
-invalidated. When `GRID` and `STATISTICS` occur in the same step, ChemEx prints
+invalidated. ChemEx no longer forwards arbitrary optimizer names or depends on
+lmfit at runtime; fitting and statistics use the native ChemEx parameter and
+evaluation stack. When `GRID` and `STATISTICS` occur in the same step, ChemEx prints
 the compatibility warning, executes the native grid, and ignores statistics.
 
 Method files are structured in sections, each representing a fitting step. Fitting steps are executed in the order they appear, and parameter settings inherit from previous steps if not redefined.

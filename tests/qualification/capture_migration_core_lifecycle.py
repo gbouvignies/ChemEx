@@ -39,6 +39,11 @@ ROOT = Path(__file__).parents[2]
 EXPERIMENT = ROOT / "examples/Experiments/RELAXATION_HZNZ/Experiments/800mhz.toml"
 PARAMETERS = ROOT / "examples/Experiments/RELAXATION_HZNZ/Parameters/parameters.toml"
 METHOD = ROOT / "examples/Experiments/RELAXATION_HZNZ/Methods/method.toml"
+FROZEN_LEGACY_IMPLEMENTATION = LegacyObservationImplementation(
+    package_version="2026.6.1",
+    lmfit_version="1.3.4",
+    source_manifest_hash="46977ae3475257d7c2561d7f53ddf5b36cc6b221a7aa9f43e73403140278f846",
+)
 @dataclass(frozen=True, slots=True)
 class ProbeObservation:
     """Raw objects and entry facts emitted by one production-seam execution."""
@@ -137,7 +142,7 @@ def _member(role: str, path: Path) -> InputMember:
 def _publication(
     path: Path, source_commit: str, lockfile_hash: str
 ) -> step.MethodStepPublicationRequest:
-    implementation = LegacyObservationImplementation.from_current_package()
+    implementation = FROZEN_LEGACY_IMPLEMENTATION
     case = CaseDefinition.create(
         "migration-core-lifecycle-publication-reference",
         CaseSourceAuthority(source_commit, lockfile_hash),
@@ -170,7 +175,7 @@ def _lineage(
     source_commit: str, lockfile_hash: str, *, required_steps: tuple[str, ...] = (),
 ) -> tuple[CaseDefinition, ExecutionSpecification, Occurrence]:
     attestation = LaneAttestation.from_record(authority.to_record())
-    implementation = LegacyObservationImplementation.from_current_package()
+    implementation = FROZEN_LEGACY_IMPLEMENTATION
     case = CaseDefinition.create(
         f"migration-core-lifecycle:{probe_id}",
         CaseSourceAuthority(source_commit, lockfile_hash),

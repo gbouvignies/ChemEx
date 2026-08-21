@@ -8,6 +8,14 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 ## [Unreleased]
 
 ### Changed
+- Removed the unreachable legacy optimizer, MCMC, resampling, parameter-container,
+  and live legacy-observation compatibility paths. ChemEx deterministic fitting
+  now uses bounded SciPy TRF exclusively through the native ChemEx parameter and
+  evaluation stack; native GRID, MC, BS, BSN, MCMC, and statistics behavior is
+  unchanged. `FITMETHOD = "trf"` remains the supported spelling and
+  `"least_squares"` remains its temporary alias; arbitrary optimizer forwarding
+  is unavailable. `lmfit`, `asteval`, and `numdifftools` are no longer runtime
+  dependencies.
 - Renamed misleading statistical summary fields without changing sampling or
   fitted values. MC, BS, and BSN now use `percentile_68_lower`,
   `percentile_68_upper`, and `half_percentile_68_width` instead of

@@ -9,8 +9,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from chemex.models.loader import register_kinetic_settings
 from chemex.experiments.loader import register_experiments
+from chemex.models.loader import register_kinetic_settings
 
 register_kinetic_settings()
 register_experiments()
@@ -19,6 +19,7 @@ register_experiments()
 def test_matmul_alternatives():
     """Test different approaches for matrix chain multiplication."""
     from chemex.configuration.methods import Selection
+    from chemex.configuration.parameters import read_defaults
     from chemex.experiments.builder import build_experiments
     from chemex.runtime import AnalysisSession
 
@@ -40,13 +41,15 @@ def test_matmul_alternatives():
     )
 
     profile = list(experiments)[0].profiles[0]
-    params = session.parameters.build_lmfit_params(experiments.param_ids)
-    profile.update_spectrometer(params)
+    session.parameters.set_defaults(
+        read_defaults([example_dir / "Parameters" / "parameters.toml"])
+    )
+    assert session.try_build_analysis_values()
+    values = session.resolve_current_values(experiments.param_ids)
+    profile.update_spectrometer_from_values(values)
 
     spectrometer = profile.spectrometer
     data = profile.data
-    settings = profile.pulse_sequence.settings
-
     ncycs = data.metadata
     tau_cps, deltas, all_delays = profile.pulse_sequence._get_delays(ncycs)
 
@@ -146,7 +149,7 @@ def test_matmul_alternatives():
     print(f"Explicit loop:         {t_loop:.4f} ms (speedup: {t_reduce/t_loop:.2f}x)")
 
     # Calculate impact
-    print(f"\nFor 48 profiles × 2000 iterations:")
+    print("\nFor 48 profiles × 2000 iterations:")
     time_saved = (t_reduce - min(t_direct, t_loop)) * 48 * 2000 / 1000
     print(f"  Best alternative saves: {time_saved:.1f} seconds")
 

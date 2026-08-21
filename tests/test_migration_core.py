@@ -4,7 +4,6 @@ import hashlib
 import io
 import json
 import tarfile
-from argparse import Namespace
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -15,13 +14,12 @@ import chemex.baselines as baselines
 import chemex.migration_core as migration_core
 import chemex.migration_core_lifecycle as migration_core_lifecycle
 from chemex.baselines import (
-    ApprovedAnchorName,
     ArtifactContent,
     BaselinePublisher,
+    LegacyObservationImplementation,
     Occurrence,
     ResultBundle,
     ScientificAnchorPublisher,
-    capture_approved_scientific_anchor_legacy_observation,
 )
 from chemex.migration_core import (
     MigrationCoreCoverageError,
@@ -134,7 +132,7 @@ def _live_authority(
 
 
 def _write_complete_anchor_output(
-    output: Path, snapshot: Path, anchor_name: ApprovedAnchorName
+    output: Path, snapshot: Path, anchor_name: baselines.ApprovedAnchorName
 ) -> None:
     anchor = baselines._approved_anchor(anchor_name)
     inputs = baselines._capture_anchor_inputs(anchor, snapshot)
@@ -154,24 +152,10 @@ def _published_migration_core(
 ) -> tuple[ScientificAnchorPublisher, dict[str, str]]:
     lane = canonical_lanes()[0]
     authority = _live_authority(monkeypatch, lane)
+    attestation = LaneAttestation.from_record(authority.to_record())
+    environment = RuntimeEnvironment(lane.semantics)
     publisher = ScientificAnchorPublisher(tmp_path / "evidence")
-    names_by_first_experiment: dict[str, ApprovedAnchorName] = {
-        "500mhz": "cpmg-15n-ip",
-        "23hz": "cest-13c-label-cn",
-        "cest_10hz_10p_1": "2st-binding",
-        "1.25hz": "dcest-fifu-drd",
-    }
-
-    def complete_fake_run(args: Namespace, **_kwargs: object) -> None:
-        assert isinstance(args.experiments, list)
-        assert isinstance(args.output, Path)
-        first = args.experiments[0]
-        _write_complete_anchor_output(
-            args.output, first.parents[1], names_by_first_experiment[first.stem]
-        )
-
-    monkeypatch.setattr(baselines, "run", complete_fake_run)
-    anchors: tuple[tuple[ApprovedAnchorName, str], ...] = (
+    anchors: tuple[tuple[baselines.ApprovedAnchorName, str], ...] = (
         ("cpmg-15n-ip", "examples/Experiments/CPMG_15N_IP"),
         ("cest-13c-label-cn", "examples/Experiments/CEST_13C_LABEL_CN"),
         ("2st-binding", "examples/Combinations/2stBinding"),
@@ -179,12 +163,47 @@ def _published_migration_core(
     )
     selections: dict[str, str] = {}
     for anchor_name, directory in anchors:
-        published = capture_approved_scientific_anchor_legacy_observation(
-            anchor_name,
-            publisher=publisher,
-            anchor_directory=Path(directory),
-            lane_authority=authority,
-            attempt_token=f"coverage-{anchor_name}",
+        anchor = baselines._approved_anchor(anchor_name)
+        anchor_directory = Path(directory)
+        inputs = baselines._capture_anchor_inputs(anchor, anchor_directory)
+        case = baselines._case_from_anchor_inputs(anchor, inputs)
+        specification = baselines._anchor_legacy_specification(
+            anchor,
+            case,
+            artifact_inventory=baselines._anchor_artifact_inventory(
+                anchor, inputs, include_lane_evidence=True
+            ),
+            implementation=LegacyObservationImplementation(),
+            lane_reference=lane.identity,
+            execution_settings={"native_threads": 1, "plot": "normal", "workers": 1},
+            include_shipped_argv=True,
+        )
+        requested = Occurrence.requested(
+            specification, case, f"coverage-{anchor_name}", authority
+        )
+        publisher.reserve(case, specification, requested)
+        output = tmp_path / f"output-{anchor_name}"
+        _write_complete_anchor_output(output, anchor_directory, anchor_name)
+        artifacts = (
+            *baselines._legacy_result_artifacts(output, specification),
+            ArtifactContent(
+                "environment:lane-attestation.json",
+                baselines._canonical_record_bytes(attestation.to_record()),
+            ),
+            ArtifactContent(
+                "environment:runtime-environment.json",
+                baselines._canonical_record_bytes(environment.to_record()),
+            ),
+        )
+        artifacts = tuple(sorted(artifacts, key=lambda item: item.role))
+        bundle = ResultBundle.create(
+            requested.identity,
+            specification.identity,
+            specification.implementation,
+            tuple(item.member for item in artifacts),
+        )
+        published = publisher.publish(
+            case, specification, requested.succeeded(bundle), bundle, artifacts
         )
         selections[f"anchor:{anchor_name}"] = published.bundle.identity
 

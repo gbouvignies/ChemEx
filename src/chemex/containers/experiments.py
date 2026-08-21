@@ -11,15 +11,11 @@ from pathlib import Path
 from random import choices
 from typing import Literal, Self
 
-import numpy as np
-from lmfit.parameter import Parameters
-
 from chemex.configuration.methods import Selection
 from chemex.containers.experiment import Experiment
 from chemex.messages import print_selecting_profiles
 from chemex.parameters.database import ParameterStore
 from chemex.parameters.spin_system import Group, SpinSystem
-from chemex.typing import Array
 
 # Type definitions
 SelectionType = list[SpinSystem] | Literal["*", "all"], None
@@ -145,23 +141,6 @@ class Experiments:
             raise ValueError(msg)
         self._experiments[experiment.filename] = experiment
 
-    def residuals(self, params: Parameters) -> Array:
-        """Calculate the residuals for all experiments in the collection.
-
-        Args:
-            params (Parameters): Parameters for residual calculation.
-
-        Returns:
-            Array: Residuals as a NumPy array.
-
-        """
-        return np.concatenate([experiment.residuals(params) for experiment in self])
-
-    def back_calculate(self) -> None:
-        """Back calculate experiments using the instance parameter store."""
-        params_lf = self.parameter_store.build_lmfit_params(self.param_ids)
-        self.residuals(params_lf)
-
     def back_calculate_from_values(
         self,
         parameter_values: Mapping[str, float],
@@ -255,17 +234,6 @@ class Experiments:
         """
         result: set[str] = set()
         return result.union(*(self.param_id_sets))
-
-    def filter(self) -> None:
-        """Get a set of all unique parameter IDs across experiments.
-
-        Returns:
-            set[str]: Set of unique parameter IDs.
-
-        """
-        params = self.parameter_store.build_lmfit_params(self.param_ids)
-        for experiment in self:
-            experiment.filter(params)
 
     def filter_from_values(self, parameter_values: Mapping[str, float]) -> None:
         """Apply all data filters from resolved native parameter values."""

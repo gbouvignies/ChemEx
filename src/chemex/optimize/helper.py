@@ -4,7 +4,6 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 import numpy as np
-from lmfit import Parameters as ParametersLF
 from scipy import stats
 
 from chemex.containers.experiments import Experiments
@@ -18,17 +17,6 @@ from chemex.messages import (
 from chemex.parameters.database import ParameterStore
 from chemex.printers.parameters import write_parameters
 from chemex.typing import Array
-
-
-def calculate_statistics(
-    experiments: Experiments,
-    params_lf: ParametersLF,
-) -> dict[str, int | float]:
-    residuals = experiments.residuals(params_lf)
-    nvarys = len(
-        [param for param in params_lf.values() if param.vary and not param.expr],
-    )
-    return calculate_statistics_from_residuals(residuals, nvarys)
 
 
 def calculate_statistics_from_residuals(
@@ -193,19 +181,4 @@ def print_header(
 
 def print_values(values: Iterable[float], chisqr: float) -> str:
     body_values = " ".join(f"{value:.5e}" for value in values)
-    return f"  {body_values} {chisqr:.5e}\n"
-
-
-def print_values_stat(
-    params_lf: ParametersLF,
-    fnames: Iterable[str],
-    chisqr: float,
-) -> str:
-    body_values_list: list[str] = []
-    for fname in fnames:
-        if fname in params_lf:
-            body_values_list.append(f"{params_lf[fname].value:12.5e}")
-        else:
-            body_values_list.append(f"{'--':^12s}")
-    body_values = " ".join(body_values_list)
     return f"  {body_values} {chisqr:.5e}\n"

@@ -25,11 +25,10 @@ current behaviour from code and tests, then correct the documentation or raise
 the discrepancy.
 
 `pyproject.toml` is the authoritative package and tooling policy, and uv is the
-authoritative dependency manager. `numdifftools` is an indirect functional
-runtime dependency: lmfit uses it to estimate covariance, standard errors, and
-parameter correlations for ChemEx-supported minimizers without native
-covariance estimates. Ruff minor upgrades require a dedicated policy review and
-coordinated updates to both its development dependency range and
+authoritative dependency manager. Deterministic fitting uses ChemEx's native
+parameter/evaluation stack with bounded SciPy TRF; statistics also use native
+ChemEx implementations. Ruff minor upgrades require a dedicated policy review
+and coordinated updates to both its development dependency range and
 `required-version`.
 
 ## Orient by task
@@ -50,7 +49,7 @@ coordinated updates to both its development dependency range and
 - Kinetic/exchange model definitions and registration:
   `src/chemex/models/model.py`, `src/chemex/models/factory.py`,
   `src/chemex/models/kinetic/`
-- Parameter naming, creation, constraints, and lmfit conversion:
+- Parameter naming, creation, constraints, and native value resolution:
   `src/chemex/parameters/`
 - NMR basis, Liouvillian calculations, propagators, pulses, distributions, and
   readout: `src/chemex/nmr/`
@@ -86,7 +85,7 @@ uses the same function. `fit` and `simulate` follow this path:
    established scaling convention, and returns masked, uncertainty-weighted
    residuals.
 7. Simulation writes calculated data directly. Fitting applies method sections,
-   filtering, grouping, lmfit minimisation or grids, optional resampling/MCMC,
+   filtering, grouping, native TRF or grids, optional resampling/MCMC,
    then writes parameters, data, plots, statistics, and `run_info/`.
 
 Keep CLI concerns in parsing/orchestration, schema concerns in
@@ -123,7 +122,7 @@ Preserve unless the change explicitly requires otherwise:
   invalidation.
 - Reference-point handling, masks, error shapes, scaling, and residual sign.
   `Data.scale` is the established uncertainty-weighted scale and
-  `ProfileEvaluator` uses `(calc - exp) / err` before masking.
+  `EvaluationEngine` uses `(calc - exp) / err` before masking.
 - Output naming and formatting, parameter names/IDs, CLI defaults, TOML key
   aliases, multi-file merge behaviour, and paths resolved relative to the
   experiment file.

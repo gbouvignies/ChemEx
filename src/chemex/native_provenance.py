@@ -664,7 +664,7 @@ class ProvenanceEnvironment:
 
     @classmethod
     def from_current_process(cls) -> ProvenanceEnvironment:
-        """Capture the local product and numerical runtime without lmfit fields."""
+        """Capture the local product and native numerical runtime."""
 
         def package_version(name: str) -> str:
             try:

@@ -194,7 +194,7 @@ Based on the analysis, expected improvements:
 | Parallelize grid search | 4-8x (on 8 cores) | Low |
 | Optimize matrix_power | 1.5-2x | Medium |
 | **Combined (Path 1)** | **5-10x** | **Low-Medium** |
-| Replace lmfit (Path 2) | +10-30% | High |
+| Native fitting-stack follow-up | Measure current baseline | Medium |
 | JAX autodiff (Future) | +2-5x | High |
 
 ## Continuous Benchmarking
@@ -254,7 +254,7 @@ If benchmarks timeout (default 5 minutes for E2E):
 
 ## References
 
-- **Analysis Documents**: See `/home/user/ChemEx/LMFIT_INVESTIGATION_SUMMARY.md`
+- **Historical Analysis Documents**: See the archived optimizer investigation
 - **Bottleneck Details**: See performance analysis in investigation docs
 - **Optimization Strategy**: See 5-phase migration plan
 
@@ -264,7 +264,7 @@ If benchmarks timeout (default 5 minutes for E2E):
 2. **Implement Path 1 Optimizations**: Eigenvalue caching, vectorization, parallelization
 3. **Measure Improvements**: Run `--all --save optimized_results.txt`
 4. **Compare Results**: Validate 2-5x speedup achieved
-5. **Path 2 (Optional)**: lmfit replacement if justified by Path 1 results
+5. **Native follow-up**: profile the current bounded SciPy TRF implementation
 
 ---
 
