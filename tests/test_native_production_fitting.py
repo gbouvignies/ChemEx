@@ -23,6 +23,7 @@ import chemex.run_info as run_info_module
 from chemex.chemex import run
 from chemex.cli import build_parser
 from chemex.optimize.mcmc import NativeMcmcIncompleteError
+from chemex.optimize.method_step import DerivationDisposition, DerivationOutcome
 from chemex.optimize.progress import ProgressPhase
 from chemex.optimize.resampling import NativeResamplingIncompleteError
 from chemex.optimize.uncertainty import ParameterUnit
@@ -624,7 +625,7 @@ def test_interrupted_block_fallback_preserves_committed_root_evidence(
     status = json.loads((covariance_path / "status.json").read_text(encoding="utf-8"))
     assert status["status"] == "incomplete"
     assert status["terminal"] == "interrupted"
-    assert status["reason"] == "block derivation interrupted"
+    assert status["reason"] == "derivation interrupted/cancelled"
     assert (output / "All" / "Parameters" / "fitted.toml").is_file()
 
 
@@ -805,22 +806,53 @@ def test_interrupted_covariance_keeps_committed_fit_and_invalidates_stale_eviden
 
     assert session.analysis_values.snapshot().revision == 1
     fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
-    assert "error unavailable: derivation interrupted" in fitted
+    assert "error unavailable: derivation interrupted/cancelled" in fitted
     constrained = (output / "Parameters" / "constrained.toml").read_text(
         encoding="utf-8"
     )
-    assert "error unavailable: derivation interrupted" in constrained
+    assert "error unavailable: derivation interrupted/cancelled" in constrained
     assert "# ±" not in constrained
     covariance_path = output / "Statistics" / "Covariance"
     assert not (covariance_path / "evidence.json").exists()
     status = json.loads((covariance_path / "status.json").read_text(encoding="utf-8"))
     assert status == {
         "artifact_type": "native_covariance_derivation_status",
-        "reason": "derivation interrupted",
+        "reason": "derivation interrupted/cancelled",
         "schema_version": 1,
         "status": "incomplete",
         "terminal": "interrupted",
     }
+
+
+def test_cancelled_covariance_uses_the_canonical_product_reason(tmp_path: Path) -> None:
+    output = tmp_path / "Output"
+
+    def cancel_uncertainty(_workflow, _accepted, request, _cancellation):
+        return DerivationOutcome(
+            request.identity,
+            "uncertainty",
+            DerivationDisposition.CANCELLED,
+        )
+
+    with patch(
+        "chemex.optimize.method_step._execute_uncertainty",
+        side_effect=cancel_uncertainty,
+    ):
+        run(_fit_arguments(output), session=AnalysisSession.create())
+
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    constrained = (output / "Parameters" / "constrained.toml").read_text(
+        encoding="utf-8"
+    )
+    assert "error unavailable: derivation interrupted/cancelled" in fitted
+    assert "error unavailable: derivation interrupted/cancelled" in constrained
+    status = json.loads(
+        (output / "Statistics" / "Covariance" / "status.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert status["terminal"] == "cancelled"
+    assert status["reason"] == "derivation interrupted/cancelled"
 
 
 def _grid_method(path: Path) -> Path:

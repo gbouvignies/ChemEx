@@ -133,5 +133,8 @@ def test_full_binding_step2_never_fails_for_a_high_cost_stencil(
         encoding="utf-8"
     )
     r2_b_section = fitted.split('["R2_B, B0->800.0MHZ"]', maxsplit=1)[1]
-    assert "538N" in r2_b_section
+    r2_b_538n = next(
+        line for line in r2_b_section.splitlines() if line.lstrip().startswith("538N")
+    )
+    assert "error unavailable: boundary limited" in r2_b_538n
     assert "Jacobian unavailable" not in fitted

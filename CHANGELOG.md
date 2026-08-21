@@ -8,13 +8,15 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 ## [Unreleased]
 
 ### Changed
-- Ordinary successful native deterministic fits now derive fresh accepted-point
-  covariance evidence and report covariance-derived standard errors in
+- Ordinary successful native deterministic fits now derive accepted-point
+  covariance evidence from exact retained optimizer Jacobians or an independent
+  accepted-point fallback and report covariance-derived standard errors in
   `Parameters/fitted.toml`. Observation uncertainties are treated as absolute
   experimental standard deviations, so covariance is not scaled by reduced
   chi-square. Supported arithmetic constraints receive propagated errors;
-  rank, conditioning, boundary, or derivative limitations withhold errors with
-  a concise reason while preserving fitted central values. Full covariance,
+  rank, boundary, normalization, derivative, or covariance-arithmetic failures
+  withhold errors with a concise reason while preserving fitted central values.
+  Condition and weak-mode diagnostics do not impose an arbitrary hard gate. Full covariance,
   correlation, constrained, and independent-block diagnostics are written
   under `Statistics/` without populating the legacy generic `stderr` field or
   mixing deterministic errors with MC, BS, BSN, or MCMC summaries.

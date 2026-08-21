@@ -569,7 +569,7 @@ def compile_constraint_linearization_capabilities(
 
 @dataclass(frozen=True, slots=True)
 class UncertaintyPolicy:
-    """Explicit resolved v1 numerical policy; no defaults are inferred."""
+    """Explicit numerical policy; legacy rank knobs are reference-only."""
 
     calibration_identity: str
     numerical_compatibility_requirement: str
@@ -676,6 +676,13 @@ class UncertaintyPolicy:
         }:
             raise UncertaintyConstructionError(
                 "Residual-Jacobian strategy is not supported"
+            )
+        if self.residual_jacobian_strategy == (
+            "retained-backend-or-accepted-2-point"
+        ) and (rank_absolute != 0.0 or rank_relative != 0.0):
+            raise UncertaintyConstructionError(
+                "Product covariance uses only the dimension-aware floating-point "
+                "rank threshold; legacy calibration tolerances must be zero"
             )
         object.__setattr__(self, "coordinate_scales", scales)
         object.__setattr__(self, "coordinate_units", units)
@@ -4168,36 +4175,12 @@ def _accepted_point_two_point_jacobian(
         center = accepted.vector[column]
         feasibility = problem.coordinate_line_feasibility(accepted.vector, column)
         nominal = sqrt_epsilon * max(1.0, abs(center))
-        preferred = nominal if center >= 0.0 else -nominal
-        displacement: float | None = None
-        orientation = ""
-        for candidate, label in (
-            (preferred, "forward" if preferred > 0.0 else "backward"),
-            (-preferred, "backward" if preferred > 0.0 else "forward"),
-        ):
-            limit = (
-                feasibility.maximum_displacement
-                if candidate > 0.0
-                else -feasibility.minimum_displacement
-            )
-            if limit <= 0.0:
-                continue
-            magnitude = min(abs(candidate), limit)
-            proposed = magnitude if candidate > 0.0 else -magnitude
-            if center + proposed == center:
-                adjacent = float(
-                    np.nextafter(
-                        center,
-                        math.inf if proposed > 0.0 else -math.inf,
-                    )
-                    - center
-                )
-                if abs(adjacent) > limit:
-                    continue
-                proposed = adjacent
-            displacement = proposed
-            orientation = label
-            break
+        displacement, orientation = _scipy_style_two_point_displacement(
+            center,
+            nominal,
+            feasibility.minimum_displacement,
+            feasibility.maximum_displacement,
+        )
         if displacement is None or displacement == 0.0:
             return None, EvidenceFailure(
                 "residual_linearization",
@@ -4298,6 +4281,40 @@ def _accepted_point_two_point_jacobian(
         ),
         None,
     )
+
+
+def _scipy_style_two_point_displacement(
+    center: float,
+    nominal: float,
+    minimum_displacement: float,
+    maximum_displacement: float,
+) -> tuple[float | None, str]:
+    """Reproduce SciPy's one-sided bound adjustment on a feasible line."""
+    preferred = nominal if center >= 0.0 else -nominal
+    if minimum_displacement <= preferred <= maximum_displacement:
+        proposed = preferred
+    elif minimum_displacement <= -preferred <= maximum_displacement:
+        proposed = -preferred
+    else:
+        proposed = (
+            maximum_displacement
+            if maximum_displacement >= -minimum_displacement
+            else minimum_displacement
+        )
+    if proposed == 0.0:
+        return None, ""
+    displacement = float((center + proposed) - center)
+    if displacement == 0.0:
+        displacement = float(
+            np.nextafter(
+                center,
+                math.inf if proposed > 0.0 else -math.inf,
+            )
+            - center
+        )
+    if not minimum_displacement <= displacement <= maximum_displacement:
+        return None, ""
+    return displacement, "forward" if displacement > 0.0 else "backward"
 
 
 def _profiled_normalization_regular(

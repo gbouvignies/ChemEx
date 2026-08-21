@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+from scipy.optimize import least_squares
 
 from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
@@ -63,6 +64,8 @@ DCEST_EXPERIMENT = ROOT / "examples/Experiments/DCEST_15N_HD_EXCH/Experiments/3h
 DCEST_PARAMETERS = (
     ROOT / "examples/Experiments/DCEST_15N_HD_EXCH/Parameters/parameters.toml"
 )
+CPMG_ROOT = ROOT / "examples/Experiments/CPMG_15N_IP"
+CEST_ROOT = ROOT / "examples/Experiments/CEST_13C_LABEL_CN"
 
 
 def _analytic_pa_kab(kab: float, kba: float) -> float:
@@ -121,6 +124,50 @@ def _accepted_relaxation_fit() -> tuple[
     )
     assert outcome.accepted_result is not None
     return session, parameterization, engine, problem, outcome.accepted_result
+
+
+def _accepted_step1_profile_fit(
+    example: Path,
+    spin_system: str,
+) -> tuple[
+    ActiveParameterization, EvaluationEngine, OptimizationProblem, AcceptedFitResult
+]:
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    method = read_methods([example / "Methods/method.toml"])["STEP1"]
+    experiments = build_experiments(
+        sorted((example / "Experiments").glob("*.toml")),
+        Selection(
+            include=[SpinSystem.from_name(spin_system)],
+            exclude=None,
+        ),
+        session=session,
+    )
+    session.parameters.set_defaults(
+        read_defaults([example / "Parameters/parameters.toml"])
+    )
+    assert session.try_build_analysis_values()
+    parameterization = session.compile_parameterization(method, experiments.param_ids)
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    configuration = session.parameter_factory.sealed_configuration
+    assert configuration is not None
+    problem = OptimizationProblem.from_native(
+        engine.plan,
+        parameterization,
+        configuration,
+        session.analysis_values.snapshot(),
+    )
+    outcome = execute_direct_trf(
+        problem,
+        DirectTrfInvocation.for_problem(
+            problem,
+            objective_request_budget=2000 * (len(problem.controlled_ids) + 1),
+        ),
+        parameterization,
+        engine,
+    )
+    assert outcome.accepted_result is not None
+    return parameterization, engine, problem, outcome.accepted_result
 
 
 def _qualification_policy(controlled_id: str) -> UncertaintyPolicy:
@@ -640,6 +687,218 @@ def test_backend_fallback_and_high_quality_jacobians_agree_at_accepted_point() -
         reference.residual_jacobian.matrix,
         rtol=2.0e-6,
         atol=2.0e-8,
+    )
+
+
+def test_fallback_reverses_a_full_step_before_shortening_at_a_bound() -> None:
+    center = float(np.nextafter(1.0, 0.0))
+    calls: list[float] = []
+
+    def residual(vector: Array) -> Array:
+        calls.append(float(vector[0]))
+        return np.asarray((vector[0] ** 2,))
+
+    least_squares(
+        residual,
+        np.asarray((center,)),
+        jac="2-point",
+        bounds=(np.asarray((0.0,)), np.asarray((1.0,))),
+        method="trf",
+        loss="linear",
+        diff_step=None,
+        max_nfev=1,
+    )
+    scipy_displacement = calls[1] - calls[0]
+    nominal = math.sqrt(np.finfo(np.float64).eps) * max(1.0, abs(center))
+    displacement, orientation = uncertainty_module._scipy_style_two_point_displacement(
+        center,
+        nominal,
+        -center,
+        1.0 - center,
+    )
+
+    assert orientation == "backward"
+    assert displacement == scipy_displacement
+    assert abs(displacement) == pytest.approx(nominal)
+
+
+@pytest.mark.parametrize(
+    ("example", "spin_system"),
+    ((CPMG_ROOT, "15N-HN"), (CEST_ROOT, "L18CB")),
+    ids=("cpmg", "cest"),
+)
+def test_production_backend_fallback_and_reference_covariance_agree(
+    example: Path,
+    spin_system: str,
+) -> None:
+    parameterization, engine, problem, accepted = _accepted_step1_profile_fit(
+        example,
+        spin_system,
+    )
+    request, _unsupported = native_deterministic_module._product_uncertainty_request(
+        problem,
+        parameterization,
+    )
+    fallback_anchor = _qualified_accepted_copy(
+        accepted,
+        occurrence_identity=f"{spin_system}-fallback-comparison",
+    )
+    reference_anchor = _qualified_accepted_copy(
+        accepted,
+        occurrence_identity=f"{spin_system}-reference-comparison",
+    )
+    reference_policy = dataclasses.replace(
+        request.policy,
+        calibration_identity=f"{request.policy.calibration_identity}-{spin_system}",
+        residual_jacobian_strategy="high-quality-reference",
+    )
+    backend = derive_uncertainty_evidence(
+        accepted,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=request.policy,
+        resolved_environment_identity="production-backend-comparison",
+    )
+    fallback = derive_uncertainty_evidence(
+        fallback_anchor,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=request.policy,
+        resolved_environment_identity="production-fallback-comparison",
+    )
+    reference = derive_uncertainty_evidence(
+        reference_anchor,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=reference_policy,
+        resolved_environment_identity="production-reference-comparison",
+    )
+
+    assert backend.residual_jacobian is not None
+    assert fallback.residual_jacobian is not None
+    assert reference.residual_jacobian is not None
+    assert backend.residual_jacobian.evaluation_count == 0
+    assert fallback.residual_jacobian.evaluation_count == len(problem.controlled_ids)
+    assert reference.residual_jacobian.evaluation_count >= 1 + 4 * len(
+        problem.controlled_ids
+    )
+    np.testing.assert_allclose(
+        backend.residual_jacobian.matrix,
+        fallback.residual_jacobian.matrix,
+        rtol=3.0e-6,
+        atol=3.0e-7,
+    )
+    np.testing.assert_allclose(
+        backend.residual_jacobian.matrix,
+        reference.residual_jacobian.matrix,
+        rtol=2.0e-4,
+        atol=1.5e-5,
+    )
+    assert backend.rank_diagnostic is not None
+    assert fallback.rank_diagnostic is not None
+    assert reference.rank_diagnostic is not None
+    assert (
+        backend.rank_diagnostic.rank
+        == fallback.rank_diagnostic.rank
+        == reference.rank_diagnostic.rank
+    )
+    assert backend.covariance is not None
+    assert fallback.covariance is not None
+    assert reference.covariance is not None
+    np.testing.assert_allclose(
+        backend.covariance.covariance,
+        fallback.covariance.covariance,
+        rtol=8.0e-6,
+        atol=1.0e-12,
+    )
+    np.testing.assert_allclose(
+        backend.covariance.covariance,
+        reference.covariance.covariance,
+        rtol=2.0e-3,
+        atol=1.0e-12,
+    )
+    assert backend.covariance.jacobian_condition == pytest.approx(
+        fallback.covariance.jacobian_condition,
+        rel=8.0e-6,
+    )
+    assert backend.covariance.jacobian_condition == pytest.approx(
+        reference.covariance.jacobian_condition,
+        rel=2.0e-3,
+    )
+    backend_claims = {
+        item.name: item.state
+        for item in backend.covariance.claims
+        if item.name
+        in {
+            "INTERIOR_POINT",
+            "BOUNDARY_SEPARATION",
+            "CONTROLLED_AFFINE_SEPARATION",
+            "USABLE_LOCAL_COVARIANCE",
+        }
+    }
+    assert backend_claims == {
+        item.name: item.state
+        for item in fallback.covariance.claims
+        if item.name in backend_claims
+    }
+    assert backend_claims == {
+        item.name: item.state
+        for item in reference.covariance.claims
+        if item.name in backend_claims
+    }
+    assert backend.marginal_errors is not None
+    assert fallback.marginal_errors is not None
+    assert reference.marginal_errors is not None
+    assert tuple(item.outcome for item in backend.marginal_errors.entries) == tuple(
+        item.outcome for item in fallback.marginal_errors.entries
+    )
+    backend_errors = np.sqrt(np.diag(backend.covariance.covariance))
+    fallback_errors = np.sqrt(np.diag(fallback.covariance.covariance))
+    reference_errors = np.sqrt(np.diag(reference.covariance.covariance))
+    np.testing.assert_allclose(
+        backend_errors,
+        fallback_errors,
+        rtol=4.0e-6,
+        atol=1.0e-12,
+    )
+    np.testing.assert_allclose(
+        backend_errors,
+        reference_errors,
+        rtol=1.0e-3,
+        atol=1.0e-12,
+    )
+    assert backend.correlations is not None
+    assert fallback.correlations is not None
+    assert reference.correlations is not None
+    backend_correlation = (
+        np.asarray(backend.covariance.covariance)
+        / backend_errors[:, np.newaxis]
+        / backend_errors[np.newaxis, :]
+    )
+    fallback_correlation = (
+        np.asarray(fallback.covariance.covariance)
+        / fallback_errors[:, np.newaxis]
+        / fallback_errors[np.newaxis, :]
+    )
+    reference_correlation = (
+        np.asarray(reference.covariance.covariance)
+        / reference_errors[:, np.newaxis]
+        / reference_errors[np.newaxis, :]
+    )
+    np.testing.assert_allclose(
+        backend_correlation,
+        fallback_correlation,
+        rtol=8.0e-6,
+        atol=1.0e-10,
+    )
+    np.testing.assert_allclose(
+        backend_correlation,
+        reference_correlation,
+        rtol=2.0e-3,
+        atol=1.0e-8,
     )
 
 
@@ -1422,6 +1681,11 @@ def test_product_request_excludes_unsupported_scientific_function_propagation() 
         ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES
     )
     assert request.policy.coordinate_scales
+    with pytest.raises(
+        uncertainty_module.UncertaintyConstructionError,
+        match="legacy calibration tolerances must be zero",
+    ):
+        dataclasses.replace(request.policy, rank_relative_tolerance=1.0e-12)
 
 
 def test_product_request_does_not_hide_structural_capability_errors() -> None:

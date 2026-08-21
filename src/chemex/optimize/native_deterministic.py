@@ -60,6 +60,7 @@ from chemex.optimize.uncertainty import (
     RootAnchoredBlockCovarianceEvidence,
     UncertaintyEvidence,
     UncertaintyPolicy,
+    UncertaintyUnavailableKind,
     compile_constraint_linearization_capabilities,
     derive_root_anchored_block_covariance,
 )
@@ -223,17 +224,20 @@ def _product_uncertainty_result(
             DerivationDisposition.NOT_STARTED_BY_WORKFLOW_STOP,
         }:
             terminal = derivation.disposition.value
-            reason = (
-                "derivation interrupted"
-                if derivation.disposition is DerivationDisposition.INTERRUPTED
-                else "derivation cancelled"
+            reason = uncertainty_unavailable_reason(
+                UncertaintyUnavailableKind.DERIVATION_STOPPED
             )
             view = ParameterUncertaintyView(
                 unavailable_reasons=(
                     *((param_id, reason) for param_id in controlled_ids),
                     *((param_id, reason) for param_id in supported_constrained_ids),
                     *(
-                        (param_id, "unsupported constrained derivative")
+                        (
+                            param_id,
+                            uncertainty_unavailable_reason(
+                                UncertaintyUnavailableKind.UNSUPPORTED_CONSTRAINED_DERIVATIVE
+                            ),
+                        )
                         for param_id in unsupported_constrained_ids
                     ),
                 )
@@ -261,7 +265,12 @@ def _product_block_uncertainty(
             None,
         )
     except KeyboardInterrupt:
-        return None, ("interrupted", "block derivation interrupted")
+        return None, (
+            "interrupted",
+            uncertainty_unavailable_reason(
+                UncertaintyUnavailableKind.DERIVATION_STOPPED
+            ),
+        )
 
 
 def _has_controlled_parameters(parameterization: ActiveParameterization) -> bool:

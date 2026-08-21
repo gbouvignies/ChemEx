@@ -94,14 +94,17 @@ PB     =  7.02971e-02 # ±2.10432e-03
 ```
 
 :::note
-An ordinary deterministic fit derives a fresh local covariance at its accepted
-point and displays its covariance-derived standard errors here when the evidence
-is usable. Experimental observation uncertainties are interpreted as absolute
+An ordinary deterministic fit derives local covariance at its accepted point
+from an exact retained optimizer Jacobian or an independent accepted-point
+fallback, and displays covariance-derived standard errors when the evidence is
+usable. Experimental observation uncertainties are interpreted as absolute
 standard deviations, so ChemEx does not multiply covariance by reduced
-chi-square. Reduced chi-square remains a goodness-of-fit diagnostic. If local
-covariance is unavailable because of rank, conditioning, boundary, or derivative
-limitations, the comment gives a concise reason instead. MC, BS, BSN, and MCMC
-summaries remain separate under `Statistics/` and never replace these errors.
+chi-square. Reduced chi-square remains a goodness-of-fit diagnostic. Numerical
+rank, boundary, normalization, derivative, or covariance-arithmetic failures
+withhold errors with a concise reason. A large condition number is retained as
+a weak-mode diagnostic rather than an arbitrary availability gate. MC, BS, BSN,
+and MCMC summaries remain separate under `Statistics/` and never replace these
+errors.
 :::
 
 </TabItem>
