@@ -21,6 +21,7 @@ import chemex.run_info as run_info_module
 from chemex.chemex import run
 from chemex.cli import build_parser
 from chemex.optimize.mcmc import NativeMcmcIncompleteError
+from chemex.optimize.progress import ProgressPhase
 from chemex.optimize.resampling import NativeResamplingIncompleteError
 from chemex.optimize.uncertainty import ParameterUnit
 from chemex.runtime import AnalysisSession
@@ -212,6 +213,50 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     time_2, intensity_2 = curve[-1]
     fitted_curve_rate = -math.log(intensity_2 / intensity_1) / (time_2 - time_1)
     assert fitted_curve_rate == pytest.approx(fitted_value, rel=1.0e-3)
+
+
+def test_real_direct_fit_reports_objective_evaluation_progress(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run(
+        _fit_arguments(tmp_path / "Output"),
+        session=AnalysisSession.create(),
+    )
+
+    rendered = capsys.readouterr().out
+    assert "eval 0/" in rendered
+    assert "final χ²" in rendered
+    assert "iteration" not in rendered.lower()
+
+
+def test_real_direct_fit_propagates_progress_interrupt_after_cleanup(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    original_observe = native_deterministic_module.MinimizationProgressReporter.observe
+
+    def interrupt_after_evaluation(self, context, event):
+        original_observe(self, context, event)
+        if event.phase is ProgressPhase.EVALUATED:
+            raise KeyboardInterrupt
+
+    with (
+        patch.object(
+            native_deterministic_module.MinimizationProgressReporter,
+            "observe",
+            interrupt_after_evaluation,
+        ),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run(
+            _fit_arguments(tmp_path / "Output"),
+            session=AnalysisSession.create(),
+        )
+
+    rendered = capsys.readouterr().out
+    assert "interrupted" in rendered
+    assert "eval 1 total" in rendered
 
 
 def test_explicit_trf_and_least_squares_alias_have_identical_native_product_output(
@@ -407,6 +452,25 @@ def test_real_grouped_direct_fit_uses_native_aggregate_commit(
     group_outputs = tuple((output / "Groups").glob("*/Parameters/fitted.toml"))
     assert len(group_outputs) == 2
     assert (output / "All" / "Parameters" / "fitted.toml").is_file()
+
+
+def test_real_grouped_direct_progress_has_one_bounded_noninteractive_stream(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run(
+        _fit_arguments(
+            tmp_path / "Output",
+            include=("G2N-HN", "H3N-HN"),
+        ),
+        session=AnalysisSession.create(),
+    )
+
+    rendered = capsys.readouterr().out
+    assert "group 1/2" in rendered
+    assert rendered.count("eval 0/") == 1
+    assert "eval " in rendered
+    assert " total" in rendered
 
 
 def _grid_method(path: Path) -> Path:
@@ -822,6 +886,21 @@ def test_real_mc_fit_is_wholly_native_and_writes_product_statistics(
     assert "(error not calculated)" in fitted
 
 
+def test_resampling_replicates_do_not_create_progress_streams(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 2')
+
+    run(
+        _fit_arguments(tmp_path / "Output", method),
+        session=AnalysisSession.create(),
+    )
+
+    rendered = capsys.readouterr().out
+    assert rendered.count("eval 0/") == 1
+
+
 def test_native_statistics_filter_resolution_fails_closed_before_filtering(
     tmp_path: Path,
 ) -> None:
@@ -1194,6 +1273,22 @@ def test_real_grid_fit_uses_native_cartesian_trf_and_writes_grid_output(
     assert session.analysis_values.snapshot().revision == 1
     assert (output / "Grid" / "grid.out").is_file()
     assert (output / "Parameters" / "fixed.toml").is_file()
+
+
+def test_real_grid_progress_aggregates_local_seed_polishes(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    method = _grid_method(tmp_path / "method.toml")
+
+    run(
+        _fit_arguments(tmp_path / "Output", method),
+        session=AnalysisSession.create(),
+    )
+
+    rendered = capsys.readouterr().out
+    assert rendered.count("GRID seed") == 1
+    assert "final χ²" in rendered
 
 
 def test_real_grouped_grid_fit_uses_one_native_aggregate_commit(

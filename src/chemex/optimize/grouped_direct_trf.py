@@ -36,6 +36,11 @@ from chemex.optimize.direct_trf import (
     canonical_chi_square,
     execute_direct_trf_candidate,
 )
+from chemex.optimize.progress import (
+    ContextualProgressObserver,
+    FitProgressContext,
+    ProgressObserver,
+)
 from chemex.parameters.parameterization import ActiveParameterization
 
 _SCHEMA_VERSION = 1
@@ -740,6 +745,9 @@ def execute_direct_trf_components(
     engine: EvaluationEngine,
     *,
     cancellation: CancellationToken | None = None,
+    progress_observer: ContextualProgressObserver | None = None,
+    grid_seed_ordinal: int | None = None,
+    grid_seed_total: int | None = None,
 ) -> tuple[FitComponentOutcome, ...]:
     """Execute canonical components without acceptance, commit, or publication."""
     if (
@@ -753,10 +761,14 @@ def execute_direct_trf_components(
     token = CancellationToken() if cancellation is None else cancellation
     outcomes: list[FitComponentOutcome] = []
     stopped = token.is_cancelled
-    for component, component_invocation in zip(
-        decomposition.components,
-        invocation.component_invocations,
-        strict=True,
+    component_total = len(decomposition.components)
+    for group_ordinal, (component, component_invocation) in enumerate(
+        zip(
+            decomposition.components,
+            invocation.component_invocations,
+            strict=True,
+        ),
+        start=1,
     ):
         if stopped:
             outcomes.append(_not_started(component))
@@ -767,12 +779,25 @@ def execute_direct_trf_components(
                 raise DirectTrfConstructionError(
                     "Component evaluator projection differs from its derivation"
                 )
+            context = FitProgressContext(
+                group_ordinal,
+                component_total,
+                component.controlled_ids,
+                grid_seed_ordinal,
+                grid_seed_total,
+            )
+            local_observer: ProgressObserver | None = (
+                None
+                if progress_observer is None
+                else lambda event, context=context: progress_observer(context, event)
+            )
             result = execute_direct_trf_candidate(
                 component.problem,
                 component_invocation,
                 parameterization,
                 child_engine,
                 cancellation=token,
+                progress_observer=local_observer,
             )
         except DirectTrfInterrupted as interrupted:
             interruption_failure = (
@@ -1390,6 +1415,7 @@ def execute_grouped_direct_trf(
     engine: EvaluationEngine,
     *,
     cancellation: CancellationToken | None = None,
+    progress_observer: ContextualProgressObserver | None = None,
 ) -> GroupedDirectTrfOutcome:
     """Execute all exact components, then freshly validate the root aggregate."""
     token = CancellationToken() if cancellation is None else cancellation
@@ -1427,6 +1453,7 @@ def execute_grouped_direct_trf(
         parameterization,
         engine,
         cancellation=token,
+        progress_observer=progress_observer,
     )
     return materialize_grouped_direct_trf(
         problem,

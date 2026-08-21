@@ -10,7 +10,12 @@ import numpy as np
 from chemex.configuration.methods import Method
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import EvaluationEngine, EvaluationResult
-from chemex.messages import print_group_name, print_minimizing
+from chemex.messages import (
+    MinimizationProgressReporter,
+    console,
+    print_group_name,
+    print_minimizing,
+)
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     DirectTrfInvocation,
@@ -297,6 +302,7 @@ def run_native_deterministic(
     plot: str,
     *,
     session: AnalysisSession,
+    step_name: str = "",
 ) -> NativeDeterministicFit | None:
     """Execute one complete deterministic method occurrence natively."""
     parameter_model = session.parameter_factory.sealed_parameter_model
@@ -378,8 +384,37 @@ def run_native_deterministic(
         strategy=strategy,
         invocation=invocation,
     )
+    group_labels = {
+        controlled_ids: (
+            group_path.name.split("_", maxsplit=1)[-1] if group_path.name else ""
+        )
+        for group_path, controlled_ids in group_scopes
+    }
+    progress = MinimizationProgressReporter(
+        console,
+        interactive=console.is_terminal,
+        retained_observation_count=engine.plan.retained_observation_count,
+        controlled_parameter_count=len(problem.controlled_ids),
+        step_name=step_name,
+        group_labels=group_labels,
+        grid=bool(method.grid),
+    )
     print_minimizing()
-    outcome = execute_method_step(workflow, analysis_values=session.analysis_values)
+    with progress:
+        outcome = execute_method_step(
+            workflow,
+            analysis_values=session.analysis_values,
+            progress_observer=progress.observe,
+        )
+        accepted_result = outcome.accepted_result
+        progress.finish(
+            final_chi_square=(
+                None if accepted_result is None else accepted_result.chi_square
+            ),
+            terminal_status=outcome.lifecycle.value,
+        )
+    if outcome.lifecycle is MethodStepLifecycle.INTERRUPTED:
+        raise KeyboardInterrupt("Native deterministic fit interrupted")
     if outcome.lifecycle is not MethodStepLifecycle.COMMITTED:
         primary = outcome.primary_execution
         failures = (

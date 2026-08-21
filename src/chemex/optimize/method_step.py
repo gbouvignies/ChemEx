@@ -113,6 +113,7 @@ from chemex.optimize.native_resampling import (
     execute_resampling_evidence,
     summarize_resampling_evidence,
 )
+from chemex.optimize.progress import ContextualProgressObserver
 from chemex.optimize.uncertainty import (
     CompiledConstraintLinearizationCapabilities,
     ParameterUnit,
@@ -1778,6 +1779,7 @@ def execute_method_step(  # noqa: C901 - closed evaluation/optimization lifecycl
     analysis_values: AnalysisValues,
     cancellation: CancellationToken | None = None,
     checkpoint_observer: Callable[[MethodStepCheckpoint], None] | None = None,
+    progress_observer: ContextualProgressObserver | None = None,
 ) -> MethodStepOutcome:
     """Execute one exact native workflow occurrence."""
     execution_start = _pin_execution_start_workflow(workflow)
@@ -1792,6 +1794,7 @@ def execute_method_step(  # noqa: C901 - closed evaluation/optimization lifecycl
             analysis_values=analysis_values,
             cancellation=cancellation,
             checkpoint_observer=checkpoint_observer,
+            progress_observer=progress_observer,
         )
     if cancellation is not None and cancellation.is_cancelled:
         return MethodStepOutcome(
@@ -2070,6 +2073,7 @@ def _execute_optimization(  # noqa: C901 - closed primary transition
     analysis_values: AnalysisValues,
     cancellation: CancellationToken | None,
     checkpoint_observer: Callable[[MethodStepCheckpoint], None] | None,
+    progress_observer: ContextualProgressObserver | None,
 ) -> MethodStepOutcome:
     _validate_execution_start_workflow(workflow, execution_start)
     problem = cast("OptimizationProblem", workflow.problem)
@@ -2086,6 +2090,7 @@ def _execute_optimization(  # noqa: C901 - closed primary transition
                 workflow.parameterization,
                 workflow.engine,
                 cancellation=token,
+                progress_observer=progress_observer,
             )
         elif strategy is MethodStepStrategy.GRID_DIRECT_TRF:
             execution = execute_grouped_grid_direct_trf(
@@ -2095,6 +2100,7 @@ def _execute_optimization(  # noqa: C901 - closed primary transition
                 workflow.parameterization,
                 workflow.engine,
                 cancellation=token,
+                progress_observer=progress_observer,
             )
         else:
             execution = execute_de_direct_trf(

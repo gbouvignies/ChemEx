@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from numbers import Real
 from threading import Event, RLock
+from time import monotonic
 from typing import SupportsIndex, cast
 from uuid import uuid4
 from weakref import ReferenceType, WeakKeyDictionary, ref
@@ -31,6 +32,7 @@ from chemex.evaluation.native import (
     EvaluationPlan,
     EvaluationResult,
 )
+from chemex.optimize.progress import ProgressEvent, ProgressObserver, ProgressPhase
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     IndependentValueFrame,
@@ -2229,6 +2231,108 @@ class _AttemptStop(RuntimeError):
         super().__init__(failure.message or failure.category)
 
 
+class _ProgressEmitter:
+    """Fail-safe observer adapter for one Direct-TRF attempt."""
+
+    def __init__(
+        self,
+        problem: OptimizationProblem,
+        invocation: DirectTrfInvocation,
+        retained_observation_count: int,
+        observer: ProgressObserver | None,
+    ) -> None:
+        self._problem = problem
+        self._invocation = invocation
+        self._retained_observation_count = retained_observation_count
+        self._observer = observer
+        self._started_at = monotonic() if observer is not None else None
+        self._current: CandidateSummary | None = None
+
+    def start(self) -> None:
+        if self._observer is None:
+            return
+        self._emit(
+            ProgressEvent(
+                ProgressPhase.STARTED,
+                0,
+                0,
+                0,
+                self._problem.start,
+                None,
+                None,
+                self._retained_observation_count,
+                len(self._problem.controlled_ids),
+                self._invocation.objective_request_budget,
+                self._elapsed(),
+            )
+        )
+
+    def evaluated(
+        self,
+        counters: AttemptCounters,
+        current: CandidateSummary,
+        best: CandidateSummary,
+    ) -> None:
+        if self._observer is None:
+            return
+        self._current = current
+        self._emit(
+            ProgressEvent(
+                ProgressPhase.EVALUATED,
+                counters.solver_requests_received,
+                counters.objective_requests_accepted,
+                counters.objective_evaluations_completed,
+                current.vector,
+                current.chi_square,
+                best.chi_square,
+                self._retained_observation_count,
+                len(self._problem.controlled_ids),
+                self._invocation.objective_request_budget,
+                self._elapsed(),
+            )
+        )
+
+    def finish(self, execution: DirectTrfExecution, status: str) -> None:
+        if self._observer is None:
+            return
+        current = execution.final_candidate or self._current or execution.best_candidate
+        self._emit(
+            ProgressEvent(
+                ProgressPhase.TERMINATED,
+                execution.counters.solver_requests_received,
+                execution.counters.objective_requests_accepted,
+                execution.counters.objective_evaluations_completed,
+                self._problem.start if current is None else current.vector,
+                None if current is None else current.chi_square,
+                (
+                    None
+                    if execution.best_candidate is None
+                    else execution.best_candidate.chi_square
+                ),
+                self._retained_observation_count,
+                len(self._problem.controlled_ids),
+                self._invocation.objective_request_budget,
+                self._elapsed(),
+                status,
+            )
+        )
+
+    def _elapsed(self) -> float:
+        return 0.0 if self._started_at is None else monotonic() - self._started_at
+
+    def _emit(self, event: ProgressEvent) -> None:
+        observer = self._observer
+        if observer is None:
+            return
+        try:
+            observer(event)
+        except KeyboardInterrupt:
+            self._observer = None
+            raise
+        except Exception:  # noqa: BLE001 - UI observation is fail-safe
+            self._observer = None
+
+
 class _LiveAttempt:
     def __init__(
         self,
@@ -2237,12 +2341,14 @@ class _LiveAttempt:
         parameterization: ActiveParameterization,
         evaluator: BoundEvaluator,
         cancellation: CancellationToken,
+        progress: _ProgressEmitter,
     ) -> None:
         self.problem = problem
         self.invocation = invocation
         self.parameterization = parameterization
         self.evaluator = evaluator
         self.cancellation = cancellation
+        self.progress = progress
         self.received = 0
         self.accepted = 0
         self.completed = 0
@@ -2333,6 +2439,7 @@ class _LiveAttempt:
         self.requests.append(request)
         if self.best is None or summary.ordering_key() < self.best.ordering_key():
             self.best = summary
+        self.progress.evaluated(self.counters, summary, self.best)
         if self.cancellation.is_cancelled:
             raise _AttemptStop(
                 DirectTrfTerminal.CANCELLED,
@@ -3269,10 +3376,18 @@ def _execute_direct_trf_attempt(
     parameterization: ActiveParameterization,
     engine: EvaluationEngine,
     token: CancellationToken,
+    progress: _ProgressEmitter,
 ) -> tuple[DirectTrfExecution, _CompletedRequest] | DirectTrfOutcome:
     occurrence_identity = uuid4().hex
     evaluator = engine.new_evaluator()
-    live = _LiveAttempt(problem, invocation, parameterization, evaluator, token)
+    live = _LiveAttempt(
+        problem,
+        invocation,
+        parameterization,
+        evaluator,
+        token,
+        progress,
+    )
     if token.is_cancelled:
         return _failed_outcome(
             _execution(
@@ -3360,6 +3475,7 @@ def execute_direct_trf(
     engine: EvaluationEngine,
     *,
     cancellation: CancellationToken | None = None,
+    progress_observer: ProgressObserver | None = None,
 ) -> DirectTrfOutcome:
     """Execute one bounded Direct-TRF attempt and fresh acceptance materialization."""
     if not problem.acceptance_authority:
@@ -3368,33 +3484,53 @@ def execute_direct_trf(
         )
     _validate_execution_context(problem, invocation, parameterization, engine)
     token = CancellationToken() if cancellation is None else cancellation
-    attempt = _execute_direct_trf_attempt(
+    progress = _ProgressEmitter(
         problem,
         invocation,
-        parameterization,
-        engine,
-        token,
+        engine.plan.retained_observation_count,
+        progress_observer,
     )
+    progress.start()
+    try:
+        attempt = _execute_direct_trf_attempt(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+            token,
+            progress,
+        )
+    except DirectTrfInterrupted as error:
+        progress.finish(error.execution, "interrupted")
+        raise
     if isinstance(attempt, DirectTrfOutcome):
+        progress.finish(attempt.execution, attempt.terminal.value)
         return attempt
     execution, request = attempt
-    materialized = _materialize_candidate(
-        execution,
-        problem,
-        invocation,
-        parameterization,
-        engine,
-        request,
-        token,
-    )
+    try:
+        materialized = _materialize_candidate(
+            execution,
+            problem,
+            invocation,
+            parameterization,
+            engine,
+            request,
+            token,
+        )
+    except DirectTrfInterrupted as error:
+        progress.finish(error.execution, "interrupted")
+        raise
     if isinstance(materialized, DirectTrfOutcome):
+        progress.finish(materialized.execution, materialized.terminal.value)
         return materialized
-    return _accepted_outcome(
+    outcome = _accepted_outcome(
         materialized,
         execution,
         problem,
         invocation,
     )
+    progress.finish(execution, outcome.terminal.value)
+    return outcome
 
 
 def execute_direct_trf_candidate(
@@ -3404,17 +3540,30 @@ def execute_direct_trf_candidate(
     engine: EvaluationEngine,
     *,
     cancellation: CancellationToken | None = None,
+    progress_observer: ProgressObserver | None = None,
 ) -> DirectTrfCandidateOutcome:
     """Run Direct TRF for one component without acceptance or commit authority."""
     _validate_execution_context(problem, invocation, parameterization, engine)
     token = CancellationToken() if cancellation is None else cancellation
-    attempt = _execute_direct_trf_attempt(
+    progress = _ProgressEmitter(
         problem,
         invocation,
-        parameterization,
-        engine,
-        token,
+        engine.plan.retained_observation_count,
+        progress_observer,
     )
+    progress.start()
+    try:
+        attempt = _execute_direct_trf_attempt(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+            token,
+            progress,
+        )
+    except DirectTrfInterrupted as error:
+        progress.finish(error.execution, "interrupted")
+        raise
     if isinstance(attempt, DirectTrfOutcome):
         terminal = {
             DirectTrfOutcomeTerminal.SOLVER_UNSUCCESSFUL: (
@@ -3425,38 +3574,48 @@ def execute_direct_trf_candidate(
             ),
             DirectTrfOutcomeTerminal.CANCELLED: DirectTrfCandidateTerminal.CANCELLED,
         }[attempt.terminal]
-        return DirectTrfCandidateOutcome(
+        outcome = DirectTrfCandidateOutcome(
             terminal,
             attempt.execution,
             attempt.materialization,
         )
+        progress.finish(attempt.execution, outcome.terminal.value)
+        return outcome
     execution, request = attempt
-    materialized = _materialize_candidate(
-        execution,
-        problem,
-        invocation,
-        parameterization,
-        engine,
-        request,
-        token,
-    )
+    try:
+        materialized = _materialize_candidate(
+            execution,
+            problem,
+            invocation,
+            parameterization,
+            engine,
+            request,
+            token,
+        )
+    except DirectTrfInterrupted as error:
+        progress.finish(error.execution, "interrupted")
+        raise
     if isinstance(materialized, DirectTrfOutcome):
         terminal = (
             DirectTrfCandidateTerminal.CANCELLED
             if materialized.terminal is DirectTrfOutcomeTerminal.CANCELLED
             else DirectTrfCandidateTerminal.MATERIALIZATION_FAILURE
         )
-        return DirectTrfCandidateOutcome(
+        outcome = DirectTrfCandidateOutcome(
             terminal,
             execution,
             materialized.materialization,
         )
-    return DirectTrfCandidateOutcome(
+        progress.finish(execution, outcome.terminal.value)
+        return outcome
+    outcome = DirectTrfCandidateOutcome(
         DirectTrfCandidateTerminal.SUCCESS,
         execution,
         materialized.materialization,
         materialized,
     )
+    progress.finish(execution, outcome.terminal.value)
+    return outcome
 
 
 def _validate_derived_candidate_for_root(
