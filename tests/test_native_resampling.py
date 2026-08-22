@@ -31,6 +31,7 @@ from chemex.optimize.direct_trf import AcceptedFitResult, OptimizationProblem
 from chemex.optimize.native_resampling import (
     ClaimState,
     CorrelationAvailability,
+    OperationTerminal,
     OptimizationStrategy,
     ProjectedOptimizationFailure,
     ProjectedOptimizationResult,
@@ -1303,6 +1304,13 @@ def test_optimization_interruption_preserves_complete_ordinal_accounting(
     )
 
     assert operation.evidence is not None
+    assert operation.terminal is OperationTerminal.INTERRUPTED
+    assert operation.evidence.completed_count >= 1
+    if workers == 1:
+        assert operation.evidence.completed_count == 1
+        assert operation.evidence.successful_count == 0
+        assert operation.evidence.failed_count == 0
+        assert operation.unstarted_ordinals == (1, 2, 3)
     assert tuple(outcome.ordinal for outcome in operation.evidence.outcomes) == (
         0,
         1,
@@ -1348,8 +1356,15 @@ def test_projected_failure_remains_typed_and_summary_uses_common_scope() -> None
     )
     assert operation.evidence is not None
     evidence = operation.evidence
+    assert operation.terminal is OperationTerminal.COMPLETED
+    assert evidence.completed_count == 3
     assert evidence.successful_count == 2
     assert evidence.failed_count == 1
+    assert tuple(item.disposition for item in evidence.outcomes) == (
+        ReplicateDisposition.SUCCEEDED,
+        ReplicateDisposition.FAILED,
+        ReplicateDisposition.SUCCEEDED,
+    )
     assert evidence.claim("MINIMUM_SUCCESSFUL_COVERAGE") is ClaimState.SATISFIED
 
     outcome = summarize_resampling_evidence(evidence)
