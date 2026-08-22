@@ -75,60 +75,6 @@ def _record_strings(value: object, field_name: str) -> tuple[str, ...]:
     return tuple(cast(list[str], value))
 
 
-type _LegacyBaselineKeys = tuple[tuple[str, str, str, str], ...]
-
-
-def _legacy_baseline_keys(value: object) -> _LegacyBaselineKeys:
-    """Decode the removed v1 field solely to preserve historical identities."""
-    if not isinstance(value, list):
-        raise NativeProvenanceError("Legacy baseline references must be a list")
-    records: list[tuple[str, str, str, str]] = []
-    for item in value:
-        if not isinstance(item, dict) or set(item) != {
-            "kind",
-            "identity",
-            "occurrence_identity",
-            "result_bundle_identity",
-        }:
-            raise NativeProvenanceError("Legacy baseline references are malformed")
-        item = cast(dict[str, object], item)
-        values = tuple(item[key] for key in item)
-        if any(not isinstance(value, str) for value in values):
-            raise NativeProvenanceError("Legacy baseline references are malformed")
-        kind = cast(str, item["kind"])
-        identity = cast(str, item["identity"])
-        occurrence_identity = cast(str, item["occurrence_identity"])
-        result_bundle_identity = cast(str, item["result_bundle_identity"])
-        if kind not in {"occurrence", "bundle", "manifest"} or any(
-            len(identity_value) != 64
-            or any(character not in "0123456789abcdef" for character in identity_value)
-            for identity_value in (
-                identity,
-                occurrence_identity,
-                result_bundle_identity,
-            )
-        ):
-            raise NativeProvenanceError("Legacy baseline identities are invalid")
-        records.append((kind, identity, occurrence_identity, result_bundle_identity))
-    references = tuple(records)
-    kinds = {item[0] for item in references}
-    if references and (
-        not {"occurrence", "bundle"} <= kinds
-        or len(references) not in {2, 3}
-        or (len(references) == 3 and kinds != {"occurrence", "bundle", "manifest"})
-        or len({item[2] for item in references}) != 1
-        or len({item[3] for item in references}) != 1
-        or next(item[1] for item in references if item[0] == "occurrence")
-        != references[0][2]
-        or next(item[1] for item in references if item[0] == "bundle")
-        != references[0][3]
-    ):
-        raise NativeProvenanceError(
-            "Legacy baseline references lack a linked occurrence/bundle pair"
-        )
-    return references
-
-
 def _identity(kind: str, record: object) -> str:
     encoded = json.dumps(
         {"kind": kind, "schema_version": 1, "record": record},
@@ -184,7 +130,6 @@ def validate_native_step_manifest_bytes(  # noqa: C901 - closed durable schema
         "policies",
         "budgets",
         "seeds",
-        "baseline_references",
         "components",
         "evidence",
         "artifacts",
@@ -210,7 +155,6 @@ def validate_native_step_manifest_bytes(  # noqa: C901 - closed durable schema
         "policies",
         "budgets",
         "seeds",
-        "baseline_references",
         "components",
         "evidence",
     }
@@ -670,9 +614,6 @@ class WorkflowProvenance:
     seeds: tuple[SeedRecord, ...]
     execution: ExecutionSettings
     environment: ProvenanceEnvironment
-    _legacy_baseline_references: _LegacyBaselineKeys = field(
-        default=(), repr=False, compare=False
-    )
     workflow_identity: str = field(init=False)
     method_identity: str = field(init=False)
     execution_identity: str = field(init=False)
@@ -713,25 +654,6 @@ class WorkflowProvenance:
             record_names = tuple(item.name for item in records)
             if len(set(record_names)) != len(record_names):
                 raise NativeProvenanceError(f"{name.title()} names must be unique")
-        try:
-            legacy_baseline_references = _legacy_baseline_keys(
-                [
-                    {
-                        "kind": kind,
-                        "identity": identity,
-                        "occurrence_identity": occurrence_identity,
-                        "result_bundle_identity": result_bundle_identity,
-                    }
-                    for kind, identity, occurrence_identity, result_bundle_identity in self._legacy_baseline_references
-                ]
-            )
-        except (TypeError, ValueError) as error:
-            raise NativeProvenanceError(
-                "Legacy baseline references are malformed"
-            ) from error
-        object.__setattr__(
-            self, "_legacy_baseline_references", legacy_baseline_references
-        )
         method_identity = _identity(
             "normalized-method-v2",
             self.normalized_method_sha256,
@@ -787,8 +709,6 @@ class WorkflowProvenance:
             ),
             "environment_identity": self.environment.identity,
         }
-        if legacy_baseline_references:
-            identity_record["baseline_references"] = legacy_baseline_references
         object.__setattr__(
             self,
             "identity",
@@ -1080,9 +1000,6 @@ class WorkflowProvenance:
             policy_records = cast(list[dict[str, object]], manifest.get("policies", []))
             budget_records = cast(list[dict[str, object]], manifest.get("budgets", []))
             seed_records = cast(list[dict[str, object]], manifest.get("seeds", []))
-            legacy_baseline_references = _legacy_baseline_keys(
-                manifest.get("baseline_references", [])
-            )
             provenance = cls(
                 _WORKFLOW_PROVENANCE_KEY,
                 str(method["normalized"]),
@@ -1146,7 +1063,6 @@ class WorkflowProvenance:
                         for item in library_records
                     ),
                 ),
-                _legacy_baseline_references=legacy_baseline_references,
             )
         except (KeyError, TypeError, ValueError) as error:
             raise NativeProvenanceError(

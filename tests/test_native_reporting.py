@@ -37,8 +37,6 @@ from chemex.native_provenance import (
     PublishedStepReference,
     SeedRecord,
     WorkflowProvenance,
-    native_step_manifest_identity,
-    validate_native_step_manifest_bytes,
 )
 from chemex.optimize import native_reporting
 from chemex.optimize.direct_trf import (
@@ -863,83 +861,6 @@ def test_committed_native_fit_publishes_only_aggregate_step_root(
     assert statistics["reduced-chi-square"] == pytest.approx(
         publication.accepted.chi_square / degrees_of_freedom
     )
-
-
-def test_v1_manifest_with_removed_baseline_fields_remains_readable(
-    tmp_path: Path,
-) -> None:
-    publication = _committed_fit()
-    output = tmp_path / "STEP"
-    publish_native_results(output, publication)
-    manifest_path = output / "fit-manifest.toml"
-    current_manifest = tomllib.loads(manifest_path.read_text())
-    references = [
-        {
-            "kind": "occurrence",
-            "identity": "a" * 64,
-            "occurrence_identity": "a" * 64,
-            "result_bundle_identity": "c" * 64,
-        },
-        {
-            "kind": "bundle",
-            "identity": "c" * 64,
-            "occurrence_identity": "a" * 64,
-            "result_bundle_identity": "c" * 64,
-        },
-    ]
-    legacy_provenance = replace(
-        publication.provenance,
-        _legacy_baseline_references=tuple(
-            (
-                item["kind"],
-                item["identity"],
-                item["occurrence_identity"],
-                item["result_bundle_identity"],
-            )
-            for item in references
-        ),
-    )
-    baseline_block = "\n".join(
-        [
-            "",
-            "[[baseline_references]]",
-            'kind = "occurrence"',
-            f'identity = "{"a" * 64}"',
-            f'occurrence_identity = "{"a" * 64}"',
-            f'result_bundle_identity = "{"c" * 64}"',
-            "",
-            "[[baseline_references]]",
-            'kind = "bundle"',
-            f'identity = "{"c" * 64}"',
-            f'occurrence_identity = "{"a" * 64}"',
-            f'result_bundle_identity = "{"c" * 64}"',
-            "",
-        ]
-    )
-    legacy_text = manifest_path.read_text().replace(
-        '\n[artifacts."Data/profile_0000.tsv"]',
-        f'{baseline_block}[artifacts."Data/profile_0000.tsv"]',
-        1,
-    )
-    legacy_text = legacy_text.replace(
-        f'provenance_identity = "{publication.provenance.identity}"',
-        f'provenance_identity = "{legacy_provenance.identity}"',
-        1,
-    )
-    legacy_manifest = tomllib.loads(legacy_text)
-    legacy_manifest_identity = native_step_manifest_identity(legacy_manifest)
-    legacy_text = legacy_text.replace(
-        f'manifest_identity = "{current_manifest["manifest_identity"]}"',
-        f'manifest_identity = "{legacy_manifest_identity}"',
-        1,
-    )
-
-    validated = validate_native_step_manifest_bytes(legacy_text.encode())
-    restored = WorkflowProvenance.from_manifest_record(validated)
-
-    assert validated["baseline_references"] == references
-    assert restored.identity == legacy_provenance.identity
-    assert "baseline_references" not in restored.to_record()
 
 
 def test_many_components_are_diagnostic_views_without_authoritative_copies(
