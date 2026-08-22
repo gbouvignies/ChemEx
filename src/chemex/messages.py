@@ -284,6 +284,42 @@ class MinimizationProgressReporter:
         self._stop_live()
 
 
+class UncertaintyProgressReporter:
+    """Render the single automatic post-fit uncertainty phase."""
+
+    def __init__(
+        self,
+        output_console: Console,
+        *,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
+        self._console = output_console
+        self._clock = clock
+        self._started_at: float | None = None
+        self._finished = False
+
+    def start(self) -> None:
+        """Start timing immediately before automatic uncertainty derivation."""
+        if self._started_at is not None:
+            return
+        self._started_at = self._clock()
+        with suppress(Exception):
+            self._console.print(Text("  • Estimating parameter uncertainties..."))
+
+    def finish(self, status: str) -> None:
+        """Emit one concise terminal status without affecting scientific work."""
+        if self._finished:
+            return
+        self._finished = True
+        elapsed = (
+            0.0
+            if self._started_at is None
+            else max(0.0, self._clock() - self._started_at)
+        )
+        with suppress(Exception):
+            self._console.print(Text(f"    {status} · {elapsed:.1f} s"))
+
+
 def _format_scalar(value: float) -> str:
     return f"{value:.6g}"
 

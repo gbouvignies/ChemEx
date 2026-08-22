@@ -308,6 +308,7 @@ def _backend_result(
         cost=0.5 * float(np.dot(residuals, residuals)),
         optimality=0.0 if success else 1.0,
         active_mask=np.zeros_like(candidate, dtype=np.int64),
+        jac=np.zeros((residuals.size, candidate.size), dtype=np.float64),
     )
 
 
@@ -384,6 +385,11 @@ def test_failed_seed_continues_and_canonical_tie_commits_only_selected_once() ->
     )
     assert all(not hasattr(attempt, "accepted_result") for attempt in outcome.attempts)
     assert outcome.accepted_result is not None
+    assert outcome.accepted_result.final_residual_jacobian is not None
+    assert (
+        outcome.accepted_result.final_residual_jacobian.identity
+        == outcome.attempts[2].final_residual_jacobian.identity
+    )
     assert outcome.commit_authority is not None
     assert outcome.accepted_result.problem_identity == problem.identity
     grid_selection = outcome.accepted_result.grid_selection_provenance
@@ -534,6 +540,7 @@ def test_plain_base_evidence_cannot_recreate_grid_commit_authority() -> None:
         accepted.commit_scope,
         accepted.commit_items,
         accepted.origin_context_identity,
+        final_residual_jacobian=accepted.final_residual_jacobian,
         occurrence_witness=None,
     )
     assert plain_evidence.identity == accepted.identity
@@ -582,6 +589,7 @@ def test_plain_base_evidence_cannot_recreate_grid_commit_authority() -> None:
             plain_evidence.commit_scope,
             plain_evidence.commit_items,
             plain_evidence.origin_context_identity,
+            final_residual_jacobian=plain_evidence.final_residual_jacobian,
             occurrence_witness=None,
         ).identity
     )

@@ -37,6 +37,9 @@ python run_benchmarks.py --bottlenecks
 
 # End-to-end workflows (~5-10 minutes)
 python run_benchmarks.py --e2e
+
+# Retained-Jacobian covariance gate for the shipped 96-profile CPMG fit
+python run_benchmarks.py --uncertainty-large-fit
 ```
 
 ### Save Results to File
@@ -93,6 +96,15 @@ Complete workflow tests using real example data:
 **Purpose**: Measure real-world performance on typical user workflows.
 
 **Runtime**: ~5-10 minutes (depends on convergence)
+
+### 4. Large native uncertainty benchmark (`benchmark_large_native_uncertainty.py`)
+
+Runs `CPMG_15N_IP_0013` with plotting disabled and records component TRF, root
+materialization/composition, covariance, and output phases separately. It also
+checks the deterministic 2058-request / 6912-kernel contract, zero covariance
+scientific evaluations, and at most one retained-matrix conversion for the sole
+successful component. The median root-composition-plus-covariance time must not
+exceed half the median component execution time.
 
 ## Benchmark Results
 

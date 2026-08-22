@@ -8,6 +8,8 @@ Options:
     --quick         Run only quick matrix operation benchmarks
     --bottlenecks   Run specific bottleneck benchmarks
     --e2e           Run end-to-end workflow benchmarks
+    --uncertainty-large-fit
+                    Run the retained-Jacobian large-fit phase gate
     --all           Run all benchmarks (default)
     --save FILE     Save results to FILE
 """
@@ -54,6 +56,16 @@ def run_e2e_benchmarks() -> None:
     run_e2e()
 
 
+def run_large_uncertainty_benchmark() -> None:
+    """Run the shipped 96-profile retained-Jacobian covariance benchmark."""
+    from benchmark_large_native_uncertainty import run_benchmark
+
+    print("\n" + "=" * 70)
+    print("LARGE NATIVE UNCERTAINTY BENCHMARK")
+    print("=" * 70)
+    run_benchmark()
+
+
 def main() -> None:
     """Main benchmark runner."""
     parser = argparse.ArgumentParser(
@@ -94,6 +106,11 @@ Examples:
         help="Run end-to-end workflow benchmarks",
     )
     parser.add_argument(
+        "--uncertainty-large-fit",
+        action="store_true",
+        help="Run the retained-Jacobian large-fit phase gate",
+    )
+    parser.add_argument(
         "--all",
         action="store_true",
         help="Run all benchmarks (default)",
@@ -108,7 +125,7 @@ Examples:
     args = parser.parse_args()
 
     # If no specific benchmark selected, run all
-    if not (args.quick or args.bottlenecks or args.e2e):
+    if not (args.quick or args.bottlenecks or args.e2e or args.uncertainty_large_fit):
         args.all = True
 
     # Print header
@@ -139,6 +156,9 @@ Examples:
 
         if args.e2e or args.all:
             run_e2e_benchmarks()
+
+        if args.uncertainty_large_fit or args.all:
+            run_large_uncertainty_benchmark()
 
         # Final summary
         print("\n" + "=" * 70)

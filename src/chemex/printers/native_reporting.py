@@ -6,7 +6,7 @@ import json
 import math
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from scipy import stats
 
@@ -24,13 +24,20 @@ from chemex.optimize.native_resampling import (
     ResamplingSummaryOutcome,
     SummaryFailure,
 )
-from chemex.optimize.uncertainty import UncertaintyEvidence
+from chemex.optimize.uncertainty import (
+    RootAnchoredBlockCovarianceEvidence,
+    UncertaintyEvidence,
+)
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     ParameterRole,
     SealedParameterModel,
 )
 from chemex.parameters.values import AnalysisValuesSnapshot
+from chemex.printers.parameters import (
+    parameter_uncertainty_view,
+    uncertainty_unavailable_reason,
+)
 
 
 class ComponentDiagnosticRecord(Protocol):
@@ -79,6 +86,7 @@ def write_parameter_reports(
     path: Path,
     parameterization: ActiveParameterization,
     result: EvaluationResult,
+    uncertainty: UncertaintyEvidence | None = None,
 ) -> None:
     """Separate central parameter values by their authoritative role."""
     path.mkdir()
@@ -86,6 +94,9 @@ def write_parameter_reports(
         item.target_id: item.expression_text
         for item in parameterization.program.constraints
     }
+    uncertainty_view = (
+        None if uncertainty is None else parameter_uncertainty_view(uncertainty)
+    )
     by_role: dict[ParameterRole, list[tuple[str, float]]] = {
         role: [] for role in ParameterRole
     }
@@ -109,6 +120,25 @@ def write_parameter_reports(
             elif role is ParameterRole.DERIVED:
                 expression = constraints.get(param_id, "model-derived")
                 comment = f" # constrained: {expression}"
+            if role in {ParameterRole.FIT, ParameterRole.DERIVED} and (
+                uncertainty_view is not None
+            ):
+                standard_error = uncertainty_view.standard_error(param_id)
+                reason = uncertainty_view.unavailable_reason(param_id)
+                if standard_error is not None:
+                    prefix = f" # ±{_toml_float(standard_error)}"
+                    comment = (
+                        prefix
+                        if role is ParameterRole.FIT
+                        else f"{prefix};{comment.removeprefix(' #')}"
+                    )
+                elif reason is not None:
+                    prefix = f" # error unavailable: {reason}"
+                    comment = (
+                        prefix
+                        if role is ParameterRole.FIT
+                        else f"{prefix};{comment.removeprefix(' #')}"
+                    )
             lines.append(f"{_toml_key(param_id)} = {_toml_float(value)}{comment}")
         (path / filenames[role]).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -333,6 +363,31 @@ def write_uncertainty(path: Path, uncertainty: UncertaintyEvidence | None) -> No
                 "failures": payload.get("failures"),
             },
         )
+
+
+def write_block_uncertainty(
+    path: Path,
+    evidence: RootAnchoredBlockCovarianceEvidence | None,
+) -> None:
+    """Write root-authoritative failure-isolated covariance blocks."""
+    if evidence is None:
+        return
+    covariance_path = path / "Covariance"
+    covariance_path.mkdir(exist_ok=True)
+    record = evidence.to_record()
+    blocks = record["blocks"]
+    if not isinstance(blocks, list):
+        raise TypeError("Block covariance record has an invalid payload")
+    for block, block_record in zip(evidence.blocks, blocks, strict=True):
+        if not isinstance(block_record, dict):
+            raise TypeError("Block covariance record has an invalid block")
+        typed_block_record = cast("dict[str, object]", block_record)
+        typed_block_record["unavailable_reason"] = (
+            ""
+            if block.unavailable_kind is None
+            else uncertainty_unavailable_reason(block.unavailable_kind)
+        )
+    write_json(covariance_path / "blocks.json", record)
 
 
 def resampling_evidence_record(evidence: ResamplingEvidence) -> dict[str, object]:

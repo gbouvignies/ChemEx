@@ -12,13 +12,17 @@ from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import EvaluationEngine, EvaluationResult
 from chemex.messages import (
     MinimizationProgressReporter,
+    UncertaintyProgressReporter,
     console,
     print_group_name,
     print_minimizing,
 )
+from chemex.native_provenance import ProvenanceEnvironment
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     DirectTrfInvocation,
+    FitCommitOperation,
+    FitCommitTerminal,
     OptimizationProblem,
 )
 from chemex.optimize.grid_direct_trf import GridDirectTrfInvocation
@@ -43,13 +47,32 @@ from chemex.optimize.helper import (
     print_values,
 )
 from chemex.optimize.method_step import (
+    DerivationDisposition,
     EvaluationPurpose,
     MethodStepLifecycle,
+    MethodStepOutcome,
     MethodStepStrategy,
     MethodStepWorkflow,
+    UncertaintyDerivationRequest,
     execute_method_step,
 )
+from chemex.optimize.uncertainty import (
+    MissingFunctionLinearizationCapability,
+    ParameterUnit,
+    ResidualVarianceScaling,
+    RootAnchoredBlockCovarianceEvidence,
+    UncertaintyEvidence,
+    UncertaintyPolicy,
+    UncertaintyUnavailableKind,
+    compile_constraint_linearization_capabilities,
+    derive_root_anchored_block_covariance,
+)
 from chemex.parameters.parameterization import ActiveParameterization, ParameterRole
+from chemex.printers.parameters import (
+    ParameterUncertaintyView,
+    parameter_uncertainty_view,
+    uncertainty_unavailable_reason,
+)
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
 
@@ -66,6 +89,8 @@ class NativeDeterministicFit:
     problem: OptimizationProblem
     parameterization: ActiveParameterization
     engine: EvaluationEngine
+    uncertainty: UncertaintyEvidence | None = None
+    block_uncertainty: RootAnchoredBlockCovarianceEvidence | None = None
 
     @property
     def objective_request_budget(self) -> int:
@@ -81,6 +106,195 @@ def _objective_request_budget(problem: OptimizationProblem) -> int:
 def _product_x_scale(problem: OptimizationProblem) -> tuple[float, ...]:
     """Scale native product coordinates without changing physical semantics."""
     return tuple(max(1.0, abs(value)) for value in problem.start)
+
+
+def _product_uncertainty_request(
+    problem: OptimizationProblem,
+    parameterization: ActiveParameterization,
+) -> tuple[UncertaintyDerivationRequest, tuple[str, ...]]:
+    """Resolve the normal absolute-observation-sigma covariance policy."""
+    environment = ProvenanceEnvironment.from_current_process()
+    policy = UncertaintyPolicy(
+        calibration_identity="native-product-local-covariance-numerics-v2",
+        numerical_compatibility_requirement=(
+            "binary64-retained-scipy-2point-gesdd-column-equilibrated-v1"
+        ),
+        coordinate_scales=tuple((param_id, 1.0) for param_id in problem.controlled_ids),
+        coordinate_units=tuple(
+            (param_id, ParameterUnit.UNSPECIFIED) for param_id in problem.controlled_ids
+        ),
+        residual_variance_scaling=(
+            ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES
+        ),
+        relative_step_tolerance=1.0e-4,
+        roundoff_multiplier=64.0,
+        smaller_step_extent=8,
+        larger_step_extent=8,
+        svd_driver="gesdd",
+        # Legacy qualification knobs; covariance rank uses sigma_max*max(m,n)*eps.
+        rank_absolute_tolerance=0.0,
+        rank_relative_tolerance=0.0,
+        weak_relative_tolerance=1.0e-6,
+        singular_value_cluster_relative_tolerance=1.0e-10,
+        conditioning_limit=1.0e12,
+        correlation_roundoff_multiplier=64.0,
+        affine_feasibility_policy="canonical-root-affine-halfspace-zeta-gt-3-v1",
+        residual_jacobian_strategy="retained-backend-or-accepted-2-point",
+    )
+    constraints = {
+        item.target_id: item for item in parameterization.program.constraints
+    }
+    controlled = frozenset(problem.controlled_ids)
+
+    def depends_on_controlled(
+        param_id: str,
+        visiting: frozenset[str] = frozenset(),
+    ) -> bool:
+        if param_id in controlled:
+            return True
+        if param_id in visiting or param_id not in constraints:
+            return False
+        constraint = constraints[param_id]
+        return any(
+            depends_on_controlled(dependency, visiting | {param_id})
+            for dependency in constraint.dependencies
+        )
+
+    propagation_candidates = tuple(
+        param_id
+        for param_id in parameterization.scope_ids
+        if parameterization.role(param_id) is ParameterRole.DERIVED
+        and depends_on_controlled(param_id)
+    )
+    supported: list[str] = []
+    unsupported: list[str] = []
+    for param_id in propagation_candidates:
+        try:
+            compile_constraint_linearization_capabilities(
+                parameterization,
+                (param_id,),
+                (),
+            )
+        except MissingFunctionLinearizationCapability:
+            unsupported.append(param_id)
+        else:
+            supported.append(param_id)
+    constrained_scope = tuple(supported)
+    capabilities = compile_constraint_linearization_capabilities(
+        parameterization,
+        constrained_scope,
+        (),
+    )
+    return (
+        UncertaintyDerivationRequest(
+            policy,
+            constrained_scope=constrained_scope,
+            constrained_units=tuple(
+                (param_id, ParameterUnit.UNSPECIFIED) for param_id in constrained_scope
+            ),
+            constrained_scales=tuple((param_id, 1.0) for param_id in constrained_scope),
+            compiled_capabilities=capabilities,
+            resolved_environment_identity=environment.identity,
+        ),
+        tuple(unsupported),
+    )
+
+
+def _product_uncertainty_result(
+    outcome: MethodStepOutcome,
+    controlled_ids: tuple[str, ...],
+    supported_constrained_ids: tuple[str, ...],
+    unsupported_constrained_ids: tuple[str, ...],
+) -> tuple[
+    UncertaintyEvidence | None,
+    ParameterUncertaintyView,
+    tuple[str, str] | None,
+]:
+    for derivation in outcome.derivations:
+        for artifact in derivation.artifacts:
+            if isinstance(artifact, UncertaintyEvidence):
+                return (
+                    artifact,
+                    parameter_uncertainty_view(
+                        artifact,
+                        unsupported_constrained_ids,
+                    ),
+                    None,
+                )
+        if derivation.stage == "uncertainty" and derivation.disposition in {
+            DerivationDisposition.CANCELLED,
+            DerivationDisposition.INTERRUPTED,
+            DerivationDisposition.NOT_STARTED_BY_WORKFLOW_STOP,
+        }:
+            terminal = derivation.disposition.value
+            reason = uncertainty_unavailable_reason(
+                UncertaintyUnavailableKind.DERIVATION_STOPPED
+            )
+            view = ParameterUncertaintyView(
+                unavailable_reasons=(
+                    *((param_id, reason) for param_id in controlled_ids),
+                    *((param_id, reason) for param_id in supported_constrained_ids),
+                    *(
+                        (
+                            param_id,
+                            uncertainty_unavailable_reason(
+                                UncertaintyUnavailableKind.UNSUPPORTED_CONSTRAINED_DERIVATIVE
+                            ),
+                        )
+                        for param_id in unsupported_constrained_ids
+                    ),
+                )
+            )
+            return None, view, (terminal, reason)
+    raise RuntimeError("Committed native fit lacks requested uncertainty evidence")
+
+
+def _product_block_uncertainty(
+    evidence: UncertaintyEvidence | None,
+    decomposition: FitDecomposition,
+) -> tuple[
+    RootAnchoredBlockCovarianceEvidence | None,
+    tuple[str, str] | None,
+]:
+    """Derive proof-bound block evidence without invalidating a committed fit."""
+    if evidence is None:
+        return None, None
+    try:
+        return (
+            derive_root_anchored_block_covariance(
+                evidence,
+                decomposition.partition_proof,
+            ),
+            None,
+        )
+    except KeyboardInterrupt:
+        return None, (
+            "interrupted",
+            uncertainty_unavailable_reason(
+                UncertaintyUnavailableKind.DERIVATION_STOPPED
+            ),
+        )
+
+
+def _uncertainty_progress_status(
+    evidence: UncertaintyEvidence | None,
+    block_evidence: RootAnchoredBlockCovarianceEvidence | None,
+    uncertainty: ParameterUncertaintyView,
+    controlled_ids: tuple[str, ...],
+) -> str:
+    """Summarize fitted covariance availability without overstating constraints."""
+    if evidence is not None and evidence.covariance is not None:
+        return "covariance available"
+    if block_evidence is not None and any(
+        block.covariance is not None for block in block_evidence.blocks
+    ):
+        return "covariance partially available"
+    reasons = dict(uncertainty.unavailable_reasons)
+    reason = next(
+        (reasons[param_id] for param_id in controlled_ids if param_id in reasons),
+        "insufficient information",
+    )
+    return f"uncertainty unavailable: {reason}"
 
 
 def _has_controlled_parameters(parameterization: ActiveParameterization) -> bool:
@@ -118,6 +332,47 @@ def _materialize_evaluation(
                 for local_name, param_id in profile.name_map.items()
             }
         )
+
+
+def _execute_with_phase_progress(
+    workflow: MethodStepWorkflow,
+    session: AnalysisSession,
+    progress: MinimizationProgressReporter,
+    uncertainty_progress: UncertaintyProgressReporter,
+) -> MethodStepOutcome:
+    """Close minimization at commit and time the following uncertainty phase."""
+    minimization_finished = False
+
+    def finish_minimization_at_commit(
+        accepted: AcceptedFitResult,
+        operation: FitCommitOperation,
+    ) -> None:
+        nonlocal minimization_finished
+        progress.finish(
+            final_chi_square=accepted.chi_square,
+            terminal_status=operation.terminal.value,
+        )
+        minimization_finished = True
+        if operation.terminal is FitCommitTerminal.COMMITTED:
+            uncertainty_progress.start()
+
+    print_minimizing()
+    with progress:
+        outcome = execute_method_step(
+            workflow,
+            analysis_values=session.analysis_values,
+            progress_observer=progress.observe,
+            commit_completed_observer=finish_minimization_at_commit,
+        )
+        if not minimization_finished:
+            accepted_result = outcome.accepted_result
+            progress.finish(
+                final_chi_square=(
+                    None if accepted_result is None else accepted_result.chi_square
+                ),
+                terminal_status=outcome.lifecycle.value,
+            )
+    return outcome
 
 
 def _project_residuals(
@@ -271,10 +526,17 @@ def _write_direct_output(
     variable_count: int,
     *,
     aggregate_output: bool,
+    uncertainty: ParameterUncertaintyView,
+    uncertainty_evidence: UncertaintyEvidence | None,
+    uncertainty_status: tuple[str, str] | None,
+    block_uncertainty: RootAnchoredBlockCovarianceEvidence | None,
 ) -> None:
     """Write established per-group and aggregate output from native evidence."""
     plot_flg = (plot == "normal" and not aggregate_output) or plot == "all"
     controlled_by_path = dict(group_scopes)
+    group_diagnostics = None if aggregate_output else uncertainty_evidence
+    group_status = None if aggregate_output else uncertainty_status
+    group_blocks = None if aggregate_output else block_uncertainty
     for group in groups:
         if message := group.message:
             print_group_name(message)
@@ -284,6 +546,10 @@ def _write_direct_output(
             plot=plot_flg,
             residuals=_project_residuals(group.experiments, experiments, result),
             nvarys=len(controlled_by_path[group.path]),
+            uncertainty=uncertainty,
+            uncertainty_evidence=group_diagnostics,
+            uncertainty_status=group_status,
+            block_uncertainty=group_blocks,
         )
     if aggregate_output:
         execute_post_fit_groups(
@@ -292,6 +558,10 @@ def _write_direct_output(
             plot,
             residuals=result.residuals,
             nvarys=variable_count,
+            uncertainty=uncertainty,
+            uncertainty_evidence=uncertainty_evidence,
+            uncertainty_status=uncertainty_status,
+            block_uncertainty=block_uncertainty,
         )
 
 
@@ -373,6 +643,10 @@ def run_native_deterministic(
         decomposition,
         experiments,
     )
+    uncertainty_request, unsupported_constrained_ids = _product_uncertainty_request(
+        problem,
+        parameterization,
+    )
     workflow = MethodStepWorkflow.for_optimization(
         starting_snapshot=starting_snapshot,
         parameter_model=parameter_model,
@@ -383,6 +657,7 @@ def run_native_deterministic(
         decomposition=decomposition,
         strategy=strategy,
         invocation=invocation,
+        derivations=(uncertainty_request,),
     )
     group_labels = {
         controlled_ids: (
@@ -399,20 +674,13 @@ def run_native_deterministic(
         group_labels=group_labels,
         grid=bool(method.grid),
     )
-    print_minimizing()
-    with progress:
-        outcome = execute_method_step(
-            workflow,
-            analysis_values=session.analysis_values,
-            progress_observer=progress.observe,
-        )
-        accepted_result = outcome.accepted_result
-        progress.finish(
-            final_chi_square=(
-                None if accepted_result is None else accepted_result.chi_square
-            ),
-            terminal_status=outcome.lifecycle.value,
-        )
+    uncertainty_progress = UncertaintyProgressReporter(console)
+    outcome = _execute_with_phase_progress(
+        workflow,
+        session,
+        progress,
+        uncertainty_progress,
+    )
     if outcome.lifecycle is MethodStepLifecycle.INTERRUPTED:
         raise KeyboardInterrupt("Native deterministic fit interrupted")
     if outcome.lifecycle is not MethodStepLifecycle.COMMITTED:
@@ -445,7 +713,56 @@ def run_native_deterministic(
     if accepted is None:
         raise RuntimeError("Committed native fit lacks its accepted result")
     result = accepted.evaluation_result
-    fit = NativeDeterministicFit(accepted, problem, parameterization, engine)
+    uncertainty_evidence, uncertainty, uncertainty_status = _product_uncertainty_result(
+        outcome,
+        problem.controlled_ids,
+        uncertainty_request.constrained_scope,
+        unsupported_constrained_ids,
+    )
+    block_uncertainty, block_status = _product_block_uncertainty(
+        uncertainty_evidence,
+        decomposition,
+    )
+    uncertainty_status = block_status or uncertainty_status
+    if block_uncertainty is not None:
+        block_errors = tuple(
+            (entry.param_id, entry.value)
+            for block in block_uncertainty.blocks
+            for entry in block.marginal_errors
+            if entry.value is not None
+        )
+        block_unavailable = tuple(
+            (param_id, uncertainty_unavailable_reason(block.unavailable_kind))
+            for block in block_uncertainty.blocks
+            if block.unavailable_kind is not None
+            for param_id in block.controlled_ids
+        )
+        block_constrained_errors = tuple(
+            (entry.param_id, entry.value)
+            for block in block_uncertainty.blocks
+            for entry in block.constrained_marginal_errors
+            if entry.value is not None
+        )
+        uncertainty = ParameterUncertaintyView(
+            uncertainty.standard_errors + block_errors + block_constrained_errors,
+            uncertainty.unavailable_reasons + block_unavailable,
+        )
+    uncertainty_progress.finish(
+        _uncertainty_progress_status(
+            uncertainty_evidence,
+            block_uncertainty,
+            uncertainty,
+            problem.controlled_ids,
+        )
+    )
+    fit = NativeDeterministicFit(
+        accepted,
+        problem,
+        parameterization,
+        engine,
+        uncertainty_evidence,
+        block_uncertainty,
+    )
     session.sync_parameter_store_from_analysis_values(
         dict(result.resolved_values.ordered_items())
     )
@@ -466,6 +783,10 @@ def run_native_deterministic(
                 plot,
                 residuals=result.residuals,
                 nvarys=variable_count,
+                uncertainty=uncertainty,
+                uncertainty_evidence=uncertainty_evidence,
+                uncertainty_status=uncertainty_status,
+                block_uncertainty=block_uncertainty,
             )
         else:
             execute_post_fit(
@@ -474,6 +795,10 @@ def run_native_deterministic(
                 plot=plot != "nothing",
                 residuals=result.residuals,
                 nvarys=variable_count,
+                uncertainty=uncertainty,
+                uncertainty_evidence=uncertainty_evidence,
+                uncertainty_status=uncertainty_status,
+                block_uncertainty=block_uncertainty,
             )
         return fit
 
@@ -486,5 +811,9 @@ def run_native_deterministic(
         result,
         variable_count,
         aggregate_output=aggregate_output,
+        uncertainty=uncertainty,
+        uncertainty_evidence=uncertainty_evidence,
+        uncertainty_status=uncertainty_status,
+        block_uncertainty=block_uncertainty,
     )
     return fit

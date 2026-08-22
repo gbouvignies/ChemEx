@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from chemex.containers.experiments import Experiments
+from chemex.optimize.uncertainty import (
+    UncertaintyEvidence,
+    UncertaintyUnavailableKind,
+)
 from chemex.parameters.database import ParameterStore
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import ParamSetting
@@ -13,6 +17,133 @@ from chemex.parameters.setting import ParamSetting
 Parameters = dict[ParamName, ParamSetting]
 
 RE_GROUPNAME = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+@dataclass(frozen=True, slots=True)
+class ParameterUncertaintyView:
+    """Immutable report-only covariance-derived uncertainty selection."""
+
+    standard_errors: tuple[tuple[str, float], ...] = ()
+    unavailable_reasons: tuple[tuple[str, str], ...] = ()
+
+    def standard_error(self, param_id: str) -> float | None:
+        return dict(self.standard_errors).get(param_id)
+
+    def unavailable_reason(self, param_id: str) -> str | None:
+        return dict(self.unavailable_reasons).get(param_id)
+
+
+_UNAVAILABLE_REASON_TEXT = {
+    UncertaintyUnavailableKind.RANK_DEFICIENT: "rank deficient",
+    UncertaintyUnavailableKind.INSUFFICIENT_INFORMATION: "insufficient information",
+    UncertaintyUnavailableKind.BOUNDARY_LIMITED: "boundary limited",
+    UncertaintyUnavailableKind.NORMALIZATION_INVALID: "normalization invalid",
+    UncertaintyUnavailableKind.JACOBIAN_UNAVAILABLE: "Jacobian unavailable",
+    UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE: (
+        "covariance numerical failure"
+    ),
+    UncertaintyUnavailableKind.UNSUPPORTED_CONSTRAINED_DERIVATIVE: (
+        "unsupported constrained derivative"
+    ),
+    UncertaintyUnavailableKind.DERIVATION_STOPPED: ("derivation interrupted/cancelled"),
+    UncertaintyUnavailableKind.CONSTRAINED_PROPAGATION_UNAVAILABLE: (
+        "constrained propagation unavailable"
+    ),
+}
+
+if set(_UNAVAILABLE_REASON_TEXT) != set(UncertaintyUnavailableKind):
+    raise RuntimeError("Uncertainty unavailability vocabulary is not exhaustive")
+
+
+def uncertainty_unavailable_reason(kind: UncertaintyUnavailableKind) -> str:
+    """Return the one human-readable phrase for a typed claim classification."""
+    return _UNAVAILABLE_REASON_TEXT[kind]
+
+
+def _controlled_unavailability_kind(
+    evidence: UncertaintyEvidence,
+) -> UncertaintyUnavailableKind:
+    categories = {failure.category for failure in evidence.failures}
+    if categories & {"cancelled", "interrupted"}:
+        return UncertaintyUnavailableKind.DERIVATION_STOPPED
+    if "rank_deficient" in categories:
+        return UncertaintyUnavailableKind.RANK_DEFICIENT
+    if categories & {
+        "insufficient_effective_observations",
+        "non_positive_nominal_residual_degrees_of_freedom",
+    }:
+        return UncertaintyUnavailableKind.INSUFFICIENT_INFORMATION
+    covariance = evidence.covariance
+    if covariance is not None:
+        claims = {item.name: item.state.value for item in covariance.claims}
+        if claims.get("PROFILED_NORMALIZATION_REGULARITY") == "violated":
+            return UncertaintyUnavailableKind.NORMALIZATION_INVALID
+        if any(
+            claims.get(name) in {"violated", "indeterminate"}
+            for name in (
+                "FULL_DIMENSIONAL_FEASIBLE_INTERIOR",
+                "INTERIOR_POINT",
+                "BOUNDARY_SEPARATION",
+                "CONTROLLED_AFFINE_SEPARATION",
+            )
+        ):
+            return UncertaintyUnavailableKind.BOUNDARY_LIMITED
+    if any(failure.stage == "residual_linearization" for failure in evidence.failures):
+        return UncertaintyUnavailableKind.JACOBIAN_UNAVAILABLE
+    return UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE
+
+
+def parameter_uncertainty_view(
+    evidence: UncertaintyEvidence,
+    unsupported_constrained_ids: tuple[str, ...] = (),
+) -> ParameterUncertaintyView:
+    """Select only scientifically reportable covariance-derived errors."""
+    standard_errors: list[tuple[str, float]] = []
+    unavailable_reasons: list[tuple[str, str]] = []
+    marginal = evidence.marginal_errors
+    if marginal is not None and marginal.scope_reportable:
+        standard_errors.extend(
+            (entry.param_id, entry.value)
+            for entry in marginal.entries
+            if entry.value is not None
+        )
+    else:
+        reason = uncertainty_unavailable_reason(
+            _controlled_unavailability_kind(evidence)
+        )
+        unavailable_reasons.extend(
+            (param_id, reason) for param_id in evidence.accepted_anchor.controlled_ids
+        )
+    constrained = evidence.constrained_marginal_errors
+    if constrained is not None and constrained.scope_reportable:
+        standard_errors.extend(
+            (entry.param_id, entry.value)
+            for entry in constrained.entries
+            if entry.value is not None
+        )
+    elif evidence.requested_output_scope:
+        unavailable_reasons.extend(
+            (
+                param_id,
+                uncertainty_unavailable_reason(
+                    UncertaintyUnavailableKind.CONSTRAINED_PROPAGATION_UNAVAILABLE
+                ),
+            )
+            for param_id in evidence.requested_output_scope
+        )
+    unavailable_reasons.extend(
+        (
+            param_id,
+            uncertainty_unavailable_reason(
+                UncertaintyUnavailableKind.UNSUPPORTED_CONSTRAINED_DERIVATIVE
+            ),
+        )
+        for param_id in unsupported_constrained_ids
+    )
+    return ParameterUncertaintyView(
+        tuple(standard_errors),
+        tuple(unavailable_reasons),
+    )
 
 
 @dataclass
@@ -31,19 +162,45 @@ class ClassifiedParameters:
     constrained: GlobalLocalParameters
 
 
-def _format_fitted(param: ParamSetting) -> str:
-    error = f"±{param.stderr:.5e}" if param.stderr else "(error not calculated)"
+def _format_fitted(
+    param_id: str,
+    param: ParamSetting,
+    uncertainty: ParameterUncertaintyView | None,
+) -> str:
+    standard_error = (
+        None if uncertainty is None else uncertainty.standard_error(param_id)
+    )
+    reason = None if uncertainty is None else uncertainty.unavailable_reason(param_id)
+    error = (
+        f"±{standard_error:.5e}"
+        if standard_error is not None
+        else f"(error unavailable: {reason})"
+        if reason is not None
+        else "(error not calculated)"
+    )
     return f"{param.value: .5e} # {error}"
 
 
 def _format_constrained(
+    param_id: str,
     param: ParamSetting,
     parameter_store: ParameterStore,
+    uncertainty: ParameterUncertaintyView | None,
 ) -> str:
     if param.value is None:
         return ""
 
-    error = f"±{param.stderr:.5e} " if param.stderr else ""
+    standard_error = (
+        None if uncertainty is None else uncertainty.standard_error(param_id)
+    )
+    reason = None if uncertainty is None else uncertainty.unavailable_reason(param_id)
+    error = (
+        f"±{standard_error:.5e} "
+        if standard_error is not None
+        else f"error unavailable: {reason}; "
+        if reason is not None
+        else ""
+    )
     constraint = param.expr
     parameters = parameter_store.get_parameters(param.dependencies)
     for param_id, parameter in parameters.items():
@@ -59,37 +216,45 @@ def _params_to_strings(
     parameters: GlobalLocalParameters,
     status: str,
     parameter_store: ParameterStore,
+    parameter_ids: dict[ParamName, str],
+    uncertainty: ParameterUncertaintyView | None,
 ) -> dict[str, dict[str, str]]:
     result: defaultdict[str, dict[str, str]] = defaultdict(dict)
 
     for pname, param in parameters.global_.items():
         result["GLOBAL"][pname.section_res] = _format_parameter(
+            parameter_ids[pname],
             param,
             status,
             parameter_store,
+            uncertainty,
         )
 
     for pname, param in parameters.local.items():
         result[pname.section][str(pname.spin_system)] = _format_parameter(
+            parameter_ids[pname],
             param,
             status,
             parameter_store,
+            uncertainty,
         )
 
     return result
 
 
 def _format_parameter(
+    param_id: str,
     param: ParamSetting,
     status: str,
     parameter_store: ParameterStore,
+    uncertainty: ParameterUncertaintyView | None,
 ) -> str:
     if status == "fitted":
-        return _format_fitted(param)
+        return _format_fitted(param_id, param, uncertainty)
     if status == "fixed":
         return _format_fixed(param)
     if status == "constrained":
-        return _format_constrained(param, parameter_store)
+        return _format_constrained(param_id, param, parameter_store, uncertainty)
     msg = (
         f"Unknown parameter status: {status!r}. Expected 'fitted', 'fixed', "
         "or 'constrained'."
@@ -120,11 +285,25 @@ def write_file(
     status: str,
     path: Path,
     parameter_store: ParameterStore,
+    parameter_ids: dict[ParamName, str] | None = None,
+    uncertainty: ParameterUncertaintyView | None = None,
 ) -> None:
     if not parameters:
         return
 
-    par_strings = _params_to_strings(parameters, status, parameter_store)
+    ids = (
+        {pname: parameter.id_ for pname, parameter in parameters.global_.items()}
+        | {pname: parameter.id_ for pname, parameter in parameters.local.items()}
+        if parameter_ids is None
+        else parameter_ids
+    )
+    par_strings = _params_to_strings(
+        parameters,
+        status,
+        parameter_store,
+        ids,
+        uncertainty,
+    )
     formatted_strings = _format_strings(par_strings)
     filename = path / f"{status}.toml"
     filename.write_text(formatted_strings)
@@ -178,17 +357,39 @@ def write_parameters(
     experiments: Experiments,
     path: Path,
     parameter_store: ParameterStore,
+    uncertainty: ParameterUncertaintyView | None = None,
 ) -> None:
     """Write the model parameter values and their uncertainties to a file."""
     path_par = path / "Parameters"
     path_par.mkdir(parents=True, exist_ok=True)
     classified_parameters = classify_parameters(experiments, parameter_store)
+    parameter_ids = {
+        parameter.param_name: param_id
+        for param_id, parameter in parameter_store.get_parameters(
+            experiments.param_ids
+        ).items()
+    }
 
-    write_file(classified_parameters.fitted, "fitted", path_par, parameter_store)
-    write_file(classified_parameters.fixed, "fixed", path_par, parameter_store)
+    write_file(
+        classified_parameters.fitted,
+        "fitted",
+        path_par,
+        parameter_store,
+        parameter_ids,
+        uncertainty,
+    )
+    write_file(
+        classified_parameters.fixed,
+        "fixed",
+        path_par,
+        parameter_store,
+        parameter_ids,
+    )
     write_file(
         classified_parameters.constrained,
         "constrained",
         path_par,
         parameter_store,
+        parameter_ids,
+        uncertainty,
     )

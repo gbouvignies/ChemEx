@@ -1,0 +1,140 @@
+"""Product regressions for retained Direct-TRF Jacobians in 2st binding fits."""
+
+from __future__ import annotations
+
+import math
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+from chemex.chemex import run
+from chemex.cli import build_parser
+from chemex.optimize import method_step as method_step_module
+from chemex.optimize.uncertainty import UncertaintyEvidence
+from chemex.runtime import AnalysisSession
+
+ROOT = Path(__file__).parent.parent
+BINDING = ROOT / "examples/Combinations/2stBinding"
+EXPERIMENTS = tuple(sorted((BINDING / "Experiments").glob("*.toml")))
+PARAMETERS = BINDING / "Parameters/params.toml"
+METHOD = BINDING / "Methods/method.toml"
+
+
+def _arguments(
+    output: Path,
+    method: Path,
+    parameters: tuple[Path, ...] = (PARAMETERS,),
+):
+    return build_parser().parse_args(
+        [
+            "fit",
+            "-e",
+            *(str(path) for path in EXPERIMENTS),
+            "-p",
+            *(str(path) for path in parameters),
+            "-m",
+            str(method),
+            "-d",
+            "2st_binding",
+            "-o",
+            str(output),
+            "--plot",
+            "nothing",
+            "--workers",
+            "1",
+        ]
+    )
+
+
+def _capture_product_uncertainty(
+    output: Path,
+    method: Path,
+    parameters: tuple[Path, ...] = (PARAMETERS,),
+) -> tuple[AnalysisSession, tuple[UncertaintyEvidence, ...]]:
+    captured: list[UncertaintyEvidence] = []
+    real_derive = method_step_module.derive_uncertainty_evidence
+
+    def derive(*args, **kwargs):
+        evidence = real_derive(*args, **kwargs)
+        captured.append(evidence)
+        return evidence
+
+    session = AnalysisSession.create()
+    with patch.object(method_step_module, "derive_uncertainty_evidence", derive):
+        run(_arguments(output, method, parameters), session=session)
+    return session, tuple(captured)
+
+
+def test_fitted_kd_uses_backend_jacobian_before_boundary_reporting(
+    tmp_path: Path,
+) -> None:
+    method = tmp_path / "kd-method.toml"
+    method.write_text(
+        """[STEP]
+INCLUDE = [486, 488, 489, 490, 491, 492, 493, 494, 495, 496, 497, 498, 499]
+FIT = ["KD"]
+FIX = ["KOFF", "DW_AB", "R1_A", "R2_A", "CS_A"]
+""",
+        encoding="utf-8",
+    )
+    step1_method = tmp_path / "step1-method.toml"
+    step1_method.write_text(
+        """[STEP1]
+INCLUDE = [486, 488, 489, 490, 491, 492, 493, 494, 495, 496, 497, 498, 499]
+FIX = ["KD"]
+""",
+        encoding="utf-8",
+    )
+    step1_output = tmp_path / "Step1"
+    step1_session = AnalysisSession.create()
+    run(_arguments(step1_output, step1_method), session=step1_session)
+    assert step1_session.analysis_values.snapshot().revision == 1
+    output = tmp_path / "Output"
+
+    session, (evidence,) = _capture_product_uncertainty(
+        output,
+        method,
+        (PARAMETERS, step1_output / "Parameters" / "fitted.toml"),
+    )
+
+    assert session.analysis_values.snapshot().revision == 1
+    jacobian = evidence.residual_jacobian
+    assert jacobian is not None
+    assert jacobian.method == "retained-scipy-final-2-point"
+    assert jacobian.evaluation_count == 0
+    assert evidence.rank_diagnostic is not None
+    assert evidence.covariance is not None
+    kd_index = jacobian.controlled_ids.index("__KD")
+    kd = evidence.accepted_anchor.vector[kd_index]
+    assert kd == pytest.approx(1.0156e-6, rel=2.0e-3)
+    assert math.isfinite(evidence.covariance.covariance[kd_index][kd_index])
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    assert "KD" in fitted
+    assert "Jacobian unavailable" not in fitted
+
+
+def test_full_binding_step2_never_fails_for_a_high_cost_stencil(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+
+    session, evidence = _capture_product_uncertainty(output, METHOD)
+
+    assert session.analysis_values.snapshot().revision == 2
+    assert len(evidence) == 2
+    step2 = evidence[1]
+    assert step2.residual_jacobian is not None
+    assert step2.residual_jacobian.method == "retained-scipy-final-2-point"
+    assert step2.residual_jacobian.evaluation_count == 0
+    assert step2.rank_diagnostic is not None
+    assert all(failure.stage != "residual_linearization" for failure in step2.failures)
+    fitted = (output / "STEP2" / "All" / "Parameters" / "fitted.toml").read_text(
+        encoding="utf-8"
+    )
+    r2_b_section = fitted.split('["R2_B, B0->800.0MHZ"]', maxsplit=1)[1]
+    r2_b_538n = next(
+        line for line in r2_b_section.splitlines() if line.lstrip().startswith("538N")
+    )
+    assert "error unavailable: boundary limited" in r2_b_538n
+    assert "Jacobian unavailable" not in fitted

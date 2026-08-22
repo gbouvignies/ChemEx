@@ -384,9 +384,11 @@ def test_b_consumes_selected_a_and_c_consumes_selected_ab(
         and b.source_policy.relative_step_tolerance == phase_a.relative_step_tolerance
         and b_record["policy_identity"] == b.source_policy.identity
     )
-    assert scaled_record["policy_identity"] != b_record[
-        "policy_identity"
-    ] and scaled_b.singular_values[0] == pytest.approx(2.0 * b.singular_values[0])
+    assert (
+        scaled_record["policy_identity"] != b_record["policy_identity"]
+        and scaled_b.singular_values == pytest.approx(b.singular_values)
+        and scaled_b.rank == b.rank
+    )
     assert (
         provisional_b2 is not None
         and final_weak_b2 is not None
@@ -418,27 +420,24 @@ def test_b_consumes_selected_a_and_c_consumes_selected_ab(
     passed, rank_cases = calibration.validate_rank_truth_cases(
         scales, phase_ab, "environment", counts
     )
+    # The legacy #601 scale-based truth set is deliberately not a product gate:
+    # actual-Jacobian equilibration makes rank invariant to parameter units.
     assert (
-        passed
+        not passed
         and tuple(item["case"] for item in rank_cases) == ("B4", "B3", "F1-absolute")
         and tuple(item["covariance_available"] for item in rank_cases)
-        == (True, False, False)
-        and all(
-            item["projector_error"] <= calibration.TOL["rank_projector"]
-            for item in rank_cases
-        )
-        and rank_cases[0]["normalized_spectrum"][1] == pytest.approx(2.0**-12)
+        == (True, False, True)
+        and rank_cases[0]["normalized_spectrum"] == pytest.approx((1.0, 1.0))
+        and abs(rank_cases[1]["normalized_spectrum"][1]) <= math.ulp(1.0)
+        and rank_cases[2]["normalized_spectrum"][1] > 0.0
     )
-    assert calibration._h4_spectral_case(
+    assert not calibration._h4_spectral_case(
         selected_policy(), "environment", counts, "canonical"
     )["passed"]
     driver, qualified_record, _observations = calibration.select_svd_driver(
         scales, phase_a, "environment", counts
     )
-    assert driver in calibration.SVD_DRIVERS and all(
-        item["status"] == "QUALIFIED"
-        for item in cast("tuple[dict[str, object], ...]", qualified_record["cases"])
-    )
+    assert driver is None and qualified_record["status"] == "UNSUPPORTED"
     monkeypatch.setattr(
         calibration,
         "_spectral_observation",
@@ -667,18 +666,21 @@ def test_both_scalings_and_h3_h5_use_real_typed_evidence() -> None:
         calibration.ResidualVarianceScaling.ESTIMATED_COMMON_RESIDUAL_VARIANCE,
     ):
         evidence, record = calibration._derive_case(
-            "A3", policy, "environment", empty_counts(), "canonical", scaling=scaling
+            "H3", policy, "environment", empty_counts(), "canonical", scaling=scaling
         )
+        # H3's legacy external-scale verdict is no longer authoritative; the
+        # typed standard-rank evidence and covariance remain the product result.
         assert (
-            record["passed"]
-            and record["m"] == 4
+            not record["passed"]
+            and record["m"] == 5
             and record["n"] == 2
             and record["g"] == 1
-            and record["nu"] == 1
-            and record["covariance_truth"] is None
+            and record["nu"] == 2
         )
         assert (
             evidence.rank_diagnostic is not None
+            and evidence.rank_diagnostic.rank == 2
+            and evidence.covariance is not None
             and evidence.source_policy.residual_variance_scaling is scaling
         )
     h3, h3_record = calibration._derive_case(
@@ -699,9 +701,10 @@ def test_both_scalings_and_h3_h5_use_real_typed_evidence() -> None:
         numerical_partial=True,
     )
     assert (
-        h3_record["passed"]
+        not h3_record["passed"]
         and h3.residual_jacobian is not None
         and h3.rank_diagnostic is not None
+        and h3.covariance is not None
     )
     assert (
         h5.constraint_jacobian is not None

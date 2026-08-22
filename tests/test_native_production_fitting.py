@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import subprocess
 import sys
@@ -17,10 +18,12 @@ import chemex.optimize.native_deterministic as native_deterministic_module
 import chemex.optimize.native_mcmc as native_mcmc_module
 import chemex.optimize.native_resampling as native_resampling_module
 import chemex.optimize.resampling as resampling_module
+import chemex.optimize.uncertainty as uncertainty_module
 import chemex.run_info as run_info_module
 from chemex.chemex import run
 from chemex.cli import build_parser
 from chemex.optimize.mcmc import NativeMcmcIncompleteError
+from chemex.optimize.method_step import DerivationDisposition, DerivationOutcome
 from chemex.optimize.progress import ProgressPhase
 from chemex.optimize.resampling import NativeResamplingIncompleteError
 from chemex.optimize.uncertainty import ParameterUnit
@@ -31,6 +34,9 @@ EXAMPLE = ROOT / "examples/Experiments/RELAXATION_HZNZ"
 EXPERIMENT = EXAMPLE / "Experiments/800mhz.toml"
 PARAMETERS = EXAMPLE / "Parameters/parameters.toml"
 METHOD = EXAMPLE / "Methods/method.toml"
+DCEST_EXAMPLE = ROOT / "examples/Experiments/DCEST_15N_HD_EXCH"
+DCEST_EXPERIMENT = DCEST_EXAMPLE / "Experiments/3hz.toml"
+DCEST_PARAMETERS = DCEST_EXAMPLE / "Parameters/parameters.toml"
 
 
 def _fit_arguments(
@@ -193,7 +199,26 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     fitted_record = next(line for line in fitted.splitlines() if "=" in line)
     fitted_value = float(fitted_record.split("=", 1)[1].split()[0])
     assert fitted_value == pytest.approx(2.34742, rel=5.0e-6)
-    assert "(error not calculated)" in fitted_record
+    assert "# ±" in fitted_record
+    fitted_error = float(fitted_record.split("±", 1)[1])
+    assert fitted_error == pytest.approx(0.083366086, rel=3.0e-6)
+    assert all(
+        parameter.stderr is None
+        for parameter in session.parameters.get_parameters(
+            session.analysis_values.snapshot()
+        ).values()
+    )
+    covariance = output / "Statistics" / "Covariance" / "evidence.json"
+    assert covariance.is_file()
+    constrained = (output / "Parameters" / "constrained.toml").read_text(
+        encoding="utf-8"
+    )
+    propagated_record = next(
+        line for line in constrained.splitlines() if "G2N-H" in line
+    )
+    propagated_error = float(propagated_record.split("±", 1)[1].split()[0])
+    assert propagated_error == pytest.approx(fitted_error, rel=1.0e-12)
+    assert (output / "Statistics" / "Constrained" / "evidence.json").is_file()
     assert (output / "statistics.toml").is_file()
     data = next((output / "Data").glob("*.dat")).read_text(encoding="utf-8")
     first_calculation = float(
@@ -215,6 +240,59 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     assert fitted_curve_rate == pytest.approx(fitted_value, rel=1.0e-3)
 
 
+def test_relaxation_product_covariance_matches_absolute_sigma_reference(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    spin_systems = ("G2N-HN", "H3N-HN", "K4N-HN", "S5N-HN", "L6N-HN")
+
+    run(
+        _fit_arguments(output, include=spin_systems),
+        session=AnalysisSession.create(),
+    )
+
+    evidence = json.loads(
+        (output / "All" / "Statistics" / "Covariance" / "evidence.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert (
+        evidence["covariance"]["residual_variance_scaling"]
+        == "absolute_observation_uncertainties"
+    )
+    entries = evidence["marginal_standard_errors"]["entries"]
+    observed = {
+        entry["param_id"]: float.fromhex(entry["value"]["binary64"])
+        for entry in entries
+    }
+    expected = {
+        "G2": 0.083366086,
+        "H3": 0.084798698,
+        "K4": 0.085572683,
+        "S5": 0.086949663,
+        "L6": 0.086999315,
+    }
+    for residue, reference in expected.items():
+        param_id = next(
+            param_id for param_id in observed if f"_{residue}N_H_" in param_id
+        )
+        assert observed[param_id] == pytest.approx(reference, rel=3.0e-6)
+
+    historical = {
+        "G2": (0.123732, 2.20286),
+        "H3": (0.110470, 1.69712),
+        "K4": (0.0727646, 0.72305),
+        "S5": (0.0607433, 0.48805),
+        "L6": (0.101158, 1.35197),
+    }
+    for residue, reference in expected.items():
+        lmfit_error, reduced_chi_square = historical[residue]
+        assert reference * math.sqrt(reduced_chi_square) == pytest.approx(
+            lmfit_error,
+            rel=5.0e-6,
+        )
+
+
 def test_real_direct_fit_reports_objective_evaluation_progress(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -227,6 +305,10 @@ def test_real_direct_fit_reports_objective_evaluation_progress(
     rendered = capsys.readouterr().out
     assert "eval 0/" in rendered
     assert "final χ²" in rendered
+    minimizing_terminal = rendered.index("final χ²")
+    uncertainty_start = rendered.index("Estimating parameter uncertainties")
+    uncertainty_terminal = rendered.index("covariance available")
+    assert minimizing_terminal < uncertainty_start < uncertainty_terminal
     assert "iteration" not in rendered.lower()
 
 
@@ -454,6 +536,185 @@ def test_real_grouped_direct_fit_uses_native_aggregate_commit(
     assert (output / "All" / "Parameters" / "fitted.toml").is_file()
 
 
+def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    original_svd = uncertainty_module.svd
+    covariance_svd_call = 0
+
+    def one_bad_block_svd(*args, **kwargs):
+        nonlocal covariance_svd_call
+        covariance_svd_call += 1
+        left, singular, right = original_svd(*args, **kwargs)
+        singular = np.array(singular, copy=True)
+        if covariance_svd_call in {1, 3}:
+            singular[-1] = 0.0
+        return left, singular, right
+
+    with patch("chemex.optimize.uncertainty.svd", side_effect=one_bad_block_svd):
+        run(
+            _fit_arguments(output, include=("G2N-HN", "H3N-HN")),
+            session=AnalysisSession.create(),
+        )
+
+    group_outputs = sorted((output / "Groups").glob("*/Parameters/fitted.toml"))
+    assert len(group_outputs) == 2
+    assert (output / "All" / "Statistics" / "Covariance" / "evidence.json").is_file()
+    assert all(
+        not (
+            path.parent.parent / "Statistics" / "Covariance" / "evidence.json"
+        ).exists()
+        for path in group_outputs
+    )
+    reports = tuple(path.read_text(encoding="utf-8") for path in group_outputs)
+    assert sum("# ±" in report for report in reports) == 1
+    assert sum("error unavailable: rank deficient" in report for report in reports) == 1
+    constrained_reports = tuple(
+        (path.parent / "constrained.toml").read_text(encoding="utf-8")
+        for path in group_outputs
+    )
+    assert tuple("# ±" in report for report in reports) == tuple(
+        "# ±" in report for report in constrained_reports
+    )
+    assert (
+        sum(
+            "error unavailable: constrained propagation unavailable" in report
+            for report in constrained_reports
+        )
+        == 1
+    )
+    blocks = json.loads(
+        (output / "All" / "Statistics" / "Covariance" / "blocks.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert len(blocks["partition_proof_identity"]) == 64
+    assert sorted(block["unavailable_reason"] for block in blocks["blocks"]) == [
+        "",
+        "rank deficient",
+    ]
+
+
+def test_interrupted_block_fallback_preserves_committed_root_evidence(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+    original_svd = uncertainty_module.svd
+
+    def rank_deficient_svd(*args, **kwargs):
+        left, singular, right = original_svd(*args, **kwargs)
+        singular = np.array(singular, copy=True)
+        singular[-1] = 0.0
+        return left, singular, right
+
+    with (
+        patch("chemex.optimize.uncertainty.svd", side_effect=rank_deficient_svd),
+        patch.object(
+            native_deterministic_module,
+            "derive_root_anchored_block_covariance",
+            side_effect=KeyboardInterrupt,
+        ),
+    ):
+        run(
+            _fit_arguments(output, include=("G2N-HN", "H3N-HN")),
+            session=session,
+        )
+
+    assert session.analysis_values.snapshot().revision == 1
+    covariance_path = output / "All" / "Statistics" / "Covariance"
+    assert (covariance_path / "evidence.json").is_file()
+    assert not (covariance_path / "blocks.json").exists()
+    status = json.loads((covariance_path / "status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "incomplete"
+    assert status["terminal"] == "interrupted"
+    assert status["reason"] == "derivation interrupted/cancelled"
+    assert (output / "All" / "Parameters" / "fitted.toml").is_file()
+
+
+def test_shared_parameter_coupling_is_not_split_into_covariance_blocks(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """[DEFAULT]
+FIT = ["PB"]
+FIX = ["KEX_AB"]
+""",
+        encoding="utf-8",
+    )
+    original_svd = uncertainty_module.svd
+
+    def rank_deficient_svd(*args, **kwargs):
+        left, singular, right = original_svd(*args, **kwargs)
+        singular = np.array(singular, copy=True)
+        singular[-1] = 0.0
+        return left, singular, right
+
+    with patch("chemex.optimize.uncertainty.svd", side_effect=rank_deficient_svd):
+        run(
+            _fit_arguments(output, method, include=("G2N-HN", "H3N-HN")),
+            session=AnalysisSession.create(),
+        )
+
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    assert "# ±" not in fitted
+    assert "error unavailable: rank deficient" in fitted
+    assert not (output / "Statistics" / "Covariance" / "blocks.json").exists()
+    assert "uncertainty unavailable: rank deficient" in capsys.readouterr().out
+
+
+def test_unsupported_scientific_constraint_keeps_product_fitted_errors(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """[DEFAULT]
+FIT = ["D2O"]
+FIX = ["CS_A", "DW_AB", "KDH", "PHI", "R1_A", "R2_A", "R2_B"]
+""",
+        encoding="utf-8",
+    )
+    arguments = build_parser().parse_args(
+        [
+            "fit",
+            "-e",
+            str(DCEST_EXPERIMENT),
+            "-p",
+            str(DCEST_PARAMETERS),
+            "-m",
+            str(method),
+            "-o",
+            str(output),
+            "-d",
+            "2st_hd",
+            "--include",
+            "1N",
+            "--plot",
+            "nothing",
+            "--workers",
+            "1",
+        ]
+    )
+
+    run(arguments, session=AnalysisSession.create())
+
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    constrained = (output / "Parameters" / "constrained.toml").read_text(
+        encoding="utf-8"
+    )
+    assert "# ±" in fitted
+    assert "error unavailable: unsupported constrained derivative" in constrained
+    constrained_evidence = (
+        output / "Statistics" / "Constrained" / "evidence.json"
+    ).read_text(encoding="utf-8")
+    assert "unsupported constrained derivative" not in constrained_evidence
+
+
 def test_real_grouped_direct_progress_has_one_bounded_noninteractive_stream(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -471,6 +732,133 @@ def test_real_grouped_direct_progress_has_one_bounded_noninteractive_stream(
     assert rendered.count("eval 0/") == 1
     assert "eval " in rendered
     assert " total" in rendered
+
+
+def test_boundary_limited_fit_keeps_central_values_and_withholds_symmetric_errors(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """[DEFAULT]
+FIX = ["KEX_AB"]
+""",
+        encoding="utf-8",
+    )
+    session = AnalysisSession.create()
+
+    run(_fit_arguments(output, method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    assert "error unavailable: boundary limited" in fitted
+    assert "# ±" not in fitted
+    evidence = (output / "Statistics" / "Covariance" / "evidence.json").read_text(
+        encoding="utf-8"
+    )
+    assert '"name": "BOUNDARY_SEPARATION"' in evidence
+    assert '"state": "violated"' in evidence
+    assert all(
+        parameter.stderr is None
+        for parameter in session.parameters.get_parameters(
+            session.analysis_values.snapshot()
+        ).values()
+    )
+
+
+def test_rank_deficient_covariance_is_nonfatal_and_replaces_stale_valid_errors(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    run(_fit_arguments(output), session=AnalysisSession.create())
+    assert "# ±" in (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+
+    original_svd = uncertainty_module.svd
+
+    def rank_deficient_svd(*args, **kwargs):
+        left, singular, right = original_svd(*args, **kwargs)
+        singular = np.array(singular, copy=True)
+        singular[-1] = 0.0
+        return left, singular, right
+
+    session = AnalysisSession.create()
+    with patch("chemex.optimize.uncertainty.svd", side_effect=rank_deficient_svd):
+        run(_fit_arguments(output), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    assert "error unavailable: rank deficient" in fitted
+    assert "# ±" not in fitted
+    evidence = (output / "Statistics" / "Covariance" / "evidence.json").read_text(
+        encoding="utf-8"
+    )
+    assert '"category": "rank_deficient"' in evidence
+    assert '"covariance": null' in evidence
+
+
+def test_interrupted_covariance_keeps_committed_fit_and_invalidates_stale_evidence(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    run(_fit_arguments(output), session=AnalysisSession.create())
+    assert (output / "Statistics" / "Covariance" / "evidence.json").is_file()
+
+    session = AnalysisSession.create()
+    with patch(
+        "chemex.optimize.method_step.derive_uncertainty_evidence",
+        side_effect=KeyboardInterrupt,
+    ):
+        run(_fit_arguments(output), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    assert "error unavailable: derivation interrupted/cancelled" in fitted
+    constrained = (output / "Parameters" / "constrained.toml").read_text(
+        encoding="utf-8"
+    )
+    assert "error unavailable: derivation interrupted/cancelled" in constrained
+    assert "# ±" not in constrained
+    covariance_path = output / "Statistics" / "Covariance"
+    assert not (covariance_path / "evidence.json").exists()
+    status = json.loads((covariance_path / "status.json").read_text(encoding="utf-8"))
+    assert status == {
+        "artifact_type": "native_covariance_derivation_status",
+        "reason": "derivation interrupted/cancelled",
+        "schema_version": 1,
+        "status": "incomplete",
+        "terminal": "interrupted",
+    }
+
+
+def test_cancelled_covariance_uses_the_canonical_product_reason(tmp_path: Path) -> None:
+    output = tmp_path / "Output"
+
+    def cancel_uncertainty(_workflow, _accepted, request, _cancellation):
+        return DerivationOutcome(
+            request.identity,
+            "uncertainty",
+            DerivationDisposition.CANCELLED,
+        )
+
+    with patch(
+        "chemex.optimize.method_step._execute_uncertainty",
+        side_effect=cancel_uncertainty,
+    ):
+        run(_fit_arguments(output), session=AnalysisSession.create())
+
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    constrained = (output / "Parameters" / "constrained.toml").read_text(
+        encoding="utf-8"
+    )
+    assert "error unavailable: derivation interrupted/cancelled" in fitted
+    assert "error unavailable: derivation interrupted/cancelled" in constrained
+    status = json.loads(
+        (output / "Statistics" / "Covariance" / "status.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert status["terminal"] == "cancelled"
+    assert status["reason"] == "derivation interrupted/cancelled"
 
 
 def _grid_method(path: Path) -> Path:
@@ -559,8 +947,8 @@ def test_real_compact_mcmc_fit_is_wholly_native_and_writes_products(
     assert diagnostics["walkers"] == 32
     assert "lmfit_version" not in diagnostics
     fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
-    assert "(error not calculated)" in fitted
-    assert "±" not in fitted
+    assert "# ±" in fitted
+    assert "half_credible_interval_68_width" not in fitted
     plan = native_sampler.call_args.args[1]
     assert plan.coordinate_units[0][1] is ParameterUnit.UNSPECIFIED
 
@@ -883,7 +1271,8 @@ def test_real_mc_fit_is_wholly_native_and_writes_product_statistics(
     assert "root_seed = 0" in diagnostics
     assert 'status = "complete"' in diagnostics
     fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
-    assert "(error not calculated)" in fitted
+    assert "# ±" in fitted
+    assert "half_percentile_68_width" not in fitted
 
 
 def test_resampling_replicates_do_not_create_progress_streams(
@@ -1336,7 +1725,7 @@ FIX = ["PB", "KEX_AB"]
         fitted = (output / step / "Parameters" / "fitted.toml").read_text(
             encoding="utf-8"
         )
-        assert "(error not calculated)" in fitted
+        assert "# ±" in fitted
         fixed = (output / step / "Parameters" / "fixed.toml").read_text(
             encoding="utf-8"
         )
@@ -1421,6 +1810,8 @@ def test_native_backend_failure_cannot_commit_or_publish_fitted_output(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
+    run(_fit_arguments(output), session=AnalysisSession.create())
+    assert (output / "Statistics" / "Covariance" / "evidence.json").is_file()
     session = AnalysisSession.create()
 
     with (
@@ -1435,6 +1826,7 @@ def test_native_backend_failure_cannot_commit_or_publish_fitted_output(
     assert session.analysis_values.snapshot().revision == 0
     assert not (output / "Parameters").exists()
     assert not (output / "Data").exists()
+    assert not (output / "Statistics" / "Covariance").exists()
 
 
 def test_v1_constraint_and_profile_selection_reach_native_product_fit(
@@ -1535,4 +1927,5 @@ STATISTICS = { "MC" = 1 }
     assert "GRID" in captured.out
     assert "STATISTICS" in captured.out
     assert (output / "Grid").is_dir()
-    assert not (output / "Statistics").exists()
+    assert (output / "Statistics" / "Covariance" / "evidence.json").is_file()
+    assert not (output / "Statistics" / "MonteCarlo").exists()

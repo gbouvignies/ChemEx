@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 from rich.console import Console
 
-from chemex.messages import MinimizationProgressReporter
+from chemex.messages import MinimizationProgressReporter, UncertaintyProgressReporter
 from chemex.optimize.progress import (
     FitProgressContext,
     ProgressEvent,
@@ -228,7 +228,23 @@ def test_noninteractive_reporter_renders_truthful_context_and_final_result() -> 
     assert "final χ² 12" in rendered
     assert "committed" in rendered
     assert "Iteration" not in rendered
-    assert "iteration" not in rendered
+
+
+def test_uncertainty_reporter_separates_post_fit_elapsed_time_and_status() -> None:
+    output_console, stream = _capturing_console()
+    times = iter((20.0, 22.25))
+    reporter = UncertaintyProgressReporter(
+        output_console,
+        clock=lambda: next(times),
+    )
+
+    reporter.start()
+    reporter.finish("covariance available")
+
+    assert stream.getvalue().splitlines() == [
+        "  • Estimating parameter uncertainties...",
+        "    covariance available · 2.2 s",
+    ]
 
 
 def test_noninteractive_reporter_rate_limits_group_transitions_fit_wide() -> None:

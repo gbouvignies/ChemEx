@@ -16,16 +16,19 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+from scipy.optimize import least_squares
 
 from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
 from chemex.evaluation.native import (
     BoundEvaluator,
     EvaluationEngine,
+    EvaluationFailure,
     EvaluationFrame,
     EvaluationResult,
 )
 from chemex.experiments.builder import build_experiments
+from chemex.optimize import native_deterministic as native_deterministic_module
 from chemex.optimize import uncertainty as uncertainty_module
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
@@ -49,6 +52,7 @@ from chemex.optimize.uncertainty import (
 )
 from chemex.parameters.parameterization import ActiveParameterization
 from chemex.parameters.spin_system import SpinSystem
+from chemex.printers.parameters import parameter_uncertainty_view
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
 
@@ -60,6 +64,8 @@ DCEST_EXPERIMENT = ROOT / "examples/Experiments/DCEST_15N_HD_EXCH/Experiments/3h
 DCEST_PARAMETERS = (
     ROOT / "examples/Experiments/DCEST_15N_HD_EXCH/Parameters/parameters.toml"
 )
+CPMG_ROOT = ROOT / "examples/Experiments/CPMG_15N_IP"
+CEST_ROOT = ROOT / "examples/Experiments/CEST_13C_LABEL_CN"
 
 
 def _analytic_pa_kab(kab: float, kba: float) -> float:
@@ -118,6 +124,50 @@ def _accepted_relaxation_fit() -> tuple[
     )
     assert outcome.accepted_result is not None
     return session, parameterization, engine, problem, outcome.accepted_result
+
+
+def _accepted_step1_profile_fit(
+    example: Path,
+    spin_system: str,
+) -> tuple[
+    ActiveParameterization, EvaluationEngine, OptimizationProblem, AcceptedFitResult
+]:
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    method = read_methods([example / "Methods/method.toml"])["STEP1"]
+    experiments = build_experiments(
+        sorted((example / "Experiments").glob("*.toml")),
+        Selection(
+            include=[SpinSystem.from_name(spin_system)],
+            exclude=None,
+        ),
+        session=session,
+    )
+    session.parameters.set_defaults(
+        read_defaults([example / "Parameters/parameters.toml"])
+    )
+    assert session.try_build_analysis_values()
+    parameterization = session.compile_parameterization(method, experiments.param_ids)
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    configuration = session.parameter_factory.sealed_configuration
+    assert configuration is not None
+    problem = OptimizationProblem.from_native(
+        engine.plan,
+        parameterization,
+        configuration,
+        session.analysis_values.snapshot(),
+    )
+    outcome = execute_direct_trf(
+        problem,
+        DirectTrfInvocation.for_problem(
+            problem,
+            objective_request_budget=2000 * (len(problem.controlled_ids) + 1),
+        ),
+        parameterization,
+        engine,
+    )
+    assert outcome.accepted_result is not None
+    return parameterization, engine, problem, outcome.accepted_result
 
 
 def _qualification_policy(controlled_id: str) -> UncertaintyPolicy:
@@ -399,7 +449,9 @@ def test_accepted_fit_yields_typed_covariance_and_joint_constraint_propagation()
     assert evidence.covariance.profiled_normalization_count == 1
     assert evidence.covariance.nominal_residual_degrees_of_freedom == 5
     assert evidence.covariance.rank == 1
-    assert evidence.covariance.factorization == ("direct-scaled-svd-factor-gram-v3")
+    assert evidence.covariance.factorization == (
+        "column-equilibrated-svd-factor-gram-v4"
+    )
     expected_variance = (accepted.chi_square / 5.0) / float(
         expected_jacobian[:, 0] @ expected_jacobian[:, 0]
     )
@@ -467,6 +519,13 @@ def test_accepted_fit_yields_typed_covariance_and_joint_constraint_propagation()
     assert typed_payload["resolved_environment_identity"] == (
         "local-qualification-environment"
     )
+    residual_record = cast(
+        "dict[str, object]",
+        typed_payload["residual_jacobian"],
+    )
+    assert "matrix" not in residual_record
+    assert residual_record["matrix_shape"] == [7, 1]
+    assert len(cast("str", residual_record["matrix_binary64_sha256"])) == 64
     other_environment = derive_uncertainty_evidence(
         accepted,
         problem=problem,
@@ -490,6 +549,357 @@ def test_accepted_fit_yields_typed_covariance_and_joint_constraint_propagation()
         item.occurrence_identity for item in other_environment.operations
     ) != tuple(item.occurrence_identity for item in evidence.operations)
     assert session.analysis_values.snapshot() == before
+
+
+def test_product_covariance_reuses_backend_jacobian_without_residual_evaluation() -> (
+    None
+):
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    request, _unsupported = native_deterministic_module._product_uncertainty_request(
+        problem,
+        parameterization,
+    )
+    evaluation_calls = 0
+
+    def reject_evaluation(
+        _evaluator: BoundEvaluator,
+        _frame: EvaluationFrame,
+    ) -> EvaluationResult:
+        nonlocal evaluation_calls
+        evaluation_calls += 1
+        raise AssertionError("valid retained backend Jacobian must avoid replay")
+
+    with patch.object(BoundEvaluator, "evaluate", reject_evaluation):
+        evidence = derive_uncertainty_evidence(
+            accepted,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=request.policy,
+            constrained_scope=request.constrained_scope,
+            constrained_units=request.constrained_units,
+            constrained_scales=request.constrained_scales,
+            compiled_constraint_linearization=request.compiled_capabilities,
+            resolved_environment_identity=request.resolved_environment_identity,
+        )
+
+    assert evaluation_calls == 0
+    assert evidence.residual_jacobian is not None
+    assert evidence.residual_jacobian.method == "retained-scipy-final-2-point"
+    assert evidence.covariance is not None
+
+
+def test_failed_accepted_point_fallback_reports_jacobian_unavailable() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    request, _unsupported = native_deterministic_module._product_uncertainty_request(
+        problem,
+        parameterization,
+    )
+    fallback_anchor = _qualified_accepted_copy(
+        accepted,
+        occurrence_identity="failed-accepted-point-fallback",
+    )
+    with patch.object(
+        BoundEvaluator,
+        "evaluate",
+        return_value=EvaluationFailure(
+            engine.plan.identity,
+            parameterization.evaluator_identity,
+            "kernel",
+            "kernel_exception",
+            "IMPLEMENTATION_FAILURE",
+            message="fallback evaluator unavailable",
+        ),
+    ):
+        evidence = derive_uncertainty_evidence(
+            fallback_anchor,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=request.policy,
+            resolved_environment_identity="failed-fallback-environment",
+        )
+
+    assert evidence.residual_jacobian is None
+    assert any(
+        failure.stage == "residual_linearization" for failure in evidence.failures
+    )
+    assert (
+        parameter_uncertainty_view(evidence).unavailable_reason(
+            problem.controlled_ids[0]
+        )
+        == "Jacobian unavailable"
+    )
+
+
+def test_backend_fallback_and_high_quality_jacobians_agree_at_accepted_point() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    request, _unsupported = native_deterministic_module._product_uncertainty_request(
+        problem,
+        parameterization,
+    )
+    backend = derive_uncertainty_evidence(
+        accepted,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=request.policy,
+        resolved_environment_identity=request.resolved_environment_identity,
+    )
+    fallback_anchor = _qualified_accepted_copy(
+        accepted,
+        occurrence_identity="accepted-point-fallback-comparison",
+    )
+    fallback = derive_uncertainty_evidence(
+        fallback_anchor,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=request.policy,
+        resolved_environment_identity="fallback-comparison-environment",
+    )
+    reference_anchor = _qualified_accepted_copy(
+        accepted,
+        occurrence_identity="high-quality-reference-comparison",
+    )
+    reference = derive_uncertainty_evidence(
+        reference_anchor,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=_qualification_policy(problem.controlled_ids[0]),
+        resolved_environment_identity="reference-comparison-environment",
+    )
+    assert backend.residual_jacobian is not None
+    assert fallback.residual_jacobian is not None
+    assert reference.residual_jacobian is not None
+    assert backend.residual_jacobian.evaluation_count == 0
+    assert fallback.residual_jacobian.evaluation_count == len(problem.controlled_ids)
+    assert fallback.residual_jacobian.method == "accepted-point-2-point"
+    np.testing.assert_allclose(
+        backend.residual_jacobian.matrix,
+        fallback.residual_jacobian.matrix,
+        rtol=2.0e-7,
+        atol=2.0e-8,
+    )
+    np.testing.assert_allclose(
+        backend.residual_jacobian.matrix,
+        reference.residual_jacobian.matrix,
+        rtol=2.0e-6,
+        atol=2.0e-8,
+    )
+
+
+def test_fallback_reverses_a_full_step_before_shortening_at_a_bound() -> None:
+    center = float(np.nextafter(1.0, 0.0))
+    calls: list[float] = []
+
+    def residual(vector: Array) -> Array:
+        calls.append(float(vector[0]))
+        return np.asarray((vector[0] ** 2,))
+
+    least_squares(
+        residual,
+        np.asarray((center,)),
+        jac="2-point",
+        bounds=(np.asarray((0.0,)), np.asarray((1.0,))),
+        method="trf",
+        loss="linear",
+        diff_step=None,
+        max_nfev=1,
+    )
+    scipy_displacement = calls[1] - calls[0]
+    nominal = math.sqrt(np.finfo(np.float64).eps) * max(1.0, abs(center))
+    displacement, orientation = uncertainty_module._scipy_style_two_point_displacement(
+        center,
+        nominal,
+        -center,
+        1.0 - center,
+    )
+
+    assert orientation == "backward"
+    assert displacement == scipy_displacement
+    assert abs(displacement) == pytest.approx(nominal)
+
+
+@pytest.mark.parametrize(
+    ("example", "spin_system"),
+    ((CPMG_ROOT, "15N-HN"), (CEST_ROOT, "L18CB")),
+    ids=("cpmg", "cest"),
+)
+def test_production_backend_fallback_and_reference_covariance_agree(
+    example: Path,
+    spin_system: str,
+) -> None:
+    parameterization, engine, problem, accepted = _accepted_step1_profile_fit(
+        example,
+        spin_system,
+    )
+    request, _unsupported = native_deterministic_module._product_uncertainty_request(
+        problem,
+        parameterization,
+    )
+    fallback_anchor = _qualified_accepted_copy(
+        accepted,
+        occurrence_identity=f"{spin_system}-fallback-comparison",
+    )
+    reference_anchor = _qualified_accepted_copy(
+        accepted,
+        occurrence_identity=f"{spin_system}-reference-comparison",
+    )
+    reference_policy = dataclasses.replace(
+        request.policy,
+        calibration_identity=f"{request.policy.calibration_identity}-{spin_system}",
+        residual_jacobian_strategy="high-quality-reference",
+    )
+    backend = derive_uncertainty_evidence(
+        accepted,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=request.policy,
+        resolved_environment_identity="production-backend-comparison",
+    )
+    fallback = derive_uncertainty_evidence(
+        fallback_anchor,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=request.policy,
+        resolved_environment_identity="production-fallback-comparison",
+    )
+    reference = derive_uncertainty_evidence(
+        reference_anchor,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=reference_policy,
+        resolved_environment_identity="production-reference-comparison",
+    )
+
+    assert backend.residual_jacobian is not None
+    assert fallback.residual_jacobian is not None
+    assert reference.residual_jacobian is not None
+    assert backend.residual_jacobian.evaluation_count == 0
+    assert fallback.residual_jacobian.evaluation_count == len(problem.controlled_ids)
+    assert reference.residual_jacobian.evaluation_count >= 1 + 4 * len(
+        problem.controlled_ids
+    )
+    np.testing.assert_allclose(
+        backend.residual_jacobian.matrix,
+        fallback.residual_jacobian.matrix,
+        rtol=3.0e-6,
+        atol=3.0e-7,
+    )
+    np.testing.assert_allclose(
+        backend.residual_jacobian.matrix,
+        reference.residual_jacobian.matrix,
+        rtol=5.0e-4,
+        atol=1.5e-5,
+    )
+    assert backend.rank_diagnostic is not None
+    assert fallback.rank_diagnostic is not None
+    assert reference.rank_diagnostic is not None
+    assert (
+        backend.rank_diagnostic.rank
+        == fallback.rank_diagnostic.rank
+        == reference.rank_diagnostic.rank
+    )
+    assert backend.covariance is not None
+    assert fallback.covariance is not None
+    assert reference.covariance is not None
+    np.testing.assert_allclose(
+        backend.covariance.covariance,
+        fallback.covariance.covariance,
+        rtol=8.0e-6,
+        atol=1.0e-12,
+    )
+    np.testing.assert_allclose(
+        backend.covariance.covariance,
+        reference.covariance.covariance,
+        rtol=2.0e-3,
+        atol=1.0e-12,
+    )
+    assert backend.covariance.jacobian_condition == pytest.approx(
+        fallback.covariance.jacobian_condition,
+        rel=8.0e-6,
+    )
+    assert backend.covariance.jacobian_condition == pytest.approx(
+        reference.covariance.jacobian_condition,
+        rel=2.0e-3,
+    )
+    backend_claims = {
+        item.name: item.state
+        for item in backend.covariance.claims
+        if item.name
+        in {
+            "INTERIOR_POINT",
+            "BOUNDARY_SEPARATION",
+            "CONTROLLED_AFFINE_SEPARATION",
+            "USABLE_LOCAL_COVARIANCE",
+        }
+    }
+    assert backend_claims == {
+        item.name: item.state
+        for item in fallback.covariance.claims
+        if item.name in backend_claims
+    }
+    assert backend_claims == {
+        item.name: item.state
+        for item in reference.covariance.claims
+        if item.name in backend_claims
+    }
+    assert backend.marginal_errors is not None
+    assert fallback.marginal_errors is not None
+    assert reference.marginal_errors is not None
+    assert tuple(item.outcome for item in backend.marginal_errors.entries) == tuple(
+        item.outcome for item in fallback.marginal_errors.entries
+    )
+    backend_errors = np.sqrt(np.diag(backend.covariance.covariance))
+    fallback_errors = np.sqrt(np.diag(fallback.covariance.covariance))
+    reference_errors = np.sqrt(np.diag(reference.covariance.covariance))
+    np.testing.assert_allclose(
+        backend_errors,
+        fallback_errors,
+        rtol=4.0e-6,
+        atol=1.0e-12,
+    )
+    np.testing.assert_allclose(
+        backend_errors,
+        reference_errors,
+        rtol=1.0e-3,
+        atol=1.0e-12,
+    )
+    assert backend.correlations is not None
+    assert fallback.correlations is not None
+    assert reference.correlations is not None
+    backend_correlation = (
+        np.asarray(backend.covariance.covariance)
+        / backend_errors[:, np.newaxis]
+        / backend_errors[np.newaxis, :]
+    )
+    fallback_correlation = (
+        np.asarray(fallback.covariance.covariance)
+        / fallback_errors[:, np.newaxis]
+        / fallback_errors[np.newaxis, :]
+    )
+    reference_correlation = (
+        np.asarray(reference.covariance.covariance)
+        / reference_errors[:, np.newaxis]
+        / reference_errors[np.newaxis, :]
+    )
+    np.testing.assert_allclose(
+        backend_correlation,
+        fallback_correlation,
+        rtol=8.0e-6,
+        atol=1.0e-10,
+    )
+    np.testing.assert_allclose(
+        backend_correlation,
+        reference_correlation,
+        rtol=2.0e-3,
+        atol=1.0e-8,
+    )
 
 
 def test_scientific_constraint_requires_and_uses_declared_numerical_capability() -> (
@@ -684,11 +1094,11 @@ def test_multivariate_scaled_svd_correlation_and_joint_propagation_reference() -
         atol=2.0e-9,
     )
     assert evidence.rank_diagnostic is not None
-    scaled_reference = reference_jacobian * np.asarray((0.1, 10.0))[np.newaxis, :]
+    reference_column_norms = np.linalg.norm(reference_jacobian, axis=0)
+    equilibration_scales = 1.0 / reference_column_norms
+    scaled_reference = reference_jacobian * equilibration_scales[np.newaxis, :]
     expected_singular_values = np.linalg.svd(scaled_reference, compute_uv=False)
-    # Independent expected singular values are [154.1975407925,
-    # 24.2113113641].  The SVD comparison therefore measures the production
-    # derivative error, not a copied production decomposition.
+    # The reference derives unit-insensitive equilibration only from J.
     np.testing.assert_allclose(
         evidence.rank_diagnostic.singular_values,
         expected_singular_values,
@@ -701,7 +1111,7 @@ def test_multivariate_scaled_svd_correlation_and_joint_propagation_reference() -
         rtol=0.0,
         atol=3.0e-16,
     )
-    with pytest.raises(ValueError, match="classified subspaces"):
+    with pytest.raises(ValueError, match="projector"):
         dataclasses.replace(
             evidence.rank_diagnostic,
             identifiable_projector=((1.0, 0.0), (0.0, 0.0)),
@@ -711,7 +1121,7 @@ def test_multivariate_scaled_svd_correlation_and_joint_propagation_reference() -
     expected_unscaled, _expected_factor, expected_covariance = (
         _independent_svd_covariance(
             reference_jacobian,
-            (0.1, 10.0),
+            tuple(float(value) for value in equilibration_scales),
             1.0,
         )
     )
@@ -821,23 +1231,143 @@ def test_covariance_uses_direct_svd_not_normal_equations() -> None:
     assert relative_difference > 1.0e-5
 
 
+def test_column_equilibrated_rank_and_physical_covariance_are_unit_invariant() -> None:
+    jacobian = np.asarray(
+        (
+            (1.0, 1.0),
+            (2.0, -1.0),
+            (-1.0, 3.0),
+            (0.5, 2.0),
+        ),
+        dtype=np.float64,
+    )
+    policy = _qualification_policy("a")
+    original, failure = uncertainty_module._analyze_scaled_jacobian(
+        jacobian,
+        (1.0, 1.0),
+        policy=policy,
+        source_identity="unit-invariance-original",
+        cancellation_probe=None,
+    )
+    assert failure is None
+    assert original is not None
+    factor = 1.0e6
+    unit_changed, failure = uncertainty_module._analyze_scaled_jacobian(
+        jacobian * np.asarray((1.0, 1.0 / factor))[np.newaxis, :],
+        (7.0, 11.0),
+        policy=policy,
+        source_identity="unit-invariance-rescaled",
+        cancellation_probe=None,
+    )
+    assert failure is None
+    assert unit_changed is not None
+
+    assert original.rank == unit_changed.rank == 2
+    assert original.threshold == pytest.approx(
+        original.singular_values[0] * max(jacobian.shape) * np.finfo(np.float64).eps
+    )
+    np.testing.assert_allclose(
+        original.singular_values,
+        unit_changed.singular_values,
+        rtol=2.0e-15,
+        atol=0.0,
+    )
+    _unscaled, _factor, covariance = uncertainty_module._canonical_covariance_reduction(
+        original.singular_values,
+        original.right_transpose,
+        original.equilibration_scales,
+        1.0,
+    )
+    _unit_unscaled, _unit_factor, unit_covariance = (
+        uncertainty_module._canonical_covariance_reduction(
+            unit_changed.singular_values,
+            unit_changed.right_transpose,
+            unit_changed.equilibration_scales,
+            1.0,
+        )
+    )
+    back_transform = np.diag((1.0, 1.0 / factor))
+    np.testing.assert_allclose(
+        covariance,
+        back_transform @ np.asarray(unit_covariance) @ back_transform,
+        rtol=3.0e-15,
+        atol=2.0e-16,
+    )
+
+
+def test_noncontiguous_partition_scopes_map_to_root_coordinates_independently() -> None:
+    assert uncertainty_module._partition_coordinate_indices(
+        ("a", "b", "c"),
+        (("a", "c"), ("b",)),
+    ) == ((0, 2), (1,))
+
+
+def test_dimension_aware_rank_threshold_handles_exact_and_near_rank_spectra() -> None:
+    policy = _qualification_policy("a")
+    assert policy.svd_driver == "gesdd"
+    exact = np.asarray(((1.0, 1.0), (2.0, 2.0), (3.0, 3.0)))
+    exact_analysis, exact_failure = uncertainty_module._analyze_scaled_jacobian(
+        exact,
+        (1.0, 1.0),
+        policy=policy,
+        source_identity="exact-rank-deficiency",
+        cancellation_probe=None,
+    )
+    assert exact_failure is None
+    assert exact_analysis is not None
+    assert exact_analysis.rank == 1
+
+    epsilon = np.finfo(np.float64).eps
+    near = np.asarray(
+        (
+            (1.0, 1.0),
+            (-1.0, -1.0 + 64.0 * epsilon),
+            (1.0, 1.0 - 64.0 * epsilon),
+        )
+    )
+    near_analysis, near_failure = uncertainty_module._analyze_scaled_jacobian(
+        near,
+        (1.0, 1.0),
+        policy=policy,
+        source_identity="near-rank-spectrum",
+        cancellation_probe=None,
+    )
+    assert near_failure is None
+    assert near_analysis is not None
+    assert near_analysis.rank == 2
+
+    gesvd_analysis, gesvd_failure = uncertainty_module._analyze_scaled_jacobian(
+        near,
+        (1.0, 1.0),
+        policy=dataclasses.replace(policy, svd_driver="gesvd"),
+        source_identity="near-rank-spectrum-gesvd",
+        cancellation_probe=None,
+    )
+    assert gesvd_failure is None
+    assert gesvd_analysis is not None
+    assert gesvd_analysis.rank == near_analysis.rank
+
+
 def test_rank_deficiency_is_diagnostic_and_never_manufactures_uncertainty() -> None:
     session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
     controlled_id = problem.controlled_ids[0]
-    policy = _qualification_policy(controlled_id)
-    rank_rejecting_policy = dataclasses.replace(
-        policy,
-        rank_absolute_tolerance=1.0e100,
-    )
+    original_svd = uncertainty_module.svd
 
-    evidence = derive_uncertainty_evidence(
-        accepted,
-        problem=problem,
-        parameterization=parameterization,
-        engine=engine,
-        policy=rank_rejecting_policy,
-        resolved_environment_identity="local-qualification-environment",
-    )
+    def rank_deficient_svd(*args, **kwargs):
+        left, singular, right = original_svd(*args, **kwargs)
+        singular = np.array(singular, copy=True)
+        singular[-1] = 0.0
+        return left, singular, right
+
+    with patch.object(uncertainty_module, "svd", side_effect=rank_deficient_svd):
+        evidence = derive_uncertainty_evidence(
+            accepted,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=_qualification_policy(controlled_id),
+            resolved_environment_identity="local-qualification-environment",
+        )
 
     assert evidence.residual_jacobian is not None
     assert evidence.rank_diagnostic is not None
@@ -935,6 +1465,10 @@ def test_boundary_covariance_remains_diagnostic_but_reporting_fails_closed() -> 
     assert evidence.correlations is not None
     assert evidence.correlations.entries[0][0].value == 1.0
     assert not evidence.correlations.scope_reportable
+    assert (
+        parameter_uncertainty_view(evidence).unavailable_reason(controlled_id)
+        == "boundary limited"
+    )
     forged_reportability_claims = tuple(
         dataclasses.replace(item, state=ClaimState.SATISFIED)
         if item.name == "MARGINAL_SCOPE_REPORTABILITY"
@@ -997,6 +1531,33 @@ def test_nonfinite_boundary_separation_is_indeterminate() -> None:
     assert evidence.covariance.claim("BOUNDARY_SEPARATION") is ClaimState.INDETERMINATE
 
 
+def test_normalization_failure_has_its_own_reporting_reason() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    with patch(
+        "chemex.optimize.uncertainty._profiled_normalization_regular",
+        return_value=False,
+    ):
+        evidence = derive_uncertainty_evidence(
+            accepted,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=_qualification_policy(problem.controlled_ids[0]),
+            resolved_environment_identity="invalid-profiled-normalization",
+        )
+
+    assert evidence.covariance is not None
+    assert evidence.covariance.claim("PROFILED_NORMALIZATION_REGULARITY") is (
+        ClaimState.VIOLATED
+    )
+    assert (
+        parameter_uncertainty_view(evidence).unavailable_reason(
+            problem.controlled_ids[0]
+        )
+        == "normalization invalid"
+    )
+
+
 def test_non_finite_accepted_objective_yields_only_typed_failed_covariance() -> None:
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
     non_finite = _qualified_accepted_copy(
@@ -1021,6 +1582,12 @@ def test_non_finite_accepted_objective_yields_only_typed_failed_covariance() -> 
     ]
     assert evidence.marginal_errors is None
     assert evidence.correlations is None
+    assert (
+        parameter_uncertainty_view(evidence).unavailable_reason(
+            problem.controlled_ids[0]
+        )
+        == "covariance numerical failure"
+    )
 
 
 def test_foreign_coordinate_scope_fails_before_any_numerical_evidence() -> None:
@@ -1111,6 +1678,100 @@ def test_absolute_observation_uncertainties_do_not_apply_residual_scaling() -> N
     )
 
 
+def test_product_request_excludes_unsupported_scientific_function_propagation() -> None:
+    parameterization, _engine, problem = _hd_problem(Method())
+
+    request, unsupported = native_deterministic_module._product_uncertainty_request(
+        problem,
+        parameterization,
+    )
+
+    assert unsupported
+    assert set(unsupported).isdisjoint(request.constrained_scope)
+    assert request.policy.residual_variance_scaling is (
+        ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES
+    )
+    assert request.policy.coordinate_scales
+    with pytest.raises(
+        uncertainty_module.UncertaintyConstructionError,
+        match="legacy calibration tolerances must be zero",
+    ):
+        dataclasses.replace(request.policy, rank_relative_tolerance=1.0e-12)
+
+
+def test_product_request_does_not_hide_structural_capability_errors() -> None:
+    parameterization, _engine, problem = _hd_problem(Method())
+
+    with (
+        patch.object(
+            native_deterministic_module,
+            "compile_constraint_linearization_capabilities",
+            side_effect=uncertainty_module.UncertaintyConstructionError("malformed"),
+        ),
+        pytest.raises(
+            uncertainty_module.UncertaintyConstructionError, match="malformed"
+        ),
+    ):
+        native_deterministic_module._product_uncertainty_request(
+            problem,
+            parameterization,
+        )
+
+
+def test_full_rank_conditioning_above_diagnostic_limit_is_not_a_rank_gate() -> None:
+    policy = dataclasses.replace(
+        _qualification_policy("a"),
+        coordinate_scales=(("a", 1.0), ("b", 1.0)),
+        coordinate_units=(
+            ("a", ParameterUnit.UNSPECIFIED),
+            ("b", ParameterUnit.UNSPECIFIED),
+        ),
+        conditioning_limit=1.0e6,
+    )
+
+    analysis, failure = uncertainty_module._analyze_scaled_jacobian(
+        np.asarray(((1.0, 1.0), (1.0, 1.0 + 1.0e-8), (1.0, 1.0 - 1.0e-8))),
+        (1.0, 1.0),
+        policy=policy,
+        source_identity="large-full-rank-condition",
+        cancellation_probe=None,
+    )
+
+    assert analysis is not None
+    assert analysis.rank == 2
+    assert analysis.jacobian_condition is not None
+    assert analysis.jacobian_condition > policy.conditioning_limit
+    assert analysis.information_condition is not None
+    assert failure is None
+
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    product_request, _unsupported = (
+        native_deterministic_module._product_uncertainty_request(
+            problem,
+            parameterization,
+        )
+    )
+    evidence = derive_uncertainty_evidence(
+        accepted,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=dataclasses.replace(
+            product_request.policy,
+            conditioning_limit=0.5,
+        ),
+        resolved_environment_identity="conditioning-is-diagnostic-only",
+    )
+    assert evidence.covariance is not None
+    assert evidence.covariance.jacobian_condition > 0.5
+    assert evidence.covariance.claim("CONDITIONING_ADEQUACY") is (ClaimState.VIOLATED)
+    assert evidence.covariance.claim("USABLE_LOCAL_COVARIANCE") is (
+        ClaimState.SATISFIED
+    )
+    assert evidence.marginal_errors is not None
+    assert evidence.marginal_errors.scope_reportable
+
+
 def test_malformed_non_finite_svd_output_is_a_typed_covariance_failure() -> None:
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
     malformed_svd = (
@@ -1133,6 +1794,37 @@ def test_malformed_non_finite_svd_output_is_a_typed_covariance_failure() -> None
     assert evidence.covariance is None
     assert evidence.rank_diagnostic is None
     assert evidence.failures[-1].category == "invalid_covariance_arithmetic"
+    assert (
+        parameter_uncertainty_view(evidence).unavailable_reason(
+            problem.controlled_ids[0]
+        )
+        == "covariance numerical failure"
+    )
+
+
+def test_svd_exception_is_reported_as_covariance_numerical_failure() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    with patch(
+        "chemex.optimize.uncertainty.svd",
+        side_effect=np.linalg.LinAlgError("gesvd did not converge"),
+    ):
+        evidence = derive_uncertainty_evidence(
+            accepted,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=_qualification_policy(problem.controlled_ids[0]),
+            resolved_environment_identity="svd-failure-reporting",
+        )
+
+    assert evidence.covariance is None
+    assert evidence.failures[-1].category == "svd_failure"
+    assert (
+        parameter_uncertainty_view(evidence).unavailable_reason(
+            problem.controlled_ids[0]
+        )
+        == "covariance numerical failure"
+    )
 
 
 def test_negative_svd_spectrum_is_typed_invalid_evidence() -> None:
@@ -1177,6 +1869,12 @@ def test_positive_scale_covariance_factor_underflow_is_typed_failure() -> None:
 
     assert evidence.covariance is None
     assert evidence.failures[-1].category == "covariance_factor_underflow"
+    assert (
+        parameter_uncertainty_view(evidence).unavailable_reason(
+            problem.controlled_ids[0]
+        )
+        == "covariance numerical failure"
+    )
 
 
 def test_cancellation_freezes_terminal_operation_without_artifact() -> None:
@@ -1278,7 +1976,7 @@ def test_exact_accepted_occurrence_is_not_reconstructible_or_mixable() -> None:
         accepted,
         occurrence_identity="equivalent-authoritative-occurrence",
     )
-    assert equivalent_occurrence.identity == accepted.identity
+    assert equivalent_occurrence.identity != accepted.identity
     other_evidence = derive_uncertainty_evidence(
         equivalent_occurrence,
         problem=problem,
@@ -1379,12 +2077,7 @@ def test_authoritative_artifacts_reject_inconsistent_reconstruction() -> None:
             columns=(forged_column,),
             matrix=forged_matrix,
         )
-    forged_subspace = dataclasses.replace(
-        rank.subspaces[0],
-        classification="isolated_null",
-    )
-    with pytest.raises(ValueError, match="classification"):
-        dataclasses.replace(rank, subspaces=(forged_subspace,))
+    assert rank.subspaces == ()
 
     altered_claims = tuple(
         dataclasses.replace(item, state=ClaimState.SATISFIED)
@@ -1423,6 +2116,158 @@ def test_authoritative_artifacts_reject_inconsistent_reconstruction() -> None:
             entries=(
                 dataclasses.replace(evidence.marginal_errors.entries[0], value=42.0),
             ),
+        )
+
+
+def test_artifact_reconstruction_does_not_replay_numerical_algorithms() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    controlled_id = problem.controlled_ids[0]
+    derived_id = "__R1A_B_G2N_H_800_0MHZ"
+    evidence = derive_uncertainty_evidence(
+        accepted,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=_qualification_policy(controlled_id),
+        constrained_scope=(derived_id,),
+        constrained_units=((derived_id, ParameterUnit.RATE_PER_SECOND),),
+        constrained_scales=((derived_id, 1.0),),
+        compiled_constraint_linearization=compile_constraint_linearization_capabilities(
+            parameterization,
+            (derived_id,),
+            (),
+        ),
+        resolved_environment_identity="artifact-no-replay",
+    )
+    rank = evidence.rank_diagnostic
+    covariance = evidence.covariance
+    propagation = evidence.constrained_propagation
+    assert rank is not None
+    assert covariance is not None
+    assert propagation is not None
+
+    with (
+        patch(
+            "chemex.optimize.uncertainty.svd",
+            side_effect=AssertionError("SVD replayed"),
+        ),
+        patch(
+            "chemex.optimize.uncertainty._invariant_singular_subspaces",
+            side_effect=AssertionError("projectors replayed"),
+        ),
+    ):
+        dataclasses.replace(rank)
+    with (
+        patch(
+            "chemex.optimize.uncertainty.svd",
+            side_effect=AssertionError("SVD replayed"),
+        ),
+        patch(
+            "chemex.optimize.uncertainty._canonical_covariance_reduction",
+            side_effect=AssertionError("covariance replayed"),
+        ),
+    ):
+        dataclasses.replace(covariance)
+    with (
+        patch(
+            "chemex.optimize.uncertainty._pairwise_sum",
+            side_effect=AssertionError("G @ L replayed"),
+        ),
+        patch(
+            "chemex.optimize.uncertainty._gram_matrix",
+            side_effect=AssertionError("propagated Gram replayed"),
+        ),
+    ):
+        dataclasses.replace(propagation)
+
+
+def test_covariance_producer_rejects_finite_internally_inconsistent_arrays() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    original = uncertainty_module._canonical_covariance_reduction
+
+    def inconsistent_reduction(*args: object, **kwargs: object):
+        unscaled, factor, covariance = original(*args, **kwargs)
+        return (
+            tuple(tuple(4.0 * value for value in row) for row in unscaled),
+            tuple(tuple(2.0 * value for value in row) for row in factor),
+            tuple(tuple(4.0 * value for value in row) for row in covariance),
+        )
+
+    with patch.object(
+        uncertainty_module,
+        "_canonical_covariance_reduction",
+        side_effect=inconsistent_reduction,
+    ):
+        evidence = derive_uncertainty_evidence(
+            accepted,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=_qualification_policy(problem.controlled_ids[0]),
+            resolved_environment_identity="inconsistent-covariance-producer",
+        )
+
+    assert evidence.covariance is None
+    assert any(
+        failure.category == "invalid_covariance_arithmetic"
+        and "Covariance factor is inconsistent with its retained source"
+        in failure.message
+        for failure in evidence.failures
+    )
+
+
+def test_constraint_producer_rejects_coherently_corrupted_factor_and_gram() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    derived_id = "__R1A_B_G2N_H_800_0MHZ"
+    original = uncertainty_module._propagated_factor_and_covariance
+
+    def inconsistent_propagation(*args: object, **kwargs: object):
+        factor, covariance = original(*args, **kwargs)
+        return (
+            tuple(tuple(2.0 * value for value in row) for row in factor),
+            tuple(tuple(4.0 * value for value in row) for row in covariance),
+        )
+
+    with patch.object(
+        uncertainty_module,
+        "_propagated_factor_and_covariance",
+        side_effect=inconsistent_propagation,
+    ):
+        evidence = derive_uncertainty_evidence(
+            accepted,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=_qualification_policy(problem.controlled_ids[0]),
+            constrained_scope=(derived_id,),
+            constrained_units=((derived_id, ParameterUnit.RATE_PER_SECOND),),
+            constrained_scales=((derived_id, 1.0),),
+            compiled_constraint_linearization=(
+                compile_constraint_linearization_capabilities(
+                    parameterization,
+                    (derived_id,),
+                    (),
+                )
+            ),
+            resolved_environment_identity="inconsistent-propagation-producer",
+        )
+
+    assert evidence.constrained_propagation is None
+    assert any(
+        failure.category == "gram_propagation_failure"
+        and "Constrained covariance factor is inconsistent with its retained source"
+        in failure.message
+        for failure in evidence.failures
+    )
+
+
+def test_matrix_relation_validation_is_relative_for_small_covariances() -> None:
+    with pytest.raises(ArithmeticError, match="retained source"):
+        uncertainty_module._validate_matrix_relation(
+            ((2.0e-20,),),
+            np.asarray(((1.0e-20,),), dtype=np.float64),
+            name="Small covariance",
+            reduction_dimension=1,
         )
 
 
@@ -1915,7 +2760,7 @@ def test_clustered_singular_evidence_retains_only_invariant_projectors() -> None
         cluster_relative_tolerance=1.0e-10,
     )
     assert exact[0].classification == "clustered_identifiable"
-    assert exact[1].classification == "isolated_identifiable"
+    assert len(exact) == 1
     np.testing.assert_allclose(
         exact[0].projector, rotated_exact[0].projector, atol=2e-16
     )
@@ -1936,7 +2781,6 @@ def test_clustered_singular_evidence_retains_only_invariant_projectors() -> None
         cluster_relative_tolerance=1.0e-10,
     )
     assert tuple(item.classification for item in classified) == (
-        "isolated_identifiable",
         "isolated_weak",
         "isolated_null",
     )

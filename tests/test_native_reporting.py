@@ -101,6 +101,10 @@ from chemex.optimize.uncertainty import (
 )
 from chemex.parameters.parameterization import ActiveParameterization
 from chemex.parameters.spin_system import SpinSystem
+from chemex.printers.parameters import (
+    UncertaintyUnavailableKind,
+    uncertainty_unavailable_reason,
+)
 from chemex.run_info import (
     CapturedNativeInputs,
     NativeRunInformation,
@@ -116,6 +120,33 @@ ROOT = Path(__file__).parent.parent
 EXPERIMENT = ROOT / "examples/Experiments/RELAXATION_HZNZ/Experiments/800mhz.toml"
 PARAMETERS = ROOT / "examples/Experiments/RELAXATION_HZNZ/Parameters/parameters.toml"
 METHOD = ROOT / "examples/Experiments/RELAXATION_HZNZ/Methods/method.toml"
+
+
+def test_uncertainty_unavailability_vocabulary_is_exhaustive_and_truthful() -> None:
+    assert {
+        kind: uncertainty_unavailable_reason(kind)
+        for kind in UncertaintyUnavailableKind
+    } == {
+        UncertaintyUnavailableKind.RANK_DEFICIENT: "rank deficient",
+        UncertaintyUnavailableKind.INSUFFICIENT_INFORMATION: (
+            "insufficient information"
+        ),
+        UncertaintyUnavailableKind.BOUNDARY_LIMITED: "boundary limited",
+        UncertaintyUnavailableKind.NORMALIZATION_INVALID: "normalization invalid",
+        UncertaintyUnavailableKind.JACOBIAN_UNAVAILABLE: "Jacobian unavailable",
+        UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE: (
+            "covariance numerical failure"
+        ),
+        UncertaintyUnavailableKind.UNSUPPORTED_CONSTRAINED_DERIVATIVE: (
+            "unsupported constrained derivative"
+        ),
+        UncertaintyUnavailableKind.DERIVATION_STOPPED: (
+            "derivation interrupted/cancelled"
+        ),
+        UncertaintyUnavailableKind.CONSTRAINED_PROPAGATION_UNAVAILABLE: (
+            "constrained propagation unavailable"
+        ),
+    }
 
 
 def _captured_inputs(output: Path) -> CapturedNativeInputs:
@@ -1237,7 +1268,7 @@ def test_covariance_and_constrained_evidence_are_separate_from_central_reports(
     ).lower()
     assert "stderr" not in central_reports
     assert "standard error" not in central_reports
-    assert "±" not in central_reports
+    assert "±" in central_reports
 
 
 def test_resampling_and_posterior_evidence_keep_family_specific_semantics(

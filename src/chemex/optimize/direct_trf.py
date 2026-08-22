@@ -22,6 +22,7 @@ from uuid import uuid4
 from weakref import ReferenceType, WeakKeyDictionary, ref
 
 import numpy as np
+from scipy import __version__ as scipy_version
 from scipy.optimize import least_squares
 
 from chemex.evaluation.native import (
@@ -65,6 +66,129 @@ _BACKEND_SETTINGS = (
     ("f_scale", "0x1.0000000000000p+0"),
     ("verbose", 0),
 )
+_BACKEND_JACOBIAN_VERSION = "scipy-final-residual-jacobian-v2"
+
+
+class ResidualJacobianSource(StrEnum):
+    """Closed origins for a retained accepted-point residual Jacobian."""
+
+    SCIPY_FINAL_2_POINT = "scipy-final-2-point"
+    FIT_PARTITION_COMPOSITION = "fit-partition-composition"
+
+
+@dataclass(frozen=True, slots=True)
+class FinalResidualJacobianEvidence:
+    """Finite external-coordinate Jacobian retained from accepted TRF work."""
+
+    source: ResidualJacobianSource
+    controlled_ids: tuple[str, ...]
+    final_vector: tuple[float, ...]
+    final_residuals: tuple[float, ...]
+    shape: tuple[int, int]
+    matrix: tuple[tuple[float, ...], ...] = field(repr=False)
+    matrix_binary64_sha256: str = field(init=False)
+    source_identities: tuple[str, ...] = ()
+    derivative_method: str = "numerical 2-point"
+    diff_step_policy: str = "scipy-default-relative-step"
+    loss_policy: str = "linear"
+    backend_identity: str = field(
+        default_factory=lambda: (
+            f"scipy-{scipy_version}:optimize.least_squares:method=trf"
+        )
+    )
+    external_coordinate_policy: str = "physical-external-unscaled"
+    trust_region_scale_policy: str = "trust-region-only"
+    identity: str = field(init=False)
+
+    def _identity_from_digest(self, matrix_digest: str) -> str:
+        return _identity(
+            "native-final-residual-jacobian-evidence",
+            (
+                _BACKEND_JACOBIAN_VERSION,
+                self.source.value,
+                self.controlled_ids,
+                _vector_tokens(self.final_vector),
+                _vector_tokens(self.final_residuals),
+                self.shape,
+                matrix_digest,
+                self.source_identities,
+                self.derivative_method,
+                self.diff_step_policy,
+                self.loss_policy,
+                self.backend_identity,
+                self.external_coordinate_policy,
+                self.trust_region_scale_policy,
+            ),
+        )
+
+    def _validate_scope_and_semantics(self) -> None:
+        rows, columns = self.shape
+        if (
+            rows < 1
+            or columns < 1
+            or columns != len(self.controlled_ids)
+            or len(set(self.controlled_ids)) != columns
+            or len(self.final_vector) != columns
+            or len(self.final_residuals) != rows
+            or len(self.matrix) != rows
+            or any(len(row) != columns for row in self.matrix)
+        ):
+            raise ValueError("Final residual Jacobian has inconsistent scope")
+        if (
+            self.derivative_method != "numerical 2-point"
+            or self.diff_step_policy != "scipy-default-relative-step"
+            or self.loss_policy != "linear"
+            or not self.backend_identity.startswith("scipy-")
+            or "least_squares:method=trf" not in self.backend_identity
+            or self.external_coordinate_policy != "physical-external-unscaled"
+            or self.trust_region_scale_policy != "trust-region-only"
+            or (
+                self.source is ResidualJacobianSource.FIT_PARTITION_COMPOSITION
+                and not self.source_identities
+            )
+        ):
+            raise ValueError("Final residual Jacobian has incompatible semantics")
+
+    def validate_integrity(self) -> None:
+        """Validate immutable scope, semantics, digest, and identity without copying J."""
+        self._validate_scope_and_semantics()
+        matrix_digest = _binary64_matrix_digest(self.matrix, self.shape)
+        if (
+            matrix_digest != self.matrix_binary64_sha256
+            or self._identity_from_digest(matrix_digest) != self.identity
+        ):
+            raise ValueError("Final residual Jacobian integrity validation failed")
+
+    def __post_init__(self) -> None:
+        self._validate_scope_and_semantics()
+        vector = tuple(
+            _finite_binary64(value, name=f"final vector[{index}]")
+            for index, value in enumerate(self.final_vector)
+        )
+        residuals = tuple(
+            _finite_binary64(value, name=f"final residual[{index}]")
+            for index, value in enumerate(self.final_residuals)
+        )
+        matrix = tuple(
+            tuple(
+                _finite_binary64(
+                    value,
+                    name=f"final residual Jacobian[{row_index},{column_index}]",
+                )
+                for column_index, value in enumerate(row)
+            )
+            for row_index, row in enumerate(self.matrix)
+        )
+        object.__setattr__(self, "final_vector", vector)
+        object.__setattr__(self, "final_residuals", residuals)
+        object.__setattr__(self, "matrix", matrix)
+        matrix_digest = _binary64_matrix_digest(matrix, self.shape)
+        object.__setattr__(self, "matrix_binary64_sha256", matrix_digest)
+        object.__setattr__(
+            self,
+            "identity",
+            self._identity_from_digest(matrix_digest),
+        )
 
 
 class DirectTrfConstructionError(ValueError):
@@ -114,6 +238,19 @@ def _float_token(value: float) -> str:
 
 def _vector_tokens(values: Sequence[float]) -> tuple[str, ...]:
     return tuple(_float_token(value) for value in values)
+
+
+def _binary64_matrix_digest(
+    matrix: Sequence[Sequence[float]],
+    shape: tuple[int, int],
+) -> str:
+    """Hash canonical little-endian binary64 rows without token expansion."""
+    digest = hashlib.sha256()
+    digest.update(f"{shape[0]}x{shape[1]}:".encode("ascii"))
+    dtype = np.dtype("<f8")
+    for row in matrix:
+        digest.update(np.asarray(row, dtype=dtype).tobytes(order="C"))
+    return digest.hexdigest()
 
 
 def _canonical_vector(
@@ -1376,8 +1513,15 @@ class BackendEvidence:
     cost: float
     optimality: float
     active_mask: tuple[int, ...]
-    final_vector: tuple[float, ...]
-    final_residuals: tuple[float, ...]
+    final_residual_jacobian: FinalResidualJacobianEvidence
+
+    @property
+    def final_vector(self) -> tuple[float, ...]:
+        return self.final_residual_jacobian.final_vector
+
+    @property
+    def final_residuals(self) -> tuple[float, ...]:
+        return self.final_residual_jacobian.final_residuals
 
     @property
     def identity(self) -> str:
@@ -1392,8 +1536,7 @@ class BackendEvidence:
                 _float_token(self.cost),
                 _float_token(self.optimality),
                 self.active_mask,
-                _vector_tokens(self.final_vector),
-                _vector_tokens(self.final_residuals),
+                self.final_residual_jacobian.identity,
             ),
         )
 
@@ -1747,6 +1890,12 @@ class AcceptedFitResult:
     commit_scope: tuple[str, ...]
     commit_items: tuple[tuple[str, float], ...]
     origin_context_identity: str
+    final_residual_jacobian: FinalResidualJacobianEvidence | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        kw_only=True,
+    )
     occurrence_witness: _AcceptedOccurrenceWitness | None = field(
         compare=False,
         repr=False,
@@ -1759,6 +1908,18 @@ class AcceptedFitResult:
             raise ValueError("Accepted result cannot have an empty residual objective")
         if not self.origin_context_identity:
             raise ValueError("Accepted result requires an origin context identity")
+        retained = self.final_residual_jacobian
+        if retained is not None and (
+            retained.controlled_ids != self.controlled_ids
+            or retained.final_vector != self.vector
+            or retained.final_residuals
+            != tuple(float(value) for value in self.evaluation_result.residuals)
+            or retained.shape
+            != (self.evaluation_result.residuals.size, len(self.controlled_ids))
+        ):
+            raise ValueError(
+                "Accepted result and retained residual Jacobian lineage differ"
+            )
         identity = _identity(
             "native-accepted-fit-result",
             (
@@ -1780,6 +1941,7 @@ class AcceptedFitResult:
                     for param_id, value in self.commit_items
                 ),
                 self.origin_context_identity,
+                None if retained is None else retained.identity,
             ),
         )
         object.__setattr__(self, "identity", identity)
@@ -2514,9 +2676,10 @@ def _backend_int(value: object, *, name: str, optional: bool = False) -> int | N
 def _normalize_backend(
     result: object,
     *,
-    dimension: int,
+    controlled_ids: tuple[str, ...],
     residual_count: int,
 ) -> BackendEvidence:
+    dimension = len(controlled_ids)
     status_value = _backend_int(getattr(result, "status", None), name="status")
     if status_value is None:
         raise TypeError("SciPy status evidence is missing")
@@ -2556,6 +2719,17 @@ def _normalize_backend(
         for value in active_array
     ):
         raise ValueError("SciPy active_mask evidence is malformed")
+    jacobian_array = np.asarray(getattr(result, "jac", None), dtype=np.float64)
+    if jacobian_array.shape != (residual_count, dimension):
+        raise ValueError("SciPy final Jacobian evidence has the wrong shape")
+    final_residual_jacobian = FinalResidualJacobianEvidence(
+        ResidualJacobianSource.SCIPY_FINAL_2_POINT,
+        controlled_ids,
+        final_vector,
+        final_residuals,
+        (residual_count, dimension),
+        tuple(tuple(float(value) for value in row) for row in jacobian_array),
+    )
     return BackendEvidence(
         status_value,
         bool(success),
@@ -2565,8 +2739,7 @@ def _normalize_backend(
         cost,
         optimality,
         tuple(int(value) for value in active_array),
-        final_vector,
-        final_residuals,
+        final_residual_jacobian,
     )
 
 
@@ -2681,7 +2854,7 @@ def _process_backend_result(
     try:
         backend = _normalize_backend(
             backend_result,
-            dimension=len(problem.controlled_ids),
+            controlled_ids=problem.controlled_ids,
             residual_count=residual_count,
         )
     except Exception as error:  # noqa: BLE001 - malformed third-party result boundary
@@ -3159,6 +3332,7 @@ def _accepted_fit_evidence(
     chi_square: float,
     evaluation_result: EvaluationResult,
     origin_context_identity: str,
+    final_residual_jacobian: FinalResidualJacobianEvidence | None = None,
 ) -> AcceptedFitResult:
     """Construct evidence only from one fresh complete root materialization."""
     if not problem.acceptance_authority:
@@ -3202,6 +3376,7 @@ def _accepted_fit_evidence(
         problem.commit_scope,
         commit_items,
         origin_context_identity,
+        final_residual_jacobian=final_residual_jacobian,
         occurrence_witness=_mint_accepted_occurrence_witness(occurrence_identity),
     )
 
@@ -3291,6 +3466,7 @@ def accept_materialized_fit(
     vector: tuple[float, ...],
     chi_square: float,
     evaluation_result: EvaluationResult,
+    final_residual_jacobian: FinalResidualJacobianEvidence | None = None,
 ) -> tuple[AcceptedFitResult, LiveFitCommitAuthority]:
     """Accept a fresh Direct TRF fit and mint its process-owned capability."""
     origin_context_identity = _direct_fit_commit_origin(
@@ -3309,6 +3485,7 @@ def accept_materialized_fit(
         chi_square=chi_square,
         evaluation_result=evaluation_result,
         origin_context_identity=origin_context_identity,
+        final_residual_jacobian=final_residual_jacobian,
     )
     authority = _mint_fit_commit_authority(accepted, problem)
     return accepted, authority
@@ -3324,6 +3501,7 @@ def _accept_materialized_fit_for_derived_workflow(
     chi_square: float,
     evaluation_result: EvaluationResult,
     authority_context_identity: str,
+    final_residual_jacobian: FinalResidualJacobianEvidence | None = None,
 ) -> AcceptedFitResult:
     """Construct derived evidence after workflow validation, before authority."""
     return _accepted_fit_evidence(
@@ -3335,6 +3513,7 @@ def _accept_materialized_fit_for_derived_workflow(
         chi_square=chi_square,
         evaluation_result=evaluation_result,
         origin_context_identity=authority_context_identity,
+        final_residual_jacobian=final_residual_jacobian,
     )
 
 
@@ -3360,6 +3539,11 @@ def _accepted_outcome(
         vector=candidate.vector,
         chi_square=candidate.chi_square,
         evaluation_result=candidate.evaluation_result,
+        final_residual_jacobian=(
+            None
+            if execution.backend is None
+            else execution.backend.final_residual_jacobian
+        ),
     )
     return DirectTrfOutcome(
         DirectTrfOutcomeTerminal.ACCEPTED,
