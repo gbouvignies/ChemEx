@@ -68,6 +68,7 @@ from chemex.optimize.uncertainty import (
 )
 from chemex.parameters.parameterization import ActiveParameterization, ParameterRole
 from chemex.printers.parameters import (
+    BOUNDARY_WARNING_TEXT,
     ParameterUncertaintyView,
     parameter_uncertainty_view,
     uncertainty_unavailable_reason,
@@ -281,7 +282,14 @@ def _uncertainty_progress_status(
     controlled_ids: tuple[str, ...],
 ) -> str:
     """Summarize fitted covariance availability without overstating constraints."""
-    if evidence is not None and evidence.covariance is not None:
+    if uncertainty.warnings:
+        return "covariance available with boundary warnings"
+    available_ids = {param_id for param_id, _value in uncertainty.standard_errors}
+    if (
+        evidence is not None
+        and evidence.covariance is not None
+        and all(param_id in available_ids for param_id in controlled_ids)
+    ):
         return "covariance available"
     if block_evidence is not None and any(
         block.covariance is not None for block in block_evidence.blocks
@@ -660,9 +668,29 @@ def run_native_deterministic(
             for entry in block.constrained_marginal_errors
             if entry.value is not None
         )
+        block_warnings = tuple(
+            (entry.param_id, BOUNDARY_WARNING_TEXT)
+            for block in block_uncertainty.blocks
+            if block.boundary_warning
+            for entry in (*block.marginal_errors, *block.constrained_marginal_errors)
+            if entry.value is not None
+        )
+        recovered_ids = {
+            param_id for param_id, _value in (*block_errors, *block_constrained_errors)
+        }
         uncertainty = ParameterUncertaintyView(
-            uncertainty.standard_errors + block_errors + block_constrained_errors,
-            uncertainty.unavailable_reasons + block_unavailable,
+            standard_errors=(
+                uncertainty.standard_errors + block_errors + block_constrained_errors
+            ),
+            warnings=uncertainty.warnings + block_warnings,
+            unavailable_reasons=(
+                tuple(
+                    (param_id, reason)
+                    for param_id, reason in uncertainty.unavailable_reasons
+                    if param_id not in recovered_ids
+                )
+                + block_unavailable
+            ),
         )
     uncertainty_progress.finish(
         _uncertainty_progress_status(

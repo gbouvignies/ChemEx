@@ -114,7 +114,7 @@ FIX = ["KD"]
     assert "Jacobian unavailable" not in fitted
 
 
-def test_full_binding_step2_never_fails_for_a_high_cost_stencil(
+def test_full_binding_step2_reports_boundary_warning_with_retained_jacobian(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
@@ -136,5 +136,7 @@ def test_full_binding_step2_never_fails_for_a_high_cost_stencil(
     r2_b_538n = next(
         line for line in r2_b_section.splitlines() if line.lstrip().startswith("538N")
     )
-    assert "error unavailable: boundary limited" in r2_b_538n
+    assert "# ±" in r2_b_538n
+    assert "boundary may make local error asymmetric" in r2_b_538n
+    assert "error unavailable: boundary limited" not in fitted
     assert "Jacobian unavailable" not in fitted

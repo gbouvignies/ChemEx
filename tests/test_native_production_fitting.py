@@ -570,10 +570,20 @@ def test_reused_output_removes_legacy_and_development_result_trees(
     assert (output / "run_info" / "outcome.toml").is_file()
 
 
-def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
+def test_grouped_covariance_reports_boundary_warning_in_valid_independent_block(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
+    parameters = tmp_path / "parameters.toml"
+    parameters.write_text(
+        PARAMETERS.read_text(encoding="utf-8")
+        + """
+
+[R1A_A]
+G2N-H = [2.3, 2.18, 5.0]
+""",
+        encoding="utf-8",
+    )
     original_svd = uncertainty_module.svd
     covariance_svd_call = 0
 
@@ -588,18 +598,24 @@ def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
 
     with patch("chemex.optimize.uncertainty.svd", side_effect=one_bad_block_svd):
         run(
-            _fit_arguments(output, include=("G2N-HN", "H3N-HN")),
+            _fit_arguments(
+                output,
+                parameters=parameters,
+                include=("G2N-HN", "H3N-HN"),
+            ),
             session=AnalysisSession.create(),
         )
 
     assert (output / "Statistics" / "Covariance" / "evidence.json").is_file()
     fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
     assert fitted.count("# ±") == 1
+    assert fitted.count("boundary may make local error asymmetric") == 1
     assert fitted.count("error unavailable: rank deficient") == 1
     constrained = (output / "Parameters" / "constrained.toml").read_text(
         encoding="utf-8"
     )
     assert constrained.count("# ±") == 1
+    assert constrained.count("boundary may make local error asymmetric") == 1
     assert (
         constrained.count("error unavailable: constrained propagation unavailable") == 1
     )
@@ -615,6 +631,10 @@ def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
         "",
         "rank deficient",
     ]
+    reportable = next(block for block in blocks["blocks"] if block["scope_reportable"])
+    claims = {claim["name"]: claim["state"] for claim in reportable["claims"]}
+    assert claims["BOUNDARY_SEPARATION"] == "violated"
+    assert claims["USABLE_LOCAL_COVARIANCE"] == "satisfied"
 
 
 def test_interrupted_block_fallback_preserves_committed_root_evidence(
@@ -760,8 +780,9 @@ def test_real_grouped_direct_progress_has_one_bounded_noninteractive_stream(
     assert "Group " not in rendered
 
 
-def test_boundary_limited_fit_keeps_central_values_and_withholds_symmetric_errors(
+def test_boundary_warning_fit_reports_local_errors_without_changing_central_values(
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     output = tmp_path / "Output"
     method = tmp_path / "method.toml"
@@ -777,8 +798,14 @@ FIX = ["KEX_AB"]
 
     assert session.analysis_values.snapshot().revision == 1
     fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
-    assert "error unavailable: boundary limited" in fitted
-    assert "# ±" not in fitted
+    constrained = (output / "Parameters" / "constrained.toml").read_text(
+        encoding="utf-8"
+    )
+    assert "# ±" in fitted
+    assert "boundary may make local error asymmetric" in fitted
+    assert "error unavailable: boundary limited" not in fitted
+    assert "error unavailable: boundary limited" not in constrained
+    assert "error unavailable: constrained propagation unavailable" in constrained
     evidence = (output / "Statistics" / "Covariance" / "evidence.json").read_text(
         encoding="utf-8"
     )
@@ -790,6 +817,8 @@ FIX = ["KEX_AB"]
             session.analysis_values.snapshot()
         ).values()
     )
+    rendered = " ".join(capsys.readouterr().out.split())
+    assert rendered.count("covariance available with boundary warnings") == 1
 
 
 def test_rank_deficient_covariance_is_nonfatal_and_replaces_stale_valid_errors(

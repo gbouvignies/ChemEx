@@ -24,10 +24,25 @@ class ParameterUncertaintyView:
     """Immutable report-only covariance-derived uncertainty selection."""
 
     standard_errors: tuple[tuple[str, float], ...] = ()
+    warnings: tuple[tuple[str, str], ...] = ()
     unavailable_reasons: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        error_ids = {param_id for param_id, _value in self.standard_errors}
+        warning_ids = {param_id for param_id, _warning in self.warnings}
+        unavailable_ids = {param_id for param_id, _reason in self.unavailable_reasons}
+        if warning_ids - error_ids:
+            raise ValueError("Uncertainty warnings require an available standard error")
+        if error_ids & unavailable_ids:
+            raise ValueError(
+                "A parameter uncertainty cannot be available and unavailable"
+            )
 
     def standard_error(self, param_id: str) -> float | None:
         return dict(self.standard_errors).get(param_id)
+
+    def warning(self, param_id: str) -> str | None:
+        return dict(self.warnings).get(param_id)
 
     def unavailable_reason(self, param_id: str) -> str | None:
         return dict(self.unavailable_reasons).get(param_id)
@@ -50,6 +65,8 @@ _UNAVAILABLE_REASON_TEXT = {
         "constrained propagation unavailable"
     ),
 }
+
+BOUNDARY_WARNING_TEXT = "boundary may make local error asymmetric"
 
 if set(_UNAVAILABLE_REASON_TEXT) != set(UncertaintyUnavailableKind):
     raise RuntimeError("Uncertainty unavailability vocabulary is not exhaustive")
@@ -78,16 +95,6 @@ def _controlled_unavailability_kind(
         claims = {item.name: item.state.value for item in covariance.claims}
         if claims.get("PROFILED_NORMALIZATION_REGULARITY") == "violated":
             return UncertaintyUnavailableKind.NORMALIZATION_INVALID
-        if any(
-            claims.get(name) in {"violated", "indeterminate"}
-            for name in (
-                "FULL_DIMENSIONAL_FEASIBLE_INTERIOR",
-                "INTERIOR_POINT",
-                "BOUNDARY_SEPARATION",
-                "CONTROLLED_AFFINE_SEPARATION",
-            )
-        ):
-            return UncertaintyUnavailableKind.BOUNDARY_LIMITED
     if any(failure.stage == "residual_linearization" for failure in evidence.failures):
         return UncertaintyUnavailableKind.JACOBIAN_UNAVAILABLE
     return UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE
@@ -99,6 +106,7 @@ def parameter_uncertainty_view(
 ) -> ParameterUncertaintyView:
     """Select only scientifically reportable covariance-derived errors."""
     standard_errors: list[tuple[str, float]] = []
+    warnings: list[tuple[str, str]] = []
     unavailable_reasons: list[tuple[str, str]] = []
     marginal = evidence.marginal_errors
     if marginal is not None and marginal.scope_reportable:
@@ -107,6 +115,12 @@ def parameter_uncertainty_view(
             for entry in marginal.entries
             if entry.value is not None
         )
+        if evidence.covariance is not None and evidence.covariance.boundary_warning:
+            warnings.extend(
+                (entry.param_id, BOUNDARY_WARNING_TEXT)
+                for entry in marginal.entries
+                if entry.value is not None
+            )
     else:
         reason = uncertainty_unavailable_reason(
             _controlled_unavailability_kind(evidence)
@@ -121,6 +135,12 @@ def parameter_uncertainty_view(
             for entry in constrained.entries
             if entry.value is not None
         )
+        if evidence.covariance is not None and evidence.covariance.boundary_warning:
+            warnings.extend(
+                (entry.param_id, BOUNDARY_WARNING_TEXT)
+                for entry in constrained.entries
+                if entry.value is not None
+            )
     elif evidence.requested_output_scope:
         unavailable_reasons.extend(
             (
@@ -141,8 +161,9 @@ def parameter_uncertainty_view(
         for param_id in unsupported_constrained_ids
     )
     return ParameterUncertaintyView(
-        tuple(standard_errors),
-        tuple(unavailable_reasons),
+        standard_errors=tuple(standard_errors),
+        warnings=tuple(warnings),
+        unavailable_reasons=tuple(unavailable_reasons),
     )
 
 
@@ -170,9 +191,10 @@ def _format_fitted(
     standard_error = (
         None if uncertainty is None else uncertainty.standard_error(param_id)
     )
+    warning = None if uncertainty is None else uncertainty.warning(param_id)
     reason = None if uncertainty is None else uncertainty.unavailable_reason(param_id)
     error = (
-        f"±{standard_error:.5e}"
+        f"±{standard_error:.5e}" + (f" ({warning})" if warning is not None else "")
         if standard_error is not None
         else f"(error unavailable: {reason})"
         if reason is not None
@@ -193,9 +215,10 @@ def _format_constrained(
     standard_error = (
         None if uncertainty is None else uncertainty.standard_error(param_id)
     )
+    warning = None if uncertainty is None else uncertainty.warning(param_id)
     reason = None if uncertainty is None else uncertainty.unavailable_reason(param_id)
     error = (
-        f"±{standard_error:.5e} "
+        f"±{standard_error:.5e}" + (f" ({warning}); " if warning is not None else " ")
         if standard_error is not None
         else f"error unavailable: {reason}; "
         if reason is not None

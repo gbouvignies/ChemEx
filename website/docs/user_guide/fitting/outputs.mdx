@@ -206,7 +206,14 @@ uncertainty analyses requested with the `STATISTICS` method-file key.
 accepted-point identity, parameter order, Jacobian/rank/conditioning/boundary
 diagnostics, covariance-derived marginal errors, correlations, and typed
 failures. `Statistics/Constrained/evidence.json` records supported constrained
-propagation. For fits with independent fit components,
+propagation. ChemEx reports covariance-derived local standard errors when the
+local covariance is otherwise valid, including when the accepted fit is near or
+at a parameter bound. In that case, parameter comments warn that the boundary
+may make the local error asymmetric because the symmetric Gaussian
+approximation can be imperfect. Profile likelihood or resampling may be more
+appropriate when accurate bounded confidence intervals are required.
+
+For fits with independent fit components,
 `Statistics/Covariance/blocks.json` records any root-anchored independent-block
 derivations used to isolate unavailable component covariance. If derivation is
 interrupted after the fit commits,

@@ -60,7 +60,7 @@ from chemex.typing import Array
 _SCHEMA_VERSION = 2
 _RESIDUAL_LINEARIZATION_VERSION = "accepted-residual-jacobian-v2"
 _CONSTRAINT_LINEARIZATION_VERSION = "constraint-forward-chain-v1"
-_COVARIANCE_VERSION = "column-equilibrated-full-rank-svd-factor-gram-v4"
+_COVARIANCE_VERSION = "column-equilibrated-full-rank-svd-factor-gram-v5"
 _FACTOR_VERSION = "column-equilibrated-svd-factor-gram-v4"
 _REDUCTION_VERSION = "fixed-pairwise-binary64-v1"
 _MARGINAL_VERSION = "covariance-diagonal-square-root-v1"
@@ -69,6 +69,12 @@ _PROPAGATION_VERSION = "constraint-gram-factor-v1"
 _EPSILON = float(np.finfo(np.float64).eps)
 _NOMINAL_STEP_FACTOR = _EPSILON ** (1.0 / 3.0)
 _BOUNDARY_THRESHOLD = 3.0
+_BOUNDARY_DIAGNOSTIC_CLAIMS = (
+    "FULL_DIMENSIONAL_FEASIBLE_INTERIOR",
+    "INTERIOR_POINT",
+    "BOUNDARY_SEPARATION",
+    "CONTROLLED_AFFINE_SEPARATION",
+)
 
 
 class UncertaintyConstructionError(ValueError):
@@ -1797,6 +1803,15 @@ class CovarianceEvidence:
     def usable(self) -> bool:
         return self.claim("USABLE_LOCAL_COVARIANCE") is ClaimState.SATISFIED
 
+    @property
+    def boundary_warning(self) -> bool:
+        """Whether boundary evidence cautions against symmetric interpretation."""
+        states = {item.name: item.state for item in self.claims}
+        return any(
+            states.get(name) in {ClaimState.VIOLATED, ClaimState.INDETERMINATE}
+            for name in _BOUNDARY_DIAGNOSTIC_CLAIMS
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class ScalarEvidenceEntry:
@@ -2821,6 +2836,15 @@ class RootAnchoredBlockCovariance:
         )
 
     @property
+    def boundary_warning(self) -> bool:
+        """Whether this block carries a boundary-interpretation caveat."""
+        states = {item.name: item.state for item in self.claims}
+        return any(
+            states.get(name) in {ClaimState.VIOLATED, ClaimState.INDETERMINATE}
+            for name in _BOUNDARY_DIAGNOSTIC_CLAIMS
+        )
+
+    @property
     def unavailable_kind(self) -> UncertaintyUnavailableKind | None:
         """Classify unavailable block evidence without rendering product text."""
         if self.scope_reportable:
@@ -2839,16 +2863,6 @@ class RootAnchoredBlockCovariance:
         states = {item.name: item.state for item in self.claims}
         if states.get("PROFILED_NORMALIZATION_REGULARITY") is ClaimState.VIOLATED:
             return UncertaintyUnavailableKind.NORMALIZATION_INVALID
-        if any(
-            states.get(name) is not ClaimState.SATISFIED
-            for name in (
-                "FULL_DIMENSIONAL_FEASIBLE_INTERIOR",
-                "INTERIOR_POINT",
-                "BOUNDARY_SEPARATION",
-                "CONTROLLED_AFFINE_SEPARATION",
-            )
-        ):
-            return UncertaintyUnavailableKind.BOUNDARY_LIMITED
         return UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE
 
 
@@ -5065,13 +5079,6 @@ def _canonical_covariance_claims(
         ),
     )
     required = (
-        ClaimState.SATISFIED,
-        full_dimensional_interior.state,
-        interior.state,
-        boundary.state,
-        controlled_affine.state
-        if controlled_affine.state is not ClaimState.NOT_APPLICABLE
-        else ClaimState.SATISFIED,
         normalization.state,
         variance_nondegeneracy.state
         if variance_nondegeneracy.state is not ClaimState.NOT_APPLICABLE
