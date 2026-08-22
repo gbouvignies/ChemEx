@@ -502,6 +502,11 @@ def test_accepted_fit_yields_typed_covariance_and_joint_constraint_propagation()
     assert evidence.constrained_propagation.source_covariance_identity == (
         evidence.covariance.identity
     )
+    uncertainty_view = parameter_uncertainty_view(evidence)
+    assert uncertainty_view.standard_error(controlled_id) is not None
+    assert uncertainty_view.standard_error(derived_id) is not None
+    assert uncertainty_view.warning(controlled_id) is None
+    assert uncertainty_view.warning(derived_id) is None
     assert evidence.resolved_environment_identity == ("local-qualification-environment")
     assert all(
         item.resolved_environment_identity == "local-qualification-environment"
@@ -1414,9 +1419,10 @@ def test_stencil_exhaustion_retains_trajectory_and_each_search_extent() -> None:
     )
 
 
-def test_boundary_covariance_remains_diagnostic_but_reporting_fails_closed() -> None:
+def test_at_bound_covariance_reports_uncertainty_with_boundary_warning() -> None:
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
     controlled_id = problem.controlled_ids[0]
+    derived_id = "__R1A_B_G2N_H_800_0MHZ"
     boundary_problem = dataclasses.replace(
         problem,
         lower_bounds=(accepted.vector[0],),
@@ -1432,6 +1438,14 @@ def test_boundary_covariance_remains_diagnostic_but_reporting_fails_closed() -> 
         parameterization=parameterization,
         engine=engine,
         policy=_qualification_policy(controlled_id),
+        constrained_scope=(derived_id,),
+        constrained_units=((derived_id, ParameterUnit.RATE_PER_SECOND),),
+        constrained_scales=((derived_id, 1.0),),
+        compiled_constraint_linearization=compile_constraint_linearization_capabilities(
+            parameterization,
+            (derived_id,),
+            (),
+        ),
         resolved_environment_identity="local-qualification-environment",
     )
 
@@ -1458,19 +1472,22 @@ def test_boundary_covariance_remains_diagnostic_but_reporting_fails_closed() -> 
     assert evidence.covariance is not None
     assert evidence.covariance.claim("INTERIOR_POINT") is ClaimState.VIOLATED
     assert evidence.covariance.claim("BOUNDARY_SEPARATION") is ClaimState.VIOLATED
-    assert evidence.covariance.claim("USABLE_LOCAL_COVARIANCE") is ClaimState.VIOLATED
+    assert evidence.covariance.claim("USABLE_LOCAL_COVARIANCE") is ClaimState.SATISFIED
     assert evidence.marginal_errors is not None
     assert evidence.marginal_errors.entries[0].value is not None
-    assert not evidence.marginal_errors.scope_reportable
+    assert evidence.marginal_errors.scope_reportable
     assert evidence.correlations is not None
     assert evidence.correlations.entries[0][0].value == 1.0
-    assert not evidence.correlations.scope_reportable
-    assert (
-        parameter_uncertainty_view(evidence).unavailable_reason(controlled_id)
-        == "boundary limited"
-    )
+    assert evidence.correlations.scope_reportable
+    view = parameter_uncertainty_view(evidence)
+    assert view.standard_error(controlled_id) is not None
+    assert view.warning(controlled_id) == "boundary may make uncertainty asymmetric"
+    assert view.unavailable_reason(controlled_id) is None
+    assert view.standard_error(derived_id) is not None
+    assert view.warning(derived_id) == "boundary may make uncertainty asymmetric"
+    assert view.unavailable_reason(derived_id) is None
     forged_reportability_claims = tuple(
-        dataclasses.replace(item, state=ClaimState.SATISFIED)
+        dataclasses.replace(item, state=ClaimState.VIOLATED)
         if item.name == "MARGINAL_SCOPE_REPORTABILITY"
         else item
         for item in evidence.marginal_errors.claims
@@ -1478,9 +1495,131 @@ def test_boundary_covariance_remains_diagnostic_but_reporting_fails_closed() -> 
     with pytest.raises(ValueError, match="reportability"):
         dataclasses.replace(
             evidence.marginal_errors,
-            scope_reportable=True,
+            scope_reportable=False,
             claims=forged_reportability_claims,
         )
+
+
+def test_near_bound_covariance_reports_local_error_and_preserves_violation() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    controlled_id = problem.controlled_ids[0]
+    policy = _qualification_policy(controlled_id)
+    interior_evidence = derive_uncertainty_evidence(
+        accepted,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=policy,
+        resolved_environment_identity="near-bound-reference",
+    )
+    assert interior_evidence.marginal_errors is not None
+    standard_error = interior_evidence.marginal_errors.entries[0].value
+    assert standard_error is not None
+    near_problem = dataclasses.replace(
+        problem,
+        lower_bounds=(accepted.vector[0] - 2.0 * standard_error,),
+    )
+    near_accepted = _qualified_accepted_copy(
+        accepted,
+        problem_identity=near_problem.identity,
+    )
+
+    evidence = derive_uncertainty_evidence(
+        near_accepted,
+        problem=near_problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=policy,
+        resolved_environment_identity="near-bound-warning",
+    )
+
+    assert evidence.covariance is not None
+    assert evidence.covariance.claim("INTERIOR_POINT") is ClaimState.SATISFIED
+    assert evidence.covariance.claim("BOUNDARY_SEPARATION") is ClaimState.VIOLATED
+    assert evidence.covariance.claim("USABLE_LOCAL_COVARIANCE") is ClaimState.SATISFIED
+    assert evidence.marginal_errors is not None
+    assert evidence.marginal_errors.scope_reportable
+    view = parameter_uncertainty_view(evidence)
+    assert view.standard_error(controlled_id) == pytest.approx(standard_error)
+    assert view.warning(controlled_id) == "boundary may make uncertainty asymmetric"
+    assert view.unavailable_reason(controlled_id) is None
+
+
+@pytest.mark.parametrize("zeta", (2.0, 0.0))
+def test_multivariate_simple_bound_warning_is_coordinate_specific(zeta: float) -> None:
+    method = Method(
+        fit=("D2O", "KDH"),
+        fix=("CS_A", "DW_AB", "PHI", "R1_A", "R2_A", "R2_B"),
+    )
+    parameterization, engine, problem = _hd_problem(method)
+    accepted = _accepted_reference_anchor(parameterization, engine, problem)
+    d2o_id, kdh_id = problem.controlled_ids
+    kab_id = "__KAB_1_0_1000"
+    policy = dataclasses.replace(
+        _qualification_policy(d2o_id),
+        coordinate_scales=((d2o_id, 0.1), (kdh_id, 10.0)),
+        coordinate_units=(
+            (d2o_id, ParameterUnit.FRACTION),
+            (kdh_id, ParameterUnit.RATE_PER_SECOND),
+        ),
+        residual_variance_scaling=(
+            ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES
+        ),
+    )
+    baseline = derive_uncertainty_evidence(
+        accepted,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=policy,
+        resolved_environment_identity="coordinate-warning-baseline",
+    )
+    assert baseline.marginal_errors is not None
+    kdh_error = baseline.marginal_errors.entries[1].value
+    assert kdh_error is not None
+    boundary_problem = dataclasses.replace(
+        problem,
+        lower_bounds=(
+            problem.lower_bounds[0],
+            accepted.vector[1] - zeta * kdh_error,
+        ),
+    )
+    boundary_accepted = _qualified_accepted_copy(
+        accepted,
+        problem_identity=boundary_problem.identity,
+        occurrence_identity=f"coordinate-warning-{zeta.hex()}",
+    )
+
+    evidence = derive_uncertainty_evidence(
+        boundary_accepted,
+        problem=boundary_problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=policy,
+        constrained_scope=(kab_id,),
+        constrained_units=((kab_id, ParameterUnit.RATE_PER_SECOND),),
+        constrained_scales=((kab_id, 10.0),),
+        compiled_constraint_linearization=(
+            compile_constraint_linearization_capabilities(
+                parameterization,
+                (kab_id,),
+                (),
+            )
+        ),
+        resolved_environment_identity="coordinate-warning",
+    )
+
+    assert evidence.covariance is not None
+    assert evidence.covariance.rank == 2
+    assert evidence.covariance.claim("BOUNDARY_SEPARATION") is ClaimState.VIOLATED
+    assert evidence.covariance.boundary_warning
+    view = parameter_uncertainty_view(evidence)
+    assert view.standard_error(d2o_id) is not None
+    assert view.standard_error(kdh_id) is not None
+    assert view.warning(d2o_id) is None
+    assert view.warning(kdh_id) == "boundary may make uncertainty asymmetric"
+    assert view.standard_error(kab_id) is not None
+    assert view.warning(kab_id) == "boundary may make uncertainty asymmetric"
 
 
 def test_unrepresentable_centered_interval_falls_back_to_inward_stencil() -> None:
@@ -2330,7 +2469,11 @@ def test_affine_directional_separation_uses_exact_full_frame_slack(
     )
     assert evidence.covariance is not None
     assert evidence.covariance.claim("AFFINE_FEASIBILITY") is expected
-    assert evidence.covariance.usable is (expected is ClaimState.SATISFIED)
+    assert evidence.covariance.usable
+    view = parameter_uncertainty_view(evidence)
+    assert view.standard_error(problem.controlled_ids[0]) is not None
+    assert view.warning(problem.controlled_ids[0]) is None
+    assert evidence.covariance.boundary_warning is (expected is ClaimState.VIOLATED)
 
 
 def test_active_affine_upper_uses_inward_stencil_without_off_feasible_calls() -> None:

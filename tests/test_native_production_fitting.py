@@ -570,10 +570,21 @@ def test_reused_output_removes_legacy_and_development_result_trees(
     assert (output / "run_info" / "outcome.toml").is_file()
 
 
-def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
+def test_grouped_covariance_warns_only_near_bound_independent_coordinate(
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     output = tmp_path / "Output"
+    parameters = tmp_path / "parameters.toml"
+    parameters.write_text(
+        PARAMETERS.read_text(encoding="utf-8")
+        + """
+
+[R1A_A]
+G2N-H = [2.3, 2.18, 5.0]
+""",
+        encoding="utf-8",
+    )
     original_svd = uncertainty_module.svd
     covariance_svd_call = 0
 
@@ -582,27 +593,38 @@ def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
         covariance_svd_call += 1
         left, singular, right = original_svd(*args, **kwargs)
         singular = np.array(singular, copy=True)
-        if covariance_svd_call in {1, 3}:
+        if covariance_svd_call == 1:
             singular[-1] = 0.0
         return left, singular, right
 
     with patch("chemex.optimize.uncertainty.svd", side_effect=one_bad_block_svd):
         run(
-            _fit_arguments(output, include=("G2N-HN", "H3N-HN")),
+            _fit_arguments(
+                output,
+                parameters=parameters,
+                include=("G2N-HN", "H3N-HN"),
+            ),
             session=AnalysisSession.create(),
         )
 
     assert (output / "Statistics" / "Covariance" / "evidence.json").is_file()
     fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
-    assert fitted.count("# ±") == 1
-    assert fitted.count("error unavailable: rank deficient") == 1
+    assert fitted.count("# ±") == 2
+    assert fitted.count("boundary may make uncertainty asymmetric") == 1
+    g2_record = next(
+        line for line in fitted.splitlines() if line.lstrip().startswith("G2N-H")
+    )
+    h3_record = next(
+        line for line in fitted.splitlines() if line.lstrip().startswith("H3N-H")
+    )
+    assert "boundary may make uncertainty asymmetric" in g2_record
+    assert "boundary may make uncertainty asymmetric" not in h3_record
     constrained = (output / "Parameters" / "constrained.toml").read_text(
         encoding="utf-8"
     )
-    assert constrained.count("# ±") == 1
-    assert (
-        constrained.count("error unavailable: constrained propagation unavailable") == 1
-    )
+    assert constrained.count("# ±") == 2
+    assert constrained.count("boundary may make uncertainty asymmetric") == 1
+    assert "error unavailable" not in constrained
     assert not (output / "All").exists()
     assert not (output / "Groups").exists()
     blocks = json.loads(
@@ -611,10 +633,77 @@ def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
         )
     )
     assert len(blocks["partition_proof_identity"]) == 64
-    assert sorted(block["unavailable_reason"] for block in blocks["blocks"]) == [
-        "",
-        "rank deficient",
+    assert all(block["scope_reportable"] for block in blocks["blocks"])
+    claim_sets = [
+        {claim["name"]: claim["state"] for claim in block["claims"]}
+        for block in blocks["blocks"]
     ]
+    assert sorted(claims["BOUNDARY_SEPARATION"] for claims in claim_sets) == [
+        "satisfied",
+        "violated",
+    ]
+    assert all(
+        claims["USABLE_LOCAL_COVARIANCE"] == "satisfied" for claims in claim_sets
+    )
+    rendered = " ".join(capsys.readouterr().out.split())
+    assert rendered.count("covariance available with boundary warnings") == 1
+
+
+def test_multivariate_boundary_warning_product_is_coordinate_specific(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """[DEFAULT]
+FIT = ["D2O", "KDH"]
+FIX = ["CS_A", "DW_AB", "PHI", "R1_A", "R2_A", "R2_B"]
+""",
+        encoding="utf-8",
+    )
+    parameters = tmp_path / "parameters.toml"
+    parameters.write_text(
+        DCEST_PARAMETERS.read_text(encoding="utf-8").replace(
+            "KDH = 10.0",
+            "KDH = [10.0, 9.99, 10.0]",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    arguments = build_parser().parse_args(
+        [
+            "fit",
+            "-e",
+            str(DCEST_EXPERIMENT),
+            "-p",
+            str(parameters),
+            "-m",
+            str(method),
+            "-o",
+            str(output),
+            "-d",
+            "2st_hd",
+            "--include",
+            "1N",
+            "--plot",
+            "nothing",
+            "--workers",
+            "1",
+        ]
+    )
+
+    run(arguments, session=AnalysisSession.create())
+
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    assert fitted.count("# ±") == 2
+    assert fitted.count("boundary may make uncertainty asymmetric") == 1
+    d2o_record = next(line for line in fitted.splitlines() if "D2O" in line)
+    kdh_record = next(line for line in fitted.splitlines() if line.startswith("1 ="))
+    assert "boundary may make uncertainty asymmetric" not in d2o_record
+    assert "boundary may make uncertainty asymmetric" in kdh_record
+    rendered = " ".join(capsys.readouterr().out.split())
+    assert rendered.count("covariance available with boundary warnings") == 1
 
 
 def test_interrupted_block_fallback_preserves_committed_root_evidence(
@@ -760,8 +849,9 @@ def test_real_grouped_direct_progress_has_one_bounded_noninteractive_stream(
     assert "Group " not in rendered
 
 
-def test_boundary_limited_fit_keeps_central_values_and_withholds_symmetric_errors(
+def test_boundary_warning_fit_reports_uncertainty_without_changing_central_values(
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     output = tmp_path / "Output"
     method = tmp_path / "method.toml"
@@ -777,8 +867,14 @@ FIX = ["KEX_AB"]
 
     assert session.analysis_values.snapshot().revision == 1
     fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
-    assert "error unavailable: boundary limited" in fitted
-    assert "# ±" not in fitted
+    constrained = (output / "Parameters" / "constrained.toml").read_text(
+        encoding="utf-8"
+    )
+    assert "# ±" in fitted
+    assert "boundary may make uncertainty asymmetric" in fitted
+    assert "error unavailable: boundary limited" not in fitted
+    assert "error unavailable: boundary limited" not in constrained
+    assert "error unavailable: constrained propagation unavailable" in constrained
     evidence = (output / "Statistics" / "Covariance" / "evidence.json").read_text(
         encoding="utf-8"
     )
@@ -790,6 +886,8 @@ FIX = ["KEX_AB"]
             session.analysis_values.snapshot()
         ).values()
     )
+    rendered = " ".join(capsys.readouterr().out.split())
+    assert rendered.count("covariance available with boundary warnings") == 1
 
 
 def test_rank_deficient_covariance_is_nonfatal_and_replaces_stale_valid_errors(

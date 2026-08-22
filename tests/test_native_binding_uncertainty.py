@@ -114,7 +114,7 @@ FIX = ["KD"]
     assert "Jacobian unavailable" not in fitted
 
 
-def test_full_binding_step2_never_fails_for_a_high_cost_stencil(
+def test_full_binding_step2_reports_boundary_warning_with_retained_jacobian(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
@@ -132,9 +132,18 @@ def test_full_binding_step2_never_fails_for_a_high_cost_stencil(
     fitted = (output / "STEP2" / "Parameters" / "fitted.toml").read_text(
         encoding="utf-8"
     )
-    r2_b_section = fitted.split('["R2_B, B0->800.0MHZ"]', maxsplit=1)[1]
-    r2_b_538n = next(
-        line for line in r2_b_section.splitlines() if line.lstrip().startswith("538N")
-    )
-    assert "error unavailable: boundary limited" in r2_b_538n
+    fitted_uncertainties = [line for line in fitted.splitlines() if "# ±" in line]
+    warned_uncertainties = [
+        line
+        for line in fitted_uncertainties
+        if "boundary may make uncertainty asymmetric" in line
+    ]
+    unavailable_uncertainties = [
+        line for line in fitted.splitlines() if "error unavailable" in line
+    ]
+    assert step2.covariance is not None
+    assert len(warned_uncertainties) == len(step2.covariance.simple_bound_warning_ids)
+    assert 0 < len(warned_uncertainties) < len(fitted_uncertainties)
+    assert unavailable_uncertainties == []
+    assert "error unavailable: boundary limited" not in fitted
     assert "Jacobian unavailable" not in fitted

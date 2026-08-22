@@ -8,6 +8,12 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 ## [Unreleased]
 
 ### Changed
+- Covariance-derived local standard errors are now reported when an otherwise
+  valid covariance lies within the existing three-sigma boundary threshold,
+  including at a bound. Boundary evidence and the threshold remain unchanged,
+  while the terminal retains an aggregate warning. Inline warnings are limited
+  to fitted coordinates near their own simple bounds and constrained outputs
+  structurally depending on them. Genuinely invalid covariance remains unavailable.
 - Unified deterministic fit presentation and output around the authoritative
   aggregate method-step result. Interactive Rich output now shows one transient
   fit-component progress table, followed by one aggregate minimization summary
@@ -23,8 +29,8 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   `Parameters/fitted.toml`. Observation uncertainties are treated as absolute
   experimental standard deviations, so covariance is not scaled by reduced
   chi-square. Supported arithmetic constraints receive propagated errors;
-  rank, boundary, normalization, derivative, or covariance-arithmetic failures
-  withhold errors with a concise reason while preserving fitted central values.
+  rank, normalization, derivative, or covariance-arithmetic failures withhold
+  errors with a concise reason while preserving fitted central values.
   Condition and weak-mode diagnostics do not impose an arbitrary hard gate. Full covariance,
   correlation, constrained, and independent-block diagnostics are written
   under `Statistics/` without populating the legacy generic `stderr` field or

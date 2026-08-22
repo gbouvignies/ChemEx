@@ -60,7 +60,7 @@ from chemex.typing import Array
 _SCHEMA_VERSION = 2
 _RESIDUAL_LINEARIZATION_VERSION = "accepted-residual-jacobian-v2"
 _CONSTRAINT_LINEARIZATION_VERSION = "constraint-forward-chain-v1"
-_COVARIANCE_VERSION = "column-equilibrated-full-rank-svd-factor-gram-v4"
+_COVARIANCE_VERSION = "column-equilibrated-full-rank-svd-factor-gram-v5"
 _FACTOR_VERSION = "column-equilibrated-svd-factor-gram-v4"
 _REDUCTION_VERSION = "fixed-pairwise-binary64-v1"
 _MARGINAL_VERSION = "covariance-diagonal-square-root-v1"
@@ -69,6 +69,45 @@ _PROPAGATION_VERSION = "constraint-gram-factor-v1"
 _EPSILON = float(np.finfo(np.float64).eps)
 _NOMINAL_STEP_FACTOR = _EPSILON ** (1.0 / 3.0)
 _BOUNDARY_THRESHOLD = 3.0
+_BOUNDARY_DIAGNOSTIC_CLAIMS = (
+    "FULL_DIMENSIONAL_FEASIBLE_INTERIOR",
+    "INTERIOR_POINT",
+    "BOUNDARY_SEPARATION",
+    "CONTROLLED_AFFINE_SEPARATION",
+)
+
+
+def _simple_bound_warning_ids(
+    controlled_ids: Sequence[str],
+    accepted_vector: Sequence[float],
+    lower_bounds: Sequence[float],
+    upper_bounds: Sequence[float],
+    standard_errors: Mapping[str, float | None],
+) -> frozenset[str]:
+    """Attribute the boundary threshold only to each coordinate's box bounds."""
+    warned: set[str] = set()
+    for param_id, value, lower, upper in zip(
+        controlled_ids,
+        accepted_vector,
+        lower_bounds,
+        upper_bounds,
+        strict=True,
+    ):
+        standard_error = standard_errors.get(param_id)
+        if (
+            standard_error is None
+            or standard_error <= 0.0
+            or not math.isfinite(standard_error)
+        ):
+            continue
+        separations = tuple(
+            distance / standard_error
+            for distance in (value - lower, upper - value)
+            if math.isfinite(distance)
+        )
+        if separations and min(separations) <= _BOUNDARY_THRESHOLD:
+            warned.add(param_id)
+    return frozenset(warned)
 
 
 class UncertaintyConstructionError(ValueError):
@@ -1797,6 +1836,32 @@ class CovarianceEvidence:
     def usable(self) -> bool:
         return self.claim("USABLE_LOCAL_COVARIANCE") is ClaimState.SATISFIED
 
+    @property
+    def boundary_warning(self) -> bool:
+        """Whether boundary evidence cautions against symmetric interpretation."""
+        states = {item.name: item.state for item in self.claims}
+        return any(
+            states.get(name) in {ClaimState.VIOLATED, ClaimState.INDETERMINATE}
+            for name in _BOUNDARY_DIAGNOSTIC_CLAIMS
+        )
+
+    @property
+    def simple_bound_warning_ids(self) -> frozenset[str]:
+        """Controlled coordinates within the threshold of their own box bounds."""
+        standard_errors = {
+            param_id: math.sqrt(self.covariance[index][index])
+            if self.covariance[index][index] > 0.0
+            else None
+            for index, param_id in enumerate(self.controlled_ids)
+        }
+        return _simple_bound_warning_ids(
+            self.controlled_ids,
+            self.accepted_vector,
+            self.source_problem.lower_bounds,
+            self.source_problem.upper_bounds,
+            standard_errors,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class ScalarEvidenceEntry:
@@ -2821,6 +2886,15 @@ class RootAnchoredBlockCovariance:
         )
 
     @property
+    def boundary_warning(self) -> bool:
+        """Whether this block carries a boundary-interpretation caveat."""
+        states = {item.name: item.state for item in self.claims}
+        return any(
+            states.get(name) in {ClaimState.VIOLATED, ClaimState.INDETERMINATE}
+            for name in _BOUNDARY_DIAGNOSTIC_CLAIMS
+        )
+
+    @property
     def unavailable_kind(self) -> UncertaintyUnavailableKind | None:
         """Classify unavailable block evidence without rendering product text."""
         if self.scope_reportable:
@@ -2839,16 +2913,6 @@ class RootAnchoredBlockCovariance:
         states = {item.name: item.state for item in self.claims}
         if states.get("PROFILED_NORMALIZATION_REGULARITY") is ClaimState.VIOLATED:
             return UncertaintyUnavailableKind.NORMALIZATION_INVALID
-        if any(
-            states.get(name) is not ClaimState.SATISFIED
-            for name in (
-                "FULL_DIMENSIONAL_FEASIBLE_INTERIOR",
-                "INTERIOR_POINT",
-                "BOUNDARY_SEPARATION",
-                "CONTROLLED_AFFINE_SEPARATION",
-            )
-        ):
-            return UncertaintyUnavailableKind.BOUNDARY_LIMITED
         return UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE
 
 
@@ -2961,6 +3025,23 @@ class RootAnchoredBlockCovarianceEvidence:
                 for item in self.blocks
             ],
         }
+
+    @property
+    def simple_bound_warning_ids(self) -> frozenset[str]:
+        """Recovered controlled coordinates near their own root box bounds."""
+        source = self.source_bundle
+        standard_errors = {
+            entry.param_id: entry.value
+            for block in self.blocks
+            for entry in block.marginal_errors
+        }
+        return _simple_bound_warning_ids(
+            source.source_problem.controlled_ids,
+            source.accepted_anchor.vector,
+            source.source_problem.lower_bounds,
+            source.source_problem.upper_bounds,
+            standard_errors,
+        )
 
 
 def _failed_block_claims(
@@ -5065,13 +5146,6 @@ def _canonical_covariance_claims(
         ),
     )
     required = (
-        ClaimState.SATISFIED,
-        full_dimensional_interior.state,
-        interior.state,
-        boundary.state,
-        controlled_affine.state
-        if controlled_affine.state is not ClaimState.NOT_APPLICABLE
-        else ClaimState.SATISFIED,
         normalization.state,
         variance_nondegeneracy.state
         if variance_nondegeneracy.state is not ClaimState.NOT_APPLICABLE
