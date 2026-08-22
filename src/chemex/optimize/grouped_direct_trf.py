@@ -783,7 +783,7 @@ def execute_direct_trf_components(
     outcomes: list[FitComponentOutcome] = []
     stopped = token.is_cancelled
     component_total = len(decomposition.components)
-    for group_ordinal, (component, component_invocation) in enumerate(
+    for component_ordinal, (component, component_invocation) in enumerate(
         zip(
             decomposition.components,
             invocation.component_invocations,
@@ -801,7 +801,7 @@ def execute_direct_trf_components(
                     "Component evaluator projection differs from its derivation"
                 )
             context = FitProgressContext(
-                group_ordinal,
+                component_ordinal,
                 component_total,
                 component.controlled_ids,
                 grid_seed_ordinal,

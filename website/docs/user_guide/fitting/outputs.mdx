@@ -12,31 +12,46 @@ By default, fitting results are saved in the `Output/` directory. You can specif
 chemex fit -o <path> [other options]
 ```
 
-### Multi-Step Fit
+### Result Layout
 
-If the fitting method involves multiple steps, each step generates its own output subdirectory named after the fitting step.
+For a single-step fit, the scientific result is written directly under the
+output root. `run_info/` independently describes how the invocation was made.
 
 ```shell
 Output/
+├── run_info/
+├── Parameters/
+├── Data/
+├── Plots/
+├── Grid/          # when GRID is requested
+├── Statistics/
+└── statistics.toml
+```
+
+If the fitting method has multiple steps, each step has the same authoritative
+result layout in a subdirectory named after that step:
+
+```shell
+Output/
+├── run_info/
 ├── STEP1/
+│   ├── Parameters/
+│   ├── Data/
+│   ├── Plots/
+│   ├── Statistics/
+│   └── statistics.toml
 └── STEP2/
+    ├── Parameters/
+    ├── Data/
+    ├── Plots/
+    ├── Statistics/
+    └── statistics.toml
 ```
 
-### Multi-Group Fit
-
-In any fitting step, if the dataset can be divided into multiple groups (each with distinct fitting parameters), ChemEx fits each group separately. Results for each group are stored in numbered subfolders within the `Groups/` folder, with a combined summary available in the `All/` folder for convenience.
-
-For example, if all global parameters (e.g., p<sub>B</sub>, k<sub>ex</sub>) are fixed or if a residue-specific model (e.g., [`2st.rs`](kinetic_models.md)) is used, residue-specific fits are performed and organized as follows:
-
-```shell
-Output/
-└── STEP2/
-    ├── All/
-    └── Groups/
-        ├── 10_11N/
-        ├── 11_12N/
-        ├── 12_13N/
-```
+ChemEx may internally factor a fit into independent **fit components** for
+efficiency. These are execution details, not separate user fits: component
+identity can appear transiently while minimization runs, but the method-step
+directory always contains the sole authoritative aggregate result.
 
 ## Content
 
@@ -63,8 +78,10 @@ outcome.
 
 When reusing an output directory, ChemEx clears its known result locations for
 every currently planned method step before the first step starts. This includes
-`Parameters/`, `Data/`, `Plots/`, `Grid/`, `Groups/`, `All/`, `Statistics/`, and
-`statistics.toml`; `run_info/` and unknown user-created paths are not cleared.
+`Parameters/`, `Data/`, `Plots/`, `Grid/`, `Statistics/`, and `statistics.toml`.
+Obsolete `All/`, `Groups/`, and `Components/` result trees are also removed so
+stale output cannot appear current; `run_info/` and unknown user-created paths
+are not cleared.
 Partial new output can remain after a writer failure, but `outcome.toml` will not
 report that invocation as complete.
 
@@ -136,7 +153,7 @@ derived error; fitted independent-parameter errors remain available.
 </TabItem>
 </Tabs>
 
-### `Plot/`
+### `Plots/`
 
 Contains `.pdf` plots of the fitting results, along with the raw input and fitted data points. Example plots for CPMG and CEST experiments are shown below:
 
@@ -162,6 +179,13 @@ Contains data values used in the fitting process along with back-calculated valu
              0    3.47059800e+04    1.77491406e+02    3.47055362e+04
 ```
 
+### `Grid/`
+
+When a method requests `GRID`, `grid.out` records the aggregate chi-square for
+each grid seed. One- and two-dimensional aggregate views are written as
+`grid_1d.pdf` and `grid_2d.pdf` when applicable. Fit-component-local GRID files
+are execution details and are not published as separate results.
+
 ### `statistics.toml`
 
 Contains goodness-of-fit statistics, such as χ<sup>2</sup>.
@@ -182,9 +206,10 @@ uncertainty analyses requested with the `STATISTICS` method-file key.
 accepted-point identity, parameter order, Jacobian/rank/conditioning/boundary
 diagnostics, covariance-derived marginal errors, correlations, and typed
 failures. `Statistics/Constrained/evidence.json` records supported constrained
-propagation. For grouped fits, `Statistics/Covariance/blocks.json` records any
-root-anchored independent-block derivations used to isolate an unavailable
-group. If derivation is interrupted after the fit commits,
+propagation. For fits with independent fit components,
+`Statistics/Covariance/blocks.json` records any root-anchored independent-block
+derivations used to isolate unavailable component covariance. If derivation is
+interrupted after the fit commits,
 `Statistics/Covariance/status.json` records the incomplete uncertainty stage.
 
 Monte Carlo and bootstrap methods write `summary.toml`,

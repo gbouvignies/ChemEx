@@ -7,6 +7,8 @@ from unittest.mock import patch
 
 import pytest
 from rich.console import Console
+from rich.padding import Padding
+from rich.table import Table
 
 from chemex.messages import MinimizationProgressReporter, UncertaintyProgressReporter
 from chemex.optimize.progress import (
@@ -178,7 +180,15 @@ def _capturing_console(*, interactive: bool = False) -> tuple[Console, StringIO]
     )
 
 
-def test_noninteractive_reporter_renders_truthful_context_and_final_result() -> None:
+def _render_text(renderable: object) -> str:
+    output_console, stream = _capturing_console()
+    output_console.print(renderable)
+    return stream.getvalue()
+
+
+def test_noninteractive_reporter_renders_bounded_component_context_and_summary() -> (
+    None
+):
     output_console, stream = _capturing_console()
     context = FitProgressContext(2, 3, ("__R1A_A_L18CD1",))
     times = iter((0.0, 0.0, 12.4, 12.5, 12.6))
@@ -187,8 +197,7 @@ def test_noninteractive_reporter_renders_truthful_context_and_final_result() -> 
         interactive=False,
         retained_observation_count=8,
         controlled_parameter_count=2,
-        step_name="STEP2",
-        group_labels={frozenset(context.controlled_ids): "L18CD1"},
+        component_labels={frozenset(context.controlled_ids): "L18CD1"},
         clock=lambda: next(times),
     )
 
@@ -218,16 +227,93 @@ def test_noninteractive_reporter_renders_truthful_context_and_final_result() -> 
         reporter.finish(final_chi_square=12.0, terminal_status="committed")
 
     rendered = stream.getvalue()
-    assert "STEP2" in rendered
-    assert "group 2/3" in rendered
+    assert "STEP2" not in rendered
+    assert "component 2/3" in rendered
     assert "L18CD1" in rendered
     assert "eval 1/100" in rendered
     assert "best χ² 12" in rendered
     assert "red. χ² 2" in rendered
-    assert "eval 1 total" in rendered
-    assert "final χ² 12" in rendered
-    assert "committed" in rendered
+    assert "Evaluations" in rendered
+    assert "Reduced χ²" in rendered
+    assert "committed" not in rendered
+    assert "group" not in rendered.lower()
     assert "Iteration" not in rendered
+
+
+def test_interactive_reporter_updates_one_transient_component_table() -> None:
+    output_console, _stream = _capturing_console(interactive=True)
+    context = FitProgressContext(2, 3, ("__R1A_A_L18CD1",))
+    reporter = MinimizationProgressReporter(
+        output_console,
+        interactive=True,
+        retained_observation_count=8,
+        controlled_parameter_count=2,
+        component_labels={frozenset(context.controlled_ids): "L18CD1"},
+        clock=lambda: 0.0,
+    )
+    updates: list[object] = []
+
+    with patch.object(reporter, "_render", side_effect=updates.append), reporter:
+        reporter.observe(context, _event(ProgressPhase.STARTED, elapsed=0.0))
+        reporter.observe(
+            FitProgressContext(3, 3, ("__R1A_A_M19CE1",)),
+            _event(ProgressPhase.STARTED, elapsed=0.0),
+        )
+
+    assert len(updates) == 2
+    assert all(
+        isinstance(update, Padding)
+        and isinstance(update.renderable, Table)
+        and len(update.renderable.rows) == 1
+        for update in updates
+    )
+    progress = updates[0]
+    assert isinstance(progress, Padding)
+    table = progress.renderable
+    assert isinstance(table, Table)
+    assert [column.header for column in table.columns] == [
+        "Component",
+        "Evaluation",
+        "Best χ²",
+        "Reduced χ²",
+        "Time",
+    ]
+    capture_console, capture = _capturing_console()
+    capture_console.print(progress)
+    rendered = capture.getvalue()
+    assert "2/3 · L18CD1" in rendered
+    assert "0 / 100" in rendered
+    assert "STEP2" not in rendered
+    assert "group" not in rendered.lower()
+
+
+def test_interactive_one_component_table_omits_component_column() -> None:
+    output_console, _stream = _capturing_console(interactive=True)
+    reporter = MinimizationProgressReporter(
+        output_console,
+        interactive=True,
+        retained_observation_count=8,
+        controlled_parameter_count=2,
+        clock=lambda: 0.0,
+    )
+    updates: list[object] = []
+
+    with patch.object(reporter, "_render", side_effect=updates.append), reporter:
+        reporter.observe(
+            FitProgressContext(1, 1, ("__PB",)),
+            _event(ProgressPhase.STARTED, elapsed=0.0),
+        )
+
+    progress = updates[0]
+    assert isinstance(progress, Padding)
+    table = progress.renderable
+    assert isinstance(table, Table)
+    assert [column.header for column in table.columns] == [
+        "Evaluation",
+        "Best χ²",
+        "Reduced χ²",
+        "Time",
+    ]
 
 
 def test_uncertainty_reporter_separates_post_fit_elapsed_time_and_status() -> None:
@@ -242,12 +328,11 @@ def test_uncertainty_reporter_separates_post_fit_elapsed_time_and_status() -> No
     reporter.finish("covariance available")
 
     assert stream.getvalue().splitlines() == [
-        "  • Estimating parameter uncertainties...",
-        "    covariance available · 2.2 s",
+        "  • Estimating parameter uncertainties -> covariance available (2.2 s)",
     ]
 
 
-def test_noninteractive_reporter_rate_limits_group_transitions_fit_wide() -> None:
+def test_noninteractive_reporter_rate_limits_component_transitions_fit_wide() -> None:
     output_console, stream = _capturing_console()
     times = iter((0.0, 0.0, 0.1, 0.2, 0.3, 10.1, 10.2, 10.3))
     reporter = MinimizationProgressReporter(
@@ -276,10 +361,10 @@ def test_noninteractive_reporter_rate_limits_group_transitions_fit_wide() -> Non
         reporter.finish(final_chi_square=9.0, terminal_status="committed")
 
     rendered = stream.getvalue()
-    assert rendered.count("group ") == 2
-    assert "group 1/3" in rendered
-    assert "group 3/3" in rendered
-    assert "eval 3 total" in rendered
+    assert rendered.count("component ") == 2
+    assert "component 1/3" in rendered
+    assert "component 3/3" in rendered
+    assert "Evaluations" in rendered
 
 
 def test_disabled_reporter_emits_no_output() -> None:
@@ -299,6 +384,34 @@ def test_disabled_reporter_emits_no_output() -> None:
         )
         reporter.finish(final_chi_square=12.0, terminal_status="committed")
 
+    assert stream.getvalue() == ""
+
+
+def test_reporting_failure_isolated_from_scientific_execution() -> None:
+    output_console, stream = _capturing_console()
+    reporter = MinimizationProgressReporter(
+        output_console,
+        interactive=False,
+        retained_observation_count=8,
+        controlled_parameter_count=2,
+        clock=lambda: 0.0,
+    )
+
+    with (
+        patch.object(
+            reporter,
+            "_render",
+            side_effect=RuntimeError("terminal unavailable"),
+        ),
+        reporter,
+    ):
+        reporter.observe(
+            FitProgressContext(1, 1, ("__PB",)),
+            _event(ProgressPhase.STARTED, elapsed=0.0),
+        )
+        reporter.finish(final_chi_square=12.0, terminal_status="committed")
+
+    assert not reporter.is_active
     assert stream.getvalue() == ""
 
 
@@ -353,7 +466,7 @@ def test_grid_reporter_aggregates_local_attempts_instead_of_streaming_each_seed(
 
     rendered = stream.getvalue()
     assert rendered.count("GRID seed") == 1
-    assert "eval 3 total" in rendered
+    assert "Evaluations" in rendered
 
 
 def test_keyboard_interrupt_stops_live_reporting_and_prints_a_terminal_line() -> None:
@@ -403,7 +516,7 @@ def test_exception_fallback_does_not_label_a_local_best_as_final() -> None:
         raise RuntimeError("scientific failure")
 
     rendered = stream.getvalue()
-    assert "eval 1 total" in rendered
+    assert "Evaluations" in rendered
     assert "failed" in rendered
     assert "final χ²" not in rendered
 
@@ -434,7 +547,7 @@ def test_live_elapsed_time_is_fit_wide_across_local_attempts(grid: bool) -> None
         grid_seed_ordinal=2 if grid else None,
         grid_seed_total=2 if grid else None,
     )
-    rendered_updates: list[str] = []
+    rendered_updates: list[object] = []
 
     with (
         patch.object(reporter, "_render", side_effect=rendered_updates.append),
@@ -454,4 +567,4 @@ def test_live_elapsed_time_is_fit_wide_across_local_attempts(grid: bool) -> None
         )
         reporter.finish(final_chi_square=12.0, terminal_status="committed")
 
-    assert any("6.0 s" in line for line in rendered_updates)
+    assert any("6.0 s" in _render_text(item) for item in rendered_updates)

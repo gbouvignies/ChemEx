@@ -325,7 +325,7 @@ def test_each_seed_uses_exact_components_and_only_selected_aggregate_commits() -
     assert session.analysis_values.snapshot() == committed
 
 
-def test_grouped_grid_progress_includes_seed_and_group_ordinals() -> None:
+def test_grouped_grid_progress_includes_seed_and_component_ordinals() -> None:
     _session, _experiments, parameterization, engine, problem = _grouped_grid_problem()
     decomposition = FitDecomposition.from_root(problem, parameterization, engine)
     (axis_id,) = problem.controlled_ids[:1]

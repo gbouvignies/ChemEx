@@ -55,8 +55,8 @@ type ProgressObserver = Callable[[ProgressEvent], None]
 class FitProgressContext:
     """Orchestration context for one local Direct-TRF attempt."""
 
-    group_ordinal: int
-    group_total: int
+    component_ordinal: int
+    component_total: int
     controlled_ids: tuple[str, ...]
     grid_seed_ordinal: int | None = None
     grid_seed_total: int | None = None

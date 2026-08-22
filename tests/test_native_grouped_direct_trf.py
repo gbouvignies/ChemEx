@@ -437,7 +437,7 @@ def test_root_jacobian_composition_converts_each_component_matrix_once() -> None
     assert conversions == list(retained_matrices)
 
 
-def test_grouped_direct_progress_identifies_each_group_in_order() -> None:
+def test_grouped_direct_progress_identifies_each_component_in_order() -> None:
     _session, _experiments, parameterization, engine, problem = _grouped_problem()
     decomposition = FitDecomposition.from_root(problem, parameterization, engine)
     invocation = GroupedDirectTrfInvocation.for_decomposition(
@@ -460,11 +460,11 @@ def test_grouped_direct_progress_identifies_each_group_in_order() -> None:
     terminated = [
         item for item in observed if item[1].phase is ProgressPhase.TERMINATED
     ]
-    assert [context.group_ordinal for context, _event in started] == list(
+    assert [context.component_ordinal for context, _event in started] == list(
         range(1, len(decomposition.components) + 1)
     )
     assert all(
-        context.group_total == len(decomposition.components)
+        context.component_total == len(decomposition.components)
         for context, _event in started
     )
     assert [context.controlled_ids for context, _event in started] == [

@@ -59,13 +59,13 @@ The `plot_param` module in ChemEx allows you to visualize fitting results intera
 An example of using this module is available in the [protein-ligand binding example](../examples/binding.md). After running `run.sh`, display the chemical shift differences between free and bound states with:
 
 ```shell
-chemex plot_param -p Output/STEP2/All/Parameters/fitted.toml -n DW_AB
+chemex plot_param -p Output/STEP2/Parameters/fitted.toml -n DW_AB
 ```
 
 To compare the transverse relaxation rates of both states, use:
 
 ```bash
-chemex plot_param -p Output/STEP2/All/Parameters/fitted.toml -n R2
+chemex plot_param -p Output/STEP2/Parameters/fitted.toml -n R2
 ```
 
 These commands are also included in the `plot_param.sh` script in [this example](../examples/binding.md). By analyzing these parameters, the core interaction site can be identified, along with a tail at the C-terminal end displaying increased R<sub>2</sub> rates and minimal chemical shift changes. This tail may indicate transient interactions with the binding partner, causing steric restrictions in that region.
