@@ -87,7 +87,9 @@ from chemex.optimize.native_resampling import (
 )
 from chemex.optimize.native_resampling import (
     OptimizationStrategy,
+    ReplicateDisposition,
     ResamplingEvidence,
+    ResamplingLifecycle,
     ResamplingOperation,
     ResamplingPlan,
     ResamplingScheme,
@@ -108,17 +110,9 @@ from chemex.parameters.parameterization import (
     SealedParameterModel,
 )
 from chemex.parameters.spin_system import SpinSystem
-from chemex.parameters.values import AnalysisValuesSnapshot
+from chemex.parameters.values import AnalysisValues, AnalysisValuesSnapshot
 from chemex.run_info import capture_native_inputs
 from chemex.runtime import AnalysisSession, ExecutionSettings
-from tests.qualification.capture_migration_core_lifecycle import (
-    observe_two_required_steps,
-)
-from tests.test_migration_core_lifecycle import (
-    LOCKFILE_HASH,
-    SOURCE_COMMIT,
-    _live_authority,
-)
 
 ROOT = Path(__file__).parent.parent
 EXPERIMENT = ROOT / "examples/Experiments/RELAXATION_HZNZ/Experiments/800mhz.toml"
@@ -146,6 +140,16 @@ class _OptimizationInputs(TypedDict):
     method: Method
     problem: OptimizationProblem
     decomposition: FitDecomposition
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _TwoStepObservation:
+    starting_snapshot: AnalysisValuesSnapshot
+    ending_snapshot: AnalysisValuesSnapshot
+    construction_failure: DirectTrfConstructionError | None = None
+    constructor_entries: tuple[str, ...] = ()
+    executor_entries: tuple[str, ...] = ()
+    outcomes: tuple[MethodStepOutcome, ...] = ()
 
 
 def _evaluation_workflow(
@@ -279,15 +283,114 @@ def _direct_workflow(
     return session, workflow
 
 
-def test_construction_failure_stops_composed_required_downstream_step(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    observed = observe_two_required_steps(
-        no_objective=True,
-        authority=_live_authority(monkeypatch),
-        source_commit=SOURCE_COMMIT,
-        lockfile_hash=LOCKFILE_HASH,
+def _observe_two_direct_steps(*, no_objective: bool) -> _TwoStepObservation:
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    experiments = build_experiments(
+        [EXPERIMENT],
+        Selection(include=[SpinSystem.from_name("G2N-HN")], exclude=None),
+        session=session,
     )
+    session.parameters.set_defaults(read_defaults([PARAMETERS]))
+    assert session.try_build_analysis_values()
+    method = (
+        Method(fix=["R1A_A", "PB", "KEX_AB"])
+        if no_objective
+        else read_methods([METHOD])["DEFAULT"]
+    )
+    parameterization = session.compile_parameterization(method, experiments.param_ids)
+    if no_objective:
+        for experiment in experiments:
+            for profile in experiment.profiles:
+                profile.is_scaled = False
+                profile.data.mask[:] = False
+                profile.data.mark_dirty()
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    if not no_objective:
+        frame = EvaluationFrame.from_lifecycle_frame(
+            parameterization,
+            parameterization.frame_from_snapshot(session.analysis_values.snapshot()),
+        )
+        initial = engine.new_evaluator().evaluate(frame)
+        assert isinstance(initial, EvaluationResult)
+        offset = 0
+        for experiment in experiments:
+            for profile in experiment.profiles:
+                stop = offset + profile.data.size
+                profile.data.exp = np.asarray(
+                    initial.normalized_calculations[offset:stop], dtype=np.float64
+                ).copy()
+                profile.data.mark_dirty()
+                offset = stop
+        engine = EvaluationEngine.from_experiments(experiments, parameterization)
+
+    parameter_model = session.parameter_factory.sealed_parameter_model
+    configuration = session.parameter_factory.sealed_configuration
+    assert parameter_model is not None and configuration is not None
+    starting = session.analysis_values.snapshot()
+    constructors: list[str] = []
+    executors: list[str] = []
+    outcomes: list[MethodStepOutcome] = []
+
+    def compose_and_execute(
+        label: str, snapshot: AnalysisValuesSnapshot
+    ) -> MethodStepOutcome:
+        constructors.append(label)
+        current_parameterization = session.compile_parameterization(
+            method, experiments.param_ids
+        )
+        current_engine = engine.rebind_parameterization(current_parameterization)
+        problem = OptimizationProblem.from_native(
+            current_engine.plan,
+            current_parameterization,
+            configuration,
+            snapshot,
+        )
+        decomposition = FitDecomposition.from_root(
+            problem, current_parameterization, current_engine
+        )
+        workflow = MethodStepWorkflow.for_optimization(
+            starting_snapshot=snapshot,
+            parameter_model=parameter_model,
+            parameterization=current_parameterization,
+            engine=current_engine,
+            method=method,
+            problem=problem,
+            decomposition=decomposition,
+            strategy=MethodStepStrategy.DIRECT_TRF,
+            invocation=GroupedDirectTrfInvocation.for_decomposition(
+                decomposition,
+                objective_request_budgets=(80,) * len(decomposition.components),
+            ),
+        )
+        executors.append(label)
+        return execute_method_step(workflow, analysis_values=session.analysis_values)
+
+    try:
+        first = compose_and_execute("first", starting)
+        outcomes.append(first)
+        successor = require_successor_state(first, session.analysis_values)
+        outcomes.append(compose_and_execute("second", successor))
+    except DirectTrfConstructionError as failure:
+        return _TwoStepObservation(
+            starting,
+            session.analysis_values.snapshot(),
+            failure,
+            tuple(constructors),
+            tuple(executors),
+            tuple(outcomes),
+        )
+    return _TwoStepObservation(
+        starting,
+        session.analysis_values.snapshot(),
+        constructor_entries=tuple(constructors),
+        executor_entries=tuple(executors),
+        outcomes=tuple(outcomes),
+    )
+
+
+def test_construction_failure_stops_composed_required_downstream_step() -> None:
+    observed = _observe_two_direct_steps(no_objective=True)
 
     assert isinstance(observed.construction_failure, DirectTrfConstructionError)
     assert observed.constructor_entries == ("first",)
@@ -1604,6 +1707,19 @@ def test_committed_publication_retains_partial_derivation_evidence(
         outcome.publication_failure
     )
     assert outcome.derivations[0].disposition is DerivationDisposition.CANCELLED
+    operation = outcome.derivations[0].operation
+    assert isinstance(operation, ResamplingOperation)
+    assert operation.terminal is ResamplingOperationTerminal.CANCELLED
+    assert operation.unstarted_ordinals == (0, 1)
+    assert operation.evidence is not None
+    assert operation.evidence.lifecycle is ResamplingLifecycle.CANCELLED
+    assert operation.evidence.completed_count == 0
+    assert operation.evidence.successful_count == 0
+    assert operation.evidence.failed_count == 0
+    assert tuple(item.disposition for item in operation.evidence.outcomes) == (
+        ReplicateDisposition.NOT_STARTED,
+        ReplicateDisposition.NOT_STARTED,
+    )
     assert outcome.publication is not None
     assert (
         output / "PartialEvidence" / "Resampling" / "MC" / "evidence.json"
@@ -1866,6 +1982,11 @@ def test_failed_primary_publishes_diagnostics_only(tmp_path: Path) -> None:
         )
 
     assert outcome.lifecycle is MethodStepLifecycle.FAILED
+    assert outcome.primary_terminal == "execution_failure"
+    assert isinstance(outcome.primary_execution, GroupedDirectTrfOutcome)
+    assert tuple(
+        item.disposition.value for item in outcome.primary_execution.components
+    ) == ("not_started",)
     assert outcome.publication is not None, outcome.publication_failure
     assert (output / "Diagnostics" / "outcome.json").is_file()
     assert not (output / "Parameters").exists()
@@ -1947,15 +2068,47 @@ def test_aggregate_materialization_failure_never_accepts_or_commits() -> None:
     assert outcome.commit_operation is None
 
 
-def test_two_steps_compile_second_from_exact_committed_successor(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    observed = observe_two_required_steps(
-        no_objective=False,
-        authority=_live_authority(monkeypatch),
-        source_commit=SOURCE_COMMIT,
-        lockfile_hash=LOCKFILE_HASH,
-    )
+def test_incompatible_commit_failure_is_typed_and_does_not_commit() -> None:
+    session, workflow = _direct_workflow()
+    configuration = session.parameter_factory.sealed_configuration
+    assert configuration is not None
+    foreign = AnalysisValues()
+    foreign.initialize(workflow.starting_snapshot.model_identity, configuration)
+    real_execute_fit_commit = method_step_module.execute_fit_commit
+
+    def reject_commit(
+        accepted: AcceptedFitResult,
+        authority: object,
+        *,
+        problem: OptimizationProblem,
+        **other: object,
+    ) -> FitCommitOperation:
+        return real_execute_fit_commit(
+            accepted,
+            authority,
+            problem=problem,
+            parameterization=other["parameterization"],
+            analysis_values=foreign,
+        )
+
+    with patch(
+        "chemex.optimize.method_step.execute_fit_commit", side_effect=reject_commit
+    ):
+        outcome = execute_method_step(
+            workflow,
+            analysis_values=session.analysis_values,
+        )
+
+    assert outcome.lifecycle is MethodStepLifecycle.ACCEPTED_UNCOMMITTED
+    assert outcome.commit_operation is not None
+    assert outcome.commit_operation.terminal.value == "failed"
+    assert outcome.commit_operation.failure is not None
+    assert outcome.commit_operation.failure.category.value == "incompatible_state"
+    assert session.analysis_values.snapshot().revision == 0
+
+
+def test_two_steps_compile_second_from_exact_committed_successor() -> None:
+    observed = _observe_two_direct_steps(no_objective=False)
     first_outcome, second_outcome = observed.outcomes
 
     assert observed.constructor_entries == ("first", "second")

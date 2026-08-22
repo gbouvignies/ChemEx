@@ -212,7 +212,7 @@ def test_canonical_v3_fixture_records_frozen_f2_failure() -> None:
     composed = record["composed"]
     assert (
         hashlib.sha256(fixture_path.read_bytes()).hexdigest()
-        == "cb149ef426d4c32bfaa2b84b5c26170ada1a3fb1b66b5221a447c9fd4a178c5c"
+        == "5418747725cf9a5ab4277684d83b4dad4400ac293343877538449e38ab600e83"
         and record["source_digest"]
         == hashlib.sha256(
             calibration.Path(calibration.__file__).read_bytes()

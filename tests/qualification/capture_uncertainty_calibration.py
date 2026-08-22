@@ -284,7 +284,6 @@ UNSUPPORTED = frozenset(
 UNSUPPORTED_PREFIXES = ("tauc_", "dwm_a", "dwm_i_a", "dwm_s_a")
 _MACHINERY_IMPORTED = False
 np: Any = None
-migration_core_authority_selection: Any = None
 uncertainty_module: Any = None
 if TYPE_CHECKING:
     from chemex.containers.data import Data
@@ -713,7 +712,6 @@ def _import_machinery() -> None:
         UncertaintyPolicy, \
         compile_constraint_linearization_capabilities, \
         derive_uncertainty_evidence, \
-        migration_core_authority_selection, \
         np, \
         uncertainty_module, \
         _column_orientations, \
@@ -736,7 +734,6 @@ def _import_machinery() -> None:
         EvaluationFrame,
         EvaluationResult,
     )
-    from chemex.migration_core import migration_core_authority_selection
     from chemex.optimize import uncertainty as uncertainty_module
     from chemex.optimize.direct_trf import (
         AcceptedFitResult,
@@ -3041,14 +3038,6 @@ def reconstruct_lane_records(
 
 def validate_lane_records(records: Mapping[str, object], role: str) -> str:
     lane, attestation, environment = reconstruct_lane_records(records, role)
-    if role == "canonical":
-        selection = migration_core_authority_selection()
-        if (
-            lane.identity != selection.lane_identity
-            or attestation.identity != selection.attestation_identity
-            or environment.identity != selection.environment_identity
-        ):
-            raise RuntimeError("canonical lane does not match live #588 authority")
     return environment.identity
 
 

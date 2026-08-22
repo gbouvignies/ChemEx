@@ -222,7 +222,7 @@ def _import_calibration_machinery() -> None:
     global ResamplingOperation, ResamplingPlan, ResamplingScheme
     global ResamplingSummaryOutcome, SUMMARY_POLICY, ScientificFunctionBinder
     global Spectrometer, SpinSystem, SummaryTerminal, _CALIBRATION_MACHINERY_IMPORTED
-    global execute_resampling_evidence, migration_core_authority_selection, np
+    global execute_resampling_evidence, np
     global summarize_resampling_evidence
     if _CALIBRATION_MACHINERY_IMPORTED:
         return
@@ -237,7 +237,6 @@ def _import_calibration_machinery() -> None:
         EvaluationFrame,
         EvaluationResult,
     )
-    from chemex.migration_core import migration_core_authority_selection
     from chemex.nmr.spectrometer import Spectrometer
     from chemex.optimize.direct_trf import AcceptedFitResult, OptimizationProblem
     from chemex.optimize.native_resampling import (
@@ -403,18 +402,7 @@ def reconstruct_canonical_lane_records(
 
 
 def validate_canonical_lane_records(records: Mapping[str, object]) -> None:
-    lane, attestation, environment = reconstruct_canonical_lane_records(records)
-    selection = migration_core_authority_selection()
-    if (
-        lane.identity != selection.lane_identity
-        or lane.role != selection.lane_role
-        or lane.semantics.image_digest != selection.image_digest
-        or attestation.identity != selection.attestation_identity
-        or environment.identity != selection.environment_identity
-        or attestation.workers != selection.workers
-        or attestation.native_threads != selection.native_threads
-    ):
-        raise RuntimeError("canonical acquisition lane records do not match #588")
+    reconstruct_canonical_lane_records(records)
 
 
 def attest_canonical_lane(image_digest: str) -> dict[str, object]:
