@@ -27,12 +27,9 @@ from chemex.optimize.direct_trf import (
     OptimizationProblem,
 )
 from chemex.optimize.native_mcmc import (
-    CalibratedMcmcPolicy,
-    CalibrationCandidateMcmcPolicy,
     EnsembleState,
     ExpertMcmcPolicy,
     InitializationKind,
-    McmcCalibrationReference,
     McmcConstructionError,
     McmcDiagnosticReason,
     McmcDiagnosticStatus,
@@ -43,7 +40,6 @@ from chemex.optimize.native_mcmc import (
     McmcOperationTerminal,
     McmcPlan,
     McmcPolicyKind,
-    McmcTrajectoryClaim,
     PosteriorSampleDisposition,
     ProposalKind,
     ResolvedMcmcPolicy,
@@ -282,69 +278,6 @@ def test_seeded_native_mcmc_workers_execute_in_parallel_without_changing_chain(
     assert parallel.evidence.states == serial.evidence.states
 
 
-def test_arbitrary_settings_cannot_mint_calibrated_authority() -> None:
-    with pytest.raises(McmcConstructionError, match="repository-frozen calibration"):
-        ResolvedMcmcPolicy(
-            kind=McmcPolicyKind.CALIBRATED,
-            policy_version="caller-labelled-calibrated",
-            dimension=2,
-            walkers=12,
-            burn_steps=20,
-            retained_steps=40,
-            root_seed=1234,
-            provenance_identity="caller-labelled-settings",
-            qualification_dimension_range=(1, 3),
-        )
-
-
-def test_foreign_calibration_reference_cannot_authorize_policy() -> None:
-    reference = McmcCalibrationReference(
-        calibration_identity="future-calibration-release",
-        baseline_release_identity="future-baseline-release",
-        numerical_lane_requirement="canonical-python-3.13-x86-64",
-        policy_version="bounded-analytic-v1",
-        minimum_dimension=1,
-        maximum_dimension=3,
-        walkers=12,
-        burn_steps=20,
-        retained_steps=40,
-    )
-    policy = CalibratedMcmcPolicy(reference, authority=object())
-
-    with pytest.raises(McmcConstructionError, match="calibration reference"):
-        policy.resolve(dimension=2, root_seed=0x1234_5678_90AB_CDEF)
-
-
-def test_provisional_calibration_candidate_is_explicitly_unqualified() -> None:
-    policy = CalibrationCandidateMcmcPolicy(
-        candidate_identity="candidate-bounded-analytic-v1",
-        minimum_dimension=1,
-        maximum_dimension=3,
-        walkers=12,
-        burn_steps=20,
-        retained_steps=40,
-    )
-
-    resolved = policy.resolve(dimension=2, root_seed=1234)
-
-    assert resolved.kind is McmcPolicyKind.CALIBRATION_CANDIDATE
-    assert not resolved.has_calibrated_adequacy
-    assert resolved.qualification_dimension_range == (1, 3)
-    assert resolved.dimension == 2
-    assert resolved.walkers == 12
-    assert resolved.burn_steps == 20
-    assert resolved.retained_steps == 40
-    assert resolved.total_steps == 60
-    assert resolved.thin == 1
-    assert resolved.initialization is InitializationKind.BOUNDED_LATIN_HYPERCUBE
-    assert resolved.proposal is ProposalKind.STRETCH
-    assert resolved.proposal_scale == 2.0
-    assert resolved.objective_request_budget == 12 * 61
-    assert resolved.root_seed == 1234
-    assert resolved.initialization_seed != resolved.sampler_seed
-    assert resolved.identity
-
-
 def test_expert_policy_only_overrides_predeclared_topology() -> None:
     policy = ExpertMcmcPolicy(
         burn_steps=7,
@@ -358,8 +291,6 @@ def test_expert_policy_only_overrides_predeclared_topology() -> None:
     assert resolved.kind is McmcPolicyKind.EXPERT
     assert resolved.policy_version == "expert-v1"
     assert resolved.provenance_identity == "user-declared-expert-settings"
-    assert not resolved.has_calibrated_adequacy
-    assert resolved.qualification_dimension_range is None
     assert resolved.burn_steps == 7
     assert resolved.retained_steps == 13
     assert resolved.walkers == 8
@@ -367,20 +298,6 @@ def test_expert_policy_only_overrides_predeclared_topology() -> None:
     assert resolved.proposal is ProposalKind.STRETCH
     assert resolved.thin == 1
     assert resolved.objective_request_budget == 8 * 21
-
-
-def test_calibration_candidate_fails_closed_outside_its_declared_stratum() -> None:
-    policy = CalibrationCandidateMcmcPolicy(
-        candidate_identity="bounded-analytic-candidate-v1",
-        minimum_dimension=1,
-        maximum_dimension=2,
-        walkers=8,
-        burn_steps=10,
-        retained_steps=20,
-    )
-
-    with pytest.raises(McmcConstructionError, match="does not cover"):
-        policy.resolve(dimension=3, root_seed=1)
 
 
 def test_initial_ensemble_is_a_seeded_bounded_latin_hypercube() -> None:
@@ -668,13 +585,9 @@ def test_complete_chain_is_primary_and_flat_samples_are_derived_views() -> None:
         rtol=0.0,
         atol=1.0e-14,
     )
-    # A local seeded replay is ordinary capture evidence only. It is not a
-    # canonical trajectory claim without the #588 live-lane authority and an
-    # independently frozen reference.
+    # A local seeded replay is ordinary deterministic evidence, not an
+    # independently frozen product reference.
     assert replay.evidence.states == evidence.states
-    assert evidence.trajectory_claim is McmcTrajectoryClaim.ORDINARY_CAPTURE
-    assert not evidence.canonical_lane_qualified
-
     retained = derive_retained_sample_view(evidence)
     assert retained.source_evidence_identity == evidence.identity
     assert retained.coordinate_ids == plan.coordinate_ids

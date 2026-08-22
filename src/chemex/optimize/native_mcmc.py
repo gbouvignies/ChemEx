@@ -1,9 +1,4 @@
-"""Native fixed-topology MCMC execution and evidence from #600.
-
-Qualification policy and evidence types remain isolated from the public method
-surface. The production adapter consumes the accepted-fit execution evidence
-without exposing calibrated or expert product modes or mutating fit state.
-"""
+"""Native fixed-topology MCMC execution and evidence from #600."""
 
 from __future__ import annotations
 
@@ -59,10 +54,8 @@ class McmcConstructionError(ValueError):
 
 
 class McmcPolicyKind(StrEnum):
-    """Closed prospective native MCMC policy modes."""
+    """Supported native MCMC policy modes."""
 
-    CALIBRATED = "calibrated"
-    CALIBRATION_CANDIDATE = "calibration_candidate"
     EXPERT = "expert"
     PRODUCT = "product"
 
@@ -147,12 +140,6 @@ class BackendTransitionEvidenceKind(StrEnum):
     OBSERVED_EXECUTION = "observed_execution"
     HISTORICAL_OBSERVATION = "historical_observation"
     HYPOTHETICAL = "hypothetical"
-
-
-class McmcTrajectoryClaim(StrEnum):
-    """Authority level of deterministic trajectory observations."""
-
-    ORDINARY_CAPTURE = "ordinary_capture"
 
 
 class McmcExecutionError(RuntimeError):
@@ -584,7 +571,6 @@ class ResolvedMcmcPolicy:
     retained_steps: int
     root_seed: int
     provenance_identity: str
-    qualification_dimension_range: tuple[int, int] | None = None
     proposal_scale: float = 2.0
     thin: int = 1
     initialization: InitializationKind = InitializationKind.BOUNDED_LATIN_HYPERCUBE
@@ -598,7 +584,6 @@ class ResolvedMcmcPolicy:
     objective_request_budget: int = field(init=False)
     initialization_seed: int = field(init=False)
     sampler_seed: int = field(init=False)
-    has_calibrated_adequacy: bool = field(init=False)
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -610,32 +595,10 @@ class ResolvedMcmcPolicy:
             name="MCMC retained extent",
         )
         root_seed = _unsigned_seed(self.root_seed, name="MCMC root seed")
-        qualification_range = self.qualification_dimension_range
-        if qualification_range is not None and (
-            len(qualification_range) != 2
-            or isinstance(qualification_range[0], bool)
-            or isinstance(qualification_range[1], bool)
-            or not all(isinstance(value, int) for value in qualification_range)
-            or qualification_range[0] < 1
-            or qualification_range[0] > qualification_range[1]
-            or not qualification_range[0] <= dimension <= qualification_range[1]
-        ):
-            raise McmcConstructionError("MCMC qualification dimension range is invalid")
-        if self.kind is McmcPolicyKind.CALIBRATED and qualification_range is None:
-            raise McmcConstructionError(
-                "Calibrated MCMC policy requires an explicit qualification stratum"
-            )
-        if self.kind is McmcPolicyKind.CALIBRATED:
-            raise McmcConstructionError(
-                "No repository-frozen calibration reference is available for "
-                "native MCMC"
-            )
-        if self.kind in {McmcPolicyKind.EXPERT, McmcPolicyKind.PRODUCT} and (
-            qualification_range is not None
-        ):
-            raise McmcConstructionError(
-                "Non-calibrated MCMC policy cannot inherit calibrated qualification"
-            )
+        # Preserve the historical empty slot in the identity namespace so that
+        # ordinary product/expert MCMC identities remain stable after removing
+        # the unsupported calibration modes.
+        qualification_range = None
         proposal_scale = _finite_positive(
             self.proposal_scale,
             name="MCMC proposal scale",
@@ -727,138 +690,7 @@ class ResolvedMcmcPolicy:
         )
         object.__setattr__(self, "initialization_seed", initialization_seed)
         object.__setattr__(self, "sampler_seed", sampler_seed)
-        object.__setattr__(
-            self,
-            "has_calibrated_adequacy",
-            self.kind is McmcPolicyKind.CALIBRATED,
-        )
         object.__setattr__(self, "identity", identity)
-
-
-@dataclass(frozen=True, slots=True)
-class McmcCalibrationReference:
-    """Future #604 content reference; it carries no authority by itself."""
-
-    calibration_identity: str
-    baseline_release_identity: str
-    numerical_lane_requirement: str
-    policy_version: str
-    minimum_dimension: int
-    maximum_dimension: int
-    walkers: int
-    burn_steps: int
-    retained_steps: int
-    proposal_scale: float = 2.0
-    identity: str = field(init=False)
-
-    def __post_init__(self) -> None:
-        minimum = _positive_integer(
-            self.minimum_dimension,
-            name="calibration-reference minimum dimension",
-        )
-        maximum = _positive_integer(
-            self.maximum_dimension,
-            name="calibration-reference maximum dimension",
-        )
-        if minimum > maximum:
-            raise McmcConstructionError(
-                "MCMC calibration reference has an inverted dimension stratum"
-            )
-        for value, name in (
-            (self.calibration_identity, "MCMC calibration identity"),
-            (self.baseline_release_identity, "MCMC baseline release identity"),
-            (self.numerical_lane_requirement, "MCMC numerical lane requirement"),
-            (self.policy_version, "MCMC calibrated policy version"),
-        ):
-            _nonempty(value, name=name)
-        object.__setattr__(
-            self,
-            "identity",
-            _identity(
-                "native-mcmc-calibration-reference",
-                (
-                    self.calibration_identity,
-                    self.baseline_release_identity,
-                    self.numerical_lane_requirement,
-                    self.policy_version,
-                    minimum,
-                    maximum,
-                    self.walkers,
-                    self.burn_steps,
-                    self.retained_steps,
-                    float(self.proposal_scale).hex(),
-                ),
-            ),
-        )
-
-
-def _repository_frozen_calibration_matches(
-    reference: McmcCalibrationReference,
-    authority: object,
-) -> bool:
-    """#604 will bind exact frozen references; none exist at #600."""
-    _ = reference, authority
-    return False
-
-
-@dataclass(frozen=True, slots=True)
-class CalibratedMcmcPolicy:
-    """Future exact-reference path, deliberately unavailable before #604."""
-
-    reference: McmcCalibrationReference
-    authority: object = field(repr=False, compare=False)
-
-    def resolve(self, *, dimension: int, root_seed: int) -> ResolvedMcmcPolicy:
-        if not _repository_frozen_calibration_matches(
-            self.reference,
-            self.authority,
-        ):
-            raise McmcConstructionError(
-                "MCMC calibration reference has no exact repository-frozen authority"
-            )
-        raise AssertionError("#604 must implement calibrated MCMC policy resolution")
-
-
-@dataclass(frozen=True, slots=True)
-class CalibrationCandidateMcmcPolicy:
-    """Executable prospective shape without calibrated adequacy authority."""
-
-    candidate_identity: str
-    minimum_dimension: int
-    maximum_dimension: int
-    walkers: int
-    burn_steps: int
-    retained_steps: int
-    proposal_scale: float = 2.0
-
-    def resolve(self, *, dimension: int, root_seed: int) -> ResolvedMcmcPolicy:
-        minimum = _positive_integer(
-            self.minimum_dimension,
-            name="candidate minimum dimension",
-        )
-        maximum = _positive_integer(
-            self.maximum_dimension,
-            name="candidate maximum dimension",
-        )
-        if minimum > maximum or not minimum <= dimension <= maximum:
-            raise McmcConstructionError(
-                "MCMC calibration candidate does not cover the requested dimension"
-            )
-        return ResolvedMcmcPolicy(
-            kind=McmcPolicyKind.CALIBRATION_CANDIDATE,
-            policy_version=_nonempty(
-                self.candidate_identity,
-                name="MCMC calibration candidate identity",
-            ),
-            dimension=dimension,
-            walkers=self.walkers,
-            burn_steps=self.burn_steps,
-            retained_steps=self.retained_steps,
-            root_seed=root_seed,
-            provenance_identity=self.candidate_identity,
-            qualification_dimension_range=(minimum, maximum),
-            proposal_scale=self.proposal_scale,
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1999,8 +1831,6 @@ class McmcEvidence:
     coordinate_ids: tuple[str, ...] = field(init=False)
     coordinate_units: tuple[tuple[str, ParameterUnit], ...] = field(init=False)
     completed_transition_count: int = field(init=False)
-    trajectory_claim: McmcTrajectoryClaim = field(init=False)
-    canonical_lane_qualified: bool = field(init=False)
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:  # noqa: C901 - complete evidence invariant
@@ -2079,12 +1909,6 @@ class McmcEvidence:
         object.__setattr__(self, "coordinate_ids", self.plan.coordinate_ids)
         object.__setattr__(self, "coordinate_units", self.plan.coordinate_units)
         object.__setattr__(self, "completed_transition_count", completed)
-        object.__setattr__(
-            self,
-            "trajectory_claim",
-            McmcTrajectoryClaim.ORDINARY_CAPTURE,
-        )
-        object.__setattr__(self, "canonical_lane_qualified", False)
         object.__setattr__(self, "identity", identity)
         if not _bind_mcmc_evidence_witness(
             self._occurrence_witness,

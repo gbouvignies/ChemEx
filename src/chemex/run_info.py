@@ -1171,7 +1171,6 @@ def read_native_run_information(  # noqa: C901 - closed durable schema
             "seeds",
             "execution",
             "environment",
-            "baseline_references",
             "published_step_identity",
             "publication_occurrence_identity",
             "independent_ids",

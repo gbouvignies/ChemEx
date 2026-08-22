@@ -52,7 +52,6 @@ type ArtifactRole = Literal[
     "partial_evidence",
     "product_output",
 ]
-_BASELINE_REFERENCE_KEY = object()
 _WORKFLOW_PROVENANCE_KEY = object()
 _PUBLISHED_STEP_KEY = object()
 
@@ -131,7 +130,6 @@ def validate_native_step_manifest_bytes(  # noqa: C901 - closed durable schema
         "policies",
         "budgets",
         "seeds",
-        "baseline_references",
         "components",
         "evidence",
         "artifacts",
@@ -157,7 +155,6 @@ def validate_native_step_manifest_bytes(  # noqa: C901 - closed durable schema
         "policies",
         "budgets",
         "seeds",
-        "baseline_references",
         "components",
         "evidence",
     }
@@ -506,117 +503,6 @@ class SeedRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class BaselineReference:
-    """Reference to baseline provenance without transferring its authority."""
-
-    _construction_key: object = field(repr=False, compare=False)
-    kind: Literal["occurrence", "bundle", "manifest"]
-    identity: str
-    occurrence_identity: str
-    result_bundle_identity: str
-
-    def __post_init__(self) -> None:
-        if self._construction_key is not _BASELINE_REFERENCE_KEY:
-            raise NativeProvenanceError(
-                "Baseline references must come from validated baseline records"
-            )
-        if self.kind not in ("occurrence", "bundle", "manifest"):
-            raise NativeProvenanceError("Unsupported baseline reference kind")
-        object.__setattr__(
-            self,
-            "identity",
-            _require_text(self.identity, "baseline reference identity"),
-        )
-        object.__setattr__(
-            self,
-            "occurrence_identity",
-            _require_text(self.occurrence_identity, "baseline occurrence identity"),
-        )
-        object.__setattr__(
-            self,
-            "result_bundle_identity",
-            _require_text(
-                self.result_bundle_identity, "baseline result bundle identity"
-            ),
-        )
-        for value in (
-            self.identity,
-            self.occurrence_identity,
-            self.result_bundle_identity,
-        ):
-            if len(value) != 64 or any(
-                character not in "0123456789abcdef" for character in value
-            ):
-                raise NativeProvenanceError(
-                    "Baseline provenance identities must be SHA-256 values"
-                )
-
-    @classmethod
-    def from_occurrence(cls, occurrence: object) -> BaselineReference:
-        """Reference an occurrence only after canonical record revalidation."""
-        from chemex.baselines import Occurrence
-
-        if not isinstance(occurrence, Occurrence):
-            raise TypeError("Baseline occurrence reference requires Occurrence")
-        canonical = Occurrence.from_record(occurrence.to_record())
-        if (
-            canonical.lifecycle != "SUCCEEDED"
-            or canonical.result_bundle_identity is None
-        ):
-            raise NativeProvenanceError(
-                "Baseline provenance requires a successful occurrence"
-            )
-        requested_identity = Occurrence(
-            canonical.execution_specification_identity,
-            canonical.case_identity,
-            canonical.actual_implementation_identity,
-            canonical.lane_reference,
-            canonical.lane_attestation_identity,
-            canonical.input_member_identities,
-            canonical.attempt_token,
-        ).identity
-        return cls(
-            _BASELINE_REFERENCE_KEY,
-            "occurrence",
-            canonical.identity,
-            requested_identity,
-            canonical.result_bundle_identity,
-        )
-
-    @classmethod
-    def from_result_bundle(cls, bundle: object) -> BaselineReference:
-        """Reference a result bundle only after canonical record revalidation."""
-        from chemex.baselines import ResultBundle
-
-        if not isinstance(bundle, ResultBundle):
-            raise TypeError("Baseline bundle reference requires ResultBundle")
-        canonical = ResultBundle.from_record(bundle.to_record())
-        return cls(
-            _BASELINE_REFERENCE_KEY,
-            "bundle",
-            canonical.identity,
-            canonical.occurrence_identity,
-            canonical.identity,
-        )
-
-    @classmethod
-    def from_result_manifest(cls, bundle: object) -> BaselineReference:
-        """Reference a result manifest only after canonical bundle revalidation."""
-        from chemex.baselines import ResultBundle
-
-        if not isinstance(bundle, ResultBundle):
-            raise TypeError("Baseline manifest reference requires ResultBundle")
-        canonical = ResultBundle.from_record(bundle.to_record())
-        return cls(
-            _BASELINE_REFERENCE_KEY,
-            "manifest",
-            canonical.manifest_identity,
-            canonical.occurrence_identity,
-            canonical.identity,
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class ProvenanceEnvironment:
     """Resolved software and numerical-library environment."""
 
@@ -728,7 +614,6 @@ class WorkflowProvenance:
     seeds: tuple[SeedRecord, ...]
     execution: ExecutionSettings
     environment: ProvenanceEnvironment
-    baseline_references: tuple[BaselineReference, ...] = ()
     workflow_identity: str = field(init=False)
     method_identity: str = field(init=False)
     execution_identity: str = field(init=False)
@@ -769,43 +654,6 @@ class WorkflowProvenance:
             record_names = tuple(item.name for item in records)
             if len(set(record_names)) != len(record_names):
                 raise NativeProvenanceError(f"{name.title()} names must be unique")
-        baseline_keys = tuple(
-            (
-                item.kind,
-                item.identity,
-                item.occurrence_identity,
-                item.result_bundle_identity,
-            )
-            for item in self.baseline_references
-        )
-        if (
-            not {"occurrence", "bundle"}
-            <= {item.kind for item in self.baseline_references}
-            or len(self.baseline_references) not in {2, 3}
-            or (
-                len(self.baseline_references) == 3
-                and {item.kind for item in self.baseline_references}
-                != {"occurrence", "bundle", "manifest"}
-            )
-            or len({item.occurrence_identity for item in self.baseline_references}) != 1
-            or len({item.result_bundle_identity for item in self.baseline_references})
-            != 1
-            or next(
-                item.identity
-                for item in self.baseline_references
-                if item.kind == "occurrence"
-            )
-            != self.baseline_references[0].occurrence_identity
-            or next(
-                item.identity
-                for item in self.baseline_references
-                if item.kind == "bundle"
-            )
-            != self.baseline_references[0].result_bundle_identity
-        ):
-            raise NativeProvenanceError(
-                "Baseline provenance requires one linked occurrence/bundle pair"
-            )
         method_identity = _identity(
             "normalized-method-v2",
             self.normalized_method_sha256,
@@ -842,35 +690,29 @@ class WorkflowProvenance:
         object.__setattr__(self, "method_identity", method_identity)
         object.__setattr__(self, "workflow_identity", workflow_identity)
         object.__setattr__(self, "execution_identity", execution_identity)
+        identity_record: dict[str, object] = {
+            "workflow_identity": self.workflow_identity,
+            "execution_identity": self.execution_identity,
+            "method_identity": self.method_identity,
+            "normalized_method_sha256": self.normalized_method_sha256,
+            "parameterization_identity": self.parameterization_identity,
+            "evaluation_plan_identity": self.evaluation_plan_identity,
+            "selection": self.selection.to_record(),
+            "policies": [(item.name, item.identity) for item in self.policies],
+            "budgets": [(item.name, item.limit, item.used) for item in self.budgets],
+            "seeds": [
+                (item.name, item.value, item.policy_identity) for item in self.seeds
+            ],
+            "execution": (
+                self.execution.workers,
+                self.execution.native_threads,
+            ),
+            "environment_identity": self.environment.identity,
+        }
         object.__setattr__(
             self,
             "identity",
-            _identity(
-                "native-workflow-provenance",
-                {
-                    "workflow_identity": self.workflow_identity,
-                    "execution_identity": self.execution_identity,
-                    "method_identity": self.method_identity,
-                    "normalized_method_sha256": self.normalized_method_sha256,
-                    "parameterization_identity": self.parameterization_identity,
-                    "evaluation_plan_identity": self.evaluation_plan_identity,
-                    "selection": self.selection.to_record(),
-                    "policies": [(item.name, item.identity) for item in self.policies],
-                    "budgets": [
-                        (item.name, item.limit, item.used) for item in self.budgets
-                    ],
-                    "seeds": [
-                        (item.name, item.value, item.policy_identity)
-                        for item in self.seeds
-                    ],
-                    "execution": (
-                        self.execution.workers,
-                        self.execution.native_threads,
-                    ),
-                    "environment_identity": self.environment.identity,
-                    "baseline_references": baseline_keys,
-                },
-            ),
+            _identity("native-workflow-provenance", identity_record),
         )
 
     @classmethod
@@ -886,7 +728,6 @@ class WorkflowProvenance:
         budgets: tuple[BudgetRecord, ...],
         seeds: tuple[SeedRecord, ...],
         environment: ProvenanceEnvironment,
-        baseline_references: tuple[BaselineReference, ...],
     ) -> WorkflowProvenance:
         """Derive canonical method, selection, and workflow from executed inputs."""
         if (
@@ -921,7 +762,6 @@ class WorkflowProvenance:
             seeds,
             execution_settings,
             environment,
-            baseline_references,
         )
 
     @classmethod
@@ -938,7 +778,6 @@ class WorkflowProvenance:
         seeds: tuple[SeedRecord, ...],
         execution: ExecutionSettings,
         environment: ProvenanceEnvironment,
-        baseline_references: tuple[BaselineReference, ...],
     ) -> WorkflowProvenance:
         """Capture one already-compiled closed method-step composition."""
         if (
@@ -966,7 +805,6 @@ class WorkflowProvenance:
             seeds,
             execution,
             environment,
-            baseline_references,
         )
 
     def validate_method_step_context(
@@ -1137,15 +975,6 @@ class WorkflowProvenance:
             for name, fields in (
                 ("policies", {"name", "identity"}),
                 ("seeds", {"name", "value", "policy_identity"}),
-                (
-                    "baseline_references",
-                    {
-                        "kind",
-                        "identity",
-                        "occurrence_identity",
-                        "result_bundle_identity",
-                    },
-                ),
             ):
                 children = manifest.get(name, [])
                 if not isinstance(children, list) or any(
@@ -1171,9 +1000,6 @@ class WorkflowProvenance:
             policy_records = cast(list[dict[str, object]], manifest.get("policies", []))
             budget_records = cast(list[dict[str, object]], manifest.get("budgets", []))
             seed_records = cast(list[dict[str, object]], manifest.get("seeds", []))
-            baseline_records = cast(
-                list[dict[str, object]], manifest.get("baseline_references", [])
-            )
             provenance = cls(
                 _WORKFLOW_PROVENANCE_KEY,
                 str(method["normalized"]),
@@ -1237,19 +1063,6 @@ class WorkflowProvenance:
                         for item in library_records
                     ),
                 ),
-                tuple(
-                    BaselineReference(
-                        _BASELINE_REFERENCE_KEY,
-                        cast(
-                            Literal["occurrence", "bundle", "manifest"],
-                            str(item["kind"]),
-                        ),
-                        str(item["identity"]),
-                        str(item["occurrence_identity"]),
-                        str(item["result_bundle_identity"]),
-                    )
-                    for item in baseline_records
-                ),
             )
         except (KeyError, TypeError, ValueError) as error:
             raise NativeProvenanceError(
@@ -1305,15 +1118,6 @@ class WorkflowProvenance:
                 "native_threads": self.execution.native_threads,
             },
             "environment": self.environment.to_record(),
-            "baseline_references": [
-                {
-                    "kind": item.kind,
-                    "identity": item.identity,
-                    "occurrence_identity": item.occurrence_identity,
-                    "result_bundle_identity": item.result_bundle_identity,
-                }
-                for item in self.baseline_references
-            ],
         }
 
 

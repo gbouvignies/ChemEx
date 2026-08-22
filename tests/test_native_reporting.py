@@ -20,12 +20,6 @@ import numpy as np
 import pytest
 
 import chemex.run_info as run_info_module
-from chemex.baselines import (
-    LegacyObservationImplementation,
-    Occurrence,
-    ResultBundle,
-    ResultMember,
-)
 from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
 from chemex.evaluation.native import (
@@ -37,7 +31,6 @@ from chemex.evaluation.native import (
 from chemex.experiments.builder import build_experiments
 from chemex.native_provenance import (
     ArtifactReference,
-    BaselineReference,
     BudgetRecord,
     PolicyRecord,
     ProvenanceEnvironment,
@@ -176,22 +169,6 @@ def _workflow_provenance(
     assert (execution is not None) != (evaluation_result is not None)
     native_execution = execution if execution is not None else evaluation_result
     assert native_execution is not None
-    requested = Occurrence(
-        "a" * 64,
-        "b" * 64,
-        "c" * 64,
-        "unqualified-local-lane-v1",
-        None,
-        ("d" * 64,),
-        "issue-609-baseline-attempt",
-    )
-    bundle = ResultBundle.create(
-        requested.identity,
-        requested.execution_specification_identity,
-        LegacyObservationImplementation(),
-        (ResultMember("result", "e" * 64, 1),),
-    )
-    occurrence = requested.succeeded(bundle)
     policies: list[PolicyRecord] = []
     budgets: list[BudgetRecord] = []
     seeds: list[SeedRecord] = []
@@ -269,10 +246,6 @@ def _workflow_provenance(
             scipy_version="1.17.0",
             emcee_version="3.1.6",
             numerical_libraries=(("blas", "accelerate", "unknown"),),
-        ),
-        baseline_references=(
-            BaselineReference.from_occurrence(occurrence),
-            BaselineReference.from_result_bundle(bundle),
         ),
     )
 
@@ -863,28 +836,6 @@ def test_committed_native_fit_publishes_only_aggregate_step_root(
     }
     assert "seeds" not in manifest
     assert manifest["environment"]["numpy_version"] == "2.5.1"
-    assert manifest["baseline_references"] == [
-        {
-            "kind": "occurrence",
-            "identity": publication.provenance.baseline_references[0].identity,
-            "occurrence_identity": publication.provenance.baseline_references[
-                0
-            ].occurrence_identity,
-            "result_bundle_identity": publication.provenance.baseline_references[
-                0
-            ].result_bundle_identity,
-        },
-        {
-            "kind": "bundle",
-            "identity": publication.provenance.baseline_references[1].identity,
-            "occurrence_identity": publication.provenance.baseline_references[
-                1
-            ].occurrence_identity,
-            "result_bundle_identity": publication.provenance.baseline_references[
-                1
-            ].result_bundle_identity,
-        },
-    ]
     assert manifest["artifacts"]["Parameters/restart.toml"]["role"] == (
         "committed_restart_state"
     )
@@ -1117,16 +1068,6 @@ def test_normalized_method_rejects_noncanonical_nested_payload() -> None:
             normalized_method_text=(
                 'FORMAT_VERSION = 2\n[METHOD]\nCANONICAL_JSON = "{}"\n'
             ),
-        )
-
-
-def test_workflow_provenance_rejects_substituted_baseline_occurrence() -> None:
-    publication = _committed_fit()
-    occurrence, bundle = publication.provenance.baseline_references
-    with pytest.raises(ValueError, match="linked occurrence/bundle"):
-        replace(
-            publication.provenance,
-            baseline_references=(replace(occurrence, identity="f" * 64), bundle),
         )
 
 

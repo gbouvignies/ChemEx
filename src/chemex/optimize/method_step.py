@@ -25,7 +25,6 @@ from chemex.evaluation.native import (
     EvaluationResult,
 )
 from chemex.native_provenance import (
-    BaselineReference,
     BudgetRecord,
     PolicyRecord,
     ProvenanceEnvironment,
@@ -343,7 +342,6 @@ class MethodStepPublicationRequest:
 
     path: Path
     environment: ProvenanceEnvironment
-    baseline_references: tuple[BaselineReference, ...]
     run_provenance: MethodStepRunProvenanceRequest | None = None
     identity: str = field(init=False)
 
@@ -358,15 +356,6 @@ class MethodStepPublicationRequest:
                 (
                     str(destination),
                     self.environment.identity,
-                    tuple(
-                        (
-                            item.kind,
-                            item.identity,
-                            item.occurrence_identity,
-                            item.result_bundle_identity,
-                        )
-                        for item in self.baseline_references
-                    ),
                     None
                     if self.run_provenance is None
                     else self.run_provenance.identity,
@@ -1007,8 +996,6 @@ def _validate_publication_request_integrity(
     publication: MethodStepPublicationRequest,
 ) -> None:
     _validate_rederived_identity(publication.environment)
-    for reference in publication.baseline_references:
-        _validate_rederived_identity(reference)
     if publication.run_provenance is not None:
         run = publication.run_provenance
         _validate_snapshot_integrity(run.starting_snapshot)
@@ -2579,7 +2566,6 @@ def _method_step_provenance(
         seeds=seeds,
         execution=execution,
         environment=request.environment,
-        baseline_references=request.baseline_references,
     )
 
 
@@ -2773,7 +2759,6 @@ def _publish_committed_method_step(
         seeds=seeds,
         execution=primary.execution_settings,
         environment=request.environment,
-        baseline_references=request.baseline_references,
     )
     publication = CommittedFitPublication(
         workflow.engine.plan,

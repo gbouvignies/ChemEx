@@ -1,8 +1,0 @@
-**
-!src/
-!src/chemex/
-!src/chemex/numerical_lanes/
-!src/chemex/numerical_lanes/**
-src/chemex/numerical_lanes/manifests/*.json
-**/__pycache__/
-**/*.pyc
