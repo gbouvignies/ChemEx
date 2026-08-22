@@ -1419,7 +1419,7 @@ def test_stencil_exhaustion_retains_trajectory_and_each_search_extent() -> None:
     )
 
 
-def test_at_bound_covariance_reports_local_error_with_boundary_warning() -> None:
+def test_at_bound_covariance_reports_uncertainty_with_boundary_warning() -> None:
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
     controlled_id = problem.controlled_ids[0]
     derived_id = "__R1A_B_G2N_H_800_0MHZ"
@@ -1481,10 +1481,10 @@ def test_at_bound_covariance_reports_local_error_with_boundary_warning() -> None
     assert evidence.correlations.scope_reportable
     view = parameter_uncertainty_view(evidence)
     assert view.standard_error(controlled_id) is not None
-    assert view.warning(controlled_id) == "boundary may make local error asymmetric"
+    assert view.warning(controlled_id) == "boundary may make uncertainty asymmetric"
     assert view.unavailable_reason(controlled_id) is None
     assert view.standard_error(derived_id) is not None
-    assert view.warning(derived_id) == "boundary may make local error asymmetric"
+    assert view.warning(derived_id) == "boundary may make uncertainty asymmetric"
     assert view.unavailable_reason(derived_id) is None
     forged_reportability_claims = tuple(
         dataclasses.replace(item, state=ClaimState.VIOLATED)
@@ -1541,8 +1541,85 @@ def test_near_bound_covariance_reports_local_error_and_preserves_violation() -> 
     assert evidence.marginal_errors.scope_reportable
     view = parameter_uncertainty_view(evidence)
     assert view.standard_error(controlled_id) == pytest.approx(standard_error)
-    assert view.warning(controlled_id) == "boundary may make local error asymmetric"
+    assert view.warning(controlled_id) == "boundary may make uncertainty asymmetric"
     assert view.unavailable_reason(controlled_id) is None
+
+
+@pytest.mark.parametrize("zeta", (2.0, 0.0))
+def test_multivariate_simple_bound_warning_is_coordinate_specific(zeta: float) -> None:
+    method = Method(
+        fit=("D2O", "KDH"),
+        fix=("CS_A", "DW_AB", "PHI", "R1_A", "R2_A", "R2_B"),
+    )
+    parameterization, engine, problem = _hd_problem(method)
+    accepted = _accepted_reference_anchor(parameterization, engine, problem)
+    d2o_id, kdh_id = problem.controlled_ids
+    kab_id = "__KAB_1_0_1000"
+    policy = dataclasses.replace(
+        _qualification_policy(d2o_id),
+        coordinate_scales=((d2o_id, 0.1), (kdh_id, 10.0)),
+        coordinate_units=(
+            (d2o_id, ParameterUnit.FRACTION),
+            (kdh_id, ParameterUnit.RATE_PER_SECOND),
+        ),
+        residual_variance_scaling=(
+            ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES
+        ),
+    )
+    baseline = derive_uncertainty_evidence(
+        accepted,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=policy,
+        resolved_environment_identity="coordinate-warning-baseline",
+    )
+    assert baseline.marginal_errors is not None
+    kdh_error = baseline.marginal_errors.entries[1].value
+    assert kdh_error is not None
+    boundary_problem = dataclasses.replace(
+        problem,
+        lower_bounds=(
+            problem.lower_bounds[0],
+            accepted.vector[1] - zeta * kdh_error,
+        ),
+    )
+    boundary_accepted = _qualified_accepted_copy(
+        accepted,
+        problem_identity=boundary_problem.identity,
+        occurrence_identity=f"coordinate-warning-{zeta.hex()}",
+    )
+
+    evidence = derive_uncertainty_evidence(
+        boundary_accepted,
+        problem=boundary_problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=policy,
+        constrained_scope=(kab_id,),
+        constrained_units=((kab_id, ParameterUnit.RATE_PER_SECOND),),
+        constrained_scales=((kab_id, 10.0),),
+        compiled_constraint_linearization=(
+            compile_constraint_linearization_capabilities(
+                parameterization,
+                (kab_id,),
+                (),
+            )
+        ),
+        resolved_environment_identity="coordinate-warning",
+    )
+
+    assert evidence.covariance is not None
+    assert evidence.covariance.rank == 2
+    assert evidence.covariance.claim("BOUNDARY_SEPARATION") is ClaimState.VIOLATED
+    assert evidence.covariance.boundary_warning
+    view = parameter_uncertainty_view(evidence)
+    assert view.standard_error(d2o_id) is not None
+    assert view.standard_error(kdh_id) is not None
+    assert view.warning(d2o_id) is None
+    assert view.warning(kdh_id) == "boundary may make uncertainty asymmetric"
+    assert view.standard_error(kab_id) is not None
+    assert view.warning(kab_id) == "boundary may make uncertainty asymmetric"
 
 
 def test_unrepresentable_centered_interval_falls_back_to_inward_stencil() -> None:
@@ -2395,9 +2472,8 @@ def test_affine_directional_separation_uses_exact_full_frame_slack(
     assert evidence.covariance.usable
     view = parameter_uncertainty_view(evidence)
     assert view.standard_error(problem.controlled_ids[0]) is not None
-    assert (view.warning(problem.controlled_ids[0]) is not None) is (
-        expected is ClaimState.VIOLATED
-    )
+    assert view.warning(problem.controlled_ids[0]) is None
+    assert evidence.covariance.boundary_warning is (expected is ClaimState.VIOLATED)
 
 
 def test_active_affine_upper_uses_inward_stencil_without_off_feasible_calls() -> None:

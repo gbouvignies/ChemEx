@@ -208,10 +208,14 @@ diagnostics, covariance-derived marginal errors, correlations, and typed
 failures. `Statistics/Constrained/evidence.json` records supported constrained
 propagation. ChemEx reports covariance-derived local standard errors when the
 local covariance is otherwise valid, including when the accepted fit is near or
-at a parameter bound. In that case, parameter comments warn that the boundary
-may make the local error asymmetric because the symmetric Gaussian
+at a parameter bound. In that case, affected parameter comments warn that the
+boundary may make the uncertainty asymmetric because the symmetric Gaussian
 approximation can be imperfect. Profile likelihood or resampling may be more
-appropriate when accurate bounded confidence intervals are required.
+appropriate when accurate bounded confidence intervals are required. Inline
+warnings are attached only to fitted coordinates near their own simple bounds
+and to constrained outputs structurally depending on those coordinates;
+aggregate boundary and affine diagnostics remain available in the evidence and
+terminal status.
 
 For fits with independent fit components,
 `Statistics/Covariance/blocks.json` records any root-anchored independent-block

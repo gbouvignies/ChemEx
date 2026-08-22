@@ -11,9 +11,9 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 - Covariance-derived local standard errors are now reported when an otherwise
   valid covariance lies within the existing three-sigma boundary threshold,
   including at a bound. Boundary evidence and the threshold remain unchanged,
-  while parameter reports and the terminal carry a concise warning that the
-  local error may be asymmetric. Genuinely invalid covariance remains
-  unavailable.
+  while the terminal retains an aggregate warning. Inline warnings are limited
+  to fitted coordinates near their own simple bounds and constrained outputs
+  structurally depending on them. Genuinely invalid covariance remains unavailable.
 - Unified deterministic fit presentation and output around the authoritative
   aggregate method-step result. Interactive Rich output now shows one transient
   fit-component progress table, followed by one aggregate minimization summary

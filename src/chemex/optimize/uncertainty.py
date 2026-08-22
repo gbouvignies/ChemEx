@@ -77,6 +77,39 @@ _BOUNDARY_DIAGNOSTIC_CLAIMS = (
 )
 
 
+def _simple_bound_warning_ids(
+    controlled_ids: Sequence[str],
+    accepted_vector: Sequence[float],
+    lower_bounds: Sequence[float],
+    upper_bounds: Sequence[float],
+    standard_errors: Mapping[str, float | None],
+) -> frozenset[str]:
+    """Attribute the boundary threshold only to each coordinate's box bounds."""
+    warned: set[str] = set()
+    for param_id, value, lower, upper in zip(
+        controlled_ids,
+        accepted_vector,
+        lower_bounds,
+        upper_bounds,
+        strict=True,
+    ):
+        standard_error = standard_errors.get(param_id)
+        if (
+            standard_error is None
+            or standard_error <= 0.0
+            or not math.isfinite(standard_error)
+        ):
+            continue
+        separations = tuple(
+            distance / standard_error
+            for distance in (value - lower, upper - value)
+            if math.isfinite(distance)
+        )
+        if separations and min(separations) <= _BOUNDARY_THRESHOLD:
+            warned.add(param_id)
+    return frozenset(warned)
+
+
 class UncertaintyConstructionError(ValueError):
     """Raised only for malformed policy or artifact construction."""
 
@@ -1812,6 +1845,23 @@ class CovarianceEvidence:
             for name in _BOUNDARY_DIAGNOSTIC_CLAIMS
         )
 
+    @property
+    def simple_bound_warning_ids(self) -> frozenset[str]:
+        """Controlled coordinates within the threshold of their own box bounds."""
+        standard_errors = {
+            param_id: math.sqrt(self.covariance[index][index])
+            if self.covariance[index][index] > 0.0
+            else None
+            for index, param_id in enumerate(self.controlled_ids)
+        }
+        return _simple_bound_warning_ids(
+            self.controlled_ids,
+            self.accepted_vector,
+            self.source_problem.lower_bounds,
+            self.source_problem.upper_bounds,
+            standard_errors,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class ScalarEvidenceEntry:
@@ -2975,6 +3025,23 @@ class RootAnchoredBlockCovarianceEvidence:
                 for item in self.blocks
             ],
         }
+
+    @property
+    def simple_bound_warning_ids(self) -> frozenset[str]:
+        """Recovered controlled coordinates near their own root box bounds."""
+        source = self.source_bundle
+        standard_errors = {
+            entry.param_id: entry.value
+            for block in self.blocks
+            for entry in block.marginal_errors
+        }
+        return _simple_bound_warning_ids(
+            source.source_problem.controlled_ids,
+            source.accepted_anchor.vector,
+            source.source_problem.lower_bounds,
+            source.source_problem.upper_bounds,
+            standard_errors,
+        )
 
 
 def _failed_block_claims(

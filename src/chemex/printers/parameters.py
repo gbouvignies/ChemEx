@@ -66,7 +66,7 @@ _UNAVAILABLE_REASON_TEXT = {
     ),
 }
 
-BOUNDARY_WARNING_TEXT = "boundary may make local error asymmetric"
+BOUNDARY_WARNING_TEXT = "boundary may make uncertainty asymmetric"
 
 if set(_UNAVAILABLE_REASON_TEXT) != set(UncertaintyUnavailableKind):
     raise RuntimeError("Uncertainty unavailability vocabulary is not exhaustive")
@@ -100,6 +100,25 @@ def _controlled_unavailability_kind(
     return UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE
 
 
+def constrained_boundary_warning_ids(
+    evidence: UncertaintyEvidence,
+    controlled_warning_ids: frozenset[str],
+) -> frozenset[str]:
+    """Derived outputs structurally depending on a directly warned coordinate."""
+    constraint_jacobian = evidence.constraint_jacobian
+    if constraint_jacobian is None or not controlled_warning_ids:
+        return frozenset()
+    return frozenset(
+        output_id
+        for output_id, dependencies in zip(
+            constraint_jacobian.output_ids,
+            constraint_jacobian.structural_dependencies,
+            strict=True,
+        )
+        if controlled_warning_ids.intersection(dependencies)
+    )
+
+
 def parameter_uncertainty_view(
     evidence: UncertaintyEvidence,
     unsupported_constrained_ids: tuple[str, ...] = (),
@@ -108,6 +127,11 @@ def parameter_uncertainty_view(
     standard_errors: list[tuple[str, float]] = []
     warnings: list[tuple[str, str]] = []
     unavailable_reasons: list[tuple[str, str]] = []
+    controlled_warning_ids = (
+        frozenset()
+        if evidence.covariance is None
+        else evidence.covariance.simple_bound_warning_ids
+    )
     marginal = evidence.marginal_errors
     if marginal is not None and marginal.scope_reportable:
         standard_errors.extend(
@@ -115,12 +139,11 @@ def parameter_uncertainty_view(
             for entry in marginal.entries
             if entry.value is not None
         )
-        if evidence.covariance is not None and evidence.covariance.boundary_warning:
-            warnings.extend(
-                (entry.param_id, BOUNDARY_WARNING_TEXT)
-                for entry in marginal.entries
-                if entry.value is not None
-            )
+        warnings.extend(
+            (entry.param_id, BOUNDARY_WARNING_TEXT)
+            for entry in marginal.entries
+            if entry.value is not None and entry.param_id in controlled_warning_ids
+        )
     else:
         reason = uncertainty_unavailable_reason(
             _controlled_unavailability_kind(evidence)
@@ -135,12 +158,15 @@ def parameter_uncertainty_view(
             for entry in constrained.entries
             if entry.value is not None
         )
-        if evidence.covariance is not None and evidence.covariance.boundary_warning:
-            warnings.extend(
-                (entry.param_id, BOUNDARY_WARNING_TEXT)
-                for entry in constrained.entries
-                if entry.value is not None
-            )
+        constrained_warning_ids = constrained_boundary_warning_ids(
+            evidence,
+            controlled_warning_ids,
+        )
+        warnings.extend(
+            (entry.param_id, BOUNDARY_WARNING_TEXT)
+            for entry in constrained.entries
+            if entry.value is not None and entry.param_id in constrained_warning_ids
+        )
     elif evidence.requested_output_scope:
         unavailable_reasons.extend(
             (

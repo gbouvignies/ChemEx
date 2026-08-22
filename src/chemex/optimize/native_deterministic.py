@@ -70,6 +70,7 @@ from chemex.parameters.parameterization import ActiveParameterization, Parameter
 from chemex.printers.parameters import (
     BOUNDARY_WARNING_TEXT,
     ParameterUncertaintyView,
+    constrained_boundary_warning_ids,
     parameter_uncertainty_view,
     uncertainty_unavailable_reason,
 )
@@ -282,7 +283,15 @@ def _uncertainty_progress_status(
     controlled_ids: tuple[str, ...],
 ) -> str:
     """Summarize fitted covariance availability without overstating constraints."""
-    if uncertainty.warnings:
+    root_boundary_warning = (
+        evidence is not None
+        and evidence.covariance is not None
+        and evidence.covariance.boundary_warning
+    )
+    block_boundary_warning = block_evidence is not None and any(
+        block.boundary_warning for block in block_evidence.blocks
+    )
+    if root_boundary_warning or block_boundary_warning:
         return "covariance available with boundary warnings"
     available_ids = {param_id for param_id, _value in uncertainty.standard_errors}
     if (
@@ -668,12 +677,23 @@ def run_native_deterministic(
             for entry in block.constrained_marginal_errors
             if entry.value is not None
         )
+        block_controlled_warning_ids = block_uncertainty.simple_bound_warning_ids
+        block_constrained_warning_ids = constrained_boundary_warning_ids(
+            block_uncertainty.source_bundle,
+            block_controlled_warning_ids,
+        )
         block_warnings = tuple(
             (entry.param_id, BOUNDARY_WARNING_TEXT)
             for block in block_uncertainty.blocks
-            if block.boundary_warning
-            for entry in (*block.marginal_errors, *block.constrained_marginal_errors)
+            for entry in block.marginal_errors
             if entry.value is not None
+            and entry.param_id in block_controlled_warning_ids
+        ) + tuple(
+            (entry.param_id, BOUNDARY_WARNING_TEXT)
+            for block in block_uncertainty.blocks
+            for entry in block.constrained_marginal_errors
+            if entry.value is not None
+            and entry.param_id in block_constrained_warning_ids
         )
         recovered_ids = {
             param_id for param_id, _value in (*block_errors, *block_constrained_errors)
