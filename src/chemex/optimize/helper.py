@@ -8,8 +8,6 @@ from scipy import stats
 
 from chemex.containers.experiments import Experiments
 from chemex.messages import (
-    print_chi2,
-    print_group_name,
     print_making_plots,
     print_plotting_canceled,
     print_writing_results,
@@ -197,34 +195,6 @@ def execute_simulation(
     _write_simulation_files(experiments, path)
     if plot:
         _write_simulation_plots(experiments, path)
-
-
-def execute_post_fit_groups(
-    experiments: Experiments,
-    path: Path,
-    plot: str,
-    *,
-    residuals: Array,
-    nvarys: int,
-    uncertainty: ParameterUncertaintyView | None = None,
-    uncertainty_evidence: UncertaintyEvidence | None = None,
-    uncertainty_status: tuple[str, str] | None = None,
-    block_uncertainty: RootAnchoredBlockCovarianceEvidence | None = None,
-) -> None:
-    print_group_name("All groups")
-    statistics = calculate_statistics_from_residuals(residuals, nvarys)
-    print_chi2(statistics["chisqr"], statistics["redchi"])
-    execute_post_fit(
-        experiments,
-        path / "All",
-        plot=(plot != "nothing"),
-        residuals=residuals,
-        nvarys=nvarys,
-        uncertainty=uncertainty,
-        uncertainty_evidence=uncertainty_evidence,
-        uncertainty_status=uncertainty_status,
-        block_uncertainty=block_uncertainty,
-    )
 
 
 def print_header(

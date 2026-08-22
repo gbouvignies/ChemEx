@@ -129,7 +129,7 @@ def test_full_binding_step2_never_fails_for_a_high_cost_stencil(
     assert step2.residual_jacobian.evaluation_count == 0
     assert step2.rank_diagnostic is not None
     assert all(failure.stage != "residual_linearization" for failure in step2.failures)
-    fitted = (output / "STEP2" / "All" / "Parameters" / "fitted.toml").read_text(
+    fitted = (output / "STEP2" / "Parameters" / "fitted.toml").read_text(
         encoding="utf-8"
     )
     r2_b_section = fitted.split('["R2_B, B0->800.0MHZ"]', maxsplit=1)[1]

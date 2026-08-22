@@ -220,6 +220,9 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     assert propagated_error == pytest.approx(fitted_error, rel=1.0e-12)
     assert (output / "Statistics" / "Constrained" / "evidence.json").is_file()
     assert (output / "statistics.toml").is_file()
+    assert not (output / "All").exists()
+    assert not (output / "Groups").exists()
+    assert not (output / "Components").exists()
     data = next((output / "Data").glob("*.dat")).read_text(encoding="utf-8")
     first_calculation = float(
         next(line for line in data.splitlines() if line.lstrip()[:1].isdigit()).split()[
@@ -252,7 +255,7 @@ def test_relaxation_product_covariance_matches_absolute_sigma_reference(
     )
 
     evidence = json.loads(
-        (output / "All" / "Statistics" / "Covariance" / "evidence.json").read_text(
+        (output / "Statistics" / "Covariance" / "evidence.json").read_text(
             encoding="utf-8"
         )
     )
@@ -304,8 +307,9 @@ def test_real_direct_fit_reports_objective_evaluation_progress(
 
     rendered = capsys.readouterr().out
     assert "eval 0/" in rendered
-    assert "final χ²" in rendered
-    minimizing_terminal = rendered.index("final χ²")
+    assert "Evaluations" in rendered
+    assert "Reduced χ²" in rendered
+    minimizing_terminal = rendered.index("Evaluations")
     uncertainty_start = rendered.index("Estimating parameter uncertainties")
     uncertainty_terminal = rendered.index("covariance available")
     assert minimizing_terminal < uncertainty_start < uncertainty_terminal
@@ -338,7 +342,7 @@ def test_real_direct_fit_propagates_progress_interrupt_after_cleanup(
 
     rendered = capsys.readouterr().out
     assert "interrupted" in rendered
-    assert "eval 1 total" in rendered
+    assert "Evaluations" in rendered
 
 
 def test_explicit_trf_and_least_squares_alias_have_identical_native_product_output(
@@ -526,14 +530,44 @@ def test_real_grouped_direct_fit_uses_native_aggregate_commit(
     session = AnalysisSession.create()
 
     run(
-        _fit_arguments(output, include=("G2N-HN", "H3N-HN")),
+        _fit_arguments(
+            output,
+            include=("G2N-HN", "H3N-HN"),
+            plot_level="normal",
+        ),
         session=session,
     )
 
     assert session.analysis_values.snapshot().revision == 1
-    group_outputs = tuple((output / "Groups").glob("*/Parameters/fitted.toml"))
-    assert len(group_outputs) == 2
-    assert (output / "All" / "Parameters" / "fitted.toml").is_file()
+    assert (output / "Parameters" / "fitted.toml").is_file()
+    assert (output / "Data").is_dir()
+    assert (output / "Plots").is_dir()
+    assert (output / "Statistics" / "Covariance" / "evidence.json").is_file()
+    assert (output / "statistics.toml").is_file()
+    assert not (output / "All").exists()
+    assert not (output / "Groups").exists()
+    assert not (output / "Components").exists()
+
+
+def test_reused_output_removes_legacy_and_development_result_trees(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    for name in ("All", "Groups", "Components"):
+        stale = output / name / "stale.txt"
+        stale.parent.mkdir(parents=True)
+        stale.write_text("obsolete result\n", encoding="utf-8")
+
+    run(
+        _fit_arguments(output, include=("G2N-HN", "H3N-HN")),
+        session=AnalysisSession.create(),
+    )
+
+    assert (output / "Parameters" / "fitted.toml").is_file()
+    assert not (output / "All").exists()
+    assert not (output / "Groups").exists()
+    assert not (output / "Components").exists()
+    assert (output / "run_info" / "outcome.toml").is_file()
 
 
 def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
@@ -558,34 +592,21 @@ def test_grouped_covariance_isolates_a_rank_deficient_independent_block(
             session=AnalysisSession.create(),
         )
 
-    group_outputs = sorted((output / "Groups").glob("*/Parameters/fitted.toml"))
-    assert len(group_outputs) == 2
-    assert (output / "All" / "Statistics" / "Covariance" / "evidence.json").is_file()
-    assert all(
-        not (
-            path.parent.parent / "Statistics" / "Covariance" / "evidence.json"
-        ).exists()
-        for path in group_outputs
+    assert (output / "Statistics" / "Covariance" / "evidence.json").is_file()
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    assert fitted.count("# ±") == 1
+    assert fitted.count("error unavailable: rank deficient") == 1
+    constrained = (output / "Parameters" / "constrained.toml").read_text(
+        encoding="utf-8"
     )
-    reports = tuple(path.read_text(encoding="utf-8") for path in group_outputs)
-    assert sum("# ±" in report for report in reports) == 1
-    assert sum("error unavailable: rank deficient" in report for report in reports) == 1
-    constrained_reports = tuple(
-        (path.parent / "constrained.toml").read_text(encoding="utf-8")
-        for path in group_outputs
-    )
-    assert tuple("# ±" in report for report in reports) == tuple(
-        "# ±" in report for report in constrained_reports
-    )
+    assert constrained.count("# ±") == 1
     assert (
-        sum(
-            "error unavailable: constrained propagation unavailable" in report
-            for report in constrained_reports
-        )
-        == 1
+        constrained.count("error unavailable: constrained propagation unavailable") == 1
     )
+    assert not (output / "All").exists()
+    assert not (output / "Groups").exists()
     blocks = json.loads(
-        (output / "All" / "Statistics" / "Covariance" / "blocks.json").read_text(
+        (output / "Statistics" / "Covariance" / "blocks.json").read_text(
             encoding="utf-8"
         )
     )
@@ -623,14 +644,14 @@ def test_interrupted_block_fallback_preserves_committed_root_evidence(
         )
 
     assert session.analysis_values.snapshot().revision == 1
-    covariance_path = output / "All" / "Statistics" / "Covariance"
+    covariance_path = output / "Statistics" / "Covariance"
     assert (covariance_path / "evidence.json").is_file()
     assert not (covariance_path / "blocks.json").exists()
     status = json.loads((covariance_path / "status.json").read_text(encoding="utf-8"))
     assert status["status"] == "incomplete"
     assert status["terminal"] == "interrupted"
     assert status["reason"] == "derivation interrupted/cancelled"
-    assert (output / "All" / "Parameters" / "fitted.toml").is_file()
+    assert (output / "Parameters" / "fitted.toml").is_file()
 
 
 def test_shared_parameter_coupling_is_not_split_into_covariance_blocks(
@@ -664,7 +685,8 @@ FIX = ["KEX_AB"]
     assert "# ±" not in fitted
     assert "error unavailable: rank deficient" in fitted
     assert not (output / "Statistics" / "Covariance" / "blocks.json").exists()
-    assert "uncertainty unavailable: rank deficient" in capsys.readouterr().out
+    rendered = " ".join(capsys.readouterr().out.split())
+    assert "uncertainty unavailable: rank deficient" in rendered
 
 
 def test_unsupported_scientific_constraint_keeps_product_fitted_errors(
@@ -728,10 +750,14 @@ def test_real_grouped_direct_progress_has_one_bounded_noninteractive_stream(
     )
 
     rendered = capsys.readouterr().out
-    assert "group 1/2" in rendered
+    assert "component 1/2" in rendered
     assert rendered.count("eval 0/") == 1
     assert "eval " in rendered
-    assert " total" in rendered
+    assert "Evaluations" in rendered
+    assert "group " not in rendered.lower()
+    assert rendered.count("Writing results in") == 1
+    assert "All groups" not in rendered
+    assert "Group " not in rendered
 
 
 def test_boundary_limited_fit_keeps_central_values_and_withholds_symmetric_errors(
@@ -1677,7 +1703,7 @@ def test_real_grid_progress_aggregates_local_seed_polishes(
 
     rendered = capsys.readouterr().out
     assert rendered.count("GRID seed") == 1
-    assert "final χ²" in rendered
+    assert "Evaluations" in rendered
 
 
 def test_real_grouped_grid_fit_uses_one_native_aggregate_commit(
@@ -1697,10 +1723,23 @@ def test_real_grouped_grid_fit_uses_one_native_aggregate_commit(
     )
 
     assert session.analysis_values.snapshot().revision == 1
-    group_grid_outputs = tuple((output / "Grid" / "Groups").glob("*.out"))
-    assert len(group_grid_outputs) == 2
-    assert (output / "All" / "Parameters" / "fixed.toml").is_file()
+    grid_output = output / "Grid" / "grid.out"
+    assert grid_output.is_file()
+    header, *_rows = grid_output.read_text(encoding="utf-8").splitlines()
+    assert header.count("[R1A_A") == 2
+    assert header.endswith("[χ²]")
+    grid_rows = np.loadtxt(grid_output)
+    np.testing.assert_allclose(
+        grid_rows[:, :2],
+        ((1.0, 1.0), (1.0, 3.0), (3.0, 1.0), (3.0, 3.0)),
+    )
+    statistics = tomllib.loads((output / "statistics.toml").read_text(encoding="utf-8"))
+    np.testing.assert_allclose(grid_rows[:, 2], statistics["chi-square"])
+    assert (output / "Parameters" / "fixed.toml").is_file()
+    assert not (output / "Grid" / "Groups").exists()
+    assert not (output / "All").exists()
     assert not (output / "Groups").exists()
+    assert not (output / "Components").exists()
 
 
 def test_ordered_native_steps_carry_forward_committed_state_and_v1_roles(
@@ -1853,9 +1892,9 @@ CONSTRAINTS = ["[R1A_A, NUC->G2N-H] = 2.0"]
     )
 
     assert session.analysis_values.snapshot().revision == 1
-    constrained = tuple((output / "All" / "Parameters").glob("constrained.toml"))
-    assert constrained
-    constrained_text = constrained[0].read_text(encoding="utf-8")
+    constrained = output / "Parameters" / "constrained.toml"
+    assert constrained.is_file()
+    constrained_text = constrained.read_text(encoding="utf-8")
     assert "G2N-H" in constrained_text
     assert "2.00000e+00" in constrained_text
 

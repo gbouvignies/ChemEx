@@ -54,8 +54,7 @@ class MinimizationProgressReporter:
         interactive: bool,
         retained_observation_count: int,
         controlled_parameter_count: int,
-        step_name: str = "",
-        group_labels: Mapping[frozenset[str], str] | None = None,
+        component_labels: Mapping[frozenset[str], str] | None = None,
         grid: bool = False,
         enabled: bool = True,
         clock: Callable[[], float] = monotonic,
@@ -64,8 +63,9 @@ class MinimizationProgressReporter:
         self._interactive = interactive
         self._retained_observation_count = retained_observation_count
         self._controlled_parameter_count = controlled_parameter_count
-        self._step_name = step_name
-        self._group_labels = {} if group_labels is None else dict(group_labels)
+        self._component_labels = (
+            {} if component_labels is None else dict(component_labels)
+        )
         self._grid = grid
         self._enabled = enabled
         self._clock = clock
@@ -141,17 +141,23 @@ class MinimizationProgressReporter:
                     else self._observe_noninteractive(context, event)
                 )
             )
-            if event.phase is ProgressPhase.TERMINATED and context.group_total == 1:
+            if event.phase is ProgressPhase.TERMINATED and context.component_total == 1:
                 update = None
             if update is not None:
-                self._render(
-                    _format_progress(
+                renderable = (
+                    _progress_table(
                         context,
                         update,
                         self._context_label(context),
-                        self._step_name,
+                    )
+                    if self._interactive
+                    else _format_progress(
+                        context,
+                        update,
+                        self._context_label(context),
                     )
                 )
+                self._render(renderable)
         except KeyboardInterrupt:
             self._stop_live()
             raise
@@ -237,7 +243,7 @@ class MinimizationProgressReporter:
         )
 
     def _context_label(self, context: FitProgressContext) -> str:
-        return self._group_labels.get(frozenset(context.controlled_ids), "")
+        return self._component_labels.get(frozenset(context.controlled_ids), "")
 
     def _elapsed(self) -> float:
         return (
@@ -246,12 +252,12 @@ class MinimizationProgressReporter:
             else max(0.0, self._clock() - self._started_at)
         )
 
-    def _render(self, line: str) -> None:
-        text = Text(line)
+    def _render(self, renderable: str | Table | Padding) -> None:
+        display = Text(renderable) if isinstance(renderable, str) else renderable
         if self._live is not None:
-            self._live.update(text, refresh=True)
+            self._live.update(display, refresh=True)
         else:
-            self._console.print(text)
+            self._console.print(display)
 
     def _render_final(self, chi_square: float | None, status: str) -> None:
         reduced = (
@@ -263,14 +269,27 @@ class MinimizationProgressReporter:
                 self._retained_observation_count - self._controlled_parameter_count,
             )
         )
-        parts = [f"eval {sum(self._completed_by_context.values())} total"]
+        table = Table(box=box.SIMPLE_HEAD)
+        table.add_column("Evaluations", justify="right", style="blue")
         if chi_square is not None:
-            parts.append(f"final χ² {_format_scalar(chi_square)}")
-        if reduced is not None:
-            parts.append(f"red. χ² {_format_scalar(reduced)}")
-        parts.extend((f"{self._elapsed():.1f} s", status))
-        prefix = f"[{self._step_name}] " if self._step_name else ""
-        self._console.print(Text(prefix + " · ".join(parts)))
+            table.add_column("χ²", justify="right")
+            table.add_column("Reduced χ²", justify="right")
+        table.add_column("Time", justify="right")
+        if status != "committed":
+            table.add_column("Status", style="red")
+        row = [str(sum(self._completed_by_context.values()))]
+        if chi_square is not None:
+            row.extend(
+                (
+                    _format_scalar(chi_square),
+                    "" if reduced is None else _format_scalar(reduced),
+                )
+            )
+        row.append(f"{self._elapsed():.1f} s")
+        if status != "committed":
+            row.append(status)
+        table.add_row(*row)
+        self._console.print(Padding.indent(table, 3))
 
     def _stop_live(self) -> None:
         if self._live is None:
@@ -303,8 +322,6 @@ class UncertaintyProgressReporter:
         if self._started_at is not None:
             return
         self._started_at = self._clock()
-        with suppress(Exception):
-            self._console.print(Text("  • Estimating parameter uncertainties..."))
 
     def finish(self, status: str) -> None:
         """Emit one concise terminal status without affecting scientific work."""
@@ -317,29 +334,81 @@ class UncertaintyProgressReporter:
             else max(0.0, self._clock() - self._started_at)
         )
         with suppress(Exception):
-            self._console.print(Text(f"    {status} · {elapsed:.1f} s"))
+            style = "blue" if status == "covariance available" else "yellow"
+            self._console.print(
+                Text.from_markup(
+                    "  • Estimating parameter uncertainties -> "
+                    f"[{style}]{status}[/] ({elapsed:.1f} s)"
+                )
+            )
 
 
 def _format_scalar(value: float) -> str:
     return f"{value:.6g}"
 
 
+def _progress_table(
+    context: FitProgressContext,
+    update: ProgressUpdate,
+    component_label: str,
+) -> Padding:
+    """Build the transient Rich view for the currently executing component."""
+    event = update.event
+    table = Table(box=box.SIMPLE_HEAD)
+    row: list[str] = []
+    if context.grid_seed_ordinal is not None and context.grid_seed_total is not None:
+        table.add_column("GRID seed", style="blue")
+        row.append(f"{context.grid_seed_ordinal}/{context.grid_seed_total}")
+    if context.component_total > 1:
+        table.add_column("Component", style="blue")
+        component = f"{context.component_ordinal}/{context.component_total}"
+        if component_label:
+            component += f" · {component_label}"
+        row.append(component)
+    table.add_column("Evaluation", justify="right", style="blue")
+    table.add_column("Best χ²", justify="right")
+    table.add_column("Reduced χ²", justify="right")
+    table.add_column("Time", justify="right")
+    row.extend(
+        (
+            (
+                f"{event.objective_evaluations_completed} / "
+                f"{event.objective_request_budget}"
+            ),
+            (
+                "—"
+                if event.best_chi_square is None
+                else _format_scalar(event.best_chi_square)
+            ),
+            (
+                "—"
+                if event.reduced_chi_square is None
+                else _format_scalar(event.reduced_chi_square)
+            ),
+            f"{event.elapsed_seconds:.1f} s",
+        )
+    )
+    table.add_row(*row)
+    return Padding.indent(table, 3)
+
+
 def _format_progress(
     context: FitProgressContext,
     update: ProgressUpdate,
-    group_label: str,
-    step_name: str,
+    component_label: str,
 ) -> str:
     event = update.event
-    labels: list[str] = [step_name] if step_name else []
+    labels: list[str] = []
     if context.grid_seed_ordinal is not None and context.grid_seed_total is not None:
         labels.append(
             f"GRID seed {context.grid_seed_ordinal}/{context.grid_seed_total}"
         )
-    if context.group_total > 1:
-        labels.append(f"group {context.group_ordinal}/{context.group_total}")
-        if group_label:
-            labels.append(group_label)
+    if context.component_total > 1:
+        labels.append(
+            f"component {context.component_ordinal}/{context.component_total}"
+        )
+        if component_label:
+            labels.append(component_label)
     prefix = f"[{' · '.join(labels)}] " if labels else ""
     parts = [
         (
@@ -592,24 +661,6 @@ def print_chi2_table_footer(iteration: int, chisqr: float, redchi: float) -> Non
     console.print()
 
 
-def print_chi2(chisqr: float, redchi: float) -> None:
-    """Display the chi-squared and reduced chi-squared values.
-
-    Args:
-        chisqr (float): Chi-squared value.
-        redchi (float): Reduced chi-squared value.
-
-    """
-    console.print()
-    console.print(
-        Padding.indent(Text.from_markup(f"        χ²: [bold]{chisqr:15.1f}[/]"), 3),
-    )
-    console.print(
-        Padding.indent(Text.from_markup(f"Reduced χ²: [bold]{redchi:15.3f}[/]"), 3),
-    )
-    console.print()
-
-
 def print_writing_results(path: Path) -> None:
     """Inform the user about the location where results are being written.
 
@@ -640,16 +691,6 @@ def print_plot_filename(filename: Path, *, extra: bool = True) -> None:
         text += " [[green].fit[/], [green].exp[/]]"
 
     console.print(Text.from_markup(text))
-
-
-def print_group_name(text: str) -> None:
-    """Print the name of the group in the analysis process.
-
-    Args:
-        text (str): Name of the group.
-
-    """
-    console.print(Padding(Rule(text, characters="⋅"), (1, 0, 0, 3)), width=49)
 
 
 def print_file_not_found(filename: Path) -> None:

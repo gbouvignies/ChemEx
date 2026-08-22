@@ -8,6 +8,15 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 ## [Unreleased]
 
 ### Changed
+- Unified deterministic fit presentation and output around the authoritative
+  aggregate method-step result. Interactive Rich output now shows one transient
+  fit-component progress table, followed by one aggregate minimization summary
+  and one concise uncertainty status. Multi-component Direct and GRID fits now
+  write `Parameters/`, `Data/`, `Plots/`, `Statistics/`, `statistics.toml`, and
+  aggregate `Grid/` artifacts directly at the method-step root; legacy `All/`,
+  `Groups/`, and `Grid/Groups/` output is no longer generated. Reruns also
+  remove stale `All/`, `Groups/`, and `Components/` trees. `run_info/` and
+  scientific fitting, covariance, and GRID-selection behavior are unchanged.
 - Ordinary successful native deterministic fits now derive accepted-point
   covariance evidence from exact retained optimizer Jacobians or an independent
   accepted-point fallback and report covariance-derived standard errors in
@@ -21,9 +30,9 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   under `Statistics/` without populating the legacy generic `stderr` field or
   mixing deterministic errors with MC, BS, BSN, or MCMC summaries.
 - Native deterministic minimization once again reports fit progress. The Rich
-  display shows objective evaluations, best and reduced chi-square, relative
-  improvement, elapsed time, and applicable step/group or aggregated GRID
-  context; objective evaluations are no longer mislabeled as solver iterations.
+  display shows objective evaluations, best and reduced chi-square, elapsed
+  time, and applicable fit-component or aggregate GRID context; objective
+  evaluations are no longer mislabeled as solver iterations.
   Internal MC, BS, and BSN refits remain under the existing statistics-level
   reporting rather than opening a progress stream for every replicate.
 - Removed the unreachable legacy optimizer, MCMC, resampling, parameter-container,
@@ -52,9 +61,9 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 - Routed Direct TRF, grouped Direct, GRID, and grouped GRID method steps through
   the native parameterization, evaluation, aggregate acceptance, and atomic
   commit stack in the production `chemex fit` path. Existing v1 method TOML,
-  ordered role inheritance, profile selection, calculated-data files, and
-  output paths are preserved. Native deterministic fits do not populate the
-  legacy generic `stderr` field. MC, BS, and BSN statistics
+  ordered role inheritance, profile selection, and calculated-data files are
+  preserved under the aggregate method-step root. Native deterministic fits do
+  not populate the legacy generic `stderr` field. MC, BS, and BSN statistics
   now start from that committed native fit and run wholly native Direct TRF
   refits with stable ordered seeds across serial and worker execution. Existing
   STATISTICS syntax and output directories are preserved; incomplete analyses

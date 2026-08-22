@@ -1,7 +1,9 @@
 """Production composition for native deterministic method steps."""
 
 from dataclasses import dataclass
+from functools import reduce
 from itertools import product
+from operator import and_
 from pathlib import Path
 from typing import cast
 
@@ -14,7 +16,6 @@ from chemex.messages import (
     MinimizationProgressReporter,
     UncertaintyProgressReporter,
     console,
-    print_group_name,
     print_minimizing,
 )
 from chemex.native_provenance import ProvenanceEnvironment
@@ -39,10 +40,8 @@ from chemex.optimize.grouped_direct_trf import (
     GroupedDirectTrfOutcome,
 )
 from chemex.optimize.grouped_grid_direct_trf import GroupedGridDirectTrfOutcome
-from chemex.optimize.grouping import Group, create_groups
 from chemex.optimize.helper import (
     execute_post_fit,
-    execute_post_fit_groups,
     print_header,
     print_values,
 )
@@ -74,7 +73,6 @@ from chemex.printers.parameters import (
     uncertainty_unavailable_reason,
 )
 from chemex.runtime import AnalysisSession
-from chemex.typing import Array
 
 # The finalized #573/#664 policy uses 2000 * (nvars + 1), with numerical
 # Jacobian requests counted in the same total objective-request ceiling.
@@ -375,29 +373,6 @@ def _execute_with_phase_progress(
     return outcome
 
 
-def _project_residuals(
-    subset: Experiments,
-    root: Experiments,
-    result: EvaluationResult,
-) -> Array:
-    """Project the root native residual vector onto one established output group."""
-    root_profiles = tuple(profile for experiment in root for profile in experiment)
-    if len(root_profiles) != len(result.profiles):
-        raise RuntimeError("Native evaluation profile population changed before output")
-    segments = {
-        id(profile): result.residuals[
-            descriptor.residual_offset : (
-                descriptor.residual_offset + descriptor.residual_count
-            )
-        ]
-        for profile, descriptor in zip(root_profiles, result.profiles, strict=True)
-    }
-    projected = [
-        segments[id(profile)] for experiment in subset for profile in experiment
-    ]
-    return np.concatenate(projected)
-
-
 def _build_invocation(
     method: Method,
     problem: OptimizationProblem,
@@ -439,9 +414,8 @@ def _write_grid_output(
     path: Path,
     *,
     experiments: Experiments,
-    group_scopes: tuple[tuple[Path, frozenset[str]], ...],
 ) -> None:
-    """Render established per-group GRID tables from native seed evidence."""
+    """Render aggregate GRID artifacts from native seed evidence."""
     grid = {
         axis.param_id: np.asarray(axis.values, dtype=np.float64)
         for axis in invocation.axes
@@ -450,15 +424,8 @@ def _write_grid_output(
     grid_path = path / "Grid"
     grid_path.mkdir(parents=True, exist_ok=True)
     component_results: list[GridResult] = []
-    for group_path, controlled_ids in group_scopes:
-        matching_indices = tuple(
-            index
-            for index, component in enumerate(outcome.attempts[0].components)
-            if frozenset(component.controlled_ids) == controlled_ids
-        )
-        if len(matching_indices) != 1:
-            raise RuntimeError("Native GRID components do not match output groups")
-        component_index = matching_indices[0]
+    for component_index, component in enumerate(outcome.attempts[0].components):
+        controlled_ids = frozenset(component.controlled_ids)
         component_grid = {
             param_id: values
             for param_id, values in grid.items()
@@ -487,17 +454,15 @@ def _write_grid_output(
         ).reshape(tuple(len(values) for values in component_grid.values()))
         component_results.append(GridResult(component_grid, chisqr))
 
-        basename = group_path if group_path != Path() else Path("grid")
-        filename = grid_path / f"{basename}.out"
-        filename.parent.mkdir(parents=True, exist_ok=True)
-        with filename.open("w", encoding="utf-8") as output:
-            output.write(print_header(component_grid, parameter_store=parameter_store))
-            for coordinates, objective in zip(
-                coordinate_order,
-                chisqr.flat,
-                strict=True,
-            ):
-                output.write(print_values(coordinates, float(objective)))
+    with (grid_path / "grid.out").open("w", encoding="utf-8") as output:
+        output.write(print_header(grid, parameter_store=parameter_store))
+        for attempt in outcome.attempts:
+            coordinates = (
+                float(cast("int | float", value))
+                for _param_id, value in attempt.axis_items
+            )
+            objective = np.inf if attempt.objective is None else attempt.objective
+            output.write(print_values(coordinates, objective))
 
     combined = combine_grids(grid, component_results)
     grids_1d = make_grids_nd(
@@ -516,53 +481,28 @@ def _write_grid_output(
     plot_grid_2d(grids_2d, grid_path, parameter_store=parameter_store)
 
 
-def _write_direct_output(
+def _fit_component_labels(
+    decomposition: FitDecomposition,
     experiments: Experiments,
-    path: Path,
-    plot: str,
-    groups: list[Group],
-    group_scopes: tuple[tuple[Path, frozenset[str]], ...],
-    result: EvaluationResult,
-    variable_count: int,
-    *,
-    aggregate_output: bool,
-    uncertainty: ParameterUncertaintyView,
-    uncertainty_evidence: UncertaintyEvidence | None,
-    uncertainty_status: tuple[str, str] | None,
-    block_uncertainty: RootAnchoredBlockCovarianceEvidence | None,
-) -> None:
-    """Write established per-group and aggregate output from native evidence."""
-    plot_flg = (plot == "normal" and not aggregate_output) or plot == "all"
-    controlled_by_path = dict(group_scopes)
-    group_diagnostics = None if aggregate_output else uncertainty_evidence
-    group_status = None if aggregate_output else uncertainty_status
-    group_blocks = None if aggregate_output else block_uncertainty
-    for group in groups:
-        if message := group.message:
-            print_group_name(message)
-        execute_post_fit(
-            group.experiments,
-            path / group.path,
-            plot=plot_flg,
-            residuals=_project_residuals(group.experiments, experiments, result),
-            nvarys=len(controlled_by_path[group.path]),
-            uncertainty=uncertainty,
-            uncertainty_evidence=group_diagnostics,
-            uncertainty_status=group_status,
-            block_uncertainty=group_blocks,
-        )
-    if aggregate_output:
-        execute_post_fit_groups(
-            experiments,
-            path,
-            plot,
-            residuals=result.residuals,
-            nvarys=variable_count,
-            uncertainty=uncertainty,
-            uncertainty_evidence=uncertainty_evidence,
-            uncertainty_status=uncertainty_status,
-            block_uncertainty=block_uncertainty,
-        )
+) -> dict[frozenset[str], str]:
+    """Return concise optional labels for transient component presentation."""
+    try:
+        labels: dict[frozenset[str], str] = {}
+        for component in decomposition.components:
+            parameters = experiments.parameter_store.get_parameters(
+                component.controlled_ids
+            )
+            param_names = tuple(
+                parameter.param_name for parameter in parameters.values()
+            )
+            if param_names:
+                labels[frozenset(component.controlled_ids)] = reduce(
+                    and_, param_names
+                ).folder
+    except Exception:  # noqa: BLE001 - optional reporting is non-scientific
+        return {}
+    else:
+        return labels
 
 
 def run_native_deterministic(
@@ -572,7 +512,6 @@ def run_native_deterministic(
     plot: str,
     *,
     session: AnalysisSession,
-    step_name: str = "",
 ) -> NativeDeterministicFit | None:
     """Execute one complete deterministic method occurrence natively."""
     parameter_model = session.parameter_factory.sealed_parameter_model
@@ -621,22 +560,6 @@ def run_native_deterministic(
         starting_snapshot,
     )
     decomposition = FitDecomposition.from_root(problem, parameterization, engine)
-    all_groups = create_groups(experiments)
-    groups = [group for group in all_groups if group.experiments]
-    aggregate_output = len(all_groups) > 1
-    group_scopes = tuple(
-        (
-            group.path,
-            frozenset(
-                param_id
-                for param_id, parameter in experiments.parameter_store.get_parameters(
-                    group.experiments.param_ids
-                ).items()
-                if parameter.vary and not parameter.expr
-            ),
-        )
-        for group in groups
-    )
     strategy, invocation = _build_invocation(
         method,
         problem,
@@ -659,19 +582,13 @@ def run_native_deterministic(
         invocation=invocation,
         derivations=(uncertainty_request,),
     )
-    group_labels = {
-        controlled_ids: (
-            group_path.name.split("_", maxsplit=1)[-1] if group_path.name else ""
-        )
-        for group_path, controlled_ids in group_scopes
-    }
+    component_labels = _fit_component_labels(decomposition, experiments)
     progress = MinimizationProgressReporter(
         console,
         interactive=console.is_terminal,
         retained_observation_count=engine.plan.retained_observation_count,
         controlled_parameter_count=len(problem.controlled_ids),
-        step_name=step_name,
-        group_labels=group_labels,
+        component_labels=component_labels,
         grid=bool(method.grid),
     )
     uncertainty_progress = UncertaintyProgressReporter(console)
@@ -774,43 +691,26 @@ def run_native_deterministic(
             cast("GridDirectTrfInvocation", invocation),
             path,
             experiments=experiments,
-            group_scopes=group_scopes,
         )
-        if aggregate_output:
-            execute_post_fit_groups(
-                experiments,
-                path,
-                plot,
-                residuals=result.residuals,
-                nvarys=variable_count,
-                uncertainty=uncertainty,
-                uncertainty_evidence=uncertainty_evidence,
-                uncertainty_status=uncertainty_status,
-                block_uncertainty=block_uncertainty,
-            )
-        else:
-            execute_post_fit(
-                experiments,
-                path,
-                plot=plot != "nothing",
-                residuals=result.residuals,
-                nvarys=variable_count,
-                uncertainty=uncertainty,
-                uncertainty_evidence=uncertainty_evidence,
-                uncertainty_status=uncertainty_status,
-                block_uncertainty=block_uncertainty,
-            )
+        execute_post_fit(
+            experiments,
+            path,
+            plot=plot != "nothing",
+            residuals=result.residuals,
+            nvarys=variable_count,
+            uncertainty=uncertainty,
+            uncertainty_evidence=uncertainty_evidence,
+            uncertainty_status=uncertainty_status,
+            block_uncertainty=block_uncertainty,
+        )
         return fit
 
-    _write_direct_output(
+    execute_post_fit(
         experiments,
         path,
-        plot,
-        groups,
-        group_scopes,
-        result,
-        variable_count,
-        aggregate_output=aggregate_output,
+        plot=plot != "nothing",
+        residuals=result.residuals,
+        nvarys=variable_count,
         uncertainty=uncertainty,
         uncertainty_evidence=uncertainty_evidence,
         uncertainty_status=uncertainty_status,
