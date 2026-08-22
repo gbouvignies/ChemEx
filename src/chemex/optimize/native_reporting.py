@@ -1353,7 +1353,7 @@ def _artifact_role(relative_path: str) -> ArtifactRole:
     return "product_output"
 
 
-def _write_manifest(  # noqa: C901 - deterministic TOML sections
+def _write_manifest(
     path: Path,
     fields: tuple[tuple[str, str | int], ...],
     provenance: WorkflowProvenance,
@@ -1459,17 +1459,6 @@ def _write_manifest(  # noqa: C901 - deterministic TOML sections
                 f"name = {json.dumps(seed.name)}",
                 f"value = {seed.value}",
                 f"policy_identity = {json.dumps(seed.policy_identity)}",
-                "",
-            )
-        )
-    for reference in provenance.baseline_references:
-        lines.extend(
-            (
-                "[[baseline_references]]",
-                f"kind = {json.dumps(reference.kind)}",
-                f"identity = {json.dumps(reference.identity)}",
-                f"occurrence_identity = {json.dumps(reference.occurrence_identity)}",
-                f"result_bundle_identity = {json.dumps(reference.result_bundle_identity)}",
                 "",
             )
         )

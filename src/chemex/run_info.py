@@ -1171,7 +1171,6 @@ def read_native_run_information(  # noqa: C901 - closed durable schema
             "seeds",
             "execution",
             "environment",
-            "baseline_references",
             "published_step_identity",
             "publication_occurrence_identity",
             "independent_ids",
@@ -1179,8 +1178,9 @@ def read_native_run_information(  # noqa: C901 - closed durable schema
             "manifest",
             "artifacts",
         }
+        legacy_workflow_keys = workflow_keys | {"baseline_references"}
         if (
-            set(workflow) != workflow_keys
+            set(workflow) not in (workflow_keys, legacy_workflow_keys)
             or not isinstance(artifacts_record, list)
             or not isinstance(independent_raw, list)
             or any(
@@ -1193,6 +1193,12 @@ def read_native_run_information(  # noqa: C901 - closed durable schema
             )
         ):
             raise NativeProvenanceError("Native workflow children are malformed")
+        if "baseline_references" in workflow and (
+            workflow["baseline_references"] != manifest.get("baseline_references")
+        ):
+            raise NativeProvenanceError(
+                "Native workflow legacy baseline references are contradictory"
+            )
         artifact_records = cast(list[dict[str, object]], artifacts_record)
         artifacts = tuple(
             ArtifactReference(

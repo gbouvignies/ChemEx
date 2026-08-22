@@ -20,12 +20,6 @@ import numpy as np
 import pytest
 
 import chemex.optimize.method_step as method_step_module
-from chemex.baselines import (
-    LegacyObservationImplementation,
-    Occurrence,
-    ResultBundle,
-    ResultMember,
-)
 from chemex.configuration.methods import (
     McmcSettings,
     Method,
@@ -37,7 +31,6 @@ from chemex.configuration.parameters import read_defaults
 from chemex.evaluation.native import EvaluationEngine, EvaluationFrame, EvaluationResult
 from chemex.experiments.builder import build_experiments
 from chemex.native_provenance import (
-    BaselineReference,
     ProvenanceEnvironment,
     WorkflowProvenance,
 )
@@ -504,29 +497,9 @@ def _resampling_request(workflow: MethodStepWorkflow) -> ResamplingDerivationReq
 
 
 def _publication_request(path: Path) -> MethodStepPublicationRequest:
-    requested = Occurrence(
-        "a" * 64,
-        "b" * 64,
-        "c" * 64,
-        "unqualified-local-lane-v1",
-        None,
-        ("d" * 64,),
-        "issue-641-publication-baseline",
-    )
-    bundle = ResultBundle.create(
-        requested.identity,
-        requested.execution_specification_identity,
-        LegacyObservationImplementation(),
-        (ResultMember("result", "e" * 64, 1),),
-    )
-    occurrence = requested.succeeded(bundle)
     return MethodStepPublicationRequest(
         path,
         ProvenanceEnvironment.from_current_process(),
-        (
-            BaselineReference.from_occurrence(occurrence),
-            BaselineReference.from_result_bundle(bundle),
-        ),
     )
 
 
@@ -917,7 +890,6 @@ def test_operational_worker_and_thread_settings_are_not_semantic(
         "seeds": (),
         "execution": ExecutionSettings(),
         "environment": request.environment,
-        "baseline_references": request.baseline_references,
     }
     provenance_one = WorkflowProvenance.create_method_step(method=one.method, **common)
     provenance_four = WorkflowProvenance.create_method_step(
@@ -971,7 +943,6 @@ def test_operational_worker_and_thread_settings_are_not_semantic(
         "budgets": (),
         "seeds": (),
         "environment": request.environment,
-        "baseline_references": request.baseline_references,
     }
     thread_provenance_one = WorkflowProvenance.create_method_step(
         execution=ExecutionSettings(native_threads=1),

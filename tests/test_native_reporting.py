@@ -20,12 +20,6 @@ import numpy as np
 import pytest
 
 import chemex.run_info as run_info_module
-from chemex.baselines import (
-    LegacyObservationImplementation,
-    Occurrence,
-    ResultBundle,
-    ResultMember,
-)
 from chemex.configuration.methods import Method, Selection, read_methods
 from chemex.configuration.parameters import read_defaults
 from chemex.evaluation.native import (
@@ -37,13 +31,14 @@ from chemex.evaluation.native import (
 from chemex.experiments.builder import build_experiments
 from chemex.native_provenance import (
     ArtifactReference,
-    BaselineReference,
     BudgetRecord,
     PolicyRecord,
     ProvenanceEnvironment,
     PublishedStepReference,
     SeedRecord,
     WorkflowProvenance,
+    native_step_manifest_identity,
+    validate_native_step_manifest_bytes,
 )
 from chemex.optimize import native_reporting
 from chemex.optimize.direct_trf import (
@@ -176,22 +171,6 @@ def _workflow_provenance(
     assert (execution is not None) != (evaluation_result is not None)
     native_execution = execution if execution is not None else evaluation_result
     assert native_execution is not None
-    requested = Occurrence(
-        "a" * 64,
-        "b" * 64,
-        "c" * 64,
-        "unqualified-local-lane-v1",
-        None,
-        ("d" * 64,),
-        "issue-609-baseline-attempt",
-    )
-    bundle = ResultBundle.create(
-        requested.identity,
-        requested.execution_specification_identity,
-        LegacyObservationImplementation(),
-        (ResultMember("result", "e" * 64, 1),),
-    )
-    occurrence = requested.succeeded(bundle)
     policies: list[PolicyRecord] = []
     budgets: list[BudgetRecord] = []
     seeds: list[SeedRecord] = []
@@ -269,10 +248,6 @@ def _workflow_provenance(
             scipy_version="1.17.0",
             emcee_version="3.1.6",
             numerical_libraries=(("blas", "accelerate", "unknown"),),
-        ),
-        baseline_references=(
-            BaselineReference.from_occurrence(occurrence),
-            BaselineReference.from_result_bundle(bundle),
         ),
     )
 
@@ -863,28 +838,6 @@ def test_committed_native_fit_publishes_only_aggregate_step_root(
     }
     assert "seeds" not in manifest
     assert manifest["environment"]["numpy_version"] == "2.5.1"
-    assert manifest["baseline_references"] == [
-        {
-            "kind": "occurrence",
-            "identity": publication.provenance.baseline_references[0].identity,
-            "occurrence_identity": publication.provenance.baseline_references[
-                0
-            ].occurrence_identity,
-            "result_bundle_identity": publication.provenance.baseline_references[
-                0
-            ].result_bundle_identity,
-        },
-        {
-            "kind": "bundle",
-            "identity": publication.provenance.baseline_references[1].identity,
-            "occurrence_identity": publication.provenance.baseline_references[
-                1
-            ].occurrence_identity,
-            "result_bundle_identity": publication.provenance.baseline_references[
-                1
-            ].result_bundle_identity,
-        },
-    ]
     assert manifest["artifacts"]["Parameters/restart.toml"]["role"] == (
         "committed_restart_state"
     )
@@ -910,6 +863,83 @@ def test_committed_native_fit_publishes_only_aggregate_step_root(
     assert statistics["reduced-chi-square"] == pytest.approx(
         publication.accepted.chi_square / degrees_of_freedom
     )
+
+
+def test_v1_manifest_with_removed_baseline_fields_remains_readable(
+    tmp_path: Path,
+) -> None:
+    publication = _committed_fit()
+    output = tmp_path / "STEP"
+    publish_native_results(output, publication)
+    manifest_path = output / "fit-manifest.toml"
+    current_manifest = tomllib.loads(manifest_path.read_text())
+    references = [
+        {
+            "kind": "occurrence",
+            "identity": "a" * 64,
+            "occurrence_identity": "a" * 64,
+            "result_bundle_identity": "c" * 64,
+        },
+        {
+            "kind": "bundle",
+            "identity": "c" * 64,
+            "occurrence_identity": "a" * 64,
+            "result_bundle_identity": "c" * 64,
+        },
+    ]
+    legacy_provenance = replace(
+        publication.provenance,
+        _legacy_baseline_references=tuple(
+            (
+                item["kind"],
+                item["identity"],
+                item["occurrence_identity"],
+                item["result_bundle_identity"],
+            )
+            for item in references
+        ),
+    )
+    baseline_block = "\n".join(
+        [
+            "",
+            "[[baseline_references]]",
+            'kind = "occurrence"',
+            f'identity = "{"a" * 64}"',
+            f'occurrence_identity = "{"a" * 64}"',
+            f'result_bundle_identity = "{"c" * 64}"',
+            "",
+            "[[baseline_references]]",
+            'kind = "bundle"',
+            f'identity = "{"c" * 64}"',
+            f'occurrence_identity = "{"a" * 64}"',
+            f'result_bundle_identity = "{"c" * 64}"',
+            "",
+        ]
+    )
+    legacy_text = manifest_path.read_text().replace(
+        '\n[artifacts."Data/profile_0000.tsv"]',
+        f'{baseline_block}[artifacts."Data/profile_0000.tsv"]',
+        1,
+    )
+    legacy_text = legacy_text.replace(
+        f'provenance_identity = "{publication.provenance.identity}"',
+        f'provenance_identity = "{legacy_provenance.identity}"',
+        1,
+    )
+    legacy_manifest = tomllib.loads(legacy_text)
+    legacy_manifest_identity = native_step_manifest_identity(legacy_manifest)
+    legacy_text = legacy_text.replace(
+        f'manifest_identity = "{current_manifest["manifest_identity"]}"',
+        f'manifest_identity = "{legacy_manifest_identity}"',
+        1,
+    )
+
+    validated = validate_native_step_manifest_bytes(legacy_text.encode())
+    restored = WorkflowProvenance.from_manifest_record(validated)
+
+    assert validated["baseline_references"] == references
+    assert restored.identity == legacy_provenance.identity
+    assert "baseline_references" not in restored.to_record()
 
 
 def test_many_components_are_diagnostic_views_without_authoritative_copies(
@@ -1117,16 +1147,6 @@ def test_normalized_method_rejects_noncanonical_nested_payload() -> None:
             normalized_method_text=(
                 'FORMAT_VERSION = 2\n[METHOD]\nCANONICAL_JSON = "{}"\n'
             ),
-        )
-
-
-def test_workflow_provenance_rejects_substituted_baseline_occurrence() -> None:
-    publication = _committed_fit()
-    occurrence, bundle = publication.provenance.baseline_references
-    with pytest.raises(ValueError, match="linked occurrence/bundle"):
-        replace(
-            publication.provenance,
-            baseline_references=(replace(occurrence, identity="f" * 64), bundle),
         )
 
 

@@ -8,6 +8,10 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 ## [Unreleased]
 
 ### Changed
+- Removed the migration-only canonical numerical lane, pinned environment and
+  attestation machinery, calibration probes, and historical baseline fixtures.
+  New native manifests no longer emit those fields; legacy v1 manifests remain
+  readable without restoring the removed qualification authority.
 - Covariance-derived local standard errors are now reported when an otherwise
   valid covariance lies within the existing three-sigma boundary threshold,
   including at a bound. Boundary evidence and the threshold remain unchanged,
