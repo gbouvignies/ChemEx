@@ -17,6 +17,7 @@ from chemex.optimize.uncertainty import (
     UncertaintyEvidence,
 )
 from chemex.parameters.database import ParameterStore
+from chemex.parameters.parameterization import ActiveParameterization
 from chemex.printers.native_reporting import (
     write_block_uncertainty,
     write_json,
@@ -84,6 +85,7 @@ def _write_files(
     uncertainty_evidence: UncertaintyEvidence | None = None,
     uncertainty_status: tuple[str, str] | None = None,
     block_uncertainty: RootAnchoredBlockCovarianceEvidence | None = None,
+    parameterization: ActiveParameterization | None = None,
 ) -> None:
     """Write the results of the fit to output files."""
     print_writing_results(path)
@@ -93,6 +95,7 @@ def _write_files(
         path,
         parameter_store=experiments.parameter_store,
         uncertainty=uncertainty,
+        parameterization=parameterization,
     )
     experiments.write(path)
     _write_statistics(
@@ -169,6 +172,7 @@ def execute_post_fit(
     uncertainty_evidence: UncertaintyEvidence | None = None,
     uncertainty_status: tuple[str, str] | None = None,
     block_uncertainty: RootAnchoredBlockCovarianceEvidence | None = None,
+    parameterization: ActiveParameterization | None = None,
 ) -> None:
     _write_files(
         experiments,
@@ -179,6 +183,7 @@ def execute_post_fit(
         uncertainty_evidence=uncertainty_evidence,
         uncertainty_status=uncertainty_status,
         block_uncertainty=block_uncertainty,
+        parameterization=parameterization,
     )
     if plot:
         _write_plots(experiments, path)

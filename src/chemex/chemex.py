@@ -6,11 +6,18 @@ from argparse import Namespace
 from collections.abc import Sequence
 
 from chemex.cli import build_parser
-from chemex.configuration.methods import Method, Methods, Selection, read_methods
+from chemex.configuration.method_plan import (
+    FormatOrigin,
+    MethodFormatError,
+    MethodPlan,
+    StepPlan,
+)
+from chemex.configuration.methods import Methods, Selection, read_method_plan
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
 from chemex.experiments.builder import build_experiments
 from chemex.messages import (
+    console,
     print_logo,
     print_no_data,
     print_reading_defaults,
@@ -34,7 +41,7 @@ def run_fit(
     session: AnalysisSession,
     *,
     argv: Sequence[str] | None = None,
-    methods: Methods | None = None,
+    methods: Methods | MethodPlan | None = None,
 ) -> None:
     if methods is None:
         methods = _read_fit_methods(args)
@@ -87,11 +94,15 @@ def run_sim(
     )
 
 
-def _read_fit_methods(args: Namespace) -> Methods:
+def _read_fit_methods(args: Namespace) -> MethodPlan:
     if args.method is None:
-        return {"": Method()}
+        return MethodPlan(FormatOrigin.V1, (StepPlan(""),))
     print_reading_methods()
-    return read_methods(args.method)
+    try:
+        return read_method_plan(args.method)
+    except MethodFormatError as error:
+        console.print(f"[red] -- ERROR: {error}")
+        sys.exit(1)
 
 
 def run(
@@ -141,6 +152,9 @@ def run(
         if construction_error is None:
             raise RuntimeError(msg)
         raise RuntimeError(f"{msg}: {construction_error}") from construction_error
+
+    if isinstance(methods, MethodPlan):
+        session.validate_method_plan(methods)
 
     if args.commands == "simulate":
         run_sim(args, experiments, session)

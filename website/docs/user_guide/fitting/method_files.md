@@ -21,10 +21,16 @@ accepted temporarily as an alias and is canonicalized to `"trf"`; historical
 optimizer names fail during method-file validation, before fit outputs are
 invalidated. ChemEx no longer forwards arbitrary optimizer names or depends on
 lmfit at runtime; fitting and statistics use the native ChemEx parameter and
-evaluation stack. When `GRID` and `STATISTICS` occur in the same step, ChemEx prints
-the compatibility warning, executes the native grid, and ignores statistics.
+evaluation stack. When `GRID` and `STATISTICS` occur in the same step, ChemEx
+first commits the accepted aggregate grid fit and then runs the requested
+statistics from that fit. This canonical workflow applies to both legacy and
+version 2 method files.
 
-Method files are structured in sections, each representing a fitting step. Fitting steps are executed in the order they appear, and parameter settings inherit from previous steps if not redefined.
+Method files are structured in sections, each representing a fitting step.
+Steps execute in the order they appear. Files without `FORMAT_VERSION` use the
+legacy version 1 behavior: profile selection and parameter roles implicitly
+carry forward when omitted. Version 2 makes role inheritance explicit and
+treats profile selection as local to each step.
 
 :::tip
 When performing multi-step fitting, start with a subset of residues with high-quality data (e.g., large CPMG dispersion or clear CEST dips) to estimate global parameters, then fix these parameters in subsequent steps to fit residue-specific parameters. For example, see the method file for `CPMG_CH3_1H_SQ/` in `Examples/Experiments/`.
@@ -64,6 +70,51 @@ This method file performs the following steps:
 4. `"DW_AB"` is varied.
 
 Results are saved in directories named according to each step.
+
+## Explicit Step Semantics (Version 2)
+
+Set `FORMAT_VERSION = 2` at the top of a method file to use canonical,
+step-local semantics. Each step starts from the sealed parameter model's roles
+unless `ROLES_FROM` names an earlier step. Starting parameter values always come
+from the latest accepted fit; inheriting roles is not required to carry fitted
+values into a later step.
+
+`ROLES` is an ordered list. Each entry contains exactly one of `FIT`, `FIX`, or
+`CONSTRAIN`. A later matching action replaces the parameter's complete earlier
+role, including removal of an earlier constraint.
+
+```toml title="method-v2.toml"
+FORMAT_VERSION = 2
+
+[FIRST]
+INCLUDE = [15, 31, 33, 34, 37]
+ROLES = [
+    { FIX = ["PB", "KEX_AB"] },
+    { FIT = ["DW_AB"] },
+]
+
+[FIRST.SEARCH.GRID]
+AXES = ["[DW_AB] = lin(0.0, 10.0, 20)"]
+
+[SECOND]
+INCLUDE = "ALL"
+ROLES_FROM = "FIRST"
+ROLES = [
+    { FIT = ["PB", "KEX_AB"] },
+    { CONSTRAIN = ["[R2_B, NUC->N] = [R2_A, NUC->N]"] },
+]
+
+[SECOND.STATISTICS.MC]
+REPLICATES = 100
+SEED = 1234
+```
+
+Omitting `ROLES_FROM` means no role inheritance, even when the preceding step
+changed roles. Omitting `INCLUDE` and `EXCLUDE` selects all profiles for that
+step; selection never inherits in version 2. `SEARCH.GRID.AXES` accepts strict
+`lin(...)`, `log(...)`, and `values(...)` expressions; the legacy bare tuple
+form is not accepted. Differential-evolution product execution is not yet
+available through version 2 method files.
 
 ## Setting Parameter Behavior
 

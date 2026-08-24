@@ -113,8 +113,9 @@ def test_cest_infinite_sweep_width_sentinel_has_a_stable_native_plan() -> None:
         )
         session.parameters.set_defaults(read_defaults([CEST_PARAMETERS]))
         assert session.try_build_analysis_values()
-        parameterization = session.compile_current_parameterization(
-            experiments.param_ids
+        parameterization = session.compile_parameterization(
+            Method(),
+            experiments.param_ids,
         )
         engine = EvaluationEngine.from_experiments(
             experiments,

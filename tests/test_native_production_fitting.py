@@ -243,6 +243,44 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     assert fitted_curve_rate == pytest.approx(fitted_value, rel=1.0e-3)
 
 
+def test_v2_role_change_keeps_the_prior_committed_value_without_store_roles(
+    tmp_path: Path,
+) -> None:
+    method = tmp_path / "method-v2.toml"
+    method.write_text(
+        """
+FORMAT_VERSION = 2
+[FIRST]
+ROLES = [{ FIX = ["PB", "KEX_AB"] }]
+
+[SECOND]
+ROLES_FROM = "FIRST"
+ROLES = [{ FIX = ["R1A_A"] }]
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+
+    run(_fit_arguments(output, method), session=session)
+
+    first_fitted = (output / "FIRST/Parameters/fitted.toml").read_text(encoding="utf-8")
+    second_fixed = (output / "SECOND/Parameters/fixed.toml").read_text(encoding="utf-8")
+    first_value = float(
+        next(line for line in first_fitted.splitlines() if "G2N-H" in line)
+        .split("=", 1)[1]
+        .split()[0]
+    )
+    second_value = float(
+        next(line for line in second_fixed.splitlines() if "G2N-H" in line)
+        .split("=", 1)[1]
+        .split()[0]
+    )
+
+    assert session.analysis_values.snapshot().revision == 1
+    assert second_value == pytest.approx(first_value, rel=1.0e-12)
+
+
 def test_relaxation_product_covariance_matches_absolute_sigma_reference(
     tmp_path: Path,
 ) -> None:
@@ -1046,11 +1084,15 @@ def test_real_compact_mcmc_fit_is_wholly_native_and_writes_products(
     parameters = _bounded_parameters(tmp_path / "parameters.toml")
     session = AnalysisSession.create()
 
-    with patch.object(
-        mcmc_module,
-        "execute_mcmc_evidence",
-        wraps=mcmc_module.execute_mcmc_evidence,
-    ) as native_sampler:
+    generated_seed = 0x1234_5678_90AB_CDEF
+    with (
+        patch.object(mcmc_module.secrets, "randbits", return_value=generated_seed),
+        patch.object(
+            mcmc_module,
+            "execute_mcmc_evidence",
+            wraps=mcmc_module.execute_mcmc_evidence,
+        ) as native_sampler,
+    ):
         run(
             _fit_arguments(output, method, parameters=parameters),
             session=session,
@@ -1069,6 +1111,7 @@ def test_real_compact_mcmc_fit_is_wholly_native_and_writes_products(
     assert diagnostics["engine"] == "native MCMC"
     assert diagnostics["steps"] == 2
     assert diagnostics["walkers"] == 32
+    assert diagnostics["root_seed"] == generated_seed
     assert "lmfit_version" not in diagnostics
     fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
     assert "# ±" in fitted
@@ -1456,6 +1499,10 @@ def test_real_bs_fit_uses_native_refits_and_writes_bootstrap_products(
     assert (statistics / "diagnostics.toml").is_file()
     assert (statistics / "plots.pdf").stat().st_size > 0
     _assert_truthful_resampling_summary(statistics / "summary.toml")
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    assert diagnostics["root_seed"] == 0
 
 
 def test_real_bsn_fit_uses_native_nucleus_resampling_products(tmp_path: Path) -> None:
@@ -1475,6 +1522,10 @@ def test_real_bsn_fit_uses_native_nucleus_resampling_products(tmp_path: Path) ->
     assert (statistics / "diagnostics.toml").is_file()
     assert (statistics / "plots.pdf").stat().st_size > 0
     _assert_truthful_resampling_summary(statistics / "summary.toml")
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    assert diagnostics["root_seed"] == 0
 
 
 def test_seeded_native_mc_products_are_ordered_across_worker_counts(
@@ -2039,9 +2090,8 @@ STATISTICS = { "MC" = 1 }
     assert (output / "Statistics" / "MonteCarlo" / "samples.tsv").is_file()
 
 
-def test_grid_with_statistics_warns_and_runs_native_grid_only(
+def test_v1_grid_runs_mc_from_the_accepted_aggregate_grid_fit(
     tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     output = tmp_path / "Output"
     method = tmp_path / "method.toml"
@@ -2054,15 +2104,72 @@ STATISTICS = { "MC" = 1 }
     )
     session = AnalysisSession.create()
 
-    with patch(
-        "chemex.optimize.fitting.run_native_resampling_statistics",
-        side_effect=AssertionError("statistics after GRID were entered"),
-    ):
-        run(_fit_arguments(output, method), session=session)
+    run(_fit_arguments(output, method), session=session)
 
-    captured = capsys.readouterr()
-    assert "GRID" in captured.out
-    assert "STATISTICS" in captured.out
     assert (output / "Grid").is_dir()
     assert (output / "Statistics" / "Covariance" / "evidence.json").is_file()
-    assert not (output / "Statistics" / "MonteCarlo").exists()
+    diagnostics = tomllib.loads(
+        (output / "Statistics" / "MonteCarlo" / "diagnostics.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert diagnostics["status"] == "complete"
+    assert diagnostics["root_seed"] == 0
+
+
+def test_v2_grid_runs_requested_statistics_from_the_accepted_grid_fit(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method-v2.toml"
+    method.write_text(
+        """FORMAT_VERSION = 2
+[DEFAULT]
+
+[DEFAULT.SEARCH.GRID]
+AXES = ["[R1A_A] = values(1.0, 3.0)"]
+
+[DEFAULT.STATISTICS.MC]
+REPLICATES = 1
+SEED = 7
+""",
+        encoding="utf-8",
+    )
+
+    run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    assert (output / "Grid").is_dir()
+    assert (output / "Statistics" / "MonteCarlo" / "samples.tsv").is_file()
+    diagnostics = tomllib.loads(
+        (output / "Statistics" / "MonteCarlo" / "diagnostics.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert diagnostics["root_seed"] == 7
+
+
+def test_v2_omitted_resampling_seed_is_generated_once_and_recorded(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method-v2.toml"
+    method.write_text(
+        """FORMAT_VERSION = 2
+[DEFAULT]
+
+[DEFAULT.STATISTICS.MC]
+REPLICATES = 1
+""",
+        encoding="utf-8",
+    )
+    generated_seed = 0xFEDC_BA09_8765_4321
+
+    with patch("chemex.optimize.fitting.secrets.randbits", return_value=generated_seed):
+        run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    diagnostics = tomllib.loads(
+        (output / "Statistics" / "MonteCarlo" / "diagnostics.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert diagnostics["root_seed"] == generated_seed

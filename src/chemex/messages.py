@@ -14,7 +14,6 @@ Typical usage example:
   print_loading_experiments()
 """
 
-from collections import Counter
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import replace
@@ -558,43 +557,6 @@ def print_fitmethod(fit_method: str) -> None:
     console.print(Text.assemble("  • Fit method -> ", (f"{fit_method}", "blue")))
 
 
-def print_status_changes(
-    vary: Counter[str],
-    fixed: Counter[str],
-    constrained: Counter[str],
-) -> None:
-    """Print changes in parameter status like varied, fixed, or constrained.
-
-    Args:
-        vary (Counter[str]): Parameters varied during fitting.
-        fixed (Counter[str]): Parameters fixed during fitting.
-        constrained (Counter[str]): Parameters constrained during fitting.
-
-    """
-    if not any([vary, fixed, constrained]):
-        return
-
-    console.print(Text("  • Setting parameter status..."))
-
-    table = Table()
-    table.add_column("Name")
-    table.add_column("Status")
-    table.add_column("Updated", justify="right")
-
-    for name, nb in vary.items():
-        table.add_row(name, "fitted", str(nb))
-
-    for name, nb in fixed.items():
-        table.add_row(name, "fixed", str(nb))
-
-    for name, nb in constrained.items():
-        table.add_row(name, "constrained", str(nb))
-
-    table.box = box.SIMPLE_HEAD
-
-    console.print(Padding.indent(table, 3))
-
-
 def print_minimizing() -> None:
     """Display a message indicating that the minimization process is running."""
     console.print(Text("  • Running the minimization..."))
@@ -873,16 +835,6 @@ def print_error_constraints(expression: str, detail: str | None = None) -> None:
     console.print(f'[red] -- ERROR: Error reading constraints -> "{expression}" --')
     if detail is not None:
         console.print(Text(f"    {detail}", style="red"))
-    console.print()
-
-
-def print_grid_statistic_warning() -> None:
-    """Warn that 'GRID' and 'STATISTICS' options are mutually exclusive."""
-    console.print()
-    console.print(
-        "[yellow] -- WARNING: The 'GRID' and 'STATISTICS' options are mutually "
-        "exclusive. Only the 'GRID' calculation will be run.",
-    )
     console.print()
 
 
