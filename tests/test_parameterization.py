@@ -14,7 +14,29 @@ import pytest
 
 from chemex import chemex as chemex_module
 from chemex.configuration.conditions import Conditions
-from chemex.configuration.methods import Method, Selection, read_methods
+from chemex.configuration.method_plan import (
+    ConstrainAction,
+    Constraint,
+    FitAction,
+    FixAction,
+    FormatOrigin,
+    MethodPlan,
+    ParameterSelector,
+    SourceRef,
+    StepPlan,
+)
+from chemex.configuration.method_plan import (
+    LiteralExpression as MethodLiteralExpression,
+)
+from chemex.configuration.method_plan import (
+    SelectorExpression as MethodSelectorExpression,
+)
+from chemex.configuration.methods import (
+    Method,
+    Selection,
+    read_method_plan,
+    read_methods,
+)
 from chemex.configuration.parameters import read_defaults
 from chemex.experiments.builder import build_experiments
 from chemex.models.factory import model_factory
@@ -40,6 +62,7 @@ from chemex.parameters.parameterization import (
     SealedParameterModel,
     UnsupportedConstraintExpressionError,
     compile_active_parameterization,
+    compile_active_parameterization_from_actions,
     seal_parameter_declarations,
 )
 from chemex.parameters.sealed import (
@@ -71,6 +94,7 @@ BINDING_ROOT = ROOT / "examples/Combinations/2stBinding"
 BINDING_EXPERIMENTS = tuple(sorted((BINDING_ROOT / "Experiments").glob("*.toml")))
 BINDING_PARAMETERS = BINDING_ROOT / "Parameters/params.toml"
 BINDING_METHOD = BINDING_ROOT / "Methods/method.toml"
+_METHOD_SOURCE = SourceRef(Path("method.toml"), "STEP", "ROLES")
 
 _BINDING_STEP1_R2_B_IDS = {
     "__R2_B_486N_800_0MHZ",
@@ -217,57 +241,6 @@ def _build_fit_session() -> tuple[AnalysisSession, set[str]]:
     return session, experiments.param_ids
 
 
-def _presentation_roles_and_values(
-    session: AnalysisSession,
-    method: Method,
-    required_ids: set[str],
-) -> tuple[dict[str, ParameterRole], dict[str, float]]:
-    session.parameters.set_parameter_status(method)
-    parameters = session.parameters.get_parameters(required_ids)
-    roles = {
-        param_id: (
-            ParameterRole.DERIVED
-            if parameter.expr
-            else ParameterRole.FIT
-            if parameter.vary
-            else ParameterRole.FIX
-        )
-        for param_id, parameter in parameters.items()
-    }
-    return roles, dict(session.resolve_current_values(required_ids))
-
-
-def _assert_complete_shipped_parity(
-    native_session: AnalysisSession,
-    presentation_session: AnalysisSession,
-    method: Method,
-    required_ids: set[str],
-) -> None:
-    snapshot = native_session.analysis_values.snapshot()
-    parameterization = native_session.compile_parameterization(
-        method,
-        required_ids,
-    )
-    resolved = parameterization.resolve(parameterization.frame_from_snapshot(snapshot))
-    presentation_roles, presentation_values = _presentation_roles_and_values(
-        presentation_session,
-        method,
-        required_ids,
-    )
-
-    assert parameterization.scope_ids == tuple(presentation_roles)
-    assert {
-        param_id: parameterization.role(param_id)
-        for param_id in parameterization.scope_ids
-    } == presentation_roles
-    assert dict(resolved) == pytest.approx(
-        presentation_values,
-        rel=1e-13,
-        abs=1e-13,
-    )
-    assert native_session.analysis_values.snapshot() == snapshot
-
-
 def _native_fixture(
     declarations: tuple[ParameterDeclaration, ...],
     *,
@@ -322,6 +295,146 @@ def _native_fixture(
     return parameter_model, snapshot
 
 
+def test_canonical_ordered_actions_compile_complete_replacement_roles() -> None:
+    declarations = (
+        ParameterDeclaration("__DW_AB_24N", True),
+        ParameterDeclaration("__DW_AB_31N", True),
+        ParameterDeclaration("__DW_AB_40N", True),
+    )
+    definitions = tuple(
+        ParamDefinition(
+            declaration.param_id,
+            "DW_AB",
+            spin_system,
+            (),
+            1.0,
+            -float("inf"),
+            float("inf"),
+        )
+        for declaration, spin_system in zip(
+            declarations,
+            ("24N", "31N", "40N"),
+            strict=True,
+        )
+    )
+    parameter_model, snapshot = _native_fixture(
+        declarations,
+        definitions=definitions,
+    )
+    broad = ParameterSelector("DW_AB")
+    subset_a = ParameterSelector("DW_AB", spin_system="24N")
+    subset_b = ParameterSelector("DW_AB", spin_system="31N")
+    actions = (
+        FixAction((broad,), _METHOD_SOURCE),
+        FitAction((subset_a,), _METHOD_SOURCE),
+        ConstrainAction(
+            (
+                Constraint(
+                    subset_b,
+                    MethodSelectorExpression(subset_a),
+                    _METHOD_SOURCE,
+                ),
+            ),
+            _METHOD_SOURCE,
+        ),
+    )
+
+    parameterization = compile_active_parameterization_from_actions(
+        parameter_model,
+        snapshot,
+        actions,
+        set(parameter_model.declarations),
+    )
+
+    assert parameterization.role("__DW_AB_24N") is ParameterRole.FIT
+    assert parameterization.role("__DW_AB_31N") is ParameterRole.DERIVED
+    assert parameterization.role("__DW_AB_40N") is ParameterRole.FIX
+
+
+@pytest.mark.parametrize("replacement", (FitAction, FixAction))
+def test_canonical_fit_or_fix_removes_an_earlier_constraint(
+    replacement: type[FitAction] | type[FixAction],
+) -> None:
+    declarations = (ParameterDeclaration("__PB", True),)
+    parameter_model, snapshot = _native_fixture(declarations)
+    selector = ParameterSelector("PB")
+    actions = (
+        ConstrainAction(
+            (
+                Constraint(
+                    selector,
+                    MethodLiteralExpression(0.25),
+                    _METHOD_SOURCE,
+                ),
+            ),
+            _METHOD_SOURCE,
+        ),
+        replacement((selector,), _METHOD_SOURCE),
+    )
+
+    parameterization = compile_active_parameterization_from_actions(
+        parameter_model,
+        snapshot,
+        actions,
+        {"__PB"},
+    )
+
+    expected = ParameterRole.FIT if replacement is FitAction else ParameterRole.FIX
+    assert parameterization.role("__PB") is expected
+    assert parameterization.program.constraints == ()
+
+
+def test_method_plan_resolves_explicit_and_baseline_role_actions_immutably() -> None:
+    selector = ParameterSelector("PB")
+    fixed = FixAction((selector,), _METHOD_SOURCE)
+    fitted = FitAction((selector,), _METHOD_SOURCE)
+    plan = MethodPlan(
+        FormatOrigin.V2,
+        (
+            StepPlan("FIRST", role_actions=(fixed,)),
+            StepPlan("INHERITED", roles_from="FIRST", role_actions=(fitted,)),
+            StepPlan("BASELINE", role_actions=(fitted,)),
+        ),
+    )
+
+    effective = plan.effective_role_actions()
+
+    assert effective == {
+        "FIRST": (fixed,),
+        "INHERITED": (fixed, fitted),
+        "BASELINE": (fitted,),
+    }
+
+
+def test_inherited_canonical_action_outside_selected_scope_is_inert() -> None:
+    declarations = (
+        ParameterDeclaration("__DW_AB_24N", True),
+        ParameterDeclaration("__DW_AB_31N", True),
+    )
+    definitions = (
+        ParamDefinition("__DW_AB_24N", "DW_AB", "24N", (), 1.0, -10.0, 10.0),
+        ParamDefinition("__DW_AB_31N", "DW_AB", "31N", (), 1.0, -10.0, 10.0),
+    )
+    parameter_model, snapshot = _native_fixture(
+        declarations,
+        definitions=definitions,
+    )
+    inherited = FixAction(
+        (ParameterSelector("DW_AB", spin_system="31N"),),
+        _METHOD_SOURCE,
+    )
+
+    parameterization = compile_active_parameterization_from_actions(
+        parameter_model,
+        snapshot,
+        (inherited,),
+        {"__DW_AB_24N"},
+    )
+
+    assert parameterization.scope_ids == ("__DW_AB_24N",)
+    assert parameterization.role("__DW_AB_24N") is ParameterRole.FIT
+
+
 def test_shipped_method_compiles_roles_and_resolves_without_mutation() -> None:
     session, required_ids = _build_dcest_session()
     methods = read_methods([DCEST_METHOD])
@@ -332,8 +445,7 @@ def test_shipped_method_compiles_roles_and_resolves_without_mutation() -> None:
         for param_id, parameter in session.parameters.database._parameters.items()
     }
 
-    parameterization = session.try_compile_parameterization(method, required_ids)
-    assert parameterization is not None
+    parameterization = session.compile_parameterization(method, required_ids)
     resolved = parameterization.resolve(parameterization.frame_from_snapshot(before))
 
     definitions = session.parameter_factory.sealed_definitions
@@ -358,38 +470,9 @@ def test_shipped_method_compiles_roles_and_resolves_without_mutation() -> None:
         session.parameters.database._parameters[r1_b].expr == legacy_expressions[r1_b]
     )
 
-    step2 = session.try_compile_parameterization(methods["STEP2"], required_ids)
-    assert step2 is not None
+    step2 = session.compile_parameterization(methods["STEP2"], required_ids)
     assert step2.role(d2o) is ParameterRole.FIX
     assert session.analysis_values.snapshot() == before
-
-
-def test_shipped_dcest_constraint_roles_and_values_match_legacy_completely() -> None:
-    native_session, required_ids = _build_dcest_session()
-    presentation_session, presentation_required_ids = _build_dcest_session()
-    assert presentation_required_ids == required_ids
-    method = read_methods([DCEST_METHOD])["STEP1"]
-
-    _assert_complete_shipped_parity(
-        native_session,
-        presentation_session,
-        method,
-        required_ids,
-    )
-
-
-def test_shipped_fix_roles_and_values_match_legacy_completely() -> None:
-    native_session, required_ids = _build_fit_session()
-    presentation_session, presentation_required_ids = _build_fit_session()
-    assert presentation_required_ids == required_ids
-    method = read_methods([FIT_METHOD])["DEFAULT"]
-
-    _assert_complete_shipped_parity(
-        native_session,
-        presentation_session,
-        method,
-        required_ids,
-    )
 
 
 @pytest.mark.parametrize(
@@ -526,7 +609,7 @@ def test_product_role_application_rejects_model_owned_override(method: Method) -
     session, required_ids = _build_dcest_session()
 
     with pytest.raises(ModelDerivationOverrideError):
-        session.apply_current_parameter_roles(method, required_ids)
+        session.compile_parameterization(method, required_ids)
 
 
 def test_non_estimable_declaration_cannot_compile_as_fit() -> None:
@@ -560,10 +643,14 @@ def test_binding_current_roles_compile_all_estimable_r2_b_coordinates() -> None:
         session.parameter_factory.native_construction_error
     )
     methods = read_methods([BINDING_METHOD])
+    plan = read_method_plan([BINDING_METHOD])
+    effective_actions = plan.effective_role_actions()
 
     experiments.select(methods["STEP1"].selection)
-    session.apply_current_parameter_roles(methods["STEP1"], experiments.param_ids)
-    step1 = session.compile_current_parameterization(experiments.param_ids)
+    step1 = session.compile_parameterization_from_actions(
+        effective_actions["STEP1"],
+        experiments.param_ids,
+    )
     step1_fit_ids = {
         param_id
         for param_id in step1.independent_ids
@@ -584,8 +671,10 @@ def test_binding_current_roles_compile_all_estimable_r2_b_coordinates() -> None:
         assert not declaration.model_owned
 
     experiments.select(methods["STEP2"].selection)
-    session.apply_current_parameter_roles(methods["STEP2"], experiments.param_ids)
-    step2 = session.compile_current_parameterization(experiments.param_ids)
+    step2 = session.compile_parameterization_from_actions(
+        effective_actions["STEP2"],
+        experiments.param_ids,
+    )
     step2_fit_ids = {
         param_id
         for param_id in step2.independent_ids
@@ -709,8 +798,6 @@ def test_shadowed_constraint_still_receives_public_syntax_validation() -> None:
 
 def test_real_model_free_scientific_expression_matches_legacy_resolution() -> None:
     native_session, required_ids = _build_mf_session()
-    presentation_session, presentation_required_ids = _build_mf_session()
-    assert presentation_required_ids == required_ids
     snapshot = native_session.analysis_values.snapshot()
     configuration = native_session.parameter_factory.sealed_configuration
     assert configuration is not None
@@ -734,12 +821,6 @@ def test_real_model_free_scientific_expression_matches_legacy_resolution() -> No
     assert any(
         item.param_id in parameterization.derived_ids and item.name.startswith("R2")
         for item in definitions
-    )
-    _assert_complete_shipped_parity(
-        native_session,
-        presentation_session,
-        method,
-        required_ids,
     )
 
 
@@ -1348,7 +1429,7 @@ def test_native_compilation_failure_cannot_fall_back_to_legacy_fit(
         msg = "native compilation failed"
         raise RuntimeError(msg)
 
-    monkeypatch.setattr(session, "compile_current_parameterization", fail_preview)
+    monkeypatch.setattr(session, "compile_parameterization_from_actions", fail_preview)
     args = Namespace(
         commands="fit",
         model="2st",

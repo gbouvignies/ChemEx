@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Protocol
 
+from chemex.configuration.method_plan import MethodPlan, RoleAction
 from chemex.configuration.methods import Method
 from chemex.experiments.loader import register_experiments
 from chemex.models.loader import register_kinetic_settings
@@ -15,9 +16,9 @@ from chemex.parameters.database import (
 from chemex.parameters.factory import ParameterFactory
 from chemex.parameters.parameterization import (
     ActiveParameterization,
-    ModelDerivationOverrideError,
     build_initial_analysis_values,
     compile_active_parameterization,
+    compile_active_parameterization_from_actions,
 )
 from chemex.parameters.values import AnalysisValues
 from chemex.runtime.execution import ExecutionSettings
@@ -163,90 +164,36 @@ class AnalysisSession:
             required_ids,
         )
 
-    def compile_current_parameterization(
+    def compile_parameterization_from_actions(
         self,
+        actions: tuple[RoleAction, ...],
         required_ids: set[str],
     ) -> ActiveParameterization:
-        """Compile the effective inherited v1 roles in the active catalog."""
+        """Compile one canonical effective method step without mutable role state."""
         parameter_model = self.parameter_factory.sealed_parameter_model
         if parameter_model is None:
             msg = "The sealed native parameter model is unavailable"
             raise RuntimeError(msg)
-        parameters = self.parameters.get_parameters(required_ids)
-        fit: list[str] = []
-        fix: list[str] = []
-        constraints: list[str] = []
-        for param_id, parameter in parameters.items():
-            declaration = parameter_model.declarations[param_id]
-            if declaration.model_owned:
-                if parameter.vary or parameter.expr != declaration.model_expression:
-                    raise ModelDerivationOverrideError(
-                        "Current parameter role cannot override a model-owned "
-                        "derivation",
-                        param_ids=(param_id,),
-                    )
-                continue
-            selector = str(parameter.param_name)
-            if parameter.expr:
-                if parameter.expr == declaration.model_expression:
-                    continue
-                expression = parameter.expr
-                for dependency in sorted(
-                    parameter.dependencies,
-                    key=len,
-                    reverse=True,
-                ):
-                    dependency_name = parameters[dependency].param_name
-                    expression = expression.replace(
-                        dependency,
-                        str(dependency_name),
-                    )
-                constraints.append(f"[{selector}] = {expression}")
-            elif parameter.vary:
-                fit.append(selector)
-            else:
-                fix.append(selector)
-        effective_method = Method(
-            fit=fit,
-            fix=fix,
-            constraints=constraints,
-        )
-        return compile_active_parameterization(
+        return compile_active_parameterization_from_actions(
             parameter_model,
             self.analysis_values.snapshot(),
-            effective_method,
+            actions,
             required_ids,
         )
 
-    def apply_current_parameter_roles(
-        self,
-        method: Method,
-        required_ids: set[str],
-    ) -> None:
-        """Validate explicit method intent, then update inherited v1 roles."""
-        self.compile_parameterization(method, required_ids)
-        self.parameters.set_parameter_status(method)
-
-    def try_compile_parameterization(
-        self,
-        method: Method,
-        required_ids: set[str],
-    ) -> ActiveParameterization | None:
-        """Best-effort native parameterization preview."""
-        try:
-            candidate = self.compile_parameterization(method, required_ids)
-            frame = candidate.frame_from_snapshot(self.analysis_values.snapshot())
-            candidate.resolve(frame)
-        except Exception:  # noqa: BLE001 - checkpoint-1 isolation boundary
-            return None
-        return candidate
+    def validate_method_plan(self, plan: MethodPlan) -> None:
+        """Validate canonical method semantics against the sealed model."""
+        parameter_model = self.parameter_factory.sealed_parameter_model
+        if parameter_model is None:
+            raise RuntimeError("Native parameter model is unavailable")
+        plan.validate(parameter_model)
 
     def resolve_current_values(
         self,
         required_ids: set[str],
     ) -> Mapping[str, float]:
         """Resolve current stable values through native parameterization."""
-        parameterization = self.compile_current_parameterization(required_ids)
+        parameterization = self.compile_parameterization(Method(), required_ids)
         frame = parameterization.frame_from_snapshot(self.analysis_values.snapshot())
         return parameterization.resolve(frame)
 

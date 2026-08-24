@@ -12,6 +12,7 @@ from chemex.optimize.uncertainty import (
 )
 from chemex.parameters.database import ParameterStore
 from chemex.parameters.name import ParamName
+from chemex.parameters.parameterization import ActiveParameterization, ParameterRole
 from chemex.parameters.setting import ParamSetting
 
 Parameters = dict[ParamName, ParamSetting]
@@ -234,6 +235,7 @@ def _format_constrained(
     param: ParamSetting,
     parameter_store: ParameterStore,
     uncertainty: ParameterUncertaintyView | None,
+    constraint_expression: str | None = None,
 ) -> str:
     if param.value is None:
         return ""
@@ -250,10 +252,11 @@ def _format_constrained(
         if reason is not None
         else ""
     )
-    constraint = param.expr
-    parameters = parameter_store.get_parameters(param.dependencies)
-    for param_id, parameter in parameters.items():
-        constraint = constraint.replace(param_id, str(parameter.param_name))
+    constraint = param.expr if constraint_expression is None else constraint_expression
+    if constraint_expression is None:
+        parameters = parameter_store.get_parameters(param.dependencies)
+        for param_id, parameter in parameters.items():
+            constraint = constraint.replace(param_id, str(parameter.param_name))
     return f"{param.value: .5e} # {error}({constraint})"
 
 
@@ -267,6 +270,7 @@ def _params_to_strings(
     parameter_store: ParameterStore,
     parameter_ids: dict[ParamName, str],
     uncertainty: ParameterUncertaintyView | None,
+    constraint_expressions: dict[str, str] | None,
 ) -> dict[str, dict[str, str]]:
     result: defaultdict[str, dict[str, str]] = defaultdict(dict)
 
@@ -277,6 +281,9 @@ def _params_to_strings(
             status,
             parameter_store,
             uncertainty,
+            None
+            if constraint_expressions is None
+            else constraint_expressions.get(parameter_ids[pname]),
         )
 
     for pname, param in parameters.local.items():
@@ -286,6 +293,9 @@ def _params_to_strings(
             status,
             parameter_store,
             uncertainty,
+            None
+            if constraint_expressions is None
+            else constraint_expressions.get(parameter_ids[pname]),
         )
 
     return result
@@ -297,13 +307,20 @@ def _format_parameter(
     status: str,
     parameter_store: ParameterStore,
     uncertainty: ParameterUncertaintyView | None,
+    constraint_expression: str | None = None,
 ) -> str:
     if status == "fitted":
         return _format_fitted(param_id, param, uncertainty)
     if status == "fixed":
         return _format_fixed(param)
     if status == "constrained":
-        return _format_constrained(param_id, param, parameter_store, uncertainty)
+        return _format_constrained(
+            param_id,
+            param,
+            parameter_store,
+            uncertainty,
+            constraint_expression,
+        )
     msg = (
         f"Unknown parameter status: {status!r}. Expected 'fitted', 'fixed', "
         "or 'constrained'."
@@ -336,6 +353,7 @@ def write_file(
     parameter_store: ParameterStore,
     parameter_ids: dict[ParamName, str] | None = None,
     uncertainty: ParameterUncertaintyView | None = None,
+    constraint_expressions: dict[str, str] | None = None,
 ) -> None:
     if not parameters:
         return
@@ -352,6 +370,7 @@ def write_file(
         parameter_store,
         ids,
         uncertainty,
+        constraint_expressions,
     )
     formatted_strings = _format_strings(par_strings)
     filename = path / f"{status}.toml"
@@ -374,6 +393,7 @@ def classify_global(parameters: Parameters) -> GlobalLocalParameters:
 def classify_parameters(
     experiments: Experiments,
     parameter_store: ParameterStore,
+    parameterization: ActiveParameterization | None = None,
 ) -> ClassifiedParameters:
     param_ids = experiments.param_ids
     parameters = {
@@ -381,12 +401,26 @@ def classify_parameters(
         for param in parameter_store.get_parameters(param_ids).values()
     }
 
-    constrained = {pname: param for pname, param in parameters.items() if param.expr}
-    fitted = {
-        pname: param
-        for pname, param in parameters.items()
-        if param.vary and pname not in constrained
-    }
+    if parameterization is None:
+        constrained = {
+            pname: param for pname, param in parameters.items() if param.expr
+        }
+        fitted = {
+            pname: param
+            for pname, param in parameters.items()
+            if param.vary and pname not in constrained
+        }
+    else:
+        constrained = {
+            pname: param
+            for pname, param in parameters.items()
+            if parameterization.role(param.id_) is ParameterRole.DERIVED
+        }
+        fitted = {
+            pname: param
+            for pname, param in parameters.items()
+            if parameterization.role(param.id_) is ParameterRole.FIT
+        }
 
     fixed_ids = set(parameters) - set(fitted) - set(constrained)
     fixed = {
@@ -407,11 +441,25 @@ def write_parameters(
     path: Path,
     parameter_store: ParameterStore,
     uncertainty: ParameterUncertaintyView | None = None,
+    parameterization: ActiveParameterization | None = None,
 ) -> None:
     """Write the model parameter values and their uncertainties to a file."""
     path_par = path / "Parameters"
     path_par.mkdir(parents=True, exist_ok=True)
-    classified_parameters = classify_parameters(experiments, parameter_store)
+    classified_parameters = classify_parameters(
+        experiments,
+        parameter_store,
+        parameterization,
+    )
+    constraint_expressions = (
+        None
+        if parameterization is None
+        else {
+            item.target_id: item.expression_text
+            for item in parameterization.program.constraints
+            if item.source.startswith("method-rule:")
+        }
+    )
     parameter_ids = {
         parameter.param_name: param_id
         for param_id, parameter in parameter_store.get_parameters(
@@ -441,4 +489,5 @@ def write_parameters(
         parameter_store,
         parameter_ids,
         uncertainty,
+        constraint_expressions,
     )

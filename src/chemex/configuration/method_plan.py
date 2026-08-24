@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
 from chemex.parameters.spin_system import SpinSystem
@@ -313,6 +315,14 @@ class StepPlan:
 class MethodPlan:
     format_origin: FormatOrigin
     steps: tuple[StepPlan, ...]
+
+    def effective_role_actions(self) -> Mapping[str, tuple[RoleAction, ...]]:
+        """Resolve each step's immutable baseline or inherited action chain."""
+        effective: dict[str, tuple[RoleAction, ...]] = {}
+        for step in self.steps:
+            inherited = () if step.roles_from is None else effective[step.roles_from]
+            effective[step.name] = (*inherited, *step.role_actions)
+        return MappingProxyType(effective)
 
     def render(self) -> str:
         lines = ["FORMAT_VERSION = 2"]

@@ -80,10 +80,13 @@ def test_revision_zero_model_values_and_constraints_resolve_without_lmfit() -> N
     assert session.try_build_analysis_values()
     initial = session.resolve_current_values(experiments.param_ids)
 
-    session.parameters.set_parameter_status(
-        Method(constraints=["[PB] = [KEX_AB] / 10000.0"])
+    parameterization = session.compile_parameterization(
+        Method(constraints=["[PB] = [KEX_AB] / 10000.0"]),
+        experiments.param_ids,
     )
-    constrained = session.resolve_current_values(experiments.param_ids)
+    constrained = parameterization.resolve(
+        parameterization.frame_from_snapshot(session.analysis_values.snapshot())
+    )
 
     assert initial["__PB"] == pytest.approx(0.07)
     assert initial["__PA"] == pytest.approx(0.93)

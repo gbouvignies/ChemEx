@@ -9,12 +9,10 @@ from typing import Protocol
 
 import numpy as np
 
-from chemex.configuration.methods import Method
 from chemex.configuration.parameters import DefaultListType
 from chemex.messages import (
     print_error_constraints,
     print_error_grid_settings,
-    print_status_changes,
     print_warning_negative_jch,
     print_warning_positive_jnh,
 )
@@ -445,7 +443,6 @@ class ParameterCatalog:
                 grid_values.update(dict.fromkeys(ids_changed, values))
                 ids_pool -= ids_changed
 
-                self.set_vary([name], vary=False)
         except GridExpressionError as error:
             print_error_grid_settings(error.entry, error.detail)
             sys.exit(1)
@@ -652,13 +649,6 @@ class ParameterStore:
 
         """
         return self.database.set_expressions(expression_list)
-
-    def set_parameter_status(self, method: Method) -> None:
-        matches_con = self.set_expressions(method.constraints)
-        matches_fix = self.set_vary(method.fix, vary=False)
-        matches_fit = self.set_vary(method.fit, vary=True)
-
-        print_status_changes(matches_fit, matches_fix, matches_con)
 
     def parse_grid(self, grid_entries: list[str]) -> dict[str, Array]:
         """Parse grid definitions and sets up parameters in the active catalog.

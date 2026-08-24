@@ -28,6 +28,21 @@ from uuid import uuid4
 import numpy as np
 
 from chemex.configuration.conditions import Conditions
+from chemex.configuration.method_plan import (
+    ConstrainAction as MethodConstrainAction,
+)
+from chemex.configuration.method_plan import (
+    FitAction as MethodFitAction,
+)
+from chemex.configuration.method_plan import (
+    FixAction as MethodFixAction,
+)
+from chemex.configuration.method_plan import (
+    RoleAction as MethodRoleAction,
+)
+from chemex.configuration.method_plan import (
+    render_expression as render_method_expression,
+)
 from chemex.configuration.methods import Method
 from chemex.nmr.rates import rate_functions
 from chemex.parameters.name import ParamName, matches_parameter_index_selector
@@ -134,6 +149,17 @@ class ParameterDeclaration:
     supports_estimation: bool
     model_expression: str = ""
     model_owned: bool = False
+
+
+def baseline_parameter_role(declaration: ParameterDeclaration) -> ParameterRole:
+    """Return the authoritative method-local role for one sealed declaration."""
+    if declaration.model_expression and (
+        declaration.model_owned or not declaration.supports_estimation
+    ):
+        return ParameterRole.DERIVED
+    if declaration.supports_estimation:
+        return ParameterRole.FIT
+    return ParameterRole.FIX
 
 
 def _fingerprint(kind: str, records: object) -> str:
@@ -1042,17 +1068,73 @@ def _build_rules(
     return tuple(rules)
 
 
+def _build_action_rules(
+    actions: Sequence[MethodRoleAction],
+    definitions: SealedDefinitions,
+) -> tuple[_RoleRule, ...]:
+    """Compile canonical ordered complete-role actions without legacy buckets."""
+    rules: list[_RoleRule] = []
+    ordinal = 0
+    for action in actions:
+        if isinstance(action, (MethodFitAction, MethodFixAction)):
+            role = (
+                ParameterRole.FIT
+                if isinstance(action, MethodFitAction)
+                else ParameterRole.FIX
+            )
+            for selector in action.selectors:
+                selector_text = selector.render()
+                rules.append(
+                    _RoleRule(
+                        role,
+                        selector_text,
+                        "",
+                        _match_selector(
+                            selector_text,
+                            definitions,
+                            role=role,
+                            ordinal=ordinal,
+                        ),
+                        ordinal,
+                    )
+                )
+                ordinal += 1
+            continue
+        if not isinstance(action, MethodConstrainAction):
+            raise TypeError(f"Unsupported canonical role action {type(action)!r}")
+        for constraint in action.constraints:
+            selector_text = constraint.target.render()
+            expression_text = render_method_expression(constraint.expression)
+            _validate_public_expression_syntax(expression_text)
+            rules.append(
+                _RoleRule(
+                    ParameterRole.DERIVED,
+                    selector_text,
+                    expression_text,
+                    _match_selector(
+                        selector_text,
+                        definitions,
+                        role=ParameterRole.DERIVED,
+                        ordinal=ordinal,
+                    ),
+                    ordinal,
+                )
+            )
+            ordinal += 1
+    return tuple(rules)
+
+
 def _role_for(
     param_id: str,
     declaration: ParameterDeclaration,
     rules: Sequence[_RoleRule],
+    *,
+    initialize_missing: bool = False,
 ) -> tuple[ParameterRole, str, str]:
     role = (
         ParameterRole.DERIVED
-        if declaration.model_expression
-        else ParameterRole.FIT
-        if declaration.supports_estimation
-        else ParameterRole.FIX
+        if initialize_missing and declaration.model_expression
+        else baseline_parameter_role(declaration)
     )
     expression = declaration.model_expression
     source = "model" if declaration.model_owned else "baseline"
@@ -1603,6 +1685,8 @@ def _compile_active_scope(
     rules: Sequence[_RoleRule],
     binder: ScientificFunctionBinder,
     required: set[str],
+    *,
+    initialize_missing: bool = False,
 ) -> tuple[
     set[str],
     dict[str, tuple[ParameterRole, str, str]],
@@ -1620,7 +1704,12 @@ def _compile_active_scope(
             if param_id not in active or param_id in role_data:
                 continue
             declaration = parameter_model.declarations[param_id]
-            role, expression_text, source = _role_for(param_id, declaration, rules)
+            role, expression_text, source = _role_for(
+                param_id,
+                declaration,
+                rules,
+                initialize_missing=initialize_missing,
+            )
             role_data[param_id] = (role, expression_text, source)
             if role is not ParameterRole.DERIVED:
                 continue
@@ -1668,13 +1757,15 @@ def _validate_rules_in_active_scope(
     )
 
 
-def compile_active_parameterization(
+def _compile_active_parameterization_from_rules(
     parameter_model: SealedParameterModel,
     snapshot: AnalysisValuesSnapshot,
-    method: Method,
+    rules: Sequence[_RoleRule],
     required_ids: Sequence[str] | set[str],
+    *,
+    initialize_missing: bool = False,
+    require_active_rule_matches: bool = True,
 ) -> ActiveParameterization:
-    """Compile one fresh method-scoped role and constraint program."""
     required = _validate_parameterization_inputs(
         parameter_model,
         snapshot,
@@ -1682,7 +1773,6 @@ def compile_active_parameterization(
     )
 
     definitions = parameter_model.definitions
-    rules = _build_rules(method, definitions)
     _validate_model_derivation_authority(rules, parameter_model.declarations)
     binder = ScientificFunctionBinder.for_model(parameter_model.model_name)
     definition_order = {
@@ -1693,9 +1783,11 @@ def compile_active_parameterization(
         rules,
         binder,
         required,
+        initialize_missing=initialize_missing,
     )
     _validate_estimation_authority(rules, parameter_model.declarations, active)
-    _validate_rules_in_active_scope(rules, active)
+    if require_active_rule_matches:
+        _validate_rules_in_active_scope(rules, active)
 
     scope_ids = tuple(
         definition.param_id
@@ -1738,6 +1830,39 @@ def compile_active_parameterization(
     )
 
 
+def compile_active_parameterization(
+    parameter_model: SealedParameterModel,
+    snapshot: AnalysisValuesSnapshot,
+    method: Method,
+    required_ids: Sequence[str] | set[str],
+) -> ActiveParameterization:
+    """Compile one fresh method-scoped role and constraint program."""
+    rules = _build_rules(method, parameter_model.definitions)
+    return _compile_active_parameterization_from_rules(
+        parameter_model,
+        snapshot,
+        rules,
+        required_ids,
+    )
+
+
+def compile_active_parameterization_from_actions(
+    parameter_model: SealedParameterModel,
+    snapshot: AnalysisValuesSnapshot,
+    actions: Sequence[MethodRoleAction],
+    required_ids: Sequence[str] | set[str],
+) -> ActiveParameterization:
+    """Compile directly from canonical effective method-role semantics."""
+    rules = _build_action_rules(actions, parameter_model.definitions)
+    return _compile_active_parameterization_from_rules(
+        parameter_model,
+        snapshot,
+        rules,
+        required_ids,
+        require_active_rule_matches=False,
+    )
+
+
 def build_initial_analysis_values(
     parameter_model: SealedParameterModel,
 ) -> Mapping[str, float]:
@@ -1764,11 +1889,12 @@ def build_initial_analysis_values(
             if config.effective_value is not None
         ),
     )
-    parameterization = compile_active_parameterization(
+    parameterization = _compile_active_parameterization_from_rules(
         parameter_model,
         bootstrap_snapshot,
-        Method(),
+        (),
         set(parameter_model.declarations),
+        initialize_missing=True,
     )
     resolved = parameterization.resolve(
         parameterization.frame_from_snapshot(bootstrap_snapshot)

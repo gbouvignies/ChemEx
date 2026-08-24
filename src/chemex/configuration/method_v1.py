@@ -42,7 +42,7 @@ def _statistics(value: object) -> StatisticsPlan | None:
 
     def resampling(name: str) -> ResamplingRequest | None:
         request = settings.get(name)
-        return ResamplingRequest(request) if isinstance(request, int) else None
+        return ResamplingRequest(request, seed=0) if isinstance(request, int) else None
 
     mcmc_value = settings.get("mcmc")
     mcmc = None

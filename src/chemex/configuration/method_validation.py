@@ -26,6 +26,7 @@ from chemex.parameters.name import ParamName, matches_parameter_index_selector
 from chemex.parameters.parameterization import (
     ParameterRole,
     SealedParameterModel,
+    baseline_parameter_role,
     compatible_reference_context,
 )
 from chemex.parameters.sealed import ParamDefinition
@@ -349,11 +350,7 @@ def _validate_de(
 
 def validate_method_plan(plan: MethodPlan, model: SealedParameterModel) -> None:
     baseline = {
-        param_id: ParameterRole.DERIVED
-        if declaration.model_expression
-        else ParameterRole.FIT
-        if declaration.supports_estimation
-        else ParameterRole.FIX
+        param_id: baseline_parameter_role(declaration)
         for param_id, declaration in model.declarations.items()
     }
     effective_by_step: dict[str, dict[str, ParameterRole]] = {}

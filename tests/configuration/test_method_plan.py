@@ -104,6 +104,38 @@ ROLES = [
     assert v1_plan.steps == v2_plan.steps
 
 
+def test_v1_and_v2_grid_statistics_normalize_to_the_same_step_semantics(
+    tmp_path: Path,
+) -> None:
+    v1 = _write(
+        tmp_path / "v1.toml",
+        """
+[STEP]
+GRID = ["[PB] = (0.1, 0.2)"]
+STATISTICS = { MC = 2 }
+""",
+    )
+    v2 = _write(
+        tmp_path / "v2.toml",
+        """
+FORMAT_VERSION = 2
+[STEP]
+
+[STEP.SEARCH.GRID]
+AXES = ["[PB] = values(0.1, 0.2)"]
+
+[STEP.STATISTICS.MC]
+REPLICATES = 2
+SEED = 0
+""",
+    )
+
+    v1_step = read_method_plan([v1]).steps[0]
+    v2_step = read_method_plan([v2]).steps[0]
+
+    assert v1_step == v2_step
+
+
 def test_v2_preserves_broad_to_specific_order_and_step_local_selection(
     tmp_path: Path,
 ) -> None:
@@ -427,6 +459,26 @@ FIT = ["PB"]
     assert "# V1_ONLY_THIN = 5" in read_method_plan([method]).render()
 
 
+def test_v1_adapter_resolves_resampling_seed_zero_but_not_mcmc_seed(
+    tmp_path: Path,
+) -> None:
+    method = _write(
+        tmp_path / "legacy-statistics.toml",
+        """
+[STEP]
+STATISTICS = { MC = 2, BS = 3, BSN = 4, MCMC = 5 }
+""",
+    )
+
+    statistics = read_method_plan([method]).steps[0].statistics
+
+    assert statistics is not None
+    assert statistics.mc is not None and statistics.mc.seed == 0
+    assert statistics.bs is not None and statistics.bs.seed == 0
+    assert statistics.bsn is not None and statistics.bsn.seed == 0
+    assert statistics.mcmc is not None and statistics.mcmc.seed is None
+
+
 def test_v1_adapter_preserves_values_coerced_by_the_legacy_schema(
     tmp_path: Path,
 ) -> None:
@@ -546,7 +598,21 @@ AXES = ["[KEX_AB] = values(100, 500)"]
 INCLUDE = [24]
 ROLES_FROM = "FIRST"
 ROLES = [{ FIT = ["PB", "KEX_AB"] }]
-STATISTICS = { MC = 10, BS = 20, BSN = 30, MCMC = 5000 }
+
+[SECOND.STATISTICS.MC]
+REPLICATES = 10
+SEED = 0
+
+[SECOND.STATISTICS.BS]
+REPLICATES = 20
+SEED = 0
+
+[SECOND.STATISTICS.BSN]
+REPLICATES = 30
+SEED = 0
+
+[SECOND.STATISTICS.MCMC]
+STEPS = 5000
 """,
     )
 

@@ -24,7 +24,7 @@ def get_setting(catalog: ParameterCatalog, param_id: str) -> ParamSetting:
     return catalog.get_parameters([param_id])[param_id]
 
 
-def test_parse_grid_preserves_specific_entry_precedence() -> None:
+def test_parse_grid_preserves_precedence_without_mutating_parameter_roles() -> None:
     global_pb = make_param("PB")
     local_pb = make_param("PB", "10N-H")
     catalog = make_catalog(global_pb, local_pb)
@@ -35,8 +35,8 @@ def test_parse_grid_preserves_specific_entry_precedence() -> None:
 
     assert grid[global_pb.id_].tolist() == [1.0, 2.0]
     assert grid[local_pb.id_].tolist() == [3.0, 4.0]
-    assert get_setting(catalog, global_pb.id_).vary is False
-    assert get_setting(catalog, local_pb.id_).vary is False
+    assert get_setting(catalog, global_pb.id_).vary is True
+    assert get_setting(catalog, local_pb.id_).vary is True
 
 
 def test_parse_grid_last_matching_entry_wins() -> None:

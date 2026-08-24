@@ -529,6 +529,7 @@ def run_native_deterministic(
     plot: str,
     *,
     session: AnalysisSession,
+    parameterization: ActiveParameterization | None = None,
 ) -> NativeDeterministicFit | None:
     """Execute one complete deterministic method occurrence natively."""
     parameter_model = session.parameter_factory.sealed_parameter_model
@@ -537,7 +538,11 @@ def run_native_deterministic(
         raise RuntimeError("Native parameter configuration is unavailable")
 
     normalized_method = method.model_copy(update={"fitmethod": "trf"})
-    parameterization = session.compile_current_parameterization(experiments.param_ids)
+    if parameterization is None:
+        parameterization = session.compile_parameterization(
+            method,
+            experiments.param_ids,
+        )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     starting_snapshot = session.analysis_values.snapshot()
     if not _has_controlled_parameters(parameterization):
@@ -567,6 +572,7 @@ def run_native_deterministic(
             plot=plot != "nothing",
             residuals=result.residuals,
             nvarys=0,
+            parameterization=parameterization,
         )
         return None
 
@@ -750,6 +756,7 @@ def run_native_deterministic(
             uncertainty_evidence=uncertainty_evidence,
             uncertainty_status=uncertainty_status,
             block_uncertainty=block_uncertainty,
+            parameterization=parameterization,
         )
         return fit
 
@@ -763,5 +770,6 @@ def run_native_deterministic(
         uncertainty_evidence=uncertainty_evidence,
         uncertainty_status=uncertainty_status,
         block_uncertainty=block_uncertainty,
+        parameterization=parameterization,
     )
     return fit
