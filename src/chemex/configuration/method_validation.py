@@ -18,6 +18,7 @@ from chemex.configuration.method_plan import (
     MethodFormatError,
     MethodPlan,
     ParameterSelector,
+    SearchScale,
     SelectorExpression,
     SourceRef,
     UnaryExpression,
@@ -37,6 +38,16 @@ from chemex.parameters.spin_system import SpinSystem
 class _ResolvedConstraint:
     declaration: Constraint
     dependencies: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedDeCoordinate:
+    """One canonical DE coordinate resolved to a stable independent parameter ID."""
+
+    param_id: str
+    low: float
+    high: float
+    scale: SearchScale
 
 
 def _param_name(definition: ParamDefinition) -> ParamName:
@@ -322,11 +333,12 @@ def _validate_de(
 ) -> None:
     seen: set[str] = set()
     resolved = resolve_de_coordinates(search, model)
-    for coordinate, (param_id, low, high, _semantics) in zip(
+    for coordinate, resolved_coordinate in zip(
         search.coordinates,
         resolved,
         strict=True,
     ):
+        param_id = resolved_coordinate.param_id
         if roles[param_id] is not ParameterRole.FIT:
             raise MethodFormatError(
                 f"DE target {param_id} is not a final independent FIT coordinate",
@@ -339,7 +351,7 @@ def _validate_de(
         seen.add(param_id)
         _check_bounds(
             param_id,
-            (low, high),
+            (resolved_coordinate.low, resolved_coordinate.high),
             model,
             coordinate.source,
         )
@@ -348,9 +360,9 @@ def _validate_de(
 def resolve_de_coordinates(
     search: DeSearch,
     model: SealedParameterModel,
-) -> tuple[tuple[str, float, float, str], ...]:
+) -> tuple[ResolvedDeCoordinate, ...]:
     """Resolve validated canonical DE coordinates to stable parameter IDs."""
-    resolved: list[tuple[str, float, float, str]] = []
+    resolved: list[ResolvedDeCoordinate] = []
     for coordinate in search.coordinates:
         matches = _matches(coordinate.selector, model, coordinate.source)
         if len(matches) != 1:
@@ -360,11 +372,11 @@ def resolve_de_coordinates(
                 coordinate.source,
             )
         resolved.append(
-            (
+            ResolvedDeCoordinate(
                 matches[0],
                 coordinate.range.low,
                 coordinate.range.high,
-                "linear" if coordinate.range.scale.value == "lin" else "log",
+                coordinate.range.scale,
             )
         )
     return tuple(resolved)

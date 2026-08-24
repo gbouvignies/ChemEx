@@ -97,8 +97,6 @@ type MethodStepPrimaryTerminal = Literal[
     "decomposition_validation_failure",
     "no_eligible_candidate",
     "materialization_failure",
-    "search_unsuccessful",
-    "polish_unsuccessful",
     "cancelled",
     "interrupted",
 ]
@@ -136,8 +134,6 @@ class MethodStepPrimaryRecord:
                 "decomposition_validation_failure",
                 "no_eligible_candidate",
                 "materialization_failure",
-                "search_unsuccessful",
-                "polish_unsuccessful",
                 "cancelled",
                 "interrupted",
             }

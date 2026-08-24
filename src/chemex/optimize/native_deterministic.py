@@ -10,7 +10,7 @@ from typing import cast
 
 import numpy as np
 
-from chemex.configuration.method_plan import DeSearch, GridSearch
+from chemex.configuration.method_plan import DeSearch, GridSearch, SearchScale
 from chemex.configuration.method_validation import resolve_de_coordinates
 from chemex.configuration.methods import Method
 from chemex.containers.experiments import Experiments
@@ -28,7 +28,8 @@ from chemex.messages import (
 )
 from chemex.native_provenance import ProvenanceEnvironment
 from chemex.optimize.de_direct_trf import (
-    DeDirectTrfInvocation,
+    DeCoordinateSemantics,
+    DeSearchInvocation,
     DeSearchTerminal,
     execute_de_search,
 )
@@ -99,8 +100,6 @@ from chemex.runtime import AnalysisSession
 # The finalized #573/#664 policy uses 2000 * (nvars + 1), with numerical
 # Jacobian requests counted in the same total objective-request ceiling.
 _TRF_OBJECTIVE_REQUESTS_PER_DIMENSION = 2000
-_DE_POPULATION_MULTIPLIER = 15
-_DE_MAXIMUM_GENERATIONS = 1000
 
 
 @dataclass(frozen=True, slots=True)
@@ -449,11 +448,6 @@ def _build_invocation(
     return MethodStepStrategy.DIRECT_TRF, invocation
 
 
-def _de_objective_request_budget(coordinate_count: int) -> int:
-    population_size = max(5, coordinate_count * _DE_POPULATION_MULTIPLIER)
-    return population_size * (_DE_MAXIMUM_GENERATIONS + 1)
-
-
 def _run_product_de_search(
     search: DeSearch,
     problem: OptimizationProblem,
@@ -461,16 +455,24 @@ def _run_product_de_search(
     engine: EvaluationEngine,
     parameter_model: SealedParameterModel,
 ) -> OptimizationProblem:
-    coordinates = resolve_de_coordinates(search, parameter_model)
-    invocation = DeDirectTrfInvocation.for_problem(
+    resolved_coordinates = resolve_de_coordinates(search, parameter_model)
+    coordinates = tuple(
+        (
+            coordinate.param_id,
+            coordinate.low,
+            coordinate.high,
+            (
+                DeCoordinateSemantics.LINEAR
+                if coordinate.scale is SearchScale.LINEAR
+                else DeCoordinateSemantics.LOG
+            ),
+        )
+        for coordinate in resolved_coordinates
+    )
+    invocation = DeSearchInvocation.for_product_problem(
         problem,
         search_coordinates=coordinates,
         root_seed=search.seed,
-        de_objective_request_budget=_de_objective_request_budget(len(coordinates)),
-        polish_objective_request_budget=_objective_request_budget(problem),
-        population_multiplier=_DE_POPULATION_MULTIPLIER,
-        maximum_generations=_DE_MAXIMUM_GENERATIONS,
-        polish_x_scale=_product_x_scale(problem),
     )
     print_running_de()
     outcome = execute_de_search(problem, invocation, parameterization, engine)
