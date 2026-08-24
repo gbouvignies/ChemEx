@@ -663,6 +663,31 @@ def test_v2_selector_diagnostics_reject_the_complete_invalid_input(
         read_method_plan([method])
 
 
+@pytest.mark.parametrize(
+    "spin_system",
+    ("G23C1'", "G23H1'", "G23H5'1", "G23C1'-H1'"),
+)
+def test_v2_nuc_selector_accepts_and_round_trips_prime_atom_names(
+    tmp_path: Path,
+    spin_system: str,
+) -> None:
+    method = _write(
+        tmp_path / "prime-nucleus.toml",
+        f"""FORMAT_VERSION = 2
+[STEP]
+ROLES = [{{ FIT = ["DW_AB, NUC->{spin_system}"] }}]
+""",
+    )
+
+    plan = read_method_plan([method])
+    selector = plan.steps[0].role_actions[0].selectors[0]
+    normalized = _write(tmp_path / "prime-nucleus-normalized.toml", plan.render())
+    round_tripped = read_method_plan([normalized]).steps[0].role_actions[0].selectors[0]
+
+    assert selector.render() == f"DW_AB, NUC->{spin_system}"
+    assert round_tripped == selector
+
+
 def test_selector_rendering_preserves_round_trip_condition_values(
     tmp_path: Path,
 ) -> None:

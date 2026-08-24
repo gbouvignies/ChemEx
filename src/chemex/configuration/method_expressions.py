@@ -92,18 +92,12 @@ def _parse_nucleus(
     start: int,
     end: int,
 ) -> str:
-    if re.fullmatch(r"[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+){0,2}", value_text) is None:
-        raise _error(
-            f"Invalid NUC spin-system selector {value_text!r}", source, start, end
-        )
     try:
-        spin_system = SpinSystem.from_name(value_text)
+        spin_system = SpinSystem.from_name_strict(value_text)
     except (TypeError, ValueError) as error:
         raise _error(
             f"Invalid NUC spin-system selector {value_text!r}", source, start, end
         ) from error
-    if not spin_system:
-        raise _error("NUC spin-system selector cannot be empty", source, start, end)
     return str(spin_system)
 
 

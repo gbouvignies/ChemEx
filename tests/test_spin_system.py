@@ -4,6 +4,7 @@ import pickle
 
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.spin_system.atom import Atom
+from chemex.parameters.spin_system.constants import STANDARD_ATOM_NAMES
 from chemex.parameters.spin_system.group import Group
 
 
@@ -44,3 +45,10 @@ def test_spin_system_pickle_rebuilds_nested_search_keys() -> None:
 
     assert restored == spin_system
     assert restored.search_keys == spin_system.search_keys
+
+
+def test_strict_spin_system_parser_accepts_every_registered_atom_name() -> None:
+    for atom_name in STANDARD_ATOM_NAMES:
+        spin_system = SpinSystem.from_name_strict(f"G23{atom_name}")
+
+        assert spin_system.atoms["i"].name == atom_name
