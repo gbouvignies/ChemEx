@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal, Self
 from pydantic import BaseModel, Field, InstanceOf, computed_field, model_validator
 
 from chemex.parameters.spin_system.atom import Atom
+from chemex.parameters.spin_system.constants import STANDARD_ATOM_NAMES
 from chemex.parameters.spin_system.group import Group
 from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.parameters.spin_system.spin import Spin
@@ -16,6 +17,13 @@ if TYPE_CHECKING:
     from chemex.nmr.basis import Basis
 
 SPIN_ALIASES = "isx"
+
+
+def _is_strict_group_name(group: Group) -> bool:
+    return all(
+        character.isascii() and (character.isalnum() or character == "_")
+        for character in group.name
+    )
 
 
 @cache
@@ -62,6 +70,40 @@ class SpinSystem(BaseModel):
         if isinstance(name, int):
             name = str(name)
         return cls(name=name)
+
+    @classmethod
+    def from_name_strict(cls, name: str) -> Self:
+        """Parse one fully consumed public spin-system name.
+
+        The established parser owns group completion, atom aliases, and canonical
+        rendering. This strict entry point additionally rejects components the
+        domain parser would otherwise truncate or preserve as unknown text.
+        """
+        normalized = name.strip().upper()
+        components = normalized.split("-")
+        if (
+            not normalized
+            or len(components) > len(SPIN_ALIASES)
+            or any(
+                not component or component != component.strip()
+                for component in components
+            )
+        ):
+            msg = f"Invalid spin-system name: {name!r}"
+            raise ValueError(msg)
+
+        spin_system = cls.from_name(normalized)
+        if len(spin_system.spins) != len(components):
+            msg = f"Invalid spin-system name: {name!r}"
+            raise ValueError(msg)
+
+        for spin in spin_system.spins.values():
+            valid_group = not spin.group or _is_strict_group_name(spin.group)
+            valid_atom = not spin.atom or spin.atom.name in STANDARD_ATOM_NAMES
+            if not spin or not valid_group or not valid_atom:
+                msg = f"Invalid spin-system name: {name!r}"
+                raise ValueError(msg)
+        return spin_system
 
     @computed_field
     @cached_property
