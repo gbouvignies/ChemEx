@@ -1,4 +1,4 @@
-"""Production composition for native deterministic method steps."""
+"""Production composition for deterministic evaluation and fitting."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -16,6 +16,8 @@ from chemex.configuration.methods import Method
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import (
     EvaluationEngine,
+    EvaluationFailure,
+    EvaluationFrame,
     EvaluationResult,
     ResolvedEvaluationValues,
 )
@@ -35,12 +37,17 @@ from chemex.optimize.de_direct_trf import (
 )
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
+    CancellationToken,
     DirectTrfInvocation,
     FitCommitOperation,
     FitCommitTerminal,
     OptimizationProblem,
+    execute_fit_commit,
 )
-from chemex.optimize.grid_direct_trf import GridDirectTrfInvocation
+from chemex.optimize.grid_direct_trf import (
+    GridDirectTrfInterrupted,
+    GridDirectTrfInvocation,
+)
 from chemex.optimize.gridding import (
     GridResult,
     combine_grids,
@@ -52,24 +59,19 @@ from chemex.optimize.grouped_direct_trf import (
     FitDecomposition,
     GroupedDirectTrfInvocation,
     GroupedDirectTrfOutcome,
+    execute_grouped_direct_trf,
 )
-from chemex.optimize.grouped_grid_direct_trf import GroupedGridDirectTrfOutcome
+from chemex.optimize.grouped_grid_direct_trf import (
+    GroupedGridDirectTrfOutcome,
+    execute_grouped_grid_direct_trf,
+)
 from chemex.optimize.helper import (
     execute_post_fit,
     print_header,
     print_values,
 )
-from chemex.optimize.method_step import (
-    DerivationDisposition,
-    EvaluationPurpose,
-    MethodStepLifecycle,
-    MethodStepOutcome,
-    MethodStepStrategy,
-    MethodStepWorkflow,
-    UncertaintyDerivationRequest,
-    execute_method_step,
-)
 from chemex.optimize.uncertainty import (
+    CompiledConstraintLinearizationCapabilities,
     MissingFunctionLinearizationCapability,
     ParameterUnit,
     ResidualVarianceScaling,
@@ -79,6 +81,7 @@ from chemex.optimize.uncertainty import (
     UncertaintyUnavailableKind,
     compile_constraint_linearization_capabilities,
     derive_root_anchored_block_covariance,
+    derive_uncertainty_evidence,
 )
 from chemex.parameters.database import ParameterStore
 from chemex.parameters.parameterization import (
@@ -120,6 +123,19 @@ class NativeDeterministicFit:
         return _objective_request_budget(self.problem)
 
 
+@dataclass(frozen=True, slots=True)
+class _ProductUncertaintyInputs:
+    """Resolved inputs for the single post-commit covariance operation."""
+
+    policy: UncertaintyPolicy
+    constrained_scope: tuple[str, ...]
+    constrained_units: tuple[tuple[str, ParameterUnit], ...]
+    constrained_scales: tuple[tuple[str, float], ...]
+    compiled_capabilities: CompiledConstraintLinearizationCapabilities
+    resolved_environment_identity: str
+    unsupported_constrained_ids: tuple[str, ...]
+
+
 def _objective_request_budget(problem: OptimizationProblem) -> int:
     coordinate_count = max(1, len(problem.controlled_ids))
     return _TRF_OBJECTIVE_REQUESTS_PER_DIMENSION * (coordinate_count + 1)
@@ -130,10 +146,10 @@ def _product_x_scale(problem: OptimizationProblem) -> tuple[float, ...]:
     return tuple(max(1.0, abs(value)) for value in problem.start)
 
 
-def _product_uncertainty_request(
+def _product_uncertainty_inputs(
     problem: OptimizationProblem,
     parameterization: ActiveParameterization,
-) -> tuple[UncertaintyDerivationRequest, tuple[str, ...]]:
+) -> _ProductUncertaintyInputs:
     """Resolve the normal absolute-observation-sigma covariance policy."""
     environment = ProvenanceEnvironment.from_current_process()
     policy = UncertaintyPolicy(
@@ -207,68 +223,82 @@ def _product_uncertainty_request(
         constrained_scope,
         (),
     )
-    return (
-        UncertaintyDerivationRequest(
-            policy,
-            constrained_scope=constrained_scope,
-            constrained_units=tuple(
-                (param_id, ParameterUnit.UNSPECIFIED) for param_id in constrained_scope
-            ),
-            constrained_scales=tuple((param_id, 1.0) for param_id in constrained_scope),
-            compiled_capabilities=capabilities,
-            resolved_environment_identity=environment.identity,
-        ),
+    return _ProductUncertaintyInputs(
+        policy,
+        constrained_scope,
+        tuple((param_id, ParameterUnit.UNSPECIFIED) for param_id in constrained_scope),
+        tuple((param_id, 1.0) for param_id in constrained_scope),
+        capabilities,
+        environment.identity,
         tuple(unsupported),
     )
 
 
-def _product_uncertainty_result(
-    outcome: MethodStepOutcome,
-    controlled_ids: tuple[str, ...],
-    supported_constrained_ids: tuple[str, ...],
-    unsupported_constrained_ids: tuple[str, ...],
+def _stopped_uncertainty_result(
+    terminal: str,
+    problem: OptimizationProblem,
+    inputs: _ProductUncertaintyInputs,
 ) -> tuple[
     UncertaintyEvidence | None,
     ParameterUncertaintyView,
     tuple[str, str] | None,
 ]:
-    for derivation in outcome.derivations:
-        for artifact in derivation.artifacts:
-            if isinstance(artifact, UncertaintyEvidence):
-                return (
-                    artifact,
-                    parameter_uncertainty_view(
-                        artifact,
-                        unsupported_constrained_ids,
-                    ),
-                    None,
-                )
-        if derivation.stage == "uncertainty" and derivation.disposition in {
-            DerivationDisposition.CANCELLED,
-            DerivationDisposition.INTERRUPTED,
-            DerivationDisposition.NOT_STARTED_BY_WORKFLOW_STOP,
-        }:
-            terminal = derivation.disposition.value
-            reason = uncertainty_unavailable_reason(
-                UncertaintyUnavailableKind.DERIVATION_STOPPED
-            )
-            view = ParameterUncertaintyView(
-                unavailable_reasons=(
-                    *((param_id, reason) for param_id in controlled_ids),
-                    *((param_id, reason) for param_id in supported_constrained_ids),
-                    *(
-                        (
-                            param_id,
-                            uncertainty_unavailable_reason(
-                                UncertaintyUnavailableKind.UNSUPPORTED_CONSTRAINED_DERIVATIVE
-                            ),
-                        )
-                        for param_id in unsupported_constrained_ids
+    reason = uncertainty_unavailable_reason(
+        UncertaintyUnavailableKind.DERIVATION_STOPPED
+    )
+    view = ParameterUncertaintyView(
+        unavailable_reasons=(
+            *((param_id, reason) for param_id in problem.controlled_ids),
+            *((param_id, reason) for param_id in inputs.constrained_scope),
+            *(
+                (
+                    param_id,
+                    uncertainty_unavailable_reason(
+                        UncertaintyUnavailableKind.UNSUPPORTED_CONSTRAINED_DERIVATIVE
                     ),
                 )
-            )
-            return None, view, (terminal, reason)
-    raise RuntimeError("Committed native fit lacks requested uncertainty evidence")
+                for param_id in inputs.unsupported_constrained_ids
+            ),
+        )
+    )
+    return None, view, (terminal, reason)
+
+
+def _derive_product_uncertainty(
+    accepted: AcceptedFitResult,
+    problem: OptimizationProblem,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    inputs: _ProductUncertaintyInputs,
+) -> tuple[
+    UncertaintyEvidence | None,
+    ParameterUncertaintyView,
+    tuple[str, str] | None,
+]:
+    """Derive covariance after commit without owning or rolling back fit state."""
+    try:
+        evidence = derive_uncertainty_evidence(
+            accepted,
+            problem=problem,
+            parameterization=parameterization,
+            engine=engine,
+            policy=inputs.policy,
+            constrained_scope=inputs.constrained_scope,
+            constrained_units=inputs.constrained_units,
+            constrained_scales=inputs.constrained_scales,
+            compiled_constraint_linearization=inputs.compiled_capabilities,
+            resolved_environment_identity=inputs.resolved_environment_identity,
+        )
+    except KeyboardInterrupt:
+        return _stopped_uncertainty_result("interrupted", problem, inputs)
+    return (
+        evidence,
+        parameter_uncertainty_view(
+            evidence,
+            inputs.unsupported_constrained_ids,
+        ),
+        None,
+    )
 
 
 def _product_block_uncertainty(
@@ -371,45 +401,82 @@ def _materialize_evaluation(
         )
 
 
-def _execute_with_phase_progress(
-    workflow: MethodStepWorkflow,
-    session: AnalysisSession,
+def _execute_and_commit_aggregate(
+    problem: OptimizationProblem,
+    decomposition: FitDecomposition,
+    invocation: GroupedDirectTrfInvocation | GridDirectTrfInvocation,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    analysis_values: AnalysisValues,
     progress: MinimizationProgressReporter,
     uncertainty_progress: UncertaintyProgressReporter,
-) -> MethodStepOutcome:
-    """Close minimization at commit and time the following uncertainty phase."""
-    minimization_finished = False
-
-    def finish_minimization_at_commit(
-        accepted: AcceptedFitResult,
-        operation: FitCommitOperation,
-    ) -> None:
-        nonlocal minimization_finished
+) -> tuple[
+    GroupedDirectTrfOutcome | GroupedGridDirectTrfOutcome,
+    FitCommitOperation | None,
+]:
+    """Execute components, accept one fresh aggregate, and atomically commit it."""
+    token = CancellationToken()
+    print_minimizing()
+    with progress:
+        if isinstance(invocation, GroupedDirectTrfInvocation):
+            outcome: GroupedDirectTrfOutcome | GroupedGridDirectTrfOutcome = (
+                execute_grouped_direct_trf(
+                    problem,
+                    decomposition,
+                    invocation,
+                    parameterization,
+                    engine,
+                    cancellation=token,
+                    progress_observer=progress.observe,
+                )
+            )
+        else:
+            try:
+                outcome = execute_grouped_grid_direct_trf(
+                    problem,
+                    decomposition,
+                    invocation,
+                    parameterization,
+                    engine,
+                    cancellation=token,
+                    progress_observer=progress.observe,
+                )
+            except GridDirectTrfInterrupted as error:
+                progress.finish(
+                    final_chi_square=None,
+                    terminal_status=error.outcome.terminal.value,
+                )
+                raise KeyboardInterrupt(
+                    "Native deterministic fit interrupted"
+                ) from error
+        accepted = outcome.accepted_result
+        authority = outcome.commit_authority
+        if accepted is None or authority is None:
+            progress.finish(
+                final_chi_square=None,
+                terminal_status=outcome.terminal.value,
+            )
+            return outcome, None
+        if token.is_cancelled:
+            progress.finish(
+                final_chi_square=accepted.chi_square,
+                terminal_status="cancelled",
+            )
+            raise KeyboardInterrupt("Native deterministic fit cancelled before commit")
+        operation = execute_fit_commit(
+            accepted,
+            authority,
+            problem=problem,
+            parameterization=parameterization,
+            analysis_values=analysis_values,
+        )
         progress.finish(
             final_chi_square=accepted.chi_square,
             terminal_status=operation.terminal.value,
         )
-        minimization_finished = True
-        if operation.terminal is FitCommitTerminal.COMMITTED:
-            uncertainty_progress.start()
-
-    print_minimizing()
-    with progress:
-        outcome = execute_method_step(
-            workflow,
-            analysis_values=session.analysis_values,
-            progress_observer=progress.observe,
-            commit_completed_observer=finish_minimization_at_commit,
-        )
-        if not minimization_finished:
-            accepted_result = outcome.accepted_result
-            progress.finish(
-                final_chi_square=(
-                    None if accepted_result is None else accepted_result.chi_square
-                ),
-                terminal_status=outcome.lifecycle.value,
-            )
-    return outcome
+    if operation.terminal is FitCommitTerminal.COMMITTED:
+        uncertainty_progress.start()
+    return outcome, operation
 
 
 def _build_invocation(
@@ -418,10 +485,7 @@ def _build_invocation(
     problem: OptimizationProblem,
     decomposition: FitDecomposition,
     parameter_store: ParameterStore,
-) -> tuple[
-    MethodStepStrategy,
-    GroupedDirectTrfInvocation | GridDirectTrfInvocation,
-]:
+) -> GroupedDirectTrfInvocation | GridDirectTrfInvocation:
     if search is not None:
         grid = parameter_store.parse_grid(method.grid)
         invocation = GridDirectTrfInvocation.for_problem(
@@ -432,7 +496,7 @@ def _build_invocation(
             objective_request_budget=_objective_request_budget(problem),
             x_scale=_product_x_scale(problem),
         )
-        return MethodStepStrategy.GRID_DIRECT_TRF, invocation
+        return invocation
     invocation = GroupedDirectTrfInvocation(
         decomposition.root_problem_identity,
         decomposition.identity,
@@ -445,7 +509,7 @@ def _build_invocation(
             for component in decomposition.components
         ),
     )
-    return MethodStepStrategy.DIRECT_TRF, invocation
+    return invocation
 
 
 def _run_product_de_search(
@@ -631,7 +695,6 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     if parameter_model is None or configuration is None:
         raise RuntimeError("Native parameter configuration is unavailable")
 
-    normalized_method = method.model_copy(update={"fitmethod": "trf"})
     if parameterization is None:
         parameterization = session.compile_parameterization(
             method,
@@ -640,22 +703,17 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     starting_snapshot = session.analysis_values.snapshot()
     if not _has_controlled_parameters(parameterization):
-        workflow = MethodStepWorkflow.for_evaluation(
-            starting_snapshot=starting_snapshot,
-            parameter_model=parameter_model,
-            parameterization=parameterization,
-            engine=engine,
-            method=normalized_method,
-            purpose=EvaluationPurpose.NO_OPTIMIZATION_REQUIRED,
+        frame = EvaluationFrame.from_lifecycle_frame(
+            parameterization,
+            parameterization.frame_from_snapshot(starting_snapshot),
         )
-        outcome = execute_method_step(
-            workflow,
-            analysis_values=session.analysis_values,
-        )
-        if outcome.lifecycle is not MethodStepLifecycle.SUCCESSFUL_NO_STATE_CHANGE:
-            msg = f"Native deterministic evaluation failed: {outcome.lifecycle.value}"
-            raise RuntimeError(msg)
-        result = cast("EvaluationResult", outcome.evaluation_result)
+        evaluated = engine.new_evaluator().evaluate(frame)
+        if isinstance(evaluated, EvaluationFailure):
+            raise RuntimeError(
+                "Native deterministic evaluation failed: "
+                f"{evaluated.category}: {evaluated.message}"
+            )
+        result = evaluated
         _commit_resolved_continuity_if_changed(
             session.analysis_values,
             starting_snapshot,
@@ -689,28 +747,16 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             parameter_model,
         )
     decomposition = FitDecomposition.from_root(problem, parameterization, engine)
-    strategy, invocation = _build_invocation(
+    invocation = _build_invocation(
         method,
         search if isinstance(search, GridSearch) else None,
         problem,
         decomposition,
         session.parameters,
     )
-    uncertainty_request, unsupported_constrained_ids = _product_uncertainty_request(
+    uncertainty_inputs = _product_uncertainty_inputs(
         problem,
         parameterization,
-    )
-    workflow = MethodStepWorkflow.for_optimization(
-        starting_snapshot=starting_snapshot,
-        parameter_model=parameter_model,
-        parameterization=parameterization,
-        engine=engine,
-        method=normalized_method,
-        problem=problem,
-        decomposition=decomposition,
-        strategy=strategy,
-        invocation=invocation,
-        derivations=(uncertainty_request,),
     )
     component_labels = _fit_component_labels(decomposition, parameter_model)
     progress = MinimizationProgressReporter(
@@ -722,23 +768,26 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         grid=isinstance(search, GridSearch),
     )
     uncertainty_progress = UncertaintyProgressReporter(console)
-    outcome = _execute_with_phase_progress(
-        workflow,
-        session,
+    outcome, commit = _execute_and_commit_aggregate(
+        problem,
+        decomposition,
+        invocation,
+        parameterization,
+        engine,
+        session.analysis_values,
         progress,
         uncertainty_progress,
     )
-    if outcome.lifecycle is MethodStepLifecycle.INTERRUPTED:
+    if outcome.terminal.value in {"cancelled", "interrupted"}:
         raise KeyboardInterrupt("Native deterministic fit interrupted")
-    if outcome.lifecycle is not MethodStepLifecycle.COMMITTED:
-        primary = outcome.primary_execution
+    if commit is None:
         failures = (
             tuple(
                 (component.controlled_ids, component.failure)
-                for component in primary.components
+                for component in outcome.components
                 if component.failure is not None
             )
-            if isinstance(primary, GroupedDirectTrfOutcome)
+            if isinstance(outcome, GroupedDirectTrfOutcome)
             else ()
         )
         detail = (
@@ -751,20 +800,28 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             )
         )
         msg = (
-            "Native deterministic fit did not commit: "
-            f"{outcome.primary_terminal or outcome.lifecycle.value}{detail}"
+            f"Native deterministic fit did not commit: {outcome.terminal.value}{detail}"
         )
         raise RuntimeError(msg)
+    if commit.terminal is not FitCommitTerminal.COMMITTED:
+        failure = commit.failure
+        detail = (
+            commit.terminal.value
+            if failure is None
+            else f"{failure.category.value}: {failure.message}"
+        )
+        raise RuntimeError(f"Native deterministic fit did not commit: {detail}")
 
     accepted = outcome.accepted_result
     if accepted is None:
         raise RuntimeError("Committed native fit lacks its accepted result")
     result = accepted.evaluation_result
-    uncertainty_evidence, uncertainty, uncertainty_status = _product_uncertainty_result(
-        outcome,
-        problem.controlled_ids,
-        uncertainty_request.constrained_scope,
-        unsupported_constrained_ids,
+    uncertainty_evidence, uncertainty, uncertainty_status = _derive_product_uncertainty(
+        accepted,
+        problem,
+        parameterization,
+        engine,
+        uncertainty_inputs,
     )
     block_uncertainty, block_status = _product_block_uncertainty(
         uncertainty_evidence,
@@ -846,7 +903,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     variable_count = len(problem.controlled_ids)
     if isinstance(search, GridSearch):
         _write_grid_output(
-            cast("GroupedGridDirectTrfOutcome", outcome.primary_execution),
+            cast("GroupedGridDirectTrfOutcome", outcome),
             cast("GridDirectTrfInvocation", invocation),
             path,
             parameter_model=parameter_model,

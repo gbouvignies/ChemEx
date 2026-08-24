@@ -25,7 +25,6 @@ from chemex.chemex import run
 from chemex.cli import build_parser
 from chemex.evaluation.native import BoundEvaluator, EvaluationFailure
 from chemex.optimize.mcmc import NativeMcmcIncompleteError
-from chemex.optimize.method_step import DerivationDisposition, DerivationOutcome
 from chemex.optimize.progress import ProgressPhase
 from chemex.optimize.resampling import NativeResamplingIncompleteError
 from chemex.optimize.uncertainty import ParameterUnit
@@ -273,6 +272,36 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     time_2, intensity_2 = curve[-1]
     fitted_curve_rate = -math.log(intensity_2 / intensity_1) / (time_2 - time_1)
     assert fitted_curve_rate == pytest.approx(fitted_value, rel=1.0e-3)
+
+
+def test_product_fit_rejects_a_stale_aggregate_commit_atomically(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+    real_commit = direct_trf_module.execute_fit_commit
+
+    def advance_revision_then_commit(*args, **kwargs):
+        current = session.analysis_values.snapshot()
+        session.analysis_values.commit(
+            dict(current),
+            expected=current,
+            scope=tuple(current),
+        )
+        return real_commit(*args, **kwargs)
+
+    with (
+        patch.object(
+            native_deterministic_module,
+            "execute_fit_commit",
+            side_effect=advance_revision_then_commit,
+        ),
+        pytest.raises(RuntimeError, match="stale_revision"),
+    ):
+        run(_fit_arguments(output), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    assert not (output / "Parameters").exists()
 
 
 def test_ordinary_fit_requires_no_post_seal_parameter_store_value_access(
@@ -528,6 +557,54 @@ def test_real_direct_fit_propagates_progress_interrupt_after_cleanup(
     rendered = capsys.readouterr().out
     assert "interrupted" in rendered
     assert "Evaluations" in rendered
+
+
+def test_cancellation_after_aggregate_acceptance_blocks_commit_and_later_steps(
+    tmp_path: Path,
+) -> None:
+    method = tmp_path / "two-steps.toml"
+    method.write_text(
+        """[STEP1]
+FIX = ["PB", "KEX_AB"]
+
+[STEP2]
+FIX = ["PB", "KEX_AB"]
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+    real_execute = native_deterministic_module.execute_grouped_direct_trf
+    executions = 0
+
+    def cancel_after_acceptance(*args, **kwargs):
+        nonlocal executions
+        executions += 1
+        outcome = real_execute(*args, **kwargs)
+        assert outcome.accepted_result is not None
+        kwargs["cancellation"].cancel()
+        return outcome
+
+    with (
+        patch.object(
+            native_deterministic_module,
+            "execute_grouped_direct_trf",
+            side_effect=cancel_after_acceptance,
+        ),
+        patch.object(
+            native_deterministic_module,
+            "derive_uncertainty_evidence",
+            side_effect=AssertionError("uncertainty ran before a committed fit"),
+        ) as uncertainty,
+        pytest.raises(KeyboardInterrupt, match="cancelled before commit"),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    assert executions == 1
+    assert uncertainty.call_count == 0
+    assert session.analysis_values.snapshot().revision == 0
+    assert not (output / "STEP1" / "Parameters").exists()
+    assert not (output / "STEP2").exists()
 
 
 def test_explicit_trf_and_least_squares_alias_have_identical_native_product_output(
@@ -1114,7 +1191,7 @@ def test_interrupted_covariance_keeps_committed_fit_and_invalidates_stale_eviden
 
     session = AnalysisSession.create()
     with patch(
-        "chemex.optimize.method_step.derive_uncertainty_evidence",
+        "chemex.optimize.native_deterministic.derive_uncertainty_evidence",
         side_effect=KeyboardInterrupt,
     ):
         run(_fit_arguments(output), session=session)
@@ -1139,35 +1216,48 @@ def test_interrupted_covariance_keeps_committed_fit_and_invalidates_stale_eviden
     }
 
 
-def test_cancelled_covariance_uses_the_canonical_product_reason(tmp_path: Path) -> None:
+def test_uncertainty_exception_does_not_roll_back_the_committed_fit(
+    tmp_path: Path,
+) -> None:
     output = tmp_path / "Output"
+    session = AnalysisSession.create()
 
-    def cancel_uncertainty(_workflow, _accepted, request, _cancellation):
-        return DerivationOutcome(
-            request.identity,
-            "uncertainty",
-            DerivationDisposition.CANCELLED,
-        )
-
-    with patch(
-        "chemex.optimize.method_step._execute_uncertainty",
-        side_effect=cancel_uncertainty,
+    with (
+        patch.object(
+            native_deterministic_module,
+            "derive_uncertainty_evidence",
+            side_effect=RuntimeError("uncertainty failed"),
+        ),
+        pytest.raises(RuntimeError, match="uncertainty failed"),
     ):
-        run(_fit_arguments(output), session=AnalysisSession.create())
+        run(_fit_arguments(output), session=session)
 
-    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
-    constrained = (output / "Parameters" / "constrained.toml").read_text(
-        encoding="utf-8"
-    )
-    assert "error unavailable: derivation interrupted/cancelled" in fitted
-    assert "error unavailable: derivation interrupted/cancelled" in constrained
-    status = json.loads(
-        (output / "Statistics" / "Covariance" / "status.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert status["terminal"] == "cancelled"
-    assert status["reason"] == "derivation interrupted/cancelled"
+    assert session.analysis_values.snapshot().revision == 1
+    assert not (output / "Parameters").exists()
+
+
+def test_product_uncertainty_starts_after_commit_and_cannot_change_central_values(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+    real_derive = native_deterministic_module.derive_uncertainty_evidence
+
+    def derive_after_commit(*args, **kwargs):
+        committed = session.analysis_values.snapshot()
+        assert committed.revision == 1
+        evidence = real_derive(*args, **kwargs)
+        assert session.analysis_values.snapshot() == committed
+        return evidence
+
+    with patch.object(
+        native_deterministic_module,
+        "derive_uncertainty_evidence",
+        side_effect=derive_after_commit,
+    ):
+        run(_fit_arguments(output), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
 
 
 def _grid_method(path: Path) -> Path:

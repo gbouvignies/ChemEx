@@ -10,7 +10,7 @@ import pytest
 
 from chemex.chemex import run
 from chemex.cli import build_parser
-from chemex.optimize import method_step as method_step_module
+from chemex.optimize import native_deterministic as native_deterministic_module
 from chemex.optimize.uncertainty import UncertaintyEvidence
 from chemex.runtime import AnalysisSession
 
@@ -53,7 +53,7 @@ def _capture_product_uncertainty(
     parameters: tuple[Path, ...] = (PARAMETERS,),
 ) -> tuple[AnalysisSession, tuple[UncertaintyEvidence, ...]]:
     captured: list[UncertaintyEvidence] = []
-    real_derive = method_step_module.derive_uncertainty_evidence
+    real_derive = native_deterministic_module.derive_uncertainty_evidence
 
     def derive(*args, **kwargs):
         evidence = real_derive(*args, **kwargs)
@@ -61,7 +61,11 @@ def _capture_product_uncertainty(
         return evidence
 
     session = AnalysisSession.create()
-    with patch.object(method_step_module, "derive_uncertainty_evidence", derive):
+    with patch.object(
+        native_deterministic_module,
+        "derive_uncertainty_evidence",
+        derive,
+    ):
         run(_arguments(output, method, parameters), session=session)
     return session, tuple(captured)
 

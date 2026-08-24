@@ -560,7 +560,7 @@ def test_product_covariance_reuses_backend_jacobian_without_residual_evaluation(
     None
 ):
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
-    request, _unsupported = native_deterministic_module._product_uncertainty_request(
+    request = native_deterministic_module._product_uncertainty_inputs(
         problem,
         parameterization,
     )
@@ -596,7 +596,7 @@ def test_product_covariance_reuses_backend_jacobian_without_residual_evaluation(
 
 def test_failed_accepted_point_fallback_reports_jacobian_unavailable() -> None:
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
-    request, _unsupported = native_deterministic_module._product_uncertainty_request(
+    request = native_deterministic_module._product_uncertainty_inputs(
         problem,
         parameterization,
     )
@@ -639,7 +639,7 @@ def test_failed_accepted_point_fallback_reports_jacobian_unavailable() -> None:
 
 def test_backend_fallback_and_high_quality_jacobians_agree_at_accepted_point() -> None:
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
-    request, _unsupported = native_deterministic_module._product_uncertainty_request(
+    request = native_deterministic_module._product_uncertainty_inputs(
         problem,
         parameterization,
     )
@@ -740,7 +740,7 @@ def test_production_backend_fallback_and_reference_covariance_agree(
         example,
         spin_system,
     )
-    request, _unsupported = native_deterministic_module._product_uncertainty_request(
+    request = native_deterministic_module._product_uncertainty_inputs(
         problem,
         parameterization,
     )
@@ -1820,13 +1820,15 @@ def test_absolute_observation_uncertainties_do_not_apply_residual_scaling() -> N
 def test_product_request_excludes_unsupported_scientific_function_propagation() -> None:
     parameterization, _engine, problem = _hd_problem(Method())
 
-    request, unsupported = native_deterministic_module._product_uncertainty_request(
+    request = native_deterministic_module._product_uncertainty_inputs(
         problem,
         parameterization,
     )
 
-    assert unsupported
-    assert set(unsupported).isdisjoint(request.constrained_scope)
+    assert request.unsupported_constrained_ids
+    assert set(request.unsupported_constrained_ids).isdisjoint(
+        request.constrained_scope
+    )
     assert request.policy.residual_variance_scaling is (
         ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES
     )
@@ -1851,7 +1853,7 @@ def test_product_request_does_not_hide_structural_capability_errors() -> None:
             uncertainty_module.UncertaintyConstructionError, match="malformed"
         ),
     ):
-        native_deterministic_module._product_uncertainty_request(
+        native_deterministic_module._product_uncertainty_inputs(
             problem,
             parameterization,
         )
@@ -1884,11 +1886,9 @@ def test_full_rank_conditioning_above_diagnostic_limit_is_not_a_rank_gate() -> N
     assert failure is None
 
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
-    product_request, _unsupported = (
-        native_deterministic_module._product_uncertainty_request(
-            problem,
-            parameterization,
-        )
+    product_request = native_deterministic_module._product_uncertainty_inputs(
+        problem,
+        parameterization,
     )
     evidence = derive_uncertainty_evidence(
         accepted,
