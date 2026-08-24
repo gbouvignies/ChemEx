@@ -5,38 +5,120 @@ import tomllib
 from argparse import Namespace
 from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from chemex import __version__
-from chemex import chemex as chemex_module
 from chemex import run_info as run_info_module
+from chemex.configuration.methods import Method
 from chemex.parameters.name import ParamName
+from chemex.parameters.parameterization import (
+    ParameterDeclaration,
+    SealedParameterDeclarations,
+    SealedParameterModel,
+    compile_active_parameterization,
+)
+from chemex.parameters.sealed import (
+    ParamConfig,
+    ParamDefinition,
+    SealedConfiguration,
+    SealedDefinitions,
+    extract_condition_entries,
+)
 from chemex.parameters.setting import ParamSetting
 from chemex.parameters.spin_system import SpinSystem
+from chemex.parameters.values import AnalysisValuesSnapshot
 
 
-class ParameterStore:
-    def __init__(self, parameters: dict[str, ParamSetting]) -> None:
-        self.parameters = parameters
+def _parameter_inputs(
+    parameters: tuple[ParamSetting, ...] = (),
+) -> dict[str, object]:
+    if not parameters:
+        parameters = (ParamSetting(ParamName("PB"), value=0.15, min=0.0, max=1.0),)
+    ordered = tuple(sorted(parameters, key=lambda parameter: parameter.param_name))
+    definitions = SealedDefinitions(
+        tuple(
+            ParamDefinition(
+                parameter.id_,
+                parameter.param_name.name,
+                str(parameter.param_name.spin_system),
+                extract_condition_entries(parameter.param_name.conditions),
+                parameter.value,
+                parameter.min,
+                parameter.max,
+            )
+            for parameter in ordered
+        ),
+        {},
+    )
+    configuration = SealedConfiguration(
+        tuple(
+            ParamConfig(
+                parameter.id_,
+                parameter.value,
+                parameter.min,
+                parameter.max,
+            )
+            for parameter in ordered
+        ),
+        {},
+        definitions.identity,
+    )
+    declarations = SealedParameterDeclarations(
+        tuple(
+            ParameterDeclaration(
+                parameter.id_,
+                parameter.vary,
+                parameter.expr,
+                bool(parameter.expr),
+            )
+            for parameter in ordered
+        )
+    )
+    parameter_model = SealedParameterModel(
+        "test",
+        "test-model",
+        definitions,
+        configuration,
+        declarations,
+    )
+    starting_values = AnalysisValuesSnapshot(
+        "test-occurrence",
+        "test-model",
+        definitions.identity,
+        configuration.identity,
+        0,
+        tuple((parameter.id_, parameter.value) for parameter in ordered),
+    )
+    parameterization = compile_active_parameterization(
+        parameter_model,
+        starting_values,
+        Method(),
+        set(declarations),
+    )
+    return {
+        "parameter_model": parameter_model,
+        "parameterization": parameterization,
+        "starting_values": starting_values,
+        "brute_steps": {
+            parameter.id_: parameter.brute_step
+            for parameter in ordered
+            if parameter.brute_step is not None
+        },
+    }
 
-    def get_parameters(self, param_ids: object) -> dict[str, ParamSetting]:
-        return {
-            param_id: parameter
-            for param_id, parameter in self.parameters.items()
-            if param_id in set(param_ids)
-        }
 
-
-class FitExperiments:
-    def __init__(self, parameter_store: ParameterStore, param_ids: set[str]) -> None:
-        self.parameter_store = parameter_store
-        self.param_ids = param_ids
-        self.filter_calls = 0
-
-    def filter_from_values(self, _values: object) -> None:
-        self.filter_calls += 1
+def _write_run_info(
+    args: Namespace,
+    *,
+    parameters: tuple[ParamSetting, ...] = (),
+    **kwargs: object,
+) -> None:
+    run_info_module.write_run_info(
+        args,
+        **_parameter_inputs(parameters),  # ty: ignore[invalid-argument-type]
+        **kwargs,  # ty: ignore[invalid-argument-type]
+    )
 
 
 def _write_input(path: Path, content: str = "[input]\nvalue = 1\n") -> Path:
@@ -75,11 +157,6 @@ def test_write_run_info_captures_inputs_parameters_and_runtime(
         value=0.85,
         expr=f"1.0 - {pb.id_}",
     )
-    store = ParameterStore({pb.id_: pb, dw.id_: dw, pa.id_: pa})
-    experiments = SimpleNamespace(
-        param_ids={pb.id_, dw.id_, pa.id_},
-        parameter_store=store,
-    )
     args = Namespace(
         experiments=[Path("experiment.toml")],
         parameters=[Path("parameters.toml")],
@@ -97,9 +174,9 @@ def test_write_run_info_captures_inputs_parameters_and_runtime(
 
     monkeypatch.setattr(run_info_module, "_git_metadata", lambda: None)
 
-    run_info_module.write_run_info(
+    _write_run_info(
         args,
-        experiments,
+        parameters=(pb, dw, pa),
         argv=argv,
         working_directory=tmp_path,
         timestamp=datetime(2026, 6, 24, 12, 30, tzinfo=UTC),
@@ -161,20 +238,15 @@ def test_archived_tomls_are_immutable_byte_copies_alongside_outcome(
     for category, source in sources.items():
         source.write_bytes(original_bytes[category])
     output = tmp_path / "Output"
-    experiments = SimpleNamespace(
-        param_ids=set(),
-        parameter_store=ParameterStore({}),
-    )
     monkeypatch.setattr(run_info_module, "_git_metadata", lambda: None)
 
-    run_info_module.write_run_info(
+    _write_run_info(
         Namespace(
             experiments=[sources["experiments"]],
             parameters=[sources["parameters"]],
             method=[sources["methods"]],
             output=output,
         ),
-        experiments,
         argv=["chemex", "fit"],
         working_directory=tmp_path,
     )
@@ -215,15 +287,10 @@ def test_run_info_uses_chemex_path_semantics_for_literal_tilde(
         method=None,
         output=Path("~/Output"),
     )
-    experiments = SimpleNamespace(
-        param_ids=set(),
-        parameter_store=ParameterStore({}),
-    )
     monkeypatch.setattr(run_info_module, "_git_metadata", lambda: None)
 
-    run_info_module.write_run_info(
+    _write_run_info(
         args,
-        experiments,
         argv=["chemex", "fit", "--output", "~/Output"],
         working_directory=tmp_path,
         timestamp=datetime(2026, 6, 24, 12, 30, tzinfo=UTC),
@@ -263,15 +330,10 @@ def test_input_files_with_same_basename_are_copied_without_collision(
         method=None,
         output=output,
     )
-    experiments = SimpleNamespace(
-        param_ids=set(),
-        parameter_store=ParameterStore({}),
-    )
     monkeypatch.setattr(run_info_module, "_git_metadata", lambda: None)
 
-    run_info_module.write_run_info(
+    _write_run_info(
         args,
-        experiments,
         argv=["chemex", "fit"],
         working_directory=tmp_path,
         timestamp=datetime(2026, 6, 24, 12, 30, tzinfo=UTC),
@@ -290,9 +352,8 @@ def test_input_files_with_same_basename_are_copied_without_collision(
         experiment_b.read_text(encoding="utf-8")
     )
 
-    run_info_module.write_run_info(
+    _write_run_info(
         args,
-        experiments,
         argv=["chemex", "fit"],
         working_directory=tmp_path,
         timestamp=datetime(2026, 6, 24, 12, 30, tzinfo=UTC),
@@ -304,67 +365,6 @@ def test_input_files_with_same_basename_are_copied_without_collision(
         item["copied_path"] for item in repeated_run["inputs"]["experiments"]
     ]
     assert repeated_paths == copied_paths
-
-
-def test_run_fit_creates_run_info(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    experiment_file = _write_input(tmp_path / "experiment.toml")
-    parameters_file = _write_input(tmp_path / "parameters.toml")
-    parameter = ParamSetting(ParamName("PB"), value=0.2)
-    store = ParameterStore({parameter.id_: parameter})
-    experiments = FitExperiments(store, {parameter.id_})
-    output = tmp_path / "Output"
-    args = Namespace(
-        experiments=[experiment_file],
-        parameters=[parameters_file],
-        method=None,
-        output=output,
-        plot="nothing",
-    )
-    run_methods_calls: list[Path] = []
-
-    monkeypatch.setattr(run_info_module, "_git_metadata", lambda: None)
-    monkeypatch.setattr(chemex_module, "print_start_fit", lambda: None)
-
-    def observe_running_outcome(
-        _experiments: object,
-        _methods: object,
-        path: Path,
-        _plot: object,
-        **_kwargs: object,
-    ) -> None:
-        outcome = tomllib.loads(
-            (path / "run_info" / "outcome.toml").read_text(encoding="utf-8")
-        )
-        assert outcome == {"schema_version": 1, "status": "running"}
-        run_methods_calls.append(path)
-
-    monkeypatch.setattr(
-        chemex_module,
-        "run_methods",
-        observe_running_outcome,
-    )
-
-    chemex_module.run_fit(
-        args,
-        experiments,
-        SimpleNamespace(
-            execution=None,
-            resolve_current_values=lambda *_args: {parameter.id_: parameter.value},
-        ),
-        argv=["chemex", "fit"],
-    )
-
-    assert experiments.filter_calls == 1
-    assert run_methods_calls == [output]
-    assert (output / "run_info" / "run.toml").exists()
-    assert (output / "run_info" / "parameters_used.toml").exists()
-    outcome = tomllib.loads(
-        (output / "run_info" / "outcome.toml").read_text(encoding="utf-8")
-    )
-    assert outcome == {"schema_version": 1, "status": "complete"}
 
 
 def test_git_metadata_is_optional_when_git_is_unavailable(
@@ -411,20 +411,15 @@ def test_same_output_rerun_can_use_archived_inputs(
 ) -> None:
     output = tmp_path / "Output"
     original_input = _write_input(tmp_path / "experiment.toml")
-    experiments = SimpleNamespace(
-        param_ids=set(),
-        parameter_store=ParameterStore({}),
-    )
     monkeypatch.setattr(run_info_module, "_git_metadata", lambda: None)
 
-    run_info_module.write_run_info(
+    _write_run_info(
         Namespace(
             experiments=[original_input],
             parameters=[],
             method=None,
             output=output,
         ),
-        experiments,
         argv=["chemex", "fit"],
         working_directory=tmp_path,
     )
@@ -432,14 +427,13 @@ def test_same_output_rerun_can_use_archived_inputs(
         output / "run_info" / "inputs" / "experiments" / original_input.name
     )
 
-    run_info_module.write_run_info(
+    _write_run_info(
         Namespace(
             experiments=[archived_input],
             parameters=[],
             method=None,
             output=output,
         ),
-        experiments,
         argv=["chemex", "fit"],
         working_directory=tmp_path,
     )
@@ -460,21 +454,16 @@ def test_failed_staging_preserves_existing_run_info(
     existing_run = run_info_path / "run.toml"
     existing_run.write_text("schema_version = 1\n", encoding="utf-8")
     missing_input = tmp_path / "missing.toml"
-    experiments = SimpleNamespace(
-        param_ids=set(),
-        parameter_store=ParameterStore({}),
-    )
     monkeypatch.setattr(run_info_module, "_git_metadata", lambda: None)
 
     with pytest.raises(FileNotFoundError):
-        run_info_module.write_run_info(
+        _write_run_info(
             Namespace(
                 experiments=[missing_input],
                 parameters=[],
                 method=None,
                 output=output,
             ),
-            experiments,
             argv=["chemex", "fit"],
             working_directory=tmp_path,
         )

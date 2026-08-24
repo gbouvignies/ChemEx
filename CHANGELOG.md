@@ -102,14 +102,14 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   `set_param_values`, `set_param_defaults`, `fix_all_parameters`,
   `reset_parameters`) left over from the `AnalysisSession` migration. Internal
   callers now use the canonical short method names
-  (`add_multiple`/`add_multiple_mf`, `sort`, `set_values`, `set_defaults`,
-  `fix_all`, `reset`); parameter semantics and fit/simulate behavior are
-  unchanged.
+  (`add_multiple`/`add_multiple_mf`, `sort`, `set_defaults`, `fix_all`,
+  `reset`); parameter semantics and fit/simulate behavior are unchanged.
 - Kept `AnalysisSession` at the `run_methods` orchestration boundary so native
   deterministic steps can use revisioned analysis values and stale-safe commit;
-  lower-level output helpers still access parameters through
-  `Experiments.parameter_store`, and statistics execution still receives the
-  session's explicit `ExecutionSettings`.
+  experiments now own profiles and their direct required IDs, while runtime and
+  output consumers receive sealed metadata plus committed or resolved values
+  explicitly. Statistics execution still receives the session's explicit
+  `ExecutionSettings`.
 
 ## [2026.06.1] - 2026-06-26
 

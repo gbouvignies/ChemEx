@@ -20,7 +20,6 @@ from typing import Literal, cast
 
 from chemex import __version__
 from chemex.atomic import publish_directory_noreplace, write_text_atomic
-from chemex.containers.experiments import Experiments
 from chemex.native_provenance import (
     ArtifactReference,
     ArtifactRole,
@@ -32,9 +31,11 @@ from chemex.native_provenance import (
     serialize_independent_parameters,
     validate_native_step_manifest_bytes,
 )
-from chemex.parameters.database import ParameterStore
-from chemex.parameters.parameterization import SealedParameterModel
-from chemex.parameters.setting import ParamSetting
+from chemex.parameters.parameterization import (
+    ActiveParameterization,
+    SealedParameterModel,
+)
+from chemex.parameters.sealed import parameter_name_from_definition
 from chemex.parameters.values import AnalysisValuesSnapshot
 
 SCHEMA_VERSION = 1
@@ -259,42 +260,49 @@ def _format_float(value: float | None) -> str:
     return "nan" if value is None else repr(float(value))
 
 
-def _parameter_values(parameter: ParamSetting) -> str:
+def _parameter_values(
+    param_id: str,
+    parameter_model: SealedParameterModel,
+    starting_values: AnalysisValuesSnapshot,
+    brute_steps: Mapping[str, float],
+) -> str:
+    configuration = parameter_model.configuration[param_id]
     values = [
-        _format_float(parameter.value),
-        _format_float(parameter.min),
-        _format_float(parameter.max),
+        _format_float(starting_values[param_id]),
+        _format_float(configuration.lower_bound),
+        _format_float(configuration.upper_bound),
     ]
-    if parameter.brute_step is not None:
-        values.append(_format_float(parameter.brute_step))
+    if param_id in brute_steps:
+        values.append(_format_float(brute_steps[param_id]))
     return "[" + ", ".join(values) + "]"
 
 
 def _parameter_sections(
-    experiments: Experiments,
-    parameter_store: ParameterStore,
-) -> Mapping[str, Mapping[str, ParamSetting]]:
-    sections: defaultdict[str, dict[str, ParamSetting]] = defaultdict(dict)
-    parameters = parameter_store.get_parameters(experiments.param_ids)
-
-    for parameter in sorted(parameters.values(), key=lambda item: item.param_name):
-        if parameter.expr:
+    parameter_model: SealedParameterModel,
+    parameterization: ActiveParameterization,
+) -> Mapping[str, Mapping[str, str]]:
+    sections: defaultdict[str, dict[str, str]] = defaultdict(dict)
+    independent_ids = set(parameterization.independent_ids)
+    for definition in parameter_model.definitions:
+        if definition.param_id not in independent_ids:
             continue
-        param_name = parameter.param_name
+        param_name = parameter_name_from_definition(definition)
         if param_name.spin_system:
             section = param_name.section
             key = str(param_name.spin_system)
         else:
             section = "GLOBAL"
             key = param_name.section_res
-        sections[section][key] = parameter
+        sections[section][key] = definition.param_id
 
     return sections
 
 
 def _serialize_parameters(
-    experiments: Experiments,
-    parameter_store: ParameterStore,
+    parameter_model: SealedParameterModel,
+    parameterization: ActiveParameterization,
+    starting_values: AnalysisValuesSnapshot,
+    brute_steps: Mapping[str, float],
 ) -> str:
     lines = [
         "# Starting independent parameters used by ChemEx for this fit.",
@@ -307,13 +315,14 @@ def _serialize_parameters(
     ]
 
     for section, parameters in _parameter_sections(
-        experiments,
-        parameter_store,
+        parameter_model,
+        parameterization,
     ).items():
         lines.append(f"[{_quote_key(section)}]")
         lines.extend(
-            f"{_quote_key(key)} = {_parameter_values(parameter)}"
-            for key, parameter in parameters.items()
+            f"{_quote_key(key)} = "
+            f"{_parameter_values(param_id, parameter_model, starting_values, brute_steps)}"
+            for key, param_id in parameters.items()
         )
         lines.append("")
 
@@ -634,8 +643,11 @@ def write_run_outcome(
 
 def write_run_info(
     args: Namespace,
-    experiments: Experiments,
     *,
+    parameter_model: SealedParameterModel,
+    parameterization: ActiveParameterization,
+    starting_values: AnalysisValuesSnapshot,
+    brute_steps: Mapping[str, float],
     argv: Sequence[str] | None = None,
     working_directory: Path | None = None,
     timestamp: datetime | None = None,
@@ -659,8 +671,10 @@ def write_run_info(
         staging_path = Path(staging_directory)
         copied_inputs = _copy_inputs(input_files, staging_path)
         parameters_text = _serialize_parameters(
-            experiments,
-            experiments.parameter_store,
+            parameter_model,
+            parameterization,
+            starting_values,
+            brute_steps,
         )
         (staging_path / "parameters_used.toml").write_text(
             parameters_text,

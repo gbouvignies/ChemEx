@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import combinations, permutations
 from pathlib import Path
@@ -10,7 +11,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.colors import LogNorm
 from matplotlib.pyplot import get_cmap
 
-from chemex.parameters.database import ParameterStore
+from chemex.parameters.name import ParamName
 from chemex.typing import Array
 
 
@@ -81,11 +82,10 @@ def make_grids_nd(
     grids_combined: list[GridResult],
     ndim: int,
     *,
-    parameter_store: ParameterStore,
+    parameter_names: Mapping[str, ParamName],
 ) -> list[GridResult]:
     grids: list[GridResult] = []
-    parameters = parameter_store.get_parameters(grid)
-    ids = sorted(grid, key=lambda x: parameters[x].param_name)
+    ids = sorted(grid, key=parameter_names.__getitem__)
     for selection in combinations(ids, ndim):
         for grid_result in grids_combined:
             if set(selection) <= set(grid_result.grid):
@@ -100,7 +100,8 @@ def plot_grid_1d(
     grids_1d: list[GridResult],
     path: Path,
     *,
-    parameter_store: ParameterStore,
+    parameter_names: Mapping[str, ParamName],
+    accepted_values: Mapping[str, float],
 ) -> None:
     """Visualize the result of the brute force grid search.
 
@@ -112,14 +113,15 @@ def plot_grid_1d(
 
     with PdfPages(str(path / "grid_1d.pdf")) as pdf:
         for grid_result in grids_1d:
-            parameters = parameter_store.get_parameters(grid_result.grid)
             ((id_, values),) = list(grid_result.grid.items())
             _fig, ax = plt.subplots(1, 1)
             ax.plot(values, grid_result.chisqr, "o", ms=3)
-            best_value = parameters[id_].value
-            if best_value is not None:
-                ax.axvline(best_value, ls="dashed", color=(0.5, 0.5, 0.5))
-            ax.set_xlabel(str(parameters[id_].param_name))
+            ax.axvline(
+                accepted_values[id_],
+                ls="dashed",
+                color=(0.5, 0.5, 0.5),
+            )
+            ax.set_xlabel(str(parameter_names[id_]))
             ax.set_ylabel(r"$\chi^{2}$")
             pdf.savefig()
             plt.close()
@@ -129,7 +131,8 @@ def plot_grid_2d(
     grids_2d: list[GridResult],
     path: Path,
     *,
-    parameter_store: ParameterStore,
+    parameter_names: Mapping[str, ParamName],
+    accepted_values: Mapping[str, float],
 ) -> None:
     """Visualize the result of the brute force grid search.
 
@@ -142,16 +145,21 @@ def plot_grid_2d(
 
     with PdfPages(str(path / "grid_2d.pdf")) as pdf:
         for grid_result in grids_2d:
-            parameters = parameter_store.get_parameters(grid_result.grid)
             (id_x, values_x), (id_y, values_y) = grid_result.grid.items()
             fig, ax = plt.subplots(1, 1)
             grid_x, grid_y = np.meshgrid(values_x, values_y)
-            best_value_x = parameters[id_x].value
-            best_value_y = parameters[id_y].value
-            if best_value_x is not None:
-                ax.axvline(best_value_x, ls="dashed", color=(0.5, 0.5, 0.5), zorder=-1)
-            if best_value_y is not None:
-                ax.axhline(best_value_y, ls="dashed", color=(0.5, 0.5, 0.5), zorder=-1)
+            ax.axvline(
+                accepted_values[id_x],
+                ls="dashed",
+                color=(0.5, 0.5, 0.5),
+                zorder=-1,
+            )
+            ax.axhline(
+                accepted_values[id_y],
+                ls="dashed",
+                color=(0.5, 0.5, 0.5),
+                zorder=-1,
+            )
             cs = ax.scatter(
                 grid_x,
                 grid_y,
@@ -161,7 +169,7 @@ def plot_grid_2d(
             )
             cbar = fig.colorbar(cs)
             cbar.set_label(r"$\chi^{2}$")
-            ax.set_xlabel(str(parameters[id_x].param_name))
-            ax.set_ylabel(str(parameters[id_y].param_name))
+            ax.set_xlabel(str(parameter_names[id_x]))
+            ax.set_ylabel(str(parameter_names[id_y]))
             pdf.savefig()
             plt.close()

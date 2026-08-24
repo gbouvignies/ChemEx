@@ -14,29 +14,57 @@ from chemex.optimize.mcmc import (
     resolve_mcmc_settings,
     write_mcmc_outputs,
 )
-from chemex.parameters.name import ParamName
-from chemex.parameters.setting import ParamSetting
+from chemex.parameters.parameterization import (
+    ParameterDeclaration,
+    SealedParameterDeclarations,
+    SealedParameterModel,
+)
+from chemex.parameters.sealed import (
+    ParamConfig,
+    ParamDefinition,
+    SealedConfiguration,
+    SealedDefinitions,
+)
 from chemex.runtime import ExecutionSettings
 
 
-class DummyParameterStore:
-    def __init__(self) -> None:
-        self.parameters = {
-            "__PB": ParamSetting(ParamName("PB"), value=0.1, min=0.0, max=1.0),
-            "__KEX_AB": ParamSetting(
-                ParamName("KEX_AB"),
-                value=200.0,
-                min=1.0,
-                max=5000.0,
+def _parameter_model() -> SealedParameterModel:
+    definitions = SealedDefinitions(
+        (
+            ParamDefinition("__PB", "PB", "", (), 0.1, 0.0, 1.0),
+            ParamDefinition(
+                "__KEX_AB",
+                "KEX_AB",
+                "",
+                (),
+                200.0,
+                1.0,
+                5000.0,
             ),
-        }
-
-    def get_parameters(self, param_ids: tuple[str, ...]) -> dict[str, ParamSetting]:
-        return {
-            param_id: parameter
-            for param_id, parameter in self.parameters.items()
-            if param_id in param_ids
-        }
+        ),
+        {},
+    )
+    configuration = SealedConfiguration(
+        (
+            ParamConfig("__PB", 0.1, 0.0, 1.0),
+            ParamConfig("__KEX_AB", 200.0, 1.0, 5000.0),
+        ),
+        {},
+        definitions.identity,
+    )
+    declarations = SealedParameterDeclarations(
+        (
+            ParameterDeclaration("__PB", True, "", False),
+            ParameterDeclaration("__KEX_AB", True, "", False),
+        )
+    )
+    return SealedParameterModel(
+        "test",
+        "test-model",
+        definitions,
+        configuration,
+        declarations,
+    )
 
 
 def test_resolve_mcmc_settings_defaults_walkers_from_varying_parameters() -> None:
@@ -110,7 +138,7 @@ def test_apply_sample_window_keeps_samples_when_auto_burn_unavailable() -> None:
 
 
 def test_write_mcmc_outputs(tmp_path: Path) -> None:
-    store = DummyParameterStore()
+    parameter_model = _parameter_model()
     settings = EffectiveMcmcSettings(
         steps=4,
         burn="auto",
@@ -169,7 +197,7 @@ def test_write_mcmc_outputs(tmp_path: Path) -> None:
         result,
         settings,
         tmp_path,
-        store,
+        parameter_model,
         timings={"sampling_seconds": 1.25, "result_processing_seconds": 0.5},
     )
 
@@ -227,7 +255,7 @@ def test_write_mcmc_outputs(tmp_path: Path) -> None:
 def test_write_mcmc_outputs_reports_tentative_autocorrelation_time(
     tmp_path: Path,
 ) -> None:
-    store = DummyParameterStore()
+    parameter_model = _parameter_model()
     settings = EffectiveMcmcSettings(
         steps=10,
         burn="auto",
@@ -272,7 +300,7 @@ def test_write_mcmc_outputs_reports_tentative_autocorrelation_time(
         raw_lnprob=np.arange(20.0).reshape(10, 2),
     )
 
-    write_mcmc_outputs(result, settings, tmp_path, store)
+    write_mcmc_outputs(result, settings, tmp_path, parameter_model)
 
     diagnostics = (tmp_path / "Statistics" / "MCMC" / "diagnostics.toml").read_text(
         encoding="utf-8"

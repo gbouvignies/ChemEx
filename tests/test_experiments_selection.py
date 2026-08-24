@@ -25,7 +25,7 @@ class SelectableExperiment:
 def test_experiments_become_false_when_selection_removes_all_profiles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    experiments = Experiments(parameter_store=object())  # type: ignore[arg-type]
+    experiments = Experiments()
     experiments.add(SelectableExperiment(Path("a.toml"), 2))
     experiments.add(SelectableExperiment(Path("b.toml"), 1))
 

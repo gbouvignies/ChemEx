@@ -204,25 +204,8 @@ class ParameterCatalog:
         """
         return self._index.get_matching_ids(param_name)
 
-    def get_value(self, id_: str) -> float | None:
-        """Retrieve the value of a parameter by its ID.
-
-        Args:
-            id_ (str): The ID of the parameter.
-
-        Returns:
-            float | None: The value of the parameter, or None if not found.
-
-        """
-        return self._parameters[id_].value
-
-    def set_values(self, par_values: dict[str, float]) -> None:
-        """Set the values of specified parameters.
-
-        Args:
-            par_values (dict[str, float]): Dictionary of parameter IDs and values.
-
-        """
+    def _set_values(self, par_values: Mapping[str, float]) -> None:
+        """Apply construction-time auxiliary values before configuration sealing."""
         for id_, value in par_values.items():
             if id_ in self._parameters:
                 self._parameters[id_].value = value
@@ -518,7 +501,7 @@ class ParameterStore:
         return self._defaults_applied
 
     def lock_configuration(self) -> None:
-        """Reject later definition/default mutations while values remain mutable."""
+        """Reject later definition and configuration mutations."""
         self._configuration_locked = True
 
     def _ensure_configuration_open(self) -> None:
@@ -560,30 +543,9 @@ class ParameterStore:
         """
         return self.database.get_parameters(param_ids)
 
-    def get_value(self, param_id: str) -> float | None:
-        """Retrieve the value of a parameter by its ID from the active catalog.
-
-        Args:
-            param_id (str): ID of the parameter.
-
-        Returns:
-            float | None: The value of the parameter or None if not found.
-
-        """
-        return self.database.get_value(param_id)
-
     def sort(self) -> None:
         """Sort parameters in the active catalog."""
         self.database.sort()
-
-    def set_values(self, par_values: dict[str, float]) -> None:
-        """Set the values of specific parameters in the active catalog.
-
-        Args:
-            par_values (dict[str, float]): Parameter values to set.
-
-        """
-        self.database.set_values(par_values)
 
     def set_defaults(self, defaults: DefaultListType) -> None:
         """Set defaults for parameters in both catalogs.
@@ -617,7 +579,7 @@ class ParameterStore:
         if not self._defaults_applied:
             msg = "Parameter defaults must be parsed before model-free initialization"
             raise RuntimeError(msg)
-        self._database.set_values(dict(values))
+        self._database._set_values(values)
         self._database.set_defaults(self._defaults)
         self._database.check_params()
 

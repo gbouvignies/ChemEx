@@ -132,10 +132,6 @@ class AnalysisSession:
                 configuration,
                 _native_initial_values=initial_values,
             )
-            resolved_values = self.resolve_current_values(
-                set(parameter_model.declarations)
-            )
-            self.sync_parameter_store_from_analysis_values(dict(resolved_values))
         except Exception as error:  # noqa: BLE001 - checkpoint-1 isolation boundary
             self.parameter_factory.disable_native_candidate(error)
             return False
@@ -196,18 +192,6 @@ class AnalysisSession:
         parameterization = self.compile_parameterization(Method(), required_ids)
         frame = parameterization.frame_from_snapshot(self.analysis_values.snapshot())
         return parameterization.resolve(frame)
-
-    def sync_parameter_store_from_analysis_values(
-        self,
-        resolved_values: dict[str, float] | None = None,
-    ) -> None:
-        """Mirror committed and resolved native values into current output state."""
-        snapshot = self.analysis_values.snapshot()
-        values = dict(snapshot.items()) if resolved_values is None else resolved_values
-        parameters = self.parameters.get_parameters(values)
-        for parameter in parameters.values():
-            parameter.stderr = None
-        self.parameters.database.set_values(values)
 
 
 def ensure_plugins_registered() -> None:

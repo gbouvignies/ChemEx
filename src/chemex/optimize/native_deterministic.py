@@ -1,5 +1,6 @@
 """Production composition for native deterministic method steps."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import reduce
 from itertools import product
@@ -11,7 +12,11 @@ import numpy as np
 
 from chemex.configuration.methods import Method
 from chemex.containers.experiments import Experiments
-from chemex.evaluation.native import EvaluationEngine, EvaluationResult
+from chemex.evaluation.native import (
+    EvaluationEngine,
+    EvaluationResult,
+    ResolvedEvaluationValues,
+)
 from chemex.messages import (
     MinimizationProgressReporter,
     UncertaintyProgressReporter,
@@ -66,7 +71,14 @@ from chemex.optimize.uncertainty import (
     compile_constraint_linearization_capabilities,
     derive_root_anchored_block_covariance,
 )
-from chemex.parameters.parameterization import ActiveParameterization, ParameterRole
+from chemex.parameters.database import ParameterStore
+from chemex.parameters.parameterization import (
+    ActiveParameterization,
+    ParameterRole,
+    SealedParameterModel,
+)
+from chemex.parameters.sealed import parameter_name_from_definition
+from chemex.parameters.values import AnalysisValues, AnalysisValuesSnapshot
 from chemex.printers.parameters import (
     BOUNDARY_WARNING_TEXT,
     ParameterUncertaintyView,
@@ -89,6 +101,7 @@ class NativeDeterministicFit:
     problem: OptimizationProblem
     parameterization: ActiveParameterization
     engine: EvaluationEngine
+    parameter_model: SealedParameterModel
     uncertainty: UncertaintyEvidence | None = None
     block_uncertainty: RootAnchoredBlockCovarianceEvidence | None = None
 
@@ -394,13 +407,13 @@ def _build_invocation(
     method: Method,
     problem: OptimizationProblem,
     decomposition: FitDecomposition,
-    experiments: Experiments,
+    parameter_store: ParameterStore,
 ) -> tuple[
     MethodStepStrategy,
     GroupedDirectTrfInvocation | GridDirectTrfInvocation,
 ]:
     if method.grid:
-        grid = experiments.parameter_store.parse_grid(method.grid)
+        grid = parameter_store.parse_grid(method.grid)
         invocation = GridDirectTrfInvocation.for_problem(
             problem,
             axes=tuple(
@@ -430,14 +443,18 @@ def _write_grid_output(
     invocation: GridDirectTrfInvocation,
     path: Path,
     *,
-    experiments: Experiments,
+    parameter_model: SealedParameterModel,
+    accepted_values: Mapping[str, float],
 ) -> None:
     """Render aggregate GRID artifacts from native seed evidence."""
     grid = {
         axis.param_id: np.asarray(axis.values, dtype=np.float64)
         for axis in invocation.axes
     }
-    parameter_store = experiments.parameter_store
+    parameter_names = {
+        definition.param_id: parameter_name_from_definition(definition)
+        for definition in parameter_model.definitions
+    }
     grid_path = path / "Grid"
     grid_path.mkdir(parents=True, exist_ok=True)
     component_results: list[GridResult] = []
@@ -472,7 +489,7 @@ def _write_grid_output(
         component_results.append(GridResult(component_grid, chisqr))
 
     with (grid_path / "grid.out").open("w", encoding="utf-8") as output:
-        output.write(print_header(grid, parameter_store=parameter_store))
+        output.write(print_header(grid, parameter_names=parameter_names))
         for attempt in outcome.attempts:
             coordinates = (
                 float(cast("int | float", value))
@@ -486,31 +503,39 @@ def _write_grid_output(
         grid,
         combined,
         1,
-        parameter_store=parameter_store,
+        parameter_names=parameter_names,
     )
     grids_2d = make_grids_nd(
         grid,
         combined,
         2,
-        parameter_store=parameter_store,
+        parameter_names=parameter_names,
     )
-    plot_grid_1d(grids_1d, grid_path, parameter_store=parameter_store)
-    plot_grid_2d(grids_2d, grid_path, parameter_store=parameter_store)
+    plot_grid_1d(
+        grids_1d,
+        grid_path,
+        parameter_names=parameter_names,
+        accepted_values=accepted_values,
+    )
+    plot_grid_2d(
+        grids_2d,
+        grid_path,
+        parameter_names=parameter_names,
+        accepted_values=accepted_values,
+    )
 
 
 def _fit_component_labels(
     decomposition: FitDecomposition,
-    experiments: Experiments,
+    parameter_model: SealedParameterModel,
 ) -> dict[frozenset[str], str]:
     """Return concise optional labels for transient component presentation."""
     try:
         labels: dict[frozenset[str], str] = {}
         for component in decomposition.components:
-            parameters = experiments.parameter_store.get_parameters(
-                component.controlled_ids
-            )
             param_names = tuple(
-                parameter.param_name for parameter in parameters.values()
+                parameter_name_from_definition(parameter_model.definitions[param_id])
+                for param_id in component.controlled_ids
             )
             if param_names:
                 labels[frozenset(component.controlled_ids)] = reduce(
@@ -520,6 +545,24 @@ def _fit_component_labels(
         return {}
     else:
         return labels
+
+
+def _commit_resolved_continuity_if_changed(
+    analysis_values: AnalysisValues,
+    starting_snapshot: AnalysisValuesSnapshot,
+    resolved_values: ResolvedEvaluationValues,
+) -> None:
+    """Commit a successful derived-only transition when its values changed."""
+    resolved_items = resolved_values.ordered_items()
+    if not any(
+        value != starting_snapshot[param_id] for param_id, value in resolved_items
+    ):
+        return
+    analysis_values.commit(
+        dict(resolved_items),
+        expected=starting_snapshot,
+        scope=tuple(resolved_values),
+    )
 
 
 def run_native_deterministic(
@@ -562,8 +605,10 @@ def run_native_deterministic(
             msg = f"Native deterministic evaluation failed: {outcome.lifecycle.value}"
             raise RuntimeError(msg)
         result = cast("EvaluationResult", outcome.evaluation_result)
-        session.sync_parameter_store_from_analysis_values(
-            dict(result.resolved_values.ordered_items())
+        _commit_resolved_continuity_if_changed(
+            session.analysis_values,
+            starting_snapshot,
+            result.resolved_values,
         )
         _materialize_evaluation(experiments, result)
         execute_post_fit(
@@ -572,6 +617,8 @@ def run_native_deterministic(
             plot=plot != "nothing",
             residuals=result.residuals,
             nvarys=0,
+            parameter_model=parameter_model,
+            parameter_values=result.resolved_values,
             parameterization=parameterization,
         )
         return None
@@ -587,7 +634,7 @@ def run_native_deterministic(
         method,
         problem,
         decomposition,
-        experiments,
+        session.parameters,
     )
     uncertainty_request, unsupported_constrained_ids = _product_uncertainty_request(
         problem,
@@ -605,7 +652,7 @@ def run_native_deterministic(
         invocation=invocation,
         derivations=(uncertainty_request,),
     )
-    component_labels = _fit_component_labels(decomposition, experiments)
+    component_labels = _fit_component_labels(decomposition, parameter_model)
     progress = MinimizationProgressReporter(
         console,
         interactive=console.is_terminal,
@@ -731,11 +778,9 @@ def run_native_deterministic(
         problem,
         parameterization,
         engine,
+        parameter_model,
         uncertainty_evidence,
         block_uncertainty,
-    )
-    session.sync_parameter_store_from_analysis_values(
-        dict(result.resolved_values.ordered_items())
     )
     _materialize_evaluation(experiments, result)
     variable_count = len(problem.controlled_ids)
@@ -744,7 +789,8 @@ def run_native_deterministic(
             cast("GroupedGridDirectTrfOutcome", outcome.primary_execution),
             cast("GridDirectTrfInvocation", invocation),
             path,
-            experiments=experiments,
+            parameter_model=parameter_model,
+            accepted_values=result.resolved_values,
         )
         execute_post_fit(
             experiments,
@@ -756,7 +802,10 @@ def run_native_deterministic(
             uncertainty_evidence=uncertainty_evidence,
             uncertainty_status=uncertainty_status,
             block_uncertainty=block_uncertainty,
+            parameter_model=parameter_model,
+            parameter_values=result.resolved_values,
             parameterization=parameterization,
+            fitted_ids=problem.controlled_ids,
         )
         return fit
 
@@ -770,6 +819,9 @@ def run_native_deterministic(
         uncertainty_evidence=uncertainty_evidence,
         uncertainty_status=uncertainty_status,
         block_uncertainty=block_uncertainty,
+        parameter_model=parameter_model,
+        parameter_values=result.resolved_values,
         parameterization=parameterization,
+        fitted_ids=problem.controlled_ids,
     )
     return fit

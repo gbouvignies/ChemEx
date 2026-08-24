@@ -9,7 +9,6 @@ import numpy as np
 
 from chemex.configuration.methods import Selection
 from chemex.containers.profile import Profile
-from chemex.parameters.database import ParameterStore
 from chemex.parameters.spin_system import Group
 from chemex.plotters.plotter import Plotter
 from chemex.printers.data import Printer
@@ -43,7 +42,6 @@ class Experiment:
     filtered_profiles: list[Profile] = field(init=False, default_factory=list)
     printer: Printer
     plotter: Plotter
-    parameter_store: ParameterStore = field(compare=False)
     _noise_notices: tuple[NoiseEstimateNotice, ...] = field(
         init=False,
         repr=False,
@@ -146,7 +144,6 @@ class Experiment:
             profiles,
             self.printer,
             self.plotter,
-            self.parameter_store,
         )
 
     def bootstrap(self) -> Self:
@@ -157,7 +154,6 @@ class Experiment:
             profiles,
             self.printer,
             self.plotter,
-            self.parameter_store,
         )
 
     def bootstrap_ns(self, groups: list[Group]) -> Self:
@@ -174,7 +170,6 @@ class Experiment:
             profiles_bs_ns,
             self.printer,
             self.plotter,
-            self.parameter_store,
         )
 
     @property
@@ -182,27 +177,9 @@ class Experiment:
         return {profile.spin_system.groups["i"] for profile in self.profiles}
 
     @property
-    def param_id_sets(self) -> list[set[str]]:
-        return [
-            set(self.parameter_store.get_parameters(profile.param_ids))
-            for profile in self.profiles
-        ]
-
-    def get_relevant_subset(self, param_ids: set[str]) -> Self:
-        profiles = [
-            profile
-            for profile in self.profiles
-            if set(self.parameter_store.get_parameters(profile.param_ids)) & param_ids
-        ]
-
-        return type(self)(
-            self.filename,
-            self.name,
-            profiles,
-            self.printer,
-            self.plotter,
-            self.parameter_store,
-        )
+    def _required_param_id_sets(self) -> list[set[str]]:
+        """Return direct profile requirements without expanding constraints."""
+        return [set(profile.param_ids) for profile in self.profiles]
 
     def __iter__(self) -> Iterator[Profile]:
         yield from self.profiles

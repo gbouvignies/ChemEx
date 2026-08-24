@@ -3,7 +3,7 @@
 import os
 import sys
 from argparse import Namespace
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from chemex.cli import build_parser
 from chemex.configuration.method_plan import (
@@ -12,7 +12,7 @@ from chemex.configuration.method_plan import (
     MethodPlan,
     StepPlan,
 )
-from chemex.configuration.methods import Methods, Selection, read_method_plan
+from chemex.configuration.methods import Method, Methods, Selection, read_method_plan
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
 from chemex.experiments.builder import build_experiments
@@ -42,11 +42,27 @@ def run_fit(
     *,
     argv: Sequence[str] | None = None,
     methods: Methods | MethodPlan | None = None,
+    brute_steps: Mapping[str, float],
 ) -> None:
     if methods is None:
         methods = _read_fit_methods(args)
 
-    write_run_info(args, experiments, argv=argv)
+    parameter_model = session.parameter_factory.sealed_parameter_model
+    if parameter_model is None:
+        raise RuntimeError("Native parameter model is unavailable")
+    starting_values = session.analysis_values.snapshot()
+    starting_parameterization = session.compile_parameterization(
+        Method(),
+        experiments.param_ids,
+    )
+    write_run_info(
+        args,
+        parameter_model=parameter_model,
+        parameterization=starting_parameterization,
+        starting_values=starting_values,
+        brute_steps=brute_steps,
+        argv=argv,
+    )
 
     try:
         invalidate_planned_outputs(methods, args.output)
@@ -83,13 +99,21 @@ def run_sim(
     path = args.output
     plot = args.plot == "normal"
 
-    session.parameters.fix_all()
-    resolved_values = session.resolve_current_values(experiments.param_ids)
+    parameter_model = session.parameter_factory.sealed_parameter_model
+    if parameter_model is None:
+        raise RuntimeError("Native parameter model is unavailable")
+    snapshot = session.analysis_values.snapshot()
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    resolved_values = parameterization.resolve(
+        parameterization.frame_from_snapshot(snapshot)
+    )
 
     execute_simulation(
         experiments,
         path,
         parameter_values=resolved_values,
+        parameter_model=parameter_model,
+        parameterization=parameterization,
         plot=plot,
     )
 
@@ -132,16 +156,18 @@ def run(
         print_no_data()
         sys.exit()
 
-    if experiments.parameter_store is not session.parameters:
-        msg = "Experiments parameter store does not match the active session"
-        raise ValueError(msg)
-
     methods = _read_fit_methods(args) if args.commands == "fit" else None
 
     # Read initial values of fitting/fixed parameters
     print_reading_defaults()
     defaults = read_defaults(args.parameters)
     session.parameters.set_defaults(defaults)
+    configured_parameters = session.parameters.get_parameters(experiments.param_ids)
+    brute_steps = {
+        param_id: parameter.brute_step
+        for param_id, parameter in configured_parameters.items()
+        if parameter.brute_step is not None
+    }
     if not session.try_build_analysis_values():
         construction_error = getattr(
             session.parameter_factory,
@@ -159,7 +185,14 @@ def run(
     if args.commands == "simulate":
         run_sim(args, experiments, session)
     else:
-        run_fit(args, experiments, session, argv=argv, methods=methods)
+        run_fit(
+            args,
+            experiments,
+            session,
+            argv=argv,
+            methods=methods,
+            brute_steps=brute_steps,
+        )
 
 
 def main() -> None:

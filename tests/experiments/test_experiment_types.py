@@ -368,7 +368,7 @@ def test_representative_family_builds_complete_experiment(
     assert result.experiment.profiles
     assert isinstance(result.experiment.printer, printer_type)
     assert isinstance(result.experiment.plotter, plotter_type)
-    assert result.experiment.parameter_store is session.parameters
+    assert not hasattr(result.experiment, "parameter_store")
 
 
 def test_exsy_explicit_support_builds_complete_experiment(tmp_path: Path) -> None:
@@ -450,7 +450,7 @@ def test_selection_precedes_profile_and_parameter_construction(
     assert excluded_session.parameters.get_parameters(expected_parameter_ids) == {}
 
 
-def test_cpmg_parameter_ids_identity_and_mutation_remain_stable() -> None:
+def test_cpmg_parameter_ids_and_construction_identity_remain_stable() -> None:
     register_experiments()
     filename = ROOT / "examples/Experiments/CPMG_15N_IP/Experiments/500mhz.toml"
     selection = Selection(
@@ -484,8 +484,6 @@ def test_cpmg_parameter_ids_identity_and_mutation_remain_stable() -> None:
 
     parameter_id = "__R2_A_10N_500_0MHZ"
     parameter = session.parameters.get_parameters([parameter_id])[parameter_id]
-    session.parameters.set_values({parameter_id: 17.25})
-
     second = experiment_types.build(
         source,
         selection=selection,
@@ -496,7 +494,7 @@ def test_cpmg_parameter_ids_identity_and_mutation_remain_stable() -> None:
 
     assert second.experiment.profiles[0].param_ids == expected_ids
     assert rebuilt_parameter is parameter
-    assert rebuilt_parameter.value == pytest.approx(17.25)
+    assert rebuilt_parameter.value == parameter.value
 
 
 def test_programming_error_from_catalog_adapter_propagates(

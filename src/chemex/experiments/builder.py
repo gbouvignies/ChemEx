@@ -86,14 +86,12 @@ def build_experiments(
     session: AnalysisSession,
 ) -> Experiments:
     """Build all configured Experiments using one session's parameter state."""
-    parameter_store = session.parameters
-
     if not filenames:
         session.parameter_factory.try_seal_definitions()
-        return Experiments(parameter_store=parameter_store)
+        return Experiments()
 
     print_loading_experiments()
-    experiments = Experiments(parameter_store=parameter_store)
+    experiments = Experiments()
 
     for filename in filenames:
         try:
@@ -128,6 +126,6 @@ def build_experiments(
             _print_notice(notice)
         experiments.add(result.experiment)
 
-    parameter_store.sort()
+    session.parameters.sort()
     session.parameter_factory.try_seal_definitions()
     return experiments

@@ -9,12 +9,11 @@ from hashlib import blake2b
 from itertools import chain
 from pathlib import Path
 from random import choices
-from typing import Literal, Self
+from typing import Literal
 
 from chemex.configuration.methods import Selection
 from chemex.containers.experiment import Experiment
 from chemex.messages import print_selecting_profiles
-from chemex.parameters.database import ParameterStore
 from chemex.parameters.spin_system import Group, SpinSystem
 
 # Type definitions
@@ -114,10 +113,9 @@ class Experiments:
     data, plotting, and more.
     """
 
-    def __init__(self, *, parameter_store: ParameterStore) -> None:
+    def __init__(self) -> None:
         """Initialize an empty Experiments collection."""
         self._experiments: dict[Path, Experiment] = {}
-        self.parameter_store = parameter_store
 
     @property
     def groups(self) -> set[Group]:
@@ -213,48 +211,28 @@ class Experiments:
         print_selecting_profiles(len(self))
 
     @property
-    def param_id_sets(self) -> list[set[str]]:
-        """Get a list of parameter ID sets for all experiments.
-
-        Returns:
-            list[set[str]]: List of sets containing parameter IDs.
-
-        """
+    def _required_param_id_sets(self) -> list[set[str]]:
+        """Return direct profile requirements without expanding constraints."""
         return list(
-            chain.from_iterable(experiment.param_id_sets for experiment in self),
+            chain.from_iterable(
+                experiment._required_param_id_sets for experiment in self
+            ),
         )
 
     @property
     def param_ids(self) -> set[str]:
-        """Get a set of all unique parameter IDs across experiments.
+        """Return direct profile requirements for parameterization compilation.
 
-        Returns:
-            set[str]: Set of unique parameter IDs.
+        Constraint dependency closure is owned by ``ActiveParameterization``.
 
         """
         result: set[str] = set()
-        return result.union(*(self.param_id_sets))
+        return result.union(*(self._required_param_id_sets))
 
     def filter_from_values(self, parameter_values: Mapping[str, float]) -> None:
         """Apply all data filters from resolved native parameter values."""
         for experiment in self:
             experiment.filter_from_values(parameter_values)
-
-    def get_relevant_subset(self, param_ids: set[str]) -> Self:
-        """Get a subset of experiments relevant to specified parameter IDs.
-
-        Args:
-            param_ids (set[str]): Parameter IDs to filter experiments.
-
-        Returns:
-            Self: Subset of Experiments relevant to given parameter IDs.
-
-        """
-        relevant_subset = type(self)(parameter_store=self.parameter_store)
-        for experiment in self:
-            if subset := experiment.get_relevant_subset(param_ids):
-                relevant_subset.add(subset)
-        return relevant_subset
 
     def __iter__(self) -> Iterator[Experiment]:
         """Iterate over the experiments in the collection.
@@ -294,7 +272,7 @@ def generate_monte_carlo_experiments(experiments: Experiments) -> Experiments:
         Experiments: Collection with Monte Carlo simulated data.
 
     """
-    experiments_mc = Experiments(parameter_store=experiments.parameter_store)
+    experiments_mc = Experiments()
     for experiment in experiments:
         experiments_mc.add(experiment.monte_carlo())
     return experiments_mc
@@ -310,7 +288,7 @@ def generate_bootstrap_experiments(experiments: Experiments) -> Experiments:
         Experiments: Collection with Bootstrap simulated data.
 
     """
-    experiments_mc = Experiments(parameter_store=experiments.parameter_store)
+    experiments_mc = Experiments()
     for experiment in experiments:
         experiments_mc.add(experiment.bootstrap())
     return experiments_mc
@@ -328,7 +306,7 @@ def generate_bootstrap_ns_experiments(experiments: Experiments) -> Experiments:
     """
     groups = experiments.groups
     groups_bs = choices(tuple(groups), k=len(groups))
-    experiments_bs = Experiments(parameter_store=experiments.parameter_store)
+    experiments_bs = Experiments()
     for experiment in experiments:
         experiments_bs.add(experiment.bootstrap_ns(groups_bs))
     return experiments_bs

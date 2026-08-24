@@ -194,20 +194,23 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
 
     run(_fit_arguments(output, plot_level="normal"), session=session)
 
-    assert session.analysis_values.snapshot().revision == 1
+    committed = session.analysis_values.snapshot()
+    assert committed.revision == 1
     fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
     fitted_record = next(line for line in fitted.splitlines() if "=" in line)
     fitted_value = float(fitted_record.split("=", 1)[1].split()[0])
     assert fitted_value == pytest.approx(2.34742, rel=5.0e-6)
+    parameter_model = session.parameter_factory.sealed_parameter_model
+    assert parameter_model is not None
+    fitted_id = next(
+        definition.param_id
+        for definition in parameter_model.definitions
+        if definition.name == "R1A_A" and definition.spin_system_name == "G2N-H"
+    )
+    assert fitted_value == pytest.approx(committed[fitted_id], rel=5.0e-6)
     assert "# ±" in fitted_record
     fitted_error = float(fitted_record.split("±", 1)[1])
     assert fitted_error == pytest.approx(0.083366086, rel=3.0e-6)
-    assert all(
-        parameter.stderr is None
-        for parameter in session.parameters.get_parameters(
-            session.analysis_values.snapshot()
-        ).values()
-    )
     covariance = output / "Statistics" / "Covariance" / "evidence.json"
     assert covariance.is_file()
     constrained = (output / "Parameters" / "constrained.toml").read_text(
@@ -241,6 +244,46 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     time_2, intensity_2 = curve[-1]
     fitted_curve_rate = -math.log(intensity_2 / intensity_1) / (time_2 - time_1)
     assert fitted_curve_rate == pytest.approx(fitted_value, rel=1.0e-3)
+
+
+def test_ordinary_fit_requires_no_post_seal_parameter_store_value_access(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session = AnalysisSession.create()
+    build_analysis_values = session.try_build_analysis_values
+
+    def seal_then_reject_store_value_mutation() -> bool:
+        initialized = build_analysis_values()
+
+        def reject_store_value_mutation(_values: object) -> None:
+            raise AssertionError("post-seal ParameterStore value mutation")
+
+        monkeypatch.setattr(
+            session.parameters.database,
+            "_set_values",
+            reject_store_value_mutation,
+        )
+
+        def reject_store_value_read(_param_ids: object) -> object:
+            raise AssertionError("post-seal ParameterStore value read")
+
+        monkeypatch.setattr(
+            session.parameters,
+            "get_parameters",
+            reject_store_value_read,
+        )
+        return initialized
+
+    monkeypatch.setattr(
+        session,
+        "try_build_analysis_values",
+        seal_then_reject_store_value_mutation,
+    )
+
+    run(_fit_arguments(tmp_path / "Output"), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
 
 
 def test_v2_role_change_keeps_the_prior_committed_value_without_store_roles(
@@ -279,6 +322,81 @@ ROLES = [{ FIX = ["R1A_A"] }]
 
     assert session.analysis_values.snapshot().revision == 1
     assert second_value == pytest.approx(first_value, rel=1.0e-12)
+
+
+def test_constrained_value_becomes_the_next_independent_start(
+    tmp_path: Path,
+) -> None:
+    method = tmp_path / "method-v2.toml"
+    method.write_text(
+        """
+FORMAT_VERSION = 2
+[CONSTRAINED]
+ROLES = [
+  { FIX = ["PB", "KEX_AB"] },
+  { CONSTRAIN = ["[R1A_A, NUC->G2N-H] = 2.0"] },
+]
+
+[INDEPENDENT]
+ROLES = [{ FIX = ["PB", "KEX_AB"] }]
+""",
+        encoding="utf-8",
+    )
+    starts: list[tuple[float, ...]] = []
+    real_least_squares = direct_trf_module.least_squares
+
+    def record_start(*args, **kwargs):
+        starts.append(tuple(float(value) for value in args[1]))
+        return real_least_squares(*args, **kwargs)
+
+    session = AnalysisSession.create()
+    with patch(
+        "chemex.optimize.direct_trf.least_squares",
+        side_effect=record_start,
+    ):
+        run(_fit_arguments(tmp_path / "Output", method), session=session)
+
+    assert starts == [(2.0,)]
+    assert session.analysis_values.snapshot().revision == 2
+
+
+def test_independent_constrained_independent_transition_uses_latest_resolved_value(
+    tmp_path: Path,
+) -> None:
+    method = tmp_path / "method-v2.toml"
+    method.write_text(
+        """
+FORMAT_VERSION = 2
+[FIRST_INDEPENDENT]
+ROLES = [{ FIX = ["PB", "KEX_AB"] }]
+
+[CONSTRAINED]
+ROLES = [
+  { FIX = ["PB", "KEX_AB"] },
+  { CONSTRAIN = ["[R1A_A, NUC->G2N-H] = 3.0"] },
+]
+
+[SECOND_INDEPENDENT]
+ROLES = [{ FIX = ["PB", "KEX_AB"] }]
+""",
+        encoding="utf-8",
+    )
+    starts: list[tuple[float, ...]] = []
+    real_least_squares = direct_trf_module.least_squares
+
+    def record_start(*args, **kwargs):
+        starts.append(tuple(float(value) for value in args[1]))
+        return real_least_squares(*args, **kwargs)
+
+    session = AnalysisSession.create()
+    with patch(
+        "chemex.optimize.direct_trf.least_squares",
+        side_effect=record_start,
+    ):
+        run(_fit_arguments(tmp_path / "Output", method), session=session)
+
+    assert starts[1] == (3.0,)
+    assert session.analysis_values.snapshot().revision == 3
 
 
 def test_relaxation_product_covariance_matches_absolute_sigma_reference(
@@ -1905,10 +2023,29 @@ FIX = ["PB", "KEX_AB"]
         encoding="utf-8",
     )
     session = AnalysisSession.create()
+    starts: list[tuple[float, ...]] = []
+    real_least_squares = direct_trf_module.least_squares
 
-    run(_fit_arguments(output, method), session=session)
+    def record_start(*args, **kwargs):
+        starts.append(tuple(float(value) for value in args[1]))
+        return real_least_squares(*args, **kwargs)
+
+    with patch(
+        "chemex.optimize.direct_trf.least_squares",
+        side_effect=record_start,
+    ):
+        run(_fit_arguments(output, method), session=session)
 
     assert session.analysis_values.snapshot().revision == 2
+    first_fitted = (output / "STEP1" / "Parameters" / "fitted.toml").read_text(
+        encoding="utf-8"
+    )
+    first_value = float(
+        next(line for line in first_fitted.splitlines() if "G2N-H" in line)
+        .split("=", 1)[1]
+        .split()[0]
+    )
+    assert starts[1] == pytest.approx((first_value,), rel=5.0e-6)
     for step in ("STEP1", "STEP2"):
         fitted = (output / step / "Parameters" / "fitted.toml").read_text(
             encoding="utf-8"

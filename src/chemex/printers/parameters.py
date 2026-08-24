@@ -2,20 +2,21 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from chemex.containers.experiments import Experiments
 from chemex.optimize.uncertainty import (
     UncertaintyEvidence,
     UncertaintyUnavailableKind,
 )
-from chemex.parameters.database import ParameterStore
 from chemex.parameters.name import ParamName
-from chemex.parameters.parameterization import ActiveParameterization, ParameterRole
-from chemex.parameters.setting import ParamSetting
-
-Parameters = dict[ParamName, ParamSetting]
+from chemex.parameters.parameterization import (
+    ActiveParameterization,
+    ParameterRole,
+    SealedParameterModel,
+)
+from chemex.parameters.sealed import parameter_name_from_definition
 
 RE_GROUPNAME = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -194,6 +195,18 @@ def parameter_uncertainty_view(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ReportParameter:
+    """One disposable presentation row joined from sealed metadata and values."""
+
+    param_id: str
+    param_name: ParamName
+    value: float
+
+
+type Parameters = dict[ParamName, ReportParameter]
+
+
 @dataclass
 class GlobalLocalParameters:
     global_: Parameters
@@ -211,10 +224,10 @@ class ClassifiedParameters:
 
 
 def _format_fitted(
-    param_id: str,
-    param: ParamSetting,
+    param: ReportParameter,
     uncertainty: ParameterUncertaintyView | None,
 ) -> str:
+    param_id = param.param_id
     standard_error = (
         None if uncertainty is None else uncertainty.standard_error(param_id)
     )
@@ -231,15 +244,11 @@ def _format_fitted(
 
 
 def _format_constrained(
-    param_id: str,
-    param: ParamSetting,
-    parameter_store: ParameterStore,
+    param: ReportParameter,
     uncertainty: ParameterUncertaintyView | None,
-    constraint_expression: str | None = None,
+    constraint_expression: str,
 ) -> str:
-    if param.value is None:
-        return ""
-
+    param_id = param.param_id
     standard_error = (
         None if uncertainty is None else uncertainty.standard_error(param_id)
     )
@@ -252,72 +261,53 @@ def _format_constrained(
         if reason is not None
         else ""
     )
-    constraint = param.expr if constraint_expression is None else constraint_expression
-    if constraint_expression is None:
-        parameters = parameter_store.get_parameters(param.dependencies)
-        for param_id, parameter in parameters.items():
-            constraint = constraint.replace(param_id, str(parameter.param_name))
-    return f"{param.value: .5e} # {error}({constraint})"
+    return f"{param.value: .5e} # {error}({constraint_expression})"
 
 
-def _format_fixed(param: ParamSetting) -> str:
+def _format_fixed(param: ReportParameter) -> str:
     return f"{param.value: .5e} # (fixed)"
 
 
 def _params_to_strings(
     parameters: GlobalLocalParameters,
     status: str,
-    parameter_store: ParameterStore,
-    parameter_ids: dict[ParamName, str],
     uncertainty: ParameterUncertaintyView | None,
-    constraint_expressions: dict[str, str] | None,
+    constraint_expressions: Mapping[str, str],
 ) -> dict[str, dict[str, str]]:
     result: defaultdict[str, dict[str, str]] = defaultdict(dict)
 
     for pname, param in parameters.global_.items():
         result["GLOBAL"][pname.section_res] = _format_parameter(
-            parameter_ids[pname],
             param,
             status,
-            parameter_store,
             uncertainty,
-            None
-            if constraint_expressions is None
-            else constraint_expressions.get(parameter_ids[pname]),
+            constraint_expressions.get(param.param_id, ""),
         )
 
     for pname, param in parameters.local.items():
         result[pname.section][str(pname.spin_system)] = _format_parameter(
-            parameter_ids[pname],
             param,
             status,
-            parameter_store,
             uncertainty,
-            None
-            if constraint_expressions is None
-            else constraint_expressions.get(parameter_ids[pname]),
+            constraint_expressions.get(param.param_id, ""),
         )
 
     return result
 
 
 def _format_parameter(
-    param_id: str,
-    param: ParamSetting,
+    param: ReportParameter,
     status: str,
-    parameter_store: ParameterStore,
     uncertainty: ParameterUncertaintyView | None,
-    constraint_expression: str | None = None,
+    constraint_expression: str = "",
 ) -> str:
     if status == "fitted":
-        return _format_fitted(param_id, param, uncertainty)
+        return _format_fitted(param, uncertainty)
     if status == "fixed":
         return _format_fixed(param)
     if status == "constrained":
         return _format_constrained(
-            param_id,
             param,
-            parameter_store,
             uncertainty,
             constraint_expression,
         )
@@ -350,27 +340,17 @@ def write_file(
     parameters: GlobalLocalParameters,
     status: str,
     path: Path,
-    parameter_store: ParameterStore,
-    parameter_ids: dict[ParamName, str] | None = None,
     uncertainty: ParameterUncertaintyView | None = None,
-    constraint_expressions: dict[str, str] | None = None,
+    constraint_expressions: Mapping[str, str] | None = None,
 ) -> None:
     if not parameters:
         return
 
-    ids = (
-        {pname: parameter.id_ for pname, parameter in parameters.global_.items()}
-        | {pname: parameter.id_ for pname, parameter in parameters.local.items()}
-        if parameter_ids is None
-        else parameter_ids
-    )
     par_strings = _params_to_strings(
         parameters,
         status,
-        parameter_store,
-        ids,
         uncertainty,
-        constraint_expressions,
+        {} if constraint_expressions is None else constraint_expressions,
     )
     formatted_strings = _format_strings(par_strings)
     filename = path / f"{status}.toml"
@@ -391,36 +371,31 @@ def classify_global(parameters: Parameters) -> GlobalLocalParameters:
 
 
 def classify_parameters(
-    experiments: Experiments,
-    parameter_store: ParameterStore,
-    parameterization: ActiveParameterization | None = None,
+    parameter_model: SealedParameterModel,
+    parameter_values: Mapping[str, float],
+    parameterization: ActiveParameterization,
+    fitted_ids: tuple[str, ...],
 ) -> ClassifiedParameters:
-    param_ids = experiments.param_ids
     parameters = {
-        param.param_name: param
-        for param in parameter_store.get_parameters(param_ids).values()
+        parameter_name_from_definition(definition): ReportParameter(
+            definition.param_id,
+            parameter_name_from_definition(definition),
+            parameter_values[definition.param_id],
+        )
+        for definition in parameter_model.definitions
+        if definition.param_id in parameterization.scope_ids
     }
-
-    if parameterization is None:
-        constrained = {
-            pname: param for pname, param in parameters.items() if param.expr
-        }
-        fitted = {
-            pname: param
-            for pname, param in parameters.items()
-            if param.vary and pname not in constrained
-        }
-    else:
-        constrained = {
-            pname: param
-            for pname, param in parameters.items()
-            if parameterization.role(param.id_) is ParameterRole.DERIVED
-        }
-        fitted = {
-            pname: param
-            for pname, param in parameters.items()
-            if parameterization.role(param.id_) is ParameterRole.FIT
-        }
+    fitted_id_set = set(fitted_ids)
+    constrained = {
+        pname: param
+        for pname, param in parameters.items()
+        if parameterization.role(param.param_id) is ParameterRole.DERIVED
+    }
+    fitted = {
+        pname: param
+        for pname, param in parameters.items()
+        if param.param_id in fitted_id_set
+    }
 
     fixed_ids = set(parameters) - set(fitted) - set(constrained)
     fixed = {
@@ -437,57 +412,66 @@ def classify_parameters(
 
 
 def write_parameters(
-    experiments: Experiments,
     path: Path,
-    parameter_store: ParameterStore,
+    *,
+    parameter_model: SealedParameterModel,
+    parameter_values: Mapping[str, float],
+    parameterization: ActiveParameterization,
+    fitted_ids: tuple[str, ...] = (),
     uncertainty: ParameterUncertaintyView | None = None,
-    parameterization: ActiveParameterization | None = None,
 ) -> None:
     """Write the model parameter values and their uncertainties to a file."""
     path_par = path / "Parameters"
     path_par.mkdir(parents=True, exist_ok=True)
     classified_parameters = classify_parameters(
-        experiments,
-        parameter_store,
+        parameter_model,
+        parameter_values,
         parameterization,
+        fitted_ids,
     )
-    constraint_expressions = (
-        None
-        if parameterization is None
-        else {
-            item.target_id: item.expression_text
-            for item in parameterization.program.constraints
-            if item.source.startswith("method-rule:")
-        }
-    )
-    parameter_ids = {
-        parameter.param_name: param_id
-        for param_id, parameter in parameter_store.get_parameters(
-            experiments.param_ids
-        ).items()
+    names = {
+        definition.param_id: parameter_name_from_definition(definition)
+        for definition in parameter_model.definitions
+    }
+    constraint_expressions = {
+        item.target_id: _replace_parameter_ids(item.expression_text, names)
+        for item in parameterization.program.constraints
     }
 
     write_file(
         classified_parameters.fitted,
         "fitted",
         path_par,
-        parameter_store,
-        parameter_ids,
         uncertainty,
     )
     write_file(
         classified_parameters.fixed,
         "fixed",
         path_par,
-        parameter_store,
-        parameter_ids,
     )
     write_file(
         classified_parameters.constrained,
         "constrained",
         path_par,
-        parameter_store,
-        parameter_ids,
         uncertainty,
         constraint_expressions,
+    )
+
+
+def _replace_parameter_ids(
+    expression: str,
+    parameter_names: Mapping[str, ParamName],
+) -> str:
+    """Render stable IDs in one constraint using sealed presentation names."""
+    if not parameter_names:
+        return expression
+    pattern = re.compile(
+        "|".join(
+            re.escape(param_id)
+            for param_id in sorted(parameter_names, key=len, reverse=True)
+        )
+    )
+    return pattern.sub(
+        lambda match: str(parameter_names[match.group(0)]),
+        expression,
     )

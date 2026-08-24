@@ -1,7 +1,7 @@
 """Canonical immutable parameter definitions and per-analysis configuration.
 
-These ChemEx-native objects are constructed beside the legacy mutable catalog.
-The legacy execution path remains authoritative at this migration checkpoint.
+The mutable catalog supplies construction inputs; sealed metadata and
+``AnalysisValues`` supply post-construction runtime state.
 """
 
 from __future__ import annotations
@@ -275,13 +275,18 @@ def _equal(left: object, right: object) -> bool:
     return left == right
 
 
-def _definition_sort_key(definition: ParamDefinition) -> ParamName:
-    """Reproduce the legacy-authoritative ``ParamName`` ordering exactly."""
+def parameter_name_from_definition(definition: ParamDefinition) -> ParamName:
+    """Reconstruct the canonical presentation name from sealed metadata."""
     return ParamName(
         definition.name,
         SpinSystem.from_name(definition.spin_system_name),
         Conditions.model_construct(None, **dict(definition.condition_entries)),
     )
+
+
+def _definition_sort_key(definition: ParamDefinition) -> ParamName:
+    """Reproduce the established ``ParamName`` ordering exactly."""
+    return parameter_name_from_definition(definition)
 
 
 class InvalidConstructionError(ValueError):
