@@ -19,7 +19,6 @@ from chemex.evaluation.native import (
     EvaluationEngine,
     EvaluationFailure,
     EvaluationFrame,
-    EvaluationResult,
 )
 from chemex.optimize.direct_trf import (
     AttemptCounters,
@@ -727,7 +726,6 @@ class DeSearchTerminal(StrEnum):
     GENERATION_LIMIT = "generation_limit"
     BUDGET_EXHAUSTED = "budget_exhausted"
     NO_VALID_CANDIDATE = "no_valid_candidate"
-    PREFLIGHT_INVALID = "preflight_invalid"
     CANCELLED = "cancelled"
     INTERRUPTED = "interrupted"
     BACKEND_FAILURE = "backend_failure"
@@ -781,7 +779,6 @@ class DeSearchExecution:
     counters: AttemptCounters
     population_identity: str
     candidate_ordering_policy: str
-    preflight_evaluation_identity: str | None
     valid_candidate_count: int
     rejected_trial_count: int
     best_candidate: DeSearchCandidate | None
@@ -812,7 +809,6 @@ class DeSearchExecution:
                     ),
                     self.population_identity,
                     self.candidate_ordering_policy,
-                    self.preflight_evaluation_identity,
                     self.valid_candidate_count,
                     self.rejected_trial_count,
                     None
@@ -979,31 +975,6 @@ def _validate_de_context(
     invocation.search_problem.validate_parameterization(parameterization)
 
 
-def _de_preflight(live: _LiveDeAttempt) -> EvaluationResult | TerminalFailure:
-    try:
-        lifecycle = live.invocation.search_problem.lifecycle_frame(
-            live.invocation.search_problem.start,
-            live.parameterization,
-        )
-        frame = EvaluationFrame.from_lifecycle_frame(live.parameterization, lifecycle)
-        evaluated = live.evaluator.evaluate(frame)
-    except Exception as error:  # noqa: BLE001 - preflight fails closed
-        return TerminalFailure(
-            "de_preflight_frame_failure",
-            f"{type(error).__name__}: {error}",
-        )
-    if isinstance(evaluated, EvaluationFailure):
-        return TerminalFailure(evaluated.category, evaluated.message, evaluated)
-    try:
-        canonical_chi_square(evaluated.residuals)
-    except (TypeError, ValueError, ObjectiveScalarizationError) as error:
-        return TerminalFailure(
-            "de_preflight_scalarization_failure",
-            f"{type(error).__name__}: {error}",
-        )
-    return evaluated
-
-
 def _normalize_de_backend(
     result: object,
     *,
@@ -1066,7 +1037,6 @@ class _DeBackendResult(Protocol):
 def _search_execution(
     live: _LiveDeAttempt,
     terminal: DeSearchTerminal,
-    preflight_identity: str | None,
     *,
     backend: DeBackendEvidence | None = None,
     failure: TerminalFailure | None = None,
@@ -1095,7 +1065,6 @@ def _search_execution(
         live.counters,
         live.invocation.population.identity,
         _DE_CANDIDATE_ORDER_VERSION,
-        preflight_identity,
         len(live.candidates),
         live.rejected,
         live.best,
@@ -1145,7 +1114,6 @@ def _invoke_de_backend(
 def _finish_de_backend(
     live: _LiveDeAttempt,
     result: object,
-    preflight_identity: str,
 ) -> DeSearchExecution:
     try:
         backend = _normalize_de_backend(
@@ -1157,7 +1125,6 @@ def _finish_de_backend(
         return _search_execution(
             live,
             DeSearchTerminal.IMPLEMENTATION_FAILURE,
-            preflight_identity,
             failure=TerminalFailure(
                 "malformed_de_backend_result",
                 f"{type(error).__name__}: {error}",
@@ -1175,7 +1142,6 @@ def _finish_de_backend(
     return _search_execution(
         live,
         terminal,
-        preflight_identity,
         backend=backend,
         failure=failure,
     )
@@ -1195,7 +1161,6 @@ def _unstarted_search_execution(
         AttemptCounters(0, 0, 0),
         invocation.population.identity,
         _DE_CANDIDATE_ORDER_VERSION,
-        None,
         0,
         0,
         None,
@@ -1263,31 +1228,13 @@ def _run_de_search(
     if isinstance(started, DeSearchExecution):
         return started
     live = started
-    try:
-        preflight = _de_preflight(live)
-    except KeyboardInterrupt:
-        return _search_execution(
-            live,
-            DeSearchTerminal.INTERRUPTED,
-            None,
-            failure=TerminalFailure(
-                "interrupted",
-                "KeyboardInterrupt during DE preflight",
-            ),
-        )
-    if isinstance(preflight, TerminalFailure):
-        return _search_execution(
-            live,
-            DeSearchTerminal.PREFLIGHT_INVALID,
-            None,
-            failure=preflight,
-        )
     if cancellation.is_cancelled:
         return _search_execution(
             live,
             DeSearchTerminal.CANCELLED,
-            preflight.identity,
-            failure=TerminalFailure("cancelled", "Cancellation after DE preflight"),
+            failure=TerminalFailure(
+                "cancelled", "Cancellation after evaluator binding"
+            ),
         )
     solver_start = np.asarray(
         tuple(
@@ -1301,21 +1248,18 @@ def _run_de_search(
         return _search_execution(
             live,
             stop.terminal,
-            preflight.identity,
             failure=stop.failure,
         )
     except KeyboardInterrupt:
         return _search_execution(
             live,
             DeSearchTerminal.INTERRUPTED,
-            preflight.identity,
             failure=TerminalFailure("interrupted", "KeyboardInterrupt during DE"),
         )
     except Exception as error:  # noqa: BLE001 - undeclared backend errors fail closed
         return _search_execution(
             live,
             DeSearchTerminal.IMPLEMENTATION_FAILURE,
-            preflight.identity,
             failure=TerminalFailure(
                 "unexpected_de_backend_exception",
                 f"{type(error).__name__}: {error}",
@@ -1325,10 +1269,9 @@ def _run_de_search(
         return _search_execution(
             live,
             DeSearchTerminal.CANCELLED,
-            preflight.identity,
             failure=TerminalFailure("cancelled", "Cancellation after DE backend"),
         )
-    return _finish_de_backend(live, result, preflight.identity)
+    return _finish_de_backend(live, result)
 
 
 def execute_de_search(

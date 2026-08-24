@@ -23,6 +23,7 @@ import chemex.optimize.uncertainty as uncertainty_module
 import chemex.run_info as run_info_module
 from chemex.chemex import run
 from chemex.cli import build_parser
+from chemex.evaluation.native import BoundEvaluator, EvaluationFailure
 from chemex.optimize.mcmc import NativeMcmcIncompleteError
 from chemex.optimize.method_step import DerivationDisposition, DerivationOutcome
 from chemex.optimize.progress import ProgressPhase
@@ -2231,6 +2232,65 @@ def test_v2_de_failure_has_no_direct_trf_fallback_or_commit(tmp_path: Path) -> N
     ):
         run(_fit_arguments(tmp_path / "Output", method), session=session)
 
+    assert session.analysis_values.snapshot().revision == 0
+
+
+def test_v2_de_all_invalid_candidates_has_no_trf_fallback_or_commit(
+    tmp_path: Path,
+) -> None:
+    method = _de_method(tmp_path / "method-v2-de.toml")
+    session = AnalysisSession.create()
+    backend_calls = 0
+
+    def invalid_evaluation(evaluator: BoundEvaluator, frame) -> EvaluationFailure:
+        return EvaluationFailure(
+            evaluator.plan.identity,
+            frame.parameterization_identity,
+            "kernel",
+            "non_finite_calculation",
+            "INVALID_TRIAL",
+            message="scientifically invalid DE trial",
+        )
+
+    def all_invalid_backend(objective, bounds, **kwargs):
+        nonlocal backend_calls
+        backend_calls += 1
+        x0 = np.asarray(kwargs["x0"], dtype=np.float64)
+        lower = np.asarray(bounds.lb, dtype=np.float64)
+        assert math.isinf(objective(x0))
+        assert math.isinf(objective(lower))
+        population_size = max(5, int(kwargs["popsize"]) * x0.size)
+        return SimpleNamespace(
+            success=True,
+            message="Optimization terminated successfully.",
+            nit=1,
+            nfev=2,
+            x=x0,
+            fun=math.inf,
+            population=np.tile(x0, (population_size, 1)),
+            population_energies=np.full(population_size, math.inf),
+        )
+
+    with (
+        patch.object(
+            BoundEvaluator,
+            "evaluate",
+            autospec=True,
+            side_effect=invalid_evaluation,
+        ),
+        patch(
+            "chemex.optimize.de_direct_trf.differential_evolution",
+            side_effect=all_invalid_backend,
+        ),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=AssertionError("direct TRF fallback ran"),
+        ),
+        pytest.raises(RuntimeError, match="no eligible candidate"),
+    ):
+        run(_fit_arguments(tmp_path / "Output", method), session=session)
+
+    assert backend_calls == 1
     assert session.analysis_values.snapshot().revision == 0
 
 

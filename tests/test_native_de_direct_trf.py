@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 
+import chemex.optimize.de_direct_trf as de_search_module
 from chemex.configuration.methods import Method, Selection
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
-from chemex.evaluation.native import EvaluationEngine
+from chemex.evaluation.native import EvaluationEngine, EvaluationFailure
 from chemex.experiments.builder import build_experiments
 from chemex.optimize.de_direct_trf import (
     DeCoordinateSemantics,
@@ -23,6 +26,7 @@ from chemex.optimize.de_direct_trf import (
 from chemex.optimize.direct_trf import (
     DeSearchProblemDerivation,
     DirectTrfConstructionError,
+    ObjectiveScalarizationError,
     OptimizationProblem,
 )
 from chemex.parameters.parameterization import ActiveParameterization
@@ -147,6 +151,217 @@ def test_captured_value_outside_search_range_is_valid_and_not_clipped() -> None:
     assert invocation.search_coordinates[0].solver_initial == pytest.approx(
         math.log(2.0)
     )
+
+
+def _successful_backend_result(
+    invocation: DeSearchInvocation,
+    solver_vector: np.ndarray,
+    objective: float,
+    *,
+    evaluation_count: int,
+) -> SimpleNamespace:
+    population = np.tile(solver_vector, (invocation.population.size, 1))
+    return SimpleNamespace(
+        success=True,
+        message="Optimization terminated successfully.",
+        nit=1,
+        nfev=evaluation_count,
+        x=solver_vector,
+        fun=objective,
+        population=population,
+        population_energies=np.full(invocation.population.size, objective),
+    )
+
+
+def _invalid_trial(
+    engine: EvaluationEngine,
+    parameterization: ActiveParameterization,
+) -> EvaluationFailure:
+    return EvaluationFailure(
+        engine.plan.identity,
+        parameterization.evaluator_identity,
+        "kernel",
+        "non_finite_calculation",
+        "INVALID_TRIAL",
+        message="scientifically invalid DE trial",
+    )
+
+
+def test_invalid_captured_value_outside_box_does_not_block_de_backend() -> None:
+    _session, _experiments, parameterization, engine, problem = _qualification_problem(
+        Method(fit=["PB"], fix=["KEX_AB"])
+    )
+    selected_id = problem.controlled_ids[1]
+    selected_index = problem.controlled_ids.index(selected_id)
+    captured = problem.start[selected_index]
+    assert captured > 4.0
+    invocation = DeSearchInvocation.for_product_problem(
+        problem,
+        search_coordinates=((selected_id, 1.0, 4.0, "log"),),
+        root_seed=597,
+    )
+    real_evaluator = engine.new_evaluator()
+
+    class RejectCapturedOutsideBox:
+        def evaluate(self, frame):
+            selected = dict(frame._items)[selected_id]
+            if not 1.0 <= selected <= 4.0:
+                return _invalid_trial(engine, parameterization)
+            return real_evaluator.evaluate(frame)
+
+    def valid_candidate_backend(live, _invocation, _solver_start):
+        solver_vector = np.asarray((math.log(3.0),), dtype=np.float64)
+        objective = live.objective(solver_vector)
+        assert math.isfinite(objective)
+        return _successful_backend_result(
+            invocation,
+            solver_vector,
+            objective,
+            evaluation_count=1,
+        )
+
+    with (
+        patch.object(engine, "new_evaluator", return_value=RejectCapturedOutsideBox()),
+        patch.object(
+            de_search_module,
+            "_invoke_de_backend",
+            side_effect=valid_candidate_backend,
+        ) as backend,
+    ):
+        outcome = execute_de_search(problem, invocation, parameterization, engine)
+
+    backend.assert_called_once()
+    assert outcome.restart_eligible
+    assert outcome.best_candidate is not None
+    assert outcome.best_candidate.selected_vector == pytest.approx((3.0,))
+    assert outcome.rejected_trial_count == 0
+
+
+def test_invalid_initial_trial_is_rejected_before_later_valid_restart() -> None:
+    _session, _experiments, parameterization, engine, problem = _qualification_problem(
+        Method(fit=["PB"], fix=["KEX_AB"])
+    )
+    selected_id = problem.controlled_ids[1]
+    invocation = DeSearchInvocation.for_product_problem(
+        problem,
+        search_coordinates=((selected_id, 1.0, 4.0, "log"),),
+        root_seed=597,
+    )
+    real_scalarization = de_search_module.canonical_chi_square
+    scalarization_count = 0
+
+    def reject_first_scalarization(residuals):
+        nonlocal scalarization_count
+        scalarization_count += 1
+        if scalarization_count == 1:
+            raise ObjectiveScalarizationError("invalid initial candidate")
+        return real_scalarization(residuals)
+
+    def invalid_then_valid_backend(live, _invocation, solver_start):
+        assert math.isinf(live.objective(solver_start))
+        solver_vector = np.asarray((math.log(3.0),), dtype=np.float64)
+        objective = live.objective(solver_vector)
+        assert math.isfinite(objective)
+        return _successful_backend_result(
+            invocation,
+            solver_vector,
+            objective,
+            evaluation_count=2,
+        )
+
+    with (
+        patch.object(
+            de_search_module,
+            "canonical_chi_square",
+            side_effect=reject_first_scalarization,
+        ),
+        patch.object(
+            de_search_module,
+            "_invoke_de_backend",
+            side_effect=invalid_then_valid_backend,
+        ) as backend,
+    ):
+        outcome = execute_de_search(problem, invocation, parameterization, engine)
+
+    backend.assert_called_once()
+    assert outcome.restart_eligible
+    assert outcome.valid_candidate_count == 1
+    assert outcome.rejected_trial_count == 1
+    assert outcome.best_candidate is not None
+    assert outcome.best_candidate.selected_vector == pytest.approx((3.0,))
+
+
+def test_evaluator_binding_failure_stops_before_de_backend() -> None:
+    _session, _experiments, parameterization, engine, problem = _qualification_problem(
+        Method(fit=["PB"], fix=["KEX_AB"])
+    )
+    selected_id = problem.controlled_ids[0]
+    selected_index = problem.controlled_ids.index(selected_id)
+    invocation = DeSearchInvocation.for_product_problem(
+        problem,
+        search_coordinates=(
+            (
+                selected_id,
+                problem.lower_bounds[selected_index],
+                problem.upper_bounds[selected_index],
+                "linear",
+            ),
+        ),
+        root_seed=597,
+    )
+
+    with (
+        patch.object(
+            engine,
+            "new_evaluator",
+            side_effect=RuntimeError("binding unavailable"),
+        ),
+        patch.object(de_search_module, "_invoke_de_backend") as backend,
+    ):
+        outcome = execute_de_search(problem, invocation, parameterization, engine)
+
+    backend.assert_not_called()
+    assert outcome.terminal is DeSearchTerminal.IMPLEMENTATION_FAILURE
+    assert outcome.counters.objective_requests_accepted == 0
+    assert outcome.failure is not None
+    assert outcome.failure.category == "de_evaluator_binding_failure"
+
+
+def test_candidate_frame_contract_failure_fails_closed() -> None:
+    _session, _experiments, parameterization, engine, problem = _qualification_problem(
+        Method(fit=["PB"], fix=["KEX_AB"])
+    )
+    selected_id = problem.controlled_ids[0]
+    selected_index = problem.controlled_ids.index(selected_id)
+    invocation = DeSearchInvocation.for_product_problem(
+        problem,
+        search_coordinates=(
+            (
+                selected_id,
+                problem.lower_bounds[selected_index],
+                problem.upper_bounds[selected_index],
+                "linear",
+            ),
+        ),
+        root_seed=597,
+    )
+
+    def malformed_candidate_backend(live, _invocation, _solver_start):
+        return live.objective(np.asarray((1.0, 2.0), dtype=np.float64))
+
+    with patch.object(
+        de_search_module,
+        "_invoke_de_backend",
+        side_effect=malformed_candidate_backend,
+    ) as backend:
+        outcome = execute_de_search(problem, invocation, parameterization, engine)
+
+    backend.assert_called_once()
+    assert outcome.terminal is DeSearchTerminal.IMPLEMENTATION_FAILURE
+    assert outcome.valid_candidate_count == 0
+    assert outcome.rejected_trial_count == 0
+    assert outcome.failure is not None
+    assert outcome.failure.category == "de_candidate_contract_failure"
 
 
 def test_search_interruption_returns_no_candidate_or_fit_authority() -> None:
