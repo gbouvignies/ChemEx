@@ -559,6 +559,54 @@ def test_real_direct_fit_propagates_progress_interrupt_after_cleanup(
     assert "Evaluations" in rendered
 
 
+def test_cancellation_after_aggregate_acceptance_blocks_commit_and_later_steps(
+    tmp_path: Path,
+) -> None:
+    method = tmp_path / "two-steps.toml"
+    method.write_text(
+        """[STEP1]
+FIX = ["PB", "KEX_AB"]
+
+[STEP2]
+FIX = ["PB", "KEX_AB"]
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+    real_execute = native_deterministic_module.execute_grouped_direct_trf
+    executions = 0
+
+    def cancel_after_acceptance(*args, **kwargs):
+        nonlocal executions
+        executions += 1
+        outcome = real_execute(*args, **kwargs)
+        assert outcome.accepted_result is not None
+        kwargs["cancellation"].cancel()
+        return outcome
+
+    with (
+        patch.object(
+            native_deterministic_module,
+            "execute_grouped_direct_trf",
+            side_effect=cancel_after_acceptance,
+        ),
+        patch.object(
+            native_deterministic_module,
+            "derive_uncertainty_evidence",
+            side_effect=AssertionError("uncertainty ran before a committed fit"),
+        ) as uncertainty,
+        pytest.raises(KeyboardInterrupt, match="cancelled before commit"),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    assert executions == 1
+    assert uncertainty.call_count == 0
+    assert session.analysis_values.snapshot().revision == 0
+    assert not (output / "STEP1" / "Parameters").exists()
+    assert not (output / "STEP2").exists()
+
+
 def test_explicit_trf_and_least_squares_alias_have_identical_native_product_output(
     tmp_path: Path,
 ) -> None:
