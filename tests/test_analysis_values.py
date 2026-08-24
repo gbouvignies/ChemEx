@@ -97,11 +97,6 @@ def test_revision_zero_model_values_and_constraints_resolve_without_lmfit() -> N
     assert constrained["__KAB"] == pytest.approx(16.0)
     assert constrained["__KBA"] == pytest.approx(384.0)
 
-    stored = session.parameters.get_parameters({"__PB", "__PA", "__KAB", "__KBA"})
-    assert stored["__PA"].value == pytest.approx(0.93)
-    assert stored["__KAB"].value == pytest.approx(28.0)
-    assert stored["__KBA"].value == pytest.approx(372.0)
-
 
 def _shipped_args(command: str, output: Path) -> Namespace:
     args = Namespace(
@@ -259,12 +254,16 @@ def test_invalid_or_incomplete_commits_leave_values_and_revision_unchanged(
 def test_real_shipped_configuration_initializes_session_values() -> None:
     session = _build_shipped_session()
     snapshot = session.analysis_values.snapshot()
+    parameter_model = session.parameter_factory.sealed_parameter_model
 
     assert snapshot.revision == 0
-    assert tuple(snapshot) == tuple(session.parameters.database._parameters)
+    assert parameter_model is not None
+    assert tuple(snapshot) == tuple(
+        config.param_id for config in parameter_model.configuration
+    )
     assert all(
-        value == session.parameters.get_value(param_id)
-        for param_id, value in snapshot.items()
+        snapshot[config.param_id] == config.effective_value
+        for config in parameter_model.configuration
     )
 
 
@@ -341,7 +340,7 @@ def test_model_change_is_rejected_after_analysis_values_are_initialized() -> Non
     assert session.analysis_values.snapshot() == snapshot
 
 
-def test_shipped_fit_is_native_authoritative_and_mirrors_committed_values(
+def test_shipped_fit_commits_native_authoritative_values(
     tmp_path: Path,
 ) -> None:
     candidate_output = tmp_path / "candidate-enabled"
@@ -351,10 +350,6 @@ def test_shipped_fit_is_native_authoritative_and_mirrors_committed_values(
 
     snapshot = session.analysis_values.snapshot()
     assert snapshot.revision == 1
-    assert all(
-        value == session.parameters.get_value(param_id)
-        for param_id, value in snapshot.items()
-    )
     assert list((candidate_output / "Data").rglob("*.dat"))
     assert list((candidate_output / "Parameters").rglob("*.toml"))
 
@@ -371,10 +366,6 @@ def test_shipped_simulation_fails_closed_on_native_initialization_failure(
 
     snapshot = session.analysis_values.snapshot()
     assert snapshot.revision == 0
-    assert all(
-        value == session.parameters.get_value(param_id)
-        for param_id, value in snapshot.items()
-    )
 
     def fail_native_initialization(*_args: object, **_kwargs: object) -> None:
         msg = "native initialization failed"

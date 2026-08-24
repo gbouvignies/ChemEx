@@ -6,7 +6,6 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
@@ -25,6 +24,8 @@ from chemex.optimize.native_resampling import (
     execute_resampling_evidence,
 )
 from chemex.optimize.statistics_plot import write_resampling_plots
+from chemex.parameters.parameterization import SealedParameterModel
+from chemex.parameters.sealed import parameter_name_from_definition
 from chemex.runtime import ExecutionSettings
 
 
@@ -80,13 +81,10 @@ def _format_tsv_float(value: float) -> str:
 
 def _format_parameter_names(
     parameter_ids: list[str],
-    parameter_store: Any,
+    parameter_model: SealedParameterModel,
 ) -> tuple[str, ...]:
-    if not hasattr(parameter_store, "get_parameters"):
-        return tuple(parameter_ids)
-    parameters = parameter_store.get_parameters(parameter_ids)
     return tuple(
-        str(parameters[param_id].param_name) if param_id in parameters else param_id
+        str(parameter_name_from_definition(parameter_model.definitions[param_id]))
         for param_id in parameter_ids
     )
 
@@ -354,9 +352,7 @@ def _run_native_resampling_method(
     statistic_path.mkdir(parents=True, exist_ok=True)
     _clear_native_statistics_artifacts(statistic_path)
     parameter_ids = fit.accepted.controlled_ids
-    parameter_names = _format_parameter_names(
-        list(parameter_ids), experiments.parameter_store
-    )
+    parameter_names = _format_parameter_names(list(parameter_ids), fit.parameter_model)
     worker_count = min(execution.workers, method.iterations)
     _write_native_state_diagnostics(
         statistic_path,

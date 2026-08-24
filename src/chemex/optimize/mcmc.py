@@ -26,7 +26,8 @@ from chemex.optimize.native_mcmc import (
 )
 from chemex.optimize.statistics_plot import write_mcmc_plots
 from chemex.optimize.uncertainty import ParameterUnit
-from chemex.parameters.database import ParameterStore
+from chemex.parameters.parameterization import SealedParameterModel
+from chemex.parameters.sealed import parameter_name_from_definition
 from chemex.runtime import ExecutionSettings
 from chemex.typing import Array
 
@@ -144,10 +145,12 @@ def resolve_mcmc_settings(
 
 def _format_parameter_ids(
     parameter_ids: tuple[str, ...],
-    parameter_store: ParameterStore,
+    parameter_model: SealedParameterModel,
 ) -> tuple[str, ...]:
-    parameters = parameter_store.get_parameters(parameter_ids)
-    return tuple(str(parameters[param_id].param_name) for param_id in parameter_ids)
+    return tuple(
+        str(parameter_name_from_definition(parameter_model.definitions[param_id]))
+        for param_id in parameter_ids
+    )
 
 
 def _summarize_chain(
@@ -436,19 +439,21 @@ def _extend_timing_diagnostics(
 def _write_summary(
     result: McmcResult,
     path: Path,
-    parameter_store: ParameterStore,
+    parameter_model: SealedParameterModel,
 ) -> None:
-    parameters = parameter_store.get_parameters(result.var_names)
     lines: list[str] = []
     for summary in result.summary:
-        parameter = parameters[summary.parameter_id]
-        parameter_name = str(parameter.param_name).strip("[]")
+        param_id = summary.parameter_id
+        parameter_name = str(
+            parameter_name_from_definition(parameter_model.definitions[param_id])
+        ).strip("[]")
+        configuration = parameter_model.configuration[param_id]
         lines.extend(
             [
                 f"[{_quote_toml_string(parameter_name)}]",
                 'prior = "uniform"',
-                f"prior_lower = {_format_toml_float(float(parameter.min))}",
-                f"prior_upper = {_format_toml_float(float(parameter.max))}",
+                f"prior_lower = {_format_toml_float(configuration.lower_bound)}",
+                f"prior_upper = {_format_toml_float(configuration.upper_bound)}",
                 'credible_interval = "95% equal-tailed"',
                 f"mean = {_format_toml_float(summary.mean)}",
                 f"standard_deviation = {_format_toml_float(summary.standard_deviation)}",
@@ -483,9 +488,9 @@ def _write_summary(
 def _write_samples(
     result: McmcResult,
     path: Path,
-    parameter_store: ParameterStore,
+    parameter_model: SealedParameterModel,
 ) -> None:
-    parameter_names = _format_parameter_ids(result.var_names, parameter_store)
+    parameter_names = _format_parameter_ids(result.var_names, parameter_model)
     values = np.column_stack((result.samples, result.log_probabilities))
 
     with (path / "samples.tsv").open("w", encoding="utf-8") as fileout:
@@ -496,9 +501,9 @@ def _write_samples(
 def _write_correlations(
     result: McmcResult,
     path: Path,
-    parameter_store: ParameterStore,
+    parameter_model: SealedParameterModel,
 ) -> None:
-    parameter_names = _format_parameter_ids(result.var_names, parameter_store)
+    parameter_names = _format_parameter_ids(result.var_names, parameter_model)
 
     with (path / "correlations.tsv").open("w", encoding="utf-8") as fileout:
         fileout.write("parameter\t" + "\t".join(parameter_names) + "\n")
@@ -515,7 +520,6 @@ def _write_diagnostics(
     result: McmcResult,
     settings: EffectiveMcmcSettings,
     path: Path,
-    parameter_store: ParameterStore,
     timings: Mapping[str, float],
     *,
     engine: str,
@@ -562,7 +566,7 @@ def write_mcmc_outputs(
     result: McmcResult,
     settings: EffectiveMcmcSettings,
     path: Path,
-    parameter_store: ParameterStore,
+    parameter_model: SealedParameterModel,
     timings: dict[str, float] | None = None,
     *,
     engine: str = "native MCMC",
@@ -574,15 +578,15 @@ def write_mcmc_outputs(
     path_mcmc.mkdir(parents=True, exist_ok=True)
 
     phase_start = perf_counter()
-    _write_summary(result, path_mcmc, parameter_store)
+    _write_summary(result, path_mcmc, parameter_model)
     timings["output_summary_seconds"] = perf_counter() - phase_start
 
     phase_start = perf_counter()
-    _write_samples(result, path_mcmc, parameter_store)
+    _write_samples(result, path_mcmc, parameter_model)
     timings["output_samples_seconds"] = perf_counter() - phase_start
 
     phase_start = perf_counter()
-    _write_correlations(result, path_mcmc, parameter_store)
+    _write_correlations(result, path_mcmc, parameter_model)
     timings["output_correlations_seconds"] = perf_counter() - phase_start
 
     phase_start = perf_counter()
@@ -590,7 +594,7 @@ def write_mcmc_outputs(
         result,
         settings,
         path_mcmc,
-        parameter_names=_format_parameter_ids(result.var_names, parameter_store),
+        parameter_names=_format_parameter_ids(result.var_names, parameter_model),
     )
     timings["output_plots_seconds"] = perf_counter() - phase_start
     timings["output_total_seconds"] = perf_counter() - output_start
@@ -604,7 +608,6 @@ def write_mcmc_outputs(
         result,
         settings,
         path_mcmc,
-        parameter_store,
         timings,
         engine=engine,
         root_seed=root_seed,
@@ -766,7 +769,7 @@ def run_native_mcmc(
                 )
                 if invalid
             ),
-            experiments.parameter_store,
+            fit.parameter_model,
         )
         error = ValueError(
             "Native MCMC requires finite lower and upper bounds with lower < upper "
@@ -836,7 +839,7 @@ def run_native_mcmc(
             result,
             effective,
             path,
-            experiments.parameter_store,
+            fit.parameter_model,
             timings=timings,
             engine="native MCMC",
             root_seed=root_seed,

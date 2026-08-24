@@ -29,7 +29,6 @@ from chemex.configuration.methods import McmcSettings, Method, Selection, Statis
 from chemex.experiments import builder as builder_module
 from chemex.nmr.basis import Basis
 from chemex.optimize import fitting as fitting_module
-from chemex.optimize import helper as helper_module
 from chemex.optimize import resampling as resampling_module
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import ParamSetting
@@ -70,6 +69,21 @@ class StubParameters:
     def sort(self) -> None:
         self.sort_calls += 1
 
+    def get_parameters(self, _param_ids: object) -> dict[str, ParamSetting]:
+        return {}
+
+
+class StubParameterization:
+    independent_ids: tuple[str, ...] = ()
+
+    @staticmethod
+    def frame_from_snapshot(snapshot: object) -> object:
+        return snapshot
+
+    @staticmethod
+    def resolve(_frame: object) -> dict[str, float]:
+        return {}
+
 
 class StubParameterFactory:
     def __init__(self) -> None:
@@ -77,6 +91,7 @@ class StubParameterFactory:
         self.seal_definition_calls = 0
         self.seal_configuration_calls = 0
         self.native_sealing_succeeds = True
+        self.sealed_parameter_model = object()
 
     def clear_cache(self) -> None:
         self.clear_calls += 1
@@ -99,6 +114,7 @@ class StubSession:
         self.model = SimpleNamespace(spec=object())
         self.model_names: list[str] = []
         self.parameter_factory = StubParameterFactory()
+        self.analysis_values = SimpleNamespace(snapshot=lambda: object())
         self.execution = ExecutionSettings()
         self.build_analysis_values_calls = 0
 
@@ -112,40 +128,21 @@ class StubSession:
     def resolve_current_values(self, _required_ids: set[str]) -> dict[str, float]:
         return {}
 
+    def compile_parameterization(
+        self,
+        _method: Method,
+        _required_ids: set[str],
+    ) -> StubParameterization:
+        return StubParameterization()
+
     def validate_method_plan(self, _plan: MethodPlan) -> None:
         return None
 
 
-class WriterParameterStore:
-    def __init__(self, parameters: dict[str, ParamSetting]) -> None:
-        self.parameters = parameters
-
-    def get_parameters(self, param_ids: object) -> dict[str, ParamSetting]:
-        return {
-            param_id: parameter
-            for param_id, parameter in self.parameters.items()
-            if param_id in set(param_ids)
-        }
-
-
-class StatisticsParameterStore(StubParameters):
-    def get_parameters(self, param_ids: object) -> dict[str, ParamSetting]:
-        parameters = {
-            "__PB": ParamSetting(ParamName("PB"), value=0.15, vary=True),
-            "__KEX_AB": ParamSetting(ParamName("KEX_AB"), value=250.0, vary=True),
-        }
-        return {
-            param_id: parameter
-            for param_id, parameter in parameters.items()
-            if param_id in set(param_ids)
-        }
-
-
 class FakeExperiments:
-    def __init__(self, parameter_store: object | None = None) -> None:
+    def __init__(self) -> None:
         self.filtered = 0
         self.selections: list[Selection] = []
-        self.parameter_store = parameter_store
         self.param_ids: set[str] = set()
 
     def filter(self) -> None:
@@ -162,8 +159,8 @@ class FakeExperiments:
 
 
 class EmptyAfterSelectExperiments(FakeExperiments):
-    def __init__(self, parameter_store: object | None = None) -> None:
-        super().__init__(parameter_store=parameter_store)
+    def __init__(self) -> None:
+        super().__init__()
         self.has_profiles = True
 
     def select(self, selection: Selection) -> None:
@@ -283,7 +280,7 @@ def test_ensure_plugins_registered_runs_once(monkeypatch: pytest.MonkeyPatch) ->
     np.testing.assert_equal(calls, ["models", "experiments"])
 
 
-def test_build_experiments_uses_session_parameter_store(
+def test_build_experiments_uses_session_construction_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = StubSession()
@@ -347,7 +344,7 @@ def test_run_uses_explicit_session_for_fit_flow(
 ) -> None:
     defaults = object()
     session = StubSession()
-    experiments = FakeExperiments(parameter_store=session.parameters)
+    experiments = FakeExperiments()
     recorded: dict[str, object] = {}
     recorded_env: dict[str, str] = {}
 
@@ -417,7 +414,7 @@ def test_run_fails_closed_when_native_configuration_is_unavailable(
 ) -> None:
     session = StubSession()
     session.parameter_factory.native_sealing_succeeds = False
-    experiments = FakeExperiments(parameter_store=session.parameters)
+    experiments = FakeExperiments()
     fit_ran: list[bool] = []
 
     monkeypatch.setattr(
@@ -451,7 +448,7 @@ def test_run_uses_explicit_session_for_simulation_flow(
 ) -> None:
     defaults = object()
     session = StubSession()
-    experiments = FakeExperiments(parameter_store=session.parameters)
+    experiments = FakeExperiments()
     recorded: dict[str, object] = {}
 
     def fake_build_experiments(
@@ -468,12 +465,16 @@ def test_run_uses_explicit_session_for_simulation_flow(
         path: Path,
         *,
         parameter_values: object,
+        parameter_model: object,
+        parameterization: object,
         plot: bool = False,
     ) -> None:
         recorded["simulation"] = (
             experiments_arg,
             path,
             parameter_values,
+            parameter_model,
+            parameterization,
             plot,
         )
 
@@ -487,40 +488,13 @@ def test_run_uses_explicit_session_for_simulation_flow(
     np.testing.assert_equal(session.parameters.defaults_calls, [defaults])
     np.testing.assert_equal(session.parameter_factory.seal_configuration_calls, 1)
     np.testing.assert_equal(session.build_analysis_values_calls, 1)
-    np.testing.assert_equal(session.parameters.fix_all_calls, 1)
+    np.testing.assert_equal(session.parameters.fix_all_calls, 0)
     np.testing.assert_equal(recorded["build"][2], session)
-    assert recorded["simulation"] == (experiments, Path("Output"), {}, True)
-
-
-def test_run_rejects_experiments_built_under_a_different_session(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    session = StubSession()
-    mismatched_store = StubParameters()
-    experiments = FakeExperiments(parameter_store=mismatched_store)
-
-    def fake_build_experiments(
-        filenames: list[Path] | None,
-        selection: Selection,
-        *,
-        session: StubSession | None = None,
-    ) -> FakeExperiments:
-        return experiments
-
-    def fail_run_methods(*_args, **_kwargs) -> None:
-        pytest.fail("run_methods should not run for a mismatched parameter store")
-
-    def fail_execute_simulation(*_args, **_kwargs) -> None:
-        pytest.fail(
-            "execute_simulation should not run for a mismatched parameter store"
-        )
-
-    monkeypatch.setattr(chemex_module, "build_experiments", fake_build_experiments)
-    monkeypatch.setattr(chemex_module, "run_methods", fail_run_methods)
-    monkeypatch.setattr(chemex_module, "execute_simulation", fail_execute_simulation)
-
-    with pytest.raises(ValueError, match="does not match the active session"):
-        chemex_module.run(make_args("fit"), session=session)
+    simulation = recorded["simulation"]
+    assert simulation[:3] == (experiments, Path("Output"), {})
+    assert simulation[3] is session.parameter_factory.sealed_parameter_model
+    assert isinstance(simulation[4], StubParameterization)
+    assert simulation[5] is True
 
 
 def test_main_bootstraps_plugins_for_non_run_commands(
@@ -585,7 +559,7 @@ def test_run_methods_skips_fit_when_selection_removes_all_profiles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = StubSession()
-    experiments = EmptyAfterSelectExperiments(parameter_store=session.parameters)
+    experiments = EmptyAfterSelectExperiments()
     calls: list[str] = []
 
     monkeypatch.setattr(
@@ -661,7 +635,7 @@ def test_v2_omitted_selection_restores_the_step_local_all_profiles_baseline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = StubSession()
-    experiments = FakeExperiments(parameter_store=session.parameters)
+    experiments = FakeExperiments()
     plan = MethodPlan(
         FormatOrigin.V2,
         (
@@ -692,7 +666,7 @@ def test_canonical_grid_runs_requested_statistics_independently_of_origin(
     origin: FormatOrigin,
 ) -> None:
     session = StubSession()
-    experiments = FakeExperiments(parameter_store=session.parameters)
+    experiments = FakeExperiments()
     source = SourceRef(Path("method.toml"), "STEP", "SEARCH.GRID.AXES", 0)
     selector = ParameterSelector("PB", source=source)
     plan = MethodPlan(
@@ -764,7 +738,7 @@ def test_failed_step_cannot_change_effective_roles_seen_by_a_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = StubSession()
-    experiments = FakeExperiments(parameter_store=session.parameters)
+    experiments = FakeExperiments()
     experiments.param_ids = {"__PB"}
     source = SourceRef(Path("method.toml"), "STEP", "ROLES")
     fixed = FixAction((ParameterSelector("PB"),), source)
@@ -816,7 +790,7 @@ def test_run_methods_compiles_each_canonical_step_without_origin_or_store_state(
     origin: FormatOrigin,
 ) -> None:
     session = StubSession()
-    experiments = FakeExperiments(parameter_store=session.parameters)
+    experiments = FakeExperiments()
     experiments.param_ids = {"__PB"}
     source = SourceRef(Path("method.toml"), "STEP", "ROLES")
     selector = ParameterSelector("PB")
@@ -879,17 +853,8 @@ def test_run_methods_compiles_each_canonical_step_without_origin_or_store_state(
 
 
 def test_resampling_summary_and_correlations_are_written(tmp_path: Path) -> None:
-    store = WriterParameterStore(
-        {
-            "__PB": ParamSetting(ParamName("PB"), value=0.15, vary=True),
-            "__KEX_AB": ParamSetting(ParamName("KEX_AB"), value=250.0, vary=True),
-        },
-    )
     samples = np.array([[0.1, 200.0], [0.3, 300.0], [0.5, 400.0]])
-    parameter_names = resampling_module._format_parameter_names(
-        ["__PB", "__KEX_AB"],
-        store,
-    )
+    parameter_names = ("[PB]", "[KEX_AB]")
 
     resampling_module._write_resampling_summary(
         tmp_path,
@@ -914,37 +879,15 @@ def test_resampling_summary_and_correlations_are_written(tmp_path: Path) -> None
     assert "1.00000e+00" in correlations
 
 
-def test_execute_post_fit_writes_parameters_from_experiments_store(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    param = ParamSetting(ParamName("PB"), value=0.15, vary=False)
-    experiments = SimpleNamespace(
-        param_ids=[param.id_],
-        parameter_store=WriterParameterStore({param.id_: param}),
-        write=lambda _path: None,
-    )
-    monkeypatch.setattr(helper_module, "print_writing_results", lambda _path: None)
-    monkeypatch.setattr(
-        helper_module,
-        "_write_statistics",
-        lambda *_args, **_kwargs: None,
-    )
-
-    helper_module.execute_post_fit(
-        experiments,
-        tmp_path,
-        residuals=np.array([], dtype=float),
-        nvarys=0,
-    )
-
-    np.testing.assert_equal(int((tmp_path / "Parameters" / "fixed.toml").exists()), 1)
-
-
 def test_write_file_rejects_unknown_parameter_status(tmp_path: Path) -> None:
     parameter = ParamSetting(ParamName("PB"), value=0.15, vary=False)
+    report_parameter = parameter_printer_module.ReportParameter(
+        parameter.id_,
+        parameter.param_name,
+        parameter.value,
+    )
     parameters = parameter_printer_module.GlobalLocalParameters(
-        {parameter.param_name: parameter},
+        {parameter.param_name: report_parameter},
         {},
     )
 
@@ -953,5 +896,16 @@ def test_write_file_rejects_unknown_parameter_status(tmp_path: Path) -> None:
             parameters,
             "typo",
             tmp_path,
-            WriterParameterStore({}),
         )
+
+
+def test_constraint_output_replaces_prefix_colliding_parameter_ids_atomically() -> None:
+    rendered = parameter_printer_module._replace_parameter_ids(
+        "__A_SPIN + __A",
+        {
+            "__A": ParamName("A"),
+            "__A_SPIN": ParamName("A_SPIN"),
+        },
+    )
+
+    assert rendered == "[A_SPIN] + [A]"

@@ -624,7 +624,6 @@ def _build[ConfigT: GenericConfig](
         profiles,
         printer,
         plotter,
-        parameter_store=parameters.parameter_store,
     )
     experiment.estimate_noise(
         config.data.error,

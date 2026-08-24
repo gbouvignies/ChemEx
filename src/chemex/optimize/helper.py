@@ -16,8 +16,10 @@ from chemex.optimize.uncertainty import (
     RootAnchoredBlockCovarianceEvidence,
     UncertaintyEvidence,
 )
-from chemex.parameters.database import ParameterStore
-from chemex.parameters.parameterization import ActiveParameterization
+from chemex.parameters.parameterization import (
+    ActiveParameterization,
+    SealedParameterModel,
+)
 from chemex.printers.native_reporting import (
     write_block_uncertainty,
     write_json,
@@ -85,17 +87,21 @@ def _write_files(
     uncertainty_evidence: UncertaintyEvidence | None = None,
     uncertainty_status: tuple[str, str] | None = None,
     block_uncertainty: RootAnchoredBlockCovarianceEvidence | None = None,
-    parameterization: ActiveParameterization | None = None,
+    parameter_model: SealedParameterModel,
+    parameter_values: Mapping[str, float],
+    parameterization: ActiveParameterization,
+    fitted_ids: tuple[str, ...] = (),
 ) -> None:
     """Write the results of the fit to output files."""
     print_writing_results(path)
     path.mkdir(parents=True, exist_ok=True)
     write_parameters(
-        experiments,
         path,
-        parameter_store=experiments.parameter_store,
-        uncertainty=uncertainty,
+        parameter_model=parameter_model,
+        parameter_values=parameter_values,
         parameterization=parameterization,
+        fitted_ids=fitted_ids,
+        uncertainty=uncertainty,
     )
     experiments.write(path)
     _write_statistics(
@@ -128,11 +134,20 @@ def _write_files(
 def _write_simulation_files(
     experiments: Experiments,
     path: Path,
+    *,
+    parameter_model: SealedParameterModel,
+    parameter_values: Mapping[str, float],
+    parameterization: ActiveParameterization,
 ) -> None:
     """Write the results of the simulation to output files."""
     print_writing_results(path)
     path.mkdir(parents=True, exist_ok=True)
-    write_parameters(experiments, path, parameter_store=experiments.parameter_store)
+    write_parameters(
+        path,
+        parameter_model=parameter_model,
+        parameter_values=parameter_values,
+        parameterization=parameterization,
+    )
     experiments.write(path)
 
 
@@ -172,7 +187,10 @@ def execute_post_fit(
     uncertainty_evidence: UncertaintyEvidence | None = None,
     uncertainty_status: tuple[str, str] | None = None,
     block_uncertainty: RootAnchoredBlockCovarianceEvidence | None = None,
-    parameterization: ActiveParameterization | None = None,
+    parameter_model: SealedParameterModel,
+    parameter_values: Mapping[str, float],
+    parameterization: ActiveParameterization,
+    fitted_ids: tuple[str, ...] = (),
 ) -> None:
     _write_files(
         experiments,
@@ -183,7 +201,10 @@ def execute_post_fit(
         uncertainty_evidence=uncertainty_evidence,
         uncertainty_status=uncertainty_status,
         block_uncertainty=block_uncertainty,
+        parameter_model=parameter_model,
+        parameter_values=parameter_values,
         parameterization=parameterization,
+        fitted_ids=fitted_ids,
     )
     if plot:
         _write_plots(experiments, path)
@@ -194,10 +215,18 @@ def execute_simulation(
     path: Path,
     *,
     parameter_values: Mapping[str, float],
+    parameter_model: SealedParameterModel,
+    parameterization: ActiveParameterization,
     plot: bool = False,
 ) -> None:
     experiments.prepare_for_simulation(parameter_values)
-    _write_simulation_files(experiments, path)
+    _write_simulation_files(
+        experiments,
+        path,
+        parameter_model=parameter_model,
+        parameter_values=parameter_values,
+        parameterization=parameterization,
+    )
     if plot:
         _write_simulation_plots(experiments, path)
 
@@ -205,10 +234,9 @@ def execute_simulation(
 def print_header(
     grid: Iterable[str],
     *,
-    parameter_store: ParameterStore,
+    parameter_names: Mapping[str, object],
 ) -> str:
-    parameters = parameter_store.get_parameters(grid)
-    header_pnames = " ".join(f"{parameters[param_id].param_name}" for param_id in grid)
+    header_pnames = " ".join(f"{parameter_names[param_id]}" for param_id in grid)
     return f"# {header_pnames} [χ²]\n"
 
 

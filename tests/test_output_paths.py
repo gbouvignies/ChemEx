@@ -31,7 +31,7 @@ class RecordingExperiment:
 
 
 def test_experiments_write_and_plot_use_unique_output_stems(tmp_path: Path) -> None:
-    experiments = Experiments(parameter_store=object())  # type: ignore[arg-type]
+    experiments = Experiments()
     experiment_a = RecordingExperiment(Path("set_a/experiment.toml"))
     experiment_b = RecordingExperiment(Path("set_b/experiment.toml"))
     experiments.add(experiment_a)
@@ -63,7 +63,7 @@ def test_experiments_write_and_plot_use_unique_output_stems(tmp_path: Path) -> N
 def test_experiments_keep_simple_stems_when_basenames_are_unique(
     tmp_path: Path,
 ) -> None:
-    experiments = Experiments(parameter_store=object())  # type: ignore[arg-type]
+    experiments = Experiments()
     experiment_a = RecordingExperiment(Path("set_a/alpha.toml"))
     experiment_b = RecordingExperiment(Path("set_b/beta.toml"))
     experiments.add(experiment_a)
@@ -78,7 +78,7 @@ def test_experiments_keep_simple_stems_when_basenames_are_unique(
 def test_experiments_fall_back_to_hashed_stems_for_path_sentinel_collisions(
     tmp_path: Path,
 ) -> None:
-    experiments = Experiments(parameter_store=object())  # type: ignore[arg-type]
+    experiments = Experiments()
     experiment_a = RecordingExperiment(Path("__absolute__/set/experiment.toml"))
     experiment_b = RecordingExperiment(Path("/set/experiment.toml"))
     experiments.add(experiment_a)

@@ -1,7 +1,7 @@
 """Tests for sealed canonical parameter definitions and configuration (#582).
 
 Primary seam: real construction path through AnalysisSession, ParameterFactory,
-and shipped experiment inputs. Verified against the legacy-authoritative catalog.
+and shipped experiment inputs. Verified against the construction catalog.
 """
 
 from __future__ import annotations
