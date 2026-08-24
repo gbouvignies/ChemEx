@@ -2090,6 +2090,14 @@ def test_real_v2_de_reaches_normal_trf_product_path_from_out_of_range_start(
 
     assert session.analysis_values.snapshot().revision == 1
     assert len(trf_starts) == 1
+    starting_parameters = (output / "run_info" / "parameters_used.toml").read_text(
+        encoding="utf-8"
+    )
+    starting_record = next(
+        line for line in starting_parameters.splitlines() if '"G2N-H"' in line
+    )
+    starting_value = float(starting_record.split("[", 1)[1].split(",", 1)[0])
+    assert starting_value > 4.0
     assert 1.0 <= trf_starts[0][0] <= 4.0
     assert (output / "Parameters" / "fitted.toml").is_file()
     assert (output / "Data" / "800mhz.dat").is_file()
