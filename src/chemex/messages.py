@@ -567,6 +567,11 @@ def print_running_grid() -> None:
     console.print(Text("  • Running the grid search..."))
 
 
+def print_running_de() -> None:
+    """Inform the user that selected-coordinate basin search is in progress."""
+    console.print(Text("  • Running selected-coordinate DE search..."))
+
+
 def print_running_statistics(name: str) -> None:
     """Display a message indicating that statistical simulations are running.
 

@@ -825,8 +825,10 @@ def test_run_methods_compiles_each_canonical_step_without_origin_or_store_state(
         *,
         session: object,
         parameterization: object,
+        search: object,
     ) -> None:
         assert session is not None
+        assert search is None
         executed.append((path.name, parameterization))
 
     monkeypatch.setattr(

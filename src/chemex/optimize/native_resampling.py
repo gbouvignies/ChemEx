@@ -73,7 +73,6 @@ class OptimizationStrategy(StrEnum):
 
     DIRECT_TRF = "direct_trf"
     GRID_DIRECT_TRF = "grid_direct_trf"
-    DE_DIRECT_TRF = "de_direct_trf"
 
 
 class ReplicateDisposition(StrEnum):

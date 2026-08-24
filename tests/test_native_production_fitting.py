@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
@@ -22,6 +23,7 @@ import chemex.optimize.uncertainty as uncertainty_module
 import chemex.run_info as run_info_module
 from chemex.chemex import run
 from chemex.cli import build_parser
+from chemex.evaluation.native import BoundEvaluator, EvaluationFailure
 from chemex.optimize.mcmc import NativeMcmcIncompleteError
 from chemex.optimize.method_step import DerivationDisposition, DerivationOutcome
 from chemex.optimize.progress import ProgressPhase
@@ -37,6 +39,9 @@ METHOD = EXAMPLE / "Methods/method.toml"
 DCEST_EXAMPLE = ROOT / "examples/Experiments/DCEST_15N_HD_EXCH"
 DCEST_EXPERIMENT = DCEST_EXAMPLE / "Experiments/3hz.toml"
 DCEST_PARAMETERS = DCEST_EXAMPLE / "Parameters/parameters.toml"
+THREE_STATE_DCEST_EXAMPLE = ROOT / "examples/Experiments/DCEST_15N_3States"
+THREE_STATE_DCEST_EXPERIMENT = THREE_STATE_DCEST_EXAMPLE / "Experiments/1.25hz.toml"
+THREE_STATE_DCEST_PARAMETERS = THREE_STATE_DCEST_EXAMPLE / "Parameters/parameters.toml"
 
 
 def _fit_arguments(
@@ -83,6 +88,30 @@ def _simulation_arguments(output: Path):
             "G2N-HN",
             "--plot",
             "nothing",
+        ]
+    )
+
+
+def _three_state_dcest_arguments(output: Path, method: Path):
+    return build_parser().parse_args(
+        [
+            "fit",
+            "-e",
+            str(THREE_STATE_DCEST_EXPERIMENT),
+            "-p",
+            str(THREE_STATE_DCEST_PARAMETERS),
+            "-m",
+            str(method),
+            "-o",
+            str(output),
+            "--model",
+            "3st",
+            "--include",
+            "K19N-HN",
+            "--plot",
+            "nothing",
+            "--workers",
+            "1",
         ]
     )
 
@@ -1152,6 +1181,37 @@ GRID = ["[R1A_A] = (1.0, 3.0)"]
     return path
 
 
+def _de_method(path: Path, *, seed: int = 597) -> Path:
+    path.write_text(
+        f"""FORMAT_VERSION = 2
+[DE]
+ROLES = [{{ FIX = ["PB", "KEX_AB"] }}]
+
+[DE.SEARCH.DE]
+SEED = {seed}
+COORDINATES = ["[R1A_A] = log(1.0, 4.0)"]
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _successful_de_backend_at_x0(objective, _bounds, **kwargs):
+    vector = np.asarray(kwargs["x0"], dtype=np.float64)
+    value = objective(vector)
+    population_size = max(5, int(kwargs["popsize"]) * vector.size)
+    return SimpleNamespace(
+        success=True,
+        message="Optimization terminated successfully.",
+        nit=1,
+        nfev=1,
+        x=vector,
+        fun=value,
+        population=np.tile(vector, (population_size, 1)),
+        population_energies=np.full(population_size, value),
+    )
+
+
 def _statistics_method(path: Path, statistics: str) -> Path:
     path.write_text(
         f"""[DEFAULT]
@@ -2007,6 +2067,464 @@ def test_real_grouped_grid_fit_uses_one_native_aggregate_commit(
     assert not (output / "All").exists()
     assert not (output / "Groups").exists()
     assert not (output / "Components").exists()
+
+
+def test_real_v2_de_reaches_normal_trf_product_path_from_out_of_range_start(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output = tmp_path / "Output"
+    method = _de_method(tmp_path / "method-v2-de.toml")
+    session = AnalysisSession.create()
+    trf_starts: list[tuple[float, ...]] = []
+    real_least_squares = direct_trf_module.least_squares
+
+    def record_full_trf_start(*args, **kwargs):
+        trf_starts.append(tuple(float(value) for value in args[1]))
+        return real_least_squares(*args, **kwargs)
+
+    with patch(
+        "chemex.optimize.direct_trf.least_squares",
+        side_effect=record_full_trf_start,
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    assert len(trf_starts) == 1
+    starting_parameters = (output / "run_info" / "parameters_used.toml").read_text(
+        encoding="utf-8"
+    )
+    starting_record = next(
+        line for line in starting_parameters.splitlines() if '"G2N-H"' in line
+    )
+    starting_value = float(starting_record.split("[", 1)[1].split(",", 1)[0])
+    assert starting_value > 4.0
+    assert 1.0 <= trf_starts[0][0] <= 4.0
+    assert (output / "Parameters" / "fitted.toml").is_file()
+    assert (output / "Data" / "800mhz.dat").is_file()
+    assert (output / "Statistics" / "Covariance" / "evidence.json").is_file()
+    assert not (output / "Components").exists()
+    assert "Running selected-coordinate DE search" in capsys.readouterr().out
+
+
+def test_real_cli_v2_de_reaches_normal_product_output(tmp_path: Path) -> None:
+    output = tmp_path / "Output"
+    method = _de_method(tmp_path / "method-v2-de.toml")
+
+    _run_real_fit_cli(output, method, PARAMETERS)
+
+    assert (output / "Parameters" / "fitted.toml").is_file()
+    assert (output / "Data" / "800mhz.dat").is_file()
+    assert (output / "run_info" / "outcome.toml").is_file()
+
+
+def test_v2_de_maps_lin_and_log_coordinates_then_releases_every_fit_coordinate(
+    tmp_path: Path,
+) -> None:
+    method = tmp_path / "method-v2-de.toml"
+    method.write_text(
+        """FORMAT_VERSION = 2
+[DE]
+ROLES = [{ FIT = ["PB", "KEX_AB", "R1A_A"] }]
+
+[DE.SEARCH.DE]
+SEED = 597
+COORDINATES = [
+  "[PB] = log(0.001, 0.1)",
+  "[KEX_AB] = lin(100.0, 500.0)",
+]
+""",
+        encoding="utf-8",
+    )
+    trf_starts: list[tuple[float, ...]] = []
+    real_least_squares = direct_trf_module.least_squares
+
+    def record_full_trf_start(*args, **kwargs):
+        trf_starts.append(tuple(float(value) for value in args[1]))
+        return real_least_squares(*args, **kwargs)
+
+    with (
+        patch(
+            "chemex.optimize.de_direct_trf.differential_evolution",
+            side_effect=_successful_de_backend_at_x0,
+        ),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=record_full_trf_start,
+        ),
+    ):
+        run(
+            _fit_arguments(tmp_path / "Output", method),
+            session=AnalysisSession.create(),
+        )
+
+    assert len(trf_starts) == 1
+    assert len(trf_starts[0]) == 3
+    assert trf_starts[0][:2] == pytest.approx((300.0, 0.01))
+    assert trf_starts[0][2] > 4.0
+
+
+def test_grouped_v2_de_holds_unselected_coordinate_then_releases_all_components(
+    tmp_path: Path,
+) -> None:
+    method = tmp_path / "method-v2-de.toml"
+    method.write_text(
+        """FORMAT_VERSION = 2
+[DE]
+ROLES = [{ FIX = ["PB", "KEX_AB"] }]
+
+[DE.SEARCH.DE]
+SEED = 597
+COORDINATES = [
+  "[R1A_A, NUC->G2N-H, B0->800MHz] = log(1.0, 4.0)",
+]
+""",
+        encoding="utf-8",
+    )
+    session = AnalysisSession.create()
+    trf_starts: list[tuple[float, ...]] = []
+    real_least_squares = direct_trf_module.least_squares
+
+    def record_component_start(*args, **kwargs):
+        trf_starts.append(tuple(float(value) for value in args[1]))
+        return real_least_squares(*args, **kwargs)
+
+    with (
+        patch(
+            "chemex.optimize.de_direct_trf.differential_evolution",
+            side_effect=_successful_de_backend_at_x0,
+        ),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=record_component_start,
+        ),
+    ):
+        run(
+            _fit_arguments(
+                tmp_path / "Output",
+                method,
+                include=("G2N-HN", "H3N-HN"),
+            ),
+            session=session,
+        )
+
+    assert session.analysis_values.snapshot().revision == 1
+    assert len(trf_starts) == 2
+    assert sorted(start[0] for start in trf_starts) == pytest.approx(
+        (2.0, 6.87922079444668)
+    )
+
+
+def test_v2_de_failure_has_no_direct_trf_fallback_or_commit(tmp_path: Path) -> None:
+    method = _de_method(tmp_path / "method-v2-de.toml")
+    session = AnalysisSession.create()
+
+    with (
+        patch(
+            "chemex.optimize.de_direct_trf.differential_evolution",
+            side_effect=RuntimeError("DE backend failed"),
+        ),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=AssertionError("direct TRF fallback ran"),
+        ),
+        pytest.raises(RuntimeError, match="no eligible candidate"),
+    ):
+        run(_fit_arguments(tmp_path / "Output", method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 0
+
+
+def test_v2_de_all_invalid_candidates_has_no_trf_fallback_or_commit(
+    tmp_path: Path,
+) -> None:
+    method = _de_method(tmp_path / "method-v2-de.toml")
+    session = AnalysisSession.create()
+    backend_calls = 0
+
+    def invalid_evaluation(evaluator: BoundEvaluator, frame) -> EvaluationFailure:
+        return EvaluationFailure(
+            evaluator.plan.identity,
+            frame.parameterization_identity,
+            "kernel",
+            "non_finite_calculation",
+            "INVALID_TRIAL",
+            message="scientifically invalid DE trial",
+        )
+
+    def all_invalid_backend(objective, bounds, **kwargs):
+        nonlocal backend_calls
+        backend_calls += 1
+        x0 = np.asarray(kwargs["x0"], dtype=np.float64)
+        lower = np.asarray(bounds.lb, dtype=np.float64)
+        assert math.isinf(objective(x0))
+        assert math.isinf(objective(lower))
+        population_size = max(5, int(kwargs["popsize"]) * x0.size)
+        return SimpleNamespace(
+            success=True,
+            message="Optimization terminated successfully.",
+            nit=1,
+            nfev=2,
+            x=x0,
+            fun=math.inf,
+            population=np.tile(x0, (population_size, 1)),
+            population_energies=np.full(population_size, math.inf),
+        )
+
+    with (
+        patch.object(
+            BoundEvaluator,
+            "evaluate",
+            autospec=True,
+            side_effect=invalid_evaluation,
+        ),
+        patch(
+            "chemex.optimize.de_direct_trf.differential_evolution",
+            side_effect=all_invalid_backend,
+        ),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=AssertionError("direct TRF fallback ran"),
+        ),
+        pytest.raises(RuntimeError, match="no eligible candidate"),
+    ):
+        run(_fit_arguments(tmp_path / "Output", method), session=session)
+
+    assert backend_calls == 1
+    assert session.analysis_values.snapshot().revision == 0
+
+
+def test_v2_de_interruption_leaves_analysis_values_unchanged(tmp_path: Path) -> None:
+    method = _de_method(tmp_path / "method-v2-de.toml")
+    session = AnalysisSession.create()
+
+    with (
+        patch(
+            "chemex.optimize.de_direct_trf.differential_evolution",
+            side_effect=KeyboardInterrupt,
+        ),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=AssertionError("TRF ran after DE interruption"),
+        ),
+        pytest.raises(KeyboardInterrupt, match="DE search interrupted"),
+    ):
+        run(_fit_arguments(tmp_path / "Output", method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 0
+
+
+def test_only_final_trf_determines_de_product_values_and_uncertainty(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _de_method(tmp_path / "method-v2-de.toml")
+    session = AnalysisSession.create()
+
+    with patch(
+        "chemex.optimize.de_direct_trf.differential_evolution",
+        side_effect=_successful_de_backend_at_x0,
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    fitted_record = next(line for line in fitted.splitlines() if "G2N-H" in line)
+    fitted_value = float(fitted_record.split("=", 1)[1].split()[0])
+    fitted_error = float(fitted_record.split("±", 1)[1])
+    assert fitted_value == pytest.approx(2.34742, rel=5.0e-6)
+    assert fitted_value != pytest.approx(2.0)
+    assert fitted_error == pytest.approx(0.083366086, rel=3.0e-6)
+    assert session.analysis_values.snapshot().revision == 1
+
+
+def test_v2_de_candidate_cannot_commit_when_final_trf_fails(tmp_path: Path) -> None:
+    method = _de_method(tmp_path / "method-v2-de.toml")
+    session = AnalysisSession.create()
+
+    with (
+        patch(
+            "chemex.optimize.de_direct_trf.differential_evolution",
+            side_effect=_successful_de_backend_at_x0,
+        ),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=RuntimeError("final TRF failed"),
+        ),
+        pytest.raises(RuntimeError, match="did not commit"),
+    ):
+        run(_fit_arguments(tmp_path / "Output", method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 0
+
+
+def test_v2_de_seed_repeats_and_changes_the_stochastic_trajectory(
+    tmp_path: Path,
+) -> None:
+    trajectories: list[tuple[float, ...]] = []
+
+    def seeded_backend(objective, bounds, **kwargs):
+        lower = np.asarray(bounds.lb, dtype=np.float64)
+        upper = np.asarray(bounds.ub, dtype=np.float64)
+        vector = lower + kwargs["rng"].random(lower.size) * (upper - lower)
+        trajectories.append(tuple(float(value) for value in vector))
+        value = objective(vector)
+        population_size = max(5, int(kwargs["popsize"]) * vector.size)
+        return SimpleNamespace(
+            success=True,
+            message="Optimization terminated successfully.",
+            nit=1,
+            nfev=1,
+            x=vector,
+            fun=value,
+            population=np.tile(vector, (population_size, 1)),
+            population_energies=np.full(population_size, value),
+        )
+
+    with patch(
+        "chemex.optimize.de_direct_trf.differential_evolution",
+        side_effect=seeded_backend,
+    ):
+        for ordinal, seed in enumerate((597, 597, 598)):
+            method = _de_method(tmp_path / f"method-{ordinal}.toml", seed=seed)
+            run(
+                _fit_arguments(tmp_path / f"Output-{ordinal}", method),
+                session=AnalysisSession.create(),
+            )
+
+    assert trajectories[0] == trajectories[1]
+    assert trajectories[0] != trajectories[2]
+
+
+def test_v2_de_statistics_start_only_after_the_final_trf_commit(tmp_path: Path) -> None:
+    method = tmp_path / "method-v2-de.toml"
+    method.write_text(
+        """FORMAT_VERSION = 2
+[DE]
+ROLES = [{ FIX = ["PB", "KEX_AB"] }]
+[DE.SEARCH.DE]
+SEED = 597
+COORDINATES = ["[R1A_A] = log(1.0, 4.0)"]
+
+[DE.STATISTICS.MC]
+REPLICATES = 1
+SEED = 7
+""",
+        encoding="utf-8",
+    )
+    session = AnalysisSession.create()
+
+    run(_fit_arguments(tmp_path / "Output", method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    diagnostics = tomllib.loads(
+        (
+            tmp_path / "Output" / "Statistics" / "MonteCarlo" / "diagnostics.toml"
+        ).read_text(encoding="utf-8")
+    )
+    assert diagnostics["status"] == "complete"
+    assert diagnostics["root_seed"] == 7
+
+
+def test_v2_step_after_de_starts_from_committed_final_trf_values(
+    tmp_path: Path,
+) -> None:
+    method = tmp_path / "method-v2-de.toml"
+    method.write_text(
+        """FORMAT_VERSION = 2
+[DE]
+ROLES = [{ FIX = ["PB", "KEX_AB"] }]
+[DE.SEARCH.DE]
+SEED = 597
+COORDINATES = ["[R1A_A] = log(1.0, 4.0)"]
+
+[FOLLOWUP]
+ROLES = [{ FIX = ["PB", "KEX_AB"] }]
+""",
+        encoding="utf-8",
+    )
+    starts: list[tuple[float, ...]] = []
+    real_least_squares = direct_trf_module.least_squares
+
+    def record_start(*args, **kwargs):
+        starts.append(tuple(float(value) for value in args[1]))
+        return real_least_squares(*args, **kwargs)
+
+    with patch(
+        "chemex.optimize.direct_trf.least_squares",
+        side_effect=record_start,
+    ):
+        run(
+            _fit_arguments(tmp_path / "Output", method),
+            session=AnalysisSession.create(),
+        )
+
+    first_fitted = (
+        tmp_path / "Output" / "DE" / "Parameters" / "fitted.toml"
+    ).read_text(encoding="utf-8")
+    first_value = float(
+        next(line for line in first_fitted.splitlines() if "G2N-H" in line)
+        .split("=", 1)[1]
+        .split()[0]
+    )
+    assert len(starts) == 2
+    assert starts[1] == pytest.approx((first_value,), rel=5.0e-6)
+
+
+def test_selected_coordinate_de_reaches_a_better_three_state_dcest_basin(
+    tmp_path: Path,
+) -> None:
+    direct_method = tmp_path / "direct.toml"
+    direct_method.write_text(
+        """FORMAT_VERSION = 2
+[DIRECT]
+ROLES = [
+  { FIX = ["KEX_BC"] },
+  { FIT = ["PB", "PC", "KEX_AB", "KEX_AC", "DW_AB", "DW_AC"] },
+]
+""",
+        encoding="utf-8",
+    )
+    de_method = tmp_path / "de.toml"
+    de_method.write_text(
+        """FORMAT_VERSION = 2
+[DE]
+ROLES = [
+  { FIX = ["KEX_BC"] },
+  { FIT = ["PB", "PC", "KEX_AB", "KEX_AC", "DW_AB", "DW_AC"] },
+]
+[DE.SEARCH.DE]
+SEED = 597
+COORDINATES = [
+  "[PB] = log(0.001, 0.2)",
+  "[PC] = log(0.001, 0.2)",
+  "[KEX_AB] = log(10.0, 5000.0)",
+  "[KEX_AC] = log(10.0, 5000.0)",
+  "[DW_AB, NUC->K19N] = lin(-15.0, 15.0)",
+  "[DW_AC, NUC->K19N] = lin(-15.0, 15.0)",
+]
+""",
+        encoding="utf-8",
+    )
+    direct_output = tmp_path / "Direct"
+    de_output = tmp_path / "DE"
+
+    run(
+        _three_state_dcest_arguments(direct_output, direct_method),
+        session=AnalysisSession.create(),
+    )
+    run(
+        _three_state_dcest_arguments(de_output, de_method),
+        session=AnalysisSession.create(),
+    )
+
+    direct_chi_square = tomllib.loads(
+        (direct_output / "statistics.toml").read_text(encoding="utf-8")
+    )["chi-square"]
+    de_chi_square = tomllib.loads(
+        (de_output / "statistics.toml").read_text(encoding="utf-8")
+    )["chi-square"]
+    assert direct_chi_square == pytest.approx(271.894, rel=1.0e-4)
+    assert de_chi_square < 0.8 * direct_chi_square
 
 
 def test_ordered_native_steps_carry_forward_committed_state_and_v1_roles(

@@ -33,14 +33,6 @@ from chemex.native_provenance import (
     WorkflowProvenance,
     published_step_reference_identity,
 )
-from chemex.optimize.de_direct_trf import (
-    AcceptedDeDirectTrfResult,
-    DeDirectTrfInterrupted,
-    DeDirectTrfInvocation,
-    DeDirectTrfOutcome,
-    execute_de_direct_trf,
-    validate_de_commit_lineage,
-)
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     CancellationToken,
@@ -164,7 +156,6 @@ class MethodStepStrategy(StrEnum):
 
     DIRECT_TRF = "direct_trf"
     GRID_DIRECT_TRF = "grid_direct_trf"
-    DE_DIRECT_TRF = "de_direct_trf"
 
 
 class MethodStepCheckpoint(StrEnum):
@@ -403,14 +394,9 @@ class MethodStepRunProvenanceRequest:
         )
 
 
-type MethodStepInvocation = (
-    GroupedDirectTrfInvocation | GridDirectTrfInvocation | DeDirectTrfInvocation
-)
+type MethodStepInvocation = GroupedDirectTrfInvocation | GridDirectTrfInvocation
 type MethodStepPrimaryExecution = (
-    GroupedDirectTrfOutcome
-    | GroupedGridDirectTrfOutcome
-    | GridDirectTrfOutcome
-    | DeDirectTrfOutcome
+    GroupedDirectTrfOutcome | GroupedGridDirectTrfOutcome | GridDirectTrfOutcome
 )
 
 
@@ -590,7 +576,7 @@ def _optimization_semantics(
         invocation_record: object = tuple(
             _direct_policy_semantics(item) for item in invocation.component_invocations
         )
-    elif isinstance(invocation, GridDirectTrfInvocation):
+    else:
         invocation_record = (
             tuple(axis.identity for axis in invocation.axes),
             invocation.objective_request_budget,
@@ -598,27 +584,6 @@ def _optimization_semantics(
             tuple(
                 None if value is None else float(value).hex()
                 for value in (invocation.ftol, invocation.xtol, invocation.gtol)
-            ),
-        )
-    else:
-        invocation_record = (
-            tuple(item.identity for item in invocation.search_coordinates),
-            invocation.root_seed,
-            invocation.population.identity,
-            invocation.de_objective_request_budget,
-            invocation.polish_objective_request_budget,
-            invocation.mutation,
-            float(invocation.recombination).hex(),
-            float(invocation.tol).hex(),
-            float(invocation.atol).hex(),
-            tuple(float(value).hex() for value in invocation.polish_x_scale),
-            tuple(
-                None if value is None else float(value).hex()
-                for value in (
-                    invocation.polish_ftol,
-                    invocation.polish_xtol,
-                    invocation.polish_gtol,
-                )
             ),
         )
     return {
@@ -761,16 +726,10 @@ class MethodStepWorkflow:
                     raise ValueError(
                         "Grouped Direct TRF requires one resolved execution setting"
                     )
-            elif self.strategy is MethodStepStrategy.GRID_DIRECT_TRF:
+            else:
                 supported = isinstance(self.invocation, GridDirectTrfInvocation)
                 supported = supported and (
                     self.invocation.root_problem_identity == self.problem.identity
-                )
-            else:
-                supported = isinstance(self.invocation, DeDirectTrfInvocation)
-                supported = supported and (
-                    self.invocation.root_problem_identity == self.problem.identity
-                    and len(self.decomposition.components) == 1
                 )
             if not supported:
                 raise ValueError(
@@ -1089,16 +1048,10 @@ def _validate_method_step_workflow(  # noqa: C901 - closed recursive workflow tr
                 and invocation.root_problem_identity == problem.identity
                 and invocation.decomposition_identity == decomposition.identity
             )
-        elif strategy is MethodStepStrategy.GRID_DIRECT_TRF:
+        else:
             compatible = (
                 isinstance(invocation, GridDirectTrfInvocation)
                 and invocation.root_problem_identity == problem.identity
-            )
-        else:
-            compatible = (
-                isinstance(invocation, DeDirectTrfInvocation)
-                and invocation.root_problem_identity == problem.identity
-                and len(decomposition.components) == 1
             )
         if not compatible:
             raise ValueError("Method-step workflow integrity validation failed")
@@ -2007,18 +1960,13 @@ def _validate_fit_commit_boundary(
             raise ValueError(
                 "Method-step Direct invocation lineage changed before commit"
             )
-    elif strategy is MethodStepStrategy.GRID_DIRECT_TRF:
+    else:
         typed = cast("AcceptedGridDirectTrfResult", accepted)
         if typed.workflow_invocation is not invocation:
             raise ValueError(
                 "Method-step GRID invocation lineage changed before commit"
             )
         validate_grid_commit_lineage(typed, problem)
-    else:
-        typed_de = cast("AcceptedDeDirectTrfResult", accepted)
-        if typed_de.workflow_invocation is not invocation:
-            raise ValueError("Method-step DE invocation lineage changed before commit")
-        validate_de_commit_lineage(typed_de, problem)
     if not fit_commit_authority_is_authoritative(accepted, authority, problem):
         raise ValueError("Method-step fit-commit authority pairing is no longer live")
 
@@ -2092,7 +2040,7 @@ def _execute_optimization(  # noqa: C901 - closed primary transition
                 cancellation=token,
                 progress_observer=progress_observer,
             )
-        elif strategy is MethodStepStrategy.GRID_DIRECT_TRF:
+        else:
             execution = execute_grouped_grid_direct_trf(
                 problem,
                 decomposition,
@@ -2102,17 +2050,7 @@ def _execute_optimization(  # noqa: C901 - closed primary transition
                 cancellation=token,
                 progress_observer=progress_observer,
             )
-        else:
-            execution = execute_de_direct_trf(
-                problem,
-                cast("DeDirectTrfInvocation", invocation),
-                workflow.parameterization,
-                workflow.engine,
-                cancellation=token,
-            )
     except GridDirectTrfInterrupted as error:
-        execution = error.outcome
-    except DeDirectTrfInterrupted as error:
         execution = error.outcome
     primary_identity = _primary_execution_identity(execution)
     terminal = execution.terminal
@@ -2374,26 +2312,11 @@ def _method_step_primary_record(
         settings = invocation.component_invocations[0].execution_settings
         used = None
         seeds: tuple[SeedRecord, ...] = ()
-    elif isinstance(invocation, GridDirectTrfInvocation):
+    else:
         limit = invocation.objective_request_budget * len(invocation.seeds)
         settings = ExecutionSettings()
         used = None
         seeds = ()
-    else:
-        de_execution = cast("DeDirectTrfOutcome", execution)
-        limit = (
-            invocation.de_objective_request_budget
-            + invocation.polish_objective_request_budget
-        )
-        settings = ExecutionSettings()
-        used = de_execution.accounting.de_counters.objective_requests_accepted + (
-            0
-            if de_execution.accounting.polish_counters is None
-            else de_execution.accounting.polish_counters.objective_requests_accepted
-        )
-        seeds = (
-            SeedRecord("primary_de_root", invocation.root_seed, invocation.identity),
-        )
     strategy = cast("MethodStepStrategy", workflow.strategy)
     return MethodStepPrimaryRecord(
         workflow.semantic_identity,

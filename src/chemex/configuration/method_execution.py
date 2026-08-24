@@ -3,7 +3,6 @@
 from pathlib import Path
 
 from chemex.configuration.method_plan import (
-    DeSearch,
     GridRange,
     GridSearch,
     GridValues,
@@ -55,8 +54,6 @@ def _grid_entries(step: StepPlan, search: GridSearch) -> list[str]:
 
 def operational_method_from_step(step: StepPlan) -> Method:
     """Adapt one canonical step without adding cross-step inheritance."""
-    if isinstance(step.search, DeSearch):
-        raise NotImplementedError("V2 DE execution is tracked separately by issue #682")
     statistics = step.statistics
     settings: dict[str, object] = {
         # Canonical selection is step-local. An omitted INCLUDE therefore

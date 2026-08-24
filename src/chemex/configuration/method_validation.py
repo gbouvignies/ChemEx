@@ -18,6 +18,7 @@ from chemex.configuration.method_plan import (
     MethodFormatError,
     MethodPlan,
     ParameterSelector,
+    SearchScale,
     SelectorExpression,
     SourceRef,
     UnaryExpression,
@@ -37,6 +38,16 @@ from chemex.parameters.spin_system import SpinSystem
 class _ResolvedConstraint:
     declaration: Constraint
     dependencies: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedDeCoordinate:
+    """One canonical DE coordinate resolved to a stable independent parameter ID."""
+
+    param_id: str
+    low: float
+    high: float
+    scale: SearchScale
 
 
 def _param_name(definition: ParamDefinition) -> ParamName:
@@ -321,15 +332,13 @@ def _validate_de(
     model: SealedParameterModel,
 ) -> None:
     seen: set[str] = set()
-    for coordinate in search.coordinates:
-        matches = _matches(coordinate.selector, model, coordinate.source)
-        if len(matches) != 1:
-            raise MethodFormatError(
-                "Each DE entry must resolve to exactly one final independent "
-                f"FIT coordinate; matched {len(matches)}",
-                coordinate.source,
-            )
-        param_id = matches[0]
+    resolved = resolve_de_coordinates(search, model)
+    for coordinate, resolved_coordinate in zip(
+        search.coordinates,
+        resolved,
+        strict=True,
+    ):
+        param_id = resolved_coordinate.param_id
         if roles[param_id] is not ParameterRole.FIT:
             raise MethodFormatError(
                 f"DE target {param_id} is not a final independent FIT coordinate",
@@ -342,10 +351,35 @@ def _validate_de(
         seen.add(param_id)
         _check_bounds(
             param_id,
-            (coordinate.range.low, coordinate.range.high),
+            (resolved_coordinate.low, resolved_coordinate.high),
             model,
             coordinate.source,
         )
+
+
+def resolve_de_coordinates(
+    search: DeSearch,
+    model: SealedParameterModel,
+) -> tuple[ResolvedDeCoordinate, ...]:
+    """Resolve validated canonical DE coordinates to stable parameter IDs."""
+    resolved: list[ResolvedDeCoordinate] = []
+    for coordinate in search.coordinates:
+        matches = _matches(coordinate.selector, model, coordinate.source)
+        if len(matches) != 1:
+            raise MethodFormatError(
+                "Each DE entry must resolve to exactly one final independent "
+                f"FIT coordinate; matched {len(matches)}",
+                coordinate.source,
+            )
+        resolved.append(
+            ResolvedDeCoordinate(
+                matches[0],
+                coordinate.range.low,
+                coordinate.range.high,
+                coordinate.range.scale,
+            )
+        )
+    return tuple(resolved)
 
 
 def validate_method_plan(plan: MethodPlan, model: SealedParameterModel) -> None:

@@ -34,11 +34,6 @@ from chemex.native_provenance import (
     ProvenanceEnvironment,
     WorkflowProvenance,
 )
-from chemex.optimize.de_direct_trf import (
-    DeCoordinateSemantics,
-    DeDirectTrfInvocation,
-    DeDirectTrfOutcome,
-)
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     CancellationToken,
@@ -407,33 +402,6 @@ def _grid_workflow(
     return session, MethodStepWorkflow.for_optimization(
         **inputs,
         strategy=MethodStepStrategy.GRID_DIRECT_TRF,
-        invocation=invocation,
-    )
-
-
-def _de_workflow() -> tuple[AnalysisSession, MethodStepWorkflow]:
-    session, inputs = _optimization_inputs()
-    problem = inputs["problem"]
-    assert isinstance(problem, OptimizationProblem)
-    invocation = DeDirectTrfInvocation.for_problem(
-        problem,
-        search_coordinates=(
-            (
-                problem.controlled_ids[0],
-                0.5 * problem.start[0],
-                1.5 * problem.start[0],
-                DeCoordinateSemantics.LINEAR,
-            ),
-        ),
-        root_seed=641,
-        de_objective_request_budget=30,
-        polish_objective_request_budget=80,
-        population_multiplier=4,
-        maximum_generations=5,
-    )
-    return session, MethodStepWorkflow.for_optimization(
-        **inputs,
-        strategy=MethodStepStrategy.DE_DIRECT_TRF,
         invocation=invocation,
     )
 
@@ -1050,18 +1018,6 @@ def test_grid_then_trf_always_uses_grouped_decomposition(all_profiles: bool) -> 
 
     assert outcome.lifecycle is MethodStepLifecycle.COMMITTED
     assert isinstance(outcome.primary_execution, GroupedGridDirectTrfOutcome)
-    assert outcome.accepted_result is outcome.primary_execution.accepted_result
-    assert outcome.commit_operation is not None
-    assert outcome.commit_operation.receipt is not None
-
-
-def test_de_then_trf_routes_existing_seeded_search_and_commits_once() -> None:
-    session, workflow = _de_workflow()
-
-    outcome = execute_method_step(workflow, analysis_values=session.analysis_values)
-
-    assert outcome.lifecycle is MethodStepLifecycle.COMMITTED
-    assert isinstance(outcome.primary_execution, DeDirectTrfOutcome)
     assert outcome.accepted_result is outcome.primary_execution.accepted_result
     assert outcome.commit_operation is not None
     assert outcome.commit_operation.receipt is not None

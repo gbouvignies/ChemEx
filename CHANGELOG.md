@@ -7,6 +7,13 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 
 ## [Unreleased]
 
+### Added
+- Added canonical version 2 `[STEP.SEARCH.DE]` product execution. Explicitly
+  selected linear or logarithmic coordinates are searched with a required seed,
+  then the best eligible candidate initializes one normal full-coordinate TRF
+  fit. Only that final aggregate TRF result can commit or supply uncertainty and
+  statistics; DE failures never fall back to the old committed start.
+
 ### Changed
 - Removed the migration-only canonical numerical lane, pinned environment and
   attestation machinery, calibration probes, and historical baseline fixtures.

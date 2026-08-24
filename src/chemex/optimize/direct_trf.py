@@ -566,63 +566,8 @@ class DeSearchProblemDerivation:
         )
 
 
-@dataclass(frozen=True, slots=True)
-class DePolishProblemDerivation:
-    """Exact lineage for the one full-coordinate TRF polish after DE."""
-
-    root_problem_identity: str
-    root_affine_feasibility_identity: str
-    workflow_invocation_identity: str
-    search_problem_identity: str
-    search_execution_identity: str
-    search_candidate_identity: str
-    controlled_ids: tuple[str, ...]
-    start: tuple[float, ...]
-    identity: str = field(init=False)
-
-    def __post_init__(self) -> None:
-        if (
-            not self.root_problem_identity
-            or not self.workflow_invocation_identity
-            or not self.search_problem_identity
-            or not self.search_execution_identity
-            or not self.search_candidate_identity
-            or not self.controlled_ids
-        ):
-            raise DirectTrfConstructionError(
-                "DE polish derivation requires complete transition lineage"
-            )
-        start = tuple(
-            _finite_binary64(value, name=f"DE polish start[{index}]")
-            for index, value in enumerate(self.start)
-        )
-        if len(start) != len(self.controlled_ids):
-            raise DirectTrfConstructionError("DE polish start has the wrong dimension")
-        object.__setattr__(self, "start", start)
-        object.__setattr__(
-            self,
-            "identity",
-            _identity(
-                "native-de-polish-problem-derivation",
-                (
-                    self.root_problem_identity,
-                    self.root_affine_feasibility_identity,
-                    self.workflow_invocation_identity,
-                    self.search_problem_identity,
-                    self.search_execution_identity,
-                    self.search_candidate_identity,
-                    self.controlled_ids,
-                    _vector_tokens(start),
-                ),
-            ),
-        )
-
-
 type ProblemDerivation = (
-    ComponentProblemDerivation
-    | GridSeedProblemDerivation
-    | DeSearchProblemDerivation
-    | DePolishProblemDerivation
+    ComponentProblemDerivation | GridSeedProblemDerivation | DeSearchProblemDerivation
 )
 
 
@@ -967,21 +912,6 @@ class OptimizationProblem:
                 raise DirectTrfConstructionError(
                     "DE search problem differs from its derivation record"
                 )
-        elif isinstance(self.derivation, DePolishProblemDerivation):
-            if (
-                self.derivation.root_affine_feasibility_identity
-                != affine_feasibility_identity
-            ):
-                raise DirectTrfConstructionError(
-                    "DE polish affine feasibility differs from its derivation record"
-                )
-            if (
-                self.derivation.controlled_ids != self.controlled_ids
-                or self.derivation.start != normalized_start
-            ):
-                raise DirectTrfConstructionError(
-                    "DE polish problem differs from its derivation record"
-                )
         object.__setattr__(self, "start", normalized_start)
         object.__setattr__(self, "lower_bounds", lower)
         object.__setattr__(self, "upper_bounds", upper)
@@ -991,10 +921,8 @@ class OptimizationProblem:
             derivation_record = (("derived-fit-component", self.derivation.identity),)
         elif isinstance(self.derivation, GridSeedProblemDerivation):
             derivation_record = (("derived-grid-seed", self.derivation.identity),)
-        elif isinstance(self.derivation, DeSearchProblemDerivation):
-            derivation_record = (("derived-de-search", self.derivation.identity),)
         else:
-            derivation_record = (("derived-de-polish", self.derivation.identity),)
+            derivation_record = (("derived-de-search", self.derivation.identity),)
         # Preserve the established box-only problem identity exactly.
         feasibility_record = _affine_feasibility_identity_record(
             self.affine_half_spaces,
@@ -1170,6 +1098,31 @@ class OptimizationProblem:
         )
         self.validate_derived_problem(child)
         return child
+
+    def restart_from(self, start: Sequence[float]) -> OptimizationProblem:
+        """Create a fresh complete root problem with a new full-coordinate start."""
+        if not self.acceptance_authority:
+            raise DirectTrfConstructionError(
+                "Only a complete root problem can create a full-coordinate restart"
+            )
+        return OptimizationProblem(
+            self.evaluation_plan_identity,
+            self.parameterization_identity,
+            self.evaluator_parameterization_identity,
+            self.constraint_program_identity,
+            self.configuration_identity,
+            self.source_snapshot,
+            self.independent_items,
+            self.controlled_ids,
+            self.held_items,
+            tuple(start),
+            self.lower_bounds,
+            self.upper_bounds,
+            self.commit_scope,
+            scalarization_version=self.scalarization_version,
+            affine_half_spaces=self.affine_half_spaces,
+            affine_equalities=self.affine_equalities,
+        )
 
     def validate_derived_problem(self, child: OptimizationProblem) -> None:
         """Fail closed when a child changes root-owned scientific context."""

@@ -10,6 +10,8 @@ from typing import cast
 
 import numpy as np
 
+from chemex.configuration.method_plan import DeSearch, GridSearch, SearchScale
+from chemex.configuration.method_validation import resolve_de_coordinates
 from chemex.configuration.methods import Method
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import (
@@ -22,8 +24,15 @@ from chemex.messages import (
     UncertaintyProgressReporter,
     console,
     print_minimizing,
+    print_running_de,
 )
 from chemex.native_provenance import ProvenanceEnvironment
+from chemex.optimize.de_direct_trf import (
+    DeCoordinateSemantics,
+    DeSearchInvocation,
+    DeSearchTerminal,
+    execute_de_search,
+)
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     DirectTrfInvocation,
@@ -405,6 +414,7 @@ def _execute_with_phase_progress(
 
 def _build_invocation(
     method: Method,
+    search: GridSearch | None,
     problem: OptimizationProblem,
     decomposition: FitDecomposition,
     parameter_store: ParameterStore,
@@ -412,7 +422,7 @@ def _build_invocation(
     MethodStepStrategy,
     GroupedDirectTrfInvocation | GridDirectTrfInvocation,
 ]:
-    if method.grid:
+    if search is not None:
         grid = parameter_store.parse_grid(method.grid)
         invocation = GridDirectTrfInvocation.for_problem(
             problem,
@@ -436,6 +446,46 @@ def _build_invocation(
         ),
     )
     return MethodStepStrategy.DIRECT_TRF, invocation
+
+
+def _run_product_de_search(
+    search: DeSearch,
+    problem: OptimizationProblem,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    parameter_model: SealedParameterModel,
+) -> OptimizationProblem:
+    resolved_coordinates = resolve_de_coordinates(search, parameter_model)
+    coordinates = tuple(
+        (
+            coordinate.param_id,
+            coordinate.low,
+            coordinate.high,
+            (
+                DeCoordinateSemantics.LINEAR
+                if coordinate.scale is SearchScale.LINEAR
+                else DeCoordinateSemantics.LOG
+            ),
+        )
+        for coordinate in resolved_coordinates
+    )
+    invocation = DeSearchInvocation.for_product_problem(
+        problem,
+        search_coordinates=coordinates,
+        root_seed=search.seed,
+    )
+    print_running_de()
+    outcome = execute_de_search(problem, invocation, parameterization, engine)
+    if outcome.terminal is DeSearchTerminal.INTERRUPTED:
+        raise KeyboardInterrupt("Selected-coordinate DE search interrupted")
+    candidate = outcome.best_candidate
+    if not outcome.restart_eligible or candidate is None:
+        failure = outcome.failure
+        detail = "" if failure is None else f": {failure.category}: {failure.message}"
+        raise RuntimeError(
+            f"Selected-coordinate DE search produced no eligible candidate{detail}"
+        )
+    return problem.restart_from(candidate.full_vector)
 
 
 def _write_grid_output(
@@ -565,7 +615,7 @@ def _commit_resolved_continuity_if_changed(
     )
 
 
-def run_native_deterministic(
+def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product dispatcher
     experiments: Experiments,
     method: Method,
     path: Path,
@@ -573,6 +623,7 @@ def run_native_deterministic(
     *,
     session: AnalysisSession,
     parameterization: ActiveParameterization | None = None,
+    search: GridSearch | DeSearch | None = None,
 ) -> NativeDeterministicFit | None:
     """Execute one complete deterministic method occurrence natively."""
     parameter_model = session.parameter_factory.sealed_parameter_model
@@ -629,9 +680,18 @@ def run_native_deterministic(
         configuration,
         starting_snapshot,
     )
+    if isinstance(search, DeSearch):
+        problem = _run_product_de_search(
+            search,
+            problem,
+            parameterization,
+            engine,
+            parameter_model,
+        )
     decomposition = FitDecomposition.from_root(problem, parameterization, engine)
     strategy, invocation = _build_invocation(
         method,
+        search if isinstance(search, GridSearch) else None,
         problem,
         decomposition,
         session.parameters,
@@ -659,7 +719,7 @@ def run_native_deterministic(
         retained_observation_count=engine.plan.retained_observation_count,
         controlled_parameter_count=len(problem.controlled_ids),
         component_labels=component_labels,
-        grid=bool(method.grid),
+        grid=isinstance(search, GridSearch),
     )
     uncertainty_progress = UncertaintyProgressReporter(console)
     outcome = _execute_with_phase_progress(
@@ -784,7 +844,7 @@ def run_native_deterministic(
     )
     _materialize_evaluation(experiments, result)
     variable_count = len(problem.controlled_ids)
-    if method.grid:
+    if isinstance(search, GridSearch):
         _write_grid_output(
             cast("GroupedGridDirectTrfOutcome", outcome.primary_execution),
             cast("GridDirectTrfInvocation", invocation),

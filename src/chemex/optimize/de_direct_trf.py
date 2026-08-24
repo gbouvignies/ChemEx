@@ -1,10 +1,4 @@
-"""Selected-coordinate differential evolution to native TRF qualification (#597).
-
-This isolated native seam is intentionally not wired into production dispatch.
-It owns an immutable selected-coordinate DE plan rooted in one complete native
-problem.  Execution and the authoritative TRF transition are added in vertical
-slices below the same seam.
-"""
+"""Qualified, non-authoritative selected-coordinate DE search machinery."""
 
 from __future__ import annotations
 
@@ -25,43 +19,25 @@ from chemex.evaluation.native import (
     EvaluationEngine,
     EvaluationFailure,
     EvaluationFrame,
-    EvaluationResult,
 )
 from chemex.optimize.direct_trf import (
-    AcceptedFitResult,
     AttemptCounters,
     CancellationToken,
-    CandidateMaterialization,
-    CommitReceipt,
-    DePolishProblemDerivation,
     DeSearchProblemDerivation,
-    DirectTrfCandidateOutcome,
-    DirectTrfCandidateTerminal,
     DirectTrfConstructionError,
-    DirectTrfInterrupted,
-    DirectTrfInvocation,
-    DirectTrfTerminal,
-    LiveFitCommitAuthority,
-    MaterializationTerminal,
-    MaterializedDirectTrfCandidate,
     ObjectiveScalarizationError,
     OptimizationProblem,
     TerminalFailure,
-    _accept_materialized_fit_for_derived_workflow,
-    _grant_derived_fit_commit_authority,
-    _materialize_derived_direct_trf_candidate_for_root,
     canonical_chi_square,
-    commit_accepted_fit,
-    execute_direct_trf_candidate,
 )
 from chemex.parameters.parameterization import ActiveParameterization
-from chemex.parameters.values import AnalysisValues
 from chemex.typing import Array
 
 _SCHEMA_VERSION = 1
-_DE_WORKFLOW_VERSION = "native-selected-coordinate-de-direct-trf-v1"
-_DE_BACKEND_POLICY_VERSION = "scipy-de-best1bin-lhs-deferred-pcg64-v1"
+_DE_BACKEND_POLICY_VERSION = "scipy-de-best1bin-lhs-deferred-pcg64-box-midpoint-v2"
 _UINT64_MAX = 2**64 - 1
+_PRODUCT_DE_POPULATION_MULTIPLIER = 15
+_PRODUCT_DE_MAXIMUM_GENERATIONS = 1000
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,16 +146,21 @@ class DeSearchCoordinate:
             return math.log(self.physical_lower), math.log(self.physical_upper)
         return self.physical_bounds
 
+    @property
+    def solver_initial(self) -> float:
+        """Return a deterministic in-box initializer without changing captured state."""
+        lower, upper = self.solver_bounds
+        return math.fsum((0.5 * lower, 0.5 * upper))
+
     def to_solver(self, physical_value: float) -> float:
-        value = _finite_binary64(physical_value, name=f"DE start {self.param_id!r}")
-        if not self.physical_lower <= value <= self.physical_upper:
-            raise DirectTrfConstructionError(
-                f"DE start for {self.param_id!r} is outside its search range"
-            )
+        value = _finite_binary64(
+            physical_value,
+            name=f"DE physical coordinate {self.param_id!r}",
+        )
         if self.semantics is DeCoordinateSemantics.LOG:
             if value <= 0.0:
                 raise DirectTrfConstructionError(
-                    f"Logarithmic DE start for {self.param_id!r} must be positive"
+                    f"Logarithmic DE coordinate for {self.param_id!r} must be positive"
                 )
             return math.log(value)
         return value
@@ -336,7 +317,6 @@ def _validate_invocation_search_contract(
             raise DirectTrfConstructionError(
                 f"DE search range for {coordinate.param_id!r} exceeds physical bounds"
             )
-        coordinate.to_solver(search_problem.start[index])
 
 
 def _expected_search_projection(
@@ -397,8 +377,8 @@ def _validate_exact_search_projection(
 
 
 @dataclass(frozen=True, slots=True)
-class DeDirectTrfInvocation:
-    """Immutable selected-coordinate DE search and one full TRF polish policy."""
+class DeSearchInvocation:
+    """Product DE search policy with no local-fit, acceptance, or commit state."""
 
     root_problem_identity: str
     root_problem: OptimizationProblem = field(repr=False, compare=False)
@@ -407,23 +387,17 @@ class DeDirectTrfInvocation:
     root_seed: int
     population: DePopulation
     de_objective_request_budget: int
-    polish_objective_request_budget: int
     mutation: float | tuple[float, float]
     recombination: float
     tol: float
     atol: float
-    polish_x_scale: tuple[float, ...]
-    polish_ftol: float | None
-    polish_xtol: float | None
-    polish_gtol: float | None
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
-        coordinates = self.search_coordinates
         _validate_invocation_search_contract(
             self.root_problem_identity,
             self.root_problem,
-            coordinates,
+            self.search_coordinates,
             self.search_problem,
         )
         if (
@@ -435,7 +409,7 @@ class DeDirectTrfInvocation:
                 "DE requires an explicit unsigned 64-bit root seed"
             )
         if not isinstance(self.population, DePopulation) or (
-            self.population.dimension != len(coordinates)
+            self.population.dimension != len(self.search_coordinates)
         ):
             raise DirectTrfConstructionError(
                 "DE population topology does not match selected coordinates"
@@ -443,10 +417,6 @@ class DeDirectTrfInvocation:
         de_budget = _positive_integer_budget(
             self.de_objective_request_budget,
             name="DE objective-request budget",
-        )
-        polish_budget = _positive_integer_budget(
-            self.polish_objective_request_budget,
-            name="TRF polish objective-request budget",
         )
         if de_budget < self.population.size:
             raise DirectTrfConstructionError(
@@ -459,35 +429,17 @@ class DeDirectTrfInvocation:
         )
         tol = _non_negative(self.tol, name="DE relative tolerance")
         atol = _non_negative(self.atol, name="DE absolute tolerance")
-        polish = DirectTrfInvocation(
-            self.root_problem_identity,
-            polish_budget,
-            self.polish_x_scale,
-            self.polish_ftol,
-            self.polish_xtol,
-            self.polish_gtol,
-        )
-        if len(polish.x_scale) != len(self.root_problem.controlled_ids):
-            raise DirectTrfConstructionError(
-                "TRF polish scale must match the complete root coordinate dimension"
-            )
         object.__setattr__(self, "de_objective_request_budget", de_budget)
-        object.__setattr__(self, "polish_objective_request_budget", polish_budget)
         object.__setattr__(self, "mutation", mutation)
         object.__setattr__(self, "recombination", recombination)
         object.__setattr__(self, "tol", tol)
         object.__setattr__(self, "atol", atol)
-        object.__setattr__(self, "polish_x_scale", polish.x_scale)
-        object.__setattr__(self, "polish_ftol", polish.ftol)
-        object.__setattr__(self, "polish_xtol", polish.xtol)
-        object.__setattr__(self, "polish_gtol", polish.gtol)
         object.__setattr__(
             self,
             "identity",
             _identity(
-                "native-de-direct-trf-invocation",
+                "native-de-search-invocation",
                 (
-                    _DE_WORKFLOW_VERSION,
                     _DE_BACKEND_POLICY_VERSION,
                     self.root_problem_identity,
                     tuple(item.identity for item in self.search_coordinates),
@@ -495,7 +447,6 @@ class DeDirectTrfInvocation:
                     self.root_seed,
                     self.population.identity,
                     de_budget,
-                    polish_budget,
                     (
                         tuple(_float_token(value) for value in mutation)
                         if isinstance(mutation, tuple)
@@ -504,101 +455,43 @@ class DeDirectTrfInvocation:
                     _float_token(recombination),
                     _float_token(tol),
                     _float_token(atol),
-                    tuple(_float_token(value) for value in polish.x_scale),
-                    tuple(
-                        None if value is None else _float_token(value)
-                        for value in (
-                            polish.ftol,
-                            polish.xtol,
-                            polish.gtol,
-                        )
-                    ),
                 ),
             ),
         )
 
-    def to_record(self) -> dict[str, object]:
-        """Return a JSON-safe declarative record with no live runtime state."""
-        mutation: float | list[float]
-        if isinstance(self.mutation, tuple):
-            mutation = list(self.mutation)
-        else:
-            mutation = self.mutation
-        return {
-            "schema_version": _SCHEMA_VERSION,
-            "workflow_version": _DE_WORKFLOW_VERSION,
-            "backend_policy_version": _DE_BACKEND_POLICY_VERSION,
-            "identity": self.identity,
-            "root_problem_identity": self.root_problem_identity,
-            "search_problem_identity": self.search_problem.identity,
-            "search_problem": {
-                "controlled_ids": list(self.search_problem.controlled_ids),
-                "captured_held_items": [
-                    [param_id, value]
-                    for param_id, value in self.search_problem.held_items
-                ],
-                "physical_start": list(self.search_problem.start),
-                "physical_lower_bound_tokens": [
-                    _float_token(value) for value in self.search_problem.lower_bounds
-                ],
-                "physical_upper_bound_tokens": [
-                    _float_token(value) for value in self.search_problem.upper_bounds
-                ],
-                "solver_x0": [
-                    coordinate.to_solver(value)
-                    for coordinate, value in zip(
-                        self.search_coordinates,
-                        self.search_problem.start,
-                        strict=True,
-                    )
-                ],
-            },
-            "search_coordinates": [
-                {
-                    "identity": item.identity,
-                    "param_id": item.param_id,
-                    "physical_lower": item.physical_lower,
-                    "physical_upper": item.physical_upper,
-                    "semantics": cast("DeCoordinateSemantics", item.semantics).value,
-                    "declaration_ordinal": item.declaration_ordinal,
-                }
-                for item in self.search_coordinates
-            ],
-            "root_seed": self.root_seed,
-            "population": {
-                "identity": self.population.identity,
-                "dimension": self.population.dimension,
-                "multiplier": self.population.multiplier,
-                "size": self.population.size,
-                "maximum_generations": self.population.maximum_generations,
-                "strategy": self.population.strategy,
-                "initialization": self.population.initialization,
-                "updating": self.population.updating,
-            },
-            "budgets": {
-                "de_objective_requests": self.de_objective_request_budget,
-                "polish_objective_requests": self.polish_objective_request_budget,
-            },
-            "candidate_ordering_policy": _DE_CANDIDATE_ORDER_VERSION,
-            "mutation": mutation,
-            "recombination": self.recombination,
-            "tol": self.tol,
-            "atol": self.atol,
-            "polish": {
-                "x_scale": list(self.polish_x_scale),
-                "ftol": self.polish_ftol,
-                "xtol": self.polish_xtol,
-                "gtol": self.polish_gtol,
-            },
-            "authority": {
-                "de_acceptance": False,
-                "de_commit": False,
-                "eligible_transition_count": 1,
-            },
-        }
+    @classmethod
+    def for_product_problem(
+        cls,
+        problem: OptimizationProblem,
+        *,
+        search_coordinates: Sequence[
+            tuple[str, float, float, DeCoordinateSemantics | str]
+        ],
+        root_seed: object,
+    ) -> DeSearchInvocation:
+        """Compile the versioned, non-configurable product DE backend policy."""
+        dimension = len(search_coordinates)
+        population_size = max(
+            5,
+            dimension * _PRODUCT_DE_POPULATION_MULTIPLIER,
+        )
+        return cls._for_problem_with_policy(
+            problem,
+            search_coordinates=search_coordinates,
+            root_seed=root_seed,
+            de_objective_request_budget=(
+                population_size * (_PRODUCT_DE_MAXIMUM_GENERATIONS + 1)
+            ),
+            population_multiplier=_PRODUCT_DE_POPULATION_MULTIPLIER,
+            maximum_generations=_PRODUCT_DE_MAXIMUM_GENERATIONS,
+            mutation=(0.5, 1.0),
+            recombination=0.7,
+            tol=0.01,
+            atol=0.0,
+        )
 
     @classmethod
-    def for_problem(
+    def _for_problem_with_policy(
         cls,
         problem: OptimizationProblem,
         *,
@@ -607,19 +500,13 @@ class DeDirectTrfInvocation:
         ],
         root_seed: object,
         de_objective_request_budget: int,
-        polish_objective_request_budget: int,
-        population_multiplier: int = 15,
-        mutation: float | tuple[float, float] = (0.5, 1.0),
-        recombination: float = 0.7,
-        tol: float = 0.01,
-        atol: float = 0.0,
-        maximum_generations: int = 1000,
-        polish_x_scale: float | Sequence[float] | None = None,
-        polish_ftol: float | None = 1.0e-8,
-        polish_xtol: float | None = 1.0e-8,
-        polish_gtol: float | None = 1.0e-8,
-    ) -> DeDirectTrfInvocation:
-        """Compile one canonical bounded selected-coordinate search plan."""
+        population_multiplier: int,
+        maximum_generations: int,
+        mutation: float | tuple[float, float],
+        recombination: float,
+        tol: float,
+        atol: float,
+    ) -> DeSearchInvocation:
         if not problem.acceptance_authority:
             raise DirectTrfConstructionError("DE requires a complete root problem")
         if (
@@ -676,7 +563,6 @@ class DeDirectTrfInvocation:
                 raise DirectTrfConstructionError(
                     f"DE search range for {item.param_id!r} exceeds physical bounds"
                 )
-            item.to_solver(root_starts[item.param_id])
         canonical_selected_ids = tuple(item.param_id for item in coordinates)
         selected = set(canonical_selected_ids)
         held_items = tuple(
@@ -708,29 +594,6 @@ class DeDirectTrfInvocation:
             max(5, len(coordinates) * population_multiplier),
             maximum_generations,
         )
-        de_budget = _positive_integer_budget(
-            de_objective_request_budget,
-            name="DE objective-request budget",
-        )
-        polish_budget = _positive_integer_budget(
-            polish_objective_request_budget,
-            name="TRF polish objective-request budget",
-        )
-        normalized_mutation = _mutation(mutation)
-        normalized_recombination = _probability(
-            recombination,
-            name="DE recombination probability",
-        )
-        normalized_tol = _non_negative(tol, name="DE relative tolerance")
-        normalized_atol = _non_negative(atol, name="DE absolute tolerance")
-        polish_template = DirectTrfInvocation.for_problem(
-            problem,
-            objective_request_budget=polish_budget,
-            x_scale=polish_x_scale,
-            ftol=polish_ftol,
-            xtol=polish_xtol,
-            gtol=polish_gtol,
-        )
         return cls(
             problem.identity,
             problem,
@@ -738,16 +601,11 @@ class DeDirectTrfInvocation:
             search_problem,
             cast("int", root_seed),
             population,
-            de_budget,
-            polish_budget,
-            normalized_mutation,
-            normalized_recombination,
-            normalized_tol,
-            normalized_atol,
-            polish_template.x_scale,
-            polish_template.ftol,
-            polish_template.xtol,
-            polish_template.gtol,
+            de_objective_request_budget,
+            mutation,
+            recombination,
+            tol,
+            atol,
         )
 
 
@@ -868,7 +726,6 @@ class DeSearchTerminal(StrEnum):
     GENERATION_LIMIT = "generation_limit"
     BUDGET_EXHAUSTED = "budget_exhausted"
     NO_VALID_CANDIDATE = "no_valid_candidate"
-    PREFLIGHT_INVALID = "preflight_invalid"
     CANCELLED = "cancelled"
     INTERRUPTED = "interrupted"
     BACKEND_FAILURE = "backend_failure"
@@ -922,7 +779,6 @@ class DeSearchExecution:
     counters: AttemptCounters
     population_identity: str
     candidate_ordering_policy: str
-    preflight_evaluation_identity: str | None
     valid_candidate_count: int
     rejected_trial_count: int
     best_candidate: DeSearchCandidate | None
@@ -953,7 +809,6 @@ class DeSearchExecution:
                     ),
                     self.population_identity,
                     self.candidate_ordering_policy,
-                    self.preflight_evaluation_identity,
                     self.valid_candidate_count,
                     self.rejected_trial_count,
                     None
@@ -984,7 +839,7 @@ class _LiveDeAttempt:
     def __init__(
         self,
         root_problem: OptimizationProblem,
-        invocation: DeDirectTrfInvocation,
+        invocation: DeSearchInvocation,
         parameterization: ActiveParameterization,
         engine: EvaluationEngine,
         cancellation: CancellationToken,
@@ -1103,7 +958,7 @@ class _LiveDeAttempt:
 
 def _validate_de_context(
     problem: OptimizationProblem,
-    invocation: DeDirectTrfInvocation,
+    invocation: DeSearchInvocation,
     parameterization: ActiveParameterization,
     engine: EvaluationEngine,
 ) -> None:
@@ -1118,31 +973,6 @@ def _validate_de_context(
         )
     problem.validate_parameterization(parameterization)
     invocation.search_problem.validate_parameterization(parameterization)
-
-
-def _de_preflight(live: _LiveDeAttempt) -> EvaluationResult | TerminalFailure:
-    try:
-        lifecycle = live.invocation.search_problem.lifecycle_frame(
-            live.invocation.search_problem.start,
-            live.parameterization,
-        )
-        frame = EvaluationFrame.from_lifecycle_frame(live.parameterization, lifecycle)
-        evaluated = live.evaluator.evaluate(frame)
-    except Exception as error:  # noqa: BLE001 - preflight fails closed
-        return TerminalFailure(
-            "de_preflight_frame_failure",
-            f"{type(error).__name__}: {error}",
-        )
-    if isinstance(evaluated, EvaluationFailure):
-        return TerminalFailure(evaluated.category, evaluated.message, evaluated)
-    try:
-        canonical_chi_square(evaluated.residuals)
-    except (TypeError, ValueError, ObjectiveScalarizationError) as error:
-        return TerminalFailure(
-            "de_preflight_scalarization_failure",
-            f"{type(error).__name__}: {error}",
-        )
-    return evaluated
 
 
 def _normalize_de_backend(
@@ -1207,7 +1037,6 @@ class _DeBackendResult(Protocol):
 def _search_execution(
     live: _LiveDeAttempt,
     terminal: DeSearchTerminal,
-    preflight_identity: str | None,
     *,
     backend: DeBackendEvidence | None = None,
     failure: TerminalFailure | None = None,
@@ -1236,7 +1065,6 @@ def _search_execution(
         live.counters,
         live.invocation.population.identity,
         _DE_CANDIDATE_ORDER_VERSION,
-        preflight_identity,
         len(live.candidates),
         live.rejected,
         live.best,
@@ -1247,7 +1075,7 @@ def _search_execution(
 
 def _invoke_de_backend(
     live: _LiveDeAttempt,
-    invocation: DeDirectTrfInvocation,
+    invocation: DeSearchInvocation,
     solver_start: Array,
 ) -> object:
     return differential_evolution(
@@ -1286,7 +1114,6 @@ def _invoke_de_backend(
 def _finish_de_backend(
     live: _LiveDeAttempt,
     result: object,
-    preflight_identity: str,
 ) -> DeSearchExecution:
     try:
         backend = _normalize_de_backend(
@@ -1298,7 +1125,6 @@ def _finish_de_backend(
         return _search_execution(
             live,
             DeSearchTerminal.IMPLEMENTATION_FAILURE,
-            preflight_identity,
             failure=TerminalFailure(
                 "malformed_de_backend_result",
                 f"{type(error).__name__}: {error}",
@@ -1316,14 +1142,13 @@ def _finish_de_backend(
     return _search_execution(
         live,
         terminal,
-        preflight_identity,
         backend=backend,
         failure=failure,
     )
 
 
 def _unstarted_search_execution(
-    invocation: DeDirectTrfInvocation,
+    invocation: DeSearchInvocation,
     terminal: DeSearchTerminal,
     failure: TerminalFailure,
 ) -> DeSearchExecution:
@@ -1336,7 +1161,6 @@ def _unstarted_search_execution(
         AttemptCounters(0, 0, 0),
         invocation.population.identity,
         _DE_CANDIDATE_ORDER_VERSION,
-        None,
         0,
         0,
         None,
@@ -1347,7 +1171,7 @@ def _unstarted_search_execution(
 
 def _start_live_de_attempt(
     problem: OptimizationProblem,
-    invocation: DeDirectTrfInvocation,
+    invocation: DeSearchInvocation,
     parameterization: ActiveParameterization,
     engine: EvaluationEngine,
     cancellation: CancellationToken,
@@ -1389,7 +1213,7 @@ def _start_live_de_attempt(
 
 def _run_de_search(
     problem: OptimizationProblem,
-    invocation: DeDirectTrfInvocation,
+    invocation: DeSearchInvocation,
     parameterization: ActiveParameterization,
     engine: EvaluationEngine,
     cancellation: CancellationToken,
@@ -1404,40 +1228,17 @@ def _run_de_search(
     if isinstance(started, DeSearchExecution):
         return started
     live = started
-    try:
-        preflight = _de_preflight(live)
-    except KeyboardInterrupt:
-        return _search_execution(
-            live,
-            DeSearchTerminal.INTERRUPTED,
-            None,
-            failure=TerminalFailure(
-                "interrupted",
-                "KeyboardInterrupt during DE preflight",
-            ),
-        )
-    if isinstance(preflight, TerminalFailure):
-        return _search_execution(
-            live,
-            DeSearchTerminal.PREFLIGHT_INVALID,
-            None,
-            failure=preflight,
-        )
     if cancellation.is_cancelled:
         return _search_execution(
             live,
             DeSearchTerminal.CANCELLED,
-            preflight.identity,
-            failure=TerminalFailure("cancelled", "Cancellation after DE preflight"),
+            failure=TerminalFailure(
+                "cancelled", "Cancellation after evaluator binding"
+            ),
         )
     solver_start = np.asarray(
         tuple(
-            coordinate.to_solver(value)
-            for coordinate, value in zip(
-                invocation.search_coordinates,
-                invocation.search_problem.start,
-                strict=True,
-            )
+            coordinate.solver_initial for coordinate in invocation.search_coordinates
         ),
         dtype=np.float64,
     )
@@ -1447,21 +1248,18 @@ def _run_de_search(
         return _search_execution(
             live,
             stop.terminal,
-            preflight.identity,
             failure=stop.failure,
         )
     except KeyboardInterrupt:
         return _search_execution(
             live,
             DeSearchTerminal.INTERRUPTED,
-            preflight.identity,
             failure=TerminalFailure("interrupted", "KeyboardInterrupt during DE"),
         )
     except Exception as error:  # noqa: BLE001 - undeclared backend errors fail closed
         return _search_execution(
             live,
             DeSearchTerminal.IMPLEMENTATION_FAILURE,
-            preflight.identity,
             failure=TerminalFailure(
                 "unexpected_de_backend_exception",
                 f"{type(error).__name__}: {error}",
@@ -1471,732 +1269,20 @@ def _run_de_search(
         return _search_execution(
             live,
             DeSearchTerminal.CANCELLED,
-            preflight.identity,
             failure=TerminalFailure("cancelled", "Cancellation after DE backend"),
         )
-    return _finish_de_backend(live, result, preflight.identity)
+    return _finish_de_backend(live, result)
 
 
-def _derive_polish_problem(
+def execute_de_search(
     problem: OptimizationProblem,
-    invocation: DeDirectTrfInvocation,
-    search: DeSearchExecution,
-) -> tuple[OptimizationProblem, DirectTrfInvocation]:
-    candidate = search.best_candidate
-    if not search.restart_eligible or candidate is None:
-        raise DirectTrfConstructionError(
-            "Only a restart-eligible DE outcome may create a TRF polish"
-        )
-    derivation = DePolishProblemDerivation(
-        problem.identity,
-        problem.affine_feasibility_identity,
-        invocation.identity,
-        invocation.search_problem.identity,
-        search.identity,
-        candidate.identity,
-        problem.controlled_ids,
-        candidate.full_vector,
-    )
-    child = problem.derive_child(
-        controlled_ids=problem.controlled_ids,
-        start=candidate.full_vector,
-        derivation=derivation,
-    )
-    polish = DirectTrfInvocation.for_problem(
-        child,
-        objective_request_budget=invocation.polish_objective_request_budget,
-        x_scale=invocation.polish_x_scale,
-        ftol=invocation.polish_ftol,
-        xtol=invocation.polish_xtol,
-        gtol=invocation.polish_gtol,
-    )
-    return child, polish
-
-
-def _validate_de_transition_lineage(
-    problem: OptimizationProblem,
-    invocation: DeDirectTrfInvocation,
-    search: DeSearchExecution,
-) -> None:
-    """Validate DE-owned candidate lineage before any TRF transfer exists."""
-    candidate = search.best_candidate
-    if candidate is None:
-        raise DirectTrfConstructionError(
-            "Restart-eligible DE search lacks a transition candidate"
-        )
-    selected_ids = invocation.search_problem.controlled_ids
-    root_indices = {
-        param_id: index for index, param_id in enumerate(problem.controlled_ids)
-    }
-    expected_selected = tuple(
-        candidate.full_vector[root_indices[param_id]] for param_id in selected_ids
-    )
-    unselected_ids = tuple(
-        param_id
-        for param_id in problem.controlled_ids
-        if param_id not in set(selected_ids)
-    )
-    root_start = dict(zip(problem.controlled_ids, problem.start, strict=True))
-    expected_solver = tuple(
-        coordinate.to_solver(value)
-        for coordinate, value in zip(
-            invocation.search_coordinates,
-            candidate.selected_vector,
-            strict=True,
-        )
-    )
-    if (
-        search.problem_identity != invocation.search_problem.identity
-        or search.workflow_invocation_identity != invocation.identity
-        or search.population_identity != invocation.population.identity
-        or search.candidate_ordering_policy != _DE_CANDIDATE_ORDER_VERSION
-        or len(candidate.full_vector) != len(problem.controlled_ids)
-        or len(candidate.selected_vector) != len(selected_ids)
-        or candidate.selected_vector != expected_selected
-        or candidate.solver_vector != expected_solver
-        or any(
-            candidate.full_vector[root_indices[param_id]] != root_start[param_id]
-            for param_id in unselected_ids
-        )
-        or candidate.request_ordinal > search.counters.objective_requests_accepted
-        or search.valid_candidate_count
-        > search.counters.objective_evaluations_completed
-    ):
-        raise DirectTrfConstructionError(
-            "Eligible DE candidate lineage is incompatible with its root problem"
-        )
-
-
-def _validate_de_polish_transition_lineage(
-    problem: OptimizationProblem,
-    invocation: DeDirectTrfInvocation,
-    search: DeSearchExecution,
-    polish_problem: OptimizationProblem,
-    polish_invocation: DirectTrfInvocation,
-    polish: DirectTrfCandidateOutcome,
-) -> None:
-    """Bind successful Direct TRF evidence to this exact DE transition."""
-    search_candidate = search.best_candidate
-    polished_candidate = polish.candidate
-    materialization = polish.materialization
-    derivation = polish_problem.derivation
-    expected_derivation = None
-    if search_candidate is not None:
-        expected_derivation = DePolishProblemDerivation(
-            problem.identity,
-            problem.affine_feasibility_identity,
-            invocation.identity,
-            invocation.search_problem.identity,
-            search.identity,
-            search_candidate.identity,
-            problem.controlled_ids,
-            search_candidate.full_vector,
-        )
-    try:
-        problem.validate_derived_problem(polish_problem)
-    except DirectTrfConstructionError as error:
-        raise DirectTrfConstructionError(
-            "Successful TRF candidate lacks exact DE polish transition lineage"
-        ) from error
-    if (
-        search_candidate is None
-        or polish.terminal is not DirectTrfCandidateTerminal.SUCCESS
-        or polish.execution.terminal is not DirectTrfTerminal.CONVERGED
-        or polished_candidate is None
-        or materialization is None
-        or materialization.terminal is not MaterializationTerminal.SUCCESS
-        or not isinstance(derivation, DePolishProblemDerivation)
-        or derivation != expected_derivation
-        or polish_problem.controlled_ids != problem.controlled_ids
-        or polish_problem.start != search_candidate.full_vector
-        or polish_invocation.problem_identity != polish_problem.identity
-        or polish_invocation.objective_request_budget
-        != invocation.polish_objective_request_budget
-        or polish_invocation.x_scale != invocation.polish_x_scale
-        or polish_invocation.ftol != invocation.polish_ftol
-        or polish_invocation.xtol != invocation.polish_xtol
-        or polish_invocation.gtol != invocation.polish_gtol
-        or polish.execution.problem_identity != polish_problem.identity
-        or polish.execution.invocation_identity != polish_invocation.identity
-        or polished_candidate.problem_identity != polish_problem.identity
-        or polished_candidate.invocation_identity != polish_invocation.identity
-        or polished_candidate.execution_identity != polish.execution.identity
-        or polish.materialization is not polished_candidate.materialization
-        or materialization.problem_identity != polish_problem.identity
-        or materialization.invocation_identity != polish_invocation.identity
-        or materialization.execution_identity != polish.execution.identity
-        or materialization.evaluation_identity
-        != polished_candidate.evaluation_result.identity
-    ):
-        raise DirectTrfConstructionError(
-            "Successful TRF candidate lacks exact DE polish transition lineage"
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class DeTrfTransitionAccounting:
-    """Explicit non-fungible accounting owned by the DE→TRF transition."""
-
-    de_budget: int
-    de_counters: AttemptCounters
-    polish_budget: int
-    polish_counters: AttemptCounters | None
-    search_to_polish_transfers: int
-    root_materializations: int
-    identity: str = field(init=False)
-
-    def __post_init__(self) -> None:
-        if self.search_to_polish_transfers not in {
-            0,
-            1,
-        } or self.root_materializations not in {
-            0,
-            1,
-        }:
-            raise ValueError("DE→TRF transition counts must be zero or one")
-        object.__setattr__(
-            self,
-            "identity",
-            _identity(
-                "native-de-trf-transition-accounting",
-                (
-                    self.de_budget,
-                    (
-                        self.de_counters.solver_requests_received,
-                        self.de_counters.objective_requests_accepted,
-                        self.de_counters.objective_evaluations_completed,
-                    ),
-                    self.polish_budget,
-                    None
-                    if self.polish_counters is None
-                    else (
-                        self.polish_counters.solver_requests_received,
-                        self.polish_counters.objective_requests_accepted,
-                        self.polish_counters.objective_evaluations_completed,
-                    ),
-                    self.search_to_polish_transfers,
-                    self.root_materializations,
-                ),
-            ),
-        )
-
-
-class DeDirectTrfTerminal(StrEnum):
-    """Closed workflow outcomes; only ACCEPTED can expose fit authority."""
-
-    ACCEPTED = "accepted"
-    SEARCH_UNSUCCESSFUL = "search_unsuccessful"
-    POLISH_UNSUCCESSFUL = "polish_unsuccessful"
-    MATERIALIZATION_FAILURE = "materialization_failure"
-    CANCELLED = "cancelled"
-    INTERRUPTED = "interrupted"
-    EXECUTION_FAILURE = "execution_failure"
-
-
-@dataclass(frozen=True, slots=True)
-class DePolishProvenance:
-    """Exact selected-restart and one-polish lineage for accepted evidence."""
-
-    workflow_invocation_identity: str
-    root_problem_identity: str
-    search_execution_identity: str
-    search_candidate_identity: str
-    search_terminal: DeSearchTerminal
-    polish_problem_identity: str
-    polish_invocation_identity: str
-    polish_execution_identity: str
-    polished_candidate_identity: str
-    identity: str = field(init=False)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "identity",
-            _identity(
-                "native-de-polish-provenance",
-                (
-                    self.workflow_invocation_identity,
-                    self.root_problem_identity,
-                    self.search_execution_identity,
-                    self.search_candidate_identity,
-                    self.search_terminal.value,
-                    self.polish_problem_identity,
-                    self.polish_invocation_identity,
-                    self.polish_execution_identity,
-                    self.polished_candidate_identity,
-                ),
-            ),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class AcceptedDeDirectTrfResult(AcceptedFitResult):
-    """Accepted root evidence retaining exact DE search and TRF polish lineage."""
-
-    de_polish_provenance: DePolishProvenance
-    workflow_invocation: DeDirectTrfInvocation = field(repr=False, compare=False)
-    search_execution: DeSearchExecution = field(repr=False, compare=False)
-    polish_problem: OptimizationProblem = field(repr=False, compare=False)
-    polish_invocation: DirectTrfInvocation = field(repr=False, compare=False)
-    polish_outcome: DirectTrfCandidateOutcome = field(repr=False, compare=False)
-    fresh_candidate: MaterializedDirectTrfCandidate = field(
-        repr=False,
-        compare=False,
-    )
-
-    @classmethod
-    def from_accepted(
-        cls,
-        accepted: AcceptedFitResult,
-        provenance: DePolishProvenance,
-        workflow_invocation: DeDirectTrfInvocation,
-        search_execution: DeSearchExecution,
-        polish_problem: OptimizationProblem,
-        polish_invocation: DirectTrfInvocation,
-        polish_outcome: DirectTrfCandidateOutcome,
-        fresh_candidate: MaterializedDirectTrfCandidate,
-    ) -> AcceptedDeDirectTrfResult:
-        return cls(
-            accepted.occurrence_identity,
-            accepted.problem_identity,
-            accepted.invocation_identity,
-            accepted.execution_identity,
-            accepted.materialization_identity,
-            accepted.parameterization_identity,
-            accepted.evaluator_parameterization_identity,
-            accepted.source_occurrence_identity,
-            accepted.source_revision,
-            accepted.controlled_ids,
-            accepted.vector,
-            accepted.chi_square,
-            accepted.evaluation_result,
-            accepted.commit_scope,
-            accepted.commit_items,
-            accepted.origin_context_identity,
-            provenance,
-            workflow_invocation,
-            search_execution,
-            polish_problem,
-            polish_invocation,
-            polish_outcome,
-            fresh_candidate,
-            occurrence_witness=accepted.occurrence_witness,
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class DeDirectTrfOutcome:
-    """Complete DE→TRF occurrence with separated stage and authority evidence."""
-
-    terminal: DeDirectTrfTerminal
-    search: DeSearchExecution
-    accounting: DeTrfTransitionAccounting
-    polish_problem: OptimizationProblem | None = field(
-        default=None,
-        repr=False,
-        compare=False,
-    )
-    polish_invocation: DirectTrfInvocation | None = field(
-        default=None,
-        repr=False,
-        compare=False,
-    )
-    polish: DirectTrfCandidateOutcome | None = field(
-        default=None,
-        repr=False,
-        compare=False,
-    )
-    root_materialization: CandidateMaterialization | None = field(
-        default=None,
-        repr=False,
-        compare=False,
-    )
-    accepted_result: AcceptedDeDirectTrfResult | None = field(
-        default=None,
-        repr=False,
-        compare=False,
-    )
-    commit_authority: LiveFitCommitAuthority | None = field(
-        default=None,
-        repr=False,
-        compare=False,
-    )
-    failure: TerminalFailure | None = None
-
-    def __post_init__(self) -> None:
-        accepted = self.terminal is DeDirectTrfTerminal.ACCEPTED
-        if accepted != (
-            self.accepted_result is not None and self.commit_authority is not None
-        ):
-            raise ValueError("Only accepted DE→TRF exposes fit commit authority")
-        if self.polish is None and (
-            self.polish_problem is not None or self.polish_invocation is not None
-        ):
-            raise ValueError("Unstarted TRF polish cannot expose partial topology")
-
-
-class DeDirectTrfInterrupted(KeyboardInterrupt):
-    """Propagated interruption carrying the frozen DE→TRF workflow outcome."""
-
-    def __init__(self, outcome: DeDirectTrfOutcome) -> None:
-        self.outcome = outcome
-        super().__init__("Native DE→TRF was interrupted")
-
-
-def _transition_accounting(
-    invocation: DeDirectTrfInvocation,
-    search: DeSearchExecution,
-    polish: DirectTrfCandidateOutcome | None,
-    *,
-    transferred: bool,
-    materialized: bool,
-) -> DeTrfTransitionAccounting:
-    return DeTrfTransitionAccounting(
-        invocation.de_objective_request_budget,
-        search.counters,
-        invocation.polish_objective_request_budget,
-        None if polish is None else polish.execution.counters,
-        int(transferred),
-        int(materialized),
-    )
-
-
-def _gate_de_to_trf_transition(
-    invocation: DeDirectTrfInvocation,
-    search: DeSearchExecution,
-    token: CancellationToken,
-) -> DeDirectTrfOutcome | None:
-    try:
-        cancelled_before_polish = token.is_cancelled
-    except KeyboardInterrupt as error:
-        outcome = DeDirectTrfOutcome(
-            DeDirectTrfTerminal.INTERRUPTED,
-            search,
-            _transition_accounting(
-                invocation,
-                search,
-                None,
-                transferred=False,
-                materialized=False,
-            ),
-            failure=TerminalFailure(
-                "interrupted",
-                "KeyboardInterrupt at DE to TRF transition gate",
-            ),
-        )
-        raise DeDirectTrfInterrupted(outcome) from error
-    if not cancelled_before_polish:
-        return None
-    return DeDirectTrfOutcome(
-        DeDirectTrfTerminal.CANCELLED,
-        search,
-        _transition_accounting(
-            invocation,
-            search,
-            None,
-            transferred=False,
-            materialized=False,
-        ),
-        failure=TerminalFailure(
-            "cancelled",
-            "Cancellation observed before DE to TRF transfer",
-        ),
-    )
-
-
-def execute_de_direct_trf(
-    problem: OptimizationProblem,
-    invocation: DeDirectTrfInvocation,
+    invocation: DeSearchInvocation,
     parameterization: ActiveParameterization,
     engine: EvaluationEngine,
     *,
     cancellation: CancellationToken | None = None,
-) -> DeDirectTrfOutcome:
-    """Run one selected-coordinate DE stage and at most one native TRF polish."""
+) -> DeSearchExecution:
+    """Run only selected-coordinate DE, without fit acceptance or commit authority."""
     _validate_de_context(problem, invocation, parameterization, engine)
     token = CancellationToken() if cancellation is None else cancellation
-    search = _run_de_search(problem, invocation, parameterization, engine, token)
-    if not search.restart_eligible:
-        terminal = {
-            DeSearchTerminal.CANCELLED: DeDirectTrfTerminal.CANCELLED,
-            DeSearchTerminal.INTERRUPTED: DeDirectTrfTerminal.INTERRUPTED,
-            DeSearchTerminal.BACKEND_FAILURE: DeDirectTrfTerminal.EXECUTION_FAILURE,
-            DeSearchTerminal.IMPLEMENTATION_FAILURE: (
-                DeDirectTrfTerminal.EXECUTION_FAILURE
-            ),
-        }.get(search.terminal, DeDirectTrfTerminal.SEARCH_UNSUCCESSFUL)
-        outcome = DeDirectTrfOutcome(
-            terminal,
-            search,
-            _transition_accounting(
-                invocation,
-                search,
-                None,
-                transferred=False,
-                materialized=False,
-            ),
-            failure=search.failure,
-        )
-        if terminal is DeDirectTrfTerminal.INTERRUPTED:
-            raise DeDirectTrfInterrupted(outcome)
-        return outcome
-    try:
-        _validate_de_transition_lineage(problem, invocation, search)
-    except Exception as error:  # noqa: BLE001 - transition lineage fails closed
-        return DeDirectTrfOutcome(
-            DeDirectTrfTerminal.EXECUTION_FAILURE,
-            search,
-            _transition_accounting(
-                invocation,
-                search,
-                None,
-                transferred=False,
-                materialized=False,
-            ),
-            failure=TerminalFailure(
-                "de_search_lineage_failure",
-                f"{type(error).__name__}: {error}",
-            ),
-        )
-    transition_failure = _gate_de_to_trf_transition(invocation, search, token)
-    if transition_failure is not None:
-        return transition_failure
-    polish_problem, polish_invocation = _derive_polish_problem(
-        problem,
-        invocation,
-        search,
-    )
-    try:
-        polish = execute_direct_trf_candidate(
-            polish_problem,
-            polish_invocation,
-            parameterization,
-            engine,
-            cancellation=token,
-        )
-    except DirectTrfInterrupted as error:
-        polish = DirectTrfCandidateOutcome(
-            DirectTrfCandidateTerminal.CANCELLED,
-            error.execution,
-            error.materialization,
-        )
-        outcome = DeDirectTrfOutcome(
-            DeDirectTrfTerminal.INTERRUPTED,
-            search,
-            _transition_accounting(
-                invocation,
-                search,
-                polish,
-                transferred=True,
-                materialized=False,
-            ),
-            polish_problem,
-            polish_invocation,
-            polish,
-            failure=TerminalFailure(
-                "interrupted", "KeyboardInterrupt during TRF polish"
-            ),
-        )
-        raise DeDirectTrfInterrupted(outcome) from error
-    if polish.terminal is not DirectTrfCandidateTerminal.SUCCESS:
-        terminal = {
-            DirectTrfCandidateTerminal.CANCELLED: DeDirectTrfTerminal.CANCELLED,
-        }.get(polish.terminal, DeDirectTrfTerminal.POLISH_UNSUCCESSFUL)
-        return DeDirectTrfOutcome(
-            terminal,
-            search,
-            _transition_accounting(
-                invocation,
-                search,
-                polish,
-                transferred=True,
-                materialized=False,
-            ),
-            polish_problem,
-            polish_invocation,
-            polish,
-            failure=polish.execution.failure,
-        )
-    try:
-        _validate_de_polish_transition_lineage(
-            problem,
-            invocation,
-            search,
-            polish_problem,
-            polish_invocation,
-            polish,
-        )
-    except Exception as error:  # noqa: BLE001 - polish lineage fails closed
-        return DeDirectTrfOutcome(
-            DeDirectTrfTerminal.EXECUTION_FAILURE,
-            search,
-            _transition_accounting(
-                invocation,
-                search,
-                polish,
-                transferred=True,
-                materialized=False,
-            ),
-            polish_problem,
-            polish_invocation,
-            polish,
-            failure=TerminalFailure(
-                "de_polish_lineage_failure",
-                f"{type(error).__name__}: {error}",
-            ),
-        )
-    polished_candidate = cast("MaterializedDirectTrfCandidate", polish.candidate)
-    fresh = _materialize_derived_direct_trf_candidate_for_root(
-        problem,
-        polished_candidate,
-        parameterization,
-        engine,
-        cancellation=token,
-    )
-    if isinstance(fresh, CandidateMaterialization):
-        terminal = {
-            MaterializationTerminal.CANCELLED: DeDirectTrfTerminal.CANCELLED,
-            MaterializationTerminal.INTERRUPTED: DeDirectTrfTerminal.INTERRUPTED,
-        }.get(fresh.terminal, DeDirectTrfTerminal.MATERIALIZATION_FAILURE)
-        materialization = fresh
-        outcome = DeDirectTrfOutcome(
-            terminal,
-            search,
-            _transition_accounting(
-                invocation,
-                search,
-                polish,
-                transferred=True,
-                materialized=True,
-            ),
-            polish_problem,
-            polish_invocation,
-            polish,
-            materialization,
-            failure=materialization.failure,
-        )
-        if terminal is DeDirectTrfTerminal.INTERRUPTED:
-            raise DeDirectTrfInterrupted(outcome)
-        return outcome
-    search_candidate = cast("DeSearchCandidate", search.best_candidate)
-    provenance = DePolishProvenance(
-        invocation.identity,
-        problem.identity,
-        search.identity,
-        search_candidate.identity,
-        search.terminal,
-        polish_problem.identity,
-        polish_invocation.identity,
-        polish.execution.identity,
-        polished_candidate.identity,
-    )
-    accepted_base = _accept_materialized_fit_for_derived_workflow(
-        problem=problem,
-        invocation_identity=polish_invocation.identity,
-        execution_identity=polish.execution.identity,
-        materialization=fresh.materialization,
-        vector=fresh.vector,
-        chi_square=fresh.chi_square,
-        evaluation_result=fresh.evaluation_result,
-        authority_context_identity=provenance.identity,
-    )
-    accepted = AcceptedDeDirectTrfResult.from_accepted(
-        accepted_base,
-        provenance,
-        invocation,
-        search,
-        polish_problem,
-        polish_invocation,
-        polish,
-        fresh,
-    )
-    authority = _grant_derived_fit_commit_authority(accepted, problem)
-    return DeDirectTrfOutcome(
-        DeDirectTrfTerminal.ACCEPTED,
-        search,
-        _transition_accounting(
-            invocation,
-            search,
-            polish,
-            transferred=True,
-            materialized=True,
-        ),
-        polish_problem,
-        polish_invocation,
-        polish,
-        fresh.materialization,
-        accepted,
-        authority,
-    )
-
-
-def validate_de_commit_lineage(
-    accepted: AcceptedDeDirectTrfResult,
-    problem: OptimizationProblem,
-) -> None:
-    """Fail closed unless accepted evidence retains exact DE→TRF lineage."""
-    provenance = accepted.de_polish_provenance
-    invocation = accepted.workflow_invocation
-    search = accepted.search_execution
-    polish_problem = accepted.polish_problem
-    polish_invocation = accepted.polish_invocation
-    polish = accepted.polish_outcome
-    fresh = accepted.fresh_candidate
-    search_candidate = search.best_candidate
-    polished_candidate = polish.candidate
-    derivation = polish_problem.derivation
-    if (
-        accepted.problem_identity != problem.identity
-        or accepted.origin_context_identity != provenance.identity
-        or provenance.workflow_invocation_identity != invocation.identity
-        or provenance.root_problem_identity != problem.identity
-        or provenance.search_execution_identity != search.identity
-        or search_candidate is None
-        or provenance.search_candidate_identity != search_candidate.identity
-        or provenance.search_terminal is not search.terminal
-        or not search.restart_eligible
-        or not isinstance(derivation, DePolishProblemDerivation)
-        or derivation.root_problem_identity != problem.identity
-        or derivation.workflow_invocation_identity != invocation.identity
-        or derivation.search_execution_identity != search.identity
-        or derivation.search_candidate_identity != search_candidate.identity
-        or provenance.polish_problem_identity != polish_problem.identity
-        or provenance.polish_invocation_identity != polish_invocation.identity
-        or provenance.polish_execution_identity != polish.execution.identity
-        or polish.terminal is not DirectTrfCandidateTerminal.SUCCESS
-        or polished_candidate is None
-        or provenance.polished_candidate_identity != polished_candidate.identity
-        or fresh.problem_identity != problem.identity
-        or accepted.invocation_identity != polish_invocation.identity
-        or accepted.execution_identity != polish.execution.identity
-        or accepted.materialization_identity != fresh.materialization.identity
-        or accepted.vector != fresh.vector
-        or accepted.chi_square != fresh.chi_square
-        or accepted.evaluation_result is not fresh.evaluation_result
-    ):
-        raise DirectTrfConstructionError(
-            "Accepted DE→TRF result lacks exact canonical polish authority"
-        )
-
-
-def commit_de_accepted_fit(
-    accepted: AcceptedDeDirectTrfResult,
-    authority: LiveFitCommitAuthority,
-    *,
-    problem: OptimizationProblem,
-    parameterization: ActiveParameterization,
-    analysis_values: AnalysisValues,
-) -> CommitReceipt:
-    """Commit one exact accepted DE→TRF result through the native boundary."""
-    if not isinstance(accepted, AcceptedDeDirectTrfResult):
-        raise DirectTrfConstructionError(
-            "DE→TRF commit requires accepted workflow evidence"
-        )
-    validate_de_commit_lineage(accepted, problem)
-    return commit_accepted_fit(
-        accepted,
-        authority,
-        problem=problem,
-        parameterization=parameterization,
-        analysis_values=analysis_values,
-    )
+    return _run_de_search(problem, invocation, parameterization, engine, token)
