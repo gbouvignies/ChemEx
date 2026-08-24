@@ -18,10 +18,6 @@ class FormatOrigin(StrEnum):
     V2 = "v2"
 
 
-class LocalFit(StrEnum):
-    TRF = "trf"
-
-
 @dataclass(frozen=True, slots=True)
 class SourceRef:
     filename: Path
@@ -311,7 +307,6 @@ class StepPlan:
     role_actions: tuple[RoleAction, ...] = ()
     search: GridSearch | DeSearch | None = None
     statistics: StatisticsPlan | None = None
-    local_fit: LocalFit = LocalFit.TRF
 
 
 @dataclass(frozen=True, slots=True)
