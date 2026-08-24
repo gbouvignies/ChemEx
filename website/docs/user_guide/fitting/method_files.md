@@ -113,8 +113,50 @@ Omitting `ROLES_FROM` means no role inheritance, even when the preceding step
 changed roles. Omitting `INCLUDE` and `EXCLUDE` selects all profiles for that
 step; selection never inherits in version 2. `SEARCH.GRID.AXES` accepts strict
 `lin(...)`, `log(...)`, and `values(...)` expressions; the legacy bare tuple
-form is not accepted. Differential-evolution product execution is not yet
-available through version 2 method files.
+form is not accepted.
+
+### Selected-coordinate DE followed by full TRF
+
+Use `SEARCH.DE` when a small number of global or basin-defining coordinates
+need broad stochastic coverage and a Cartesian GRID would require too many
+complete local fits:
+
+```toml title="method-de-v2.toml"
+FORMAT_VERSION = 2
+
+[STEP]
+ROLES = [
+    { FIT = ["PB", "KEX_AB", "DW_AB"] },
+]
+
+[STEP.SEARCH.DE]
+SEED = 597
+COORDINATES = [
+    "[PB] = log(0.001, 0.1)",
+    "[KEX_AB] = log(100.0, 5000.0)",
+]
+```
+
+DE searches only `PB` and `KEX_AB`. During that search, every other independent
+coordinate remains at the value captured at the start of the method step. The
+best eligible candidate then initializes one fresh normal TRF fit that releases
+the complete final `FIT` set, including every fitted `DW_AB`. Only that final
+TRF result can be accepted, committed, or used for deterministic uncertainty
+and requested statistics. The current committed value may lie outside its
+declared DE range; ChemEx preserves that captured value and initializes the DE
+backend inside the declared search box.
+
+Every DE coordinate must resolve to exactly one final independent `FIT`
+parameter. Its `lin(low, high)` or `log(low, high)` range must be finite,
+strictly ordered, and inside the parameter's physical bounds; logarithmic lower
+bounds must be positive. `SEED` is a required unsigned 64-bit integer. DE
+population and stopping details are ChemEx policy rather than method-file
+controls.
+
+Use GRID for deterministic Cartesian multistart. Use selected-coordinate DE
+when Cartesian coverage of a few basin coordinates is impractical. A complete
+three-state DCEST example is shipped as
+`examples/Experiments/DCEST_15N_3States/Methods/method_de_v2.toml`.
 
 ## Setting Parameter Behavior
 

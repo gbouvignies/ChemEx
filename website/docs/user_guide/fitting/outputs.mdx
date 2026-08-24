@@ -186,6 +186,11 @@ each grid seed. One- and two-dimensional aggregate views are written as
 `grid_1d.pdf` and `grid_2d.pdf` when applicable. Fit-component-local GRID files
 are execution details and are not published as separate results.
 
+Selected-coordinate DE is only an initializer for one normal full-coordinate
+TRF fit, so it creates no separate DE result tree. Successful DE-assisted fits
+use the same `Parameters/`, `Data/`, `Plots/`, `Statistics/`, and
+`statistics.toml` outputs as an ordinary fit.
+
 ### `statistics.toml`
 
 Contains goodness-of-fit statistics, such as χ<sup>2</sup>.

@@ -180,6 +180,7 @@ def run_methods(
             plot_level,
             session=session,
             parameterization=parameterization,
+            search=step.search,
         )
         _run_requested_native_statistics(
             experiments,

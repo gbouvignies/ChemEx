@@ -528,11 +528,10 @@ def test_log_coordinate_rejects_non_positive_non_finite_or_empty_bounds(
         DeSearchCoordinate("log-rate", lower, upper, "log", 0)
 
 
-def test_log_coordinate_rejects_a_start_outside_the_declared_search_range() -> None:
+def test_log_coordinate_maps_a_captured_value_outside_the_search_range() -> None:
     coordinate = DeSearchCoordinate("log-rate", 0.1, 10.0, "log", 0)
 
-    with pytest.raises(DirectTrfConstructionError, match="outside its search range"):
-        coordinate.to_solver(10.1)
+    assert coordinate.to_solver(20.0) == pytest.approx(math.log(20.0))
 
 
 def _trf_backend_result(candidate: Array, residuals: Array) -> SimpleNamespace:

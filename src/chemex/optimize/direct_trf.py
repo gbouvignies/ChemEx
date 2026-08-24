@@ -1171,6 +1171,31 @@ class OptimizationProblem:
         self.validate_derived_problem(child)
         return child
 
+    def restart_from(self, start: Sequence[float]) -> OptimizationProblem:
+        """Create a fresh complete root problem with a new full-coordinate start."""
+        if not self.acceptance_authority:
+            raise DirectTrfConstructionError(
+                "Only a complete root problem can create a full-coordinate restart"
+            )
+        return OptimizationProblem(
+            self.evaluation_plan_identity,
+            self.parameterization_identity,
+            self.evaluator_parameterization_identity,
+            self.constraint_program_identity,
+            self.configuration_identity,
+            self.source_snapshot,
+            self.independent_items,
+            self.controlled_ids,
+            self.held_items,
+            tuple(start),
+            self.lower_bounds,
+            self.upper_bounds,
+            self.commit_scope,
+            scalarization_version=self.scalarization_version,
+            affine_half_spaces=self.affine_half_spaces,
+            affine_equalities=self.affine_equalities,
+        )
+
     def validate_derived_problem(self, child: OptimizationProblem) -> None:
         """Fail closed when a child changes root-owned scientific context."""
         derivation = child.derivation

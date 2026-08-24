@@ -321,15 +321,12 @@ def _validate_de(
     model: SealedParameterModel,
 ) -> None:
     seen: set[str] = set()
-    for coordinate in search.coordinates:
-        matches = _matches(coordinate.selector, model, coordinate.source)
-        if len(matches) != 1:
-            raise MethodFormatError(
-                "Each DE entry must resolve to exactly one final independent "
-                f"FIT coordinate; matched {len(matches)}",
-                coordinate.source,
-            )
-        param_id = matches[0]
+    resolved = resolve_de_coordinates(search, model)
+    for coordinate, (param_id, low, high, _semantics) in zip(
+        search.coordinates,
+        resolved,
+        strict=True,
+    ):
         if roles[param_id] is not ParameterRole.FIT:
             raise MethodFormatError(
                 f"DE target {param_id} is not a final independent FIT coordinate",
@@ -342,10 +339,35 @@ def _validate_de(
         seen.add(param_id)
         _check_bounds(
             param_id,
-            (coordinate.range.low, coordinate.range.high),
+            (low, high),
             model,
             coordinate.source,
         )
+
+
+def resolve_de_coordinates(
+    search: DeSearch,
+    model: SealedParameterModel,
+) -> tuple[tuple[str, float, float, str], ...]:
+    """Resolve validated canonical DE coordinates to stable parameter IDs."""
+    resolved: list[tuple[str, float, float, str]] = []
+    for coordinate in search.coordinates:
+        matches = _matches(coordinate.selector, model, coordinate.source)
+        if len(matches) != 1:
+            raise MethodFormatError(
+                "Each DE entry must resolve to exactly one final independent "
+                f"FIT coordinate; matched {len(matches)}",
+                coordinate.source,
+            )
+        resolved.append(
+            (
+                matches[0],
+                coordinate.range.low,
+                coordinate.range.high,
+                "linear" if coordinate.range.scale.value == "lin" else "log",
+            )
+        )
+    return tuple(resolved)
 
 
 def validate_method_plan(plan: MethodPlan, model: SealedParameterModel) -> None:

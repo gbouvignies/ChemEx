@@ -1,0 +1,19 @@
+FORMAT_VERSION = 2
+
+[DE]
+INCLUDE = ["K19N-HN"]
+ROLES = [
+    { FIX = ["KEX_BC"] },
+    { FIT = ["PB", "PC", "KEX_AB", "KEX_AC", "DW_AB", "DW_AC"] },
+]
+
+[DE.SEARCH.DE]
+SEED = 597
+COORDINATES = [
+    "[PB] = log(0.001, 0.2)",
+    "[PC] = log(0.001, 0.2)",
+    "[KEX_AB] = log(10.0, 5000.0)",
+    "[KEX_AC] = log(10.0, 5000.0)",
+    "[DW_AB, NUC->K19N] = lin(-15.0, 15.0)",
+    "[DW_AC, NUC->K19N] = lin(-15.0, 15.0)",
+]

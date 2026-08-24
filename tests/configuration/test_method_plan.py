@@ -564,6 +564,26 @@ COORDINATES = ["[PB, B0->600MHz] = lin(0.01, 0.2)"]
     read_method_plan([exact]).validate(model)
 
 
+def test_de_validation_rejects_ranges_outside_physical_bounds(tmp_path: Path) -> None:
+    model = _parameter_model(
+        ParamDefinition("pb", "PB", "", (), 0.1, 0.0, 1.0),
+    )
+    method = _write(
+        tmp_path / "out-of-bounds-de.toml",
+        """
+FORMAT_VERSION = 2
+[STEP]
+ROLES = [{ FIT = ["PB"] }]
+[STEP.SEARCH.DE]
+SEED = 597
+COORDINATES = ["[PB] = lin(0.1, 1.1)"]
+""",
+    )
+
+    with pytest.raises(MethodFormatError, match="outside physical bounds"):
+        read_method_plan([method]).validate(model)
+
+
 def test_representative_multistep_v1_and_v2_workflows_are_structurally_equivalent(
     tmp_path: Path,
 ) -> None:
@@ -619,12 +639,15 @@ STEPS = 5000
     assert read_method_plan([v1]).steps == read_method_plan([v2]).steps
 
 
-def test_all_shipped_v1_methods_normalize_without_compatibility_regressions() -> None:
+def test_all_shipped_methods_normalize_without_compatibility_regressions() -> None:
     methods = sorted((ROOT / "examples").glob("**/Methods/*.toml"))
 
-    assert len(methods) == 29
+    assert len(methods) == 30
     for method in methods:
         read_method_plan([method])
+
+    de_example = next(path for path in methods if path.name == "method_de_v2.toml")
+    assert isinstance(read_method_plan([de_example]).steps[0].search, DeSearch)
 
 
 def test_method_plan_is_deeply_immutable(tmp_path: Path) -> None:

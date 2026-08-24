@@ -1,9 +1,9 @@
-"""Selected-coordinate differential evolution to native TRF qualification (#597).
+"""Qualified selected-coordinate differential-evolution machinery.
 
-This isolated native seam is intentionally not wired into production dispatch.
-It owns an immutable selected-coordinate DE plan rooted in one complete native
-problem.  Execution and the authoritative TRF transition are added in vertical
-slices below the same seam.
+The product dispatcher reuses only the non-authoritative search stage. Its
+winning initializer enters a fresh normal grouped Direct TRF transaction. The
+older single-component DE→TRF authority types remain isolated for their #597
+qualification coverage and are not a second product acceptance or commit path.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ from chemex.typing import Array
 
 _SCHEMA_VERSION = 1
 _DE_WORKFLOW_VERSION = "native-selected-coordinate-de-direct-trf-v1"
-_DE_BACKEND_POLICY_VERSION = "scipy-de-best1bin-lhs-deferred-pcg64-v1"
+_DE_BACKEND_POLICY_VERSION = "scipy-de-best1bin-lhs-deferred-pcg64-box-midpoint-v2"
 _UINT64_MAX = 2**64 - 1
 
 
@@ -170,16 +170,21 @@ class DeSearchCoordinate:
             return math.log(self.physical_lower), math.log(self.physical_upper)
         return self.physical_bounds
 
+    @property
+    def solver_initial(self) -> float:
+        """Return a deterministic in-box initializer without changing captured state."""
+        lower, upper = self.solver_bounds
+        return math.fsum((0.5 * lower, 0.5 * upper))
+
     def to_solver(self, physical_value: float) -> float:
-        value = _finite_binary64(physical_value, name=f"DE start {self.param_id!r}")
-        if not self.physical_lower <= value <= self.physical_upper:
-            raise DirectTrfConstructionError(
-                f"DE start for {self.param_id!r} is outside its search range"
-            )
+        value = _finite_binary64(
+            physical_value,
+            name=f"DE physical coordinate {self.param_id!r}",
+        )
         if self.semantics is DeCoordinateSemantics.LOG:
             if value <= 0.0:
                 raise DirectTrfConstructionError(
-                    f"Logarithmic DE start for {self.param_id!r} must be positive"
+                    f"Logarithmic DE coordinate for {self.param_id!r} must be positive"
                 )
             return math.log(value)
         return value
@@ -336,7 +341,6 @@ def _validate_invocation_search_contract(
             raise DirectTrfConstructionError(
                 f"DE search range for {coordinate.param_id!r} exceeds physical bounds"
             )
-        coordinate.to_solver(search_problem.start[index])
 
 
 def _expected_search_projection(
@@ -545,12 +549,7 @@ class DeDirectTrfInvocation:
                     _float_token(value) for value in self.search_problem.upper_bounds
                 ],
                 "solver_x0": [
-                    coordinate.to_solver(value)
-                    for coordinate, value in zip(
-                        self.search_coordinates,
-                        self.search_problem.start,
-                        strict=True,
-                    )
+                    coordinate.solver_initial for coordinate in self.search_coordinates
                 ],
             },
             "search_coordinates": [
@@ -676,7 +675,6 @@ class DeDirectTrfInvocation:
                 raise DirectTrfConstructionError(
                     f"DE search range for {item.param_id!r} exceeds physical bounds"
                 )
-            item.to_solver(root_starts[item.param_id])
         canonical_selected_ids = tuple(item.param_id for item in coordinates)
         selected = set(canonical_selected_ids)
         held_items = tuple(
@@ -1432,12 +1430,7 @@ def _run_de_search(
         )
     solver_start = np.asarray(
         tuple(
-            coordinate.to_solver(value)
-            for coordinate, value in zip(
-                invocation.search_coordinates,
-                invocation.search_problem.start,
-                strict=True,
-            )
+            coordinate.solver_initial for coordinate in invocation.search_coordinates
         ),
         dtype=np.float64,
     )
@@ -1475,6 +1468,20 @@ def _run_de_search(
             failure=TerminalFailure("cancelled", "Cancellation after DE backend"),
         )
     return _finish_de_backend(live, result, preflight.identity)
+
+
+def execute_de_search(
+    problem: OptimizationProblem,
+    invocation: DeDirectTrfInvocation,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    *,
+    cancellation: CancellationToken | None = None,
+) -> DeSearchExecution:
+    """Run only selected-coordinate DE, without fit acceptance or commit authority."""
+    _validate_de_context(problem, invocation, parameterization, engine)
+    token = CancellationToken() if cancellation is None else cancellation
+    return _run_de_search(problem, invocation, parameterization, engine, token)
 
 
 def _derive_polish_problem(
@@ -1913,9 +1920,14 @@ def execute_de_direct_trf(
     cancellation: CancellationToken | None = None,
 ) -> DeDirectTrfOutcome:
     """Run one selected-coordinate DE stage and at most one native TRF polish."""
-    _validate_de_context(problem, invocation, parameterization, engine)
     token = CancellationToken() if cancellation is None else cancellation
-    search = _run_de_search(problem, invocation, parameterization, engine, token)
+    search = execute_de_search(
+        problem,
+        invocation,
+        parameterization,
+        engine,
+        cancellation=token,
+    )
     if not search.restart_eligible:
         terminal = {
             DeSearchTerminal.CANCELLED: DeDirectTrfTerminal.CANCELLED,
