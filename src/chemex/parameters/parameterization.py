@@ -1126,7 +1126,7 @@ def _replace_selectors(right: str) -> tuple[str, Mapping[str, str]]:
     return "".join(parts), MappingProxyType(replacements)
 
 
-def _compatible_context(
+def compatible_reference_context(
     candidate: ParamDefinition,
     target: ParamDefinition,
     selector: ParamName,
@@ -1190,7 +1190,8 @@ def _resolve_reference(
     ranked = tuple(
         (candidate, context)
         for candidate in non_self
-        if (context := _compatible_context(candidate, target, selector)) is not None
+        if (context := compatible_reference_context(candidate, target, selector))
+        is not None
     )
     if not ranked:
         raise NoParameterMatchError(

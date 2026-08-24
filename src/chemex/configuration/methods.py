@@ -18,6 +18,9 @@ from pydantic import (
 )
 from pydantic.types import NonNegativeInt, PositiveInt
 
+from chemex.configuration.method_plan import MethodFormatError, MethodPlan, SourceRef
+from chemex.configuration.method_v1 import adapt_v1
+from chemex.configuration.method_v2 import adapt_v2
 from chemex.configuration.utils import key_to_lower
 from chemex.messages import print_method_error
 from chemex.parameters.spin_system import SpinSystem
@@ -138,6 +141,104 @@ class Method(BaseModel):
 
 
 Methods = dict[str, Method]
+type _MethodSource = tuple[Path, dict[str, object]]
+type _RawStep = tuple[Path, str, dict[str, object]]
+
+
+def _method_format(sources: list[_MethodSource]) -> bool:
+    formats: set[int] = set()
+    for filename, data in sources:
+        version_items = [
+            value for key, value in data.items() if str(key).lower() == "format_version"
+        ]
+        if len(version_items) > 1:
+            raise MethodFormatError(
+                "Duplicate FORMAT_VERSION declaration",
+                SourceRef(filename, "<file>", "FORMAT_VERSION"),
+            )
+        if not version_items:
+            formats.add(1)
+        elif (
+            isinstance(version_items[0], int)
+            and not isinstance(version_items[0], bool)
+            and version_items[0] == 2
+        ):
+            formats.add(2)
+        else:
+            raise MethodFormatError(
+                "FORMAT_VERSION supports only version 2; omit it for legacy v1",
+                SourceRef(filename, "<file>", "FORMAT_VERSION"),
+            )
+    if len(formats) > 1:
+        filename = sources[-1][0]
+        raise MethodFormatError(
+            "A mixed v1/v2 method invocation is not supported",
+            SourceRef(filename, "<file>", "FORMAT_VERSION"),
+        )
+    return formats == {2}
+
+
+def _explicit_model_values(model: BaseModel) -> dict[str, object]:
+    return {
+        field: _explicit_model_values(value) if isinstance(value, BaseModel) else value
+        for field in model.model_fields_set
+        if (value := getattr(model, field)) is not None
+    }
+
+
+def _validate_v1_step(
+    filename: Path, name: str, settings: dict[str, object]
+) -> dict[str, object]:
+    try:
+        return _explicit_model_values(Method.model_validate(settings))
+    except ValidationError as error:
+        first = error.errors()[0]
+        field = ".".join(str(item).upper() for item in first["loc"])
+        raise MethodFormatError(
+            str(first["msg"]),
+            SourceRef(filename, name, field or "<step>"),
+        ) from error
+
+
+def _raw_steps(sources: list[_MethodSource], *, is_v2: bool) -> list[_RawStep]:
+    raw_steps: list[_RawStep] = []
+    step_positions: dict[str, int] = {}
+    for filename, data in sources:
+        for name, settings in data.items():
+            if str(name).lower() == "format_version":
+                continue
+            if not isinstance(settings, dict):
+                raise MethodFormatError(
+                    "Method steps must be TOML tables",
+                    SourceRef(filename, str(name), "<step>"),
+                )
+            normalized_settings = {str(key): value for key, value in settings.items()}
+            if not is_v2:
+                normalized_settings = _validate_v1_step(
+                    filename, name, normalized_settings
+                )
+            if name in step_positions:
+                if is_v2:
+                    raise MethodFormatError(
+                        f"Duplicate v2 step {name!r}",
+                        SourceRef(filename, str(name), "<step>"),
+                    )
+                raw_steps[step_positions[name]] = (filename, name, normalized_settings)
+            else:
+                step_positions[name] = len(raw_steps)
+                raw_steps.append((filename, name, normalized_settings))
+    return raw_steps
+
+
+def read_method_plan(filenames: Iterable[Path]) -> MethodPlan:
+    sources: list[_MethodSource] = [
+        (filename, read_toml(filename)) for filename in filenames
+    ]
+    is_v2 = _method_format(sources)
+    raw_steps = _raw_steps(sources, is_v2=is_v2)
+    if is_v2:
+        return adapt_v2(raw_steps)
+    return adapt_v1(raw_steps)
 
 
 def read_methods(filenames: Iterable[Path]) -> Methods:
