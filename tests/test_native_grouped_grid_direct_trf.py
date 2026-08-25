@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 import chemex.optimize.grouped_grid_direct_trf as grouped_grid
-from chemex.configuration.methods import Selection, read_methods
+from chemex.configuration.methods import Selection, read_method_plan
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import EvaluationEngine
@@ -72,9 +72,9 @@ def _grouped_grid_problem() -> tuple[
     assert session.try_build_analysis_values(), repr(
         session.parameter_factory.native_construction_error
     )
-    parameterization = session.compile_parameterization(
-        read_methods([METHOD])["DEFAULT"],
-        experiments.param_ids,
+    plan = read_method_plan([METHOD])
+    parameterization = session.compile_parameterization_from_actions(
+        plan.effective_role_actions()["DEFAULT"], experiments.param_ids
     )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration

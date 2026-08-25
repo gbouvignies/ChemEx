@@ -503,6 +503,16 @@ def print_reading_methods() -> None:
     console.print("\nReading methods...", style="bold yellow")
 
 
+def print_method_v1_deprecation_warning() -> None:
+    """Warn that an explicitly supplied method uses the deprecated v1 format."""
+    console.print(
+        "[yellow] -- WARNING: Method format v1 is deprecated and is supported "
+        "only during the frozen compatibility window. V1-only spellings, "
+        'including FITMETHOD and its "least_squares" alias, follow the same '
+        "removal boundary. Use FORMAT_VERSION = 2 for new method files. --"
+    )
+
+
 def print_start_fit() -> None:
     """Display a message indicating the start of the fitting process."""
     console.print("\nStarting the fits...", style="bold yellow")
@@ -949,8 +959,9 @@ def print_no_duplicate_warning(filename: Path) -> None:
 
 
 FITMETHOD_ERROR_MESSAGE = """\
-  - "FITMETHOD" supports only "trf" (the default).
-    "least_squares" is accepted temporarily as an alias for "trf".
+  - "FITMETHOD" is deprecated v1-only syntax and supports only "trf".
+    "least_squares" remains an alias only during the v1 compatibility window.
+    Canonical v2 omits FITMETHOD because TRF is implicit.
     Historical optimizer names, including "leastsq" and
     "differential_evolution", are not supported."""
 

@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 from scipy.optimize import least_squares
 
-from chemex.configuration.methods import Method, Selection, read_methods
+from chemex.configuration.methods import Method, Selection, read_method_plan
 from chemex.configuration.parameters import read_defaults
 from chemex.evaluation.native import (
     BoundEvaluator,
@@ -132,8 +132,10 @@ def _accepted_relaxation_fit() -> tuple[
     assert session.try_build_analysis_values(), repr(
         session.parameter_factory.native_construction_error
     )
-    method = read_methods([METHOD])["DEFAULT"]
-    parameterization = session.compile_parameterization(method, experiments.param_ids)
+    plan = read_method_plan([METHOD])
+    parameterization = session.compile_parameterization_from_actions(
+        plan.effective_role_actions()["DEFAULT"], experiments.param_ids
+    )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration
     assert configuration is not None
@@ -165,7 +167,7 @@ def _accepted_step1_profile_fit(
 ]:
     session = AnalysisSession.create()
     session.set_model("2st")
-    method = read_methods([example / "Methods/method.toml"])["STEP1"]
+    plan = read_method_plan([example / "Methods/method.toml"])
     experiments = build_experiments(
         sorted((example / "Experiments").glob("*.toml")),
         Selection(
@@ -178,7 +180,9 @@ def _accepted_step1_profile_fit(
         read_defaults([example / "Parameters/parameters.toml"])
     )
     assert session.try_build_analysis_values()
-    parameterization = session.compile_parameterization(method, experiments.param_ids)
+    parameterization = session.compile_parameterization_from_actions(
+        plan.effective_role_actions()["STEP1"], experiments.param_ids
+    )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration
     assert configuration is not None

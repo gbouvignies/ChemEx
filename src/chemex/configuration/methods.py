@@ -115,8 +115,9 @@ class Method(BaseModel):
             if normalized == "trf":
                 return normalized
         msg = (
-            "FITMETHOD supports only 'trf'; 'least_squares' is accepted as a "
-            "temporary alias"
+            "FITMETHOD supports only 'trf'; 'least_squares' is deprecated "
+            "v1-only syntax accepted during the v1 compatibility window; "
+            "canonical v2 omits FITMETHOD because TRF is implicit"
         )
         raise ValueError(msg)
 

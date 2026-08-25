@@ -1,5 +1,12 @@
+FORMAT_VERSION = 2
+
 [STEP1]
-FIX = ["J_B"]
+ROLES = [
+  { FIX = ["J_B"] },
+]
 
 [STEP2]
-FIT = ["J_B"]
+ROLES_FROM = "STEP1"
+ROLES = [
+  { FIT = ["J_B"] },
+]

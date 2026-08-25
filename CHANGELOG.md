@@ -21,6 +21,11 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   statistics; DE failures never fall back to the old committed start.
 
 ### Changed
+- Converted all shipped method examples to canonical method format v2 and made
+  v2 the primary authoring format in the fitting guide. The guide now documents
+  ordered complete-role overrides, explicit `ROLES_FROM`, automatic committed
+  value continuity, GRID/selected-coordinate DE/implicit TRF, and the frozen v1
+  deprecation window. No fitting or numerical behavior changed.
 - Removed the disconnected native fit-manifest, artifact-catalogue, Components,
   PartialEvidence, historical run-reader, canonical-method-envelope, and broad
   workflow-provenance architecture. Current covariance and constrained evidence
@@ -28,7 +33,6 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   environment identity.
 - Removed the migration-only canonical numerical lane, pinned environment and
   attestation machinery, calibration probes, and historical baseline fixtures.
-  Native manifests no longer contain those migration-only baseline fields.
 - Covariance-derived local standard errors are now reported when an otherwise
   valid covariance lies within the existing three-sigma boundary threshold,
   including at a bound. Boundary evidence and the threshold remain unchanged,
@@ -66,8 +70,9 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   and live legacy-observation compatibility paths. ChemEx deterministic fitting
   now uses bounded SciPy TRF exclusively through the native ChemEx parameter and
   evaluation stack; native GRID, MC, BS, BSN, MCMC, and statistics behavior is
-  unchanged. `FITMETHOD = "trf"` remains the supported spelling and
-  `"least_squares"` remains its temporary alias; arbitrary optimizer forwarding
+  unchanged. Canonical v2 omits `FITMETHOD` because TRF is implicit. Deprecated
+  v1 continues to accept `FITMETHOD = "trf"` and its `"least_squares"` alias
+  only for the frozen v1 compatibility window; arbitrary optimizer forwarding
   is unavailable. `lmfit`, `asteval`, and `numdifftools` are no longer runtime
   dependencies.
 - Renamed misleading statistical summary fields without changing sampling or
@@ -102,13 +107,14 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   and nested method forms. Native MCMC requires finite, strictly ordered bounds
   and rejects `UPDATE_PARAMETERS = true`; failed or interrupted chains publish
   incomplete diagnostics without summary, sample, correlation, or plot files.
-  The public `FITMETHOD` surface is now closed to `trf`; omitted values default
-  to `trf`, and `least_squares` remains a temporary canonicalized alias. Legacy
-  and arbitrary optimizer spellings fail during method validation. Ordinary
+  The deprecated v1 `FITMETHOD` surface is closed to `trf`, with
+  `least_squares` retained as a canonicalized alias for the same frozen
+  compatibility window; v2 omits `FITMETHOD`. Other legacy and arbitrary
+  optimizer spellings fail during method validation. Ordinary
   filtering, revision-zero model/default resolution, simulation
   back-calculation, and native fit publication no longer construct lmfit
-  parameter containers. `GRID` with `STATISTICS` keeps its warning and native
-  GRID-only compatibility behavior.
+  parameter containers. After successful GRID aggregate acceptance and atomic
+  commit, requested statistics analyze the committed deterministic result.
 
 ### Infrastructure
 - Removed the unused `B1FieldConfig` model and its `default_distribution_config`

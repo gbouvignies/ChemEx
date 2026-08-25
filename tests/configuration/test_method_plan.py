@@ -10,6 +10,7 @@ from chemex.configuration.method_plan import (
     DeSearch,
     FitAction,
     FixAction,
+    FormatOrigin,
     MethodFormatError,
     ProfileSelection,
 )
@@ -418,7 +419,7 @@ ROLES_FROM = "SECOND"
         tmp_path / "fitmethod.toml",
         'FORMAT_VERSION = 2\n[STEP]\nFITMETHOD = "trf"\n',
     )
-    with pytest.raises(MethodFormatError, match="Unsupported v2 field FITMETHOD"):
+    with pytest.raises(MethodFormatError, match="V2 has no FITMETHOD.*TRF is implicit"):
         read_method_plan([fitmethod])
 
 
@@ -639,14 +640,16 @@ STEPS = 5000
     assert read_method_plan([v1]).steps == read_method_plan([v2]).steps
 
 
-def test_all_shipped_methods_normalize_without_compatibility_regressions() -> None:
+def test_all_shipped_methods_use_canonical_v2_and_parse() -> None:
     methods = sorted((ROOT / "examples").glob("**/Methods/*.toml"))
 
     assert len(methods) == 30
     for method in methods:
-        read_method_plan([method])
+        plan = read_method_plan([method])
+        assert plan.format_origin is FormatOrigin.V2
+        assert plan.render() == method.read_text(encoding="utf-8")
 
-    de_example = next(path for path in methods if path.name == "method_de_v2.toml")
+    de_example = next(path for path in methods if path.name == "method_de.toml")
     assert isinstance(read_method_plan([de_example]).steps[0].search, DeSearch)
 
 

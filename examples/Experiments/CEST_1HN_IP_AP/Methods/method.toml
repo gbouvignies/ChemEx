@@ -1,6 +1,13 @@
+FORMAT_VERSION = 2
+
 [1_FIX_R1]
-FIT = ["CS_A"]
-FIX = ["KEX_AB", "R1_A"]
+ROLES = [
+  { FIX = ["KEX_AB", "R1_A"] },
+  { FIT = ["CS_A"] },
+]
 
 [2_FIT_R1]
-FIT = ["R1_A"]
+ROLES_FROM = "1_FIX_R1"
+ROLES = [
+  { FIT = ["R1_A"] },
+]

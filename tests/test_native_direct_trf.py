@@ -23,7 +23,8 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from chemex.configuration.methods import Method, Selection, read_methods
+from chemex.configuration.method_execution import normalize_methods_for_execution
+from chemex.configuration.methods import Method, Selection, read_method_plan
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import (
@@ -78,6 +79,12 @@ METHOD = ROOT / "examples/Experiments/RELAXATION_HZNZ/Methods/method.toml"
 CPMG_ROOT = ROOT / "examples/Experiments/CPMG_15N_IP"
 
 
+def _shipped_method(path: Path, section: str) -> Method:
+    plan = read_method_plan([path])
+    _plan, operational = normalize_methods_for_execution(plan)
+    return operational[section]
+
+
 def _qualification_fit(
     *, budget: int = 80
 ) -> tuple[
@@ -102,8 +109,10 @@ def _qualification_fit(
     assert session.try_build_analysis_values(), repr(
         session.parameter_factory.native_construction_error
     )
-    method = read_methods([METHOD])["DEFAULT"]
-    parameterization = session.compile_parameterization(method, experiments.param_ids)
+    plan = read_method_plan([METHOD])
+    parameterization = session.compile_parameterization_from_actions(
+        plan.effective_role_actions()["DEFAULT"], experiments.param_ids
+    )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration
     assert configuration is not None
@@ -598,8 +607,9 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
 
     configuration = session.parameter_factory.sealed_configuration
     assert configuration is not None
-    revision_one_parameterization = session.compile_parameterization(
-        read_methods([METHOD])["DEFAULT"],
+    plan = read_method_plan([METHOD])
+    revision_one_parameterization = session.compile_parameterization_from_actions(
+        plan.effective_role_actions()["DEFAULT"],
         experiments.param_ids,
     )
     revision_one_engine = EvaluationEngine.from_experiments(
@@ -683,7 +693,9 @@ def test_solver_requests_use_lean_residuals_and_acceptance_materializes_fresh() 
 
 
 def test_cpmg_step1_direct_trf_preserves_requests_and_reuses_profile_kernels() -> None:
-    method = read_methods([CPMG_ROOT / "Methods/method.toml"])["STEP1"]
+    method_path = CPMG_ROOT / "Methods/method.toml"
+    plan = read_method_plan([method_path])
+    method = _shipped_method(method_path, "STEP1")
     session = AnalysisSession.create()
     session.set_model("2st")
     experiments = build_experiments(
@@ -695,7 +707,9 @@ def test_cpmg_step1_direct_trf_preserves_requests_and_reuses_profile_kernels() -
         read_defaults([CPMG_ROOT / "Parameters/parameters.toml"])
     )
     assert session.try_build_analysis_values()
-    parameterization = session.compile_parameterization(method, experiments.param_ids)
+    parameterization = session.compile_parameterization_from_actions(
+        plan.effective_role_actions()["STEP1"], experiments.param_ids
+    )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration
     assert configuration is not None

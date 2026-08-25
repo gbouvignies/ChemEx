@@ -1,7 +1,14 @@
+FORMAT_VERSION = 2
+
 [STEP1]
-INCLUDE = [486, 488, 489, 490, 491, 492, 493, 494, 495, 496, 497, 498, 499]
-FIX = ["KD"]
+INCLUDE = ["486", "488", "489", "490", "491", "492", "493", "494", "495", "496", "497", "498", "499"]
+ROLES = [
+  { FIX = ["KD"] },
+]
 
 [STEP2]
 INCLUDE = "ALL"
-FIX = ["KOFF"]
+ROLES_FROM = "STEP1"
+ROLES = [
+  { FIX = ["KOFF"] },
+]

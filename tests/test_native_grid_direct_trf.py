@@ -16,7 +16,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from chemex.configuration.methods import Method, Selection, read_methods
+from chemex.configuration.methods import Method, Selection, read_method_plan
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import EvaluationEngine
@@ -54,7 +54,7 @@ METHOD = ROOT / "examples/Experiments/RELAXATION_HZNZ/Methods/method.toml"
 
 
 def _qualification_problem(
-    method: Method,
+    method: Method | None,
 ) -> tuple[
     AnalysisSession,
     Experiments,
@@ -73,7 +73,15 @@ def _qualification_problem(
     assert session.try_build_analysis_values(), repr(
         session.parameter_factory.native_construction_error
     )
-    parameterization = session.compile_parameterization(method, experiments.param_ids)
+    if method is None:
+        plan = read_method_plan([METHOD])
+        parameterization = session.compile_parameterization_from_actions(
+            plan.effective_role_actions()["DEFAULT"], experiments.param_ids
+        )
+    else:
+        parameterization = session.compile_parameterization(
+            method, experiments.param_ids
+        )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration
     assert configuration is not None
@@ -240,7 +248,7 @@ def test_unusable_axis_value_is_seed_local_and_later_seeds_run(
     unusable: object,
 ) -> None:
     _session, _experiments, parameterization, engine, problem = _qualification_problem(
-        read_methods([METHOD])["DEFAULT"]
+        None
     )
     (param_id,) = problem.controlled_ids
     start = problem.start[0]
@@ -323,7 +331,7 @@ def _presentation_values(
 
 def test_failed_seed_continues_and_canonical_tie_commits_only_selected_once() -> None:
     session, _experiments, parameterization, engine, problem = _qualification_problem(
-        read_methods([METHOD])["DEFAULT"]
+        None
     )
     (param_id,) = problem.controlled_ids
     (lower,) = problem.lower_bounds
@@ -496,7 +504,7 @@ def test_failed_seed_continues_and_canonical_tie_commits_only_selected_once() ->
 
 def test_plain_base_evidence_cannot_recreate_grid_commit_authority() -> None:
     session, _experiments, parameterization, engine, problem = _qualification_problem(
-        read_methods([METHOD])["DEFAULT"]
+        None
     )
     (param_id,) = problem.controlled_ids
     start = problem.start[0]
@@ -599,7 +607,7 @@ def test_plain_base_evidence_cannot_recreate_grid_commit_authority() -> None:
 
 def test_grid_commit_rejects_foreign_direct_origin_authority_atomically() -> None:
     session, _experiments, parameterization, engine, problem = _qualification_problem(
-        read_methods([METHOD])["DEFAULT"]
+        None
     )
     (param_id,) = problem.controlled_ids
     grid_invocation = GridDirectTrfInvocation.for_problem(
@@ -656,7 +664,7 @@ def test_grid_commit_rejects_foreign_direct_origin_authority_atomically() -> Non
 
 def test_selection_requires_one_exact_canonical_seed_candidate_record() -> None:
     _session, _experiments, parameterization, engine, problem = _qualification_problem(
-        read_methods([METHOD])["DEFAULT"]
+        None
     )
     (param_id,) = problem.controlled_ids
     start = problem.start[0]
@@ -723,7 +731,7 @@ def test_selection_requires_one_exact_canonical_seed_candidate_record() -> None:
 
 def test_invalid_trial_continues_to_later_seed() -> None:
     session, experiments, parameterization, engine, problem = _qualification_problem(
-        read_methods([METHOD])["DEFAULT"]
+        None
     )
     (param_id,) = problem.controlled_ids
     start = problem.start[0]
@@ -783,7 +791,7 @@ def test_invalid_trial_continues_to_later_seed() -> None:
 
 def test_cancellation_and_interruption_stop_later_seeds() -> None:
     session, _experiments, parameterization, engine, problem = _qualification_problem(
-        read_methods([METHOD])["DEFAULT"]
+        None
     )
     (param_id,) = problem.controlled_ids
     start = problem.start[0]
@@ -908,7 +916,7 @@ def test_table_and_two_dimensional_diagnostics_retain_exact_seed_provenance() ->
 
 def test_no_converged_candidate_has_no_selection_or_commit_authority() -> None:
     session, _experiments, parameterization, engine, problem = _qualification_problem(
-        read_methods([METHOD])["DEFAULT"]
+        None
     )
     (param_id,) = problem.controlled_ids
     start = problem.start[0]
@@ -947,7 +955,7 @@ def test_no_converged_candidate_has_no_selection_or_commit_authority() -> None:
 
 def test_seed_local_materialization_failure_continues_to_later_seed() -> None:
     session, experiments, parameterization, engine, problem = _qualification_problem(
-        read_methods([METHOD])["DEFAULT"]
+        None
     )
     (param_id,) = problem.controlled_ids
     start = problem.start[0]
@@ -996,7 +1004,7 @@ def test_seed_local_materialization_failure_continues_to_later_seed() -> None:
 
 def test_selected_root_materialization_failure_never_falls_back() -> None:
     session, experiments, parameterization, engine, problem = _qualification_problem(
-        read_methods([METHOD])["DEFAULT"]
+        None
     )
     (param_id,) = problem.controlled_ids
     start = problem.start[0]

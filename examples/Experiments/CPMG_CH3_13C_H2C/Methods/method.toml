@@ -1,6 +1,14 @@
+FORMAT_VERSION = 2
+
 [STEP1]
 INCLUDE = ["L24CD1", "L25CD1", "L25CD2", "V30CG2", "L52CD2", "L55CD1", "L55CD2"]
-FIX = ["PB", "KEX_AB"]
+ROLES = [
+  { FIX = ["PB", "KEX_AB"] },
+]
 
 [STEP2]
-FIT = ["PB", "KEX_AB"]
+INCLUDE = ["L24CD1", "L25CD1", "L25CD2", "V30CG2", "L52CD2", "L55CD1", "L55CD2"]
+ROLES_FROM = "STEP1"
+ROLES = [
+  { FIT = ["PB", "KEX_AB"] },
+]

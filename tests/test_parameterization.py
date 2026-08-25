@@ -14,6 +14,7 @@ import pytest
 
 from chemex import chemex as chemex_module
 from chemex.configuration.conditions import Conditions
+from chemex.configuration.method_execution import normalize_methods_for_execution
 from chemex.configuration.method_plan import (
     ConstrainAction,
     Constraint,
@@ -35,7 +36,6 @@ from chemex.configuration.methods import (
     Method,
     Selection,
     read_method_plan,
-    read_methods,
 )
 from chemex.configuration.parameters import read_defaults
 from chemex.experiments.builder import build_experiments
@@ -437,15 +437,17 @@ def test_inherited_canonical_action_outside_selected_scope_is_inert() -> None:
 
 def test_shipped_method_compiles_roles_and_resolves_without_mutation() -> None:
     session, required_ids = _build_dcest_session()
-    methods = read_methods([DCEST_METHOD])
-    method = methods["STEP1"]
+    plan = read_method_plan([DCEST_METHOD])
+    effective_actions = plan.effective_role_actions()
     before = session.analysis_values.snapshot()
     legacy_expressions = {
         param_id: parameter.expr
         for param_id, parameter in session.parameters.database._parameters.items()
     }
 
-    parameterization = session.compile_parameterization(method, required_ids)
+    parameterization = session.compile_parameterization_from_actions(
+        effective_actions["STEP1"], required_ids
+    )
     resolved = parameterization.resolve(parameterization.frame_from_snapshot(before))
 
     definitions = session.parameter_factory.sealed_definitions
@@ -470,7 +472,9 @@ def test_shipped_method_compiles_roles_and_resolves_without_mutation() -> None:
         session.parameters.database._parameters[r1_b].expr == legacy_expressions[r1_b]
     )
 
-    step2 = session.compile_parameterization(methods["STEP2"], required_ids)
+    step2 = session.compile_parameterization_from_actions(
+        effective_actions["STEP2"], required_ids
+    )
     assert step2.role(d2o) is ParameterRole.FIX
     assert session.analysis_values.snapshot() == before
 
@@ -642,11 +646,11 @@ def test_binding_current_roles_compile_all_estimable_r2_b_coordinates() -> None:
     assert session.try_build_analysis_values(), repr(
         session.parameter_factory.native_construction_error
     )
-    methods = read_methods([BINDING_METHOD])
     plan = read_method_plan([BINDING_METHOD])
+    _plan, operational = normalize_methods_for_execution(plan)
     effective_actions = plan.effective_role_actions()
 
-    experiments.select(methods["STEP1"].selection)
+    experiments.select(operational["STEP1"].selection)
     step1 = session.compile_parameterization_from_actions(
         effective_actions["STEP1"],
         experiments.param_ids,
@@ -670,7 +674,7 @@ def test_binding_current_roles_compile_all_estimable_r2_b_coordinates() -> None:
         assert declaration.supports_estimation
         assert not declaration.model_owned
 
-    experiments.select(methods["STEP2"].selection)
+    experiments.select(operational["STEP2"].selection)
     step2 = session.compile_parameterization_from_actions(
         effective_actions["STEP2"],
         experiments.param_ids,
@@ -810,8 +814,10 @@ def test_real_model_free_scientific_expression_matches_legacy_resolution() -> No
     assert any(item.effective_value is None for item in configuration)
     assert not snapshot.occurrence_identity.startswith("bootstrap:")
 
-    method = read_methods([MF_METHOD])["DEFAULT"]
-    parameterization = native_session.compile_parameterization(method, required_ids)
+    plan = read_method_plan([MF_METHOD])
+    parameterization = native_session.compile_parameterization_from_actions(
+        plan.effective_role_actions()["DEFAULT"], required_ids
+    )
     definitions = native_session.parameter_factory.sealed_definitions
     assert definitions is not None
     pb = next(item.param_id for item in definitions if item.name == "PB")

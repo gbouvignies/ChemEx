@@ -83,22 +83,13 @@ chemex fit -e Experiments/*.toml \
            --native-threads 1
 ```
 
-## MCMC Worker Overrides
+## Method files and workers
 
-MCMC settings in a method file may include an optional `WORKERS` value:
-
-```toml
-[STEP1.STATISTICS.MCMC]
-STEPS = 5000
-WORKERS = 4
-```
-
-When `WORKERS` is omitted, MCMC inherits the command-line `--workers` setting.
-Use the method-file value only when a specific MCMC step needs a different worker
-count from the rest of the fit statistics.
-
-Method-file `WORKERS` must be a positive integer. The special `0` and `auto`
-values are command-line controls only.
+Canonical version 2 method files do not contain execution settings. MCMC and
+resampling use the command-line `--workers` value; walker topology and native
+thread coordination remain ChemEx policy. Method-local MCMC `WORKERS` is
+deprecated v1-only syntax and follows the v1 removal window described in the
+[Method Files](method_files.md#version-1-compatibility) guide.
 
 ## Practical Guidance
 

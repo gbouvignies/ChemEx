@@ -4,426 +4,334 @@ sidebar_position: 6
 
 # Method Files
 
-## Overview
+Method files describe which profiles and parameter roles a fit uses, whether a
+deterministic search precedes the local fit, and which statistical analyses run
+afterward. Pass one or more method files with `chemex fit -m`.
 
-Method files define the fitting methods used in ChemEx. In these files, you can:
-
--   Specify which parameters to fit, fix, or constrain.
--   Select the profiles to include in calculations.
--   Activate additional analyses, such as grid search, Monte Carlo, bootstrap,
-    or MCMC analyses.
-
-Provide the method file to ChemEx using the `-m` or `--method` option.
-
-`FITMETHOD` is deliberately closed to the native trust-region reflective
-solver. Omit it or set `FITMETHOD = "trf"`. The spelling `"least_squares"` is
-accepted temporarily as an alias and is canonicalized to `"trf"`; historical
-optimizer names fail during method-file validation, before fit outputs are
-invalidated. ChemEx no longer forwards arbitrary optimizer names or depends on
-lmfit at runtime; fitting and statistics use the native ChemEx parameter and
-evaluation stack. When `GRID` and `STATISTICS` occur in the same step, ChemEx
-first commits the accepted aggregate grid fit and then runs the requested
-statistics from that fit. This canonical workflow applies to both legacy and
-version 2 method files.
-
-Method files are structured in sections, each representing a fitting step.
-Steps execute in the order they appear. Files without `FORMAT_VERSION` use the
-legacy version 1 behavior: profile selection and parameter roles implicitly
-carry forward when omitted. Version 2 makes role inheritance explicit and
-treats profile selection as local to each step.
-
-:::tip
-When performing multi-step fitting, start with a subset of residues with high-quality data (e.g., large CPMG dispersion or clear CEST dips) to estimate global parameters, then fix these parameters in subsequent steps to fit residue-specific parameters. For example, see the method file for `CPMG_CH3_1H_SQ/` in `Examples/Experiments/`.
-:::
-
-## Example Method File
-
-An example method file with four fitting steps is shown below:
+Version 2 is the canonical format for new method files. Every v2 file starts
+with:
 
 ```toml title="method.toml"
-[STEP1]
-INCLUDE = [15, 31, 33, 34, 37]
-GRID    = [
-    "[KEX_AB] = log(100.0, 600.0, 10)",
-    "[PB] = log(0.03, 0.15, 10)",
-    "[DW_AB] = lin(0.0, 10.0, 5)",
-]
-
-[STEP2]
-FIT = ["PB", "KEX_AB", "DW_AB"]
-STATISTICS = { "MC"=100, "BS"=100, "BSN"=100 }
-
-[STEP3]
-INCLUDE = "ALL"
-FIX     = ["PB", "KEX_AB"]
-GRID    = ["[DW_AB] = lin(0.0, 10.0, 20)"]
-
-[STEP4]
-FIT = ["DW_AB"]
-```
-
-This method file performs the following steps:
-
-1. A subset of profiles is selected, and a grid search is performed on `"KEX_AB"`, `"PB"`, and `"DW_AB"`.
-2. The parameters `"KEX_AB"`, `"PB"`, and `"DW_AB"` are varied, using the same profile selection as in Step 1.
-3. All profiles are included, `"KEX_AB"` and `"PB"` are fixed, and a grid search is performed on `"DW_AB"`.
-4. `"DW_AB"` is varied.
-
-Results are saved in directories named according to each step.
-
-## Explicit Step Semantics (Version 2)
-
-Set `FORMAT_VERSION = 2` at the top of a method file to use canonical,
-step-local semantics. Each step starts from the sealed parameter model's roles
-unless `ROLES_FROM` names an earlier step. Starting parameter values always come
-from the latest accepted fit; inheriting roles is not required to carry fitted
-values into a later step.
-
-`ROLES` is an ordered list. Each entry contains exactly one of `FIT`, `FIX`, or
-`CONSTRAIN`. A later matching action replaces the parameter's complete earlier
-role, including removal of an earlier constraint.
-
-```toml title="method-v2.toml"
 FORMAT_VERSION = 2
 
-[FIRST]
-INCLUDE = [15, 31, 33, 34, 37]
-ROLES = [
-    { FIX = ["PB", "KEX_AB"] },
-    { FIT = ["DW_AB"] },
-]
-
-[FIRST.SEARCH.GRID]
-AXES = ["[DW_AB] = lin(0.0, 10.0, 20)"]
-
-[SECOND]
-INCLUDE = "ALL"
-ROLES_FROM = "FIRST"
-ROLES = [
-    { FIT = ["PB", "KEX_AB"] },
-    { CONSTRAIN = ["[R2_B, NUC->N] = [R2_A, NUC->N]"] },
-]
-
-[SECOND.STATISTICS.MC]
-REPLICATES = 100
-SEED = 1234
+[DEFAULT]
 ```
 
-Omitting `ROLES_FROM` means no role inheritance, even when the preceding step
-changed roles. Omitting `INCLUDE` and `EXCLUDE` selects all profiles for that
-step; selection never inherits in version 2. `SEARCH.GRID.AXES` accepts strict
-`lin(...)`, `log(...)`, and `values(...)` expressions; the legacy bare tuple
-form is not accepted.
+The empty step performs one bounded trust-region reflective (TRF) fit using the
+parameter model's baseline roles and all profiles. V2 has no `FITMETHOD`; when
+neither `SEARCH.GRID` nor `SEARCH.DE` is present, full-coordinate TRF is
+implicit.
 
-### Selected-coordinate DE followed by full TRF
+## The v2 mental model
 
-Use `SEARCH.DE` when a small number of global or basin-defining coordinates
-need broad stochastic coverage and a Cartesian GRID would require too many
-complete local fits:
+Each step has six straightforward rules:
 
-```toml title="method-de-v2.toml"
+1. It starts from baseline parameter roles unless `ROLES_FROM` explicitly names
+   an earlier step.
+2. `ROLES` actions are applied from top to bottom.
+3. A later matching action replaces the parameter's complete earlier role.
+4. Numerical starting values automatically come from the latest successfully
+   committed fit, independently of `ROLES_FROM`.
+5. `SEARCH.GRID` or `SEARCH.DE` chooses an optional deterministic search;
+   otherwise ChemEx runs the implicit full TRF directly.
+6. `STATISTICS` analyzes the committed deterministic result and never changes
+   its central parameter values.
+
+Steps execute in declaration order. Results are written under the step name for
+multi-step methods.
+
+## Ordered parameter roles
+
+`ROLES` is an ordered array. Every entry contains exactly one action:
+
+- `FIT` makes matching user-controlled parameters independent fit coordinates.
+- `FIX` holds matching user-controlled parameters at their current values.
+- `CONSTRAIN` derives each target from its equation.
+
+```toml
 FORMAT_VERSION = 2
 
 [STEP]
 ROLES = [
-    { FIT = ["PB", "KEX_AB", "DW_AB"] },
+  { FIX = ["PB", "KEX_AB"] },
+  { FIT = ["DW_AB"] },
 ]
+```
+
+Later actions are intentional overrides, not conflicts. `FIT` or `FIX` after a
+constraint removes that constraint; `CONSTRAIN` after `FIT` makes the target
+derived.
+
+### Broad rule followed by specific exceptions
+
+The following example fixes every `DW_AB`, fits the G24 value, and constrains
+the G31 value to the fitted G24 value. Every other `DW_AB` remains fixed:
+
+```toml
+FORMAT_VERSION = 2
+
+[STEP]
+ROLES = [
+  { FIX = ["DW_AB"] },
+  { FIT = ["DW_AB, NUC->G24N-H"] },
+  { CONSTRAIN = [
+    "[DW_AB, NUC->G31N-H] = [DW_AB, NUC->G24N-H]",
+  ] },
+]
+```
+
+There is no separate precedence rule: the visible list order is the complete
+precedence rule.
+
+### Selectors and constraints
+
+Selectors start with a parameter name and may add qualifiers. V2 consumes the
+complete selector and rejects unknown, duplicated, or trailing fragments.
+
+```toml
+ROLES = [
+  { FIT = [
+    "R2_A, NUC->G23N, B0->800.13MHz, T->23C",
+    "R1_A, B0->800.13MHz",
+    "DW_AB, NUC->N",
+  ] },
+  { CONSTRAIN = [
+    "[R1_B] = 0.5 * [R1_A]",
+    "[R2_B, NUC->N] = [R2_A, NUC->N]",
+  ] },
+]
+```
+
+Supported qualifiers are `NUC`, `T`, `B0`, `[P]`, `[L]`, and `D2O`. Constraint
+right-hand sides use finite numbers, bracketed parameter references,
+parentheses, and `+`, `-`, `*`, and `/`.
+
+Model-owned derived parameters remain protected: method actions cannot turn a
+structurally derived parameter into an independent fit coordinate.
+
+## Multi-step methods
+
+Role inheritance and numerical value continuity are separate.
+
+```toml
+FORMAT_VERSION = 2
+
+[GLOBAL_FIT]
+INCLUDE = [15, 31, 33, 34, 37]
+ROLES = [{ FIT = ["PB", "KEX_AB"] }]
+
+[LOCAL_FITS]
+INCLUDE = "ALL"
+ROLES_FROM = "GLOBAL_FIT"
+ROLES = [
+  { FIX = ["PB", "KEX_AB"] },
+  { FIT = ["DW_AB"] },
+]
+```
+
+`ROLES_FROM = "GLOBAL_FIT"` copies only that earlier step's effective
+role/constraint setup. It does not copy values, profile selection, search,
+statistics, seeds, or execution settings. It must name one unique earlier step.
+
+Whether or not `ROLES_FROM` is present, `LOCAL_FITS` starts numerically from the
+latest values committed by `GLOBAL_FIT`. Omitting `ROLES_FROM` starts from
+baseline roles, **not** baseline numerical values.
+
+`INCLUDE` and `EXCLUDE` are step-local. Omitting both selects all profiles for
+that step; selection never inherits. They accept spin-system or group names,
+residue numbers, and `"ALL"`/`"*"`:
+
+```toml
+INCLUDE = ["G2", "A4", "C5", "H6"]
+EXCLUDE = [12, 18]
+```
+
+## Choosing the deterministic search
+
+| Method structure | Use it when | What ChemEx does |
+| --- | --- | --- |
+| No `SEARCH` | The committed start is suitable | Runs one full-coordinate TRF |
+| `SEARCH.GRID` | A deterministic Cartesian set of starts is practical | Runs a complete TRF at every Cartesian seed and commits the best eligible complete fit |
+| `SEARCH.DE` | A few basin-defining coordinates need broad stochastic coverage | Searches only those coordinates, then seeds exactly one normal full-coordinate TRF |
+
+GRID and DE never change parameter roles. Their targets must resolve to final
+independent `FIT` coordinates.
+
+### GRID
+
+```toml
+FORMAT_VERSION = 2
+
+[STEP]
+ROLES = [{ FIT = ["PB", "KEX_AB", "DW_AB"] }]
+
+[STEP.SEARCH.GRID]
+AXES = [
+  "[PB] = values(0.01, 0.02, 0.05, 0.10, 0.20)",
+  "[KEX_AB] = log(100.0, 5000.0, 12)",
+  "[DW_AB] = lin(0.0, 10.0, 5)",
+]
+```
+
+GRID accepts only `lin(low, high, count)`, `log(low, high, count)`, and
+`values(v1, v2, ...)`. Broad axes may expand to several final fitted
+coordinates. Axis declarations apply top-to-bottom, so a later specific axis
+replaces an earlier broad axis for the same concrete coordinate.
+
+Every Cartesian seed runs one complete full-coordinate TRF. ChemEx selects the
+best eligible materialized fit, performs aggregate acceptance, and commits once;
+there is no redundant final TRF.
+
+### Selected-coordinate DE
+
+```toml
+FORMAT_VERSION = 2
+
+[STEP]
+ROLES = [{ FIT = ["PB", "KEX_AB", "DW_AB"] }]
 
 [STEP.SEARCH.DE]
 SEED = 597
 COORDINATES = [
-    "[PB] = log(0.001, 0.1)",
-    "[KEX_AB] = log(100.0, 5000.0)",
+  "[PB] = log(0.001, 0.20)",
+  "[KEX_AB] = log(100.0, 5000.0)",
 ]
 ```
 
-DE searches only `PB` and `KEX_AB`. During that search, every other independent
-coordinate remains at the value captured at the start of the method step. The
-best eligible candidate then initializes one fresh normal TRF fit that releases
-the complete final `FIT` set, including every fitted `DW_AB`. Only that final
-TRF result can be accepted, committed, or used for deterministic uncertainty
-and requested statistics. The current committed value may lie outside its
-declared DE range; ChemEx preserves that captured value and initializes the DE
-backend inside the declared search box.
+Each DE coordinate must resolve to exactly one final fitted coordinate and use
+`lin(low, high)` or `log(low, high)`. Ranges must be finite, ordered, within the
+physical parameter bounds, and positive for logarithmic searches. `SEED` is a
+required unsigned 64-bit integer.
 
-Every DE coordinate must resolve to exactly one final independent `FIT`
-parameter. Its `lin(low, high)` or `log(low, high)` range must be finite,
-strictly ordered, and inside the parameter's physical bounds; logarithmic lower
-bounds must be positive. `SEED` is a required unsigned 64-bit integer. DE
-population and stopping details are ChemEx policy rather than method-file
-controls.
+During DE, other fitted coordinates such as `DW_AB` remain at the committed
+step-start values. The best eligible DE candidate initializes one fresh TRF
+that releases the complete final `FIT` set. Only that TRF can be accepted,
+committed, or used for uncertainty and statistics. DE failure does not fall back
+to direct TRF.
 
-Use GRID for deterministic Cartesian multistart. Use selected-coordinate DE
-when Cartesian coverage of a few basin coordinates is impractical. A complete
-three-state DCEST example is shipped as
-`examples/Experiments/DCEST_15N_3States/Methods/method_de_v2.toml`.
+Use GRID for deterministic Cartesian multistart. Use DE when a Cartesian grid
+over a small set of basin coordinates would be impractical. See the shipped
+three-state DCEST example at
+`examples/Experiments/DCEST_15N_3States/Methods/method_de.toml`.
 
-## Setting Parameter Behavior
+## Statistical analyses
 
-Parameters can be set to vary, be fixed, or be constrained. You can adjust parameter behavior in each fitting step.
+Statistics run once after successful deterministic acceptance and commit. They
+do not mutate the committed central fit.
 
-### `FIT`
-
-Parameters in the `FIT` list are varied during the fitting step. Parameters may be specified individually or as groups.
-
-Example:
+The compact form requests MC, bootstrap, nucleus-specific bootstrap, and MCMC:
 
 ```toml
-FIT = [
-    "R2_A, NUC->G23N, B0->800.13MHz, T->23C",
-    "R1_A, B0->800.13MHz",
-    "DW_AB, NUC->N",
-    "R2_B",
+FORMAT_VERSION = 2
+
+[STEP]
+STATISTICS = { MC = 100, BS = 100, BSN = 100, MCMC = 5000 }
+```
+
+Expanded MC, BS, and BSN requests add an optional reproducibility seed:
+
+```toml
+[STEP.STATISTICS.MC]
+REPLICATES = 100
+SEED = 680
+
+[STEP.STATISTICS.BS]
+REPLICATES = 100
+SEED = 681
+
+[STEP.STATISTICS.BSN]
+REPLICATES = 100
+SEED = 682
+```
+
+When a seed is omitted, ChemEx resolves one unsigned 64-bit root seed and records
+it before the analysis starts.
+
+Expanded MCMC exposes only `STEPS`, optional integer `BURN`, and optional
+unsigned 64-bit `SEED`:
+
+```toml
+[STEP.STATISTICS.MCMC]
+STEPS = 20000
+BURN = 4000
+SEED = 680
+```
+
+`STEPS` counts raw post-initialization ensemble iterations. Omitting `BURN`
+invokes ChemEx's automatic burn/convergence policy. If that policy cannot
+establish a defensible retained window, ChemEx preserves raw or partial chain
+evidence and diagnostics but publishes no authoritative posterior summary; it
+does not silently fall back to zero burn. A numeric `BURN` fixes the discard
+window but does not suppress convergence, autocorrelation, ESS, or MCSE
+diagnostics.
+
+Walker topology, initialization, proposal policy, and parallel execution are
+ChemEx policy. Configure parallelism globally with `chemex fit --workers`; v2
+has no method-local `WORKERS`, `WALKERS`, `THIN`, `POLICY`, `MODE`, backend
+options, or parameter-update behavior.
+
+MC, BS, and BSN write complete summaries only if every requested replicate
+succeeds. MCMC likewise withholds authoritative summary products from an
+incomplete chain. Successful evidence and diagnostics remain available, and no
+statistical analysis replaces deterministic fitted values or covariance errors.
+
+## Version 1 compatibility
+
+Version 1 is supported only for the frozen deprecation window; do not use it for
+new method files. If v2 first ships in non-patch release **R**, v1 remains
+supported but deprecated in **R** and the following non-patch release **R+1**,
+then is removed in **R+2**. Patch releases never remove v1. Calendar versions
+are assigned during release planning.
+
+The same boundary applies to all v1-only behavior: `FITMETHOD`, the
+`least_squares` alias, bare GRID tuples, permissive legacy selectors, implicit
+cross-step role/profile carry-over, `BURN = "AUTO"`, `THIN`, explicit
+`WALKERS`, method-local MCMC `WORKERS`, and other legacy MCMC controls.
+
+During that window, omitting `FORMAT_VERSION` selects the frozen v1 adapter. V1
+continues to apply role buckets in `CONSTRAINTS` → `FIX` → `FIT` order and to
+carry roles and profile selection implicitly between steps. Mixed v1/v2 input
+in one invocation is rejected. Duplicate v2 step names are errors and are never
+partially merged.
+
+### V1-to-v2 role equivalents
+
+This v1 step:
+
+```toml
+[STEP]
+CONSTRAINTS = ["[R2_B] = [R2_A]"]
+FIX = ["PB"]
+FIT = ["KEX_AB"]
+```
+
+has the following v2 equivalent because the ordered actions preserve v1's
+bucket precedence:
+
+```toml
+FORMAT_VERSION = 2
+
+[STEP]
+ROLES = [
+  { CONSTRAIN = ["[R2_B] = [R2_A]"] },
+  { FIX = ["PB"] },
+  { FIT = ["KEX_AB"] },
 ]
 ```
 
--   `"R2_A, NUC->G23N, B0->800.13MHz, T->23C"` specifies the R<sub>2</sub> of the nitrogen nucleus in state A of Gly23 at 800.13 MHz and 23 ºC.
--   `"R1_A, B0->800.13MHz"` includes all R₁ values for state A at 800.13 MHz.
--   `"DW_AB, NUC->N"` applies to nitrogen chemical shift differences between states A and B.
--   `"R2_B"` includes all R<sub>2</sub> values for state B.
+For later steps, add `ROLES_FROM = "PREVIOUS_STEP"` only when the old file
+relied on role/constraint carry-over. Repeat `INCLUDE` or `EXCLUDE` when the old
+file relied on selection carry-over. Do not add either merely to continue fitted
+values; committed numerical values continue automatically.
 
-### `FIX`
+Move a v1 `GRID = [...]` list under `[STEP.SEARCH.GRID]` as `AXES = [...]`, and
+replace bare tuples such as `"[PB] = (0.01, 0.05, 0.10)"` with
+`"[PB] = values(0.01, 0.05, 0.10)"`. Remove `FITMETHOD`; implicit TRF is the
+only v2 local fit.
 
-Parameters in the `FIX` list remain constant during the fitting step. The format matches that of the `FIT` list.
+## Outputs
 
-```toml
-FIX = [
-    "R2_A, NUC->G23N, B0->800.13MHz, T->23C",
-    "R1_A, B0->800.13MHz",
-    "DW_AB, NUC->N",
-    "R2_B",
-]
-```
-
-### `CONSTRAINTS`
-
-The `CONSTRAINTS` list defines constraints on parameters using mathematical expressions of other parameters.
-
-```toml
-CONSTRAINTS = [
-    "[R1_B] = 0.5 * [R1_A]",
-    "[R2_B, NUC->N] = [R2_A, NUC->N]",
-]
-```
-
-:::info Parameter Precedence
-The settings in method files follow this order of precedence: `CONSTRAINTS` -> `FIX` -> `FIT`. This means:
-
--   Parameters in `CONSTRAINTS` are initialized first.
--   Parameters listed in `FIX` will be held constant, even if also present in `CONSTRAINTS`.
--   Parameters in `FIT` are set to vary, taking precedence over both `FIX` and `CONSTRAINTS` settings.
-
-For instance, if a parameter is both constrained (in `CONSTRAINTS`) and fixed (in `FIX`), it will remain fixed, ignoring the constraint. Similarly, if a parameter is in both `FIX` and `FIT`, it will ultimately be set to vary.
-:::
-
-## Selecting a Subset of Profiles
-
-### `INCLUDE`
-
-The `INCLUDE` key specifies residues for analysis in each fitting step. Residues can be specified by spin-system name (e.g., `"G23N-H"`), group name (e.g., `"G23"`), or residue number (e.g., `23`). The default value, `"ALL"` (or `"*"`), includes all residues.
-
-:::note
-When using residue numbers only, provide a list of integers without quotes:
-
-```toml
-INCLUDE = ["G2", "A4", "C5", "H6"]
-INCLUDE = [2, 4, 5, 6]
-```
-
-:::
-
-### `EXCLUDE`
-
-The `EXCLUDE` key excludes specific residues from analysis, using the same format as `INCLUDE`.
-
-## Running a Grid Search
-
-ChemEx supports n-dimensional grid search with 1D and 2D plot outputs for visualizing χ² values. Define grid search with the `GRID` key in any fitting step.
-
-Grid points are defined as:
-
--   Linear scale:
-    ```toml
-    "[PB] = lin(<min>, <max>, <nb of points>)"
-    ```
--   Log scale:
-    ```toml
-    "[PB] = log(<min>, <max>, <nb of points>)"
-    ```
--   Specific points:
-    ```toml
-    "[PB] = (<value1>, <value2>, ..., <valuen>)"
-    ```
-
-Example:
-
-```toml
-GRID = [
-    "[PB] = log(0.03, 0.1, 10)",
-    "[KEX_AB] = log(200.0, 1000.0, 10)",
-    "[DW_AB] = lin(0.0, 10.0, 10)",
-]
-```
-
-Results are stored in the `grid.toml` file, with 1D and 2D plots generated. If more than two parameters are defined, sub-grids of interdependent parameters are evaluated, yielding 3D grids.
-
-## Estimating Parameter Uncertainty
-
-ChemEx offers additional methods for estimating uncertainty, including Monte Carlo, bootstrap, nucleus-specific bootstrap, and MCMC analyses.
-
-MC, BS, and BSN start from the accepted native Direct TRF fit. Their refits are
-evaluation-only successors: they cannot update the committed central parameter
-values or populate the generic fitted-parameter error field.
-
-### Monte Carlo Simulations
-
-In Monte Carlo simulations, the fit is run once, Gaussian noise is added to generated profiles, and fitting is repeated. After N simulations, the distribution of fitted parameters provides an uncertainty estimate.
-
-### Bootstrap Analysis
-
-Bootstrap analysis randomly resamples data points from each profile to create synthetic datasets of the same size, and then fits are repeated.
-
-### Nucleus-Specific Bootstrap Analysis
-
-In nucleus-specific bootstrap, profiles are resampled based on the associated nucleus, creating synthetic datasets. Profiles with fewer data points may yield datasets of varying sizes.
-
-:::note
-Nucleus-specific bootstrap can create datasets of varying sizes, unlike standard bootstrap analysis.
-:::
-
-### MCMC Analysis
-
-MCMC analysis samples the posterior distribution after the native deterministic
-fit has converged and committed. It consumes that accepted native problem and
-evaluation engine directly, uses ChemEx's weighted residuals as the likelihood,
-and uses the fitted-parameter bounds as uniform priors. Initial walkers are
-placed reproducibly by applying small seeded perturbations to the committed
-fitted values and clipping them into the open bounded intervals.
-
-Every fitted parameter sampled by MCMC must have finite lower and upper bounds,
-with the lower bound strictly smaller than the upper bound. ChemEx rejects an
-unbounded or empty interval before sampling, writes an incomplete diagnostic,
-and leaves the committed central fit unchanged.
-
-### Syntax
-
-Run these analyses at the end of any fitting step using the `STATISTICS` key.
-
-```toml
-[STEP1]
-STATISTICS = {"MC"= 100}
-```
-
-Available types:
-
--   `"MC"` for Monte Carlo
--   `"BS"` for bootstrap
--   `"BSN"` for nucleus-specific bootstrap
--   `"MCMC"` for posterior sampling with MCMC
-
-To perform multiple analyses:
-
-```toml
-[STEP1]
-STATISTICS = {"MC"= 100, "BS"= 100}
-```
-
-ChemEx runs every requested MC, BS, and BSN replicate. A failed or interrupted
-replicate makes that analysis incomplete: successful rows and failure
-diagnostics remain available, but ChemEx does not publish a complete summary,
-correlation matrix, or plots. The native root seed is recorded in
-`diagnostics.toml`; serial and worker execution preserve the same ordered
-results.
-
-For MCMC, the compact form sets the number of sampler steps:
-
-```toml
-[STEP1]
-STATISTICS = {"MCMC"= 5000}
-```
-
-Advanced MCMC settings can be provided as a nested table:
-
-```toml
-[STEP1.STATISTICS.MCMC]
-STEPS = 5000
-BURN = "AUTO"
-THIN = 1
-WALKERS = 64
-SEED = 1234
-WORKERS = 4
-```
-
-`STEPS` is the number of emcee sampler iterations. `WALKERS` defaults to the
-larger of 32 or twice the number of fitted parameters. `SEED` fixes the initial
-walker positions for reproducible runs.
-
-`BURN` defaults to `"AUTO"`. In automatic mode, ChemEx uses the integrated
-autocorrelation time reported by the sampler and discards twice the largest
-autocorrelation time when that estimate is available and shorter than the chain.
-If the chain is too short for emcee's reliability threshold but still provides a
-tentative autocorrelation estimate, ChemEx uses that tentative estimate for
-automatic burn-in and records the warning in `diagnostics.toml`. If
-autocorrelation time cannot be estimated at all, ChemEx keeps the full chain and
-records the reason. A numeric `BURN` value can still be provided to discard a
-fixed number of initial sampler steps.
-
-`THIN` defaults to `1`, which keeps every retained sample. Thinning is mainly a
-storage and output-size control; it is usually better to keep all post-burn-in
-samples unless the output files become too large.
-
-`WORKERS` is optional. When omitted, MCMC inherits the command-line
-[`--workers`](multicore_execution.md) setting from `chemex fit`, whose default
-is `auto`. Set `WORKERS` in the method file only when this MCMC step needs a
-specific positive worker count. Command-line `--workers 0` means all available
-CPUs, but method-file `WORKERS` must be a positive integer.
-
-`UPDATE_PARAMETERS = true` is rejected. Posterior summaries are evidence about
-the committed central fit and never replace its authoritative parameter values
-or generic fitted-parameter errors.
-
-See [Multicore Execution](multicore_execution.md) for performance guidance and
-the interaction between `--workers` and `--native-threads`.
-
-Sampling outputs are stored under a `Statistics` directory in the corresponding step or group output directory:
-
-```text
-Statistics/
-  MonteCarlo/
-    summary.toml
-    samples.tsv
-    correlations.tsv
-    diagnostics.toml
-    plots.pdf
-  Bootstrap/
-    summary.toml
-    samples.tsv
-    correlations.tsv
-    diagnostics.toml
-    plots.pdf
-  BootstrapNS/
-    summary.toml
-    samples.tsv
-    correlations.tsv
-    diagnostics.toml
-    plots.pdf
-  MCMC/
-    summary.toml
-    samples.tsv
-    correlations.tsv
-    diagnostics.toml
-    plots.pdf
-```
-
-For Monte Carlo and bootstrap methods, `samples.tsv` contains one fitted-parameter row per synthetic dataset plus χ². `summary.toml` reports empirical-distribution quantities: mean, median, standard deviation, 95% percentile bounds, 68% percentile bounds, and `half_percentile_68_width`. `correlations.tsv` reports parameter correlations across the fitted synthetic datasets. Missing values are written as `nan`. Their `plots.pdf` reports provide a summary page, one-dimensional sample distributions, a χ² distribution, and two-dimensional sample distributions for parameter pairs with `|r| >= 0.5`.
-
-For MCMC, `summary.toml` reports the uniform prior implied by each parameter's bounds, posterior mean, median, standard deviation, 95% equal-tailed and 68% credible-interval bounds, and `half_credible_interval_68_width`. Effective sample size and `mcse_mean` are included when the autocorrelation estimate passes emcee's reliability threshold; `mcse_mean` is the Monte Carlo standard error of the estimated posterior mean, not a posterior interval width. MCMC diagnostics include sampler versions, retained samples, acceptance fractions, reliable or tentative autocorrelation time, recommended chain lengths, and burn-in decisions. The `plots.pdf` report provides a summary page, one-dimensional posterior distributions, walker traces, the log-probability trace, an autocorrelation monitor, and two-dimensional posterior distributions for parameter pairs with `|r| >= 0.5`.
-
-MC, BS, BSN, and MCMC summaries remain separate statistical results. They do not
-mutate the committed central fit or populate a generic error in
-`Parameters/fitted.toml`.
-
-If MCMC setup, sampling, processing, or output fails or is interrupted,
-`diagnostics.toml` records an explicit incomplete terminal state. ChemEx does not
-publish `summary.toml`, `samples.tsv`, `correlations.tsv`, or `plots.pdf` for an
-incomplete chain.
+GRID results are written under `Grid/`. Selected-coordinate DE is an initializer
+and creates no separate result tree. MC, BS, BSN, and MCMC outputs are written
+under their corresponding `Statistics/` subdirectories. See
+[Outputs](outputs.mdx) for the complete layout and diagnostics.
