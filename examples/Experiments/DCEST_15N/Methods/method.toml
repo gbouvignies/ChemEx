@@ -1,2 +1,6 @@
+FORMAT_VERSION = 2
+
 [DEFAULT]
-CONSTRAINTS = ["[R2_B] = [R2_A]"]
+ROLES = [
+  { CONSTRAIN = ["[R2_B] = [R2_A]"] },
+]

@@ -1,3 +1,7 @@
+FORMAT_VERSION = 2
+
 [DEFAULT]
-FIT = ["CS_A"]
-FIX = ["KEX_AB"]
+ROLES = [
+  { FIX = ["KEX_AB"] },
+  { FIT = ["CS_A"] },
+]

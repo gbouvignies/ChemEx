@@ -21,6 +21,11 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   statistics; DE failures never fall back to the old committed start.
 
 ### Changed
+- Converted all shipped method examples to canonical method format v2 and made
+  v2 the primary authoring format in the fitting guide. The guide now documents
+  ordered complete-role overrides, explicit `ROLES_FROM`, automatic committed
+  value continuity, GRID/selected-coordinate DE/implicit TRF, and the frozen v1
+  deprecation window. No fitting or numerical behavior changed.
 - Removed the disconnected native fit-manifest, artifact-catalogue, Components,
   PartialEvidence, historical run-reader, canonical-method-envelope, and broad
   workflow-provenance architecture. Current covariance and constrained evidence

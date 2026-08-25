@@ -949,8 +949,9 @@ def print_no_duplicate_warning(filename: Path) -> None:
 
 
 FITMETHOD_ERROR_MESSAGE = """\
-  - "FITMETHOD" supports only "trf" (the default).
-    "least_squares" is accepted temporarily as an alias for "trf".
+  - "FITMETHOD" is deprecated v1-only syntax and supports only "trf".
+    "least_squares" remains an alias only during the v1 compatibility window.
+    Canonical v2 omits FITMETHOD because TRF is implicit.
     Historical optimizer names, including "leastsq" and
     "differential_evolution", are not supported."""
 

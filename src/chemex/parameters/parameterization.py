@@ -1,6 +1,6 @@
 """Immutable native parameter roles, constraints, and resolved scalar values.
 
-This module compiles active v1 method roles for authoritative native evaluation
+This module compiles active method roles for authoritative native evaluation
 without mutating parameter definitions, configuration, or committed Analysis
 Values.
 """

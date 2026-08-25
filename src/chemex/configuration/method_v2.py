@@ -290,6 +290,11 @@ def _step(
     settings: dict[str, Any],
     earlier: set[str],
 ) -> StepPlan:
+    if any(str(key).lower() == "fitmethod" for key in settings):
+        raise MethodFormatError(
+            "V2 has no FITMETHOD; omit it because TRF is implicit",
+            SourceRef(filename, name, "FITMETHOD"),
+        )
     normalized = _mapping(
         settings,
         {"include", "exclude", "roles", "roles_from", "search", "statistics"},

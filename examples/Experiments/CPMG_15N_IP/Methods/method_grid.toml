@@ -1,18 +1,37 @@
+FORMAT_VERSION = 2
+
 [STEP1]
-INCLUDE = [15, 31, 33, 34, 37]  # , 33, 34, 37]
-GRID = [
+INCLUDE = ["15", "31", "33", "34", "37"]
+
+[STEP1.SEARCH.GRID]
+AXES = [
   "[KEX_AB] = log(100.0, 600.0, 10)",
   "[PB] = log(0.03, 0.15, 10)",
   "[DW_AB] = lin(0.0, 10.0, 5)",
 ]
 
 [STEP2]
-FIT = ["PB", "KEX_AB", "DW_AB"]
+INCLUDE = ["15", "31", "33", "34", "37"]
+ROLES_FROM = "STEP1"
+ROLES = [
+  { FIT = ["PB", "KEX_AB", "DW_AB"] },
+]
 
 [STEP3]
 INCLUDE = "ALL"
-FIX = ["PB", "KEX_AB"]
-GRID = ["[DW_AB] = lin(0.0, 10.0, 20)"]
+ROLES_FROM = "STEP2"
+ROLES = [
+  { FIX = ["PB", "KEX_AB"] },
+]
+
+[STEP3.SEARCH.GRID]
+AXES = [
+  "[DW_AB] = lin(0.0, 10.0, 20)",
+]
 
 [STEP4]
-FIT = ["DW_AB"]
+INCLUDE = "ALL"
+ROLES_FROM = "STEP3"
+ROLES = [
+  { FIT = ["DW_AB"] },
+]

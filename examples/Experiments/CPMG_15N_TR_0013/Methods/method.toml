@@ -1,8 +1,13 @@
+FORMAT_VERSION = 2
+
 [STEP1]
-FIT = [
-  "ETAXY_A, B0->800.3"
-]  # Necessary when trosy and antitrosy are fitter together
-FIX = ["PB", "KEX_AB"]
+ROLES = [
+  { FIX = ["PB", "KEX_AB"] },
+  { FIT = ["ETAXY_A, B0->800.3MHz"] },
+]
 
 [STEP2]
-FIT = ["PB", "KEX_AB"]
+ROLES_FROM = "STEP1"
+ROLES = [
+  { FIT = ["PB", "KEX_AB"] },
+]

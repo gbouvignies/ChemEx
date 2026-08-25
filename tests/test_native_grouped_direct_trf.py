@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 import chemex.optimize.grouped_direct_trf as grouped_direct_trf_owner
-from chemex.configuration.methods import Method, Selection, read_methods
+from chemex.configuration.methods import Method, Selection, read_method_plan
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import EvaluationEngine, EvaluationFrame, EvaluationResult
@@ -76,11 +76,16 @@ def _grouped_problem(
     assert session.try_build_analysis_values(), repr(
         session.parameter_factory.native_construction_error
     )
-    selected_method = read_methods([METHOD])["DEFAULT"] if method is None else method
-    parameterization = session.compile_parameterization(
-        selected_method,
-        experiments.param_ids,
-    )
+    if method is None:
+        plan = read_method_plan([METHOD])
+        parameterization = session.compile_parameterization_from_actions(
+            plan.effective_role_actions()["DEFAULT"], experiments.param_ids
+        )
+    else:
+        parameterization = session.compile_parameterization(
+            method,
+            experiments.param_ids,
+        )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration
     assert configuration is not None

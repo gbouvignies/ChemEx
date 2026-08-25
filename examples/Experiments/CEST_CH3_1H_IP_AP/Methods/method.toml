@@ -1,2 +1,6 @@
+FORMAT_VERSION = 2
+
 [DEFAULT]
-FIX = ["KEX_AB"]
+ROLES = [
+  { FIX = ["KEX_AB"] },
+]

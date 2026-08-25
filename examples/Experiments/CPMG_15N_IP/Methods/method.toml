@@ -1,6 +1,11 @@
+FORMAT_VERSION = 2
+
 [STEP1]
-INCLUDE = [15, 31, 33, 34, 37]
+INCLUDE = ["15", "31", "33", "34", "37"]
 
 [STEP2]
 INCLUDE = "ALL"
-FIX = ["PB", "KEX_AB"]
+ROLES_FROM = "STEP1"
+ROLES = [
+  { FIX = ["PB", "KEX_AB"] },
+]
