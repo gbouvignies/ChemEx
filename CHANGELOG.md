@@ -8,6 +8,12 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 ## [Unreleased]
 
 ### Added
+- Added lightweight schema-2 `run_info`: `parameters_used.toml` now records the
+  immutable original invocation start, while one atomically replaced
+  `restart.toml` records the latest committed continuation state and remains a
+  normal `-p/--parameters` input. `run.toml` records resolved execution/software
+  facts and persisted unsigned root seeds before stochastic work begins;
+  `outcome.toml` reports both committed and successfully restarted revisions.
 - Added canonical version 2 `[STEP.SEARCH.DE]` product execution. Explicitly
   selected linear or logarithmic coordinates are searched with a required seed,
   then the best eligible candidate initializes one normal full-coordinate TRF
@@ -15,6 +21,11 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   statistics; DE failures never fall back to the old committed start.
 
 ### Changed
+- Removed the disconnected native fit-manifest, artifact-catalogue, Components,
+  PartialEvidence, historical run-reader, canonical-method-envelope, and broad
+  workflow-provenance architecture. Current covariance and constrained evidence
+  retain their detailed scientific records and a small numerical-runtime
+  environment identity.
 - Removed the migration-only canonical numerical lane, pinned environment and
   attestation machinery, calibration probes, and historical baseline fixtures.
   Native manifests no longer contain those migration-only baseline fields.
@@ -66,8 +77,9 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   `credible_interval_68_lower`, `credible_interval_68_upper`, and
   `half_credible_interval_68_width`; genuine `mcse_mean` remains the Monte Carlo
   standard error of the posterior mean. Clarified that
-  `run_info/parameters_used.toml` is the bound-preserving restart input, while
-  the fitted/fixed/constrained parameter files are result reports.
+  `run_info/parameters_used.toml` is the original invocation start and
+  `run_info/restart.toml` is the latest committed continuation state, while the
+  fitted/fixed/constrained parameter files are result reports.
 - Fit output now has a success-last `run_info/outcome.toml` lifecycle marker.
   Reruns eagerly invalidate only known ChemEx result locations for every planned
   method step, preventing earlier deterministic or later statistics-family

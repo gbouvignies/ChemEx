@@ -60,17 +60,30 @@ The output directory typically includes the following files and subdirectories:
 ### `run_info/`
 
 Records how the fit was started. `run.toml` contains runtime and command-line
-metadata grouped into run, ChemEx, Python, command, inputs, and optional Git
-sections. `parameters_used.toml` contains the parsed independent starting
-parameters needed to restart or re-run the fit, including values and bounds. Use
-this file as the parameter input for a subsequent `chemex fit`. Parameters
-calculated from expressions are not written separately because ChemEx
-reconstructs them from the independent parameters and model. `inputs/` contains
-byte copies of the user-provided experiment, parameter, and method TOML files as
-captured for the run. Raw experimental data files are not copied.
+metadata, resolved execution and software versions, archived input mappings,
+optional Git details, and the root seed of each stochastic operation actually
+started. `parameters_used.toml` is the immutable **original invocation start**:
+it contains revision-zero values and configured bounds and reproduces the
+original starting point. It is not updated after fitting.
+
+After a state-changing fit commit, `restart.toml` is the **latest committed
+continuation state**. It is atomically replaced after each later commit, so
+there is one latest checkpoint rather than one checkpoint per method step. It
+is an ordinary ChemEx parameter file and can be used directly with
+`chemex fit ... -p Output/run_info/restart.toml`. A failed, rejected, stale, or
+interrupted step does not replace the last successfully published restart. The
+file is absent when the invocation has made no state-changing commit.
+
+`inputs/` contains verbatim byte copies of every user-provided experiment,
+parameter, and method TOML file captured for the run. Multiple inputs remain
+separate; both version 1 and version 2 method files are archived without a
+normalized method artifact. Raw experimental data files are not copied.
 
 `outcome.toml` is the lifecycle marker for the current invocation. It has
-`schema_version = 1` and a `status` of `running`, `complete`, or `incomplete`.
+`schema_version = 2` and a `status` of `running`, `complete`, or `incomplete`.
+It always reports the latest in-memory committed revision and the latest
+revision successfully published to `restart.toml`; these can differ if restart
+publication failed after a scientific commit.
 ChemEx writes `complete` only after every requested method step and statistics
 analysis succeeds. Incomplete outcomes also identify the failure or interruption
 when available. A process kill may leave `running`, which is not a successful
@@ -89,9 +102,9 @@ report that invocation as complete.
 
 Contains result reports as three files: `fitted.toml`, `fixed.toml`, and
 `constrained.toml`, which list parameters that were fitted, fixed, and
-constrained, respectively. These reports are not promised to form a complete,
-bound-preserving restart bundle; use `run_info/parameters_used.toml` when
-restarting or re-running a fit.
+constrained, respectively. These reports are not restart bundles. Use
+`run_info/restart.toml` to continue from the latest committed state, or
+`run_info/parameters_used.toml` to reproduce the original invocation start.
 
 #### Example Files
 

@@ -52,7 +52,11 @@ from chemex.optimize.uncertainty import (
 )
 from chemex.parameters.parameterization import ActiveParameterization
 from chemex.parameters.spin_system import SpinSystem
-from chemex.printers.parameters import parameter_uncertainty_view
+from chemex.printers.parameters import (
+    UncertaintyUnavailableKind,
+    parameter_uncertainty_view,
+    uncertainty_unavailable_reason,
+)
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
 
@@ -66,6 +70,33 @@ DCEST_PARAMETERS = (
 )
 CPMG_ROOT = ROOT / "examples/Experiments/CPMG_15N_IP"
 CEST_ROOT = ROOT / "examples/Experiments/CEST_13C_LABEL_CN"
+
+
+def test_uncertainty_unavailability_vocabulary_is_exhaustive_and_truthful() -> None:
+    assert {
+        kind: uncertainty_unavailable_reason(kind)
+        for kind in UncertaintyUnavailableKind
+    } == {
+        UncertaintyUnavailableKind.RANK_DEFICIENT: "rank deficient",
+        UncertaintyUnavailableKind.INSUFFICIENT_INFORMATION: (
+            "insufficient information"
+        ),
+        UncertaintyUnavailableKind.BOUNDARY_LIMITED: "boundary limited",
+        UncertaintyUnavailableKind.NORMALIZATION_INVALID: "normalization invalid",
+        UncertaintyUnavailableKind.JACOBIAN_UNAVAILABLE: "Jacobian unavailable",
+        UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE: (
+            "covariance numerical failure"
+        ),
+        UncertaintyUnavailableKind.UNSUPPORTED_CONSTRAINED_DERIVATIVE: (
+            "unsupported constrained derivative"
+        ),
+        UncertaintyUnavailableKind.DERIVATION_STOPPED: (
+            "derivation interrupted/cancelled"
+        ),
+        UncertaintyUnavailableKind.CONSTRAINED_PROPAGATION_UNAVAILABLE: (
+            "constrained propagation unavailable"
+        ),
+    }
 
 
 def _analytic_pa_kab(kab: float, kba: float) -> float:

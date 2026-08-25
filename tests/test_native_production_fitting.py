@@ -301,6 +301,10 @@ def test_product_fit_rejects_a_stale_aggregate_commit_atomically(
         run(_fit_arguments(output), session=session)
 
     assert session.analysis_values.snapshot().revision == 1
+    assert not (output / "run_info" / "restart.toml").exists()
+    outcome = _read_outcome(output)
+    assert outcome["latest_committed_revision"] == 1
+    assert outcome["restart_revision"] == 0
     assert not (output / "Parameters").exists()
 
 
@@ -407,15 +411,36 @@ ROLES = [{ FIX = ["PB", "KEX_AB"] }]
         starts.append(tuple(float(value) for value in args[1]))
         return real_least_squares(*args, **kwargs)
 
+    output = tmp_path / "Output"
     session = AnalysisSession.create()
-    with patch(
-        "chemex.optimize.direct_trf.least_squares",
-        side_effect=record_start,
+    published: list[tuple[int, str]] = []
+    real_publish = run_info_module.RunInfo.publish_restart
+
+    def record_restart(run_info, snapshot):
+        real_publish(run_info, snapshot)
+        published.append(
+            (snapshot.revision, (run_info.path / "restart.toml").read_text())
+        )
+
+    with (
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=record_start,
+        ),
+        patch.object(
+            run_info_module.RunInfo,
+            "publish_restart",
+            autospec=True,
+            side_effect=record_restart,
+        ),
     ):
-        run(_fit_arguments(tmp_path / "Output", method), session=session)
+        run(_fit_arguments(output, method), session=session)
 
     assert starts == [(2.0,)]
     assert session.analysis_values.snapshot().revision == 2
+    assert [revision for revision, _text in published] == [1, 2]
+    assert '"G2N-H" = [2.0,' in published[0][1]
+    assert _read_outcome(output)["restart_revision"] == 2
 
 
 def test_independent_constrained_independent_transition_uses_latest_resolved_value(
@@ -446,15 +471,36 @@ ROLES = [{ FIX = ["PB", "KEX_AB"] }]
         starts.append(tuple(float(value) for value in args[1]))
         return real_least_squares(*args, **kwargs)
 
+    output = tmp_path / "Output"
     session = AnalysisSession.create()
-    with patch(
-        "chemex.optimize.direct_trf.least_squares",
-        side_effect=record_start,
+    published: list[tuple[int, str]] = []
+    real_publish = run_info_module.RunInfo.publish_restart
+
+    def record_restart(run_info, snapshot):
+        real_publish(run_info, snapshot)
+        published.append(
+            (snapshot.revision, (run_info.path / "restart.toml").read_text())
+        )
+
+    with (
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=record_start,
+        ),
+        patch.object(
+            run_info_module.RunInfo,
+            "publish_restart",
+            autospec=True,
+            side_effect=record_restart,
+        ),
     ):
-        run(_fit_arguments(tmp_path / "Output", method), session=session)
+        run(_fit_arguments(output, method), session=session)
 
     assert starts[1] == (3.0,)
     assert session.analysis_values.snapshot().revision == 3
+    assert [revision for revision, _text in published] == [1, 2, 3]
+    assert '"G2N-H" = [3.0,' in published[1][1]
+    assert _read_outcome(output)["restart_revision"] == 3
 
 
 def test_relaxation_product_covariance_matches_absolute_sigma_reference(
@@ -665,12 +711,12 @@ def test_invalid_fitmethod_fails_before_defaults_and_output_invalidation(
     assert not (output / "run_info").exists()
 
 
-def test_parameters_used_supports_real_cli_restart_round_trip(tmp_path: Path) -> None:
+def test_committed_restart_supports_real_cli_round_trip(tmp_path: Path) -> None:
     first_output = tmp_path / "First"
     restarted_output = tmp_path / "Restarted"
 
     _run_real_fit_cli(first_output, METHOD, PARAMETERS)
-    restart_parameters = first_output / "run_info" / "parameters_used.toml"
+    restart_parameters = first_output / "run_info" / "restart.toml"
     _run_real_fit_cli(restarted_output, METHOD, restart_parameters)
 
     def fitted_value(output: Path) -> float:
@@ -684,6 +730,25 @@ def test_parameters_used_supports_real_cli_restart_round_trip(tmp_path: Path) ->
     # allows roughly one final rendered digit of solver/platform variation.
     assert first_value == pytest.approx(2.34742, rel=5.0e-6)
     assert restarted_value == pytest.approx(first_value, rel=5.0e-6)
+
+
+def test_original_start_supports_real_cli_round_trip(tmp_path: Path) -> None:
+    first_output = tmp_path / "First"
+    reproduced_output = tmp_path / "Reproduced"
+
+    _run_real_fit_cli(first_output, METHOD, PARAMETERS)
+    original_start = first_output / "run_info" / "parameters_used.toml"
+    _run_real_fit_cli(reproduced_output, METHOD, original_start)
+
+    first = tomllib.loads(
+        (first_output / "run_info" / "parameters_used.toml").read_text(encoding="utf-8")
+    )
+    reproduced = tomllib.loads(
+        (reproduced_output / "run_info" / "parameters_used.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert reproduced == first
 
 
 def test_failed_deterministic_rerun_invalidates_prior_results_and_is_incomplete(
@@ -707,15 +772,44 @@ def test_failed_deterministic_rerun_invalidates_prior_results_and_is_incomplete(
         run(_fit_arguments(output), session=AnalysisSession.create())
 
     outcome = _read_outcome(output)
-    assert outcome["schema_version"] == 1
+    assert outcome["schema_version"] == 2
     assert outcome["status"] == "incomplete"
+    assert outcome["latest_committed_revision"] == 0
+    assert outcome["restart_revision"] == 0
     assert outcome["terminal"] == "failed"
+    assert outcome["failure_stage"] == "deterministic_fit"
     assert outcome["failure_type"] == "RuntimeError"
     assert not (output / "Parameters").exists()
     assert not (output / "Data").exists()
     assert not (output / "Plots").exists()
     assert not (output / "statistics.toml").exists()
     assert user_file.read_text(encoding="utf-8") == "keep me\n"
+
+
+def test_planned_output_cleanup_failure_is_classified_as_output(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+
+    with (
+        patch(
+            "chemex.chemex.invalidate_planned_outputs",
+            side_effect=OSError("planned output cleanup failed"),
+        ),
+        pytest.raises(OSError, match="planned output cleanup failed"),
+    ):
+        run(_fit_arguments(output), session=AnalysisSession.create())
+
+    assert _read_outcome(output) == {
+        "schema_version": 2,
+        "status": "incomplete",
+        "latest_committed_revision": 0,
+        "restart_revision": 0,
+        "terminal": "failed",
+        "failure_stage": "output",
+        "failure_type": "OSError",
+        "failure_message": "planned output cleanup failed",
+    }
 
 
 def test_data_writer_failure_after_commit_cannot_complete_or_retain_stale_results(
@@ -740,16 +834,205 @@ def test_data_writer_failure_after_commit_cannot_complete_or_retain_stale_result
 
     assert session.analysis_values.snapshot().revision == 1
     assert _read_outcome(output) == {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "incomplete",
+        "latest_committed_revision": 1,
+        "restart_revision": 1,
         "terminal": "failed",
+        "failure_stage": "output",
         "failure_type": "RuntimeError",
         "failure_message": "data writer failed",
     }
+    assert (output / "run_info" / "restart.toml").is_file()
     assert (output / "Parameters" / "fitted.toml").is_file()
     assert not stale_parameter.exists()
     assert not stale_data.exists()
     assert not (output / "statistics.toml").exists()
+
+
+def test_first_restart_publication_failure_preserves_committed_authority(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+    real_atomic_write = run_info_module.write_text_atomic
+
+    def fail_restart(destination: Path, content: str) -> None:
+        if destination.name == "restart.toml":
+            raise OSError("restart publication failed")
+        real_atomic_write(destination, content)
+
+    with (
+        patch.object(run_info_module, "write_text_atomic", side_effect=fail_restart),
+        pytest.raises(OSError, match="restart publication failed"),
+    ):
+        run(_fit_arguments(output), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    assert not (output / "run_info" / "restart.toml").exists()
+    assert not (output / "Parameters").exists()
+    assert _read_outcome(output) == {
+        "schema_version": 2,
+        "status": "incomplete",
+        "latest_committed_revision": 1,
+        "restart_revision": 0,
+        "terminal": "failed",
+        "failure_stage": "restart_publication",
+        "failure_type": "OSError",
+        "failure_message": "restart publication failed",
+    }
+
+
+def test_first_restart_serialization_failure_preserves_committed_authority(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+    real_serialize = run_info_module.serialize_parameter_file
+
+    def fail_restart_serialization(*args, **kwargs) -> str:
+        if kwargs.get("state_kind") == "restart":
+            raise RuntimeError("restart serialization failed")
+        return real_serialize(*args, **kwargs)
+
+    with (
+        patch.object(
+            run_info_module,
+            "serialize_parameter_file",
+            side_effect=fail_restart_serialization,
+        ),
+        pytest.raises(RuntimeError, match="restart serialization failed"),
+    ):
+        run(_fit_arguments(output), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    assert not (output / "run_info" / "restart.toml").exists()
+    assert _read_outcome(output) == {
+        "schema_version": 2,
+        "status": "incomplete",
+        "latest_committed_revision": 1,
+        "restart_revision": 0,
+        "terminal": "failed",
+        "failure_stage": "restart_publication",
+        "failure_type": "RuntimeError",
+        "failure_message": "restart serialization failed",
+    }
+
+
+def test_later_restart_publication_failure_preserves_previous_checkpoint(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """[STEP1]
+FIX = ["PB", "KEX_AB"]
+
+[STEP2]
+""",
+        encoding="utf-8",
+    )
+    session = AnalysisSession.create()
+    real_atomic_write = run_info_module.write_text_atomic
+    restart_writes = 0
+    first_restart = b""
+
+    def fail_second_restart(destination: Path, content: str) -> None:
+        nonlocal restart_writes, first_restart
+        if destination.name == "restart.toml":
+            restart_writes += 1
+            if restart_writes == 2:
+                raise OSError("second restart publication failed")
+        real_atomic_write(destination, content)
+        if destination.name == "restart.toml":
+            first_restart = destination.read_bytes()
+
+    with (
+        patch.object(
+            run_info_module,
+            "write_text_atomic",
+            side_effect=fail_second_restart,
+        ),
+        pytest.raises(OSError, match="second restart publication failed"),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    restart = output / "run_info" / "restart.toml"
+    assert session.analysis_values.snapshot().revision == 2
+    assert restart.read_bytes() == first_restart
+    assert _read_outcome(output) == {
+        "schema_version": 2,
+        "status": "incomplete",
+        "latest_committed_revision": 2,
+        "restart_revision": 1,
+        "terminal": "failed",
+        "failure_stage": "restart_publication",
+        "failure_type": "OSError",
+        "failure_message": "second restart publication failed",
+    }
+
+
+def test_later_restart_serialization_failure_preserves_previous_checkpoint(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """[STEP1]
+FIX = ["PB", "KEX_AB"]
+
+[STEP2]
+""",
+        encoding="utf-8",
+    )
+    session = AnalysisSession.create()
+    real_serialize = run_info_module.serialize_parameter_file
+    real_atomic_write = run_info_module.write_text_atomic
+    restart_serializations = 0
+    first_restart = b""
+
+    def fail_second_restart_serialization(*args, **kwargs) -> str:
+        nonlocal restart_serializations
+        if kwargs.get("state_kind") == "restart":
+            restart_serializations += 1
+            if restart_serializations == 2:
+                raise RuntimeError("second restart serialization failed")
+        return real_serialize(*args, **kwargs)
+
+    def capture_first_restart(destination: Path, content: str) -> None:
+        nonlocal first_restart
+        real_atomic_write(destination, content)
+        if destination.name == "restart.toml":
+            first_restart = destination.read_bytes()
+
+    with (
+        patch.object(
+            run_info_module,
+            "serialize_parameter_file",
+            side_effect=fail_second_restart_serialization,
+        ),
+        patch.object(
+            run_info_module,
+            "write_text_atomic",
+            side_effect=capture_first_restart,
+        ),
+        pytest.raises(RuntimeError, match="second restart serialization failed"),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    restart = output / "run_info" / "restart.toml"
+    assert session.analysis_values.snapshot().revision == 2
+    assert restart.read_bytes() == first_restart
+    assert _read_outcome(output) == {
+        "schema_version": 2,
+        "status": "incomplete",
+        "latest_committed_revision": 2,
+        "restart_revision": 1,
+        "terminal": "failed",
+        "failure_stage": "restart_publication",
+        "failure_type": "RuntimeError",
+        "failure_message": "second restart serialization failed",
+    }
 
 
 def test_final_complete_outcome_write_failure_is_terminal_and_propagates(
@@ -777,9 +1060,12 @@ def test_final_complete_outcome_write_failure_is_terminal_and_propagates(
     assert session.analysis_values.snapshot().revision == 1
     assert (output / "Parameters" / "fitted.toml").is_file()
     assert _read_outcome(output) == {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "incomplete",
+        "latest_committed_revision": 1,
+        "restart_revision": 1,
         "terminal": "failed",
+        "failure_stage": "run_info",
         "failure_type": "OSError",
         "failure_message": "complete outcome publication failed",
     }
@@ -1233,6 +1519,17 @@ def test_uncertainty_exception_does_not_roll_back_the_committed_fit(
         run(_fit_arguments(output), session=session)
 
     assert session.analysis_values.snapshot().revision == 1
+    assert (output / "run_info" / "restart.toml").is_file()
+    assert _read_outcome(output) == {
+        "schema_version": 2,
+        "status": "incomplete",
+        "latest_committed_revision": 1,
+        "restart_revision": 1,
+        "terminal": "failed",
+        "failure_stage": "uncertainty",
+        "failure_type": "RuntimeError",
+        "failure_message": "uncertainty failed",
+    }
     assert not (output / "Parameters").exists()
 
 
@@ -1381,6 +1678,12 @@ def test_real_compact_mcmc_fit_is_wholly_native_and_writes_products(
     assert diagnostics["walkers"] == 32
     assert diagnostics["root_seed"] == generated_seed
     assert "lmfit_version" not in diagnostics
+    run_record = tomllib.loads(
+        (output / "run_info" / "run.toml").read_text(encoding="utf-8")
+    )
+    assert run_record["stochastic_operations"] == [
+        {"step": "DEFAULT", "kind": "mcmc", "seed": str(generated_seed)}
+    ]
     fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
     assert "# ±" in fitted
     assert "half_credible_interval_68_width" not in fitted
@@ -1421,6 +1724,12 @@ def test_seeded_nested_mcmc_settings_run_through_real_chemex_cli(
     )
     assert diagnostics["status"] == "complete"
     assert diagnostics["root_seed"] == 612
+    run_record = tomllib.loads(
+        (output / "run_info" / "run.toml").read_text(encoding="utf-8")
+    )
+    assert run_record["stochastic_operations"] == [
+        {"step": "DEFAULT", "kind": "mcmc", "seed": "612"}
+    ]
     assert diagnostics["requested_burn"] == 1
     assert diagnostics["thin"] == 2
     assert diagnostics["walkers"] == 4
@@ -1520,6 +1829,10 @@ def test_unbounded_native_mcmc_fails_closed_after_committing_central_fit(
     assert not (statistics / "samples.tsv").exists()
     assert not (statistics / "correlations.tsv").exists()
     assert not (statistics / "plots.pdf").exists()
+    outcome = _read_outcome(output)
+    assert outcome["latest_committed_revision"] == 1
+    assert outcome["restart_revision"] == 1
+    assert outcome["failure_stage"] == "statistics"
 
 
 def test_interrupted_native_mcmc_publishes_only_incomplete_diagnostics(
@@ -1634,7 +1947,12 @@ def test_failed_mixed_statistics_rerun_removes_later_family_outputs_eagerly(
         _fit_arguments(output, method, parameters=parameters),
         session=AnalysisSession.create(),
     )
-    assert _read_outcome(output) == {"schema_version": 1, "status": "complete"}
+    assert _read_outcome(output) == {
+        "schema_version": 2,
+        "status": "complete",
+        "latest_committed_revision": 1,
+        "restart_revision": 1,
+    }
     assert (output / "Statistics" / "Bootstrap" / "diagnostics.toml").is_file()
     assert (output / "Statistics" / "MCMC" / "diagnostics.toml").is_file()
 
@@ -1679,6 +1997,7 @@ STATISTICS = {"MCMC" = 2}
     run(_fit_arguments(output, method), session=session)
 
     assert session.analysis_values.snapshot().revision == 0
+    assert not (output / "run_info" / "restart.toml").exists()
     assert not (output / "Statistics" / "MCMC").exists()
 
 
@@ -2483,6 +2802,87 @@ def test_v2_de_seed_repeats_and_changes_the_stochastic_trajectory(
 
     assert trajectories[0] == trajectories[1]
     assert trajectories[0] != trajectories[2]
+    for ordinal, seed in enumerate((597, 597, 598)):
+        run_record = tomllib.loads(
+            (tmp_path / f"Output-{ordinal}" / "run_info" / "run.toml").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert run_record["stochastic_operations"] == [
+            {"step": "DE", "kind": "de", "seed": str(seed)}
+        ]
+
+
+def test_seed_publication_failure_prevents_de_from_starting(tmp_path: Path) -> None:
+    output = tmp_path / "Output"
+    method = _de_method(tmp_path / "method-v2-de.toml", seed=597)
+    real_atomic_write = run_info_module.write_text_atomic
+
+    def fail_run_update(destination: Path, content: str) -> None:
+        if destination.name == "run.toml":
+            raise OSError("seed publication failed")
+        real_atomic_write(destination, content)
+
+    with (
+        patch.object(run_info_module, "write_text_atomic", side_effect=fail_run_update),
+        patch(
+            "chemex.optimize.de_direct_trf.differential_evolution",
+            side_effect=AssertionError("DE consumed RNG after seed publication failed"),
+        ) as backend,
+        pytest.raises(OSError, match="seed publication failed"),
+    ):
+        run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    backend.assert_not_called()
+    assert _read_outcome(output) == {
+        "schema_version": 2,
+        "status": "incomplete",
+        "latest_committed_revision": 0,
+        "restart_revision": 0,
+        "terminal": "failed",
+        "failure_stage": "run_info",
+        "failure_type": "OSError",
+        "failure_message": "seed publication failed",
+    }
+
+
+def test_seed_record_serialization_failure_prevents_de_from_starting(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _de_method(tmp_path / "method-v2-de.toml", seed=597)
+    real_json_dumps = run_info_module.json.dumps
+
+    def fail_seed_record_serialization(value, **kwargs) -> str:
+        if value == "DE":
+            raise RuntimeError("seed record serialization failed")
+        return real_json_dumps(value, **kwargs)
+
+    with (
+        patch.object(
+            run_info_module.json,
+            "dumps",
+            side_effect=fail_seed_record_serialization,
+        ),
+        patch(
+            "chemex.optimize.de_direct_trf.differential_evolution",
+            side_effect=AssertionError("DE started after seed recording failed"),
+        ) as backend,
+        pytest.raises(RuntimeError, match="seed record serialization failed"),
+    ):
+        run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    backend.assert_not_called()
+    assert _read_outcome(output) == {
+        "schema_version": 2,
+        "status": "incomplete",
+        "latest_committed_revision": 0,
+        "restart_revision": 0,
+        "terminal": "failed",
+        "failure_stage": "run_info",
+        "failure_type": "RuntimeError",
+        "failure_message": "seed record serialization failed",
+    }
 
 
 def test_v2_de_statistics_start_only_after_the_final_trf_commit(tmp_path: Path) -> None:
@@ -2645,6 +3045,10 @@ FIX = ["PB", "KEX_AB"]
         run(_fit_arguments(output, method), session=session)
 
     assert session.analysis_values.snapshot().revision == 2
+    restart = output / "run_info" / "restart.toml"
+    assert restart.is_file()
+    assert not list(output.glob("*/run_info/restart.toml"))
+    assert _read_outcome(output)["restart_revision"] == 2
     first_fitted = (output / "STEP1" / "Parameters" / "fitted.toml").read_text(
         encoding="utf-8"
     )
@@ -2712,7 +3116,52 @@ FIX = ["PB", "KEX_AB"]
     assert not (output / "STEP2" / "Parameters").exists()
     assert not stale_step2.exists()
     assert user_file.read_text(encoding="utf-8") == "keep me\n"
-    assert _read_outcome(output)["status"] == "incomplete"
+    assert (output / "run_info" / "restart.toml").is_file()
+    outcome = _read_outcome(output)
+    assert outcome["status"] == "incomplete"
+    assert outcome["latest_committed_revision"] == 1
+    assert outcome["restart_revision"] == 1
+
+
+def test_interrupted_second_step_preserves_first_committed_restart(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """[STEP1]
+FIX = ["PB", "KEX_AB"]
+
+[STEP2]
+""",
+        encoding="utf-8",
+    )
+    real_least_squares = direct_trf_module.least_squares
+    call_count = 0
+
+    def interrupt_second_step(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise KeyboardInterrupt
+        return real_least_squares(*args, **kwargs)
+
+    session = AnalysisSession.create()
+    with (
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=interrupt_second_step,
+        ),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    assert (output / "run_info" / "restart.toml").is_file()
+    outcome = _read_outcome(output)
+    assert outcome["terminal"] == "interrupted"
+    assert outcome["latest_committed_revision"] == 1
+    assert outcome["restart_revision"] == 1
 
 
 def test_planned_invalidation_rejects_a_step_root_outside_the_output(
@@ -2809,6 +3258,7 @@ FIX = ["R1A_A", "PB", "KEX_AB"]
     run(_fit_arguments(output, method), session=session)
 
     assert session.analysis_values.snapshot().revision == 0
+    assert not (output / "run_info" / "restart.toml").exists()
     assert (output / "Parameters" / "fixed.toml").is_file()
     assert (output / "statistics.toml").is_file()
     data = next((output / "Data").glob("*.dat")).read_text(encoding="utf-8")
@@ -2860,6 +3310,12 @@ STATISTICS = { "MC" = 1 }
     )
     assert diagnostics["status"] == "complete"
     assert diagnostics["root_seed"] == 0
+    run_record = tomllib.loads(
+        (output / "run_info" / "run.toml").read_text(encoding="utf-8")
+    )
+    assert run_record["stochastic_operations"] == [
+        {"step": "DEFAULT", "kind": "mc", "seed": "0"}
+    ]
 
 
 def test_v2_grid_runs_requested_statistics_from_the_accepted_grid_fit(
@@ -2891,6 +3347,12 @@ SEED = 7
         )
     )
     assert diagnostics["root_seed"] == 7
+    run_record = tomllib.loads(
+        (output / "run_info" / "run.toml").read_text(encoding="utf-8")
+    )
+    assert run_record["stochastic_operations"] == [
+        {"step": "DEFAULT", "kind": "mc", "seed": "7"}
+    ]
 
 
 def test_v2_omitted_resampling_seed_is_generated_once_and_recorded(
@@ -2909,7 +3371,9 @@ REPLICATES = 1
     )
     generated_seed = 0xFEDC_BA09_8765_4321
 
-    with patch("chemex.optimize.fitting.secrets.randbits", return_value=generated_seed):
+    with patch(
+        "chemex.optimize.fitting.secrets.randbits", return_value=generated_seed
+    ) as generate_seed:
         run(_fit_arguments(output, method), session=AnalysisSession.create())
 
     diagnostics = tomllib.loads(
@@ -2918,3 +3382,10 @@ REPLICATES = 1
         )
     )
     assert diagnostics["root_seed"] == generated_seed
+    assert generate_seed.call_count == 1
+    run_record = tomllib.loads(
+        (output / "run_info" / "run.toml").read_text(encoding="utf-8")
+    )
+    assert run_record["stochastic_operations"] == [
+        {"step": "DEFAULT", "kind": "mc", "seed": str(generated_seed)}
+    ]

@@ -28,7 +28,6 @@ from chemex.messages import (
     print_minimizing,
     print_running_de,
 )
-from chemex.native_provenance import ProvenanceEnvironment
 from chemex.optimize.de_direct_trf import (
     DeCoordinateSemantics,
     DeSearchInvocation,
@@ -98,7 +97,9 @@ from chemex.printers.parameters import (
     parameter_uncertainty_view,
     uncertainty_unavailable_reason,
 )
+from chemex.run_info import RunInfo, mark_failure_stage
 from chemex.runtime import AnalysisSession
+from chemex.runtime.environment import RuntimeEnvironment
 
 # The finalized #573/#664 policy uses 2000 * (nvars + 1), with numerical
 # Jacobian requests counted in the same total objective-request ceiling.
@@ -151,7 +152,7 @@ def _product_uncertainty_inputs(
     parameterization: ActiveParameterization,
 ) -> _ProductUncertaintyInputs:
     """Resolve the normal absolute-observation-sigma covariance policy."""
-    environment = ProvenanceEnvironment.from_current_process()
+    environment = RuntimeEnvironment.from_current_process()
     policy = UncertaintyPolicy(
         calibration_identity="native-product-local-covariance-numerics-v2",
         numerical_compatibility_requirement=(
@@ -665,14 +666,14 @@ def _commit_resolved_continuity_if_changed(
     analysis_values: AnalysisValues,
     starting_snapshot: AnalysisValuesSnapshot,
     resolved_values: ResolvedEvaluationValues,
-) -> None:
+) -> AnalysisValuesSnapshot | None:
     """Commit a successful derived-only transition when its values changed."""
     resolved_items = resolved_values.ordered_items()
     if not any(
         value != starting_snapshot[param_id] for param_id, value in resolved_items
     ):
-        return
-    analysis_values.commit(
+        return None
+    return analysis_values.commit(
         dict(resolved_items),
         expected=starting_snapshot,
         scope=tuple(resolved_values),
@@ -688,6 +689,8 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     session: AnalysisSession,
     parameterization: ActiveParameterization | None = None,
     search: GridSearch | DeSearch | None = None,
+    run_info: RunInfo | None = None,
+    step_name: str = "DEFAULT",
 ) -> NativeDeterministicFit | None:
     """Execute one complete deterministic method occurrence natively."""
     parameter_model = session.parameter_factory.sealed_parameter_model
@@ -714,22 +717,28 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
                 f"{evaluated.category}: {evaluated.message}"
             )
         result = evaluated
-        _commit_resolved_continuity_if_changed(
+        continuity_snapshot = _commit_resolved_continuity_if_changed(
             session.analysis_values,
             starting_snapshot,
             result.resolved_values,
         )
-        _materialize_evaluation(experiments, result)
-        execute_post_fit(
-            experiments,
-            path,
-            plot=plot != "nothing",
-            residuals=result.residuals,
-            nvarys=0,
-            parameter_model=parameter_model,
-            parameter_values=result.resolved_values,
-            parameterization=parameterization,
-        )
+        if continuity_snapshot is not None and run_info is not None:
+            run_info.publish_restart(continuity_snapshot)
+        try:
+            _materialize_evaluation(experiments, result)
+            execute_post_fit(
+                experiments,
+                path,
+                plot=plot != "nothing",
+                residuals=result.residuals,
+                nvarys=0,
+                parameter_model=parameter_model,
+                parameter_values=result.resolved_values,
+                parameterization=parameterization,
+            )
+        except (Exception, KeyboardInterrupt) as error:
+            mark_failure_stage(error, "output")
+            raise
         return None
 
     problem = OptimizationProblem.from_native(
@@ -739,6 +748,8 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         starting_snapshot,
     )
     if isinstance(search, DeSearch):
+        if run_info is not None:
+            run_info.record_stochastic_operation(step_name, "de", search.seed)
         problem = _run_product_de_search(
             search,
             problem,
@@ -811,22 +822,33 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             else f"{failure.category.value}: {failure.message}"
         )
         raise RuntimeError(f"Native deterministic fit did not commit: {detail}")
+    committed_snapshot = commit.committed_snapshot
+    if committed_snapshot is None:
+        raise RuntimeError("Committed native fit lacks its central-value snapshot")
+    if run_info is not None:
+        run_info.publish_restart(committed_snapshot)
 
     accepted = outcome.accepted_result
     if accepted is None:
         raise RuntimeError("Committed native fit lacks its accepted result")
     result = accepted.evaluation_result
-    uncertainty_evidence, uncertainty, uncertainty_status = _derive_product_uncertainty(
-        accepted,
-        problem,
-        parameterization,
-        engine,
-        uncertainty_inputs,
-    )
-    block_uncertainty, block_status = _product_block_uncertainty(
-        uncertainty_evidence,
-        decomposition,
-    )
+    try:
+        uncertainty_evidence, uncertainty, uncertainty_status = (
+            _derive_product_uncertainty(
+                accepted,
+                problem,
+                parameterization,
+                engine,
+                uncertainty_inputs,
+            )
+        )
+        block_uncertainty, block_status = _product_block_uncertainty(
+            uncertainty_evidence,
+            decomposition,
+        )
+    except (Exception, KeyboardInterrupt) as error:
+        mark_failure_stage(error, "uncertainty")
+        raise
     uncertainty_status = block_status or uncertainty_status
     if block_uncertainty is not None:
         block_errors = tuple(
@@ -899,16 +921,42 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         uncertainty_evidence,
         block_uncertainty,
     )
-    _materialize_evaluation(experiments, result)
+    try:
+        _materialize_evaluation(experiments, result)
+    except (Exception, KeyboardInterrupt) as error:
+        mark_failure_stage(error, "output")
+        raise
     variable_count = len(problem.controlled_ids)
     if isinstance(search, GridSearch):
-        _write_grid_output(
-            cast("GroupedGridDirectTrfOutcome", outcome),
-            cast("GridDirectTrfInvocation", invocation),
-            path,
-            parameter_model=parameter_model,
-            accepted_values=result.resolved_values,
-        )
+        try:
+            _write_grid_output(
+                cast("GroupedGridDirectTrfOutcome", outcome),
+                cast("GridDirectTrfInvocation", invocation),
+                path,
+                parameter_model=parameter_model,
+                accepted_values=result.resolved_values,
+            )
+            execute_post_fit(
+                experiments,
+                path,
+                plot=plot != "nothing",
+                residuals=result.residuals,
+                nvarys=variable_count,
+                uncertainty=uncertainty,
+                uncertainty_evidence=uncertainty_evidence,
+                uncertainty_status=uncertainty_status,
+                block_uncertainty=block_uncertainty,
+                parameter_model=parameter_model,
+                parameter_values=result.resolved_values,
+                parameterization=parameterization,
+                fitted_ids=problem.controlled_ids,
+            )
+        except (Exception, KeyboardInterrupt) as error:
+            mark_failure_stage(error, "output")
+            raise
+        return fit
+
+    try:
         execute_post_fit(
             experiments,
             path,
@@ -924,21 +972,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             parameterization=parameterization,
             fitted_ids=problem.controlled_ids,
         )
-        return fit
-
-    execute_post_fit(
-        experiments,
-        path,
-        plot=plot != "nothing",
-        residuals=result.residuals,
-        nvarys=variable_count,
-        uncertainty=uncertainty,
-        uncertainty_evidence=uncertainty_evidence,
-        uncertainty_status=uncertainty_status,
-        block_uncertainty=block_uncertainty,
-        parameter_model=parameter_model,
-        parameter_values=result.resolved_values,
-        parameterization=parameterization,
-        fitted_ids=problem.controlled_ids,
-    )
+    except (Exception, KeyboardInterrupt) as error:
+        mark_failure_stage(error, "output")
+        raise
     return fit

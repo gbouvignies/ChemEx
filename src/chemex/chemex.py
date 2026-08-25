@@ -3,7 +3,7 @@
 import os
 import sys
 from argparse import Namespace
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 
 from chemex.cli import build_parser
 from chemex.configuration.method_plan import (
@@ -27,7 +27,12 @@ from chemex.messages import (
 )
 from chemex.optimize.fitting import invalidate_planned_outputs, run_methods
 from chemex.optimize.helper import execute_simulation
-from chemex.run_info import write_run_info, write_run_outcome
+from chemex.run_info import (
+    InputFile,
+    capture_input_files,
+    mark_failure_stage,
+    write_run_info,
+)
 from chemex.runtime import (
     AnalysisSession,
     ExecutionSettings,
@@ -40,9 +45,9 @@ def run_fit(
     experiments: Experiments,
     session: AnalysisSession,
     *,
+    input_files: Sequence[InputFile],
     argv: Sequence[str] | None = None,
     methods: Methods | MethodPlan | None = None,
-    brute_steps: Mapping[str, float],
 ) -> None:
     if methods is None:
         methods = _read_fit_methods(args)
@@ -51,21 +56,21 @@ def run_fit(
     if parameter_model is None:
         raise RuntimeError("Native parameter model is unavailable")
     starting_values = session.analysis_values.snapshot()
-    starting_parameterization = session.compile_parameterization(
-        Method(),
-        experiments.param_ids,
-    )
-    write_run_info(
+    run_info = write_run_info(
         args,
         parameter_model=parameter_model,
-        parameterization=starting_parameterization,
         starting_values=starting_values,
-        brute_steps=brute_steps,
+        execution=session.execution,
+        input_files=input_files,
         argv=argv,
     )
 
     try:
-        invalidate_planned_outputs(methods, args.output)
+        try:
+            invalidate_planned_outputs(methods, args.output)
+        except (Exception, KeyboardInterrupt) as error:
+            mark_failure_stage(error, "output")
+            raise
 
         resolved_values = session.resolve_current_values(experiments.param_ids)
         experiments.filter_from_values(resolved_values)
@@ -77,11 +82,17 @@ def run_fit(
             args.output,
             args.plot,
             session=session,
+            run_info=run_info,
         )
-        write_run_outcome(args.output, "complete")
+        run_info.write_outcome("complete", session.analysis_values.snapshot())
     except (Exception, KeyboardInterrupt) as error:
         try:
-            write_run_outcome(args.output, "incomplete", failure=error)
+            run_info.write_outcome(
+                "incomplete",
+                session.analysis_values.snapshot(),
+                failure=error,
+                failure_stage="deterministic_fit",
+            )
         except (Exception, KeyboardInterrupt) as outcome_error:  # noqa: BLE001
             error.add_note(
                 f"ChemEx could not publish the incomplete run outcome: {outcome_error}"
@@ -145,6 +156,8 @@ def run(
     )
     os.environ.update(session.execution.native_thread_env())
 
+    input_files = capture_input_files(args) if args.commands == "fit" else ()
+
     # Parse kinetics model
     session.set_model(args.model)
 
@@ -162,12 +175,6 @@ def run(
     print_reading_defaults()
     defaults = read_defaults(args.parameters)
     session.parameters.set_defaults(defaults)
-    configured_parameters = session.parameters.get_parameters(experiments.param_ids)
-    brute_steps = {
-        param_id: parameter.brute_step
-        for param_id, parameter in configured_parameters.items()
-        if parameter.brute_step is not None
-    }
     if not session.try_build_analysis_values():
         construction_error = getattr(
             session.parameter_factory,
@@ -189,9 +196,9 @@ def run(
             args,
             experiments,
             session,
+            input_files=input_files,
             argv=argv,
             methods=methods,
-            brute_steps=brute_steps,
         )
 
 

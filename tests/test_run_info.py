@@ -10,13 +10,12 @@ import pytest
 
 from chemex import __version__
 from chemex import run_info as run_info_module
-from chemex.configuration.methods import Method
+from chemex.configuration.parameters import read_defaults
 from chemex.parameters.name import ParamName
 from chemex.parameters.parameterization import (
     ParameterDeclaration,
     SealedParameterDeclarations,
     SealedParameterModel,
-    compile_active_parameterization,
 )
 from chemex.parameters.sealed import (
     ParamConfig,
@@ -90,21 +89,9 @@ def _parameter_inputs(
         0,
         tuple((parameter.id_, parameter.value) for parameter in ordered),
     )
-    parameterization = compile_active_parameterization(
-        parameter_model,
-        starting_values,
-        Method(),
-        set(declarations),
-    )
     return {
         "parameter_model": parameter_model,
-        "parameterization": parameterization,
         "starting_values": starting_values,
-        "brute_steps": {
-            parameter.id_: parameter.brute_step
-            for parameter in ordered
-            if parameter.brute_step is not None
-        },
     }
 
 
@@ -161,7 +148,12 @@ def test_write_run_info_captures_inputs_parameters_and_runtime(
         experiments=[Path("experiment.toml")],
         parameters=[Path("parameters.toml")],
         method=[Path("method.toml")],
-        output=output,
+        output=Path("Output"),
+        model="2st",
+        include=[SpinSystem.from_name("15N")],
+        exclude=None,
+        workers=4,
+        native_threads="auto",
     )
     argv = [
         "chemex",
@@ -183,21 +175,45 @@ def test_write_run_info_captures_inputs_parameters_and_runtime(
     )
 
     run_info_path = output / "run_info"
+    assert {path.relative_to(run_info_path) for path in run_info_path.rglob("*")} >= {
+        Path("run.toml"),
+        Path("parameters_used.toml"),
+        Path("outcome.toml"),
+        Path("inputs/experiments"),
+        Path("inputs/parameters"),
+        Path("inputs/methods"),
+    }
+    assert not (run_info_path / "restart.toml").exists()
     run_text = (run_info_path / "run.toml").read_text(encoding="utf-8")
     run = tomllib.loads(run_text)
+    assert tomllib.loads(
+        (run_info_path / "outcome.toml").read_text(encoding="utf-8")
+    ) == {
+        "schema_version": 2,
+        "status": "running",
+        "latest_committed_revision": 0,
+        "restart_revision": 0,
+    }
     parameters = tomllib.loads(
         (run_info_path / "parameters_used.toml").read_text(encoding="utf-8"),
     )
 
     assert run_text.startswith("# ChemEx run information.\n")
-    assert run["schema_version"] == 1
+    assert run["schema_version"] == 2
     assert run["created_at_utc"] == "2026-06-24T12:30:00+00:00"
     assert run["run"]["kind"] == "fit"
     assert run["run"]["working_directory"] == str(tmp_path)
-    assert run["run"]["output_directory"] == str(output)
-    assert run["chemex"]["version"] == __version__
-    assert run["python"]["version"]
-    assert run["python"]["platform"]
+    assert run["run"]["requested_output_path"] == "Output"
+    assert run["run"]["resolved_output_path"] == str(output)
+    assert run["run"]["model"] == "2st"
+    assert run["selection"] == {"include": ["15N"], "exclude": []}
+    assert run["execution"] == {"workers": 4, "native_threads": "automatic"}
+    assert run["software"]["chemex"] == __version__
+    assert run["software"]["python"]
+    assert run["software"]["numpy"]
+    assert run["software"]["scipy"]
+    assert run["software"]["emcee"]
+    assert "platform" not in run["software"]
     assert run["command"]["arguments"] == argv
     assert "git" not in run
 
@@ -216,13 +232,143 @@ def test_write_run_info_captures_inputs_parameters_and_runtime(
     parameters_text = (run_info_path / "parameters_used.toml").read_text(
         encoding="utf-8",
     )
-    assert parameters_text.startswith(
-        "# Starting independent parameters used by ChemEx for this fit.\n"
-    )
-    assert "intended to be usable as a starting parameter file" in parameters_text
+    assert parameters_text.startswith("# Original invocation start used by ChemEx.\n")
+    assert "not the latest fitted state" in parameters_text
     assert parameters["GLOBAL"]["PB"] == [0.15, 0.0, 1.0]
-    assert parameters["DW_AB"]["15N"] == [2.5, -10.0, 10.0, 0.5]
+    assert parameters["DW_AB"]["15N"] == [2.5, -10.0, 10.0]
     assert "PA" not in parameters["GLOBAL"]
+
+
+def test_committed_restart_is_one_normal_parameter_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    pb = ParamSetting(ParamName("PB"), value=0.15, min=0.0, max=1.0)
+    dw = ParamSetting(
+        ParamName("DW_AB", SpinSystem.from_name("15N")),
+        value=2.5,
+        min=-10.0,
+        max=10.0,
+    )
+    inputs = _parameter_inputs((pb, dw))
+    starting = inputs["starting_values"]
+    assert isinstance(starting, AnalysisValuesSnapshot)
+    output = tmp_path / "Output"
+    args = Namespace(
+        experiments=[_write_input(tmp_path / "experiment.toml")],
+        parameters=[_write_input(tmp_path / "parameters.toml")],
+        method=None,
+        output=output,
+        model="2st",
+        include=None,
+        exclude=None,
+        workers=1,
+        native_threads="auto",
+    )
+    monkeypatch.setattr(run_info_module, "_git_metadata", lambda: None)
+
+    run = run_info_module.write_run_info(
+        args,
+        **inputs,  # ty: ignore[invalid-argument-type]
+        argv=["chemex", "fit"],
+        working_directory=tmp_path,
+    )
+    committed = AnalysisValuesSnapshot(
+        starting.occurrence_identity,
+        starting.model_identity,
+        starting.definitions_identity,
+        starting.configuration_identity,
+        1,
+        ((pb.id_, 0.083417), (dw.id_, 3.041)),
+    )
+
+    run.publish_restart(committed)
+
+    restart = output / "run_info" / "restart.toml"
+    parsed = tomllib.loads(restart.read_text(encoding="utf-8"))
+    assert parsed["GLOBAL"]["PB"] == [0.083417, 0.0, 1.0]
+    assert parsed["DW_AB"]["15N"] == [3.041, -10.0, 10.0]
+    defaults = {name.id_: setting for name, setting in read_defaults([restart])}
+    assert defaults[pb.id_].value == pytest.approx(0.083417)
+    assert defaults[dw.id_].value == pytest.approx(3.041)
+    assert run.restart_revision == 1
+    assert list((output / "run_info").glob("restart.toml")) == [restart]
+
+
+def test_stochastic_seed_is_a_full_unsigned_decimal_string(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inputs = _parameter_inputs()
+    output = tmp_path / "Output"
+    args = Namespace(
+        experiments=[_write_input(tmp_path / "experiment.toml")],
+        parameters=[_write_input(tmp_path / "parameters.toml")],
+        method=None,
+        output=output,
+        model="2st",
+        include=None,
+        exclude=None,
+        workers=1,
+        native_threads="auto",
+    )
+    monkeypatch.setattr(run_info_module, "_git_metadata", lambda: None)
+    run = run_info_module.write_run_info(
+        args,
+        **inputs,  # ty: ignore[invalid-argument-type]
+        argv=["chemex", "fit"],
+        working_directory=tmp_path,
+    )
+
+    run.record_stochastic_operation("SEARCH", "de", (1 << 64) - 1)
+
+    record = tomllib.loads(
+        (output / "run_info" / "run.toml").read_text(encoding="utf-8")
+    )
+    assert record["stochastic_operations"] == [
+        {"step": "SEARCH", "kind": "de", "seed": "18446744073709551615"}
+    ]
+
+
+def test_seed_record_read_failure_is_classified_as_run_info(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inputs = _parameter_inputs()
+    output = tmp_path / "Output"
+    args = Namespace(
+        experiments=[_write_input(tmp_path / "experiment.toml")],
+        parameters=[_write_input(tmp_path / "parameters.toml")],
+        method=None,
+        output=output,
+        model="2st",
+        include=None,
+        exclude=None,
+        workers=1,
+        native_threads="auto",
+    )
+    monkeypatch.setattr(run_info_module, "_git_metadata", lambda: None)
+    run = run_info_module.write_run_info(
+        args,
+        **inputs,  # ty: ignore[invalid-argument-type]
+        argv=["chemex", "fit"],
+        working_directory=tmp_path,
+    )
+    run_path = output / "run_info" / "run.toml"
+    original_read_text = Path.read_text
+
+    def fail_run_record_read(path: Path, *args, **kwargs) -> str:
+        if path == run_path:
+            raise OSError("run record read failed")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fail_run_record_read)
+
+    with pytest.raises(OSError, match="run record read failed") as caught:
+        run.record_stochastic_operation("SEARCH", "de", 7)
+
+    assert caught.value.failure_stage == "run_info"
+    assert run.stochastic_operations == ()
 
 
 def test_archived_tomls_are_immutable_byte_copies_alongside_outcome(
@@ -268,8 +414,10 @@ def test_archived_tomls_are_immutable_byte_copies_alongside_outcome(
 
     assert run_path.read_bytes() == run_bytes
     assert tomllib.loads((run_info / "outcome.toml").read_text(encoding="utf-8")) == {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "complete",
+        "latest_committed_revision": 0,
+        "restart_revision": 0,
     }
     for category, path in archived.items():
         assert path.read_bytes() == original_bytes[category]
@@ -300,7 +448,7 @@ def test_run_info_uses_chemex_path_semantics_for_literal_tilde(
     run = tomllib.loads((run_info_path / "run.toml").read_text(encoding="utf-8"))
     copied_experiment = run["inputs"]["experiments"][0]
 
-    assert run["run"]["output_directory"] == str(output.resolve())
+    assert run["run"]["resolved_output_path"] == str(output.resolve())
     assert copied_experiment["provided_path"] == "~/experiment.toml"
     assert copied_experiment["resolved_path"] == str(experiment_file.resolve())
     assert (run_info_path / copied_experiment["copied_path"]).read_text(
@@ -502,22 +650,3 @@ def test_failed_replacement_restores_existing_run_info(
     assert existing_run.read_text(encoding="utf-8") == "schema_version = 1\n"
     assert staging_path.exists()
     assert not list(tmp_path.glob(".run_info-backup-*"))
-
-
-@pytest.mark.parametrize(
-    "content",
-    (
-        "schema_version = 3\n",
-        'schema_version = 2\nschema_kind = "foreign"\n',
-        'schema_version = "2"\n',
-    ),
-)
-def test_run_information_classifier_rejects_unknown_schema_meanings(
-    tmp_path: Path,
-    content: str,
-) -> None:
-    path = tmp_path / "run.toml"
-    path.write_text(content, encoding="utf-8")
-
-    with pytest.raises(ValueError, match="Unsupported run-information schema"):
-        run_info_module.classify_run_information(path)
