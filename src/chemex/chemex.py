@@ -27,7 +27,12 @@ from chemex.messages import (
 )
 from chemex.optimize.fitting import invalidate_planned_outputs, run_methods
 from chemex.optimize.helper import execute_simulation
-from chemex.run_info import write_run_info
+from chemex.run_info import (
+    InputFile,
+    capture_input_files,
+    mark_failure_stage,
+    write_run_info,
+)
 from chemex.runtime import (
     AnalysisSession,
     ExecutionSettings,
@@ -40,6 +45,7 @@ def run_fit(
     experiments: Experiments,
     session: AnalysisSession,
     *,
+    input_files: Sequence[InputFile],
     argv: Sequence[str] | None = None,
     methods: Methods | MethodPlan | None = None,
 ) -> None:
@@ -55,11 +61,16 @@ def run_fit(
         parameter_model=parameter_model,
         starting_values=starting_values,
         execution=session.execution,
+        input_files=input_files,
         argv=argv,
     )
 
     try:
-        invalidate_planned_outputs(methods, args.output)
+        try:
+            invalidate_planned_outputs(methods, args.output)
+        except (Exception, KeyboardInterrupt) as error:
+            mark_failure_stage(error, "output")
+            raise
 
         resolved_values = session.resolve_current_values(experiments.param_ids)
         experiments.filter_from_values(resolved_values)
@@ -145,6 +156,8 @@ def run(
     )
     os.environ.update(session.execution.native_thread_env())
 
+    input_files = capture_input_files(args) if args.commands == "fit" else ()
+
     # Parse kinetics model
     session.set_model(args.model)
 
@@ -183,6 +196,7 @@ def run(
             args,
             experiments,
             session,
+            input_files=input_files,
             argv=argv,
             methods=methods,
         )

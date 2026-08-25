@@ -121,9 +121,9 @@ class RunInfo:
             f"seed = {_quote_string(str(seed))}",
             "",
         ]
-        run_path = self.path / "run.toml"
-        text = run_path.read_text(encoding="utf-8") + "\n".join(lines)
         try:
+            run_path = self.path / "run.toml"
+            text = run_path.read_text(encoding="utf-8") + "\n".join(lines)
             write_text_atomic(run_path, text)
         except (Exception, KeyboardInterrupt) as error:
             mark_failure_stage(error, "run_info")
@@ -235,18 +235,27 @@ def _resolve_path(path: Path, working_directory: Path) -> Path:
     return (working_directory / path).resolve()
 
 
-def _collect_input_files(args: Namespace, working_directory: Path) -> list[InputFile]:
+def capture_input_files(
+    args: Namespace,
+    working_directory: Path | None = None,
+) -> tuple[InputFile, ...]:
+    """Capture exact CLI TOML bytes before any consumer parses them."""
+    cwd = (
+        Path.cwd().resolve()
+        if working_directory is None
+        else working_directory.resolve()
+    )
     files: list[InputFile] = []
     for category in _INPUT_CATEGORIES:
         paths = getattr(args, category if category != "methods" else "method", None)
         if paths is None:
             continue
         for path in paths:
-            resolved_path = _resolve_path(path, working_directory)
+            resolved_path = _resolve_path(path, cwd)
             files.append(
                 InputFile(category, path, resolved_path, resolved_path.read_bytes())
             )
-    return files
+    return tuple(files)
 
 
 def _copy_name(path: Path, *, collides: bool) -> str:
@@ -510,6 +519,7 @@ def write_run_info(
     parameter_model: SealedParameterModel,
     starting_values: AnalysisValuesSnapshot,
     execution: ExecutionSettings | None = None,
+    input_files: Sequence[InputFile] | None = None,
     argv: Sequence[str] | None = None,
     working_directory: Path | None = None,
     timestamp: datetime | None = None,
@@ -522,7 +532,9 @@ def write_run_info(
     )
     output_directory = _resolve_path(args.output, cwd)
     run_info_path = output_directory / "run_info"
-    input_files = _collect_input_files(args, cwd)
+    captured_inputs = (
+        capture_input_files(args, cwd) if input_files is None else input_files
+    )
     git_metadata = _git_metadata()
     resolved_execution = (
         ExecutionSettings.from_counts(
@@ -539,7 +551,7 @@ def write_run_info(
         prefix=".run_info-",
     ) as staging:
         staging_path = Path(staging)
-        copied_inputs = _copy_inputs(input_files, staging_path)
+        copied_inputs = _copy_inputs(captured_inputs, staging_path)
         (staging_path / "parameters_used.toml").write_text(
             serialize_parameter_file(
                 parameter_model,

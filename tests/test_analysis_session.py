@@ -341,12 +341,18 @@ def test_build_experiments_seals_empty_definition_set() -> None:
 
 def test_run_uses_explicit_session_for_fit_flow(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     defaults = object()
     session = StubSession()
     experiments = FakeExperiments()
     recorded: dict[str, object] = {}
     recorded_env: dict[str, str] = {}
+    experiment_path = tmp_path / "experiment.toml"
+    parameter_path = tmp_path / "parameters.toml"
+    experiment_bytes = b'[experiment]\r\nname = "captured-before-parse"\r\n'
+    experiment_path.write_bytes(experiment_bytes)
+    parameter_path.write_text("[GLOBAL]\nPB = 0.1\n", encoding="utf-8")
 
     def fake_build_experiments(
         filenames: list[Path] | None,
@@ -354,6 +360,7 @@ def test_run_uses_explicit_session_for_fit_flow(
         *,
         session: StubSession | None = None,
     ) -> FakeExperiments:
+        experiment_path.write_text("[changed]\nvalue = true\n", encoding="utf-8")
         recorded["build"] = (filenames, selection, session)
         return experiments
 
@@ -383,14 +390,17 @@ def test_run_uses_explicit_session_for_fit_flow(
             "outcome", status
         )
     )
-    monkeypatch.setattr(
-        chemex_module,
-        "write_run_info",
-        lambda *_args, **_kwargs: recorded.setdefault("run_info", fake_run_info),
-    )
+
+    def fake_write_run_info(*_args, **kwargs):
+        recorded["captured_inputs"] = kwargs["input_files"]
+        return recorded.setdefault("run_info", fake_run_info)
+
+    monkeypatch.setattr(chemex_module, "write_run_info", fake_write_run_info)
     monkeypatch.setattr(chemex_module.os, "environ", recorded_env)
 
     args = make_args("fit")
+    args.experiments = [experiment_path]
+    args.parameters = [parameter_path]
     args.workers = 3
     args.native_threads = 2
     chemex_module.run(args, session=session)
@@ -409,6 +419,8 @@ def test_run_uses_explicit_session_for_fit_flow(
     assert recorded["run_methods"][4] is session
     assert recorded["run_methods"][5] is fake_run_info
     assert recorded["run_info"] is fake_run_info
+    captured_inputs = recorded["captured_inputs"]
+    assert captured_inputs[0].content == experiment_bytes
     assert recorded["outcome"] == "complete"
 
 
@@ -426,6 +438,7 @@ def test_run_fails_closed_when_native_configuration_is_unavailable(
         lambda *_args, **_kwargs: experiments,
     )
     monkeypatch.setattr(chemex_module, "read_defaults", lambda _filenames: object())
+    monkeypatch.setattr(chemex_module, "capture_input_files", lambda _args: ())
     monkeypatch.setattr(
         chemex_module,
         "run_methods",

@@ -330,6 +330,47 @@ def test_stochastic_seed_is_a_full_unsigned_decimal_string(
     ]
 
 
+def test_seed_record_read_failure_is_classified_as_run_info(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    inputs = _parameter_inputs()
+    output = tmp_path / "Output"
+    args = Namespace(
+        experiments=[_write_input(tmp_path / "experiment.toml")],
+        parameters=[_write_input(tmp_path / "parameters.toml")],
+        method=None,
+        output=output,
+        model="2st",
+        include=None,
+        exclude=None,
+        workers=1,
+        native_threads="auto",
+    )
+    monkeypatch.setattr(run_info_module, "_git_metadata", lambda: None)
+    run = run_info_module.write_run_info(
+        args,
+        **inputs,  # ty: ignore[invalid-argument-type]
+        argv=["chemex", "fit"],
+        working_directory=tmp_path,
+    )
+    run_path = output / "run_info" / "run.toml"
+    original_read_text = Path.read_text
+
+    def fail_run_record_read(path: Path, *args, **kwargs) -> str:
+        if path == run_path:
+            raise OSError("run record read failed")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fail_run_record_read)
+
+    with pytest.raises(OSError, match="run record read failed") as caught:
+        run.record_stochastic_operation("SEARCH", "de", 7)
+
+    assert caught.value.failure_stage == "run_info"
+    assert run.stochastic_operations == ()
+
+
 def test_archived_tomls_are_immutable_byte_copies_alongside_outcome(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

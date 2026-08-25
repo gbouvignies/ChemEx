@@ -786,6 +786,32 @@ def test_failed_deterministic_rerun_invalidates_prior_results_and_is_incomplete(
     assert user_file.read_text(encoding="utf-8") == "keep me\n"
 
 
+def test_planned_output_cleanup_failure_is_classified_as_output(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+
+    with (
+        patch(
+            "chemex.chemex.invalidate_planned_outputs",
+            side_effect=OSError("planned output cleanup failed"),
+        ),
+        pytest.raises(OSError, match="planned output cleanup failed"),
+    ):
+        run(_fit_arguments(output), session=AnalysisSession.create())
+
+    assert _read_outcome(output) == {
+        "schema_version": 2,
+        "status": "incomplete",
+        "latest_committed_revision": 0,
+        "restart_revision": 0,
+        "terminal": "failed",
+        "failure_stage": "output",
+        "failure_type": "OSError",
+        "failure_message": "planned output cleanup failed",
+    }
+
+
 def test_data_writer_failure_after_commit_cannot_complete_or_retain_stale_results(
     tmp_path: Path,
 ) -> None:
