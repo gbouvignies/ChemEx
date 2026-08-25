@@ -116,6 +116,12 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   parameter containers. After successful GRID aggregate acceptance and atomic
   commit, requested statistics analyze the committed deterministic result.
 
+### Fixed
+- Automatic MCMC burn selection now fails closed when autocorrelation evidence
+  cannot establish a defensible retained window. ChemEx preserves the completed
+  raw chain and incomplete diagnostics but withholds posterior summaries,
+  retained samples, correlations, and plots instead of silently using zero burn.
+
 ### Infrastructure
 - Removed the unused `B1FieldConfig` model and its `default_distribution_config`
   helper from `b1_config.py`; the flat-table `b1_frq` schema it implemented was

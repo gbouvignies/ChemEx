@@ -10,6 +10,7 @@ from chemex.optimize.mcmc import (
     EffectiveMcmcSettings,
     McmcResult,
     McmcSummary,
+    NativeMcmcIncompleteError,
     _apply_sample_window,
     resolve_mcmc_settings,
     write_mcmc_outputs,
@@ -26,6 +27,7 @@ from chemex.parameters.sealed import (
     SealedDefinitions,
 )
 from chemex.runtime import ExecutionSettings
+from chemex.typing import Array
 
 
 def _parameter_model() -> SealedParameterModel:
@@ -119,22 +121,78 @@ def test_apply_sample_window_uses_auto_burn_from_autocorrelation_time() -> None:
     assert np.array_equal(retained_lnprob, lnprob[4::2])
 
 
-def test_apply_sample_window_keeps_samples_when_auto_burn_unavailable() -> None:
+def test_apply_sample_window_fails_closed_when_auto_burn_unavailable() -> None:
     chain = np.arange(12.0).reshape(3, 2, 2)
     lnprob = np.arange(6.0).reshape(3, 2)
+
+    with pytest.raises(
+        NativeMcmcIncompleteError,
+        match="automatic burn-in.*autocorrelation time unavailable",
+    ):
+        _apply_sample_window(
+            chain,
+            lnprob,
+            burn="auto",
+            thin=1,
+            autocorrelation_time=None,
+        )
+
+
+@pytest.mark.parametrize(
+    ("autocorrelation_time", "reason"),
+    [
+        (np.array([np.nan, 1.0]), "autocorrelation time invalid"),
+        (np.array([1.5, 1.0]), "does not leave a retained chain"),
+    ],
+)
+def test_apply_sample_window_fails_closed_for_invalid_automatic_window(
+    autocorrelation_time: Array,
+    reason: str,
+) -> None:
+    chain = np.arange(12.0).reshape(3, 2, 2)
+    lnprob = np.arange(6.0).reshape(3, 2)
+
+    with pytest.raises(NativeMcmcIncompleteError, match=reason):
+        _apply_sample_window(
+            chain,
+            lnprob,
+            burn="auto",
+            thin=1,
+            autocorrelation_time=autocorrelation_time,
+        )
+
+
+def test_apply_sample_window_fails_closed_for_unreliable_automatic_burn() -> None:
+    chain = np.arange(20.0).reshape(10, 2, 1)
+    lnprob = np.arange(20.0).reshape(10, 2)
+
+    with pytest.raises(NativeMcmcIncompleteError, match="estimate is unreliable"):
+        _apply_sample_window(
+            chain,
+            lnprob,
+            burn="auto",
+            thin=1,
+            autocorrelation_time=np.array([1.6]),
+            autocorrelation_time_reliable=False,
+        )
+
+
+def test_apply_sample_window_preserves_explicit_integer_burn_contract() -> None:
+    chain = np.arange(20.0).reshape(5, 2, 2)
+    lnprob = np.arange(10.0).reshape(5, 2)
 
     retained_chain, retained_lnprob, discarded_steps, warning = _apply_sample_window(
         chain,
         lnprob,
-        burn="auto",
-        thin=1,
+        burn=2,
+        thin=2,
         autocorrelation_time=None,
     )
 
-    assert discarded_steps == 0
-    assert "autocorrelation time unavailable" in str(warning)
-    assert np.array_equal(retained_chain, chain)
-    assert np.array_equal(retained_lnprob, lnprob)
+    assert discarded_steps == 2
+    assert warning is None
+    assert np.array_equal(retained_chain, chain[2::2])
+    assert np.array_equal(retained_lnprob, lnprob[2::2])
 
 
 def test_write_mcmc_outputs(tmp_path: Path) -> None:
@@ -258,7 +316,7 @@ def test_write_mcmc_outputs_reports_tentative_autocorrelation_time(
     parameter_model = _parameter_model()
     settings = EffectiveMcmcSettings(
         steps=10,
-        burn="auto",
+        burn=4,
         thin=1,
         walkers=2,
         seed=None,
@@ -287,10 +345,7 @@ def test_write_mcmc_outputs_reports_tentative_autocorrelation_time(
         acceptance_fraction=np.array([0.25, 0.50]),
         autocorrelation_time=None,
         discarded_steps=4,
-        burn_in_warning=(
-            "autocorrelation time estimate is unreliable; "
-            "tentative automatic burn-in was applied"
-        ),
+        burn_in_warning=None,
         tentative_autocorrelation_time=np.array([1.6]),
         autocorrelation_warning=(
             "chain shorter than 50 times the autocorrelation time; "
@@ -310,6 +365,7 @@ def test_write_mcmc_outputs_reports_tentative_autocorrelation_time(
     )
 
     assert "effective_sample_size" not in summary
+    assert "requested_burn = 4" in diagnostics
     assert 'autocorrelation_status = "unreliable_short_chain"' in diagnostics
     assert "autocorrelation_time_tentative = [1.60000e+00]" in diagnostics
     assert "max_autocorrelation_time_tentative = 1.60000e+00" in diagnostics

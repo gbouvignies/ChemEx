@@ -7,7 +7,7 @@ from importlib.metadata import PackageNotFoundError, version
 from math import ceil
 from pathlib import Path
 from time import perf_counter
-from typing import cast
+from typing import NoReturn, cast
 
 import emcee.autocorr as emcee_autocorr
 import numpy as np
@@ -107,10 +107,12 @@ class NativeMcmcIncompleteError(RuntimeError):
         *,
         terminal: str = "failed",
         completed_steps: int = 0,
+        preserve_raw_evidence: bool = False,
     ) -> None:
         super().__init__(message)
         self.terminal = terminal
         self.completed_steps = completed_steps
+        self.preserve_raw_evidence = preserve_raw_evidence
 
 
 def resolve_mcmc_settings(
@@ -241,33 +243,34 @@ def _resolve_discarded_steps(
     burn: McmcBurnSetting,
     *,
     nsteps: int,
+    nparameters: int,
     autocorrelation_time: Array | None,
     autocorrelation_time_reliable: bool = True,
+    autocorrelation_failure_reason: str | None = None,
 ) -> tuple[int, str | None]:
     if burn != "auto":
         return int(burn), None
+
+    def fail(reason: str) -> NoReturn:
+        raise NativeMcmcIncompleteError(
+            f"automatic burn-in failed because {reason}; authoritative MCMC "
+            "posterior summarization was withheld",
+            completed_steps=nsteps,
+            preserve_raw_evidence=True,
+        )
+
     if autocorrelation_time is None:
-        return 0, "autocorrelation time unavailable; automatic burn-in was not applied"
+        fail(autocorrelation_failure_reason or "autocorrelation time unavailable")
+    if autocorrelation_time.shape != (nparameters,):
+        fail("autocorrelation time has an invalid shape")
     max_tau = float(np.max(autocorrelation_time))
     if not np.isfinite(max_tau) or max_tau <= 0.0:
-        return 0, "autocorrelation time invalid; automatic burn-in was not applied"
+        fail("autocorrelation time invalid")
+    if not autocorrelation_time_reliable:
+        fail("the autocorrelation time estimate is unreliable")
     discarded_steps = ceil(2.0 * max_tau)
     if discarded_steps >= nsteps:
-        return (
-            0,
-            (
-                "estimated automatic burn-in is longer than the chain; "
-                "automatic burn-in was not applied"
-            ),
-        )
-    if not autocorrelation_time_reliable:
-        return (
-            discarded_steps,
-            (
-                "autocorrelation time estimate is unreliable; "
-                "tentative automatic burn-in was applied"
-            ),
-        )
+        fail("the calculated discard does not leave a retained chain")
     return discarded_steps, None
 
 
@@ -279,12 +282,15 @@ def _apply_sample_window(
     thin: int,
     autocorrelation_time: Array | None,
     autocorrelation_time_reliable: bool = True,
+    autocorrelation_failure_reason: str | None = None,
 ) -> tuple[Array, Array, int, str | None]:
     discarded_steps, warning = _resolve_discarded_steps(
         burn,
         nsteps=chain.shape[0],
+        nparameters=chain.shape[2],
         autocorrelation_time=autocorrelation_time,
         autocorrelation_time_reliable=autocorrelation_time_reliable,
+        autocorrelation_failure_reason=autocorrelation_failure_reason,
     )
     retained_chain = chain[discarded_steps::thin]
     retained_lnprob = lnprob[discarded_steps::thin]
@@ -498,6 +504,24 @@ def _write_samples(
         np.savetxt(fileout, values, fmt="%.5e", delimiter="\t")
 
 
+def _write_raw_chain_evidence(
+    evidence: McmcEvidence,
+    path: Path,
+    parameter_model: SealedParameterModel,
+) -> None:
+    parameter_names = _format_parameter_ids(evidence.coordinate_ids, parameter_model)
+    with (path / "raw_chain.tsv").open("w", encoding="utf-8") as fileout:
+        fileout.write("\t".join(("step", "walker", *parameter_names, "lnprob")) + "\n")
+        for step, state in enumerate(evidence.states[1:], start=1):
+            for walker, (position, lnprob) in enumerate(
+                zip(state.positions, state.log_densities, strict=True),
+            ):
+                values = "\t".join(_format_toml_float(value) for value in position)
+                fileout.write(
+                    f"{step}\t{walker}\t{values}\t{_format_toml_float(lnprob)}\n"
+                )
+
+
 def _write_correlations(
     result: McmcResult,
     path: Path,
@@ -621,6 +645,7 @@ def _clear_mcmc_artifacts(path: Path) -> None:
         "correlations.tsv",
         "diagnostics.toml",
         "plots.pdf",
+        "raw_chain.tsv",
     ):
         (path / name).unlink(missing_ok=True)
 
@@ -635,6 +660,8 @@ def _write_native_mcmc_state_diagnostics(
     terminal: str | None = None,
     completed_steps: int | None = None,
     failure: BaseException | None = None,
+    raw_steps: int | None = None,
+    raw_samples: int | None = None,
 ) -> None:
     requested_burn = '"auto"' if settings.burn == "auto" else str(settings.burn)
     lines = [
@@ -661,21 +688,33 @@ def _write_native_mcmc_state_diagnostics(
                 f"failure_message = {_quote_toml_string(message)}",
             )
         )
+    if raw_steps is not None and raw_samples is not None:
+        lines.extend(
+            (
+                'raw_evidence = "diagnostic_chain"',
+                'raw_chain_file = "raw_chain.tsv"',
+                f"raw_steps = {raw_steps}",
+                f"raw_samples = {raw_samples}",
+            )
+        )
     (path / "diagnostics.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _raw_arrays_from_evidence(evidence: McmcEvidence) -> tuple[Array, Array]:
+    return (
+        np.asarray([state.positions for state in evidence.states[1:]], dtype=float),
+        np.asarray(
+            [state.log_densities for state in evidence.states[1:]],
+            dtype=float,
+        ),
+    )
 
 
 def _native_result_from_evidence(
     evidence: McmcEvidence,
     settings: EffectiveMcmcSettings,
 ) -> McmcResult:
-    raw_chain = np.asarray(
-        [state.positions for state in evidence.states[1:]],
-        dtype=float,
-    )
-    raw_lnprob = np.asarray(
-        [state.log_densities for state in evidence.states[1:]],
-        dtype=float,
-    )
+    raw_chain, raw_lnprob = _raw_arrays_from_evidence(evidence)
     diagnostics = derive_mcmc_diagnostics(evidence)
     if (
         diagnostics.status is not McmcDiagnosticStatus.AVAILABLE
@@ -702,6 +741,7 @@ def _native_result_from_evidence(
             thin=settings.thin,
             autocorrelation_time=burn_autocorrelation_time,
             autocorrelation_time_reliable=autocorrelation_time is not None,
+            autocorrelation_failure_reason=autocorrelation_warning,
         )
     )
     samples = retained_chain.reshape((-1, len(evidence.coordinate_ids)))
@@ -792,6 +832,7 @@ def run_native_mcmc(
 
     timings: dict[str, float] = {}
     completed_steps = 0
+    mcmc_evidence: McmcEvidence | None = None
     try:
         policy = resolve_product_mcmc_policy(
             dimension=len(fit.problem.controlled_ids),
@@ -819,6 +860,7 @@ def run_native_mcmc(
                 native_threads=effective.native_threads,
             ),
         )
+        mcmc_evidence = operation.evidence
         timings["sampling_seconds"] = perf_counter() - phase_start
         completed_steps = (
             0
@@ -849,6 +891,14 @@ def run_native_mcmc(
         )
     except (Exception, KeyboardInterrupt) as error:
         _clear_mcmc_artifacts(statistic_path)
+        raw_evidence = (
+            mcmc_evidence
+            if isinstance(error, NativeMcmcIncompleteError)
+            and error.preserve_raw_evidence
+            else None
+        )
+        if raw_evidence is not None:
+            _write_raw_chain_evidence(raw_evidence, statistic_path, fit.parameter_model)
         terminal = (
             error.terminal
             if isinstance(error, NativeMcmcIncompleteError)
@@ -870,6 +920,16 @@ def run_native_mcmc(
             terminal=terminal,
             completed_steps=failure_completed_steps,
             failure=error,
+            raw_steps=(
+                raw_evidence.completed_transition_count
+                if raw_evidence is not None
+                else None
+            ),
+            raw_samples=(
+                raw_evidence.completed_transition_count * effective.walkers
+                if raw_evidence is not None
+                else None
+            ),
         )
         raise
     else:
