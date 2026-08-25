@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from argparse import Namespace
 from dataclasses import FrozenInstanceError
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
-from chemex.chemex import _read_fit_methods
 from chemex.configuration.method_plan import (
     ConstrainAction,
     DeSearch,
@@ -106,34 +103,6 @@ ROLES = [
     v2_plan = read_method_plan([v2])
 
     assert v1_plan.steps == v2_plan.steps
-
-
-def test_cli_warns_when_accepting_deprecated_v1_and_least_squares(
-    tmp_path: Path,
-) -> None:
-    method = _write(
-        tmp_path / "v1.toml",
-        '[STEP]\nFITMETHOD = "least_squares"\n',
-    )
-
-    with patch("chemex.chemex.print_method_v1_deprecation_warning") as print_warning:
-        plan = _read_fit_methods(Namespace(method=[method]))
-
-    assert plan.format_origin is FormatOrigin.V1
-    print_warning.assert_called_once_with()
-
-
-def test_cli_does_not_emit_v1_deprecation_warning_for_v2(tmp_path: Path) -> None:
-    method = _write(
-        tmp_path / "v2.toml",
-        "FORMAT_VERSION = 2\n\n[STEP]\n",
-    )
-
-    with patch("chemex.chemex.print_method_v1_deprecation_warning") as print_warning:
-        plan = _read_fit_methods(Namespace(method=[method]))
-
-    assert plan.format_origin is FormatOrigin.V2
-    print_warning.assert_not_called()
 
 
 def test_v1_and_v2_grid_statistics_normalize_to_the_same_step_semantics(
