@@ -28,6 +28,7 @@ from chemex.optimize.native_deterministic import (
     run_native_deterministic,
 )
 from chemex.optimize.resampling import run_native_resampling_statistics
+from chemex.run_info import RunInfo, mark_failure_stage
 from chemex.runtime import AnalysisSession
 
 _CHEMEX_RESULT_PATHS = (
@@ -73,6 +74,8 @@ def _run_native_statistics(
     fit: NativeDeterministicFit,
     *,
     session: AnalysisSession,
+    run_info: RunInfo | None = None,
+    step_name: str = "DEFAULT",
 ) -> None:
     committed = session.analysis_values.snapshot()
     try:
@@ -83,15 +86,16 @@ def _run_native_statistics(
         ):
             if request is None:
                 continue
+            root_seed = secrets.randbits(64) if request.seed is None else request.seed
+            if run_info is not None:
+                run_info.record_stochastic_operation(step_name, name, root_seed)
             run_native_resampling_statistics(
                 experiments,
                 path,
                 Statistics(**{name: request.replicates}),
                 fit,
                 execution=session.execution,
-                root_seed=(
-                    secrets.randbits(64) if request.seed is None else request.seed
-                ),
+                root_seed=root_seed,
             )
         mcmc = mcmc_settings(statistics.mcmc)
         if mcmc is not None:
@@ -102,6 +106,15 @@ def _run_native_statistics(
                 mcmc,
                 path,
                 execution=session.execution,
+                seed_recorder=(
+                    None
+                    if run_info is None
+                    else lambda seed: run_info.record_stochastic_operation(
+                        step_name,
+                        "mcmc",
+                        seed,
+                    )
+                ),
             )
     finally:
         if session.analysis_values.snapshot() != committed:
@@ -124,6 +137,8 @@ def _run_requested_native_statistics(
     fit: NativeDeterministicFit | None,
     *,
     session: AnalysisSession,
+    run_info: RunInfo | None = None,
+    step_name: str = "DEFAULT",
 ) -> None:
     if statistics is None:
         return
@@ -132,13 +147,19 @@ def _run_requested_native_statistics(
             print_mcmc_no_vary_warning()
             return
         raise RuntimeError("Native resampling requires a committed deterministic fit")
-    _run_native_statistics(
-        experiments,
-        path,
-        statistics,
-        fit,
-        session=session,
-    )
+    try:
+        _run_native_statistics(
+            experiments,
+            path,
+            statistics,
+            fit,
+            session=session,
+            run_info=run_info,
+            step_name=step_name,
+        )
+    except (Exception, KeyboardInterrupt) as error:
+        mark_failure_stage(error, "statistics")
+        raise
 
 
 def run_methods(
@@ -148,6 +169,7 @@ def run_methods(
     plot_level: str,
     *,
     session: AnalysisSession,
+    run_info: RunInfo | None = None,
 ) -> None:
     plan, operational = normalize_methods_for_execution(methods)
     effective_actions = plan.effective_role_actions()
@@ -181,6 +203,8 @@ def run_methods(
             session=session,
             parameterization=parameterization,
             search=step.search,
+            run_info=run_info,
+            step_name=section or "DEFAULT",
         )
         _run_requested_native_statistics(
             experiments,
@@ -188,4 +212,6 @@ def run_methods(
             step.statistics,
             fit,
             session=session,
+            run_info=run_info,
+            step_name=section or "DEFAULT",
         )

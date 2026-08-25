@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import secrets
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from math import ceil
@@ -737,6 +737,7 @@ def run_native_mcmc(
     path: Path,
     *,
     execution: ExecutionSettings | None = None,
+    seed_recorder: Callable[[int], None] | None = None,
 ) -> McmcResult:
     """Run product MCMC directly from one committed native deterministic fit."""
     effective = resolve_mcmc_settings(
@@ -745,6 +746,8 @@ def run_native_mcmc(
         execution=execution,
     )
     root_seed = secrets.randbits(64) if effective.seed is None else effective.seed
+    if seed_recorder is not None:
+        seed_recorder(root_seed)
     statistic_path = path / "Statistics" / "MCMC"
     statistic_path.mkdir(parents=True, exist_ok=True)
     _clear_mcmc_artifacts(statistic_path)

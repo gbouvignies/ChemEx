@@ -364,6 +364,7 @@ def test_run_uses_explicit_session_for_fit_flow(
         plot_level: str,
         *,
         session: StubSession,
+        run_info: object,
     ) -> None:
         recorded["run_methods"] = (
             experiments_arg,
@@ -371,20 +372,21 @@ def test_run_uses_explicit_session_for_fit_flow(
             path,
             plot_level,
             session,
+            run_info,
         )
 
     monkeypatch.setattr(chemex_module, "build_experiments", fake_build_experiments)
     monkeypatch.setattr(chemex_module, "read_defaults", lambda _filenames: defaults)
     monkeypatch.setattr(chemex_module, "run_methods", fake_run_methods)
-    monkeypatch.setattr(
-        chemex_module,
-        "write_run_info",
-        lambda *_args, **_kwargs: recorded.setdefault("run_info", True),
+    fake_run_info = SimpleNamespace(
+        write_outcome=lambda status, _snapshot, **_kwargs: recorded.setdefault(
+            "outcome", status
+        )
     )
     monkeypatch.setattr(
         chemex_module,
-        "write_run_outcome",
-        lambda _path, status, **_kwargs: recorded.setdefault("outcome", status),
+        "write_run_info",
+        lambda *_args, **_kwargs: recorded.setdefault("run_info", fake_run_info),
     )
     monkeypatch.setattr(chemex_module.os, "environ", recorded_env)
 
@@ -405,7 +407,8 @@ def test_run_uses_explicit_session_for_fit_flow(
     np.testing.assert_equal(experiments.filtered, 1)
     np.testing.assert_equal(recorded["build"][2], session)
     assert recorded["run_methods"][4] is session
-    assert recorded["run_info"] is True
+    assert recorded["run_methods"][5] is fake_run_info
+    assert recorded["run_info"] is fake_run_info
     assert recorded["outcome"] == "complete"
 
 
@@ -427,12 +430,6 @@ def test_run_fails_closed_when_native_configuration_is_unavailable(
         chemex_module,
         "run_methods",
         lambda *_args, **_kwargs: fit_ran.append(True),
-    )
-    monkeypatch.setattr(chemex_module, "write_run_info", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(
-        chemex_module,
-        "write_run_outcome",
-        lambda *_args, **_kwargs: None,
     )
 
     with pytest.raises(RuntimeError, match="Native parameter initialization failed"):
@@ -826,9 +823,13 @@ def test_run_methods_compiles_each_canonical_step_without_origin_or_store_state(
         session: object,
         parameterization: object,
         search: object,
+        run_info: object,
+        step_name: str,
     ) -> None:
         assert session is not None
         assert search is None
+        assert run_info is None
+        assert step_name in {"FIRST", "SECOND", "THIRD"}
         executed.append((path.name, parameterization))
 
     monkeypatch.setattr(
