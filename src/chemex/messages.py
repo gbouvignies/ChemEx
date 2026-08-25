@@ -503,6 +503,16 @@ def print_reading_methods() -> None:
     console.print("\nReading methods...", style="bold yellow")
 
 
+def print_method_v1_deprecation_warning() -> None:
+    """Warn that an explicitly supplied method uses the deprecated v1 format."""
+    console.print(
+        "[yellow] -- WARNING: Method format v1 is deprecated and is supported "
+        "only during the frozen compatibility window. V1-only spellings, "
+        'including FITMETHOD and its "least_squares" alias, follow the same '
+        "removal boundary. Use FORMAT_VERSION = 2 for new method files. --"
+    )
+
+
 def print_start_fit() -> None:
     """Display a message indicating the start of the fitting process."""
     console.print("\nStarting the fits...", style="bold yellow")

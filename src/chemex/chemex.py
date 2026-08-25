@@ -19,6 +19,7 @@ from chemex.experiments.builder import build_experiments
 from chemex.messages import (
     console,
     print_logo,
+    print_method_v1_deprecation_warning,
     print_no_data,
     print_reading_defaults,
     print_reading_methods,
@@ -134,10 +135,13 @@ def _read_fit_methods(args: Namespace) -> MethodPlan:
         return MethodPlan(FormatOrigin.V1, (StepPlan(""),))
     print_reading_methods()
     try:
-        return read_method_plan(args.method)
+        plan = read_method_plan(args.method)
     except MethodFormatError as error:
         console.print(f"[red] -- ERROR: {error}")
         sys.exit(1)
+    if plan.format_origin is FormatOrigin.V1:
+        print_method_v1_deprecation_warning()
+    return plan
 
 
 def run(
