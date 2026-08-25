@@ -883,6 +883,42 @@ def test_first_restart_publication_failure_preserves_committed_authority(
     }
 
 
+def test_first_restart_serialization_failure_preserves_committed_authority(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+    real_serialize = run_info_module.serialize_parameter_file
+
+    def fail_restart_serialization(*args, **kwargs) -> str:
+        if kwargs.get("state_kind") == "restart":
+            raise RuntimeError("restart serialization failed")
+        return real_serialize(*args, **kwargs)
+
+    with (
+        patch.object(
+            run_info_module,
+            "serialize_parameter_file",
+            side_effect=fail_restart_serialization,
+        ),
+        pytest.raises(RuntimeError, match="restart serialization failed"),
+    ):
+        run(_fit_arguments(output), session=session)
+
+    assert session.analysis_values.snapshot().revision == 1
+    assert not (output / "run_info" / "restart.toml").exists()
+    assert _read_outcome(output) == {
+        "schema_version": 2,
+        "status": "incomplete",
+        "latest_committed_revision": 1,
+        "restart_revision": 0,
+        "terminal": "failed",
+        "failure_stage": "restart_publication",
+        "failure_type": "RuntimeError",
+        "failure_message": "restart serialization failed",
+    }
+
+
 def test_later_restart_publication_failure_preserves_previous_checkpoint(
     tmp_path: Path,
 ) -> None:
@@ -933,6 +969,69 @@ FIX = ["PB", "KEX_AB"]
         "failure_stage": "restart_publication",
         "failure_type": "OSError",
         "failure_message": "second restart publication failed",
+    }
+
+
+def test_later_restart_serialization_failure_preserves_previous_checkpoint(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """[STEP1]
+FIX = ["PB", "KEX_AB"]
+
+[STEP2]
+""",
+        encoding="utf-8",
+    )
+    session = AnalysisSession.create()
+    real_serialize = run_info_module.serialize_parameter_file
+    real_atomic_write = run_info_module.write_text_atomic
+    restart_serializations = 0
+    first_restart = b""
+
+    def fail_second_restart_serialization(*args, **kwargs) -> str:
+        nonlocal restart_serializations
+        if kwargs.get("state_kind") == "restart":
+            restart_serializations += 1
+            if restart_serializations == 2:
+                raise RuntimeError("second restart serialization failed")
+        return real_serialize(*args, **kwargs)
+
+    def capture_first_restart(destination: Path, content: str) -> None:
+        nonlocal first_restart
+        real_atomic_write(destination, content)
+        if destination.name == "restart.toml":
+            first_restart = destination.read_bytes()
+
+    with (
+        patch.object(
+            run_info_module,
+            "serialize_parameter_file",
+            side_effect=fail_second_restart_serialization,
+        ),
+        patch.object(
+            run_info_module,
+            "write_text_atomic",
+            side_effect=capture_first_restart,
+        ),
+        pytest.raises(RuntimeError, match="second restart serialization failed"),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    restart = output / "run_info" / "restart.toml"
+    assert session.analysis_values.snapshot().revision == 2
+    assert restart.read_bytes() == first_restart
+    assert _read_outcome(output) == {
+        "schema_version": 2,
+        "status": "incomplete",
+        "latest_committed_revision": 2,
+        "restart_revision": 1,
+        "terminal": "failed",
+        "failure_stage": "restart_publication",
+        "failure_type": "RuntimeError",
+        "failure_message": "second restart serialization failed",
     }
 
 
@@ -2744,6 +2843,45 @@ def test_seed_publication_failure_prevents_de_from_starting(tmp_path: Path) -> N
         "failure_stage": "run_info",
         "failure_type": "OSError",
         "failure_message": "seed publication failed",
+    }
+
+
+def test_seed_record_serialization_failure_prevents_de_from_starting(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _de_method(tmp_path / "method-v2-de.toml", seed=597)
+    real_json_dumps = run_info_module.json.dumps
+
+    def fail_seed_record_serialization(value, **kwargs) -> str:
+        if value == "DE":
+            raise RuntimeError("seed record serialization failed")
+        return real_json_dumps(value, **kwargs)
+
+    with (
+        patch.object(
+            run_info_module.json,
+            "dumps",
+            side_effect=fail_seed_record_serialization,
+        ),
+        patch(
+            "chemex.optimize.de_direct_trf.differential_evolution",
+            side_effect=AssertionError("DE started after seed recording failed"),
+        ) as backend,
+        pytest.raises(RuntimeError, match="seed record serialization failed"),
+    ):
+        run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    backend.assert_not_called()
+    assert _read_outcome(output) == {
+        "schema_version": 2,
+        "status": "incomplete",
+        "latest_committed_revision": 0,
+        "restart_revision": 0,
+        "terminal": "failed",
+        "failure_stage": "run_info",
+        "failure_type": "RuntimeError",
+        "failure_message": "seed record serialization failed",
     }
 
 

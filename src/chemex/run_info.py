@@ -75,27 +75,28 @@ class RunInfo:
 
     def publish_restart(self, snapshot: AnalysisValuesSnapshot) -> None:
         """Atomically publish the latest committed continuation state."""
-        if (
-            snapshot.occurrence_identity != self.starting_snapshot.occurrence_identity
-            or snapshot.model_identity != self.starting_snapshot.model_identity
-            or snapshot.definitions_identity
-            != self.starting_snapshot.definitions_identity
-            or snapshot.configuration_identity
-            != self.starting_snapshot.configuration_identity
-            or snapshot.revision <= self.restart_revision
-        ):
-            raise ValueError("Restart snapshot does not advance this invocation")
-        text = serialize_parameter_file(
-            self.parameter_model,
-            snapshot,
-            state_kind="restart",
-        )
         try:
+            if (
+                snapshot.occurrence_identity
+                != self.starting_snapshot.occurrence_identity
+                or snapshot.model_identity != self.starting_snapshot.model_identity
+                or snapshot.definitions_identity
+                != self.starting_snapshot.definitions_identity
+                or snapshot.configuration_identity
+                != self.starting_snapshot.configuration_identity
+                or snapshot.revision <= self.restart_revision
+            ):
+                raise ValueError("Restart snapshot does not advance this invocation")
+            text = serialize_parameter_file(
+                self.parameter_model,
+                snapshot,
+                state_kind="restart",
+            )
             write_text_atomic(self.path / "restart.toml", text)
+            self.restart_revision = snapshot.revision
         except (Exception, KeyboardInterrupt) as error:
             mark_failure_stage(error, "restart_publication")
             raise
-        self.restart_revision = snapshot.revision
 
     def record_stochastic_operation(
         self,
@@ -104,31 +105,37 @@ class RunInfo:
         seed: int,
     ) -> None:
         """Persist one resolved root seed before its operation consumes RNG state."""
-        if not step or kind not in {"de", "mc", "bs", "bsn", "mcmc"}:
-            raise ValueError("Invalid stochastic operation record")
-        if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2**64:
-            raise ValueError("Stochastic root seed must be an unsigned 64-bit integer")
-        if any(
-            recorded_step == step and recorded_kind == kind
-            for recorded_step, recorded_kind, _recorded_seed in self.stochastic_operations
-        ):
-            raise ValueError("Stochastic operation was already recorded")
-        record = (step, kind, seed)
-        lines = [
-            "[[stochastic_operations]]",
-            f"step = {_quote_string(step)}",
-            f"kind = {_quote_string(kind)}",
-            f"seed = {_quote_string(str(seed))}",
-            "",
-        ]
         try:
+            if not step or kind not in {"de", "mc", "bs", "bsn", "mcmc"}:
+                raise ValueError("Invalid stochastic operation record")
+            if (
+                isinstance(seed, bool)
+                or not isinstance(seed, int)
+                or not 0 <= seed < 2**64
+            ):
+                raise ValueError(
+                    "Stochastic root seed must be an unsigned 64-bit integer"
+                )
+            if any(
+                recorded_step == step and recorded_kind == kind
+                for recorded_step, recorded_kind, _recorded_seed in self.stochastic_operations
+            ):
+                raise ValueError("Stochastic operation was already recorded")
+            record = (step, kind, seed)
+            lines = [
+                "[[stochastic_operations]]",
+                f"step = {_quote_string(step)}",
+                f"kind = {_quote_string(kind)}",
+                f"seed = {_quote_string(str(seed))}",
+                "",
+            ]
             run_path = self.path / "run.toml"
             text = run_path.read_text(encoding="utf-8") + "\n".join(lines)
             write_text_atomic(run_path, text)
+            self.stochastic_operations += (record,)
         except (Exception, KeyboardInterrupt) as error:
             mark_failure_stage(error, "run_info")
             raise
-        self.stochastic_operations += (record,)
 
     def write_outcome(
         self,
