@@ -88,7 +88,9 @@ def _add_dw_param_settings(
         vary=True,
     )
     settings[f"cs_i_{state}"].expr = f"{{cs_i_a}} + {{dw_i_a{state}}}"
+    settings[f"cs_i_{state}"].supports_estimation = False
     settings[f"cs_s_{state}"].expr = f"{{cs_s_a}} + {{dw_s_a{state}}}"
+    settings[f"cs_s_{state}"].supports_estimation = False
 
     if basis.model.temp_coef:
         _add_temp_coef_param_settings(settings, state, conditions)
@@ -98,6 +100,15 @@ def _set_equal_to_a(settings: dict[str, ParamLocalSetting]) -> None:
     for name, setting in settings.items():
         if not setting.expr:
             setting.expr = f"{{{name[:-1]}a}}"
+            setting.supports_estimation = True
+
+
+def _declare_independent_estimation_capabilities(
+    settings: dict[str, ParamLocalSetting],
+) -> None:
+    for setting in settings.values():
+        if not setting.expr:
+            setting.supports_estimation = True
 
 
 def create_base_param_settings(
@@ -263,6 +274,7 @@ def create_base_param_settings(
     }
 
     _update_expr_for_proton_exchange(settings, state, basis)
+    _declare_independent_estimation_capabilities(settings)
 
     if state != "a":
         _set_equal_to_a(settings)
@@ -281,6 +293,7 @@ def _build_model_free_settings(
     for name, setting in settings_mf.items():
         if name in model_free_expressions:
             setting.expr = model_free_expressions[name]
+            setting.supports_estimation = False
 
     return settings_mf
 

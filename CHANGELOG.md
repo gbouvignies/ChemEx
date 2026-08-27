@@ -117,6 +117,11 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   commit, requested statistics analyze the committed deterministic result.
 
 ### Fixed
+- Restored explicit method `FIT`/`FIX` overrides for user-overridable spin
+  parameters whose ordinary baseline is a state-A equality, such as `J_B` in
+  the shipped N15 NH RDC analysis. Scientific estimation capability is now
+  declared separately from whether an experiment fits the parameter by
+  default; model-owned derivations and unsupported parameters remain protected.
 - Restored target-relative constraint resolution across companion spins at the
   same molecular group and atom site. Exact spin context remains preferred,
   companion context outranks global fallback, and unrelated or genuinely

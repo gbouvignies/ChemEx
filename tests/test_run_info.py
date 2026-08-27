@@ -70,6 +70,8 @@ def _parameter_inputs(
                 parameter.vary,
                 parameter.expr,
                 bool(parameter.expr),
+                requires_independent=not bool(parameter.expr),
+                fits_by_default=parameter.vary,
             )
             for parameter in ordered
         )

@@ -58,6 +58,8 @@ class ExpressionSetting:
 
 
 class ParamLocalSetting:
+    """Scientific defaults and explicit-estimation capability for one parameter."""
+
     def __init__(
         self,
         name_setting: NameSetting,
@@ -66,6 +68,7 @@ class ParamLocalSetting:
         max: float = np.inf,
         vary: bool = False,
         expr: str = "",
+        supports_estimation: bool = False,
     ) -> None:
         self.__expr: ExpressionSetting = ExpressionSetting(_RE_NAMES)
         self.name_setting = name_setting
@@ -73,6 +76,7 @@ class ParamLocalSetting:
         self.min = min
         self.max = max
         self.vary = vary
+        self.supports_estimation = supports_estimation
         self.expr = expr
 
     @property

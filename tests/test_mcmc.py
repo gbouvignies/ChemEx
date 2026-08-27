@@ -56,8 +56,12 @@ def _parameter_model() -> SealedParameterModel:
     )
     declarations = SealedParameterDeclarations(
         (
-            ParameterDeclaration("__PB", True, "", False),
-            ParameterDeclaration("__KEX_AB", True, "", False),
+            ParameterDeclaration(
+                "__PB", True, requires_independent=True, fits_by_default=True
+            ),
+            ParameterDeclaration(
+                "__KEX_AB", True, requires_independent=True, fits_by_default=True
+            ),
         )
     )
     return SealedParameterModel(
