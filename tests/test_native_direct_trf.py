@@ -46,7 +46,6 @@ from chemex.optimize.direct_trf import (
     DirectTrfInvocation,
     DirectTrfOutcomeTerminal,
     DirectTrfTerminal,
-    GridSeedProblemDerivation,
     LiveFitCommitAuthority,
     MaterializationTerminal,
     ObjectiveScalarizationError,
@@ -232,20 +231,12 @@ def test_root_owned_child_derivation_preserves_context_and_rejects_forgery() -> 
             ),
         ),
     )
-    derivation = GridSeedProblemDerivation(
-        constrained.identity,
-        constrained.affine_feasibility_identity,
-        "seed-coordinate-identity",
-        0,
-        ((param_id, constrained.start[0]),),
-        constrained.controlled_ids,
-        constrained.start,
-    )
-
-    child = constrained.derive_child(
+    child = constrained.derive_profiled_grid_point(
+        factor_identity="qualified-profiled-grid-factor",
+        point_ordinal=0,
+        projected_plan_identity=constrained.evaluation_plan_identity,
+        grid_items=(),
         controlled_ids=constrained.controlled_ids,
-        start=constrained.start,
-        derivation=derivation,
     )
 
     assert child.source_snapshot is constrained.source_snapshot
@@ -623,7 +614,7 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
     )
     with pytest.raises(
         DirectTrfConstructionError,
-        match="exact live Direct TRF commit authority",
+        match="exact live fit commit authority",
     ):
         commit_accepted_fit(
             first.accepted_result,
@@ -668,7 +659,7 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
     assert revision_one.accepted_result is not None
     with pytest.raises(
         DirectTrfConstructionError,
-        match="exact live Direct TRF commit authority",
+        match="exact live fit commit authority",
     ):
         commit_accepted_fit(
             revision_one.accepted_result,
@@ -937,7 +928,7 @@ def test_live_commit_authority_is_atomic_under_concurrent_use() -> None:
     )
     receipts = tuple(result for result in results if result not in errors)
     assert len(errors) == len(receipts) == 1
-    assert "exact live Direct TRF commit authority" in str(errors[0])
+    assert "exact live fit commit authority" in str(errors[0])
     assert session.analysis_values.snapshot().revision == before.revision + 1
     assert _presentation_values(session, problem.commit_scope) == presentation_before
 
@@ -972,7 +963,7 @@ def test_commit_rejects_absent_foreign_or_wrongly_bound_live_authority() -> None
     assert equivalent_evidence.identity == first.accepted_result.identity
     with pytest.raises(
         DirectTrfConstructionError,
-        match="exact live Direct TRF commit authority",
+        match="exact live fit commit authority",
     ):
         commit_accepted_fit(
             equivalent_evidence,
@@ -983,7 +974,7 @@ def test_commit_rejects_absent_foreign_or_wrongly_bound_live_authority() -> None
         )
     with pytest.raises(
         DirectTrfConstructionError,
-        match="exact live Direct TRF commit authority",
+        match="exact live fit commit authority",
     ):
         commit_accepted_fit(
             first.accepted_result,
@@ -994,7 +985,7 @@ def test_commit_rejects_absent_foreign_or_wrongly_bound_live_authority() -> None
         )
     with pytest.raises(
         DirectTrfConstructionError,
-        match="exact live Direct TRF commit authority",
+        match="exact live fit commit authority",
     ):
         commit_accepted_fit(
             first.accepted_result,
@@ -1642,7 +1633,7 @@ def test_stale_commit_rejects_the_complete_accepted_scope_atomically() -> None:
         )
     with pytest.raises(
         DirectTrfConstructionError,
-        match="exact live Direct TRF commit authority",
+        match="exact live fit commit authority",
     ):
         commit_accepted_fit(
             outcome.accepted_result,

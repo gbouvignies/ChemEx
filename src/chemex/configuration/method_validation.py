@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 
+import numpy as np
+
 from chemex.configuration.conditions import Conditions
 from chemex.configuration.method_plan import (
     BinaryExpression,
@@ -48,6 +50,15 @@ class ResolvedDeCoordinate:
     low: float
     high: float
     scale: SearchScale
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedGridAxis:
+    """One GRID declaration resolved inside the current active FIT scope."""
+
+    param_id: str
+    values: tuple[float, ...]
+    declaration_ordinal: int
 
 
 def _param_name(definition: ParamDefinition) -> ParamName:
@@ -307,23 +318,82 @@ def _validate_grid(
     roles: dict[str, ParameterRole],
     model: SealedParameterModel,
 ) -> None:
-    concrete: dict[str, GridAxis] = {}
     for axis in search.axes:
         matches = _matches(axis.selector, model, axis.source)
-        for param_id in matches:
-            if roles[param_id] is not ParameterRole.FIT:
-                raise MethodFormatError(
-                    f"GRID target {param_id} is not a final independent FIT coordinate",
-                    axis.source,
-                )
-            concrete[param_id] = axis
-    for param_id, axis in concrete.items():
-        values = (
-            axis.spacing.values
-            if isinstance(axis.spacing, GridValues)
-            else (axis.spacing.low, axis.spacing.high)
+        if not any(roles[param_id] is ParameterRole.FIT for param_id in matches):
+            raise MethodFormatError(
+                "GRID target is not a final independent FIT coordinate",
+                axis.source,
+            )
+
+
+def _grid_values(axis: GridAxis) -> tuple[float, ...]:
+    spacing = axis.spacing
+    if isinstance(spacing, GridValues):
+        return spacing.values
+    if spacing.scale is SearchScale.LINEAR:
+        values = np.linspace(spacing.low, spacing.high, spacing.count)
+    else:
+        values = np.geomspace(spacing.low, spacing.high, spacing.count)
+    return tuple(float(value) for value in values)
+
+
+def resolve_grid_axes(
+    search: GridSearch,
+    model: SealedParameterModel,
+    *,
+    active_scope_ids: tuple[str, ...],
+    final_fit_ids: tuple[str, ...],
+) -> tuple[ResolvedGridAxis, ...]:
+    """Resolve broad GRID rules against one current active final FIT scope.
+
+    Declarations retain v2's top-to-bottom rule semantics: a later declaration
+    replaces an earlier declaration for every concrete active coordinate it
+    matches. Parameters outside the active scope are deliberately ignored.
+    """
+    active_scope = frozenset(active_scope_ids)
+    final_fit = frozenset(final_fit_ids)
+    concrete: dict[str, ResolvedGridAxis] = {}
+    sources: dict[str, SourceRef] = {}
+    for ordinal, axis in enumerate(search.axes):
+        active_matches = tuple(
+            param_id
+            for param_id in _matches(axis.selector, model, axis.source)
+            if param_id in active_scope
         )
-        _check_bounds(param_id, values, model, axis.source)
+        if not active_matches:
+            raise MethodFormatError(
+                "GRID selector has no applicable coordinate in the current "
+                f"active step: [{axis.selector.render()}]",
+                axis.source,
+            )
+        matches = tuple(
+            param_id for param_id in active_matches if param_id in final_fit
+        )
+        if not matches:
+            raise MethodFormatError(
+                "GRID selector has no active final independent FIT coordinate; "
+                "active non-FIT matches: " + ", ".join(active_matches),
+                axis.source,
+            )
+        values = _grid_values(axis)
+        for param_id in matches:
+            concrete[param_id] = ResolvedGridAxis(param_id, values, ordinal)
+            sources[param_id] = axis.source
+    for resolved in concrete.values():
+        _check_bounds(
+            resolved.param_id,
+            resolved.values,
+            model,
+            sources[resolved.param_id],
+        )
+    active_order = {param_id: index for index, param_id in enumerate(final_fit_ids)}
+    return tuple(
+        sorted(
+            concrete.values(),
+            key=lambda item: (item.declaration_ordinal, active_order[item.param_id]),
+        )
+    )
 
 
 def _validate_de(

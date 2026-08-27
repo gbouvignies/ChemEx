@@ -3,15 +3,16 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import reduce
-from itertools import product
 from operator import and_
 from pathlib import Path
-from typing import cast
 
 import numpy as np
 
 from chemex.configuration.method_plan import DeSearch, GridSearch, SearchScale
-from chemex.configuration.method_validation import resolve_de_coordinates
+from chemex.configuration.method_validation import (
+    resolve_de_coordinates,
+    resolve_grid_axes,
+)
 from chemex.configuration.methods import Method
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import (
@@ -44,31 +45,16 @@ from chemex.optimize.direct_trf import (
     build_bounded_independent_frame,
     execute_fit_commit,
 )
-from chemex.optimize.grid_direct_trf import (
-    GridDirectTrfInterrupted,
-    GridDirectTrfInvocation,
-)
-from chemex.optimize.gridding import (
-    GridResult,
-    combine_grids,
-    make_grids_nd,
-    plot_grid_1d,
-    plot_grid_2d,
-)
 from chemex.optimize.grouped_direct_trf import (
     FitDecomposition,
     GroupedDirectTrfInvocation,
     GroupedDirectTrfOutcome,
     execute_grouped_direct_trf,
 )
-from chemex.optimize.grouped_grid_direct_trf import (
-    GroupedGridDirectTrfOutcome,
-    execute_grouped_grid_direct_trf,
-)
-from chemex.optimize.helper import (
-    execute_post_fit,
-    print_header,
-    print_values,
+from chemex.optimize.helper import execute_post_fit
+from chemex.optimize.profiled_grid import (
+    ProfiledGridOutcome,
+    execute_profiled_grid,
 )
 from chemex.optimize.uncertainty import (
     CompiledConstraintLinearizationCapabilities,
@@ -83,7 +69,6 @@ from chemex.optimize.uncertainty import (
     derive_root_anchored_block_covariance,
     derive_uncertainty_evidence,
 )
-from chemex.parameters.database import ParameterStore
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     ParameterRole,
@@ -91,6 +76,7 @@ from chemex.parameters.parameterization import (
 )
 from chemex.parameters.sealed import parameter_name_from_definition
 from chemex.parameters.values import AnalysisValues, AnalysisValuesSnapshot
+from chemex.printers.grid import write_grid_output
 from chemex.printers.parameters import (
     BOUNDARY_WARNING_TEXT,
     ParameterUncertaintyView,
@@ -406,22 +392,23 @@ def _materialize_evaluation(
 def _execute_and_commit_aggregate(
     problem: OptimizationProblem,
     decomposition: FitDecomposition,
-    invocation: GroupedDirectTrfInvocation | GridDirectTrfInvocation,
+    invocation: GroupedDirectTrfInvocation | None,
+    grid_axes: Mapping[str, tuple[float, ...]] | None,
     parameterization: ActiveParameterization,
     engine: EvaluationEngine,
     analysis_values: AnalysisValues,
     progress: MinimizationProgressReporter,
     uncertainty_progress: UncertaintyProgressReporter,
 ) -> tuple[
-    GroupedDirectTrfOutcome | GroupedGridDirectTrfOutcome,
+    GroupedDirectTrfOutcome | ProfiledGridOutcome,
     FitCommitOperation | None,
 ]:
     """Execute components, accept one fresh aggregate, and atomically commit it."""
     token = CancellationToken()
     print_minimizing()
     with progress:
-        if isinstance(invocation, GroupedDirectTrfInvocation):
-            outcome: GroupedDirectTrfOutcome | GroupedGridDirectTrfOutcome = (
+        if invocation is not None:
+            outcome: GroupedDirectTrfOutcome | ProfiledGridOutcome = (
                 execute_grouped_direct_trf(
                     problem,
                     decomposition,
@@ -433,24 +420,18 @@ def _execute_and_commit_aggregate(
                 )
             )
         else:
-            try:
-                outcome = execute_grouped_grid_direct_trf(
-                    problem,
-                    decomposition,
-                    invocation,
-                    parameterization,
-                    engine,
-                    cancellation=token,
-                    progress_observer=progress.observe,
-                )
-            except GridDirectTrfInterrupted as error:
-                progress.finish(
-                    final_chi_square=None,
-                    terminal_status=error.outcome.terminal.value,
-                )
-                raise KeyboardInterrupt(
-                    "Native deterministic fit interrupted"
-                ) from error
+            if grid_axes is None:
+                raise RuntimeError("Profiled GRID execution lacks resolved axes")
+            outcome = execute_profiled_grid(
+                problem,
+                grid_axes,
+                parameterization,
+                engine,
+                objective_request_budget=_objective_request_budget(problem),
+                x_scale=_product_x_scale(problem),
+                cancellation=token,
+                progress_observer=progress.observe,
+            )
         accepted = outcome.accepted_result
         authority = outcome.commit_authority
         if accepted is None or authority is None:
@@ -476,29 +457,15 @@ def _execute_and_commit_aggregate(
             final_chi_square=accepted.chi_square,
             terminal_status=operation.terminal.value,
         )
-    if operation.terminal is FitCommitTerminal.COMMITTED:
+    if operation.terminal is FitCommitTerminal.COMMITTED and grid_axes is None:
         uncertainty_progress.start()
     return outcome, operation
 
 
 def _build_invocation(
-    method: Method,
-    search: GridSearch | None,
     problem: OptimizationProblem,
     decomposition: FitDecomposition,
-    parameter_store: ParameterStore,
-) -> GroupedDirectTrfInvocation | GridDirectTrfInvocation:
-    if search is not None:
-        grid = parameter_store.parse_grid(method.grid)
-        invocation = GridDirectTrfInvocation.for_problem(
-            problem,
-            axes=tuple(
-                (param_id, tuple(values.tolist())) for param_id, values in grid.items()
-            ),
-            objective_request_budget=_objective_request_budget(problem),
-            x_scale=_product_x_scale(problem),
-        )
-        return invocation
+) -> GroupedDirectTrfInvocation:
     invocation = GroupedDirectTrfInvocation(
         decomposition.root_problem_identity,
         decomposition.identity,
@@ -552,93 +519,6 @@ def _run_product_de_search(
             f"Selected-coordinate DE search produced no eligible candidate{detail}"
         )
     return problem.restart_from(candidate.full_vector)
-
-
-def _write_grid_output(
-    outcome: GroupedGridDirectTrfOutcome,
-    invocation: GridDirectTrfInvocation,
-    path: Path,
-    *,
-    parameter_model: SealedParameterModel,
-    accepted_values: Mapping[str, float],
-) -> None:
-    """Render aggregate GRID artifacts from native seed evidence."""
-    grid = {
-        axis.param_id: np.asarray(axis.values, dtype=np.float64)
-        for axis in invocation.axes
-    }
-    parameter_names = {
-        definition.param_id: parameter_name_from_definition(definition)
-        for definition in parameter_model.definitions
-    }
-    grid_path = path / "Grid"
-    grid_path.mkdir(parents=True, exist_ok=True)
-    component_results: list[GridResult] = []
-    for component_index, component in enumerate(outcome.attempts[0].components):
-        controlled_ids = frozenset(component.controlled_ids)
-        component_grid = {
-            param_id: values
-            for param_id, values in grid.items()
-            if param_id in controlled_ids
-        }
-        objective_by_coordinates: dict[tuple[float, ...], float] = {}
-        for attempt in outcome.attempts:
-            coordinates = dict(attempt.axis_items)
-            key = tuple(
-                float(cast("int | float", coordinates[param_id]))
-                for param_id in component_grid
-            )
-            candidate = attempt.components[component_index].candidate
-            objective = np.inf if candidate is None else candidate.chi_square
-            objective_by_coordinates[key] = min(
-                objective,
-                objective_by_coordinates.get(key, np.inf),
-            )
-        coordinate_order = tuple(product(*component_grid.values()))
-        chisqr = np.asarray(
-            [
-                objective_by_coordinates[tuple(float(value) for value in coordinates)]
-                for coordinates in coordinate_order
-            ],
-            dtype=np.float64,
-        ).reshape(tuple(len(values) for values in component_grid.values()))
-        component_results.append(GridResult(component_grid, chisqr))
-
-    with (grid_path / "grid.out").open("w", encoding="utf-8") as output:
-        output.write(print_header(grid, parameter_names=parameter_names))
-        for attempt in outcome.attempts:
-            coordinates = (
-                float(cast("int | float", value))
-                for _param_id, value in attempt.axis_items
-            )
-            objective = np.inf if attempt.objective is None else attempt.objective
-            output.write(print_values(coordinates, objective))
-
-    combined = combine_grids(grid, component_results)
-    grids_1d = make_grids_nd(
-        grid,
-        combined,
-        1,
-        parameter_names=parameter_names,
-    )
-    grids_2d = make_grids_nd(
-        grid,
-        combined,
-        2,
-        parameter_names=parameter_names,
-    )
-    plot_grid_1d(
-        grids_1d,
-        grid_path,
-        parameter_names=parameter_names,
-        accepted_values=accepted_values,
-    )
-    plot_grid_2d(
-        grids_2d,
-        grid_path,
-        parameter_names=parameter_names,
-        accepted_values=accepted_values,
-    )
 
 
 def _fit_component_labels(
@@ -764,13 +644,20 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             parameter_model,
         )
     decomposition = FitDecomposition.from_root(problem, parameterization, engine)
-    invocation = _build_invocation(
-        method,
-        search if isinstance(search, GridSearch) else None,
-        problem,
-        decomposition,
-        session.parameters,
-    )
+    if isinstance(search, GridSearch):
+        resolved_grid_axes = resolve_grid_axes(
+            search,
+            parameter_model,
+            active_scope_ids=parameterization.scope_ids,
+            final_fit_ids=problem.controlled_ids,
+        )
+        grid_axes: Mapping[str, tuple[float, ...]] | None = {
+            axis.param_id: axis.values for axis in resolved_grid_axes
+        }
+        invocation = None
+    else:
+        grid_axes = None
+        invocation = _build_invocation(problem, decomposition)
     uncertainty_inputs = _product_uncertainty_inputs(
         problem,
         parameterization,
@@ -789,6 +676,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         problem,
         decomposition,
         invocation,
+        grid_axes,
         parameterization,
         engine,
         session.analysis_values,
@@ -798,7 +686,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     if outcome.terminal.value in {"cancelled", "interrupted"}:
         raise KeyboardInterrupt("Native deterministic fit interrupted")
     if commit is None:
-        failures = (
+        component_failures = (
             tuple(
                 (component.controlled_ids, component.failure)
                 for component in outcome.components
@@ -807,15 +695,15 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             if isinstance(outcome, GroupedDirectTrfOutcome)
             else ()
         )
-        detail = (
-            ""
-            if not failures
-            else ": "
-            + "; ".join(
+        if component_failures:
+            detail = ": " + "; ".join(
                 f"{controlled_ids!r}: {failure.category}: {failure.message}"
-                for controlled_ids, failure in failures
+                for controlled_ids, failure in component_failures
             )
-        )
+        elif isinstance(outcome, ProfiledGridOutcome) and outcome.failure is not None:
+            detail = f": {outcome.failure.category}: {outcome.failure.message}"
+        else:
+            detail = ""
         msg = (
             f"Native deterministic fit did not commit: {outcome.terminal.value}{detail}"
         )
@@ -838,24 +726,44 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     if accepted is None:
         raise RuntimeError("Committed native fit lacks its accepted result")
     result = accepted.evaluation_result
-    try:
-        uncertainty_evidence, uncertainty, uncertainty_status = (
-            _derive_product_uncertainty(
-                accepted,
-                problem,
-                parameterization,
-                engine,
-                uncertainty_inputs,
+    if isinstance(search, GridSearch):
+        grid_uncertainty_reason = (
+            "withheld: GRID coordinates were selected on a discrete profiled "
+            "surface, not by a full continuous Direct TRF"
+        )
+        uncertainty_evidence = None
+        block_uncertainty = None
+        block_status = None
+        uncertainty = ParameterUncertaintyView(
+            unavailable_reasons=tuple(
+                (param_id, grid_uncertainty_reason)
+                for param_id in (
+                    *problem.controlled_ids,
+                    *uncertainty_inputs.constrained_scope,
+                    *uncertainty_inputs.unsupported_constrained_ids,
+                )
             )
         )
-        block_uncertainty, block_status = _product_block_uncertainty(
-            uncertainty_evidence,
-            decomposition,
-        )
-    except (Exception, KeyboardInterrupt) as error:
-        mark_failure_stage(error, "uncertainty")
-        raise
-    uncertainty_status = block_status or uncertainty_status
+        uncertainty_status = ("withheld", grid_uncertainty_reason)
+    else:
+        try:
+            uncertainty_evidence, uncertainty, uncertainty_status = (
+                _derive_product_uncertainty(
+                    accepted,
+                    problem,
+                    parameterization,
+                    engine,
+                    uncertainty_inputs,
+                )
+            )
+            block_uncertainty, block_status = _product_block_uncertainty(
+                uncertainty_evidence,
+                decomposition,
+            )
+        except (Exception, KeyboardInterrupt) as error:
+            mark_failure_stage(error, "uncertainty")
+            raise
+        uncertainty_status = block_status or uncertainty_status
     if block_uncertainty is not None:
         block_errors = tuple(
             (entry.param_id, entry.value)
@@ -910,14 +818,17 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
                 + block_unavailable
             ),
         )
-    uncertainty_progress.finish(
-        _uncertainty_progress_status(
-            uncertainty_evidence,
-            block_uncertainty,
-            uncertainty,
-            problem.controlled_ids,
+    if isinstance(search, GridSearch):
+        uncertainty_progress.skip_grid()
+    else:
+        uncertainty_progress.finish(
+            _uncertainty_progress_status(
+                uncertainty_evidence,
+                block_uncertainty,
+                uncertainty,
+                problem.controlled_ids,
+            )
         )
-    )
     fit = NativeDeterministicFit(
         accepted,
         problem,
@@ -935,9 +846,10 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     variable_count = len(problem.controlled_ids)
     if isinstance(search, GridSearch):
         try:
-            _write_grid_output(
-                cast("GroupedGridDirectTrfOutcome", outcome),
-                cast("GridDirectTrfInvocation", invocation),
+            if not isinstance(outcome, ProfiledGridOutcome):
+                raise TypeError("GRID execution returned a non-GRID outcome")
+            write_grid_output(
+                outcome,
                 path,
                 parameter_model=parameter_model,
                 accepted_values=result.resolved_values,

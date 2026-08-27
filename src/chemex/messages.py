@@ -341,6 +341,72 @@ class UncertaintyProgressReporter:
                 )
             )
 
+    def skip_grid(self) -> None:
+        """Report that GRID intentionally has no automatic covariance phase."""
+        if self._finished:
+            return
+        self._finished = True
+        with suppress(Exception):
+            self._console.print(
+                Text.from_markup(
+                    "  • Parameter uncertainties -> [yellow]not estimated for GRID[/]"
+                )
+            )
+
+
+class GridOutputProgressReporter:
+    """Report the two user-visible GRID publication phases."""
+
+    def __init__(
+        self,
+        output_console: Console,
+        *,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
+        self._console = output_console
+        self._clock = clock
+        self._started_at: float | None = None
+        self._label: str | None = None
+
+    def start_writing(self) -> None:
+        """Report that numerical GRID products are being written."""
+        self._start("Writing GRID results")
+
+    def finish_writing(self) -> None:
+        """Report completion of numerical GRID product writing."""
+        self._finish()
+
+    def start_plotting(self, count_1d: int, count_2d: int) -> None:
+        """Report that GRID PDFs are being generated."""
+        counts = [f"{count_1d} 1D"]
+        if count_2d:
+            counts.append(f"{count_2d} 2D")
+        self._start(f"Generating GRID plots ({', '.join(counts)})")
+
+    def finish_plotting(self) -> None:
+        """Report completion of GRID PDF generation."""
+        self._finish()
+
+    def _start(self, label: str) -> None:
+        self._label = label
+        self._started_at = self._clock()
+        with suppress(Exception):
+            self._console.print(Text(f"  • {label}..."))
+
+    def _finish(self) -> None:
+        label = self._label or "GRID output"
+        elapsed = (
+            0.0
+            if self._started_at is None
+            else max(0.0, self._clock() - self._started_at)
+        )
+        self._label = None
+        self._started_at = None
+        with suppress(Exception):
+            self._console.print(
+                Text.from_markup(f"  • {label} -> [blue]complete[/] ({elapsed:.1f} s)")
+            )
+
 
 def _format_scalar(value: float) -> str:
     return f"{value:.6g}"
@@ -355,11 +421,14 @@ def _progress_table(
     event = update.event
     table = Table(box=box.SIMPLE_HEAD)
     row: list[str] = []
-    if context.grid_seed_ordinal is not None and context.grid_seed_total is not None:
-        table.add_column("GRID seed", style="blue")
+    is_grid_point = (
+        context.grid_seed_ordinal is not None and context.grid_seed_total is not None
+    )
+    if is_grid_point:
+        table.add_column("GRID point", style="blue")
         row.append(f"{context.grid_seed_ordinal}/{context.grid_seed_total}")
     if context.component_total > 1:
-        table.add_column("Component", style="blue")
+        table.add_column("Factor" if is_grid_point else "Component", style="blue")
         component = f"{context.component_ordinal}/{context.component_total}"
         if component_label:
             component += f" · {component_label}"
@@ -398,13 +467,17 @@ def _format_progress(
 ) -> str:
     event = update.event
     labels: list[str] = []
-    if context.grid_seed_ordinal is not None and context.grid_seed_total is not None:
+    is_grid_point = (
+        context.grid_seed_ordinal is not None and context.grid_seed_total is not None
+    )
+    if is_grid_point:
         labels.append(
-            f"GRID seed {context.grid_seed_ordinal}/{context.grid_seed_total}"
+            f"GRID point {context.grid_seed_ordinal}/{context.grid_seed_total}"
         )
     if context.component_total > 1:
         labels.append(
-            f"component {context.component_ordinal}/{context.component_total}"
+            f"{'factor' if is_grid_point else 'component'} "
+            f"{context.component_ordinal}/{context.component_total}"
         )
         if component_label:
             labels.append(component_label)

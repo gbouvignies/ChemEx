@@ -14,6 +14,7 @@ from chemex.configuration.method_plan import (
     MethodFormatError,
     ProfileSelection,
 )
+from chemex.configuration.method_validation import resolve_grid_axes
 from chemex.configuration.methods import read_method_plan
 from chemex.parameters.parameterization import (
     ParameterDeclaration,
@@ -900,6 +901,144 @@ AXES = [
     )
 
     read_method_plan([method]).validate(model)
+
+
+def test_grid_resolution_projects_broad_rules_to_active_fit_scope_and_overrides(
+    tmp_path: Path,
+) -> None:
+    model = _parameter_model(
+        ParamDefinition("dw-15", "DW_AB", "15N", (), 1.0, 0.0, 10.0),
+        ParamDefinition("dw-31", "DW_AB", "31N", (), 1.0, 0.0, 10.0),
+        ParamDefinition("dw-99", "DW_AB", "99N", (), 1.0, 0.0, 10.0),
+    )
+    method = _write(
+        tmp_path / "active-grid.toml",
+        """
+FORMAT_VERSION = 2
+[STEP.SEARCH.GRID]
+AXES = [
+  "[DW_AB] = lin(0, 10, 3)",
+  "[DW_AB, NUC->31N] = values(2, 4)",
+]
+""",
+    )
+    search = read_method_plan([method]).steps[0].search
+    assert search is not None
+
+    resolved = resolve_grid_axes(
+        search,  # ty: ignore[invalid-argument-type]
+        model,
+        active_scope_ids=("dw-15", "dw-31"),
+        final_fit_ids=("dw-15", "dw-31"),
+    )
+
+    assert tuple(axis.param_id for axis in resolved) == ("dw-15", "dw-31")
+    assert resolved[0].values == (0.0, 5.0, 10.0)
+    assert resolved[1].values == (2.0, 4.0)
+    assert tuple(axis.declaration_ordinal for axis in resolved) == (0, 1)
+
+
+def test_grid_resolution_rejects_inactive_non_fit_and_out_of_bounds_targets(
+    tmp_path: Path,
+) -> None:
+    model = _parameter_model(
+        ParamDefinition("dw-15", "DW_AB", "15N", (), 1.0, 0.0, 10.0),
+        ParamDefinition("dw-31", "DW_AB", "31N", (), 1.0, 0.0, 10.0),
+    )
+
+    def search(text: str):
+        method = _write(
+            tmp_path / "runtime-grid.toml",
+            f'FORMAT_VERSION = 2\n[STEP.SEARCH.GRID]\nAXES = ["{text}"]\n',
+        )
+        return read_method_plan([method]).steps[0].search
+
+    with pytest.raises(MethodFormatError, match="no applicable coordinate"):
+        resolve_grid_axes(
+            search("[DW_AB, NUC->31N] = values(2)"),  # ty: ignore[invalid-argument-type]
+            model,
+            active_scope_ids=("dw-15",),
+            final_fit_ids=("dw-15",),
+        )
+    with pytest.raises(MethodFormatError, match="final independent FIT"):
+        resolve_grid_axes(
+            search("[DW_AB, NUC->15N] = values(2)"),  # ty: ignore[invalid-argument-type]
+            model,
+            active_scope_ids=("dw-15",),
+            final_fit_ids=(),
+        )
+    with pytest.raises(MethodFormatError, match="outside physical bounds"):
+        resolve_grid_axes(
+            search("[DW_AB, NUC->15N] = values(11)"),  # ty: ignore[invalid-argument-type]
+            model,
+            active_scope_ids=("dw-15",),
+            final_fit_ids=("dw-15",),
+        )
+
+
+def test_broad_grid_rule_projects_away_active_non_fit_matches(tmp_path: Path) -> None:
+    model = _parameter_model(
+        ParamDefinition("dw-fit", "DW_AB", "15N", (), 1.0, 0.0, 10.0),
+        ParamDefinition("dw-fix", "DW_AB", "31N", (), 1.0, 0.0, 10.0),
+    )
+    method = _write(
+        tmp_path / "mixed-active-grid.toml",
+        """FORMAT_VERSION = 2
+[STEP]
+ROLES = [
+  { FIX = ["DW_AB"] },
+  { FIT = ["DW_AB, NUC->15N"] },
+]
+[STEP.SEARCH.GRID]
+AXES = ["[DW_AB] = values(2, 4)"]
+""",
+    )
+    plan = read_method_plan([method])
+    plan.validate(model)
+    search = plan.steps[0].search
+    assert search is not None
+
+    resolved = resolve_grid_axes(
+        search,  # ty: ignore[invalid-argument-type]
+        model,
+        active_scope_ids=("dw-fit", "dw-fix"),
+        final_fit_ids=("dw-fit",),
+    )
+
+    assert tuple(axis.param_id for axis in resolved) == ("dw-fit",)
+
+
+def test_later_specific_grid_rule_replaces_broad_values_before_bounds_check(
+    tmp_path: Path,
+) -> None:
+    model = _parameter_model(
+        ParamDefinition("dw-wide", "DW_AB", "15N", (), 1.0, 0.0, 10.0),
+        ParamDefinition("dw-narrow", "DW_AB", "31N", (), 1.0, 0.0, 5.0),
+    )
+    method = _write(
+        tmp_path / "override-before-bounds.toml",
+        """FORMAT_VERSION = 2
+[STEP.SEARCH.GRID]
+AXES = [
+  "[DW_AB] = values(8)",
+  "[DW_AB, NUC->31N] = values(4)",
+]
+""",
+    )
+    search = read_method_plan([method]).steps[0].search
+    assert search is not None
+
+    resolved = resolve_grid_axes(
+        search,  # ty: ignore[invalid-argument-type]
+        model,
+        active_scope_ids=("dw-wide", "dw-narrow"),
+        final_fit_ids=("dw-wide", "dw-narrow"),
+    )
+
+    assert tuple((axis.param_id, axis.values) for axis in resolved) == (
+        ("dw-wide", (8.0,)),
+        ("dw-narrow", (4.0,)),
+    )
 
 
 def test_ordered_complete_roles_validate_fix_fit_constrain_exceptions(

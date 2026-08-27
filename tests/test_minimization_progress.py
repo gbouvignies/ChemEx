@@ -10,7 +10,11 @@ from rich.console import Console
 from rich.padding import Padding
 from rich.table import Table
 
-from chemex.messages import MinimizationProgressReporter, UncertaintyProgressReporter
+from chemex.messages import (
+    GridOutputProgressReporter,
+    MinimizationProgressReporter,
+    UncertaintyProgressReporter,
+)
 from chemex.optimize.progress import (
     FitProgressContext,
     ProgressEvent,
@@ -332,6 +336,32 @@ def test_uncertainty_reporter_separates_post_fit_elapsed_time_and_status() -> No
     ]
 
 
+def test_uncertainty_reporter_skips_grid_without_elapsed_time() -> None:
+    output_console, stream = _capturing_console()
+    reporter = UncertaintyProgressReporter(output_console)
+
+    reporter.skip_grid()
+
+    assert stream.getvalue().splitlines() == [
+        "  • Parameter uncertainties -> not estimated for GRID",
+    ]
+
+
+def test_grid_plot_progress_reports_surface_counts() -> None:
+    output_console, stream = _capturing_console()
+    reporter = GridOutputProgressReporter(
+        output_console,
+        clock=iter((10.0, 12.0)).__next__,
+    )
+
+    reporter.start_plotting(7, 11)
+    reporter.finish_plotting()
+
+    started, completed = stream.getvalue().splitlines()
+    assert started == "  • Generating GRID plots (7 1D, 11 2D)..."
+    assert completed.startswith("  • Generating GRID plots (7 1D, 11 2D) -> complete (")
+
+
 def test_noninteractive_reporter_rate_limits_component_transitions_fit_wide() -> None:
     output_console, stream = _capturing_console()
     times = iter((0.0, 0.0, 0.1, 0.2, 0.3, 10.1, 10.2, 10.3))
@@ -465,7 +495,7 @@ def test_grid_reporter_aggregates_local_attempts_instead_of_streaming_each_seed(
         reporter.finish(final_chi_square=10.0, terminal_status="committed")
 
     rendered = stream.getvalue()
-    assert rendered.count("GRID seed") == 1
+    assert rendered.count("GRID point") == 1
     assert "Evaluations" in rendered
 
 

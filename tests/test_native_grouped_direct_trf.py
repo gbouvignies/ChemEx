@@ -378,7 +378,7 @@ def test_successful_components_compose_one_fresh_root_accepted_result_and_commit
     committed = session.analysis_values.snapshot()
     with pytest.raises(
         DirectTrfConstructionError,
-        match="exact live Direct TRF commit authority",
+        match="exact live fit commit authority",
     ):
         commit_accepted_fit(
             accepted,
