@@ -43,6 +43,7 @@ from chemex.models.factory import model_factory
 from chemex.parameters.database import ParameterIndex
 from chemex.parameters.name import ParamName
 from chemex.parameters.parameterization import (
+    ActiveParameterization,
     AmbiguousParameterReferenceError,
     ConstraintCycleError,
     ConstraintDomainError,
@@ -94,6 +95,10 @@ BINDING_ROOT = ROOT / "examples/Combinations/2stBinding"
 BINDING_EXPERIMENTS = tuple(sorted((BINDING_ROOT / "Experiments").glob("*.toml")))
 BINDING_PARAMETERS = BINDING_ROOT / "Parameters/params.toml"
 BINDING_METHOD = BINDING_ROOT / "Methods/method.toml"
+METHYL_ROOT = ROOT / "examples/Combinations/CPMG_CH3_1H_DQ_TQ"
+METHYL_EXPERIMENTS = tuple(sorted((METHYL_ROOT / "Experiments").glob("*.toml")))
+METHYL_PARAMETERS = METHYL_ROOT / "Parameters/parameters.toml"
+METHYL_METHOD = METHYL_ROOT / "Methods/method.toml"
 _METHOD_SOURCE = SourceRef(Path("method.toml"), "STEP", "ROLES")
 
 _BINDING_STEP1_R2_B_IDS = {
@@ -299,6 +304,29 @@ def _native_fixture(
         _items=tuple(current.items()),
     )
     return parameter_model, snapshot
+
+
+def _compile_context_constraint(
+    definitions: tuple[ParamDefinition, ...],
+    expression: str,
+    target_id: str = "__TARGET",
+) -> ActiveParameterization:
+    declarations = tuple(
+        ParameterDeclaration(definition.param_id, False) for definition in definitions
+    )
+    parameter_model, snapshot = _native_fixture(
+        declarations,
+        definitions=definitions,
+        values={
+            definition.param_id: definition.default_value for definition in definitions
+        },
+    )
+    return compile_active_parameterization(
+        parameter_model,
+        snapshot,
+        Method(constraints=(expression,)),
+        {target_id},
+    )
 
 
 def test_canonical_ordered_actions_compile_complete_replacement_roles() -> None:
@@ -1119,7 +1147,7 @@ def test_parameter_selectors_use_legacy_exact_name_matching(
         )
 
 
-def test_contextually_incomparable_reference_is_ambiguity() -> None:
+def test_exact_spin_reference_outranks_condition_specific_global() -> None:
     definitions = (
         ParamDefinition("__A_SPIN", "A", "G1N-HN", (), 1.0, -10.0, 10.0),
         ParamDefinition(
@@ -1137,16 +1165,225 @@ def test_contextually_incomparable_reference_is_ambiguity() -> None:
         definitions=definitions,
     )
 
-    with pytest.raises(AmbiguousParameterReferenceError) as raised:
-        compile_active_parameterization(
-            parameter_model,
-            snapshot,
-            Method(constraints=("[T] = [A]",)),
-            {"__T"},
+    parameterization = compile_active_parameterization(
+        parameter_model,
+        snapshot,
+        Method(constraints=("[T] = [A]",)),
+        {"__T"},
+    )
+
+    assert parameterization.program.constraints[0].dependencies == ("__A_SPIN",)
+
+
+def test_shipped_methyl_constraint_resolves_companion_spin_for_both_states() -> None:
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    experiments = build_experiments(
+        METHYL_EXPERIMENTS,
+        Selection(
+            include=[
+                SpinSystem.from_name("I3HD1-CD1"),
+                SpinSystem.from_name("V75HG1-CG1"),
+                SpinSystem.from_name("V75HG2-CG2"),
+            ],
+            exclude=None,
+        ),
+        session=session,
+    )
+    session.parameters.set_defaults(read_defaults([METHYL_PARAMETERS]))
+    assert session.try_build_analysis_values(), repr(
+        session.parameter_factory.native_construction_error
+    )
+    plan = read_method_plan([METHYL_METHOD])
+    session.validate_method_plan(plan)
+    parameterization = session.compile_parameterization_from_actions(
+        plan.effective_role_actions()["STEP1"],
+        experiments.param_ids,
+    )
+
+    dependencies = {
+        constraint.target_id: constraint.dependencies
+        for constraint in parameterization.program.constraints
+    }
+    assert dependencies["__R2ADQ_A_I3HD1_700_2MHZ"] == (
+        "__R2DQ_A_I3HD1_700_2MHZ",
+        "__R1_A_I3CD1_700_2MHZ",
+    )
+    assert dependencies["__R2ADQ_B_I3HD1_700_2MHZ"] == (
+        "__R2DQ_B_I3HD1_700_2MHZ",
+        "__R1_B_I3CD1_700_2MHZ",
+    )
+    assert dependencies["__R2ADQ_A_V75HG1_700_2MHZ"][-1] == ("__R1_A_V75CG1_700_2MHZ")
+    assert dependencies["__R2ADQ_A_V75HG2_700_2MHZ"][-1] == ("__R1_A_V75CG2_700_2MHZ")
+    assert dependencies["__R2ADQ_B_V75HG1_700_2MHZ"][-1] == ("__R1_B_V75CG1_700_2MHZ")
+    assert dependencies["__R2ADQ_B_V75HG2_700_2MHZ"][-1] == ("__R1_B_V75CG2_700_2MHZ")
+    resolved = parameterization.resolve(
+        parameterization.frame_from_snapshot(session.analysis_values.snapshot())
+    )
+    assert resolved["__R2ADQ_A_I3HD1_700_2MHZ"] == pytest.approx(
+        resolved["__R2DQ_A_I3HD1_700_2MHZ"] - resolved["__R1_A_I3CD1_700_2MHZ"] / 3.0
+    )
+    assert resolved["__R2ADQ_B_I3HD1_700_2MHZ"] == pytest.approx(
+        resolved["__R2DQ_B_I3HD1_700_2MHZ"] - resolved["__R1_B_I3CD1_700_2MHZ"] / 3.0
+    )
+
+
+def test_exact_spin_reference_outranks_same_group_companion() -> None:
+    parameterization = _compile_context_constraint(
+        (
+            ParamDefinition("__TARGET", "TARGET", "I3HD1", (), 0.0, -10.0, 10.0),
+            ParamDefinition("__VALUE_EXACT", "VALUE", "I3HD1", (), 2.0, -10.0, 10.0),
+            ParamDefinition(
+                "__VALUE_COMPANION", "VALUE", "I3CD1", (), 3.0, -10.0, 10.0
+            ),
+        ),
+        "[TARGET] = [VALUE]",
+    )
+
+    assert parameterization.program.constraints[0].dependencies == ("__VALUE_EXACT",)
+
+
+def test_explicit_spin_selector_remains_authoritative() -> None:
+    parameterization = _compile_context_constraint(
+        (
+            ParamDefinition("__TARGET", "TARGET", "I3HD1", (), 0.0, -10.0, 10.0),
+            ParamDefinition("__VALUE_EXACT", "VALUE", "I3HD1", (), 2.0, -10.0, 10.0),
+            ParamDefinition(
+                "__VALUE_COMPANION", "VALUE", "I3CD1", (), 3.0, -10.0, 10.0
+            ),
+        ),
+        "[TARGET] = [VALUE, NUC->I3CD1]",
+    )
+
+    assert parameterization.program.constraints[0].dependencies == (
+        "__VALUE_COMPANION",
+    )
+
+
+def test_same_group_companion_reference_outranks_global_fallback() -> None:
+    parameterization = _compile_context_constraint(
+        (
+            ParamDefinition("__TARGET", "TARGET", "I3HD1", (), 0.0, -10.0, 10.0),
+            ParamDefinition(
+                "__VALUE_COMPANION", "VALUE", "I3CD1", (), 3.0, -10.0, 10.0
+            ),
+            ParamDefinition("__VALUE_GLOBAL", "VALUE", "", (), 4.0, -10.0, 10.0),
+        ),
+        "[TARGET] = [VALUE]",
+    )
+
+    assert parameterization.program.constraints[0].dependencies == (
+        "__VALUE_COMPANION",
+    )
+
+
+def test_same_group_companion_outranks_condition_specific_global() -> None:
+    parameterization = _compile_context_constraint(
+        (
+            ParamDefinition(
+                "__TARGET",
+                "TARGET",
+                "I3HD1",
+                (("h_larmor_frq", 800.0),),
+                0.0,
+                -10.0,
+                10.0,
+            ),
+            ParamDefinition(
+                "__VALUE_COMPANION", "VALUE", "I3CD1", (), 3.0, -10.0, 10.0
+            ),
+            ParamDefinition(
+                "__VALUE_GLOBAL",
+                "VALUE",
+                "",
+                (("h_larmor_frq", 800.0),),
+                4.0,
+                -10.0,
+                10.0,
+            ),
+        ),
+        "[TARGET] = [VALUE]",
+    )
+
+    assert parameterization.program.constraints[0].dependencies == (
+        "__VALUE_COMPANION",
+    )
+
+
+def test_unrelated_group_reference_is_rejected() -> None:
+    with pytest.raises(NoParameterMatchError, match="context-compatible"):
+        _compile_context_constraint(
+            (
+                ParamDefinition("__TARGET", "TARGET", "I3HD1", (), 0.0, -10.0, 10.0),
+                ParamDefinition(
+                    "__VALUE_OTHER", "VALUE", "L7CD2", (), 3.0, -10.0, 10.0
+                ),
+            ),
+            "[TARGET] = [VALUE]",
         )
 
-    assert raised.value.code == "ambiguity"
-    assert raised.value.context["candidate_ids"] == ("__A_SPIN", "__A_FIELD")
+
+def test_equally_specific_same_group_companions_remain_ambiguous() -> None:
+    with pytest.raises(AmbiguousParameterReferenceError) as raised:
+        _compile_context_constraint(
+            (
+                ParamDefinition("__TARGET", "TARGET", "I3HD1", (), 0.0, -10.0, 10.0),
+                ParamDefinition("__VALUE_CD1", "VALUE", "I3CD1", (), 2.0, -10.0, 10.0),
+                ParamDefinition("__VALUE_MD1", "VALUE", "I3MD1", (), 3.0, -10.0, 10.0),
+            ),
+            "[TARGET] = [VALUE]",
+        )
+
+    assert raised.value.context["candidate_ids"] == (
+        "__VALUE_CD1",
+        "__VALUE_MD1",
+    )
+
+
+def test_condition_specificity_is_preserved_for_same_group_companions() -> None:
+    parameterization = _compile_context_constraint(
+        (
+            ParamDefinition(
+                "__TARGET",
+                "TARGET",
+                "I3HD1",
+                (("h_larmor_frq", 800.0),),
+                0.0,
+                -10.0,
+                10.0,
+            ),
+            ParamDefinition(
+                "__VALUE_800",
+                "VALUE",
+                "I3CD1",
+                (("h_larmor_frq", 800.0),),
+                2.0,
+                -10.0,
+                10.0,
+            ),
+            ParamDefinition(
+                "__VALUE_GLOBAL_CONDITION",
+                "VALUE",
+                "I3CD1",
+                (),
+                3.0,
+                -10.0,
+                10.0,
+            ),
+            ParamDefinition(
+                "__VALUE_600",
+                "VALUE",
+                "I3CD1",
+                (("h_larmor_frq", 600.0),),
+                4.0,
+                -10.0,
+                10.0,
+            ),
+        ),
+        "[TARGET] = [VALUE]",
+    )
+
+    assert parameterization.program.constraints[0].dependencies == ("__VALUE_800",)
 
 
 def test_direct_self_reference_is_rejected_before_evaluation() -> None:

@@ -145,6 +145,16 @@ class SpinSystem(BaseModel):
         spin_pairs = zip(self.spins.values(), other.spins.values(), strict=False)
         return all(spin.match(other_spin) for spin, other_spin in spin_pairs)
 
+    def shares_group_site(self, other: Self) -> bool:
+        """Return whether two systems contain spins at the same molecular site."""
+        return any(
+            spin.group
+            and spin.group == other_spin.group
+            and spin.atom.shares_site(other_spin.atom)
+            for spin in self.spins.values()
+            for other_spin in other.spins.values()
+        )
+
     def part_of(self, selection: Sequence[Self] | str) -> bool:
         if isinstance(selection, str):
             return selection.lower() in ("all", "*")

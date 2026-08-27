@@ -117,6 +117,10 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   commit, requested statistics analyze the committed deterministic result.
 
 ### Fixed
+- Restored target-relative constraint resolution across companion spins at the
+  same molecular group and atom site. Exact spin context remains preferred,
+  companion context outranks global fallback, and unrelated or genuinely
+  ambiguous candidates still fail closed without encoded-ID similarity.
 - Restored GRID as exact profiled chi-square surface analysis. Declared grid
   coordinates remain held at every point while the remaining independent
   fitted coordinates are optimized with native TRF; exact objective
