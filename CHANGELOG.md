@@ -126,8 +126,8 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   withhold deterministic covariance for their discrete selected coordinates,
   while later Direct steps and explicitly requested sampling statistics retain
   their normal behavior. `Grid/` now exposes status-bearing raw factor TSVs,
-  reusable exact 1D/2D profile TSVs, matching PDFs, and `summary.toml` instead
-  of the native multistart `grid.out` layout.
+  reusable exact 1D profiles and factor-supported 2D profile TSVs, matching
+  PDFs, and `summary.toml` instead of the native multistart `grid.out` layout.
 - Fixed native fit commits rejecting finite expression-derived parameter values
   solely because they fall outside configured numerical-coordinate bounds.
   Independent TRF, GRID, DE, and MCMC coordinates remain bounded at their

@@ -38,6 +38,7 @@ from chemex.optimize.profiled_grid import (
     ProfiledGridPoint,
     ProfiledGridPointStatus,
     ProfiledGridTerminal,
+    _profile_surface_pairs,
     aggregate_profiled_grids,
     discover_profiled_grid_factors,
     execute_profiled_grid,
@@ -151,6 +152,7 @@ def test_factorized_profiles_match_brute_force_and_select_one_coherent_truth() -
     assert selected_nuisance["n2"] == pytest.approx(brute_nuisance[(0.0, 1.0, 1.0)][1])
     assert aggregate.selection.chi_square == pytest.approx(0.0, abs=1.0e-24)
     assert brute[0, 0, 0] == pytest.approx(10.0)
+    assert set(aggregate.profiles_2d) == {("k", "d1"), ("k", "d2")}
 
     for axis_id, profile in aggregate.profiles_1d.items():
         axis = tuple(axes).index(axis_id)
@@ -249,10 +251,10 @@ def test_raw_factor_output_distinguishes_failure_from_valid_high_value(
     assert "\t1e+300\tsuccess\ttrue\t1\t" in rows[2]
     rendered = output.getvalue()
     messages = (
-        "Writing GRID surfaces and output...",
-        "Writing GRID surfaces and output -> complete",
-        "Generating GRID plots...",
-        "Generating GRID plots -> complete",
+        "Writing GRID results...",
+        "Writing GRID results -> complete",
+        "Generating GRID plots (1 1D)...",
+        "Generating GRID plots (1 1D) -> complete",
     )
     assert all(message in rendered for message in messages)
     assert tuple(rendered.index(message) for message in messages) == tuple(
@@ -352,6 +354,18 @@ def test_shipped_cpmg_step1_discovers_five_500_point_residue_factors() -> None:
         int(np.prod([axis_sizes[param_id] for param_id in factor.grid_ids]))
         for factor in factors
     ] == [500] * 5
+    surface_pairs = _profile_surface_pairs(
+        tuple(axis_sizes),
+        factors,
+    )
+    pair_names = tuple(
+        frozenset(parameter_model.definitions[param_id].name for param_id in pair)
+        for pair in surface_pairs
+    )
+    assert len(surface_pairs) == 11
+    assert pair_names.count(frozenset(("KEX_AB", "PB"))) == 1
+    assert pair_names.count(frozenset(("KEX_AB", "DW_AB"))) == 5
+    assert pair_names.count(frozenset(("PB", "DW_AB"))) == 5
     assert (
         sum(
             int(np.prod([axis_sizes[param_id] for param_id in factor.grid_ids]))
@@ -412,6 +426,7 @@ def test_shipped_cpmg_step3_discovers_residue_local_20_point_factors() -> None:
     assert len(factors) == 54
     assert all(len(factor.grid_ids) == 1 for factor in factors)
     assert all(len(factor.nuisance_ids) == 2 for factor in factors)
+    assert not _profile_surface_pairs(tuple(axis.param_id for axis in axes), factors)
     assert all(len(axes[index].values) == 20 for index in range(len(axes)))
     assert sum(len(axes[index].values) for index in range(len(factors))) == 1_080
     assert 20**54 > 10**70

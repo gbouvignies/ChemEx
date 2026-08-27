@@ -903,6 +903,27 @@ def _shared_local_axes(
     return shared
 
 
+def _profile_surface_pairs(
+    axis_ids: tuple[str, ...],
+    factors: Sequence[ProfiledGridFactor],
+) -> tuple[tuple[str, str], ...]:
+    """Select pairs that coexist in at least one exact GRID factor."""
+    axis_order = {axis_id: index for index, axis_id in enumerate(axis_ids)}
+    pairs: set[tuple[str, str]] = set()
+    for factor in factors:
+        for left, right in combinations(factor.grid_ids, 2):
+            pair = (
+                (left, right) if axis_order[left] < axis_order[right] else (right, left)
+            )
+            pairs.add(pair)
+    return tuple(
+        sorted(
+            pairs,
+            key=lambda pair: (axis_order[pair[0]], axis_order[pair[1]]),
+        )
+    )
+
+
 def aggregate_profiled_grids(  # noqa: C901 - exact shared/local reduction
     axes: Mapping[str, Sequence[float]],
     factors: Sequence[ProfiledGridFactorResult],
@@ -1055,7 +1076,11 @@ def aggregate_profiled_grids(  # noqa: C901 - exact shared/local reduction
 
     profiles_1d = {axis_id: surface((axis_id,)) for axis_id in axis_ids}
     profiles_2d = {
-        selection: surface(selection) for selection in combinations(axis_ids, 2)
+        selection: surface(selection)
+        for selection in _profile_surface_pairs(
+            axis_ids,
+            tuple(result.factor for result in factor_results),
+        )
     }
     return ProfiledGridAggregate(
         ProfiledGridSelection(

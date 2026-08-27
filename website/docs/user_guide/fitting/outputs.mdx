@@ -224,6 +224,12 @@ same exact reduced surfaces shown in the PDFs, including a marker for the
 selected coherent joint solution. `summary.toml` records its freshly validated
 aggregate chi-square and concrete grid-axis assignment.
 
+ChemEx writes a 1D profile for every concrete GRID coordinate. A 2D profile is
+written only when both coordinates coexist in at least one exact GRID factor;
+cross-factor local/local pairs are omitted because they do not add a directly
+sampled joint landscape. The corresponding `grid_2d.pdf` is absent when no such
+pair exists.
+
 These factor files are numerical evidence, not independently authoritative
 fits. ChemEx reconstructs one complete joint candidate from the exact factor
 minimum, validates it against the complete root objective, and commits at most

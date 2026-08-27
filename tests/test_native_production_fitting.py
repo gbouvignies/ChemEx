@@ -2784,11 +2784,11 @@ def test_real_grid_fit_writes_profiled_surfaces_and_withholds_covariance(
 
     rendered = capsys.readouterr().out
     progress_messages = (
-        "Estimating parameter uncertainties",
-        "Writing GRID surfaces and output...",
-        "Writing GRID surfaces and output -> complete",
-        "Generating GRID plots...",
-        "Generating GRID plots -> complete",
+        "Parameter uncertainties -> not estimated for GRID",
+        "Writing GRID results...",
+        "Writing GRID results -> complete",
+        "Generating GRID plots (1 1D)...",
+        "Generating GRID plots (1 1D) -> complete",
     )
     assert all(message in rendered for message in progress_messages)
     assert tuple(rendered.index(message) for message in progress_messages) == tuple(
@@ -2902,9 +2902,11 @@ def test_real_grouped_grid_fit_uses_one_native_aggregate_commit(
     profiles_1d = tuple((output / "Grid" / "Profiles" / "1D").glob("*.tsv"))
     profiles_2d = tuple((output / "Grid" / "Profiles" / "2D").glob("*.tsv"))
     assert len(profiles_1d) == 2
-    assert len(profiles_2d) == 1
+    assert not profiles_2d
     plotted_1d_grids = plotted_1d.call_args.args[0]
     plotted_2d_grids = plotted_2d.call_args.args[0]
+    assert not plotted_2d_grids
+    assert not (output / "Grid" / "grid_2d.pdf").exists()
 
     def numerical_surfaces(paths: tuple[Path, ...]) -> list[tuple[float, ...]]:
         surfaces = []

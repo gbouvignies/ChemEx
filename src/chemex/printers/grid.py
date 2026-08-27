@@ -205,7 +205,7 @@ def write_grid_output(
             output.write(f"value = {value!r}\n")
     progress.finish_writing()
 
-    progress.start_plotting()
+    progress.start_plotting(len(grids_1d), len(grids_2d))
     plot_grid_1d(
         grids_1d,
         staging,

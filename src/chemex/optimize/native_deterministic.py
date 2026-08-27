@@ -457,7 +457,7 @@ def _execute_and_commit_aggregate(
             final_chi_square=accepted.chi_square,
             terminal_status=operation.terminal.value,
         )
-    if operation.terminal is FitCommitTerminal.COMMITTED:
+    if operation.terminal is FitCommitTerminal.COMMITTED and grid_axes is None:
         uncertainty_progress.start()
     return outcome, operation
 
@@ -818,16 +818,17 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
                 + block_unavailable
             ),
         )
-    uncertainty_progress.finish(
-        grid_uncertainty_reason
-        if isinstance(search, GridSearch)
-        else _uncertainty_progress_status(
-            uncertainty_evidence,
-            block_uncertainty,
-            uncertainty,
-            problem.controlled_ids,
+    if isinstance(search, GridSearch):
+        uncertainty_progress.skip_grid()
+    else:
+        uncertainty_progress.finish(
+            _uncertainty_progress_status(
+                uncertainty_evidence,
+                block_uncertainty,
+                uncertainty,
+                problem.controlled_ids,
+            )
         )
-    )
     fit = NativeDeterministicFit(
         accepted,
         problem,

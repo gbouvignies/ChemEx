@@ -341,6 +341,18 @@ class UncertaintyProgressReporter:
                 )
             )
 
+    def skip_grid(self) -> None:
+        """Report that GRID intentionally has no automatic covariance phase."""
+        if self._finished:
+            return
+        self._finished = True
+        with suppress(Exception):
+            self._console.print(
+                Text.from_markup(
+                    "  • Parameter uncertainties -> [yellow]not estimated for GRID[/]"
+                )
+            )
+
 
 class GridOutputProgressReporter:
     """Report the two user-visible GRID publication phases."""
@@ -354,34 +366,41 @@ class GridOutputProgressReporter:
         self._console = output_console
         self._clock = clock
         self._started_at: float | None = None
+        self._label: str | None = None
 
     def start_writing(self) -> None:
         """Report that numerical GRID products are being written."""
-        self._start("Writing GRID surfaces and output")
+        self._start("Writing GRID results")
 
     def finish_writing(self) -> None:
         """Report completion of numerical GRID product writing."""
-        self._finish("Writing GRID surfaces and output")
+        self._finish()
 
-    def start_plotting(self) -> None:
+    def start_plotting(self, count_1d: int, count_2d: int) -> None:
         """Report that GRID PDFs are being generated."""
-        self._start("Generating GRID plots")
+        counts = [f"{count_1d} 1D"]
+        if count_2d:
+            counts.append(f"{count_2d} 2D")
+        self._start(f"Generating GRID plots ({', '.join(counts)})")
 
     def finish_plotting(self) -> None:
         """Report completion of GRID PDF generation."""
-        self._finish("Generating GRID plots")
+        self._finish()
 
     def _start(self, label: str) -> None:
+        self._label = label
         self._started_at = self._clock()
         with suppress(Exception):
             self._console.print(Text(f"  • {label}..."))
 
-    def _finish(self, label: str) -> None:
+    def _finish(self) -> None:
+        label = self._label or "GRID output"
         elapsed = (
             0.0
             if self._started_at is None
             else max(0.0, self._clock() - self._started_at)
         )
+        self._label = None
         self._started_at = None
         with suppress(Exception):
             self._console.print(
