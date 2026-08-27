@@ -139,7 +139,6 @@ class AnalysisValues:
         self._definitions_identity = ""
         self._configuration_identity = ""
         self._items: tuple[tuple[str, float], ...] = ()
-        self._bounds: Mapping[str, tuple[float, float]] = MappingProxyType({})
         self._revision: int | None = None
         self._lock = RLock()
 
@@ -204,12 +203,6 @@ class AnalysisValues:
             self._definitions_identity = configuration.definitions_identity
             self._configuration_identity = configuration.identity
             self._items = tuple(items)
-            self._bounds = MappingProxyType(
-                {
-                    config.param_id: (config.lower_bound, config.upper_bound)
-                    for config in configuration
-                }
-            )
             self._revision = 0
 
     def snapshot(self) -> AnalysisValuesSnapshot:
@@ -298,11 +291,7 @@ class AnalysisValues:
                 msg = f"Invalid central value for {param_id!r}: {value!r}"
                 raise InvalidAnalysisValuesCommitError(msg)
             numeric_value = float(value)
-            lower_bound, upper_bound = self._bounds[param_id]
-            if (
-                not math.isfinite(numeric_value)
-                or not lower_bound <= numeric_value <= upper_bound
-            ):
+            if not math.isfinite(numeric_value):
                 msg = f"Invalid central value for {param_id!r}: {value!r}"
                 raise InvalidAnalysisValuesCommitError(msg)
             replacements[param_id] = numeric_value
@@ -322,5 +311,4 @@ class AnalysisValues:
             self._definitions_identity = ""
             self._configuration_identity = ""
             self._items = ()
-            self._bounds = MappingProxyType({})
             self._revision = None

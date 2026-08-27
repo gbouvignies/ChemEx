@@ -230,7 +230,6 @@ def test_concurrent_disjoint_commits_use_one_conservative_global_revision() -> N
         ({"__PB": "not-a-number"}, ("__PB",)),
         ({"__PB": float("nan")}, ("__PB",)),
         ({"__PB": float("inf")}, ("__PB",)),
-        ({"__PB": 1.01}, ("__PB",)),
     ],
 )
 def test_invalid_or_incomplete_commits_leave_values_and_revision_unchanged(
@@ -249,6 +248,22 @@ def test_invalid_or_incomplete_commits_leave_values_and_revision_unchanged(
         )
 
     assert values.snapshot() == initial
+
+
+def test_commit_accepts_finite_resolved_values_outside_configured_bounds() -> None:
+    values = AnalysisValues()
+    values.initialize("2st", _configuration())
+    initial = values.snapshot()
+
+    committed = values.commit(
+        {"__PB": 1.01, "__KEX_AB": -1.0},
+        expected=initial,
+        scope=("__PB", "__KEX_AB"),
+    )
+
+    assert committed.revision == 1
+    assert committed["__PB"] == 1.01
+    assert committed["__KEX_AB"] == -1.0
 
 
 def test_real_shipped_configuration_initializes_session_values() -> None:

@@ -117,6 +117,11 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   commit, requested statistics analyze the committed deterministic result.
 
 ### Fixed
+- Fixed native fit commits rejecting finite expression-derived parameter values
+  solely because they fall outside configured numerical-coordinate bounds.
+  Independent TRF, GRID, DE, and MCMC coordinates remain bounded at their
+  numerical-problem boundaries; derived values continue to follow constraint
+  evaluator domains and scientific postconditions without clipping.
 - Automatic MCMC burn selection now fails closed when autocorrelation evidence
   cannot establish a defensible retained window. ChemEx preserves the completed
   raw chain and incomplete diagnostics but withholds posterior summaries,

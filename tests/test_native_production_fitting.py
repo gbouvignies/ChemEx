@@ -28,6 +28,7 @@ from chemex.optimize.mcmc import NativeMcmcIncompleteError
 from chemex.optimize.progress import ProgressPhase
 from chemex.optimize.resampling import NativeResamplingIncompleteError
 from chemex.optimize.uncertainty import ParameterUnit
+from chemex.parameters.values import AnalysisValuesSnapshot
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
 
@@ -42,6 +43,10 @@ DCEST_PARAMETERS = DCEST_EXAMPLE / "Parameters/parameters.toml"
 THREE_STATE_DCEST_EXAMPLE = ROOT / "examples/Experiments/DCEST_15N_3States"
 THREE_STATE_DCEST_EXPERIMENT = THREE_STATE_DCEST_EXAMPLE / "Experiments/1.25hz.toml"
 THREE_STATE_DCEST_PARAMETERS = THREE_STATE_DCEST_EXAMPLE / "Parameters/parameters.toml"
+CEST_1HN_IP_AP_EXAMPLE = ROOT / "examples/Experiments/CEST_1HN_IP_AP"
+CEST_1HN_IP_AP_EXPERIMENT = CEST_1HN_IP_AP_EXAMPLE / "Experiments/30hz.toml"
+CEST_1HN_IP_AP_PARAMETERS = CEST_1HN_IP_AP_EXAMPLE / "Parameters/parameters.toml"
+CEST_1HN_IP_AP_METHOD = CEST_1HN_IP_AP_EXAMPLE / "Methods/method.toml"
 
 
 def _fit_arguments(
@@ -111,6 +116,32 @@ def _three_state_dcest_arguments(output: Path, method: Path):
             "--plot",
             "nothing",
             "--workers",
+            "1",
+        ]
+    )
+
+
+def _cest_1hn_ip_ap_arguments(output: Path):
+    return build_parser().parse_args(
+        [
+            "fit",
+            "-e",
+            str(CEST_1HN_IP_AP_EXPERIMENT),
+            "-p",
+            str(CEST_1HN_IP_AP_PARAMETERS),
+            "-m",
+            str(CEST_1HN_IP_AP_METHOD),
+            "-o",
+            str(output),
+            "--model",
+            "2st.rs",
+            "--include",
+            "4",
+            "--plot",
+            "nothing",
+            "--workers",
+            "1",
+            "--native-threads",
             "1",
         ]
     )
@@ -273,6 +304,49 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     time_2, intensity_2 = curve[-1]
     fitted_curve_rate = -math.log(intensity_2 / intensity_1) / (time_2 - time_1)
     assert fitted_curve_rate == pytest.approx(fitted_value, rel=1.0e-3)
+
+
+def test_cest_1hn_ip_ap_commits_finite_negative_derived_r2a_b(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+    committed_snapshots: list[AnalysisValuesSnapshot] = []
+    real_publish = run_info_module.RunInfo.publish_restart
+
+    def record_restart(run_info, snapshot):
+        real_publish(run_info, snapshot)
+        committed_snapshots.append(snapshot)
+
+    with patch.object(
+        run_info_module.RunInfo,
+        "publish_restart",
+        autospec=True,
+        side_effect=record_restart,
+    ):
+        run(_cest_1hn_ip_ap_arguments(output), session=session)
+
+    snapshot = session.analysis_values.snapshot()
+    parameter_model = session.parameter_factory.sealed_parameter_model
+    assert parameter_model is not None
+    r2a_b = next(
+        definition
+        for definition in parameter_model.definitions
+        if definition.name == "R2A_B" and definition.spin_system_name == "4H"
+    )
+    configuration = parameter_model.configuration[r2a_b.param_id]
+    assert configuration.lower_bound == 0.0
+    assert [item.revision for item in committed_snapshots] == [1, 2]
+    # This is the one-profile form of the shipped regression. A 2e-7 relative
+    # tolerance covers backend/finite-difference rounding while remaining seven
+    # orders of magnitude from the configured zero bound and lmfit's old clipping.
+    assert committed_snapshots[0][r2a_b.param_id] == pytest.approx(
+        -0.42454801400787906,
+        rel=2.0e-7,
+        abs=1.0e-9,
+    )
+    assert committed_snapshots[0][r2a_b.param_id] < configuration.lower_bound
+    assert snapshot.revision == 2
 
 
 def test_product_fit_rejects_a_stale_aggregate_commit_atomically(
@@ -502,6 +576,44 @@ ROLES = [{ FIX = ["PB", "KEX_AB"] }]
     assert [revision for revision, _text in published] == [1, 2, 3]
     assert '"G2N-H" = [3.0,' in published[1][1]
     assert _read_outcome(output)["restart_revision"] == 3
+
+
+def test_out_of_bounds_derived_continuity_cannot_become_held_independent(
+    tmp_path: Path,
+) -> None:
+    method = tmp_path / "method-v2.toml"
+    method.write_text(
+        """
+FORMAT_VERSION = 2
+[DERIVED]
+ROLES = [
+  { FIX = ["PB", "KEX_AB"] },
+  { CONSTRAIN = ["[R1A_A, NUC->G2N-H] = -1.0"] },
+]
+
+[HELD]
+ROLES = [{ FIX = ["PB", "KEX_AB", "R1A_A"] }]
+""",
+        encoding="utf-8",
+    )
+    session = AnalysisSession.create()
+
+    with pytest.raises(
+        direct_trf_module.DirectTrfConstructionError,
+        match="Independent parameter .* outside its effective bounds",
+    ):
+        run(_fit_arguments(tmp_path / "Output", method), session=session)
+
+    committed = session.analysis_values.snapshot()
+    parameter_model = session.parameter_factory.sealed_parameter_model
+    assert parameter_model is not None
+    r1a_a = next(
+        item.param_id
+        for item in parameter_model.definitions
+        if item.name == "R1A_A" and item.spin_system_name == "G2N-H"
+    )
+    assert committed.revision == 1
+    assert committed[r1a_a] == -1.0
 
 
 def test_relaxation_product_covariance_matches_absolute_sigma_reference(

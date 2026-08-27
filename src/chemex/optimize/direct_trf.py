@@ -810,6 +810,26 @@ def _validate_candidate_feasibility(
     return full_values
 
 
+def build_bounded_independent_frame(
+    parameterization: ActiveParameterization,
+    configuration: SealedConfiguration,
+    snapshot: AnalysisValuesSnapshot,
+) -> IndependentValueFrame:
+    """Build one independent frame after enforcing configured coordinate bounds."""
+    if configuration.identity != snapshot.configuration_identity:
+        raise DirectTrfConstructionError(
+            "Configuration and starting snapshot identities differ"
+        )
+    frame = parameterization.frame_from_snapshot(snapshot)
+    for param_id, value in frame.ordered_items():
+        item = configuration[param_id]
+        if not item.lower_bound <= value <= item.upper_bound:
+            raise DirectTrfConstructionError(
+                f"Independent parameter {param_id!r} is outside its effective bounds"
+            )
+    return frame
+
+
 @dataclass(frozen=True, slots=True)
 class OptimizationProblem:
     """One immutable canonical external-coordinate fit and commit context."""
@@ -985,11 +1005,11 @@ class OptimizationProblem:
             )
         if plan.retained_observation_count < 1:
             raise DirectTrfConstructionError("Residual objective cannot be empty")
-        if configuration.identity != snapshot.configuration_identity:
-            raise DirectTrfConstructionError(
-                "Configuration and starting snapshot identities differ"
-            )
-        frame = parameterization.frame_from_snapshot(snapshot)
+        frame = build_bounded_independent_frame(
+            parameterization,
+            configuration,
+            snapshot,
+        )
         independent_items = frame.ordered_items()
         controlled_ids = tuple(
             param_id
@@ -1010,12 +1030,6 @@ class OptimizationProblem:
         upper = tuple(
             configuration[param_id].upper_bound for param_id in controlled_ids
         )
-        for param_id, value in held_items:
-            item = configuration[param_id]
-            if not item.lower_bound <= value <= item.upper_bound:
-                raise DirectTrfConstructionError(
-                    f"Held parameter {param_id!r} is outside its effective bounds"
-                )
         return cls(
             plan.identity,
             parameterization.identity,
