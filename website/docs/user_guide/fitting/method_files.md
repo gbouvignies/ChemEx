@@ -151,7 +151,7 @@ EXCLUDE = [12, 18]
 | Method structure | Use it when | What ChemEx does |
 | --- | --- | --- |
 | No `SEARCH` | The committed start is suitable | Runs one full-coordinate TRF |
-| `SEARCH.GRID` | A deterministic Cartesian set of starts is practical | Runs a complete TRF at every Cartesian seed and commits the best eligible complete fit |
+| `SEARCH.GRID` | A profiled chi-square landscape is scientifically useful | Holds the GRID coordinates at each point, optimizes the other fitted coordinates, and commits one coherent joint grid solution |
 | `SEARCH.DE` | A few basin-defining coordinates need broad stochastic coverage | Searches only those coordinates, then seeds exactly one normal full-coordinate TRF |
 
 GRID and DE never change parameter roles. Their targets must resolve to final
@@ -178,9 +178,30 @@ GRID accepts only `lin(low, high, count)`, `log(low, high, count)`, and
 coordinates. Axis declarations apply top-to-bottom, so a later specific axis
 replaces an earlier broad axis for the same concrete coordinate.
 
-Every Cartesian seed runs one complete full-coordinate TRF. ChemEx selects the
-best eligible materialized fit, performs aggregate acceptance, and commits once;
-there is no redundant final TRF.
+GRID calculates a profiled chi-square surface. At each grid point, the declared
+GRID coordinates are held exactly at their declared values while every other
+final independent `FIT` coordinate is optimized by the normal native TRF
+solver. Derived and fixed parameters keep their normal constraint and role
+semantics. When no non-GRID fitted coordinate remains, ChemEx evaluates the
+point directly without starting a zero-variable optimizer.
+
+Broad selectors are resolved only against the current step's active final
+`FIT` scope. Exact objective factorization avoids Cartesian products of
+unrelated local axes. For example, factors that share global `KEX_AB` and `PB`
+but each own a residue-local `DW_AB` are profiled separately and then reduced
+and summed exactly. ChemEx selects one coherent joint assignment: one shared
+global grid point, its corresponding best local point in every factor, and the
+nuisance-parameter solutions attached to those points. The complete root state
+is freshly evaluated and accepted before one atomic commit. Factor results and
+independent one-dimensional marginal minima never commit.
+
+GRID does not release its own axes through an automatic final TRF. A later
+method step can do so explicitly with its normal roles, starting from the
+committed GRID state. Because a discrete GRID coordinate was not continuously
+optimized in that step, ChemEx withholds deterministic covariance errors for a
+GRID step. Requested MC, BS, BSN, or MCMC analyses still start from the accepted
+GRID state; a following ordinary Direct step is the normal route to local
+covariance uncertainty.
 
 ### Selected-coordinate DE
 
@@ -209,8 +230,9 @@ that releases the complete final `FIT` set. Only that TRF can be accepted,
 committed, or used for uncertainty and statistics. DE failure does not fall back
 to direct TRF.
 
-Use GRID for deterministic Cartesian multistart. Use DE when a Cartesian grid
-over a small set of basin coordinates would be impractical. See the shipped
+Use GRID to inspect exact profiled chi-square landscapes. Use DE when a small
+set of coordinates needs stochastic basin exploration before one complete
+continuous fit. See the shipped
 three-state DCEST example at
 `examples/Experiments/DCEST_15N_3States/Methods/method_de.toml`.
 

@@ -439,62 +439,58 @@ class ComponentProblemDerivation:
 
 
 @dataclass(frozen=True, slots=True)
-class GridSeedProblemDerivation:
-    """Exact lineage for one full-coordinate GRID seed child problem."""
+class ProfiledGridPointProblemDerivation:
+    """Exact lineage for one factor-local profiled GRID point problem."""
 
     root_problem_identity: str
     root_affine_feasibility_identity: str
-    seed_identity: str
-    seed_ordinal: int
-    axis_items: tuple[tuple[str, float], ...]
+    factor_identity: str
+    point_ordinal: int
+    projected_plan_identity: str
+    grid_items: tuple[tuple[str, float], ...]
     controlled_ids: tuple[str, ...]
-    start: tuple[float, ...]
+    captured_independent_items: tuple[tuple[str, float], ...]
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
-        if isinstance(self.seed_ordinal, bool) or self.seed_ordinal < 0:
-            raise DirectTrfConstructionError(
-                "GRID seed ordinal must be a non-negative integer"
-            )
-        axis_items = tuple(
-            (param_id, _finite_binary64(value, name=f"GRID axis {param_id!r}"))
-            for param_id, value in self.axis_items
+        grid_ids = tuple(param_id for param_id, _value in self.grid_items)
+        independent_ids = tuple(
+            param_id for param_id, _value in self.captured_independent_items
         )
-        axis_ids = tuple(param_id for param_id, _value in axis_items)
         if (
-            not axis_items
-            or len(set(axis_ids)) != len(axis_ids)
-            or axis_ids
-            != tuple(sorted(axis_ids, key=lambda item: item.encode("utf-8")))
-            or not set(axis_ids).issubset(self.controlled_ids)
+            not self.root_problem_identity
+            or not self.factor_identity
+            or not self.projected_plan_identity
+            or self.point_ordinal < 0
+            or len(set(grid_ids)) != len(grid_ids)
+            or len(set(self.controlled_ids)) != len(self.controlled_ids)
+            or set(grid_ids) & set(self.controlled_ids)
+            or len(set(independent_ids)) != len(independent_ids)
+            or not {*grid_ids, *self.controlled_ids}.issubset(independent_ids)
         ):
             raise DirectTrfConstructionError(
-                "GRID seed axes must be unique canonical controlled IDs"
+                "Profiled GRID point derivation has inconsistent coordinates"
             )
-        start = tuple(
-            _finite_binary64(value, name=f"GRID start[{index}]")
-            for index, value in enumerate(self.start)
-        )
-        if len(start) != len(self.controlled_ids):
-            raise DirectTrfConstructionError("GRID seed start has the wrong dimension")
-        object.__setattr__(self, "axis_items", axis_items)
-        object.__setattr__(self, "start", start)
         object.__setattr__(
             self,
             "identity",
             _identity(
-                "native-grid-seed-problem-derivation",
+                "native-profiled-grid-point-problem-derivation",
                 (
                     self.root_problem_identity,
                     self.root_affine_feasibility_identity,
-                    self.seed_identity,
-                    self.seed_ordinal,
+                    self.factor_identity,
+                    self.point_ordinal,
+                    self.projected_plan_identity,
                     tuple(
                         (param_id, _float_token(value))
-                        for param_id, value in axis_items
+                        for param_id, value in self.grid_items
                     ),
                     self.controlled_ids,
-                    _vector_tokens(start),
+                    tuple(
+                        (param_id, _float_token(value))
+                        for param_id, value in self.captured_independent_items
+                    ),
                 ),
             ),
         )
@@ -567,7 +563,9 @@ class DeSearchProblemDerivation:
 
 
 type ProblemDerivation = (
-    ComponentProblemDerivation | GridSeedProblemDerivation | DeSearchProblemDerivation
+    ComponentProblemDerivation
+    | ProfiledGridPointProblemDerivation
+    | DeSearchProblemDerivation
 )
 
 
@@ -901,20 +899,22 @@ class OptimizationProblem:
                 raise DirectTrfConstructionError(
                     "Component problem differs from its derivation record"
                 )
-        elif isinstance(self.derivation, GridSeedProblemDerivation):
+        elif isinstance(self.derivation, ProfiledGridPointProblemDerivation):
             if (
                 self.derivation.root_affine_feasibility_identity
                 != affine_feasibility_identity
             ):
                 raise DirectTrfConstructionError(
-                    "GRID seed affine feasibility differs from its derivation record"
+                    "Profiled GRID point affine feasibility differs from its "
+                    "derivation record"
                 )
             if (
-                self.derivation.controlled_ids != self.controlled_ids
-                or self.derivation.start != normalized_start
+                self.derivation.projected_plan_identity != self.evaluation_plan_identity
+                or self.derivation.controlled_ids != self.controlled_ids
+                or self.derivation.captured_independent_items != self.independent_items
             ):
                 raise DirectTrfConstructionError(
-                    "GRID seed problem differs from its derivation record"
+                    "Profiled GRID point problem differs from its derivation record"
                 )
         elif isinstance(self.derivation, DeSearchProblemDerivation):
             if (
@@ -939,8 +939,10 @@ class OptimizationProblem:
             derivation_record: tuple[tuple[str, str], ...] = ()
         elif isinstance(self.derivation, ComponentProblemDerivation):
             derivation_record = (("derived-fit-component", self.derivation.identity),)
-        elif isinstance(self.derivation, GridSeedProblemDerivation):
-            derivation_record = (("derived-grid-seed", self.derivation.identity),)
+        elif isinstance(self.derivation, ProfiledGridPointProblemDerivation):
+            derivation_record = (
+                ("derived-profiled-grid-point", self.derivation.identity),
+            )
         else:
             derivation_record = (("derived-de-search", self.derivation.identity),)
         # Preserve the established box-only problem identity exactly.
@@ -1113,6 +1115,85 @@ class OptimizationProblem:
         self.validate_derived_problem(child)
         return child
 
+    def derive_profiled_grid_point(
+        self,
+        *,
+        factor_identity: str,
+        point_ordinal: int,
+        projected_plan_identity: str,
+        grid_items: tuple[tuple[str, float], ...],
+        controlled_ids: tuple[str, ...],
+    ) -> OptimizationProblem:
+        """Hold exact GRID values and control only factor-local nuisance coordinates."""
+        if not self.acceptance_authority:
+            raise DirectTrfConstructionError(
+                "Profiled GRID points require one complete root problem"
+            )
+        root_controlled = set(self.controlled_ids)
+        grid_ids = tuple(param_id for param_id, _value in grid_items)
+        controlled = set(controlled_ids)
+        if (
+            len(set(grid_ids)) != len(grid_ids)
+            or len(controlled) != len(controlled_ids)
+            or set(grid_ids) & controlled
+            or not set(grid_ids).issubset(root_controlled)
+            or not controlled.issubset(root_controlled)
+            or controlled_ids
+            != tuple(
+                param_id for param_id in self.controlled_ids if param_id in controlled
+            )
+        ):
+            raise DirectTrfConstructionError(
+                "Profiled GRID point coordinates differ from the root FIT scope"
+            )
+        updates = dict(grid_items)
+        independent_items = tuple(
+            (param_id, updates.get(param_id, value))
+            for param_id, value in self.independent_items
+        )
+        independent_values = dict(independent_items)
+        held_items = tuple(
+            item for item in independent_items if item[0] not in controlled
+        )
+        root_indices = {
+            param_id: index for index, param_id in enumerate(self.controlled_ids)
+        }
+        derivation = ProfiledGridPointProblemDerivation(
+            self.identity,
+            self.affine_feasibility_identity,
+            factor_identity,
+            point_ordinal,
+            projected_plan_identity,
+            grid_items,
+            controlled_ids,
+            independent_items,
+        )
+        child = OptimizationProblem(
+            projected_plan_identity,
+            self.parameterization_identity,
+            self.evaluator_parameterization_identity,
+            self.constraint_program_identity,
+            self.configuration_identity,
+            self.source_snapshot,
+            independent_items,
+            controlled_ids,
+            held_items,
+            tuple(independent_values[param_id] for param_id in controlled_ids),
+            tuple(
+                self.lower_bounds[root_indices[param_id]] for param_id in controlled_ids
+            ),
+            tuple(
+                self.upper_bounds[root_indices[param_id]] for param_id in controlled_ids
+            ),
+            self.commit_scope,
+            derivation,
+            self.scalarization_version,
+            self.affine_half_spaces,
+            self.affine_equalities,
+        )
+        self.validate_derived_problem(child)
+        return child
+
     def restart_from(self, start: Sequence[float]) -> OptimizationProblem:
         """Create a fresh complete root problem with a new full-coordinate start."""
         if not self.acceptance_authority:
@@ -1148,12 +1229,22 @@ class OptimizationProblem:
         root_indices = {
             param_id: index for index, param_id in enumerate(self.controlled_ids)
         }
-        expected_held = tuple(
-            item for item in self.independent_items if item[0] not in controlled
-        )
+        if isinstance(derivation, ProfiledGridPointProblemDerivation):
+            expected_independent = derivation.captured_independent_items
+            expected_held = tuple(
+                item for item in expected_independent if item[0] not in controlled
+            )
+        else:
+            expected_independent = self.independent_items
+            expected_held = tuple(
+                item for item in self.independent_items if item[0] not in controlled
+            )
         expected_plan_identity = (
             derivation.projected_plan_identity
-            if isinstance(derivation, ComponentProblemDerivation)
+            if isinstance(
+                derivation,
+                (ComponentProblemDerivation, ProfiledGridPointProblemDerivation),
+            )
             else self.evaluation_plan_identity
         )
         if (
@@ -1169,7 +1260,7 @@ class OptimizationProblem:
             or child.constraint_program_identity != self.constraint_program_identity
             or child.configuration_identity != self.configuration_identity
             or child.source_snapshot is not self.source_snapshot
-            or child.independent_items != self.independent_items
+            or child.independent_items != expected_independent
             or child.held_items != expected_held
             or child.lower_bounds
             != tuple(
@@ -1643,71 +1734,6 @@ class RootMaterializationFailure:
     failure: TerminalFailure
 
 
-@dataclass(frozen=True, slots=True)
-class GridSelectionProvenance:
-    """Exact GRID workflow selection that authorizes one root materialization."""
-
-    workflow_invocation_identity: str
-    root_problem_identity: str
-    selection_identity: str
-    selected_seed_identity: str
-    selected_seed_ordinal: int
-    grid_candidate_identity: str
-    materialized_candidate_identity: str
-    candidate_problem_identity: str
-    candidate_invocation_identity: str
-    candidate_execution_identity: str
-    candidate_materialization_identity: str
-    accepted_materialization_identity: str
-    accepted_evaluation_identity: str
-    identity: str = field(init=False)
-
-    def __post_init__(self) -> None:
-        if (
-            isinstance(self.selected_seed_ordinal, bool)
-            or self.selected_seed_ordinal < 0
-        ):
-            raise ValueError("Selected GRID seed ordinal must be non-negative")
-        identities = (
-            self.workflow_invocation_identity,
-            self.root_problem_identity,
-            self.selection_identity,
-            self.selected_seed_identity,
-            self.grid_candidate_identity,
-            self.materialized_candidate_identity,
-            self.candidate_problem_identity,
-            self.candidate_invocation_identity,
-            self.candidate_execution_identity,
-            self.candidate_materialization_identity,
-            self.accepted_materialization_identity,
-            self.accepted_evaluation_identity,
-        )
-        if any(not identity for identity in identities):
-            raise ValueError("GRID selection provenance identities cannot be empty")
-        object.__setattr__(
-            self,
-            "identity",
-            _identity(
-                "native-grid-selection-provenance",
-                (
-                    self.workflow_invocation_identity,
-                    self.root_problem_identity,
-                    self.selection_identity,
-                    self.selected_seed_identity,
-                    self.selected_seed_ordinal,
-                    self.grid_candidate_identity,
-                    self.materialized_candidate_identity,
-                    self.candidate_problem_identity,
-                    self.candidate_invocation_identity,
-                    self.candidate_execution_identity,
-                    self.candidate_materialization_identity,
-                    self.accepted_materialization_identity,
-                    self.accepted_evaluation_identity,
-                ),
-            ),
-        )
-
-
 class _OpaqueOccurrenceWitness:
     """Noncopyable, nonserializable base for process-local occurrence witnesses."""
 
@@ -1974,13 +2000,13 @@ def accepted_occurrence_is_authoritative(accepted: AcceptedFitResult) -> bool:
 
 
 class LiveFitCommitAuthority:
-    """Opaque process-local token whose authority lives only in Direct TRF."""
+    """Opaque process-local token for one freshly accepted native root result."""
 
     __slots__ = ("__weakref__",)
 
     def __new__(cls) -> LiveFitCommitAuthority:
         raise TypeError(
-            "Live fit commit authority is minted only by Direct TRF acceptance"
+            "Live fit commit authority is minted only by native fit acceptance"
         )
 
     def __copy__(self) -> LiveFitCommitAuthority:
@@ -3864,13 +3890,13 @@ def _consume_fit_commit_authority(
 ) -> None:
     if not isinstance(authority, LiveFitCommitAuthority):
         raise DirectTrfConstructionError(
-            "Accepted result lacks its exact live Direct TRF commit authority"
+            "Accepted result lacks its exact live fit commit authority"
         )
     with _LIVE_FIT_COMMIT_AUTHORITIES_LOCK:
         binding = _LIVE_FIT_COMMIT_AUTHORITIES.get(authority)
         if not _fit_commit_authority_binding_matches(binding, accepted, problem):
             raise DirectTrfConstructionError(
-                "Accepted result lacks its exact live Direct TRF commit authority"
+                "Accepted result lacks its exact live fit commit authority"
             )
         del _LIVE_FIT_COMMIT_AUTHORITIES[authority]
 

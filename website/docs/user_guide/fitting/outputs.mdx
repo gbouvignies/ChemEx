@@ -194,10 +194,43 @@ Contains data values used in the fitting process along with back-calculated valu
 
 ### `Grid/`
 
-When a method requests `GRID`, `grid.out` records the aggregate chi-square for
-each grid seed. One- and two-dimensional aggregate views are written as
-`grid_1d.pdf` and `grid_2d.pdf` when applicable. Fit-component-local GRID files
-are execution details and are not published as separate results.
+When a method requests `GRID`, ChemEx publishes the raw exact factor grids,
+machine-readable profile surfaces, plots, and the coherent selected grid state:
+
+```shell
+Grid/
+├── Factors/
+│   ├── factor_01__<axes>.tsv
+│   └── ...
+├── Profiles/
+│   ├── 1D/
+│   │   ├── <parameter>.tsv
+│   │   └── ...
+│   └── 2D/
+│       ├── <parameter1>__<parameter2>.tsv
+│       └── ...
+├── grid_1d.pdf
+├── grid_2d.pdf
+└── summary.toml
+```
+
+Each deterministic factor filename identifies its concrete grid axes. Its TSV
+contains the coordinate values, profiled chi-square, point status, selected
+flag, objective-evaluation count, and a failure description when applicable.
+Thus a failed or unavailable point is distinct from a valid point with a large
+finite chi-square. The `Profiles/1D/` and `Profiles/2D/` TSV files contain the
+same exact reduced surfaces shown in the PDFs, including a marker for the
+selected coherent joint solution. `summary.toml` records its freshly validated
+aggregate chi-square and concrete grid-axis assignment.
+
+These factor files are numerical evidence, not independently authoritative
+fits. ChemEx reconstructs one complete joint candidate from the exact factor
+minimum, validates it against the complete root objective, and commits at most
+once. Incomplete or interrupted GRID work does not publish ordinary fitted,
+covariance, or statistics output as though it were complete. Reruns clear the
+previous `Grid/` tree before publishing a replacement. The former native
+`grid.out` multistart layout is not written because it did not represent a
+profiled chi-square surface truthfully.
 
 Selected-coordinate DE is only an initializer for one normal full-coordinate
 TRF fit, so it creates no separate DE result tree. Successful DE-assisted fits

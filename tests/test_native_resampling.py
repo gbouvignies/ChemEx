@@ -446,7 +446,6 @@ def test_altered_generated_observation_cannot_retain_or_rebind_draw_identity() -
         ("invocation_identity", "foreign-invocation"),
         ("execution_identity", "foreign-execution"),
         ("workflow_identity", "foreign-workflow"),
-        ("strategy", OptimizationStrategy.GRID_DIRECT_TRF),
         ("component_identities", ("foreign-component",)),
         ("component_outcome_identities", ("foreign-component-outcome",)),
         ("candidate_identity", "foreign-candidate"),

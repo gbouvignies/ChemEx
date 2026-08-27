@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 
+import numpy as np
+
 from chemex.configuration.conditions import Conditions
 from chemex.configuration.method_plan import (
     BinaryExpression,
@@ -48,6 +50,15 @@ class ResolvedDeCoordinate:
     low: float
     high: float
     scale: SearchScale
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedGridAxis:
+    """One GRID declaration resolved inside the current active FIT scope."""
+
+    param_id: str
+    values: tuple[float, ...]
+    declaration_ordinal: int
 
 
 def _param_name(definition: ParamDefinition) -> ParamName:
@@ -324,6 +335,65 @@ def _validate_grid(
             else (axis.spacing.low, axis.spacing.high)
         )
         _check_bounds(param_id, values, model, axis.source)
+
+
+def _grid_values(axis: GridAxis) -> tuple[float, ...]:
+    spacing = axis.spacing
+    if isinstance(spacing, GridValues):
+        return spacing.values
+    if spacing.scale is SearchScale.LINEAR:
+        values = np.linspace(spacing.low, spacing.high, spacing.count)
+    else:
+        values = np.geomspace(spacing.low, spacing.high, spacing.count)
+    return tuple(float(value) for value in values)
+
+
+def resolve_grid_axes(
+    search: GridSearch,
+    model: SealedParameterModel,
+    *,
+    active_scope_ids: tuple[str, ...],
+    final_fit_ids: tuple[str, ...],
+) -> tuple[ResolvedGridAxis, ...]:
+    """Resolve broad GRID rules against one current active final FIT scope.
+
+    Declarations retain v2's top-to-bottom rule semantics: a later declaration
+    replaces an earlier declaration for every concrete active coordinate it
+    matches. Parameters outside the active scope are deliberately ignored.
+    """
+    active_scope = frozenset(active_scope_ids)
+    final_fit = frozenset(final_fit_ids)
+    concrete: dict[str, ResolvedGridAxis] = {}
+    for ordinal, axis in enumerate(search.axes):
+        matches = tuple(
+            param_id
+            for param_id in _matches(axis.selector, model, axis.source)
+            if param_id in active_scope
+        )
+        if not matches:
+            raise MethodFormatError(
+                "GRID selector has no applicable coordinate in the current "
+                f"active step: [{axis.selector.render()}]",
+                axis.source,
+            )
+        invalid = tuple(param_id for param_id in matches if param_id not in final_fit)
+        if invalid:
+            raise MethodFormatError(
+                "GRID targets must be active final independent FIT coordinates: "
+                + ", ".join(invalid),
+                axis.source,
+            )
+        values = _grid_values(axis)
+        for param_id in matches:
+            _check_bounds(param_id, values, model, axis.source)
+            concrete[param_id] = ResolvedGridAxis(param_id, values, ordinal)
+    active_order = {param_id: index for index, param_id in enumerate(final_fit_ids)}
+    return tuple(
+        sorted(
+            concrete.values(),
+            key=lambda item: (item.declaration_ordinal, active_order[item.param_id]),
+        )
+    )
 
 
 def _validate_de(

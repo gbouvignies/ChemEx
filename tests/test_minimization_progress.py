@@ -465,7 +465,7 @@ def test_grid_reporter_aggregates_local_attempts_instead_of_streaming_each_seed(
         reporter.finish(final_chi_square=10.0, terminal_status="committed")
 
     rendered = stream.getvalue()
-    assert rendered.count("GRID seed") == 1
+    assert rendered.count("GRID point") == 1
     assert "Evaluations" in rendered
 
 

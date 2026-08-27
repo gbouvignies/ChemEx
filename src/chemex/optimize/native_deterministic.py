@@ -1,17 +1,20 @@
 """Production composition for deterministic evaluation and fitting."""
 
+import re
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import reduce
-from itertools import product
 from operator import and_
 from pathlib import Path
-from typing import cast
 
 import numpy as np
 
 from chemex.configuration.method_plan import DeSearch, GridSearch, SearchScale
-from chemex.configuration.method_validation import resolve_de_coordinates
+from chemex.configuration.method_validation import (
+    resolve_de_coordinates,
+    resolve_grid_axes,
+)
 from chemex.configuration.methods import Method
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import (
@@ -44,14 +47,8 @@ from chemex.optimize.direct_trf import (
     build_bounded_independent_frame,
     execute_fit_commit,
 )
-from chemex.optimize.grid_direct_trf import (
-    GridDirectTrfInterrupted,
-    GridDirectTrfInvocation,
-)
 from chemex.optimize.gridding import (
     GridResult,
-    combine_grids,
-    make_grids_nd,
     plot_grid_1d,
     plot_grid_2d,
 )
@@ -61,14 +58,11 @@ from chemex.optimize.grouped_direct_trf import (
     GroupedDirectTrfOutcome,
     execute_grouped_direct_trf,
 )
-from chemex.optimize.grouped_grid_direct_trf import (
-    GroupedGridDirectTrfOutcome,
-    execute_grouped_grid_direct_trf,
-)
-from chemex.optimize.helper import (
-    execute_post_fit,
-    print_header,
-    print_values,
+from chemex.optimize.helper import execute_post_fit
+from chemex.optimize.profiled_grid import (
+    ProfiledGridOutcome,
+    ProfiledGridSurface,
+    execute_profiled_grid,
 )
 from chemex.optimize.uncertainty import (
     CompiledConstraintLinearizationCapabilities,
@@ -83,7 +77,6 @@ from chemex.optimize.uncertainty import (
     derive_root_anchored_block_covariance,
     derive_uncertainty_evidence,
 )
-from chemex.parameters.database import ParameterStore
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     ParameterRole,
@@ -406,22 +399,23 @@ def _materialize_evaluation(
 def _execute_and_commit_aggregate(
     problem: OptimizationProblem,
     decomposition: FitDecomposition,
-    invocation: GroupedDirectTrfInvocation | GridDirectTrfInvocation,
+    invocation: GroupedDirectTrfInvocation | None,
+    grid_axes: Mapping[str, tuple[float, ...]] | None,
     parameterization: ActiveParameterization,
     engine: EvaluationEngine,
     analysis_values: AnalysisValues,
     progress: MinimizationProgressReporter,
     uncertainty_progress: UncertaintyProgressReporter,
 ) -> tuple[
-    GroupedDirectTrfOutcome | GroupedGridDirectTrfOutcome,
+    GroupedDirectTrfOutcome | ProfiledGridOutcome,
     FitCommitOperation | None,
 ]:
     """Execute components, accept one fresh aggregate, and atomically commit it."""
     token = CancellationToken()
     print_minimizing()
     with progress:
-        if isinstance(invocation, GroupedDirectTrfInvocation):
-            outcome: GroupedDirectTrfOutcome | GroupedGridDirectTrfOutcome = (
+        if invocation is not None:
+            outcome: GroupedDirectTrfOutcome | ProfiledGridOutcome = (
                 execute_grouped_direct_trf(
                     problem,
                     decomposition,
@@ -433,24 +427,18 @@ def _execute_and_commit_aggregate(
                 )
             )
         else:
-            try:
-                outcome = execute_grouped_grid_direct_trf(
-                    problem,
-                    decomposition,
-                    invocation,
-                    parameterization,
-                    engine,
-                    cancellation=token,
-                    progress_observer=progress.observe,
-                )
-            except GridDirectTrfInterrupted as error:
-                progress.finish(
-                    final_chi_square=None,
-                    terminal_status=error.outcome.terminal.value,
-                )
-                raise KeyboardInterrupt(
-                    "Native deterministic fit interrupted"
-                ) from error
+            if grid_axes is None:
+                raise RuntimeError("Profiled GRID execution lacks resolved axes")
+            outcome = execute_profiled_grid(
+                problem,
+                grid_axes,
+                parameterization,
+                engine,
+                objective_request_budget=_objective_request_budget(problem),
+                x_scale=_product_x_scale(problem),
+                cancellation=token,
+                progress_observer=progress.observe,
+            )
         accepted = outcome.accepted_result
         authority = outcome.commit_authority
         if accepted is None or authority is None:
@@ -482,23 +470,9 @@ def _execute_and_commit_aggregate(
 
 
 def _build_invocation(
-    method: Method,
-    search: GridSearch | None,
     problem: OptimizationProblem,
     decomposition: FitDecomposition,
-    parameter_store: ParameterStore,
-) -> GroupedDirectTrfInvocation | GridDirectTrfInvocation:
-    if search is not None:
-        grid = parameter_store.parse_grid(method.grid)
-        invocation = GridDirectTrfInvocation.for_problem(
-            problem,
-            axes=tuple(
-                (param_id, tuple(values.tolist())) for param_id, values in grid.items()
-            ),
-            objective_request_budget=_objective_request_budget(problem),
-            x_scale=_product_x_scale(problem),
-        )
-        return invocation
+) -> GroupedDirectTrfInvocation:
     invocation = GroupedDirectTrfInvocation(
         decomposition.root_problem_identity,
         decomposition.identity,
@@ -555,90 +529,158 @@ def _run_product_de_search(
 
 
 def _write_grid_output(
-    outcome: GroupedGridDirectTrfOutcome,
-    invocation: GridDirectTrfInvocation,
+    outcome: ProfiledGridOutcome,
     path: Path,
     *,
     parameter_model: SealedParameterModel,
     accepted_values: Mapping[str, float],
 ) -> None:
-    """Render aggregate GRID artifacts from native seed evidence."""
-    grid = {
-        axis.param_id: np.asarray(axis.values, dtype=np.float64)
-        for axis in invocation.axes
-    }
+    """Publish raw factors and exact numerical profiles as one GRID product."""
+    aggregate = outcome.aggregate
+    accepted = outcome.accepted_result
+    if aggregate is None or accepted is None:
+        raise RuntimeError("Accepted profiled GRID output lacks its aggregate")
     parameter_names = {
         definition.param_id: parameter_name_from_definition(definition)
         for definition in parameter_model.definitions
     }
     grid_path = path / "Grid"
-    grid_path.mkdir(parents=True, exist_ok=True)
-    component_results: list[GridResult] = []
-    for component_index, component in enumerate(outcome.attempts[0].components):
-        controlled_ids = frozenset(component.controlled_ids)
-        component_grid = {
-            param_id: values
-            for param_id, values in grid.items()
-            if param_id in controlled_ids
-        }
-        objective_by_coordinates: dict[tuple[float, ...], float] = {}
-        for attempt in outcome.attempts:
-            coordinates = dict(attempt.axis_items)
-            key = tuple(
-                float(cast("int | float", coordinates[param_id]))
-                for param_id in component_grid
-            )
-            candidate = attempt.components[component_index].candidate
-            objective = np.inf if candidate is None else candidate.chi_square
-            objective_by_coordinates[key] = min(
-                objective,
-                objective_by_coordinates.get(key, np.inf),
-            )
-        coordinate_order = tuple(product(*component_grid.values()))
-        chisqr = np.asarray(
-            [
-                objective_by_coordinates[tuple(float(value) for value in coordinates)]
-                for coordinates in coordinate_order
-            ],
-            dtype=np.float64,
-        ).reshape(tuple(len(values) for values in component_grid.values()))
-        component_results.append(GridResult(component_grid, chisqr))
+    staging = path / ".Grid.tmp"
+    shutil.rmtree(staging, ignore_errors=True)
+    factors_path = staging / "Factors"
+    profiles_1d_path = staging / "Profiles" / "1D"
+    profiles_2d_path = staging / "Profiles" / "2D"
+    factors_path.mkdir(parents=True, exist_ok=True)
+    profiles_1d_path.mkdir(parents=True, exist_ok=True)
+    profiles_2d_path.mkdir(parents=True, exist_ok=True)
 
-    with (grid_path / "grid.out").open("w", encoding="utf-8") as output:
-        output.write(print_header(grid, parameter_names=parameter_names))
-        for attempt in outcome.attempts:
-            coordinates = (
-                float(cast("int | float", value))
-                for _param_id, value in attempt.axis_items
-            )
-            objective = np.inf if attempt.objective is None else attempt.objective
-            output.write(print_values(coordinates, objective))
+    def token(param_id: str) -> str:
+        folder = parameter_names[param_id].folder.lower()
+        return re.sub(r"[^a-z0-9_.-]+", "_", folder).strip("_") or param_id.strip("_")
 
-    combined = combine_grids(grid, component_results)
-    grids_1d = make_grids_nd(
-        grid,
-        combined,
-        1,
-        parameter_names=parameter_names,
-    )
-    grids_2d = make_grids_nd(
-        grid,
-        combined,
-        2,
-        parameter_names=parameter_names,
-    )
+    selected_ordinals = aggregate.selection.factor_point_ordinals
+    for result, selected_ordinal in zip(
+        outcome.factors, selected_ordinals, strict=True
+    ):
+        axis_tokens = tuple(token(param_id) for param_id in result.factor.grid_ids)
+        suffix = "__".join(axis_tokens) if axis_tokens else "constant"
+        filename = (
+            factors_path / f"factor_{result.factor.ordinal + 1:02d}__{suffix}.tsv"
+        )
+        headers = (
+            "point",
+            *(token(param_id) for param_id in result.factor.grid_ids),
+            "chi_square",
+            "status",
+            "selected",
+            "objective_evaluations",
+            "failure",
+        )
+        with filename.open("w", encoding="utf-8") as output:
+            output.write("\t".join(headers) + "\n")
+            for point in result.points:
+                coordinate_values = tuple(
+                    repr(value) for _param_id, value in point.axis_items
+                )
+                failure = (
+                    ""
+                    if point.failure is None
+                    else re.sub(r"[\t\r\n]+", " ", point.failure)
+                )
+                output.write(
+                    "\t".join(
+                        (
+                            str(point.ordinal),
+                            *coordinate_values,
+                            "" if point.chi_square is None else repr(point.chi_square),
+                            point.status.value,
+                            str(point.ordinal == selected_ordinal).lower(),
+                            str(point.objective_evaluations),
+                            failure,
+                        )
+                    )
+                    + "\n"
+                )
+
+    selected_grid = dict(aggregate.selection.grid_items)
+
+    def write_surface(destination: Path, surface: ProfiledGridSurface) -> None:
+        axis_ids = surface.axis_ids
+        axis_values = surface.axis_values
+        chisqr = surface.chi_square
+        with destination.open("w", encoding="utf-8") as output:
+            output.write(
+                "\t".join((*map(token, axis_ids), "chi_square", "selected")) + "\n"
+            )
+            for indices in np.ndindex(chisqr.shape):
+                values = tuple(
+                    axis_values[index][coordinate]
+                    for index, coordinate in enumerate(indices)
+                )
+                is_selected = all(
+                    selected_grid[param_id] == value
+                    for param_id, value in zip(axis_ids, values, strict=True)
+                )
+                output.write(
+                    "\t".join(
+                        (
+                            *(repr(value) for value in values),
+                            repr(float(chisqr[indices])),
+                            str(is_selected).lower(),
+                        )
+                    )
+                    + "\n"
+                )
+
+    grids_1d: list[GridResult] = []
+    for param_id, surface in aggregate.profiles_1d.items():
+        write_surface(profiles_1d_path / f"{token(param_id)}.tsv", surface)
+        grids_1d.append(
+            GridResult(
+                {param_id: np.asarray(surface.axis_values[0], dtype=np.float64)},
+                surface.chi_square,
+            )
+        )
+    grids_2d: list[GridResult] = []
+    for param_ids, surface in aggregate.profiles_2d.items():
+        write_surface(
+            profiles_2d_path / f"{token(param_ids[0])}__{token(param_ids[1])}.tsv",
+            surface,
+        )
+        grids_2d.append(
+            GridResult(
+                {
+                    param_id: np.asarray(values, dtype=np.float64)
+                    for param_id, values in zip(
+                        surface.axis_ids, surface.axis_values, strict=True
+                    )
+                },
+                surface.chi_square,
+            )
+        )
     plot_grid_1d(
         grids_1d,
-        grid_path,
+        staging,
         parameter_names=parameter_names,
         accepted_values=accepted_values,
     )
     plot_grid_2d(
         grids_2d,
-        grid_path,
+        staging,
         parameter_names=parameter_names,
         accepted_values=accepted_values,
     )
+    with (staging / "summary.toml").open("w", encoding="utf-8") as output:
+        output.write('status = "complete"\n')
+        output.write(f"selected_chi_square = {accepted.chi_square!r}\n")
+        output.write(f"factor_count = {len(outcome.factors)}\n")
+        for param_id, value in aggregate.selection.grid_items:
+            output.write("\n[[selected_axes]]\n")
+            output.write(f"parameter_id = {param_id!r}\n")
+            output.write(f"name = {str(parameter_names[param_id])!r}\n")
+            output.write(f"value = {value!r}\n")
+    shutil.rmtree(grid_path, ignore_errors=True)
+    staging.replace(grid_path)
 
 
 def _fit_component_labels(
@@ -764,13 +806,20 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             parameter_model,
         )
     decomposition = FitDecomposition.from_root(problem, parameterization, engine)
-    invocation = _build_invocation(
-        method,
-        search if isinstance(search, GridSearch) else None,
-        problem,
-        decomposition,
-        session.parameters,
-    )
+    if isinstance(search, GridSearch):
+        resolved_grid_axes = resolve_grid_axes(
+            search,
+            parameter_model,
+            active_scope_ids=parameterization.scope_ids,
+            final_fit_ids=problem.controlled_ids,
+        )
+        grid_axes: Mapping[str, tuple[float, ...]] | None = {
+            axis.param_id: axis.values for axis in resolved_grid_axes
+        }
+        invocation = None
+    else:
+        grid_axes = None
+        invocation = _build_invocation(problem, decomposition)
     uncertainty_inputs = _product_uncertainty_inputs(
         problem,
         parameterization,
@@ -789,6 +838,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         problem,
         decomposition,
         invocation,
+        grid_axes,
         parameterization,
         engine,
         session.analysis_values,
@@ -798,7 +848,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     if outcome.terminal.value in {"cancelled", "interrupted"}:
         raise KeyboardInterrupt("Native deterministic fit interrupted")
     if commit is None:
-        failures = (
+        component_failures = (
             tuple(
                 (component.controlled_ids, component.failure)
                 for component in outcome.components
@@ -807,15 +857,15 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             if isinstance(outcome, GroupedDirectTrfOutcome)
             else ()
         )
-        detail = (
-            ""
-            if not failures
-            else ": "
-            + "; ".join(
+        if component_failures:
+            detail = ": " + "; ".join(
                 f"{controlled_ids!r}: {failure.category}: {failure.message}"
-                for controlled_ids, failure in failures
+                for controlled_ids, failure in component_failures
             )
-        )
+        elif isinstance(outcome, ProfiledGridOutcome) and outcome.failure is not None:
+            detail = f": {outcome.failure.category}: {outcome.failure.message}"
+        else:
+            detail = ""
         msg = (
             f"Native deterministic fit did not commit: {outcome.terminal.value}{detail}"
         )
@@ -838,24 +888,44 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     if accepted is None:
         raise RuntimeError("Committed native fit lacks its accepted result")
     result = accepted.evaluation_result
-    try:
-        uncertainty_evidence, uncertainty, uncertainty_status = (
-            _derive_product_uncertainty(
-                accepted,
-                problem,
-                parameterization,
-                engine,
-                uncertainty_inputs,
+    if isinstance(search, GridSearch):
+        grid_uncertainty_reason = (
+            "withheld: GRID coordinates were selected on a discrete profiled "
+            "surface, not by a full continuous Direct TRF"
+        )
+        uncertainty_evidence = None
+        block_uncertainty = None
+        block_status = None
+        uncertainty = ParameterUncertaintyView(
+            unavailable_reasons=tuple(
+                (param_id, grid_uncertainty_reason)
+                for param_id in (
+                    *problem.controlled_ids,
+                    *uncertainty_inputs.constrained_scope,
+                    *uncertainty_inputs.unsupported_constrained_ids,
+                )
             )
         )
-        block_uncertainty, block_status = _product_block_uncertainty(
-            uncertainty_evidence,
-            decomposition,
-        )
-    except (Exception, KeyboardInterrupt) as error:
-        mark_failure_stage(error, "uncertainty")
-        raise
-    uncertainty_status = block_status or uncertainty_status
+        uncertainty_status = ("withheld", grid_uncertainty_reason)
+    else:
+        try:
+            uncertainty_evidence, uncertainty, uncertainty_status = (
+                _derive_product_uncertainty(
+                    accepted,
+                    problem,
+                    parameterization,
+                    engine,
+                    uncertainty_inputs,
+                )
+            )
+            block_uncertainty, block_status = _product_block_uncertainty(
+                uncertainty_evidence,
+                decomposition,
+            )
+        except (Exception, KeyboardInterrupt) as error:
+            mark_failure_stage(error, "uncertainty")
+            raise
+        uncertainty_status = block_status or uncertainty_status
     if block_uncertainty is not None:
         block_errors = tuple(
             (entry.param_id, entry.value)
@@ -911,7 +981,9 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             ),
         )
     uncertainty_progress.finish(
-        _uncertainty_progress_status(
+        grid_uncertainty_reason
+        if isinstance(search, GridSearch)
+        else _uncertainty_progress_status(
             uncertainty_evidence,
             block_uncertainty,
             uncertainty,
@@ -935,9 +1007,10 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     variable_count = len(problem.controlled_ids)
     if isinstance(search, GridSearch):
         try:
+            if not isinstance(outcome, ProfiledGridOutcome):
+                raise TypeError("GRID execution returned a non-GRID outcome")
             _write_grid_output(
-                cast("GroupedGridDirectTrfOutcome", outcome),
-                cast("GridDirectTrfInvocation", invocation),
+                outcome,
                 path,
                 parameter_model=parameter_model,
                 accepted_values=result.resolved_values,

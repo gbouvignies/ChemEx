@@ -2771,7 +2771,7 @@ def test_resampling_diagnostics_failure_preserves_original_publication_error(
     assert outcome["failure_message"] == "correlation publication failed"
 
 
-def test_real_grid_fit_uses_native_cartesian_trf_and_writes_grid_output(
+def test_real_grid_fit_writes_profiled_surfaces_and_withholds_covariance(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
@@ -2781,11 +2781,51 @@ def test_real_grid_fit_uses_native_cartesian_trf_and_writes_grid_output(
     run(_fit_arguments(output, method), session=session)
 
     assert session.analysis_values.snapshot().revision == 1
-    assert (output / "Grid" / "grid.out").is_file()
+    (factor_output,) = tuple((output / "Grid" / "Factors").glob("*.tsv"))
+    (profile_output,) = tuple((output / "Grid" / "Profiles" / "1D").glob("*.tsv"))
+    factor_rows = np.genfromtxt(
+        factor_output, delimiter="\t", names=True, dtype=None, encoding="utf-8"
+    )
+    profile_rows = np.genfromtxt(
+        profile_output, delimiter="\t", names=True, dtype=None, encoding="utf-8"
+    )
+    summary = tomllib.loads(
+        (output / "Grid" / "summary.toml").read_text(encoding="utf-8")
+    )
+    assert factor_rows["selected"].dtype.kind == "b"
+    assert profile_rows["selected"].dtype.kind == "b"
+    factor_selected = factor_rows["selected"]
+    profile_selected = profile_rows["selected"]
+    assert np.count_nonzero(factor_selected) == 1
+    assert np.count_nonzero(profile_selected) == 1
+    selected_factor = factor_rows[factor_selected]
+    selected_profile = profile_rows[profile_selected]
+    factor_axis = factor_rows.dtype.names[1]
+    profile_axis = profile_rows.dtype.names[0]
+    assert selected_factor[factor_axis][0] == pytest.approx(
+        selected_profile[profile_axis][0]
+    )
+    assert summary["selected_axes"][0]["value"] == pytest.approx(
+        selected_factor[factor_axis][0]
+    )
+    assert (output / "Grid" / "grid_1d.pdf").is_file()
+    assert not (output / "Grid" / "grid.out").exists()
+    assert not (output / "Statistics" / "Covariance" / "evidence.json").exists()
+    covariance_status = json.loads(
+        (output / "Statistics" / "Covariance" / "status.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "discrete profiled surface" in covariance_status["reason"]
     assert (output / "Parameters" / "fixed.toml").is_file()
 
+    stale = output / "Grid" / "Factors" / "stale.tsv"
+    stale.write_text("obsolete\n", encoding="utf-8")
+    run(_fit_arguments(output, method), session=AnalysisSession.create())
+    assert not stale.exists()
 
-def test_real_grid_progress_aggregates_local_seed_polishes(
+
+def test_evaluation_only_grid_does_not_manufacture_zero_variable_trf(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -2797,7 +2837,7 @@ def test_real_grid_progress_aggregates_local_seed_polishes(
     )
 
     rendered = capsys.readouterr().out
-    assert rendered.count("GRID seed") == 1
+    assert "GRID seed" not in rendered
     assert "Evaluations" in rendered
 
 
@@ -2807,34 +2847,115 @@ def test_real_grouped_grid_fit_uses_one_native_aggregate_commit(
     output = tmp_path / "Output"
     session = AnalysisSession.create()
     method = _grid_method(tmp_path / "method.toml")
+    plot_1d = native_deterministic_module.plot_grid_1d
+    plot_2d = native_deterministic_module.plot_grid_2d
 
-    run(
-        _fit_arguments(
-            output,
-            method,
-            include=("G2N-HN", "H3N-HN"),
-        ),
-        session=session,
-    )
+    with (
+        patch.object(
+            native_deterministic_module,
+            "plot_grid_1d",
+            wraps=plot_1d,
+        ) as plotted_1d,
+        patch.object(
+            native_deterministic_module,
+            "plot_grid_2d",
+            wraps=plot_2d,
+        ) as plotted_2d,
+    ):
+        run(
+            _fit_arguments(
+                output,
+                method,
+                include=("G2N-HN", "H3N-HN"),
+            ),
+            session=session,
+        )
 
     assert session.analysis_values.snapshot().revision == 1
-    grid_output = output / "Grid" / "grid.out"
-    assert grid_output.is_file()
-    header, *_rows = grid_output.read_text(encoding="utf-8").splitlines()
-    assert header.count("[R1A_A") == 2
-    assert header.endswith("[χ²]")
-    grid_rows = np.loadtxt(grid_output)
-    np.testing.assert_allclose(
-        grid_rows[:, :2],
-        ((1.0, 1.0), (1.0, 3.0), (3.0, 1.0), (3.0, 3.0)),
+    factor_outputs = sorted((output / "Grid" / "Factors").glob("*.tsv"))
+    assert len(factor_outputs) == 2
+    for factor_output in factor_outputs:
+        rows = np.genfromtxt(
+            factor_output, delimiter="\t", names=True, dtype=None, encoding="utf-8"
+        )
+        np.testing.assert_allclose(rows[rows.dtype.names[1]], (1.0, 3.0))
+        assert tuple(rows["status"]) == ("success", "success")
+    summary = tomllib.loads(
+        (output / "Grid" / "summary.toml").read_text(encoding="utf-8")
     )
-    statistics = tomllib.loads((output / "statistics.toml").read_text(encoding="utf-8"))
-    np.testing.assert_allclose(grid_rows[:, 2], statistics["chi-square"])
+    assert summary["factor_count"] == 2
+    profiles_1d = tuple((output / "Grid" / "Profiles" / "1D").glob("*.tsv"))
+    profiles_2d = tuple((output / "Grid" / "Profiles" / "2D").glob("*.tsv"))
+    assert len(profiles_1d) == 2
+    assert len(profiles_2d) == 1
+    plotted_1d_grids = plotted_1d.call_args.args[0]
+    plotted_2d_grids = plotted_2d.call_args.args[0]
+
+    def numerical_surfaces(paths: tuple[Path, ...]) -> list[tuple[float, ...]]:
+        surfaces = []
+        for profile_path in paths:
+            rows = np.genfromtxt(
+                profile_path,
+                delimiter="\t",
+                names=True,
+                dtype=None,
+                encoding="utf-8",
+            )
+            surfaces.append(tuple(np.atleast_1d(rows["chi_square"])))
+        return sorted(surfaces)
+
+    assert numerical_surfaces(profiles_1d) == sorted(
+        tuple(grid.chisqr.ravel()) for grid in plotted_1d_grids
+    )
+    assert numerical_surfaces(profiles_2d) == sorted(
+        tuple(grid.chisqr.ravel()) for grid in plotted_2d_grids
+    )
     assert (output / "Parameters" / "fixed.toml").is_file()
     assert not (output / "Grid" / "Groups").exists()
     assert not (output / "All").exists()
     assert not (output / "Groups").exists()
     assert not (output / "Components").exists()
+
+
+def test_following_direct_step_starts_from_the_committed_grid_solution(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """FORMAT_VERSION = 2
+[GRID]
+ROLES = [
+  { FIX = ["PB", "KEX_AB", "ETAZ_A", "R1_A"] },
+  { FIT = ["R1A_A"] },
+]
+
+[GRID.SEARCH.GRID]
+AXES = ["[R1A_A] = values(1.0, 3.0)"]
+
+[DIRECT]
+ROLES_FROM = "GRID"
+ROLES = [{ FIT = ["R1A_A"] }]
+""",
+        encoding="utf-8",
+    )
+    starts: list[tuple[float, ...]] = []
+    real_least_squares = direct_trf_module.least_squares
+
+    def record_start(*args, **kwargs):
+        starts.append(tuple(float(value) for value in args[1]))
+        return real_least_squares(*args, **kwargs)
+
+    session = AnalysisSession.create()
+    with patch(
+        "chemex.optimize.direct_trf.least_squares",
+        side_effect=record_start,
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    assert starts[0] == pytest.approx((3.0,))
+    assert session.analysis_values.snapshot().revision == 2
+    assert (output / "DIRECT" / "Statistics" / "Covariance" / "evidence.json").is_file()
 
 
 def test_real_v2_de_reaches_normal_trf_product_path_from_out_of_range_start(
@@ -3661,7 +3782,8 @@ STATISTICS = { "MC" = 1 }
     run(_fit_arguments(output, method), session=session)
 
     assert (output / "Grid").is_dir()
-    assert (output / "Statistics" / "Covariance" / "evidence.json").is_file()
+    assert not (output / "Statistics" / "Covariance" / "evidence.json").exists()
+    assert (output / "Statistics" / "Covariance" / "status.json").is_file()
     diagnostics = tomllib.loads(
         (output / "Statistics" / "MonteCarlo" / "diagnostics.toml").read_text(
             encoding="utf-8"

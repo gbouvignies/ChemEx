@@ -72,7 +72,6 @@ class OptimizationStrategy(StrEnum):
     """Closed projected optimization strategies available to a replicate."""
 
     DIRECT_TRF = "direct_trf"
-    GRID_DIRECT_TRF = "grid_direct_trf"
 
 
 class ReplicateDisposition(StrEnum):

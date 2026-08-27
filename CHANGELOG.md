@@ -47,7 +47,7 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   aggregate `Grid/` artifacts directly at the method-step root; legacy `All/`,
   `Groups/`, and `Grid/Groups/` output is no longer generated. Reruns also
   remove stale `All/`, `Groups/`, and `Components/` trees. `run_info/` and
-  scientific fitting, covariance, and GRID-selection behavior are unchanged.
+  ordinary scientific fitting and covariance behavior are unchanged.
 - Ordinary successful native deterministic fits now derive accepted-point
   covariance evidence from exact retained optimizer Jacobians or an independent
   accepted-point fallback and report covariance-derived standard errors in
@@ -69,7 +69,7 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 - Removed the unreachable legacy optimizer, MCMC, resampling, parameter-container,
   and live legacy-observation compatibility paths. ChemEx deterministic fitting
   now uses bounded SciPy TRF exclusively through the native ChemEx parameter and
-  evaluation stack; native GRID, MC, BS, BSN, MCMC, and statistics behavior is
+  evaluation stack; native MC, BS, BSN, MCMC, and statistics behavior is
   unchanged. Canonical v2 omits `FITMETHOD` because TRF is implicit. Deprecated
   v1 continues to accept `FITMETHOD = "trf"` and its `"least_squares"` alias
   only for the frozen v1 compatibility window; arbitrary optimizer forwarding
@@ -117,6 +117,17 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   commit, requested statistics analyze the committed deterministic result.
 
 ### Fixed
+- Restored GRID as exact profiled chi-square surface analysis. Declared grid
+  coordinates remain held at every point while the remaining independent
+  fitted coordinates are optimized with native TRF; exact objective
+  factorization avoids Cartesian products of unrelated local axes. ChemEx now
+  reconstructs one coherent joint grid and nuisance-coordinate solution,
+  freshly validates the complete root state, and commits it once. GRID steps
+  withhold deterministic covariance for their discrete selected coordinates,
+  while later Direct steps and explicitly requested sampling statistics retain
+  their normal behavior. `Grid/` now exposes status-bearing raw factor TSVs,
+  reusable exact 1D/2D profile TSVs, matching PDFs, and `summary.toml` instead
+  of the native multistart `grid.out` layout.
 - Fixed native fit commits rejecting finite expression-derived parameter values
   solely because they fall outside configured numerical-coordinate bounds.
   Independent TRF, GRID, DE, and MCMC coordinates remain bounded at their

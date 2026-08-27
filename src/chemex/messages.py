@@ -355,11 +355,14 @@ def _progress_table(
     event = update.event
     table = Table(box=box.SIMPLE_HEAD)
     row: list[str] = []
-    if context.grid_seed_ordinal is not None and context.grid_seed_total is not None:
-        table.add_column("GRID seed", style="blue")
+    is_grid_point = (
+        context.grid_seed_ordinal is not None and context.grid_seed_total is not None
+    )
+    if is_grid_point:
+        table.add_column("GRID point", style="blue")
         row.append(f"{context.grid_seed_ordinal}/{context.grid_seed_total}")
     if context.component_total > 1:
-        table.add_column("Component", style="blue")
+        table.add_column("Factor" if is_grid_point else "Component", style="blue")
         component = f"{context.component_ordinal}/{context.component_total}"
         if component_label:
             component += f" · {component_label}"
@@ -398,13 +401,17 @@ def _format_progress(
 ) -> str:
     event = update.event
     labels: list[str] = []
-    if context.grid_seed_ordinal is not None and context.grid_seed_total is not None:
+    is_grid_point = (
+        context.grid_seed_ordinal is not None and context.grid_seed_total is not None
+    )
+    if is_grid_point:
         labels.append(
-            f"GRID seed {context.grid_seed_ordinal}/{context.grid_seed_total}"
+            f"GRID point {context.grid_seed_ordinal}/{context.grid_seed_total}"
         )
     if context.component_total > 1:
         labels.append(
-            f"component {context.component_ordinal}/{context.component_total}"
+            f"{'factor' if is_grid_point else 'component'} "
+            f"{context.component_ordinal}/{context.component_total}"
         )
         if component_label:
             labels.append(component_label)
