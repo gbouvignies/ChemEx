@@ -73,7 +73,7 @@ from chemex.parameters.sealed import (
 )
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.userfunctions import user_function_registry
-from chemex.parameters.values import AnalysisValuesSnapshot
+from chemex.parameters.values import AnalysisValues, AnalysisValuesSnapshot
 from chemex.runtime import AnalysisSession
 
 ROOT = Path(__file__).parent.parent
@@ -246,6 +246,7 @@ def _native_fixture(
     *,
     values: dict[str, float] | None = None,
     definitions: tuple[ParamDefinition, ...] | None = None,
+    configuration_bounds: dict[str, tuple[float, float]] | None = None,
     model_name: str = "2st",
     occurrence_identity: str = "occurrence-a",
 ) -> tuple[SealedParameterModel, AnalysisValuesSnapshot]:
@@ -267,8 +268,13 @@ def _native_fixture(
         {item.param_id: index for index, item in enumerate(definitions)},
     )
     current = values or {item.param_id: 1.0 for item in declarations}
+    bounds = configuration_bounds or {}
     configs = tuple(
-        ParamConfig(item.param_id, current[item.param_id], -float("inf"), float("inf"))
+        ParamConfig(
+            item.param_id,
+            current[item.param_id],
+            *bounds.get(item.param_id, (-float("inf"), float("inf"))),
+        )
         for item in declarations
     )
     configuration = SealedConfiguration(
@@ -887,6 +893,78 @@ def test_supported_arithmetic_has_explicit_precedence_and_unary_semantics() -> N
     resolved = parameterization.resolve(parameterization.frame_from_snapshot(snapshot))
 
     assert resolved["__B"] == -2.0
+
+
+def test_finite_derived_value_outside_configured_bounds_commits() -> None:
+    declarations = (
+        ParameterDeclaration("__R2", False),
+        ParameterDeclaration("__R1", False),
+        ParameterDeclaration("__R2A", False, "__R2 - __R1", model_owned=True),
+    )
+    parameter_model, _snapshot = _native_fixture(
+        declarations,
+        values={"__R2": 1.0, "__R1": 2.0, "__R2A": 12.0},
+        configuration_bounds={"__R2A": (0.0, float("inf"))},
+    )
+    values = AnalysisValues()
+    values.initialize(parameter_model.model_identity, parameter_model.configuration)
+    initial = values.snapshot()
+    parameterization = compile_active_parameterization(
+        parameter_model,
+        initial,
+        Method(),
+        {"__R2A"},
+    )
+
+    resolved = parameterization.resolve(parameterization.frame_from_snapshot(initial))
+    committed = values.commit(
+        dict(resolved.items()),
+        expected=initial,
+        scope=parameterization.scope_ids,
+    )
+
+    assert parameterization.role("__R2A") is ParameterRole.DERIVED
+    assert resolved["__R2A"] == -1.0
+    assert committed["__R2A"] == -1.0
+    assert committed.revision == 1
+
+
+def test_derived_continuity_value_becomes_the_next_independent_value() -> None:
+    declarations = (ParameterDeclaration("__A", True),)
+    parameter_model, _snapshot = _native_fixture(
+        declarations,
+        values={"__A": 0.5},
+        configuration_bounds={"__A": (0.0, 1.0)},
+    )
+    values = AnalysisValues()
+    values.initialize(parameter_model.model_identity, parameter_model.configuration)
+    initial = values.snapshot()
+    derived = compile_active_parameterization(
+        parameter_model,
+        initial,
+        Method(constraints=("[A] = 2.0",)),
+        {"__A"},
+    )
+    resolved = derived.resolve(derived.frame_from_snapshot(initial))
+    committed = values.commit(
+        dict(resolved.items()),
+        expected=initial,
+        scope=derived.scope_ids,
+    )
+
+    independent = compile_active_parameterization(
+        parameter_model,
+        committed,
+        Method(),
+        {"__A"},
+    )
+    next_frame = independent.frame_from_snapshot(committed)
+    next_values = dict(next_frame.ordered_items())
+
+    assert derived.role("__A") is ParameterRole.DERIVED
+    assert independent.role("__A") is ParameterRole.FIT
+    assert next_values["__A"] == 2.0
+    assert next_values["__A"] != parameter_model.configuration["__A"].effective_value
 
 
 @pytest.mark.parametrize(

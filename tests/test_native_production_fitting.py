@@ -28,6 +28,7 @@ from chemex.optimize.mcmc import NativeMcmcIncompleteError
 from chemex.optimize.progress import ProgressPhase
 from chemex.optimize.resampling import NativeResamplingIncompleteError
 from chemex.optimize.uncertainty import ParameterUnit
+from chemex.parameters.values import AnalysisValuesSnapshot
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
 
@@ -42,6 +43,10 @@ DCEST_PARAMETERS = DCEST_EXAMPLE / "Parameters/parameters.toml"
 THREE_STATE_DCEST_EXAMPLE = ROOT / "examples/Experiments/DCEST_15N_3States"
 THREE_STATE_DCEST_EXPERIMENT = THREE_STATE_DCEST_EXAMPLE / "Experiments/1.25hz.toml"
 THREE_STATE_DCEST_PARAMETERS = THREE_STATE_DCEST_EXAMPLE / "Parameters/parameters.toml"
+CEST_1HN_IP_AP_EXAMPLE = ROOT / "examples/Experiments/CEST_1HN_IP_AP"
+CEST_1HN_IP_AP_EXPERIMENT = CEST_1HN_IP_AP_EXAMPLE / "Experiments/30hz.toml"
+CEST_1HN_IP_AP_PARAMETERS = CEST_1HN_IP_AP_EXAMPLE / "Parameters/parameters.toml"
+CEST_1HN_IP_AP_METHOD = CEST_1HN_IP_AP_EXAMPLE / "Methods/method.toml"
 
 
 def _fit_arguments(
@@ -111,6 +116,32 @@ def _three_state_dcest_arguments(output: Path, method: Path):
             "--plot",
             "nothing",
             "--workers",
+            "1",
+        ]
+    )
+
+
+def _cest_1hn_ip_ap_arguments(output: Path):
+    return build_parser().parse_args(
+        [
+            "fit",
+            "-e",
+            str(CEST_1HN_IP_AP_EXPERIMENT),
+            "-p",
+            str(CEST_1HN_IP_AP_PARAMETERS),
+            "-m",
+            str(CEST_1HN_IP_AP_METHOD),
+            "-o",
+            str(output),
+            "--model",
+            "2st.rs",
+            "--include",
+            "4",
+            "--plot",
+            "nothing",
+            "--workers",
+            "1",
+            "--native-threads",
             "1",
         ]
     )
@@ -273,6 +304,46 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     time_2, intensity_2 = curve[-1]
     fitted_curve_rate = -math.log(intensity_2 / intensity_1) / (time_2 - time_1)
     assert fitted_curve_rate == pytest.approx(fitted_value, rel=1.0e-3)
+
+
+def test_cest_1hn_ip_ap_commits_finite_negative_derived_r2a_b(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+    committed_snapshots: list[AnalysisValuesSnapshot] = []
+    real_publish = run_info_module.RunInfo.publish_restart
+
+    def record_restart(run_info, snapshot):
+        real_publish(run_info, snapshot)
+        committed_snapshots.append(snapshot)
+
+    with patch.object(
+        run_info_module.RunInfo,
+        "publish_restart",
+        autospec=True,
+        side_effect=record_restart,
+    ):
+        run(_cest_1hn_ip_ap_arguments(output), session=session)
+
+    snapshot = session.analysis_values.snapshot()
+    parameter_model = session.parameter_factory.sealed_parameter_model
+    assert parameter_model is not None
+    r2a_b = next(
+        definition
+        for definition in parameter_model.definitions
+        if definition.name == "R2A_B" and definition.spin_system_name == "4H"
+    )
+    configuration = parameter_model.configuration[r2a_b.param_id]
+    assert configuration.lower_bound == 0.0
+    assert [item.revision for item in committed_snapshots] == [1, 2]
+    assert committed_snapshots[0][r2a_b.param_id] == pytest.approx(
+        -0.42454801400787906,
+        rel=1.0e-10,
+        abs=1.0e-12,
+    )
+    assert committed_snapshots[0][r2a_b.param_id] < configuration.lower_bound
+    assert snapshot.revision == 2
 
 
 def test_product_fit_rejects_a_stale_aggregate_commit_atomically(

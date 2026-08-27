@@ -181,6 +181,35 @@ def test_lifecycle_frame_rejects_exact_box_and_affine_infeasibility() -> None:
         problem.lifecycle_frame((problem.lower_bounds[0] - 1.0,), parameterization)
 
 
+def test_problem_construction_rejects_out_of_bounds_held_independent_value() -> None:
+    session, _experiments, parameterization, engine, problem, _invocation = (
+        _qualification_fit()
+    )
+    configuration = session.parameter_factory.sealed_configuration
+    assert configuration is not None
+    held_id = next(
+        param_id
+        for param_id, _value in problem.held_items
+        if math.isfinite(configuration[param_id].lower_bound)
+    )
+    invalid_value = configuration[held_id].lower_bound - 1.0
+    invalid_snapshot = dataclasses.replace(
+        problem.source_snapshot,
+        _items=tuple(
+            (param_id, invalid_value if param_id == held_id else value)
+            for param_id, value in problem.source_snapshot.items()
+        ),
+    )
+
+    with pytest.raises(DirectTrfConstructionError, match="Held parameter"):
+        OptimizationProblem.from_native(
+            engine.plan,
+            parameterization,
+            configuration,
+            invalid_snapshot,
+        )
+
+
 def test_root_owned_child_derivation_preserves_context_and_rejects_forgery() -> None:
     _session, _experiments, _parameterization, _engine, problem, _invocation = (
         _qualification_fit()
