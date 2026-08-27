@@ -117,6 +117,12 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   commit, requested statistics analyze the committed deterministic result.
 
 ### Fixed
+- Canonicalized model-free relaxation derivations by physical N-H and C-H
+  orientation, so experiments that reverse their local `i`/`s` basis ordering
+  now contribute one unambiguous model-owned expression. Single-spin
+  components follow the physical nucleus, symmetric components remain shared,
+  and deuteration and proton-exchange contributions retain their established
+  semantics.
 - Restored explicit method `FIT`/`FIX` overrides for user-overridable spin
   parameters whose ordinary baseline is a state-A equality, such as `J_B` in
   the shipped N15 NH RDC analysis. Scientific estimation capability is now

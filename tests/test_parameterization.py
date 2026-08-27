@@ -103,6 +103,12 @@ RDC_ROOT = ROOT / "examples/Combinations/N15_NH_RDC"
 RDC_EXPERIMENTS = tuple(sorted((RDC_ROOT / "Experiments").glob("*.toml")))
 RDC_PARAMETERS = RDC_ROOT / "Parameters/parameters.toml"
 RDC_METHOD = RDC_ROOT / "Methods/method.toml"
+SHIFTS_ROOT = ROOT / "examples/Combinations/Shifts"
+SHIFTS_OPPOSITE_ORIENTATION_EXPERIMENTS = (
+    SHIFTS_ROOT / "Experiments/cpmg_15n_800.toml",
+    SHIFTS_ROOT / "Experiments/cpmg_1hn_800.toml",
+)
+SHIFTS_PARAMETERS = SHIFTS_ROOT / "Parameters/parameters.toml"
 _METHOD_SOURCE = SourceRef(Path("method.toml"), "STEP", "ROLES")
 
 _BINDING_STEP1_R2_B_IDS = {
@@ -1045,6 +1051,75 @@ def test_real_model_free_scientific_expression_matches_legacy_resolution() -> No
         item.param_id in parameterization.derived_ids and item.name.startswith("R2")
         for item in definitions
     )
+
+
+def test_real_opposite_orientation_contributions_share_one_model_derivation() -> None:
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    build_experiments(
+        list(SHIFTS_OPPOSITE_ORIENTATION_EXPERIMENTS),
+        Selection(include=[SpinSystem.from_name("11")], exclude=None),
+        session=session,
+    )
+    session.parameters.set_defaults(read_defaults([SHIFTS_PARAMETERS]))
+
+    r1_n_id = "__R1_A_11N_799_7MHZ"
+    contributions = session.parameter_factory._model_free_declaration_contributions[
+        r1_n_id
+    ]
+    expected_expression = "nh(799.708, __TAUC_A_11, __S2_A_11, __KHH_A_11)['r1_i']"
+
+    assert len(contributions) == 2
+    assert {item.model_expression for item in contributions} == {
+        expected_expression,
+    }
+    assert session.try_build_analysis_values(), repr(
+        session.parameter_factory.native_construction_error
+    )
+    model_free_model = session.parameter_factory.build_model_free_parameter_model()
+    assert model_free_model is not None
+    assert (
+        model_free_model.declarations[r1_n_id].model_expression == expected_expression
+    )
+
+
+def test_sealing_still_rejects_genuinely_different_model_owned_expressions() -> None:
+    definition = ParamDefinition(
+        "__R1_A_11N_799_7MHZ",
+        "R1_A",
+        "11N",
+        (("h_larmor_frq", 799.7),),
+        1.5,
+        0.0,
+        float("inf"),
+    )
+    definitions = SealedDefinitions((definition,), {definition.param_id: 0})
+
+    with pytest.raises(
+        IncompatibleParameterizationInputError,
+        match="Contributors disagree on a model-owned expression",
+    ):
+        seal_parameter_declarations(
+            definitions,
+            {
+                definition.param_id: (
+                    ParameterDeclarationContribution(
+                        definition.param_id,
+                        False,
+                        "nh(800.0, __TAUC_A_11, __S2_A_11)['r1_i']",
+                        "experiment-a",
+                        True,
+                    ),
+                    ParameterDeclarationContribution(
+                        definition.param_id,
+                        False,
+                        "other_rate(800.0, __TAUC_A_11)['r1_i']",
+                        "experiment-b",
+                        True,
+                    ),
+                ),
+            },
+        )
 
 
 def test_model_free_rate_expression_remains_unestimable() -> None:
