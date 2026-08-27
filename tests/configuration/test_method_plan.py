@@ -40,6 +40,8 @@ def _parameter_model(
     *definitions: ParamDefinition,
     supports_estimation: bool = True,
     model_expression: str = "",
+    requires_independent: bool | None = None,
+    fits_by_default: bool | None = None,
 ) -> SealedParameterModel:
     sealed_definitions = SealedDefinitions(tuple(definitions), {})
     configuration = SealedConfiguration(
@@ -61,6 +63,16 @@ def _parameter_model(
                 definition.param_id,
                 supports_estimation,
                 model_expression,
+                requires_independent=(
+                    not bool(model_expression)
+                    if requires_independent is None
+                    else requires_independent
+                ),
+                fits_by_default=(
+                    supports_estimation and not bool(model_expression)
+                    if fits_by_default is None
+                    else fits_by_default
+                ),
             )
             for definition in definitions
         )
@@ -129,6 +141,39 @@ def test_v1_and_v2_validate_same_group_companion_constraints(
     )
     version = "" if format_version == 1 else "FORMAT_VERSION = 2\n"
     method = _write(tmp_path / "method.toml", f"{version}[STEP]\n{roles}\n")
+
+    read_method_plan([method]).validate(model)
+
+
+@pytest.mark.parametrize("format_version", (1, 2))
+def test_v1_and_v2_allow_supported_default_derivation_role_overrides(
+    tmp_path: Path,
+    format_version: int,
+) -> None:
+    model = _parameter_model(
+        ParamDefinition("j-a", "J_A", "3N-H", (), -90.0, -120.0, -60.0),
+        ParamDefinition("j-b", "J_B", "3N-H", (), -90.0, -120.0, -60.0),
+        supports_estimation=True,
+        model_expression="j-a",
+        requires_independent=False,
+    )
+    if format_version == 1:
+        contents = """[STEP1]
+FIX = ["J_B"]
+
+[STEP2]
+FIT = ["J_B"]
+"""
+    else:
+        contents = """FORMAT_VERSION = 2
+[STEP1]
+ROLES = [{ FIX = ["J_B"] }]
+
+[STEP2]
+ROLES_FROM = "STEP1"
+ROLES = [{ FIT = ["J_B"] }]
+"""
+    method = _write(tmp_path / "method.toml", contents)
 
     read_method_plan([method]).validate(model)
 
@@ -788,6 +833,23 @@ def test_fit_cannot_override_a_structurally_unestimable_parameter(
     )
     method = _write(
         tmp_path / "unestimable.toml",
+        'FORMAT_VERSION = 2\n[STEP]\nROLES = [{ FIT = ["PB"] }]\n',
+    )
+
+    with pytest.raises(MethodFormatError, match="do not support estimation"):
+        read_method_plan([method]).validate(model)
+
+
+def test_fit_cannot_override_an_independent_unsupported_parameter(
+    tmp_path: Path,
+) -> None:
+    model = _parameter_model(
+        ParamDefinition("pb", "PB", "", (), 0.1, 0.0, 1.0),
+        supports_estimation=False,
+        requires_independent=True,
+    )
+    method = _write(
+        tmp_path / "unsupported.toml",
         'FORMAT_VERSION = 2\n[STEP]\nROLES = [{ FIT = ["PB"] }]\n',
     )
 

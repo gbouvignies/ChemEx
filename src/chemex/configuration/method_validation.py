@@ -218,8 +218,7 @@ def _reject_unestimable(
     unestimable = tuple(
         param_id
         for param_id in matches
-        if model.declarations[param_id].model_expression
-        and not model.declarations[param_id].supports_estimation
+        if not model.declarations[param_id].supports_estimation
     )
     if unestimable:
         raise MethodFormatError(

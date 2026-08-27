@@ -99,6 +99,10 @@ METHYL_ROOT = ROOT / "examples/Combinations/CPMG_CH3_1H_DQ_TQ"
 METHYL_EXPERIMENTS = tuple(sorted((METHYL_ROOT / "Experiments").glob("*.toml")))
 METHYL_PARAMETERS = METHYL_ROOT / "Parameters/parameters.toml"
 METHYL_METHOD = METHYL_ROOT / "Methods/method.toml"
+RDC_ROOT = ROOT / "examples/Combinations/N15_NH_RDC"
+RDC_EXPERIMENTS = tuple(sorted((RDC_ROOT / "Experiments").glob("*.toml")))
+RDC_PARAMETERS = RDC_ROOT / "Parameters/parameters.toml"
+RDC_METHOD = RDC_ROOT / "Methods/method.toml"
 _METHOD_SOURCE = SourceRef(Path("method.toml"), "STEP", "ROLES")
 
 _BINDING_STEP1_R2_B_IDS = {
@@ -246,6 +250,24 @@ def _build_fit_session() -> tuple[AnalysisSession, set[str]]:
     return session, experiments.param_ids
 
 
+def _build_rdc_session() -> tuple[AnalysisSession, set[str]]:
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    experiments = build_experiments(
+        RDC_EXPERIMENTS,
+        Selection(
+            include=[SpinSystem.from_name("3N-HN")],
+            exclude=None,
+        ),
+        session=session,
+    )
+    session.parameters.set_defaults(read_defaults([RDC_PARAMETERS]))
+    assert session.try_build_analysis_values(), repr(
+        session.parameter_factory.native_construction_error
+    )
+    return session, experiments.param_ids
+
+
 def _native_fixture(
     declarations: tuple[ParameterDeclaration, ...],
     *,
@@ -331,9 +353,15 @@ def _compile_context_constraint(
 
 def test_canonical_ordered_actions_compile_complete_replacement_roles() -> None:
     declarations = (
-        ParameterDeclaration("__DW_AB_24N", True),
-        ParameterDeclaration("__DW_AB_31N", True),
-        ParameterDeclaration("__DW_AB_40N", True),
+        ParameterDeclaration(
+            "__DW_AB_24N", True, requires_independent=True, fits_by_default=True
+        ),
+        ParameterDeclaration(
+            "__DW_AB_31N", True, requires_independent=True, fits_by_default=True
+        ),
+        ParameterDeclaration(
+            "__DW_AB_40N", True, requires_independent=True, fits_by_default=True
+        ),
     )
     definitions = tuple(
         ParamDefinition(
@@ -389,7 +417,11 @@ def test_canonical_ordered_actions_compile_complete_replacement_roles() -> None:
 def test_canonical_fit_or_fix_removes_an_earlier_constraint(
     replacement: type[FitAction] | type[FixAction],
 ) -> None:
-    declarations = (ParameterDeclaration("__PB", True),)
+    declarations = (
+        ParameterDeclaration(
+            "__PB", True, requires_independent=True, fits_by_default=True
+        ),
+    )
     parameter_model, snapshot = _native_fixture(declarations)
     selector = ParameterSelector("PB")
     actions = (
@@ -442,8 +474,12 @@ def test_method_plan_resolves_explicit_and_baseline_role_actions_immutably() -> 
 
 def test_inherited_canonical_action_outside_selected_scope_is_inert() -> None:
     declarations = (
-        ParameterDeclaration("__DW_AB_24N", True),
-        ParameterDeclaration("__DW_AB_31N", True),
+        ParameterDeclaration(
+            "__DW_AB_24N", True, requires_independent=True, fits_by_default=True
+        ),
+        ParameterDeclaration(
+            "__DW_AB_31N", True, requires_independent=True, fits_by_default=True
+        ),
     )
     definitions = (
         ParamDefinition("__DW_AB_24N", "DW_AB", "24N", (), 1.0, -10.0, 10.0),
@@ -597,6 +633,138 @@ def test_non_model_owned_baseline_expression_can_compile_as_fit() -> None:
     assert parameterization.role("__B") is ParameterRole.FIT
 
 
+def test_shipped_rdc_j_b_default_is_derived_but_explicitly_estimable(
+    tmp_path: Path,
+) -> None:
+    session, required_ids = _build_rdc_session()
+    parameter_model = session.parameter_factory.sealed_parameter_model
+    assert parameter_model is not None
+    j_b = next(
+        definition
+        for definition in parameter_model.definitions
+        if definition.name == "J_B" and definition.spin_system_name == "3N-H"
+    )
+    j_a = next(
+        definition
+        for definition in parameter_model.definitions
+        if definition.name == "J_A" and definition.spin_system_name == "3N-H"
+    )
+    declaration = parameter_model.declarations[j_b.param_id]
+    baseline = session.compile_parameterization(Method(), required_ids)
+
+    assert declaration.model_expression == "__J_A_3N_H"
+    assert declaration.supports_estimation
+    assert not declaration.requires_independent
+    assert not declaration.model_owned
+    assert baseline.role(j_b.param_id) is ParameterRole.DERIVED
+    assert parameter_model.declarations[j_a.param_id].supports_estimation
+    assert baseline.role(j_a.param_id) is ParameterRole.FIX
+    assert j_b.param_id in {
+        constraint.target_id for constraint in baseline.program.constraints
+    }
+
+    v1_method = tmp_path / "method-v1.toml"
+    v1_method.write_text(
+        '[STEP1]\nFIX = ["J_B"]\n\n[STEP2]\nFIT = ["J_B"]\n',
+        encoding="utf-8",
+    )
+    plans = (
+        read_method_plan([v1_method]),
+        read_method_plan([RDC_METHOD]),
+    )
+    for plan in plans:
+        session.validate_method_plan(plan)
+        actions = plan.effective_role_actions()
+        step1 = session.compile_parameterization_from_actions(
+            actions["STEP1"],
+            required_ids,
+        )
+        step2 = session.compile_parameterization_from_actions(
+            actions["STEP2"],
+            required_ids,
+        )
+
+        assert step1.role(j_b.param_id) is ParameterRole.FIX
+        assert j_b.param_id in step1.independent_ids
+        assert step2.role(j_b.param_id) is ParameterRole.FIT
+        assert j_b.param_id in step2.independent_ids
+        assert j_b.param_id not in {
+            constraint.target_id for constraint in step1.program.constraints
+        }
+        assert j_b.param_id not in {
+            constraint.target_id for constraint in step2.program.constraints
+        }
+
+
+def test_shipped_dcest_explicit_fit_targets_declare_capability() -> None:
+    session, required_ids = _build_dcest_session()
+    parameter_model = session.parameter_factory.sealed_parameter_model
+    assert parameter_model is not None
+    plan = read_method_plan([DCEST_METHOD])
+    baseline = session.compile_parameterization(Method(), required_ids)
+
+    session.validate_method_plan(plan)
+
+    declarations = parameter_model.declarations
+    explicit_fit_names = {"D2O", "CS_A"}
+    explicit_fit_ids = {
+        definition.param_id
+        for definition in parameter_model.definitions
+        if definition.name in explicit_fit_names
+    }
+    assert all(
+        declarations[param_id].supports_estimation for param_id in explicit_fit_ids
+    )
+    assert all(
+        baseline.role(param_id) is ParameterRole.FIX for param_id in explicit_fit_ids
+    )
+
+
+def test_fixed_default_derivation_continues_into_later_explicit_fit() -> None:
+    declarations = (
+        ParameterDeclaration("__J_A", False),
+        ParameterDeclaration(
+            "__J_B",
+            True,
+            "__J_A",
+            model_owned=False,
+            requires_independent=False,
+        ),
+        ParameterDeclaration(
+            "__X", True, requires_independent=True, fits_by_default=True
+        ),
+    )
+    parameter_model, _snapshot = _native_fixture(
+        declarations,
+        values={"__J_A": -90.0, "__J_B": -91.0, "__X": 1.0},
+    )
+    values = AnalysisValues()
+    values.initialize(parameter_model.model_identity, parameter_model.configuration)
+    initial = values.snapshot()
+    fixed = compile_active_parameterization(
+        parameter_model,
+        initial,
+        Method(fix=("J_B",)),
+        {"__J_B", "__X"},
+    )
+    committed = values.commit(
+        {"__J_B": -91.0, "__X": 2.0},
+        expected=initial,
+        scope=fixed.scope_ids,
+    )
+    fitted = compile_active_parameterization(
+        parameter_model,
+        committed,
+        Method(fit=("J_B",)),
+        {"__J_B", "__X"},
+    )
+    next_frame = fitted.frame_from_snapshot(committed)
+
+    assert fixed.role("__J_B") is ParameterRole.FIX
+    assert fitted.role("__J_B") is ParameterRole.FIT
+    assert dict(next_frame.ordered_items())["__J_B"] == -91.0
+
+
 def test_non_model_owned_baseline_expression_remains_active_constraint() -> None:
     declarations = (
         ParameterDeclaration("__A", False),
@@ -655,6 +823,21 @@ def test_non_estimable_declaration_cannot_compile_as_fit() -> None:
         ParameterDeclaration("__A", False),
         ParameterDeclaration("__B", False, "__A", model_owned=False),
     )
+    parameter_model, snapshot = _native_fixture(declarations)
+
+    with pytest.raises(IncompatibleParameterizationInputError) as raised:
+        compile_active_parameterization(
+            parameter_model,
+            snapshot,
+            Method(fit=("B",)),
+            {"__B"},
+        )
+
+    assert raised.value.context["param_ids"] == ("__B",)
+
+
+def test_independent_unsupported_declaration_cannot_compile_as_fit() -> None:
+    declarations = (ParameterDeclaration("__B", False, requires_independent=True),)
     parameter_model, snapshot = _native_fixture(declarations)
 
     with pytest.raises(IncompatibleParameterizationInputError) as raised:
@@ -729,7 +912,7 @@ def test_binding_current_roles_compile_all_estimable_r2_b_coordinates() -> None:
 
 def test_constraint_chain_is_deterministic_and_freshly_reresolves() -> None:
     declarations = (
-        ParameterDeclaration("__A", False),
+        ParameterDeclaration("__A", True),
         ParameterDeclaration("__B", False),
         ParameterDeclaration("__C", False),
     )
@@ -759,7 +942,7 @@ def test_constraint_chain_is_deterministic_and_freshly_reresolves() -> None:
 def test_legacy_constraints_fix_fit_precedence_uses_final_fit_role() -> None:
     declarations = (
         ParameterDeclaration("__A", False),
-        ParameterDeclaration("__B", False),
+        ParameterDeclaration("__B", True),
     )
     parameter_model, snapshot = _native_fixture(
         declarations,
@@ -864,6 +1047,26 @@ def test_real_model_free_scientific_expression_matches_legacy_resolution() -> No
     )
 
 
+def test_model_free_rate_expression_remains_unestimable() -> None:
+    session, required_ids = _build_mf_session()
+    parameter_model = session.parameter_factory.sealed_parameter_model
+    assert parameter_model is not None
+    r2_b = next(
+        definition
+        for definition in parameter_model.definitions
+        if definition.name == "R2_B" and definition.spin_system_name == "G23N"
+    )
+    declaration = parameter_model.declarations[r2_b.param_id]
+
+    assert declaration.model_expression
+    assert not declaration.supports_estimation
+    with pytest.raises(IncompatibleParameterizationInputError):
+        session.compile_parameterization(
+            Method(fit=("R2_B",)),
+            required_ids,
+        )
+
+
 @pytest.mark.parametrize("model_name", ("2st_binding", "2st_eyring"))
 def test_registered_scientific_model_expression_compiles_through_restricted_language(
     model_name: str,
@@ -958,7 +1161,11 @@ def test_finite_derived_value_outside_configured_bounds_commits() -> None:
 
 
 def test_derived_continuity_value_becomes_the_next_independent_value() -> None:
-    declarations = (ParameterDeclaration("__A", True),)
+    declarations = (
+        ParameterDeclaration(
+            "__A", True, requires_independent=True, fits_by_default=True
+        ),
+    )
     parameter_model, _snapshot = _native_fixture(
         declarations,
         values={"__A": 0.5},

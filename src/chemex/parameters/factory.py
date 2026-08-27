@@ -196,6 +196,8 @@ class ParameterFactory:
         *,
         contributor: str,
         model_owned_ids: frozenset[str],
+        supports_estimation_ids: set[str],
+        default_fit_ids: set[str],
         contributions: (
             dict[str, list[ParameterDeclarationContribution]] | None
         ) = None,
@@ -206,10 +208,12 @@ class ParameterFactory:
         for param_id, parameter in parameters.items():
             contribution = ParameterDeclarationContribution(
                 param_id=param_id,
-                supports_estimation=parameter.vary,
+                supports_estimation=param_id in supports_estimation_ids,
                 model_expression=parameter.expr,
                 contributor=contributor,
                 model_owned=param_id in model_owned_ids and bool(parameter.expr),
+                requires_independent=not bool(parameter.expr),
+                fits_by_default=param_id in default_fit_ids,
             )
             target.setdefault(param_id, []).append(contribution)
 
@@ -251,6 +255,22 @@ class ParameterFactory:
             construction_context = f"{contributor}; {construction_context}"
         _set_to_fit(parameters, name_map, config.to_be_fitted.rates)
         _set_to_fit(parameters_mf, name_map_mf, config.to_be_fitted.model_free)
+        default_fit_ids = {
+            param_id for param_id, parameter in parameters.items() if parameter.vary
+        }
+        model_free_default_fit_ids = {
+            param_id for param_id, parameter in parameters_mf.items() if parameter.vary
+        }
+        supports_estimation_ids = default_fit_ids | {
+            name_map[name]
+            for name, setting in settings.items()
+            if setting.supports_estimation
+        }
+        model_free_supports_estimation_ids = model_free_default_fit_ids | {
+            name_map_mf[name]
+            for name, setting in settings_mf.items()
+            if setting.supports_estimation
+        }
 
         if self._native_construction_error is None:
             native_parameters = (
@@ -273,6 +293,16 @@ class ParameterFactory:
                     native_parameters,
                     contributor=construction_context,
                     model_owned_ids=model_owned_ids,
+                    supports_estimation_ids=(
+                        model_free_supports_estimation_ids
+                        if self.parameter_store.model.model_free
+                        else supports_estimation_ids
+                    ),
+                    default_fit_ids=(
+                        model_free_default_fit_ids
+                        if self.parameter_store.model.model_free
+                        else default_fit_ids
+                    ),
                 )
                 if not self.parameter_store.model.model_free:
                     model_free_owned_ids = frozenset(
@@ -289,6 +319,8 @@ class ParameterFactory:
                         parameters_mf,
                         contributor=construction_context,
                         model_owned_ids=model_free_owned_ids,
+                        supports_estimation_ids=model_free_supports_estimation_ids,
+                        default_fit_ids=model_free_default_fit_ids,
                         contributions=self._model_free_declaration_contributions,
                     )
             except Exception as error:  # noqa: BLE001 - checkpoint-1 isolation boundary

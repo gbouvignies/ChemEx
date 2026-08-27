@@ -132,32 +132,49 @@ class ModelDerivationOverrideError(ParameterizationError):
 
 @dataclass(frozen=True, slots=True)
 class ParameterDeclarationContribution:
-    """One construction contribution to a parameter's scientific baseline."""
+    """One construction contribution to a parameter's scientific baseline.
+
+    Estimation support is a scientific capability. Requiring an independent
+    value and fitting it by default are separate baseline choices.
+    """
 
     param_id: str
     supports_estimation: bool
     model_expression: str
     contributor: str
     model_owned: bool = False
+    requires_independent: bool = False
+    fits_by_default: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class ParameterDeclaration:
-    """Sealed scientific inputs used to build each method-local baseline."""
+    """Sealed scientific inputs used to build each method-local baseline.
+
+    Estimation support permits an explicit FIT override. Requiring an
+    independent value chooses baseline FIT/FIX rather than DERIVED, while
+    ``fits_by_default`` distinguishes FIT from FIX.
+    """
 
     param_id: str
     supports_estimation: bool
     model_expression: str = ""
     model_owned: bool = False
+    requires_independent: bool = False
+    fits_by_default: bool = False
 
 
 def baseline_parameter_role(declaration: ParameterDeclaration) -> ParameterRole:
     """Return the authoritative method-local role for one sealed declaration."""
     if declaration.model_expression and (
-        declaration.model_owned or not declaration.supports_estimation
+        declaration.model_owned or not declaration.requires_independent
     ):
         return ParameterRole.DERIVED
-    if declaration.supports_estimation:
+    if (
+        declaration.requires_independent
+        and declaration.fits_by_default
+        and declaration.supports_estimation
+    ):
         return ParameterRole.FIT
     return ParameterRole.FIX
 
@@ -202,6 +219,8 @@ class SealedParameterDeclarations(Mapping[str, ParameterDeclaration]):
                         item.supports_estimation,
                         item.model_expression,
                         item.model_owned,
+                        item.requires_independent,
+                        item.fits_by_default,
                     )
                     for item in items
                 ),
@@ -222,7 +241,7 @@ def seal_parameter_declarations(
     definitions: SealedDefinitions,
     contributions: Mapping[str, Sequence[ParameterDeclarationContribution]],
 ) -> SealedParameterDeclarations:
-    """Seal additive estimation support and model derivations in definition order."""
+    """Seal additive capabilities, baseline independence, and model derivations."""
     items: list[ParameterDeclaration] = []
     for definition in definitions:
         contributed = tuple(contributions.get(definition.param_id, ()))
@@ -245,6 +264,8 @@ def seal_parameter_declarations(
                 expressions=tuple(expressions),
             )
         supports_estimation = any(item.supports_estimation for item in contributed)
+        requires_independent = any(item.requires_independent for item in contributed)
+        fits_by_default = any(item.fits_by_default for item in contributed)
         expression = expressions[0] if expressions else ""
         model_owned = any(
             item.model_owned and item.model_expression.strip() == expression
@@ -256,6 +277,8 @@ def seal_parameter_declarations(
                 supports_estimation,
                 expression,
                 model_owned,
+                requires_independent,
+                fits_by_default,
             )
         )
     return SealedParameterDeclarations(tuple(items))
@@ -1179,9 +1202,7 @@ def _validate_estimation_authority(
         unsupported_matches = tuple(
             param_id
             for param_id in rule.matches
-            if param_id in active_ids
-            and declarations[param_id].model_expression
-            and not declarations[param_id].supports_estimation
+            if param_id in active_ids and not declarations[param_id].supports_estimation
         )
         if unsupported_matches:
             raise IncompatibleParameterizationInputError(
