@@ -41,6 +41,7 @@ from chemex.optimize.direct_trf import (
     FitCommitOperation,
     FitCommitTerminal,
     OptimizationProblem,
+    build_bounded_independent_frame,
     execute_fit_commit,
 )
 from chemex.optimize.grid_direct_trf import (
@@ -706,9 +707,14 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     starting_snapshot = session.analysis_values.snapshot()
     if not _has_controlled_parameters(parameterization):
+        independent_frame = build_bounded_independent_frame(
+            parameterization,
+            configuration,
+            starting_snapshot,
+        )
         frame = EvaluationFrame.from_lifecycle_frame(
             parameterization,
-            parameterization.frame_from_snapshot(starting_snapshot),
+            independent_frame,
         )
         evaluated = engine.new_evaluator().evaluate(frame)
         if isinstance(evaluated, EvaluationFailure):

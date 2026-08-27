@@ -337,10 +337,13 @@ def test_cest_1hn_ip_ap_commits_finite_negative_derived_r2a_b(
     configuration = parameter_model.configuration[r2a_b.param_id]
     assert configuration.lower_bound == 0.0
     assert [item.revision for item in committed_snapshots] == [1, 2]
+    # This is the one-profile form of the shipped regression. A 2e-7 relative
+    # tolerance covers backend/finite-difference rounding while remaining seven
+    # orders of magnitude from the configured zero bound and lmfit's old clipping.
     assert committed_snapshots[0][r2a_b.param_id] == pytest.approx(
         -0.42454801400787906,
-        rel=1.0e-10,
-        abs=1.0e-12,
+        rel=2.0e-7,
+        abs=1.0e-9,
     )
     assert committed_snapshots[0][r2a_b.param_id] < configuration.lower_bound
     assert snapshot.revision == 2
@@ -573,6 +576,44 @@ ROLES = [{ FIX = ["PB", "KEX_AB"] }]
     assert [revision for revision, _text in published] == [1, 2, 3]
     assert '"G2N-H" = [3.0,' in published[1][1]
     assert _read_outcome(output)["restart_revision"] == 3
+
+
+def test_out_of_bounds_derived_continuity_cannot_become_held_independent(
+    tmp_path: Path,
+) -> None:
+    method = tmp_path / "method-v2.toml"
+    method.write_text(
+        """
+FORMAT_VERSION = 2
+[DERIVED]
+ROLES = [
+  { FIX = ["PB", "KEX_AB"] },
+  { CONSTRAIN = ["[R1A_A, NUC->G2N-H] = -1.0"] },
+]
+
+[HELD]
+ROLES = [{ FIX = ["PB", "KEX_AB", "R1A_A"] }]
+""",
+        encoding="utf-8",
+    )
+    session = AnalysisSession.create()
+
+    with pytest.raises(
+        direct_trf_module.DirectTrfConstructionError,
+        match="Independent parameter .* outside its effective bounds",
+    ):
+        run(_fit_arguments(tmp_path / "Output", method), session=session)
+
+    committed = session.analysis_values.snapshot()
+    parameter_model = session.parameter_factory.sealed_parameter_model
+    assert parameter_model is not None
+    r1a_a = next(
+        item.param_id
+        for item in parameter_model.definitions
+        if item.name == "R1A_A" and item.spin_system_name == "G2N-H"
+    )
+    assert committed.revision == 1
+    assert committed[r1a_a] == -1.0
 
 
 def test_relaxation_product_covariance_matches_absolute_sigma_reference(

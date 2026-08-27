@@ -201,7 +201,7 @@ def test_problem_construction_rejects_out_of_bounds_held_independent_value() -> 
         ),
     )
 
-    with pytest.raises(DirectTrfConstructionError, match="Held parameter"):
+    with pytest.raises(DirectTrfConstructionError, match="Independent parameter"):
         OptimizationProblem.from_native(
             engine.plan,
             parameterization,
