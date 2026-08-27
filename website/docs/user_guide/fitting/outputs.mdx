@@ -262,9 +262,11 @@ autocorrelation estimates. Failed or interrupted MCMC suppresses every
 authoritative posterior product. If automatic burn selection cannot establish a
 retained window, `raw_chain.tsv` preserves the completed sampler chain as
 diagnostic evidence while `diagnostics.toml` explicitly marks the analysis
-incomplete; the raw chain is not a retained-posterior sample file. Other failures
-leave only the evidence available at their failure stage and an explicit
-incomplete diagnostic. These diagnostics are the best place to confirm that
+incomplete, distinguishes completed sampling from failed posterior retention,
+and retains acceptance, autocorrelation, and timing diagnostics. The raw chain
+is not a retained-posterior sample file. Other failures leave only the evidence
+available at their failure stage and an explicit incomplete diagnostic. These
+diagnostics are the best place to confirm that
 [`--workers`](multicore_execution.md) was applied as intended.
 
 MC, BS, and BSN `summary.toml` files describe their empirical fitted-sample
