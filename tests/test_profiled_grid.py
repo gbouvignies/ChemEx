@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from itertools import product
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,6 +10,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+from scipy.optimize import least_squares
 
 from chemex.configuration.method_execution import normalize_methods_for_execution
 from chemex.configuration.method_validation import resolve_grid_axes
@@ -17,6 +19,7 @@ from chemex.configuration.parameters import read_defaults
 from chemex.evaluation.native import EvaluationEngine
 from chemex.experiments.builder import build_experiments
 from chemex.optimize.direct_trf import (
+    AffineHalfSpace,
     CancellationToken,
     DirectTrfConstructionError,
     FitCommitFailureCategory,
@@ -25,7 +28,6 @@ from chemex.optimize.direct_trf import (
     execute_fit_commit,
 )
 from chemex.optimize.grouped_direct_trf import _profile_dependencies
-from chemex.optimize.native_deterministic import _write_grid_output
 from chemex.optimize.profiled_grid import (
     ProfiledGridFactor,
     ProfiledGridFactorResult,
@@ -37,11 +39,38 @@ from chemex.optimize.profiled_grid import (
     execute_profiled_grid,
 )
 from chemex.parameters.spin_system import SpinSystem
+from chemex.printers.grid import write_grid_output
 from chemex.runtime import AnalysisSession
 
 ROOT = Path(__file__).parent.parent
 CPMG = ROOT / "examples/Experiments/CPMG_15N_IP"
 RELAXATION = ROOT / "examples/Experiments/RELAXATION_HZNZ"
+
+
+def _local_truth_residuals(
+    vector: np.ndarray,
+    base: float,
+    target: float,
+) -> np.ndarray:
+    return np.asarray((np.sqrt(base), vector[0] - target), dtype=np.float64)
+
+
+def _joint_truth_residuals(
+    vector: np.ndarray,
+    base_1: float,
+    target_1: float,
+    base_2: float,
+    target_2: float,
+) -> np.ndarray:
+    return np.asarray(
+        (
+            np.sqrt(base_1),
+            vector[0] - target_1,
+            np.sqrt(base_2),
+            vector[1] - target_2,
+        ),
+        dtype=np.float64,
+    )
 
 
 def _synthetic_factor_results() -> tuple[ProfiledGridFactorResult, ...]:
@@ -60,15 +89,21 @@ def _synthetic_factor_results() -> tuple[ProfiledGridFactorResult, ...]:
             # (k=1,d1=d2=0). Independent 1D first-argmins form (0,0,0),
             # which is not a joint minimum.
             base = 0.0 if d == 1.0 - k else 5.0
-            nuisance_value = k + 2.0 * d if nuisance == "n1" else 2.0 * k + d
+            target = k + 2.0 * d if nuisance == "n1" else 2.0 * k + d
+            fitted = least_squares(
+                _local_truth_residuals,
+                np.asarray((0.25,), dtype=np.float64),
+                args=(base, target),
+                method="trf",
+            )
             points.append(
                 ProfiledGridPoint(
                     ordinal=point_ordinal,
                     axis_items=(("k", k), (local, d)),
                     status=ProfiledGridPointStatus.SUCCESS,
-                    chi_square=base,
-                    nuisance_items=((nuisance, nuisance_value),),
-                    objective_evaluations=3,
+                    chi_square=float(np.sum(fitted.fun**2)),
+                    nuisance_items=((nuisance, float(fitted.x[0])),),
+                    objective_evaluations=fitted.nfev,
                 )
             )
         return ProfiledGridFactorResult(factor, tuple(points))
@@ -83,23 +118,35 @@ def test_factorized_profiles_match_brute_force_and_select_one_coherent_truth() -
     aggregate = aggregate_profiled_grids(axes, factors)
 
     brute = np.empty((2, 2, 2), dtype=np.float64)
+    brute_nuisance: dict[tuple[float, float, float], tuple[float, float]] = {}
     for indices, (k, d1, d2) in zip(
         product(range(2), repeat=3),
         product(axes["k"], axes["d1"], axes["d2"]),
         strict=True,
     ):
-        brute[indices] = (0.0 if d1 == 1.0 - k else 5.0) + (
-            0.0 if d2 == 1.0 - k else 5.0
+        base_1 = 0.0 if d1 == 1.0 - k else 5.0
+        base_2 = 0.0 if d2 == 1.0 - k else 5.0
+        target_1 = k + 2.0 * d1
+        target_2 = 2.0 * k + d2
+        profiled = least_squares(
+            _joint_truth_residuals,
+            np.asarray((0.25, 0.25), dtype=np.float64),
+            args=(base_1, target_1, base_2, target_2),
+            method="trf",
         )
+        brute[indices] = float(np.sum(profiled.fun**2))
+        brute_nuisance[(k, d1, d2)] = tuple(float(value) for value in profiled.x)
 
     assert aggregate.selection.grid_items == (
         ("k", 0.0),
         ("d1", 1.0),
         ("d2", 1.0),
     )
-    assert aggregate.selection.nuisance_items == (("n1", 2.0), ("n2", 1.0))
-    assert aggregate.selection.chi_square == 0.0
-    assert brute[0, 0, 0] == 10.0  # independent marginal first-argmins are incoherent
+    selected_nuisance = dict(aggregate.selection.nuisance_items)
+    assert selected_nuisance["n1"] == pytest.approx(brute_nuisance[(0.0, 1.0, 1.0)][0])
+    assert selected_nuisance["n2"] == pytest.approx(brute_nuisance[(0.0, 1.0, 1.0)][1])
+    assert aggregate.selection.chi_square == pytest.approx(0.0, abs=1.0e-24)
+    assert brute[0, 0, 0] == pytest.approx(10.0)
 
     for axis_id, profile in aggregate.profiles_1d.items():
         axis = tuple(axes).index(axis_id)
@@ -176,10 +223,10 @@ def test_raw_factor_output_distinguishes_failure_from_valid_high_value(
     )
 
     with (
-        patch("chemex.optimize.native_deterministic.plot_grid_1d"),
-        patch("chemex.optimize.native_deterministic.plot_grid_2d"),
+        patch("chemex.printers.grid.plot_grid_1d"),
+        patch("chemex.printers.grid.plot_grid_2d"),
     ):
-        _write_grid_output(  # ty: ignore[invalid-argument-type]
+        write_grid_output(  # ty: ignore[invalid-argument-type]
             outcome,
             tmp_path,
             parameter_model=parameter_model,
@@ -472,6 +519,42 @@ def test_profiled_grid_stale_or_cancelled_execution_cannot_commit() -> None:
     assert fresh_session.analysis_values.snapshot().revision == 0
 
 
+def test_fresh_root_validation_rejects_inconsistent_factor_aggregate() -> None:
+    session, parameterization, engine, problem = _relaxation_problem()
+    (axis_id,) = problem.controlled_ids
+    real_aggregate = aggregate_profiled_grids
+
+    def corrupt_aggregate(*args, **kwargs):
+        aggregate = real_aggregate(*args, **kwargs)
+        return replace(
+            aggregate,
+            selection=replace(
+                aggregate.selection,
+                chi_square=aggregate.selection.chi_square + 1.0,
+            ),
+        )
+
+    with patch(
+        "chemex.optimize.profiled_grid.aggregate_profiled_grids",
+        side_effect=corrupt_aggregate,
+    ):
+        outcome = execute_profiled_grid(
+            problem,
+            {axis_id: (1.0, 3.0)},
+            parameterization,
+            engine,
+            objective_request_budget=10,
+            x_scale=(1.0,),
+        )
+
+    assert outcome.terminal is ProfiledGridTerminal.EXECUTION_FAILURE
+    assert outcome.failure is not None
+    assert outcome.failure.category == "grid_aggregate_validation_failure"
+    assert outcome.accepted_result is None
+    assert outcome.commit_authority is None
+    assert session.analysis_values.snapshot().revision == 0
+
+
 def test_cpmg_grid_points_hold_axes_while_optimizing_factor_nuisance() -> None:
     session = AnalysisSession.create()
     experiments = build_experiments(
@@ -545,3 +628,33 @@ def test_cpmg_grid_points_hold_axes_while_optimizing_factor_nuisance() -> None:
         param_id: values[0] for param_id, values in axes.items()
     }
     assert outcome.aggregate.selection.nuisance_items
+
+    assert len(outcome.factors) == 2
+    coupled_ids = frozenset(result.factor.nuisance_ids[0] for result in outcome.factors)
+    affine_problem = replace(
+        problem,
+        affine_half_spaces=(
+            AffineHalfSpace(
+                "synthetic-cross-factor-domain",
+                tuple(
+                    1.0 if param_id in coupled_ids else 0.0
+                    for param_id, _value in problem.independent_items
+                ),
+                1.0e9,
+            ),
+        ),
+    )
+    affine_outcome = execute_profiled_grid(
+        affine_problem,
+        axes,
+        parameterization,
+        engine,
+        objective_request_budget=12_000,
+        x_scale=tuple(max(1.0, abs(value)) for value in affine_problem.start),
+    )
+    assert affine_outcome.terminal is ProfiledGridTerminal.ACCEPTED
+    assert len(affine_outcome.factors) == 1
+    assert affine_outcome.factors[0].factor.grid_ids == tuple(axes)
+    assert affine_outcome.factors[0].factor.nuisance_ids == tuple(
+        param_id for param_id in affine_problem.controlled_ids if param_id not in axes
+    )

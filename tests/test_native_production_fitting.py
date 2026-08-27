@@ -20,6 +20,7 @@ import chemex.optimize.native_mcmc as native_mcmc_module
 import chemex.optimize.native_resampling as native_resampling_module
 import chemex.optimize.resampling as resampling_module
 import chemex.optimize.uncertainty as uncertainty_module
+import chemex.printers.grid as grid_printer_module
 import chemex.run_info as run_info_module
 from chemex.chemex import run
 from chemex.cli import build_parser
@@ -2800,7 +2801,7 @@ def test_real_grid_fit_writes_profiled_surfaces_and_withholds_covariance(
     assert np.count_nonzero(profile_selected) == 1
     selected_factor = factor_rows[factor_selected]
     selected_profile = profile_rows[profile_selected]
-    factor_axis = factor_rows.dtype.names[1]
+    factor_axis = factor_rows.dtype.names[2]
     profile_axis = profile_rows.dtype.names[0]
     assert selected_factor[factor_axis][0] == pytest.approx(
         selected_profile[profile_axis][0]
@@ -2847,17 +2848,17 @@ def test_real_grouped_grid_fit_uses_one_native_aggregate_commit(
     output = tmp_path / "Output"
     session = AnalysisSession.create()
     method = _grid_method(tmp_path / "method.toml")
-    plot_1d = native_deterministic_module.plot_grid_1d
-    plot_2d = native_deterministic_module.plot_grid_2d
+    plot_1d = grid_printer_module.plot_grid_1d
+    plot_2d = grid_printer_module.plot_grid_2d
 
     with (
         patch.object(
-            native_deterministic_module,
+            grid_printer_module,
             "plot_grid_1d",
             wraps=plot_1d,
         ) as plotted_1d,
         patch.object(
-            native_deterministic_module,
+            grid_printer_module,
             "plot_grid_2d",
             wraps=plot_2d,
         ) as plotted_2d,
@@ -2878,8 +2879,9 @@ def test_real_grouped_grid_fit_uses_one_native_aggregate_commit(
         rows = np.genfromtxt(
             factor_output, delimiter="\t", names=True, dtype=None, encoding="utf-8"
         )
-        np.testing.assert_allclose(rows[rows.dtype.names[1]], (1.0, 3.0))
+        np.testing.assert_allclose(rows[rows.dtype.names[2]], (1.0, 3.0))
         assert tuple(rows["status"]) == ("success", "success")
+        assert all(rows["profiles"])
     summary = tomllib.loads(
         (output / "Grid" / "summary.toml").read_text(encoding="utf-8")
     )

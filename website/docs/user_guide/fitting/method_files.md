@@ -195,6 +195,11 @@ nuisance-parameter solutions attached to those points. The complete root state
 is freshly evaluated and accepted before one atomic commit. Factor results and
 independent one-dimensional marginal minima never commit.
 
+If the feasible domain contains an affine restriction, ChemEx conservatively
+uses one exact unfactorized profiled grid. This can be slower, but prevents a
+cross-coordinate domain restriction from being mistaken for independent
+factor objectives.
+
 GRID does not release its own axes through an automatic final TRF. A later
 method step can do so explicitly with its normal roles, starting from the
 committed GRID state. Because a discrete GRID coordinate was not continuously

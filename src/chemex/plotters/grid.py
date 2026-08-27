@@ -1,3 +1,5 @@
+"""Plots for exact profiled chi-square GRID surfaces."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -16,6 +18,8 @@ from chemex.typing import Array
 
 @dataclass
 class GridResult:
+    """One plot-ready exact profile surface."""
+
     grid: dict[str, Array]
     chisqr: Array
 
@@ -27,11 +31,7 @@ def plot_grid_1d(
     parameter_names: Mapping[str, ParamName],
     accepted_values: Mapping[str, float],
 ) -> None:
-    """Visualize exact one-dimensional profiled chi-square surfaces.
-
-    The output file will display the chi-square values per parameter.
-
-    """
+    """Visualize exact one-dimensional profiled chi-square surfaces."""
     if not grids_1d:
         return
 
@@ -58,12 +58,7 @@ def plot_grid_2d(
     parameter_names: Mapping[str, ParamName],
     accepted_values: Mapping[str, float],
 ) -> None:
-    """Visualize exact two-dimensional profiled chi-square surfaces.
-
-    The output file will display the chi-square contour
-    plots for all combination of two parameters.
-
-    """
+    """Visualize exact two-dimensional profiled chi-square surfaces."""
     if not grids_2d:
         return
 

@@ -1,7 +1,5 @@
 """Production composition for deterministic evaluation and fitting."""
 
-import re
-import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import reduce
@@ -47,11 +45,6 @@ from chemex.optimize.direct_trf import (
     build_bounded_independent_frame,
     execute_fit_commit,
 )
-from chemex.optimize.gridding import (
-    GridResult,
-    plot_grid_1d,
-    plot_grid_2d,
-)
 from chemex.optimize.grouped_direct_trf import (
     FitDecomposition,
     GroupedDirectTrfInvocation,
@@ -61,7 +54,6 @@ from chemex.optimize.grouped_direct_trf import (
 from chemex.optimize.helper import execute_post_fit
 from chemex.optimize.profiled_grid import (
     ProfiledGridOutcome,
-    ProfiledGridSurface,
     execute_profiled_grid,
 )
 from chemex.optimize.uncertainty import (
@@ -84,6 +76,7 @@ from chemex.parameters.parameterization import (
 )
 from chemex.parameters.sealed import parameter_name_from_definition
 from chemex.parameters.values import AnalysisValues, AnalysisValuesSnapshot
+from chemex.printers.grid import write_grid_output
 from chemex.printers.parameters import (
     BOUNDARY_WARNING_TEXT,
     ParameterUncertaintyView,
@@ -528,161 +521,6 @@ def _run_product_de_search(
     return problem.restart_from(candidate.full_vector)
 
 
-def _write_grid_output(
-    outcome: ProfiledGridOutcome,
-    path: Path,
-    *,
-    parameter_model: SealedParameterModel,
-    accepted_values: Mapping[str, float],
-) -> None:
-    """Publish raw factors and exact numerical profiles as one GRID product."""
-    aggregate = outcome.aggregate
-    accepted = outcome.accepted_result
-    if aggregate is None or accepted is None:
-        raise RuntimeError("Accepted profiled GRID output lacks its aggregate")
-    parameter_names = {
-        definition.param_id: parameter_name_from_definition(definition)
-        for definition in parameter_model.definitions
-    }
-    grid_path = path / "Grid"
-    staging = path / ".Grid.tmp"
-    shutil.rmtree(staging, ignore_errors=True)
-    factors_path = staging / "Factors"
-    profiles_1d_path = staging / "Profiles" / "1D"
-    profiles_2d_path = staging / "Profiles" / "2D"
-    factors_path.mkdir(parents=True, exist_ok=True)
-    profiles_1d_path.mkdir(parents=True, exist_ok=True)
-    profiles_2d_path.mkdir(parents=True, exist_ok=True)
-
-    def token(param_id: str) -> str:
-        folder = parameter_names[param_id].folder.lower()
-        return re.sub(r"[^a-z0-9_.-]+", "_", folder).strip("_") or param_id.strip("_")
-
-    selected_ordinals = aggregate.selection.factor_point_ordinals
-    for result, selected_ordinal in zip(
-        outcome.factors, selected_ordinals, strict=True
-    ):
-        axis_tokens = tuple(token(param_id) for param_id in result.factor.grid_ids)
-        suffix = "__".join(axis_tokens) if axis_tokens else "constant"
-        filename = (
-            factors_path / f"factor_{result.factor.ordinal + 1:02d}__{suffix}.tsv"
-        )
-        headers = (
-            "point",
-            *(token(param_id) for param_id in result.factor.grid_ids),
-            "chi_square",
-            "status",
-            "selected",
-            "objective_evaluations",
-            "failure",
-        )
-        with filename.open("w", encoding="utf-8") as output:
-            output.write("\t".join(headers) + "\n")
-            for point in result.points:
-                coordinate_values = tuple(
-                    repr(value) for _param_id, value in point.axis_items
-                )
-                failure = (
-                    ""
-                    if point.failure is None
-                    else re.sub(r"[\t\r\n]+", " ", point.failure)
-                )
-                output.write(
-                    "\t".join(
-                        (
-                            str(point.ordinal),
-                            *coordinate_values,
-                            "" if point.chi_square is None else repr(point.chi_square),
-                            point.status.value,
-                            str(point.ordinal == selected_ordinal).lower(),
-                            str(point.objective_evaluations),
-                            failure,
-                        )
-                    )
-                    + "\n"
-                )
-
-    selected_grid = dict(aggregate.selection.grid_items)
-
-    def write_surface(destination: Path, surface: ProfiledGridSurface) -> None:
-        axis_ids = surface.axis_ids
-        axis_values = surface.axis_values
-        chisqr = surface.chi_square
-        with destination.open("w", encoding="utf-8") as output:
-            output.write(
-                "\t".join((*map(token, axis_ids), "chi_square", "selected")) + "\n"
-            )
-            for indices in np.ndindex(chisqr.shape):
-                values = tuple(
-                    axis_values[index][coordinate]
-                    for index, coordinate in enumerate(indices)
-                )
-                is_selected = all(
-                    selected_grid[param_id] == value
-                    for param_id, value in zip(axis_ids, values, strict=True)
-                )
-                output.write(
-                    "\t".join(
-                        (
-                            *(repr(value) for value in values),
-                            repr(float(chisqr[indices])),
-                            str(is_selected).lower(),
-                        )
-                    )
-                    + "\n"
-                )
-
-    grids_1d: list[GridResult] = []
-    for param_id, surface in aggregate.profiles_1d.items():
-        write_surface(profiles_1d_path / f"{token(param_id)}.tsv", surface)
-        grids_1d.append(
-            GridResult(
-                {param_id: np.asarray(surface.axis_values[0], dtype=np.float64)},
-                surface.chi_square,
-            )
-        )
-    grids_2d: list[GridResult] = []
-    for param_ids, surface in aggregate.profiles_2d.items():
-        write_surface(
-            profiles_2d_path / f"{token(param_ids[0])}__{token(param_ids[1])}.tsv",
-            surface,
-        )
-        grids_2d.append(
-            GridResult(
-                {
-                    param_id: np.asarray(values, dtype=np.float64)
-                    for param_id, values in zip(
-                        surface.axis_ids, surface.axis_values, strict=True
-                    )
-                },
-                surface.chi_square,
-            )
-        )
-    plot_grid_1d(
-        grids_1d,
-        staging,
-        parameter_names=parameter_names,
-        accepted_values=accepted_values,
-    )
-    plot_grid_2d(
-        grids_2d,
-        staging,
-        parameter_names=parameter_names,
-        accepted_values=accepted_values,
-    )
-    with (staging / "summary.toml").open("w", encoding="utf-8") as output:
-        output.write('status = "complete"\n')
-        output.write(f"selected_chi_square = {accepted.chi_square!r}\n")
-        output.write(f"factor_count = {len(outcome.factors)}\n")
-        for param_id, value in aggregate.selection.grid_items:
-            output.write("\n[[selected_axes]]\n")
-            output.write(f"parameter_id = {param_id!r}\n")
-            output.write(f"name = {str(parameter_names[param_id])!r}\n")
-            output.write(f"value = {value!r}\n")
-    shutil.rmtree(grid_path, ignore_errors=True)
-    staging.replace(grid_path)
-
-
 def _fit_component_labels(
     decomposition: FitDecomposition,
     parameter_model: SealedParameterModel,
@@ -1009,7 +847,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         try:
             if not isinstance(outcome, ProfiledGridOutcome):
                 raise TypeError("GRID execution returned a non-GRID outcome")
-            _write_grid_output(
+            write_grid_output(
                 outcome,
                 path,
                 parameter_model=parameter_model,

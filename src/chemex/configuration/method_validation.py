@@ -318,23 +318,13 @@ def _validate_grid(
     roles: dict[str, ParameterRole],
     model: SealedParameterModel,
 ) -> None:
-    concrete: dict[str, GridAxis] = {}
     for axis in search.axes:
         matches = _matches(axis.selector, model, axis.source)
-        for param_id in matches:
-            if roles[param_id] is not ParameterRole.FIT:
-                raise MethodFormatError(
-                    f"GRID target {param_id} is not a final independent FIT coordinate",
-                    axis.source,
-                )
-            concrete[param_id] = axis
-    for param_id, axis in concrete.items():
-        values = (
-            axis.spacing.values
-            if isinstance(axis.spacing, GridValues)
-            else (axis.spacing.low, axis.spacing.high)
-        )
-        _check_bounds(param_id, values, model, axis.source)
+        if not any(roles[param_id] is ParameterRole.FIT for param_id in matches):
+            raise MethodFormatError(
+                "GRID target is not a final independent FIT coordinate",
+                axis.source,
+            )
 
 
 def _grid_values(axis: GridAxis) -> tuple[float, ...]:
@@ -365,22 +355,24 @@ def resolve_grid_axes(
     final_fit = frozenset(final_fit_ids)
     concrete: dict[str, ResolvedGridAxis] = {}
     for ordinal, axis in enumerate(search.axes):
-        matches = tuple(
+        active_matches = tuple(
             param_id
             for param_id in _matches(axis.selector, model, axis.source)
             if param_id in active_scope
         )
-        if not matches:
+        if not active_matches:
             raise MethodFormatError(
                 "GRID selector has no applicable coordinate in the current "
                 f"active step: [{axis.selector.render()}]",
                 axis.source,
             )
-        invalid = tuple(param_id for param_id in matches if param_id not in final_fit)
-        if invalid:
+        matches = tuple(
+            param_id for param_id in active_matches if param_id in final_fit
+        )
+        if not matches:
             raise MethodFormatError(
-                "GRID targets must be active final independent FIT coordinates: "
-                + ", ".join(invalid),
+                "GRID selector has no active final independent FIT coordinate; "
+                "active non-FIT matches: " + ", ".join(active_matches),
                 axis.source,
             )
         values = _grid_values(axis)

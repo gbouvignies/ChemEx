@@ -214,9 +214,10 @@ Grid/
 └── summary.toml
 ```
 
-Each deterministic factor filename identifies its concrete grid axes. Its TSV
-contains the coordinate values, profiled chi-square, point status, selected
-flag, objective-evaluation count, and a failure description when applicable.
+Each deterministic factor filename identifies its concrete grid axes and a
+compact experiment/profile key. Its TSV includes the full profile membership,
+coordinate values, profiled chi-square, point status, selected flag,
+objective-evaluation count, and a failure description when applicable.
 Thus a failed or unavailable point is distinct from a valid point with a large
 finite chi-square. The `Profiles/1D/` and `Profiles/2D/` TSV files contain the
 same exact reduced surfaces shown in the PDFs, including a marker for the

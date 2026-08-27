@@ -74,6 +74,7 @@ class ProfiledGridFactor:
     profile_indices: tuple[int, ...]
     grid_ids: tuple[str, ...]
     nuisance_ids: tuple[str, ...]
+    profile_keys: tuple[tuple[int, int], ...] = ()
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -95,6 +96,10 @@ class ProfiledGridFactor:
             raise ProfiledGridConstructionError(
                 "GRID and nuisance factor coordinates must be disjoint"
             )
+        if self.profile_keys and len(self.profile_keys) != len(self.profile_indices):
+            raise ProfiledGridConstructionError(
+                "GRID factor profile keys differ from its profile indices"
+            )
         object.__setattr__(
             self,
             "identity",
@@ -105,6 +110,7 @@ class ProfiledGridFactor:
                     self.profile_indices,
                     self.grid_ids,
                     self.nuisance_ids,
+                    self.profile_keys,
                 ),
             ),
         )
@@ -121,7 +127,6 @@ class ProfiledGridPoint:
     nuisance_items: tuple[tuple[str, float], ...] = ()
     objective_evaluations: int = 0
     failure: str | None = None
-    candidate: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         successful = self.status is ProfiledGridPointStatus.SUCCESS
@@ -146,7 +151,7 @@ class ProfiledGridPoint:
 
 @dataclass(frozen=True, slots=True)
 class ProfiledGridFactorResult:
-    """Complete raw point table for one exact objective factor."""
+    """Retained raw point evidence for one exact objective factor."""
 
     factor: ProfiledGridFactor
     points: tuple[ProfiledGridPoint, ...]
@@ -232,6 +237,7 @@ class ProfiledGridOutcome:
 def discover_profiled_grid_factors(  # noqa: C901 - exact factor proof is kept local
     profile_dependencies: Sequence[frozenset[str]],
     retained_profiles: Sequence[bool],
+    profile_keys: Sequence[tuple[int, int]] | None = None,
     *,
     grid_ids: Sequence[str],
     controlled_ids: Sequence[str],
@@ -239,9 +245,14 @@ def discover_profiled_grid_factors(  # noqa: C901 - exact factor proof is kept l
     """Find exact factors after removing globally shared held GRID coupling."""
     dependencies = tuple(profile_dependencies)
     retained = tuple(retained_profiles)
+    keys = (
+        tuple((index, index) for index in range(len(dependencies)))
+        if profile_keys is None
+        else tuple(profile_keys)
+    )
     ordered_grid = tuple(grid_ids)
     ordered_controls = tuple(controlled_ids)
-    if len(dependencies) != len(retained):
+    if len(dependencies) != len(retained) or len(dependencies) != len(keys):
         raise ProfiledGridConstructionError(
             "Profile dependency and retained-objective records differ"
         )
@@ -312,6 +323,7 @@ def discover_profiled_grid_factors(  # noqa: C901 - exact factor proof is kept l
                     for param_id in ordered_controls
                     if param_id not in grid_set and param_id in factor_dependencies
                 ),
+                tuple(keys[index] for index in indices),
             )
         )
     return tuple(factors)
@@ -371,7 +383,6 @@ def _evaluate_only_factor_point(
         chi_square,
         (),
         1,
-        candidate=evaluated,
     )
 
 
@@ -468,8 +479,84 @@ def _fit_factor_point(
         candidate.chi_square,
         tuple(zip(factor.nuisance_ids, candidate.vector, strict=True)),
         evaluations,
-        candidate=candidate,
     )
+
+
+def _validate_selected_factor_evidence(
+    problem: OptimizationProblem,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    materialized: MaterializedDirectTrfCandidate,
+    factor_results: Sequence[ProfiledGridFactorResult],
+    aggregate: ProfiledGridAggregate,
+) -> TerminalFailure | None:
+    """Check selected factor evidence against one fresh complete root frame."""
+    lifecycle = problem.lifecycle_frame(materialized.vector, parameterization)
+    frame = EvaluationFrame.from_lifecycle_frame(parameterization, lifecycle)
+    factor_total = 0.0
+    for result, selected_ordinal in zip(
+        factor_results,
+        aggregate.selection.factor_point_ordinals,
+        strict=True,
+    ):
+        selected = next(
+            (point for point in result.points if point.ordinal == selected_ordinal),
+            None,
+        )
+        if selected is None or selected.chi_square is None:
+            return TerminalFailure(
+                "grid_factor_validation_failure",
+                f"Selected point is unavailable for factor {result.factor.ordinal + 1}",
+            )
+        evaluated = (
+            engine.project_profiles(result.factor.profile_indices)
+            .new_evaluator()
+            .evaluate(frame)
+        )
+        if isinstance(evaluated, EvaluationFailure):
+            return TerminalFailure(
+                "grid_factor_validation_failure",
+                f"Fresh factor {result.factor.ordinal + 1} evaluation failed: "
+                f"{evaluated.category}: {evaluated.message}",
+                evaluated,
+            )
+        try:
+            fresh_chi_square = canonical_chi_square(evaluated.residuals)
+        except (TypeError, ValueError) as error:
+            return TerminalFailure(
+                "grid_factor_validation_failure",
+                f"Fresh factor {result.factor.ordinal + 1} chi-square failed: {error}",
+            )
+        if not math.isclose(
+            fresh_chi_square,
+            selected.chi_square,
+            rel_tol=1.0e-12,
+            abs_tol=1.0e-12,
+        ):
+            return TerminalFailure(
+                "grid_factor_validation_failure",
+                f"Fresh factor {result.factor.ordinal + 1} chi-square "
+                f"{fresh_chi_square!r} differs from selected evidence "
+                f"{selected.chi_square!r}",
+            )
+        factor_total += fresh_chi_square
+    if not math.isclose(
+        factor_total,
+        aggregate.selection.chi_square,
+        rel_tol=1.0e-12,
+        abs_tol=1.0e-12,
+    ) or not math.isclose(
+        materialized.chi_square,
+        aggregate.selection.chi_square,
+        rel_tol=1.0e-12,
+        abs_tol=1.0e-12,
+    ):
+        return TerminalFailure(
+            "grid_aggregate_validation_failure",
+            "Fresh complete-root chi-square, selected factor sum, and aggregate "
+            "profile minimum differ",
+        )
+    return None
 
 
 def execute_profiled_grid(  # noqa: C901 - closed factor/point lifecycle dispatcher
@@ -509,9 +596,38 @@ def execute_profiled_grid(  # noqa: C901 - closed factor/point lifecycle dispatc
             bool(profile.retained_observation_indices)
             for profile in engine.plan.profiles
         ),
+        tuple(
+            (profile.experiment_ordinal, profile.profile_ordinal)
+            for profile in engine.plan.profiles
+        ),
         grid_ids=grid_ids,
         controlled_ids=problem.controlled_ids,
     )
+    if problem.affine_half_spaces or problem.affine_equalities:
+        retained_indices = tuple(
+            index
+            for index, profile in enumerate(engine.plan.profiles)
+            if profile.retained_observation_indices
+        )
+        factors = (
+            ProfiledGridFactor(
+                0,
+                retained_indices,
+                grid_ids,
+                tuple(
+                    param_id
+                    for param_id in problem.controlled_ids
+                    if param_id not in grid_ids
+                ),
+                tuple(
+                    (
+                        engine.plan.profiles[index].experiment_ordinal,
+                        engine.plan.profiles[index].profile_ordinal,
+                    )
+                    for index in retained_indices
+                ),
+            ),
+        )
     token = CancellationToken() if cancellation is None else cancellation
     factor_results: list[ProfiledGridFactorResult] = []
     for factor in factors:
@@ -519,19 +635,17 @@ def execute_profiled_grid(  # noqa: C901 - closed factor/point lifecycle dispatc
         coordinate_values = tuple(
             ordered_axes[param_id] for param_id in factor.grid_ids
         )
-        assignments = tuple(product(*coordinate_values)) if coordinate_values else ((),)
+        point_count = math.prod(len(values) for values in coordinate_values) or 1
+        assignments = product(*coordinate_values)
         points: list[ProfiledGridPoint] = []
         for point_ordinal, values in enumerate(assignments):
             if token.is_cancelled:
-                points.extend(
+                points.append(
                     ProfiledGridPoint(
-                        ordinal,
-                        tuple(zip(factor.grid_ids, remaining, strict=True)),
+                        point_ordinal,
+                        tuple(zip(factor.grid_ids, values, strict=True)),
                         ProfiledGridPointStatus.NOT_STARTED,
                         failure="cancelled before execution",
-                    )
-                    for ordinal, remaining in enumerate(
-                        assignments[point_ordinal:], start=point_ordinal
                     )
                 )
                 factor_results.append(ProfiledGridFactorResult(factor, tuple(points)))
@@ -555,7 +669,7 @@ def execute_profiled_grid(  # noqa: C901 - closed factor/point lifecycle dispatc
                         cancellation=token,
                         progress_observer=progress_observer,
                         factor_count=len(factors),
-                        point_count=len(assignments),
+                        point_count=point_count,
                     )
                     if factor.nuisance_ids
                     else _evaluate_only_factor_point(
@@ -582,17 +696,6 @@ def execute_profiled_grid(  # noqa: C901 - closed factor/point lifecycle dispatc
                 )
             points.append(point)
             if point.status is ProfiledGridPointStatus.INTERRUPTED:
-                points.extend(
-                    ProfiledGridPoint(
-                        ordinal,
-                        tuple(zip(factor.grid_ids, remaining, strict=True)),
-                        ProfiledGridPointStatus.NOT_STARTED,
-                        failure="interrupted before execution",
-                    )
-                    for ordinal, remaining in enumerate(
-                        assignments[point_ordinal + 1 :], start=point_ordinal + 1
-                    )
-                )
                 factor_results.append(ProfiledGridFactorResult(factor, tuple(points)))
                 return ProfiledGridOutcome(
                     ProfiledGridTerminal.INTERRUPTED,
@@ -692,6 +795,21 @@ def execute_profiled_grid(  # noqa: C901 - closed factor/point lifecycle dispatc
             tuple(factor_results),
             aggregate,
             failure=failure,
+        )
+    validation_failure = _validate_selected_factor_evidence(
+        problem,
+        parameterization,
+        engine,
+        materialized,
+        factor_results,
+        aggregate,
+    )
+    if validation_failure is not None:
+        return ProfiledGridOutcome(
+            ProfiledGridTerminal.EXECUTION_FAILURE,
+            tuple(factor_results),
+            aggregate,
+            failure=validation_failure,
         )
     authority_context = _identity(
         "profiled-grid-aggregate-acceptance",

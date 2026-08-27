@@ -976,6 +976,38 @@ def test_grid_resolution_rejects_inactive_non_fit_and_out_of_bounds_targets(
         )
 
 
+def test_broad_grid_rule_projects_away_active_non_fit_matches(tmp_path: Path) -> None:
+    model = _parameter_model(
+        ParamDefinition("dw-fit", "DW_AB", "15N", (), 1.0, 0.0, 10.0),
+        ParamDefinition("dw-fix", "DW_AB", "31N", (), 1.0, 0.0, 10.0),
+    )
+    method = _write(
+        tmp_path / "mixed-active-grid.toml",
+        """FORMAT_VERSION = 2
+[STEP]
+ROLES = [
+  { FIX = ["DW_AB"] },
+  { FIT = ["DW_AB, NUC->15N"] },
+]
+[STEP.SEARCH.GRID]
+AXES = ["[DW_AB] = values(2, 4)"]
+""",
+    )
+    plan = read_method_plan([method])
+    plan.validate(model)
+    search = plan.steps[0].search
+    assert search is not None
+
+    resolved = resolve_grid_axes(
+        search,  # ty: ignore[invalid-argument-type]
+        model,
+        active_scope_ids=("dw-fit", "dw-fix"),
+        final_fit_ids=("dw-fit",),
+    )
+
+    assert tuple(axis.param_id for axis in resolved) == ("dw-fit",)
+
+
 def test_ordered_complete_roles_validate_fix_fit_constrain_exceptions(
     tmp_path: Path,
 ) -> None:
