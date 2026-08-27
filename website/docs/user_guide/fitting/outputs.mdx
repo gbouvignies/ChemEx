@@ -259,7 +259,13 @@ the diagnostic as incomplete. MCMC diagnostics also
 include the direct emcee sampler engine, timing information, effective worker
 count and root seed, acceptance fractions, burn-in decisions, and
 autocorrelation estimates. Failed or interrupted MCMC suppresses every
-complete-chain product and leaves only an explicit incomplete diagnostic. These
+authoritative posterior product. If automatic burn selection cannot establish a
+retained window, `raw_chain.tsv` preserves the completed sampler chain as
+diagnostic evidence while `diagnostics.toml` explicitly marks the analysis
+incomplete, distinguishes completed sampling from failed posterior retention,
+and retains acceptance, autocorrelation, and timing diagnostics. The raw chain
+is not a retained-posterior sample file. Other failures leave only the evidence
+available at their failure stage and an explicit incomplete diagnostic. These
 diagnostics are the best place to confirm that
 [`--workers`](multicore_execution.md) was applied as intended.
 
