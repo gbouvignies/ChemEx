@@ -2774,6 +2774,7 @@ def test_resampling_diagnostics_failure_preserves_original_publication_error(
 
 def test_real_grid_fit_writes_profiled_surfaces_and_withholds_covariance(
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     output = tmp_path / "Output"
     session = AnalysisSession.create()
@@ -2781,6 +2782,18 @@ def test_real_grid_fit_writes_profiled_surfaces_and_withholds_covariance(
 
     run(_fit_arguments(output, method), session=session)
 
+    rendered = capsys.readouterr().out
+    progress_messages = (
+        "Estimating parameter uncertainties",
+        "Writing GRID surfaces and output...",
+        "Writing GRID surfaces and output -> complete",
+        "Generating GRID plots...",
+        "Generating GRID plots -> complete",
+    )
+    assert all(message in rendered for message in progress_messages)
+    assert tuple(rendered.index(message) for message in progress_messages) == tuple(
+        sorted(rendered.index(message) for message in progress_messages)
+    )
     assert session.analysis_values.snapshot().revision == 1
     (factor_output,) = tuple((output / "Grid" / "Factors").glob("*.tsv"))
     (profile_output,) = tuple((output / "Grid" / "Profiles" / "1D").glob("*.tsv"))

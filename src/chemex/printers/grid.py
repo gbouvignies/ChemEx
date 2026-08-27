@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
+from chemex.messages import GridOutputProgressReporter, console
 from chemex.optimize.profiled_grid import ProfiledGridOutcome, ProfiledGridSurface
 from chemex.parameters.name import ParamName
 from chemex.parameters.parameterization import SealedParameterModel
@@ -134,6 +135,7 @@ def write_grid_output(
     *,
     parameter_model: SealedParameterModel,
     accepted_values: Mapping[str, float],
+    progress: GridOutputProgressReporter | None = None,
 ) -> None:
     """Publish one complete, atomically replaced GRID product tree."""
     aggregate = outcome.aggregate
@@ -155,6 +157,8 @@ def write_grid_output(
     profiles_1d_path.mkdir(parents=True, exist_ok=True)
     profiles_2d_path.mkdir(parents=True, exist_ok=True)
 
+    progress = progress or GridOutputProgressReporter(console)
+    progress.start_writing()
     _write_factor_tables(outcome, factors_path, token)
     selected_grid = dict(aggregate.selection.grid_items)
     grids_1d: list[GridResult] = []
@@ -190,6 +194,18 @@ def write_grid_output(
                 surface.chi_square,
             )
         )
+    with (staging / "summary.toml").open("w", encoding="utf-8") as output:
+        output.write('status = "complete"\n')
+        output.write(f"selected_chi_square = {accepted.chi_square!r}\n")
+        output.write(f"factor_count = {len(outcome.factors)}\n")
+        for param_id, value in aggregate.selection.grid_items:
+            output.write("\n[[selected_axes]]\n")
+            output.write(f"parameter_id = {param_id!r}\n")
+            output.write(f"name = {str(parameter_names[param_id])!r}\n")
+            output.write(f"value = {value!r}\n")
+    progress.finish_writing()
+
+    progress.start_plotting()
     plot_grid_1d(
         grids_1d,
         staging,
@@ -202,14 +218,7 @@ def write_grid_output(
         parameter_names=parameter_names,
         accepted_values=accepted_values,
     )
-    with (staging / "summary.toml").open("w", encoding="utf-8") as output:
-        output.write('status = "complete"\n')
-        output.write(f"selected_chi_square = {accepted.chi_square!r}\n")
-        output.write(f"factor_count = {len(outcome.factors)}\n")
-        for param_id, value in aggregate.selection.grid_items:
-            output.write("\n[[selected_axes]]\n")
-            output.write(f"parameter_id = {param_id!r}\n")
-            output.write(f"name = {str(parameter_names[param_id])!r}\n")
-            output.write(f"value = {value!r}\n")
+    progress.finish_plotting()
+
     shutil.rmtree(grid_path, ignore_errors=True)
     staging.replace(grid_path)

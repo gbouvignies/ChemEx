@@ -342,6 +342,53 @@ class UncertaintyProgressReporter:
             )
 
 
+class GridOutputProgressReporter:
+    """Report the two user-visible GRID publication phases."""
+
+    def __init__(
+        self,
+        output_console: Console,
+        *,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
+        self._console = output_console
+        self._clock = clock
+        self._started_at: float | None = None
+
+    def start_writing(self) -> None:
+        """Report that numerical GRID products are being written."""
+        self._start("Writing GRID surfaces and output")
+
+    def finish_writing(self) -> None:
+        """Report completion of numerical GRID product writing."""
+        self._finish("Writing GRID surfaces and output")
+
+    def start_plotting(self) -> None:
+        """Report that GRID PDFs are being generated."""
+        self._start("Generating GRID plots")
+
+    def finish_plotting(self) -> None:
+        """Report completion of GRID PDF generation."""
+        self._finish("Generating GRID plots")
+
+    def _start(self, label: str) -> None:
+        self._started_at = self._clock()
+        with suppress(Exception):
+            self._console.print(Text(f"  • {label}..."))
+
+    def _finish(self, label: str) -> None:
+        elapsed = (
+            0.0
+            if self._started_at is None
+            else max(0.0, self._clock() - self._started_at)
+        )
+        self._started_at = None
+        with suppress(Exception):
+            self._console.print(
+                Text.from_markup(f"  • {label} -> [blue]complete[/] ({elapsed:.1f} s)")
+            )
+
+
 def _format_scalar(value: float) -> str:
     return f"{value:.6g}"
 

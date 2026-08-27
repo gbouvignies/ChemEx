@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
+from io import StringIO
 from itertools import product
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,6 +12,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+from rich.console import Console
 from scipy.optimize import least_squares
 
 from chemex.configuration.method_execution import normalize_methods_for_execution
@@ -18,6 +21,7 @@ from chemex.configuration.methods import Method, Selection, read_method_plan
 from chemex.configuration.parameters import read_defaults
 from chemex.evaluation.native import EvaluationEngine
 from chemex.experiments.builder import build_experiments
+from chemex.messages import GridOutputProgressReporter
 from chemex.optimize.direct_trf import (
     AffineHalfSpace,
     CancellationToken,
@@ -221,6 +225,11 @@ def test_raw_factor_output_distinguishes_failure_from_valid_high_value(
         accepted_result=SimpleNamespace(chi_square=1.0e300),
         factors=(result,),
     )
+    output = StringIO()
+    progress = GridOutputProgressReporter(
+        Console(file=output, force_terminal=False),
+        clock=iter((10.0, 12.0, 20.0, 25.0)).__next__,
+    )
 
     with (
         patch("chemex.printers.grid.plot_grid_1d"),
@@ -231,12 +240,25 @@ def test_raw_factor_output_distinguishes_failure_from_valid_high_value(
             tmp_path,
             parameter_model=parameter_model,
             accepted_values={axis_id: 3.0},
+            progress=progress,
         )
 
     (factor_output,) = tuple((tmp_path / "Grid" / "Factors").glob("*.tsv"))
     rows = factor_output.read_text(encoding="utf-8").splitlines()
     assert "\t\tfailed\tfalse\t0\tsynthetic failure" in rows[1]
     assert "\t1e+300\tsuccess\ttrue\t1\t" in rows[2]
+    rendered = output.getvalue()
+    messages = (
+        "Writing GRID surfaces and output...",
+        "Writing GRID surfaces and output -> complete",
+        "Generating GRID plots...",
+        "Generating GRID plots -> complete",
+    )
+    assert all(message in rendered for message in messages)
+    assert tuple(rendered.index(message) for message in messages) == tuple(
+        sorted(rendered.index(message) for message in messages)
+    )
+    assert len(re.findall(r"-> complete \([0-9]+\.[0-9] s\)", rendered)) == 2
 
 
 def test_factor_discovery_removes_shared_grid_coupling_but_keeps_local_ownership() -> (
