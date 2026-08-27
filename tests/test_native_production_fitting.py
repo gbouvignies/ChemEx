@@ -2960,6 +2960,45 @@ ROLES = [{ FIT = ["R1A_A"] }]
     assert (output / "DIRECT" / "Statistics" / "Covariance" / "evidence.json").is_file()
 
 
+def test_interrupted_profiled_grid_cannot_commit_or_publish_complete_output(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        """FORMAT_VERSION = 2
+[GRID]
+ROLES = [
+  { FIX = ["PB", "KEX_AB", "R1_A"] },
+  { FIT = ["R1A_A", "ETAZ_A"] },
+]
+
+[GRID.SEARCH.GRID]
+AXES = ["[R1A_A] = values(1.0, 3.0)"]
+""",
+        encoding="utf-8",
+    )
+    session = AnalysisSession.create()
+
+    with (
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=KeyboardInterrupt,
+        ),
+        pytest.raises(KeyboardInterrupt, match="interrupted"),
+    ):
+        run(_fit_arguments(output, method), session=session)
+
+    assert session.analysis_values.snapshot().revision == 0
+    assert not (output / "Parameters").exists()
+    assert not (output / "Data").exists()
+    assert not (output / "Grid").exists()
+    assert not (output / "Statistics").exists()
+    outcome = _read_outcome(output)
+    assert outcome["status"] == "incomplete"
+    assert outcome["terminal"] == "interrupted"
+
+
 def test_real_v2_de_reaches_normal_trf_product_path_from_out_of_range_start(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

@@ -1008,6 +1008,39 @@ AXES = ["[DW_AB] = values(2, 4)"]
     assert tuple(axis.param_id for axis in resolved) == ("dw-fit",)
 
 
+def test_later_specific_grid_rule_replaces_broad_values_before_bounds_check(
+    tmp_path: Path,
+) -> None:
+    model = _parameter_model(
+        ParamDefinition("dw-wide", "DW_AB", "15N", (), 1.0, 0.0, 10.0),
+        ParamDefinition("dw-narrow", "DW_AB", "31N", (), 1.0, 0.0, 5.0),
+    )
+    method = _write(
+        tmp_path / "override-before-bounds.toml",
+        """FORMAT_VERSION = 2
+[STEP.SEARCH.GRID]
+AXES = [
+  "[DW_AB] = values(8)",
+  "[DW_AB, NUC->31N] = values(4)",
+]
+""",
+    )
+    search = read_method_plan([method]).steps[0].search
+    assert search is not None
+
+    resolved = resolve_grid_axes(
+        search,  # ty: ignore[invalid-argument-type]
+        model,
+        active_scope_ids=("dw-wide", "dw-narrow"),
+        final_fit_ids=("dw-wide", "dw-narrow"),
+    )
+
+    assert tuple((axis.param_id, axis.values) for axis in resolved) == (
+        ("dw-wide", (8.0,)),
+        ("dw-narrow", (4.0,)),
+    )
+
+
 def test_ordered_complete_roles_validate_fix_fit_constrain_exceptions(
     tmp_path: Path,
 ) -> None:

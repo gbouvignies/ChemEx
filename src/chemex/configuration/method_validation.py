@@ -354,6 +354,7 @@ def resolve_grid_axes(
     active_scope = frozenset(active_scope_ids)
     final_fit = frozenset(final_fit_ids)
     concrete: dict[str, ResolvedGridAxis] = {}
+    sources: dict[str, SourceRef] = {}
     for ordinal, axis in enumerate(search.axes):
         active_matches = tuple(
             param_id
@@ -377,8 +378,15 @@ def resolve_grid_axes(
             )
         values = _grid_values(axis)
         for param_id in matches:
-            _check_bounds(param_id, values, model, axis.source)
             concrete[param_id] = ResolvedGridAxis(param_id, values, ordinal)
+            sources[param_id] = axis.source
+    for resolved in concrete.values():
+        _check_bounds(
+            resolved.param_id,
+            resolved.values,
+            model,
+            sources[resolved.param_id],
+        )
     active_order = {param_id: index for index, param_id in enumerate(final_fit_ids)}
     return tuple(
         sorted(
