@@ -1212,8 +1212,10 @@ def compatible_reference_context(
     candidate: ParamDefinition,
     target: ParamDefinition,
     selector: ParamName,
-) -> tuple[frozenset[str], int] | None:
+) -> tuple[int, frozenset[str], int] | None:
+    """Return spin specificity, matching condition fields, and extra context."""
     matched: set[str] = set()
+    spin_specificity = 0
     extras = 0
     candidate_spin = SpinSystem.from_name(candidate.spin_system_name)
     target_spin = SpinSystem.from_name(target.spin_system_name)
@@ -1223,7 +1225,9 @@ def compatible_reference_context(
             or candidate_spin.match(target_spin)
             or target_spin.match(candidate_spin)
         ):
-            matched.add("spin_system")
+            spin_specificity = 2
+        elif target_spin and candidate_spin.shares_group_site(target_spin):
+            spin_specificity = 1
         elif target_spin:
             return None
         else:
@@ -1241,7 +1245,7 @@ def compatible_reference_context(
             matched.add(name)
         else:
             return None
-    return frozenset(matched), extras
+    return spin_specificity, frozenset(matched), extras
 
 
 def _resolve_reference(
@@ -1281,11 +1285,17 @@ def _resolve_reference(
             selector=selector_text,
             target_id=target_id,
         )
-    minimum_extras = min(context[1] for _candidate, context in ranked)
-    eligible = tuple(
-        (candidate, context[0])
+    maximum_spin_specificity = max(context[0] for _candidate, context in ranked)
+    spin_eligible = tuple(
+        (candidate, context)
         for candidate, context in ranked
-        if context[1] == minimum_extras
+        if context[0] == maximum_spin_specificity
+    )
+    minimum_extras = min(context[2] for _candidate, context in spin_eligible)
+    eligible = tuple(
+        (candidate, context[1])
+        for candidate, context in spin_eligible
+        if context[2] == minimum_extras
     )
     maximal = tuple(
         candidate

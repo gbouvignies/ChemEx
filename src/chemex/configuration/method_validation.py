@@ -140,11 +140,17 @@ def _resolve_constraint_reference(
         raise MethodFormatError(
             f"No context-compatible parameter matches [{selector.render()}]", source
         )
-    minimum_extras = min(context[1] for _candidate, context in ranked)
-    eligible = tuple(
-        (candidate, context[0])
+    maximum_spin_specificity = max(context[0] for _candidate, context in ranked)
+    spin_eligible = tuple(
+        (candidate, context)
         for candidate, context in ranked
-        if context[1] == minimum_extras
+        if context[0] == maximum_spin_specificity
+    )
+    minimum_extras = min(context[2] for _candidate, context in spin_eligible)
+    eligible = tuple(
+        (candidate, context[1])
+        for candidate, context in spin_eligible
+        if context[2] == minimum_extras
     )
     maximal = tuple(
         candidate

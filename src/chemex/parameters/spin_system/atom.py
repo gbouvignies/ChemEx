@@ -53,6 +53,10 @@ class Atom:
         """
         return other.name.startswith(self.name)
 
+    def shares_site(self, other: Self) -> bool:
+        """Return whether atoms identify the same site across nucleus types."""
+        return bool(self) and bool(other) and self.name[1:] == other.name[1:]
+
     def __hash__(self) -> int:
         """Generates a hash value for an Atom instance.
 

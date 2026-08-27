@@ -52,3 +52,11 @@ def test_strict_spin_system_parser_accepts_every_registered_atom_name() -> None:
         spin_system = SpinSystem.from_name_strict(f"G23{atom_name}")
 
         assert spin_system.atoms["i"].name == atom_name
+
+
+def test_spin_system_group_site_identifies_cross_nucleus_companions() -> None:
+    target = SpinSystem.from_name("V75HG1")
+
+    assert target.shares_group_site(SpinSystem.from_name("V75CG1"))
+    assert not target.shares_group_site(SpinSystem.from_name("V75CG2"))
+    assert not target.shares_group_site(SpinSystem.from_name("V71CG1"))

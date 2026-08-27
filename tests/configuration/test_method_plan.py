@@ -106,6 +106,70 @@ ROLES = [
     assert v1_plan.steps == v2_plan.steps
 
 
+@pytest.mark.parametrize("format_version", (1, 2))
+def test_v1_and_v2_validate_same_group_companion_constraints(
+    tmp_path: Path,
+    format_version: int,
+) -> None:
+    model = _parameter_model(
+        ParamDefinition(
+            "r2adq-a", "R2ADQ_A", "I3HD1", (("h_larmor_frq", 700.2),), 0.0, 0.0, 100.0
+        ),
+        ParamDefinition(
+            "r2dq-a", "R2DQ_A", "I3HD1", (("h_larmor_frq", 700.2),), 20.0, 0.0, 100.0
+        ),
+        ParamDefinition(
+            "r1-a", "R1_A", "I3CD1", (("h_larmor_frq", 700.2),), 1.5, 0.0, 10.0
+        ),
+    )
+    roles = (
+        'CONSTRAINTS = ["[R2ADQ_A] = [R2DQ_A] - [R1_A] / 3.0"]'
+        if format_version == 1
+        else 'ROLES = [{ CONSTRAIN = ["[R2ADQ_A] = [R2DQ_A] - [R1_A] / 3.0"] }]'
+    )
+    version = "" if format_version == 1 else "FORMAT_VERSION = 2\n"
+    method = _write(tmp_path / "method.toml", f"{version}[STEP]\n{roles}\n")
+
+    read_method_plan([method]).validate(model)
+
+
+@pytest.mark.parametrize("format_version", (1, 2))
+def test_v1_and_v2_rank_spin_context_before_condition_specificity(
+    tmp_path: Path,
+    format_version: int,
+) -> None:
+    model = _parameter_model(
+        ParamDefinition(
+            "target",
+            "TARGET",
+            "I3HD1",
+            (("h_larmor_frq", 800.0),),
+            0.0,
+            0.0,
+            100.0,
+        ),
+        ParamDefinition("companion", "VALUE", "I3CD1", (), 1.0, 0.0, 10.0),
+        ParamDefinition(
+            "global",
+            "VALUE",
+            "",
+            (("h_larmor_frq", 800.0),),
+            2.0,
+            0.0,
+            10.0,
+        ),
+    )
+    roles = (
+        'CONSTRAINTS = ["[TARGET] = [VALUE]"]'
+        if format_version == 1
+        else 'ROLES = [{ CONSTRAIN = ["[TARGET] = [VALUE]"] }]'
+    )
+    version = "" if format_version == 1 else "FORMAT_VERSION = 2\n"
+    method = _write(tmp_path / "method.toml", f"{version}[STEP]\n{roles}\n")
+
+    read_method_plan([method]).validate(model)
+
+
 def test_v1_and_v2_grid_statistics_normalize_to_the_same_step_semantics(
     tmp_path: Path,
 ) -> None:
