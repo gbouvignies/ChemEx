@@ -324,6 +324,36 @@ _RATE_NAMES = [
     "mu_is",
 ]
 
+_CANONICAL_REVERSED_ORIENTATIONS = {
+    "hn": "nh",
+    "hc": "ch",
+}
+
+_REVERSED_RATE_COMPONENTS = {
+    "r2_i": "r2_s",
+    "r2_s": "r2_i",
+    "r1_i": "r1_s",
+    "r1_s": "r1_i",
+    "r2a_i": "r2a_s",
+    "r2a_s": "r2a_i",
+    "r2mq_is": "r2mq_is",
+    "r1a_is": "r1a_is",
+    "etaxy_i": "etaxy_s",
+    "etaxy_s": "etaxy_i",
+    "etaz_i": "etaz_s",
+    "etaz_s": "etaz_i",
+    "sigma_is": "sigma_is",
+    "mu_is": "mu_is",
+}
+
+
+def _canonical_rate_identity(spin_system: str, component: str) -> tuple[str, str]:
+    """Return the physical rate-function orientation and component identity."""
+    canonical_orientation = _CANONICAL_REVERSED_ORIENTATIONS.get(spin_system)
+    if canonical_orientation is None:
+        return spin_system, component
+    return canonical_orientation, _REVERSED_RATE_COMPONENTS[component]
+
 
 def get_model_free_expressions(basis: Basis, conditions: Conditions) -> dict[str, str]:
     """Generate expressions for model-free analysis based on basis and conditions.
@@ -337,17 +367,20 @@ def get_model_free_expressions(basis: Basis, conditions: Conditions) -> dict[str
 
     """
     deuterated_extension = "_d" if conditions.is_deuterated else ""
-    rate_function_name = f"{basis.spin_system}{deuterated_extension}"
-
     h_frq_str = f"{conditions.h_larmor_frq}"
     has_h_exchange = basis.spin_system in {"nh", "hn"}
 
     model_free_expr: dict[str, str] = {}
     for state, name in product(basis.model.states, _RATE_NAMES):
         rate_name = f"{name}_{state}"
+        rate_orientation, rate_component = _canonical_rate_identity(
+            basis.spin_system,
+            name,
+        )
+        rate_function_name = f"{rate_orientation}{deuterated_extension}"
         khh = f", {{khh_{state}}}" if has_h_exchange else ""
         arguments = f"{h_frq_str}, {{tauc_{state}}}, {{s2_{state}}}{khh}"
-        expr = f"{rate_function_name}({arguments})['{name}']"
+        expr = f"{rate_function_name}({arguments})['{rate_component}']"
         model_free_expr[rate_name] = expr
 
     return model_free_expr
