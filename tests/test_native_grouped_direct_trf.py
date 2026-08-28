@@ -267,6 +267,16 @@ def test_grouped_components_preserve_root_affine_feasibility() -> None:
             dataclasses.replace(component.problem, affine_half_spaces=())
 
 
+def test_relaxation_feasibility_hyperedge_merges_separate_profile_controls() -> None:
+    components = grouped_direct_trf_owner._ordered_component_controls(
+        ("r2", "eta", "pb"),
+        (frozenset(("r2",)), frozenset(("eta",)), frozenset(("pb",))),
+        (frozenset(("r2", "eta")),),
+    )
+
+    assert components == (("pb",), ("r2", "eta"))
+
+
 def test_all_masked_unscaled_profile_cannot_supply_a_control_dependency() -> None:
     session, experiments, parameterization, _engine, _problem = _grouped_problem()
     profile = next(iter(experiments)).profiles[0]

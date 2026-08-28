@@ -16,6 +16,7 @@ from chemex.optimize.uncertainty import (
     RootAnchoredBlockCovarianceEvidence,
     UncertaintyEvidence,
 )
+from chemex.parameters.feasible_coordinates import validate_relaxation_state
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     SealedParameterModel,
@@ -219,6 +220,7 @@ def execute_simulation(
     parameterization: ActiveParameterization,
     plot: bool = False,
 ) -> None:
+    validate_relaxation_state(parameterization, parameter_values)
     experiments.prepare_for_simulation(parameter_values)
     _write_simulation_files(
         experiments,

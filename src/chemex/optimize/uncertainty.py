@@ -43,6 +43,7 @@ from chemex.optimize.direct_trf import (
     accepted_occurrence_is_authoritative,
 )
 from chemex.optimize.grouped_direct_trf import FitPartitionProof
+from chemex.parameters.feasible_coordinates import relaxation_state_is_on_boundary
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     BinaryExpression,
@@ -1145,6 +1146,7 @@ class ResidualJacobianEvidence:
                 or retained.source
                 not in {
                     ResidualJacobianSource.SCIPY_FINAL_2_POINT,
+                    ResidualJacobianSource.SCIPY_FINAL_2_POINT_FEASIBILITY_PUSHFORWARD,
                     ResidualJacobianSource.FIT_PARTITION_COMPOSITION,
                 }
                 or retained.controlled_ids != self.controlled_ids
@@ -6518,7 +6520,21 @@ def _derive_covariance_branch(  # noqa: C901 - ordered cancellation phase ledger
     residual_failure: EvidenceFailure | None = None
     residual_terminal: OperationTerminal | None = None
     try:
-        if policy.residual_jacobian_strategy == "retained-backend-or-accepted-2-point":
+        if relaxation_state_is_on_boundary(
+            parameterization,
+            accepted.evaluation_result.resolved_values,
+            controlled_ids=problem.controlled_ids,
+        ):
+            residual_failure = EvidenceFailure(
+                "residual_linearization",
+                "active_relaxation_feasibility_boundary",
+                "Symmetric public-coordinate covariance is unavailable on an "
+                "active positive-semidefinite relaxation boundary",
+                accepted.identity,
+            )
+        elif policy.residual_jacobian_strategy == (
+            "retained-backend-or-accepted-2-point"
+        ):
             residual_jacobian, _retained_failure = _retained_residual_jacobian(
                 accepted,
                 problem=problem,

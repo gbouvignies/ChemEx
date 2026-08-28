@@ -7,6 +7,7 @@ from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
 from chemex.nmr.basis import Basis
 from chemex.nmr.rates import get_model_free_expressions, rate_functions
+from chemex.parameters.spins import create_base_param_settings
 
 _SWAPPED_COMPONENTS = {
     "r2_i": "r2_s",
@@ -77,6 +78,54 @@ def test_nh_hn_expressions_canonicalize_physical_n_and_h_components() -> None:
         == hn["r1_i_a"]
         == ("nh(799.708, {tauc_a}, {s2_a}, {khh_a})['r1_s']")
     )
+
+
+def test_diffusion_coefficient_is_non_negative() -> None:
+    basis = Basis(type="ixyzsxyz_diff", spin_system="ch", model=ModelSpec())
+
+    settings = create_base_param_settings(basis, "a", Conditions())
+
+    assert settings["d_a"].min == 0.0
+
+
+def test_relaxation_psd_specs_match_the_actual_basis_transition_support() -> None:
+    basis = Basis(
+        type="ixyzsxyz_eq",
+        spin_system="nh",
+        model=ModelSpec(),
+    )
+    non_equilibrium = tuple(
+        index
+        for index, component in enumerate(basis.components_states)
+        if not component.startswith(("ie_", "se_"))
+    )
+
+    for specification in basis.relaxation_psd_specs:
+        diagonal_supports = []
+        for name in specification.diagonal_names:
+            matrix = basis.matrices[name]
+            diagonal_supports.append(
+                {index for index in non_equilibrium if matrix[index, index] < 0.0}
+            )
+        for row, column, name in specification.off_diagonal_names:
+            matrix = basis.matrices[name]
+            observed = {
+                (left, right)
+                for left in non_equilibrium
+                for right in non_equilibrium
+                if left != right and matrix[left, right] != 0.0
+            }
+            expected_support = {
+                (left, right)
+                for left in diagonal_supports[row]
+                for right in diagonal_supports[column]
+            } | {
+                (right, left)
+                for left in diagonal_supports[row]
+                for right in diagonal_supports[column]
+            }
+            assert observed
+            assert observed <= expected_support
 
 
 @pytest.mark.parametrize("component", ("r2mq_is", "r1a_is", "sigma_is", "mu_is"))

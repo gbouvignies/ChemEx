@@ -131,6 +131,7 @@ def create_base_param_settings(
         f"khh_{state}": ParamLocalSetting(
             name_setting=NameSetting(f"khh_{state}", "g", ("temperature",)),
             value=0.0,
+            min=0.0,
         ),
         f"r2_i_{state}": ParamLocalSetting(
             name_setting=NameSetting(
@@ -270,6 +271,7 @@ def create_base_param_settings(
         f"d_{state}": ParamLocalSetting(
             name_setting=NameSetting(f"d_{state}", "", ("temperature",)),
             value=0.0,
+            min=0.0,
         ),
     }
 

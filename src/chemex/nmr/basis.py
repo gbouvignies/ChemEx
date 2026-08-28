@@ -359,6 +359,16 @@ def _freeze_vectors(vectors: DictArray) -> VectorMap:
     return MappingProxyType(frozen_vectors)
 
 
+@dataclass(frozen=True, slots=True)
+class RelaxationPsdSpec:
+    """NMR-owned local-name description of one symmetric relaxation block."""
+
+    family: str
+    state: str
+    diagonal_names: tuple[str, ...]
+    off_diagonal_names: tuple[tuple[int, int, str], ...]
+
+
 @dataclass(frozen=True)
 class Basis:
     type: str
@@ -403,6 +413,71 @@ class Basis:
         required_names = set(self.matrices)
         required_names |= {f"p{state}" for state in self.model.states}
         return required_names
+
+    @property
+    def relaxation_psd_specs(self) -> tuple[RelaxationPsdSpec, ...]:
+        """Describe dissipative blocks represented by this basis's transitions."""
+        specs: list[RelaxationPsdSpec] = []
+        components = set(self.components)
+        for state in self.model.states:
+            candidates = (
+                (
+                    "transverse-i",
+                    ("ix", "2ixsz"),
+                    (f"r2_i_{state}", f"r2a_i_{state}"),
+                    ((0, 1, f"etaxy_i_{state}"),),
+                ),
+                (
+                    "transverse-s",
+                    ("sx", "2izsx"),
+                    (f"r2_s_{state}", f"r2a_s_{state}"),
+                    ((0, 1, f"etaxy_s_{state}"),),
+                ),
+                (
+                    "multiple-quantum",
+                    ("2ixsx", "2iysy"),
+                    (f"r2mq_is_{state}", f"r2mq_is_{state}"),
+                    ((0, 1, f"mu_is_{state}"),),
+                ),
+            )
+            specs.extend(
+                RelaxationPsdSpec(family, state, diagonals, off_diagonals)
+                for family, modes, diagonals, off_diagonals in candidates
+                if set(modes) <= components
+            )
+            longitudinal_modes = tuple(
+                mode for mode in ("iz", "sz", "2izsz") if mode in components
+            )
+            if len(longitudinal_modes) < 2:
+                continue
+            diagonal_names = {
+                "iz": f"r1_i_{state}",
+                "sz": f"r1_s_{state}",
+                "2izsz": f"r1a_is_{state}",
+            }
+            cross_names = {
+                frozenset(("iz", "sz")): f"sigma_is_{state}",
+                frozenset(("iz", "2izsz")): f"etaz_i_{state}",
+                frozenset(("sz", "2izsz")): f"etaz_s_{state}",
+            }
+            specs.append(
+                RelaxationPsdSpec(
+                    "longitudinal",
+                    state,
+                    tuple(diagonal_names[mode] for mode in longitudinal_modes),
+                    tuple(
+                        (
+                            row,
+                            column,
+                            cross_names[frozenset((left, right))],
+                        )
+                        for row, left in enumerate(longitudinal_modes)
+                        for column, right in enumerate(longitudinal_modes)
+                        if row < column
+                    ),
+                )
+            )
+        return tuple(specs)
 
     def copy_matrices(self) -> DictArray:
         return {name: matrix.copy() for name, matrix in self.matrices.items()}

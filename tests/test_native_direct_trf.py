@@ -1188,8 +1188,10 @@ def test_non_convergence_keeps_last_iterate_diagnostic_and_commits_nothing() -> 
     ) -> object:
         bounds = settings.pop("bounds")
         assert isinstance(bounds, tuple)
-        np.testing.assert_array_equal(bounds[0], problem.lower_bounds)
-        np.testing.assert_array_equal(bounds[1], problem.upper_bounds)
+        feasible = problem.feasible_coordinates
+        assert feasible is not None
+        np.testing.assert_array_equal(bounds[0], feasible.solver_lower_bounds)
+        np.testing.assert_array_equal(bounds[1], feasible.solver_upper_bounds)
         assert settings.pop("x_scale") == "jac"
         assert settings == {
             "method": "trf",

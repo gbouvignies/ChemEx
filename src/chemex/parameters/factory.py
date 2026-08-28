@@ -13,6 +13,7 @@ from chemex.parameters.parameterization import (
     SealedParameterModel,
     seal_parameter_declarations,
 )
+from chemex.parameters.relaxation import RelaxationPsdBlock, SealedRelaxationDomains
 from chemex.parameters.sealed import (
     DefinitionContribution,
     ParamDefinition,
@@ -97,6 +98,10 @@ class ParameterFactory:
         str,
         list[ParameterDeclarationContribution],
     ] = field(default_factory=dict)
+    _relaxation_blocks: set[RelaxationPsdBlock] = field(default_factory=set)
+    _model_free_relaxation_blocks: set[RelaxationPsdBlock] = field(
+        default_factory=set,
+    )
     _sealed_definitions: SealedDefinitions | None = field(default=None, repr=False)
     _sealed_configuration: SealedConfiguration | None = field(default=None, repr=False)
     _sealed_parameter_model: SealedParameterModel | None = field(
@@ -189,6 +194,24 @@ class ParameterFactory:
                 contributor=contributor,
             )
             target.setdefault(param_id, []).append(contribution)
+
+    @staticmethod
+    def _relaxation_blocks_for_basis(
+        basis: Basis,
+        name_map: dict[str, str],
+    ) -> tuple[RelaxationPsdBlock, ...]:
+        return tuple(
+            RelaxationPsdBlock(
+                f"{basis.spin_system}:{specification.family}:{specification.state}",
+                specification.state,
+                tuple(name_map[item] for item in specification.diagonal_names),
+                tuple(
+                    (row, column, name_map[item])
+                    for row, column, item in specification.off_diagonal_names
+                ),
+            )
+            for specification in basis.relaxation_psd_specs
+        )
 
     def _collect_declarations(
         self,
@@ -304,6 +327,9 @@ class ParameterFactory:
                         else default_fit_ids
                     ),
                 )
+                self._relaxation_blocks.update(
+                    self._relaxation_blocks_for_basis(basis, native_name_map)
+                )
                 if not self.parameter_store.model.model_free:
                     model_free_owned_ids = frozenset(
                         name_map_mf[name]
@@ -322,6 +348,9 @@ class ParameterFactory:
                         supports_estimation_ids=model_free_supports_estimation_ids,
                         default_fit_ids=model_free_default_fit_ids,
                         contributions=self._model_free_declaration_contributions,
+                    )
+                    self._model_free_relaxation_blocks.update(
+                        self._relaxation_blocks_for_basis(basis, name_map_mf)
                     )
             except Exception as error:  # noqa: BLE001 - checkpoint-1 isolation boundary
                 self._native_construction_error = error
@@ -381,6 +410,7 @@ class ParameterFactory:
             definitions=self._sealed_definitions,
             configuration=configuration,
             declarations=declarations,
+            relaxation_domains=SealedRelaxationDomains(tuple(self._relaxation_blocks)),
         )
 
     def build_model_free_parameter_model(self) -> SealedParameterModel | None:
@@ -404,6 +434,9 @@ class ParameterFactory:
             definitions=definitions,
             configuration=configuration,
             declarations=declarations,
+            relaxation_domains=SealedRelaxationDomains(
+                tuple(self._model_free_relaxation_blocks)
+            ),
         )
 
     def try_seal_definitions(self) -> bool:
@@ -451,6 +484,8 @@ class ParameterFactory:
         self._declaration_contributions.clear()
         self._model_free_definition_contributions.clear()
         self._model_free_declaration_contributions.clear()
+        self._relaxation_blocks.clear()
+        self._model_free_relaxation_blocks.clear()
         self._sealed_definitions = None
         self._sealed_configuration = None
         self._sealed_parameter_model = None

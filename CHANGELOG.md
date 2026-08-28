@@ -21,6 +21,14 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   statistics; DE failures never fall back to the old committed start.
 
 ### Changed
+- Relaxation and cross-correlation rates used together in an NMR basis now obey
+  the positive-semidefinite domain of their represented relaxation block before
+  scientific evaluation. Native fitting uses private feasible coordinates while
+  preserving public `ETAXY`, `ETAZ`, `SIGMA`, `MU`, `R1`, and `R2` parameter
+  names, restart files, and output. The proton-exchange contribution `KHH` and
+  diffusion coefficient `D` are non-negative. Invalid fixed starting states fail
+  before the kernel; adaptive Jacobian scaling and fail-closed kernel exceptions
+  are unchanged.
 - Changed native local TRF refinement to one versioned adaptive inverse-Jacobian-
   column-norm scaling policy across Direct, grouped Direct, GRID nuisance fits,
   DE polishing, and resampling refits. Sensitivity-based trust-region geometry

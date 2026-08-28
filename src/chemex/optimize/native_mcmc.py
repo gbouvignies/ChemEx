@@ -745,6 +745,15 @@ def resolve_product_mcmc_policy(
     )
 
 
+def _mcmc_box_bounds(
+    problem: OptimizationProblem,
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    feasible = problem.feasible_coordinates
+    if feasible is not None and feasible.supports_box_only_algorithms:
+        return feasible.solver_bounds
+    return problem.lower_bounds, problem.upper_bounds
+
+
 @dataclass(frozen=True, slots=True)
 class McmcAcceptedAnchor:
     """Exact occurrence-owned scientific context for one MCMC request."""
@@ -803,6 +812,7 @@ class McmcAcceptedAnchor:
         engine: EvaluationEngine,
     ) -> None:
         """Reject any live object outside the exact frozen accepted lineage."""
+        live_lower, live_upper = _mcmc_box_bounds(problem)
         expected = (
             self.accepted_semantic_identity,
             self.accepted_occurrence_identity,
@@ -833,8 +843,8 @@ class McmcAcceptedAnchor:
             engine.plan.identity,
             tuple(self.coordinate_units),
             problem.held_items,
-            problem.lower_bounds,
-            problem.upper_bounds,
+            live_lower,
+            live_upper,
             problem.affine_feasibility_identity,
             accepted.vector,
             accepted.evaluation_result.identity,
@@ -946,8 +956,13 @@ class McmcPlan:
             raise McmcConstructionError(
                 "Native MCMC qualification currently supports box-bounded problems"
             )
-        lower = tuple(problem.lower_bounds)
-        upper = tuple(problem.upper_bounds)
+        feasible = problem.feasible_coordinates
+        if feasible is not None and not feasible.supports_box_only_algorithms:
+            raise McmcConstructionError(
+                "Native MCMC has not qualified the Jacobian measure for private "
+                "relaxation-feasibility coordinates"
+            )
+        lower, upper = _mcmc_box_bounds(problem)
         if self.policy.initialization is InitializationKind.ACCEPTED_POINT_JITTER:
             initial = build_accepted_point_ensemble(
                 accepted.vector,

@@ -29,6 +29,7 @@ from chemex.optimize.mcmc import NativeMcmcIncompleteError
 from chemex.optimize.progress import ProgressPhase
 from chemex.optimize.resampling import NativeResamplingIncompleteError
 from chemex.optimize.uncertainty import ParameterUnit
+from chemex.parameters.feasible_coordinates import ScientificFeasibilityError
 from chemex.parameters.values import AnalysisValuesSnapshot
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
@@ -48,6 +49,54 @@ CEST_1HN_IP_AP_EXAMPLE = ROOT / "examples/Experiments/CEST_1HN_IP_AP"
 CEST_1HN_IP_AP_EXPERIMENT = CEST_1HN_IP_AP_EXAMPLE / "Experiments/30hz.toml"
 CEST_1HN_IP_AP_PARAMETERS = CEST_1HN_IP_AP_EXAMPLE / "Parameters/parameters.toml"
 CEST_1HN_IP_AP_METHOD = CEST_1HN_IP_AP_EXAMPLE / "Methods/method.toml"
+CPMG_15N_TR_EXAMPLE = ROOT / "examples/Experiments/CPMG_15N_TR"
+CPMG_15N_TR_EXPERIMENT = CPMG_15N_TR_EXAMPLE / "Experiments/500mhz.toml"
+CPMG_15N_TR_PARAMETERS = CPMG_15N_TR_EXAMPLE / "Parameters/parameters.toml"
+CEST_15N_CW_EXAMPLE = ROOT / "examples/Experiments/CEST_15N_CW"
+CEST_15N_CW_EXPERIMENT = CEST_15N_CW_EXAMPLE / "Experiments/dec.toml"
+CEST_15N_CW_PARAMETERS = CEST_15N_CW_EXAMPLE / "Parameters/parameters.toml"
+CEST_15N_CW_METHOD = CEST_15N_CW_EXAMPLE / "Methods/method.toml"
+CEST_1HN_IP_AP_SELECTION = (
+    "3",
+    "4",
+    "12",
+    "13",
+    "14",
+    "30",
+    "32",
+    "65",
+    "68",
+    "70",
+    "72",
+    "74",
+    "75",
+    "78",
+    "80",
+    "91",
+    "100",
+    "101",
+    "103",
+    "104",
+    "105",
+    "108",
+    "110",
+    "111",
+    "113",
+    "115",
+    "116",
+    "117",
+    "118",
+    "119",
+    "121",
+    "122",
+    "137",
+    "138",
+    "139",
+    "141",
+    "142",
+    "146",
+    "149",
+)
 
 
 def _fit_arguments(
@@ -122,7 +171,11 @@ def _three_state_dcest_arguments(output: Path, method: Path):
     )
 
 
-def _cest_1hn_ip_ap_arguments(output: Path):
+def _cest_1hn_ip_ap_arguments(
+    output: Path,
+    *,
+    include: tuple[str, ...] = ("74",),
+):
     return build_parser().parse_args(
         [
             "fit",
@@ -137,12 +190,56 @@ def _cest_1hn_ip_ap_arguments(output: Path):
             "--model",
             "2st.rs",
             "--include",
-            "4",
+            *include,
             "--plot",
             "nothing",
             "--workers",
             "1",
             "--native-threads",
+            "1",
+        ]
+    )
+
+
+def _cpmg_15n_tr_arguments(output: Path):
+    return build_parser().parse_args(
+        [
+            "fit",
+            "-e",
+            str(CPMG_15N_TR_EXPERIMENT),
+            "-p",
+            str(CPMG_15N_TR_PARAMETERS),
+            "-o",
+            str(output),
+            "--include",
+            "8",
+            "--plot",
+            "nothing",
+            "--workers",
+            "1",
+        ]
+    )
+
+
+def _cest_15n_cw_model_free_arguments(output: Path):
+    return build_parser().parse_args(
+        [
+            "fit",
+            "-e",
+            str(CEST_15N_CW_EXPERIMENT),
+            "-p",
+            str(CEST_15N_CW_PARAMETERS),
+            "-m",
+            str(CEST_15N_CW_METHOD),
+            "-o",
+            str(output),
+            "--model",
+            "2st.mf",
+            "--include",
+            "52",
+            "--plot",
+            "nothing",
+            "--workers",
             "1",
         ]
     )
@@ -318,7 +415,7 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     assert fitted_curve_rate == pytest.approx(fitted_value, rel=1.0e-3)
 
 
-def test_cest_1hn_ip_ap_commits_finite_negative_derived_r2a_b(
+def test_cest_1hn_ip_ap_commits_psd_transverse_relaxation_block(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
@@ -344,21 +441,88 @@ def test_cest_1hn_ip_ap_commits_finite_negative_derived_r2a_b(
     r2a_b = next(
         definition
         for definition in parameter_model.definitions
-        if definition.name == "R2A_B" and definition.spin_system_name == "4H"
+        if definition.name == "R2A_B" and definition.spin_system_name == "74H"
     )
     configuration = parameter_model.configuration[r2a_b.param_id]
+    r2_b = next(
+        definition
+        for definition in parameter_model.definitions
+        if definition.name == "R2_B" and definition.spin_system_name == "74H"
+    )
+    etaxy_b = next(
+        definition
+        for definition in parameter_model.definitions
+        if definition.name == "ETAXY_B" and definition.spin_system_name == "74H"
+    )
     assert configuration.lower_bound == 0.0
     assert [item.revision for item in committed_snapshots] == [1, 2]
-    # This is the one-profile form of the shipped regression. A 2e-7 relative
-    # tolerance covers backend/finite-difference rounding while remaining seven
-    # orders of magnitude from the configured zero bound and lmfit's old clipping.
-    assert committed_snapshots[0][r2a_b.param_id] == pytest.approx(
-        -0.42454801400787906,
-        rel=2.0e-7,
-        abs=1.0e-9,
+    first = committed_snapshots[0]
+    assert first[r2a_b.param_id] >= configuration.lower_bound
+    determinant = (
+        first[r2_b.param_id] * first[r2a_b.param_id] - first[etaxy_b.param_id] ** 2
     )
-    assert committed_snapshots[0][r2a_b.param_id] < configuration.lower_bound
+    assert determinant >= -1.0e-10
+    stage_one_parameters = (
+        output / "1_FIX_R1" / "Parameters" / "fitted.toml"
+    ).read_text(encoding="utf-8")
+    assert "error unavailable: Jacobian unavailable" in stage_one_parameters
+    stage_one_covariance = json.loads(
+        (output / "1_FIX_R1" / "Statistics" / "Covariance" / "evidence.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert any(
+        failure["category"] == "active_relaxation_feasibility_boundary"
+        for failure in stage_one_covariance["failures"]
+    )
     assert snapshot.revision == 2
+    final_statistics = tomllib.loads(
+        (output / "2_FIT_R1" / "statistics.toml").read_text(encoding="utf-8")
+    )
+    assert final_statistics["chi-square"] == pytest.approx(52.4331, rel=2.0e-5)
+
+
+def test_complete_cest_1hn_ip_ap_shipped_selection_finishes_both_steps(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+
+    run(
+        _cest_1hn_ip_ap_arguments(
+            output,
+            include=CEST_1HN_IP_AP_SELECTION,
+        ),
+        session=AnalysisSession.create(),
+    )
+
+    first = tomllib.loads(
+        (output / "1_FIX_R1" / "statistics.toml").read_text(encoding="utf-8")
+    )
+    second = tomllib.loads(
+        (output / "2_FIT_R1" / "statistics.toml").read_text(encoding="utf-8")
+    )
+    assert first["chi-square"] == pytest.approx(11938.9, rel=2.0e-5)
+    assert second["chi-square"] == pytest.approx(3877.57, rel=2.0e-5)
+
+
+def test_cpmg_15n_tr_nested_antiphase_rate_remains_feasible(tmp_path: Path) -> None:
+    output = tmp_path / "Output"
+
+    run(_cpmg_15n_tr_arguments(output), session=AnalysisSession.create())
+
+    statistics = tomllib.loads((output / "statistics.toml").read_text(encoding="utf-8"))
+    assert statistics["chi-square"] == pytest.approx(38.8201, rel=2.0e-5)
+
+
+def test_cest_15n_cw_model_free_rates_preserve_intrinsic_psd_domain(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+
+    run(_cest_15n_cw_model_free_arguments(output), session=AnalysisSession.create())
+
+    statistics = tomllib.loads((output / "statistics.toml").read_text(encoding="utf-8"))
+    assert statistics["chi-square"] == pytest.approx(88.0553, rel=2.0e-5)
 
 
 def test_product_fit_rejects_a_stale_aggregate_commit_atomically(
@@ -590,7 +754,7 @@ ROLES = [{ FIX = ["PB", "KEX_AB"] }]
     assert _read_outcome(output)["restart_revision"] == 3
 
 
-def test_out_of_bounds_derived_continuity_cannot_become_held_independent(
+def test_invalid_derived_relaxation_state_fails_before_commit(
     tmp_path: Path,
 ) -> None:
     method = tmp_path / "method-v2.toml"
@@ -610,10 +774,7 @@ ROLES = [{ FIX = ["PB", "KEX_AB", "R1A_A"] }]
     )
     session = AnalysisSession.create()
 
-    with pytest.raises(
-        direct_trf_module.DirectTrfConstructionError,
-        match="Independent parameter .* outside its effective bounds",
-    ):
+    with pytest.raises(ScientificFeasibilityError, match="positive semidefinite"):
         run(_fit_arguments(tmp_path / "Output", method), session=session)
 
     committed = session.analysis_values.snapshot()
@@ -624,8 +785,8 @@ ROLES = [{ FIX = ["PB", "KEX_AB", "R1A_A"] }]
         for item in parameter_model.definitions
         if item.name == "R1A_A" and item.spin_system_name == "G2N-H"
     )
-    assert committed.revision == 1
-    assert committed[r1a_a] == -1.0
+    assert committed.revision == 0
+    assert committed[r1a_a] > 0.0
 
 
 def test_relaxation_product_covariance_matches_absolute_sigma_reference(
@@ -3168,8 +3329,10 @@ COORDINATES = [
 
     assert session.analysis_values.snapshot().revision == 1
     assert len(trf_starts) == 2
+    # The declared DE interval starts just below the exact ETAZ/R1 PSD floor;
+    # its effective search box begins at the physical boundary.
     assert sorted(start[0] for start in trf_starts) == pytest.approx(
-        (2.0, 6.87922079444668)
+        (2.006856537329346, 6.87922079444668)
     )
     assert trf_scale_policies == ["jac", "jac"]
 
