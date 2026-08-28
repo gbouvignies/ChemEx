@@ -168,8 +168,9 @@ def test_complete_cpmg_ch3_1h_sq_workflow_converges_exact_step3_components(
 
     components = _component_map(step3)
     scales = _invocation_scale_map(step3, invocations[2])
-    # These sub-micro chi-square tolerances cover binary64 finite-difference and
-    # backend variation while remaining many orders below the 12k-budget gaps.
+    # These basin-scale tolerances cover supported-host finite-difference and
+    # linear-algebra variation while remaining many orders below the 12k-budget
+    # gaps. The fitted-vector checks below provide the scientific fingerprint.
     qualified = {
         "I43HD1": (
             200,
@@ -198,7 +199,7 @@ def test_complete_cpmg_ch3_1h_sq_workflow_converges_exact_step3_components(
         assert outcome.execution.counters.objective_requests_accepted < request_limit
         assert outcome.candidate is not None
         assert outcome.candidate.chi_square == pytest.approx(
-            chi_square, rel=0.0, abs=5.0e-7
+            chi_square, rel=0.0, abs=5.0e-4
         )
         # Ill-conditioned relaxation pairs permit small coordinate drift; these
         # bounds still reject a distinct basin or a scientifically changed DW.
@@ -251,10 +252,11 @@ def test_cest_13c_qualification_preserves_basin_with_bounded_small_scale(
     )
     assert l18cd1.execution.counters.objective_requests_accepted < 3_000
     assert l18cd1.candidate is not None
-    # This is tight enough to distinguish the qualified lower basin while
-    # accommodating binary64 finite-difference variation across supported hosts.
+    # The competing basin is about 291 chi-square units higher. This tolerance,
+    # together with the fitted-vector checks, distinguishes the qualified lower
+    # basin without requiring host-identical binary64 termination points.
     assert l18cd1.candidate.chi_square == pytest.approx(
-        801.9787003, rel=0.0, abs=2.0e-6
+        801.9787003, rel=0.0, abs=1.0e-3
     )
     l18cd1_vector = (24.92877435, 0.19320262, 4.84303720, 6.17970065)
     assert l18cd1.candidate.vector[0] == pytest.approx(

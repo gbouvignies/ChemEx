@@ -93,8 +93,9 @@ from chemex.runtime.environment import RuntimeEnvironment
 _TRF_OBJECTIVE_REQUESTS_PER_DIMENSION = 2000
 
 # #710 found that linear start-magnitude scaling can make small mixed-sensitivity
-# Direct fits require tens of thousands of requests. Bound the fixed scale of
-# low-dimensional ordinary Direct fits in physical coordinates. Keep the #664
+# Direct fits require tens of thousands of requests. This conservative fixed cap
+# is an empirically qualified fallback, not a general sensitivity preconditioner:
+# adaptive and initial-Jacobian scaling select a worse CEST basin. Keep the #664
 # scale for DE polishing, GRID, and larger coupled fits; the cap preserves the
 # qualified CEST basin while avoiding the pathological CPMG trajectories.
 _TRF_SMALL_COMPONENT_COORDINATE_LIMIT = 5
