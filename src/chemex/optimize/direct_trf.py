@@ -17,7 +17,7 @@ from enum import StrEnum
 from numbers import Real
 from threading import Event, RLock
 from time import monotonic
-from typing import SupportsIndex, cast
+from typing import Literal, SupportsIndex
 from uuid import uuid4
 from weakref import ReferenceType, WeakKeyDictionary, ref
 
@@ -54,7 +54,12 @@ from chemex.typing import Array
 _SCHEMA_VERSION = 1
 _PROBLEM_VERSION = "native-direct-trf-problem-v1"
 _SCALARIZATION_VERSION = "ordered-pairwise-chi-square-v1"
-_INVOCATION_VERSION = "scipy-direct-trf-v2"
+_INVOCATION_VERSION = "scipy-direct-trf-v3"
+_SCALE_POLICY_VERSION = "scipy-adaptive-inverse-jacobian-column-norm-v1"
+_NUMERICAL_COMPATIBILITY_REQUIREMENT = (
+    "scipy-1.18.x-dense-trf-adaptive-jacobian-scaling-v1"
+)
+_REQUEST_TRAJECTORY_VERSION = "native-direct-trf-request-trajectory-v2"
 _CANDIDATE_ORDER_VERSION = "chi-square-vector-ordinal-v1"
 _BACKEND_SETTINGS = (
     ("method", "trf"),
@@ -64,6 +69,7 @@ _BACKEND_SETTINGS = (
     ("tr_options", ()),
     ("loss", "linear"),
     ("f_scale", "0x1.0000000000000p+0"),
+    ("x_scale", "jac"),
     ("verbose", 0),
 )
 _BACKEND_JACOBIAN_VERSION = "scipy-final-residual-jacobian-v2"
@@ -97,7 +103,7 @@ class FinalResidualJacobianEvidence:
         )
     )
     external_coordinate_policy: str = "physical-external-unscaled"
-    trust_region_scale_policy: str = "trust-region-only"
+    trust_region_scale_policy: str = _SCALE_POLICY_VERSION
     identity: str = field(init=False)
 
     def _identity_from_digest(self, matrix_digest: str) -> str:
@@ -141,7 +147,7 @@ class FinalResidualJacobianEvidence:
             or not self.backend_identity.startswith("scipy-")
             or "least_squares:method=trf" not in self.backend_identity
             or self.external_coordinate_policy != "physical-external-unscaled"
-            or self.trust_region_scale_policy != "trust-region-only"
+            or self.trust_region_scale_policy != _SCALE_POLICY_VERSION
             or (
                 self.source is ResidualJacobianSource.FIT_PARTITION_COMPOSITION
                 and not self.source_identities
@@ -238,6 +244,47 @@ def _float_token(value: float) -> str:
 
 def _vector_tokens(values: Sequence[float]) -> tuple[str, ...]:
     return tuple(_float_token(value) for value in values)
+
+
+def _scipy_satisfies_numerical_compatibility(version: str) -> bool:
+    """Return whether SciPy belongs to the TRF class qualified by ChemEx."""
+    components = version.split(".", maxsplit=2)
+    if len(components) < 2:
+        return False
+    try:
+        major, minor = (int(component) for component in components[:2])
+    except ValueError:
+        return False
+    return (major, minor) == (1, 18)
+
+
+def _request_vector_evidence(vector: object) -> tuple[object, ...]:
+    """Detach one solver request without making trace capture affect execution."""
+    try:
+        array = np.asarray(vector, dtype=np.float64)
+    except Exception as error:  # noqa: BLE001 - evidence must not mask the real failure
+        return ("unrepresentable", type(error).__name__)
+    big_endian = np.asarray(array, dtype=np.dtype(">f8"))
+    return (
+        "binary64",
+        tuple(int(value) for value in array.shape),
+        big_endian.tobytes().hex(),
+    )
+
+
+def _advance_request_trajectory(previous: bytes, record: object) -> bytes:
+    encoded = json.dumps(
+        record,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+    digest = hashlib.sha256()
+    digest.update(b"chemex-direct-trf-request-trajectory\0")
+    digest.update(previous)
+    digest.update(len(encoded).to_bytes(8, byteorder="big"))
+    digest.update(encoded)
+    return digest.digest()
 
 
 def _binary64_matrix_digest(
@@ -1398,13 +1445,32 @@ class OptimizationProblem:
         ).with_updates(updates)
 
 
+class DirectTrfScalePolicy(StrEnum):
+    """Closed coordinate geometry for every native local TRF invocation.
+
+    SciPy 1.18.x ``x_scale="jac"`` starts from inverse Jacobian-column 2-norms
+    and recomputes them after accepted steps while retaining the largest prior
+    column norm. ChemEx admits only that qualified SciPy minor-version class;
+    exact SciPy and native-library versions remain part of run provenance.
+    """
+
+    ADAPTIVE_INVERSE_JACOBIAN_COLUMN_NORM = _SCALE_POLICY_VERSION
+
+    @property
+    def scipy_x_scale(self) -> Literal["jac"]:
+        """Return the closed SciPy spelling hidden behind this policy."""
+        return "jac"
+
+
 @dataclass(frozen=True, slots=True)
 class DirectTrfInvocation:
     """Closed immutable settings for one atomic SciPy Direct-TRF attempt."""
 
     problem_identity: str
     objective_request_budget: int
-    x_scale: tuple[float, ...]
+    scale_policy: DirectTrfScalePolicy = (
+        DirectTrfScalePolicy.ADAPTIVE_INVERSE_JACOBIAN_COLUMN_NORM
+    )
     ftol: float | None = 1.0e-8
     xtol: float | None = 1.0e-8
     gtol: float | None = 1.0e-8
@@ -1412,6 +1478,11 @@ class DirectTrfInvocation:
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
+        if not _scipy_satisfies_numerical_compatibility(scipy_version):
+            raise DirectTrfConstructionError(
+                "SciPy does not satisfy the native TRF numerical compatibility "
+                f"requirement: {_NUMERICAL_COMPATIBILITY_REQUIREMENT}"
+            )
         if self.execution_settings.workers != 1:
             raise DirectTrfConstructionError(
                 "One Direct TRF invocation has exactly one ChemEx worker"
@@ -1424,12 +1495,8 @@ class DirectTrfInvocation:
             raise DirectTrfConstructionError(
                 "Objective-request budget must be a positive integer"
             )
-        scales = tuple(
-            _finite_binary64(value, name=f"x_scale[{index}]")
-            for index, value in enumerate(self.x_scale)
-        )
-        if not scales or any(value <= 0.0 for value in scales):
-            raise DirectTrfConstructionError("x_scale entries must be positive")
+        if not isinstance(self.scale_policy, DirectTrfScalePolicy):
+            raise DirectTrfConstructionError("Unsupported Direct TRF scale policy")
         epsilon = float(np.finfo(np.float64).eps)
         tolerances: list[float | None] = []
         for name, tolerance in (
@@ -1450,7 +1517,6 @@ class DirectTrfInvocation:
             raise DirectTrfConstructionError(
                 "At least one Direct-TRF convergence tolerance must be enabled"
             )
-        object.__setattr__(self, "x_scale", scales)
         object.__setattr__(self, "ftol", tolerances[0])
         object.__setattr__(self, "xtol", tolerances[1])
         object.__setattr__(self, "gtol", tolerances[2])
@@ -1462,8 +1528,9 @@ class DirectTrfInvocation:
                 (
                     _INVOCATION_VERSION,
                     self.problem_identity,
+                    _NUMERICAL_COMPATIBILITY_REQUIREMENT,
                     self.objective_request_budget,
-                    _vector_tokens(scales),
+                    self.scale_policy.value,
                     tuple(
                         None if value is None else _float_token(value)
                         for value in tolerances
@@ -1483,26 +1550,19 @@ class DirectTrfInvocation:
         problem: OptimizationProblem,
         *,
         objective_request_budget: int,
-        x_scale: float | Sequence[float] | None = None,
+        scale_policy: DirectTrfScalePolicy = (
+            DirectTrfScalePolicy.ADAPTIVE_INVERSE_JACOBIAN_COLUMN_NORM
+        ),
         ftol: float | None = 1.0e-8,
         xtol: float | None = 1.0e-8,
         gtol: float | None = 1.0e-8,
         execution_settings: ExecutionSettings | None = None,
     ) -> DirectTrfInvocation:
-        """Resolve scalar/default scaling into one value per external coordinate."""
-        dimension = len(problem.controlled_ids)
-        if x_scale is None:
-            scales = (1.0,) * dimension
-        elif isinstance(x_scale, Real) and not isinstance(x_scale, bool):
-            scales = (float(x_scale),) * dimension
-        else:
-            scales = tuple(cast("Sequence[float]", x_scale))
-        if len(scales) != dimension:
-            raise DirectTrfConstructionError("x_scale has the wrong dimension")
+        """Bind the closed local-solver policy to one accepted problem."""
         return cls(
             problem.identity,
             objective_request_budget,
-            scales,
+            scale_policy,
             ftol,
             xtol,
             gtol,
@@ -1608,6 +1668,7 @@ class DirectTrfExecution:
     invocation_identity: str
     terminal: DirectTrfTerminal
     counters: AttemptCounters
+    request_trajectory_fingerprint: str
     preflight_evaluation_identity: str | None
     best_candidate: CandidateSummary | None
     final_candidate: CandidateSummary | None
@@ -1616,6 +1677,11 @@ class DirectTrfExecution:
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
+        if len(self.request_trajectory_fingerprint) != 64 or any(
+            character not in "0123456789abcdef"
+            for character in self.request_trajectory_fingerprint
+        ):
+            raise ValueError("Direct TRF lacks a valid request trajectory fingerprint")
         if self.terminal is DirectTrfTerminal.CONVERGED and (
             self.final_candidate is None
             or self.backend is None
@@ -1636,6 +1702,7 @@ class DirectTrfExecution:
                         self.counters.objective_requests_accepted,
                         self.counters.objective_evaluations_completed,
                     ),
+                    self.request_trajectory_fingerprint,
                     self.preflight_evaluation_identity,
                     None
                     if self.best_candidate is None
@@ -2509,19 +2576,109 @@ class _LiveAttempt:
         self.completed = 0
         self.requests: list[_CompletedRequest] = []
         self.best: CandidateSummary | None = None
+        initial_record = json.dumps(
+            (_REQUEST_TRAJECTORY_VERSION,),
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+        self._trajectory_digest = hashlib.sha256(initial_record).digest()
+        self._pending_request: tuple[int, tuple[object, ...]] | None = None
 
     @property
     def counters(self) -> AttemptCounters:
         return AttemptCounters(self.received, self.accepted, self.completed)
 
+    def _begin_request(self, solver_vector: object) -> None:
+        if self._pending_request is not None:
+            raise RuntimeError("Direct TRF objective adapter is not reentrant")
+        self._pending_request = (
+            self.received,
+            _request_vector_evidence(solver_vector),
+        )
+
+    def _finish_request(
+        self,
+        disposition: str,
+        *,
+        reason: str | None = None,
+        vector: tuple[float, ...] | None = None,
+        chi_square: float | None = None,
+        failure_identity: str | None = None,
+    ) -> None:
+        pending = self._pending_request
+        if pending is None:
+            raise RuntimeError("Direct TRF request evidence has no pending request")
+        ordinal, solver_vector = pending
+        external_vector = None
+        if vector is not None:
+            canonical_external = _request_vector_evidence(vector)
+            if canonical_external != solver_vector:
+                external_vector = canonical_external
+        # The problem/invocation identities bind residual semantics; canonical
+        # chi-square identifies a valid objective result. Full residuals remain
+        # in _CompletedRequest for final-candidate verification and are retained
+        # with the accepted residual/Jacobian evidence, not this hot-path digest.
+        self._trajectory_digest = _advance_request_trajectory(
+            self._trajectory_digest,
+            (
+                "request",
+                ordinal,
+                solver_vector,
+                external_vector,
+                disposition,
+                reason,
+                None if chi_square is None else _float_token(chi_square),
+                failure_identity,
+            ),
+        )
+        self._pending_request = None
+
+    def trajectory_fingerprint(
+        self,
+        terminal: DirectTrfTerminal,
+        failure: TerminalFailure | None,
+    ) -> str:
+        """Finalize compact evidence for every received solver request in order."""
+        digest = self._trajectory_digest
+        if self._pending_request is not None:
+            ordinal, solver_vector = self._pending_request
+            digest = _advance_request_trajectory(
+                digest,
+                (
+                    "request",
+                    ordinal,
+                    solver_vector,
+                    None,
+                    "accepted-incomplete",
+                    "attempt-terminated-during-request",
+                    None,
+                    None,
+                ),
+            )
+        digest = _advance_request_trajectory(
+            digest,
+            (
+                "end",
+                self.received,
+                self.accepted,
+                self.completed,
+                terminal.value,
+                None if failure is None else failure.category,
+            ),
+        )
+        return digest.hex()
+
     def objective(self, solver_vector: Array) -> Array:
         self.received += 1
+        self._begin_request(solver_vector)
         if self.cancellation.is_cancelled:
+            self._finish_request("refused", reason="cancelled-before-admission")
             raise _AttemptStop(
                 DirectTrfTerminal.CANCELLED,
                 TerminalFailure("cancelled", "Cancellation observed before request"),
             )
         if self.accepted >= self.invocation.objective_request_budget:
+            self._finish_request("refused", reason="objective-budget-exhausted")
             raise _AttemptStop(
                 DirectTrfTerminal.BUDGET_EXHAUSTED,
                 TerminalFailure(
@@ -2552,6 +2709,10 @@ class _LiveAttempt:
                 lifecycle,
             )
         except Exception as error:
+            self._finish_request(
+                "accepted-failed",
+                reason="candidate-contract-failure",
+            )
             raise _AttemptStop(
                 DirectTrfTerminal.IMPLEMENTATION_FAILURE,
                 TerminalFailure(
@@ -2562,6 +2723,12 @@ class _LiveAttempt:
         outcome = self.evaluator.evaluate_residuals(frame)
         self.completed += 1
         if isinstance(outcome, EvaluationFailure):
+            self._finish_request(
+                "accepted-failed",
+                reason=outcome.category,
+                vector=vector,
+                failure_identity=outcome.identity,
+            )
             terminal = (
                 DirectTrfTerminal.INVALID_TRIAL
                 if outcome.validity == "INVALID_TRIAL"
@@ -2582,6 +2749,11 @@ class _LiveAttempt:
             )
             chi_square = canonical_chi_square(residuals)
         except (TypeError, ValueError, ObjectiveScalarizationError) as error:
+            self._finish_request(
+                "accepted-failed",
+                reason="objective-scalarization-failure",
+                vector=vector,
+            )
             raise _AttemptStop(
                 DirectTrfTerminal.INVALID_TRIAL,
                 TerminalFailure(
@@ -2594,6 +2766,11 @@ class _LiveAttempt:
         self.requests.append(request)
         if self.best is None or summary.ordering_key() < self.best.ordering_key():
             self.best = summary
+        self._finish_request(
+            "accepted-valid",
+            vector=vector,
+            chi_square=chi_square,
+        )
         self.progress.evaluated(self.counters, summary, self.best)
         if self.cancellation.is_cancelled:
             raise _AttemptStop(
@@ -2647,6 +2824,7 @@ def _execution(
         invocation.identity,
         terminal,
         live.counters,
+        live.trajectory_fingerprint(terminal, failure),
         preflight_identity,
         live.best,
         final_candidate,
@@ -2775,8 +2953,6 @@ def _validate_execution_context(
     problem.validate_parameterization(parameterization)
     if engine.plan.identity != problem.evaluation_plan_identity:
         raise DirectTrfConstructionError("Evaluator belongs to another plan")
-    if len(invocation.x_scale) != len(problem.controlled_ids):
-        raise DirectTrfConstructionError("Invocation has the wrong vector dimension")
 
 
 def _invoke_least_squares(
@@ -2802,7 +2978,7 @@ def _invoke_least_squares(
             tr_options={},
             loss="linear",
             f_scale=1.0,
-            x_scale=np.asarray(invocation.x_scale, dtype=np.float64),
+            x_scale=invocation.scale_policy.scipy_x_scale,
             ftol=invocation.ftol,
             xtol=invocation.xtol,
             gtol=invocation.gtol,

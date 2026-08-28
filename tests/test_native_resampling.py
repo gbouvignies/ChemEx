@@ -27,7 +27,11 @@ from chemex.evaluation.native import (
     ResolvedEvaluationValues,
 )
 from chemex.nmr.spectrometer import Spectrometer
-from chemex.optimize.direct_trf import AcceptedFitResult, OptimizationProblem
+from chemex.optimize.direct_trf import (
+    AcceptedFitResult,
+    DirectTrfScalePolicy,
+    OptimizationProblem,
+)
 from chemex.optimize.native_resampling import (
     ClaimState,
     CorrelationAvailability,
@@ -431,6 +435,18 @@ def test_altered_generated_observation_cannot_retain_or_rebind_draw_identity() -
     assert altered.identity != draw.identity
     with pytest.raises(ResamplingConstructionError, match="canonical seeded"):
         ReplicateExecutionPlan.prepare(plan, request, altered)
+
+
+def test_resampling_local_refinement_uses_the_common_jacobian_scale_policy() -> None:
+    _accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=2)
+    request = plan.replicates[0]
+    draw = generate_resampling_draw(plan.dataset, request)
+
+    prepared = ReplicateExecutionPlan.prepare(plan, request, draw)
+
+    assert prepared.invocation.scale_policy is (
+        DirectTrfScalePolicy.ADAPTIVE_INVERSE_JACOBIAN_COLUMN_NORM
+    )
 
 
 @pytest.mark.parametrize(

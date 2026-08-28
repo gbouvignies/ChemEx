@@ -23,6 +23,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+import chemex.optimize.direct_trf as direct_trf_module
 from chemex.configuration.method_execution import normalize_methods_for_execution
 from chemex.configuration.methods import Method, Selection, read_method_plan
 from chemex.configuration.parameters import read_defaults
@@ -40,11 +41,14 @@ from chemex.optimize.direct_trf import (
     AffineHalfSpace,
     CancellationToken,
     CandidateSummary,
+    DirectTrfCandidateOutcome,
     DirectTrfCandidateTerminal,
     DirectTrfConstructionError,
     DirectTrfInterrupted,
     DirectTrfInvocation,
+    DirectTrfOutcome,
     DirectTrfOutcomeTerminal,
+    DirectTrfScalePolicy,
     DirectTrfTerminal,
     LiveFitCommitAuthority,
     MaterializationTerminal,
@@ -470,7 +474,9 @@ def test_accepted_fit_retains_exact_final_backend_residual_jacobian() -> None:
     assert retained.diff_step_policy == "scipy-default-relative-step"
     assert retained.loss_policy == "linear"
     assert retained.external_coordinate_policy == "physical-external-unscaled"
-    assert retained.trust_region_scale_policy == "trust-region-only"
+    assert retained.trust_region_scale_policy == (
+        "scipy-adaptive-inverse-jacobian-column-norm-v1"
+    )
     assert len(retained.matrix_binary64_sha256) == 64
     assert np.isfinite(np.asarray(retained.matrix)).all()
     assert outcome.execution.backend is not None
@@ -570,11 +576,11 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
     assert first.materialization.evaluation_count == 1
     assert first.materialization.cache_hits == 0
     # The literals come from the independent legacy least_squares baseline at
-    # c6378fb0. A 2e-8 relative tolerance covers the observed native ordered-
-    # normalization plus finite-difference/TRF rounding while remaining far
-    # below any scientifically meaningful change in this relaxation rate.
+    # c6378fb0. A 3e-8 relative tolerance covers supported macOS/Linux native-
+    # library and finite-difference/TRF rounding while remaining far below any
+    # scientifically meaningful change in this relaxation rate.
     assert first.accepted_result.vector == (
-        pytest.approx(2.3474211504, rel=2.0e-8, abs=1.0e-10),
+        pytest.approx(2.3474211504, rel=3.0e-8, abs=1.0e-10),
     )
     assert first.accepted_result.chi_square == pytest.approx(
         13.2171307054,
@@ -607,11 +613,7 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
     assert receipt.new_revision == 1
     assert receipt.scope == problem.commit_scope
     assert committed.revision == 1
-    assert committed[problem.controlled_ids[0]] == pytest.approx(
-        2.3474211504,
-        rel=2.0e-8,
-        abs=1.0e-10,
-    )
+    assert committed[problem.controlled_ids[0]] == first.accepted_result.vector[0]
     with pytest.raises(
         DirectTrfConstructionError,
         match="exact live fit commit authority",
@@ -645,7 +647,7 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
     revision_one_invocation = DirectTrfInvocation.for_problem(
         revision_one_problem,
         objective_request_budget=invocation.objective_request_budget,
-        x_scale=invocation.x_scale,
+        scale_policy=invocation.scale_policy,
         ftol=invocation.ftol,
         xtol=invocation.xtol,
         gtol=invocation.gtol,
@@ -750,7 +752,6 @@ def test_cpmg_step1_direct_trf_preserves_requests_and_reuses_profile_kernels() -
     invocation = DirectTrfInvocation.for_problem(
         component.problem,
         objective_request_budget=2000 * (len(component.controlled_ids) + 1),
-        x_scale=tuple(max(1.0, abs(value)) for value in component.problem.start),
     )
     pulse_type = type(next(iter(experiments)).profiles[0].pulse_sequence)
     original_calculate = pulse_type.calculate
@@ -772,11 +773,18 @@ def test_cpmg_step1_direct_trf_preserves_requests_and_reuses_profile_kernels() -
     assert outcome.terminal is DirectTrfCandidateTerminal.SUCCESS
     assert outcome.candidate is not None
     assert outcome.execution.backend is not None
-    assert outcome.execution.backend.nfev == 7
-    assert outcome.execution.backend.njev == 7
-    assert outcome.execution.counters.solver_requests_received == 126
-    assert outcome.execution.counters.objective_evaluations_completed == 126
-    assert kernel_calls == 360
+    # Supported Linux and macOS native libraries differ by one accepted TRF
+    # iteration. Protect request accounting and profile-kernel reuse without
+    # requiring a host-identical trajectory length.
+    backend_nfev = outcome.execution.backend.nfev
+    assert backend_nfev in {7, 8}
+    assert outcome.execution.backend.njev == backend_nfev
+    expected_requests = backend_nfev * (len(component.controlled_ids) + 1)
+    assert outcome.execution.counters.solver_requests_received == expected_requests
+    assert (
+        outcome.execution.counters.objective_evaluations_completed == expected_requests
+    )
+    assert kernel_calls == 50 * backend_nfev + 10
     assert outcome.candidate.chi_square == pytest.approx(285.8191490381348)
 
 
@@ -899,6 +907,9 @@ def test_progress_observer_failure_is_suppressed_after_first_event() -> None:
 def test_live_commit_authority_is_atomic_under_concurrent_use() -> None:
     session, _experiments, parameterization, engine, problem, invocation = (
         _qualification_fit()
+    )
+    assert invocation.scale_policy is (
+        DirectTrfScalePolicy.ADAPTIVE_INVERSE_JACOBIAN_COLUMN_NORM
     )
     outcome = execute_direct_trf(problem, invocation, parameterization, engine)
     assert outcome.accepted_result is not None
@@ -1139,8 +1150,30 @@ def test_objective_request_budget_requires_a_positive_integer(budget: object) ->
         DirectTrfInvocation(
             "qualification-problem",
             cast("int", budget),
-            (1.0,),
         )
+
+
+def test_invocation_rejects_unrecognized_scale_policy() -> None:
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="Unsupported Direct TRF scale policy",
+    ):
+        DirectTrfInvocation(
+            "qualification-problem",
+            10,
+            cast("DirectTrfScalePolicy", "start-magnitude"),
+        )
+
+
+def test_invocation_rejects_an_unqualified_scipy_trf_class() -> None:
+    with (
+        patch("chemex.optimize.direct_trf.scipy_version", "1.19.0"),
+        pytest.raises(
+            DirectTrfConstructionError,
+            match="does not satisfy the native TRF numerical compatibility",
+        ),
+    ):
+        DirectTrfInvocation("qualification-problem", 10)
 
 
 def test_non_convergence_keeps_last_iterate_diagnostic_and_commits_nothing() -> None:
@@ -1157,8 +1190,7 @@ def test_non_convergence_keeps_last_iterate_diagnostic_and_commits_nothing() -> 
         assert isinstance(bounds, tuple)
         np.testing.assert_array_equal(bounds[0], problem.lower_bounds)
         np.testing.assert_array_equal(bounds[1], problem.upper_bounds)
-        x_scale = settings.pop("x_scale")
-        np.testing.assert_array_equal(x_scale, np.ones(1))
+        assert settings.pop("x_scale") == "jac"
         assert settings == {
             "method": "trf",
             "jac": "2-point",
@@ -1194,6 +1226,328 @@ def test_non_convergence_keeps_last_iterate_diagnostic_and_commits_nothing() -> 
     assert outcome.accepted_result is None
     assert session.analysis_values.snapshot() == before
     assert _presentation_values(session, problem.commit_scope) == presentation_before
+
+
+def test_execution_fingerprints_the_ordered_solver_request_trajectory() -> None:
+    _session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    (
+        _fresh_session,
+        _fresh_experiments,
+        fresh_parameterization,
+        fresh_engine,
+        fresh_problem,
+        fresh_invocation,
+    ) = _qualification_fit()
+
+    def backend_for_order(
+        factors: tuple[float, float, float],
+    ) -> Callable[..., object]:
+        def converge(
+            fun: Callable[[Array], Array], x0: Array, **_settings: object
+        ) -> object:
+            final_candidate: Array | None = None
+            final_residuals: Array | None = None
+            for factor in factors:
+                final_candidate = np.asarray(x0, dtype=np.float64) * factor
+                final_residuals = fun(final_candidate)
+            assert final_candidate is not None
+            assert final_residuals is not None
+            return _backend_result(
+                final_candidate,
+                final_residuals,
+                status=1,
+                success=True,
+                message="gradient tolerance satisfied",
+                optimality=0.0,
+            )
+
+        return converge
+
+    def execute(
+        factors: tuple[float, float, float],
+        *,
+        fit_problem: OptimizationProblem = problem,
+        fit_invocation: DirectTrfInvocation = invocation,
+        fit_parameterization: ActiveParameterization = parameterization,
+        fit_engine: EvaluationEngine = engine,
+    ) -> DirectTrfOutcome:
+        with patch(
+            "chemex.optimize.direct_trf.least_squares",
+            backend_for_order(factors),
+        ):
+            return execute_direct_trf(
+                fit_problem,
+                fit_invocation,
+                fit_parameterization,
+                fit_engine,
+            )
+
+    first = execute((0.95, 0.85, 0.35))
+    replay = execute((0.95, 0.85, 0.35))
+    fresh_replay = execute(
+        (0.95, 0.85, 0.35),
+        fit_problem=fresh_problem,
+        fit_invocation=fresh_invocation,
+        fit_parameterization=fresh_parameterization,
+        fit_engine=fresh_engine,
+    )
+    reordered = execute((0.85, 0.95, 0.35))
+    changed_intermediate = execute((0.95, 0.80, 0.35))
+
+    first_fingerprint = first.execution.request_trajectory_fingerprint
+    assert len(first_fingerprint) == 64
+    assert replay.execution.request_trajectory_fingerprint == first_fingerprint
+    assert fresh_problem.identity != problem.identity
+    assert fresh_invocation.identity != invocation.identity
+    assert fresh_replay.execution.request_trajectory_fingerprint == first_fingerprint
+    assert reordered.execution.request_trajectory_fingerprint != first_fingerprint
+    assert (
+        changed_intermediate.execution.request_trajectory_fingerprint
+        != first_fingerprint
+    )
+    assert first.execution.counters == reordered.execution.counters
+    assert first.execution.counters == changed_intermediate.execution.counters
+    assert first.execution.final_candidate == reordered.execution.final_candidate
+    assert (
+        first.execution.final_candidate
+        == changed_intermediate.execution.final_candidate
+    )
+    assert first.execution.best_candidate == reordered.execution.best_candidate
+    assert (
+        first.execution.best_candidate == changed_intermediate.execution.best_candidate
+    )
+    assert first.execution.backend == reordered.execution.backend
+    assert first.execution.backend == changed_intermediate.execution.backend
+    assert first.execution.identity != reordered.execution.identity
+
+
+def test_valid_request_trajectory_record_is_compact() -> None:
+    _session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    records: list[tuple[object, ...]] = []
+    advance = direct_trf_module._advance_request_trajectory
+
+    def capture_record(previous: bytes, record: object) -> bytes:
+        assert isinstance(record, tuple)
+        records.append(record)
+        return advance(previous, record)
+
+    def converge(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        return _one_request_converged_backend(fun, x0)
+
+    with (
+        patch.object(
+            direct_trf_module,
+            "_advance_request_trajectory",
+            capture_record,
+        ),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            converge,
+        ),
+    ):
+        outcome = execute_direct_trf(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert outcome.terminal is DirectTrfOutcomeTerminal.ACCEPTED
+    request_records = [record for record in records if record[0] == "request"]
+    assert len(request_records) == 1
+    request_record = request_records[0]
+    assert len(request_record) == 8
+    assert request_record[1] == 1
+    assert request_record[2][0] == "binary64"
+    assert request_record[3] is None
+    assert request_record[4] == "accepted-valid"
+    assert request_record[5] is None
+    assert isinstance(request_record[6], str)
+    assert request_record[7] is None
+
+
+def test_request_trajectory_fingerprint_includes_chi_square() -> None:
+    _session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+
+    def converge(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        return _one_request_converged_backend(fun, x0)
+
+    with patch("chemex.optimize.direct_trf.least_squares", converge):
+        baseline = execute_direct_trf_candidate(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    evaluate_residuals = BoundEvaluator.evaluate_residuals
+
+    def perturb_chi_square(
+        evaluator: BoundEvaluator,
+        frame: EvaluationFrame,
+    ) -> Array | EvaluationFailure:
+        outcome = evaluate_residuals(evaluator, frame)
+        if isinstance(outcome, EvaluationFailure):
+            return outcome
+        perturbed = np.array(outcome, copy=True)
+        perturbed[0] += 1.0e-4
+        return perturbed
+
+    with (
+        patch.object(BoundEvaluator, "evaluate_residuals", perturb_chi_square),
+        patch("chemex.optimize.direct_trf.least_squares", converge),
+    ):
+        changed = execute_direct_trf_candidate(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert baseline.execution.final_candidate is not None
+    assert changed.execution.final_candidate is not None
+    assert (
+        baseline.execution.final_candidate.vector
+        == changed.execution.final_candidate.vector
+    )
+    assert (
+        baseline.execution.final_candidate.chi_square
+        != changed.execution.final_candidate.chi_square
+    )
+    assert baseline.execution.counters == changed.execution.counters
+    assert (
+        baseline.execution.request_trajectory_fingerprint
+        != changed.execution.request_trajectory_fingerprint
+    )
+
+
+def test_request_trajectory_fingerprint_includes_disposition_and_termination() -> None:
+    _session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+
+    def converged(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        return _one_request_converged_backend(fun, x0)
+
+    def non_converged(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        candidate = np.asarray(x0, dtype=np.float64) * 0.9
+        residuals = fun(candidate)
+        return _backend_result(
+            candidate,
+            residuals,
+            status=0,
+            success=False,
+            message="maximum evaluations reached",
+            optimality=1.0,
+        )
+
+    def execute_with_backend(
+        backend: Callable[..., object],
+    ) -> DirectTrfCandidateOutcome:
+        with patch("chemex.optimize.direct_trf.least_squares", backend):
+            return execute_direct_trf_candidate(
+                problem,
+                invocation,
+                parameterization,
+                engine,
+            )
+
+    successful = execute_with_backend(converged)
+    unsuccessful = execute_with_backend(non_converged)
+
+    def invalid(category: str) -> DirectTrfCandidateOutcome:
+        failure = EvaluationFailure(
+            engine.plan.identity,
+            parameterization.evaluator_identity,
+            "residual",
+            category,
+            "INVALID_TRIAL",
+            message=f"{category} diagnostic",
+        )
+        with (
+            patch.object(
+                BoundEvaluator,
+                "evaluate_residuals",
+                return_value=failure,
+            ),
+            patch("chemex.optimize.direct_trf.least_squares", converged),
+        ):
+            return execute_direct_trf_candidate(
+                problem,
+                invocation,
+                parameterization,
+                engine,
+            )
+
+    invalid_a = invalid("trajectory-probe-a")
+    invalid_b = invalid("trajectory-probe-b")
+
+    exhausted_invocation = DirectTrfInvocation.for_problem(
+        problem,
+        objective_request_budget=1,
+    )
+
+    def exhaust(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        candidate = np.asarray(x0, dtype=np.float64) * 0.9
+        fun(candidate)
+        fun(candidate)
+        raise AssertionError("the refused request must stop the backend")
+
+    with patch("chemex.optimize.direct_trf.least_squares", exhaust):
+        exhausted = execute_direct_trf_candidate(
+            problem,
+            exhausted_invocation,
+            parameterization,
+            engine,
+        )
+
+    cancellation = CancellationToken()
+    cancellation.cancel()
+    cancelled = execute_direct_trf_candidate(
+        problem,
+        invocation,
+        parameterization,
+        engine,
+        cancellation=cancellation,
+    )
+
+    fingerprints = {
+        outcome.execution.request_trajectory_fingerprint
+        for outcome in (
+            successful,
+            unsuccessful,
+            invalid_a,
+            invalid_b,
+            exhausted,
+            cancelled,
+        )
+    }
+    assert len(fingerprints) == 6
+    assert successful.execution.terminal is DirectTrfTerminal.CONVERGED
+    assert unsuccessful.execution.terminal is DirectTrfTerminal.NON_CONVERGED
+    assert invalid_a.execution.terminal is DirectTrfTerminal.INVALID_TRIAL
+    assert invalid_b.execution.terminal is DirectTrfTerminal.INVALID_TRIAL
+    assert exhausted.execution.terminal is DirectTrfTerminal.BUDGET_EXHAUSTED
+    assert cancelled.execution.terminal is DirectTrfTerminal.CANCELLED
+    assert invalid_a.execution.failure is not None
+    assert invalid_b.execution.failure is not None
+    assert invalid_a.execution.failure.category != invalid_b.execution.failure.category
 
 
 def test_invocation_execution_settings_drive_the_solver_environment() -> None:
@@ -1262,6 +1616,7 @@ def test_budget_exhaustion_has_exact_counters_and_no_accepted_candidate() -> Non
     assert outcome.execution.counters.solver_requests_received == 3
     assert outcome.execution.counters.objective_requests_accepted == 2
     assert outcome.execution.counters.objective_evaluations_completed == 2
+    assert len(outcome.execution.request_trajectory_fingerprint) == 64
     assert outcome.accepted_result is None
     assert session.analysis_values.snapshot() == before
 

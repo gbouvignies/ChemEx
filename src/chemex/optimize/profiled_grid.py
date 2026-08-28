@@ -24,6 +24,7 @@ from chemex.optimize.direct_trf import (
     DirectTrfCandidateTerminal,
     DirectTrfInterrupted,
     DirectTrfInvocation,
+    DirectTrfScalePolicy,
     LiveFitCommitAuthority,
     MaterializedDirectTrfCandidate,
     OptimizationProblem,
@@ -395,7 +396,6 @@ def _fit_factor_point(
     axis_items: tuple[tuple[str, float], ...],
     *,
     objective_request_budget: int,
-    root_scales: Mapping[str, float],
     cancellation: CancellationToken,
     progress_observer: ContextualProgressObserver | None,
     factor_count: int,
@@ -411,7 +411,6 @@ def _fit_factor_point(
     invocation = DirectTrfInvocation.for_problem(
         child,
         objective_request_budget=objective_request_budget,
-        x_scale=tuple(root_scales[param_id] for param_id in factor.nuisance_ids),
     )
     context = FitProgressContext(
         factor.ordinal + 1,
@@ -566,7 +565,6 @@ def execute_profiled_grid(  # noqa: C901 - closed factor/point lifecycle dispatc
     engine: EvaluationEngine,
     *,
     objective_request_budget: int,
-    x_scale: Sequence[float],
     cancellation: CancellationToken | None = None,
     progress_observer: ContextualProgressObserver | None = None,
 ) -> ProfiledGridOutcome:
@@ -585,10 +583,6 @@ def execute_profiled_grid(  # noqa: C901 - closed factor/point lifecycle dispatc
         raise ProfiledGridConstructionError(
             "Profiled GRID axes must be active final FIT coordinates"
         )
-    scales = tuple(float(value) for value in x_scale)
-    if len(scales) != len(problem.controlled_ids):
-        raise ProfiledGridConstructionError("Profiled GRID x_scale has wrong dimension")
-    root_scales = dict(zip(problem.controlled_ids, scales, strict=True))
     dependencies = _profile_dependencies(problem, parameterization, engine)
     factors = discover_profiled_grid_factors(
         dependencies,
@@ -665,7 +659,6 @@ def execute_profiled_grid(  # noqa: C901 - closed factor/point lifecycle dispatc
                         point_ordinal,
                         axis_items,
                         objective_request_budget=objective_request_budget,
-                        root_scales=root_scales,
                         cancellation=token,
                         progress_observer=progress_observer,
                         factor_count=len(factors),
@@ -739,7 +732,7 @@ def execute_profiled_grid(  # noqa: C901 - closed factor/point lifecycle dispatc
             tuple((param_id, ordered_axes[param_id]) for param_id in grid_ids),
             tuple(factor.identity for factor in factors),
             objective_request_budget,
-            scales,
+            (DirectTrfScalePolicy.ADAPTIVE_INVERSE_JACOBIAN_COLUMN_NORM.value),
         ),
     )
     execution_identity = _identity(

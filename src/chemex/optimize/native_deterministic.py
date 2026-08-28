@@ -129,11 +129,6 @@ def _objective_request_budget(problem: OptimizationProblem) -> int:
     return _TRF_OBJECTIVE_REQUESTS_PER_DIMENSION * (coordinate_count + 1)
 
 
-def _product_x_scale(problem: OptimizationProblem) -> tuple[float, ...]:
-    """Scale native product coordinates without changing physical semantics."""
-    return tuple(max(1.0, abs(value)) for value in problem.start)
-
-
 def _product_uncertainty_inputs(
     problem: OptimizationProblem,
     parameterization: ActiveParameterization,
@@ -428,7 +423,6 @@ def _execute_and_commit_aggregate(
                 parameterization,
                 engine,
                 objective_request_budget=_objective_request_budget(problem),
-                x_scale=_product_x_scale(problem),
                 cancellation=token,
                 progress_observer=progress.observe,
             )
@@ -473,7 +467,6 @@ def _build_invocation(
             DirectTrfInvocation.for_problem(
                 component.problem,
                 objective_request_budget=_objective_request_budget(component.problem),
-                x_scale=_product_x_scale(component.problem),
             )
             for component in decomposition.components
         ),

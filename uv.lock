@@ -55,7 +55,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "rapidfuzz", specifier = ">=3.12.1" },
     { name = "rich", specifier = ">=13.9.4" },
-    { name = "scipy", specifier = ">=1.15.2" },
+    { name = "scipy", specifier = ">=1.18,<1.19" },
 ]
 
 [package.metadata.requires-dev]
