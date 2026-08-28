@@ -21,6 +21,11 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   statistics; DE failures never fall back to the old committed start.
 
 ### Changed
+- Bounded the fixed TRF coordinate scale for ordinary Direct fits with at most
+  five varying parameters. This prevents pathological, still-improving
+  trajectories in the shipped methyl CPMG residue fits while preserving the
+  fixed objective-request budget, fail-closed convergence, and the established
+  scaling of DE-polished, GRID, and larger coupled fits.
 - Converted all shipped method examples to canonical method format v2 and made
   v2 the primary authoring format in the fitting guide. The guide now documents
   ordered complete-role overrides, explicit `ROLES_FROM`, automatic committed

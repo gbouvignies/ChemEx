@@ -148,27 +148,39 @@ def _cest_1hn_ip_ap_arguments(output: Path):
     )
 
 
-def test_product_trf_uses_legacy_request_ceiling_and_physical_coordinate_scale() -> (
-    None
-):
-    problem = type(
-        "Problem",
-        (),
-        {
-            "controlled_ids": ("a", "b", "c", "d"),
-            "start": (0.01, -2.0, 0.0, 150.0),
-        },
-    )()
+def test_product_trf_caps_only_ordinary_small_direct_scales() -> None:
+    small_problem = SimpleNamespace(
+        controlled_ids=("a", "b", "c", "d"),
+        start=(0.01, -2.0, 0.0, 150.0),
+    )
 
     assert (
         native_deterministic_module._objective_request_budget(
-            problem  # ty: ignore[invalid-argument-type]
+            small_problem  # ty: ignore[invalid-argument-type]
         )
         == 10000
     )
     assert native_deterministic_module._product_x_scale(
-        problem  # ty: ignore[invalid-argument-type]
+        small_problem  # ty: ignore[invalid-argument-type]
     ) == (1.0, 2.0, 1.0, 150.0)
+    assert native_deterministic_module._direct_x_scale(
+        small_problem,  # ty: ignore[invalid-argument-type]
+    ) == (1.0, 2.0, 1.0, 5.0)
+
+    coupled_problem = SimpleNamespace(
+        controlled_ids=("a", "b", "c", "d", "e", "f"),
+        start=(0.01, -2.0, 0.0, 5.0, 25.0, 150.0),
+    )
+
+    assert (
+        native_deterministic_module._objective_request_budget(
+            coupled_problem  # ty: ignore[invalid-argument-type]
+        )
+        == 14000
+    )
+    assert native_deterministic_module._direct_x_scale(
+        coupled_problem,  # ty: ignore[invalid-argument-type]
+    ) == (1.0, 2.0, 1.0, 5.0, 25.0, 150.0)
 
 
 def test_real_simulation_uses_native_values_and_preserves_back_calculation(
@@ -3128,10 +3140,12 @@ COORDINATES = [
     )
     session = AnalysisSession.create()
     trf_starts: list[tuple[float, ...]] = []
+    trf_scales: list[tuple[float, ...]] = []
     real_least_squares = direct_trf_module.least_squares
 
     def record_component_start(*args, **kwargs):
         trf_starts.append(tuple(float(value) for value in args[1]))
+        trf_scales.append(tuple(float(value) for value in kwargs["x_scale"]))
         return real_least_squares(*args, **kwargs)
 
     with (
@@ -3156,6 +3170,9 @@ COORDINATES = [
     assert session.analysis_values.snapshot().revision == 1
     assert len(trf_starts) == 2
     assert sorted(start[0] for start in trf_starts) == pytest.approx(
+        (2.0, 6.87922079444668)
+    )
+    assert sorted(scale[0] for scale in trf_scales) == pytest.approx(
         (2.0, 6.87922079444668)
     )
 

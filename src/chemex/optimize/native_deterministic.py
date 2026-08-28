@@ -92,6 +92,14 @@ from chemex.runtime.environment import RuntimeEnvironment
 # Jacobian requests counted in the same total objective-request ceiling.
 _TRF_OBJECTIVE_REQUESTS_PER_DIMENSION = 2000
 
+# #710 found that linear start-magnitude scaling can make small mixed-sensitivity
+# Direct fits require tens of thousands of requests. Bound the fixed scale of
+# low-dimensional ordinary Direct fits in physical coordinates. Keep the #664
+# scale for DE polishing, GRID, and larger coupled fits; the cap preserves the
+# qualified CEST basin while avoiding the pathological CPMG trajectories.
+_TRF_SMALL_COMPONENT_COORDINATE_LIMIT = 5
+_TRF_SMALL_COMPONENT_SCALE_CAP = 5.0
+
 
 @dataclass(frozen=True, slots=True)
 class NativeDeterministicFit:
@@ -132,6 +140,14 @@ def _objective_request_budget(problem: OptimizationProblem) -> int:
 def _product_x_scale(problem: OptimizationProblem) -> tuple[float, ...]:
     """Scale native product coordinates without changing physical semantics."""
     return tuple(max(1.0, abs(value)) for value in problem.start)
+
+
+def _direct_x_scale(problem: OptimizationProblem) -> tuple[float, ...]:
+    """Return the fixed scale qualified for one ordinary Direct problem."""
+    scales = _product_x_scale(problem)
+    if len(problem.controlled_ids) <= _TRF_SMALL_COMPONENT_COORDINATE_LIMIT:
+        return tuple(min(_TRF_SMALL_COMPONENT_SCALE_CAP, value) for value in scales)
+    return scales
 
 
 def _product_uncertainty_inputs(
@@ -465,7 +481,10 @@ def _execute_and_commit_aggregate(
 def _build_invocation(
     problem: OptimizationProblem,
     decomposition: FitDecomposition,
+    *,
+    de_polish: bool = False,
 ) -> GroupedDirectTrfInvocation:
+    scale_problem = _product_x_scale if de_polish else _direct_x_scale
     invocation = GroupedDirectTrfInvocation(
         decomposition.root_problem_identity,
         decomposition.identity,
@@ -473,7 +492,7 @@ def _build_invocation(
             DirectTrfInvocation.for_problem(
                 component.problem,
                 objective_request_budget=_objective_request_budget(component.problem),
-                x_scale=_product_x_scale(component.problem),
+                x_scale=scale_problem(component.problem),
             )
             for component in decomposition.components
         ),
@@ -657,7 +676,11 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         invocation = None
     else:
         grid_axes = None
-        invocation = _build_invocation(problem, decomposition)
+        invocation = _build_invocation(
+            problem,
+            decomposition,
+            de_polish=isinstance(search, DeSearch),
+        )
     uncertainty_inputs = _product_uncertainty_inputs(
         problem,
         parameterization,
