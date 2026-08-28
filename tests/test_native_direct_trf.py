@@ -45,6 +45,7 @@ from chemex.optimize.direct_trf import (
     DirectTrfInterrupted,
     DirectTrfInvocation,
     DirectTrfOutcomeTerminal,
+    DirectTrfScalePolicy,
     DirectTrfTerminal,
     LiveFitCommitAuthority,
     MaterializationTerminal,
@@ -470,7 +471,9 @@ def test_accepted_fit_retains_exact_final_backend_residual_jacobian() -> None:
     assert retained.diff_step_policy == "scipy-default-relative-step"
     assert retained.loss_policy == "linear"
     assert retained.external_coordinate_policy == "physical-external-unscaled"
-    assert retained.trust_region_scale_policy == "trust-region-only"
+    assert retained.trust_region_scale_policy == (
+        "scipy-adaptive-inverse-jacobian-column-norm-v1"
+    )
     assert len(retained.matrix_binary64_sha256) == 64
     assert np.isfinite(np.asarray(retained.matrix)).all()
     assert outcome.execution.backend is not None
@@ -645,7 +648,7 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
     revision_one_invocation = DirectTrfInvocation.for_problem(
         revision_one_problem,
         objective_request_budget=invocation.objective_request_budget,
-        x_scale=invocation.x_scale,
+        scale_policy=invocation.scale_policy,
         ftol=invocation.ftol,
         xtol=invocation.xtol,
         gtol=invocation.gtol,
@@ -750,7 +753,6 @@ def test_cpmg_step1_direct_trf_preserves_requests_and_reuses_profile_kernels() -
     invocation = DirectTrfInvocation.for_problem(
         component.problem,
         objective_request_budget=2000 * (len(component.controlled_ids) + 1),
-        x_scale=tuple(max(1.0, abs(value)) for value in component.problem.start),
     )
     pulse_type = type(next(iter(experiments)).profiles[0].pulse_sequence)
     original_calculate = pulse_type.calculate
@@ -899,6 +901,9 @@ def test_progress_observer_failure_is_suppressed_after_first_event() -> None:
 def test_live_commit_authority_is_atomic_under_concurrent_use() -> None:
     session, _experiments, parameterization, engine, problem, invocation = (
         _qualification_fit()
+    )
+    assert invocation.scale_policy is (
+        DirectTrfScalePolicy.ADAPTIVE_INVERSE_JACOBIAN_COLUMN_NORM
     )
     outcome = execute_direct_trf(problem, invocation, parameterization, engine)
     assert outcome.accepted_result is not None
@@ -1139,7 +1144,18 @@ def test_objective_request_budget_requires_a_positive_integer(budget: object) ->
         DirectTrfInvocation(
             "qualification-problem",
             cast("int", budget),
-            (1.0,),
+        )
+
+
+def test_invocation_rejects_unrecognized_scale_policy() -> None:
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="Unsupported Direct TRF scale policy",
+    ):
+        DirectTrfInvocation(
+            "qualification-problem",
+            10,
+            cast("DirectTrfScalePolicy", "start-magnitude"),
         )
 
 
@@ -1157,8 +1173,7 @@ def test_non_convergence_keeps_last_iterate_diagnostic_and_commits_nothing() -> 
         assert isinstance(bounds, tuple)
         np.testing.assert_array_equal(bounds[0], problem.lower_bounds)
         np.testing.assert_array_equal(bounds[1], problem.upper_bounds)
-        x_scale = settings.pop("x_scale")
-        np.testing.assert_array_equal(x_scale, np.ones(1))
+        assert settings.pop("x_scale") == "jac"
         assert settings == {
             "method": "trf",
             "jac": "2-point",

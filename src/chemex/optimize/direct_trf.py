@@ -17,7 +17,7 @@ from enum import StrEnum
 from numbers import Real
 from threading import Event, RLock
 from time import monotonic
-from typing import SupportsIndex, cast
+from typing import Literal, SupportsIndex
 from uuid import uuid4
 from weakref import ReferenceType, WeakKeyDictionary, ref
 
@@ -54,7 +54,8 @@ from chemex.typing import Array
 _SCHEMA_VERSION = 1
 _PROBLEM_VERSION = "native-direct-trf-problem-v1"
 _SCALARIZATION_VERSION = "ordered-pairwise-chi-square-v1"
-_INVOCATION_VERSION = "scipy-direct-trf-v2"
+_INVOCATION_VERSION = "scipy-direct-trf-v3"
+_SCALE_POLICY_VERSION = "scipy-adaptive-inverse-jacobian-column-norm-v1"
 _CANDIDATE_ORDER_VERSION = "chi-square-vector-ordinal-v1"
 _BACKEND_SETTINGS = (
     ("method", "trf"),
@@ -64,6 +65,7 @@ _BACKEND_SETTINGS = (
     ("tr_options", ()),
     ("loss", "linear"),
     ("f_scale", "0x1.0000000000000p+0"),
+    ("x_scale", "jac"),
     ("verbose", 0),
 )
 _BACKEND_JACOBIAN_VERSION = "scipy-final-residual-jacobian-v2"
@@ -97,7 +99,7 @@ class FinalResidualJacobianEvidence:
         )
     )
     external_coordinate_policy: str = "physical-external-unscaled"
-    trust_region_scale_policy: str = "trust-region-only"
+    trust_region_scale_policy: str = _SCALE_POLICY_VERSION
     identity: str = field(init=False)
 
     def _identity_from_digest(self, matrix_digest: str) -> str:
@@ -141,7 +143,7 @@ class FinalResidualJacobianEvidence:
             or not self.backend_identity.startswith("scipy-")
             or "least_squares:method=trf" not in self.backend_identity
             or self.external_coordinate_policy != "physical-external-unscaled"
-            or self.trust_region_scale_policy != "trust-region-only"
+            or self.trust_region_scale_policy != _SCALE_POLICY_VERSION
             or (
                 self.source is ResidualJacobianSource.FIT_PARTITION_COMPOSITION
                 and not self.source_identities
@@ -1398,13 +1400,32 @@ class OptimizationProblem:
         ).with_updates(updates)
 
 
+class DirectTrfScalePolicy(StrEnum):
+    """Closed coordinate geometry for every native local TRF invocation.
+
+    SciPy 1.18 ``x_scale="jac"`` starts from inverse Jacobian-column 2-norms
+    and recomputes them after accepted steps while retaining the largest prior
+    column norm. Exact SciPy and native-library versions remain part of the run
+    environment identity.
+    """
+
+    ADAPTIVE_INVERSE_JACOBIAN_COLUMN_NORM = _SCALE_POLICY_VERSION
+
+    @property
+    def scipy_x_scale(self) -> Literal["jac"]:
+        """Return the closed SciPy spelling hidden behind this policy."""
+        return "jac"
+
+
 @dataclass(frozen=True, slots=True)
 class DirectTrfInvocation:
     """Closed immutable settings for one atomic SciPy Direct-TRF attempt."""
 
     problem_identity: str
     objective_request_budget: int
-    x_scale: tuple[float, ...]
+    scale_policy: DirectTrfScalePolicy = (
+        DirectTrfScalePolicy.ADAPTIVE_INVERSE_JACOBIAN_COLUMN_NORM
+    )
     ftol: float | None = 1.0e-8
     xtol: float | None = 1.0e-8
     gtol: float | None = 1.0e-8
@@ -1424,12 +1445,8 @@ class DirectTrfInvocation:
             raise DirectTrfConstructionError(
                 "Objective-request budget must be a positive integer"
             )
-        scales = tuple(
-            _finite_binary64(value, name=f"x_scale[{index}]")
-            for index, value in enumerate(self.x_scale)
-        )
-        if not scales or any(value <= 0.0 for value in scales):
-            raise DirectTrfConstructionError("x_scale entries must be positive")
+        if not isinstance(self.scale_policy, DirectTrfScalePolicy):
+            raise DirectTrfConstructionError("Unsupported Direct TRF scale policy")
         epsilon = float(np.finfo(np.float64).eps)
         tolerances: list[float | None] = []
         for name, tolerance in (
@@ -1450,7 +1467,6 @@ class DirectTrfInvocation:
             raise DirectTrfConstructionError(
                 "At least one Direct-TRF convergence tolerance must be enabled"
             )
-        object.__setattr__(self, "x_scale", scales)
         object.__setattr__(self, "ftol", tolerances[0])
         object.__setattr__(self, "xtol", tolerances[1])
         object.__setattr__(self, "gtol", tolerances[2])
@@ -1463,7 +1479,7 @@ class DirectTrfInvocation:
                     _INVOCATION_VERSION,
                     self.problem_identity,
                     self.objective_request_budget,
-                    _vector_tokens(scales),
+                    self.scale_policy.value,
                     tuple(
                         None if value is None else _float_token(value)
                         for value in tolerances
@@ -1483,26 +1499,19 @@ class DirectTrfInvocation:
         problem: OptimizationProblem,
         *,
         objective_request_budget: int,
-        x_scale: float | Sequence[float] | None = None,
+        scale_policy: DirectTrfScalePolicy = (
+            DirectTrfScalePolicy.ADAPTIVE_INVERSE_JACOBIAN_COLUMN_NORM
+        ),
         ftol: float | None = 1.0e-8,
         xtol: float | None = 1.0e-8,
         gtol: float | None = 1.0e-8,
         execution_settings: ExecutionSettings | None = None,
     ) -> DirectTrfInvocation:
-        """Resolve scalar/default scaling into one value per external coordinate."""
-        dimension = len(problem.controlled_ids)
-        if x_scale is None:
-            scales = (1.0,) * dimension
-        elif isinstance(x_scale, Real) and not isinstance(x_scale, bool):
-            scales = (float(x_scale),) * dimension
-        else:
-            scales = tuple(cast("Sequence[float]", x_scale))
-        if len(scales) != dimension:
-            raise DirectTrfConstructionError("x_scale has the wrong dimension")
+        """Bind the closed local-solver policy to one accepted problem."""
         return cls(
             problem.identity,
             objective_request_budget,
-            scales,
+            scale_policy,
             ftol,
             xtol,
             gtol,
@@ -2775,8 +2784,6 @@ def _validate_execution_context(
     problem.validate_parameterization(parameterization)
     if engine.plan.identity != problem.evaluation_plan_identity:
         raise DirectTrfConstructionError("Evaluator belongs to another plan")
-    if len(invocation.x_scale) != len(problem.controlled_ids):
-        raise DirectTrfConstructionError("Invocation has the wrong vector dimension")
 
 
 def _invoke_least_squares(
@@ -2802,7 +2809,7 @@ def _invoke_least_squares(
             tr_options={},
             loss="linear",
             f_scale=1.0,
-            x_scale=np.asarray(invocation.x_scale, dtype=np.float64),
+            x_scale=invocation.scale_policy.scipy_x_scale,
             ftol=invocation.ftol,
             xtol=invocation.xtol,
             gtol=invocation.gtol,

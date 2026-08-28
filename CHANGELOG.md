@@ -21,12 +21,15 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   statistics; DE failures never fall back to the old committed start.
 
 ### Changed
-- Conservatively bounded the fixed TRF coordinate scale for ordinary Direct
-  fits with at most five varying parameters. This empirically qualified fallback
-  prevents pathological, still-improving trajectories in the shipped methyl
-  CPMG residue fits while preserving the fixed objective-request budget,
-  fail-closed convergence, and the established scaling of DE-polished, GRID,
-  and larger coupled fits.
+- Changed native local TRF refinement to one versioned adaptive inverse-Jacobian-
+  column-norm scaling policy across Direct, grouped Direct, GRID nuisance fits,
+  and DE polishing. Sensitivity-based trust-region geometry removes pathological,
+  still-improving trajectories in shipped mixed-sensitivity methyl CPMG fits and
+  is less dependent on parameter magnitudes and physical units. Local scaling is
+  not used as an implicit global-search policy: a shipped CEST start reaches a
+  different qualified attraction basin. Fixed objective-request budgets,
+  convergence tolerances, bounds, residual semantics, and fail-closed acceptance
+  remain unchanged.
 - Converted all shipped method examples to canonical method format v2 and made
   v2 the primary authoring format in the fitting guide. The guide now documents
   ordered complete-role overrides, explicit `ROLES_FROM`, automatic committed

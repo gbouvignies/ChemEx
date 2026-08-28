@@ -477,7 +477,6 @@ def test_evaluation_only_grid_point_never_releases_axis_and_commits_once() -> No
             parameterization,
             engine,
             objective_request_budget=10,
-            x_scale=(1.0,),
         )
 
     assert outcome.terminal is ProfiledGridTerminal.ACCEPTED
@@ -517,7 +516,6 @@ def test_profiled_grid_stale_or_cancelled_execution_cannot_commit() -> None:
         parameterization,
         engine,
         objective_request_budget=10,
-        x_scale=(1.0,),
     )
     assert outcome.accepted_result is not None
     assert outcome.commit_authority is not None
@@ -547,7 +545,6 @@ def test_profiled_grid_stale_or_cancelled_execution_cannot_commit() -> None:
         fresh_parameterization,
         fresh_engine,
         objective_request_budget=10,
-        x_scale=(1.0,),
         cancellation=token,
     )
     assert cancelled.terminal is ProfiledGridTerminal.CANCELLED
@@ -581,7 +578,6 @@ def test_fresh_root_validation_rejects_inconsistent_factor_aggregate() -> None:
             parameterization,
             engine,
             objective_request_budget=10,
-            x_scale=(1.0,),
         )
 
     assert outcome.terminal is ProfiledGridTerminal.EXECUTION_FAILURE
@@ -627,6 +623,7 @@ def test_cpmg_grid_points_hold_axes_while_optimizing_factor_nuisance() -> None:
     )
     axes = {axis.param_id: (axis.values[0],) for axis in resolved}
     children: list[OptimizationProblem] = []
+    trf_scale_policies: list[str] = []
     derive = OptimizationProblem.derive_profiled_grid_point
 
     def record_child(
@@ -636,10 +633,20 @@ def test_cpmg_grid_points_hold_axes_while_optimizing_factor_nuisance() -> None:
         children.append(child)
         return child
 
-    with patch.object(
-        OptimizationProblem,
-        "derive_profiled_grid_point",
-        record_child,
+    def record_trf_scale(*args: object, **kwargs: object) -> object:
+        trf_scale_policies.append(str(kwargs["x_scale"]))
+        return least_squares(*args, **kwargs)  # ty: ignore[invalid-argument-type]
+
+    with (
+        patch.object(
+            OptimizationProblem,
+            "derive_profiled_grid_point",
+            record_child,
+        ),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=record_trf_scale,
+        ),
     ):
         outcome = execute_profiled_grid(
             problem,
@@ -647,11 +654,11 @@ def test_cpmg_grid_points_hold_axes_while_optimizing_factor_nuisance() -> None:
             parameterization,
             engine,
             objective_request_budget=12_000,
-            x_scale=tuple(max(1.0, abs(value)) for value in problem.start),
         )
 
     assert outcome.terminal is ProfiledGridTerminal.ACCEPTED
     assert children
+    assert trf_scale_policies and set(trf_scale_policies) == {"jac"}
     grid_ids = frozenset(axes)
     for child in children:
         assert not grid_ids.intersection(child.controlled_ids)
@@ -687,7 +694,6 @@ def test_cpmg_grid_points_hold_axes_while_optimizing_factor_nuisance() -> None:
         parameterization,
         engine,
         objective_request_budget=12_000,
-        x_scale=tuple(max(1.0, abs(value)) for value in affine_problem.start),
     )
     assert affine_outcome.terminal is ProfiledGridTerminal.ACCEPTED
     assert len(affine_outcome.factors) == 1

@@ -148,8 +148,9 @@ def _cest_1hn_ip_ap_arguments(output: Path):
     )
 
 
-def test_product_trf_caps_only_ordinary_small_direct_scales() -> None:
+def test_product_trf_uses_one_named_adaptive_jacobian_policy() -> None:
     small_problem = SimpleNamespace(
+        identity="small-problem",
         controlled_ids=("a", "b", "c", "d"),
         start=(0.01, -2.0, 0.0, 150.0),
     )
@@ -160,12 +161,13 @@ def test_product_trf_caps_only_ordinary_small_direct_scales() -> None:
         )
         == 10000
     )
-    assert native_deterministic_module._product_x_scale(
-        small_problem  # ty: ignore[invalid-argument-type]
-    ) == (1.0, 2.0, 1.0, 150.0)
-    assert native_deterministic_module._direct_x_scale(
+    invocation = direct_trf_module.DirectTrfInvocation.for_problem(
         small_problem,  # ty: ignore[invalid-argument-type]
-    ) == (1.0, 2.0, 1.0, 5.0)
+        objective_request_budget=10_000,
+    )
+    assert invocation.scale_policy is (
+        direct_trf_module.DirectTrfScalePolicy.ADAPTIVE_INVERSE_JACOBIAN_COLUMN_NORM
+    )
 
     coupled_problem = SimpleNamespace(
         controlled_ids=("a", "b", "c", "d", "e", "f"),
@@ -178,9 +180,6 @@ def test_product_trf_caps_only_ordinary_small_direct_scales() -> None:
         )
         == 14000
     )
-    assert native_deterministic_module._direct_x_scale(
-        coupled_problem,  # ty: ignore[invalid-argument-type]
-    ) == (1.0, 2.0, 1.0, 5.0, 25.0, 150.0)
 
 
 def test_real_simulation_uses_native_values_and_preserves_back_calculation(
@@ -3140,12 +3139,12 @@ COORDINATES = [
     )
     session = AnalysisSession.create()
     trf_starts: list[tuple[float, ...]] = []
-    trf_scales: list[tuple[float, ...]] = []
+    trf_scale_policies: list[str] = []
     real_least_squares = direct_trf_module.least_squares
 
     def record_component_start(*args, **kwargs):
         trf_starts.append(tuple(float(value) for value in args[1]))
-        trf_scales.append(tuple(float(value) for value in kwargs["x_scale"]))
+        trf_scale_policies.append(str(kwargs["x_scale"]))
         return real_least_squares(*args, **kwargs)
 
     with (
@@ -3172,9 +3171,7 @@ COORDINATES = [
     assert sorted(start[0] for start in trf_starts) == pytest.approx(
         (2.0, 6.87922079444668)
     )
-    assert sorted(scale[0] for scale in trf_scales) == pytest.approx(
-        (2.0, 6.87922079444668)
-    )
+    assert trf_scale_policies == ["jac", "jac"]
 
 
 def test_v2_de_failure_has_no_direct_trf_fallback_or_commit(tmp_path: Path) -> None:
