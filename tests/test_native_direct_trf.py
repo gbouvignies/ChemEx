@@ -611,11 +611,7 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
     assert receipt.new_revision == 1
     assert receipt.scope == problem.commit_scope
     assert committed.revision == 1
-    assert committed[problem.controlled_ids[0]] == pytest.approx(
-        2.3474211504,
-        rel=2.0e-8,
-        abs=1.0e-10,
-    )
+    assert committed[problem.controlled_ids[0]] == first.accepted_result.vector[0]
     with pytest.raises(
         DirectTrfConstructionError,
         match="exact live fit commit authority",

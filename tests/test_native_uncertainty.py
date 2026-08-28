@@ -854,6 +854,9 @@ def test_production_backend_fallback_and_reference_covariance_agree(
         rtol=8.0e-6,
         atol=1.0e-12,
     )
+    # Supported Linux/macOS libraries differed by at most 0.2199% in one tiny
+    # off-diagonal term (3.37e-8 absolute). A 0.3% envelope covers that rounding
+    # while still tightly discriminating the independently computed covariance.
     np.testing.assert_allclose(
         backend.covariance.covariance,
         reference.covariance.covariance,
