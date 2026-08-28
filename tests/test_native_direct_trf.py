@@ -574,11 +574,11 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
     assert first.materialization.evaluation_count == 1
     assert first.materialization.cache_hits == 0
     # The literals come from the independent legacy least_squares baseline at
-    # c6378fb0. A 2e-8 relative tolerance covers the observed native ordered-
-    # normalization plus finite-difference/TRF rounding while remaining far
-    # below any scientifically meaningful change in this relaxation rate.
+    # c6378fb0. A 3e-8 relative tolerance covers supported macOS/Linux native-
+    # library and finite-difference/TRF rounding while remaining far below any
+    # scientifically meaningful change in this relaxation rate.
     assert first.accepted_result.vector == (
-        pytest.approx(2.3474211504, rel=2.0e-8, abs=1.0e-10),
+        pytest.approx(2.3474211504, rel=3.0e-8, abs=1.0e-10),
     )
     assert first.accepted_result.chi_square == pytest.approx(
         13.2171307054,
@@ -775,11 +775,18 @@ def test_cpmg_step1_direct_trf_preserves_requests_and_reuses_profile_kernels() -
     assert outcome.terminal is DirectTrfCandidateTerminal.SUCCESS
     assert outcome.candidate is not None
     assert outcome.execution.backend is not None
-    assert outcome.execution.backend.nfev == 7
-    assert outcome.execution.backend.njev == 7
-    assert outcome.execution.counters.solver_requests_received == 126
-    assert outcome.execution.counters.objective_evaluations_completed == 126
-    assert kernel_calls == 360
+    # Supported Linux and macOS native libraries differ by one accepted TRF
+    # iteration. Protect request accounting and profile-kernel reuse without
+    # requiring a host-identical trajectory length.
+    backend_nfev = outcome.execution.backend.nfev
+    assert backend_nfev in {7, 8}
+    assert outcome.execution.backend.njev == backend_nfev
+    expected_requests = backend_nfev * (len(component.controlled_ids) + 1)
+    assert outcome.execution.counters.solver_requests_received == expected_requests
+    assert (
+        outcome.execution.counters.objective_evaluations_completed == expected_requests
+    )
+    assert kernel_calls == 50 * backend_nfev + 10
     assert outcome.candidate.chi_square == pytest.approx(285.8191490381348)
 
 

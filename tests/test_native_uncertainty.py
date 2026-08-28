@@ -857,7 +857,7 @@ def test_production_backend_fallback_and_reference_covariance_agree(
     np.testing.assert_allclose(
         backend.covariance.covariance,
         reference.covariance.covariance,
-        rtol=2.0e-3,
+        rtol=3.0e-3,
         atol=1.0e-12,
     )
     assert backend.covariance.jacobian_condition == pytest.approx(
@@ -866,7 +866,7 @@ def test_production_backend_fallback_and_reference_covariance_agree(
     )
     assert backend.covariance.jacobian_condition == pytest.approx(
         reference.covariance.jacobian_condition,
-        rel=2.0e-3,
+        rel=3.0e-3,
     )
     backend_claims = {
         item.name: item.state
