@@ -44,6 +44,7 @@ from chemex.optimize.direct_trf import (
     DirectTrfConstructionError,
     DirectTrfInterrupted,
     DirectTrfInvocation,
+    DirectTrfOutcome,
     DirectTrfOutcomeTerminal,
     DirectTrfScalePolicy,
     DirectTrfTerminal,
@@ -1227,42 +1228,55 @@ def test_execution_fingerprints_the_ordered_solver_request_trajectory() -> None:
         _qualification_fit()
     )
 
-    def converge_after_one_request(
-        fun: Callable[[Array], Array], x0: Array, **_settings: object
-    ) -> object:
-        return _one_request_converged_backend(fun, x0)
+    def backend_for_order(
+        factors: tuple[float, float, float],
+    ) -> Callable[..., object]:
+        def converge(
+            fun: Callable[[Array], Array], x0: Array, **_settings: object
+        ) -> object:
+            final_candidate: Array | None = None
+            final_residuals: Array | None = None
+            for factor in factors:
+                final_candidate = np.asarray(x0, dtype=np.float64) * factor
+                final_residuals = fun(final_candidate)
+            assert final_candidate is not None
+            assert final_residuals is not None
+            return _backend_result(
+                final_candidate,
+                final_residuals,
+                status=1,
+                success=True,
+                message="gradient tolerance satisfied",
+                optimality=0.0,
+            )
 
-    def converge_after_two_requests(
-        fun: Callable[[Array], Array], x0: Array, **_settings: object
-    ) -> object:
-        fun(np.asarray(x0, dtype=np.float64) * 0.95)
-        return _one_request_converged_backend(fun, x0)
+        return converge
 
-    with patch(
-        "chemex.optimize.direct_trf.least_squares",
-        converge_after_one_request,
-    ):
-        one_request = execute_direct_trf(
-            problem,
-            invocation,
-            parameterization,
-            engine,
-        )
-    with patch(
-        "chemex.optimize.direct_trf.least_squares",
-        converge_after_two_requests,
-    ):
-        two_requests = execute_direct_trf(
-            problem,
-            invocation,
-            parameterization,
-            engine,
-        )
+    def execute(factors: tuple[float, float, float]) -> DirectTrfOutcome:
+        with patch(
+            "chemex.optimize.direct_trf.least_squares",
+            backend_for_order(factors),
+        ):
+            return execute_direct_trf(
+                problem,
+                invocation,
+                parameterization,
+                engine,
+            )
 
-    assert len(one_request.execution.request_trajectory_fingerprint) == 64
-    assert one_request.execution.request_trajectory_fingerprint != (
-        two_requests.execution.request_trajectory_fingerprint
-    )
+    first = execute((0.95, 0.85, 0.35))
+    replay = execute((0.95, 0.85, 0.35))
+    reordered = execute((0.85, 0.95, 0.35))
+
+    first_fingerprint = first.execution.request_trajectory_fingerprint
+    assert len(first_fingerprint) == 64
+    assert replay.execution.request_trajectory_fingerprint == first_fingerprint
+    assert reordered.execution.request_trajectory_fingerprint != first_fingerprint
+    assert first.execution.counters == reordered.execution.counters
+    assert first.execution.final_candidate == reordered.execution.final_candidate
+    assert first.execution.best_candidate == reordered.execution.best_candidate
+    assert first.execution.backend == reordered.execution.backend
+    assert first.execution.identity != reordered.execution.identity
 
 
 def test_invocation_execution_settings_drive_the_solver_environment() -> None:
