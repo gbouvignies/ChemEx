@@ -59,7 +59,7 @@ _SCALE_POLICY_VERSION = "scipy-adaptive-inverse-jacobian-column-norm-v1"
 _NUMERICAL_COMPATIBILITY_REQUIREMENT = (
     "scipy-1.18.x-dense-trf-adaptive-jacobian-scaling-v1"
 )
-_REQUEST_TRAJECTORY_VERSION = "native-direct-trf-request-trajectory-v1"
+_REQUEST_TRAJECTORY_VERSION = "native-direct-trf-request-trajectory-v2"
 _CANDIDATE_ORDER_VERSION = "chi-square-vector-ordinal-v1"
 _BACKEND_SETTINGS = (
     ("method", "trf"),
@@ -2602,7 +2602,6 @@ class _LiveAttempt:
         *,
         reason: str | None = None,
         vector: tuple[float, ...] | None = None,
-        residuals: tuple[float, ...] | None = None,
         chi_square: float | None = None,
         failure_identity: str | None = None,
     ) -> None:
@@ -2610,17 +2609,24 @@ class _LiveAttempt:
         if pending is None:
             raise RuntimeError("Direct TRF request evidence has no pending request")
         ordinal, solver_vector = pending
+        external_vector = None
+        if vector is not None:
+            canonical_external = _request_vector_evidence(vector)
+            if canonical_external != solver_vector:
+                external_vector = canonical_external
+        # The problem/invocation identities bind residual semantics; canonical
+        # chi-square identifies a valid objective result. Full residuals remain
+        # in _CompletedRequest for final-candidate verification and are retained
+        # with the accepted residual/Jacobian evidence, not this hot-path digest.
         self._trajectory_digest = _advance_request_trajectory(
             self._trajectory_digest,
             (
                 "request",
                 ordinal,
-                None,
                 solver_vector,
-                None if vector is None else _vector_tokens(vector),
+                external_vector,
                 disposition,
                 reason,
-                None if residuals is None else _vector_tokens(residuals),
                 None if chi_square is None else _float_token(chi_square),
                 failure_identity,
             ),
@@ -2641,12 +2647,10 @@ class _LiveAttempt:
                 (
                     "request",
                     ordinal,
-                    None,
                     solver_vector,
                     None,
                     "accepted-incomplete",
                     "attempt-terminated-during-request",
-                    None,
                     None,
                     None,
                 ),
@@ -2765,7 +2769,6 @@ class _LiveAttempt:
         self._finish_request(
             "accepted-valid",
             vector=vector,
-            residuals=residuals,
             chi_square=chi_square,
         )
         self.progress.evaluated(self.counters, summary, self.best)

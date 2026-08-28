@@ -23,6 +23,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+import chemex.optimize.direct_trf as direct_trf_module
 from chemex.configuration.method_execution import normalize_methods_for_execution
 from chemex.configuration.methods import Method, Selection, read_method_plan
 from chemex.configuration.parameters import read_defaults
@@ -40,6 +41,7 @@ from chemex.optimize.direct_trf import (
     AffineHalfSpace,
     CancellationToken,
     CandidateSummary,
+    DirectTrfCandidateOutcome,
     DirectTrfCandidateTerminal,
     DirectTrfConstructionError,
     DirectTrfInterrupted,
@@ -1292,6 +1294,7 @@ def test_execution_fingerprints_the_ordered_solver_request_trajectory() -> None:
         fit_engine=fresh_engine,
     )
     reordered = execute((0.85, 0.95, 0.35))
+    changed_intermediate = execute((0.95, 0.80, 0.35))
 
     first_fingerprint = first.execution.request_trajectory_fingerprint
     assert len(first_fingerprint) == 64
@@ -1300,11 +1303,251 @@ def test_execution_fingerprints_the_ordered_solver_request_trajectory() -> None:
     assert fresh_invocation.identity != invocation.identity
     assert fresh_replay.execution.request_trajectory_fingerprint == first_fingerprint
     assert reordered.execution.request_trajectory_fingerprint != first_fingerprint
+    assert (
+        changed_intermediate.execution.request_trajectory_fingerprint
+        != first_fingerprint
+    )
     assert first.execution.counters == reordered.execution.counters
+    assert first.execution.counters == changed_intermediate.execution.counters
     assert first.execution.final_candidate == reordered.execution.final_candidate
+    assert (
+        first.execution.final_candidate
+        == changed_intermediate.execution.final_candidate
+    )
     assert first.execution.best_candidate == reordered.execution.best_candidate
+    assert (
+        first.execution.best_candidate == changed_intermediate.execution.best_candidate
+    )
     assert first.execution.backend == reordered.execution.backend
+    assert first.execution.backend == changed_intermediate.execution.backend
     assert first.execution.identity != reordered.execution.identity
+
+
+def test_valid_request_trajectory_record_is_compact() -> None:
+    _session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    records: list[tuple[object, ...]] = []
+    advance = direct_trf_module._advance_request_trajectory
+
+    def capture_record(previous: bytes, record: object) -> bytes:
+        assert isinstance(record, tuple)
+        records.append(record)
+        return advance(previous, record)
+
+    def converge(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        return _one_request_converged_backend(fun, x0)
+
+    with (
+        patch.object(
+            direct_trf_module,
+            "_advance_request_trajectory",
+            capture_record,
+        ),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            converge,
+        ),
+    ):
+        outcome = execute_direct_trf(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert outcome.terminal is DirectTrfOutcomeTerminal.ACCEPTED
+    request_records = [record for record in records if record[0] == "request"]
+    assert len(request_records) == 1
+    request_record = request_records[0]
+    assert len(request_record) == 8
+    assert request_record[1] == 1
+    assert request_record[2][0] == "binary64"
+    assert request_record[3] is None
+    assert request_record[4] == "accepted-valid"
+    assert request_record[5] is None
+    assert isinstance(request_record[6], str)
+    assert request_record[7] is None
+
+
+def test_request_trajectory_fingerprint_includes_chi_square() -> None:
+    _session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+
+    def converge(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        return _one_request_converged_backend(fun, x0)
+
+    with patch("chemex.optimize.direct_trf.least_squares", converge):
+        baseline = execute_direct_trf_candidate(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    evaluate_residuals = BoundEvaluator.evaluate_residuals
+
+    def perturb_chi_square(
+        evaluator: BoundEvaluator,
+        frame: EvaluationFrame,
+    ) -> Array | EvaluationFailure:
+        outcome = evaluate_residuals(evaluator, frame)
+        if isinstance(outcome, EvaluationFailure):
+            return outcome
+        perturbed = np.array(outcome, copy=True)
+        perturbed[0] += 1.0e-4
+        return perturbed
+
+    with (
+        patch.object(BoundEvaluator, "evaluate_residuals", perturb_chi_square),
+        patch("chemex.optimize.direct_trf.least_squares", converge),
+    ):
+        changed = execute_direct_trf_candidate(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert baseline.execution.final_candidate is not None
+    assert changed.execution.final_candidate is not None
+    assert (
+        baseline.execution.final_candidate.vector
+        == changed.execution.final_candidate.vector
+    )
+    assert (
+        baseline.execution.final_candidate.chi_square
+        != changed.execution.final_candidate.chi_square
+    )
+    assert baseline.execution.counters == changed.execution.counters
+    assert (
+        baseline.execution.request_trajectory_fingerprint
+        != changed.execution.request_trajectory_fingerprint
+    )
+
+
+def test_request_trajectory_fingerprint_includes_disposition_and_termination() -> None:
+    _session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+
+    def converged(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        return _one_request_converged_backend(fun, x0)
+
+    def non_converged(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        candidate = np.asarray(x0, dtype=np.float64) * 0.9
+        residuals = fun(candidate)
+        return _backend_result(
+            candidate,
+            residuals,
+            status=0,
+            success=False,
+            message="maximum evaluations reached",
+            optimality=1.0,
+        )
+
+    def execute_with_backend(
+        backend: Callable[..., object],
+    ) -> DirectTrfCandidateOutcome:
+        with patch("chemex.optimize.direct_trf.least_squares", backend):
+            return execute_direct_trf_candidate(
+                problem,
+                invocation,
+                parameterization,
+                engine,
+            )
+
+    successful = execute_with_backend(converged)
+    unsuccessful = execute_with_backend(non_converged)
+
+    def invalid(category: str) -> DirectTrfCandidateOutcome:
+        failure = EvaluationFailure(
+            engine.plan.identity,
+            parameterization.evaluator_identity,
+            "residual",
+            category,
+            "INVALID_TRIAL",
+            message=f"{category} diagnostic",
+        )
+        with (
+            patch.object(
+                BoundEvaluator,
+                "evaluate_residuals",
+                return_value=failure,
+            ),
+            patch("chemex.optimize.direct_trf.least_squares", converged),
+        ):
+            return execute_direct_trf_candidate(
+                problem,
+                invocation,
+                parameterization,
+                engine,
+            )
+
+    invalid_a = invalid("trajectory-probe-a")
+    invalid_b = invalid("trajectory-probe-b")
+
+    exhausted_invocation = DirectTrfInvocation.for_problem(
+        problem,
+        objective_request_budget=1,
+    )
+
+    def exhaust(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        candidate = np.asarray(x0, dtype=np.float64) * 0.9
+        fun(candidate)
+        fun(candidate)
+        raise AssertionError("the refused request must stop the backend")
+
+    with patch("chemex.optimize.direct_trf.least_squares", exhaust):
+        exhausted = execute_direct_trf_candidate(
+            problem,
+            exhausted_invocation,
+            parameterization,
+            engine,
+        )
+
+    cancellation = CancellationToken()
+    cancellation.cancel()
+    cancelled = execute_direct_trf_candidate(
+        problem,
+        invocation,
+        parameterization,
+        engine,
+        cancellation=cancellation,
+    )
+
+    fingerprints = {
+        outcome.execution.request_trajectory_fingerprint
+        for outcome in (
+            successful,
+            unsuccessful,
+            invalid_a,
+            invalid_b,
+            exhausted,
+            cancelled,
+        )
+    }
+    assert len(fingerprints) == 6
+    assert successful.execution.terminal is DirectTrfTerminal.CONVERGED
+    assert unsuccessful.execution.terminal is DirectTrfTerminal.NON_CONVERGED
+    assert invalid_a.execution.terminal is DirectTrfTerminal.INVALID_TRIAL
+    assert invalid_b.execution.terminal is DirectTrfTerminal.INVALID_TRIAL
+    assert exhausted.execution.terminal is DirectTrfTerminal.BUDGET_EXHAUSTED
+    assert cancelled.execution.terminal is DirectTrfTerminal.CANCELLED
+    assert invalid_a.execution.failure is not None
+    assert invalid_b.execution.failure is not None
+    assert invalid_a.execution.failure.category != invalid_b.execution.failure.category
 
 
 def test_invocation_execution_settings_drive_the_solver_environment() -> None:
