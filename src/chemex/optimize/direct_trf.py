@@ -2577,11 +2577,7 @@ class _LiveAttempt:
         self.requests: list[_CompletedRequest] = []
         self.best: CandidateSummary | None = None
         initial_record = json.dumps(
-            (
-                _REQUEST_TRAJECTORY_VERSION,
-                problem.identity,
-                invocation.identity,
-            ),
+            (_REQUEST_TRAJECTORY_VERSION,),
             ensure_ascii=True,
             separators=(",", ":"),
         ).encode("ascii")

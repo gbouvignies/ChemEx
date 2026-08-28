@@ -1227,6 +1227,14 @@ def test_execution_fingerprints_the_ordered_solver_request_trajectory() -> None:
     _session, _experiments, parameterization, engine, problem, invocation = (
         _qualification_fit()
     )
+    (
+        _fresh_session,
+        _fresh_experiments,
+        fresh_parameterization,
+        fresh_engine,
+        fresh_problem,
+        fresh_invocation,
+    ) = _qualification_fit()
 
     def backend_for_order(
         factors: tuple[float, float, float],
@@ -1252,25 +1260,42 @@ def test_execution_fingerprints_the_ordered_solver_request_trajectory() -> None:
 
         return converge
 
-    def execute(factors: tuple[float, float, float]) -> DirectTrfOutcome:
+    def execute(
+        factors: tuple[float, float, float],
+        *,
+        fit_problem: OptimizationProblem = problem,
+        fit_invocation: DirectTrfInvocation = invocation,
+        fit_parameterization: ActiveParameterization = parameterization,
+        fit_engine: EvaluationEngine = engine,
+    ) -> DirectTrfOutcome:
         with patch(
             "chemex.optimize.direct_trf.least_squares",
             backend_for_order(factors),
         ):
             return execute_direct_trf(
-                problem,
-                invocation,
-                parameterization,
-                engine,
+                fit_problem,
+                fit_invocation,
+                fit_parameterization,
+                fit_engine,
             )
 
     first = execute((0.95, 0.85, 0.35))
     replay = execute((0.95, 0.85, 0.35))
+    fresh_replay = execute(
+        (0.95, 0.85, 0.35),
+        fit_problem=fresh_problem,
+        fit_invocation=fresh_invocation,
+        fit_parameterization=fresh_parameterization,
+        fit_engine=fresh_engine,
+    )
     reordered = execute((0.85, 0.95, 0.35))
 
     first_fingerprint = first.execution.request_trajectory_fingerprint
     assert len(first_fingerprint) == 64
     assert replay.execution.request_trajectory_fingerprint == first_fingerprint
+    assert fresh_problem.identity != problem.identity
+    assert fresh_invocation.identity != invocation.identity
+    assert fresh_replay.execution.request_trajectory_fingerprint == first_fingerprint
     assert reordered.execution.request_trajectory_fingerprint != first_fingerprint
     assert first.execution.counters == reordered.execution.counters
     assert first.execution.final_candidate == reordered.execution.final_candidate
