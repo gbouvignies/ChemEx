@@ -56,6 +56,10 @@ _PROBLEM_VERSION = "native-direct-trf-problem-v1"
 _SCALARIZATION_VERSION = "ordered-pairwise-chi-square-v1"
 _INVOCATION_VERSION = "scipy-direct-trf-v3"
 _SCALE_POLICY_VERSION = "scipy-adaptive-inverse-jacobian-column-norm-v1"
+_NUMERICAL_COMPATIBILITY_REQUIREMENT = (
+    "scipy-1.18.x-dense-trf-adaptive-jacobian-scaling-v1"
+)
+_REQUEST_TRAJECTORY_VERSION = "native-direct-trf-request-trajectory-v1"
 _CANDIDATE_ORDER_VERSION = "chi-square-vector-ordinal-v1"
 _BACKEND_SETTINGS = (
     ("method", "trf"),
@@ -240,6 +244,47 @@ def _float_token(value: float) -> str:
 
 def _vector_tokens(values: Sequence[float]) -> tuple[str, ...]:
     return tuple(_float_token(value) for value in values)
+
+
+def _scipy_satisfies_numerical_compatibility(version: str) -> bool:
+    """Return whether SciPy belongs to the TRF class qualified by ChemEx."""
+    components = version.split(".", maxsplit=2)
+    if len(components) < 2:
+        return False
+    try:
+        major, minor = (int(component) for component in components[:2])
+    except ValueError:
+        return False
+    return (major, minor) == (1, 18)
+
+
+def _request_vector_evidence(vector: object) -> tuple[object, ...]:
+    """Detach one solver request without making trace capture affect execution."""
+    try:
+        array = np.asarray(vector, dtype=np.float64)
+    except Exception as error:  # noqa: BLE001 - evidence must not mask the real failure
+        return ("unrepresentable", type(error).__name__)
+    big_endian = np.asarray(array, dtype=np.dtype(">f8"))
+    return (
+        "binary64",
+        tuple(int(value) for value in array.shape),
+        big_endian.tobytes().hex(),
+    )
+
+
+def _advance_request_trajectory(previous: bytes, record: object) -> bytes:
+    encoded = json.dumps(
+        record,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+    digest = hashlib.sha256()
+    digest.update(b"chemex-direct-trf-request-trajectory\0")
+    digest.update(previous)
+    digest.update(len(encoded).to_bytes(8, byteorder="big"))
+    digest.update(encoded)
+    return digest.digest()
 
 
 def _binary64_matrix_digest(
@@ -1403,10 +1448,10 @@ class OptimizationProblem:
 class DirectTrfScalePolicy(StrEnum):
     """Closed coordinate geometry for every native local TRF invocation.
 
-    SciPy 1.18 ``x_scale="jac"`` starts from inverse Jacobian-column 2-norms
+    SciPy 1.18.x ``x_scale="jac"`` starts from inverse Jacobian-column 2-norms
     and recomputes them after accepted steps while retaining the largest prior
-    column norm. Exact SciPy and native-library versions remain part of the run
-    environment identity.
+    column norm. ChemEx admits only that qualified SciPy minor-version class;
+    exact SciPy and native-library versions remain part of run provenance.
     """
 
     ADAPTIVE_INVERSE_JACOBIAN_COLUMN_NORM = _SCALE_POLICY_VERSION
@@ -1433,6 +1478,11 @@ class DirectTrfInvocation:
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
+        if not _scipy_satisfies_numerical_compatibility(scipy_version):
+            raise DirectTrfConstructionError(
+                "SciPy does not satisfy the native TRF numerical compatibility "
+                f"requirement: {_NUMERICAL_COMPATIBILITY_REQUIREMENT}"
+            )
         if self.execution_settings.workers != 1:
             raise DirectTrfConstructionError(
                 "One Direct TRF invocation has exactly one ChemEx worker"
@@ -1478,6 +1528,7 @@ class DirectTrfInvocation:
                 (
                     _INVOCATION_VERSION,
                     self.problem_identity,
+                    _NUMERICAL_COMPATIBILITY_REQUIREMENT,
                     self.objective_request_budget,
                     self.scale_policy.value,
                     tuple(
@@ -1617,6 +1668,7 @@ class DirectTrfExecution:
     invocation_identity: str
     terminal: DirectTrfTerminal
     counters: AttemptCounters
+    request_trajectory_fingerprint: str
     preflight_evaluation_identity: str | None
     best_candidate: CandidateSummary | None
     final_candidate: CandidateSummary | None
@@ -1625,6 +1677,11 @@ class DirectTrfExecution:
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
+        if len(self.request_trajectory_fingerprint) != 64 or any(
+            character not in "0123456789abcdef"
+            for character in self.request_trajectory_fingerprint
+        ):
+            raise ValueError("Direct TRF lacks a valid request trajectory fingerprint")
         if self.terminal is DirectTrfTerminal.CONVERGED and (
             self.final_candidate is None
             or self.backend is None
@@ -1645,6 +1702,7 @@ class DirectTrfExecution:
                         self.counters.objective_requests_accepted,
                         self.counters.objective_evaluations_completed,
                     ),
+                    self.request_trajectory_fingerprint,
                     self.preflight_evaluation_identity,
                     None
                     if self.best_candidate is None
@@ -2518,19 +2576,109 @@ class _LiveAttempt:
         self.completed = 0
         self.requests: list[_CompletedRequest] = []
         self.best: CandidateSummary | None = None
+        initial_record = json.dumps(
+            (
+                _REQUEST_TRAJECTORY_VERSION,
+                problem.identity,
+                invocation.identity,
+            ),
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+        self._trajectory_digest = hashlib.sha256(initial_record).digest()
+        self._pending_request: tuple[int, tuple[object, ...]] | None = None
 
     @property
     def counters(self) -> AttemptCounters:
         return AttemptCounters(self.received, self.accepted, self.completed)
 
+    def _begin_request(self, solver_vector: object) -> None:
+        if self._pending_request is not None:
+            raise RuntimeError("Direct TRF objective adapter is not reentrant")
+        self._pending_request = (
+            self.received,
+            _request_vector_evidence(solver_vector),
+        )
+
+    def _finish_request(
+        self,
+        disposition: str,
+        *,
+        reason: str | None = None,
+        vector: tuple[float, ...] | None = None,
+        residuals: tuple[float, ...] | None = None,
+        chi_square: float | None = None,
+        failure_identity: str | None = None,
+    ) -> None:
+        pending = self._pending_request
+        if pending is None:
+            raise RuntimeError("Direct TRF request evidence has no pending request")
+        ordinal, solver_vector = pending
+        self._trajectory_digest = _advance_request_trajectory(
+            self._trajectory_digest,
+            (
+                "request",
+                ordinal,
+                None,
+                solver_vector,
+                None if vector is None else _vector_tokens(vector),
+                disposition,
+                reason,
+                None if residuals is None else _vector_tokens(residuals),
+                None if chi_square is None else _float_token(chi_square),
+                failure_identity,
+            ),
+        )
+        self._pending_request = None
+
+    def trajectory_fingerprint(
+        self,
+        terminal: DirectTrfTerminal,
+        failure: TerminalFailure | None,
+    ) -> str:
+        """Finalize compact evidence for every received solver request in order."""
+        digest = self._trajectory_digest
+        if self._pending_request is not None:
+            ordinal, solver_vector = self._pending_request
+            digest = _advance_request_trajectory(
+                digest,
+                (
+                    "request",
+                    ordinal,
+                    None,
+                    solver_vector,
+                    None,
+                    "accepted-incomplete",
+                    "attempt-terminated-during-request",
+                    None,
+                    None,
+                    None,
+                ),
+            )
+        digest = _advance_request_trajectory(
+            digest,
+            (
+                "end",
+                self.received,
+                self.accepted,
+                self.completed,
+                terminal.value,
+                None if failure is None else failure.category,
+            ),
+        )
+        return digest.hex()
+
     def objective(self, solver_vector: Array) -> Array:
         self.received += 1
+        self._begin_request(solver_vector)
         if self.cancellation.is_cancelled:
+            self._finish_request("refused", reason="cancelled-before-admission")
             raise _AttemptStop(
                 DirectTrfTerminal.CANCELLED,
                 TerminalFailure("cancelled", "Cancellation observed before request"),
             )
         if self.accepted >= self.invocation.objective_request_budget:
+            self._finish_request("refused", reason="objective-budget-exhausted")
             raise _AttemptStop(
                 DirectTrfTerminal.BUDGET_EXHAUSTED,
                 TerminalFailure(
@@ -2561,6 +2709,10 @@ class _LiveAttempt:
                 lifecycle,
             )
         except Exception as error:
+            self._finish_request(
+                "accepted-failed",
+                reason="candidate-contract-failure",
+            )
             raise _AttemptStop(
                 DirectTrfTerminal.IMPLEMENTATION_FAILURE,
                 TerminalFailure(
@@ -2571,6 +2723,12 @@ class _LiveAttempt:
         outcome = self.evaluator.evaluate_residuals(frame)
         self.completed += 1
         if isinstance(outcome, EvaluationFailure):
+            self._finish_request(
+                "accepted-failed",
+                reason=outcome.category,
+                vector=vector,
+                failure_identity=outcome.identity,
+            )
             terminal = (
                 DirectTrfTerminal.INVALID_TRIAL
                 if outcome.validity == "INVALID_TRIAL"
@@ -2591,6 +2749,11 @@ class _LiveAttempt:
             )
             chi_square = canonical_chi_square(residuals)
         except (TypeError, ValueError, ObjectiveScalarizationError) as error:
+            self._finish_request(
+                "accepted-failed",
+                reason="objective-scalarization-failure",
+                vector=vector,
+            )
             raise _AttemptStop(
                 DirectTrfTerminal.INVALID_TRIAL,
                 TerminalFailure(
@@ -2603,6 +2766,12 @@ class _LiveAttempt:
         self.requests.append(request)
         if self.best is None or summary.ordering_key() < self.best.ordering_key():
             self.best = summary
+        self._finish_request(
+            "accepted-valid",
+            vector=vector,
+            residuals=residuals,
+            chi_square=chi_square,
+        )
         self.progress.evaluated(self.counters, summary, self.best)
         if self.cancellation.is_cancelled:
             raise _AttemptStop(
@@ -2656,6 +2825,7 @@ def _execution(
         invocation.identity,
         terminal,
         live.counters,
+        live.trajectory_fingerprint(terminal, failure),
         preflight_identity,
         live.best,
         final_candidate,

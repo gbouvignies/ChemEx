@@ -23,13 +23,16 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 ### Changed
 - Changed native local TRF refinement to one versioned adaptive inverse-Jacobian-
   column-norm scaling policy across Direct, grouped Direct, GRID nuisance fits,
-  and DE polishing. Sensitivity-based trust-region geometry removes pathological,
-  still-improving trajectories in shipped mixed-sensitivity methyl CPMG fits and
-  is less dependent on parameter magnitudes and physical units. Local scaling is
-  not used as an implicit global-search policy: a shipped CEST start reaches a
-  different qualified attraction basin. Fixed objective-request budgets,
-  convergence tolerances, bounds, residual semantics, and fail-closed acceptance
-  remain unchanged.
+  DE polishing, and resampling refits. Sensitivity-based trust-region geometry
+  removes pathological, still-improving trajectories in shipped mixed-sensitivity
+  methyl CPMG fits and is less dependent on parameter magnitudes and physical
+  units. Local scaling is not used as an implicit global-search policy: a shipped
+  CEST start reaches a different qualified attraction basin. Fixed objective-
+  request budgets, convergence tolerances, bounds, residual semantics, and fail-
+  closed acceptance remain unchanged. The invocation now binds the qualified
+  SciPy 1.18.x dense-TRF compatibility class, and execution evidence fingerprints
+  every solver request in received order, including refused and interrupted
+  requests.
 - Converted all shipped method examples to canonical method format v2 and made
   v2 the primary authoring format in the fitting guide. The guide now documents
   ordered complete-role overrides, explicit `ROLES_FROM`, automatic committed

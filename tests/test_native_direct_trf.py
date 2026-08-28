@@ -1159,6 +1159,17 @@ def test_invocation_rejects_unrecognized_scale_policy() -> None:
         )
 
 
+def test_invocation_rejects_an_unqualified_scipy_trf_class() -> None:
+    with (
+        patch("chemex.optimize.direct_trf.scipy_version", "1.19.0"),
+        pytest.raises(
+            DirectTrfConstructionError,
+            match="does not satisfy the native TRF numerical compatibility",
+        ),
+    ):
+        DirectTrfInvocation("qualification-problem", 10)
+
+
 def test_non_convergence_keeps_last_iterate_diagnostic_and_commits_nothing() -> None:
     session, _experiments, parameterization, engine, problem, invocation = (
         _qualification_fit()
@@ -1209,6 +1220,49 @@ def test_non_convergence_keeps_last_iterate_diagnostic_and_commits_nothing() -> 
     assert outcome.accepted_result is None
     assert session.analysis_values.snapshot() == before
     assert _presentation_values(session, problem.commit_scope) == presentation_before
+
+
+def test_execution_fingerprints_the_ordered_solver_request_trajectory() -> None:
+    _session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+
+    def converge_after_one_request(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        return _one_request_converged_backend(fun, x0)
+
+    def converge_after_two_requests(
+        fun: Callable[[Array], Array], x0: Array, **_settings: object
+    ) -> object:
+        fun(np.asarray(x0, dtype=np.float64) * 0.95)
+        return _one_request_converged_backend(fun, x0)
+
+    with patch(
+        "chemex.optimize.direct_trf.least_squares",
+        converge_after_one_request,
+    ):
+        one_request = execute_direct_trf(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+        )
+    with patch(
+        "chemex.optimize.direct_trf.least_squares",
+        converge_after_two_requests,
+    ):
+        two_requests = execute_direct_trf(
+            problem,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert len(one_request.execution.request_trajectory_fingerprint) == 64
+    assert one_request.execution.request_trajectory_fingerprint != (
+        two_requests.execution.request_trajectory_fingerprint
+    )
 
 
 def test_invocation_execution_settings_drive_the_solver_environment() -> None:
@@ -1277,6 +1331,7 @@ def test_budget_exhaustion_has_exact_counters_and_no_accepted_candidate() -> Non
     assert outcome.execution.counters.solver_requests_received == 3
     assert outcome.execution.counters.objective_requests_accepted == 2
     assert outcome.execution.counters.objective_evaluations_completed == 2
+    assert len(outcome.execution.request_trajectory_fingerprint) == 64
     assert outcome.accepted_result is None
     assert session.analysis_values.snapshot() == before
 
