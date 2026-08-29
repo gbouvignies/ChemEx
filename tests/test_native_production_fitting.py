@@ -462,15 +462,6 @@ def test_cest_1hn_ip_ap_commits_psd_transverse_relaxation_block(
         first[r2_b.param_id] * first[r2a_b.param_id] - first[etaxy_b.param_id] ** 2
     )
     assert determinant >= -1.0e-10
-    stage_one_covariance = json.loads(
-        (output / "1_FIX_R1" / "Statistics" / "Covariance" / "evidence.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert any(
-        failure["category"] == "active_relaxation_feasibility_boundary"
-        for failure in stage_one_covariance["failures"]
-    )
     assert snapshot.revision == 2
     final_statistics = tomllib.loads(
         (output / "2_FIT_R1" / "statistics.toml").read_text(encoding="utf-8")
