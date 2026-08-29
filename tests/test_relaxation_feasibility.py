@@ -8,8 +8,10 @@ import pytest
 
 from chemex.optimize.helper import execute_simulation
 from chemex.parameters.feasible_coordinates import (
+    FeasibleCoordinateConstructionError,
     ScientificFeasibilityError,
     _conditional_interval,
+    _reference_coefficient,
     _validate_blocks,
     compile_feasible_coordinates,
     relaxation_state_is_on_boundary,
@@ -17,8 +19,11 @@ from chemex.parameters.feasible_coordinates import (
 from chemex.parameters.parameterization import (
     BinaryExpression,
     CompiledConstraint,
+    FunctionExpression,
     IndependentValueFrame,
+    LiteralExpression,
     ReferenceExpression,
+    UnaryExpression,
 )
 from chemex.parameters.relaxation import (
     RelaxationPsdBlock,
@@ -118,6 +123,264 @@ def _affine_parameterization():
             return values
 
     return Parameterization()
+
+
+def _dq_affine_parameterization():
+    block = RelaxationPsdBlock(
+        "transverse-a",
+        "a",
+        ("r2dq", "r2adq"),
+        ((0, 1, "eta"),),
+    )
+    constraint = CompiledConstraint(
+        "r2adq",
+        BinaryExpression(
+            "subtract",
+            ReferenceExpression("r2dq"),
+            BinaryExpression(
+                "divide",
+                ReferenceExpression("r1"),
+                LiteralExpression(3.0),
+            ),
+        ),
+        ("r2dq", "r1"),
+        "method",
+        "[R2DQ] - [R1] / 3.0",
+    )
+
+    class Parameterization:
+        scope_ids = ("r2dq", "r1", "eta", "r2adq")
+        evaluator_identity = "dq-relaxation-test-evaluator"
+        program = SimpleNamespace(
+            constraints=(constraint,),
+            relaxation_domains=SealedRelaxationDomains((block,)),
+        )
+
+        @staticmethod
+        def resolve(frame):
+            values = dict(frame.ordered_items())
+            values.setdefault("r2dq", 0.0)
+            values.setdefault("r1", 0.0)
+            values["r2adq"] = values["r2dq"] - values["r1"] / 3.0
+            return values
+
+    return Parameterization()
+
+
+def test_compiler_recognizes_exact_dq_affine_nonnegative_floor() -> None:
+    parameterization = _dq_affine_parameterization()
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("r2dq", 20.0), ("r1", 1.5), ("eta", 0.0)),
+    )
+    maximum = float(np.finfo(np.float64).max)
+
+    chart = compile_feasible_coordinates(
+        parameterization,
+        frame,
+        ("r2dq",),
+        (0.0,),
+        (maximum,),
+    )
+
+    assert chart is not None
+    assert chart.rate_excess_ids == (("r2dq", "r2adq"),)
+    boundary = chart.decode((0.0,))
+    values = parameterization.resolve(boundary.frame)
+    assert values["r2dq"] == pytest.approx(0.5)
+    assert values["r2adq"] == pytest.approx(0.0)
+    _validate_blocks(chart.blocks, values)
+
+
+def test_compiler_recognizes_exact_dq_affine_psd_floor() -> None:
+    parameterization = _dq_affine_parameterization()
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("r2dq", 20.0), ("r1", 1.5), ("eta", 3.0)),
+    )
+    maximum = float(np.finfo(np.float64).max)
+
+    chart = compile_feasible_coordinates(
+        parameterization,
+        frame,
+        ("r2dq",),
+        (0.0,),
+        (maximum,),
+    )
+
+    assert chart is not None
+    assert chart.rate_excess_ids == (("r2dq", "r2adq"),)
+    assert chart.static_rate_floors[0][0] == "r2dq"
+    boundary = chart.decode((0.0,))
+    values = parameterization.resolve(boundary.frame)
+    assert values["r2dq"] == pytest.approx(0.25 + 0.5 * np.sqrt(36.25))
+    assert values["r2dq"] * values["r2adq"] == pytest.approx(9.0)
+    _validate_blocks(chart.blocks, values)
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        (
+            BinaryExpression("add", ReferenceExpression("x"), LiteralExpression(4.0)),
+            1.0,
+        ),
+        (
+            BinaryExpression(
+                "subtract", ReferenceExpression("x"), LiteralExpression(4.0)
+            ),
+            1.0,
+        ),
+        (
+            BinaryExpression("add", LiteralExpression(4.0), ReferenceExpression("x")),
+            1.0,
+        ),
+        (
+            BinaryExpression(
+                "multiply", LiteralExpression(2.5), ReferenceExpression("x")
+            ),
+            2.5,
+        ),
+        (
+            BinaryExpression(
+                "multiply", ReferenceExpression("x"), LiteralExpression(2.5)
+            ),
+            2.5,
+        ),
+        (
+            BinaryExpression(
+                "divide", ReferenceExpression("x"), LiteralExpression(4.0)
+            ),
+            0.25,
+        ),
+        (UnaryExpression("positive", ReferenceExpression("x")), 1.0),
+        (UnaryExpression("negative", ReferenceExpression("x")), -1.0),
+        (
+            BinaryExpression(
+                "subtract",
+                BinaryExpression(
+                    "multiply",
+                    LiteralExpression(3.0),
+                    BinaryExpression(
+                        "add", ReferenceExpression("x"), LiteralExpression(2.0)
+                    ),
+                ),
+                UnaryExpression("negative", ReferenceExpression("x")),
+            ),
+            4.0,
+        ),
+    ],
+)
+def test_reference_coefficient_supports_exact_affine_forms(
+    expression: object,
+    expected: float,
+) -> None:
+    assert _reference_coefficient(expression, "x") == expected
+
+
+def test_reference_coefficient_expands_recursive_derived_references() -> None:
+    constraints = {
+        "y": CompiledConstraint(
+            "y",
+            BinaryExpression(
+                "add",
+                BinaryExpression(
+                    "multiply", LiteralExpression(2.0), ReferenceExpression("x")
+                ),
+                LiteralExpression(1.0),
+            ),
+            ("x",),
+            "method",
+            "2.0 * [X] + 1.0",
+        )
+    }
+    expression = BinaryExpression(
+        "divide", ReferenceExpression("y"), LiteralExpression(2.0)
+    )
+
+    assert _reference_coefficient(expression, "x", constraints) == 1.0
+
+
+def test_reference_coefficient_rejects_recursive_constraint_cycle() -> None:
+    constraints = {
+        "y": CompiledConstraint(
+            "y",
+            ReferenceExpression("z"),
+            ("z",),
+            "method",
+            "[Z]",
+        ),
+        "z": CompiledConstraint(
+            "z",
+            ReferenceExpression("y"),
+            ("y",),
+            "method",
+            "[Y]",
+        ),
+    }
+
+    assert _reference_coefficient(ReferenceExpression("y"), "x", constraints) is None
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        BinaryExpression(
+            "multiply", ReferenceExpression("x"), ReferenceExpression("y")
+        ),
+        BinaryExpression("divide", ReferenceExpression("x"), ReferenceExpression("y")),
+        BinaryExpression(
+            "multiply", ReferenceExpression("x"), ReferenceExpression("x")
+        ),
+        FunctionExpression("f", (ReferenceExpression("x"),)),
+        BinaryExpression("divide", ReferenceExpression("x"), LiteralExpression(0.0)),
+        BinaryExpression(
+            "multiply", LiteralExpression(float("inf")), ReferenceExpression("x")
+        ),
+    ],
+)
+def test_reference_coefficient_rejects_non_affine_forms(expression: object) -> None:
+    assert _reference_coefficient(expression, "x") is None
+
+
+def test_compiler_rejects_nonlinear_relaxation_controller() -> None:
+    parameterization = _dq_affine_parameterization()
+    nonlinear = CompiledConstraint(
+        "r2adq",
+        BinaryExpression(
+            "multiply", ReferenceExpression("r2dq"), ReferenceExpression("r1")
+        ),
+        ("r2dq", "r1"),
+        "method",
+        "[R2DQ] * [R1]",
+    )
+    parameterization.program.constraints = (nonlinear,)
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("r2dq", 20.0), ("r1", 1.5), ("eta", 0.0)),
+    )
+    maximum = float(np.finfo(np.float64).max)
+
+    with pytest.raises(
+        FeasibleCoordinateConstructionError,
+        match="unsupported affine controller",
+    ):
+        compile_feasible_coordinates(
+            parameterization,
+            frame,
+            ("r2dq",),
+            (0.0,),
+            (maximum,),
+        )
 
 
 def test_compiler_returns_no_chart_when_feasibility_has_no_execution_effect() -> None:

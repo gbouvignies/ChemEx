@@ -423,35 +423,117 @@ class FeasibleCoordinates:
         return result
 
 
+@dataclass(frozen=True, slots=True)
+class _AffineExpression:
+    """Exact scalar constant plus coefficients of referenced parameters."""
+
+    constant: float
+    coefficients: Mapping[str, float]
+
+
+def _scaled_affine(
+    expression: _AffineExpression,
+    factor: float,
+) -> _AffineExpression | None:
+    constant = factor * expression.constant
+    coefficients: dict[str, float] = {}
+    for param_id, coefficient in expression.coefficients.items():
+        scaled = factor * coefficient
+        if scaled != 0.0:
+            coefficients[param_id] = scaled
+    if not math.isfinite(constant) or not all(
+        math.isfinite(coefficient) for coefficient in coefficients.values()
+    ):
+        return None
+    return _AffineExpression(constant, coefficients)
+
+
+def _combined_affine(
+    left: _AffineExpression,
+    right: _AffineExpression,
+    right_factor: float,
+) -> _AffineExpression | None:
+    constant = left.constant + right_factor * right.constant
+    coefficients = dict(left.coefficients)
+    for param_id, coefficient in right.coefficients.items():
+        combined = coefficients.get(param_id, 0.0) + right_factor * coefficient
+        if combined == 0.0:
+            coefficients.pop(param_id, None)
+        else:
+            coefficients[param_id] = combined
+    if not math.isfinite(constant) or not all(
+        math.isfinite(coefficient) for coefficient in coefficients.values()
+    ):
+        return None
+    return _AffineExpression(constant, coefficients)
+
+
+def _binary_affine_expression(
+    expression: BinaryExpression,
+    constraints: Mapping[str, CompiledConstraint] | None,
+    seen: frozenset[str],
+) -> _AffineExpression | None:
+    left = _affine_expression(expression.left, constraints, seen)
+    right = _affine_expression(expression.right, constraints, seen)
+    if left is None or right is None:
+        return None
+    if expression.operator in {"add", "subtract"}:
+        factor = 1.0 if expression.operator == "add" else -1.0
+        return _combined_affine(left, right, factor)
+    if expression.operator == "multiply":
+        if not left.coefficients:
+            return _scaled_affine(right, left.constant)
+        if not right.coefficients:
+            return _scaled_affine(left, right.constant)
+        return None
+    if expression.operator == "divide":
+        if right.coefficients or right.constant == 0.0:
+            return None
+        return _scaled_affine(left, 1.0 / right.constant)
+    return None
+
+
+def _affine_expression(
+    expression: object,
+    constraints: Mapping[str, CompiledConstraint] | None = None,
+    seen: frozenset[str] = frozenset(),
+) -> _AffineExpression | None:
+    if isinstance(expression, LiteralExpression):
+        if not math.isfinite(expression.value):
+            return None
+        return _AffineExpression(expression.value, {})
+    if isinstance(expression, ReferenceExpression):
+        reference_id = expression.param_id
+        constraint = None if constraints is None else constraints.get(reference_id)
+        if constraint is None:
+            return _AffineExpression(0.0, {reference_id: 1.0})
+        if reference_id in seen:
+            return None
+        return _affine_expression(
+            constraint.expression,
+            constraints,
+            seen | {reference_id},
+        )
+    if isinstance(expression, UnaryExpression):
+        operand = _affine_expression(expression.operand, constraints, seen)
+        if operand is None:
+            return None
+        factor = 1.0 if expression.operator == "positive" else -1.0
+        return _scaled_affine(operand, factor)
+    if isinstance(expression, BinaryExpression):
+        return _binary_affine_expression(expression, constraints, seen)
+    return None
+
+
 def _reference_coefficient(
     expression: object,
     param_id: str,
     constraints: Mapping[str, CompiledConstraint] | None = None,
-    seen: frozenset[str] = frozenset(),
 ) -> float | None:
-    if isinstance(expression, ReferenceExpression):
-        reference_id = expression.param_id
-        if reference_id == param_id:
-            return 1.0
-        constraint = None if constraints is None else constraints.get(reference_id)
-        if constraint is None or reference_id in seen:
-            return 0.0
-        return _reference_coefficient(
-            constraint.expression,
-            param_id,
-            constraints,
-            seen | {reference_id},
-        )
-    if isinstance(expression, BinaryExpression) and expression.operator in {
-        "add",
-        "subtract",
-    }:
-        left = _reference_coefficient(expression.left, param_id, constraints, seen)
-        right = _reference_coefficient(expression.right, param_id, constraints, seen)
-        if left is None or right is None:
-            return None
-        return left + right if expression.operator == "add" else left - right
-    return None
+    affine = _affine_expression(expression, constraints)
+    if affine is None:
+        return None
+    return affine.coefficients.get(param_id, 0.0)
 
 
 def _is_additive_reference_expression(expression: object) -> bool:
