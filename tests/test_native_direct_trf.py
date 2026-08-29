@@ -1230,6 +1230,49 @@ def test_non_convergence_keeps_last_iterate_diagnostic_and_commits_nothing() -> 
     assert _presentation_values(session, problem.commit_scope) == presentation_before
 
 
+def test_box_only_feasibility_uses_public_coordinates_without_decode() -> None:
+    _session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    feasible = problem.feasible_coordinates
+    assert feasible is not None
+    assert not feasible.has_coordinate_transform
+    observed_solver_domain: list[tuple[Array, tuple[Array, Array]]] = []
+
+    def non_converged(
+        fun: Callable[[Array], Array], x0: Array, **settings: object
+    ) -> object:
+        bounds = settings["bounds"]
+        assert isinstance(bounds, tuple)
+        observed_solver_domain.append((x0, bounds))
+        residuals = fun(x0)
+        return _backend_result(
+            x0,
+            residuals,
+            status=0,
+            success=False,
+            message="measurement stop",
+            optimality=1.0,
+        )
+
+    with (
+        patch.object(
+            type(feasible),
+            "decode",
+            side_effect=AssertionError("box-only feasibility decode"),
+        ),
+        patch("chemex.optimize.direct_trf.least_squares", non_converged),
+    ):
+        outcome = execute_direct_trf(problem, invocation, parameterization, engine)
+
+    assert outcome.terminal is DirectTrfOutcomeTerminal.SOLVER_UNSUCCESSFUL
+    assert outcome.execution.terminal is DirectTrfTerminal.NON_CONVERGED
+    [(start, bounds)] = observed_solver_domain
+    np.testing.assert_array_equal(start, problem.start)
+    np.testing.assert_array_equal(bounds[0], feasible.solver_lower_bounds)
+    np.testing.assert_array_equal(bounds[1], feasible.solver_upper_bounds)
+
+
 def test_execution_fingerprints_the_ordered_solver_request_trajectory() -> None:
     _session, _experiments, parameterization, engine, problem, invocation = (
         _qualification_fit()

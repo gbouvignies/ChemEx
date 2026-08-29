@@ -278,7 +278,7 @@ class FeasibleCoordinates:
         controlled_ids: tuple[str, ...],
         lower_bounds: tuple[float, ...],
         upper_bounds: tuple[float, ...],
-    ) -> FeasibleCoordinates:
+    ) -> FeasibleCoordinates | None:
         """Compile a role-aware child chart without exposing model internals."""
         return compile_feasible_coordinates(
             self.parameterization,
@@ -690,7 +690,7 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
     controlled_ids: tuple[str, ...],
     lower_bounds: tuple[float, ...],
     upper_bounds: tuple[float, ...],
-) -> FeasibleCoordinates:
+) -> FeasibleCoordinates | None:
     """Compile an exact supported chart for the active relaxation domains."""
     blocks = active_relaxation_blocks(parameterization)
     chart_blocks = tuple(
@@ -955,7 +955,7 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
                 max(lower_by_id[param_id], static_rate_floors.get(param_id, -math.inf))
             )
             solver_upper.append(upper_by_id[param_id])
-    return FeasibleCoordinates(
+    chart = FeasibleCoordinates(
         parameterization,
         frame,
         controlled_ids,
@@ -970,3 +970,4 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
         tuple(solver_lower),
         tuple(solver_upper),
     )
+    return None if chart.is_noop else chart

@@ -120,6 +120,38 @@ def _affine_parameterization():
     return Parameterization()
 
 
+def test_compiler_returns_no_chart_when_feasibility_has_no_execution_effect() -> None:
+    class Parameterization:
+        evaluator_identity = "uncoupled-test-evaluator"
+        scope_ids = ("rate",)
+        program = SimpleNamespace(
+            constraints=(),
+            relaxation_domains=SealedRelaxationDomains(()),
+        )
+
+        @staticmethod
+        def resolve(frame):
+            return dict(frame.ordered_items())
+
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("rate", 5.0),),
+    )
+
+    chart = compile_feasible_coordinates(
+        Parameterization(),
+        frame,
+        ("rate",),
+        (0.0,),
+        (10.0,),
+    )
+
+    assert chart is None
+
+
 def test_compiled_dynamic_affine_floor_spans_only_the_exact_psd_domain() -> None:
     parameterization = _affine_parameterization()
     frame = IndependentValueFrame(
@@ -138,6 +170,8 @@ def test_compiled_dynamic_affine_floor_spans_only_the_exact_psd_domain() -> None
         (maximum, maximum),
     )
 
+    assert chart is not None
+    assert chart.has_coordinate_transform
     boundary = chart.decode((0.0, 10.0))
     values = parameterization.resolve(boundary.frame)
     assert values["r2"] == pytest.approx(0.5 * (10.0 + np.sqrt(136.0)))
@@ -163,6 +197,7 @@ def test_compiled_static_affine_floor_supersedes_nonnegative_rate_excess() -> No
         (maximum,),
     )
 
+    assert chart is not None
     boundary = chart.decode((0.0,))
     values = parameterization.resolve(boundary.frame)
     assert values["r2"] == pytest.approx(0.5 * (2.0 + np.sqrt(40.0)))
@@ -187,6 +222,8 @@ def test_collapsed_cross_rate_chart_has_singular_public_differential() -> None:
         (maximum,),
     )
 
+    assert chart is not None
+    assert chart.has_coordinate_transform
     assert np.linalg.matrix_rank(chart.differential(chart.solver_start)) == 0
     values = parameterization.resolve(chart.decode((1.0,)).frame)
     assert values["eta"] == 0.0

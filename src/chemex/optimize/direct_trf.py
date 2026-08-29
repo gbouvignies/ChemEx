@@ -2786,9 +2786,9 @@ class _LiveAttempt:
                 name="solver vector",
             )
             feasible = self.problem.feasible_coordinates
-            if feasible is None:
+            if feasible is None or not feasible.has_coordinate_transform:
                 vector = private_vector
-                if any(
+                if feasible is None and any(
                     not lower <= value <= upper
                     for value, lower, upper in zip(
                         vector,
@@ -2997,41 +2997,33 @@ def _normalize_backend(
         raise ValueError("SciPy final Jacobian evidence has the wrong shape")
     feasible = problem.feasible_coordinates
     final_residual_jacobian: FinalResidualJacobianEvidence | None = None
-    if feasible is None:
+    if feasible is None or not feasible.has_coordinate_transform:
         final_vector = private_final_vector
         jacobian_source = ResidualJacobianSource.SCIPY_FINAL_2_POINT
         derivative_method = "numerical 2-point"
+        differential_has_full_rank = True
     else:
         final_vector = feasible.decode(private_final_vector).vector
         differential = feasible.differential(private_final_vector)
-        if (
+        differential_has_full_rank = (
             np.linalg.matrix_rank(
                 differential,
                 rtol=_FEASIBILITY_DIFFERENTIAL_RANK_RTOL,
             )
             == dimension
-        ):
+        )
+        if differential_has_full_rank:
             jacobian_array = np.linalg.solve(
                 differential.T,
                 jacobian_array.T,
             ).T
             jacobian_source = (
-                ResidualJacobianSource.SCIPY_FINAL_2_POINT
-                if not feasible.has_coordinate_transform
-                else ResidualJacobianSource.SCIPY_FINAL_2_POINT_FEASIBILITY_PUSHFORWARD
+                ResidualJacobianSource.SCIPY_FINAL_2_POINT_FEASIBILITY_PUSHFORWARD
             )
             derivative_method = (
-                "numerical 2-point"
-                if not feasible.has_coordinate_transform
-                else "solver-coordinate 2-point with exact feasibility pushforward"
+                "solver-coordinate 2-point with exact feasibility pushforward"
             )
-    if feasible is None or (
-        np.linalg.matrix_rank(
-            differential,
-            rtol=_FEASIBILITY_DIFFERENTIAL_RANK_RTOL,
-        )
-        == dimension
-    ):
+    if differential_has_full_rank:
         final_residual_jacobian = FinalResidualJacobianEvidence(
             jacobian_source,
             controlled_ids,
