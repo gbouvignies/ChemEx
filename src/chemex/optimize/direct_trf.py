@@ -1195,6 +1195,7 @@ class OptimizationProblem:
         root_feasible = self.feasible_coordinates
         if root_feasible is None:
             return None
+        root_feasible.require_root_projection_authority()
         _ = root_feasible.controlled_domain_groups
         frame = root_feasible.frame_with_updates(
             dict(zip(controlled_ids, start, strict=True))

@@ -652,6 +652,26 @@ def test_general_component_derivation_recompiles_feasibility_at_root_start() -> 
     assert child.feasible_coordinates is not root_feasible
 
 
+def test_grouped_exact_domain_rejects_projected_chart_as_forged_root() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    component = decomposition.components[0]
+    assert component.problem.feasible_coordinates is not None
+    forged_root = dataclasses.replace(component.problem, derivation=None)
+    derivation = component.problem.derivation
+    assert isinstance(derivation, ComponentProblemDerivation)
+
+    with pytest.raises(
+        feasible_coordinates_owner.FeasibleCoordinateConstructionError,
+        match="compiled root chart",
+    ):
+        forged_root.derive_grouped_component(
+            controlled_ids=forged_root.controlled_ids,
+            start=forged_root.start,
+            derivation=derivation,
+        )
+
+
 def test_grouped_components_preserve_root_affine_feasibility() -> None:
     _session, _experiments, parameterization, engine, problem = _grouped_problem()
     controlled_id = problem.controlled_ids[0]

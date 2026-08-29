@@ -233,6 +233,14 @@ class FeasibleCoordinates:
             )
         return provenance.controlled_domain_groups
 
+    def require_root_projection_authority(self) -> None:
+        """Fail unless this chart is the compiler-owned projection root."""
+        provenance = self._projection_provenance
+        if provenance is None or not provenance.has_root_projection_authority:
+            raise FeasibleCoordinateConstructionError(
+                "Component feasibility projection requires the compiled root chart"
+            )
+
     @property
     def has_coordinate_transform(self) -> bool:
         return bool(self.rate_excess_ids or self.rate_floors or self.cross_rate_ids)
@@ -306,11 +314,7 @@ class FeasibleCoordinates:
         upper_bounds: tuple[float, ...],
     ) -> FeasibleCoordinates | None:
         """Project an exact root chart onto one closed fit component."""
-        provenance = self._projection_provenance
-        if provenance is None or not provenance.has_root_projection_authority:
-            raise FeasibleCoordinateConstructionError(
-                "Component feasibility projection requires the compiled root chart"
-            )
+        self.require_root_projection_authority()
         selected = set(controlled_ids)
         root_indices = {
             param_id: index for index, param_id in enumerate(self.controlled_ids)
