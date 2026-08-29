@@ -2788,12 +2788,17 @@ class _LiveAttempt:
             feasible = self.problem.feasible_coordinates
             if feasible is None or not feasible.has_coordinate_transform:
                 vector = private_vector
-                if feasible is None and any(
+                lower_bounds, upper_bounds = (
+                    (self.problem.lower_bounds, self.problem.upper_bounds)
+                    if feasible is None
+                    else feasible.solver_bounds
+                )
+                if any(
                     not lower <= value <= upper
                     for value, lower, upper in zip(
                         vector,
-                        self.problem.lower_bounds,
-                        self.problem.upper_bounds,
+                        lower_bounds,
+                        upper_bounds,
                         strict=True,
                     )
                 ):

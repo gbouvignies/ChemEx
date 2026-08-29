@@ -1273,6 +1273,36 @@ def test_box_only_feasibility_uses_public_coordinates_without_decode() -> None:
     np.testing.assert_array_equal(bounds[1], feasible.solver_upper_bounds)
 
 
+def test_box_only_feasibility_rejects_candidate_below_effective_floor() -> None:
+    _session, _experiments, parameterization, engine, problem, invocation = (
+        _qualification_fit()
+    )
+    feasible = problem.feasible_coordinates
+    assert feasible is not None
+    assert not feasible.has_coordinate_transform
+    assert len(problem.controlled_ids) == 1
+    public_lower = problem.lower_bounds[0]
+    effective_lower = feasible.solver_lower_bounds[0]
+    assert public_lower < effective_lower < problem.start[0]
+    invalid = np.array([0.5 * (public_lower + effective_lower)])
+
+    def supply_invalid(
+        fun: Callable[[Array], Array], _x0: Array, **_settings: object
+    ) -> object:
+        fun(invalid)
+        raise AssertionError("out-of-effective-box candidate was evaluated")
+
+    with patch("chemex.optimize.direct_trf.least_squares", supply_invalid):
+        outcome = execute_direct_trf(problem, invocation, parameterization, engine)
+
+    assert outcome.execution.terminal is DirectTrfTerminal.IMPLEMENTATION_FAILURE
+    assert outcome.execution.counters.solver_requests_received == 1
+    assert outcome.execution.counters.objective_requests_accepted == 1
+    assert outcome.execution.counters.objective_evaluations_completed == 0
+    assert outcome.execution.failure is not None
+    assert outcome.execution.failure.category == "candidate_contract_failure"
+
+
 def test_execution_fingerprints_the_ordered_solver_request_trajectory() -> None:
     _session, _experiments, parameterization, engine, problem, invocation = (
         _qualification_fit()
