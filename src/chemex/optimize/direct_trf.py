@@ -1168,6 +1168,10 @@ class OptimizationProblem:
         derivation: ComponentProblemDerivation,
     ) -> OptimizationProblem:
         """Construct one proven root-state grouped component by exact projection."""
+        if not self.acceptance_authority:
+            raise DirectTrfConstructionError(
+                "Grouped feasibility projection requires one complete root problem"
+            )
         return self._derive_child(
             controlled_ids=controlled_ids,
             start=start,
@@ -1184,6 +1188,10 @@ class OptimizationProblem:
         upper_bounds: tuple[float, ...],
     ) -> FeasibleCoordinates | None:
         """Project the sealed root chart for one exact root-state component."""
+        if not self.acceptance_authority:
+            raise DirectTrfConstructionError(
+                "Grouped feasibility projection requires one complete root problem"
+            )
         root_feasible = self.feasible_coordinates
         if root_feasible is None:
             return None

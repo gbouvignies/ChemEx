@@ -559,6 +559,11 @@ class EvaluationPlan:
         )
 
     @property
+    def compatibility_identity(self) -> str:
+        """Return the runtime compatibility identity sealed by this plan."""
+        return _compatibility_identity(self)
+
+    @property
     def observation_count(self) -> int:
         return sum(item.observation_count for item in self.profiles)
 

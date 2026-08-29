@@ -461,7 +461,53 @@ def test_grouped_validation_does_not_rebuild_projected_plans() -> None:
         )
 
     assert outcome.terminal is GroupedDirectTrfTerminal.ACCEPTED
-    assert projection_calls.call_count == 2 * len(decomposition.components)
+    assert projection_calls.call_count == len(decomposition.components)
+
+
+def test_combined_grouped_execution_validates_context_once() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    invocation = GroupedDirectTrfInvocation.for_decomposition(
+        decomposition,
+        objective_request_budgets=(80,) * len(decomposition.components),
+    )
+
+    with patch.object(
+        grouped_direct_trf_owner,
+        "_validate_grouped_context",
+        wraps=grouped_direct_trf_owner._validate_grouped_context,
+    ) as validation_calls:
+        outcome = execute_grouped_direct_trf(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert outcome.terminal is GroupedDirectTrfTerminal.ACCEPTED
+    validation_calls.assert_called_once()
+
+
+def test_grouped_decomposition_rejects_a_derived_component_root() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    component = decomposition.components[0]
+    child_engine = engine.project_profiles(component.root_profile_indices)
+
+    with (
+        patch.object(
+            grouped_direct_trf_owner,
+            "_profile_dependencies",
+            side_effect=AssertionError("non-root decomposition inspected profiles"),
+        ),
+        pytest.raises(DirectTrfConstructionError, match="complete root"),
+    ):
+        FitDecomposition.from_root(
+            component.problem,
+            parameterization,
+            child_engine,
+        )
 
 
 def test_grouped_component_projection_does_not_recompile_feasibility() -> None:
@@ -1233,7 +1279,7 @@ def test_cancellation_stops_after_in_flight_component_and_commits_nothing() -> N
     assert session.analysis_values.snapshot() == before
 
 
-def test_cancellation_during_first_context_projection_stops_validation() -> None:
+def test_cancellation_during_first_carried_projection_stops_validation() -> None:
     session, _experiments, parameterization, engine, problem = _grouped_problem()
     decomposition = FitDecomposition.from_root(problem, parameterization, engine)
     invocation = GroupedDirectTrfInvocation.for_decomposition(
@@ -1249,22 +1295,22 @@ def test_cancellation_during_first_context_projection_stops_validation() -> None
     )
     token = CancellationToken()
     projection_count = 0
-    project_profiles = engine.project_profiles
+    materialized_projection = (
+        grouped_direct_trf_owner._materialized_component_projection
+    )
 
-    def cancel_during_first_context_projection(
-        profile_indices: tuple[int, ...],
-    ) -> EvaluationEngine:
+    def cancel_during_first_carried_projection(*args, **kwargs):
         nonlocal projection_count
         projection_count += 1
-        projected = project_profiles(profile_indices)
+        projected = materialized_projection(*args, **kwargs)
         token.cancel()
         return projected
 
     with (
         patch.object(
-            engine,
-            "project_profiles",
-            side_effect=cancel_during_first_context_projection,
+            grouped_direct_trf_owner,
+            "_materialized_component_projection",
+            side_effect=cancel_during_first_carried_projection,
         ),
         patch(
             "chemex.optimize.grouped_direct_trf._aggregate_vector",
@@ -1309,16 +1355,7 @@ def test_cancellation_during_first_evidence_comparison_stops_reconstruction() ->
         engine,
     )
     token = CancellationToken()
-    projection_count = 0
     comparison_count = 0
-    project_profiles = engine.project_profiles
-
-    def record_projection(
-        profile_indices: tuple[int, ...],
-    ) -> EvaluationEngine:
-        nonlocal projection_count
-        projection_count += 1
-        return project_profiles(profile_indices)
 
     def cancel_during_first_evidence_comparison(residuals: Array) -> float:
         nonlocal comparison_count
@@ -1331,7 +1368,7 @@ def test_cancellation_during_first_evidence_comparison_stops_reconstruction() ->
         patch.object(
             engine,
             "project_profiles",
-            side_effect=record_projection,
+            side_effect=AssertionError("materialization rebuilt a child engine"),
         ),
         patch(
             "chemex.optimize.grouped_direct_trf.canonical_chi_square",
@@ -1358,7 +1395,6 @@ def test_cancellation_during_first_evidence_comparison_stops_reconstruction() ->
         )
 
     assert outcome.terminal is GroupedDirectTrfTerminal.CANCELLED
-    assert projection_count == 1
     assert comparison_count == 1
     aggregate_vector.assert_not_called()
     new_root_evaluator.assert_not_called()
