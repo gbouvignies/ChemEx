@@ -194,12 +194,24 @@ class FeasibleCoordinates:
     static_rate_floors: tuple[tuple[str, float], ...]
     cross_rate_ids: tuple[str, ...]
     blocks: tuple[RelaxationPsdBlock, ...]
+    controlled_domain_groups: tuple[frozenset[str], ...] = field(
+        repr=False,
+        compare=False,
+    )
     solver_start: tuple[float, ...]
     solver_lower_bounds: tuple[float, ...]
     solver_upper_bounds: tuple[float, ...]
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
+        controlled = frozenset(self.controlled_ids)
+        if len(self.controlled_domain_groups) != len(self.blocks) or any(
+            not dependencies <= controlled
+            for dependencies in self.controlled_domain_groups
+        ):
+            raise FeasibleCoordinateConstructionError(
+                "Feasibility dependency provenance differs from its root chart"
+            )
         object.__setattr__(
             self,
             "identity",
@@ -217,6 +229,10 @@ class FeasibleCoordinates:
                     self.static_rate_floors,
                     self.cross_rate_ids,
                     tuple(block.domain_id for block in self.blocks),
+                    tuple(
+                        tuple(sorted(dependencies))
+                        for dependencies in self.controlled_domain_groups
+                    ),
                     self.solver_start,
                     self.solver_lower_bounds,
                     self.solver_upper_bounds,
@@ -294,7 +310,6 @@ class FeasibleCoordinates:
         controlled_ids: tuple[str, ...],
         lower_bounds: tuple[float, ...],
         upper_bounds: tuple[float, ...],
-        domain_controlled_groups: tuple[frozenset[str], ...],
     ) -> FeasibleCoordinates | None:
         """Project an exact root chart onto one closed fit component."""
         selected = set(controlled_ids)
@@ -308,10 +323,10 @@ class FeasibleCoordinates:
             )
             != controlled_ids
             or len(selected) != len(controlled_ids)
-            or len(domain_controlled_groups) != len(self.blocks)
+            or len(self.controlled_domain_groups) != len(self.blocks)
             or any(
                 dependencies & selected and not dependencies <= selected
-                for dependencies in domain_controlled_groups
+                for dependencies in self.controlled_domain_groups
             )
         ):
             raise FeasibleCoordinateConstructionError(
@@ -340,6 +355,10 @@ class FeasibleCoordinates:
             tuple(item for item in self.static_rate_floors if item[0] in selected),
             tuple(param_id for param_id in self.cross_rate_ids if param_id in selected),
             self.blocks,
+            tuple(
+                dependencies & selected
+                for dependencies in self.controlled_domain_groups
+            ),
             tuple(
                 self.solver_start[root_indices[param_id]] for param_id in controlled_ids
             ),
@@ -798,6 +817,47 @@ def _controlled_dependencies(
     return frozenset(dependencies)
 
 
+def _controlled_domain_groups(
+    parameterization: ActiveParameterization,
+    blocks: Sequence[RelaxationPsdBlock],
+    controlled_ids: Sequence[str],
+) -> tuple[frozenset[str], ...]:
+    """Resolve every PSD domain to immutable root-controlled dependencies."""
+    controlled = frozenset(controlled_ids)
+    constraints = {
+        item.target_id: item for item in parameterization.program.constraints
+    }
+    cache: dict[str, frozenset[str]] = {}
+
+    def resolve(param_id: str, seen: frozenset[str] = frozenset()) -> frozenset[str]:
+        if param_id in cache:
+            return cache[param_id]
+        if param_id in controlled:
+            result = frozenset((param_id,))
+        elif param_id in seen or (constraint := constraints.get(param_id)) is None:
+            result = frozenset()
+        else:
+            result = frozenset(
+                dependency
+                for source in constraint.dependencies
+                for dependency in resolve(source, seen | {param_id})
+            )
+        cache[param_id] = result
+        return result
+
+    return tuple(
+        frozenset(
+            dependency
+            for param_id in (
+                *block.diagonal_ids,
+                *(item[2] for item in block.off_diagonal_ids),
+            )
+            for dependency in resolve(param_id)
+        )
+        for block in blocks
+    )
+
+
 def _is_intrinsic_rate_derivation(
     parameterization: ActiveParameterization,
     param_id: str,
@@ -1152,6 +1212,7 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
         tuple(sorted(static_rate_floors.items())),
         cross_ids,
         blocks,
+        _controlled_domain_groups(parameterization, blocks, controlled_ids),
         tuple(solver_start),
         tuple(solver_lower),
         tuple(solver_upper),

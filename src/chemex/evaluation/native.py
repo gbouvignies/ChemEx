@@ -1531,8 +1531,11 @@ class EvaluationEngine:
         )
         return cls(plan, parameterization, sources)
 
-    def project_profiles(self, profile_indices: Sequence[int]) -> EvaluationEngine:
-        """Project complete Profiles in root order into an isolated child engine."""
+    def _projected_population(
+        self,
+        profile_indices: Sequence[int],
+    ) -> tuple[EvaluationPlan, tuple[tuple[int, int, Profile], ...]]:
+        """Build the immutable plan and trusted sources for a profile projection."""
         indices = tuple(profile_indices)
         if (
             not indices
@@ -1589,6 +1592,16 @@ class EvaluationEngine:
             failure_version=self.plan.failure_version,
             diagnostics_version=self.plan.diagnostics_version,
         )
+        return plan, tuple(sources)
+
+    def projected_plan_identity(self, profile_indices: Sequence[int]) -> str:
+        """Return a canonical child-plan identity without constructing its engine."""
+        plan, _sources = self._projected_population(profile_indices)
+        return plan.identity
+
+    def project_profiles(self, profile_indices: Sequence[int]) -> EvaluationEngine:
+        """Project complete Profiles in root order into an isolated child engine."""
+        plan, sources = self._projected_population(profile_indices)
         return EvaluationEngine(plan, self._parameterization, sources)
 
     def resampled_observation_metadata(self, binding: ResampledProfileBinding) -> str:

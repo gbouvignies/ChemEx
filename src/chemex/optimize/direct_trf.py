@@ -1151,7 +1151,37 @@ class OptimizationProblem:
         controlled_ids: tuple[str, ...],
         start: tuple[float, ...],
         derivation: ProblemDerivation,
-        feasibility_dependencies: tuple[frozenset[str], ...] | None = None,
+    ) -> OptimizationProblem:
+        """Construct a general child, recompiling feasibility for its state."""
+        return self._derive_child(
+            controlled_ids=controlled_ids,
+            start=start,
+            derivation=derivation,
+            project_root_feasibility=False,
+        )
+
+    def derive_grouped_component(
+        self,
+        *,
+        controlled_ids: tuple[str, ...],
+        start: tuple[float, ...],
+        derivation: ComponentProblemDerivation,
+    ) -> OptimizationProblem:
+        """Construct one proven root-state grouped component by exact projection."""
+        return self._derive_child(
+            controlled_ids=controlled_ids,
+            start=start,
+            derivation=derivation,
+            project_root_feasibility=True,
+        )
+
+    def _derive_child(
+        self,
+        *,
+        controlled_ids: tuple[str, ...],
+        start: tuple[float, ...],
+        derivation: ProblemDerivation,
+        project_root_feasibility: bool,
     ) -> OptimizationProblem:
         """Construct one child while retaining every root-owned invariant."""
         controlled = set(controlled_ids)
@@ -1188,7 +1218,9 @@ class OptimizationProblem:
             else None
         )
         if (
-            root_feasible is not None
+            project_root_feasibility
+            and isinstance(derivation, ComponentProblemDerivation)
+            and root_feasible is not None
             and controlled_ids == self.controlled_ids
             and start == self.start
             and child_lower == self.lower_bounds
@@ -1196,17 +1228,16 @@ class OptimizationProblem:
         ):
             feasible_coordinates = root_feasible
         elif (
-            root_feasible is not None
+            project_root_feasibility
+            and root_feasible is not None
             and frame is not None
             and isinstance(derivation, ComponentProblemDerivation)
-            and feasibility_dependencies is not None
         ):
             feasible_coordinates = root_feasible.project_component(
                 frame,
                 controlled_ids,
                 child_lower,
                 child_upper,
-                feasibility_dependencies,
             )
         else:
             feasible_coordinates = (

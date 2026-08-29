@@ -219,7 +219,6 @@ def _build_component(
     engine: EvaluationEngine,
     component_ids: tuple[str, ...],
     profile_dependencies: tuple[frozenset[str], ...],
-    feasibility_dependencies: tuple[frozenset[str], ...],
 ) -> FitComponent:
     component_set = set(component_ids)
     profile_indices = tuple(
@@ -244,21 +243,14 @@ def _build_component(
     start = tuple(bounds[param_id][0] for param_id in component_ids)
     lower = tuple(bounds[param_id][1] for param_id in component_ids)
     upper = tuple(bounds[param_id][2] for param_id in component_ids)
-    component_identity = _identity(
-        "native-fit-component",
-        (
-            _DECOMPOSITION_POLICY,
-            _PROJECTION_POLICY,
-            problem.evaluator_parameterization_identity,
-            problem.constraint_program_identity,
-            component_ids,
-            tuple(
-                engine.plan.profiles[index].source_identity for index in profile_indices
-            ),
-            child_engine.plan.identity,
-            tuple(float(value).hex() for value in lower),
-            tuple(float(value).hex() for value in upper),
-        ),
+    component_identity = _component_identity(
+        problem,
+        engine,
+        component_ids,
+        profile_indices,
+        child_engine.plan.identity,
+        lower,
+        upper,
     )
     derivation = ComponentProblemDerivation(
         problem.identity,
@@ -269,17 +261,44 @@ def _build_component(
         component_ids,
         held_items,
     )
-    child_problem = problem.derive_child(
+    child_problem = problem.derive_grouped_component(
         controlled_ids=component_ids,
         start=start,
         derivation=derivation,
-        feasibility_dependencies=feasibility_dependencies,
     )
     return FitComponent(
         component_ids,
         profile_indices,
         child_problem,
         component_identity,
+    )
+
+
+def _component_identity(
+    problem: OptimizationProblem,
+    engine: EvaluationEngine,
+    component_ids: tuple[str, ...],
+    profile_indices: tuple[int, ...],
+    projected_plan_identity: str,
+    lower_bounds: tuple[float, ...],
+    upper_bounds: tuple[float, ...],
+) -> str:
+    """Derive the canonical identity of one exact grouped root projection."""
+    return _identity(
+        "native-fit-component",
+        (
+            _DECOMPOSITION_POLICY,
+            _PROJECTION_POLICY,
+            problem.evaluator_parameterization_identity,
+            problem.constraint_program_identity,
+            component_ids,
+            tuple(
+                engine.plan.profiles[index].source_identity for index in profile_indices
+            ),
+            projected_plan_identity,
+            tuple(float(value).hex() for value in lower_bounds),
+            tuple(float(value).hex() for value in upper_bounds),
+        ),
     )
 
 
@@ -480,22 +499,9 @@ class FitDecomposition:
             engine,
         )
         components_list: list[FitComponent] = []
-        resolver = _ControlledDependencyResolver(
-            problem.controlled_ids,
-            parameterization,
-        )
         feasible = problem.feasible_coordinates
         feasibility_dependencies = (
-            ()
-            if feasible is None
-            else tuple(
-                frozenset(
-                    controlled_id
-                    for param_id in parameter_ids
-                    for controlled_id, _path in resolver.paths(param_id)
-                )
-                for parameter_ids in feasible.domain_parameter_groups
-            )
+            () if feasible is None else feasible.controlled_domain_groups
         )
         for component_ids in _ordered_component_controls(
             problem.controlled_ids,
@@ -508,7 +514,6 @@ class FitDecomposition:
                 engine,
                 component_ids,
                 profile_dependencies,
-                feasibility_dependencies,
             )
             _check_grouped_cancellation(cancellation)
             components_list.append(component)
@@ -769,22 +774,9 @@ def _validate_grouped_context(
         parameterization,
         engine,
     )
-    resolver = _ControlledDependencyResolver(
-        problem.controlled_ids,
-        parameterization,
-    )
     feasible = problem.feasible_coordinates
     feasibility_dependencies = (
-        ()
-        if feasible is None
-        else tuple(
-            frozenset(
-                controlled_id
-                for param_id in parameter_ids
-                for controlled_id, _path in resolver.paths(param_id)
-            )
-            for parameter_ids in feasible.domain_parameter_groups
-        )
+        () if feasible is None else feasible.controlled_domain_groups
     )
     expected_component_controls = _ordered_component_controls(
         problem.controlled_ids,
@@ -853,9 +845,35 @@ def _validate_grouped_context(
         _check_grouped_cancellation(cancellation)
         problem.validate_derived_problem(component.problem)
         derivation = component.problem.derivation
+        root_indices = {
+            param_id: index for index, param_id in enumerate(problem.controlled_ids)
+        }
+        projected_plan_identity = engine.projected_plan_identity(
+            component.root_profile_indices
+        )
+        lower_bounds = tuple(
+            problem.lower_bounds[root_indices[param_id]]
+            for param_id in component.controlled_ids
+        )
+        upper_bounds = tuple(
+            problem.upper_bounds[root_indices[param_id]]
+            for param_id in component.controlled_ids
+        )
+        expected_identity = _component_identity(
+            problem,
+            engine,
+            component.controlled_ids,
+            component.root_profile_indices,
+            projected_plan_identity,
+            lower_bounds,
+            upper_bounds,
+        )
         if (
             not isinstance(derivation, ComponentProblemDerivation)
+            or component.identity != expected_identity
             or derivation.component_identity != component.identity
+            or derivation.projected_plan_identity != projected_plan_identity
+            or component.problem.evaluation_plan_identity != projected_plan_identity
             or component_invocation.problem_identity != component.problem.identity
         ):
             raise DirectTrfConstructionError(

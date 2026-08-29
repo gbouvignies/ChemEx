@@ -105,15 +105,14 @@ def test_exact_decomposition_is_deterministic_and_distinguishes_shared_coordinat
     _session, _experiments, parameterization, engine, problem = _grouped_problem()
 
     derivations: list[ProblemDerivation] = []
-    original_derive_child = OptimizationProblem.derive_child
+    original_derive_child = OptimizationProblem.derive_grouped_component
 
     def track_derive_child(
         self: OptimizationProblem,
         *,
         controlled_ids: tuple[str, ...],
         start: tuple[float, ...],
-        derivation: ProblemDerivation,
-        feasibility_dependencies: tuple[frozenset[str], ...] | None = None,
+        derivation: ComponentProblemDerivation,
     ) -> OptimizationProblem:
         derivations.append(derivation)
         return original_derive_child(
@@ -121,10 +120,13 @@ def test_exact_decomposition_is_deterministic_and_distinguishes_shared_coordinat
             controlled_ids=controlled_ids,
             start=start,
             derivation=derivation,
-            feasibility_dependencies=feasibility_dependencies,
         )
 
-    with patch.object(OptimizationProblem, "derive_child", track_derive_child):
+    with patch.object(
+        OptimizationProblem,
+        "derive_grouped_component",
+        track_derive_child,
+    ):
         first = FitDecomposition.from_root(problem, parameterization, engine)
         second = FitDecomposition.from_root(problem, parameterization, engine)
 
@@ -292,6 +294,61 @@ def test_grouped_execution_does_not_rederive_a_supplied_decomposition() -> None:
     assert outcome.terminal is GroupedDirectTrfTerminal.ACCEPTED
 
 
+def test_grouped_validation_rejects_a_self_consistent_forged_component_identity() -> (
+    None
+):
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    original = decomposition.components[0]
+    assert isinstance(original.problem.derivation, ComponentProblemDerivation)
+    forged_identity = "forged-component-identity"
+    forged_derivation = dataclasses.replace(
+        original.problem.derivation,
+        component_identity=forged_identity,
+    )
+    forged_problem = dataclasses.replace(
+        original.problem,
+        derivation=forged_derivation,
+    )
+    forged_component = dataclasses.replace(
+        original,
+        problem=forged_problem,
+        identity=forged_identity,
+    )
+    forged_components = (forged_component, *decomposition.components[1:])
+    first_record = decomposition.partition_proof.component_records[0]
+    forged_proof = dataclasses.replace(
+        decomposition.partition_proof,
+        component_records=(
+            (forged_identity, *first_record[1:]),
+            *decomposition.partition_proof.component_records[1:],
+        ),
+    )
+    forged_decomposition = dataclasses.replace(
+        decomposition,
+        components=forged_components,
+        partition_proof=forged_proof,
+    )
+    invocation = GroupedDirectTrfInvocation.for_decomposition(
+        forged_decomposition,
+        objective_request_budgets=(10,) * len(forged_components),
+    )
+
+    outcome = execute_grouped_direct_trf(
+        problem,
+        forged_decomposition,
+        invocation,
+        parameterization,
+        engine,
+    )
+
+    assert outcome.terminal is GroupedDirectTrfTerminal.EXECUTION_FAILURE
+    assert all(
+        component.disposition is ComponentDisposition.NOT_STARTED
+        for component in outcome.components
+    )
+
+
 def test_grouped_component_projection_does_not_recompile_feasibility() -> None:
     _session, _experiments, parameterization, engine, problem = _grouped_problem()
 
@@ -310,6 +367,38 @@ def test_grouped_component_projection_does_not_recompile_feasibility() -> None:
         decomposition = FitDecomposition.from_root(problem, parameterization, engine)
 
     assert len(decomposition.components) == len(problem.controlled_ids)
+
+
+def test_general_component_derivation_recompiles_feasibility_at_root_start() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    root_feasible = problem.feasible_coordinates
+    assert root_feasible is not None
+    derivation = ComponentProblemDerivation(
+        problem.identity,
+        problem.affine_feasibility_identity,
+        "resampling-complete-scope",
+        "native-resampling-complete-scope-v1",
+        engine.plan.identity,
+        problem.controlled_ids,
+        problem.held_items,
+    )
+    derive_calls = 0
+    original_derive = type(root_feasible).derive
+
+    def track_derive(*args, **kwargs):
+        nonlocal derive_calls
+        derive_calls += 1
+        return original_derive(*args, **kwargs)
+
+    with patch.object(type(root_feasible), "derive", track_derive):
+        child = problem.derive_child(
+            controlled_ids=problem.controlled_ids,
+            start=problem.start,
+            derivation=derivation,
+        )
+
+    assert derive_calls == 1
+    assert child.feasible_coordinates is not root_feasible
 
 
 def test_grouped_components_preserve_root_affine_feasibility() -> None:
