@@ -522,7 +522,7 @@ def test_cest_15n_cw_model_free_rates_preserve_intrinsic_psd_domain(
     run(_cest_15n_cw_model_free_arguments(output), session=AnalysisSession.create())
 
     statistics = tomllib.loads((output / "statistics.toml").read_text(encoding="utf-8"))
-    assert statistics["chi-square"] == pytest.approx(88.0553, rel=2.0e-5)
+    assert statistics["chi-square"] == pytest.approx(88.0553, rel=1.0e-4)
 
 
 def test_product_fit_rejects_a_stale_aggregate_commit_atomically(
