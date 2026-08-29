@@ -1151,6 +1151,7 @@ class OptimizationProblem:
         controlled_ids: tuple[str, ...],
         start: tuple[float, ...],
         derivation: ProblemDerivation,
+        feasibility_dependencies: tuple[frozenset[str], ...] | None = None,
     ) -> OptimizationProblem:
         """Construct one child while retaining every root-owned invariant."""
         controlled = set(controlled_ids)
@@ -1186,16 +1187,38 @@ class OptimizationProblem:
             if root_feasible is not None
             else None
         )
-        feasible_coordinates = (
-            root_feasible.derive(
+        if (
+            root_feasible is not None
+            and controlled_ids == self.controlled_ids
+            and start == self.start
+            and child_lower == self.lower_bounds
+            and child_upper == self.upper_bounds
+        ):
+            feasible_coordinates = root_feasible
+        elif (
+            root_feasible is not None
+            and frame is not None
+            and isinstance(derivation, ComponentProblemDerivation)
+            and feasibility_dependencies is not None
+        ):
+            feasible_coordinates = root_feasible.project_component(
                 frame,
                 controlled_ids,
                 child_lower,
                 child_upper,
+                feasibility_dependencies,
             )
-            if root_feasible is not None and frame is not None
-            else None
-        )
+        else:
+            feasible_coordinates = (
+                root_feasible.derive(
+                    frame,
+                    controlled_ids,
+                    child_lower,
+                    child_upper,
+                )
+                if root_feasible is not None and frame is not None
+                else None
+            )
         child = OptimizationProblem(
             evaluation_plan_identity,
             self.parameterization_identity,

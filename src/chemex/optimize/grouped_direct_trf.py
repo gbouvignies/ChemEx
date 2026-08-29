@@ -219,6 +219,7 @@ def _build_component(
     engine: EvaluationEngine,
     component_ids: tuple[str, ...],
     profile_dependencies: tuple[frozenset[str], ...],
+    feasibility_dependencies: tuple[frozenset[str], ...],
 ) -> FitComponent:
     component_set = set(component_ids)
     profile_indices = tuple(
@@ -272,6 +273,7 @@ def _build_component(
         controlled_ids=component_ids,
         start=start,
         derivation=derivation,
+        feasibility_dependencies=feasibility_dependencies,
     )
     return FitComponent(
         component_ids,
@@ -506,6 +508,7 @@ class FitDecomposition:
                 engine,
                 component_ids,
                 profile_dependencies,
+                feasibility_dependencies,
             )
             _check_grouped_cancellation(cancellation)
             components_list.append(component)
@@ -750,24 +753,114 @@ def _validate_grouped_context(
     _check_grouped_cancellation(cancellation)
     problem.validate_parameterization(parameterization)
     _check_grouped_cancellation(cancellation)
-    expected_decomposition = FitDecomposition.from_root(
+    if engine.plan.identity != problem.evaluation_plan_identity:
+        raise DirectTrfConstructionError("Root evaluator belongs to another problem")
+    # Recheck the cheap semantic partition records without rebuilding child
+    # evaluators or their feasibility charts. Component execution validates each
+    # projected plan against the already sealed child problem before evaluation.
+    profile_dependencies = _profile_dependencies(
         problem,
         parameterization,
         engine,
-        cancellation=cancellation,
     )
     _check_grouped_cancellation(cancellation)
+    profile_paths = _profile_dependency_paths(
+        problem,
+        parameterization,
+        engine,
+    )
+    resolver = _ControlledDependencyResolver(
+        problem.controlled_ids,
+        parameterization,
+    )
+    feasible = problem.feasible_coordinates
+    feasibility_dependencies = (
+        ()
+        if feasible is None
+        else tuple(
+            frozenset(
+                controlled_id
+                for param_id in parameter_ids
+                for controlled_id, _path in resolver.paths(param_id)
+            )
+            for parameter_ids in feasible.domain_parameter_groups
+        )
+    )
+    expected_component_controls = _ordered_component_controls(
+        problem.controlled_ids,
+        profile_dependencies,
+        feasibility_dependencies,
+    )
+    expected_component_profiles = tuple(
+        tuple(
+            index
+            for index, dependencies in enumerate(profile_dependencies)
+            if dependencies and dependencies.issubset(set(component_ids))
+        )
+        for component_ids in expected_component_controls
+    )
+    expected_constant_indices = tuple(
+        index
+        for index, dependencies in enumerate(profile_dependencies)
+        if not dependencies and engine.plan.profiles[index].retained_observation_indices
+    )
+    expected_non_objective_indices = tuple(
+        index
+        for index, profile in enumerate(engine.plan.profiles)
+        if not profile.retained_observation_indices
+    )
+    expected_profile_records = tuple(
+        (
+            profile.identity,
+            profile.param_ids,
+            tuple(
+                param_id
+                for param_id in problem.controlled_ids
+                if param_id in profile_dependencies[index]
+            ),
+            profile_paths[index],
+        )
+        for index, profile in enumerate(engine.plan.profiles)
+    )
+    proof = decomposition.partition_proof
     if (
         decomposition.root_problem_identity != problem.identity
         or decomposition.root_plan_identity != engine.plan.identity
+        or proof.root_plan_identity != engine.plan.identity
+        or proof.constraint_program_identity != problem.constraint_program_identity
+        or proof.controlled_ids != problem.controlled_ids
+        or proof.profile_records != expected_profile_records
+        or tuple(component.controlled_ids for component in decomposition.components)
+        != expected_component_controls
+        or tuple(
+            component.root_profile_indices for component in decomposition.components
+        )
+        != expected_component_profiles
+        or decomposition.constant_profile_indices != expected_constant_indices
+        or decomposition.non_objective_profile_indices != expected_non_objective_indices
         or invocation.root_problem_identity != problem.identity
         or invocation.decomposition_identity != decomposition.identity
         or len(invocation.component_invocations) != len(decomposition.components)
-        or decomposition.identity != expected_decomposition.identity
     ):
         raise DirectTrfConstructionError(
             "Grouped Direct TRF context is not rooted in one problem"
         )
+    for component, component_invocation in zip(
+        decomposition.components,
+        invocation.component_invocations,
+        strict=True,
+    ):
+        _check_grouped_cancellation(cancellation)
+        problem.validate_derived_problem(component.problem)
+        derivation = component.problem.derivation
+        if (
+            not isinstance(derivation, ComponentProblemDerivation)
+            or derivation.component_identity != component.identity
+            or component_invocation.problem_identity != component.problem.identity
+        ):
+            raise DirectTrfConstructionError(
+                "Grouped Direct TRF context is not rooted in one problem"
+            )
 
 
 def _not_started(component: FitComponent) -> FitComponentOutcome:

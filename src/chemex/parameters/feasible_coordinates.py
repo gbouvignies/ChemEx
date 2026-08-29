@@ -288,6 +288,72 @@ class FeasibleCoordinates:
             upper_bounds,
         )
 
+    def project_component(
+        self,
+        frame: IndependentValueFrame,
+        controlled_ids: tuple[str, ...],
+        lower_bounds: tuple[float, ...],
+        upper_bounds: tuple[float, ...],
+        domain_controlled_groups: tuple[frozenset[str], ...],
+    ) -> FeasibleCoordinates | None:
+        """Project an exact root chart onto one closed fit component."""
+        selected = set(controlled_ids)
+        root_indices = {
+            param_id: index for index, param_id in enumerate(self.controlled_ids)
+        }
+        if (
+            frame != self.base_frame
+            or tuple(
+                param_id for param_id in self.controlled_ids if param_id in selected
+            )
+            != controlled_ids
+            or len(selected) != len(controlled_ids)
+            or len(domain_controlled_groups) != len(self.blocks)
+            or any(
+                dependencies & selected and not dependencies <= selected
+                for dependencies in domain_controlled_groups
+            )
+        ):
+            raise FeasibleCoordinateConstructionError(
+                "Component feasibility projection is not a closed root-chart subset"
+            )
+        expected_lower = tuple(
+            self.public_lower_bounds[root_indices[param_id]]
+            for param_id in controlled_ids
+        )
+        expected_upper = tuple(
+            self.public_upper_bounds[root_indices[param_id]]
+            for param_id in controlled_ids
+        )
+        if lower_bounds != expected_lower or upper_bounds != expected_upper:
+            raise FeasibleCoordinateConstructionError(
+                "Component feasibility projection changed root public bounds"
+            )
+        projected = type(self)(
+            self.parameterization,
+            frame,
+            controlled_ids,
+            lower_bounds,
+            upper_bounds,
+            tuple(item for item in self.rate_excess_ids if item[0] in selected),
+            tuple(item for item in self.rate_floors if item.rate_id in selected),
+            tuple(item for item in self.static_rate_floors if item[0] in selected),
+            tuple(param_id for param_id in self.cross_rate_ids if param_id in selected),
+            self.blocks,
+            tuple(
+                self.solver_start[root_indices[param_id]] for param_id in controlled_ids
+            ),
+            tuple(
+                self.solver_lower_bounds[root_indices[param_id]]
+                for param_id in controlled_ids
+            ),
+            tuple(
+                self.solver_upper_bounds[root_indices[param_id]]
+                for param_id in controlled_ids
+            ),
+        )
+        return None if projected.is_noop else projected
+
     def decode(  # noqa: C901 - complete feasibility decode and verification
         self,
         solver_vector: Sequence[float],
