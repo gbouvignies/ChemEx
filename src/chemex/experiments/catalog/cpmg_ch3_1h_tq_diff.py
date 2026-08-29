@@ -37,7 +37,7 @@ class CpmgCh31HTqDiffSettings(CpmgSettings):
     delta: float = Field(
         gt=0.0, description="Gradient pulse duration for diffusion encoding (seconds)"
     )
-    gradient: float = Field(gt=0.0, description="Gradient strength (G/cm)")
+    gradient: float = Field(ge=0.0, description="Gradient strength (G/cm)")
     tau: float = Field(
         default=500.0e-6,
         gt=0.0,
