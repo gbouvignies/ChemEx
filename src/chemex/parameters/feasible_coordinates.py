@@ -425,10 +425,11 @@ class FeasibleCoordinates:
 
 @dataclass(frozen=True, slots=True)
 class _AffineExpression:
-    """Exact scalar constant plus coefficients of referenced parameters."""
+    """Exact scalar constant, linear coefficients, and reference provenance."""
 
     constant: float
     coefficients: Mapping[str, float]
+    reference_ids: frozenset[str]
 
 
 def _scaled_affine(
@@ -445,7 +446,7 @@ def _scaled_affine(
         math.isfinite(coefficient) for coefficient in coefficients.values()
     ):
         return None
-    return _AffineExpression(constant, coefficients)
+    return _AffineExpression(constant, coefficients, expression.reference_ids)
 
 
 def _combined_affine(
@@ -465,7 +466,11 @@ def _combined_affine(
         math.isfinite(coefficient) for coefficient in coefficients.values()
     ):
         return None
-    return _AffineExpression(constant, coefficients)
+    return _AffineExpression(
+        constant,
+        coefficients,
+        left.reference_ids | right.reference_ids,
+    )
 
 
 def _binary_affine_expression(
@@ -481,13 +486,13 @@ def _binary_affine_expression(
         factor = 1.0 if expression.operator == "add" else -1.0
         return _combined_affine(left, right, factor)
     if expression.operator == "multiply":
-        if not left.coefficients:
+        if not left.reference_ids:
             return _scaled_affine(right, left.constant)
-        if not right.coefficients:
+        if not right.reference_ids:
             return _scaled_affine(left, right.constant)
         return None
     if expression.operator == "divide":
-        if right.coefficients or right.constant == 0.0:
+        if right.reference_ids or right.constant == 0.0:
             return None
         return _scaled_affine(left, 1.0 / right.constant)
     return None
@@ -501,12 +506,16 @@ def _affine_expression(
     if isinstance(expression, LiteralExpression):
         if not math.isfinite(expression.value):
             return None
-        return _AffineExpression(expression.value, {})
+        return _AffineExpression(expression.value, {}, frozenset())
     if isinstance(expression, ReferenceExpression):
         reference_id = expression.param_id
         constraint = None if constraints is None else constraints.get(reference_id)
         if constraint is None:
-            return _AffineExpression(0.0, {reference_id: 1.0})
+            return _AffineExpression(
+                0.0,
+                {reference_id: 1.0},
+                frozenset((reference_id,)),
+            )
         if reference_id in seen:
             return None
         return _affine_expression(
@@ -536,14 +545,36 @@ def _reference_coefficient(
     return affine.coefficients.get(param_id, 0.0)
 
 
-def _is_additive_reference_expression(expression: object) -> bool:
+def _is_model_additive_reference_expression(
+    expression: object,
+    constraints: Mapping[str, CompiledConstraint],
+    seen: frozenset[str] = frozenset(),
+) -> bool:
     if isinstance(expression, ReferenceExpression):
-        return True
+        reference_id = expression.param_id
+        constraint = constraints.get(reference_id)
+        if constraint is None:
+            return True
+        if constraint.source not in {"baseline", "model"} or reference_id in seen:
+            return False
+        return _is_model_additive_reference_expression(
+            constraint.expression,
+            constraints,
+            seen | {reference_id},
+        )
     return (
         isinstance(expression, BinaryExpression)
         and expression.operator == "add"
-        and _is_additive_reference_expression(expression.left)
-        and _is_additive_reference_expression(expression.right)
+        and _is_model_additive_reference_expression(
+            expression.left,
+            constraints,
+            seen,
+        )
+        and _is_model_additive_reference_expression(
+            expression.right,
+            constraints,
+            seen,
+        )
     )
 
 
@@ -562,9 +593,16 @@ def _derived_diagonal_transforms(
         if constraint is None:
             continue
         expression = constraint.expression
-        if _is_additive_reference_expression(expression):
+        if constraint.source in {
+            "baseline",
+            "model",
+        } and _is_model_additive_reference_expression(expression, constraints):
             continue
-        dependencies = controlled & set(constraint.dependencies)
+        dependencies = _controlled_dependencies(
+            parameterization,
+            diagonal_id,
+            controlled,
+        )
         supported = {
             param_id
             for param_id in dependencies

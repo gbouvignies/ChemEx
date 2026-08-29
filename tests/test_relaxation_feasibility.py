@@ -6,6 +6,11 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from chemex.configuration.methods import Selection, read_method_plan
+from chemex.configuration.parameters import read_defaults
+from chemex.evaluation.native import EvaluationEngine
+from chemex.experiments.builder import build_experiments
+from chemex.optimize.direct_trf import OptimizationProblem
 from chemex.optimize.helper import execute_simulation
 from chemex.parameters.feasible_coordinates import (
     FeasibleCoordinateConstructionError,
@@ -29,6 +34,8 @@ from chemex.parameters.relaxation import (
     RelaxationPsdBlock,
     SealedRelaxationDomains,
 )
+from chemex.parameters.spin_system import SpinSystem
+from chemex.runtime import AnalysisSession
 
 
 def test_two_state_shared_cross_rate_uses_the_limiting_psd_block() -> None:
@@ -343,6 +350,28 @@ def test_reference_coefficient_rejects_recursive_constraint_cycle() -> None:
         BinaryExpression(
             "multiply", LiteralExpression(float("inf")), ReferenceExpression("x")
         ),
+        BinaryExpression(
+            "multiply",
+            ReferenceExpression("x"),
+            BinaryExpression(
+                "subtract",
+                BinaryExpression(
+                    "add", ReferenceExpression("y"), LiteralExpression(1.0)
+                ),
+                ReferenceExpression("y"),
+            ),
+        ),
+        BinaryExpression(
+            "divide",
+            ReferenceExpression("x"),
+            BinaryExpression(
+                "add",
+                BinaryExpression(
+                    "subtract", ReferenceExpression("y"), ReferenceExpression("y")
+                ),
+                LiteralExpression(1.0),
+            ),
+        ),
     ],
 )
 def test_reference_coefficient_rejects_non_affine_forms(expression: object) -> None:
@@ -381,6 +410,177 @@ def test_compiler_rejects_nonlinear_relaxation_controller() -> None:
             (0.0,),
             (maximum,),
         )
+
+
+def _recursive_affine_parameterization(*, nonlinear: bool):
+    block = RelaxationPsdBlock(
+        "recursive-transverse-a",
+        "a",
+        ("held", "diagonal"),
+        ((0, 1, "cross"),),
+    )
+    intermediate_expression = (
+        BinaryExpression(
+            "multiply",
+            ReferenceExpression("controller"),
+            ReferenceExpression("controller"),
+        )
+        if nonlinear
+        else ReferenceExpression("controller")
+    )
+    constraints = (
+        CompiledConstraint(
+            "intermediate",
+            intermediate_expression,
+            ("controller",),
+            "method",
+            "[CONTROLLER] * [CONTROLLER]" if nonlinear else "[CONTROLLER]",
+        ),
+        CompiledConstraint(
+            "diagonal",
+            BinaryExpression(
+                "add",
+                ReferenceExpression("intermediate"),
+                ReferenceExpression("offset"),
+            ),
+            ("intermediate", "offset"),
+            "method",
+            "[INTERMEDIATE] + [OFFSET]",
+        ),
+    )
+
+    class Parameterization:
+        scope_ids = (
+            "held",
+            "cross",
+            "controller",
+            "offset",
+            "intermediate",
+            "diagonal",
+        )
+        evaluator_identity = f"recursive-affine-{nonlinear}"
+        program = SimpleNamespace(
+            constraints=constraints,
+            relaxation_domains=SealedRelaxationDomains((block,)),
+        )
+
+        @staticmethod
+        def resolve(frame):
+            values = dict(frame.ordered_items())
+            controller = values["controller"]
+            values["intermediate"] = (
+                controller * controller if nonlinear else controller
+            )
+            values["diagonal"] = values["intermediate"] + values["offset"]
+            return values
+
+    return Parameterization()
+
+
+def test_compiler_discovers_recursive_affine_controller() -> None:
+    parameterization = _recursive_affine_parameterization(nonlinear=False)
+    maximum = float(np.finfo(np.float64).max)
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("held", 2.0), ("cross", 0.0), ("controller", 2.0), ("offset", -1.0)),
+    )
+
+    chart = compile_feasible_coordinates(
+        parameterization,
+        frame,
+        ("controller",),
+        (0.0,),
+        (maximum,),
+    )
+
+    assert chart is not None
+    assert chart.rate_excess_ids == (("controller", "diagonal"),)
+    values = parameterization.resolve(chart.decode((0.0,)).frame)
+    assert values["controller"] == pytest.approx(1.0)
+    assert values["diagonal"] == pytest.approx(0.0)
+
+
+def test_compiler_rejects_recursive_nonlinear_controller() -> None:
+    parameterization = _recursive_affine_parameterization(nonlinear=True)
+    maximum = float(np.finfo(np.float64).max)
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("held", 2.0), ("cross", 0.0), ("controller", 2.0), ("offset", -1.0)),
+    )
+
+    with pytest.raises(
+        FeasibleCoordinateConstructionError,
+        match="unsupported affine controller",
+    ):
+        compile_feasible_coordinates(
+            parameterization,
+            frame,
+            ("controller",),
+            (0.0,),
+            (maximum,),
+        )
+
+
+def test_shipped_v71hg2_compiles_complete_dq_tq_state_mapping() -> None:
+    root = Path(__file__).parent.parent
+    example = root / "examples/Combinations/CPMG_CH3_1H_DQ_TQ"
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    plan = read_method_plan([example / "Methods/method.toml"])
+    experiments = build_experiments(
+        sorted((example / "Experiments").glob("*.toml")),
+        Selection(include=[SpinSystem.from_name("V71HG2")], exclude=None),
+        session=session,
+    )
+    session.parameters.set_defaults(
+        read_defaults([example / "Parameters/parameters.toml"])
+    )
+    assert session.try_build_analysis_values()
+    parameterization = session.compile_parameterization_from_actions(
+        plan.effective_role_actions()["STEP1"], experiments.param_ids
+    )
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    configuration = session.parameter_factory.sealed_configuration
+    assert configuration is not None
+
+    problem = OptimizationProblem.from_native(
+        engine.plan,
+        parameterization,
+        configuration,
+        session.analysis_values.snapshot(),
+    )
+
+    chart = problem.feasible_coordinates
+    assert chart is not None
+    dq_rate = "__R2DQ_A_V71HG2_700_2MHZ"
+    tq_rate = "__R2TQ_A_V71HG2_700_2MHZ"
+    assert chart.rate_excess_ids == (
+        (dq_rate, "__R2ADQ_A_V71HG2_700_2MHZ"),
+        (dq_rate, "__R2ADQ_B_V71HG2_700_2MHZ"),
+        (tq_rate, "__R2ATQ_A_V71HG2_700_2MHZ"),
+        (tq_rate, "__R2ATQ_B_V71HG2_700_2MHZ"),
+    )
+    private = list(chart.solver_start)
+    private[chart.controlled_ids.index(dq_rate)] = 0.0
+    private[chart.controlled_ids.index(tq_rate)] = 0.0
+    resolved = parameterization.resolve(chart.decode(tuple(private)).frame)
+    expected = {
+        dq_rate: 0.5,
+        "__R2DQ_B_V71HG2_700_2MHZ": 0.5,
+        "__R2ADQ_A_V71HG2_700_2MHZ": 0.0,
+        "__R2ADQ_B_V71HG2_700_2MHZ": 0.0,
+        tq_rate: 1.5,
+        "__R2TQ_B_V71HG2_700_2MHZ": 1.5,
+        "__R2ATQ_A_V71HG2_700_2MHZ": 0.0,
+        "__R2ATQ_B_V71HG2_700_2MHZ": 0.0,
+    }
+    assert {param_id: resolved[param_id] for param_id in expected} == expected
 
 
 def test_compiler_returns_no_chart_when_feasibility_has_no_execution_effect() -> None:
