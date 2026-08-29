@@ -1152,6 +1152,76 @@ class OptimizationProblem:
         start: tuple[float, ...],
         derivation: ProblemDerivation,
     ) -> OptimizationProblem:
+        """Construct a general child, recompiling feasibility for its state."""
+        return self._derive_child(
+            controlled_ids=controlled_ids,
+            start=start,
+            derivation=derivation,
+            project_root_feasibility=False,
+        )
+
+    def derive_grouped_component(
+        self,
+        *,
+        controlled_ids: tuple[str, ...],
+        start: tuple[float, ...],
+        derivation: ComponentProblemDerivation,
+    ) -> OptimizationProblem:
+        """Construct one proven root-state grouped component by exact projection."""
+        if not self.acceptance_authority:
+            raise DirectTrfConstructionError(
+                "Grouped feasibility projection requires one complete root problem"
+            )
+        return self._derive_child(
+            controlled_ids=controlled_ids,
+            start=start,
+            derivation=derivation,
+            project_root_feasibility=True,
+        )
+
+    def project_grouped_feasibility(
+        self,
+        *,
+        controlled_ids: tuple[str, ...],
+        start: tuple[float, ...],
+        lower_bounds: tuple[float, ...],
+        upper_bounds: tuple[float, ...],
+    ) -> FeasibleCoordinates | None:
+        """Project the sealed root chart for one exact root-state component."""
+        if not self.acceptance_authority:
+            raise DirectTrfConstructionError(
+                "Grouped feasibility projection requires one complete root problem"
+            )
+        root_feasible = self.feasible_coordinates
+        if root_feasible is None:
+            return None
+        root_feasible.require_root_projection_authority()
+        _ = root_feasible.controlled_domain_groups
+        frame = root_feasible.frame_with_updates(
+            dict(zip(controlled_ids, start, strict=True))
+        )
+        if (
+            controlled_ids == self.controlled_ids
+            and start == self.start
+            and lower_bounds == self.lower_bounds
+            and upper_bounds == self.upper_bounds
+        ):
+            return root_feasible
+        return root_feasible.project_component(
+            frame,
+            controlled_ids,
+            lower_bounds,
+            upper_bounds,
+        )
+
+    def _derive_child(
+        self,
+        *,
+        controlled_ids: tuple[str, ...],
+        start: tuple[float, ...],
+        derivation: ProblemDerivation,
+        project_root_feasibility: bool,
+    ) -> OptimizationProblem:
         """Construct one child while retaining every root-owned invariant."""
         controlled = set(controlled_ids)
         expected_controlled = tuple(
@@ -1186,16 +1256,26 @@ class OptimizationProblem:
             if root_feasible is not None
             else None
         )
-        feasible_coordinates = (
-            root_feasible.derive(
-                frame,
-                controlled_ids,
-                child_lower,
-                child_upper,
+        if project_root_feasibility and isinstance(
+            derivation, ComponentProblemDerivation
+        ):
+            feasible_coordinates = self.project_grouped_feasibility(
+                controlled_ids=controlled_ids,
+                start=start,
+                lower_bounds=child_lower,
+                upper_bounds=child_upper,
             )
-            if root_feasible is not None and frame is not None
-            else None
-        )
+        else:
+            feasible_coordinates = (
+                root_feasible.derive(
+                    frame,
+                    controlled_ids,
+                    child_lower,
+                    child_upper,
+                )
+                if root_feasible is not None and frame is not None
+                else None
+            )
         child = OptimizationProblem(
             evaluation_plan_identity,
             self.parameterization_identity,

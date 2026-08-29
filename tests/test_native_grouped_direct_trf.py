@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 import chemex.optimize.grouped_direct_trf as grouped_direct_trf_owner
+import chemex.parameters.feasible_coordinates as feasible_coordinates_owner
 from chemex.configuration.methods import Method, Selection, read_method_plan
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
@@ -104,14 +105,14 @@ def test_exact_decomposition_is_deterministic_and_distinguishes_shared_coordinat
     _session, _experiments, parameterization, engine, problem = _grouped_problem()
 
     derivations: list[ProblemDerivation] = []
-    original_derive_child = OptimizationProblem.derive_child
+    original_derive_child = OptimizationProblem.derive_grouped_component
 
     def track_derive_child(
         self: OptimizationProblem,
         *,
         controlled_ids: tuple[str, ...],
         start: tuple[float, ...],
-        derivation: ProblemDerivation,
+        derivation: ComponentProblemDerivation,
     ) -> OptimizationProblem:
         derivations.append(derivation)
         return original_derive_child(
@@ -121,7 +122,11 @@ def test_exact_decomposition_is_deterministic_and_distinguishes_shared_coordinat
             derivation=derivation,
         )
 
-    with patch.object(OptimizationProblem, "derive_child", track_derive_child):
+    with patch.object(
+        OptimizationProblem,
+        "derive_grouped_component",
+        track_derive_child,
+    ):
         first = FitDecomposition.from_root(problem, parameterization, engine)
         second = FitDecomposition.from_root(problem, parameterization, engine)
 
@@ -182,6 +187,28 @@ def test_exact_decomposition_is_deterministic_and_distinguishes_shared_coordinat
     assert tuple(component.identity for component in first.components) == tuple(
         component.identity for component in second.components
     )
+    root_chart = problem.feasible_coordinates
+    assert root_chart is not None
+    for component in first.components:
+        frame = root_chart.frame_with_updates(
+            dict(zip(component.controlled_ids, component.problem.start, strict=True))
+        )
+        freshly_compiled = feasible_coordinates_owner.compile_feasible_coordinates(
+            parameterization,
+            frame,
+            component.controlled_ids,
+            component.problem.lower_bounds,
+            component.problem.upper_bounds,
+        )
+        assert component.problem.feasible_coordinates == freshly_compiled
+        assert component.problem.feasible_coordinates is not None
+        assert (
+            component.problem.feasible_coordinates.identity == freshly_compiled.identity
+        )
+        assert (
+            component.problem.feasible_coordinates.solver_domain
+            == freshly_compiled.solver_domain
+        )
     child = first.components[0]
     child_invocation = DirectTrfInvocation.for_problem(
         child.problem,
@@ -206,6 +233,10 @@ def test_exact_decomposition_is_deterministic_and_distinguishes_shared_coordinat
     assert len(shared.components) == 1
     assert set(shared.components[0].controlled_ids) == {"__PB", *expected}
     assert shared.components[0].root_profile_indices == (0, 1, 2, 3, 4)
+    assert (
+        shared.components[0].problem.feasible_coordinates
+        is shared_problem.feasible_coordinates
+    )
 
     profile_record = first.partition_proof.profile_records[0]
     first_path = profile_record[3][0]
@@ -237,6 +268,408 @@ def test_exact_decomposition_is_deterministic_and_distinguishes_shared_coordinat
         component.disposition is ComponentDisposition.NOT_STARTED
         for component in invalid_outcome.components
     )
+
+
+def test_grouped_execution_does_not_rederive_a_supplied_decomposition() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    invocation = GroupedDirectTrfInvocation.for_decomposition(
+        decomposition,
+        objective_request_budgets=(80,) * len(decomposition.components),
+    )
+
+    with patch.object(
+        FitDecomposition,
+        "from_root",
+        side_effect=AssertionError("grouped execution rederived its decomposition"),
+    ):
+        outcome = execute_grouped_direct_trf(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert outcome.terminal is GroupedDirectTrfTerminal.ACCEPTED
+
+
+def test_grouped_validation_rejects_a_self_consistent_forged_component_identity() -> (
+    None
+):
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    original = decomposition.components[0]
+    assert isinstance(original.problem.derivation, ComponentProblemDerivation)
+    forged_identity = "forged-component-identity"
+    forged_derivation = dataclasses.replace(
+        original.problem.derivation,
+        component_identity=forged_identity,
+    )
+    forged_problem = dataclasses.replace(
+        original.problem,
+        derivation=forged_derivation,
+    )
+    forged_component = dataclasses.replace(
+        original,
+        problem=forged_problem,
+        identity=forged_identity,
+    )
+    forged_components = (forged_component, *decomposition.components[1:])
+    first_record = decomposition.partition_proof.component_records[0]
+    forged_proof = dataclasses.replace(
+        decomposition.partition_proof,
+        component_records=(
+            (forged_identity, *first_record[1:]),
+            *decomposition.partition_proof.component_records[1:],
+        ),
+    )
+    forged_decomposition = dataclasses.replace(
+        decomposition,
+        components=forged_components,
+        partition_proof=forged_proof,
+    )
+    invocation = GroupedDirectTrfInvocation.for_decomposition(
+        forged_decomposition,
+        objective_request_budgets=(10,) * len(forged_components),
+    )
+
+    outcome = execute_grouped_direct_trf(
+        problem,
+        forged_decomposition,
+        invocation,
+        parameterization,
+        engine,
+    )
+
+    assert outcome.terminal is GroupedDirectTrfTerminal.EXECUTION_FAILURE
+    assert all(
+        component.disposition is ComponentDisposition.NOT_STARTED
+        for component in outcome.components
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "missing_chart",
+        "altered_held_frame",
+        "altered_block",
+        "changed_start",
+        "changed_policy",
+    ),
+)
+def test_grouped_validation_rejects_forged_component_feasibility(
+    mutation: str,
+) -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    original = decomposition.components[0]
+    chart = original.problem.feasible_coordinates
+    assert chart is not None
+    if mutation == "missing_chart":
+        forged_problem = dataclasses.replace(
+            original.problem,
+            feasible_coordinates=None,
+        )
+    elif mutation == "altered_held_frame":
+        held_id, held_value = original.problem.held_items[0]
+        forged_chart = dataclasses.replace(
+            chart,
+            base_frame=chart.base_frame.with_updates({held_id: held_value + 0.25}),
+        )
+        forged_problem = dataclasses.replace(
+            original.problem,
+            feasible_coordinates=forged_chart,
+        )
+    elif mutation == "altered_block":
+        block = chart.blocks[0]
+        altered_block = dataclasses.replace(
+            block,
+            off_diagonal_ids=(
+                (*block.off_diagonal_ids[0][:2], block.diagonal_ids[0]),
+                *block.off_diagonal_ids[1:],
+            ),
+        )
+        forged_problem = dataclasses.replace(
+            original.problem,
+            feasible_coordinates=dataclasses.replace(
+                chart,
+                blocks=(altered_block, *chart.blocks[1:]),
+            ),
+        )
+    elif mutation == "changed_policy":
+        derivation = original.problem.derivation
+        assert isinstance(derivation, ComponentProblemDerivation)
+        forged_problem = dataclasses.replace(
+            original.problem,
+            derivation=dataclasses.replace(
+                derivation,
+                projection_policy="forged-projection-policy",
+            ),
+        )
+    else:
+        forged_problem = dataclasses.replace(
+            original.problem,
+            start=(original.problem.start[0] + 0.01, *original.problem.start[1:]),
+        )
+    forged_component = dataclasses.replace(original, problem=forged_problem)
+    forged_decomposition = dataclasses.replace(
+        decomposition,
+        components=(forged_component, *decomposition.components[1:]),
+    )
+    invocation = GroupedDirectTrfInvocation.for_decomposition(
+        forged_decomposition,
+        objective_request_budgets=(10,) * len(forged_decomposition.components),
+    )
+
+    outcome = execute_grouped_direct_trf(
+        problem,
+        forged_decomposition,
+        invocation,
+        parameterization,
+        engine,
+    )
+
+    assert outcome.terminal is GroupedDirectTrfTerminal.EXECUTION_FAILURE
+    assert all(
+        component.disposition is ComponentDisposition.NOT_STARTED
+        for component in outcome.components
+    )
+
+
+def test_standalone_materialization_rejects_a_foreign_component_plan() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    original = decomposition.components[0]
+    original_profile = original.evaluation_plan.profiles[0]
+    altered_profile = dataclasses.replace(
+        original_profile,
+        experimental_values=(
+            original_profile.experimental_values[0] + 1.0,
+            *original_profile.experimental_values[1:],
+        ),
+    )
+    altered_plan = dataclasses.replace(
+        original.evaluation_plan,
+        profiles=(altered_profile, *original.evaluation_plan.profiles[1:]),
+    )
+    derivation = original.problem.derivation
+    assert isinstance(derivation, ComponentProblemDerivation)
+    forged_derivation = dataclasses.replace(
+        derivation,
+        projected_plan_identity=altered_plan.identity,
+    )
+    forged_problem = dataclasses.replace(
+        original.problem,
+        evaluation_plan_identity=altered_plan.identity,
+        derivation=forged_derivation,
+    )
+    forged_identity = grouped_direct_trf_owner._component_identity(
+        problem,
+        engine,
+        original.controlled_ids,
+        original.root_profile_indices,
+        altered_plan.identity,
+        original.problem.lower_bounds,
+        original.problem.upper_bounds,
+    )
+    forged_derivation = dataclasses.replace(
+        forged_derivation,
+        component_identity=forged_identity,
+    )
+    forged_problem = dataclasses.replace(
+        forged_problem,
+        derivation=forged_derivation,
+    )
+    forged_component = dataclasses.replace(
+        original,
+        problem=forged_problem,
+        evaluation_plan=altered_plan,
+        identity=forged_identity,
+    )
+    first_record = decomposition.partition_proof.component_records[0]
+    forged_proof = dataclasses.replace(
+        decomposition.partition_proof,
+        component_records=(
+            (forged_identity, *first_record[1:]),
+            *decomposition.partition_proof.component_records[1:],
+        ),
+    )
+    forged_decomposition = dataclasses.replace(
+        decomposition,
+        components=(forged_component, *decomposition.components[1:]),
+        partition_proof=forged_proof,
+    )
+    invocation = GroupedDirectTrfInvocation.for_decomposition(
+        forged_decomposition,
+        objective_request_budgets=(80,) * len(forged_decomposition.components),
+    )
+
+    outcome = materialize_grouped_direct_trf(
+        problem,
+        forged_decomposition,
+        invocation,
+        parameterization,
+        engine,
+        (),
+    )
+
+    assert outcome.terminal is GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE
+
+
+def test_grouped_validation_does_not_rebuild_projected_plans() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    invocation = GroupedDirectTrfInvocation.for_decomposition(
+        decomposition,
+        objective_request_budgets=(80,) * len(decomposition.components),
+    )
+    project_plan = engine.project_plan
+    project_profiles = engine.project_profiles
+
+    with (
+        patch.object(engine, "project_plan", wraps=project_plan) as plan_calls,
+        patch.object(
+            engine,
+            "project_profiles",
+            wraps=project_profiles,
+        ) as engine_calls,
+    ):
+        outcome = execute_grouped_direct_trf(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert outcome.terminal is GroupedDirectTrfTerminal.ACCEPTED
+    assert plan_calls.call_count == len(decomposition.components)
+    assert engine_calls.call_count == len(decomposition.components)
+
+
+def test_combined_grouped_execution_validates_context_once() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    invocation = GroupedDirectTrfInvocation.for_decomposition(
+        decomposition,
+        objective_request_budgets=(80,) * len(decomposition.components),
+    )
+
+    with patch.object(
+        grouped_direct_trf_owner,
+        "_validate_grouped_context",
+        wraps=grouped_direct_trf_owner._validate_grouped_context,
+    ) as validation_calls:
+        outcome = execute_grouped_direct_trf(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert outcome.terminal is GroupedDirectTrfTerminal.ACCEPTED
+    validation_calls.assert_called_once()
+
+
+def test_grouped_decomposition_rejects_a_derived_component_root() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    component = decomposition.components[0]
+    child_engine = engine.project_profiles(component.root_profile_indices)
+
+    with (
+        patch.object(
+            grouped_direct_trf_owner,
+            "_profile_dependencies",
+            side_effect=AssertionError("non-root decomposition inspected profiles"),
+        ),
+        pytest.raises(DirectTrfConstructionError, match="complete root"),
+    ):
+        FitDecomposition.from_root(
+            component.problem,
+            parameterization,
+            child_engine,
+        )
+
+
+def test_grouped_component_projection_does_not_recompile_feasibility() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+
+    with (
+        patch.object(
+            feasible_coordinates_owner,
+            "compile_feasible_coordinates",
+            side_effect=AssertionError("component feasibility was recompiled"),
+        ),
+        patch.object(
+            problem.feasible_coordinates.__class__,
+            "derive",
+            side_effect=AssertionError("component feasibility used general derivation"),
+        ),
+        patch.object(
+            engine,
+            "project_profiles",
+            side_effect=AssertionError("decomposition compiled child engines"),
+        ),
+    ):
+        decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+
+    assert len(decomposition.components) == len(problem.controlled_ids)
+
+
+def test_general_component_derivation_recompiles_feasibility_at_root_start() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    root_feasible = problem.feasible_coordinates
+    assert root_feasible is not None
+    derivation = ComponentProblemDerivation(
+        problem.identity,
+        problem.affine_feasibility_identity,
+        "resampling-complete-scope",
+        "native-resampling-complete-scope-v1",
+        engine.plan.identity,
+        problem.controlled_ids,
+        problem.held_items,
+    )
+    derive_calls = 0
+    original_derive = type(root_feasible).derive
+
+    def track_derive(*args, **kwargs):
+        nonlocal derive_calls
+        derive_calls += 1
+        return original_derive(*args, **kwargs)
+
+    with patch.object(type(root_feasible), "derive", track_derive):
+        child = problem.derive_child(
+            controlled_ids=problem.controlled_ids,
+            start=problem.start,
+            derivation=derivation,
+        )
+
+    assert derive_calls == 1
+    assert child.feasible_coordinates is not root_feasible
+
+
+def test_grouped_exact_domain_rejects_projected_chart_as_forged_root() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    component = decomposition.components[0]
+    assert component.problem.feasible_coordinates is not None
+    forged_root = dataclasses.replace(component.problem, derivation=None)
+    derivation = component.problem.derivation
+    assert isinstance(derivation, ComponentProblemDerivation)
+
+    with pytest.raises(
+        feasible_coordinates_owner.FeasibleCoordinateConstructionError,
+        match="compiled root chart",
+    ):
+        forged_root.derive_grouped_component(
+            controlled_ids=forged_root.controlled_ids,
+            start=forged_root.start,
+            derivation=derivation,
+        )
 
 
 def test_grouped_components_preserve_root_affine_feasibility() -> None:
@@ -879,7 +1312,7 @@ def test_interruption_stops_later_components_without_exposing_partial_authority(
     assert session.analysis_values.snapshot() == before
 
 
-def test_projection_interruption_gives_every_component_a_disposition() -> None:
+def test_projection_interruption_marks_the_in_flight_component() -> None:
     session, _experiments, parameterization, engine, problem = _grouped_problem()
     decomposition = FitDecomposition.from_root(problem, parameterization, engine)
     invocation = GroupedDirectTrfInvocation.for_decomposition(
@@ -898,9 +1331,12 @@ def test_projection_interruption_gives_every_component_a_disposition() -> None:
         )
 
     assert outcome.terminal is GroupedDirectTrfTerminal.INTERRUPTED
-    assert all(
-        component.disposition is ComponentDisposition.NOT_STARTED
-        for component in outcome.components
+    assert tuple(component.disposition for component in outcome.components) == (
+        ComponentDisposition.INTERRUPTED,
+        ComponentDisposition.NOT_STARTED,
+        ComponentDisposition.NOT_STARTED,
+        ComponentDisposition.NOT_STARTED,
+        ComponentDisposition.NOT_STARTED,
     )
     assert outcome.accepted_result is None
     assert session.analysis_values.snapshot() == before
@@ -948,7 +1384,7 @@ def test_cancellation_stops_after_in_flight_component_and_commits_nothing() -> N
     assert session.analysis_values.snapshot() == before
 
 
-def test_cancellation_during_first_context_projection_stops_validation() -> None:
+def test_cancellation_during_first_carried_projection_stops_validation() -> None:
     session, _experiments, parameterization, engine, problem = _grouped_problem()
     decomposition = FitDecomposition.from_root(problem, parameterization, engine)
     invocation = GroupedDirectTrfInvocation.for_decomposition(
@@ -964,22 +1400,22 @@ def test_cancellation_during_first_context_projection_stops_validation() -> None
     )
     token = CancellationToken()
     projection_count = 0
-    project_profiles = engine.project_profiles
+    materialized_projection = (
+        grouped_direct_trf_owner._materialized_component_projection
+    )
 
-    def cancel_during_first_context_projection(
-        profile_indices: tuple[int, ...],
-    ) -> EvaluationEngine:
+    def cancel_during_first_carried_projection(*args, **kwargs):
         nonlocal projection_count
         projection_count += 1
-        projected = project_profiles(profile_indices)
+        projected = materialized_projection(*args, **kwargs)
         token.cancel()
         return projected
 
     with (
         patch.object(
-            engine,
-            "project_profiles",
-            side_effect=cancel_during_first_context_projection,
+            grouped_direct_trf_owner,
+            "_materialized_component_projection",
+            side_effect=cancel_during_first_carried_projection,
         ),
         patch(
             "chemex.optimize.grouped_direct_trf._aggregate_vector",
@@ -1024,17 +1460,7 @@ def test_cancellation_during_first_evidence_comparison_stops_reconstruction() ->
         engine,
     )
     token = CancellationToken()
-    projection_count = 0
     comparison_count = 0
-    context_projection_count = len(decomposition.components)
-    project_profiles = engine.project_profiles
-
-    def record_projection(
-        profile_indices: tuple[int, ...],
-    ) -> EvaluationEngine:
-        nonlocal projection_count
-        projection_count += 1
-        return project_profiles(profile_indices)
 
     def cancel_during_first_evidence_comparison(residuals: Array) -> float:
         nonlocal comparison_count
@@ -1047,7 +1473,7 @@ def test_cancellation_during_first_evidence_comparison_stops_reconstruction() ->
         patch.object(
             engine,
             "project_profiles",
-            side_effect=record_projection,
+            side_effect=AssertionError("materialization rebuilt a child engine"),
         ),
         patch(
             "chemex.optimize.grouped_direct_trf.canonical_chi_square",
@@ -1074,7 +1500,6 @@ def test_cancellation_during_first_evidence_comparison_stops_reconstruction() ->
         )
 
     assert outcome.terminal is GroupedDirectTrfTerminal.CANCELLED
-    assert projection_count == context_projection_count + 1
     assert comparison_count == 1
     aggregate_vector.assert_not_called()
     new_root_evaluator.assert_not_called()

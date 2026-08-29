@@ -29,6 +29,7 @@ from chemex.optimize.direct_trf import (
     ObjectiveScalarizationError,
     OptimizationProblem,
 )
+from chemex.parameters.feasible_coordinates import FeasibleCoordinates
 from chemex.parameters.parameterization import ActiveParameterization
 from chemex.parameters.spin_system import SpinSystem
 from chemex.runtime import AnalysisSession
@@ -99,6 +100,42 @@ def test_product_search_plan_is_bounded_seeded_and_non_authoritative() -> None:
     assert invocation.population.size == 15
     assert invocation.population.maximum_generations == 1000
     assert invocation.de_objective_request_budget == 15 * 1001
+
+
+def test_full_scope_de_recompiles_feasibility_even_at_the_root_start() -> None:
+    _session, _experiments, _parameterization, _engine, problem = (
+        _qualification_problem(Method(fit=["PB"], fix=["KEX_AB"]))
+    )
+    assert problem.feasible_coordinates is not None
+    derive_calls = 0
+    original_derive = FeasibleCoordinates.derive
+
+    def track_derive(
+        self: FeasibleCoordinates,
+        *args: object,
+        **kwargs: object,
+    ):
+        nonlocal derive_calls
+        derive_calls += 1
+        return original_derive(self, *args, **kwargs)
+
+    derivation = DeSearchProblemDerivation(
+        problem.identity,
+        problem.affine_feasibility_identity,
+        "full-scope-de-regression",
+        problem.controlled_ids,
+        problem.held_items,
+        problem.start,
+    )
+    with patch.object(FeasibleCoordinates, "derive", track_derive):
+        child = problem.derive_child(
+            controlled_ids=problem.controlled_ids,
+            start=problem.start,
+            derivation=derivation,
+        )
+
+    assert derive_calls == 1
+    assert child.feasible_coordinates is not problem.feasible_coordinates
 
 
 @pytest.mark.parametrize("root_seed", (-1, 2**64, True, None))

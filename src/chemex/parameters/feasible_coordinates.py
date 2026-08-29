@@ -21,7 +21,10 @@ from chemex.parameters.parameterization import (
     ReferenceExpression,
     UnaryExpression,
 )
-from chemex.parameters.relaxation import RelaxationPsdBlock
+from chemex.parameters.relaxation import (
+    RelaxationPsdBlock,
+    relaxation_blocks_identity,
+)
 from chemex.typing import Array
 
 # Eigenvalue and Schur checks operate on tiny (2x2/3x3) symmetric binary64
@@ -181,6 +184,14 @@ def _rate_floor(specification: RateFloor, values: Mapping[str, float]) -> float:
 
 
 @dataclass(frozen=True, slots=True)
+class _FeasibilityProjectionProvenance:
+    """Private immutable closure proof compiled with one feasibility chart."""
+
+    controlled_domain_groups: tuple[frozenset[str], ...]
+    has_root_projection_authority: bool
+
+
+@dataclass(frozen=True, slots=True)
 class FeasibleCoordinates:
     """Role-aware exact chart over the represented relaxation PSD domains."""
 
@@ -194,6 +205,12 @@ class FeasibleCoordinates:
     static_rate_floors: tuple[tuple[str, float], ...]
     cross_rate_ids: tuple[str, ...]
     blocks: tuple[RelaxationPsdBlock, ...]
+    _projection_provenance: _FeasibilityProjectionProvenance | None = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
     solver_start: tuple[float, ...]
     solver_lower_bounds: tuple[float, ...]
     solver_upper_bounds: tuple[float, ...]
@@ -203,26 +220,26 @@ class FeasibleCoordinates:
         object.__setattr__(
             self,
             "identity",
-            _identity(
-                (
-                    self.parameterization.evaluator_identity,
-                    self.controlled_ids,
-                    self.public_lower_bounds,
-                    self.public_upper_bounds,
-                    self.rate_excess_ids,
-                    tuple(
-                        (item.rate_id, item.kind, item.other_id, item.cross_id)
-                        for item in self.rate_floors
-                    ),
-                    self.static_rate_floors,
-                    self.cross_rate_ids,
-                    tuple(block.domain_id for block in self.blocks),
-                    self.solver_start,
-                    self.solver_lower_bounds,
-                    self.solver_upper_bounds,
-                )
-            ),
+            _identity(("unsealed-feasibility-chart",)),
         )
+
+    @property
+    def controlled_domain_groups(self) -> tuple[frozenset[str], ...]:
+        """Return private root-compiled controlled-domain closure proofs."""
+        provenance = self._projection_provenance
+        if provenance is None:
+            raise FeasibleCoordinateConstructionError(
+                "Feasibility chart lacks construction-owned projection provenance"
+            )
+        return provenance.controlled_domain_groups
+
+    def require_root_projection_authority(self) -> None:
+        """Fail unless this chart is the compiler-owned projection root."""
+        provenance = self._projection_provenance
+        if provenance is None or not provenance.has_root_projection_authority:
+            raise FeasibleCoordinateConstructionError(
+                "Component feasibility projection requires the compiled root chart"
+            )
 
     @property
     def has_coordinate_transform(self) -> bool:
@@ -280,6 +297,7 @@ class FeasibleCoordinates:
         upper_bounds: tuple[float, ...],
     ) -> FeasibleCoordinates | None:
         """Compile a role-aware child chart without exposing model internals."""
+        _ = self.controlled_domain_groups
         return compile_feasible_coordinates(
             self.parameterization,
             frame,
@@ -288,10 +306,87 @@ class FeasibleCoordinates:
             upper_bounds,
         )
 
+    def project_component(
+        self,
+        frame: IndependentValueFrame,
+        controlled_ids: tuple[str, ...],
+        lower_bounds: tuple[float, ...],
+        upper_bounds: tuple[float, ...],
+    ) -> FeasibleCoordinates | None:
+        """Project an exact root chart onto one closed fit component."""
+        self.require_root_projection_authority()
+        selected = set(controlled_ids)
+        root_indices = {
+            param_id: index for index, param_id in enumerate(self.controlled_ids)
+        }
+        if (
+            frame != self.base_frame
+            or tuple(
+                param_id for param_id in self.controlled_ids if param_id in selected
+            )
+            != controlled_ids
+            or len(selected) != len(controlled_ids)
+            or len(self.controlled_domain_groups) != len(self.blocks)
+            or any(
+                dependencies & selected and not dependencies <= selected
+                for dependencies in self.controlled_domain_groups
+            )
+        ):
+            raise FeasibleCoordinateConstructionError(
+                "Component feasibility projection is not a closed root-chart subset"
+            )
+        expected_lower = tuple(
+            self.public_lower_bounds[root_indices[param_id]]
+            for param_id in controlled_ids
+        )
+        expected_upper = tuple(
+            self.public_upper_bounds[root_indices[param_id]]
+            for param_id in controlled_ids
+        )
+        if lower_bounds != expected_lower or upper_bounds != expected_upper:
+            raise FeasibleCoordinateConstructionError(
+                "Component feasibility projection changed root public bounds"
+            )
+        projected = _seal_projection_provenance(
+            type(self)(
+                self.parameterization,
+                frame,
+                controlled_ids,
+                lower_bounds,
+                upper_bounds,
+                tuple(item for item in self.rate_excess_ids if item[0] in selected),
+                tuple(item for item in self.rate_floors if item.rate_id in selected),
+                tuple(item for item in self.static_rate_floors if item[0] in selected),
+                tuple(
+                    param_id for param_id in self.cross_rate_ids if param_id in selected
+                ),
+                self.blocks,
+                tuple(
+                    self.solver_start[root_indices[param_id]]
+                    for param_id in controlled_ids
+                ),
+                tuple(
+                    self.solver_lower_bounds[root_indices[param_id]]
+                    for param_id in controlled_ids
+                ),
+                tuple(
+                    self.solver_upper_bounds[root_indices[param_id]]
+                    for param_id in controlled_ids
+                ),
+            ),
+            tuple(
+                dependencies & selected
+                for dependencies in self.controlled_domain_groups
+            ),
+            has_root_projection_authority=False,
+        )
+        return None if projected.is_noop else projected
+
     def decode(  # noqa: C901 - complete feasibility decode and verification
         self,
         solver_vector: Sequence[float],
     ) -> FeasiblePoint:
+        _ = self.controlled_domain_groups
         if len(solver_vector) != len(self.controlled_ids):
             raise ValueError("Feasible solver vector has the wrong dimension")
         public = {
@@ -394,6 +489,7 @@ class FeasibleCoordinates:
 
     def differential(self, solver_vector: Sequence[float]) -> Array:
         """Return d(public coordinates)/d(private solver coordinates)."""
+        _ = self.controlled_domain_groups
         point = np.asarray(solver_vector, dtype=np.float64)
         dimension = len(point)
         result = np.empty((dimension, dimension), dtype=np.float64)
@@ -730,6 +826,106 @@ def _controlled_dependencies(
             )
         )
     return frozenset(dependencies)
+
+
+def _seal_projection_provenance(
+    chart: FeasibleCoordinates,
+    controlled_domain_groups: tuple[frozenset[str], ...],
+    *,
+    has_root_projection_authority: bool,
+) -> FeasibleCoordinates:
+    """Seal compiler-owned closure proof and complete scientific chart identity."""
+    controlled = frozenset(chart.controlled_ids)
+    if len(controlled_domain_groups) != len(chart.blocks) or any(
+        not dependencies <= controlled for dependencies in controlled_domain_groups
+    ):
+        raise FeasibleCoordinateConstructionError(
+            "Feasibility dependency provenance differs from its root chart"
+        )
+    object.__setattr__(
+        chart,
+        "_projection_provenance",
+        _FeasibilityProjectionProvenance(
+            controlled_domain_groups,
+            has_root_projection_authority,
+        ),
+    )
+    object.__setattr__(
+        chart,
+        "identity",
+        _identity(
+            (
+                chart.parameterization.evaluator_identity,
+                (
+                    chart.base_frame.parameterization_identity,
+                    chart.base_frame.program_fingerprint,
+                    chart.base_frame.occurrence_identity,
+                    chart.base_frame.revision,
+                    chart.base_frame.ordered_items(),
+                ),
+                chart.controlled_ids,
+                chart.public_lower_bounds,
+                chart.public_upper_bounds,
+                chart.rate_excess_ids,
+                tuple(
+                    (item.rate_id, item.kind, item.other_id, item.cross_id)
+                    for item in chart.rate_floors
+                ),
+                chart.static_rate_floors,
+                chart.cross_rate_ids,
+                relaxation_blocks_identity(chart.blocks),
+                tuple(
+                    tuple(sorted(dependencies))
+                    for dependencies in controlled_domain_groups
+                ),
+                chart.solver_start,
+                chart.solver_lower_bounds,
+                chart.solver_upper_bounds,
+            )
+        ),
+    )
+    return chart
+
+
+def _controlled_domain_groups(
+    parameterization: ActiveParameterization,
+    blocks: Sequence[RelaxationPsdBlock],
+    controlled_ids: Sequence[str],
+) -> tuple[frozenset[str], ...]:
+    """Resolve every PSD domain to immutable root-controlled dependencies."""
+    controlled = frozenset(controlled_ids)
+    constraints = {
+        item.target_id: item for item in parameterization.program.constraints
+    }
+    cache: dict[str, frozenset[str]] = {}
+
+    def resolve(param_id: str, seen: frozenset[str] = frozenset()) -> frozenset[str]:
+        if param_id in cache:
+            return cache[param_id]
+        if param_id in controlled:
+            result = frozenset((param_id,))
+        elif param_id in seen or (constraint := constraints.get(param_id)) is None:
+            result = frozenset()
+        else:
+            result = frozenset(
+                dependency
+                for source in constraint.dependencies
+                for dependency in resolve(source, seen | {param_id})
+            )
+        cache[param_id] = result
+        return result
+
+    return tuple(
+        frozenset(
+            dependency
+            for param_id in (
+                *block.diagonal_ids,
+                *(item[2] for item in block.off_diagonal_ids),
+            )
+            for dependency in resolve(param_id)
+        )
+        for block in blocks
+    )
 
 
 def _is_intrinsic_rate_derivation(
@@ -1075,19 +1271,23 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
                 max(lower_by_id[param_id], static_rate_floors.get(param_id, -math.inf))
             )
             solver_upper.append(upper_by_id[param_id])
-    chart = FeasibleCoordinates(
-        parameterization,
-        frame,
-        controlled_ids,
-        lower_bounds,
-        upper_bounds,
-        rate_excess_ids,
-        tuple(rate_floors),
-        tuple(sorted(static_rate_floors.items())),
-        cross_ids,
-        blocks,
-        tuple(solver_start),
-        tuple(solver_lower),
-        tuple(solver_upper),
+    chart = _seal_projection_provenance(
+        FeasibleCoordinates(
+            parameterization,
+            frame,
+            controlled_ids,
+            lower_bounds,
+            upper_bounds,
+            rate_excess_ids,
+            tuple(rate_floors),
+            tuple(sorted(static_rate_floors.items())),
+            cross_ids,
+            blocks,
+            tuple(solver_start),
+            tuple(solver_lower),
+            tuple(solver_upper),
+        ),
+        _controlled_domain_groups(parameterization, blocks, controlled_ids),
+        has_root_projection_authority=True,
     )
     return None if chart.is_noop else chart

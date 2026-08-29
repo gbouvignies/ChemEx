@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -665,6 +666,64 @@ def test_compiled_static_affine_floor_supersedes_nonnegative_rate_excess() -> No
     values = parameterization.resolve(boundary.frame)
     assert values["r2"] == pytest.approx(0.5 * (2.0 + np.sqrt(40.0)))
     assert values["r2"] * values["r2a"] == pytest.approx(9.0)
+
+
+def test_component_projection_rejects_a_non_closed_root_feasibility_domain() -> None:
+    parameterization = _affine_parameterization()
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("r2", 5.0), ("r1", 2.0), ("eta", 3.0)),
+    )
+    maximum = float(np.finfo(np.float64).max)
+    root = compile_feasible_coordinates(
+        parameterization,
+        frame,
+        ("r2", "eta"),
+        (0.0, -maximum),
+        (maximum, maximum),
+    )
+
+    assert root is not None
+    with pytest.raises(TypeError):
+        dataclasses.replace(
+            root,
+            controlled_domain_groups=(frozenset(),),
+        )
+    with pytest.raises(TypeError, match="init=False"):
+        dataclasses.replace(
+            root,
+            _projection_provenance=root._projection_provenance,
+        )
+    with pytest.raises(
+        FeasibleCoordinateConstructionError,
+        match="closed root-chart subset",
+    ):
+        root.project_component(
+            frame,
+            ("r2",),
+            (0.0,),
+            (maximum,),
+        )
+    projected = root.project_component(
+        frame,
+        ("r2", "eta"),
+        (0.0, -maximum),
+        (maximum, maximum),
+    )
+    assert projected is not None
+    with pytest.raises(
+        FeasibleCoordinateConstructionError,
+        match="compiled root chart",
+    ):
+        projected.project_component(
+            frame,
+            ("r2", "eta"),
+            (0.0, -maximum),
+            (maximum, maximum),
+        )
 
 
 def test_collapsed_cross_rate_chart_has_singular_public_differential() -> None:

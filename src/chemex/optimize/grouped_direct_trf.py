@@ -14,7 +14,7 @@ from enum import StrEnum
 
 import numpy as np
 
-from chemex.evaluation.native import EvaluationEngine, EvaluationResult
+from chemex.evaluation.native import EvaluationEngine, EvaluationPlan, EvaluationResult
 from chemex.optimize import direct_trf as direct_trf_owner
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
@@ -77,6 +77,7 @@ class FitComponent:
     controlled_ids: tuple[str, ...]
     root_profile_indices: tuple[int, ...]
     problem: OptimizationProblem = field(repr=False, compare=False)
+    evaluation_plan: EvaluationPlan = field(repr=False, compare=False)
     identity: str
 
 
@@ -226,7 +227,7 @@ def _build_component(
         for index, dependencies in enumerate(profile_dependencies)
         if dependencies and dependencies.issubset(component_set)
     )
-    child_engine = engine.project_profiles(profile_indices)
+    child_plan = engine.project_plan(profile_indices)
     bounds = {
         param_id: (start, lower, upper)
         for param_id, start, lower, upper in zip(
@@ -243,7 +244,49 @@ def _build_component(
     start = tuple(bounds[param_id][0] for param_id in component_ids)
     lower = tuple(bounds[param_id][1] for param_id in component_ids)
     upper = tuple(bounds[param_id][2] for param_id in component_ids)
-    component_identity = _identity(
+    component_identity = _component_identity(
+        problem,
+        engine,
+        component_ids,
+        profile_indices,
+        child_plan.identity,
+        lower,
+        upper,
+    )
+    derivation = ComponentProblemDerivation(
+        problem.identity,
+        problem.affine_feasibility_identity,
+        component_identity,
+        _PROJECTION_POLICY,
+        child_plan.identity,
+        component_ids,
+        held_items,
+    )
+    child_problem = problem.derive_grouped_component(
+        controlled_ids=component_ids,
+        start=start,
+        derivation=derivation,
+    )
+    return FitComponent(
+        component_ids,
+        profile_indices,
+        child_problem,
+        child_plan,
+        component_identity,
+    )
+
+
+def _component_identity(
+    problem: OptimizationProblem,
+    engine: EvaluationEngine,
+    component_ids: tuple[str, ...],
+    profile_indices: tuple[int, ...],
+    projected_plan_identity: str,
+    lower_bounds: tuple[float, ...],
+    upper_bounds: tuple[float, ...],
+) -> str:
+    """Derive the canonical identity of one exact grouped root projection."""
+    return _identity(
         "native-fit-component",
         (
             _DECOMPOSITION_POLICY,
@@ -254,30 +297,12 @@ def _build_component(
             tuple(
                 engine.plan.profiles[index].source_identity for index in profile_indices
             ),
-            child_engine.plan.identity,
-            tuple(float(value).hex() for value in lower),
-            tuple(float(value).hex() for value in upper),
+            engine.plan.identity,
+            profile_indices,
+            projected_plan_identity,
+            tuple(float(value).hex() for value in lower_bounds),
+            tuple(float(value).hex() for value in upper_bounds),
         ),
-    )
-    derivation = ComponentProblemDerivation(
-        problem.identity,
-        problem.affine_feasibility_identity,
-        component_identity,
-        _PROJECTION_POLICY,
-        child_engine.plan.identity,
-        component_ids,
-        held_items,
-    )
-    child_problem = problem.derive_child(
-        controlled_ids=component_ids,
-        start=start,
-        derivation=derivation,
-    )
-    return FitComponent(
-        component_ids,
-        profile_indices,
-        child_problem,
-        component_identity,
     )
 
 
@@ -461,6 +486,10 @@ class FitDecomposition:
         cancellation: CancellationToken | None = None,
     ) -> FitDecomposition:
         """Derive exact components from semantic Profile and constraint paths."""
+        if not problem.acceptance_authority:
+            raise DirectTrfConstructionError(
+                "Grouped decomposition requires one complete root problem"
+            )
         problem.validate_parameterization(parameterization)
         if engine.plan.identity != problem.evaluation_plan_identity:
             raise DirectTrfConstructionError(
@@ -478,22 +507,9 @@ class FitDecomposition:
             engine,
         )
         components_list: list[FitComponent] = []
-        resolver = _ControlledDependencyResolver(
-            problem.controlled_ids,
-            parameterization,
-        )
         feasible = problem.feasible_coordinates
         feasibility_dependencies = (
-            ()
-            if feasible is None
-            else tuple(
-                frozenset(
-                    controlled_id
-                    for param_id in parameter_ids
-                    for controlled_id, _path in resolver.paths(param_id)
-                )
-                for parameter_ids in feasible.domain_parameter_groups
-            )
+            () if feasible is None else feasible.controlled_domain_groups
         )
         for component_ids in _ordered_component_controls(
             problem.controlled_ids,
@@ -651,6 +667,12 @@ class FitComponentOutcome:
         repr=False,
         compare=False,
     )
+    evaluation_plan: EvaluationPlan | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        kw_only=True,
+    )
     final_residual_jacobian: FinalResidualJacobianEvidence | None = field(
         default=None,
         repr=False,
@@ -662,9 +684,11 @@ class FitComponentOutcome:
 
     def __post_init__(self) -> None:
         if (self.disposition is ComponentDisposition.SUCCEEDED) != (
-            self.candidate is not None
+            self.candidate is not None and self.evaluation_plan is not None
         ):
-            raise ValueError("Only a successful component may expose a candidate")
+            raise ValueError(
+                "Only a successful component may expose a candidate and plan"
+            )
         if self.final_residual_jacobian is not None and (
             self.candidate is None
             or self.final_residual_jacobian.controlled_ids != self.controlled_ids
@@ -690,6 +714,9 @@ class FitComponentOutcome:
                     self.disposition.value,
                     self.execution_identity,
                     None if self.candidate is None else self.candidate.identity,
+                    None
+                    if self.evaluation_plan is None
+                    else self.evaluation_plan.identity,
                     None
                     if self.final_residual_jacobian is None
                     else self.final_residual_jacobian.identity,
@@ -739,6 +766,25 @@ class GroupedDirectTrfOutcome:
             raise ValueError("Unaccepted grouped execution cannot expose fit authority")
 
 
+def _grouped_context_validation_identity(
+    problem: OptimizationProblem,
+    decomposition: FitDecomposition,
+    invocation: GroupedDirectTrfInvocation,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+) -> str:
+    return _identity(
+        "native-grouped-context-validation",
+        (
+            problem.identity,
+            decomposition.identity,
+            invocation.identity,
+            parameterization.identity,
+            engine.plan.identity,
+        ),
+    )
+
+
 def _validate_grouped_context(
     problem: OptimizationProblem,
     decomposition: FitDecomposition,
@@ -746,28 +792,156 @@ def _validate_grouped_context(
     parameterization: ActiveParameterization,
     engine: EvaluationEngine,
     cancellation: CancellationToken,
-) -> None:
+) -> str:
     _check_grouped_cancellation(cancellation)
     problem.validate_parameterization(parameterization)
     _check_grouped_cancellation(cancellation)
-    expected_decomposition = FitDecomposition.from_root(
+    if engine.plan.identity != problem.evaluation_plan_identity:
+        raise DirectTrfConstructionError("Root evaluator belongs to another problem")
+    # Recheck the cheap semantic partition records without rebuilding child
+    # evaluators or their feasibility charts. Component execution validates each
+    # projected plan against the already sealed child problem before evaluation.
+    profile_dependencies = _profile_dependencies(
         problem,
         parameterization,
         engine,
-        cancellation=cancellation,
     )
     _check_grouped_cancellation(cancellation)
+    profile_paths = _profile_dependency_paths(
+        problem,
+        parameterization,
+        engine,
+    )
+    feasible = problem.feasible_coordinates
+    feasibility_dependencies = (
+        () if feasible is None else feasible.controlled_domain_groups
+    )
+    expected_component_controls = _ordered_component_controls(
+        problem.controlled_ids,
+        profile_dependencies,
+        feasibility_dependencies,
+    )
+    expected_component_profiles = tuple(
+        tuple(
+            index
+            for index, dependencies in enumerate(profile_dependencies)
+            if dependencies and dependencies.issubset(set(component_ids))
+        )
+        for component_ids in expected_component_controls
+    )
+    expected_constant_indices = tuple(
+        index
+        for index, dependencies in enumerate(profile_dependencies)
+        if not dependencies and engine.plan.profiles[index].retained_observation_indices
+    )
+    expected_non_objective_indices = tuple(
+        index
+        for index, profile in enumerate(engine.plan.profiles)
+        if not profile.retained_observation_indices
+    )
+    expected_profile_records = tuple(
+        (
+            profile.identity,
+            profile.param_ids,
+            tuple(
+                param_id
+                for param_id in problem.controlled_ids
+                if param_id in profile_dependencies[index]
+            ),
+            profile_paths[index],
+        )
+        for index, profile in enumerate(engine.plan.profiles)
+    )
+    proof = decomposition.partition_proof
     if (
         decomposition.root_problem_identity != problem.identity
         or decomposition.root_plan_identity != engine.plan.identity
+        or proof.root_plan_identity != engine.plan.identity
+        or proof.constraint_program_identity != problem.constraint_program_identity
+        or proof.controlled_ids != problem.controlled_ids
+        or proof.profile_records != expected_profile_records
+        or tuple(component.controlled_ids for component in decomposition.components)
+        != expected_component_controls
+        or tuple(
+            component.root_profile_indices for component in decomposition.components
+        )
+        != expected_component_profiles
+        or decomposition.constant_profile_indices != expected_constant_indices
+        or decomposition.non_objective_profile_indices != expected_non_objective_indices
         or invocation.root_problem_identity != problem.identity
         or invocation.decomposition_identity != decomposition.identity
         or len(invocation.component_invocations) != len(decomposition.components)
-        or decomposition.identity != expected_decomposition.identity
     ):
         raise DirectTrfConstructionError(
             "Grouped Direct TRF context is not rooted in one problem"
         )
+    for component, component_invocation in zip(
+        decomposition.components,
+        invocation.component_invocations,
+        strict=True,
+    ):
+        _check_grouped_cancellation(cancellation)
+        problem.validate_derived_problem(component.problem)
+        derivation = component.problem.derivation
+        root_indices = {
+            param_id: index for index, param_id in enumerate(problem.controlled_ids)
+        }
+        expected_start = tuple(
+            problem.start[root_indices[param_id]]
+            for param_id in component.controlled_ids
+        )
+        lower_bounds = tuple(
+            problem.lower_bounds[root_indices[param_id]]
+            for param_id in component.controlled_ids
+        )
+        upper_bounds = tuple(
+            problem.upper_bounds[root_indices[param_id]]
+            for param_id in component.controlled_ids
+        )
+        canonical_plan = engine.project_plan(component.root_profile_indices)
+        expected_identity = _component_identity(
+            problem,
+            engine,
+            component.controlled_ids,
+            component.root_profile_indices,
+            canonical_plan.identity,
+            lower_bounds,
+            upper_bounds,
+        )
+        expected_feasible = problem.project_grouped_feasibility(
+            controlled_ids=component.controlled_ids,
+            start=expected_start,
+            lower_bounds=lower_bounds,
+            upper_bounds=upper_bounds,
+        )
+        actual_feasible = component.problem.feasible_coordinates
+        if (
+            not isinstance(derivation, ComponentProblemDerivation)
+            or component.identity != expected_identity
+            or derivation.component_identity != component.identity
+            or derivation.projection_policy != _PROJECTION_POLICY
+            or component.problem.start != expected_start
+            or component.evaluation_plan.identity != canonical_plan.identity
+            or derivation.projected_plan_identity != canonical_plan.identity
+            or component.problem.evaluation_plan_identity != canonical_plan.identity
+            or (expected_feasible is None) != (actual_feasible is None)
+            or (
+                expected_feasible is not None
+                and actual_feasible is not None
+                and expected_feasible.identity != actual_feasible.identity
+            )
+            or component_invocation.problem_identity != component.problem.identity
+        ):
+            raise DirectTrfConstructionError(
+                "Grouped Direct TRF context is not rooted in one problem"
+            )
+    return _grouped_context_validation_identity(
+        problem,
+        decomposition,
+        invocation,
+        parameterization,
+        engine,
+    )
 
 
 def _not_started(component: FitComponent) -> FitComponentOutcome:
@@ -815,7 +989,11 @@ def execute_direct_trf_components(
             continue
         try:
             child_engine = engine.project_profiles(component.root_profile_indices)
-            if child_engine.plan.identity != component.problem.evaluation_plan_identity:
+            if (
+                child_engine.plan.identity != component.evaluation_plan.identity
+                or child_engine.plan.identity
+                != component.problem.evaluation_plan_identity
+            ):
                 raise DirectTrfConstructionError(
                     "Component evaluator projection differs from its derivation"
                 )
@@ -892,6 +1070,7 @@ def execute_direct_trf_components(
                     ComponentDisposition.SUCCEEDED,
                     result.execution.identity,
                     result.candidate,
+                    evaluation_plan=child_engine.plan,
                     final_residual_jacobian=(
                         None
                         if result.execution.backend is None
@@ -942,11 +1121,11 @@ def execute_direct_trf_components(
     return tuple(outcomes)
 
 
-type _ComponentProjection = tuple[EvaluationEngine, EvaluationResult]
+type _ComponentProjection = tuple[EvaluationPlan, EvaluationResult]
 
 
 def _materialized_component_projection(
-    child_engine: EvaluationEngine,
+    child_plan: EvaluationPlan,
     component: FitComponent,
     invocation: DirectTrfInvocation,
     outcome: FitComponentOutcome,
@@ -975,7 +1154,7 @@ def _materialized_component_projection(
             "Combined component assignment violates the root feasible domain",
         )
     child_result = candidate.evaluation_result
-    expected_compatibility_identity = child_engine.compatibility_identity
+    expected_compatibility_identity = child_plan.compatibility_identity
     try:
         child_chi_square = canonical_chi_square(child_result.residuals)
     except (TypeError, ValueError, ObjectiveScalarizationError):
@@ -984,7 +1163,9 @@ def _materialized_component_projection(
             "Fresh root objective differs from component evidence",
         )
     if (
-        child_result.plan_identity != child_engine.plan.identity
+        child_result.plan_identity != child_plan.identity
+        or child_plan.identity != component.evaluation_plan.identity
+        or child_plan.identity != component.problem.evaluation_plan_identity
         or child_result.parameterization_identity
         != component.problem.evaluator_parameterization_identity
         or tuple(child_result.resolved_values) != component.problem.commit_scope
@@ -1013,7 +1194,7 @@ def _materialized_component_projection(
             "decomposition_projection_mismatch",
             "Fresh root objective differs from component evidence",
         )
-    return child_engine, child_result
+    return child_plan, child_result
 
 
 def _root_projection_matches(
@@ -1022,10 +1203,10 @@ def _root_projection_matches(
     component: FitComponent,
     projection: _ComponentProjection,
 ) -> bool:
-    child_engine, child_result = projection
+    child_plan, child_result = projection
     for child_index, root_index in enumerate(component.root_profile_indices):
         root_descriptor = root_engine.plan.profiles[root_index]
-        child_descriptor = child_engine.plan.profiles[child_index]
+        child_descriptor = child_plan.profiles[child_index]
         root_profile = root_result.profiles[root_index]
         child_profile = child_result.profiles[child_index]
         root_start = root_descriptor.observation_offset
@@ -1075,7 +1256,6 @@ def _projection_mismatch(
 def _validate_component_projections(
     decomposition: FitDecomposition,
     invocation: GroupedDirectTrfInvocation,
-    engine: EvaluationEngine,
     outcomes: tuple[FitComponentOutcome, ...],
     token: CancellationToken,
 ) -> tuple[_ComponentProjection, ...] | GroupedDirectTrfOutcome:
@@ -1092,14 +1272,18 @@ def _validate_component_projections(
                     GroupedDirectTrfTerminal.CANCELLED,
                     outcomes,
                 )
-            child_engine = engine.project_profiles(component.root_profile_indices)
-            if token.is_cancelled:
+            child_plan = outcome.evaluation_plan
+            if child_plan is None:
                 return GroupedDirectTrfOutcome(
-                    GroupedDirectTrfTerminal.CANCELLED,
+                    GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
                     outcomes,
+                    failure=TerminalFailure(
+                        "decomposition_projection_mismatch",
+                        "Successful component lacks its execution-time plan",
+                    ),
                 )
             projection = _materialized_component_projection(
-                child_engine,
+                child_plan,
                 component,
                 component_invocation,
                 outcome,
@@ -1422,7 +1606,7 @@ def _grouped_materialization_failure(
     )
 
 
-def materialize_grouped_direct_trf(  # noqa: C901 - ordered grouped lifecycle gates
+def materialize_grouped_direct_trf(
     problem: OptimizationProblem,
     decomposition: FitDecomposition,
     invocation: GroupedDirectTrfInvocation,
@@ -1432,11 +1616,11 @@ def materialize_grouped_direct_trf(  # noqa: C901 - ordered grouped lifecycle ga
     *,
     cancellation: CancellationToken | None = None,
 ) -> GroupedDirectTrfOutcome:
-    """Freshly validate one complete aggregate before granting root authority."""
+    """Freshly validate one standalone aggregate before granting authority."""
     outcomes = tuple(components)
     token = CancellationToken() if cancellation is None else cancellation
     try:
-        _validate_grouped_context(
+        validation_identity = _validate_grouped_context(
             problem,
             decomposition,
             invocation,
@@ -1463,6 +1647,47 @@ def materialize_grouped_direct_trf(  # noqa: C901 - ordered grouped lifecycle ga
                 f"{type(error).__name__}: {error}",
             ),
         )
+    return _materialize_grouped_direct_trf_validated(
+        problem,
+        decomposition,
+        invocation,
+        parameterization,
+        engine,
+        outcomes,
+        validation_identity,
+        cancellation=token,
+    )
+
+
+def _materialize_grouped_direct_trf_validated(
+    problem: OptimizationProblem,
+    decomposition: FitDecomposition,
+    invocation: GroupedDirectTrfInvocation,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    components: Sequence[FitComponentOutcome],
+    validation_identity: str,
+    *,
+    cancellation: CancellationToken | None = None,
+) -> GroupedDirectTrfOutcome:
+    """Materialize one aggregate carrying exact prior context validation."""
+    outcomes = tuple(components)
+    token = CancellationToken() if cancellation is None else cancellation
+    if validation_identity != _grouped_context_validation_identity(
+        problem,
+        decomposition,
+        invocation,
+        parameterization,
+        engine,
+    ):
+        return GroupedDirectTrfOutcome(
+            GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE,
+            outcomes,
+            failure=TerminalFailure(
+                "decomposition_context_failure",
+                "Grouped context validation belongs to another invocation",
+            ),
+        )
     if tuple(item.component_identity for item in outcomes) != tuple(
         component.identity for component in decomposition.components
     ):
@@ -1475,7 +1700,6 @@ def materialize_grouped_direct_trf(  # noqa: C901 - ordered grouped lifecycle ga
     projections_or_outcome = _validate_component_projections(
         decomposition,
         invocation,
-        engine,
         outcomes,
         token,
     )
@@ -1548,7 +1772,7 @@ def execute_grouped_direct_trf(
     """Execute all exact components, then freshly validate the root aggregate."""
     token = CancellationToken() if cancellation is None else cancellation
     try:
-        _validate_grouped_context(
+        validation_identity = _validate_grouped_context(
             problem,
             decomposition,
             invocation,
@@ -1583,12 +1807,13 @@ def execute_grouped_direct_trf(
         cancellation=token,
         progress_observer=progress_observer,
     )
-    return materialize_grouped_direct_trf(
+    return _materialize_grouped_direct_trf_validated(
         problem,
         decomposition,
         invocation,
         parameterization,
         engine,
         components,
+        validation_identity,
         cancellation=token,
     )

@@ -559,6 +559,11 @@ class EvaluationPlan:
         )
 
     @property
+    def compatibility_identity(self) -> str:
+        """Return the runtime compatibility identity sealed by this plan."""
+        return _compatibility_identity(self)
+
+    @property
     def observation_count(self) -> int:
         return sum(item.observation_count for item in self.profiles)
 
@@ -1531,8 +1536,11 @@ class EvaluationEngine:
         )
         return cls(plan, parameterization, sources)
 
-    def project_profiles(self, profile_indices: Sequence[int]) -> EvaluationEngine:
-        """Project complete Profiles in root order into an isolated child engine."""
+    def _projected_population(
+        self,
+        profile_indices: Sequence[int],
+    ) -> tuple[EvaluationPlan, tuple[tuple[int, int, Profile], ...]]:
+        """Build the immutable plan and trusted sources for a profile projection."""
         indices = tuple(profile_indices)
         if (
             not indices
@@ -1589,7 +1597,17 @@ class EvaluationEngine:
             failure_version=self.plan.failure_version,
             diagnostics_version=self.plan.diagnostics_version,
         )
+        return plan, tuple(sources)
+
+    def project_profiles(self, profile_indices: Sequence[int]) -> EvaluationEngine:
+        """Project complete Profiles in root order into an isolated child engine."""
+        plan, sources = self._projected_population(profile_indices)
         return EvaluationEngine(plan, self._parameterization, sources)
+
+    def project_plan(self, profile_indices: Sequence[int]) -> EvaluationPlan:
+        """Project an immutable child plan without compiling its runtime engine."""
+        plan, _sources = self._projected_population(profile_indices)
+        return plan
 
     def resampled_observation_metadata(self, binding: ResampledProfileBinding) -> str:
         """Return the canonical metadata descriptor for exact selected root rows."""
