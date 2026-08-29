@@ -226,7 +226,7 @@ def _build_component(
         for index, dependencies in enumerate(profile_dependencies)
         if dependencies and dependencies.issubset(component_set)
     )
-    child_engine = engine.project_profiles(profile_indices)
+    child_plan = engine.project_plan(profile_indices)
     bounds = {
         param_id: (start, lower, upper)
         for param_id, start, lower, upper in zip(
@@ -256,7 +256,7 @@ def _build_component(
         problem.affine_feasibility_identity,
         component_identity,
         _PROJECTION_POLICY,
-        child_engine.plan.identity,
+        child_plan.identity,
         component_ids,
         held_items,
     )
@@ -878,6 +878,7 @@ def _validate_grouped_context(
             not isinstance(derivation, ComponentProblemDerivation)
             or component.identity != expected_identity
             or derivation.component_identity != component.identity
+            or derivation.projection_policy != _PROJECTION_POLICY
             or component.problem.start != expected_start
             or derivation.projected_plan_identity
             != component.problem.evaluation_plan_identity

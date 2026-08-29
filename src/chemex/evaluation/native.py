@@ -1599,6 +1599,11 @@ class EvaluationEngine:
         plan, sources = self._projected_population(profile_indices)
         return EvaluationEngine(plan, self._parameterization, sources)
 
+    def project_plan(self, profile_indices: Sequence[int]) -> EvaluationPlan:
+        """Project an immutable child plan without compiling its runtime engine."""
+        plan, _sources = self._projected_population(profile_indices)
+        return plan
+
     def resampled_observation_metadata(self, binding: ResampledProfileBinding) -> str:
         """Return the canonical metadata descriptor for exact selected root rows."""
         if binding.root_profile_index >= len(self._templates):

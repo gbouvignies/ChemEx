@@ -351,7 +351,13 @@ def test_grouped_validation_rejects_a_self_consistent_forged_component_identity(
 
 @pytest.mark.parametrize(
     "mutation",
-    ("missing_chart", "altered_held_frame", "changed_start"),
+    (
+        "missing_chart",
+        "altered_held_frame",
+        "altered_block",
+        "changed_start",
+        "changed_policy",
+    ),
 )
 def test_grouped_validation_rejects_forged_component_feasibility(
     mutation: str,
@@ -375,6 +381,32 @@ def test_grouped_validation_rejects_forged_component_feasibility(
         forged_problem = dataclasses.replace(
             original.problem,
             feasible_coordinates=forged_chart,
+        )
+    elif mutation == "altered_block":
+        block = chart.blocks[0]
+        altered_block = dataclasses.replace(
+            block,
+            off_diagonal_ids=(
+                (*block.off_diagonal_ids[0][:2], block.diagonal_ids[0]),
+                *block.off_diagonal_ids[1:],
+            ),
+        )
+        forged_problem = dataclasses.replace(
+            original.problem,
+            feasible_coordinates=dataclasses.replace(
+                chart,
+                blocks=(altered_block, *chart.blocks[1:]),
+            ),
+        )
+    elif mutation == "changed_policy":
+        derivation = original.problem.derivation
+        assert isinstance(derivation, ComponentProblemDerivation)
+        forged_problem = dataclasses.replace(
+            original.problem,
+            derivation=dataclasses.replace(
+                derivation,
+                projection_policy="forged-projection-policy",
+            ),
         )
     else:
         forged_problem = dataclasses.replace(
@@ -445,6 +477,11 @@ def test_grouped_component_projection_does_not_recompile_feasibility() -> None:
             problem.feasible_coordinates.__class__,
             "derive",
             side_effect=AssertionError("component feasibility used general derivation"),
+        ),
+        patch.object(
+            engine,
+            "project_profiles",
+            side_effect=AssertionError("decomposition compiled child engines"),
         ),
     ):
         decomposition = FitDecomposition.from_root(problem, parameterization, engine)

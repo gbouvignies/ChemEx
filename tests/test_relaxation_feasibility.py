@@ -692,6 +692,11 @@ def test_component_projection_rejects_a_non_closed_root_feasibility_domain() -> 
             root,
             controlled_domain_groups=(frozenset(),),
         )
+    with pytest.raises(TypeError, match="init=False"):
+        dataclasses.replace(
+            root,
+            _projection_provenance=root._projection_provenance,
+        )
     with pytest.raises(
         FeasibleCoordinateConstructionError,
         match="closed root-chart subset",
