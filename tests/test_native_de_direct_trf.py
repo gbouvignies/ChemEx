@@ -148,8 +148,46 @@ def test_captured_value_outside_search_range_is_valid_and_not_clipped() -> None:
     )
 
     assert invocation.search_problem.start == (captured,)
+    effective = invocation.search_coordinates[0]
+    assert effective.physical_lower > 1.0
     assert invocation.search_coordinates[0].solver_initial == pytest.approx(
-        math.log(2.0)
+        0.5 * math.log(effective.physical_lower * effective.physical_upper)
+    )
+
+
+def test_mixed_domain_de_uses_the_derived_child_psd_bound() -> None:
+    _session, _experiments, _parameterization, _engine, problem = (
+        _qualification_problem(
+            Method(
+                fit=["ETAZ_A", "R1A_A"],
+                fix=["R1_A", "PB", "KEX_AB"],
+            )
+        )
+    )
+    root_feasible = problem.feasible_coordinates
+    assert root_feasible is not None
+    assert root_feasible.has_coordinate_transform
+    selected_id = next(item for item in problem.controlled_ids if "__R1A_A" in item)
+    selected_index = problem.controlled_ids.index(selected_id)
+
+    invocation = DeSearchInvocation.for_product_problem(
+        problem,
+        search_coordinates=(
+            (
+                selected_id,
+                problem.lower_bounds[selected_index],
+                5.0,
+                "linear",
+            ),
+        ),
+        root_seed=597,
+    )
+
+    child_feasible = invocation.search_problem.feasible_coordinates
+    assert child_feasible is not None
+    assert not child_feasible.has_coordinate_transform
+    assert invocation.search_coordinates[0].physical_lower == pytest.approx(
+        child_feasible.solver_lower_bounds[0]
     )
 
 

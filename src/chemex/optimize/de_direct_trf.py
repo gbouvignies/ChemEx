@@ -491,7 +491,7 @@ class DeSearchInvocation:
         )
 
     @classmethod
-    def _for_problem_with_policy(
+    def _for_problem_with_policy(  # noqa: C901 - closed DE construction policy
         cls,
         problem: OptimizationProblem,
         *,
@@ -571,23 +571,56 @@ class DeSearchInvocation:
             if param_id not in selected
         )
         start = tuple(root_starts[param_id] for param_id in canonical_selected_ids)
-        search_specification_identity = _identity(
-            "native-de-search-specification",
-            tuple(item.identity for item in coordinates),
-        )
-        derivation = DeSearchProblemDerivation(
-            problem.identity,
-            problem.affine_feasibility_identity,
-            search_specification_identity,
-            canonical_selected_ids,
-            held_items,
-            start,
-        )
-        search_problem = problem.derive_child(
-            controlled_ids=canonical_selected_ids,
-            start=start,
-            derivation=derivation,
-        )
+
+        def derive_search_problem() -> OptimizationProblem:
+            search_specification_identity = _identity(
+                "native-de-search-specification",
+                tuple(item.identity for item in coordinates),
+            )
+            derivation = DeSearchProblemDerivation(
+                problem.identity,
+                problem.affine_feasibility_identity,
+                search_specification_identity,
+                canonical_selected_ids,
+                held_items,
+                start,
+            )
+            return problem.derive_child(
+                controlled_ids=canonical_selected_ids,
+                start=start,
+                derivation=derivation,
+            )
+
+        search_problem = derive_search_problem()
+        feasible = search_problem.feasible_coordinates
+        if feasible is not None and not feasible.supports_box_only_algorithms:
+            raise DirectTrfConstructionError(
+                "DE search over relaxation-feasibility coordinates is not yet "
+                "qualified; use Direct TRF for this method section"
+            )
+        if feasible is not None:
+            feasible_lower, feasible_upper = feasible.solver_bounds
+            child_indices = {
+                param_id: index
+                for index, param_id in enumerate(search_problem.controlled_ids)
+            }
+            coordinates = tuple(
+                DeSearchCoordinate(
+                    item.param_id,
+                    max(
+                        item.physical_lower,
+                        feasible_lower[child_indices[item.param_id]],
+                    ),
+                    min(
+                        item.physical_upper,
+                        feasible_upper[child_indices[item.param_id]],
+                    ),
+                    item.semantics,
+                    item.declaration_ordinal,
+                )
+                for item in coordinates
+            )
+            search_problem = derive_search_problem()
         population = DePopulation(
             len(coordinates),
             population_multiplier,

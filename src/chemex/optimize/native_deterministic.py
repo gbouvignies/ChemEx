@@ -69,6 +69,7 @@ from chemex.optimize.uncertainty import (
     derive_root_anchored_block_covariance,
     derive_uncertainty_evidence,
 )
+from chemex.parameters.feasible_coordinates import validate_relaxation_state
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     ParameterRole,
@@ -584,6 +585,10 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             parameterization,
             configuration,
             starting_snapshot,
+        )
+        validate_relaxation_state(
+            parameterization,
+            parameterization.resolve(independent_frame),
         )
         frame = EvaluationFrame.from_lifecycle_frame(
             parameterization,

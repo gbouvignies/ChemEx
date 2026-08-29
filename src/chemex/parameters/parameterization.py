@@ -46,6 +46,7 @@ from chemex.configuration.method_plan import (
 from chemex.configuration.methods import Method
 from chemex.nmr.rates import rate_functions
 from chemex.parameters.name import ParamName, matches_parameter_index_selector
+from chemex.parameters.relaxation import SealedRelaxationDomains
 from chemex.parameters.sealed import (
     ParamDefinition,
     SealedConfiguration,
@@ -293,6 +294,9 @@ class SealedParameterModel:
     definitions: SealedDefinitions
     configuration: SealedConfiguration
     declarations: SealedParameterDeclarations
+    relaxation_domains: SealedRelaxationDomains = field(
+        default_factory=SealedRelaxationDomains,
+    )
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -317,6 +321,7 @@ class SealedParameterModel:
                     self.definitions.identity,
                     self.configuration.identity,
                     self.declarations.identity,
+                    self.relaxation_domains.identity,
                 ),
             ),
         )
@@ -652,6 +657,9 @@ class ConstraintProgram:
     derived_ids: tuple[str, ...]
     constraints: tuple[CompiledConstraint, ...]
     evaluation_order: tuple[str, ...]
+    relaxation_domains: SealedRelaxationDomains = field(
+        default_factory=SealedRelaxationDomains,
+    )
     fingerprint: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -673,6 +681,7 @@ class ConstraintProgram:
                 for item in self.constraints
             ),
             self.evaluation_order,
+            self.relaxation_domains.identity,
         )
         object.__setattr__(
             self, "fingerprint", _fingerprint("constraint-program", records)
@@ -1851,6 +1860,14 @@ def _compile_active_parameterization_from_rules(
         derived_ids=derived_ids,
         constraints=constraints,
         evaluation_order=evaluation_order,
+        relaxation_domains=SealedRelaxationDomains(
+            tuple(
+                block
+                for block in parameter_model.relaxation_domains.blocks
+                if {*block.diagonal_ids, *(item[2] for item in block.off_diagonal_ids)}
+                <= active
+            )
+        ),
     )
     return ActiveParameterization(
         program=program,

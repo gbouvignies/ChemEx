@@ -174,6 +174,7 @@ def _profile_dependency_paths(
 def _ordered_component_controls(
     controlled_ids: tuple[str, ...],
     profile_dependencies: tuple[frozenset[str], ...],
+    feasibility_dependencies: tuple[frozenset[str], ...] = (),
 ) -> tuple[tuple[str, ...], ...]:
     parent = {param_id: param_id for param_id in controlled_ids}
 
@@ -183,7 +184,7 @@ def _ordered_component_controls(
             param_id = parent[param_id]
         return param_id
 
-    for dependencies in profile_dependencies:
+    for dependencies in (*profile_dependencies, *feasibility_dependencies):
         ordered = tuple(
             param_id for param_id in controlled_ids if param_id in dependencies
         )
@@ -477,9 +478,27 @@ class FitDecomposition:
             engine,
         )
         components_list: list[FitComponent] = []
+        resolver = _ControlledDependencyResolver(
+            problem.controlled_ids,
+            parameterization,
+        )
+        feasible = problem.feasible_coordinates
+        feasibility_dependencies = (
+            ()
+            if feasible is None
+            else tuple(
+                frozenset(
+                    controlled_id
+                    for param_id in parameter_ids
+                    for controlled_id, _path in resolver.paths(param_id)
+                )
+                for parameter_ids in feasible.domain_parameter_groups
+            )
+        )
         for component_ids in _ordered_component_controls(
             problem.controlled_ids,
             profile_dependencies,
+            feasibility_dependencies,
         ):
             _check_grouped_cancellation(cancellation)
             component = _build_component(

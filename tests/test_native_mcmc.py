@@ -422,6 +422,52 @@ def test_product_policy_initializes_from_exact_accepted_fit() -> None:
     )
 
 
+def test_mcmc_rejects_private_relaxation_coordinates_without_measure() -> None:
+    accepted, problem, parameterization, engine = _native_context()
+    transformed_problem = dataclasses.replace(
+        problem,
+        feasible_coordinates=SimpleNamespace(
+            is_noop=False,
+            identity="private-relaxation-chart",
+            supports_box_only_algorithms=False,
+            solver_bounds=(problem.lower_bounds, problem.upper_bounds),
+        ),
+    )
+    compatible = AcceptedFitResult.for_qualification(
+        occurrence_identity="relaxation-chart-accepted",
+        problem_identity=transformed_problem.identity,
+        invocation_identity=accepted.invocation_identity,
+        execution_identity=accepted.execution_identity,
+        materialization_identity=accepted.materialization_identity,
+        parameterization_identity=accepted.parameterization_identity,
+        evaluator_parameterization_identity=(
+            accepted.evaluator_parameterization_identity
+        ),
+        source_occurrence_identity=accepted.source_occurrence_identity,
+        source_revision=accepted.source_revision,
+        controlled_ids=accepted.controlled_ids,
+        vector=accepted.vector,
+        chi_square=accepted.chi_square,
+        evaluation_result=accepted.evaluation_result,
+        commit_scope=accepted.commit_scope,
+        commit_items=accepted.commit_items,
+        origin_context_identity=accepted.origin_context_identity,
+    )
+
+    with pytest.raises(McmcConstructionError, match="Jacobian measure"):
+        McmcPlan.for_accepted(
+            compatible,
+            source_problem=transformed_problem,
+            parameterization=parameterization,
+            source_engine=engine,
+            policy=_resolved_policy(),
+            coordinate_units=(
+                ("A", ParameterUnit.DIMENSIONLESS),
+                ("B", ParameterUnit.DIMENSIONLESS),
+            ),
+        )
+
+
 @pytest.mark.parametrize("walkers", (2, 3))
 def test_one_dimensional_product_policy_preserves_two_walker_minimum(
     walkers: int,

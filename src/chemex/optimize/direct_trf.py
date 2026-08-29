@@ -34,6 +34,10 @@ from chemex.evaluation.native import (
     EvaluationResult,
 )
 from chemex.optimize.progress import ProgressEvent, ProgressObserver, ProgressPhase
+from chemex.parameters.feasible_coordinates import (
+    FeasibleCoordinates,
+    compile_feasible_coordinates,
+)
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     IndependentValueFrame,
@@ -73,12 +77,16 @@ _BACKEND_SETTINGS = (
     ("verbose", 0),
 )
 _BACKEND_JACOBIAN_VERSION = "scipy-final-residual-jacobian-v2"
+_FEASIBILITY_DIFFERENTIAL_RANK_RTOL = math.sqrt(np.finfo(np.float64).eps)
 
 
 class ResidualJacobianSource(StrEnum):
     """Closed origins for a retained accepted-point residual Jacobian."""
 
     SCIPY_FINAL_2_POINT = "scipy-final-2-point"
+    SCIPY_FINAL_2_POINT_FEASIBILITY_PUSHFORWARD = (
+        "scipy-final-2-point-feasibility-pushforward"
+    )
     FIT_PARTITION_COMPOSITION = "fit-partition-composition"
 
 
@@ -141,7 +149,11 @@ class FinalResidualJacobianEvidence:
         ):
             raise ValueError("Final residual Jacobian has inconsistent scope")
         if (
-            self.derivative_method != "numerical 2-point"
+            self.derivative_method
+            not in {
+                "numerical 2-point",
+                "solver-coordinate 2-point with exact feasibility pushforward",
+            }
             or self.diff_step_policy != "scipy-default-relative-step"
             or self.loss_policy != "linear"
             or not self.backend_identity.startswith("scipy-")
@@ -896,6 +908,11 @@ class OptimizationProblem:
     scalarization_version: str = _SCALARIZATION_VERSION
     affine_half_spaces: tuple[AffineHalfSpace, ...] = ()
     affine_equalities: tuple[AffineEquality, ...] = ()
+    feasible_coordinates: FeasibleCoordinates | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:  # noqa: C901 - complete problem invariant
@@ -1027,6 +1044,17 @@ class OptimizationProblem:
                     *derivation_record,
                     self.scalarization_version,
                     *feasibility_record,
+                    *(
+                        ()
+                        if self.feasible_coordinates is None
+                        or self.feasible_coordinates.is_noop
+                        else (
+                            (
+                                "relaxation-feasible-coordinates",
+                                self.feasible_coordinates.identity,
+                            ),
+                        )
+                    ),
                 ),
             ),
         )
@@ -1079,6 +1107,13 @@ class OptimizationProblem:
         upper = tuple(
             configuration[param_id].upper_bound for param_id in controlled_ids
         )
+        feasible_coordinates = compile_feasible_coordinates(
+            parameterization,
+            frame,
+            controlled_ids,
+            lower,
+            upper,
+        )
         return cls(
             plan.identity,
             parameterization.identity,
@@ -1093,6 +1128,7 @@ class OptimizationProblem:
             lower,
             upper,
             parameterization.scope_ids,
+            feasible_coordinates=feasible_coordinates,
         )
 
     def validate_parameterization(
@@ -1136,6 +1172,30 @@ class OptimizationProblem:
             if isinstance(derivation, ComponentProblemDerivation)
             else self.evaluation_plan_identity
         )
+        child_lower = tuple(
+            self.lower_bounds[root_indices[param_id]] for param_id in controlled_ids
+        )
+        child_upper = tuple(
+            self.upper_bounds[root_indices[param_id]] for param_id in controlled_ids
+        )
+        root_feasible = self.feasible_coordinates
+        frame = (
+            root_feasible.frame_with_updates(
+                dict(zip(controlled_ids, start, strict=True))
+            )
+            if root_feasible is not None
+            else None
+        )
+        feasible_coordinates = (
+            root_feasible.derive(
+                frame,
+                controlled_ids,
+                child_lower,
+                child_upper,
+            )
+            if root_feasible is not None and frame is not None
+            else None
+        )
         child = OptimizationProblem(
             evaluation_plan_identity,
             self.parameterization_identity,
@@ -1147,17 +1207,14 @@ class OptimizationProblem:
             controlled_ids,
             held_items,
             start,
-            tuple(
-                self.lower_bounds[root_indices[param_id]] for param_id in controlled_ids
-            ),
-            tuple(
-                self.upper_bounds[root_indices[param_id]] for param_id in controlled_ids
-            ),
+            child_lower,
+            child_upper,
             self.commit_scope,
             derivation,
             self.scalarization_version,
             self.affine_half_spaces,
             self.affine_equalities,
+            feasible_coordinates,
         )
         self.validate_derived_problem(child)
         return child
@@ -1215,6 +1272,28 @@ class OptimizationProblem:
             controlled_ids,
             independent_items,
         )
+        child_lower = tuple(
+            self.lower_bounds[root_indices[param_id]] for param_id in controlled_ids
+        )
+        child_upper = tuple(
+            self.upper_bounds[root_indices[param_id]] for param_id in controlled_ids
+        )
+        root_feasible = self.feasible_coordinates
+        frame = (
+            root_feasible.frame_with_updates(dict(independent_items))
+            if root_feasible is not None
+            else None
+        )
+        feasible_coordinates = (
+            root_feasible.derive(
+                frame,
+                controlled_ids,
+                child_lower,
+                child_upper,
+            )
+            if root_feasible is not None and frame is not None
+            else None
+        )
         child = OptimizationProblem(
             projected_plan_identity,
             self.parameterization_identity,
@@ -1226,17 +1305,14 @@ class OptimizationProblem:
             controlled_ids,
             held_items,
             tuple(independent_values[param_id] for param_id in controlled_ids),
-            tuple(
-                self.lower_bounds[root_indices[param_id]] for param_id in controlled_ids
-            ),
-            tuple(
-                self.upper_bounds[root_indices[param_id]] for param_id in controlled_ids
-            ),
+            child_lower,
+            child_upper,
             self.commit_scope,
             derivation,
             self.scalarization_version,
             self.affine_half_spaces,
             self.affine_equalities,
+            feasible_coordinates,
         )
         self.validate_derived_problem(child)
         return child
@@ -1247,6 +1323,23 @@ class OptimizationProblem:
             raise DirectTrfConstructionError(
                 "Only a complete root problem can create a full-coordinate restart"
             )
+        frame = (
+            self.feasible_coordinates.frame_with_updates(
+                dict(zip(self.controlled_ids, start, strict=True))
+            )
+            if self.feasible_coordinates is not None
+            else None
+        )
+        feasible_coordinates = (
+            self.feasible_coordinates.derive(
+                frame,
+                self.controlled_ids,
+                self.lower_bounds,
+                self.upper_bounds,
+            )
+            if frame is not None and self.feasible_coordinates is not None
+            else None
+        )
         return OptimizationProblem(
             self.evaluation_plan_identity,
             self.parameterization_identity,
@@ -1264,6 +1357,7 @@ class OptimizationProblem:
             scalarization_version=self.scalarization_version,
             affine_half_spaces=self.affine_half_spaces,
             affine_equalities=self.affine_equalities,
+            feasible_coordinates=feasible_coordinates,
         )
 
     def validate_derived_problem(self, child: OptimizationProblem) -> None:
@@ -1631,15 +1725,9 @@ class BackendEvidence:
     cost: float
     optimality: float
     active_mask: tuple[int, ...]
-    final_residual_jacobian: FinalResidualJacobianEvidence
-
-    @property
-    def final_vector(self) -> tuple[float, ...]:
-        return self.final_residual_jacobian.final_vector
-
-    @property
-    def final_residuals(self) -> tuple[float, ...]:
-        return self.final_residual_jacobian.final_residuals
+    final_vector: tuple[float, ...]
+    final_residuals: tuple[float, ...]
+    final_residual_jacobian: FinalResidualJacobianEvidence | None
 
     @property
     def identity(self) -> str:
@@ -1654,7 +1742,11 @@ class BackendEvidence:
                 _float_token(self.cost),
                 _float_token(self.optimality),
                 self.active_mask,
-                self.final_residual_jacobian.identity,
+                self.final_vector,
+                self.final_residuals,
+                None
+                if self.final_residual_jacobian is None
+                else self.final_residual_jacobian.identity,
             ),
         )
 
@@ -2688,22 +2780,36 @@ class _LiveAttempt:
             )
         self.accepted += 1
         try:
-            vector = _canonical_vector(
+            private_vector = _canonical_vector(
                 solver_vector,
                 dimension=len(self.problem.controlled_ids),
                 name="solver vector",
             )
-            if any(
-                not lower <= value <= upper
-                for value, lower, upper in zip(
-                    vector,
-                    self.problem.lower_bounds,
-                    self.problem.upper_bounds,
-                    strict=True,
+            feasible = self.problem.feasible_coordinates
+            if feasible is None or not feasible.has_coordinate_transform:
+                vector = private_vector
+                lower_bounds, upper_bounds = (
+                    (self.problem.lower_bounds, self.problem.upper_bounds)
+                    if feasible is None
+                    else feasible.solver_bounds
                 )
-            ):
-                raise ValueError("SciPy supplied an out-of-bounds external candidate")
-            lifecycle = self.problem.lifecycle_frame(vector, self.parameterization)
+                if any(
+                    not lower <= value <= upper
+                    for value, lower, upper in zip(
+                        vector,
+                        lower_bounds,
+                        upper_bounds,
+                        strict=True,
+                    )
+                ):
+                    raise ValueError(
+                        "SciPy supplied an out-of-bounds external candidate"
+                    )
+                lifecycle = self.problem.lifecycle_frame(vector, self.parameterization)
+            else:
+                point = feasible.decode(private_vector)
+                vector = point.vector
+                lifecycle = self.problem.lifecycle_frame(vector, self.parameterization)
             frame = EvaluationFrame.from_lifecycle_frame(
                 self.parameterization,
                 lifecycle,
@@ -2847,9 +2953,10 @@ def _backend_int(value: object, *, name: str, optional: bool = False) -> int | N
 def _normalize_backend(
     result: object,
     *,
-    controlled_ids: tuple[str, ...],
+    problem: OptimizationProblem,
     residual_count: int,
 ) -> BackendEvidence:
+    controlled_ids = problem.controlled_ids
     dimension = len(controlled_ids)
     status_value = _backend_int(getattr(result, "status", None), name="status")
     if status_value is None:
@@ -2872,7 +2979,7 @@ def _normalize_backend(
     )
     if cost < 0.0 or optimality < 0.0:
         raise ValueError("SciPy cost and optimality cannot be negative")
-    final_vector = _canonical_vector(
+    private_final_vector = _canonical_vector(
         getattr(result, "x", None),
         dimension=dimension,
         name="SciPy final vector",
@@ -2893,14 +3000,44 @@ def _normalize_backend(
     jacobian_array = np.asarray(getattr(result, "jac", None), dtype=np.float64)
     if jacobian_array.shape != (residual_count, dimension):
         raise ValueError("SciPy final Jacobian evidence has the wrong shape")
-    final_residual_jacobian = FinalResidualJacobianEvidence(
-        ResidualJacobianSource.SCIPY_FINAL_2_POINT,
-        controlled_ids,
-        final_vector,
-        final_residuals,
-        (residual_count, dimension),
-        tuple(tuple(float(value) for value in row) for row in jacobian_array),
-    )
+    feasible = problem.feasible_coordinates
+    final_residual_jacobian: FinalResidualJacobianEvidence | None = None
+    if feasible is None or not feasible.has_coordinate_transform:
+        final_vector = private_final_vector
+        jacobian_source = ResidualJacobianSource.SCIPY_FINAL_2_POINT
+        derivative_method = "numerical 2-point"
+        differential_has_full_rank = True
+    else:
+        final_vector = feasible.decode(private_final_vector).vector
+        differential = feasible.differential(private_final_vector)
+        differential_has_full_rank = (
+            np.linalg.matrix_rank(
+                differential,
+                rtol=_FEASIBILITY_DIFFERENTIAL_RANK_RTOL,
+            )
+            == dimension
+        )
+        if differential_has_full_rank:
+            jacobian_array = np.linalg.solve(
+                differential.T,
+                jacobian_array.T,
+            ).T
+            jacobian_source = (
+                ResidualJacobianSource.SCIPY_FINAL_2_POINT_FEASIBILITY_PUSHFORWARD
+            )
+            derivative_method = (
+                "solver-coordinate 2-point with exact feasibility pushforward"
+            )
+    if differential_has_full_rank:
+        final_residual_jacobian = FinalResidualJacobianEvidence(
+            jacobian_source,
+            controlled_ids,
+            final_vector,
+            final_residuals,
+            (residual_count, dimension),
+            tuple(tuple(float(value) for value in row) for row in jacobian_array),
+            derivative_method=derivative_method,
+        )
     return BackendEvidence(
         status_value,
         bool(success),
@@ -2910,6 +3047,8 @@ def _normalize_backend(
         cost,
         optimality,
         tuple(int(value) for value in active_array),
+        final_vector,
+        final_residuals,
         final_residual_jacobian,
     )
 
@@ -2961,15 +3100,21 @@ def _invoke_least_squares(
     invocation: DirectTrfInvocation,
 ) -> object:
     execution = invocation.execution_settings
+    feasible = problem.feasible_coordinates
+    start, lower, upper = (
+        (problem.start, problem.lower_bounds, problem.upper_bounds)
+        if feasible is None
+        else feasible.solver_domain
+    )
     with native_thread_environment(
         execution.native_thread_env(parallel=execution.is_parallel)
     ):
         return least_squares(
             live.objective,
-            np.asarray(problem.start, dtype=np.float64),
+            np.asarray(start, dtype=np.float64),
             bounds=(
-                np.asarray(problem.lower_bounds, dtype=np.float64),
-                np.asarray(problem.upper_bounds, dtype=np.float64),
+                np.asarray(lower, dtype=np.float64),
+                np.asarray(upper, dtype=np.float64),
             ),
             method="trf",
             jac="2-point",
@@ -3023,7 +3168,7 @@ def _process_backend_result(
     try:
         backend = _normalize_backend(
             backend_result,
-            controlled_ids=problem.controlled_ids,
+            problem=problem,
             residual_count=residual_count,
         )
     except Exception as error:  # noqa: BLE001 - malformed third-party result boundary

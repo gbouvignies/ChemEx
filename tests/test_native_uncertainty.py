@@ -1662,7 +1662,7 @@ def test_multivariate_simple_bound_warning_is_coordinate_specific(zeta: float) -
     assert view.warning(kab_id) == "boundary may make uncertainty asymmetric"
 
 
-def test_unrepresentable_centered_interval_falls_back_to_inward_stencil() -> None:
+def test_invalid_relaxation_anchor_has_no_public_uncertainty_stencil() -> None:
     _session, parameterization, engine, problem, _accepted = _accepted_relaxation_fit()
     controlled_id = problem.controlled_ids[0]
     interior = (float(np.nextafter(0.0, 1.0)),)
@@ -1682,8 +1682,11 @@ def test_unrepresentable_centered_interval_falls_back_to_inward_stencil() -> Non
         resolved_environment_identity="local-qualification-environment",
     )
 
-    assert evidence.residual_jacobian is not None
-    assert evidence.residual_jacobian.columns[0].orientation == "one_sided_positive"
+    assert evidence.residual_jacobian is None
+    assert any(
+        failure.category == "active_relaxation_feasibility_boundary"
+        for failure in evidence.failures
+    )
 
 
 def test_nonfinite_boundary_separation_is_indeterminate() -> None:
