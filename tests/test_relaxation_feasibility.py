@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -686,6 +687,11 @@ def test_component_projection_rejects_a_non_closed_root_feasibility_domain() -> 
     )
 
     assert root is not None
+    with pytest.raises(TypeError):
+        dataclasses.replace(
+            root,
+            controlled_domain_groups=(frozenset(),),
+        )
     with pytest.raises(
         FeasibleCoordinateConstructionError,
         match="closed root-chart subset",

@@ -1594,11 +1594,6 @@ class EvaluationEngine:
         )
         return plan, tuple(sources)
 
-    def projected_plan_identity(self, profile_indices: Sequence[int]) -> str:
-        """Return a canonical child-plan identity without constructing its engine."""
-        plan, _sources = self._projected_population(profile_indices)
-        return plan.identity
-
     def project_profiles(self, profile_indices: Sequence[int]) -> EvaluationEngine:
         """Project complete Profiles in root order into an isolated child engine."""
         plan, sources = self._projected_population(profile_indices)

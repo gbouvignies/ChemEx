@@ -349,6 +349,89 @@ def test_grouped_validation_rejects_a_self_consistent_forged_component_identity(
     )
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    ("missing_chart", "altered_held_frame", "changed_start"),
+)
+def test_grouped_validation_rejects_forged_component_feasibility(
+    mutation: str,
+) -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    original = decomposition.components[0]
+    chart = original.problem.feasible_coordinates
+    assert chart is not None
+    if mutation == "missing_chart":
+        forged_problem = dataclasses.replace(
+            original.problem,
+            feasible_coordinates=None,
+        )
+    elif mutation == "altered_held_frame":
+        held_id, held_value = original.problem.held_items[0]
+        forged_chart = dataclasses.replace(
+            chart,
+            base_frame=chart.base_frame.with_updates({held_id: held_value + 0.25}),
+        )
+        forged_problem = dataclasses.replace(
+            original.problem,
+            feasible_coordinates=forged_chart,
+        )
+    else:
+        forged_problem = dataclasses.replace(
+            original.problem,
+            start=(original.problem.start[0] + 0.01, *original.problem.start[1:]),
+        )
+    forged_component = dataclasses.replace(original, problem=forged_problem)
+    forged_decomposition = dataclasses.replace(
+        decomposition,
+        components=(forged_component, *decomposition.components[1:]),
+    )
+    invocation = GroupedDirectTrfInvocation.for_decomposition(
+        forged_decomposition,
+        objective_request_budgets=(10,) * len(forged_decomposition.components),
+    )
+
+    outcome = execute_grouped_direct_trf(
+        problem,
+        forged_decomposition,
+        invocation,
+        parameterization,
+        engine,
+    )
+
+    assert outcome.terminal is GroupedDirectTrfTerminal.EXECUTION_FAILURE
+    assert all(
+        component.disposition is ComponentDisposition.NOT_STARTED
+        for component in outcome.components
+    )
+
+
+def test_grouped_validation_does_not_rebuild_projected_plans() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    invocation = GroupedDirectTrfInvocation.for_decomposition(
+        decomposition,
+        objective_request_budgets=(80,) * len(decomposition.components),
+    )
+    projected_population = engine._projected_population
+
+    with patch.object(
+        engine,
+        "_projected_population",
+        wraps=projected_population,
+    ) as projection_calls:
+        outcome = execute_grouped_direct_trf(
+            problem,
+            decomposition,
+            invocation,
+            parameterization,
+            engine,
+        )
+
+    assert outcome.terminal is GroupedDirectTrfTerminal.ACCEPTED
+    assert projection_calls.call_count == 2 * len(decomposition.components)
+
+
 def test_grouped_component_projection_does_not_recompile_feasibility() -> None:
     _session, _experiments, parameterization, engine, problem = _grouped_problem()
 

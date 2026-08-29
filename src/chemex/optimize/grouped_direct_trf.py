@@ -248,7 +248,6 @@ def _build_component(
         engine,
         component_ids,
         profile_indices,
-        child_engine.plan.identity,
         lower,
         upper,
     )
@@ -279,7 +278,6 @@ def _component_identity(
     engine: EvaluationEngine,
     component_ids: tuple[str, ...],
     profile_indices: tuple[int, ...],
-    projected_plan_identity: str,
     lower_bounds: tuple[float, ...],
     upper_bounds: tuple[float, ...],
 ) -> str:
@@ -295,7 +293,8 @@ def _component_identity(
             tuple(
                 engine.plan.profiles[index].source_identity for index in profile_indices
             ),
-            projected_plan_identity,
+            engine.plan.identity,
+            profile_indices,
             tuple(float(value).hex() for value in lower_bounds),
             tuple(float(value).hex() for value in upper_bounds),
         ),
@@ -848,8 +847,9 @@ def _validate_grouped_context(
         root_indices = {
             param_id: index for index, param_id in enumerate(problem.controlled_ids)
         }
-        projected_plan_identity = engine.projected_plan_identity(
-            component.root_profile_indices
+        expected_start = tuple(
+            problem.start[root_indices[param_id]]
+            for param_id in component.controlled_ids
         )
         lower_bounds = tuple(
             problem.lower_bounds[root_indices[param_id]]
@@ -864,16 +864,29 @@ def _validate_grouped_context(
             engine,
             component.controlled_ids,
             component.root_profile_indices,
-            projected_plan_identity,
             lower_bounds,
             upper_bounds,
         )
+        expected_feasible = problem.project_grouped_feasibility(
+            controlled_ids=component.controlled_ids,
+            start=expected_start,
+            lower_bounds=lower_bounds,
+            upper_bounds=upper_bounds,
+        )
+        actual_feasible = component.problem.feasible_coordinates
         if (
             not isinstance(derivation, ComponentProblemDerivation)
             or component.identity != expected_identity
             or derivation.component_identity != component.identity
-            or derivation.projected_plan_identity != projected_plan_identity
-            or component.problem.evaluation_plan_identity != projected_plan_identity
+            or component.problem.start != expected_start
+            or derivation.projected_plan_identity
+            != component.problem.evaluation_plan_identity
+            or (expected_feasible is None) != (actual_feasible is None)
+            or (
+                expected_feasible is not None
+                and actual_feasible is not None
+                and expected_feasible.identity != actual_feasible.identity
+            )
             or component_invocation.problem_identity != component.problem.identity
         ):
             raise DirectTrfConstructionError(

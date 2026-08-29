@@ -181,6 +181,13 @@ def _rate_floor(specification: RateFloor, values: Mapping[str, float]) -> float:
 
 
 @dataclass(frozen=True, slots=True)
+class _FeasibilityProjectionProvenance:
+    """Private immutable closure proof compiled with one feasibility chart."""
+
+    controlled_domain_groups: tuple[frozenset[str], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class FeasibleCoordinates:
     """Role-aware exact chart over the represented relaxation PSD domains."""
 
@@ -194,7 +201,7 @@ class FeasibleCoordinates:
     static_rate_floors: tuple[tuple[str, float], ...]
     cross_rate_ids: tuple[str, ...]
     blocks: tuple[RelaxationPsdBlock, ...]
-    controlled_domain_groups: tuple[frozenset[str], ...] = field(
+    _projection_provenance: _FeasibilityProjectionProvenance = field(
         repr=False,
         compare=False,
     )
@@ -218,6 +225,13 @@ class FeasibleCoordinates:
             _identity(
                 (
                     self.parameterization.evaluator_identity,
+                    (
+                        self.base_frame.parameterization_identity,
+                        self.base_frame.program_fingerprint,
+                        self.base_frame.occurrence_identity,
+                        self.base_frame.revision,
+                        self.base_frame.ordered_items(),
+                    ),
                     self.controlled_ids,
                     self.public_lower_bounds,
                     self.public_upper_bounds,
@@ -239,6 +253,11 @@ class FeasibleCoordinates:
                 )
             ),
         )
+
+    @property
+    def controlled_domain_groups(self) -> tuple[frozenset[str], ...]:
+        """Return private root-compiled controlled-domain closure proofs."""
+        return self._projection_provenance.controlled_domain_groups
 
     @property
     def has_coordinate_transform(self) -> bool:
@@ -355,9 +374,11 @@ class FeasibleCoordinates:
             tuple(item for item in self.static_rate_floors if item[0] in selected),
             tuple(param_id for param_id in self.cross_rate_ids if param_id in selected),
             self.blocks,
-            tuple(
-                dependencies & selected
-                for dependencies in self.controlled_domain_groups
+            _FeasibilityProjectionProvenance(
+                tuple(
+                    dependencies & selected
+                    for dependencies in self.controlled_domain_groups
+                )
             ),
             tuple(
                 self.solver_start[root_indices[param_id]] for param_id in controlled_ids
@@ -1212,7 +1233,9 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
         tuple(sorted(static_rate_floors.items())),
         cross_ids,
         blocks,
-        _controlled_domain_groups(parameterization, blocks, controlled_ids),
+        _FeasibilityProjectionProvenance(
+            _controlled_domain_groups(parameterization, blocks, controlled_ids)
+        ),
         tuple(solver_start),
         tuple(solver_lower),
         tuple(solver_upper),

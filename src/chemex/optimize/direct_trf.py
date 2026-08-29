@@ -1175,6 +1175,35 @@ class OptimizationProblem:
             project_root_feasibility=True,
         )
 
+    def project_grouped_feasibility(
+        self,
+        *,
+        controlled_ids: tuple[str, ...],
+        start: tuple[float, ...],
+        lower_bounds: tuple[float, ...],
+        upper_bounds: tuple[float, ...],
+    ) -> FeasibleCoordinates | None:
+        """Project the sealed root chart for one exact root-state component."""
+        root_feasible = self.feasible_coordinates
+        if root_feasible is None:
+            return None
+        frame = root_feasible.frame_with_updates(
+            dict(zip(controlled_ids, start, strict=True))
+        )
+        if (
+            controlled_ids == self.controlled_ids
+            and start == self.start
+            and lower_bounds == self.lower_bounds
+            and upper_bounds == self.upper_bounds
+        ):
+            return root_feasible
+        return root_feasible.project_component(
+            frame,
+            controlled_ids,
+            lower_bounds,
+            upper_bounds,
+        )
+
     def _derive_child(
         self,
         *,
@@ -1217,27 +1246,14 @@ class OptimizationProblem:
             if root_feasible is not None
             else None
         )
-        if (
-            project_root_feasibility
-            and isinstance(derivation, ComponentProblemDerivation)
-            and root_feasible is not None
-            and controlled_ids == self.controlled_ids
-            and start == self.start
-            and child_lower == self.lower_bounds
-            and child_upper == self.upper_bounds
+        if project_root_feasibility and isinstance(
+            derivation, ComponentProblemDerivation
         ):
-            feasible_coordinates = root_feasible
-        elif (
-            project_root_feasibility
-            and root_feasible is not None
-            and frame is not None
-            and isinstance(derivation, ComponentProblemDerivation)
-        ):
-            feasible_coordinates = root_feasible.project_component(
-                frame,
-                controlled_ids,
-                child_lower,
-                child_upper,
+            feasible_coordinates = self.project_grouped_feasibility(
+                controlled_ids=controlled_ids,
+                start=start,
+                lower_bounds=child_lower,
+                upper_bounds=child_upper,
             )
         else:
             feasible_coordinates = (
