@@ -188,6 +188,7 @@ class _FeasibilityProjectionProvenance:
     """Private immutable closure proof compiled with one feasibility chart."""
 
     controlled_domain_groups: tuple[frozenset[str], ...]
+    has_root_projection_authority: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,6 +306,11 @@ class FeasibleCoordinates:
         upper_bounds: tuple[float, ...],
     ) -> FeasibleCoordinates | None:
         """Project an exact root chart onto one closed fit component."""
+        provenance = self._projection_provenance
+        if provenance is None or not provenance.has_root_projection_authority:
+            raise FeasibleCoordinateConstructionError(
+                "Component feasibility projection requires the compiled root chart"
+            )
         selected = set(controlled_ids)
         root_indices = {
             param_id: index for index, param_id in enumerate(self.controlled_ids)
@@ -368,6 +374,7 @@ class FeasibleCoordinates:
                 dependencies & selected
                 for dependencies in self.controlled_domain_groups
             ),
+            has_root_projection_authority=False,
         )
         return None if projected.is_noop else projected
 
@@ -820,6 +827,8 @@ def _controlled_dependencies(
 def _seal_projection_provenance(
     chart: FeasibleCoordinates,
     controlled_domain_groups: tuple[frozenset[str], ...],
+    *,
+    has_root_projection_authority: bool,
 ) -> FeasibleCoordinates:
     """Seal compiler-owned closure proof and complete scientific chart identity."""
     controlled = frozenset(chart.controlled_ids)
@@ -832,7 +841,10 @@ def _seal_projection_provenance(
     object.__setattr__(
         chart,
         "_projection_provenance",
-        _FeasibilityProjectionProvenance(controlled_domain_groups),
+        _FeasibilityProjectionProvenance(
+            controlled_domain_groups,
+            has_root_projection_authority,
+        ),
     )
     object.__setattr__(
         chart,
@@ -1272,5 +1284,6 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
             tuple(solver_upper),
         ),
         _controlled_domain_groups(parameterization, blocks, controlled_ids),
+        has_root_projection_authority=True,
     )
     return None if chart.is_noop else chart

@@ -438,6 +438,86 @@ def test_grouped_validation_rejects_forged_component_feasibility(
     )
 
 
+def test_standalone_materialization_rejects_a_foreign_component_plan() -> None:
+    _session, _experiments, parameterization, engine, problem = _grouped_problem()
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    original = decomposition.components[0]
+    original_profile = original.evaluation_plan.profiles[0]
+    altered_profile = dataclasses.replace(
+        original_profile,
+        experimental_values=(
+            original_profile.experimental_values[0] + 1.0,
+            *original_profile.experimental_values[1:],
+        ),
+    )
+    altered_plan = dataclasses.replace(
+        original.evaluation_plan,
+        profiles=(altered_profile, *original.evaluation_plan.profiles[1:]),
+    )
+    derivation = original.problem.derivation
+    assert isinstance(derivation, ComponentProblemDerivation)
+    forged_derivation = dataclasses.replace(
+        derivation,
+        projected_plan_identity=altered_plan.identity,
+    )
+    forged_problem = dataclasses.replace(
+        original.problem,
+        evaluation_plan_identity=altered_plan.identity,
+        derivation=forged_derivation,
+    )
+    forged_identity = grouped_direct_trf_owner._component_identity(
+        problem,
+        engine,
+        original.controlled_ids,
+        original.root_profile_indices,
+        altered_plan.identity,
+        original.problem.lower_bounds,
+        original.problem.upper_bounds,
+    )
+    forged_derivation = dataclasses.replace(
+        forged_derivation,
+        component_identity=forged_identity,
+    )
+    forged_problem = dataclasses.replace(
+        forged_problem,
+        derivation=forged_derivation,
+    )
+    forged_component = dataclasses.replace(
+        original,
+        problem=forged_problem,
+        evaluation_plan=altered_plan,
+        identity=forged_identity,
+    )
+    first_record = decomposition.partition_proof.component_records[0]
+    forged_proof = dataclasses.replace(
+        decomposition.partition_proof,
+        component_records=(
+            (forged_identity, *first_record[1:]),
+            *decomposition.partition_proof.component_records[1:],
+        ),
+    )
+    forged_decomposition = dataclasses.replace(
+        decomposition,
+        components=(forged_component, *decomposition.components[1:]),
+        partition_proof=forged_proof,
+    )
+    invocation = GroupedDirectTrfInvocation.for_decomposition(
+        forged_decomposition,
+        objective_request_budgets=(80,) * len(forged_decomposition.components),
+    )
+
+    outcome = materialize_grouped_direct_trf(
+        problem,
+        forged_decomposition,
+        invocation,
+        parameterization,
+        engine,
+        (),
+    )
+
+    assert outcome.terminal is GroupedDirectTrfTerminal.DECOMPOSITION_VALIDATION_FAILURE
+
+
 def test_grouped_validation_does_not_rebuild_projected_plans() -> None:
     _session, _experiments, parameterization, engine, problem = _grouped_problem()
     decomposition = FitDecomposition.from_root(problem, parameterization, engine)
@@ -445,13 +525,17 @@ def test_grouped_validation_does_not_rebuild_projected_plans() -> None:
         decomposition,
         objective_request_budgets=(80,) * len(decomposition.components),
     )
-    projected_population = engine._projected_population
+    project_plan = engine.project_plan
+    project_profiles = engine.project_profiles
 
-    with patch.object(
-        engine,
-        "_projected_population",
-        wraps=projected_population,
-    ) as projection_calls:
+    with (
+        patch.object(engine, "project_plan", wraps=project_plan) as plan_calls,
+        patch.object(
+            engine,
+            "project_profiles",
+            wraps=project_profiles,
+        ) as engine_calls,
+    ):
         outcome = execute_grouped_direct_trf(
             problem,
             decomposition,
@@ -461,7 +545,8 @@ def test_grouped_validation_does_not_rebuild_projected_plans() -> None:
         )
 
     assert outcome.terminal is GroupedDirectTrfTerminal.ACCEPTED
-    assert projection_calls.call_count == len(decomposition.components)
+    assert plan_calls.call_count == len(decomposition.components)
+    assert engine_calls.call_count == len(decomposition.components)
 
 
 def test_combined_grouped_execution_validates_context_once() -> None:

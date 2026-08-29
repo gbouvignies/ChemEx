@@ -707,6 +707,23 @@ def test_component_projection_rejects_a_non_closed_root_feasibility_domain() -> 
             (0.0,),
             (maximum,),
         )
+    projected = root.project_component(
+        frame,
+        ("r2", "eta"),
+        (0.0, -maximum),
+        (maximum, maximum),
+    )
+    assert projected is not None
+    with pytest.raises(
+        FeasibleCoordinateConstructionError,
+        match="compiled root chart",
+    ):
+        projected.project_component(
+            frame,
+            ("r2", "eta"),
+            (0.0, -maximum),
+            (maximum, maximum),
+        )
 
 
 def test_collapsed_cross_rate_chart_has_singular_public_differential() -> None:

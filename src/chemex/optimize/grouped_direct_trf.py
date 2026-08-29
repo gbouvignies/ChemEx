@@ -77,6 +77,7 @@ class FitComponent:
     controlled_ids: tuple[str, ...]
     root_profile_indices: tuple[int, ...]
     problem: OptimizationProblem = field(repr=False, compare=False)
+    evaluation_plan: EvaluationPlan = field(repr=False, compare=False)
     identity: str
 
 
@@ -248,6 +249,7 @@ def _build_component(
         engine,
         component_ids,
         profile_indices,
+        child_plan.identity,
         lower,
         upper,
     )
@@ -269,6 +271,7 @@ def _build_component(
         component_ids,
         profile_indices,
         child_problem,
+        child_plan,
         component_identity,
     )
 
@@ -278,6 +281,7 @@ def _component_identity(
     engine: EvaluationEngine,
     component_ids: tuple[str, ...],
     profile_indices: tuple[int, ...],
+    projected_plan_identity: str,
     lower_bounds: tuple[float, ...],
     upper_bounds: tuple[float, ...],
 ) -> str:
@@ -295,6 +299,7 @@ def _component_identity(
             ),
             engine.plan.identity,
             profile_indices,
+            projected_plan_identity,
             tuple(float(value).hex() for value in lower_bounds),
             tuple(float(value).hex() for value in upper_bounds),
         ),
@@ -893,11 +898,13 @@ def _validate_grouped_context(
             problem.upper_bounds[root_indices[param_id]]
             for param_id in component.controlled_ids
         )
+        canonical_plan = engine.project_plan(component.root_profile_indices)
         expected_identity = _component_identity(
             problem,
             engine,
             component.controlled_ids,
             component.root_profile_indices,
+            canonical_plan.identity,
             lower_bounds,
             upper_bounds,
         )
@@ -914,8 +921,9 @@ def _validate_grouped_context(
             or derivation.component_identity != component.identity
             or derivation.projection_policy != _PROJECTION_POLICY
             or component.problem.start != expected_start
-            or derivation.projected_plan_identity
-            != component.problem.evaluation_plan_identity
+            or component.evaluation_plan.identity != canonical_plan.identity
+            or derivation.projected_plan_identity != canonical_plan.identity
+            or component.problem.evaluation_plan_identity != canonical_plan.identity
             or (expected_feasible is None) != (actual_feasible is None)
             or (
                 expected_feasible is not None
@@ -981,7 +989,11 @@ def execute_direct_trf_components(
             continue
         try:
             child_engine = engine.project_profiles(component.root_profile_indices)
-            if child_engine.plan.identity != component.problem.evaluation_plan_identity:
+            if (
+                child_engine.plan.identity != component.evaluation_plan.identity
+                or child_engine.plan.identity
+                != component.problem.evaluation_plan_identity
+            ):
                 raise DirectTrfConstructionError(
                     "Component evaluator projection differs from its derivation"
                 )
@@ -1152,6 +1164,7 @@ def _materialized_component_projection(
         )
     if (
         child_result.plan_identity != child_plan.identity
+        or child_plan.identity != component.evaluation_plan.identity
         or child_plan.identity != component.problem.evaluation_plan_identity
         or child_result.parameterization_identity
         != component.problem.evaluator_parameterization_identity
