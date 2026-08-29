@@ -6,10 +6,17 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from chemex.configuration.methods import Selection, read_method_plan
+from chemex.configuration.parameters import read_defaults
+from chemex.evaluation.native import EvaluationEngine
+from chemex.experiments.builder import build_experiments
+from chemex.optimize.direct_trf import OptimizationProblem
 from chemex.optimize.helper import execute_simulation
 from chemex.parameters.feasible_coordinates import (
+    FeasibleCoordinateConstructionError,
     ScientificFeasibilityError,
     _conditional_interval,
+    _reference_coefficient,
     _validate_blocks,
     compile_feasible_coordinates,
     relaxation_state_is_on_boundary,
@@ -17,13 +24,18 @@ from chemex.parameters.feasible_coordinates import (
 from chemex.parameters.parameterization import (
     BinaryExpression,
     CompiledConstraint,
+    FunctionExpression,
     IndependentValueFrame,
+    LiteralExpression,
     ReferenceExpression,
+    UnaryExpression,
 )
 from chemex.parameters.relaxation import (
     RelaxationPsdBlock,
     SealedRelaxationDomains,
 )
+from chemex.parameters.spin_system import SpinSystem
+from chemex.runtime import AnalysisSession
 
 
 def test_two_state_shared_cross_rate_uses_the_limiting_psd_block() -> None:
@@ -118,6 +130,457 @@ def _affine_parameterization():
             return values
 
     return Parameterization()
+
+
+def _dq_affine_parameterization():
+    block = RelaxationPsdBlock(
+        "transverse-a",
+        "a",
+        ("r2dq", "r2adq"),
+        ((0, 1, "eta"),),
+    )
+    constraint = CompiledConstraint(
+        "r2adq",
+        BinaryExpression(
+            "subtract",
+            ReferenceExpression("r2dq"),
+            BinaryExpression(
+                "divide",
+                ReferenceExpression("r1"),
+                LiteralExpression(3.0),
+            ),
+        ),
+        ("r2dq", "r1"),
+        "method",
+        "[R2DQ] - [R1] / 3.0",
+    )
+
+    class Parameterization:
+        scope_ids = ("r2dq", "r1", "eta", "r2adq")
+        evaluator_identity = "dq-relaxation-test-evaluator"
+        program = SimpleNamespace(
+            constraints=(constraint,),
+            relaxation_domains=SealedRelaxationDomains((block,)),
+        )
+
+        @staticmethod
+        def resolve(frame):
+            values = dict(frame.ordered_items())
+            values.setdefault("r2dq", 0.0)
+            values.setdefault("r1", 0.0)
+            values["r2adq"] = values["r2dq"] - values["r1"] / 3.0
+            return values
+
+    return Parameterization()
+
+
+def test_compiler_recognizes_exact_dq_affine_nonnegative_floor() -> None:
+    parameterization = _dq_affine_parameterization()
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("r2dq", 20.0), ("r1", 1.5), ("eta", 0.0)),
+    )
+    maximum = float(np.finfo(np.float64).max)
+
+    chart = compile_feasible_coordinates(
+        parameterization,
+        frame,
+        ("r2dq",),
+        (0.0,),
+        (maximum,),
+    )
+
+    assert chart is not None
+    assert chart.rate_excess_ids == (("r2dq", "r2adq"),)
+    boundary = chart.decode((0.0,))
+    values = parameterization.resolve(boundary.frame)
+    assert values["r2dq"] == pytest.approx(0.5)
+    assert values["r2adq"] == pytest.approx(0.0)
+    _validate_blocks(chart.blocks, values)
+
+
+def test_compiler_recognizes_exact_dq_affine_psd_floor() -> None:
+    parameterization = _dq_affine_parameterization()
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("r2dq", 20.0), ("r1", 1.5), ("eta", 3.0)),
+    )
+    maximum = float(np.finfo(np.float64).max)
+
+    chart = compile_feasible_coordinates(
+        parameterization,
+        frame,
+        ("r2dq",),
+        (0.0,),
+        (maximum,),
+    )
+
+    assert chart is not None
+    assert chart.rate_excess_ids == (("r2dq", "r2adq"),)
+    assert chart.static_rate_floors[0][0] == "r2dq"
+    boundary = chart.decode((0.0,))
+    values = parameterization.resolve(boundary.frame)
+    assert values["r2dq"] == pytest.approx(0.25 + 0.5 * np.sqrt(36.25))
+    assert values["r2dq"] * values["r2adq"] == pytest.approx(9.0)
+    _validate_blocks(chart.blocks, values)
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        (
+            BinaryExpression("add", ReferenceExpression("x"), LiteralExpression(4.0)),
+            1.0,
+        ),
+        (
+            BinaryExpression(
+                "subtract", ReferenceExpression("x"), LiteralExpression(4.0)
+            ),
+            1.0,
+        ),
+        (
+            BinaryExpression("add", LiteralExpression(4.0), ReferenceExpression("x")),
+            1.0,
+        ),
+        (
+            BinaryExpression(
+                "multiply", LiteralExpression(2.5), ReferenceExpression("x")
+            ),
+            2.5,
+        ),
+        (
+            BinaryExpression(
+                "multiply", ReferenceExpression("x"), LiteralExpression(2.5)
+            ),
+            2.5,
+        ),
+        (
+            BinaryExpression(
+                "divide", ReferenceExpression("x"), LiteralExpression(4.0)
+            ),
+            0.25,
+        ),
+        (UnaryExpression("positive", ReferenceExpression("x")), 1.0),
+        (UnaryExpression("negative", ReferenceExpression("x")), -1.0),
+        (
+            BinaryExpression(
+                "subtract",
+                BinaryExpression(
+                    "multiply",
+                    LiteralExpression(3.0),
+                    BinaryExpression(
+                        "add", ReferenceExpression("x"), LiteralExpression(2.0)
+                    ),
+                ),
+                UnaryExpression("negative", ReferenceExpression("x")),
+            ),
+            4.0,
+        ),
+    ],
+)
+def test_reference_coefficient_supports_exact_affine_forms(
+    expression: object,
+    expected: float,
+) -> None:
+    assert _reference_coefficient(expression, "x") == expected
+
+
+def test_reference_coefficient_expands_recursive_derived_references() -> None:
+    constraints = {
+        "y": CompiledConstraint(
+            "y",
+            BinaryExpression(
+                "add",
+                BinaryExpression(
+                    "multiply", LiteralExpression(2.0), ReferenceExpression("x")
+                ),
+                LiteralExpression(1.0),
+            ),
+            ("x",),
+            "method",
+            "2.0 * [X] + 1.0",
+        )
+    }
+    expression = BinaryExpression(
+        "divide", ReferenceExpression("y"), LiteralExpression(2.0)
+    )
+
+    assert _reference_coefficient(expression, "x", constraints) == 1.0
+
+
+def test_reference_coefficient_rejects_recursive_constraint_cycle() -> None:
+    constraints = {
+        "y": CompiledConstraint(
+            "y",
+            ReferenceExpression("z"),
+            ("z",),
+            "method",
+            "[Z]",
+        ),
+        "z": CompiledConstraint(
+            "z",
+            ReferenceExpression("y"),
+            ("y",),
+            "method",
+            "[Y]",
+        ),
+    }
+
+    assert _reference_coefficient(ReferenceExpression("y"), "x", constraints) is None
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        BinaryExpression(
+            "multiply", ReferenceExpression("x"), ReferenceExpression("y")
+        ),
+        BinaryExpression("divide", ReferenceExpression("x"), ReferenceExpression("y")),
+        BinaryExpression(
+            "multiply", ReferenceExpression("x"), ReferenceExpression("x")
+        ),
+        FunctionExpression("f", (ReferenceExpression("x"),)),
+        BinaryExpression("divide", ReferenceExpression("x"), LiteralExpression(0.0)),
+        BinaryExpression(
+            "multiply", LiteralExpression(float("inf")), ReferenceExpression("x")
+        ),
+        BinaryExpression(
+            "multiply",
+            ReferenceExpression("x"),
+            BinaryExpression(
+                "subtract",
+                BinaryExpression(
+                    "add", ReferenceExpression("y"), LiteralExpression(1.0)
+                ),
+                ReferenceExpression("y"),
+            ),
+        ),
+        BinaryExpression(
+            "divide",
+            ReferenceExpression("x"),
+            BinaryExpression(
+                "add",
+                BinaryExpression(
+                    "subtract", ReferenceExpression("y"), ReferenceExpression("y")
+                ),
+                LiteralExpression(1.0),
+            ),
+        ),
+    ],
+)
+def test_reference_coefficient_rejects_non_affine_forms(expression: object) -> None:
+    assert _reference_coefficient(expression, "x") is None
+
+
+def test_compiler_rejects_nonlinear_relaxation_controller() -> None:
+    parameterization = _dq_affine_parameterization()
+    nonlinear = CompiledConstraint(
+        "r2adq",
+        BinaryExpression(
+            "multiply", ReferenceExpression("r2dq"), ReferenceExpression("r1")
+        ),
+        ("r2dq", "r1"),
+        "method",
+        "[R2DQ] * [R1]",
+    )
+    parameterization.program.constraints = (nonlinear,)
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("r2dq", 20.0), ("r1", 1.5), ("eta", 0.0)),
+    )
+    maximum = float(np.finfo(np.float64).max)
+
+    with pytest.raises(
+        FeasibleCoordinateConstructionError,
+        match="unsupported affine controller",
+    ):
+        compile_feasible_coordinates(
+            parameterization,
+            frame,
+            ("r2dq",),
+            (0.0,),
+            (maximum,),
+        )
+
+
+def _recursive_affine_parameterization(*, nonlinear: bool):
+    block = RelaxationPsdBlock(
+        "recursive-transverse-a",
+        "a",
+        ("held", "diagonal"),
+        ((0, 1, "cross"),),
+    )
+    intermediate_expression = (
+        BinaryExpression(
+            "multiply",
+            ReferenceExpression("controller"),
+            ReferenceExpression("controller"),
+        )
+        if nonlinear
+        else ReferenceExpression("controller")
+    )
+    constraints = (
+        CompiledConstraint(
+            "intermediate",
+            intermediate_expression,
+            ("controller",),
+            "method",
+            "[CONTROLLER] * [CONTROLLER]" if nonlinear else "[CONTROLLER]",
+        ),
+        CompiledConstraint(
+            "diagonal",
+            BinaryExpression(
+                "add",
+                ReferenceExpression("intermediate"),
+                ReferenceExpression("offset"),
+            ),
+            ("intermediate", "offset"),
+            "method",
+            "[INTERMEDIATE] + [OFFSET]",
+        ),
+    )
+
+    class Parameterization:
+        scope_ids = (
+            "held",
+            "cross",
+            "controller",
+            "offset",
+            "intermediate",
+            "diagonal",
+        )
+        evaluator_identity = f"recursive-affine-{nonlinear}"
+        program = SimpleNamespace(
+            constraints=constraints,
+            relaxation_domains=SealedRelaxationDomains((block,)),
+        )
+
+        @staticmethod
+        def resolve(frame):
+            values = dict(frame.ordered_items())
+            controller = values["controller"]
+            values["intermediate"] = (
+                controller * controller if nonlinear else controller
+            )
+            values["diagonal"] = values["intermediate"] + values["offset"]
+            return values
+
+    return Parameterization()
+
+
+def test_compiler_discovers_recursive_affine_controller() -> None:
+    parameterization = _recursive_affine_parameterization(nonlinear=False)
+    maximum = float(np.finfo(np.float64).max)
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("held", 2.0), ("cross", 0.0), ("controller", 2.0), ("offset", -1.0)),
+    )
+
+    chart = compile_feasible_coordinates(
+        parameterization,
+        frame,
+        ("controller",),
+        (0.0,),
+        (maximum,),
+    )
+
+    assert chart is not None
+    assert chart.rate_excess_ids == (("controller", "diagonal"),)
+    values = parameterization.resolve(chart.decode((0.0,)).frame)
+    assert values["controller"] == pytest.approx(1.0)
+    assert values["diagonal"] == pytest.approx(0.0)
+
+
+def test_compiler_rejects_recursive_nonlinear_controller() -> None:
+    parameterization = _recursive_affine_parameterization(nonlinear=True)
+    maximum = float(np.finfo(np.float64).max)
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("held", 2.0), ("cross", 0.0), ("controller", 2.0), ("offset", -1.0)),
+    )
+
+    with pytest.raises(
+        FeasibleCoordinateConstructionError,
+        match="unsupported affine controller",
+    ):
+        compile_feasible_coordinates(
+            parameterization,
+            frame,
+            ("controller",),
+            (0.0,),
+            (maximum,),
+        )
+
+
+def test_shipped_v71hg2_compiles_complete_dq_tq_state_mapping() -> None:
+    root = Path(__file__).parent.parent
+    example = root / "examples/Combinations/CPMG_CH3_1H_DQ_TQ"
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    plan = read_method_plan([example / "Methods/method.toml"])
+    experiments = build_experiments(
+        sorted((example / "Experiments").glob("*.toml")),
+        Selection(include=[SpinSystem.from_name("V71HG2")], exclude=None),
+        session=session,
+    )
+    session.parameters.set_defaults(
+        read_defaults([example / "Parameters/parameters.toml"])
+    )
+    assert session.try_build_analysis_values()
+    parameterization = session.compile_parameterization_from_actions(
+        plan.effective_role_actions()["STEP1"], experiments.param_ids
+    )
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    configuration = session.parameter_factory.sealed_configuration
+    assert configuration is not None
+
+    problem = OptimizationProblem.from_native(
+        engine.plan,
+        parameterization,
+        configuration,
+        session.analysis_values.snapshot(),
+    )
+
+    chart = problem.feasible_coordinates
+    assert chart is not None
+    dq_rate = "__R2DQ_A_V71HG2_700_2MHZ"
+    tq_rate = "__R2TQ_A_V71HG2_700_2MHZ"
+    assert chart.rate_excess_ids == (
+        (dq_rate, "__R2ADQ_A_V71HG2_700_2MHZ"),
+        (dq_rate, "__R2ADQ_B_V71HG2_700_2MHZ"),
+        (tq_rate, "__R2ATQ_A_V71HG2_700_2MHZ"),
+        (tq_rate, "__R2ATQ_B_V71HG2_700_2MHZ"),
+    )
+    private = list(chart.solver_start)
+    private[chart.controlled_ids.index(dq_rate)] = 0.0
+    private[chart.controlled_ids.index(tq_rate)] = 0.0
+    resolved = parameterization.resolve(chart.decode(tuple(private)).frame)
+    expected = {
+        dq_rate: 0.5,
+        "__R2DQ_B_V71HG2_700_2MHZ": 0.5,
+        "__R2ADQ_A_V71HG2_700_2MHZ": 0.0,
+        "__R2ADQ_B_V71HG2_700_2MHZ": 0.0,
+        tq_rate: 1.5,
+        "__R2TQ_B_V71HG2_700_2MHZ": 1.5,
+        "__R2ATQ_A_V71HG2_700_2MHZ": 0.0,
+        "__R2ATQ_B_V71HG2_700_2MHZ": 0.0,
+    }
+    assert {param_id: resolved[param_id] for param_id in expected} == expected
 
 
 def test_compiler_returns_no_chart_when_feasibility_has_no_execution_effect() -> None:

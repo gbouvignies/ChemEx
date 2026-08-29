@@ -28,7 +28,9 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   names, restart files, and output. The proton-exchange contribution `KHH` and
   diffusion coefficient `D` are non-negative. Invalid fixed starting states fail
   before the kernel; adaptive Jacobian scaling and fail-closed kernel exceptions
-  are unchanged.
+  are unchanged. Exact affine constraints on relaxation diagonals may use finite
+  literal offsets, unary signs, constant multiplication, and division by a
+  finite non-zero constant; nonlinear controller expressions remain rejected.
 - Changed native local TRF refinement to one versioned adaptive inverse-Jacobian-
   column-norm scaling policy across Direct, grouped Direct, GRID nuisance fits,
   DE polishing, and resampling refits. Sensitivity-based trust-region geometry
