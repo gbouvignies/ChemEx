@@ -5,6 +5,7 @@ import math
 import subprocess
 import sys
 import tomllib
+from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -13,8 +14,8 @@ import numpy as np
 import pytest
 
 import chemex.optimize.direct_trf as direct_trf_module
-import chemex.optimize.fitting as fitting_module
 import chemex.optimize.mcmc as mcmc_module
+import chemex.optimize.method_plan_execution as method_execution_module
 import chemex.optimize.native_deterministic as native_deterministic_module
 import chemex.optimize.native_mcmc as native_mcmc_module
 import chemex.optimize.native_resampling as native_resampling_module
@@ -22,14 +23,20 @@ import chemex.optimize.resampling as resampling_module
 import chemex.optimize.uncertainty as uncertainty_module
 import chemex.printers.grid as grid_printer_module
 import chemex.run_info as run_info_module
-from chemex.chemex import run
+from chemex.chemex import run, run_fit
 from chemex.cli import build_parser
+from chemex.configuration.methods import Method, Selection
+from chemex.configuration.parameters import read_defaults
+from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import BoundEvaluator, EvaluationFailure
+from chemex.experiments.builder import build_experiments
+from chemex.optimize.fitting import run_methods
 from chemex.optimize.mcmc import NativeMcmcIncompleteError
 from chemex.optimize.progress import ProgressPhase
 from chemex.optimize.resampling import NativeResamplingIncompleteError
 from chemex.optimize.uncertainty import ParameterUnit
 from chemex.parameters.feasible_coordinates import ScientificFeasibilityError
+from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.values import AnalysisValuesSnapshot
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
@@ -145,6 +152,25 @@ def _simulation_arguments(output: Path):
             "nothing",
         ]
     )
+
+
+def _programmatic_fit_context(
+    output: Path,
+) -> tuple[Namespace, AnalysisSession, Experiments]:
+    args = _fit_arguments(output)
+    session = AnalysisSession.create()
+    session.set_model("2st")
+    experiments = build_experiments(
+        [EXPERIMENT],
+        Selection(
+            include=[SpinSystem.from_name("G2N-HN")],
+            exclude=None,
+        ),
+        session=session,
+    )
+    session.parameters.set_defaults(read_defaults([PARAMETERS]))
+    assert session.try_build_analysis_values()
+    return args, session, experiments
 
 
 def _three_state_dcest_arguments(output: Path, method: Path):
@@ -2440,9 +2466,9 @@ def test_mixed_mc_and_mcmc_use_one_native_central_fit_without_legacy_fallback(
     session = AnalysisSession.create()
 
     with patch.object(
-        fitting_module,
+        method_execution_module,
         "run_native_deterministic",
-        wraps=fitting_module.run_native_deterministic,
+        wraps=method_execution_module.run_native_deterministic,
     ) as native_central:
         run(
             _fit_arguments(output, method, parameters=parameters),
@@ -3944,6 +3970,86 @@ CONSTRAINTS = ["[R1A_A, NUC->G2N-H] = 2.0"]
     assert "2.00000e+00" in constrained_text
 
 
+def test_v1_v2_and_programmatic_facades_execute_equivalent_method_semantics(
+    tmp_path: Path,
+) -> None:
+    v1_method = tmp_path / "method-v1.toml"
+    v1_method.write_text(
+        '[DEFAULT]\nFIX = ["PB", "KEX_AB"]\n',
+        encoding="utf-8",
+    )
+    v2_method = tmp_path / "method-v2.toml"
+    v2_method.write_text(
+        """FORMAT_VERSION = 2
+
+[DEFAULT]
+ROLES = [{ FIX = ["PB", "KEX_AB"] }]
+""",
+        encoding="utf-8",
+    )
+    methods = {"DEFAULT": Method(fix=["PB", "KEX_AB"])}
+    outputs = {
+        "v1": tmp_path / "V1",
+        "v2": tmp_path / "V2",
+        "run_fit_methods": tmp_path / "RunFitMethods",
+        "run_methods": tmp_path / "RunMethods",
+    }
+
+    sessions = {
+        "v1": AnalysisSession.create(),
+        "v2": AnalysisSession.create(),
+    }
+    run(_fit_arguments(outputs["v1"], v1_method), session=sessions["v1"])
+    run(_fit_arguments(outputs["v2"], v2_method), session=sessions["v2"])
+
+    args, run_fit_session, run_fit_experiments = _programmatic_fit_context(
+        outputs["run_fit_methods"]
+    )
+    run_fit(
+        args,
+        run_fit_experiments,
+        run_fit_session,
+        input_files=(),
+        methods=methods,
+    )
+    sessions["run_fit_methods"] = run_fit_session
+
+    _, run_methods_session, run_methods_experiments = _programmatic_fit_context(
+        outputs["run_methods"]
+    )
+    run_methods(
+        run_methods_experiments,
+        methods,
+        outputs["run_methods"],
+        "nothing",
+        session=run_methods_session,
+    )
+    sessions["run_methods"] = run_methods_session
+
+    snapshots = {
+        name: session.analysis_values.snapshot() for name, session in sessions.items()
+    }
+    assert {snapshot.revision for snapshot in snapshots.values()} == {1}
+    reference = dict(snapshots["v2"])
+    for snapshot in snapshots.values():
+        assert tuple(snapshot) == tuple(reference)
+        np.testing.assert_allclose(
+            tuple(snapshot.values()),
+            tuple(reference.values()),
+            rtol=1.0e-12,
+            atol=0.0,
+        )
+
+    fitted_outputs = []
+    for output in outputs.values():
+        fitted = output / "Parameters" / "fitted.toml"
+        assert fitted.is_file()
+        assert (output / "statistics.toml").is_file()
+        assert list((output / "Data").glob("*.dat"))
+        fitted_outputs.append(fitted.read_text(encoding="utf-8"))
+    assert len(set(fitted_outputs)) == 1
+
+
 def test_all_fixed_v1_method_evaluates_without_optimizer_or_commit(
     tmp_path: Path,
 ) -> None:
@@ -4075,7 +4181,8 @@ REPLICATES = 1
     generated_seed = 0xFEDC_BA09_8765_4321
 
     with patch(
-        "chemex.optimize.fitting.secrets.randbits", return_value=generated_seed
+        "chemex.optimize.method_plan_execution.secrets.randbits",
+        return_value=generated_seed,
     ) as generate_seed:
         run(_fit_arguments(output, method), session=AnalysisSession.create())
 

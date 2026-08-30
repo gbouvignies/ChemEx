@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from chemex.atomic import write_text_atomic
-from chemex.configuration.methods import Statistics
+from chemex.configuration.method_plan import ResamplingKind, ResamplingRequest
 from chemex.containers.experiments import Experiments
 from chemex.messages import print_running_statistics
 from chemex.optimize.native_deterministic import NativeDeterministicFit
@@ -41,24 +41,17 @@ class NativeResamplingIncompleteError(RuntimeError):
     """Raised after truthful incomplete native statistics have been published."""
 
 
-def _resampling_methods(statistics: Statistics) -> tuple[_ResamplingMethod, ...]:
-    methods: list[_ResamplingMethod] = []
-    if statistics.mc is not None:
-        methods.append(
-            _ResamplingMethod("mc", "Monte Carlo", "MonteCarlo", statistics.mc)
-        )
-    if statistics.bs is not None:
-        methods.append(_ResamplingMethod("bs", "bootstrap", "Bootstrap", statistics.bs))
-    if statistics.bsn is not None:
-        methods.append(
-            _ResamplingMethod(
-                "bsn",
-                "nucleus-based bootstrap",
-                "BootstrapNS",
-                statistics.bsn,
-            )
-        )
-    return tuple(methods)
+def _resampling_method(
+    kind: ResamplingKind,
+    request: ResamplingRequest,
+) -> _ResamplingMethod:
+    descriptions = {
+        "mc": ("Monte Carlo", "MonteCarlo"),
+        "bs": ("bootstrap", "Bootstrap"),
+        "bsn": ("nucleus-based bootstrap", "BootstrapNS"),
+    }
+    message, directory = descriptions[kind]
+    return _ResamplingMethod(kind, message, directory, request.replicates)
 
 
 def _quote_toml_string(value: str) -> str:
@@ -566,24 +559,25 @@ def _run_native_resampling_method(
         )
 
 
-def run_native_resampling_statistics(
+def run_native_resampling(
     experiments: Experiments,
     path: Path,
-    statistics: Statistics,
+    kind: ResamplingKind,
+    request: ResamplingRequest,
     fit: NativeDeterministicFit,
     *,
     execution: ExecutionSettings | None = None,
     root_seed: int = 0,
 ) -> None:
-    """Run existing MC/BS/BSN product analyses from one committed native fit."""
+    """Run one canonical resampling request from a committed native fit."""
     settings = ExecutionSettings() if execution is None else execution
-    for method in _resampling_methods(statistics):
-        print_running_statistics(method.message)
-        _run_native_resampling_method(
-            experiments,
-            path,
-            method,
-            fit,
-            execution=settings,
-            root_seed=root_seed,
-        )
+    method = _resampling_method(kind, request)
+    print_running_statistics(method.message)
+    _run_native_resampling_method(
+        experiments,
+        path,
+        method,
+        fit,
+        execution=settings,
+        root_seed=root_seed,
+    )

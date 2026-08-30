@@ -24,7 +24,6 @@ import numpy as np
 import pytest
 
 import chemex.optimize.direct_trf as direct_trf_module
-from chemex.configuration.method_execution import normalize_methods_for_execution
 from chemex.configuration.methods import Method, Selection, read_method_plan
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
@@ -80,12 +79,6 @@ EXPERIMENT = ROOT / "examples/Experiments/RELAXATION_HZNZ/Experiments/800mhz.tom
 PARAMETERS = ROOT / "examples/Experiments/RELAXATION_HZNZ/Parameters/parameters.toml"
 METHOD = ROOT / "examples/Experiments/RELAXATION_HZNZ/Methods/method.toml"
 CPMG_ROOT = ROOT / "examples/Experiments/CPMG_15N_IP"
-
-
-def _shipped_method(path: Path, section: str) -> Method:
-    plan = read_method_plan([path])
-    _plan, operational = normalize_methods_for_execution(plan)
-    return operational[section]
 
 
 def _qualification_fit(
@@ -717,12 +710,16 @@ def test_solver_requests_use_lean_residuals_and_acceptance_materializes_fresh() 
 def test_cpmg_step1_direct_trf_preserves_requests_and_reuses_profile_kernels() -> None:
     method_path = CPMG_ROOT / "Methods/method.toml"
     plan = read_method_plan([method_path])
-    method = _shipped_method(method_path, "STEP1")
+    step = plan.steps[0]
+    assert isinstance(step.selection.include, tuple)
     session = AnalysisSession.create()
     session.set_model("2st")
     experiments = build_experiments(
         sorted((CPMG_ROOT / "Experiments").glob("*.toml")),
-        method.selection,
+        Selection(
+            include=[SpinSystem.from_name(name) for name in step.selection.include],
+            exclude=None,
+        ),
         session=session,
     )
     session.parameters.set_defaults(

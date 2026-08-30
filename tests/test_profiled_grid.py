@@ -15,7 +15,6 @@ import pytest
 from rich.console import Console
 from scipy.optimize import least_squares
 
-from chemex.configuration.method_execution import normalize_methods_for_execution
 from chemex.configuration.method_validation import resolve_grid_axes
 from chemex.configuration.methods import Method, Selection, read_method_plan
 from chemex.configuration.parameters import read_defaults
@@ -306,11 +305,9 @@ def test_shipped_cpmg_step1_discovers_five_500_point_residue_factors() -> None:
         read_defaults([CPMG / "Parameters/parameters.toml"])
     )
     assert session.try_build_analysis_values()
-    plan, operational = normalize_methods_for_execution(
-        read_method_plan([CPMG / "Methods/method_grid.toml"])
-    )
+    plan = read_method_plan([CPMG / "Methods/method_grid.toml"])
     step = plan.steps[0]
-    experiments.select(operational[step.name].selection)
+    experiments.select_profiles(step.selection)
     parameterization = session.compile_parameterization_from_actions(
         plan.effective_role_actions()[step.name], experiments.param_ids
     )
@@ -387,11 +384,9 @@ def test_shipped_cpmg_step3_discovers_residue_local_20_point_factors() -> None:
         read_defaults([CPMG / "Parameters/parameters.toml"])
     )
     assert session.try_build_analysis_values()
-    plan, operational = normalize_methods_for_execution(
-        read_method_plan([CPMG / "Methods/method_grid.toml"])
-    )
+    plan = read_method_plan([CPMG / "Methods/method_grid.toml"])
     step = plan.steps[2]
-    experiments.select(operational[step.name].selection)
+    experiments.select_profiles(step.selection)
     parameterization = session.compile_parameterization_from_actions(
         plan.effective_role_actions()[step.name], experiments.param_ids
     )

@@ -11,6 +11,7 @@ from pathlib import Path
 from random import choices
 from typing import Literal
 
+from chemex.configuration.method_plan import ProfileSelection
 from chemex.configuration.methods import Selection
 from chemex.containers.experiment import Experiment
 from chemex.messages import print_selecting_profiles
@@ -208,6 +209,12 @@ class Experiments:
             return
         for experiment in self:
             experiment.select(selection)
+        print_selecting_profiles(len(self))
+
+    def select_profiles(self, selection: ProfileSelection) -> None:
+        """Apply one canonical Method Step selection from the full profile set."""
+        for experiment in self:
+            experiment.select_profiles(selection)
         print_selecting_profiles(len(self))
 
     @property
