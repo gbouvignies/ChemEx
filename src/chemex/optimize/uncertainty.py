@@ -2909,6 +2909,8 @@ class RootAnchoredBlockCovariance:
                 "non_positive_nominal_residual_degrees_of_freedom",
             }:
                 return UncertaintyUnavailableKind.INSUFFICIENT_INFORMATION
+            if self.failure.category == "active_relaxation_feasibility_boundary":
+                return UncertaintyUnavailableKind.BOUNDARY_LIMITED
             if self.failure.stage == "residual_linearization":
                 return UncertaintyUnavailableKind.JACOBIAN_UNAVAILABLE
             return UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE
