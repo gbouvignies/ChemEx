@@ -466,7 +466,7 @@ def test_cest_1hn_ip_ap_commits_psd_transverse_relaxation_block(
     final_statistics = tomllib.loads(
         (output / "2_FIT_R1" / "statistics.toml").read_text(encoding="utf-8")
     )
-    assert final_statistics["chi-square"] == pytest.approx(52.4331, rel=2.0e-5)
+    assert final_statistics["chi-square"] == pytest.approx(52.7997, rel=2.0e-5)
 
 
 def test_complete_cest_1hn_ip_ap_shipped_selection_finishes_both_steps(
@@ -488,8 +488,8 @@ def test_complete_cest_1hn_ip_ap_shipped_selection_finishes_both_steps(
     second = tomllib.loads(
         (output / "2_FIT_R1" / "statistics.toml").read_text(encoding="utf-8")
     )
-    assert first["chi-square"] == pytest.approx(11938.9, rel=2.0e-5)
-    assert second["chi-square"] == pytest.approx(3877.57, rel=2.0e-5)
+    assert first["chi-square"] == pytest.approx(12417.8, rel=2.0e-5)
+    assert second["chi-square"] == pytest.approx(4805.51, rel=2.0e-5)
 
 
 def test_cpmg_15n_tr_nested_antiphase_rate_remains_feasible(tmp_path: Path) -> None:

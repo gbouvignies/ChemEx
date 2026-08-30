@@ -4,6 +4,7 @@ FORMAT_VERSION = 2
 ROLES = [
   { FIX = ["KEX_AB", "R1_A"] },
   { FIT = ["CS_A"] },
+  { CONSTRAIN = ["[R2_B] = [R2_A]"] },
 ]
 
 [2_FIT_R1]
