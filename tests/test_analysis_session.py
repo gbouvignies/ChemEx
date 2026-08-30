@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from chemex import chemex as chemex_module
-from chemex.configuration.method_execution import normalize_methods_for_execution
+from chemex.configuration.method_input import prepare_method_plan
 from chemex.configuration.method_plan import (
     FitAction,
     FixAction,
@@ -29,10 +29,10 @@ from chemex.configuration.methods import McmcSettings, Method, Selection, Statis
 from chemex.experiments import builder as builder_module
 from chemex.nmr.basis import Basis
 from chemex.optimize import fitting as fitting_module
+from chemex.optimize import method_plan_execution as method_execution_module
 from chemex.optimize import resampling as resampling_module
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import ParamSetting
-from chemex.parameters.spin_system import SpinSystem
 from chemex.printers import parameters as parameter_printer_module
 from chemex.runtime import AnalysisSession, ExecutionSettings
 from chemex.runtime import session as session_module
@@ -91,7 +91,7 @@ class StubParameterFactory:
         self.seal_definition_calls = 0
         self.seal_configuration_calls = 0
         self.native_sealing_succeeds = True
-        self.sealed_parameter_model = object()
+        self.sealed_parameter_model = SimpleNamespace(declarations={}, definitions=())
 
     def clear_cache(self) -> None:
         self.clear_calls += 1
@@ -142,7 +142,7 @@ class StubSession:
 class FakeExperiments:
     def __init__(self) -> None:
         self.filtered = 0
-        self.selections: list[Selection] = []
+        self.selections: list[ProfileSelection] = []
         self.param_ids: set[str] = set()
 
     def filter(self) -> None:
@@ -151,7 +151,7 @@ class FakeExperiments:
     def filter_from_values(self, _values: object) -> None:
         self.filtered += 1
 
-    def select(self, selection: Selection) -> None:
+    def select_profiles(self, selection: ProfileSelection) -> None:
         self.selections.append(selection)
 
     def __bool__(self) -> bool:
@@ -163,8 +163,8 @@ class EmptyAfterSelectExperiments(FakeExperiments):
         super().__init__()
         self.has_profiles = True
 
-    def select(self, selection: Selection) -> None:
-        super().select(selection)
+    def select_profiles(self, selection: ProfileSelection) -> None:
+        super().select_profiles(selection)
         self.has_profiles = False
 
     def __bool__(self) -> bool:
@@ -364,7 +364,7 @@ def test_run_uses_explicit_session_for_fit_flow(
         recorded["build"] = (filenames, selection, session)
         return experiments
 
-    def fake_run_methods(
+    def fake_execute_method_plan(
         experiments_arg: FakeExperiments,
         methods: MethodPlan,
         path: Path,
@@ -373,7 +373,7 @@ def test_run_uses_explicit_session_for_fit_flow(
         session: StubSession,
         run_info: object,
     ) -> None:
-        recorded["run_methods"] = (
+        recorded["execute_method_plan"] = (
             experiments_arg,
             methods,
             path,
@@ -384,7 +384,11 @@ def test_run_uses_explicit_session_for_fit_flow(
 
     monkeypatch.setattr(chemex_module, "build_experiments", fake_build_experiments)
     monkeypatch.setattr(chemex_module, "read_defaults", lambda _filenames: defaults)
-    monkeypatch.setattr(chemex_module, "run_methods", fake_run_methods)
+    monkeypatch.setattr(
+        chemex_module,
+        "execute_method_plan",
+        fake_execute_method_plan,
+    )
     fake_run_info = SimpleNamespace(
         write_outcome=lambda status, _snapshot, **_kwargs: recorded.setdefault(
             "outcome", status
@@ -416,8 +420,8 @@ def test_run_uses_explicit_session_for_fit_flow(
     np.testing.assert_equal(session.build_analysis_values_calls, 1)
     np.testing.assert_equal(experiments.filtered, 1)
     np.testing.assert_equal(recorded["build"][2], session)
-    assert recorded["run_methods"][4] is session
-    assert recorded["run_methods"][5] is fake_run_info
+    assert recorded["execute_method_plan"][4] is session
+    assert recorded["execute_method_plan"][5] is fake_run_info
     assert recorded["run_info"] is fake_run_info
     captured_inputs = recorded["captured_inputs"]
     assert captured_inputs[0].content == experiment_bytes
@@ -441,7 +445,7 @@ def test_run_fails_closed_when_native_configuration_is_unavailable(
     monkeypatch.setattr(chemex_module, "capture_input_files", lambda _args: ())
     monkeypatch.setattr(
         chemex_module,
-        "run_methods",
+        "execute_method_plan",
         lambda *_args, **_kwargs: fit_ran.append(True),
     )
 
@@ -451,6 +455,40 @@ def test_run_fails_closed_when_native_configuration_is_unavailable(
     assert fit_ran == []
     assert session.parameter_factory.seal_configuration_calls == 1
     assert session.build_analysis_values_calls == 1
+
+
+def test_run_fit_prepares_method_plan_before_run_side_effects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = StubSession()
+    events: list[str] = []
+
+    def reject_method(*_args: object) -> MethodPlan:
+        events.append("prepare")
+        raise ValueError("invalid method plan")
+
+    monkeypatch.setattr(chemex_module, "prepare_method_plan", reject_method)
+    monkeypatch.setattr(
+        chemex_module,
+        "write_run_info",
+        lambda *_args, **_kwargs: events.append("run_info"),
+    )
+    monkeypatch.setattr(
+        chemex_module,
+        "invalidate_planned_outputs",
+        lambda *_args: events.append("invalidate"),
+    )
+
+    with pytest.raises(ValueError, match="invalid method plan"):
+        chemex_module.run_fit(
+            make_args("fit"),
+            FakeExperiments(),
+            session,  # type: ignore[arg-type]
+            input_files=(),
+            methods={"": Method()},
+        )
+
+    assert events == ["prepare"]
 
 
 def test_run_uses_explicit_session_for_simulation_flow(
@@ -573,13 +611,17 @@ def test_run_methods_skips_fit_when_selection_removes_all_profiles(
     calls: list[str] = []
 
     monkeypatch.setattr(
-        fitting_module, "print_no_data", lambda: calls.append("no_data")
+        method_execution_module, "print_no_data", lambda: calls.append("no_data")
     )
 
     def fail_if_called(*_args, **_kwargs) -> None:
         pytest.fail("native fitting should not run when no profiles remain selected")
 
-    monkeypatch.setattr(fitting_module, "run_native_deterministic", fail_if_called)
+    monkeypatch.setattr(
+        method_execution_module,
+        "run_native_deterministic",
+        fail_if_called,
+    )
 
     fitting_module.run_methods(
         experiments,
@@ -593,19 +635,26 @@ def test_run_methods_skips_fit_when_selection_removes_all_profiles(
     np.testing.assert_equal(len(experiments.selections), 1)
 
 
-def test_legacy_methods_compatibility_keeps_implicit_selection_inheritance() -> None:
-    plan, _operational = normalize_methods_for_execution(
+def test_legacy_methods_compatibility_keeps_implicit_selection_inheritance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(MethodPlan, "validate", lambda *_args: None)
+    plan = prepare_method_plan(
         {
             "FIRST": Method(include=["1H"]),
             "SECOND": Method(),
-        }
+        },
+        object(),  # type: ignore[arg-type]
     )
 
     assert plan.steps[1].selection == plan.steps[0].selection
 
 
-def test_programmatic_v1_methods_normalize_grid_and_statistics_canonically() -> None:
-    plan, _operational = normalize_methods_for_execution(
+def test_programmatic_v1_methods_normalize_grid_and_statistics_canonically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(MethodPlan, "validate", lambda *_args: None)
+    plan = prepare_method_plan(
         {
             "STEP": Method(
                 fix=["PB"],
@@ -622,7 +671,8 @@ def test_programmatic_v1_methods_normalize_grid_and_statistics_canonically() -> 
                     ),
                 ),
             )
-        }
+        },
+        object(),  # type: ignore[arg-type]
     )
 
     step = plan.steps[0]
@@ -637,8 +687,7 @@ def test_programmatic_v1_methods_normalize_grid_and_statistics_canonically() -> 
         seed=9,
         workers=2,
     )
-    _same_plan, canonical_operational = normalize_methods_for_execution(plan)
-    assert _operational == canonical_operational
+    assert prepare_method_plan(plan, object()) is plan  # type: ignore[arg-type]
 
 
 def test_v2_omitted_selection_restores_the_step_local_all_profiles_baseline(
@@ -655,7 +704,9 @@ def test_v2_omitted_selection_restores_the_step_local_all_profiles_baseline(
     )
     session.compile_parameterization_from_actions = lambda *_args: object()  # type: ignore[attr-defined]
     monkeypatch.setattr(
-        fitting_module, "run_native_deterministic", lambda *_args, **_kwargs: None
+        method_execution_module,
+        "run_native_deterministic",
+        lambda *_args, **_kwargs: None,
     )
 
     fitting_module.run_methods(
@@ -666,8 +717,10 @@ def test_v2_omitted_selection_restores_the_step_local_all_profiles_baseline(
         session=session,
     )
 
-    assert experiments.selections[0].include == [SpinSystem.from_name("1H")]
-    assert experiments.selections[1] == Selection(include="*", exclude=None)
+    assert experiments.selections == [
+        ProfileSelection(("1H",), None),
+        ProfileSelection(),
+    ]
 
 
 @pytest.mark.parametrize("origin", tuple(FormatOrigin))
@@ -695,19 +748,19 @@ def test_canonical_grid_runs_requested_statistics_independently_of_origin(
     statistics_calls: list[tuple[object, object]] = []
     session.compile_parameterization_from_actions = lambda *_args: object()  # type: ignore[attr-defined]
     monkeypatch.setattr(
-        fitting_module,
+        method_execution_module,
         "run_native_deterministic",
         lambda *_args, **_kwargs: accepted_fit,
     )
     monkeypatch.setattr(
-        fitting_module,
+        method_execution_module,
         "_run_requested_native_statistics",
         lambda _experiments, _path, statistics, fit, **_kwargs: statistics_calls.append(
             (statistics, fit)
         ),
     )
 
-    fitting_module.run_methods(
+    method_execution_module.execute_method_plan(
         experiments,
         plan,
         Path("Output"),
@@ -723,17 +776,21 @@ def test_v2_omitted_resampling_seed_is_resolved_once_for_the_occurrence(
 ) -> None:
     resolved_seed = 0x1234_5678_90AB_CDEF
     calls: list[int] = []
-    monkeypatch.setattr(fitting_module.secrets, "randbits", lambda _bits: resolved_seed)
     monkeypatch.setattr(
-        fitting_module,
-        "run_native_resampling_statistics",
+        method_execution_module.secrets,
+        "randbits",
+        lambda _bits: resolved_seed,
+    )
+    monkeypatch.setattr(
+        method_execution_module,
+        "run_native_resampling",
         lambda *_args, root_seed, **_kwargs: calls.append(root_seed),
     )
     session = StubSession()
     snapshot = object()
     session.analysis_values = SimpleNamespace(snapshot=lambda: snapshot)  # type: ignore[attr-defined]
 
-    fitting_module._run_native_statistics(
+    method_execution_module._run_native_statistics(
         FakeExperiments(),
         Path("Output"),
         StatisticsPlan(mc=ResamplingRequest(1)),
@@ -744,7 +801,92 @@ def test_v2_omitted_resampling_seed_is_resolved_once_for_the_occurrence(
     assert calls == [resolved_seed]
 
 
-def test_failed_step_cannot_change_effective_roles_seen_by_a_retry(
+def test_executor_delegates_canonical_statistics_in_fixed_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = StubSession()
+    snapshot = object()
+    session.analysis_values = SimpleNamespace(snapshot=lambda: snapshot)  # type: ignore[attr-defined]
+    parameterization = object()
+    session.compile_parameterization_from_actions = (  # type: ignore[attr-defined]
+        lambda *_args: parameterization
+    )
+    experiments = FakeExperiments()
+    fit = object()
+    requests = (
+        ResamplingRequest(2, seed=11),
+        ResamplingRequest(3, seed=12),
+        ResamplingRequest(4, seed=13),
+    )
+    mcmc = McmcRequest(steps=10, burn=2, seed=14, thin=2, walkers=4, workers=2)
+    plan = MethodPlan(
+        FormatOrigin.V2,
+        (
+            StepPlan(
+                "STEP",
+                statistics=StatisticsPlan(*requests, mcmc),
+            ),
+        ),
+    )
+    calls: list[tuple[object, ...]] = []
+
+    def deterministic(
+        _experiments: object,
+        path: Path,
+        plot: str,
+        *,
+        parameterization: object,
+        search: object,
+        **_kwargs: object,
+    ) -> object:
+        calls.append(("deterministic", path, plot, parameterization, search))
+        return fit
+
+    def resampling(
+        _experiments: object,
+        path: Path,
+        kind: str,
+        request: ResamplingRequest,
+        actual_fit: object,
+        **_kwargs: object,
+    ) -> None:
+        calls.append((kind, path, request, actual_fit))
+
+    def run_mcmc(
+        _experiments: object,
+        actual_fit: object,
+        request: McmcRequest,
+        path: Path,
+        **_kwargs: object,
+    ) -> None:
+        calls.append(("mcmc", path, request, actual_fit))
+
+    monkeypatch.setattr(
+        method_execution_module,
+        "run_native_deterministic",
+        deterministic,
+    )
+    monkeypatch.setattr(method_execution_module, "run_native_resampling", resampling)
+    monkeypatch.setattr(method_execution_module, "run_native_mcmc", run_mcmc)
+
+    method_execution_module.execute_method_plan(
+        experiments,
+        plan,
+        Path("Output"),
+        "normal",
+        session=session,
+    )
+
+    assert calls == [
+        ("deterministic", Path("Output"), "normal", parameterization, None),
+        ("mc", Path("Output"), requests[0], fit),
+        ("bs", Path("Output"), requests[1], fit),
+        ("bsn", Path("Output"), requests[2], fit),
+        ("mcmc", Path("Output"), mcmc, fit),
+    ]
+
+
+def test_failed_plan_reinvocation_starts_fresh_from_committed_scientific_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = StubSession()
@@ -762,6 +904,8 @@ def test_failed_step_cannot_change_effective_roles_seen_by_a_retry(
         ),
     )
     compiled: list[tuple[object, ...]] = []
+    starting_revisions: list[int] = []
+    committed_revision = 0
     execution_count = 0
 
     def compile_actions(actions: tuple[object, ...], _required: set[str]) -> object:
@@ -769,19 +913,25 @@ def test_failed_step_cannot_change_effective_roles_seen_by_a_retry(
         return actions
 
     def fail_once(*_args: object, **_kwargs: object) -> None:
-        nonlocal execution_count
+        nonlocal committed_revision, execution_count
+        starting_revisions.append(committed_revision)
         execution_count += 1
         if execution_count == 2:
             raise RuntimeError("injected second-step failure")
+        committed_revision += 1
 
     session.compile_parameterization_from_actions = compile_actions  # type: ignore[attr-defined]
-    monkeypatch.setattr(fitting_module, "run_native_deterministic", fail_once)
+    monkeypatch.setattr(
+        method_execution_module,
+        "run_native_deterministic",
+        fail_once,
+    )
 
     with pytest.raises(RuntimeError, match="second-step failure"):
-        fitting_module.run_methods(
+        method_execution_module.execute_method_plan(
             experiments, plan, Path("Output"), "normal", session=session
         )
-    fitting_module.run_methods(
+    method_execution_module.execute_method_plan(
         experiments, plan, Path("Output"), "normal", session=session
     )
 
@@ -792,6 +942,8 @@ def test_failed_step_cannot_change_effective_roles_seen_by_a_retry(
         (fixed, fitted),
         (fixed,),
     ]
+    assert starting_revisions == [0, 1, 1, 2, 3]
+    assert committed_revision == 4
 
 
 @pytest.mark.parametrize("origin", tuple(FormatOrigin))
@@ -829,7 +981,6 @@ def test_run_methods_compiles_each_canonical_step_without_origin_or_store_state(
 
     def run_deterministic(
         _experiments: object,
-        _method: Method,
         path: Path,
         _plot: str,
         *,
@@ -846,12 +997,12 @@ def test_run_methods_compiles_each_canonical_step_without_origin_or_store_state(
         executed.append((path.name, parameterization))
 
     monkeypatch.setattr(
-        fitting_module,
+        method_execution_module,
         "run_native_deterministic",
         run_deterministic,
     )
 
-    fitting_module.run_methods(
+    method_execution_module.execute_method_plan(
         experiments,
         plan,
         Path("Output"),

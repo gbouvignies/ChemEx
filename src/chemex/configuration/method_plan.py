@@ -256,6 +256,9 @@ class ResamplingRequest:
     seed: int | None = None
 
 
+type ResamplingKind = Literal["mc", "bs", "bsn"]
+
+
 @dataclass(frozen=True, slots=True)
 class McmcRequest:
     steps: int

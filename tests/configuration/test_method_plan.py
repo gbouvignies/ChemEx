@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from chemex.configuration.method_input import prepare_method_plan
 from chemex.configuration.method_plan import (
     ConstrainAction,
     DeSearch,
@@ -15,7 +16,7 @@ from chemex.configuration.method_plan import (
     ProfileSelection,
 )
 from chemex.configuration.method_validation import resolve_grid_axes
-from chemex.configuration.methods import read_method_plan
+from chemex.configuration.methods import Method, Statistics, read_method_plan
 from chemex.parameters.parameterization import (
     ParameterDeclaration,
     SealedParameterDeclarations,
@@ -116,6 +117,59 @@ ROLES = [
     v2_plan = read_method_plan([v2])
 
     assert v1_plan.steps == v2_plan.steps
+
+
+def test_v1_v2_and_programmatic_methods_prepare_equivalent_execution_semantics(
+    tmp_path: Path,
+) -> None:
+    v1 = _write(
+        tmp_path / "v1.toml",
+        """
+[STEP]
+INCLUDE = ["1H"]
+
+[STEP.STATISTICS]
+MC = 2
+""",
+    )
+    v2 = _write(
+        tmp_path / "v2.toml",
+        """
+FORMAT_VERSION = 2
+
+[STEP]
+INCLUDE = ["1H"]
+
+[STEP.STATISTICS.MC]
+REPLICATES = 2
+SEED = 0
+""",
+    )
+    programmatic = {"STEP": Method(include=["1H"], statistics=Statistics(mc=2))}
+
+    v1_plan = read_method_plan([v1])
+    v2_plan = read_method_plan([v2])
+    methods_plan = prepare_method_plan(programmatic, _parameter_model())
+
+    assert v1_plan.steps == v2_plan.steps == methods_plan.steps
+
+
+def test_prepare_method_plan_validates_canonical_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = read_method_plan([])
+    parameter_model = _parameter_model()
+    validated: list[SealedParameterModel] = []
+    monkeypatch.setattr(
+        type(plan),
+        "validate",
+        lambda _plan, model: validated.append(model),
+    )
+
+    prepared = prepare_method_plan(plan, parameter_model)
+
+    assert prepared is plan
+    assert validated == [parameter_model]
 
 
 @pytest.mark.parametrize("format_version", (1, 2))

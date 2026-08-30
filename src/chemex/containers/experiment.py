@@ -7,9 +7,10 @@ from typing import Self
 
 import numpy as np
 
+from chemex.configuration.method_plan import ProfileSelection
 from chemex.configuration.methods import Selection
 from chemex.containers.profile import Profile
-from chemex.parameters.spin_system import Group
+from chemex.parameters.spin_system import Group, SpinSystem
 from chemex.plotters.plotter import Plotter
 from chemex.printers.data import Printer
 from chemex.uncertainty import estimate_noise_variance
@@ -70,9 +71,11 @@ class Experiment:
             for profile in sorted(self.profiles):
                 file_dat.write(str(profile))
 
-    def select(self, selection: Selection) -> None:
-        include = selection.include
-        exclude = selection.exclude
+    def _select_profiles(
+        self,
+        include: list[SpinSystem] | tuple[SpinSystem, ...] | str | None,
+        exclude: list[SpinSystem] | tuple[SpinSystem, ...] | str | None,
+    ) -> None:
         profiles_all = [*self.profiles, *self.filtered_profiles]
         profiles: list[Profile] = []
         filtered: list[Profile] = []
@@ -85,6 +88,25 @@ class Experiment:
                 filtered.append(profile)
         self.profiles = profiles
         self.filtered_profiles = filtered
+
+    def select(self, selection: Selection) -> None:
+        """Apply the legacy standalone selection interface."""
+        self._select_profiles(selection.include, selection.exclude)
+
+    def select_profiles(self, selection: ProfileSelection) -> None:
+        """Apply canonical step-local profile selection semantics."""
+
+        def resolve(
+            value: tuple[str, ...] | str | None,
+        ) -> tuple[SpinSystem, ...] | str | None:
+            if value is None or isinstance(value, str):
+                return value
+            return tuple(SpinSystem.from_name(name) for name in value)
+
+        self._select_profiles(
+            resolve(selection.include),
+            resolve(selection.exclude),
+        )
 
     def filter_from_values(self, parameter_values: Mapping[str, float]) -> None:
         """Apply profile filters from resolved native parameter values."""

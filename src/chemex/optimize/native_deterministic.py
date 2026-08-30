@@ -13,7 +13,6 @@ from chemex.configuration.method_validation import (
     resolve_de_coordinates,
     resolve_grid_axes,
 )
-from chemex.configuration.methods import Method
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import (
     EvaluationEngine,
@@ -557,12 +556,11 @@ def _commit_resolved_continuity_if_changed(
 
 def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product dispatcher
     experiments: Experiments,
-    method: Method,
     path: Path,
     plot: str,
     *,
     session: AnalysisSession,
-    parameterization: ActiveParameterization | None = None,
+    parameterization: ActiveParameterization,
     search: GridSearch | DeSearch | None = None,
     run_info: RunInfo | None = None,
     step_name: str = "DEFAULT",
@@ -573,11 +571,6 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     if parameter_model is None or configuration is None:
         raise RuntimeError("Native parameter configuration is unavailable")
 
-    if parameterization is None:
-        parameterization = session.compile_parameterization(
-            method,
-            experiments.param_ids,
-        )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     starting_snapshot = session.analysis_values.snapshot()
     if not _has_controlled_parameters(parameterization):

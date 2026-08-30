@@ -6,6 +6,7 @@ from argparse import Namespace
 from collections.abc import Sequence
 
 from chemex.cli import build_parser
+from chemex.configuration.method_input import prepare_method_plan
 from chemex.configuration.method_plan import (
     FormatOrigin,
     MethodFormatError,
@@ -26,8 +27,9 @@ from chemex.messages import (
     print_running_simulations,
     print_start_fit,
 )
-from chemex.optimize.fitting import invalidate_planned_outputs, run_methods
+from chemex.optimize.fitting import invalidate_planned_outputs
 from chemex.optimize.helper import execute_simulation
+from chemex.optimize.method_plan_execution import execute_method_plan
 from chemex.run_info import (
     InputFile,
     capture_input_files,
@@ -56,6 +58,7 @@ def run_fit(
     parameter_model = session.parameter_factory.sealed_parameter_model
     if parameter_model is None:
         raise RuntimeError("Native parameter model is unavailable")
+    plan = prepare_method_plan(methods, parameter_model)
     starting_values = session.analysis_values.snapshot()
     run_info = write_run_info(
         args,
@@ -68,7 +71,7 @@ def run_fit(
 
     try:
         try:
-            invalidate_planned_outputs(methods, args.output)
+            invalidate_planned_outputs(plan, args.output)
         except (Exception, KeyboardInterrupt) as error:
             mark_failure_stage(error, "output")
             raise
@@ -77,9 +80,9 @@ def run_fit(
         experiments.filter_from_values(resolved_values)
 
         print_start_fit()
-        run_methods(
+        execute_method_plan(
             experiments,
-            methods,
+            plan,
             args.output,
             args.plot,
             session=session,
@@ -189,9 +192,6 @@ def run(
         if construction_error is None:
             raise RuntimeError(msg)
         raise RuntimeError(f"{msg}: {construction_error}") from construction_error
-
-    if isinstance(methods, MethodPlan):
-        session.validate_method_plan(methods)
 
     if args.commands == "simulate":
         run_sim(args, experiments, session)

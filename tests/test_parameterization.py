@@ -14,7 +14,6 @@ import pytest
 
 from chemex import chemex as chemex_module
 from chemex.configuration.conditions import Conditions
-from chemex.configuration.method_execution import normalize_methods_for_execution
 from chemex.configuration.method_plan import (
     ConstrainAction,
     Constraint,
@@ -870,10 +869,9 @@ def test_binding_current_roles_compile_all_estimable_r2_b_coordinates() -> None:
         session.parameter_factory.native_construction_error
     )
     plan = read_method_plan([BINDING_METHOD])
-    _plan, operational = normalize_methods_for_execution(plan)
     effective_actions = plan.effective_role_actions()
 
-    experiments.select(operational["STEP1"].selection)
+    experiments.select_profiles(plan.steps[0].selection)
     step1 = session.compile_parameterization_from_actions(
         effective_actions["STEP1"],
         experiments.param_ids,
@@ -897,7 +895,7 @@ def test_binding_current_roles_compile_all_estimable_r2_b_coordinates() -> None:
         assert declaration.supports_estimation
         assert not declaration.model_owned
 
-    experiments.select(operational["STEP2"].selection)
+    experiments.select_profiles(plan.steps[1].selection)
     step2 = session.compile_parameterization_from_actions(
         effective_actions["STEP2"],
         experiments.param_ids,

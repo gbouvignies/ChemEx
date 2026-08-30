@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import secrets
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib.metadata import PackageNotFoundError, version
 from math import ceil
 from pathlib import Path
 from time import perf_counter
-from typing import NoReturn, cast
+from typing import Literal, NoReturn, cast
 
 import emcee.autocorr as emcee_autocorr
 import numpy as np
 
-from chemex.configuration.methods import McmcBurnSetting, McmcSettings
+from chemex.configuration.method_plan import McmcRequest
+from chemex.configuration.methods import McmcSettings
 from chemex.containers.experiments import Experiments
 from chemex.optimize.native_deterministic import NativeDeterministicFit
 from chemex.optimize.native_mcmc import (
@@ -31,11 +32,13 @@ from chemex.parameters.sealed import parameter_name_from_definition
 from chemex.runtime import ExecutionSettings
 from chemex.typing import Array
 
+type McmcBurnSetting = int | Literal["auto"]
+
 
 @dataclass(frozen=True)
 class EffectiveMcmcSettings:
     steps: int
-    burn: McmcBurnSetting
+    burn: int | Literal["auto"]
     thin: int
     walkers: int
     seed: int | None
@@ -121,13 +124,13 @@ class NativeMcmcIncompleteError(RuntimeError):
         self.autocorrelation_warning = autocorrelation_warning
 
 
-def resolve_mcmc_settings(
-    settings: McmcSettings,
+def resolve_mcmc_request(
+    request: McmcRequest,
     *,
     nvarys: int,
     execution: ExecutionSettings | None = None,
 ) -> EffectiveMcmcSettings:
-    walkers = settings.walkers or max(32, 2 * nvarys)
+    walkers = request.walkers or max(32, 2 * nvarys)
     min_walkers = 2 * nvarys
     if walkers < min_walkers:
         msg = (
@@ -136,19 +139,41 @@ def resolve_mcmc_settings(
         )
         raise ValueError(msg)
 
-    workers = settings.workers or (execution.workers if execution is not None else 1)
+    workers = request.workers or (execution.workers if execution is not None else 1)
     native_threads = execution.native_threads if execution is not None else None
 
     return EffectiveMcmcSettings(
-        steps=settings.steps,
-        burn=settings.burn,
-        thin=settings.thin,
+        steps=request.steps,
+        burn="auto" if request.burn is None else request.burn,
+        thin=request.thin,
         walkers=walkers,
-        seed=settings.seed,
+        seed=request.seed,
         workers=workers,
         native_threads=native_threads,
-        update_parameters=settings.update_parameters,
+        update_parameters=False,
     )
+
+
+def resolve_mcmc_settings(
+    settings: McmcSettings,
+    *,
+    nvarys: int,
+    execution: ExecutionSettings | None = None,
+) -> EffectiveMcmcSettings:
+    """Preserve the standalone legacy settings resolver compatibility surface."""
+    effective = resolve_mcmc_request(
+        McmcRequest(
+            steps=settings.steps,
+            burn=None if settings.burn == "auto" else settings.burn,
+            seed=settings.seed,
+            thin=settings.thin,
+            walkers=settings.walkers,
+            workers=settings.workers,
+        ),
+        nvarys=nvarys,
+        execution=execution,
+    )
+    return replace(effective, update_parameters=settings.update_parameters)
 
 
 def _format_parameter_ids(
@@ -892,15 +917,15 @@ def _native_result_from_evidence(
 def run_native_mcmc(
     experiments: Experiments,
     fit: NativeDeterministicFit,
-    settings: McmcSettings,
+    request: McmcRequest,
     path: Path,
     *,
     execution: ExecutionSettings | None = None,
     seed_recorder: Callable[[int], None] | None = None,
 ) -> McmcResult:
     """Run product MCMC directly from one committed native deterministic fit."""
-    effective = resolve_mcmc_settings(
-        settings,
+    effective = resolve_mcmc_request(
+        request,
         nvarys=len(fit.problem.controlled_ids),
         execution=execution,
     )
