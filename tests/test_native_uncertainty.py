@@ -40,12 +40,16 @@ from chemex.optimize.direct_trf import (
     execute_direct_trf,
 )
 from chemex.optimize.uncertainty import (
+    ClaimAssessment,
     ClaimState,
+    EvidenceFailure,
     FunctionAnalyticPartialCapability,
     FunctionFiniteDifferenceCapability,
     OperationTerminal,
     ParameterUnit,
     ResidualVarianceScaling,
+    RootAnchoredBlockCovariance,
+    ScalarEvidenceEntry,
     UncertaintyPolicy,
     compile_constraint_linearization_capabilities,
     derive_uncertainty_evidence,
@@ -81,7 +85,9 @@ def test_uncertainty_unavailability_vocabulary_is_exhaustive_and_truthful() -> N
         UncertaintyUnavailableKind.INSUFFICIENT_INFORMATION: (
             "insufficient information"
         ),
-        UncertaintyUnavailableKind.BOUNDARY_LIMITED: "boundary limited",
+        UncertaintyUnavailableKind.BOUNDARY_LIMITED: (
+            "boundary limited (active relaxation-PSD boundary)"
+        ),
         UncertaintyUnavailableKind.NORMALIZATION_INVALID: "normalization invalid",
         UncertaintyUnavailableKind.JACOBIAN_UNAVAILABLE: "Jacobian unavailable",
         UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE: (
@@ -1686,6 +1692,45 @@ def test_invalid_relaxation_anchor_has_no_public_uncertainty_stencil() -> None:
     assert any(
         failure.category == "active_relaxation_feasibility_boundary"
         for failure in evidence.failures
+    )
+    view = parameter_uncertainty_view(evidence)
+    expected_reason = "boundary limited (active relaxation-PSD boundary)"
+    assert view.unavailable_reason(controlled_id) == expected_reason
+    assert (
+        native_deterministic_module._uncertainty_progress_status(
+            evidence,
+            None,
+            view,
+            problem.controlled_ids,
+        )
+        == f"uncertainty unavailable: {expected_reason}"
+    )
+
+
+def test_active_relaxation_boundary_classifies_root_block_as_boundary_limited() -> None:
+    failure = EvidenceFailure(
+        "residual_linearization",
+        "active_relaxation_feasibility_boundary",
+        "active relaxation boundary",
+        "test-source",
+    )
+    block = RootAnchoredBlockCovariance(
+        controlled_ids=("__CONTROLLED",),
+        root_profile_indices=(0,),
+        rank=0,
+        jacobian_condition=None,
+        covariance=None,
+        factor=None,
+        marginal_errors=(ScalarEvidenceEntry("__CONTROLLED", None, "UNAVAILABLE"),),
+        correlations=(),
+        constrained_marginal_errors=(),
+        claims=(ClaimAssessment("USABLE_LOCAL_COVARIANCE", ClaimState.VIOLATED),),
+        failure=failure,
+    )
+
+    assert block.unavailable_kind is UncertaintyUnavailableKind.BOUNDARY_LIMITED
+    assert uncertainty_unavailable_reason(block.unavailable_kind) == (
+        "boundary limited (active relaxation-PSD boundary)"
     )
 
 

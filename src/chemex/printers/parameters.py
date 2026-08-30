@@ -53,7 +53,9 @@ class ParameterUncertaintyView:
 _UNAVAILABLE_REASON_TEXT = {
     UncertaintyUnavailableKind.RANK_DEFICIENT: "rank deficient",
     UncertaintyUnavailableKind.INSUFFICIENT_INFORMATION: "insufficient information",
-    UncertaintyUnavailableKind.BOUNDARY_LIMITED: "boundary limited",
+    UncertaintyUnavailableKind.BOUNDARY_LIMITED: (
+        "boundary limited (active relaxation-PSD boundary)"
+    ),
     UncertaintyUnavailableKind.NORMALIZATION_INVALID: "normalization invalid",
     UncertaintyUnavailableKind.JACOBIAN_UNAVAILABLE: "Jacobian unavailable",
     UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE: (
@@ -92,6 +94,8 @@ def _controlled_unavailability_kind(
         "non_positive_nominal_residual_degrees_of_freedom",
     }:
         return UncertaintyUnavailableKind.INSUFFICIENT_INFORMATION
+    if "active_relaxation_feasibility_boundary" in categories:
+        return UncertaintyUnavailableKind.BOUNDARY_LIMITED
     covariance = evidence.covariance
     if covariance is not None:
         claims = {item.name: item.state.value for item in covariance.claims}
