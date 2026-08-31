@@ -46,6 +46,60 @@ EXAMPLE = ROOT / "examples/Experiments/RELAXATION_HZNZ"
 EXPERIMENT = EXAMPLE / "Experiments/800mhz.toml"
 PARAMETERS = EXAMPLE / "Parameters/parameters.toml"
 METHOD = EXAMPLE / "Methods/method.toml"
+
+# Byte oracles captured from production at pre-refactor HEAD 7751974f. They are
+# intentionally data, not a second implementation of the statistical policy.
+_PRE_REFACTOR_MCMC_ARTIFACTS = {
+    "samples.tsv": b"""[R1A_A, NUC->G2N-H, B0->800.0MHZ]\tlnprob
+2.34489e+00\t-6.60902e+00
+2.34705e+00\t-6.60858e+00
+2.35082e+00\t-6.60939e+00
+2.34688e+00\t-6.60859e+00
+2.34329e+00\t-6.60978e+00
+2.34670e+00\t-6.60860e+00
+2.35092e+00\t-6.60944e+00
+2.34693e+00\t-6.60858e+00
+""",
+    "summary.toml": b"""["R1A_A, NUC->G2N-H, B0->800.0MHZ"]
+prior = "uniform"
+prior_lower = 1.00000e-01
+prior_upper = 5.00000e+00
+credible_interval = "95% equal-tailed"
+mean = 2.34718e+00
+standard_deviation = 2.62060e-03
+median = 2.34690e+00
+eti_95_lower = 2.34357e+00
+eti_95_upper = 2.35090e+00
+credible_interval_68_lower = 2.34509e+00
+credible_interval_68_upper = 2.35040e+00
+half_credible_interval_68_width = 2.65637e-03
+""",
+    "correlations.tsv": b"""parameter\t[R1A_A, NUC->G2N-H, B0->800.0MHZ]
+[R1A_A, NUC->G2N-H, B0->800.0MHZ]\t1.00000e+00
+""",
+}
+_PRE_REFACTOR_MC_ARTIFACTS = {
+    "samples.tsv": b"""[R1A_A, NUC->G2N-H, B0->800.0MHZ]\tchisqr
+2.45034e+00\t2.06655e+00
+2.34880e+00\t9.95161e+00
+2.28046e+00\t2.37925e+00
+""",
+    "summary.toml": b"""["R1A_A, NUC->G2N-H, B0->800.0MHZ"]
+interval = "95% percentile"
+sample_count = 3
+mean = 2.35987e+00
+standard_deviation = 8.54791e-02
+median = 2.34880e+00
+percentile_95_lower = 2.28388e+00
+percentile_95_upper = 2.44526e+00
+percentile_68_lower = 2.30215e+00
+percentile_68_upper = 2.41811e+00
+half_percentile_68_width = 5.79801e-02
+""",
+    "correlations.tsv": b"""parameter\t[R1A_A, NUC->G2N-H, B0->800.0MHZ]
+[R1A_A, NUC->G2N-H, B0->800.0MHZ]\t1.00000e+00
+""",
+}
 DCEST_EXAMPLE = ROOT / "examples/Experiments/DCEST_15N_HD_EXCH"
 DCEST_EXPERIMENT = DCEST_EXAMPLE / "Experiments/3hz.toml"
 DCEST_PARAMETERS = DCEST_EXAMPLE / "Parameters/parameters.toml"
@@ -1972,7 +2026,7 @@ def test_valid_automatic_mcmc_burn_publishes_normal_posterior_outputs(
         return np.array([1.0])
 
     with patch.object(
-        mcmc_module.emcee_autocorr,
+        native_mcmc_module.emcee.autocorr,
         "integrated_time",
         side_effect=valid_autocorrelation_time,
     ):
@@ -2012,7 +2066,7 @@ def test_valid_automatic_mcmc_burn_publishes_normal_posterior_outputs(
         ),
         (object(), "invalid", "unavailable"),
         (
-            mcmc_module.emcee_autocorr.AutocorrError(np.array([1.0])),
+            native_mcmc_module.emcee.autocorr.AutocorrError(np.array([1.0])),
             "unreliable",
             "unreliable_short_chain",
         ),
@@ -2070,7 +2124,7 @@ def test_automatic_mcmc_burn_failure_preserves_only_incomplete_raw_evidence(
     )
     with (
         patch.object(
-            mcmc_module.emcee_autocorr,
+            native_mcmc_module.emcee.autocorr,
             "integrated_time",
             **patch_kwargs,
         ),
@@ -2153,7 +2207,7 @@ def test_explicit_mcmc_burn_survives_autocorrelation_calculation_failure(
     parameters = _bounded_parameters(tmp_path / "parameters.toml")
 
     with patch.object(
-        mcmc_module.emcee_autocorr,
+        native_mcmc_module.emcee.autocorr,
         "integrated_time",
         side_effect=RuntimeError("autocorrelation backend failed"),
     ):
@@ -2187,7 +2241,7 @@ def test_real_compact_mcmc_fit_is_wholly_native_and_writes_products(
     with (
         patch.object(mcmc_module.secrets, "randbits", return_value=generated_seed),
         patch.object(
-            mcmc_module.emcee_autocorr,
+            native_mcmc_module.emcee.autocorr,
             "integrated_time",
             return_value=np.array([0.25]),
         ),
@@ -2301,13 +2355,10 @@ def test_seeded_nested_native_mcmc_replays_across_worker_counts(
         session=AnalysisSession.create(),
     )
 
-    serial_samples = (serial / "Statistics" / "MCMC" / "samples.tsv").read_text(
-        encoding="utf-8"
-    )
-    parallel_samples = (parallel / "Statistics" / "MCMC" / "samples.tsv").read_text(
-        encoding="utf-8"
-    )
-    assert serial_samples == parallel_samples
+    for artifact, oracle in _PRE_REFACTOR_MCMC_ARTIFACTS.items():
+        serial_artifact = (serial / "Statistics" / "MCMC" / artifact).read_bytes()
+        parallel_artifact = (parallel / "Statistics" / "MCMC" / artifact).read_bytes()
+        assert serial_artifact == parallel_artifact == oracle
     diagnostics = tomllib.loads(
         (parallel / "Statistics" / "MCMC" / "diagnostics.toml").read_text(
             encoding="utf-8"
@@ -2429,7 +2480,7 @@ def test_native_mcmc_postprocessing_failure_replaces_running_diagnostics(
     with (
         patch.object(
             mcmc_module,
-            "_native_result_from_evidence",
+            "derive_mcmc_analysis_result",
             side_effect=RuntimeError("missing acceptance diagnostics"),
         ),
         pytest.raises(RuntimeError, match="acceptance diagnostics"),
@@ -2672,13 +2723,12 @@ def test_seeded_native_mc_products_are_ordered_across_worker_counts(
     run(_fit_arguments(serial, method, workers=1), session=AnalysisSession.create())
     run(_fit_arguments(parallel, method, workers=2), session=AnalysisSession.create())
 
-    serial_samples = (serial / "Statistics" / "MonteCarlo" / "samples.tsv").read_text(
-        encoding="utf-8"
-    )
-    parallel_samples = (
-        parallel / "Statistics" / "MonteCarlo" / "samples.tsv"
-    ).read_text(encoding="utf-8")
-    assert serial_samples == parallel_samples
+    for artifact, oracle in _PRE_REFACTOR_MC_ARTIFACTS.items():
+        serial_artifact = (serial / "Statistics" / "MonteCarlo" / artifact).read_bytes()
+        parallel_artifact = (
+            parallel / "Statistics" / "MonteCarlo" / artifact
+        ).read_bytes()
+        assert serial_artifact == parallel_artifact == oracle
     parallel_diagnostics = (
         parallel / "Statistics" / "MonteCarlo" / "diagnostics.toml"
     ).read_text(encoding="utf-8")
@@ -2889,7 +2939,7 @@ def test_native_resampling_publication_failure_is_terminal_and_fail_closed(
     assert _read_outcome(output)["status"] == "incomplete"
 
 
-def test_native_resampling_materialization_failure_replaces_running_diagnostics(
+def test_native_resampling_result_failure_replaces_running_diagnostics(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
@@ -2898,10 +2948,10 @@ def test_native_resampling_materialization_failure_replaces_running_diagnostics(
     with (
         patch.object(
             resampling_module,
-            "_as_sample_array",
-            side_effect=RuntimeError("sample materialization failed"),
+            "derive_resampling_analysis_result",
+            side_effect=RuntimeError("Analysis Result construction failed"),
         ),
-        pytest.raises(RuntimeError, match="sample materialization failed"),
+        pytest.raises(RuntimeError, match="Analysis Result construction failed"),
     ):
         run(_fit_arguments(output, method), session=AnalysisSession.create())
 
@@ -2911,7 +2961,7 @@ def test_native_resampling_materialization_failure_replaces_running_diagnostics(
     )
     assert diagnostics["status"] == "incomplete"
     assert diagnostics["completed_samples"] == 1
-    assert diagnostics["failure_message"] == "sample materialization failed"
+    assert diagnostics["failure_message"] == "Analysis Result construction failed"
     assert not (statistics / "samples.tsv").exists()
     assert not (statistics / "summary.toml").exists()
     assert not (statistics / "correlations.tsv").exists()

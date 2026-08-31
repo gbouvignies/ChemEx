@@ -4,12 +4,10 @@ import secrets
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from importlib.metadata import PackageNotFoundError, version
-from math import ceil
 from pathlib import Path
 from time import perf_counter
-from typing import Literal, NoReturn, cast
+from typing import Literal, cast
 
-import emcee.autocorr as emcee_autocorr
 import numpy as np
 
 from chemex.configuration.method_plan import McmcRequest
@@ -17,12 +15,17 @@ from chemex.configuration.methods import McmcSettings
 from chemex.containers.experiments import Experiments
 from chemex.optimize.native_deterministic import NativeDeterministicFit
 from chemex.optimize.native_mcmc import (
-    McmcDiagnosticStatus,
+    McmcAcceptanceSummary,
+    McmcAnalysisFailureCategory,
+    McmcAnalysisResult,
+    McmcAnalysisStatus,
+    McmcAutocorrelationReport,
     McmcEvidence,
     McmcOperationTerminal,
     McmcPlan,
-    derive_mcmc_diagnostics,
+    derive_mcmc_analysis_result,
     execute_mcmc_evidence,
+    product_mcmc_invalid_bound_ids,
     resolve_product_mcmc_policy,
 )
 from chemex.optimize.statistics_plot import write_mcmc_plots
@@ -45,48 +48,6 @@ class EffectiveMcmcSettings:
     workers: int
     native_threads: int | None
     update_parameters: bool
-
-
-@dataclass(frozen=True)
-class McmcSummary:
-    parameter_id: str
-    mean: float
-    standard_deviation: float
-    median: float
-    eti_95_lower: float
-    eti_95_upper: float
-    credible_interval_68_lower: float
-    credible_interval_68_upper: float
-    half_credible_interval_68_width: float
-    effective_sample_size: float | None = None
-    mcse_mean: float | None = None
-
-
-@dataclass(frozen=True)
-class McmcResult:
-    var_names: tuple[str, ...]
-    chain: Array
-    lnprob: Array
-    summary: tuple[McmcSummary, ...]
-    correlations: Array
-    acceptance_fraction: Array
-    autocorrelation_time: Array | None
-    discarded_steps: int
-    burn_in_warning: str | None
-    tentative_autocorrelation_time: Array | None = None
-    autocorrelation_warning: str | None = None
-    raw_chain: Array | None = None
-    raw_lnprob: Array | None = None
-
-    @property
-    def samples(self) -> Array:
-        """Return the flattened retained chain."""
-        return self.chain.reshape((-1, len(self.var_names)))
-
-    @property
-    def log_probabilities(self) -> Array:
-        """Return the flattened retained log probabilities."""
-        return self.lnprob.reshape(-1)
 
 
 _TIMING_KEYS = (
@@ -122,6 +83,36 @@ class NativeMcmcIncompleteError(RuntimeError):
         self.autocorrelation_time = autocorrelation_time
         self.autocorrelation_time_reliable = autocorrelation_time_reliable
         self.autocorrelation_warning = autocorrelation_warning
+
+
+def _compatibility_error_from_result(
+    result: McmcAnalysisResult,
+) -> NativeMcmcIncompleteError:
+    failure = result.failure
+    if failure is None:
+        raise RuntimeError("Incomplete MCMC Analysis Result has no typed failure")
+    report = result.autocorrelation_report
+    autocorrelation_time = (
+        None
+        if report is None or report.values is None
+        else np.asarray(report.values, dtype=float)
+    )
+    autocorrelation_warning = (
+        None
+        if failure.category
+        is McmcAnalysisFailureCategory.ACCEPTANCE_DIAGNOSTICS_UNAVAILABLE
+        or report is None
+        else report.warning
+    )
+    completed_steps = result.evidence.completed_transition_count
+    return NativeMcmcIncompleteError(
+        failure.message,
+        completed_steps=completed_steps,
+        preserve_raw_evidence=failure.preserve_raw_evidence,
+        autocorrelation_time=autocorrelation_time,
+        autocorrelation_time_reliable=report is not None and report.reliable,
+        autocorrelation_warning=autocorrelation_warning,
+    )
 
 
 def resolve_mcmc_request(
@@ -186,162 +177,6 @@ def _format_parameter_ids(
     )
 
 
-def _summarize_chain(
-    var_names: tuple[str, ...],
-    samples: Array,
-    autocorrelation_time: Array | None,
-    thin: int,
-) -> tuple[McmcSummary, ...]:
-    quantiles = np.percentile(samples, [2.5, 15.87, 50.0, 84.13, 97.5], axis=0)
-    summaries: list[McmcSummary] = []
-    for index, name in enumerate(var_names):
-        lower_95, lower_68, median, upper_68, upper_95 = quantiles[:, index]
-        values = samples[:, index]
-        standard_deviation = float(np.std(values, ddof=1)) if len(values) > 1 else 0.0
-        effective_sample_size = None
-        mcse_mean = None
-        if autocorrelation_time is not None:
-            tau = float(autocorrelation_time[index])
-            if np.isfinite(tau) and tau > 0.0:
-                tau_in_retained_steps = max(tau / thin, 1.0)
-                effective_sample_size = len(values) / tau_in_retained_steps
-                mcse_mean = standard_deviation / np.sqrt(effective_sample_size)
-        summaries.append(
-            McmcSummary(
-                parameter_id=name,
-                mean=float(np.mean(values)),
-                standard_deviation=standard_deviation,
-                median=float(median),
-                eti_95_lower=float(lower_95),
-                eti_95_upper=float(upper_95),
-                credible_interval_68_lower=float(lower_68),
-                credible_interval_68_upper=float(upper_68),
-                half_credible_interval_68_width=0.5 * float(upper_68 - lower_68),
-                effective_sample_size=effective_sample_size,
-                mcse_mean=mcse_mean,
-            ),
-        )
-    return tuple(summaries)
-
-
-def _correlation_matrix(samples: Array) -> Array:
-    if samples.shape[1] == 1:
-        return np.ones((1, 1), dtype=float)
-    return np.corrcoef(samples, rowvar=False)
-
-
-def _valid_autocorrelation_time(autocorrelation_time: object) -> Array | None:
-    try:
-        autocorrelation_time = np.asarray(
-            cast("Array", autocorrelation_time),
-            dtype=float,
-        )
-    except (TypeError, ValueError, OverflowError):
-        return None
-    if (
-        autocorrelation_time.ndim != 1
-        or not np.all(np.isfinite(autocorrelation_time))
-        or np.any(autocorrelation_time <= 0.0)
-    ):
-        return None
-    return autocorrelation_time
-
-
-def _estimate_autocorrelation_time(
-    chain: Array,
-) -> tuple[Array | None, Array | None, str | None]:
-    try:
-        autocorrelation_time = emcee_autocorr.integrated_time(chain, quiet=False)
-    except emcee_autocorr.AutocorrError as error:
-        tentative_autocorrelation_time = _valid_autocorrelation_time(error.tau)
-        if tentative_autocorrelation_time is None:
-            return None, None, "autocorrelation time unavailable"
-        return (
-            None,
-            tentative_autocorrelation_time,
-            (
-                "chain shorter than 50 times the autocorrelation time; "
-                "tentative estimate reported"
-            ),
-        )
-    except Exception as error:  # noqa: BLE001 - optional diagnostic boundary
-        message = str(error).replace("\n", " ")
-        return (
-            None,
-            None,
-            (f"autocorrelation calculation failed: {type(error).__name__}: {message}"),
-        )
-
-    autocorrelation_time = _valid_autocorrelation_time(autocorrelation_time)
-    if autocorrelation_time is None:
-        return None, None, "autocorrelation time invalid"
-    return autocorrelation_time, None, None
-
-
-def _resolve_discarded_steps(
-    burn: McmcBurnSetting,
-    *,
-    nsteps: int,
-    nparameters: int,
-    autocorrelation_time: Array | None,
-    autocorrelation_time_reliable: bool = True,
-    autocorrelation_failure_reason: str | None = None,
-) -> tuple[int, str | None]:
-    if burn != "auto":
-        return int(burn), None
-
-    def fail(reason: str) -> NoReturn:
-        raise NativeMcmcIncompleteError(
-            f"automatic burn-in failed because {reason}; authoritative MCMC "
-            "posterior summarization was withheld",
-            completed_steps=nsteps,
-            preserve_raw_evidence=True,
-            autocorrelation_time=autocorrelation_time,
-            autocorrelation_time_reliable=autocorrelation_time_reliable,
-            autocorrelation_warning=autocorrelation_failure_reason or reason,
-        )
-
-    if autocorrelation_time is None:
-        fail(autocorrelation_failure_reason or "autocorrelation time unavailable")
-    if autocorrelation_time.shape != (nparameters,):
-        fail("autocorrelation time has an invalid shape")
-    max_tau = float(np.max(autocorrelation_time))
-    if not np.isfinite(max_tau) or max_tau <= 0.0:
-        fail("autocorrelation time invalid")
-    if not autocorrelation_time_reliable:
-        fail("the autocorrelation time estimate is unreliable")
-    discarded_steps = ceil(2.0 * max_tau)
-    if discarded_steps >= nsteps:
-        fail("the calculated discard does not leave a retained chain")
-    return discarded_steps, None
-
-
-def _apply_sample_window(
-    chain: Array,
-    lnprob: Array,
-    *,
-    burn: McmcBurnSetting,
-    thin: int,
-    autocorrelation_time: Array | None,
-    autocorrelation_time_reliable: bool = True,
-    autocorrelation_failure_reason: str | None = None,
-) -> tuple[Array, Array, int, str | None]:
-    discarded_steps, warning = _resolve_discarded_steps(
-        burn,
-        nsteps=chain.shape[0],
-        nparameters=chain.shape[2],
-        autocorrelation_time=autocorrelation_time,
-        autocorrelation_time_reliable=autocorrelation_time_reliable,
-        autocorrelation_failure_reason=autocorrelation_failure_reason,
-    )
-    retained_chain = chain[discarded_steps::thin]
-    retained_lnprob = lnprob[discarded_steps::thin]
-    if retained_chain.shape[0] < 1:
-        msg = "MCMC settings did not retain any samples"
-        raise ValueError(msg)
-    return retained_chain, retained_lnprob, discarded_steps, warning
-
-
 def _quote_toml_string(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -369,107 +204,51 @@ def _package_version(package_name: str) -> str:
         return "unknown"
 
 
-def _autocorrelation_status(result: McmcResult) -> str:
-    if result.autocorrelation_time is not None:
-        return "reliable"
-    if result.tentative_autocorrelation_time is not None:
-        return "unreliable_short_chain"
-    return "unavailable"
-
-
-def _autocorrelation_steps(
-    result: McmcResult,
-    settings: EffectiveMcmcSettings,
-) -> int:
-    if result.raw_chain is not None:
-        return int(result.raw_chain.shape[0])
-    return int(result.discarded_steps + result.chain.shape[0] * settings.thin)
-
-
-def _autocorrelation_time_for_reporting(
-    result: McmcResult,
-) -> tuple[Array | None, bool]:
-    if result.autocorrelation_time is not None:
-        return result.autocorrelation_time, True
-    if result.tentative_autocorrelation_time is not None:
-        return result.tentative_autocorrelation_time, False
-    return None, False
-
-
 def _extend_autocorrelation_diagnostics(
     lines: list[str],
-    result: McmcResult,
-    settings: EffectiveMcmcSettings,
+    report: McmcAutocorrelationReport,
 ) -> None:
-    autocorrelation_time, is_reliable = _autocorrelation_time_for_reporting(result)
-    if autocorrelation_time is None:
-        warning = result.autocorrelation_warning or "not available"
+    if report.values is None:
+        warning = report.warning or "not available"
         lines.append(f"autocorrelation_warning = {_quote_toml_string(warning)}")
         return
 
-    max_tau = float(np.max(autocorrelation_time))
-    suffix = "" if is_reliable else "_tentative"
+    suffix = "" if report.reliable else "_tentative"
+    maximum = cast("float", report.maximum)
+    sampled_steps_over_maximum = cast(
+        "float",
+        report.sampled_steps_over_maximum,
+    )
     tau_key = f"autocorrelation_time{suffix}"
     max_tau_key = f"max_autocorrelation_time{suffix}"
     lines.extend(
         [
-            f"{tau_key} = {_format_toml_float_list(autocorrelation_time.tolist())}",
-            f"{max_tau_key} = {_format_toml_float(max_tau)}",
-        ],
-    )
-    if max_tau <= 0.0:
-        lines.append('autocorrelation_warning = "autocorrelation time is not positive"')
-        return
-
-    autocorrelation_steps = _autocorrelation_steps(result, settings)
-    lines.extend(
-        [
+            f"{tau_key} = {_format_toml_float_list(list(report.values))}",
+            f"{max_tau_key} = {_format_toml_float(maximum)}",
             (
                 "steps_over_max_autocorrelation_time = "
-                f"{_format_toml_float(autocorrelation_steps / max_tau)}"
+                f"{_format_toml_float(sampled_steps_over_maximum)}"
             ),
-            f"recommended_min_steps_50tau = {ceil(50.0 * max_tau)}",
-            f"recommended_min_steps_100tau = {ceil(100.0 * max_tau)}",
+            f"recommended_min_steps_50tau = {report.recommended_min_steps_50tau}",
+            f"recommended_min_steps_100tau = {report.recommended_min_steps_100tau}",
         ],
     )
-    if not is_reliable:
-        warning = (
-            result.autocorrelation_warning
-            or "chain shorter than 50 times the autocorrelation time"
+    if report.retained_steps_over_maximum is not None:
+        lines.append(
+            "retained_steps_over_max_autocorrelation_time = "
+            f"{_format_toml_float(report.retained_steps_over_maximum)}"
         )
-        lines.extend(
-            [
-                f"autocorrelation_warning = {_quote_toml_string(warning)}",
-                (
-                    'effective_sample_size_warning = "not reported: autocorrelation time '
-                    'estimate is unreliable"'
-                ),
-            ],
-        )
-        return
-
-    retained_steps_over_tau = result.chain.shape[0] * settings.thin / max_tau
-    min_effective_sample_size = min(
-        (
-            summary.effective_sample_size
-            for summary in result.summary
-            if summary.effective_sample_size is not None
-        ),
-        default=None,
-    )
-    lines.append(
-        "retained_steps_over_max_autocorrelation_time = "
-        f"{_format_toml_float(retained_steps_over_tau)}",
-    )
-    if min_effective_sample_size is not None:
+    if report.minimum_effective_sample_size is not None:
         lines.append(
             "min_effective_sample_size = "
-            f"{_format_toml_float(min_effective_sample_size)}",
+            f"{_format_toml_float(report.minimum_effective_sample_size)}",
         )
-    if retained_steps_over_tau < 50.0:
+    if report.warning is not None:
+        lines.append(f"autocorrelation_warning = {_quote_toml_string(report.warning)}")
+    if report.effective_sample_size_warning is not None:
         lines.append(
-            'autocorrelation_warning = "Retained chain length is shorter '
-            'than 50 times the maximum autocorrelation time."',
+            "effective_sample_size_warning = "
+            f"{_quote_toml_string(report.effective_sample_size_warning)}"
         )
 
 
@@ -485,7 +264,7 @@ def _extend_timing_diagnostics(
 
 
 def _write_summary(
-    result: McmcResult,
+    result: McmcAnalysisResult,
     path: Path,
     parameter_model: SealedParameterModel,
 ) -> None:
@@ -495,13 +274,16 @@ def _write_summary(
         parameter_name = str(
             parameter_name_from_definition(parameter_model.definitions[param_id])
         ).strip("[]")
-        configuration = parameter_model.configuration[param_id]
+        if summary.prior_lower is None or summary.prior_upper is None:
+            raise RuntimeError(
+                "Authoritative MCMC Summary has no resolved prior bounds"
+            )
         lines.extend(
             [
                 f"[{_quote_toml_string(parameter_name)}]",
                 'prior = "uniform"',
-                f"prior_lower = {_format_toml_float(configuration.lower_bound)}",
-                f"prior_upper = {_format_toml_float(configuration.upper_bound)}",
+                f"prior_lower = {_format_toml_float(summary.prior_lower)}",
+                f"prior_upper = {_format_toml_float(summary.prior_upper)}",
                 'credible_interval = "95% equal-tailed"',
                 f"mean = {_format_toml_float(summary.mean)}",
                 f"standard_deviation = {_format_toml_float(summary.standard_deviation)}",
@@ -534,7 +316,7 @@ def _write_summary(
 
 
 def _write_samples(
-    result: McmcResult,
+    result: McmcAnalysisResult,
     path: Path,
     parameter_model: SealedParameterModel,
 ) -> None:
@@ -565,82 +347,21 @@ def _write_raw_chain_evidence(
                 )
 
 
-def _extend_acceptance_diagnostics(lines: list[str], acceptance: Array) -> None:
-    lines.extend(
-        (
-            (
-                "acceptance_fraction_mean = "
-                f"{_format_toml_float(float(np.mean(acceptance)))}"
-            ),
-            (
-                "acceptance_fraction_min = "
-                f"{_format_toml_float(float(np.min(acceptance)))}"
-            ),
-            (
-                "acceptance_fraction_max = "
-                f"{_format_toml_float(float(np.max(acceptance)))}"
-            ),
-        )
-    )
-
-
-def _extend_incomplete_autocorrelation_diagnostics(
+def _extend_acceptance_diagnostics(
     lines: list[str],
-    error: NativeMcmcIncompleteError,
-    *,
-    nparameters: int,
-    sampled_steps: int,
+    acceptance: McmcAcceptanceSummary,
 ) -> None:
-    autocorrelation_time = error.autocorrelation_time
-    valid_shape = autocorrelation_time is not None and autocorrelation_time.shape == (
-        nparameters,
-    )
-    if not valid_shape:
-        status = "invalid" if autocorrelation_time is not None else "unavailable"
-        lines.extend(
-            (
-                f"autocorrelation_status = {_quote_toml_string(status)}",
-                (
-                    "autocorrelation_warning = "
-                    f"{_quote_toml_string(error.autocorrelation_warning or 'not available')}"
-                ),
-            )
-        )
-        return
-
-    reliable = error.autocorrelation_time_reliable
-    suffix = "" if reliable else "_tentative"
-    status = "reliable" if reliable else "unreliable_short_chain"
-    max_tau = float(np.max(autocorrelation_time))
     lines.extend(
         (
-            f"autocorrelation_status = {_quote_toml_string(status)}",
-            (
-                f"autocorrelation_time{suffix} = "
-                f"{_format_toml_float_list(autocorrelation_time.tolist())}"
-            ),
-            f"max_autocorrelation_time{suffix} = {_format_toml_float(max_tau)}",
-            (
-                "steps_over_max_autocorrelation_time = "
-                f"{_format_toml_float(sampled_steps / max_tau)}"
-            ),
-            f"recommended_min_steps_50tau = {ceil(50.0 * max_tau)}",
-            f"recommended_min_steps_100tau = {ceil(100.0 * max_tau)}",
-            (
-                "autocorrelation_warning = "
-                f"{_quote_toml_string(error.autocorrelation_warning or str(error))}"
-            ),
+            (f"acceptance_fraction_mean = {_format_toml_float(acceptance.mean)}"),
+            (f"acceptance_fraction_min = {_format_toml_float(acceptance.minimum)}"),
+            (f"acceptance_fraction_max = {_format_toml_float(acceptance.maximum)}"),
         )
     )
-    if not reliable:
-        lines.append(
-            'effective_sample_size_warning = "not reported: autocorrelation time '
-            'estimate is unreliable"'
-        )
 
 
 def _write_correlations(
-    result: McmcResult,
+    result: McmcAnalysisResult,
     path: Path,
     parameter_model: SealedParameterModel,
 ) -> None:
@@ -658,7 +379,7 @@ def _write_correlations(
 
 
 def _write_diagnostics(
-    result: McmcResult,
+    result: McmcAnalysisResult,
     settings: EffectiveMcmcSettings,
     path: Path,
     timings: Mapping[str, float],
@@ -666,7 +387,12 @@ def _write_diagnostics(
     engine: str,
     root_seed: int | None = None,
 ) -> None:
-    acceptance = result.acceptance_fraction
+    acceptance = result.acceptance_summary
+    autocorrelation = result.autocorrelation_report
+    if acceptance is None or autocorrelation is None:
+        raise RuntimeError(
+            "Authoritative MCMC Analysis Result has no publication diagnostics"
+        )
     requested_burn = '"auto"' if settings.burn == "auto" else str(settings.burn)
     lines = [
         'status = "complete"',
@@ -675,7 +401,7 @@ def _write_diagnostics(
         f"emcee_version = {_quote_toml_string(_package_version('emcee'))}",
         'credible_interval = "95% equal-tailed"',
         'convergence_diagnostic = "integrated_autocorrelation_time"',
-        f"autocorrelation_status = {_quote_toml_string(_autocorrelation_status(result))}",
+        f"autocorrelation_status = {_quote_toml_string(autocorrelation.status)}",
         'rhat = "not computed: emcee ensemble walkers are not independent chains"',
         f"steps = {settings.steps}",
         f"requested_burn = {requested_burn}",
@@ -683,8 +409,8 @@ def _write_diagnostics(
         f"thin = {settings.thin}",
         f"walkers = {settings.walkers}",
         f"workers = {settings.workers}",
-        f"retained_steps = {result.chain.shape[0]}",
-        f"retained_samples = {len(result.samples)}",
+        f"retained_steps = {result.retained_step_count}",
+        f"retained_samples = {result.retained_sample_count}",
         'samples_file = "samples.tsv"',
         'summary_file = "summary.toml"',
         'correlations_file = "correlations.tsv"',
@@ -694,15 +420,13 @@ def _write_diagnostics(
     lines.append("unbounded_parameters = []")
     if root_seed is not None:
         lines.append(f"root_seed = {root_seed}")
-    if result.burn_in_warning is not None:
-        lines.append(f"burn_in_warning = {_quote_toml_string(result.burn_in_warning)}")
-    _extend_autocorrelation_diagnostics(lines, result, settings)
+    _extend_autocorrelation_diagnostics(lines, autocorrelation)
     _extend_timing_diagnostics(lines, timings)
     (path / "diagnostics.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def write_mcmc_outputs(
-    result: McmcResult,
+    result: McmcAnalysisResult,
     settings: EffectiveMcmcSettings,
     path: Path,
     parameter_model: SealedParameterModel,
@@ -776,6 +500,7 @@ def _write_native_mcmc_state_diagnostics(
     completed_steps: int | None = None,
     failure: BaseException | None = None,
     raw_evidence: McmcEvidence | None = None,
+    analysis_result: McmcAnalysisResult | None = None,
     timings: Mapping[str, float] | None = None,
 ) -> None:
     requested_burn = '"auto"' if settings.burn == "auto" else str(settings.burn)
@@ -804,8 +529,12 @@ def _write_native_mcmc_state_diagnostics(
             )
         )
     if raw_evidence is not None:
-        raw_steps = raw_evidence.completed_transition_count
-        raw_samples = sum(len(state.positions) for state in raw_evidence.states[1:])
+        if analysis_result is None:
+            raise RuntimeError(
+                "Diagnostic MCMC Evidence has no authoritative Analysis Result"
+            )
+        raw_steps = analysis_result.raw_step_count
+        raw_samples = analysis_result.raw_sample_count
         lines.extend(
             (
                 (
@@ -823,95 +552,20 @@ def _write_native_mcmc_state_diagnostics(
                 'rhat = "not computed: emcee ensemble walkers are not independent chains"',
             )
         )
-        diagnostics = derive_mcmc_diagnostics(raw_evidence)
-        if (
-            diagnostics.status is McmcDiagnosticStatus.AVAILABLE
-            and diagnostics.acceptance_fractions is not None
-        ):
-            _extend_acceptance_diagnostics(
-                lines,
-                np.asarray(diagnostics.acceptance_fractions, dtype=float),
+        if analysis_result.acceptance_summary is not None:
+            _extend_acceptance_diagnostics(lines, analysis_result.acceptance_summary)
+        if analysis_result.autocorrelation_report is not None:
+            lines.append(
+                "autocorrelation_status = "
+                f"{_quote_toml_string(analysis_result.autocorrelation_report.status)}"
             )
-        if isinstance(failure, NativeMcmcIncompleteError):
-            _extend_incomplete_autocorrelation_diagnostics(
+            _extend_autocorrelation_diagnostics(
                 lines,
-                failure,
-                nparameters=len(parameter_ids),
-                sampled_steps=raw_steps,
+                analysis_result.autocorrelation_report,
             )
     if timings is not None:
         _extend_timing_diagnostics(lines, timings)
     (path / "diagnostics.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def _raw_arrays_from_evidence(evidence: McmcEvidence) -> tuple[Array, Array]:
-    return (
-        np.asarray([state.positions for state in evidence.states[1:]], dtype=float),
-        np.asarray(
-            [state.log_densities for state in evidence.states[1:]],
-            dtype=float,
-        ),
-    )
-
-
-def _native_result_from_evidence(
-    evidence: McmcEvidence,
-    settings: EffectiveMcmcSettings,
-) -> McmcResult:
-    raw_chain, raw_lnprob = _raw_arrays_from_evidence(evidence)
-    diagnostics = derive_mcmc_diagnostics(evidence)
-    if (
-        diagnostics.status is not McmcDiagnosticStatus.AVAILABLE
-        or diagnostics.acceptance_fractions is None
-    ):
-        msg = "Native MCMC completed without authoritative acceptance diagnostics"
-        raise NativeMcmcIncompleteError(
-            msg,
-            completed_steps=evidence.completed_transition_count,
-        )
-    autocorrelation_time, tentative_autocorrelation_time, autocorrelation_warning = (
-        _estimate_autocorrelation_time(raw_chain)
-    )
-    burn_autocorrelation_time = (
-        autocorrelation_time
-        if autocorrelation_time is not None
-        else tentative_autocorrelation_time
-    )
-    retained_chain, retained_lnprob, discarded_steps, burn_in_warning = (
-        _apply_sample_window(
-            raw_chain,
-            raw_lnprob,
-            burn=settings.burn,
-            thin=settings.thin,
-            autocorrelation_time=burn_autocorrelation_time,
-            autocorrelation_time_reliable=autocorrelation_time is not None,
-            autocorrelation_failure_reason=autocorrelation_warning,
-        )
-    )
-    samples = retained_chain.reshape((-1, len(evidence.coordinate_ids)))
-    return McmcResult(
-        var_names=evidence.coordinate_ids,
-        chain=retained_chain,
-        lnprob=retained_lnprob,
-        summary=_summarize_chain(
-            evidence.coordinate_ids,
-            samples,
-            autocorrelation_time,
-            settings.thin,
-        ),
-        correlations=_correlation_matrix(samples),
-        acceptance_fraction=np.asarray(
-            diagnostics.acceptance_fractions,
-            dtype=float,
-        ),
-        autocorrelation_time=autocorrelation_time,
-        discarded_steps=discarded_steps,
-        burn_in_warning=burn_in_warning,
-        tentative_autocorrelation_time=tentative_autocorrelation_time,
-        autocorrelation_warning=autocorrelation_warning,
-        raw_chain=raw_chain,
-        raw_lnprob=raw_lnprob,
-    )
 
 
 def run_native_mcmc(
@@ -922,7 +576,7 @@ def run_native_mcmc(
     *,
     execution: ExecutionSettings | None = None,
     seed_recorder: Callable[[int], None] | None = None,
-) -> McmcResult:
+) -> McmcAnalysisResult:
     """Run product MCMC directly from one committed native deterministic fit."""
     effective = resolve_mcmc_request(
         request,
@@ -942,20 +596,10 @@ def run_native_mcmc(
         parameter_ids=fit.problem.controlled_ids,
         status="running",
     )
-    lower = np.asarray(fit.problem.lower_bounds, dtype=float)
-    upper = np.asarray(fit.problem.upper_bounds, dtype=float)
-    invalid_bounds = ~np.isfinite(lower) | ~np.isfinite(upper) | (lower >= upper)
-    if np.any(invalid_bounds):
+    invalid_bound_ids = product_mcmc_invalid_bound_ids(fit.problem)
+    if invalid_bound_ids:
         parameter_names = _format_parameter_ids(
-            tuple(
-                param_id
-                for param_id, invalid in zip(
-                    fit.problem.controlled_ids,
-                    invalid_bounds,
-                    strict=True,
-                )
-                if invalid
-            ),
+            invalid_bound_ids,
             fit.parameter_model,
         )
         error = ValueError(
@@ -977,6 +621,7 @@ def run_native_mcmc(
     timings: dict[str, float] = {}
     completed_steps = 0
     mcmc_evidence: McmcEvidence | None = None
+    analysis_result: McmcAnalysisResult | None = None
     try:
         policy = resolve_product_mcmc_policy(
             dimension=len(fit.problem.controlled_ids),
@@ -1023,11 +668,17 @@ def run_native_mcmc(
             raise error
         phase_start = perf_counter()
         try:
-            result = _native_result_from_evidence(operation.evidence, effective)
+            analysis_result = derive_mcmc_analysis_result(
+                operation.evidence,
+                request,
+                fit.parameter_model,
+            )
         finally:
             timings["result_processing_seconds"] = perf_counter() - phase_start
+        if analysis_result.status is McmcAnalysisStatus.INCOMPLETE:
+            raise _compatibility_error_from_result(analysis_result)
         write_mcmc_outputs(
-            result,
+            analysis_result,
             effective,
             path,
             fit.parameter_model,
@@ -1038,7 +689,12 @@ def run_native_mcmc(
     except (Exception, KeyboardInterrupt) as error:
         _clear_mcmc_artifacts(statistic_path)
         raw_evidence = (
-            mcmc_evidence
+            analysis_result.evidence
+            if analysis_result is not None
+            and analysis_result.status is McmcAnalysisStatus.INCOMPLETE
+            and analysis_result.failure is not None
+            and analysis_result.failure.preserve_raw_evidence
+            else mcmc_evidence
             if isinstance(error, NativeMcmcIncompleteError)
             and error.preserve_raw_evidence
             else None
@@ -1067,8 +723,9 @@ def run_native_mcmc(
             completed_steps=failure_completed_steps,
             failure=error,
             raw_evidence=raw_evidence,
+            analysis_result=analysis_result,
             timings=timings,
         )
         raise
     else:
-        return result
+        return analysis_result

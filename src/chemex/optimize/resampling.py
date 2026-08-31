@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 
@@ -13,14 +13,22 @@ from chemex.atomic import write_text_atomic
 from chemex.configuration.method_plan import ResamplingKind, ResamplingRequest
 from chemex.containers.experiments import Experiments
 from chemex.messages import print_running_statistics
+from chemex.optimize.direct_trf import AcceptedFitResult
 from chemex.optimize.native_deterministic import NativeDeterministicFit
 from chemex.optimize.native_resampling import (
     OperationTerminal,
     ReplicateDisposition,
     ReplicateOutcome,
+    ResamplingAnalysisResult,
+    ResamplingAnalysisSample,
+    ResamplingAnalysisStatus,
+    ResamplingAnalysisSummary,
     ResamplingDatasetManifest,
+    ResamplingOperation,
     ResamplingPlan,
     ResamplingScheme,
+    derive_resampling_analysis_result,
+    derive_resampling_diagnostic_samples,
     execute_resampling_evidence,
 )
 from chemex.optimize.statistics_plot import write_resampling_plots
@@ -39,6 +47,21 @@ class _ResamplingMethod:
 
 class NativeResamplingIncompleteError(RuntimeError):
     """Raised after truthful incomplete native statistics have been published."""
+
+
+def _resampling_result_and_samples(
+    operation: ResamplingOperation,
+    accepted: AcceptedFitResult,
+    method_message: str,
+) -> tuple[ResamplingAnalysisResult | None, Sequence[ResamplingAnalysisSample]]:
+    if operation.terminal is OperationTerminal.INTERRUPTED:
+        return None, derive_resampling_diagnostic_samples(operation, accepted)
+    result = derive_resampling_analysis_result(operation, accepted)
+    if result is None:
+        raise NativeResamplingIncompleteError(
+            f"Native {method_message} produced no meaningful Analysis Result"
+        )
+    return result, result.samples
 
 
 def _resampling_method(
@@ -82,82 +105,76 @@ def _format_parameter_names(
     )
 
 
-def _as_sample_array(sample_rows: list[list[float]], width: int) -> np.ndarray:
-    if not sample_rows:
-        return np.empty((0, width), dtype=float)
-    return np.asarray(sample_rows, dtype=float)
-
-
 def _write_resampling_summary(
     path: Path,
     *,
     parameter_names: tuple[str, ...],
-    samples: np.ndarray,
+    summary: ResamplingAnalysisSummary,
 ) -> None:
     lines: list[str] = []
-    for index, parameter_name in enumerate(parameter_names):
-        values = samples[:, index] if samples.size else np.empty(0, dtype=float)
-        values = values[np.isfinite(values)]
+    for parameter_name, distribution in zip(
+        parameter_names,
+        summary.distributions,
+        strict=True,
+    ):
         lines.extend(
             [
                 f"[{_quote_toml_string(parameter_name.strip('[]'))}]",
                 'interval = "95% percentile"',
-                f"sample_count = {len(values)}",
+                f"sample_count = {distribution.sample_count}",
             ],
         )
-        if len(values) > 0:
-            lower_95, lower_68, median, upper_68, upper_95 = np.percentile(
-                values,
-                [2.5, 15.87, 50.0, 84.13, 97.5],
-            )
-            standard_deviation = (
-                float(np.std(values, ddof=1)) if len(values) > 1 else 0.0
-            )
-            lines.extend(
-                [
-                    f"mean = {_format_toml_float(float(np.mean(values)))}",
-                    f"standard_deviation = {_format_toml_float(standard_deviation)}",
-                    f"median = {_format_toml_float(float(median))}",
-                    f"percentile_95_lower = {_format_toml_float(float(lower_95))}",
-                    f"percentile_95_upper = {_format_toml_float(float(upper_95))}",
-                    f"percentile_68_lower = {_format_toml_float(float(lower_68))}",
-                    f"percentile_68_upper = {_format_toml_float(float(upper_68))}",
-                    (
-                        "half_percentile_68_width = "
-                        f"{_format_toml_float(0.5 * float(upper_68 - lower_68))}"
-                    ),
-                ],
-            )
+        lines.extend(
+            [
+                f"mean = {_format_toml_float(distribution.mean)}",
+                (
+                    "standard_deviation = "
+                    f"{_format_toml_float(distribution.standard_deviation)}"
+                ),
+                f"median = {_format_toml_float(distribution.median)}",
+                (
+                    "percentile_95_lower = "
+                    f"{_format_toml_float(distribution.percentile_95_lower)}"
+                ),
+                (
+                    "percentile_95_upper = "
+                    f"{_format_toml_float(distribution.percentile_95_upper)}"
+                ),
+                (
+                    "percentile_68_lower = "
+                    f"{_format_toml_float(distribution.percentile_68_lower)}"
+                ),
+                (
+                    "percentile_68_upper = "
+                    f"{_format_toml_float(distribution.percentile_68_upper)}"
+                ),
+                (
+                    "half_percentile_68_width = "
+                    f"{_format_toml_float(distribution.half_percentile_68_width)}"
+                ),
+            ],
+        )
         lines.append("")
     (path / "summary.toml").write_text("\n".join(lines), encoding="utf-8")
-
-
-def _pairwise_correlation(samples: np.ndarray, index_a: int, index_b: int) -> float:
-    values_a = samples[:, index_a]
-    values_b = samples[:, index_b]
-    valid = np.isfinite(values_a) & np.isfinite(values_b)
-    if int(np.sum(valid)) < 2:
-        return np.nan
-    return float(np.corrcoef(values_a[valid], values_b[valid])[0, 1])
 
 
 def _write_resampling_correlations(
     path: Path,
     *,
     parameter_names: tuple[str, ...],
-    samples: np.ndarray,
+    summary: ResamplingAnalysisSummary,
 ) -> np.ndarray:
+    width = len(summary.parameter_ids)
+    correlations = np.asarray(
+        tuple(
+            np.nan if item.value is None else item.value
+            for item in summary.correlations
+        ),
+        dtype=np.float64,
+    ).reshape((width, width))
     if not parameter_names:
         (path / "correlations.tsv").write_text("", encoding="utf-8")
-        return np.empty((0, 0), dtype=float)
-    correlations = np.empty((len(parameter_names), len(parameter_names)), dtype=float)
-    for index_a in range(len(parameter_names)):
-        for index_b in range(len(parameter_names)):
-            correlations[index_a, index_b] = (
-                1.0
-                if index_a == index_b
-                else _pairwise_correlation(samples, index_a, index_b)
-            )
+        return correlations
 
     with (path / "correlations.tsv").open("w", encoding="utf-8") as fileout:
         fileout.write("parameter\t" + "\t".join(parameter_names) + "\n")
@@ -429,25 +446,24 @@ def _run_native_resampling_method(
             failure=error,
         )
         raise error
-    disposition_counts = Counter(outcome.disposition for outcome in evidence.outcomes)
     samples_published = False
     failures_published = False
+    result: ResamplingAnalysisResult | None = None
+    operational_interruption = operation.terminal is OperationTerminal.INTERRUPTED
     try:
+        result, analysis_samples = _resampling_result_and_samples(
+            operation,
+            fit.accepted,
+            method.message,
+        )
         complete = (
-            operation.terminal is OperationTerminal.COMPLETED
-            and evidence.successful_count == method.iterations
+            result is not None and result.status is ResamplingAnalysisStatus.COMPLETE
         )
-        successful = tuple(
-            outcome.success
-            for outcome in evidence.outcomes
-            if outcome.success is not None
+        sample_rows = [sample.values for sample in analysis_samples]
+        chisqr_rows = [sample.chi_square for sample in analysis_samples]
+        samples = np.asarray(sample_rows, dtype=float).reshape(
+            (len(sample_rows), len(parameter_ids))
         )
-        sample_rows = [
-            [dict(success.resolved_items)[param_id] for param_id in parameter_ids]
-            for success in successful
-        ]
-        chisqr_rows = [success.chi_square for success in successful]
-        samples = _as_sample_array(sample_rows, len(parameter_ids))
         with (statistic_path / "samples.tsv").open("w", encoding="utf-8") as output:
             output.write("\t".join((*parameter_names, "chisqr")) + "\n")
             for values, chisqr in zip(sample_rows, chisqr_rows, strict=True):
@@ -461,6 +477,7 @@ def _run_native_resampling_method(
         if not complete:
             _write_native_failures(statistic_path, evidence.outcomes)
             failures_published = True
+            disposition_source = evidence if result is None else result
             _write_native_state_diagnostics(
                 statistic_path,
                 method=method,
@@ -468,25 +485,34 @@ def _run_native_resampling_method(
                 parameter_ids=parameter_ids,
                 root_seed=root_seed,
                 status="incomplete",
-                successful_samples=disposition_counts[ReplicateDisposition.SUCCEEDED],
-                failed_samples=disposition_counts[ReplicateDisposition.FAILED],
-                cancelled_samples=disposition_counts[ReplicateDisposition.CANCELLED],
-                interrupted_samples=disposition_counts[
+                successful_samples=disposition_source.disposition_count(
+                    ReplicateDisposition.SUCCEEDED
+                ),
+                failed_samples=disposition_source.disposition_count(
+                    ReplicateDisposition.FAILED
+                ),
+                cancelled_samples=disposition_source.disposition_count(
+                    ReplicateDisposition.CANCELLED
+                ),
+                interrupted_samples=disposition_source.disposition_count(
                     ReplicateDisposition.INTERRUPTED
-                ],
-                unstarted_samples=disposition_counts[ReplicateDisposition.NOT_STARTED],
+                ),
+                unstarted_samples=disposition_source.disposition_count(
+                    ReplicateDisposition.NOT_STARTED
+                ),
                 terminal=operation.terminal.value,
             )
         else:
+            summary = cast("ResamplingAnalysisSummary", result.summary)
             _write_resampling_summary(
                 statistic_path,
                 parameter_names=parameter_names,
-                samples=samples,
+                summary=summary,
             )
             correlations = _write_resampling_correlations(
                 statistic_path,
                 parameter_names=parameter_names,
-                samples=samples,
+                summary=summary,
             )
             write_resampling_plots(
                 statistic_path,
@@ -496,15 +522,20 @@ def _run_native_resampling_method(
                 samples=samples,
                 chisqr_values=np.asarray(chisqr_rows, dtype=float),
                 correlations=correlations,
+                summary=summary,
                 requested_samples=method.iterations,
-                completed_samples=evidence.successful_count,
+                completed_samples=result.disposition_count(
+                    ReplicateDisposition.SUCCEEDED
+                ),
             )
             _write_resampling_diagnostics(
                 statistic_path,
                 method=method.message,
                 fitmethod="trf",
                 requested_samples=method.iterations,
-                completed_samples=evidence.successful_count,
+                completed_samples=result.disposition_count(
+                    ReplicateDisposition.SUCCEEDED
+                ),
                 workers=worker_count,
                 parameter_ids=list(parameter_ids),
                 engine="native direct TRF",
@@ -523,6 +554,7 @@ def _run_native_resampling_method(
             error,
         )
         terminal = "interrupted" if isinstance(error, KeyboardInterrupt) else "failed"
+        disposition_source = evidence if result is None else result
         try:
             _write_native_state_diagnostics(
                 statistic_path,
@@ -531,13 +563,21 @@ def _run_native_resampling_method(
                 parameter_ids=parameter_ids,
                 root_seed=root_seed,
                 status="incomplete",
-                successful_samples=disposition_counts[ReplicateDisposition.SUCCEEDED],
-                failed_samples=disposition_counts[ReplicateDisposition.FAILED],
-                cancelled_samples=disposition_counts[ReplicateDisposition.CANCELLED],
-                interrupted_samples=disposition_counts[
+                successful_samples=disposition_source.disposition_count(
+                    ReplicateDisposition.SUCCEEDED
+                ),
+                failed_samples=disposition_source.disposition_count(
+                    ReplicateDisposition.FAILED
+                ),
+                cancelled_samples=disposition_source.disposition_count(
+                    ReplicateDisposition.CANCELLED
+                ),
+                interrupted_samples=disposition_source.disposition_count(
                     ReplicateDisposition.INTERRUPTED
-                ],
-                unstarted_samples=disposition_counts[ReplicateDisposition.NOT_STARTED],
+                ),
+                unstarted_samples=disposition_source.disposition_count(
+                    ReplicateDisposition.NOT_STARTED
+                ),
                 terminal=terminal,
                 failure=error,
             )
@@ -552,7 +592,9 @@ def _run_native_resampling_method(
                 error,
             )
         raise
-    if not complete:
+    if operational_interruption or (
+        result is not None and result.status is ResamplingAnalysisStatus.INCOMPLETE
+    ):
         raise NativeResamplingIncompleteError(
             f"Native {method.message} completed {evidence.successful_count} of "
             f"{method.iterations} requested replicates"

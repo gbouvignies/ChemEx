@@ -1,19 +1,22 @@
 from __future__ import annotations
 
 from itertools import combinations
-from math import ceil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
-from emcee.autocorr import AutocorrError, integrated_time
 from matplotlib.backends.backend_pdf import PdfPages
 
+from chemex.optimize.native_mcmc import McmcAnalysisResult
+from chemex.optimize.native_resampling import (
+    ResamplingAnalysisChiSquareSummary,
+    ResamplingAnalysisSummary,
+)
 from chemex.typing import Array
 
 if TYPE_CHECKING:
-    from chemex.optimize.mcmc import EffectiveMcmcSettings, McmcResult
+    from chemex.optimize.mcmc import EffectiveMcmcSettings
 
 
 _CORRELATION_THRESHOLD = 0.5
@@ -30,20 +33,6 @@ def _format_float(value: float | None) -> str:
 
 def _finite_values(values: Array) -> Array:
     return values[np.isfinite(values)]
-
-
-def _mcmc_autocorrelation_time(result: McmcResult) -> Array | None:
-    if result.autocorrelation_time is not None:
-        return result.autocorrelation_time
-    return result.tentative_autocorrelation_time
-
-
-def _mcmc_autocorrelation_status(result: McmcResult) -> str:
-    if result.autocorrelation_time is not None:
-        return "reliable"
-    if result.tentative_autocorrelation_time is not None:
-        return "unreliable short chain"
-    return "unavailable"
 
 
 def _correlated_pairs(
@@ -161,12 +150,17 @@ def _save_pair_distribution_page(
 
 def _save_mcmc_summary_page(
     pdf: PdfPages,
-    result: McmcResult,
+    result: McmcAnalysisResult,
     settings: EffectiveMcmcSettings,
     parameter_names: tuple[str, ...],
     correlated_pairs: list[tuple[int, int, float]],
 ) -> None:
-    acceptance = result.acceptance_fraction
+    acceptance = result.acceptance_summary
+    autocorrelation = result.autocorrelation_report
+    if acceptance is None or autocorrelation is None:
+        raise RuntimeError(
+            "Authoritative MCMC Analysis Result has no plotting diagnostics"
+        )
     burn = '"auto"' if settings.burn == "auto" else str(settings.burn)
     lines = [
         "Sampler: emcee via ChemEx direct EnsembleSampler",
@@ -180,25 +174,28 @@ def _save_mcmc_summary_page(
         f"Retained samples: {len(result.samples)}",
         (
             "Acceptance fraction: "
-            f"mean={_format_float(float(np.mean(acceptance)))}, "
-            f"min={_format_float(float(np.min(acceptance)))}, "
-            f"max={_format_float(float(np.max(acceptance)))}"
+            f"mean={_format_float(acceptance.mean)}, "
+            f"min={_format_float(acceptance.minimum)}, "
+            f"max={_format_float(acceptance.maximum)}"
         ),
     ]
-    autocorrelation_time = _mcmc_autocorrelation_time(result)
-    lines.append(f"Autocorrelation status: {_mcmc_autocorrelation_status(result)}")
-    if autocorrelation_time is None:
+    status_label = autocorrelation.status.value.replace("_", " ")
+    lines.append(f"Autocorrelation status: {status_label}")
+    if autocorrelation.values is None:
         lines.append("Autocorrelation time: unavailable")
     else:
-        max_tau = float(np.max(autocorrelation_time))
-        lines.append(f"Max autocorrelation time: {_format_float(max_tau)}")
-        lines.append(f"Recommended steps (50 tau): {ceil(50.0 * max_tau)}")
-        lines.append(f"Recommended steps (100 tau): {ceil(100.0 * max_tau)}")
-    if result.autocorrelation_warning is not None:
-        lines.append(f"Autocorrelation warning: {result.autocorrelation_warning}")
-    if result.burn_in_warning is not None:
-        lines.append(f"Burn-in warning: {result.burn_in_warning}")
-
+        lines.append(
+            f"Max autocorrelation time: {_format_float(autocorrelation.maximum)}"
+        )
+        lines.append(
+            f"Recommended steps (50 tau): {autocorrelation.recommended_min_steps_50tau}"
+        )
+        lines.append(
+            "Recommended steps (100 tau): "
+            f"{autocorrelation.recommended_min_steps_100tau}"
+        )
+    if autocorrelation.warning is not None:
+        lines.append(f"Autocorrelation warning: {autocorrelation.warning}")
     lines.extend(["", "Posterior summaries:"])
     for name, summary in zip(parameter_names, result.summary, strict=True):
         lines.append(
@@ -223,7 +220,7 @@ def _save_mcmc_summary_page(
 
 def _save_mcmc_distribution_pages(
     pdf: PdfPages,
-    result: McmcResult,
+    result: McmcAnalysisResult,
     parameter_names: tuple[str, ...],
 ) -> None:
     samples = result.samples
@@ -244,31 +241,35 @@ def _save_mcmc_distribution_pages(
         )
 
 
-def _trace_chain(result: McmcResult) -> tuple[Array, bool]:
+def _trace_chain(result: McmcAnalysisResult) -> tuple[Array, bool]:
     if result.raw_chain is not None:
         return result.raw_chain, True
     return result.chain, False
 
 
-def _trace_lnprob(result: McmcResult) -> tuple[Array, bool]:
+def _trace_lnprob(result: McmcAnalysisResult) -> tuple[Array, bool]:
     if result.raw_lnprob is not None:
         return result.raw_lnprob, True
     return result.lnprob, False
 
 
 def _trace_steps(
-    result: McmcResult,
-    settings: EffectiveMcmcSettings,
+    result: McmcAnalysisResult,
     length: int,
     *,
     raw: bool,
 ) -> Array:
     if raw:
         return np.arange(length)
-    return result.discarded_steps + np.arange(length) * settings.thin
+    return np.asarray(result.retained_step_ordinals, dtype=int)
 
 
-def _mark_burn_in(ax: plt.Axes, result: McmcResult, *, raw: bool) -> None:
+def _mark_burn_in(
+    ax: plt.Axes,
+    result: McmcAnalysisResult,
+    *,
+    raw: bool,
+) -> None:
     if raw and result.discarded_steps > 0:
         ax.axvspan(
             0,
@@ -282,12 +283,11 @@ def _mark_burn_in(ax: plt.Axes, result: McmcResult, *, raw: bool) -> None:
 
 def _save_trace_pages(
     pdf: PdfPages,
-    result: McmcResult,
-    settings: EffectiveMcmcSettings,
+    result: McmcAnalysisResult,
     parameter_names: tuple[str, ...],
 ) -> None:
     chain, raw = _trace_chain(result)
-    steps = _trace_steps(result, settings, chain.shape[0], raw=raw)
+    steps = _trace_steps(result, chain.shape[0], raw=raw)
     for index, name in enumerate(parameter_names):
         fig, ax = plt.subplots(figsize=(7.5, 5.0))
         _mark_burn_in(ax, result, raw=raw)
@@ -306,11 +306,10 @@ def _save_trace_pages(
 
 def _save_log_probability_page(
     pdf: PdfPages,
-    result: McmcResult,
-    settings: EffectiveMcmcSettings,
+    result: McmcAnalysisResult,
 ) -> None:
     lnprob, raw = _trace_lnprob(result)
-    steps = _trace_steps(result, settings, lnprob.shape[0], raw=raw)
+    steps = _trace_steps(result, lnprob.shape[0], raw=raw)
     fig, ax = plt.subplots(figsize=(7.5, 5.0))
     _mark_burn_in(ax, result, raw=raw)
     for walker in range(lnprob.shape[1]):
@@ -326,40 +325,18 @@ def _save_log_probability_page(
     plt.close(fig)
 
 
-def _autocorrelation_monitor_values(chain: Array) -> tuple[Array, Array, Array]:
-    nsteps = chain.shape[0]
-    if nsteps < 4:
-        empty = np.empty(0, dtype=float)
-        return empty, empty, empty
-
-    start = max(4, min(100, nsteps // 10))
-    lengths = np.unique(np.geomspace(start, nsteps, num=12).astype(int))
-    mean_tau: list[float] = []
-    max_tau: list[float] = []
-    used_lengths: list[int] = []
-    for length in lengths:
-        try:
-            tau = integrated_time(chain[:length], quiet=False)
-        except AutocorrError as error:
-            tau = error.tau
-        except (FloatingPointError, ValueError):
-            continue
-        tau = np.asarray(tau, dtype=float)
-        if tau.ndim != 1 or not np.all(np.isfinite(tau)) or np.any(tau <= 0.0):
-            continue
-        used_lengths.append(int(length))
-        mean_tau.append(float(np.mean(tau)))
-        max_tau.append(float(np.max(tau)))
-    return (
-        np.asarray(used_lengths, dtype=float),
-        np.asarray(mean_tau, dtype=float),
-        np.asarray(max_tau, dtype=float),
-    )
-
-
-def _save_autocorrelation_monitor_page(pdf: PdfPages, result: McmcResult) -> None:
-    chain, _raw = _trace_chain(result)
-    lengths, mean_tau, max_tau = _autocorrelation_monitor_values(chain)
+def _save_autocorrelation_monitor_page(
+    pdf: PdfPages,
+    result: McmcAnalysisResult,
+) -> None:
+    monitor = result.autocorrelation_monitor
+    if monitor is None:
+        raise RuntimeError(
+            "Authoritative MCMC Analysis Result has no autocorrelation monitor"
+        )
+    lengths = np.asarray(monitor.step_counts, dtype=float)
+    mean_tau = np.asarray(monitor.mean_times, dtype=float)
+    max_tau = np.asarray(monitor.maximum_times, dtype=float)
     fig, ax = plt.subplots(figsize=(7.5, 5.0))
     if len(lengths):
         ax.plot(lengths, mean_tau, "o-", label="mean tau")
@@ -379,7 +356,7 @@ def _save_autocorrelation_monitor_page(pdf: PdfPages, result: McmcResult) -> Non
 
 def _save_mcmc_correlation_pages(
     pdf: PdfPages,
-    result: McmcResult,
+    result: McmcAnalysisResult,
     parameter_names: tuple[str, ...],
     correlated_pairs: list[tuple[int, int, float]],
 ) -> None:
@@ -396,7 +373,7 @@ def _save_mcmc_correlation_pages(
 
 
 def write_mcmc_plots(
-    result: McmcResult,
+    result: McmcAnalysisResult,
     settings: EffectiveMcmcSettings,
     path: Path,
     *,
@@ -415,8 +392,8 @@ def write_mcmc_plots(
             correlated_pairs,
         )
         _save_mcmc_distribution_pages(pdf, result, parameter_names)
-        _save_trace_pages(pdf, result, settings, parameter_names)
-        _save_log_probability_page(pdf, result, settings)
+        _save_trace_pages(pdf, result, parameter_names)
+        _save_log_probability_page(pdf, result)
         _save_autocorrelation_monitor_page(pdf, result)
         _save_mcmc_correlation_pages(pdf, result, parameter_names, correlated_pairs)
 
@@ -430,13 +407,12 @@ def _save_resampling_summary_page(
     correlations: Array,
     requested_samples: int,
     completed_samples: int,
-    chisqr_values: Array,
+    chi_square: ResamplingAnalysisChiSquareSummary,
 ) -> list[tuple[int, int, float]]:
     correlated_pairs = _correlated_pairs(
         correlations,
         threshold=_CORRELATION_THRESHOLD,
     )
-    finite_chisqr = _finite_values(chisqr_values)
     lines = [
         f"Method: {method}",
         f"Fit method: {fitmethod}",
@@ -444,13 +420,13 @@ def _save_resampling_summary_page(
         f"Requested samples: {requested_samples}",
         f"Completed samples: {completed_samples}",
     ]
-    if len(finite_chisqr):
+    if chi_square.sample_count:
         lines.extend(
             [
-                f"chisqr mean: {_format_float(float(np.mean(finite_chisqr)))}",
-                f"chisqr median: {_format_float(float(np.median(finite_chisqr)))}",
-                f"chisqr min: {_format_float(float(np.min(finite_chisqr)))}",
-                f"chisqr max: {_format_float(float(np.max(finite_chisqr)))}",
+                f"chisqr mean: {_format_float(chi_square.mean)}",
+                f"chisqr median: {_format_float(chi_square.median)}",
+                f"chisqr min: {_format_float(chi_square.minimum)}",
+                f"chisqr max: {_format_float(chi_square.maximum)}",
             ],
         )
     else:
@@ -475,19 +451,12 @@ def _save_resampling_distribution_pages(
     *,
     samples: Array,
     parameter_names: tuple[str, ...],
+    summary: ResamplingAnalysisSummary,
 ) -> None:
-    for index, name in enumerate(parameter_names):
+    for index, (name, distribution) in enumerate(
+        zip(parameter_names, summary.distributions, strict=True)
+    ):
         values = samples[:, index] if samples.size else np.empty(0, dtype=float)
-        finite_values = _finite_values(values)
-        interval = None
-        median = None
-        if len(finite_values):
-            lower_95, median, upper_95 = np.percentile(
-                finite_values,
-                [2.5, 50.0, 97.5],
-            )
-            interval = (float(lower_95), float(upper_95))
-            median = float(median)
         _save_histogram_page(
             pdf,
             values=values,
@@ -496,15 +465,21 @@ def _save_resampling_distribution_pages(
             ylabel="Density",
             color="#55A868",
             density=True,
-            interval=interval,
+            interval=(
+                distribution.percentile_95_lower,
+                distribution.percentile_95_upper,
+            ),
             interval_label="95% percentile",
-            median=median,
+            median=distribution.median,
         )
 
 
-def _save_chisqr_distribution_page(pdf: PdfPages, chisqr_values: Array) -> None:
+def _save_chisqr_distribution_page(
+    pdf: PdfPages,
+    chisqr_values: Array,
+    chi_square: ResamplingAnalysisChiSquareSummary,
+) -> None:
     values = _finite_values(chisqr_values)
-    median = float(np.median(values)) if len(values) else None
     _save_histogram_page(
         pdf,
         values=values,
@@ -513,7 +488,7 @@ def _save_chisqr_distribution_page(pdf: PdfPages, chisqr_values: Array) -> None:
         ylabel="Samples",
         color="#8172B3",
         density=False,
-        median=median,
+        median=chi_square.median,
         empty_message="No finite chisqr values",
     )
 
@@ -545,6 +520,7 @@ def write_resampling_plots(
     samples: Array,
     chisqr_values: Array,
     correlations: Array,
+    summary: ResamplingAnalysisSummary,
     requested_samples: int,
     completed_samples: int,
 ) -> None:
@@ -557,14 +533,15 @@ def write_resampling_plots(
             correlations=correlations,
             requested_samples=requested_samples,
             completed_samples=completed_samples,
-            chisqr_values=chisqr_values,
+            chi_square=summary.chi_square,
         )
         _save_resampling_distribution_pages(
             pdf,
             samples=samples,
             parameter_names=parameter_names,
+            summary=summary,
         )
-        _save_chisqr_distribution_page(pdf, chisqr_values)
+        _save_chisqr_distribution_page(pdf, chisqr_values, summary.chi_square)
         _save_resampling_correlation_pages(
             pdf,
             samples=samples,

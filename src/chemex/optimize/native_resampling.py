@@ -53,6 +53,7 @@ _SEED_POLICY_VERSION = "sha256-product-stable-structural-u64-v2"
 _RNG_ALGORITHM = "numpy-pcg64-v1"
 _GENERATION_POLICY_VERSION = "chemex-mc-bs-bsn-v1"
 _SUMMARY_POLICY_VERSION = "complete-scope-percentile-v1"
+_PRODUCTION_ANALYSIS_POLICY_VERSION = "chemex-production-resampling-v1"
 _MAX_U64 = (1 << 64) - 1
 
 
@@ -119,6 +120,22 @@ class SummaryTerminal(StrEnum):
     COMPLETED = "completed"
     INSUFFICIENT_COVERAGE = "insufficient_coverage"
     SOURCE_INVALID = "source_invalid"
+
+
+class ResamplingAnalysisStatus(StrEnum):
+    """Scientific completeness of a production resampling analysis."""
+
+    COMPLETE = "complete"
+    INCOMPLETE = "incomplete"
+
+
+class ResamplingAnalysisCorrelationAvailability(StrEnum):
+    """Why one production correlation is or is not scientifically available."""
+
+    AVAILABLE = "available"
+    ZERO_VARIANCE = "zero_variance"
+    INSUFFICIENT_SAMPLES = "insufficient_samples"
+    NON_FINITE_ARITHMETIC = "non_finite_arithmetic"
 
 
 class CorrelationAvailability(StrEnum):
@@ -2156,6 +2173,10 @@ class ResamplingEvidence:
         """Return one exact named claim; unknown claims fail closed."""
         return _claim_state(self.claims, name)
 
+    def disposition_count(self, disposition: ReplicateDisposition) -> int:
+        """Return the authoritative count for one replicate disposition."""
+        return sum(outcome.disposition is disposition for outcome in self.outcomes)
+
     def validate_integrity(self) -> None:
         """Recompute this evidence and recursively reject altered descendants."""
         try:
@@ -3370,4 +3391,367 @@ def summarize_resampling_evidence(
     return ResamplingSummaryOutcome(
         SummaryTerminal.COMPLETED,
         summary=summary,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _ProductionResamplingInterpretationPolicy:
+    """Immutable internal policy preserving the established product semantics."""
+
+    parameter_ids: tuple[str, ...]
+    percentiles: tuple[float, float, float, float, float] = (
+        2.5,
+        15.87,
+        50.0,
+        84.13,
+        97.5,
+    )
+    percentile_method: Literal["linear"] = "linear"
+    standard_deviation_delta_degrees_of_freedom: int = 1
+    version: str = _PRODUCTION_ANALYSIS_POLICY_VERSION
+
+    def __post_init__(self) -> None:
+        if not self.parameter_ids or len(set(self.parameter_ids)) != len(
+            self.parameter_ids
+        ):
+            raise ResamplingConstructionError(
+                "Production resampling policy requires unique controlled parameters"
+            )
+        if self.percentiles != (2.5, 15.87, 50.0, 84.13, 97.5):
+            raise ResamplingConstructionError(
+                "Production resampling percentiles are a compatibility policy"
+            )
+        if (
+            self.percentile_method != "linear"
+            or self.standard_deviation_delta_degrees_of_freedom != 1
+        ):
+            raise ResamplingConstructionError(
+                "Production resampling estimators are a compatibility policy"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class ResamplingAnalysisSample:
+    """One successful product-scope sample retained in an Analysis Result."""
+
+    ordinal: int
+    outcome_identity: str
+    values: tuple[float, ...]
+    chi_square: float
+
+
+@dataclass(frozen=True, slots=True)
+class ResamplingAnalysisDistribution:
+    """Established production statistics for one controlled parameter."""
+
+    parameter_id: str
+    sample_count: int
+    mean: float
+    standard_deviation: float
+    median: float
+    percentile_95_lower: float
+    percentile_95_upper: float
+    percentile_68_lower: float
+    percentile_68_upper: float
+    half_percentile_68_width: float
+
+
+@dataclass(frozen=True, slots=True)
+class ResamplingAnalysisChiSquareSummary:
+    """Authoritative production conclusions for successful chi-square values."""
+
+    sample_count: int
+    mean: float | None
+    median: float | None
+    minimum: float | None
+    maximum: float | None
+
+    def __post_init__(self) -> None:
+        values = (self.mean, self.median, self.minimum, self.maximum)
+        available = self.sample_count > 0
+        if self.sample_count < 0 or available != all(
+            value is not None for value in values
+        ):
+            raise ResamplingConstructionError(
+                "Production chi-square availability payload is inconsistent"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class ResamplingAnalysisCorrelation:
+    """One production correlation with typed scientific availability."""
+
+    parameter_a: str
+    parameter_b: str
+    availability: ResamplingAnalysisCorrelationAvailability
+    value: float | None
+
+    def __post_init__(self) -> None:
+        available = (
+            self.availability is ResamplingAnalysisCorrelationAvailability.AVAILABLE
+        )
+        if available != (self.value is not None):
+            raise ResamplingConstructionError(
+                "Production correlation value and availability are inconsistent"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class ResamplingAnalysisSummary:
+    """Authoritative production summary derived from complete Evidence."""
+
+    parameter_ids: tuple[str, ...]
+    distributions: tuple[ResamplingAnalysisDistribution, ...]
+    correlations: tuple[ResamplingAnalysisCorrelation, ...]
+    chi_square: ResamplingAnalysisChiSquareSummary
+    policy_version: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResamplingAnalysisResult:
+    """Complete authoritative scientific outcome for production resampling."""
+
+    evidence: ResamplingEvidence = field(repr=False, compare=False)
+    parameter_ids: tuple[str, ...]
+    samples: tuple[ResamplingAnalysisSample, ...]
+    summary: ResamplingAnalysisSummary | None
+
+    def __post_init__(self) -> None:
+        if (
+            self.summary is not None
+            and self.summary.parameter_ids != self.parameter_ids
+        ):
+            raise ResamplingConstructionError(
+                "Resampling Analysis Result and Summary scopes differ"
+            )
+
+    @property
+    def status(self) -> ResamplingAnalysisStatus:
+        """Return the scientific completeness derived from Summary availability."""
+        return (
+            ResamplingAnalysisStatus.COMPLETE
+            if self.summary is not None
+            else ResamplingAnalysisStatus.INCOMPLETE
+        )
+
+    def disposition_count(self, disposition: ReplicateDisposition) -> int:
+        """Return the authoritative count for one terminal disposition."""
+        return self.evidence.disposition_count(disposition)
+
+
+def _production_resampling_distribution(
+    parameter_id: str,
+    values: Array,
+    policy: _ProductionResamplingInterpretationPolicy,
+) -> ResamplingAnalysisDistribution:
+    finite_values = values[np.isfinite(values)]
+    lower_95, lower_68, median, upper_68, upper_95 = np.percentile(
+        finite_values,
+        policy.percentiles,
+        method=policy.percentile_method,
+    )
+    standard_deviation = (
+        float(
+            np.std(
+                finite_values,
+                ddof=policy.standard_deviation_delta_degrees_of_freedom,
+            )
+        )
+        if len(finite_values) > 1
+        else 0.0
+    )
+    return ResamplingAnalysisDistribution(
+        parameter_id,
+        len(finite_values),
+        float(np.mean(finite_values)),
+        standard_deviation,
+        float(median),
+        float(lower_95),
+        float(upper_95),
+        float(lower_68),
+        float(upper_68),
+        0.5 * float(upper_68 - lower_68),
+    )
+
+
+def _production_resampling_correlation(
+    parameter_a: str,
+    parameter_b: str,
+    values_a: Array,
+    values_b: Array,
+    *,
+    diagonal: bool,
+) -> ResamplingAnalysisCorrelation:
+    if diagonal:
+        return ResamplingAnalysisCorrelation(
+            parameter_a,
+            parameter_b,
+            ResamplingAnalysisCorrelationAvailability.AVAILABLE,
+            1.0,
+        )
+    valid = np.isfinite(values_a) & np.isfinite(values_b)
+    paired_a = values_a[valid]
+    paired_b = values_b[valid]
+    if len(paired_a) < 2:
+        return ResamplingAnalysisCorrelation(
+            parameter_a,
+            parameter_b,
+            ResamplingAnalysisCorrelationAvailability.INSUFFICIENT_SAMPLES,
+            None,
+        )
+    with np.errstate(divide="ignore", invalid="ignore"):
+        value = float(np.corrcoef(paired_a, paired_b)[0, 1])
+    if math.isfinite(value):
+        return ResamplingAnalysisCorrelation(
+            parameter_a,
+            parameter_b,
+            ResamplingAnalysisCorrelationAvailability.AVAILABLE,
+            value,
+        )
+    availability = (
+        ResamplingAnalysisCorrelationAvailability.ZERO_VARIANCE
+        if float(np.std(paired_a)) == 0.0 or float(np.std(paired_b)) == 0.0
+        else ResamplingAnalysisCorrelationAvailability.NON_FINITE_ARITHMETIC
+    )
+    return ResamplingAnalysisCorrelation(
+        parameter_a,
+        parameter_b,
+        availability,
+        None,
+    )
+
+
+def _production_resampling_summary(
+    samples: tuple[ResamplingAnalysisSample, ...],
+    policy: _ProductionResamplingInterpretationPolicy,
+) -> ResamplingAnalysisSummary:
+    matrix = np.asarray(
+        [sample.values for sample in samples],
+        dtype=np.float64,
+    ).reshape((len(samples), len(policy.parameter_ids)))
+    distributions = tuple(
+        _production_resampling_distribution(
+            parameter_id,
+            matrix[:, index],
+            policy,
+        )
+        for index, parameter_id in enumerate(policy.parameter_ids)
+    )
+    correlations = tuple(
+        _production_resampling_correlation(
+            parameter_a,
+            parameter_b,
+            matrix[:, index_a],
+            matrix[:, index_b],
+            diagonal=index_a == index_b,
+        )
+        for index_a, parameter_a in enumerate(policy.parameter_ids)
+        for index_b, parameter_b in enumerate(policy.parameter_ids)
+    )
+    finite_chi_square = np.asarray(
+        [sample.chi_square for sample in samples if math.isfinite(sample.chi_square)],
+        dtype=np.float64,
+    )
+    chi_square = (
+        ResamplingAnalysisChiSquareSummary(0, None, None, None, None)
+        if len(finite_chi_square) == 0
+        else ResamplingAnalysisChiSquareSummary(
+            len(finite_chi_square),
+            float(np.mean(finite_chi_square)),
+            float(np.median(finite_chi_square)),
+            float(np.min(finite_chi_square)),
+            float(np.max(finite_chi_square)),
+        )
+    )
+    return ResamplingAnalysisSummary(
+        policy.parameter_ids,
+        distributions,
+        correlations,
+        chi_square,
+        policy.version,
+    )
+
+
+def _production_resampling_samples(
+    operation: ResamplingOperation,
+    accepted: AcceptedFitResult,
+) -> (
+    tuple[
+        ResamplingEvidence,
+        _ProductionResamplingInterpretationPolicy,
+        tuple[ResamplingAnalysisSample, ...],
+    ]
+    | None
+):
+    evidence = operation.evidence
+    if evidence is None:
+        return None
+    evidence.validate_integrity()
+    if (
+        operation.plan_identity != evidence.plan.identity
+        or evidence.plan.accepted_result_identity != accepted.identity
+        or evidence.plan.accepted_occurrence_identity != accepted.occurrence_identity
+        or not accepted_occurrence_is_authoritative(accepted)
+    ):
+        raise ResamplingConstructionError(
+            "Resampling operation and accepted deterministic result have different lineage"
+        )
+    policy = _ProductionResamplingInterpretationPolicy(accepted.controlled_ids)
+    scope_indexes = {
+        parameter_id: index
+        for index, parameter_id in enumerate(evidence.plan.output_scope)
+    }
+    if any(parameter_id not in scope_indexes for parameter_id in policy.parameter_ids):
+        raise ResamplingConstructionError(
+            "Production resampling scope is absent from validated Evidence"
+        )
+    successful_outcomes = tuple(
+        outcome for outcome in evidence.outcomes if outcome.success is not None
+    )
+    samples = tuple(
+        ResamplingAnalysisSample(
+            outcome.ordinal,
+            outcome.identity,
+            tuple(
+                outcome.success.resolved_items[scope_indexes[parameter_id]][1]
+                for parameter_id in policy.parameter_ids
+            ),
+            outcome.success.chi_square,
+        )
+        for outcome in successful_outcomes
+        if outcome.success is not None
+    )
+    return evidence, policy, samples
+
+
+def derive_resampling_diagnostic_samples(
+    operation: ResamplingOperation,
+    accepted: AcceptedFitResult,
+) -> tuple[ResamplingAnalysisSample, ...]:
+    """Return validated successful samples for operational diagnostic rendering."""
+    interpreted = _production_resampling_samples(operation, accepted)
+    return () if interpreted is None else interpreted[2]
+
+
+def derive_resampling_analysis_result(
+    operation: ResamplingOperation,
+    accepted: AcceptedFitResult,
+) -> ResamplingAnalysisResult | None:
+    """Interpret validated Evidence using the established production policy."""
+    if operation.terminal is OperationTerminal.INTERRUPTED:
+        return None
+    interpreted = _production_resampling_samples(operation, accepted)
+    if interpreted is None:
+        return None
+    evidence, policy, samples = interpreted
+    complete = (
+        operation.terminal is OperationTerminal.COMPLETED
+        and evidence.successful_count == evidence.plan.replicate_count
+    )
+    summary = _production_resampling_summary(samples, policy) if complete else None
+    return ResamplingAnalysisResult(
+        evidence,
+        policy.parameter_ids,
+        samples,
+        summary,
     )

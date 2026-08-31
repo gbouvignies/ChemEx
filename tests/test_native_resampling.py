@@ -44,6 +44,7 @@ from chemex.optimize.native_resampling import (
     ReplicateExecutionPlan,
     ReplicateRequest,
     ReplicateStage,
+    ResamplingAnalysisStatus,
     ResamplingConstructionError,
     ResamplingDatasetManifest,
     ResamplingLifecycle,
@@ -54,6 +55,7 @@ from chemex.optimize.native_resampling import (
     ResamplingSummaryPolicy,
     SummaryTerminal,
     ValidatedReplicateSuccess,
+    derive_resampling_analysis_result,
     execute_resampling_evidence,
     generate_resampling_draw,
     summarize_resampling_evidence,
@@ -961,6 +963,121 @@ def test_summary_numerical_references_and_zero_variance_are_canonical(
     )
 
 
+def test_product_analysis_result_preserves_production_summary_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accepted, plan = _plan(
+        ResamplingScheme.MONTE_CARLO,
+        count=3,
+        minimum=3,
+    )
+
+    def fixed_candidate(
+        prepared: ReplicateExecutionPlan,
+        _engine: EvaluationEngine,
+    ) -> ProjectedOptimizationResult:
+        ordinal = prepared.request.ordinal
+        return ProjectedOptimizationSuccess.for_prepared(
+            prepared,
+            candidate_vector=(float(ordinal + 1), 5.0),
+            backend_chi_square=float(ordinal + 10),
+            execution_identity=f"product-execution-{ordinal}",
+        )
+
+    monkeypatch.setattr(resampling_module, "_execute_native_candidate", fixed_candidate)
+    operation = execute_resampling_evidence(accepted, plan)
+
+    result = derive_resampling_analysis_result(operation, accepted)
+
+    assert result.status is ResamplingAnalysisStatus.COMPLETE
+    assert result.parameter_ids == ("A", "B")
+    assert tuple(sample.values for sample in result.samples) == (
+        (1.0, 5.0),
+        (2.0, 5.0),
+        (3.0, 5.0),
+    )
+    assert operation.evidence is not None
+    assert tuple(sample.chi_square for sample in result.samples) == tuple(
+        outcome.success.chi_square
+        for outcome in operation.evidence.outcomes
+        if outcome.success is not None
+    )
+    assert result.summary is not None
+    distributions = {
+        distribution.parameter_id: distribution
+        for distribution in result.summary.distributions
+    }
+    assert distributions["A"].sample_count == 3
+    # These small binary64 references use the pre-refactor production estimators;
+    # one-ulp-scale absolute tolerance detects policy or interpolation changes.
+    assert distributions["A"].mean == pytest.approx(2.0, rel=0.0, abs=1.0e-15)
+    assert distributions["A"].standard_deviation == pytest.approx(
+        1.0, rel=0.0, abs=1.0e-15
+    )
+    assert distributions["A"].median == pytest.approx(2.0, rel=0.0, abs=1.0e-15)
+    assert distributions["A"].percentile_95_lower == pytest.approx(
+        1.05, rel=0.0, abs=1.0e-15
+    )
+    assert distributions["A"].percentile_95_upper == pytest.approx(
+        2.95, rel=0.0, abs=1.0e-15
+    )
+    assert distributions["A"].percentile_68_lower == pytest.approx(
+        1.3174, rel=0.0, abs=1.0e-15
+    )
+    assert distributions["A"].percentile_68_upper == pytest.approx(
+        2.6826, rel=0.0, abs=1.0e-15
+    )
+    assert distributions["A"].half_percentile_68_width == pytest.approx(
+        0.6826, rel=0.0, abs=1.0e-15
+    )
+    assert tuple(item.value for item in result.summary.correlations) == (
+        1.0,
+        None,
+        None,
+        1.0,
+    )
+    assert result.summary.correlations[1].availability.value == "zero_variance"
+
+
+def test_product_analysis_result_keeps_single_sample_conventions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accepted, plan = _plan(
+        ResamplingScheme.MONTE_CARLO,
+        count=1,
+        minimum=1,
+    )
+
+    def fixed_candidate(
+        prepared: ReplicateExecutionPlan,
+        _engine: EvaluationEngine,
+    ) -> ProjectedOptimizationResult:
+        return ProjectedOptimizationSuccess.for_prepared(
+            prepared,
+            candidate_vector=(3.0, 5.0),
+            backend_chi_square=7.0,
+            execution_identity="single-product-execution",
+        )
+
+    monkeypatch.setattr(resampling_module, "_execute_native_candidate", fixed_candidate)
+    operation = execute_resampling_evidence(accepted, plan)
+
+    result = derive_resampling_analysis_result(operation, accepted)
+
+    assert result.summary is not None
+    assert all(
+        distribution.standard_deviation == 0.0
+        for distribution in result.summary.distributions
+    )
+    assert tuple(item.value for item in result.summary.correlations) == (
+        1.0,
+        None,
+        None,
+        1.0,
+    )
+    assert result.summary.correlations[1].availability.value == "insufficient_samples"
+
+
 def test_summary_record_rejects_every_independent_tampering_vector() -> None:
     accepted, plan = _plan(ResamplingScheme.MONTE_CARLO, count=3)
     operation = execute_resampling_evidence(accepted, plan)
@@ -1320,6 +1437,7 @@ def test_optimization_interruption_preserves_complete_ordinal_accounting(
 
     assert operation.evidence is not None
     assert operation.terminal is OperationTerminal.INTERRUPTED
+    assert derive_resampling_analysis_result(operation, accepted) is None
     assert operation.evidence.completed_count >= 1
     if workers == 1:
         assert operation.evidence.completed_count == 1

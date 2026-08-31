@@ -24,3 +24,19 @@ _Avoid_: Method file, Methods
 One named stage in a Method Plan that defines profile selection, parameter
 roles and constraints, search, and requested statistics for that stage.
 _Avoid_: Method section, Method
+
+**Evidence**:
+The validated source observations or samples of a statistical analysis together
+with their scientific state.
+_Avoid_: Summary, Analysis Result
+
+**Summary**:
+Scientific conclusions and statistics derived from Evidence under an explicit
+interpretation policy.
+_Avoid_: Evidence, report
+
+**Analysis Result**:
+The complete authoritative outcome of one specific statistical analysis,
+including its Evidence, Summary availability, and scientific completeness.
+Resampling and MCMC have distinct Analysis Results.
+_Avoid_: Evidence, Summary, output artifacts
