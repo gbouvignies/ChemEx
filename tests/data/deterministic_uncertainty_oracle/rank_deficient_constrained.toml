@@ -1,0 +1,13 @@
+[GLOBAL]
+KAB =  0.00000e+00 # ([KEX_AB] * [PB])
+KBA =  0.00000e+00 # ([KEX_AB] * [PA])
+PA  =  1.00000e+00 # (1.0 - [PB])
+
+["ETAZ_B, B0->800.0MHZ"]
+G2N =  1.31811e+00 # ([ETAZ_A, NUC->G2N, B0->800.0MHZ])
+
+["R1A_B, B0->800.0MHZ"]
+G2N-H =  2.34742e+00 # error unavailable: constrained propagation unavailable; ([R1A_A, NUC->G2N-H, B0->800.0MHZ])
+
+["R1_B, B0->800.0MHZ"]
+G2N =  1.72557e+00 # ([R1_A, NUC->G2N, B0->800.0MHZ])

@@ -11,7 +11,7 @@ import pytest
 from chemex.chemex import run
 from chemex.cli import build_parser
 from chemex.optimize import native_deterministic as native_deterministic_module
-from chemex.optimize.uncertainty import UncertaintyEvidence
+from chemex.optimize.deterministic_uncertainty import DeterministicUncertainty
 from chemex.runtime import AnalysisSession
 
 ROOT = Path(__file__).parent.parent
@@ -51,19 +51,19 @@ def _capture_product_uncertainty(
     output: Path,
     method: Path,
     parameters: tuple[Path, ...] = (PARAMETERS,),
-) -> tuple[AnalysisSession, tuple[UncertaintyEvidence, ...]]:
-    captured: list[UncertaintyEvidence] = []
-    real_derive = native_deterministic_module.derive_uncertainty_evidence
+) -> tuple[AnalysisSession, tuple[DeterministicUncertainty, ...]]:
+    captured: list[DeterministicUncertainty] = []
+    real_derive = native_deterministic_module.derive_deterministic_uncertainty
 
-    def derive(*args, **kwargs):
-        evidence = real_derive(*args, **kwargs)
-        captured.append(evidence)
-        return evidence
+    def derive(facts):
+        uncertainty = real_derive(facts)
+        captured.append(uncertainty)
+        return uncertainty
 
     session = AnalysisSession.create()
     with patch.object(
         native_deterministic_module,
-        "derive_uncertainty_evidence",
+        "derive_deterministic_uncertainty",
         derive,
     ):
         run(_arguments(output, method, parameters), session=session)
@@ -96,13 +96,15 @@ FIX = ["KD"]
     assert step1_session.analysis_values.snapshot().revision == 1
     output = tmp_path / "Output"
 
-    session, (evidence,) = _capture_product_uncertainty(
+    session, (uncertainty,) = _capture_product_uncertainty(
         output,
         method,
         (PARAMETERS, step1_output / "Parameters" / "fitted.toml"),
     )
 
     assert session.analysis_values.snapshot().revision == 1
+    evidence = uncertainty.root_evidence
+    assert evidence is not None
     jacobian = evidence.residual_jacobian
     assert jacobian is not None
     assert jacobian.method == "retained-scipy-final-2-point"
@@ -123,11 +125,12 @@ def test_full_binding_step2_reports_boundary_warning_with_retained_jacobian(
 ) -> None:
     output = tmp_path / "Output"
 
-    session, evidence = _capture_product_uncertainty(output, METHOD)
+    session, uncertainty = _capture_product_uncertainty(output, METHOD)
 
     assert session.analysis_values.snapshot().revision == 2
-    assert len(evidence) == 2
-    step2 = evidence[1]
+    assert len(uncertainty) == 2
+    step2 = uncertainty[1].root_evidence
+    assert step2 is not None
     assert step2.residual_jacobian is not None
     assert step2.residual_jacobian.method == "retained-scipy-final-2-point"
     assert step2.residual_jacobian.evaluation_count == 0

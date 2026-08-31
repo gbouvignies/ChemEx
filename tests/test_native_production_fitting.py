@@ -13,6 +13,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+import chemex.optimize.deterministic_uncertainty as deterministic_uncertainty_module
 import chemex.optimize.direct_trf as direct_trf_module
 import chemex.optimize.mcmc as mcmc_module
 import chemex.optimize.method_plan_execution as method_execution_module
@@ -46,6 +47,12 @@ EXAMPLE = ROOT / "examples/Experiments/RELAXATION_HZNZ"
 EXPERIMENT = EXAMPLE / "Experiments/800mhz.toml"
 PARAMETERS = EXAMPLE / "Parameters/parameters.toml"
 METHOD = EXAMPLE / "Methods/method.toml"
+DETERMINISTIC_UNCERTAINTY_ORACLE = ROOT / "tests/data/deterministic_uncertainty_oracle"
+
+
+def _assert_deterministic_uncertainty_oracle(path: Path, name: str) -> None:
+    assert path.read_bytes() == (DETERMINISTIC_UNCERTAINTY_ORACLE / name).read_bytes()
+
 
 # Byte oracles captured from production at pre-refactor HEAD 7751974f. They are
 # intentionally data, not a second implementation of the statistical policy.
@@ -869,6 +876,11 @@ def test_relaxation_product_covariance_matches_absolute_sigma_reference(
         session=AnalysisSession.create(),
     )
 
+    _assert_deterministic_uncertainty_oracle(
+        output / "Parameters" / "fitted.toml",
+        "direct_full_rank_fitted.toml",
+    )
+
     evidence = json.loads(
         (output / "Statistics" / "Covariance" / "evidence.json").read_text(
             encoding="utf-8"
@@ -993,7 +1005,7 @@ FIX = ["PB", "KEX_AB"]
             side_effect=cancel_after_acceptance,
         ),
         patch.object(
-            native_deterministic_module,
+            deterministic_uncertainty_module,
             "derive_uncertainty_evidence",
             side_effect=AssertionError("uncertainty ran before a committed fit"),
         ) as uncertainty,
@@ -1625,7 +1637,7 @@ def test_interrupted_block_fallback_preserves_committed_root_evidence(
     with (
         patch("chemex.optimize.uncertainty.svd", side_effect=rank_deficient_svd),
         patch.object(
-            native_deterministic_module,
+            deterministic_uncertainty_module,
             "derive_root_anchored_block_covariance",
             side_effect=KeyboardInterrupt,
         ),
@@ -1814,6 +1826,14 @@ def test_rank_deficient_covariance_is_nonfatal_and_replaces_stale_valid_errors(
 
     assert session.analysis_values.snapshot().revision == 1
     fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    _assert_deterministic_uncertainty_oracle(
+        output / "Parameters" / "fitted.toml",
+        "rank_deficient_fitted.toml",
+    )
+    _assert_deterministic_uncertainty_oracle(
+        output / "Parameters" / "constrained.toml",
+        "rank_deficient_constrained.toml",
+    )
     assert "error unavailable: rank deficient" in fitted
     assert "# ±" not in fitted
     evidence = (output / "Statistics" / "Covariance" / "evidence.json").read_text(
@@ -1832,7 +1852,7 @@ def test_interrupted_covariance_keeps_committed_fit_and_invalidates_stale_eviden
 
     session = AnalysisSession.create()
     with patch(
-        "chemex.optimize.native_deterministic.derive_uncertainty_evidence",
+        "chemex.optimize.deterministic_uncertainty.derive_uncertainty_evidence",
         side_effect=KeyboardInterrupt,
     ):
         run(_fit_arguments(output), session=session)
@@ -1865,7 +1885,7 @@ def test_uncertainty_exception_does_not_roll_back_the_committed_fit(
 
     with (
         patch.object(
-            native_deterministic_module,
+            deterministic_uncertainty_module,
             "derive_uncertainty_evidence",
             side_effect=RuntimeError("uncertainty failed"),
         ),
@@ -1893,18 +1913,18 @@ def test_product_uncertainty_starts_after_commit_and_cannot_change_central_value
 ) -> None:
     output = tmp_path / "Output"
     session = AnalysisSession.create()
-    real_derive = native_deterministic_module.derive_uncertainty_evidence
+    real_derive = deterministic_uncertainty_module.derive_deterministic_uncertainty
 
-    def derive_after_commit(*args, **kwargs):
+    def derive_after_commit(facts):
         committed = session.analysis_values.snapshot()
         assert committed.revision == 1
-        evidence = real_derive(*args, **kwargs)
+        uncertainty = real_derive(facts)
         assert session.analysis_values.snapshot() == committed
-        return evidence
+        return uncertainty
 
     with patch.object(
         native_deterministic_module,
-        "derive_uncertainty_evidence",
+        "derive_deterministic_uncertainty",
         side_effect=derive_after_commit,
     ):
         run(_fit_arguments(output), session=session)
@@ -3068,6 +3088,14 @@ def test_real_grid_fit_writes_profiled_surfaces_and_withholds_covariance(
         )
     )
     assert "discrete profiled surface" in covariance_status["reason"]
+    _assert_deterministic_uncertainty_oracle(
+        output / "Parameters" / "fitted.toml",
+        "grid_withheld_fitted.toml",
+    )
+    _assert_deterministic_uncertainty_oracle(
+        output / "Statistics" / "Covariance" / "status.json",
+        "grid_withheld_status.json",
+    )
     assert (output / "Parameters" / "fixed.toml").is_file()
 
     stale = output / "Grid" / "Factors" / "stale.tsv"

@@ -28,8 +28,16 @@ from chemex.evaluation.native import (
     EvaluationResult,
 )
 from chemex.experiments.builder import build_experiments
-from chemex.optimize import native_deterministic as native_deterministic_module
 from chemex.optimize import uncertainty as uncertainty_module
+from chemex.optimize.deterministic_uncertainty import (
+    AcceptedDeterministicFitFacts,
+    ContinuousTrfBasis,
+    DerivationDisposition,
+    DeterministicUncertainty,
+    InterpretationCompleteness,
+    ProfiledGridBasis,
+    derive_deterministic_uncertainty,
+)
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     AffineEquality,
@@ -39,6 +47,7 @@ from chemex.optimize.direct_trf import (
     OptimizationProblem,
     execute_direct_trf,
 )
+from chemex.optimize.grouped_direct_trf import FitDecomposition
 from chemex.optimize.uncertainty import (
     ClaimAssessment,
     ClaimState,
@@ -51,16 +60,13 @@ from chemex.optimize.uncertainty import (
     RootAnchoredBlockCovariance,
     ScalarEvidenceEntry,
     UncertaintyPolicy,
+    UncertaintyUnavailableKind,
     compile_constraint_linearization_capabilities,
     derive_uncertainty_evidence,
 )
 from chemex.parameters.parameterization import ActiveParameterization
 from chemex.parameters.spin_system import SpinSystem
-from chemex.printers.parameters import (
-    UncertaintyUnavailableKind,
-    parameter_uncertainty_view,
-    uncertainty_unavailable_reason,
-)
+from chemex.printers.parameters import uncertainty_unavailable_reason
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
 
@@ -163,6 +169,147 @@ def _accepted_relaxation_fit() -> tuple[
     )
     assert outcome.accepted_result is not None
     return session, parameterization, engine, problem, outcome.accepted_result
+
+
+def _derive_product_uncertainty(
+    accepted: AcceptedFitResult,
+    problem: OptimizationProblem,
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+) -> DeterministicUncertainty:
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+    return derive_deterministic_uncertainty(
+        AcceptedDeterministicFitFacts(
+            accepted,
+            problem,
+            parameterization,
+            engine,
+            ContinuousTrfBasis(decomposition.partition_proof),
+            "test-product-environment",
+        )
+    )
+
+
+def test_deterministic_uncertainty_is_complete_evaluated_and_fit_bound() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+
+    uncertainty = _derive_product_uncertainty(
+        accepted,
+        problem,
+        parameterization,
+        engine,
+    )
+
+    assert uncertainty.accepted_anchor is accepted
+    assert uncertainty.completeness is InterpretationCompleteness.COMPLETE
+    assert uncertainty.disposition is DerivationDisposition.EVALUATED
+    assert uncertainty.incomplete_terminal is None
+    assert uncertainty.root_evidence is not None
+    assert uncertainty.root_evidence.source_policy is uncertainty.policy
+    assert uncertainty.root_evidence.resolved_environment_identity == (
+        "test-product-environment"
+    )
+    conclusion = uncertainty.parameter(problem.controlled_ids[0])
+    assert conclusion is not None
+    assert conclusion.reportable
+    assert conclusion.standard_error is not None
+    assert conclusion.unavailable_kind is None
+
+
+def test_profiled_grid_is_complete_withheld_without_new_classification() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+
+    uncertainty = derive_deterministic_uncertainty(
+        AcceptedDeterministicFitFacts(
+            accepted,
+            problem,
+            parameterization,
+            engine,
+            ProfiledGridBasis(),
+            "test-grid-environment",
+        )
+    )
+
+    assert uncertainty.completeness is InterpretationCompleteness.COMPLETE
+    assert uncertainty.disposition is DerivationDisposition.WITHHELD
+    assert uncertainty.root_evidence is None
+    assert uncertainty.block_evidence is None
+    assert uncertainty.incomplete_terminal is None
+    assert uncertainty.parameters
+    assert all(not item.reportable for item in uncertainty.parameters)
+    assert all(item.unavailable_kind is None for item in uncertainty.parameters)
+
+
+def test_deterministic_uncertainty_rejects_mixed_accepted_problem_lineage() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+    foreign_problem = dataclasses.replace(
+        problem,
+        lower_bounds=(problem.lower_bounds[0] - 1.0,),
+    )
+    decomposition = FitDecomposition.from_root(problem, parameterization, engine)
+
+    with pytest.raises(
+        uncertainty_module.UncertaintyConstructionError,
+        match="problem lineage",
+    ):
+        derive_deterministic_uncertainty(
+            AcceptedDeterministicFitFacts(
+                accepted,
+                foreign_problem,
+                parameterization,
+                engine,
+                ContinuousTrfBasis(decomposition.partition_proof),
+                "test-lineage-environment",
+            )
+        )
+
+
+def test_root_interruption_is_incomplete_without_evidence() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+
+    with patch(
+        "chemex.optimize.deterministic_uncertainty.derive_uncertainty_evidence",
+        side_effect=KeyboardInterrupt,
+    ):
+        uncertainty = _derive_product_uncertainty(
+            accepted,
+            problem,
+            parameterization,
+            engine,
+        )
+
+    assert uncertainty.completeness is InterpretationCompleteness.INCOMPLETE
+    assert uncertainty.disposition is DerivationDisposition.EVALUATED
+    assert uncertainty.incomplete_terminal is OperationTerminal.INTERRUPTED
+    assert uncertainty.root_evidence is None
+    assert uncertainty.block_evidence is None
+    controlled = uncertainty.parameter(problem.controlled_ids[0])
+    assert controlled is not None
+    assert controlled.unavailable_kind is UncertaintyUnavailableKind.DERIVATION_STOPPED
+
+
+def test_block_interruption_retains_root_evidence_and_conclusions() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
+
+    with patch(
+        "chemex.optimize.deterministic_uncertainty.derive_root_anchored_block_covariance",
+        side_effect=KeyboardInterrupt,
+    ):
+        uncertainty = _derive_product_uncertainty(
+            accepted,
+            problem,
+            parameterization,
+            engine,
+        )
+
+    assert uncertainty.completeness is InterpretationCompleteness.INCOMPLETE
+    assert uncertainty.disposition is DerivationDisposition.EVALUATED
+    assert uncertainty.incomplete_terminal is OperationTerminal.INTERRUPTED
+    assert uncertainty.root_evidence is not None
+    assert uncertainty.block_evidence is None
+    controlled = uncertainty.parameter(problem.controlled_ids[0])
+    assert controlled is not None
+    assert controlled.reportable
 
 
 def _accepted_step1_profile_fit(
@@ -543,11 +690,14 @@ def test_accepted_fit_yields_typed_covariance_and_joint_constraint_propagation()
     assert evidence.constrained_propagation.source_covariance_identity == (
         evidence.covariance.identity
     )
-    uncertainty_view = parameter_uncertainty_view(evidence)
-    assert uncertainty_view.standard_error(controlled_id) is not None
-    assert uncertainty_view.standard_error(derived_id) is not None
-    assert uncertainty_view.warning(controlled_id) is None
-    assert uncertainty_view.warning(derived_id) is None
+    assert evidence.marginal_errors is not None
+    assert evidence.marginal_errors.entries[0].value is not None
+    assert evidence.constrained_marginal_errors is not None
+    assert all(
+        entry.value is not None
+        for entry in evidence.constrained_marginal_errors.entries
+    )
+    assert evidence.covariance.simple_bound_warning_ids == frozenset()
     assert evidence.resolved_environment_identity == ("local-qualification-environment")
     assert all(
         item.resolved_environment_identity == "local-qualification-environment"
@@ -601,10 +751,6 @@ def test_product_covariance_reuses_backend_jacobian_without_residual_evaluation(
     None
 ):
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
-    request = native_deterministic_module._product_uncertainty_inputs(
-        problem,
-        parameterization,
-    )
     evaluation_calls = 0
 
     def reject_evaluation(
@@ -616,20 +762,16 @@ def test_product_covariance_reuses_backend_jacobian_without_residual_evaluation(
         raise AssertionError("valid retained backend Jacobian must avoid replay")
 
     with patch.object(BoundEvaluator, "evaluate", reject_evaluation):
-        evidence = derive_uncertainty_evidence(
+        uncertainty = _derive_product_uncertainty(
             accepted,
-            problem=problem,
-            parameterization=parameterization,
-            engine=engine,
-            policy=request.policy,
-            constrained_scope=request.constrained_scope,
-            constrained_units=request.constrained_units,
-            constrained_scales=request.constrained_scales,
-            compiled_constraint_linearization=request.compiled_capabilities,
-            resolved_environment_identity=request.resolved_environment_identity,
+            problem,
+            parameterization,
+            engine,
         )
 
     assert evaluation_calls == 0
+    evidence = uncertainty.root_evidence
+    assert evidence is not None
     assert evidence.residual_jacobian is not None
     assert evidence.residual_jacobian.method == "retained-scipy-final-2-point"
     assert evidence.covariance is not None
@@ -637,10 +779,6 @@ def test_product_covariance_reuses_backend_jacobian_without_residual_evaluation(
 
 def test_failed_accepted_point_fallback_reports_jacobian_unavailable() -> None:
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
-    request = native_deterministic_module._product_uncertainty_inputs(
-        problem,
-        parameterization,
-    )
     fallback_anchor = _qualified_accepted_copy(
         accepted,
         occurrence_identity="failed-accepted-point-fallback",
@@ -657,41 +795,36 @@ def test_failed_accepted_point_fallback_reports_jacobian_unavailable() -> None:
             message="fallback evaluator unavailable",
         ),
     ):
-        evidence = derive_uncertainty_evidence(
+        uncertainty = _derive_product_uncertainty(
             fallback_anchor,
-            problem=problem,
-            parameterization=parameterization,
-            engine=engine,
-            policy=request.policy,
-            resolved_environment_identity="failed-fallback-environment",
+            problem,
+            parameterization,
+            engine,
         )
 
+    evidence = uncertainty.root_evidence
+    assert evidence is not None
     assert evidence.residual_jacobian is None
     assert any(
         failure.stage == "residual_linearization" for failure in evidence.failures
     )
+    conclusion = uncertainty.parameter(problem.controlled_ids[0])
+    assert conclusion is not None
     assert (
-        parameter_uncertainty_view(evidence).unavailable_reason(
-            problem.controlled_ids[0]
-        )
-        == "Jacobian unavailable"
+        conclusion.unavailable_kind is UncertaintyUnavailableKind.JACOBIAN_UNAVAILABLE
     )
 
 
 def test_backend_fallback_and_high_quality_jacobians_agree_at_accepted_point() -> None:
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
-    request = native_deterministic_module._product_uncertainty_inputs(
+    product = _derive_product_uncertainty(
+        accepted,
         problem,
         parameterization,
+        engine,
     )
-    backend = derive_uncertainty_evidence(
-        accepted,
-        problem=problem,
-        parameterization=parameterization,
-        engine=engine,
-        policy=request.policy,
-        resolved_environment_identity=request.resolved_environment_identity,
-    )
+    backend = product.root_evidence
+    assert backend is not None
     fallback_anchor = _qualified_accepted_copy(
         accepted,
         occurrence_identity="accepted-point-fallback-comparison",
@@ -701,7 +834,7 @@ def test_backend_fallback_and_high_quality_jacobians_agree_at_accepted_point() -
         problem=problem,
         parameterization=parameterization,
         engine=engine,
-        policy=request.policy,
+        policy=product.policy,
         resolved_environment_identity="fallback-comparison-environment",
     )
     reference_anchor = _qualified_accepted_copy(
@@ -781,9 +914,11 @@ def test_production_backend_fallback_and_reference_covariance_agree(
         example,
         spin_system,
     )
-    request = native_deterministic_module._product_uncertainty_inputs(
+    product = _derive_product_uncertainty(
+        accepted,
         problem,
         parameterization,
+        engine,
     )
     fallback_anchor = _qualified_accepted_copy(
         accepted,
@@ -794,24 +929,18 @@ def test_production_backend_fallback_and_reference_covariance_agree(
         occurrence_identity=f"{spin_system}-reference-comparison",
     )
     reference_policy = dataclasses.replace(
-        request.policy,
-        calibration_identity=f"{request.policy.calibration_identity}-{spin_system}",
+        product.policy,
+        calibration_identity=f"{product.policy.calibration_identity}-{spin_system}",
         residual_jacobian_strategy="high-quality-reference",
     )
-    backend = derive_uncertainty_evidence(
-        accepted,
-        problem=problem,
-        parameterization=parameterization,
-        engine=engine,
-        policy=request.policy,
-        resolved_environment_identity="production-backend-comparison",
-    )
+    backend = product.root_evidence
+    assert backend is not None
     fallback = derive_uncertainty_evidence(
         fallback_anchor,
         problem=problem,
         parameterization=parameterization,
         engine=engine,
-        policy=request.policy,
+        policy=product.policy,
         resolved_environment_identity="production-fallback-comparison",
     )
     reference = derive_uncertainty_evidence(
@@ -1525,13 +1654,11 @@ def test_at_bound_covariance_reports_uncertainty_with_boundary_warning() -> None
     assert evidence.correlations is not None
     assert evidence.correlations.entries[0][0].value == 1.0
     assert evidence.correlations.scope_reportable
-    view = parameter_uncertainty_view(evidence)
-    assert view.standard_error(controlled_id) is not None
-    assert view.warning(controlled_id) == "boundary may make uncertainty asymmetric"
-    assert view.unavailable_reason(controlled_id) is None
-    assert view.standard_error(derived_id) is not None
-    assert view.warning(derived_id) == "boundary may make uncertainty asymmetric"
-    assert view.unavailable_reason(derived_id) is None
+    assert evidence.covariance.simple_bound_warning_ids == {controlled_id}
+    assert evidence.constrained_marginal_errors is not None
+    assert evidence.constrained_marginal_errors.entries[0].value is not None
+    assert evidence.constraint_jacobian is not None
+    assert evidence.constraint_jacobian.structural_dependencies == ((controlled_id,),)
     forged_reportability_claims = tuple(
         dataclasses.replace(item, state=ClaimState.VIOLATED)
         if item.name == "MARGINAL_SCOPE_REPORTABILITY"
@@ -1585,10 +1712,8 @@ def test_near_bound_covariance_reports_local_error_and_preserves_violation() -> 
     assert evidence.covariance.claim("USABLE_LOCAL_COVARIANCE") is ClaimState.SATISFIED
     assert evidence.marginal_errors is not None
     assert evidence.marginal_errors.scope_reportable
-    view = parameter_uncertainty_view(evidence)
-    assert view.standard_error(controlled_id) == pytest.approx(standard_error)
-    assert view.warning(controlled_id) == "boundary may make uncertainty asymmetric"
-    assert view.unavailable_reason(controlled_id) is None
+    assert evidence.marginal_errors.entries[0].value == pytest.approx(standard_error)
+    assert evidence.covariance.simple_bound_warning_ids == {controlled_id}
 
 
 @pytest.mark.parametrize("zeta", (2.0, 0.0))
@@ -1659,13 +1784,14 @@ def test_multivariate_simple_bound_warning_is_coordinate_specific(zeta: float) -
     assert evidence.covariance.rank == 2
     assert evidence.covariance.claim("BOUNDARY_SEPARATION") is ClaimState.VIOLATED
     assert evidence.covariance.boundary_warning
-    view = parameter_uncertainty_view(evidence)
-    assert view.standard_error(d2o_id) is not None
-    assert view.standard_error(kdh_id) is not None
-    assert view.warning(d2o_id) is None
-    assert view.warning(kdh_id) == "boundary may make uncertainty asymmetric"
-    assert view.standard_error(kab_id) is not None
-    assert view.warning(kab_id) == "boundary may make uncertainty asymmetric"
+    assert evidence.marginal_errors is not None
+    assert all(entry.value is not None for entry in evidence.marginal_errors.entries)
+    assert evidence.covariance.simple_bound_warning_ids == {kdh_id}
+    assert evidence.constrained_marginal_errors is not None
+    assert evidence.constrained_marginal_errors.entries[0].param_id == kab_id
+    assert evidence.constrained_marginal_errors.entries[0].value is not None
+    assert evidence.constraint_jacobian is not None
+    assert kdh_id in evidence.constraint_jacobian.structural_dependencies[0]
 
 
 def test_invalid_relaxation_anchor_has_no_public_uncertainty_stencil() -> None:
@@ -1693,18 +1819,7 @@ def test_invalid_relaxation_anchor_has_no_public_uncertainty_stencil() -> None:
         failure.category == "active_relaxation_feasibility_boundary"
         for failure in evidence.failures
     )
-    view = parameter_uncertainty_view(evidence)
-    expected_reason = "boundary limited (active relaxation-PSD boundary)"
-    assert view.unavailable_reason(controlled_id) == expected_reason
-    assert (
-        native_deterministic_module._uncertainty_progress_status(
-            evidence,
-            None,
-            view,
-            problem.controlled_ids,
-        )
-        == f"uncertainty unavailable: {expected_reason}"
-    )
+    assert evidence.marginal_errors is None
 
 
 def test_active_relaxation_boundary_classifies_root_block_as_boundary_limited() -> None:
@@ -1777,12 +1892,7 @@ def test_normalization_failure_has_its_own_reporting_reason() -> None:
     assert evidence.covariance.claim("PROFILED_NORMALIZATION_REGULARITY") is (
         ClaimState.VIOLATED
     )
-    assert (
-        parameter_uncertainty_view(evidence).unavailable_reason(
-            problem.controlled_ids[0]
-        )
-        == "normalization invalid"
-    )
+    assert not evidence.marginal_errors.scope_reportable
 
 
 def test_non_finite_accepted_objective_yields_only_typed_failed_covariance() -> None:
@@ -1809,12 +1919,6 @@ def test_non_finite_accepted_objective_yields_only_typed_failed_covariance() -> 
     ]
     assert evidence.marginal_errors is None
     assert evidence.correlations is None
-    assert (
-        parameter_uncertainty_view(evidence).unavailable_reason(
-            problem.controlled_ids[0]
-        )
-        == "covariance numerical failure"
-    )
 
 
 def test_foreign_coordinate_scope_fails_before_any_numerical_evidence() -> None:
@@ -1906,45 +2010,31 @@ def test_absolute_observation_uncertainties_do_not_apply_residual_scaling() -> N
 
 
 def test_product_request_excludes_unsupported_scientific_function_propagation() -> None:
-    parameterization, _engine, problem = _hd_problem(Method())
-
-    request = native_deterministic_module._product_uncertainty_inputs(
+    parameterization, engine, problem = _hd_problem(Method())
+    accepted = _accepted_reference_anchor(parameterization, engine, problem)
+    uncertainty = _derive_product_uncertainty(
+        accepted,
         problem,
         parameterization,
+        engine,
     )
 
-    assert request.unsupported_constrained_ids
-    assert set(request.unsupported_constrained_ids).isdisjoint(
-        request.constrained_scope
+    unsupported = tuple(
+        item.param_id
+        for item in uncertainty.parameters
+        if item.unavailable_kind
+        is UncertaintyUnavailableKind.UNSUPPORTED_CONSTRAINED_DERIVATIVE
     )
-    assert request.policy.residual_variance_scaling is (
+    assert unsupported
+    assert uncertainty.policy.residual_variance_scaling is (
         ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES
     )
-    assert request.policy.coordinate_scales
+    assert uncertainty.policy.coordinate_scales
     with pytest.raises(
         uncertainty_module.UncertaintyConstructionError,
         match="legacy calibration tolerances must be zero",
     ):
-        dataclasses.replace(request.policy, rank_relative_tolerance=1.0e-12)
-
-
-def test_product_request_does_not_hide_structural_capability_errors() -> None:
-    parameterization, _engine, problem = _hd_problem(Method())
-
-    with (
-        patch.object(
-            native_deterministic_module,
-            "compile_constraint_linearization_capabilities",
-            side_effect=uncertainty_module.UncertaintyConstructionError("malformed"),
-        ),
-        pytest.raises(
-            uncertainty_module.UncertaintyConstructionError, match="malformed"
-        ),
-    ):
-        native_deterministic_module._product_uncertainty_inputs(
-            problem,
-            parameterization,
-        )
+        dataclasses.replace(uncertainty.policy, rank_relative_tolerance=1.0e-12)
 
 
 def test_full_rank_conditioning_above_diagnostic_limit_is_not_a_rank_gate() -> None:
@@ -1974,9 +2064,11 @@ def test_full_rank_conditioning_above_diagnostic_limit_is_not_a_rank_gate() -> N
     assert failure is None
 
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
-    product_request = native_deterministic_module._product_uncertainty_inputs(
+    product = _derive_product_uncertainty(
+        accepted,
         problem,
         parameterization,
+        engine,
     )
     evidence = derive_uncertainty_evidence(
         accepted,
@@ -1984,7 +2076,7 @@ def test_full_rank_conditioning_above_diagnostic_limit_is_not_a_rank_gate() -> N
         parameterization=parameterization,
         engine=engine,
         policy=dataclasses.replace(
-            product_request.policy,
+            product.policy,
             conditioning_limit=0.5,
         ),
         resolved_environment_identity="conditioning-is-diagnostic-only",
@@ -2021,12 +2113,6 @@ def test_malformed_non_finite_svd_output_is_a_typed_covariance_failure() -> None
     assert evidence.covariance is None
     assert evidence.rank_diagnostic is None
     assert evidence.failures[-1].category == "invalid_covariance_arithmetic"
-    assert (
-        parameter_uncertainty_view(evidence).unavailable_reason(
-            problem.controlled_ids[0]
-        )
-        == "covariance numerical failure"
-    )
 
 
 def test_svd_exception_is_reported_as_covariance_numerical_failure() -> None:
@@ -2046,12 +2132,6 @@ def test_svd_exception_is_reported_as_covariance_numerical_failure() -> None:
 
     assert evidence.covariance is None
     assert evidence.failures[-1].category == "svd_failure"
-    assert (
-        parameter_uncertainty_view(evidence).unavailable_reason(
-            problem.controlled_ids[0]
-        )
-        == "covariance numerical failure"
-    )
 
 
 def test_negative_svd_spectrum_is_typed_invalid_evidence() -> None:
@@ -2096,12 +2176,6 @@ def test_positive_scale_covariance_factor_underflow_is_typed_failure() -> None:
 
     assert evidence.covariance is None
     assert evidence.failures[-1].category == "covariance_factor_underflow"
-    assert (
-        parameter_uncertainty_view(evidence).unavailable_reason(
-            problem.controlled_ids[0]
-        )
-        == "covariance numerical failure"
-    )
 
 
 def test_cancellation_freezes_terminal_operation_without_artifact() -> None:
@@ -2558,9 +2632,9 @@ def test_affine_directional_separation_uses_exact_full_frame_slack(
     assert evidence.covariance is not None
     assert evidence.covariance.claim("AFFINE_FEASIBILITY") is expected
     assert evidence.covariance.usable
-    view = parameter_uncertainty_view(evidence)
-    assert view.standard_error(problem.controlled_ids[0]) is not None
-    assert view.warning(problem.controlled_ids[0]) is None
+    assert evidence.marginal_errors is not None
+    assert evidence.marginal_errors.entries[0].value is not None
+    assert evidence.covariance.simple_bound_warning_ids == frozenset()
     assert evidence.covariance.boundary_warning is (expected is ClaimState.VIOLATED)
 
 
