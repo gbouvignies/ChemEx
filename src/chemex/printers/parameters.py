@@ -6,10 +6,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from chemex.optimize.uncertainty import (
-    UncertaintyEvidence,
-    UncertaintyUnavailableKind,
+from chemex.optimize.deterministic_uncertainty import (
+    DerivationDisposition,
+    DeterministicUncertainty,
 )
+from chemex.optimize.uncertainty import UncertaintyUnavailableKind
 from chemex.parameters.name import ParamName
 from chemex.parameters.parameterization import (
     ActiveParameterization,
@@ -19,35 +20,6 @@ from chemex.parameters.parameterization import (
 from chemex.parameters.sealed import parameter_name_from_definition
 
 RE_GROUPNAME = re.compile(r"^[A-Za-z0-9_-]+$")
-
-
-@dataclass(frozen=True, slots=True)
-class ParameterUncertaintyView:
-    """Immutable report-only covariance-derived uncertainty selection."""
-
-    standard_errors: tuple[tuple[str, float], ...] = ()
-    warnings: tuple[tuple[str, str], ...] = ()
-    unavailable_reasons: tuple[tuple[str, str], ...] = ()
-
-    def __post_init__(self) -> None:
-        error_ids = {param_id for param_id, _value in self.standard_errors}
-        warning_ids = {param_id for param_id, _warning in self.warnings}
-        unavailable_ids = {param_id for param_id, _reason in self.unavailable_reasons}
-        if warning_ids - error_ids:
-            raise ValueError("Uncertainty warnings require an available standard error")
-        if error_ids & unavailable_ids:
-            raise ValueError(
-                "A parameter uncertainty cannot be available and unavailable"
-            )
-
-    def standard_error(self, param_id: str) -> float | None:
-        return dict(self.standard_errors).get(param_id)
-
-    def warning(self, param_id: str) -> str | None:
-        return dict(self.warnings).get(param_id)
-
-    def unavailable_reason(self, param_id: str) -> str | None:
-        return dict(self.unavailable_reasons).get(param_id)
 
 
 _UNAVAILABLE_REASON_TEXT = {
@@ -71,6 +43,10 @@ _UNAVAILABLE_REASON_TEXT = {
 }
 
 BOUNDARY_WARNING_TEXT = "boundary may make uncertainty asymmetric"
+GRID_UNCERTAINTY_WITHHELD_TEXT = (
+    "withheld: GRID coordinates were selected on a discrete profiled surface, "
+    "not by a full continuous Direct TRF"
+)
 
 if set(_UNAVAILABLE_REASON_TEXT) != set(UncertaintyUnavailableKind):
     raise RuntimeError("Uncertainty unavailability vocabulary is not exhaustive")
@@ -81,122 +57,25 @@ def uncertainty_unavailable_reason(kind: UncertaintyUnavailableKind) -> str:
     return _UNAVAILABLE_REASON_TEXT[kind]
 
 
-def _controlled_unavailability_kind(
-    evidence: UncertaintyEvidence,
-) -> UncertaintyUnavailableKind:
-    categories = {failure.category for failure in evidence.failures}
-    if categories & {"cancelled", "interrupted"}:
-        return UncertaintyUnavailableKind.DERIVATION_STOPPED
-    if "rank_deficient" in categories:
-        return UncertaintyUnavailableKind.RANK_DEFICIENT
-    if categories & {
-        "insufficient_effective_observations",
-        "non_positive_nominal_residual_degrees_of_freedom",
-    }:
-        return UncertaintyUnavailableKind.INSUFFICIENT_INFORMATION
-    if "active_relaxation_feasibility_boundary" in categories:
-        return UncertaintyUnavailableKind.BOUNDARY_LIMITED
-    covariance = evidence.covariance
-    if covariance is not None:
-        claims = {item.name: item.state.value for item in covariance.claims}
-        if claims.get("PROFILED_NORMALIZATION_REGULARITY") == "violated":
-            return UncertaintyUnavailableKind.NORMALIZATION_INVALID
-    if any(failure.stage == "residual_linearization" for failure in evidence.failures):
-        return UncertaintyUnavailableKind.JACOBIAN_UNAVAILABLE
-    return UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE
-
-
-def constrained_boundary_warning_ids(
-    evidence: UncertaintyEvidence,
-    controlled_warning_ids: frozenset[str],
-) -> frozenset[str]:
-    """Derived outputs structurally depending on a directly warned coordinate."""
-    constraint_jacobian = evidence.constraint_jacobian
-    if constraint_jacobian is None or not controlled_warning_ids:
-        return frozenset()
-    return frozenset(
-        output_id
-        for output_id, dependencies in zip(
-            constraint_jacobian.output_ids,
-            constraint_jacobian.structural_dependencies,
-            strict=True,
-        )
-        if controlled_warning_ids.intersection(dependencies)
-    )
-
-
-def parameter_uncertainty_view(
-    evidence: UncertaintyEvidence,
-    unsupported_constrained_ids: tuple[str, ...] = (),
-) -> ParameterUncertaintyView:
-    """Select only scientifically reportable covariance-derived errors."""
-    standard_errors: list[tuple[str, float]] = []
-    warnings: list[tuple[str, str]] = []
-    unavailable_reasons: list[tuple[str, str]] = []
-    controlled_warning_ids = (
-        frozenset()
-        if evidence.covariance is None
-        else evidence.covariance.simple_bound_warning_ids
-    )
-    marginal = evidence.marginal_errors
-    if marginal is not None and marginal.scope_reportable:
-        standard_errors.extend(
-            (entry.param_id, entry.value)
-            for entry in marginal.entries
-            if entry.value is not None
-        )
-        warnings.extend(
-            (entry.param_id, BOUNDARY_WARNING_TEXT)
-            for entry in marginal.entries
-            if entry.value is not None and entry.param_id in controlled_warning_ids
-        )
-    else:
-        reason = uncertainty_unavailable_reason(
-            _controlled_unavailability_kind(evidence)
-        )
-        unavailable_reasons.extend(
-            (param_id, reason) for param_id in evidence.accepted_anchor.controlled_ids
-        )
-    constrained = evidence.constrained_marginal_errors
-    if constrained is not None and constrained.scope_reportable:
-        standard_errors.extend(
-            (entry.param_id, entry.value)
-            for entry in constrained.entries
-            if entry.value is not None
-        )
-        constrained_warning_ids = constrained_boundary_warning_ids(
-            evidence,
-            controlled_warning_ids,
-        )
-        warnings.extend(
-            (entry.param_id, BOUNDARY_WARNING_TEXT)
-            for entry in constrained.entries
-            if entry.value is not None and entry.param_id in constrained_warning_ids
-        )
-    elif evidence.requested_output_scope:
-        unavailable_reasons.extend(
-            (
-                param_id,
-                uncertainty_unavailable_reason(
-                    UncertaintyUnavailableKind.CONSTRAINED_PROPAGATION_UNAVAILABLE
-                ),
-            )
-            for param_id in evidence.requested_output_scope
-        )
-    unavailable_reasons.extend(
+def uncertainty_progress_status(uncertainty: DeterministicUncertainty) -> str:
+    """Render the established terminal progress text from scientific facts."""
+    if uncertainty.boundary_warning:
+        return "covariance available with boundary warnings"
+    if uncertainty.root_covariance_available:
+        return "covariance available"
+    if uncertainty.block_covariance_available:
+        return "covariance partially available"
+    controlled_ids = uncertainty.accepted_anchor.controlled_ids
+    reason = next(
         (
-            param_id,
-            uncertainty_unavailable_reason(
-                UncertaintyUnavailableKind.UNSUPPORTED_CONSTRAINED_DERIVATIVE
-            ),
-        )
-        for param_id in unsupported_constrained_ids
+            uncertainty_unavailable_reason(item.unavailable_kind)
+            for param_id in controlled_ids
+            if (item := uncertainty.parameter(param_id)) is not None
+            and item.unavailable_kind is not None
+        ),
+        "insufficient information",
     )
-    return ParameterUncertaintyView(
-        standard_errors=tuple(standard_errors),
-        warnings=tuple(warnings),
-        unavailable_reasons=tuple(unavailable_reasons),
-    )
+    return f"uncertainty unavailable: {reason}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,16 +106,38 @@ class ClassifiedParameters:
     constrained: GlobalLocalParameters
 
 
+def _parameter_uncertainty_rendering(
+    param_id: str,
+    uncertainty: DeterministicUncertainty | None,
+) -> tuple[float | None, str | None, str | None]:
+    """Translate one predetermined conclusion into presentation values."""
+    conclusion = None if uncertainty is None else uncertainty.parameter(param_id)
+    standard_error = None if conclusion is None else conclusion.standard_error
+    warning = (
+        BOUNDARY_WARNING_TEXT
+        if conclusion is not None and conclusion.boundary_warning
+        else None
+    )
+    reason = (
+        GRID_UNCERTAINTY_WITHHELD_TEXT
+        if uncertainty is not None
+        and uncertainty.disposition is DerivationDisposition.WITHHELD
+        and conclusion is not None
+        else uncertainty_unavailable_reason(conclusion.unavailable_kind)
+        if conclusion is not None and conclusion.unavailable_kind is not None
+        else None
+    )
+    return standard_error, warning, reason
+
+
 def _format_fitted(
     param: ReportParameter,
-    uncertainty: ParameterUncertaintyView | None,
+    uncertainty: DeterministicUncertainty | None,
 ) -> str:
-    param_id = param.param_id
-    standard_error = (
-        None if uncertainty is None else uncertainty.standard_error(param_id)
+    standard_error, warning, reason = _parameter_uncertainty_rendering(
+        param.param_id,
+        uncertainty,
     )
-    warning = None if uncertainty is None else uncertainty.warning(param_id)
-    reason = None if uncertainty is None else uncertainty.unavailable_reason(param_id)
     error = (
         f"±{standard_error:.5e}" + (f" ({warning})" if warning is not None else "")
         if standard_error is not None
@@ -249,15 +150,13 @@ def _format_fitted(
 
 def _format_constrained(
     param: ReportParameter,
-    uncertainty: ParameterUncertaintyView | None,
+    uncertainty: DeterministicUncertainty | None,
     constraint_expression: str,
 ) -> str:
-    param_id = param.param_id
-    standard_error = (
-        None if uncertainty is None else uncertainty.standard_error(param_id)
+    standard_error, warning, reason = _parameter_uncertainty_rendering(
+        param.param_id,
+        uncertainty,
     )
-    warning = None if uncertainty is None else uncertainty.warning(param_id)
-    reason = None if uncertainty is None else uncertainty.unavailable_reason(param_id)
     error = (
         f"±{standard_error:.5e}" + (f" ({warning}); " if warning is not None else " ")
         if standard_error is not None
@@ -275,7 +174,7 @@ def _format_fixed(param: ReportParameter) -> str:
 def _params_to_strings(
     parameters: GlobalLocalParameters,
     status: str,
-    uncertainty: ParameterUncertaintyView | None,
+    uncertainty: DeterministicUncertainty | None,
     constraint_expressions: Mapping[str, str],
 ) -> dict[str, dict[str, str]]:
     result: defaultdict[str, dict[str, str]] = defaultdict(dict)
@@ -302,7 +201,7 @@ def _params_to_strings(
 def _format_parameter(
     param: ReportParameter,
     status: str,
-    uncertainty: ParameterUncertaintyView | None,
+    uncertainty: DeterministicUncertainty | None,
     constraint_expression: str = "",
 ) -> str:
     if status == "fitted":
@@ -344,7 +243,7 @@ def write_file(
     parameters: GlobalLocalParameters,
     status: str,
     path: Path,
-    uncertainty: ParameterUncertaintyView | None = None,
+    uncertainty: DeterministicUncertainty | None = None,
     constraint_expressions: Mapping[str, str] | None = None,
 ) -> None:
     if not parameters:
@@ -422,7 +321,7 @@ def write_parameters(
     parameter_values: Mapping[str, float],
     parameterization: ActiveParameterization,
     fitted_ids: tuple[str, ...] = (),
-    uncertainty: ParameterUncertaintyView | None = None,
+    deterministic_uncertainty: DeterministicUncertainty | None = None,
 ) -> None:
     """Write the model parameter values and their uncertainties to a file."""
     path_par = path / "Parameters"
@@ -446,7 +345,7 @@ def write_parameters(
         classified_parameters.fitted,
         "fitted",
         path_par,
-        uncertainty,
+        deterministic_uncertainty,
     )
     write_file(
         classified_parameters.fixed,
@@ -457,7 +356,7 @@ def write_parameters(
         classified_parameters.constrained,
         "constrained",
         path_par,
-        uncertainty,
+        deterministic_uncertainty,
         constraint_expressions,
     )
 

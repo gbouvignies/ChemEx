@@ -12,10 +12,12 @@ from chemex.messages import (
     print_plotting_canceled,
     print_writing_results,
 )
-from chemex.optimize.uncertainty import (
-    RootAnchoredBlockCovarianceEvidence,
-    UncertaintyEvidence,
+from chemex.optimize.deterministic_uncertainty import (
+    DerivationDisposition,
+    DeterministicUncertainty,
+    InterpretationCompleteness,
 )
+from chemex.optimize.uncertainty import UncertaintyUnavailableKind
 from chemex.parameters.feasible_coordinates import validate_relaxation_state
 from chemex.parameters.parameterization import (
     ActiveParameterization,
@@ -26,7 +28,11 @@ from chemex.printers.native_reporting import (
     write_json,
     write_uncertainty,
 )
-from chemex.printers.parameters import ParameterUncertaintyView, write_parameters
+from chemex.printers.parameters import (
+    GRID_UNCERTAINTY_WITHHELD_TEXT,
+    uncertainty_unavailable_reason,
+    write_parameters,
+)
 from chemex.typing import Array
 
 
@@ -84,10 +90,7 @@ def _write_files(
     *,
     residuals: Array,
     nvarys: int,
-    uncertainty: ParameterUncertaintyView | None = None,
-    uncertainty_evidence: UncertaintyEvidence | None = None,
-    uncertainty_status: tuple[str, str] | None = None,
-    block_uncertainty: RootAnchoredBlockCovarianceEvidence | None = None,
+    deterministic_uncertainty: DeterministicUncertainty | None = None,
     parameter_model: SealedParameterModel,
     parameter_values: Mapping[str, float],
     parameterization: ActiveParameterization,
@@ -102,7 +105,7 @@ def _write_files(
         parameter_values=parameter_values,
         parameterization=parameterization,
         fitted_ids=fitted_ids,
-        uncertainty=uncertainty,
+        deterministic_uncertainty=deterministic_uncertainty,
     )
     experiments.write(path)
     _write_statistics(
@@ -111,13 +114,33 @@ def _write_files(
         residuals=residuals,
         nvarys=nvarys,
     )
-    if uncertainty_evidence is not None:
+    if (
+        deterministic_uncertainty is not None
+        and deterministic_uncertainty.root_evidence is not None
+    ):
         statistics_path = path / "Statistics"
         statistics_path.mkdir(exist_ok=True)
-        write_uncertainty(statistics_path, uncertainty_evidence)
-        write_block_uncertainty(statistics_path, block_uncertainty)
-    if uncertainty_status is not None:
-        terminal, reason = uncertainty_status
+        write_uncertainty(statistics_path, deterministic_uncertainty.root_evidence)
+        write_block_uncertainty(
+            statistics_path,
+            deterministic_uncertainty.block_evidence,
+        )
+    if deterministic_uncertainty is not None and (
+        deterministic_uncertainty.disposition is DerivationDisposition.WITHHELD
+        or deterministic_uncertainty.completeness
+        is InterpretationCompleteness.INCOMPLETE
+    ):
+        if deterministic_uncertainty.disposition is DerivationDisposition.WITHHELD:
+            terminal = "withheld"
+            reason = GRID_UNCERTAINTY_WITHHELD_TEXT
+        else:
+            incomplete_terminal = deterministic_uncertainty.incomplete_terminal
+            if incomplete_terminal is None:
+                raise ValueError("Incomplete uncertainty lacks its terminal")
+            terminal = incomplete_terminal.value
+            reason = uncertainty_unavailable_reason(
+                UncertaintyUnavailableKind.DERIVATION_STOPPED
+            )
         covariance_path = path / "Statistics" / "Covariance"
         covariance_path.mkdir(parents=True, exist_ok=True)
         write_json(
@@ -184,10 +207,7 @@ def execute_post_fit(
     plot: bool = False,
     residuals: Array,
     nvarys: int,
-    uncertainty: ParameterUncertaintyView | None = None,
-    uncertainty_evidence: UncertaintyEvidence | None = None,
-    uncertainty_status: tuple[str, str] | None = None,
-    block_uncertainty: RootAnchoredBlockCovarianceEvidence | None = None,
+    deterministic_uncertainty: DeterministicUncertainty | None = None,
     parameter_model: SealedParameterModel,
     parameter_values: Mapping[str, float],
     parameterization: ActiveParameterization,
@@ -198,10 +218,7 @@ def execute_post_fit(
         path,
         residuals=residuals,
         nvarys=nvarys,
-        uncertainty=uncertainty,
-        uncertainty_evidence=uncertainty_evidence,
-        uncertainty_status=uncertainty_status,
-        block_uncertainty=block_uncertainty,
+        deterministic_uncertainty=deterministic_uncertainty,
         parameter_model=parameter_model,
         parameter_values=parameter_values,
         parameterization=parameterization,

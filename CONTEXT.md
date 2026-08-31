@@ -40,3 +40,9 @@ The complete authoritative outcome of one specific statistical analysis,
 including its Evidence, Summary availability, and scientific completeness.
 Resampling and MCMC have distinct Analysis Results.
 _Avoid_: Evidence, Summary, output artifacts
+
+**Deterministic Uncertainty**:
+The complete interpreted uncertainty associated with one accepted deterministic
+fit, including its Evidence and predetermined availability, completeness, and
+reportability.
+_Avoid_: Product Uncertainty, Uncertainty Result, publication artifacts

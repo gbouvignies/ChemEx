@@ -1,0 +1,7 @@
+{
+  "artifact_type": "native_covariance_derivation_status",
+  "reason": "withheld: GRID coordinates were selected on a discrete profiled surface, not by a full continuous Direct TRF",
+  "schema_version": 1,
+  "status": "incomplete",
+  "terminal": "withheld"
+}

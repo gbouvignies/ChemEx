@@ -34,6 +34,14 @@ from chemex.optimize.de_direct_trf import (
     DeSearchTerminal,
     execute_de_search,
 )
+from chemex.optimize.deterministic_uncertainty import (
+    AcceptedDeterministicFitFacts,
+    ContinuousTrfBasis,
+    DerivationDisposition,
+    DeterministicUncertainty,
+    ProfiledGridBasis,
+    derive_deterministic_uncertainty,
+)
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
     CancellationToken,
@@ -55,19 +63,6 @@ from chemex.optimize.profiled_grid import (
     ProfiledGridOutcome,
     execute_profiled_grid,
 )
-from chemex.optimize.uncertainty import (
-    CompiledConstraintLinearizationCapabilities,
-    MissingFunctionLinearizationCapability,
-    ParameterUnit,
-    ResidualVarianceScaling,
-    RootAnchoredBlockCovarianceEvidence,
-    UncertaintyEvidence,
-    UncertaintyPolicy,
-    UncertaintyUnavailableKind,
-    compile_constraint_linearization_capabilities,
-    derive_root_anchored_block_covariance,
-    derive_uncertainty_evidence,
-)
 from chemex.parameters.feasible_coordinates import validate_relaxation_state
 from chemex.parameters.parameterization import (
     ActiveParameterization,
@@ -78,11 +73,7 @@ from chemex.parameters.sealed import parameter_name_from_definition
 from chemex.parameters.values import AnalysisValues, AnalysisValuesSnapshot
 from chemex.printers.grid import write_grid_output
 from chemex.printers.parameters import (
-    BOUNDARY_WARNING_TEXT,
-    ParameterUncertaintyView,
-    constrained_boundary_warning_ids,
-    parameter_uncertainty_view,
-    uncertainty_unavailable_reason,
+    uncertainty_progress_status,
 )
 from chemex.run_info import RunInfo, mark_failure_stage
 from chemex.runtime import AnalysisSession
@@ -102,8 +93,13 @@ class NativeDeterministicFit:
     parameterization: ActiveParameterization
     engine: EvaluationEngine
     parameter_model: SealedParameterModel
-    uncertainty: UncertaintyEvidence | None = None
-    block_uncertainty: RootAnchoredBlockCovarianceEvidence | None = None
+    deterministic_uncertainty: DeterministicUncertainty
+
+    def __post_init__(self) -> None:
+        if self.deterministic_uncertainty.accepted_anchor is not self.accepted:
+            raise ValueError(
+                "Deterministic uncertainty belongs to a different accepted fit"
+            )
 
     @property
     def objective_request_budget(self) -> int:
@@ -111,240 +107,9 @@ class NativeDeterministicFit:
         return _objective_request_budget(self.problem)
 
 
-@dataclass(frozen=True, slots=True)
-class _ProductUncertaintyInputs:
-    """Resolved inputs for the single post-commit covariance operation."""
-
-    policy: UncertaintyPolicy
-    constrained_scope: tuple[str, ...]
-    constrained_units: tuple[tuple[str, ParameterUnit], ...]
-    constrained_scales: tuple[tuple[str, float], ...]
-    compiled_capabilities: CompiledConstraintLinearizationCapabilities
-    resolved_environment_identity: str
-    unsupported_constrained_ids: tuple[str, ...]
-
-
 def _objective_request_budget(problem: OptimizationProblem) -> int:
     coordinate_count = max(1, len(problem.controlled_ids))
     return _TRF_OBJECTIVE_REQUESTS_PER_DIMENSION * (coordinate_count + 1)
-
-
-def _product_uncertainty_inputs(
-    problem: OptimizationProblem,
-    parameterization: ActiveParameterization,
-) -> _ProductUncertaintyInputs:
-    """Resolve the normal absolute-observation-sigma covariance policy."""
-    environment = RuntimeEnvironment.from_current_process()
-    policy = UncertaintyPolicy(
-        calibration_identity="native-product-local-covariance-numerics-v2",
-        numerical_compatibility_requirement=(
-            "binary64-retained-scipy-2point-gesdd-column-equilibrated-v1"
-        ),
-        coordinate_scales=tuple((param_id, 1.0) for param_id in problem.controlled_ids),
-        coordinate_units=tuple(
-            (param_id, ParameterUnit.UNSPECIFIED) for param_id in problem.controlled_ids
-        ),
-        residual_variance_scaling=(
-            ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES
-        ),
-        relative_step_tolerance=1.0e-4,
-        roundoff_multiplier=64.0,
-        smaller_step_extent=8,
-        larger_step_extent=8,
-        svd_driver="gesdd",
-        # Legacy qualification knobs; covariance rank uses sigma_max*max(m,n)*eps.
-        rank_absolute_tolerance=0.0,
-        rank_relative_tolerance=0.0,
-        weak_relative_tolerance=1.0e-6,
-        singular_value_cluster_relative_tolerance=1.0e-10,
-        conditioning_limit=1.0e12,
-        correlation_roundoff_multiplier=64.0,
-        affine_feasibility_policy="canonical-root-affine-halfspace-zeta-gt-3-v1",
-        residual_jacobian_strategy="retained-backend-or-accepted-2-point",
-    )
-    constraints = {
-        item.target_id: item for item in parameterization.program.constraints
-    }
-    controlled = frozenset(problem.controlled_ids)
-
-    def depends_on_controlled(
-        param_id: str,
-        visiting: frozenset[str] = frozenset(),
-    ) -> bool:
-        if param_id in controlled:
-            return True
-        if param_id in visiting or param_id not in constraints:
-            return False
-        constraint = constraints[param_id]
-        return any(
-            depends_on_controlled(dependency, visiting | {param_id})
-            for dependency in constraint.dependencies
-        )
-
-    propagation_candidates = tuple(
-        param_id
-        for param_id in parameterization.scope_ids
-        if parameterization.role(param_id) is ParameterRole.DERIVED
-        and depends_on_controlled(param_id)
-    )
-    supported: list[str] = []
-    unsupported: list[str] = []
-    for param_id in propagation_candidates:
-        try:
-            compile_constraint_linearization_capabilities(
-                parameterization,
-                (param_id,),
-                (),
-            )
-        except MissingFunctionLinearizationCapability:
-            unsupported.append(param_id)
-        else:
-            supported.append(param_id)
-    constrained_scope = tuple(supported)
-    capabilities = compile_constraint_linearization_capabilities(
-        parameterization,
-        constrained_scope,
-        (),
-    )
-    return _ProductUncertaintyInputs(
-        policy,
-        constrained_scope,
-        tuple((param_id, ParameterUnit.UNSPECIFIED) for param_id in constrained_scope),
-        tuple((param_id, 1.0) for param_id in constrained_scope),
-        capabilities,
-        environment.identity,
-        tuple(unsupported),
-    )
-
-
-def _stopped_uncertainty_result(
-    terminal: str,
-    problem: OptimizationProblem,
-    inputs: _ProductUncertaintyInputs,
-) -> tuple[
-    UncertaintyEvidence | None,
-    ParameterUncertaintyView,
-    tuple[str, str] | None,
-]:
-    reason = uncertainty_unavailable_reason(
-        UncertaintyUnavailableKind.DERIVATION_STOPPED
-    )
-    view = ParameterUncertaintyView(
-        unavailable_reasons=(
-            *((param_id, reason) for param_id in problem.controlled_ids),
-            *((param_id, reason) for param_id in inputs.constrained_scope),
-            *(
-                (
-                    param_id,
-                    uncertainty_unavailable_reason(
-                        UncertaintyUnavailableKind.UNSUPPORTED_CONSTRAINED_DERIVATIVE
-                    ),
-                )
-                for param_id in inputs.unsupported_constrained_ids
-            ),
-        )
-    )
-    return None, view, (terminal, reason)
-
-
-def _derive_product_uncertainty(
-    accepted: AcceptedFitResult,
-    problem: OptimizationProblem,
-    parameterization: ActiveParameterization,
-    engine: EvaluationEngine,
-    inputs: _ProductUncertaintyInputs,
-) -> tuple[
-    UncertaintyEvidence | None,
-    ParameterUncertaintyView,
-    tuple[str, str] | None,
-]:
-    """Derive covariance after commit without owning or rolling back fit state."""
-    try:
-        evidence = derive_uncertainty_evidence(
-            accepted,
-            problem=problem,
-            parameterization=parameterization,
-            engine=engine,
-            policy=inputs.policy,
-            constrained_scope=inputs.constrained_scope,
-            constrained_units=inputs.constrained_units,
-            constrained_scales=inputs.constrained_scales,
-            compiled_constraint_linearization=inputs.compiled_capabilities,
-            resolved_environment_identity=inputs.resolved_environment_identity,
-        )
-    except KeyboardInterrupt:
-        return _stopped_uncertainty_result("interrupted", problem, inputs)
-    return (
-        evidence,
-        parameter_uncertainty_view(
-            evidence,
-            inputs.unsupported_constrained_ids,
-        ),
-        None,
-    )
-
-
-def _product_block_uncertainty(
-    evidence: UncertaintyEvidence | None,
-    decomposition: FitDecomposition,
-) -> tuple[
-    RootAnchoredBlockCovarianceEvidence | None,
-    tuple[str, str] | None,
-]:
-    """Derive proof-bound block evidence without invalidating a committed fit."""
-    if evidence is None:
-        return None, None
-    try:
-        return (
-            derive_root_anchored_block_covariance(
-                evidence,
-                decomposition.partition_proof,
-            ),
-            None,
-        )
-    except KeyboardInterrupt:
-        return None, (
-            "interrupted",
-            uncertainty_unavailable_reason(
-                UncertaintyUnavailableKind.DERIVATION_STOPPED
-            ),
-        )
-
-
-def _uncertainty_progress_status(
-    evidence: UncertaintyEvidence | None,
-    block_evidence: RootAnchoredBlockCovarianceEvidence | None,
-    uncertainty: ParameterUncertaintyView,
-    controlled_ids: tuple[str, ...],
-) -> str:
-    """Summarize fitted covariance availability without overstating constraints."""
-    root_boundary_warning = (
-        evidence is not None
-        and evidence.covariance is not None
-        and evidence.covariance.boundary_warning
-    )
-    block_boundary_warning = block_evidence is not None and any(
-        block.boundary_warning for block in block_evidence.blocks
-    )
-    if root_boundary_warning or block_boundary_warning:
-        return "covariance available with boundary warnings"
-    available_ids = {param_id for param_id, _value in uncertainty.standard_errors}
-    if (
-        evidence is not None
-        and evidence.covariance is not None
-        and all(param_id in available_ids for param_id in controlled_ids)
-    ):
-        return "covariance available"
-    if block_evidence is not None and any(
-        block.covariance is not None for block in block_evidence.blocks
-    ):
-        return "covariance partially available"
-    reasons = dict(uncertainty.unavailable_reasons)
-    reason = next(
-        (reasons[param_id] for param_id in controlled_ids if param_id in reasons),
-        "insufficient information",
-    )
-    return f"uncertainty unavailable: {reason}"
 
 
 def _has_controlled_parameters(parameterization: ActiveParameterization) -> bool:
@@ -649,10 +414,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     else:
         grid_axes = None
         invocation = _build_invocation(problem, decomposition)
-    uncertainty_inputs = _product_uncertainty_inputs(
-        problem,
-        parameterization,
-    )
+    resolved_environment_identity = RuntimeEnvironment.from_current_process().identity
     component_labels = _fit_component_labels(decomposition, parameter_model)
     progress = MinimizationProgressReporter(
         console,
@@ -717,108 +479,28 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     if accepted is None:
         raise RuntimeError("Committed native fit lacks its accepted result")
     result = accepted.evaluation_result
-    if isinstance(search, GridSearch):
-        grid_uncertainty_reason = (
-            "withheld: GRID coordinates were selected on a discrete profiled "
-            "surface, not by a full continuous Direct TRF"
-        )
-        uncertainty_evidence = None
-        block_uncertainty = None
-        block_status = None
-        uncertainty = ParameterUncertaintyView(
-            unavailable_reasons=tuple(
-                (param_id, grid_uncertainty_reason)
-                for param_id in (
-                    *problem.controlled_ids,
-                    *uncertainty_inputs.constrained_scope,
-                    *uncertainty_inputs.unsupported_constrained_ids,
-                )
-            )
-        )
-        uncertainty_status = ("withheld", grid_uncertainty_reason)
-    else:
-        try:
-            uncertainty_evidence, uncertainty, uncertainty_status = (
-                _derive_product_uncertainty(
-                    accepted,
-                    problem,
-                    parameterization,
-                    engine,
-                    uncertainty_inputs,
-                )
-            )
-            block_uncertainty, block_status = _product_block_uncertainty(
-                uncertainty_evidence,
-                decomposition,
-            )
-        except (Exception, KeyboardInterrupt) as error:
-            mark_failure_stage(error, "uncertainty")
-            raise
-        uncertainty_status = block_status or uncertainty_status
-    if block_uncertainty is not None:
-        block_errors = tuple(
-            (entry.param_id, entry.value)
-            for block in block_uncertainty.blocks
-            for entry in block.marginal_errors
-            if entry.value is not None
-        )
-        block_unavailable = tuple(
-            (param_id, uncertainty_unavailable_reason(block.unavailable_kind))
-            for block in block_uncertainty.blocks
-            if block.unavailable_kind is not None
-            for param_id in block.controlled_ids
-        )
-        block_constrained_errors = tuple(
-            (entry.param_id, entry.value)
-            for block in block_uncertainty.blocks
-            for entry in block.constrained_marginal_errors
-            if entry.value is not None
-        )
-        block_controlled_warning_ids = block_uncertainty.simple_bound_warning_ids
-        block_constrained_warning_ids = constrained_boundary_warning_ids(
-            block_uncertainty.source_bundle,
-            block_controlled_warning_ids,
-        )
-        block_warnings = tuple(
-            (entry.param_id, BOUNDARY_WARNING_TEXT)
-            for block in block_uncertainty.blocks
-            for entry in block.marginal_errors
-            if entry.value is not None
-            and entry.param_id in block_controlled_warning_ids
-        ) + tuple(
-            (entry.param_id, BOUNDARY_WARNING_TEXT)
-            for block in block_uncertainty.blocks
-            for entry in block.constrained_marginal_errors
-            if entry.value is not None
-            and entry.param_id in block_constrained_warning_ids
-        )
-        recovered_ids = {
-            param_id for param_id, _value in (*block_errors, *block_constrained_errors)
-        }
-        uncertainty = ParameterUncertaintyView(
-            standard_errors=(
-                uncertainty.standard_errors + block_errors + block_constrained_errors
-            ),
-            warnings=uncertainty.warnings + block_warnings,
-            unavailable_reasons=(
-                tuple(
-                    (param_id, reason)
-                    for param_id, reason in uncertainty.unavailable_reasons
-                    if param_id not in recovered_ids
-                )
-                + block_unavailable
-            ),
-        )
-    if isinstance(search, GridSearch):
+    uncertainty_facts = AcceptedDeterministicFitFacts(
+        accepted,
+        problem,
+        parameterization,
+        engine,
+        (
+            ProfiledGridBasis()
+            if isinstance(search, GridSearch)
+            else ContinuousTrfBasis(decomposition.partition_proof)
+        ),
+        resolved_environment_identity,
+    )
+    try:
+        deterministic_uncertainty = derive_deterministic_uncertainty(uncertainty_facts)
+    except (Exception, KeyboardInterrupt) as error:
+        mark_failure_stage(error, "uncertainty")
+        raise
+    if deterministic_uncertainty.disposition is DerivationDisposition.WITHHELD:
         uncertainty_progress.skip_grid()
     else:
         uncertainty_progress.finish(
-            _uncertainty_progress_status(
-                uncertainty_evidence,
-                block_uncertainty,
-                uncertainty,
-                problem.controlled_ids,
-            )
+            uncertainty_progress_status(deterministic_uncertainty)
         )
     fit = NativeDeterministicFit(
         accepted,
@@ -826,8 +508,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         parameterization,
         engine,
         parameter_model,
-        uncertainty_evidence,
-        block_uncertainty,
+        deterministic_uncertainty,
     )
     try:
         _materialize_evaluation(experiments, result)
@@ -851,10 +532,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
                 plot=plot != "nothing",
                 residuals=result.residuals,
                 nvarys=variable_count,
-                uncertainty=uncertainty,
-                uncertainty_evidence=uncertainty_evidence,
-                uncertainty_status=uncertainty_status,
-                block_uncertainty=block_uncertainty,
+                deterministic_uncertainty=deterministic_uncertainty,
                 parameter_model=parameter_model,
                 parameter_values=result.resolved_values,
                 parameterization=parameterization,
@@ -872,10 +550,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             plot=plot != "nothing",
             residuals=result.residuals,
             nvarys=variable_count,
-            uncertainty=uncertainty,
-            uncertainty_evidence=uncertainty_evidence,
-            uncertainty_status=uncertainty_status,
-            block_uncertainty=block_uncertainty,
+            deterministic_uncertainty=deterministic_uncertainty,
             parameter_model=parameter_model,
             parameter_values=result.resolved_values,
             parameterization=parameterization,
