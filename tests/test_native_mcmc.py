@@ -8,6 +8,7 @@ import pickle
 import threading
 import time
 from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 from scipy.stats import truncnorm
 
 import chemex.optimize.native_mcmc as native_mcmc
+from chemex.configuration.method_plan import McmcRequest
 from chemex.containers.data import Data
 from chemex.containers.profile import Profile, PulseSequence
 from chemex.evaluation.native import EvaluationEngine, EvaluationFrame, EvaluationResult
@@ -26,10 +28,14 @@ from chemex.optimize.direct_trf import (
     CancellationToken,
     OptimizationProblem,
 )
+from chemex.optimize.mcmc import EffectiveMcmcSettings, write_mcmc_outputs
 from chemex.optimize.native_mcmc import (
     EnsembleState,
     ExpertMcmcPolicy,
     InitializationKind,
+    McmcAnalysisFailureCategory,
+    McmcAnalysisStatus,
+    McmcAutocorrelationStatus,
     McmcConstructionError,
     McmcDiagnosticReason,
     McmcDiagnosticStatus,
@@ -45,6 +51,7 @@ from chemex.optimize.native_mcmc import (
     ResolvedMcmcPolicy,
     build_accepted_point_ensemble,
     build_bounded_latin_hypercube,
+    derive_mcmc_analysis_result,
     derive_mcmc_diagnostics,
     derive_mcmc_operation_diagnostics,
     derive_posterior_sample_evidence,
@@ -58,8 +65,17 @@ from chemex.optimize.uncertainty import ParameterUnit
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     ConstraintProgram,
+    ParameterDeclaration,
     ParameterRole,
     ScientificFunctionBinder,
+    SealedParameterDeclarations,
+    SealedParameterModel,
+)
+from chemex.parameters.sealed import (
+    ParamConfig,
+    ParamDefinition,
+    SealedConfiguration,
+    SealedDefinitions,
 )
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.values import AnalysisValuesSnapshot
@@ -209,6 +225,41 @@ def _resolved_policy() -> ResolvedMcmcPolicy:
         walkers=8,
         expert_provenance="qualification-test-expert",
     ).resolve(dimension=2, root_seed=1234)
+
+
+def _product_parameter_model() -> SealedParameterModel:
+    definitions = SealedDefinitions(
+        (
+            ParamDefinition("A", "A", "", (), 0.5, 0.0, 2.0),
+            ParamDefinition("B", "B", "", (), 1.5, 1.0, 3.0),
+        ),
+        {},
+    )
+    configuration = SealedConfiguration(
+        (
+            ParamConfig("A", 0.5, 0.0, 2.0),
+            ParamConfig("B", 1.5, 1.0, 3.0),
+        ),
+        {},
+        definitions.identity,
+    )
+    declarations = SealedParameterDeclarations(
+        (
+            ParameterDeclaration(
+                "A", True, requires_independent=True, fits_by_default=True
+            ),
+            ParameterDeclaration(
+                "B", True, requires_independent=True, fits_by_default=True
+            ),
+        )
+    )
+    return SealedParameterModel(
+        "test",
+        "test-model",
+        definitions,
+        configuration,
+        declarations,
+    )
 
 
 def _same_semantics_foreign_occurrence(
@@ -420,6 +471,219 @@ def test_product_policy_initializes_from_exact_accepted_fit() -> None:
         accepted.vector,
         atol=2.0e-4,
     )
+
+
+def test_product_analysis_result_preserves_explicit_burn_and_summary_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accepted, problem, parameterization, engine = _native_context()
+    request = McmcRequest(
+        steps=5,
+        burn=1,
+        thin=2,
+        walkers=8,
+        seed=1234,
+    )
+    policy = resolve_product_mcmc_policy(
+        dimension=2,
+        walkers=8,
+        steps=request.steps,
+        root_seed=1234,
+    )
+    plan = McmcPlan.for_accepted(
+        accepted,
+        source_problem=problem,
+        parameterization=parameterization,
+        source_engine=engine,
+        policy=policy,
+        coordinate_units=(
+            ("A", ParameterUnit.DIMENSIONLESS),
+            ("B", ParameterUnit.DIMENSIONLESS),
+        ),
+    )
+    operation = execute_mcmc_evidence(accepted, plan)
+    assert operation.evidence is not None
+    monkeypatch.setattr(
+        native_mcmc.emcee.autocorr,
+        "integrated_time",
+        lambda _chain, **_kwargs: np.array([1.25, 1.5]),
+    )
+
+    parameter_model = _product_parameter_model()
+    result = derive_mcmc_analysis_result(
+        operation.evidence,
+        request,
+        parameter_model,
+    )
+
+    assert result.status is McmcAnalysisStatus.COMPLETE
+    assert result.failure is None
+    assert result.discarded_steps == 1
+    assert result.chain.shape == (2, 8, 2)
+    expected_raw = np.asarray(
+        [state.positions for state in operation.evidence.states[1:]],
+        dtype=float,
+    )
+    np.testing.assert_array_equal(result.chain, expected_raw[1::2])
+    assert result.summary[0].parameter_id == "A"
+    expected_quantiles = np.percentile(
+        result.samples[:, 0],
+        [2.5, 15.87, 50.0, 84.13, 97.5],
+    )
+    np.testing.assert_array_equal(
+        np.array(
+            [
+                result.summary[0].eti_95_lower,
+                result.summary[0].credible_interval_68_lower,
+                result.summary[0].median,
+                result.summary[0].credible_interval_68_upper,
+                result.summary[0].eti_95_upper,
+            ]
+        ),
+        expected_quantiles,
+    )
+
+
+def test_product_analysis_result_classifies_automatic_burn_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accepted, problem, parameterization, engine = _native_context()
+    request = McmcRequest(
+        steps=5,
+        walkers=8,
+        seed=1234,
+    )
+    plan = McmcPlan.for_accepted(
+        accepted,
+        source_problem=problem,
+        parameterization=parameterization,
+        source_engine=engine,
+        policy=resolve_product_mcmc_policy(
+            dimension=2,
+            walkers=8,
+            steps=request.steps,
+            root_seed=1234,
+        ),
+        coordinate_units=(
+            ("A", ParameterUnit.DIMENSIONLESS),
+            ("B", ParameterUnit.DIMENSIONLESS),
+        ),
+    )
+    operation = execute_mcmc_evidence(accepted, plan)
+    assert operation.evidence is not None
+    monkeypatch.setattr(
+        native_mcmc.emcee.autocorr,
+        "integrated_time",
+        lambda _chain, **_kwargs: object(),
+    )
+
+    parameter_model = _product_parameter_model()
+    result = derive_mcmc_analysis_result(
+        operation.evidence,
+        request,
+        parameter_model,
+    )
+
+    assert result.status is McmcAnalysisStatus.INCOMPLETE
+    assert result.failure is not None
+    assert (
+        result.failure.category
+        is McmcAnalysisFailureCategory.AUTOMATIC_BURN_UNAVAILABLE
+    )
+    assert "autocorrelation time invalid" in result.failure.message
+    assert result.failure.preserve_raw_evidence
+    assert result.summary == ()
+    assert result.raw_chain is not None
+    assert result.raw_chain.shape == (5, 8, 2)
+
+
+@pytest.mark.parametrize(
+    ("autocorrelation_outcome", "expected_status"),
+    (
+        (np.array([1.25, 1.5]), McmcAutocorrelationStatus.RELIABLE),
+        (
+            native_mcmc.emcee.autocorr.AutocorrError(np.array([1.6, 1.8])),
+            McmcAutocorrelationStatus.UNRELIABLE_SHORT_CHAIN,
+        ),
+    ),
+    ids=("reliable", "tentative"),
+)
+def test_publication_consumes_predetermined_authoritative_mcmc_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    autocorrelation_outcome: object,
+    expected_status: McmcAutocorrelationStatus,
+) -> None:
+    accepted, problem, parameterization, engine = _native_context()
+    request = McmcRequest(
+        steps=5,
+        burn=1,
+        thin=2,
+        walkers=8,
+        seed=1234,
+    )
+    plan = McmcPlan.for_accepted(
+        accepted,
+        source_problem=problem,
+        parameterization=parameterization,
+        source_engine=engine,
+        policy=resolve_product_mcmc_policy(
+            dimension=2,
+            walkers=8,
+            steps=request.steps,
+            root_seed=1234,
+        ),
+        coordinate_units=(
+            ("A", ParameterUnit.DIMENSIONLESS),
+            ("B", ParameterUnit.DIMENSIONLESS),
+        ),
+    )
+    operation = execute_mcmc_evidence(accepted, plan)
+    assert operation.evidence is not None
+
+    def integrated_time(_chain: Array, **_kwargs: object) -> object:
+        if isinstance(autocorrelation_outcome, BaseException):
+            raise autocorrelation_outcome
+        return autocorrelation_outcome
+
+    monkeypatch.setattr(
+        native_mcmc.emcee.autocorr,
+        "integrated_time",
+        integrated_time,
+    )
+    parameter_model = _product_parameter_model()
+    result = derive_mcmc_analysis_result(
+        operation.evidence,
+        request,
+        parameter_model,
+    )
+    assert result.autocorrelation_report is not None
+    assert result.autocorrelation_report.status is expected_status
+
+    write_mcmc_outputs(
+        result,
+        EffectiveMcmcSettings(
+            steps=5,
+            burn=1,
+            thin=2,
+            walkers=8,
+            seed=1234,
+            workers=1,
+            native_threads=None,
+            update_parameters=False,
+        ),
+        tmp_path,
+        parameter_model,
+    )
+
+    statistics = tmp_path / "Statistics" / "MCMC"
+    diagnostics = (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    assert f'autocorrelation_status = "{expected_status.value}"' in diagnostics
+    assert "discarded_steps = 1" in diagnostics
+    assert (statistics / "summary.toml").is_file()
+    assert (statistics / "samples.tsv").is_file()
+    assert (statistics / "correlations.tsv").is_file()
+    assert (statistics / "plots.pdf").stat().st_size > 0
 
 
 def test_mcmc_rejects_private_relaxation_coordinates_without_measure() -> None:

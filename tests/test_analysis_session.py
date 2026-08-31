@@ -30,6 +30,7 @@ from chemex.experiments import builder as builder_module
 from chemex.nmr.basis import Basis
 from chemex.optimize import fitting as fitting_module
 from chemex.optimize import method_plan_execution as method_execution_module
+from chemex.optimize import native_resampling as native_resampling_module
 from chemex.optimize import resampling as resampling_module
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import ParamSetting
@@ -1020,30 +1021,94 @@ def test_run_methods_compiles_each_canonical_step_without_origin_or_store_state(
 
 
 def test_resampling_summary_and_correlations_are_written(tmp_path: Path) -> None:
-    samples = np.array([[0.1, 200.0], [0.3, 300.0], [0.5, 400.0]])
     parameter_names = ("[PB]", "[KEX_AB]")
+    summary = native_resampling_module.ResamplingAnalysisSummary(
+        ("PB", "KEX_AB"),
+        (
+            native_resampling_module.ResamplingAnalysisDistribution(
+                "PB", 3, 0.3, 0.2, 0.3, 0.11, 0.49, 0.16348, 0.43652, 0.13652
+            ),
+            native_resampling_module.ResamplingAnalysisDistribution(
+                "KEX_AB",
+                3,
+                300.0,
+                100.0,
+                300.0,
+                205.0,
+                395.0,
+                231.74,
+                368.26,
+                68.26,
+            ),
+        ),
+        tuple(
+            native_resampling_module.ResamplingAnalysisCorrelation(
+                parameter_a,
+                parameter_b,
+                native_resampling_module.ResamplingAnalysisCorrelationAvailability.AVAILABLE,
+                1.0,
+            )
+            for parameter_a in ("PB", "KEX_AB")
+            for parameter_b in ("PB", "KEX_AB")
+        ),
+        native_resampling_module.ResamplingAnalysisChiSquareSummary(
+            3,
+            2.0,
+            2.0,
+            1.0,
+            3.0,
+        ),
+        "test-production-policy",
+    )
 
     resampling_module._write_resampling_summary(
         tmp_path,
         parameter_names=parameter_names,
-        samples=samples,
+        summary=summary,
     )
     resampling_module._write_resampling_correlations(
         tmp_path,
         parameter_names=parameter_names,
-        samples=samples,
+        summary=summary,
     )
 
     summary = (tmp_path / "summary.toml").read_text(encoding="utf-8")
     correlations = (tmp_path / "correlations.tsv").read_text(encoding="utf-8")
 
-    assert '["PB"]' in summary
-    assert 'interval = "95% percentile"' in summary
-    assert "sample_count = 3" in summary
-    assert "median = 3.00000e-01" in summary
-    assert "[PB]" in correlations
-    assert "[KEX_AB]" in correlations
-    assert "1.00000e+00" in correlations
+    assert (
+        summary
+        == """["PB"]
+interval = "95% percentile"
+sample_count = 3
+mean = 3.00000e-01
+standard_deviation = 2.00000e-01
+median = 3.00000e-01
+percentile_95_lower = 1.10000e-01
+percentile_95_upper = 4.90000e-01
+percentile_68_lower = 1.63480e-01
+percentile_68_upper = 4.36520e-01
+half_percentile_68_width = 1.36520e-01
+
+["KEX_AB"]
+interval = "95% percentile"
+sample_count = 3
+mean = 3.00000e+02
+standard_deviation = 1.00000e+02
+median = 3.00000e+02
+percentile_95_lower = 2.05000e+02
+percentile_95_upper = 3.95000e+02
+percentile_68_lower = 2.31740e+02
+percentile_68_upper = 3.68260e+02
+half_percentile_68_width = 6.82600e+01
+"""
+    )
+    assert (
+        correlations
+        == """parameter\t[PB]\t[KEX_AB]
+[PB]\t1.00000e+00\t1.00000e+00
+[KEX_AB]\t1.00000e+00\t1.00000e+00
+"""
+    )
 
 
 def test_write_file_rejects_unknown_parameter_status(tmp_path: Path) -> None:

@@ -13,12 +13,13 @@ from contextlib import ExitStack
 from dataclasses import dataclass, field
 from enum import StrEnum
 from threading import Lock, RLock, local
-from typing import SupportsIndex, cast
+from typing import Literal, SupportsIndex, cast
 from weakref import WeakKeyDictionary
 
 import emcee
 import numpy as np
 
+from chemex.configuration.method_plan import McmcRequest
 from chemex.evaluation.native import (
     BoundEvaluator,
     EvaluationEngine,
@@ -33,7 +34,10 @@ from chemex.optimize.direct_trf import (
     canonical_chi_square,
 )
 from chemex.optimize.uncertainty import ParameterUnit
-from chemex.parameters.parameterization import ActiveParameterization
+from chemex.parameters.parameterization import (
+    ActiveParameterization,
+    SealedParameterModel,
+)
 from chemex.runtime import ExecutionSettings
 from chemex.runtime.execution import native_thread_environment
 from chemex.typing import Array
@@ -47,6 +51,7 @@ _INITIALIZATION_VERSION = "bounded-latin-hypercube-v1"
 _PRODUCT_INITIALIZATION_VERSION = "accepted-point-jitter-v1"
 _PROPOSAL_VERSION = "emcee-stretch-v1"
 _MAX_U64 = (1 << 64) - 1
+_EMCEE_MONITOR_INTEGRATED_TIME = emcee.autocorr.integrated_time
 
 
 class McmcConstructionError(ValueError):
@@ -87,6 +92,29 @@ class McmcOperationTerminal(StrEnum):
     CANCELLED = "cancelled"
     FAILED = "failed"
     INTERRUPTED = "interrupted"
+
+
+class McmcAnalysisStatus(StrEnum):
+    """Scientific completeness of a production MCMC analysis."""
+
+    COMPLETE = "complete"
+    INCOMPLETE = "incomplete"
+
+
+class McmcAutocorrelationStatus(StrEnum):
+    """Closed scientific classification of product autocorrelation evidence."""
+
+    RELIABLE = "reliable"
+    UNRELIABLE_SHORT_CHAIN = "unreliable_short_chain"
+    UNAVAILABLE = "unavailable"
+    INVALID = "invalid"
+
+
+class McmcAnalysisFailureCategory(StrEnum):
+    """Closed scientific reasons a product MCMC result can be incomplete."""
+
+    ACCEPTANCE_DIAGNOSTICS_UNAVAILABLE = "acceptance_diagnostics_unavailable"
+    AUTOMATIC_BURN_UNAVAILABLE = "automatic_burn_unavailable"
 
 
 class McmcExecutionStage(StrEnum):
@@ -752,6 +780,27 @@ def _mcmc_box_bounds(
     if feasible is not None and feasible.supports_box_only_algorithms:
         return feasible.solver_bounds
     return problem.lower_bounds, problem.upper_bounds
+
+
+def product_mcmc_invalid_bound_ids(
+    problem: OptimizationProblem,
+) -> tuple[str, ...]:
+    """Classify coordinates that cannot define the established product prior."""
+    lower, upper = _mcmc_box_bounds(problem)
+    return tuple(
+        parameter_id
+        for parameter_id, lower_bound, upper_bound in zip(
+            problem.controlled_ids,
+            lower,
+            upper,
+            strict=True,
+        )
+        if (
+            not math.isfinite(lower_bound)
+            or not math.isfinite(upper_bound)
+            or lower_bound >= upper_bound
+        )
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -3888,3 +3937,656 @@ def derive_mcmc_operation_diagnostics(
                 "Operation and primary evidence backend diagnostics differ"
             )
     return AcceptanceDiagnostics.from_backend_evidence(source)
+
+
+@dataclass(frozen=True, slots=True)
+class McmcParameterSummary:
+    """Established production posterior statistics for one coordinate."""
+
+    parameter_id: str
+    mean: float
+    standard_deviation: float
+    median: float
+    eti_95_lower: float
+    eti_95_upper: float
+    credible_interval_68_lower: float
+    credible_interval_68_upper: float
+    half_credible_interval_68_width: float
+    effective_sample_size: float | None = None
+    mcse_mean: float | None = None
+    prior_lower: float | None = None
+    prior_upper: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class McmcAcceptanceSummary:
+    """Authoritative production acceptance-fraction conclusions."""
+
+    mean: float
+    minimum: float
+    maximum: float
+
+
+@dataclass(frozen=True, slots=True)
+class McmcAutocorrelationReport:
+    """Authoritative production autocorrelation conclusions for publication."""
+
+    status: McmcAutocorrelationStatus
+    values: tuple[float, ...] | None
+    reliable: bool
+    maximum: float | None
+    sampled_steps_over_maximum: float | None
+    recommended_min_steps_50tau: int | None
+    recommended_min_steps_100tau: int | None
+    retained_steps_over_maximum: float | None
+    minimum_effective_sample_size: float | None
+    warning: str | None
+    effective_sample_size_warning: str | None
+
+    def __post_init__(self) -> None:
+        has_values = self.values is not None
+        reliable = self.status is McmcAutocorrelationStatus.RELIABLE
+        unreliable = self.status is McmcAutocorrelationStatus.UNRELIABLE_SHORT_CHAIN
+        if (
+            self.reliable != reliable
+            or has_values != (reliable or unreliable)
+            or (has_values and self.maximum is None)
+            or (not has_values and self.maximum is not None)
+        ):
+            raise McmcConstructionError(
+                "MCMC autocorrelation classification payload is inconsistent"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class McmcAutocorrelationMonitor:
+    """Authoritative prefix diagnostics used by the MCMC monitor plot."""
+
+    step_counts: tuple[int, ...]
+    mean_times: tuple[float, ...]
+    maximum_times: tuple[float, ...]
+
+    def __post_init__(self) -> None:
+        if not (
+            len(self.step_counts) == len(self.mean_times) == len(self.maximum_times)
+        ):
+            raise McmcConstructionError(
+                "MCMC autocorrelation monitor series have inconsistent lengths"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class McmcAnalysisFailure:
+    """Typed scientific reason a production MCMC result is incomplete."""
+
+    category: McmcAnalysisFailureCategory
+    message: str
+    preserve_raw_evidence: bool
+
+
+@dataclass(frozen=True, slots=True)
+class McmcAnalysisResult:
+    """Complete authoritative scientific outcome for production MCMC."""
+
+    evidence: McmcEvidence = field(repr=False, compare=False)
+    chain: Array = field(repr=False, compare=False)
+    lnprob: Array = field(repr=False, compare=False)
+    summary: tuple[McmcParameterSummary, ...]
+    correlations: Array = field(repr=False, compare=False)
+    discarded_steps: int
+    retained_step_ordinals: tuple[int, ...]
+    raw_chain: Array | None = field(default=None, repr=False, compare=False)
+    raw_lnprob: Array | None = field(default=None, repr=False, compare=False)
+    failure: McmcAnalysisFailure | None = None
+    acceptance_summary: McmcAcceptanceSummary | None = None
+    autocorrelation_report: McmcAutocorrelationReport | None = None
+    autocorrelation_monitor: McmcAutocorrelationMonitor | None = None
+
+    def __post_init__(self) -> None:
+        complete = self.failure is None
+        if (
+            self.evidence.lifecycle is not McmcEvidenceLifecycle.COMPLETED
+            or self.evidence.terminal is not McmcOperationTerminal.COMPLETED
+        ):
+            raise McmcConstructionError(
+                "MCMC Analysis Result requires complete validated Evidence"
+            )
+        if complete and (
+            self.chain.ndim != 3
+            or self.lnprob.shape != self.chain.shape[:2]
+            or self.chain.shape[2] != len(self.var_names)
+            or len(self.summary) != len(self.var_names)
+            or self.correlations.shape != (len(self.var_names), len(self.var_names))
+            or len(self.retained_step_ordinals) != self.chain.shape[0]
+            or self.acceptance_summary is None
+            or self.autocorrelation_report is None
+            or self.autocorrelation_monitor is None
+        ):
+            raise McmcConstructionError(
+                "Complete MCMC Analysis Result has inconsistent retained topology"
+            )
+
+    @property
+    def var_names(self) -> tuple[str, ...]:
+        """Return the authoritative coordinate scope from Evidence."""
+        return self.evidence.coordinate_ids
+
+    @property
+    def status(self) -> McmcAnalysisStatus:
+        """Return scientific completeness derived from typed failure presence."""
+        return (
+            McmcAnalysisStatus.COMPLETE
+            if self.failure is None
+            else McmcAnalysisStatus.INCOMPLETE
+        )
+
+    @property
+    def samples(self) -> Array:
+        """Return the flattened retained chain."""
+        return self.chain.reshape((-1, len(self.var_names)))
+
+    @property
+    def log_probabilities(self) -> Array:
+        """Return flattened retained log probabilities."""
+        return self.lnprob.reshape(-1)
+
+    @property
+    def retained_step_count(self) -> int:
+        return int(self.chain.shape[0])
+
+    @property
+    def retained_sample_count(self) -> int:
+        return len(self.samples)
+
+    @property
+    def raw_step_count(self) -> int:
+        return 0 if self.raw_chain is None else int(self.raw_chain.shape[0])
+
+    @property
+    def raw_sample_count(self) -> int:
+        if self.raw_chain is None:
+            return 0
+        return int(self.raw_chain.shape[0] * self.raw_chain.shape[1])
+
+
+@dataclass(frozen=True, slots=True)
+class _ProductMcmcInterpretationPolicy:
+    """Internal immutable policy preserving established product interpretation."""
+
+    requested_steps: int
+    burn: int | str
+    thin: int
+    percentiles: tuple[float, float, float, float, float] = (
+        2.5,
+        15.87,
+        50.0,
+        84.13,
+        97.5,
+    )
+    percentile_method: Literal["linear"] = "linear"
+    standard_deviation_delta_degrees_of_freedom: int = 1
+    version: str = "chemex-production-mcmc-v1"
+
+    @classmethod
+    def from_request(cls, request: McmcRequest) -> _ProductMcmcInterpretationPolicy:
+        return cls(
+            request.steps,
+            "auto" if request.burn is None else request.burn,
+            request.thin,
+        )
+
+    def __post_init__(self) -> None:
+        if (
+            self.requested_steps < 1
+            or (
+                self.burn != "auto"
+                and (not isinstance(self.burn, int) or self.burn < 0)
+            )
+            or self.thin < 1
+            or self.percentiles != (2.5, 15.87, 50.0, 84.13, 97.5)
+            or self.percentile_method != "linear"
+            or self.standard_deviation_delta_degrees_of_freedom != 1
+        ):
+            raise McmcConstructionError(
+                "Production MCMC interpretation policy is invalid"
+            )
+
+
+def _product_raw_arrays(evidence: McmcEvidence) -> tuple[Array, Array]:
+    return (
+        np.asarray([state.positions for state in evidence.states[1:]], dtype=float),
+        np.asarray(
+            [state.log_densities for state in evidence.states[1:]],
+            dtype=float,
+        ),
+    )
+
+
+def _valid_product_autocorrelation_time(value: object) -> Array | None:
+    try:
+        result = np.asarray(cast("Array", value), dtype=float)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if result.ndim != 1 or not np.all(np.isfinite(result)) or np.any(result <= 0.0):
+        return None
+    return result
+
+
+def _estimate_product_autocorrelation_time(
+    chain: Array,
+) -> tuple[Array | None, Array | None, str | None]:
+    try:
+        value = emcee.autocorr.integrated_time(chain, quiet=False)
+    except emcee.autocorr.AutocorrError as error:
+        tentative = _valid_product_autocorrelation_time(error.tau)
+        if tentative is None:
+            return None, None, "autocorrelation time unavailable"
+        return (
+            None,
+            tentative,
+            (
+                "chain shorter than 50 times the autocorrelation time; "
+                "tentative estimate reported"
+            ),
+        )
+    except Exception as error:  # noqa: BLE001 - optional diagnostic boundary
+        message = str(error).replace("\n", " ")
+        return (
+            None,
+            None,
+            f"autocorrelation calculation failed: {type(error).__name__}: {message}",
+        )
+    result = _valid_product_autocorrelation_time(value)
+    if result is None:
+        return None, None, "autocorrelation time invalid"
+    return result, None, None
+
+
+def _product_autocorrelation_monitor(
+    chain: Array,
+) -> McmcAutocorrelationMonitor:
+    step_count = chain.shape[0]
+    if step_count < 4:
+        return McmcAutocorrelationMonitor((), (), ())
+    start = max(4, min(100, step_count // 10))
+    lengths = np.unique(np.geomspace(start, step_count, num=12).astype(int))
+    used_lengths: list[int] = []
+    mean_times: list[float] = []
+    maximum_times: list[float] = []
+    for length in lengths:
+        try:
+            value = _EMCEE_MONITOR_INTEGRATED_TIME(chain[:length], quiet=False)
+        except emcee.autocorr.AutocorrError as error:
+            value = error.tau
+        except (FloatingPointError, ValueError):
+            continue
+        tau = _valid_product_autocorrelation_time(value)
+        if tau is None:
+            continue
+        used_lengths.append(int(length))
+        mean_times.append(float(np.mean(tau)))
+        maximum_times.append(float(np.max(tau)))
+    return McmcAutocorrelationMonitor(
+        tuple(used_lengths),
+        tuple(mean_times),
+        tuple(maximum_times),
+    )
+
+
+def _product_mcmc_summary(
+    coordinate_ids: tuple[str, ...],
+    samples: Array,
+    autocorrelation_time: Array | None,
+    policy: _ProductMcmcInterpretationPolicy,
+    lower_bounds: tuple[float, ...],
+    upper_bounds: tuple[float, ...],
+) -> tuple[McmcParameterSummary, ...]:
+    quantiles = np.percentile(
+        samples,
+        policy.percentiles,
+        axis=0,
+        method=policy.percentile_method,
+    )
+    summaries: list[McmcParameterSummary] = []
+    for index, parameter_id in enumerate(coordinate_ids):
+        lower_95, lower_68, median, upper_68, upper_95 = quantiles[:, index]
+        values = samples[:, index]
+        standard_deviation = (
+            float(
+                np.std(
+                    values,
+                    ddof=policy.standard_deviation_delta_degrees_of_freedom,
+                )
+            )
+            if len(values) > 1
+            else 0.0
+        )
+        effective_sample_size = None
+        mcse_mean = None
+        if autocorrelation_time is not None:
+            tau = float(autocorrelation_time[index])
+            if math.isfinite(tau) and tau > 0.0:
+                tau_in_retained_steps = max(tau / policy.thin, 1.0)
+                effective_sample_size = len(values) / tau_in_retained_steps
+                mcse_mean = standard_deviation / np.sqrt(effective_sample_size)
+        summaries.append(
+            McmcParameterSummary(
+                parameter_id,
+                float(np.mean(values)),
+                standard_deviation,
+                float(median),
+                float(lower_95),
+                float(upper_95),
+                float(lower_68),
+                float(upper_68),
+                0.5 * float(upper_68 - lower_68),
+                effective_sample_size,
+                mcse_mean,
+                lower_bounds[index],
+                upper_bounds[index],
+            )
+        )
+    return tuple(summaries)
+
+
+def _product_correlation_matrix(samples: Array) -> Array:
+    if samples.shape[1] == 1:
+        return np.ones((1, 1), dtype=float)
+    return np.corrcoef(samples, rowvar=False)
+
+
+def _product_acceptance_summary(values: Array) -> McmcAcceptanceSummary:
+    return McmcAcceptanceSummary(
+        float(np.mean(values)),
+        float(np.min(values)),
+        float(np.max(values)),
+    )
+
+
+def _product_autocorrelation_report(
+    *,
+    reliable_values: Array | None,
+    tentative_values: Array | None,
+    warning: str | None,
+    coordinate_count: int,
+    sampled_step_count: int,
+    retained_step_count: int | None,
+    thin: int,
+    summaries: tuple[McmcParameterSummary, ...],
+    failure_warning: str | None = None,
+) -> McmcAutocorrelationReport:
+    values = reliable_values if reliable_values is not None else tentative_values
+    reliable = reliable_values is not None
+    if values is None:
+        return McmcAutocorrelationReport(
+            McmcAutocorrelationStatus.UNAVAILABLE,
+            None,
+            False,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            failure_warning or warning or "not available",
+            None,
+        )
+    if values.shape != (coordinate_count,):
+        return McmcAutocorrelationReport(
+            McmcAutocorrelationStatus.INVALID,
+            None,
+            False,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            failure_warning or warning or "not available",
+            None,
+        )
+    maximum = float(np.max(values))
+    status = (
+        McmcAutocorrelationStatus.RELIABLE
+        if reliable
+        else McmcAutocorrelationStatus.UNRELIABLE_SHORT_CHAIN
+    )
+    sampled_ratio = sampled_step_count / maximum
+    retained_ratio = (
+        None
+        if retained_step_count is None or not reliable
+        else retained_step_count * thin / maximum
+    )
+    minimum_effective_sample_size = (
+        min(
+            (
+                summary.effective_sample_size
+                for summary in summaries
+                if summary.effective_sample_size is not None
+            ),
+            default=None,
+        )
+        if reliable
+        else None
+    )
+    report_warning = failure_warning
+    effective_warning = None
+    if not reliable:
+        report_warning = (
+            report_warning
+            or warning
+            or "chain shorter than 50 times the autocorrelation time"
+        )
+        effective_warning = "not reported: autocorrelation time estimate is unreliable"
+    elif retained_ratio is not None and retained_ratio < 50.0:
+        report_warning = (
+            "Retained chain length is shorter than 50 times the maximum "
+            "autocorrelation time."
+        )
+    return McmcAutocorrelationReport(
+        status,
+        tuple(float(value) for value in values),
+        reliable,
+        maximum,
+        sampled_ratio,
+        math.ceil(50.0 * maximum),
+        math.ceil(100.0 * maximum),
+        retained_ratio,
+        minimum_effective_sample_size,
+        report_warning,
+        effective_warning,
+    )
+
+
+def _incomplete_product_mcmc_result(
+    evidence: McmcEvidence,
+    raw_chain: Array,
+    raw_lnprob: Array,
+    acceptance_fraction: Array,
+    failure: McmcAnalysisFailure,
+    *,
+    autocorrelation_time: Array | None = None,
+    tentative_autocorrelation_time: Array | None = None,
+    autocorrelation_warning: str | None = None,
+    autocorrelation_failure_warning: str | None = None,
+) -> McmcAnalysisResult:
+    width = len(evidence.coordinate_ids)
+    acceptance_summary = (
+        None
+        if len(acceptance_fraction) == 0
+        else _product_acceptance_summary(acceptance_fraction)
+    )
+    report = _product_autocorrelation_report(
+        reliable_values=autocorrelation_time,
+        tentative_values=tentative_autocorrelation_time,
+        warning=autocorrelation_warning,
+        coordinate_count=width,
+        sampled_step_count=len(raw_chain),
+        retained_step_count=None,
+        thin=1,
+        summaries=(),
+        failure_warning=autocorrelation_failure_warning,
+    )
+    return McmcAnalysisResult(
+        evidence=evidence,
+        chain=np.empty((0, evidence.plan.policy.walkers, width), dtype=float),
+        lnprob=np.empty((0, evidence.plan.policy.walkers), dtype=float),
+        summary=(),
+        correlations=np.empty((0, 0), dtype=float),
+        discarded_steps=0,
+        retained_step_ordinals=(),
+        raw_chain=raw_chain,
+        raw_lnprob=raw_lnprob,
+        failure=failure,
+        acceptance_summary=acceptance_summary,
+        autocorrelation_report=report,
+    )
+
+
+def _resolve_product_mcmc_burn(
+    policy: _ProductMcmcInterpretationPolicy,
+    *,
+    raw_step_count: int,
+    coordinate_count: int,
+    autocorrelation_time: Array | None,
+    autocorrelation_time_reliable: bool,
+    autocorrelation_warning: str | None,
+) -> tuple[int | None, str | None]:
+    if policy.burn != "auto":
+        return int(policy.burn), None
+    if autocorrelation_time is None:
+        return None, autocorrelation_warning or "autocorrelation time unavailable"
+    if autocorrelation_time.shape != (coordinate_count,):
+        return None, "autocorrelation time has an invalid shape"
+    max_tau = float(np.max(autocorrelation_time))
+    if not math.isfinite(max_tau) or max_tau <= 0.0:
+        return None, "autocorrelation time invalid"
+    if not autocorrelation_time_reliable:
+        return None, "the autocorrelation time estimate is unreliable"
+    discarded_steps = math.ceil(2.0 * max_tau)
+    if discarded_steps >= raw_step_count:
+        return None, "the calculated discard does not leave a retained chain"
+    return discarded_steps, None
+
+
+def derive_mcmc_analysis_result(
+    evidence: McmcEvidence,
+    request: McmcRequest,
+    parameter_model: SealedParameterModel,
+) -> McmcAnalysisResult:
+    """Interpret complete native Evidence using established product semantics."""
+    evidence.validate_integrity()
+    policy = _ProductMcmcInterpretationPolicy.from_request(request)
+    if (
+        evidence.lifecycle is not McmcEvidenceLifecycle.COMPLETED
+        or evidence.terminal is not McmcOperationTerminal.COMPLETED
+        or evidence.plan.policy.kind is not McmcPolicyKind.PRODUCT
+        or evidence.completed_transition_count != policy.requested_steps
+    ):
+        raise McmcConstructionError(
+            "Production MCMC Analysis Result requires a complete matching product chain"
+        )
+    raw_chain, raw_lnprob = _product_raw_arrays(evidence)
+    diagnostics = derive_mcmc_diagnostics(evidence)
+    if (
+        diagnostics.status is not McmcDiagnosticStatus.AVAILABLE
+        or diagnostics.acceptance_fractions is None
+    ):
+        failure = McmcAnalysisFailure(
+            McmcAnalysisFailureCategory.ACCEPTANCE_DIAGNOSTICS_UNAVAILABLE,
+            "Native MCMC completed without authoritative acceptance diagnostics",
+            False,
+        )
+        return _incomplete_product_mcmc_result(
+            evidence,
+            raw_chain,
+            raw_lnprob,
+            np.empty(0, dtype=float),
+            failure,
+        )
+    acceptance_fraction = np.asarray(diagnostics.acceptance_fractions, dtype=float)
+    autocorrelation_time, tentative, autocorrelation_warning = (
+        _estimate_product_autocorrelation_time(raw_chain)
+    )
+    burn_autocorrelation_time = (
+        autocorrelation_time if autocorrelation_time is not None else tentative
+    )
+    discarded_steps, burn_failure_reason = _resolve_product_mcmc_burn(
+        policy,
+        raw_step_count=raw_chain.shape[0],
+        coordinate_count=len(evidence.coordinate_ids),
+        autocorrelation_time=burn_autocorrelation_time,
+        autocorrelation_time_reliable=autocorrelation_time is not None,
+        autocorrelation_warning=autocorrelation_warning,
+    )
+    if burn_failure_reason is not None:
+        message = (
+            f"automatic burn-in failed because {burn_failure_reason}; authoritative "
+            "MCMC posterior summarization was withheld"
+        )
+        failure = McmcAnalysisFailure(
+            McmcAnalysisFailureCategory.AUTOMATIC_BURN_UNAVAILABLE,
+            message,
+            True,
+        )
+        return _incomplete_product_mcmc_result(
+            evidence,
+            raw_chain,
+            raw_lnprob,
+            acceptance_fraction,
+            failure,
+            autocorrelation_time=autocorrelation_time,
+            tentative_autocorrelation_time=tentative,
+            autocorrelation_warning=autocorrelation_warning,
+            autocorrelation_failure_warning=(
+                autocorrelation_warning or burn_failure_reason
+            ),
+        )
+    exact_discarded_steps = cast("int", discarded_steps)
+    retained_chain = raw_chain[exact_discarded_steps :: policy.thin]
+    retained_lnprob = raw_lnprob[exact_discarded_steps :: policy.thin]
+    if retained_chain.shape[0] < 1:
+        raise ValueError("MCMC settings did not retain any samples")
+    samples = retained_chain.reshape((-1, len(evidence.coordinate_ids)))
+    summaries = _product_mcmc_summary(
+        evidence.coordinate_ids,
+        samples,
+        autocorrelation_time,
+        policy,
+        tuple(
+            parameter_model.configuration[param_id].lower_bound
+            for param_id in evidence.coordinate_ids
+        ),
+        tuple(
+            parameter_model.configuration[param_id].upper_bound
+            for param_id in evidence.coordinate_ids
+        ),
+    )
+    acceptance_summary = _product_acceptance_summary(acceptance_fraction)
+    autocorrelation_report = _product_autocorrelation_report(
+        reliable_values=autocorrelation_time,
+        tentative_values=tentative,
+        warning=autocorrelation_warning,
+        coordinate_count=len(evidence.coordinate_ids),
+        sampled_step_count=len(raw_chain),
+        retained_step_count=len(retained_chain),
+        thin=policy.thin,
+        summaries=summaries,
+    )
+    return McmcAnalysisResult(
+        evidence=evidence,
+        chain=retained_chain,
+        lnprob=retained_lnprob,
+        summary=summaries,
+        correlations=_product_correlation_matrix(samples),
+        discarded_steps=exact_discarded_steps,
+        retained_step_ordinals=tuple(
+            range(exact_discarded_steps, raw_chain.shape[0], policy.thin)
+        ),
+        raw_chain=raw_chain,
+        raw_lnprob=raw_lnprob,
+        failure=None,
+        acceptance_summary=acceptance_summary,
+        autocorrelation_report=autocorrelation_report,
+        autocorrelation_monitor=_product_autocorrelation_monitor(raw_chain),
+    )
