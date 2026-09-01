@@ -1,6 +1,6 @@
-"""chemex.__main__: executed when the chemex directory is called as script."""
+"""Execute ChemEx through its terminal command-line boundary."""
 
-from chemex.chemex import main
+from chemex._entrypoint import main
 
 if __name__ == "__main__":
     main()

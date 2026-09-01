@@ -6,8 +6,11 @@ import json
 from pathlib import Path
 from typing import cast
 
+from chemex.atomic import write_text_atomic
 from chemex.optimize.uncertainty import (
+    OperationTerminal,
     RootAnchoredBlockCovarianceEvidence,
+    RootAnchoredBlockCovarianceOperation,
     UncertaintyEvidence,
 )
 from chemex.printers.parameters import uncertainty_unavailable_reason
@@ -15,7 +18,8 @@ from chemex.printers.parameters import uncertainty_unavailable_reason
 
 def write_json(path: Path, record: object) -> None:
     """Write one deterministic, strict JSON evidence artifact."""
-    path.write_text(
+    write_text_atomic(
+        path,
         json.dumps(
             record,
             allow_nan=False,
@@ -24,7 +28,6 @@ def write_json(path: Path, record: object) -> None:
             sort_keys=True,
         )
         + "\n",
-        encoding="utf-8",
     )
 
 
@@ -102,3 +105,15 @@ def write_block_uncertainty(
             else uncertainty_unavailable_reason(block.unavailable_kind)
         )
     write_json(covariance_path / "blocks.json", record)
+
+
+def write_block_recovery(
+    path: Path,
+    operation: RootAnchoredBlockCovarianceOperation | None,
+) -> None:
+    """Write interrupted block-recovery lifecycle without weakening Evidence."""
+    if operation is None or operation.terminal is not OperationTerminal.INTERRUPTED:
+        return
+    covariance_path = path / "Covariance"
+    covariance_path.mkdir(exist_ok=True)
+    write_json(covariance_path / "block_recovery.json", operation.to_record())

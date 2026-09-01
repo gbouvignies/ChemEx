@@ -123,7 +123,9 @@ def _analytic_pa_kba(kab: float, kba: float) -> float:
     return kab / (kab + kba) ** 2
 
 
-def _accepted_relaxation_fit() -> tuple[
+def _accepted_relaxation_fit(
+    spin_systems: tuple[str, ...] = ("G2N-HN",),
+) -> tuple[
     AnalysisSession,
     ActiveParameterization,
     EvaluationEngine,
@@ -135,7 +137,7 @@ def _accepted_relaxation_fit() -> tuple[
     experiments = build_experiments(
         [EXPERIMENT],
         Selection(
-            include=[SpinSystem.from_name("G2N-HN")],
+            include=[SpinSystem.from_name(name) for name in spin_systems],
             exclude=None,
         ),
         session=session,
@@ -292,7 +294,7 @@ def test_block_interruption_retains_root_evidence_and_conclusions() -> None:
     _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit()
 
     with patch(
-        "chemex.optimize.deterministic_uncertainty.derive_root_anchored_block_covariance",
+        "chemex.optimize.deterministic_uncertainty.execute_root_anchored_block_covariance",
         side_effect=KeyboardInterrupt,
     ):
         uncertainty = _derive_product_uncertainty(
@@ -310,6 +312,180 @@ def test_block_interruption_retains_root_evidence_and_conclusions() -> None:
     controlled = uncertainty.parameter(problem.controlled_ids[0])
     assert controlled is not None
     assert controlled.reportable
+
+
+def test_block_operation_retains_exact_completed_prefix_after_interruption() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit(
+        ("G2N-HN", "H3N-HN")
+    )
+    original_svd = uncertainty_module.svd
+    call_count = 0
+
+    def interrupt_second_block(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 3:
+            raise KeyboardInterrupt
+        left, singular, right = original_svd(*args, **kwargs)
+        singular = np.array(singular, copy=True)
+        if call_count in {1, 2}:
+            singular[-1] = 0.0
+        return left, singular, right
+
+    with patch(
+        "chemex.optimize.uncertainty.svd",
+        side_effect=interrupt_second_block,
+    ):
+        uncertainty = _derive_product_uncertainty(
+            accepted,
+            problem,
+            parameterization,
+            engine,
+        )
+
+    operation = uncertainty.block_operation
+    assert operation is not None
+    assert operation.terminal is OperationTerminal.INTERRUPTED
+    assert len(operation.completed_blocks) == 1
+    assert operation.completed_blocks[0].failure is not None
+    assert operation.completed_blocks[0].failure.category == "rank_deficient"
+    assert operation.complete_evidence is None
+    assert uncertainty.completeness is InterpretationCompleteness.INCOMPLETE
+    assert uncertainty.incomplete_terminal is OperationTerminal.INTERRUPTED
+
+
+def test_full_block_prefix_interruption_retains_complete_uncertainty() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit(
+        ("G2N-HN", "H3N-HN")
+    )
+    original_svd = uncertainty_module.svd
+    original_bundle = uncertainty_module.RootAnchoredBlockCovarianceEvidence
+    bundle_attempts = 0
+    svd_calls = 0
+
+    def rank_deficient_root(*args, **kwargs):
+        nonlocal svd_calls
+        svd_calls += 1
+        left, singular, right = original_svd(*args, **kwargs)
+        singular = np.array(singular, copy=True)
+        if svd_calls == 1:
+            singular[-1] = 0.0
+        return left, singular, right
+
+    def interrupt_first_bundle(*args, **kwargs):
+        nonlocal bundle_attempts
+        bundle_attempts += 1
+        if bundle_attempts == 1:
+            raise KeyboardInterrupt
+        return original_bundle(*args, **kwargs)
+
+    with (
+        patch("chemex.optimize.uncertainty.svd", side_effect=rank_deficient_root),
+        patch.object(
+            uncertainty_module,
+            "RootAnchoredBlockCovarianceEvidence",
+            side_effect=interrupt_first_bundle,
+        ),
+    ):
+        uncertainty = _derive_product_uncertainty(
+            accepted,
+            problem,
+            parameterization,
+            engine,
+        )
+
+    operation = uncertainty.block_operation
+    assert operation is not None
+    assert operation.terminal is OperationTerminal.INTERRUPTED
+    assert (
+        len(operation.completed_blocks)
+        == len(operation.source_partition_proof.component_records)
+        == 2
+    )
+    assert operation.complete_evidence is not None
+    assert uncertainty.completeness is InterpretationCompleteness.COMPLETE
+    assert uncertainty.incomplete_terminal is None
+    assert uncertainty.derivation_interrupted
+
+
+def test_block_operation_rejects_reordered_complete_blocks() -> None:
+    _session, parameterization, engine, problem, accepted = _accepted_relaxation_fit(
+        ("G2N-HN", "H3N-HN")
+    )
+    original_svd = uncertainty_module.svd
+    call_count = 0
+
+    def rank_deficient_root(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        left, singular, right = original_svd(*args, **kwargs)
+        singular = np.array(singular, copy=True)
+        if call_count == 1:
+            singular[-1] = 0.0
+        return left, singular, right
+
+    with patch("chemex.optimize.uncertainty.svd", side_effect=rank_deficient_root):
+        uncertainty = _derive_product_uncertainty(
+            accepted,
+            problem,
+            parameterization,
+            engine,
+        )
+
+    operation = uncertainty.block_operation
+    assert operation is not None
+    with pytest.raises(ValueError, match="exact partition prefix"):
+        dataclasses.replace(
+            operation,
+            completed_blocks=tuple(reversed(operation.completed_blocks)),
+        )
+    first, second = operation.completed_blocks
+    with pytest.raises(ValueError, match="exact partition prefix"):
+        dataclasses.replace(operation, completed_blocks=(first, first))
+    with pytest.raises(ValueError, match="exact partition prefix"):
+        dataclasses.replace(operation, completed_blocks=(second,))
+    foreign_proof = dataclasses.replace(
+        operation.source_partition_proof,
+        root_plan_identity="foreign-root-plan",
+    )
+    with pytest.raises(ValueError, match="exact root partition proof"):
+        dataclasses.replace(operation, source_partition_proof=foreign_proof)
+    with pytest.raises(ValueError, match="marginal scope"):
+        dataclasses.replace(first, marginal_errors=())
+    foreign_source = dataclasses.replace(operation.source_bundle)
+    with pytest.raises(ValueError, match="foreign source context"):
+        dataclasses.replace(operation, source_bundle=foreign_source)
+    equivalent_foreign_proof = dataclasses.replace(operation.source_partition_proof)
+    with pytest.raises(ValueError, match="foreign source context"):
+        dataclasses.replace(
+            operation,
+            source_partition_proof=equivalent_foreign_proof,
+        )
+    with pytest.raises(ValueError, match="exact partition prefix"):
+        dataclasses.replace(
+            operation,
+            completed_blocks=(
+                dataclasses.replace(
+                    first,
+                    root_profile_indices=second.root_profile_indices,
+                ),
+                second,
+            ),
+        )
+    detached = dataclasses.replace(
+        first,
+        _source_bundle=None,
+        _source_partition_proof=None,
+    )
+    with pytest.raises(ValueError, match="foreign source context"):
+        dataclasses.replace(
+            operation,
+            completed_blocks=(detached, *operation.completed_blocks[1:]),
+        )
+    complete = operation.complete_evidence
+    assert complete is not None
+    with pytest.raises(ValueError, match="foreign source context"):
+        dataclasses.replace(complete, source_bundle=foreign_source)
 
 
 def _accepted_step1_profile_fit(

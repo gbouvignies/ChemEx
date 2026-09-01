@@ -312,8 +312,8 @@ def test_malformed_dataset_cli_failure_has_no_traceback(
 
     output = capfd.readouterr()
     assert error_info.value.code == 1
-    assert "Invalid data" in output.out
-    assert "malformed.dat" in output.out
+    assert "Invalid data" in output.err
+    assert "malformed.dat" in output.err
     assert "Traceback" not in output.out + output.err
 
 

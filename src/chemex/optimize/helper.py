@@ -9,7 +9,6 @@ from scipy import stats
 from chemex.containers.experiments import Experiments
 from chemex.messages import (
     print_making_plots,
-    print_plotting_canceled,
     print_writing_results,
 )
 from chemex.optimize.deterministic_uncertainty import (
@@ -24,6 +23,7 @@ from chemex.parameters.parameterization import (
     SealedParameterModel,
 )
 from chemex.printers.native_reporting import (
+    write_block_recovery,
     write_block_uncertainty,
     write_json,
     write_uncertainty,
@@ -108,12 +108,17 @@ def _write_files(
         deterministic_uncertainty=deterministic_uncertainty,
     )
     experiments.write(path)
-    _write_statistics(
-        experiments,
-        path=path,
-        residuals=residuals,
-        nvarys=nvarys,
+    uncertainty_interrupted = (
+        deterministic_uncertainty is not None
+        and deterministic_uncertainty.derivation_interrupted
     )
+    if not uncertainty_interrupted:
+        _write_statistics(
+            experiments,
+            path=path,
+            residuals=residuals,
+            nvarys=nvarys,
+        )
     if (
         deterministic_uncertainty is not None
         and deterministic_uncertainty.root_evidence is not None
@@ -124,6 +129,10 @@ def _write_files(
         write_block_uncertainty(
             statistics_path,
             deterministic_uncertainty.block_evidence,
+        )
+        write_block_recovery(
+            statistics_path,
+            deterministic_uncertainty.block_operation,
         )
     if deterministic_uncertainty is not None and (
         deterministic_uncertainty.disposition is DerivationDisposition.WITHHELD
@@ -181,11 +190,7 @@ def _write_plots(experiments: Experiments, path: Path) -> None:
 
     path_ = path / "Plots"
     path_.mkdir(parents=True, exist_ok=True)
-    try:
-        experiments.plot(path=path_)
-    except KeyboardInterrupt:
-        print_plotting_canceled()
-        raise
+    experiments.plot(path=path_)
 
 
 def _write_simulation_plots(experiments: Experiments, path: Path) -> None:
@@ -194,10 +199,7 @@ def _write_simulation_plots(experiments: Experiments, path: Path) -> None:
 
     path_ = path / "Plots"
     path_.mkdir(parents=True, exist_ok=True)
-    try:
-        experiments.plot_simulation(path=path_)
-    except KeyboardInterrupt:
-        print_plotting_canceled()
+    experiments.plot_simulation(path=path_)
 
 
 def execute_post_fit(
@@ -224,7 +226,11 @@ def execute_post_fit(
         parameterization=parameterization,
         fitted_ids=fitted_ids,
     )
-    if plot:
+    uncertainty_interrupted = (
+        deterministic_uncertainty is not None
+        and deterministic_uncertainty.derivation_interrupted
+    )
+    if plot and not uncertainty_interrupted:
         _write_plots(experiments, path)
 
 

@@ -10,19 +10,23 @@ from typing import Literal, cast
 
 import numpy as np
 
+from chemex.atomic import open_text_atomic, remove_paths_best_effort, write_text_atomic
 from chemex.configuration.method_plan import McmcRequest
 from chemex.configuration.methods import McmcSettings
 from chemex.containers.experiments import Experiments
 from chemex.optimize.native_deterministic import NativeDeterministicFit
 from chemex.optimize.native_mcmc import (
+    EnsembleState,
     McmcAcceptanceSummary,
     McmcAnalysisFailureCategory,
     McmcAnalysisResult,
     McmcAnalysisStatus,
     McmcAutocorrelationReport,
     McmcEvidence,
+    McmcOperation,
     McmcOperationTerminal,
     McmcPlan,
+    RawMcmcCapture,
     derive_mcmc_analysis_result,
     execute_mcmc_evidence,
     product_mcmc_invalid_bound_ids,
@@ -59,6 +63,16 @@ _TIMING_KEYS = (
     "output_plots_seconds",
     "output_total_seconds",
     "total_seconds",
+)
+
+_MCMC_ARTIFACT_NAMES = (
+    "summary.toml",
+    "samples.tsv",
+    "correlations.tsv",
+    "diagnostics.toml",
+    "plots.pdf",
+    "raw_chain.tsv",
+    "raw_capture.tsv",
 )
 
 
@@ -334,9 +348,18 @@ def _write_raw_chain_evidence(
     parameter_model: SealedParameterModel,
 ) -> None:
     parameter_names = _format_parameter_ids(evidence.coordinate_ids, parameter_model)
-    with (path / "raw_chain.tsv").open("w", encoding="utf-8") as fileout:
+    _write_raw_states(path / "raw_chain.tsv", evidence.states[1:], parameter_names)
+
+
+def _write_raw_states(
+    destination: Path,
+    states: tuple[EnsembleState, ...],
+    parameter_names: tuple[str, ...],
+) -> None:
+    """Write already-selected complete ensemble states atomically."""
+    with open_text_atomic(destination) as fileout:
         fileout.write("\t".join(("step", "walker", *parameter_names, "lnprob")) + "\n")
-        for state in evidence.states[1:]:
+        for state in states:
             for walker, (position, lnprob) in enumerate(
                 zip(state.positions, state.log_densities, strict=True),
             ):
@@ -345,6 +368,16 @@ def _write_raw_chain_evidence(
                     f"{state.ordinal}\t{walker}\t{values}\t"
                     f"{_format_toml_float(lnprob)}\n"
                 )
+
+
+def _write_raw_capture(
+    capture: RawMcmcCapture,
+    path: Path,
+    parameter_model: SealedParameterModel,
+    parameter_ids: tuple[str, ...],
+) -> None:
+    parameter_names = _format_parameter_ids(parameter_ids, parameter_model)
+    _write_raw_states(path / "raw_capture.tsv", capture.states, parameter_names)
 
 
 def _extend_acceptance_diagnostics(
@@ -422,7 +455,7 @@ def _write_diagnostics(
         lines.append(f"root_seed = {root_seed}")
     _extend_autocorrelation_diagnostics(lines, autocorrelation)
     _extend_timing_diagnostics(lines, timings)
-    (path / "diagnostics.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_text_atomic(path / "diagnostics.toml", "\n".join(lines) + "\n")
 
 
 def write_mcmc_outputs(
@@ -478,14 +511,7 @@ def write_mcmc_outputs(
 
 
 def _clear_mcmc_artifacts(path: Path) -> None:
-    for name in (
-        "summary.toml",
-        "samples.tsv",
-        "correlations.tsv",
-        "diagnostics.toml",
-        "plots.pdf",
-        "raw_chain.tsv",
-    ):
+    for name in _MCMC_ARTIFACT_NAMES:
         (path / name).unlink(missing_ok=True)
 
 
@@ -500,6 +526,7 @@ def _write_native_mcmc_state_diagnostics(
     completed_steps: int | None = None,
     failure: BaseException | None = None,
     raw_evidence: McmcEvidence | None = None,
+    raw_capture: RawMcmcCapture | None = None,
     analysis_result: McmcAnalysisResult | None = None,
     timings: Mapping[str, float] | None = None,
 ) -> None:
@@ -529,32 +556,58 @@ def _write_native_mcmc_state_diagnostics(
             )
         )
     if raw_evidence is not None:
-        if analysis_result is None:
-            raise RuntimeError(
-                "Diagnostic MCMC Evidence has no authoritative Analysis Result"
-            )
-        raw_steps = analysis_result.raw_step_count
-        raw_samples = analysis_result.raw_sample_count
+        raw_steps = (
+            raw_evidence.completed_transition_count
+            if analysis_result is None
+            else analysis_result.raw_step_count
+        )
+        raw_samples = (
+            raw_steps * raw_evidence.plan.policy.walkers
+            if analysis_result is None
+            else analysis_result.raw_sample_count
+        )
         lines.extend(
             (
                 (
                     "sampling_terminal = "
                     f"{_quote_toml_string(raw_evidence.terminal.value)}"
                 ),
-                'posterior_retention = "failed"',
                 'posterior_summary = "withheld"',
-                'raw_evidence = "diagnostic_chain"',
+                'raw_evidence = "qualified_chain"',
                 'raw_chain_file = "raw_chain.tsv"',
                 f"raw_steps = {raw_steps}",
                 f"raw_samples = {raw_samples}",
                 f"emcee_version = {_quote_toml_string(_package_version('emcee'))}",
-                'convergence_diagnostic = "integrated_autocorrelation_time"',
-                'rhat = "not computed: emcee ensemble walkers are not independent chains"',
             )
         )
-        if analysis_result.acceptance_summary is not None:
+        if terminal == "interrupted":
+            lines.extend(
+                (
+                    'posterior_retention = "withheld"',
+                    'burn_validity = "withheld"',
+                    'convergence = "withheld"',
+                    'correlations = "withheld"',
+                )
+            )
+        else:
+            lines.extend(
+                (
+                    'posterior_retention = "failed"',
+                    'convergence_diagnostic = "integrated_autocorrelation_time"',
+                    'rhat = "not computed: emcee ensemble walkers are not independent chains"',
+                )
+            )
+        if (
+            terminal != "interrupted"
+            and analysis_result is not None
+            and analysis_result.acceptance_summary is not None
+        ):
             _extend_acceptance_diagnostics(lines, analysis_result.acceptance_summary)
-        if analysis_result.autocorrelation_report is not None:
+        if (
+            terminal != "interrupted"
+            and analysis_result is not None
+            and analysis_result.autocorrelation_report is not None
+        ):
             lines.append(
                 "autocorrelation_status = "
                 f"{_quote_toml_string(analysis_result.autocorrelation_report.status)}"
@@ -563,12 +616,35 @@ def _write_native_mcmc_state_diagnostics(
                 lines,
                 analysis_result.autocorrelation_report,
             )
+    elif raw_capture is not None:
+        lines.extend(
+            (
+                (
+                    "sampling_terminal = "
+                    f"{_quote_toml_string(raw_capture.terminal.value)}"
+                ),
+                'posterior_retention = "withheld"',
+                'posterior_summary = "withheld"',
+                'burn_validity = "withheld"',
+                'convergence = "withheld"',
+                'correlations = "withheld"',
+                'acceptance_fraction = "withheld"',
+                'raw_evidence = "execution_capture_unqualified"',
+                'raw_capture_file = "raw_capture.tsv"',
+                f"captured_states = {raw_capture.complete_state_count}",
+                (
+                    "completed_transitions = "
+                    f"{max(0, raw_capture.complete_state_count - 1)}"
+                ),
+                f"emcee_version = {_quote_toml_string(_package_version('emcee'))}",
+            )
+        )
     if timings is not None:
         _extend_timing_diagnostics(lines, timings)
-    (path / "diagnostics.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_text_atomic(path / "diagnostics.toml", "\n".join(lines) + "\n")
 
 
-def run_native_mcmc(
+def run_native_mcmc(  # noqa: C901 - closed execution/publication lifecycle
     experiments: Experiments,
     fit: NativeDeterministicFit,
     request: McmcRequest,
@@ -620,6 +696,7 @@ def run_native_mcmc(
 
     timings: dict[str, float] = {}
     completed_steps = 0
+    mcmc_operation: McmcOperation | None = None
     mcmc_evidence: McmcEvidence | None = None
     analysis_result: McmcAnalysisResult | None = None
     try:
@@ -641,7 +718,7 @@ def run_native_mcmc(
             ),
         )
         phase_start = perf_counter()
-        operation = execute_mcmc_evidence(
+        mcmc_operation = execute_mcmc_evidence(
             fit.accepted,
             plan,
             execution=ExecutionSettings(
@@ -649,27 +726,29 @@ def run_native_mcmc(
                 native_threads=effective.native_threads,
             ),
         )
-        mcmc_evidence = operation.evidence
+        mcmc_evidence = mcmc_operation.evidence
         timings["sampling_seconds"] = perf_counter() - phase_start
-        completed_steps = (
-            0
-            if operation.evidence is None
-            else operation.evidence.completed_transition_count
-        )
+        completed_steps = max(0, mcmc_operation.complete_state_count - 1)
         if (
-            operation.terminal is not McmcOperationTerminal.COMPLETED
-            or operation.evidence is None
+            mcmc_operation.terminal is not McmcOperationTerminal.COMPLETED
+            or mcmc_operation.evidence is None
         ):
             error = NativeMcmcIncompleteError(
-                f"Native MCMC {operation.terminal.value}: {operation.failure_message}",
-                terminal=operation.terminal.value,
+                "Native MCMC "
+                f"{mcmc_operation.terminal.value}: "
+                f"{mcmc_operation.failure_message}",
+                terminal=mcmc_operation.terminal.value,
                 completed_steps=completed_steps,
+                preserve_raw_evidence=(
+                    mcmc_operation.terminal is McmcOperationTerminal.INTERRUPTED
+                    and mcmc_operation.evidence is not None
+                ),
             )
             raise error
         phase_start = perf_counter()
         try:
             analysis_result = derive_mcmc_analysis_result(
-                operation.evidence,
+                mcmc_operation.evidence,
                 request,
                 fit.parameter_model,
             )
@@ -687,7 +766,6 @@ def run_native_mcmc(
             root_seed=root_seed,
         )
     except (Exception, KeyboardInterrupt) as error:
-        _clear_mcmc_artifacts(statistic_path)
         raw_evidence = (
             analysis_result.evidence
             if analysis_result is not None
@@ -695,12 +773,15 @@ def run_native_mcmc(
             and analysis_result.failure is not None
             and analysis_result.failure.preserve_raw_evidence
             else mcmc_evidence
-            if isinstance(error, NativeMcmcIncompleteError)
-            and error.preserve_raw_evidence
+            if (
+                isinstance(error, KeyboardInterrupt)
+                or (
+                    isinstance(error, NativeMcmcIncompleteError)
+                    and error.preserve_raw_evidence
+                )
+            )
             else None
         )
-        if raw_evidence is not None:
-            _write_raw_chain_evidence(raw_evidence, statistic_path, fit.parameter_model)
         terminal = (
             error.terminal
             if isinstance(error, NativeMcmcIncompleteError)
@@ -713,6 +794,80 @@ def run_native_mcmc(
             if isinstance(error, NativeMcmcIncompleteError)
             else completed_steps
         )
+        raw_capture = (
+            mcmc_operation.raw_capture
+            if terminal == "interrupted"
+            and raw_evidence is None
+            and mcmc_operation is not None
+            and mcmc_operation.raw_capture is not None
+            and mcmc_operation.raw_capture.complete_state_count > 0
+            else None
+        )
+        if terminal == "interrupted":
+            remove_paths_best_effort(
+                (statistic_path / name for name in _MCMC_ARTIFACT_NAMES),
+                error,
+                description="interrupted MCMC artifact",
+            )
+            published_evidence: McmcEvidence | None = None
+            published_capture: RawMcmcCapture | None = None
+            if raw_evidence is not None:
+                try:
+                    _write_raw_chain_evidence(
+                        raw_evidence,
+                        statistic_path,
+                        fit.parameter_model,
+                    )
+                    published_evidence = raw_evidence
+                except (Exception, KeyboardInterrupt) as publication_error:  # noqa: BLE001
+                    detail = str(publication_error) or type(publication_error).__name__
+                    error.add_note(
+                        "ChemEx could not finish interrupted qualified MCMC chain: "
+                        f"{detail}"
+                    )
+            elif raw_capture is not None:
+                try:
+                    _write_raw_capture(
+                        raw_capture,
+                        statistic_path,
+                        fit.parameter_model,
+                        fit.problem.controlled_ids,
+                    )
+                    published_capture = raw_capture
+                except (Exception, KeyboardInterrupt) as publication_error:  # noqa: BLE001
+                    detail = str(publication_error) or type(publication_error).__name__
+                    error.add_note(
+                        "ChemEx could not finish interrupted MCMC execution capture: "
+                        f"{detail}"
+                    )
+            try:
+                _write_native_mcmc_state_diagnostics(
+                    statistic_path,
+                    settings=effective,
+                    root_seed=root_seed,
+                    parameter_ids=fit.problem.controlled_ids,
+                    status="incomplete",
+                    terminal=terminal,
+                    completed_steps=failure_completed_steps,
+                    failure=error,
+                    raw_evidence=published_evidence,
+                    raw_capture=published_capture,
+                    analysis_result=analysis_result,
+                    timings=timings,
+                )
+            except (Exception, KeyboardInterrupt) as publication_error:  # noqa: BLE001
+                detail = str(publication_error) or type(publication_error).__name__
+                error.add_note(
+                    f"ChemEx could not finish interrupted MCMC diagnostics: {detail}"
+                )
+            raise
+        _clear_mcmc_artifacts(statistic_path)
+        if raw_evidence is not None:
+            _write_raw_chain_evidence(
+                raw_evidence,
+                statistic_path,
+                fit.parameter_model,
+            )
         _write_native_mcmc_state_diagnostics(
             statistic_path,
             settings=effective,
@@ -723,6 +878,7 @@ def run_native_mcmc(
             completed_steps=failure_completed_steps,
             failure=error,
             raw_evidence=raw_evidence,
+            raw_capture=None,
             analysis_result=analysis_result,
             timings=timings,
         )

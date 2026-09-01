@@ -36,7 +36,7 @@ Homepage = "https://gbouvignies.github.io/ChemEx/"
 Repository = "https://github.com/gbouvignies/ChemEx"
 
 [project.scripts]
-chemex = "chemex.chemex:main"
+chemex = "chemex._entrypoint:main"
 
 [dependency-groups]
 dev = [

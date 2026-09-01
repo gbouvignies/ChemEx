@@ -31,7 +31,7 @@ class ModelSpec:
 
         if name not in model_factory.set:
             print_model_error(name)
-            sys.exit()
+            sys.exit(1)
         return name
 
     @staticmethod
@@ -43,7 +43,7 @@ class ModelSpec:
                 unknown_suffixes,
                 SUPPORTED_MODEL_EXTENSIONS,
             )
-            sys.exit()
+            sys.exit(1)
         return set(extensions)
 
     @classmethod

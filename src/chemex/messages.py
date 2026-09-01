@@ -14,7 +14,7 @@ Typical usage example:
   print_loading_experiments()
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import replace
 from pathlib import Path
@@ -41,6 +41,21 @@ from chemex.optimize.progress import (
 )
 
 console = Console()
+error_console = Console(stderr=True)
+
+
+def print_cli_diagnostic(
+    message: str,
+    notes: Sequence[str],
+    interrupted: bool,
+) -> None:
+    """Render one literal terminal diagnostic to stderr."""
+    if interrupted:
+        error_console.print(Text(message, style="red"))
+    else:
+        error_console.print(Text(f"ERROR: {message}", style="red"))
+    for note in notes:
+        error_console.print(Text(f"NOTE: {note}", style="yellow"))
 
 
 class MinimizationProgressReporter:
@@ -750,8 +765,8 @@ def print_file_not_found(filename: Path) -> None:
         filename (Path): The path of the file that was not found.
 
     """
-    console.print()
-    console.print(f"[red]The file '{filename}' is empty or does not exist!")
+    error_console.print()
+    error_console.print(f"[red]The file '{filename}' is empty or does not exist!")
 
 
 def print_file_not_found_error(error: FileNotFoundError) -> None:
@@ -761,14 +776,14 @@ def print_file_not_found_error(error: FileNotFoundError) -> None:
         error (FileNotFoundError): The FileNotFoundError exception instance.
 
     """
-    console.print()
-    console.print(f"[red]Error: {error}")
+    error_console.print()
+    error_console.print(f"[red]Error: {error}")
 
 
 def print_dataset_error(filename: Path, explanation: str) -> None:
     """Display a concise error for invalid user-supplied dataset content."""
-    console.print()
-    console.print(f"[red]Error: Invalid data in '{filename}': {explanation}")
+    error_console.print()
+    error_console.print(f"[red]Error: Invalid data in '{filename}': {explanation}")
 
 
 def print_toml_error(filename: Path, error_message: Exception) -> None:
@@ -779,12 +794,12 @@ def print_toml_error(filename: Path, error_message: Exception) -> None:
         error_message (Exception): The exception instance with the error message.
 
     """
-    console.print()
-    console.print(Text.from_markup(f"[red]Error in the TOML file '{filename}'"))
-    console.print(
+    error_console.print()
+    error_console.print(Text.from_markup(f"[red]Error in the TOML file '{filename}'"))
+    error_console.print(
         Text.from_markup(f"[red]-> {error_message}\n"),
     )
-    console.print(
+    error_console.print(
         "Please check the website [link]https://toml.io[/]"
         " for a complete description of the TOML format.",
     )
@@ -797,12 +812,14 @@ def print_experiment_name_error(filename: Path) -> None:
         filename (Path): Path of the file with the missing experiment name.
 
     """
-    console.print()
-    console.print(f"[red]The experiment name is missing from the file '{filename}'\n")
-    console.print(
+    error_console.print()
+    error_console.print(
+        f"[red]The experiment name is missing from the file '{filename}'\n"
+    )
+    error_console.print(
         f"Please make sure that the 'name' field is provided in '{filename}':\n",
     )
-    console.print(
+    error_console.print(
         Syntax(EXPERIMENT_NAME, "toml"),
         "\nRun 'chemex info' to obtain the full list of the available experiments.",
     )
@@ -810,20 +827,20 @@ def print_experiment_name_error(filename: Path) -> None:
 
 def print_experiment_type_error(filename: Path, name: str) -> None:
     """Display an error when an input names an unknown Experiment Type."""
-    console.print()
-    console.print(
+    error_console.print()
+    error_console.print(
         f"[red]Unknown Experiment Type '{name}' in the file '{filename}'.[/]",
     )
-    console.print(
+    error_console.print(
         "Run 'chemex info' to obtain the full list of available experiments.",
     )
 
 
 def print_experiment_source_error(filename: Path | None, explanation: str) -> None:
     """Display an error for an invalid or stale opened Experiment source."""
-    console.print()
+    error_console.print()
     location = f" for '{filename}'" if filename is not None else ""
-    console.print(f"[red]Invalid Experiment source{location}: {explanation}")
+    error_console.print(f"[red]Invalid Experiment source{location}: {explanation}")
 
 
 def print_pydantic_parsing_error(filename: Path, error: ValidationError) -> None:
@@ -834,32 +851,25 @@ def print_pydantic_parsing_error(filename: Path, error: ValidationError) -> None
         error (ValidationError): Instance detailing parsing errors.
 
     """
-    console.print()
-    console.print(Text.from_markup(f"[red]Error(s) while parsing '{filename}'"))
+    error_console.print()
+    error_console.print(Text.from_markup(f"[red]Error(s) while parsing '{filename}'"))
     for err in error.errors():
         location = " -> ".join(str(loc) for loc in err["loc"])
-        console.print("  • ", location, ":", err["msg"], style="red")
+        error_console.print("  • ", location, ":", err["msg"], style="red")
 
 
 def print_calculation_stopped_error() -> None:
     """Inform the user that the calculation was manually stopped."""
-    console.print()
-    console.print("[red] -- Keyboard Interrupt: Calculation stopped --")
-    console.print()
-
-
-def print_plotting_canceled() -> None:
-    """Display a message indicating that the plotting process was cancelled."""
-    console.print()
-    console.print("[red] -- Keyboard Interrupt: Plotting cancelled --")
-    console.print()
+    error_console.print()
+    error_console.print("[red] -- Keyboard Interrupt: Calculation stopped --")
+    error_console.print()
 
 
 def print_value_error() -> None:
     """Inform the user that a ValueError occurred, stopping the calculation."""
-    console.print()
-    console.print("[red] -- Got a ValueError: Calculation stopped --")
-    console.print()
+    error_console.print()
+    error_console.print("[red] -- Got a ValueError: Calculation stopped --")
+    error_console.print()
 
 
 def print_warning_positive_jnh() -> None:
@@ -896,19 +906,19 @@ def print_error_grid_settings(entry: str, detail: str | None = None) -> None:
         detail (str | None): Optional explanation of the validation failure.
 
     """
-    console.print()
-    console.print("[red] -- ERROR: Error reading grid settings:")
-    console.print(Text(f'    "{entry}"', style="red"))
+    error_console.print()
+    error_console.print("[red] -- ERROR: Error reading grid settings:")
+    error_console.print(Text(f'    "{entry}"', style="red"))
     if detail is not None:
-        console.print(Text(f"    {detail}", style="red"))
-    console.print()
-    console.print(
+        error_console.print(Text(f"    {detail}", style="red"))
+    error_console.print()
+    error_console.print(
         "Please make sure that the grid settings are provided in the correct format",
     )
-    console.print(Text("    [PB] = lin(<min>, <max>, <nb of points>)"))
-    console.print(Text("    [PB] = log(<min>, <max>, <nb of points>)"))
-    console.print(Text("    [PB] = (<value1>, <value2>, ..., <valuen>)"))
-    console.print()
+    error_console.print(Text("    [PB] = lin(<min>, <max>, <nb of points>)"))
+    error_console.print(Text("    [PB] = log(<min>, <max>, <nb of points>)"))
+    error_console.print(Text("    [PB] = (<value1>, <value2>, ..., <valuen>)"))
+    error_console.print()
 
 
 def print_error_constraints(expression: str, detail: str | None = None) -> None:
@@ -919,11 +929,13 @@ def print_error_constraints(expression: str, detail: str | None = None) -> None:
         detail (str | None): Optional explanation of the validation failure.
 
     """
-    console.print()
-    console.print(f'[red] -- ERROR: Error reading constraints -> "{expression}" --')
+    error_console.print()
+    error_console.print(
+        f'[red] -- ERROR: Error reading constraints -> "{expression}" --'
+    )
     if detail is not None:
-        console.print(Text(f"    {detail}", style="red"))
-    console.print()
+        error_console.print(Text(f"    {detail}", style="red"))
+    error_console.print()
 
 
 def print_mcmc_no_vary_warning() -> None:
@@ -961,13 +973,13 @@ def print_model_error(name: str) -> None:
     """
     from chemex.models.factory import model_factory
 
-    console.print()
-    console.print(f"[red] -- ERROR: The model '{name}' is not available.")
-    console.print()
-    console.print("The available models are:")
+    error_console.print()
+    error_console.print(f"[red] -- ERROR: The model '{name}' is not available.")
+    error_console.print()
+    error_console.print("The available models are:")
     for model_name in sorted(model_factory.set):
-        console.print(f"    - '{model_name}'")
-    console.print()
+        error_console.print(f"    - '{model_name}'")
+    error_console.print()
 
 
 def print_model_suffix_error(
@@ -978,15 +990,15 @@ def print_model_suffix_error(
     """Display an error message for unsupported model suffixes."""
     suffixes = ", ".join(f"'.{suffix}'" for suffix in sorted(unknown_suffixes))
 
-    console.print()
-    console.print(
+    error_console.print()
+    error_console.print(
         f"[red] -- ERROR: The model '{name}' uses unsupported suffixes: {suffixes}.",
     )
-    console.print()
-    console.print("The supported model suffixes are:")
+    error_console.print()
+    error_console.print("The supported model suffixes are:")
     for suffix in supported_suffixes:
-        console.print(f"    - '.{suffix}'")
-    console.print()
+        error_console.print(f"    - '.{suffix}'")
+    error_console.print()
 
 
 def print_not_implemented_noise_method_warning(
@@ -1118,12 +1130,12 @@ def print_method_error(filename: Path, section: str, options: set[int | str]) ->
         options (set[int | str]): Set of options or methods that are incorrect.
 
     """
-    console.print()
-    console.print(
+    error_console.print()
+    error_console.print(
         f"[red] -- ERROR: Error reading section '[{section}]' of '{filename}' --",
     )
     for option in options:
-        console.print(
+        error_console.print(
             METHOD_ERROR_MESSAGES.get(str(option), print_wrong_option(str(option))),
         )
-    console.print()
+    error_console.print()

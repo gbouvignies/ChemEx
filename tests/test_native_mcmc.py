@@ -974,7 +974,9 @@ def test_seeded_native_chain_recovers_known_truncated_normal_posterior() -> None
     assert samples.std(ddof=1) == pytest.approx(distribution.std(), abs=0.025)
 
 
-def test_interruption_preserves_only_a_contiguous_complete_state_prefix() -> None:
+def test_interruption_preserves_unqualified_complete_state_prefix_without_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     accepted, problem, parameterization, engine = _native_context()
     plan = McmcPlan.for_accepted(
         accepted,
@@ -992,6 +994,15 @@ def test_interruption_preserves_only_a_contiguous_complete_state_prefix() -> Non
         if state.ordinal == 2:
             raise KeyboardInterrupt
 
+    def forbid_fresh_validation(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("interrupted execution must not freshly validate raw capture")
+
+    monkeypatch.setattr(
+        native_mcmc,
+        "validate_raw_mcmc_capture",
+        forbid_fresh_validation,
+    )
+
     operation = execute_mcmc_evidence(
         accepted,
         plan,
@@ -1000,15 +1011,51 @@ def test_interruption_preserves_only_a_contiguous_complete_state_prefix() -> Non
 
     assert operation.terminal is McmcOperationTerminal.INTERRUPTED
     assert operation.failure_category == "interrupted"
+    assert operation.evidence is None
+    assert operation.validation is None
+    assert operation.raw_capture is not None
+    assert tuple(state.ordinal for state in operation.raw_capture.states) == (0, 1, 2)
+    assert operation.raw_capture.objective_request_count == plan.policy.walkers * 3
+
+
+def test_interruption_after_qualification_preserves_complete_chain_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accepted, plan = _plan_context()
+    original = native_mcmc.validate_raw_mcmc_capture
+    validation_calls = 0
+
+    def count_validation(*args: object, **kwargs: object):
+        nonlocal validation_calls
+        validation_calls += 1
+        return original(*args, **kwargs)
+
+    def interrupt_before_final_assembly(
+        stage: McmcExecutionStage,
+        _count: int,
+    ) -> None:
+        if stage is McmcExecutionStage.BEFORE_FINAL_ASSEMBLY:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        native_mcmc,
+        "validate_raw_mcmc_capture",
+        count_validation,
+    )
+    operation = execute_mcmc_evidence(
+        accepted,
+        plan,
+        checkpoint_observer=interrupt_before_final_assembly,
+    )
+
+    assert validation_calls == 1
+    assert operation.terminal is McmcOperationTerminal.INTERRUPTED
     assert operation.evidence is not None
-    evidence = operation.evidence
-    assert evidence.lifecycle is McmcEvidenceLifecycle.PARTIAL
-    assert tuple(state.ordinal for state in evidence.states) == (0, 1, 2)
-    assert evidence.completed_transition_count == 2
-    assert evidence.objective_request_count == plan.policy.walkers * 3
-    retained = derive_retained_sample_view(evidence)
-    assert retained.selected_state_ordinals == ()
-    assert not retained.is_complete
+    assert operation.evidence.lifecycle is McmcEvidenceLifecycle.COMPLETED
+    assert operation.validation is not None
+    assert operation.validation.is_complete
+    assert operation.raw_capture is not None
+    assert operation.raw_capture.terminal is McmcOperationTerminal.COMPLETED
 
 
 def test_primary_chain_evidence_round_trips_and_rejects_tampering() -> None:

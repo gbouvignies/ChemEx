@@ -197,7 +197,7 @@ def _fit_arguments(
     )
 
 
-def _simulation_arguments(output: Path):
+def _simulation_arguments(output: Path, *, plot_level: str = "nothing"):
     return build_parser().parse_args(
         [
             "simulate",
@@ -210,7 +210,7 @@ def _simulation_arguments(output: Path):
             "--include",
             "G2N-HN",
             "--plot",
-            "nothing",
+            plot_level,
         ]
     )
 
@@ -392,6 +392,50 @@ def test_real_simulation_uses_native_values_and_preserves_back_calculation(
     assert (output / "Parameters" / "constrained.toml").is_file()
 
 
+def test_simulation_plot_interruption_preserves_written_results_and_propagates(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output = tmp_path / "Output"
+
+    with (
+        patch.object(Experiments, "plot_simulation", side_effect=KeyboardInterrupt),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run(
+            _simulation_arguments(output, plot_level="normal"),
+            session=AnalysisSession.create(),
+        )
+
+    assert (output / "Data" / "800mhz.dat").is_file()
+    assert (output / "Parameters" / "fixed.toml").is_file()
+    rendered = capsys.readouterr()
+    assert "Plotting cancelled" not in rendered.out + rendered.err
+
+
+def test_fit_plot_interruption_preserves_committed_results_and_propagates(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+
+    with (
+        patch.object(Experiments, "plot", side_effect=KeyboardInterrupt),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run(
+            _fit_arguments(output, plot_level="normal"),
+            session=session,
+        )
+
+    assert session.analysis_values.snapshot().revision == 1
+    assert (output / "Parameters" / "fitted.toml").is_file()
+    assert _read_outcome(output)["terminal"] == "interrupted"
+    rendered = capsys.readouterr()
+    assert "Plotting cancelled" not in rendered.out + rendered.err
+
+
 def _run_real_fit_cli(output: Path, method: Path, parameters: Path) -> None:
     subprocess.run(  # noqa: S603 - fixed local CLI and repository-owned fixtures
         [
@@ -425,6 +469,20 @@ def _run_real_fit_cli(output: Path, method: Path, parameters: Path) -> None:
 def _read_outcome(output: Path) -> dict[str, object]:
     return tomllib.loads(
         (output / "run_info" / "outcome.toml").read_text(encoding="utf-8")
+    )
+
+
+def _assert_interrupted_mcmc_artifacts(
+    statistics: Path,
+    *,
+    raw_capture: bool,
+    raw_chain: bool,
+) -> None:
+    assert (statistics / "raw_capture.tsv").is_file() is raw_capture
+    assert (statistics / "raw_chain.tsv").is_file() is raw_chain
+    assert all(
+        not (statistics / name).exists()
+        for name in ("summary.toml", "samples.tsv", "correlations.tsv", "plots.pdf")
     )
 
 
@@ -1547,6 +1605,7 @@ G2N-H = [2.3, 2.18, 5.0]
             encoding="utf-8"
         )
     )
+    assert not (output / "Statistics" / "Covariance" / "block_recovery.json").exists()
     assert len(blocks["partition_proof_identity"]) == 64
     assert all(block["scope_reportable"] for block in blocks["blocks"])
     claim_sets = [
@@ -1625,6 +1684,8 @@ def test_interrupted_block_fallback_preserves_committed_root_evidence(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text("[STEP1]\n\n[STEP2]\n", encoding="utf-8")
     session = AnalysisSession.create()
     original_svd = uncertainty_module.svd
 
@@ -1638,24 +1699,182 @@ def test_interrupted_block_fallback_preserves_committed_root_evidence(
         patch("chemex.optimize.uncertainty.svd", side_effect=rank_deficient_svd),
         patch.object(
             deterministic_uncertainty_module,
-            "derive_root_anchored_block_covariance",
+            "execute_root_anchored_block_covariance",
             side_effect=KeyboardInterrupt,
         ),
+        pytest.raises(KeyboardInterrupt, match="uncertainty derivation interrupted"),
     ):
         run(
-            _fit_arguments(output, include=("G2N-HN", "H3N-HN")),
+            _fit_arguments(
+                output,
+                method,
+                include=("G2N-HN", "H3N-HN"),
+            ),
             session=session,
         )
 
     assert session.analysis_values.snapshot().revision == 1
-    covariance_path = output / "Statistics" / "Covariance"
+    covariance_path = output / "STEP1" / "Statistics" / "Covariance"
     assert (covariance_path / "evidence.json").is_file()
     assert not (covariance_path / "blocks.json").exists()
     status = json.loads((covariance_path / "status.json").read_text(encoding="utf-8"))
     assert status["status"] == "incomplete"
     assert status["terminal"] == "interrupted"
     assert status["reason"] == "derivation interrupted/cancelled"
-    assert (output / "Parameters" / "fitted.toml").is_file()
+    assert (output / "STEP1" / "Parameters" / "fitted.toml").is_file()
+    assert not (output / "STEP1" / "statistics.toml").exists()
+    assert not (output / "STEP2").exists()
+    outcome = _read_outcome(output)
+    assert outcome["terminal"] == "interrupted"
+    assert outcome["failure_stage"] == "uncertainty"
+
+
+def test_later_block_interruption_publishes_exact_prefix_and_stops_plan(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        '[DEFAULT]\nFIX = ["PB", "KEX_AB"]\n\n[STEP1]\n\n[STEP2]\n',
+        encoding="utf-8",
+    )
+    original_svd = uncertainty_module.svd
+    block_calls = 0
+
+    def interrupt_second_block(*args, **kwargs):
+        nonlocal block_calls
+        is_block = np.asarray(args[0]).shape[1] == 1
+        if is_block:
+            block_calls += 1
+        if is_block and block_calls == 2:
+            raise KeyboardInterrupt
+        left, singular, right = original_svd(*args, **kwargs)
+        singular = np.array(singular, copy=True)
+        if not is_block or block_calls == 1:
+            singular[-1] = 0.0
+        return left, singular, right
+
+    with (
+        patch("chemex.optimize.uncertainty.svd", side_effect=interrupt_second_block),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run(
+            _fit_arguments(output, method, include=("G2N-HN", "H3N-HN")),
+            session=AnalysisSession.create(),
+        )
+
+    covariance = output / "DEFAULT" / "Statistics" / "Covariance"
+    recovery = json.loads(
+        (covariance / "block_recovery.json").read_text(encoding="utf-8")
+    )
+    assert recovery["terminal"] == "interrupted"
+    assert recovery["completed_block_count"] == 1
+    assert recovery["planned_block_count"] == 2
+    assert [item["disposition"] for item in recovery["blocks"]] == [
+        "completed",
+        "not_completed",
+    ]
+    assert not (covariance / "blocks.json").exists()
+    assert not (output / "DEFAULT" / "statistics.toml").exists()
+    assert not (output / "STEP1").exists()
+    assert not (output / "STEP2").exists()
+    assert _read_outcome(output)["terminal"] == "interrupted"
+
+
+def test_full_block_prefix_interruption_publishes_complete_science_but_stops_plan(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = tmp_path / "method.toml"
+    method.write_text(
+        '[DEFAULT]\nFIX = ["PB", "KEX_AB"]\n\n[STEP1]\n\n[STEP2]\n',
+        encoding="utf-8",
+    )
+    original_svd = uncertainty_module.svd
+    original_bundle = uncertainty_module.RootAnchoredBlockCovarianceEvidence
+    root_seen = False
+    bundle_calls = 0
+
+    def rank_deficient_root(*args, **kwargs):
+        nonlocal root_seen
+        left, singular, right = original_svd(*args, **kwargs)
+        singular = np.array(singular, copy=True)
+        if not root_seen and np.asarray(args[0]).shape[1] == 2:
+            root_seen = True
+            singular[-1] = 0.0
+        return left, singular, right
+
+    def interrupt_initial_bundle_assembly(*args, **kwargs):
+        nonlocal bundle_calls
+        bundle_calls += 1
+        if bundle_calls == 1:
+            raise KeyboardInterrupt
+        return original_bundle(*args, **kwargs)
+
+    with (
+        patch("chemex.optimize.uncertainty.svd", side_effect=rank_deficient_root),
+        patch.object(
+            uncertainty_module,
+            "RootAnchoredBlockCovarianceEvidence",
+            side_effect=interrupt_initial_bundle_assembly,
+        ),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run(
+            _fit_arguments(output, method, include=("G2N-HN", "H3N-HN")),
+            session=AnalysisSession.create(),
+        )
+
+    covariance = output / "DEFAULT" / "Statistics" / "Covariance"
+    recovery = json.loads(
+        (covariance / "block_recovery.json").read_text(encoding="utf-8")
+    )
+    blocks = json.loads((covariance / "blocks.json").read_text(encoding="utf-8"))
+    assert recovery["terminal"] == "interrupted"
+    assert recovery["completed_block_count"] == recovery["planned_block_count"] == 2
+    assert recovery["complete_evidence_identity"] == blocks["identity"]
+    assert not (covariance / "status.json").exists()
+    assert not (output / "DEFAULT" / "statistics.toml").exists()
+    assert not (output / "STEP1").exists()
+    assert not (output / "STEP2").exists()
+    assert _read_outcome(output)["terminal"] == "interrupted"
+
+
+def test_interrupted_uncertainty_publication_failure_preserves_interruption(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    original_svd = uncertainty_module.svd
+
+    def rank_deficient_svd(*args, **kwargs):
+        left, singular, right = original_svd(*args, **kwargs)
+        singular = np.array(singular, copy=True)
+        singular[-1] = 0.0
+        return left, singular, right
+
+    with (
+        patch("chemex.optimize.uncertainty.svd", side_effect=rank_deficient_svd),
+        patch.object(
+            deterministic_uncertainty_module,
+            "execute_root_anchored_block_covariance",
+            side_effect=KeyboardInterrupt,
+        ),
+        patch(
+            "chemex.optimize.helper.write_uncertainty",
+            side_effect=RuntimeError("evidence write failed"),
+        ),
+        pytest.raises(KeyboardInterrupt) as error_info,
+    ):
+        run(
+            _fit_arguments(output, include=("G2N-HN", "H3N-HN")),
+            session=AnalysisSession.create(),
+        )
+
+    assert any(
+        note.startswith("ChemEx ") and "evidence write failed" in note
+        for note in error_info.value.__notes__
+    )
+    assert _read_outcome(output)["terminal"] == "interrupted"
 
 
 def test_shared_parameter_coupling_is_not_split_into_covariance_blocks(
@@ -1851,9 +2070,12 @@ def test_interrupted_covariance_keeps_committed_fit_and_invalidates_stale_eviden
     assert (output / "Statistics" / "Covariance" / "evidence.json").is_file()
 
     session = AnalysisSession.create()
-    with patch(
-        "chemex.optimize.deterministic_uncertainty.derive_uncertainty_evidence",
-        side_effect=KeyboardInterrupt,
+    with (
+        patch(
+            "chemex.optimize.deterministic_uncertainty.derive_uncertainty_evidence",
+            side_effect=KeyboardInterrupt,
+        ),
+        pytest.raises(KeyboardInterrupt, match="uncertainty derivation interrupted"),
     ):
         run(_fit_arguments(output), session=session)
 
@@ -1875,6 +2097,10 @@ def test_interrupted_covariance_keeps_committed_fit_and_invalidates_stale_eviden
         "status": "incomplete",
         "terminal": "interrupted",
     }
+    assert not (output / "statistics.toml").exists()
+    outcome = _read_outcome(output)
+    assert outcome["terminal"] == "interrupted"
+    assert outcome["failure_stage"] == "uncertainty"
 
 
 def test_uncertainty_exception_does_not_roll_back_the_committed_fit(
@@ -2172,7 +2398,7 @@ def test_automatic_mcmc_burn_failure_preserves_only_incomplete_raw_evidence(
     assert diagnostics["sampling_terminal"] == "completed"
     assert diagnostics["posterior_retention"] == "failed"
     assert diagnostics["posterior_summary"] == "withheld"
-    assert diagnostics["raw_evidence"] == "diagnostic_chain"
+    assert diagnostics["raw_evidence"] == "qualified_chain"
     assert diagnostics["raw_chain_file"] == "raw_chain.tsv"
     assert diagnostics["raw_steps"] == 5
     assert diagnostics["raw_samples"] == 160
@@ -2321,7 +2547,7 @@ def test_short_compact_mcmc_form_fails_closed_through_real_chemex_cli(
     assert diagnostics["status"] == "incomplete"
     assert diagnostics["engine"] == "native MCMC"
     assert diagnostics["steps"] == 2
-    assert diagnostics["raw_evidence"] == "diagnostic_chain"
+    assert diagnostics["raw_evidence"] == "qualified_chain"
     assert (statistics / "raw_chain.tsv").is_file()
     assert not (statistics / "summary.toml").exists()
     assert not (statistics / "samples.tsv").exists()
@@ -2482,10 +2708,196 @@ def test_interrupted_native_mcmc_publishes_only_incomplete_diagnostics(
     assert diagnostics["status"] == "incomplete"
     assert diagnostics["terminal"] == "interrupted"
     assert diagnostics["completed_steps"] == 0
-    assert not (statistics / "summary.toml").exists()
-    assert not (statistics / "samples.tsv").exists()
-    assert not (statistics / "correlations.tsv").exists()
-    assert not (statistics / "plots.pdf").exists()
+    assert diagnostics["raw_evidence"] == "execution_capture_unqualified"
+    assert diagnostics["captured_states"] == 1
+    assert diagnostics["completed_transitions"] == 0
+    _assert_interrupted_mcmc_artifacts(
+        statistics,
+        raw_capture=True,
+        raw_chain=False,
+    )
+    assert _read_outcome(output)["terminal"] == "interrupted"
+
+
+def test_interrupted_native_mcmc_publishes_unqualified_raw_capture(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+
+    def interrupt_after_second_transition(accepted, plan, *, execution):
+        def observe(state):
+            if state.ordinal == 2:
+                raise KeyboardInterrupt
+
+        return native_mcmc_module.execute_mcmc_evidence(
+            accepted,
+            plan,
+            execution=execution,
+            state_observer=observe,
+        )
+
+    with (
+        patch.object(
+            mcmc_module,
+            "execute_mcmc_evidence",
+            side_effect=interrupt_after_second_transition,
+        ),
+        pytest.raises(NativeMcmcIncompleteError, match="interrupted") as error_info,
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=AnalysisSession.create(),
+        )
+
+    assert error_info.value.terminal == "interrupted"
+    statistics = output / "Statistics" / "MCMC"
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    assert diagnostics["status"] == "incomplete"
+    assert diagnostics["terminal"] == "interrupted"
+    assert diagnostics["sampling_terminal"] == "interrupted"
+    assert diagnostics["completed_steps"] == 2
+    assert diagnostics["raw_evidence"] == "execution_capture_unqualified"
+    assert diagnostics["posterior_summary"] == "withheld"
+    assert diagnostics["captured_states"] == 3
+    assert diagnostics["completed_transitions"] == 2
+    raw_lines = (
+        (statistics / "raw_capture.tsv").read_text(encoding="utf-8").splitlines()
+    )
+    assert len(raw_lines) == 13
+    _assert_interrupted_mcmc_artifacts(
+        statistics,
+        raw_capture=True,
+        raw_chain=False,
+    )
+    assert _read_outcome(output)["terminal"] == "interrupted"
+
+
+def test_interruption_after_mcmc_qualification_publishes_only_qualified_chain(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+
+    with (
+        patch.object(
+            mcmc_module,
+            "derive_mcmc_analysis_result",
+            side_effect=KeyboardInterrupt,
+        ),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=AnalysisSession.create(),
+        )
+
+    statistics = output / "Statistics" / "MCMC"
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    assert diagnostics["terminal"] == "interrupted"
+    assert diagnostics["raw_evidence"] == "qualified_chain"
+    assert diagnostics["posterior_retention"] == "withheld"
+    assert diagnostics["convergence"] == "withheld"
+    _assert_interrupted_mcmc_artifacts(
+        statistics,
+        raw_capture=False,
+        raw_chain=True,
+    )
+    assert _read_outcome(output)["terminal"] == "interrupted"
+
+
+@pytest.mark.parametrize(
+    "publication_name",
+    (
+        "_write_summary",
+        "_write_samples",
+        "_write_correlations",
+        "write_mcmc_plots",
+        "_write_diagnostics",
+    ),
+)
+def test_each_mcmc_publication_interruption_retains_only_qualified_chain(
+    tmp_path: Path,
+    publication_name: str,
+) -> None:
+    output = tmp_path / "Output"
+    method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+
+    with (
+        patch.object(
+            mcmc_module,
+            publication_name,
+            side_effect=KeyboardInterrupt,
+        ),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=AnalysisSession.create(),
+        )
+
+    statistics = output / "Statistics" / "MCMC"
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    assert diagnostics["terminal"] == "interrupted"
+    assert diagnostics["raw_evidence"] == "qualified_chain"
+    _assert_interrupted_mcmc_artifacts(
+        statistics,
+        raw_capture=False,
+        raw_chain=True,
+    )
+
+
+def test_interrupted_mcmc_publication_failure_preserves_interruption(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+
+    def interrupt_after_second_transition(accepted, plan, *, execution):
+        def observe(state):
+            if state.ordinal == 2:
+                raise KeyboardInterrupt
+
+        return native_mcmc_module.execute_mcmc_evidence(
+            accepted,
+            plan,
+            execution=execution,
+            state_observer=observe,
+        )
+
+    with (
+        patch.object(
+            mcmc_module,
+            "execute_mcmc_evidence",
+            side_effect=interrupt_after_second_transition,
+        ),
+        patch.object(
+            mcmc_module,
+            "_write_raw_capture",
+            side_effect=RuntimeError("raw capture write failed"),
+        ),
+        pytest.raises(NativeMcmcIncompleteError) as error_info,
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=AnalysisSession.create(),
+        )
+
+    assert error_info.value.terminal == "interrupted"
+    assert any(
+        note.startswith("ChemEx ") and "raw capture write failed" in note
+        for note in error_info.value.__notes__
+    )
     assert _read_outcome(output)["terminal"] == "interrupted"
 
 
@@ -2845,10 +3257,18 @@ def test_interrupted_native_statistics_report_truthful_disposition_counts(
             "chemex.optimize.native_resampling.generate_resampling_draw",
             side_effect=interrupt_second_draw,
         ),
-        pytest.raises(NativeResamplingIncompleteError, match="1 of 3"),
+        patch.object(
+            resampling_module,
+            "derive_resampling_analysis_result",
+            side_effect=AssertionError(
+                "interrupted resampling must not derive statistical summaries"
+            ),
+        ),
+        pytest.raises(NativeResamplingIncompleteError, match="1 of 3") as error_info,
     ):
         run(_fit_arguments(output, method), session=session)
 
+    assert error_info.value.terminal == "interrupted"
     statistics = output / "Statistics" / "MonteCarlo"
     diagnostics = tomllib.loads(
         (statistics / "diagnostics.toml").read_text(encoding="utf-8")
@@ -2874,6 +3294,73 @@ def test_interrupted_native_statistics_report_truthful_disposition_counts(
     assert not (statistics / "summary.toml").exists()
     assert not (statistics / "correlations.tsv").exists()
     assert not (statistics / "plots.pdf").exists()
+    assert _read_outcome(output)["terminal"] == "interrupted"
+
+
+def test_interrupted_resampling_publication_failure_preserves_interruption(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 3')
+    real_generate = native_resampling_module.generate_resampling_draw
+
+    def interrupt_second_draw(dataset, request):
+        if request.ordinal == 1:
+            raise KeyboardInterrupt
+        return real_generate(dataset, request)
+
+    with (
+        patch(
+            "chemex.optimize.native_resampling.generate_resampling_draw",
+            side_effect=interrupt_second_draw,
+        ),
+        patch.object(
+            resampling_module,
+            "_write_native_failures",
+            side_effect=RuntimeError("failure manifest write failed"),
+        ),
+        pytest.raises(NativeResamplingIncompleteError) as error_info,
+    ):
+        run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    assert error_info.value.terminal == "interrupted"
+    assert any(
+        note.startswith("ChemEx ") and "failure manifest write failed" in note
+        for note in error_info.value.__notes__
+    )
+    statistics = output / "Statistics" / "MonteCarlo"
+    assert (statistics / "samples.tsv").is_file()
+    assert _read_outcome(output)["terminal"] == "interrupted"
+
+
+def test_ctrl_c_after_resampling_operation_preserves_validated_sample_values(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 3')
+
+    with (
+        patch.object(
+            resampling_module,
+            "_resampling_result_and_samples",
+            side_effect=KeyboardInterrupt,
+        ),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    statistics = output / "Statistics" / "MonteCarlo"
+    sample_lines = (statistics / "samples.tsv").read_text(encoding="utf-8").splitlines()
+    assert len(sample_lines) == 4
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    assert diagnostics["terminal"] == "interrupted"
+    assert diagnostics["completed_samples"] == 3
+    assert not (statistics / "summary.toml").exists()
+    assert not (statistics / "correlations.tsv").exists()
+    assert not (statistics / "plots.pdf").exists()
+    assert _read_outcome(output)["terminal"] == "interrupted"
 
 
 def test_native_statistics_setup_failure_publishes_incomplete_diagnostics(

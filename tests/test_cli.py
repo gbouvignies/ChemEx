@@ -53,6 +53,22 @@ def test_fit_cli_does_not_emit_v1_deprecation_warning_for_v2(
     assert "Method format v1 is deprecated" not in capsys.readouterr().out
 
 
+def test_fit_cli_reports_method_errors_on_stderr(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    method = tmp_path / "invalid.toml"
+    method.write_text("[STEP\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as error_info:
+        _read_fit_methods(_fit_args(method))
+
+    output = capsys.readouterr()
+    assert error_info.value.code == 1
+    assert "Error in the TOML file" in output.err
+    assert "Traceback (most recent call last)" not in output.out + output.err
+
+
 def test_fit_parser_defaults_execution_arguments_to_auto() -> None:
     args = build_parser().parse_args(
         [

@@ -67,8 +67,10 @@ tests together.
 
 ## Execution and data flow
 
-The installed `chemex` command calls `chemex.chemex:main`; `python -m chemex`
-uses the same function. `fit` and `simulate` follow this path:
+The installed `chemex` command and `python -m chemex` enter through
+`chemex._entrypoint:main`, which translates terminal failures and delegates to
+the exception-transparent `chemex.chemex:main`. `fit` and `simulate` then follow
+this path:
 
 1. `cli.py` parses paths, model selection, profile selection, output options,
    and fit execution settings.
