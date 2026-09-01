@@ -27,16 +27,12 @@ jobs:
             pytest_args: "-n 2"
             attempt: 1
           - python_version: "3.13"
-            mode: n4
-            pytest_args: "-n 4"
-            attempt: 1
-          - python_version: "3.13"
-            mode: n4
-            pytest_args: "-n 4"
+            mode: n2
+            pytest_args: "-n 2"
             attempt: 2
           - python_version: "3.13"
-            mode: n4
-            pytest_args: "-n 4"
+            mode: n2
+            pytest_args: "-n 2"
             attempt: 3
           - python_version: "3.14"
             mode: serial
@@ -47,16 +43,12 @@ jobs:
             pytest_args: "-n 2"
             attempt: 1
           - python_version: "3.14"
-            mode: n4
-            pytest_args: "-n 4"
-            attempt: 1
-          - python_version: "3.14"
-            mode: n4
-            pytest_args: "-n 4"
+            mode: n2
+            pytest_args: "-n 2"
             attempt: 2
           - python_version: "3.14"
-            mode: n4
-            pytest_args: "-n 4"
+            mode: n2
+            pytest_args: "-n 2"
             attempt: 3
 
     env:

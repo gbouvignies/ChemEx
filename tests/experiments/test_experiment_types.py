@@ -306,6 +306,8 @@ def test_malformed_dataset_cli_failure_has_no_traceback(
             "nothing",
         ],
     )
+    # Keep Rich from wrapping the asserted input filename when xdist lengthens tmp_path.
+    monkeypatch.setenv("COLUMNS", "200")
 
     with pytest.raises(SystemExit) as error_info:
         chemex_module.main()
