@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import tomllib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -18,19 +19,63 @@ ROOT = Path(__file__).parent.parent
 BINDING = ROOT / "examples/Combinations/2stBinding"
 EXPERIMENTS = tuple(sorted((BINDING / "Experiments").glob("*.toml")))
 PARAMETERS = BINDING / "Parameters/params.toml"
-METHOD = BINDING / "Methods/method.toml"
+
+# The boundary/Jacobian regression needs two real binding modalities and a
+# second condition, but not every shipped dataset.  These explicit profile
+# identities retain the high-cost Step 1 stencil and spread Step 2 over the
+# available CEST/CPMG profiles so the reduced witness keeps its binding
+# constraints, rank, and boundary-warning population.
+REPRESENTATIVE_EXPERIMENTS = (
+    BINDING / "Experiments/cest_10hz_10p_1.toml",
+    BINDING / "Experiments/cpmg_13p.toml",
+)
+BINDING_STEP1_PROFILES = (
+    486,
+    488,
+    489,
+    491,
+    492,
+    493,
+    494,
+    495,
+    496,
+    497,
+    498,
+    499,
+)
+REPRESENTATIVE_STEP2_PROFILES = (
+    480,
+    484,
+    *BINDING_STEP1_PROFILES,
+    500,
+    504,
+    511,
+    515,
+    522,
+    527,
+    533,
+    540,
+    546,
+    552,
+    557,
+    566,
+    571,
+    575,
+)
 
 
 def _arguments(
     output: Path,
     method: Path,
     parameters: tuple[Path, ...] = (PARAMETERS,),
+    *,
+    experiments: tuple[Path, ...] = EXPERIMENTS,
 ):
     return build_parser().parse_args(
         [
             "fit",
             "-e",
-            *(str(path) for path in EXPERIMENTS),
+            *(str(path) for path in experiments),
             "-p",
             *(str(path) for path in parameters),
             "-m",
@@ -51,6 +96,8 @@ def _capture_product_uncertainty(
     output: Path,
     method: Path,
     parameters: tuple[Path, ...] = (PARAMETERS,),
+    *,
+    experiments: tuple[Path, ...] = EXPERIMENTS,
 ) -> tuple[AnalysisSession, tuple[DeterministicUncertainty, ...]]:
     captured: list[DeterministicUncertainty] = []
     real_derive = native_deterministic_module.derive_deterministic_uncertainty
@@ -66,8 +113,56 @@ def _capture_product_uncertainty(
         "derive_deterministic_uncertainty",
         derive,
     ):
-        run(_arguments(output, method, parameters), session=session)
+        run(
+            _arguments(output, method, parameters, experiments=experiments),
+            session=session,
+        )
     return session, tuple(captured)
+
+
+def _write_representative_method(path: Path) -> Path:
+    """Write the reduced two-step binding witness used by the boundary test."""
+
+    step1_profiles = ", ".join(
+        f'"{profile_id}"' for profile_id in BINDING_STEP1_PROFILES
+    )
+    step2_profiles = ", ".join(
+        f'"{profile_id}"' for profile_id in REPRESENTATIVE_STEP2_PROFILES
+    )
+    path.write_text(
+        f"""FORMAT_VERSION = 2
+
+[STEP1]
+INCLUDE = [{step1_profiles}]
+ROLES = [
+  {{ FIX = ["KD"] }},
+]
+
+[STEP2]
+INCLUDE = [{step2_profiles}]
+ROLES_FROM = "STEP1"
+ROLES = [
+  {{ FIX = ["KOFF"] }},
+]
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _assert_representative_profiles_are_shipped() -> None:
+    """Fail clearly if a selected residue's stable N profile disappears."""
+
+    required_profiles = {
+        f"{profile_id}N" for profile_id in REPRESENTATIVE_STEP2_PROFILES
+    }
+    for experiment in REPRESENTATIVE_EXPERIMENTS:
+        with experiment.open("rb") as file:
+            profiles = tomllib.load(file)["data"]["profiles"]
+        missing = sorted(required_profiles.difference(profiles))
+        assert not missing, (
+            f"{experiment.name} is missing representative profiles: {missing}"
+        )
 
 
 def test_fitted_kd_uses_backend_jacobian_before_boundary_reporting(
@@ -120,12 +215,18 @@ FIX = ["KD"]
     assert "Jacobian unavailable" not in fitted
 
 
-def test_full_binding_step2_reports_boundary_warning_with_retained_jacobian(
+def test_representative_binding_step2_reports_boundary_warning_with_retained_jacobian(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
+    method = _write_representative_method(tmp_path / "representative-method.toml")
+    _assert_representative_profiles_are_shipped()
 
-    session, uncertainty = _capture_product_uncertainty(output, METHOD)
+    session, uncertainty = _capture_product_uncertainty(
+        output,
+        method,
+        experiments=REPRESENTATIVE_EXPERIMENTS,
+    )
 
     assert session.analysis_values.snapshot().revision == 2
     assert len(uncertainty) == 2
