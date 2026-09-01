@@ -79,6 +79,9 @@ jobs:
       - name: Install project dependencies
         run: uv sync --locked
 
+      - name: Install ephemeral xdist
+        run: uv pip install --python .venv/bin/python pytest-xdist==3.8.0
+
       - name: Record runner and numerical backend
         shell: bash
         run: |
@@ -102,7 +105,7 @@ jobs:
 
           {
             echo "NumPy/SciPy versions and runtime configuration:"
-            uv run --with pytest-xdist==3.8.0 python -c 'import numpy, scipy; print("numpy", numpy.__version__); print("scipy", scipy.__version__); print("--- numpy.show_runtime() ---"); getattr(numpy, "show_runtime", lambda: None)(); print("--- numpy.show_config() ---"); numpy.show_config(); print("--- scipy.show_config() ---"); scipy.show_config()'
+            .venv/bin/python -c 'import numpy, scipy; print("numpy", numpy.__version__); print("scipy", scipy.__version__); print("--- numpy.show_runtime() ---"); getattr(numpy, "show_runtime", lambda: None)(); print("--- numpy.show_config() ---"); numpy.show_config(); print("--- scipy.show_config() ---"); scipy.show_config()'
           } | tee benchmark-results/numerical-backend.txt >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run complete test suite
@@ -114,9 +117,10 @@ jobs:
           time_file="benchmark-results/pytest-time.txt"
           junit_file="benchmark-results/pytest.xml"
           log_file="benchmark-results/pytest.log"
+          export PATH="$GITHUB_WORKSPACE/.venv/bin:$PATH"
           set +e
           /usr/bin/time -f '%e' -o "$time_file" \
-            uv run --with pytest-xdist==3.8.0 pytest -q ${PYTEST_ARGS} \
+            .venv/bin/pytest -q ${PYTEST_ARGS} \
             --junitxml "$junit_file" 2>&1 | tee "$log_file"
           pytest_status=${PIPESTATUS[0]}
           set -e
@@ -124,7 +128,6 @@ jobs:
           export PYTEST_STATUS="$pytest_status"
           export TIME_FILE="$time_file"
           export JUNIT_FILE="$junit_file"
-          export LOG_FILE="$log_file"
           python - <<'PY'
           import json
           import os
@@ -159,7 +162,14 @@ jobs:
                       break
 
           time_path = Path(os.environ["TIME_FILE"])
-          wall_seconds = float(time_path.read_text().strip()) if time_path.exists() else None
+          wall_seconds = None
+          if time_path.exists():
+              for line in reversed(time_path.read_text().splitlines()):
+                  try:
+                      wall_seconds = float(line.strip())
+                  except ValueError:
+                      continue
+                  break
           result = {
               "python_version": os.environ["PYTHON_VERSION"],
               "mode": os.environ["BENCHMARK_MODE"],
