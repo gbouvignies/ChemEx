@@ -7,6 +7,9 @@ import errno
 import os
 import sys
 import tempfile
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager, suppress
+from io import TextIOWrapper
 from pathlib import Path
 
 _AT_FDCWD = -100
@@ -14,8 +17,9 @@ _RENAME_NOREPLACE = 1
 _RENAME_EXCL = 4
 
 
-def write_text_atomic(destination: Path, content: str) -> None:
-    """Replace one text file atomically from a same-directory temporary file."""
+@contextmanager
+def open_text_atomic(destination: Path) -> Iterator[TextIOWrapper]:
+    """Stream one text file and expose it only after a complete write."""
     descriptor, temporary_name = tempfile.mkstemp(
         dir=destination.parent,
         prefix=f".{destination.name}-",
@@ -24,11 +28,40 @@ def write_text_atomic(destination: Path, content: str) -> None:
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-            output.write(content)
+            yield output
         temporary.replace(destination)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
+    except BaseException as error:
+        try:
+            temporary.unlink(missing_ok=True)
+        except BaseException:  # noqa: BLE001 - preserve first failure
+            with suppress(BaseException):
+                BaseException.add_note(
+                    error,
+                    "ChemEx could not remove an incomplete temporary artifact.",
+                )
         raise
+
+
+def write_text_atomic(destination: Path, content: str) -> None:
+    """Replace one text file atomically from a same-directory temporary file."""
+    with open_text_atomic(destination) as output:
+        output.write(content)
+
+
+def remove_paths_best_effort(
+    paths: Iterable[Path],
+    error: BaseException,
+) -> None:
+    """Attempt every explicit removal without replacing the original failure."""
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except BaseException:  # noqa: BLE001 - cleanup is subordinate
+            with suppress(BaseException):
+                BaseException.add_note(
+                    error,
+                    "ChemEx could not remove a stale artifact.",
+                )
 
 
 def publish_directory_noreplace(staging: Path, destination: Path) -> None:

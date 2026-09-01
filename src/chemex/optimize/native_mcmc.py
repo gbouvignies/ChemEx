@@ -2437,13 +2437,21 @@ class McmcOperation:
             raise McmcConstructionError(
                 "Non-completed MCMC operation requires typed failure evidence"
             )
-        if (
-            self.raw_capture is None
-            or self.validation is None
-            or self.backend_transition_evidence is None
-        ):
+        if self.raw_capture is None or self.backend_transition_evidence is None:
             raise McmcConstructionError(
                 "Every MCMC operation requires raw and backend diagnostic evidence"
+            )
+        if self.validation is None:
+            if (
+                self.evidence is not None
+                or self.terminal is not McmcOperationTerminal.INTERRUPTED
+            ):
+                raise McmcConstructionError(
+                    "Only interrupted MCMC may retain unqualified raw capture"
+                )
+        elif self.validation.primary_evidence is not self.evidence:
+            raise McmcConstructionError(
+                "MCMC operation Evidence differs from fresh validation"
             )
         if (
             self.backend_transition_evidence.kind
@@ -2466,7 +2474,6 @@ class McmcOperation:
 
     def _content_identity(self) -> str:
         capture = cast("RawMcmcCapture", self.raw_capture)
-        validation = cast("McmcChainValidation", self.validation)
         backend = cast(
             "BackendTransitionEvidence",
             self.backend_transition_evidence,
@@ -2479,7 +2486,7 @@ class McmcOperation:
                 self.failure_category,
                 self.failure_message,
                 capture.identity,
-                validation.identity,
+                None if self.validation is None else self.validation.identity,
                 backend.identity,
             ),
         )
@@ -2497,8 +2504,8 @@ class McmcOperation:
     def validate_integrity(self) -> None:
         capture = cast("RawMcmcCapture", self.raw_capture)
         capture.validate_integrity()
-        validation = cast("McmcChainValidation", self.validation)
-        validation.validate_integrity()
+        if self.validation is not None:
+            self.validation.validate_integrity()
         backend = cast(
             "BackendTransitionEvidence",
             self.backend_transition_evidence,
@@ -2533,7 +2540,7 @@ def _mint_mcmc_operation(
     failure_category: str | None,
     failure_message: str,
     raw_capture: RawMcmcCapture,
-    validation: McmcChainValidation,
+    validation: McmcChainValidation | None,
     backend_transition_evidence: BackendTransitionEvidence,
 ) -> McmcOperation:
     return McmcOperation(
@@ -3694,6 +3701,10 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
     stage = McmcExecutionStage.BEFORE_INITIALIZATION
     initialization_outcome = McmcInitializationOutcome.NOT_STARTED
     execution_settings = ExecutionSettings() if execution is None else execution
+    raw_capture: RawMcmcCapture | None = None
+    validation: McmcChainValidation | None = None
+    backend_transition_evidence: BackendTransitionEvidence | None = None
+    evidence: McmcEvidence | None = None
 
     def checkpoint(next_stage: McmcExecutionStage) -> None:
         nonlocal stage
@@ -3794,12 +3805,12 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
         validation = validate_raw_mcmc_capture(plan, raw_capture)
         if not validation.is_complete or validation.primary_evidence is None:
             raise McmcExecutionError("fresh MCMC validation did not complete")
+        evidence = validation.primary_evidence
         checkpoint(McmcExecutionStage.BEFORE_FINAL_ASSEMBLY)
         backend_transition_evidence = _mint_observed_backend_transition_evidence(
             backend_observation,
             raw_capture,
         )
-        evidence = validation.primary_evidence
         object.__setattr__(
             evidence,
             "backend_transition_evidence",
@@ -3833,29 +3844,43 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
         message = str(error)
         if initialization_outcome is McmcInitializationOutcome.NOT_STARTED:
             initialization_outcome = McmcInitializationOutcome.FAILED
-    raw_capture = _mint_raw_capture(
-        plan,
-        terminal,
-        tuple(states),
-        log_density.objective_request_count,
-        log_density.evaluation_request_count,
-        stage,
-        initialization_outcome,
-        backend_observation,
-        category,
-    )
-    backend_transition_evidence = _mint_observed_backend_transition_evidence(
-        backend_observation,
-        raw_capture,
-    )
-    validation = validate_raw_mcmc_capture(
-        plan,
-        raw_capture,
-        backend_transition_evidence=backend_transition_evidence,
-    )
+    if raw_capture is None or terminal is not McmcOperationTerminal.INTERRUPTED:
+        raw_capture = _mint_raw_capture(
+            plan,
+            terminal,
+            tuple(states),
+            log_density.objective_request_count,
+            log_density.evaluation_request_count,
+            stage,
+            initialization_outcome,
+            backend_observation,
+            category,
+        )
+        backend_transition_evidence = None
+        validation = None
+        evidence = None
+    if backend_transition_evidence is None:
+        backend_transition_evidence = _mint_observed_backend_transition_evidence(
+            backend_observation,
+            raw_capture,
+        )
+        if evidence is not None:
+            object.__setattr__(
+                evidence,
+                "backend_transition_evidence",
+                backend_transition_evidence,
+            )
+            evidence.validate_integrity()
+    if terminal is not McmcOperationTerminal.INTERRUPTED:
+        validation = validate_raw_mcmc_capture(
+            plan,
+            raw_capture,
+            backend_transition_evidence=backend_transition_evidence,
+        )
+        evidence = validation.primary_evidence
     return _mint_mcmc_operation(
         terminal,
-        validation.primary_evidence,
+        evidence,
         category,
         message,
         raw_capture,

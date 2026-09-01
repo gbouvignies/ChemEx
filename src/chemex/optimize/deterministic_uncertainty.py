@@ -26,13 +26,14 @@ from chemex.optimize.uncertainty import (
     ParameterUnit,
     ResidualVarianceScaling,
     RootAnchoredBlockCovarianceEvidence,
+    RootAnchoredBlockCovarianceOperation,
     UncertaintyConstructionError,
     UncertaintyEvidence,
     UncertaintyPolicy,
     UncertaintyUnavailableKind,
     compile_constraint_linearization_capabilities,
-    derive_root_anchored_block_covariance,
     derive_uncertainty_evidence,
+    execute_root_anchored_block_covariance,
 )
 from chemex.parameters.parameterization import (
     ActiveParameterization,
@@ -130,7 +131,7 @@ class DeterministicUncertainty:
         repr=False,
         compare=False,
     )
-    block_evidence: RootAnchoredBlockCovarianceEvidence | None = field(
+    block_operation: RootAnchoredBlockCovarianceOperation | None = field(
         default=None,
         repr=False,
         compare=False,
@@ -151,7 +152,7 @@ class DeterministicUncertainty:
         self._validate_interpretation_state()
 
     def _validate_evidence_lineage(self) -> None:
-        if self.block_evidence is not None and self.root_evidence is None:
+        if self.block_operation is not None and self.root_evidence is None:
             raise UncertaintyConstructionError(
                 "Block uncertainty Evidence requires root Evidence"
             )
@@ -164,9 +165,9 @@ class DeterministicUncertainty:
                 raise UncertaintyConstructionError(
                     "Root Evidence does not belong to this deterministic uncertainty"
                 )
-        if self.block_evidence is not None:
-            block = self.block_evidence
-            if block.source_bundle is not self.root_evidence:
+        if self.block_operation is not None:
+            operation = self.block_operation
+            if operation.source_bundle is not self.root_evidence:
                 raise UncertaintyConstructionError(
                     "Block Evidence does not belong to this deterministic uncertainty"
                 )
@@ -176,7 +177,7 @@ class DeterministicUncertainty:
             if (
                 self.completeness is not InterpretationCompleteness.COMPLETE
                 or self.root_evidence is not None
-                or self.block_evidence is not None
+                or self.block_operation is not None
                 or self.incomplete_terminal is not None
                 or any(
                     item.reportable
@@ -205,6 +206,14 @@ class DeterministicUncertainty:
             raise UncertaintyConstructionError(
                 "Complete evaluated uncertainty requires root Evidence"
             )
+        if self.block_operation is not None:
+            complete_blocks = self.block_operation.complete_evidence is not None
+            if (
+                self.completeness is InterpretationCompleteness.COMPLETE
+            ) != complete_blocks:
+                raise UncertaintyConstructionError(
+                    "Block operation and uncertainty completeness disagree"
+                )
         if any(
             not item.reportable and item.unavailable_kind is None
             for item in self.parameters
@@ -227,10 +236,27 @@ class DeterministicUncertainty:
             and self.root_evidence.covariance is not None
             and self.root_evidence.covariance.boundary_warning
         )
-        block_warning = self.block_evidence is not None and any(
-            block.boundary_warning for block in self.block_evidence.blocks
+        block_warning = self.block_operation is not None and any(
+            block.boundary_warning for block in self.block_operation.completed_blocks
         )
         return root_warning or block_warning
+
+    @property
+    def block_evidence(self) -> RootAnchoredBlockCovarianceEvidence | None:
+        """Return complete block Evidence when the full partition exists."""
+        return (
+            None
+            if self.block_operation is None
+            else self.block_operation.complete_evidence
+        )
+
+    @property
+    def derivation_interrupted(self) -> bool:
+        """Whether uncertainty execution was interrupted, independently of science."""
+        return self.incomplete_terminal is OperationTerminal.INTERRUPTED or (
+            self.block_operation is not None
+            and self.block_operation.terminal is OperationTerminal.INTERRUPTED
+        )
 
     @property
     def root_covariance_available(self) -> bool:
@@ -248,8 +274,9 @@ class DeterministicUncertainty:
     @property
     def block_covariance_available(self) -> bool:
         """Whether any root-anchored recovery block has covariance."""
-        return self.block_evidence is not None and any(
-            block.covariance is not None for block in self.block_evidence.blocks
+        return self.block_operation is not None and any(
+            block.covariance is not None
+            for block in self.block_operation.completed_blocks
         )
 
 
@@ -450,7 +477,7 @@ def _constrained_boundary_warning_ids(
 
 def _interpret_evidence(
     evidence: UncertaintyEvidence,
-    block_evidence: RootAnchoredBlockCovarianceEvidence | None,
+    block_operation: RootAnchoredBlockCovarianceOperation | None,
     inputs: _ResolvedUncertaintyInputs,
 ) -> tuple[ParameterUncertaintyConclusion, ...]:
     standard_errors: dict[str, float] = {}
@@ -509,13 +536,13 @@ def _interpret_evidence(
         )
         for param_id in inputs.unsupported_constrained_ids
     )
-    if block_evidence is not None:
-        block_controlled_warning_ids = block_evidence.simple_bound_warning_ids
+    if block_operation is not None:
+        block_controlled_warning_ids = block_operation.simple_bound_warning_ids
         block_constrained_warning_ids = _constrained_boundary_warning_ids(
-            block_evidence.source_bundle,
+            block_operation.source_bundle,
             block_controlled_warning_ids,
         )
-        for block in block_evidence.blocks:
+        for block in block_operation.completed_blocks:
             recovered_ids: set[str] = set()
             for entry in (*block.marginal_errors, *block.constrained_marginal_errors):
                 if entry.value is not None:
@@ -614,7 +641,7 @@ def derive_deterministic_uncertainty(
             incomplete_terminal=OperationTerminal.INTERRUPTED,
         )
     try:
-        block_evidence = derive_root_anchored_block_covariance(
+        block_operation = execute_root_anchored_block_covariance(
             root_evidence,
             facts.basis.partition_proof,
         )
@@ -628,12 +655,18 @@ def derive_deterministic_uncertainty(
             root_evidence,
             incomplete_terminal=OperationTerminal.INTERRUPTED,
         )
+    complete = block_operation is None or block_operation.complete_evidence is not None
     return DeterministicUncertainty(
-        facts.accepted,
-        inputs.policy,
-        InterpretationCompleteness.COMPLETE,
-        DerivationDisposition.EVALUATED,
-        _interpret_evidence(root_evidence, block_evidence, inputs),
-        root_evidence,
-        block_evidence,
+        accepted_anchor=facts.accepted,
+        policy=inputs.policy,
+        completeness=(
+            InterpretationCompleteness.COMPLETE
+            if complete
+            else InterpretationCompleteness.INCOMPLETE
+        ),
+        disposition=DerivationDisposition.EVALUATED,
+        parameters=_interpret_evidence(root_evidence, block_operation, inputs),
+        root_evidence=root_evidence,
+        block_operation=block_operation,
+        incomplete_terminal=(None if complete else OperationTerminal.INTERRUPTED),
     )

@@ -2788,6 +2788,20 @@ class RootAnchoredBlockCovariance:
     claims: tuple[ClaimAssessment, ...]
     failure: EvidenceFailure | None = None
     constrained_failure: EvidenceFailure | None = None
+    _source_bundle: UncertaintyEvidence | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"record": False},
+        kw_only=True,
+    )
+    _source_partition_proof: FitPartitionProof | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"record": False},
+        kw_only=True,
+    )
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -2985,6 +2999,12 @@ class RootAnchoredBlockCovarianceEvidence:
         )
         if block_scopes != proof_scopes:
             raise ValueError("Root-anchored blocks differ from the partition proof")
+        if any(
+            block._source_bundle is not source
+            or block._source_partition_proof is not proof
+            for block in self.blocks
+        ):
+            raise ValueError("Root-anchored blocks have foreign source context")
         object.__setattr__(
             self,
             "identity",
@@ -3048,6 +3068,167 @@ class RootAnchoredBlockCovarianceEvidence:
         )
 
 
+def _validated_root_block_scopes(
+    evidence: UncertaintyEvidence,
+    partition_proof: FitPartitionProof,
+) -> tuple[tuple[tuple[str, ...], tuple[int, ...]], ...]:
+    jacobian = evidence.residual_jacobian
+    if (
+        jacobian is None
+        or partition_proof.root_plan_identity != evidence.source_engine.plan.identity
+        or partition_proof.constraint_program_identity
+        != evidence.source_parameterization.program.fingerprint
+        or partition_proof.controlled_ids != jacobian.controlled_ids
+    ):
+        raise ValueError("Block covariance requires the exact root partition proof")
+    root_bounds = {
+        param_id: (float(lower).hex(), float(upper).hex())
+        for param_id, lower, upper in zip(
+            evidence.source_problem.controlled_ids,
+            evidence.source_problem.lower_bounds,
+            evidence.source_problem.upper_bounds,
+            strict=True,
+        )
+    }
+    if any(
+        bounds
+        != tuple((param_id, *root_bounds[param_id]) for param_id in controlled_ids)
+        for _component_id, controlled_ids, _profiles, bounds in (
+            partition_proof.component_records
+        )
+    ):
+        raise ValueError("Block covariance partition bounds differ from the root")
+    return tuple(
+        (controlled_ids, profile_indices)
+        for _component_id, controlled_ids, profile_indices, _bounds in (
+            partition_proof.component_records
+        )
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class RootAnchoredBlockCovarianceOperation:
+    """Terminal lifecycle record for one root-anchored block recovery."""
+
+    source_bundle: UncertaintyEvidence = field(repr=False, compare=False)
+    source_partition_proof: FitPartitionProof = field(repr=False, compare=False)
+    terminal: OperationTerminal
+    completed_blocks: tuple[RootAnchoredBlockCovariance, ...]
+    complete_evidence: RootAnchoredBlockCovarianceEvidence | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+
+    def __post_init__(self) -> None:
+        source = self.source_bundle
+        proof = self.source_partition_proof
+        if self.terminal not in {
+            OperationTerminal.COMPLETED,
+            OperationTerminal.INTERRUPTED,
+        }:
+            raise ValueError("Block covariance operation has an invalid terminal")
+        planned_scopes = _validated_root_block_scopes(source, proof)
+        completed = tuple(self.completed_blocks)
+        completed_scopes = tuple(
+            (block.controlled_ids, block.root_profile_indices) for block in completed
+        )
+        if completed_scopes != planned_scopes[: len(completed)]:
+            raise ValueError(
+                "Completed block covariance must be an exact partition prefix"
+            )
+        if any(
+            block._source_bundle is not source
+            or block._source_partition_proof is not proof
+            for block in completed
+        ):
+            raise ValueError("Completed block covariance has foreign source context")
+        object.__setattr__(self, "completed_blocks", completed)
+        full_partition = len(completed) == len(planned_scopes)
+        if self.terminal is OperationTerminal.COMPLETED and not full_partition:
+            raise ValueError("Completed block covariance operation lacks blocks")
+        if full_partition:
+            complete = self.complete_evidence
+            if (
+                complete is None
+                or complete.source_bundle is not source
+                or complete.source_partition_proof is not proof
+                or complete.blocks != completed
+            ):
+                raise ValueError(
+                    "Full block covariance operation requires its complete Evidence"
+                )
+        elif self.complete_evidence is not None:
+            raise ValueError("Partial block covariance operation has complete Evidence")
+
+    @property
+    def simple_bound_warning_ids(self) -> frozenset[str]:
+        source = self.source_bundle
+        standard_errors = {
+            entry.param_id: entry.value
+            for block in self.completed_blocks
+            for entry in block.marginal_errors
+        }
+        return _simple_bound_warning_ids(
+            source.source_problem.controlled_ids,
+            source.accepted_anchor.vector,
+            source.source_problem.lower_bounds,
+            source.source_problem.upper_bounds,
+            standard_errors,
+        )
+
+    def to_record(self) -> dict[str, object]:
+        """Serialize lifecycle facts without claiming a complete partition."""
+        source = self.source_bundle
+        proof = self.source_partition_proof
+        jacobian = cast("ResidualJacobianEvidence", source.residual_jacobian)
+        records = []
+        for index, (
+            component_id,
+            controlled_ids,
+            profile_indices,
+            _bounds,
+        ) in enumerate(proof.component_records):
+            completed = index < len(self.completed_blocks)
+            records.append(
+                {
+                    "partition_index": index,
+                    "component_identity": component_id,
+                    "controlled_ids": list(controlled_ids),
+                    "root_profile_indices": list(profile_indices),
+                    "disposition": "completed" if completed else "not_completed",
+                    "evidence": (
+                        _record_value(self.completed_blocks[index])
+                        if completed
+                        else None
+                    ),
+                }
+            )
+        return {
+            "artifact_type": "native_root_anchored_block_covariance_operation",
+            "schema_version": _SCHEMA_VERSION,
+            "terminal": self.terminal.value,
+            "accepted_result_identity": source.accepted_result_identity,
+            "accepted_occurrence_identity": source.accepted_occurrence_identity,
+            "source_jacobian_identity": jacobian.identity,
+            "source_constraint_jacobian_identity": (
+                None
+                if source.constraint_jacobian is None
+                else source.constraint_jacobian.identity
+            ),
+            "partition_proof_identity": proof.identity,
+            "policy_identity": source.policy_identity,
+            "completed_block_count": len(self.completed_blocks),
+            "planned_block_count": len(proof.component_records),
+            "complete_evidence_identity": (
+                None
+                if self.complete_evidence is None
+                else self.complete_evidence.identity
+            ),
+            "blocks": records,
+        }
+
+
 def _failed_block_claims(
     category: str,
     *,
@@ -3096,9 +3277,36 @@ def _partition_coordinate_indices(
     return tuple(tuple(root_order[param_id] for param_id in scope) for scope in scopes)
 
 
-def derive_root_anchored_block_covariance(  # noqa: C901
+def _assemble_root_anchored_block_covariance_evidence(
     evidence: UncertaintyEvidence,
     partition_proof: FitPartitionProof,
+    blocks: Sequence[RootAnchoredBlockCovariance],
+) -> RootAnchoredBlockCovarianceEvidence:
+    """Assemble complete block Evidence without further scientific work."""
+    jacobian = evidence.residual_jacobian
+    if jacobian is None:
+        raise ValueError("Block covariance Evidence requires the root Jacobian")
+    return RootAnchoredBlockCovarianceEvidence(
+        evidence.accepted_result_identity,
+        evidence.accepted_occurrence_identity,
+        jacobian.identity,
+        (
+            None
+            if evidence.constraint_jacobian is None
+            else evidence.constraint_jacobian.identity
+        ),
+        partition_proof.identity,
+        evidence.policy_identity,
+        tuple(blocks),
+        evidence,
+        partition_proof,
+    )
+
+
+def _derive_root_anchored_block_covariance_complete(  # noqa: C901
+    evidence: UncertaintyEvidence,
+    partition_proof: FitPartitionProof,
+    completed_blocks: list[RootAnchoredBlockCovariance],
 ) -> RootAnchoredBlockCovarianceEvidence | None:
     """Derive independent full-rank blocks when the joint root is unavailable."""
     jacobian = evidence.residual_jacobian
@@ -3112,36 +3320,7 @@ def derive_root_anchored_block_covariance(  # noqa: C901
         is not ResidualVarianceScaling.ABSOLUTE_OBSERVATION_UNCERTAINTIES
     ):
         return None
-    if (
-        partition_proof.root_plan_identity != evidence.source_engine.plan.identity
-        or partition_proof.constraint_program_identity
-        != evidence.source_parameterization.program.fingerprint
-        or partition_proof.controlled_ids != jacobian.controlled_ids
-    ):
-        raise ValueError("Block covariance requires the exact root partition proof")
-    root_bounds = {
-        param_id: (float(lower).hex(), float(upper).hex())
-        for param_id, lower, upper in zip(
-            evidence.source_problem.controlled_ids,
-            evidence.source_problem.lower_bounds,
-            evidence.source_problem.upper_bounds,
-            strict=True,
-        )
-    }
-    if any(
-        bounds
-        != tuple((param_id, *root_bounds[param_id]) for param_id in controlled_ids)
-        for _component_id, controlled_ids, _profiles, bounds in (
-            partition_proof.component_records
-        )
-    ):
-        raise ValueError("Block covariance partition bounds differ from the root")
-    scopes = tuple(
-        (controlled_ids, profile_indices)
-        for _component_id, controlled_ids, profile_indices, _bounds in (
-            partition_proof.component_records
-        )
-    )
+    scopes = _validated_root_block_scopes(evidence, partition_proof)
     if len(scopes) < 2:
         return None
     coordinate_indices = _partition_coordinate_indices(
@@ -3161,7 +3340,7 @@ def derive_root_anchored_block_covariance(  # noqa: C901
     if row_offset != jacobian.residual_count:
         raise ValueError("Root residual rows do not match the evaluation profile plan")
     constraint_jacobian = evidence.constraint_jacobian
-    blocks: list[RootAnchoredBlockCovariance] = []
+    blocks = completed_blocks
     for (scope, profile_indices), indices in zip(
         scopes,
         coordinate_indices,
@@ -3343,19 +3522,68 @@ def derive_root_anchored_block_covariance(  # noqa: C901
                 claims,
                 failure,
                 constrained_failure,
+                _source_bundle=evidence,
+                _source_partition_proof=partition_proof,
             )
         )
-    return RootAnchoredBlockCovarianceEvidence(
-        evidence.accepted_result_identity,
-        evidence.accepted_occurrence_identity,
-        jacobian.identity,
-        None if constraint_jacobian is None else constraint_jacobian.identity,
-        partition_proof.identity,
-        evidence.policy_identity,
-        tuple(blocks),
+    return _assemble_root_anchored_block_covariance_evidence(
         evidence,
         partition_proof,
+        blocks,
     )
+
+
+def execute_root_anchored_block_covariance(
+    evidence: UncertaintyEvidence,
+    partition_proof: FitPartitionProof,
+) -> RootAnchoredBlockCovarianceOperation | None:
+    """Recover complete blocks while freezing a truthful interrupted prefix."""
+    completed_blocks: list[RootAnchoredBlockCovariance] = []
+    try:
+        complete = _derive_root_anchored_block_covariance_complete(
+            evidence,
+            partition_proof,
+            completed_blocks,
+        )
+    except KeyboardInterrupt:
+        complete = (
+            _assemble_root_anchored_block_covariance_evidence(
+                evidence,
+                partition_proof,
+                completed_blocks,
+            )
+            if len(completed_blocks) == len(partition_proof.component_records)
+            else None
+        )
+        return RootAnchoredBlockCovarianceOperation(
+            evidence,
+            partition_proof,
+            OperationTerminal.INTERRUPTED,
+            tuple(completed_blocks),
+            complete,
+        )
+    if complete is None:
+        return None
+    return RootAnchoredBlockCovarianceOperation(
+        evidence,
+        partition_proof,
+        OperationTerminal.COMPLETED,
+        complete.blocks,
+        complete,
+    )
+
+
+def derive_root_anchored_block_covariance(
+    evidence: UncertaintyEvidence,
+    partition_proof: FitPartitionProof,
+) -> RootAnchoredBlockCovarianceEvidence | None:
+    """Compatibility view returning only complete block Evidence."""
+    operation = execute_root_anchored_block_covariance(evidence, partition_proof)
+    if operation is None:
+        return None
+    if operation.terminal is OperationTerminal.INTERRUPTED:
+        raise KeyboardInterrupt("Root-anchored block covariance interrupted")
+    return operation.complete_evidence
 
 
 @dataclass(frozen=True, slots=True)

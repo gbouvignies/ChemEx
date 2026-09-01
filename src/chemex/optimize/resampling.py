@@ -9,7 +9,7 @@ from typing import cast
 
 import numpy as np
 
-from chemex.atomic import write_text_atomic
+from chemex.atomic import open_text_atomic, remove_paths_best_effort, write_text_atomic
 from chemex.configuration.method_plan import ResamplingKind, ResamplingRequest
 from chemex.containers.experiments import Experiments
 from chemex.messages import print_running_statistics
@@ -24,6 +24,7 @@ from chemex.optimize.native_resampling import (
     ResamplingAnalysisStatus,
     ResamplingAnalysisSummary,
     ResamplingDatasetManifest,
+    ResamplingEvidence,
     ResamplingOperation,
     ResamplingPlan,
     ResamplingScheme,
@@ -47,6 +48,10 @@ class _ResamplingMethod:
 
 class NativeResamplingIncompleteError(RuntimeError):
     """Raised after truthful incomplete native statistics have been published."""
+
+    def __init__(self, message: str, *, terminal: str = "failed") -> None:
+        super().__init__(message)
+        self.terminal = terminal
 
 
 def _resampling_result_and_samples(
@@ -258,7 +263,7 @@ def _write_native_failures(path: Path, outcomes: Sequence[ReplicateOutcome]) -> 
     failed = tuple(outcome for outcome in outcomes if outcome.failure is not None)
     if not failed:
         return
-    with (path / "failures.tsv").open("w", encoding="utf-8") as output:
+    with open_text_atomic(path / "failures.tsv") as output:
         output.write("ordinal\tdisposition\tcategory\tmessage\n")
         for outcome in failed:
             failure = outcome.failure
@@ -271,6 +276,49 @@ def _write_native_failures(path: Path, outcomes: Sequence[ReplicateOutcome]) -> 
             )
 
 
+def _write_native_samples(
+    path: Path,
+    parameter_names: tuple[str, ...],
+    samples: Sequence[ResamplingAnalysisSample],
+) -> None:
+    with open_text_atomic(path / "samples.tsv") as output:
+        output.write("\t".join((*parameter_names, "chisqr")) + "\n")
+        for sample in samples:
+            output.write(
+                "\t".join(
+                    _format_tsv_float(value)
+                    for value in (*sample.values, float(sample.chi_square))
+                )
+                + "\n"
+            )
+
+
+def _disposition_counts(
+    source: ResamplingEvidence | ResamplingAnalysisResult | None = None,
+    *,
+    unstarted: int = 0,
+) -> tuple[tuple[str, int], ...]:
+    """Map authoritative dispositions to their diagnostic representation."""
+    if source is None:
+        return (
+            ("completed_samples", 0),
+            ("failed_samples", 0),
+            ("cancelled_samples", 0),
+            ("interrupted_samples", 0),
+            ("unstarted_samples", unstarted),
+        )
+    return tuple(
+        (name, source.disposition_count(disposition))
+        for name, disposition in (
+            ("completed_samples", ReplicateDisposition.SUCCEEDED),
+            ("failed_samples", ReplicateDisposition.FAILED),
+            ("cancelled_samples", ReplicateDisposition.CANCELLED),
+            ("interrupted_samples", ReplicateDisposition.INTERRUPTED),
+            ("unstarted_samples", ReplicateDisposition.NOT_STARTED),
+        )
+    )
+
+
 def _write_native_state_diagnostics(
     path: Path,
     *,
@@ -279,11 +327,7 @@ def _write_native_state_diagnostics(
     parameter_ids: tuple[str, ...],
     root_seed: int,
     status: str,
-    successful_samples: int | None = None,
-    failed_samples: int | None = None,
-    cancelled_samples: int | None = None,
-    interrupted_samples: int | None = None,
-    unstarted_samples: int | None = None,
+    sample_counts: Sequence[tuple[str, int]] = (),
     terminal: str | None = None,
     failure: BaseException | None = None,
 ) -> None:
@@ -299,16 +343,7 @@ def _write_native_state_diagnostics(
     ]
     if terminal is not None:
         lines.append(f"terminal = {_quote_toml_string(terminal)}")
-    sample_counts = (
-        ("completed_samples", successful_samples),
-        ("failed_samples", failed_samples),
-        ("cancelled_samples", cancelled_samples),
-        ("interrupted_samples", interrupted_samples),
-        ("unstarted_samples", unstarted_samples),
-    )
-    lines.extend(
-        f"{name} = {count}" for name, count in sample_counts if count is not None
-    )
+    lines.extend(f"{name} = {count}" for name, count in sample_counts)
     if status == "incomplete":
         if (path / "samples.tsv").is_file():
             lines.append('samples_file = "samples.tsv"')
@@ -337,19 +372,7 @@ def _clear_native_statistics_artifacts(path: Path) -> None:
         (path / name).unlink(missing_ok=True)
 
 
-def _remove_failed_publication_artifacts(
-    path: Path,
-    names: Sequence[str],
-    failure: BaseException,
-) -> None:
-    for name in names:
-        try:
-            (path / name).unlink(missing_ok=True)
-        except (Exception, KeyboardInterrupt) as cleanup_error:  # noqa: BLE001
-            failure.add_note(f"ChemEx could not remove {name}: {cleanup_error}")
-
-
-def _run_native_resampling_method(
+def _run_native_resampling_method(  # noqa: C901 - closed execution/publication lifecycle
     experiments: Experiments,
     path: Path,
     method: _ResamplingMethod,
@@ -409,26 +432,34 @@ def _run_native_resampling_method(
         )
     except (Exception, KeyboardInterrupt) as error:
         terminal = "interrupted" if isinstance(error, KeyboardInterrupt) else "failed"
-        _write_native_state_diagnostics(
-            statistic_path,
-            method=method,
-            workers=worker_count,
-            parameter_ids=parameter_ids,
-            root_seed=root_seed,
-            status="incomplete",
-            successful_samples=0,
-            failed_samples=0,
-            cancelled_samples=0,
-            interrupted_samples=0,
-            unstarted_samples=method.iterations,
-            terminal=terminal,
-            failure=error,
-        )
+        try:
+            _write_native_state_diagnostics(
+                statistic_path,
+                method=method,
+                workers=worker_count,
+                parameter_ids=parameter_ids,
+                root_seed=root_seed,
+                status="incomplete",
+                sample_counts=_disposition_counts(unstarted=method.iterations),
+                terminal=terminal,
+                failure=error,
+            )
+        except (Exception, KeyboardInterrupt):
+            if terminal != "interrupted":
+                raise
+            error.add_note(
+                "ChemEx could not publish interrupted resampling diagnostics."
+            )
+            remove_paths_best_effort(
+                (statistic_path / "diagnostics.toml",),
+                error,
+            )
         raise
     evidence = operation.evidence
     if evidence is None:
         error = NativeResamplingIncompleteError(
-            f"Native {method.message} produced no replicate evidence"
+            f"Native {method.message} produced no replicate evidence",
+            terminal=operation.terminal.value,
         )
         _write_native_state_diagnostics(
             statistic_path,
@@ -437,11 +468,7 @@ def _run_native_resampling_method(
             parameter_ids=parameter_ids,
             root_seed=root_seed,
             status="incomplete",
-            successful_samples=0,
-            failed_samples=0,
-            cancelled_samples=0,
-            interrupted_samples=0,
-            unstarted_samples=method.iterations,
+            sample_counts=_disposition_counts(unstarted=method.iterations),
             terminal=operation.terminal.value,
             failure=error,
         )
@@ -464,15 +491,7 @@ def _run_native_resampling_method(
         samples = np.asarray(sample_rows, dtype=float).reshape(
             (len(sample_rows), len(parameter_ids))
         )
-        with (statistic_path / "samples.tsv").open("w", encoding="utf-8") as output:
-            output.write("\t".join((*parameter_names, "chisqr")) + "\n")
-            for values, chisqr in zip(sample_rows, chisqr_rows, strict=True):
-                output.write(
-                    "\t".join(
-                        _format_tsv_float(value) for value in (*values, float(chisqr))
-                    )
-                    + "\n"
-                )
+        _write_native_samples(statistic_path, parameter_names, analysis_samples)
         samples_published = True
         if not complete:
             _write_native_failures(statistic_path, evidence.outcomes)
@@ -485,21 +504,7 @@ def _run_native_resampling_method(
                 parameter_ids=parameter_ids,
                 root_seed=root_seed,
                 status="incomplete",
-                successful_samples=disposition_source.disposition_count(
-                    ReplicateDisposition.SUCCEEDED
-                ),
-                failed_samples=disposition_source.disposition_count(
-                    ReplicateDisposition.FAILED
-                ),
-                cancelled_samples=disposition_source.disposition_count(
-                    ReplicateDisposition.CANCELLED
-                ),
-                interrupted_samples=disposition_source.disposition_count(
-                    ReplicateDisposition.INTERRUPTED
-                ),
-                unstarted_samples=disposition_source.disposition_count(
-                    ReplicateDisposition.NOT_STARTED
-                ),
+                sample_counts=_disposition_counts(disposition_source),
                 terminal=operation.terminal.value,
             )
         else:
@@ -548,13 +553,48 @@ def _run_native_resampling_method(
             artifacts_to_remove.append("samples.tsv")
         if not failures_published:
             artifacts_to_remove.append("failures.tsv")
-        _remove_failed_publication_artifacts(
-            statistic_path,
-            artifacts_to_remove,
+        remove_paths_best_effort(
+            (statistic_path / name for name in artifacts_to_remove),
             error,
         )
-        terminal = "interrupted" if isinstance(error, KeyboardInterrupt) else "failed"
+        terminal = (
+            "interrupted"
+            if operational_interruption or isinstance(error, KeyboardInterrupt)
+            else "failed"
+        )
         disposition_source = evidence if result is None else result
+        if terminal == "interrupted" and not samples_published:
+            try:
+                diagnostic_samples = derive_resampling_diagnostic_samples(
+                    operation,
+                    fit.accepted,
+                )
+                _write_native_samples(
+                    statistic_path,
+                    parameter_names,
+                    diagnostic_samples,
+                )
+                samples_published = True
+            except (Exception, KeyboardInterrupt):  # noqa: BLE001
+                error.add_note(
+                    "ChemEx could not publish interrupted resampling samples."
+                )
+                remove_paths_best_effort(
+                    (statistic_path / "samples.tsv",),
+                    error,
+                )
+        if terminal == "interrupted" and not failures_published:
+            try:
+                _write_native_failures(statistic_path, evidence.outcomes)
+                failures_published = True
+            except (Exception, KeyboardInterrupt):  # noqa: BLE001
+                error.add_note(
+                    "ChemEx could not publish interrupted resampling failures."
+                )
+                remove_paths_best_effort(
+                    (statistic_path / "failures.tsv",),
+                    error,
+                )
         try:
             _write_native_state_diagnostics(
                 statistic_path,
@@ -563,41 +603,36 @@ def _run_native_resampling_method(
                 parameter_ids=parameter_ids,
                 root_seed=root_seed,
                 status="incomplete",
-                successful_samples=disposition_source.disposition_count(
-                    ReplicateDisposition.SUCCEEDED
-                ),
-                failed_samples=disposition_source.disposition_count(
-                    ReplicateDisposition.FAILED
-                ),
-                cancelled_samples=disposition_source.disposition_count(
-                    ReplicateDisposition.CANCELLED
-                ),
-                interrupted_samples=disposition_source.disposition_count(
-                    ReplicateDisposition.INTERRUPTED
-                ),
-                unstarted_samples=disposition_source.disposition_count(
-                    ReplicateDisposition.NOT_STARTED
-                ),
+                sample_counts=_disposition_counts(disposition_source),
                 terminal=terminal,
                 failure=error,
             )
-        except (Exception, KeyboardInterrupt) as diagnostics_error:  # noqa: BLE001
+        except (Exception, KeyboardInterrupt):  # noqa: BLE001
             error.add_note(
-                "ChemEx could not publish incomplete resampling diagnostics: "
-                f"{diagnostics_error}"
+                "ChemEx could not publish incomplete resampling diagnostics."
             )
-            _remove_failed_publication_artifacts(
-                statistic_path,
-                ("diagnostics.toml",),
+            remove_paths_best_effort(
+                (statistic_path / "diagnostics.toml",),
                 error,
             )
+        if operational_interruption and not isinstance(error, KeyboardInterrupt):
+            interrupted_error = NativeResamplingIncompleteError(
+                f"Native {method.message} completed {evidence.successful_count} of "
+                f"{method.iterations} requested replicates",
+                terminal="interrupted",
+            )
+            interrupted_error.add_note(
+                "ChemEx could not publish interrupted resampling output."
+            )
+            raise interrupted_error from error
         raise
     if operational_interruption or (
         result is not None and result.status is ResamplingAnalysisStatus.INCOMPLETE
     ):
         raise NativeResamplingIncompleteError(
             f"Native {method.message} completed {evidence.successful_count} of "
-            f"{method.iterations} requested replicates"
+            f"{method.iterations} requested replicates",
+            terminal="interrupted" if operational_interruption else "failed",
         )
 
 

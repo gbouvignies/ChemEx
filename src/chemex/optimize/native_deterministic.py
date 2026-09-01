@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from functools import reduce
 from operator import and_
 from pathlib import Path
+from typing import Never
 
 import numpy as np
 
@@ -82,6 +83,17 @@ from chemex.runtime.environment import RuntimeEnvironment
 # The finalized #573/#664 policy uses 2000 * (nvars + 1), with numerical
 # Jacobian requests counted in the same total objective-request ceiling.
 _TRF_OBJECTIVE_REQUESTS_PER_DIMENSION = 2000
+
+
+def _propagate_uncertainty_interruption(
+    finalization_error: BaseException | None = None,
+) -> Never:
+    error = KeyboardInterrupt("Native deterministic uncertainty derivation interrupted")
+    mark_failure_stage(error, "uncertainty")
+    if finalization_error is not None:
+        error.add_note("ChemEx could not publish interrupted uncertainty output.")
+        raise error from finalization_error
+    raise error
 
 
 @dataclass(frozen=True, slots=True)
@@ -510,9 +522,12 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         parameter_model,
         deterministic_uncertainty,
     )
+    uncertainty_interrupted = deterministic_uncertainty.derivation_interrupted
     try:
         _materialize_evaluation(experiments, result)
     except (Exception, KeyboardInterrupt) as error:
+        if uncertainty_interrupted:
+            _propagate_uncertainty_interruption(error)
         mark_failure_stage(error, "output")
         raise
     variable_count = len(problem.controlled_ids)
@@ -539,8 +554,12 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
                 fitted_ids=problem.controlled_ids,
             )
         except (Exception, KeyboardInterrupt) as error:
+            if uncertainty_interrupted:
+                _propagate_uncertainty_interruption(error)
             mark_failure_stage(error, "output")
             raise
+        if uncertainty_interrupted:
+            _propagate_uncertainty_interruption()
         return fit
 
     try:
@@ -557,6 +576,10 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             fitted_ids=problem.controlled_ids,
         )
     except (Exception, KeyboardInterrupt) as error:
+        if uncertainty_interrupted:
+            _propagate_uncertainty_interruption(error)
         mark_failure_stage(error, "output")
         raise
+    if uncertainty_interrupted:
+        _propagate_uncertainty_interruption()
     return fit
