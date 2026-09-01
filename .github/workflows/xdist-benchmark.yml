@@ -140,7 +140,7 @@ jobs:
           if junit_path.exists():
               root = ET.parse(junit_path).getroot()
               if root.tag == "testsuites":
-                  suites = [root]
+                  suites = list(root)
               else:
                   suites = [root]
 
@@ -247,7 +247,7 @@ jobs:
           for item in results:
               wall = item["wall_seconds"]
               serial = serial_times.get(item["python_version"])
-              speedup = wall / serial if wall is not None and serial else None
+              speedup = serial / wall if wall is not None and serial else None
               result = "pass" if item["exit_code"] == 0 else f"exit {item['exit_code']}"
               lines.append(
                   "| {python_version} | {mode} | {attempt} | {wall} | {speedup} | "
