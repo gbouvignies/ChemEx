@@ -306,16 +306,14 @@ def test_malformed_dataset_cli_failure_has_no_traceback(
             "nothing",
         ],
     )
-    # Keep Rich from wrapping the asserted input filename when xdist lengthens tmp_path.
-    monkeypatch.setenv("COLUMNS", "200")
-
     with pytest.raises(SystemExit) as error_info:
         chemex_module.main()
 
     output = capfd.readouterr()
     assert error_info.value.code == 1
     assert "Invalid data" in output.err
-    assert "malformed.dat" in output.err
+    # Rich may wrap long temporary paths; line breaks are presentation only.
+    assert "malformed.dat" in output.err.replace("\n", "")
     assert "Traceback" not in output.out + output.err
 
 
