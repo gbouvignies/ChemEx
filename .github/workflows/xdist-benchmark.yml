@@ -1,0 +1,257 @@
+name: Temporary xdist Benchmark
+
+# Temporary benchmark workflow. Remove or replace after the fixed worker
+# count is selected; pytest-xdist is intentionally not a project dependency.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Python ${{ matrix.python_version }} / ${{ matrix.mode }} / run ${{ matrix.attempt }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python_version: "3.13"
+            mode: serial
+            pytest_args: ""
+            attempt: 1
+          - python_version: "3.13"
+            mode: n2
+            pytest_args: "-n 2"
+            attempt: 1
+          - python_version: "3.13"
+            mode: n4
+            pytest_args: "-n 4"
+            attempt: 1
+          - python_version: "3.13"
+            mode: n4
+            pytest_args: "-n 4"
+            attempt: 2
+          - python_version: "3.13"
+            mode: n4
+            pytest_args: "-n 4"
+            attempt: 3
+          - python_version: "3.14"
+            mode: serial
+            pytest_args: ""
+            attempt: 1
+          - python_version: "3.14"
+            mode: n2
+            pytest_args: "-n 2"
+            attempt: 1
+          - python_version: "3.14"
+            mode: n4
+            pytest_args: "-n 4"
+            attempt: 1
+          - python_version: "3.14"
+            mode: n4
+            pytest_args: "-n 4"
+            attempt: 2
+          - python_version: "3.14"
+            mode: n4
+            pytest_args: "-n 4"
+            attempt: 3
+
+    env:
+      PYTHON_VERSION: ${{ matrix.python_version }}
+      BENCHMARK_MODE: ${{ matrix.mode }}
+      BENCHMARK_ATTEMPT: ${{ matrix.attempt }}
+      PYTEST_ARGS: ${{ matrix.pytest_args }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python ${{ matrix.python_version }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python_version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install project dependencies
+        run: uv sync --locked
+
+      - name: Record runner and numerical backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p benchmark-results
+          {
+            echo "Runner: ${RUNNER_NAME:-unknown}"
+            echo "Mode: ${BENCHMARK_MODE}"
+            echo "Attempt: ${BENCHMARK_ATTEMPT}"
+            echo
+            echo "CPU summary:"
+            nproc
+            lscpu | grep -E '^(Architecture|CPU\(s\)|Model name|Thread|Core|Socket|NUMA)' || true
+            echo
+            echo "Memory summary:"
+            free -h
+            echo
+            echo "Thread-related environment:"
+            env | grep -E '^(BLIS|MKL|NUMEXPR|OMP|OPENBLAS|VECLIB).*THREAD' | sort || true
+          } | tee benchmark-results/runner.txt >> "$GITHUB_STEP_SUMMARY"
+
+          {
+            echo "NumPy/SciPy versions and runtime configuration:"
+            uv run --with pytest-xdist==3.8.0 python -c 'import numpy, scipy; print("numpy", numpy.__version__); print("scipy", scipy.__version__); print("--- numpy.show_runtime() ---"); getattr(numpy, "show_runtime", lambda: None)(); print("--- numpy.show_config() ---"); numpy.show_config(); print("--- scipy.show_config() ---"); scipy.show_config()'
+          } | tee benchmark-results/numerical-backend.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run complete test suite
+        id: pytest
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p benchmark-results
+          time_file="benchmark-results/pytest-time.txt"
+          junit_file="benchmark-results/pytest.xml"
+          log_file="benchmark-results/pytest.log"
+          set +e
+          /usr/bin/time -f '%e' -o "$time_file" \
+            uv run --with pytest-xdist==3.8.0 pytest -q ${PYTEST_ARGS} \
+            --junitxml "$junit_file" 2>&1 | tee "$log_file"
+          pytest_status=${PIPESTATUS[0]}
+          set -e
+
+          export PYTEST_STATUS="$pytest_status"
+          export TIME_FILE="$time_file"
+          export JUNIT_FILE="$junit_file"
+          export LOG_FILE="$log_file"
+          python - <<'PY'
+          import json
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          target_name = "test_short_compact_mcmc_form_fails_closed_through_real_chemex_cli"
+          junit_path = Path(os.environ["JUNIT_FILE"])
+          suites = []
+          if junit_path.exists():
+              root = ET.parse(junit_path).getroot()
+              if root.tag == "testsuites":
+                  suites = [root]
+              else:
+                  suites = [root]
+
+          def total_attribute(name: str) -> int:
+              if not suites:
+                  return 0
+              return sum(int(float(suite.attrib.get(name, 0))) for suite in suites)
+
+          target_status = "not-found"
+          if junit_path.exists():
+              for case in ET.parse(junit_path).getroot().iter("testcase"):
+                  if case.attrib.get("name") == target_name:
+                      if case.find("failure") is not None or case.find("error") is not None:
+                          target_status = "failed"
+                      elif case.find("skipped") is not None:
+                          target_status = "skipped"
+                      else:
+                          target_status = "passed"
+                      break
+
+          time_path = Path(os.environ["TIME_FILE"])
+          wall_seconds = float(time_path.read_text().strip()) if time_path.exists() else None
+          result = {
+              "python_version": os.environ["PYTHON_VERSION"],
+              "mode": os.environ["BENCHMARK_MODE"],
+              "attempt": int(os.environ["BENCHMARK_ATTEMPT"]),
+              "pytest_args": os.environ["PYTEST_ARGS"],
+              "exit_code": int(os.environ["PYTEST_STATUS"]),
+              "wall_seconds": wall_seconds,
+              "tests": total_attribute("tests"),
+              "failures": total_attribute("failures"),
+              "errors": total_attribute("errors"),
+              "skipped": total_attribute("skipped"),
+              "target_compact_mcmc_status": target_status,
+          }
+          Path("benchmark-results/result.json").write_text(
+              json.dumps(result, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          summary = (
+              f"### Result\n"
+              f"- Exit code: `{result['exit_code']}`\n"
+              f"- Wall time: `{result['wall_seconds']}` seconds\n"
+              f"- Tests: `{result['tests']}`; failures: `{result['failures']}`; "
+              f"errors: `{result['errors']}`; skipped: `{result['skipped']}`\n"
+              f"- `{target_name}`: `{result['target_compact_mcmc_status']}`\n"
+          )
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as summary_file:
+              summary_file.write(summary)
+          raise SystemExit(result["exit_code"])
+
+      - name: Upload benchmark result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdist-${{ matrix.python_version }}-${{ matrix.mode }}-${{ matrix.attempt }}
+          path: benchmark-results/
+          if-no-files-found: warn
+
+  aggregate:
+    name: Aggregate xdist benchmark results
+    if: always()
+    needs: benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: xdist-*
+          merge-multiple: false
+
+      - name: Publish comparison summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          results = [
+              json.loads(path.read_text(encoding="utf-8"))
+              for path in sorted(Path(".").glob("**/result.json"))
+          ]
+          results.sort(key=lambda item: (item["python_version"], item["mode"], item["attempt"]))
+          serial_times = {
+              item["python_version"]: item["wall_seconds"]
+              for item in results
+              if item["mode"] == "serial" and item["wall_seconds"] is not None
+          }
+          lines = [
+              "## xdist benchmark summary",
+              "",
+              "| Python | Mode | Attempt | Wall seconds | Speedup vs serial | Tests | Result | Compact MCMC test |",
+              "| --- | --- | ---: | ---: | ---: | ---: | --- | --- |",
+          ]
+          for item in results:
+              wall = item["wall_seconds"]
+              serial = serial_times.get(item["python_version"])
+              speedup = wall / serial if wall is not None and serial else None
+              result = "pass" if item["exit_code"] == 0 else f"exit {item['exit_code']}"
+              lines.append(
+                  "| {python_version} | {mode} | {attempt} | {wall} | {speedup} | "
+                  "{tests} | {result} | {target_compact_mcmc_status} |".format(
+                      speedup="" if speedup is None else f"{speedup:.2f}x",
+                      **item,
+                      wall="" if wall is None else f"{wall:.2f}",
+                      result=result,
+                  )
+              )
+          summary = "\n".join(lines) + "\n"
+          print(summary)
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(
+              summary,
+              encoding="utf-8",
+          )
+          PY
