@@ -14,8 +14,9 @@ during command execution.
 their established status and stream behavior.  A user interruption exits 130.
 Other ordinary failures exit non-zero.  Terminal diagnostics are concise,
 literal, written to stderr, and contain neither traceback nor chained exception
-details.  Rendering failure falls back to plain stderr without replacing the
-original exit status.
+details.  The boundary emits only boundary-owned diagnostics and never exposes
+arbitrary exception contents.  Rendering failure falls back to plain stderr
+without replacing the original exit status.
 
 Workflow layers may catch interruption temporarily to freeze scientifically
 valid partial state, serialize already committed values or qualified Evidence,

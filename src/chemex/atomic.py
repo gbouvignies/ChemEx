@@ -33,13 +33,11 @@ def open_text_atomic(destination: Path) -> Iterator[TextIOWrapper]:
     except BaseException as error:
         try:
             temporary.unlink(missing_ok=True)
-        except BaseException as cleanup_error:  # noqa: BLE001 - preserve first failure
-            detail = str(cleanup_error) or type(cleanup_error).__name__
+        except BaseException:  # noqa: BLE001 - preserve first failure
             with suppress(BaseException):
                 BaseException.add_note(
                     error,
-                    "ChemEx could not remove incomplete temporary artifact "
-                    f"{temporary}: {detail}",
+                    "ChemEx could not remove an incomplete temporary artifact.",
                 )
         raise
 
@@ -53,22 +51,16 @@ def write_text_atomic(destination: Path, content: str) -> None:
 def remove_paths_best_effort(
     paths: Iterable[Path],
     error: BaseException,
-    *,
-    description: str,
 ) -> None:
     """Attempt every explicit removal without replacing the original failure."""
     for path in paths:
         try:
             path.unlink(missing_ok=True)
-        except BaseException as cleanup_error:  # noqa: BLE001 - cleanup is subordinate
-            try:
-                detail = str(cleanup_error) or type(cleanup_error).__name__
-            except BaseException:  # noqa: BLE001 - note rendering is best effort
-                detail = "unreportable cleanup failure"
+        except BaseException:  # noqa: BLE001 - cleanup is subordinate
             with suppress(BaseException):
                 BaseException.add_note(
                     error,
-                    f"ChemEx could not remove {description} {path.name}: {detail}",
+                    "ChemEx could not remove a stale artifact.",
                 )
 
 

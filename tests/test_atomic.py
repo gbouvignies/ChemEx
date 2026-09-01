@@ -70,11 +70,7 @@ def test_atomic_cleanup_failure_is_noted_without_replacing_original_error(
     assert destination.read_text(encoding="utf-8") == "previous complete artifact\n"
     assert tuple(tmp_path.glob(".artifact.tsv-*"))
     assert error_info.value.__notes__ == [
-        next(
-            note
-            for note in error_info.value.__notes__
-            if note.startswith("ChemEx ") and "unlink refused" in note
-        )
+        "ChemEx could not remove an incomplete temporary artifact."
     ]
 
 
@@ -97,15 +93,9 @@ def test_best_effort_removal_attempts_every_path_and_preserves_original_error(
     monkeypatch.setattr(Path, "unlink", fail_first_cleanup)
     interruption = KeyboardInterrupt()
 
-    remove_paths_best_effort(paths, interruption, description="test artifact")
+    remove_paths_best_effort(paths, interruption)
 
     assert attempted == list(paths)
     assert paths[0].is_file()
     assert all(not path.exists() for path in paths[1:])
-    assert interruption.__notes__ == [
-        next(
-            note
-            for note in interruption.__notes__
-            if note.startswith("ChemEx ") and "stale cleanup refused" in note
-        )
-    ]
+    assert interruption.__notes__ == ["ChemEx could not remove a stale artifact."]

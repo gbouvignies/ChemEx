@@ -1870,10 +1870,9 @@ def test_interrupted_uncertainty_publication_failure_preserves_interruption(
             session=AnalysisSession.create(),
         )
 
-    assert any(
-        note.startswith("ChemEx ") and "evidence write failed" in note
-        for note in error_info.value.__notes__
-    )
+    assert error_info.value.__notes__ == [
+        "ChemEx could not publish interrupted uncertainty output."
+    ]
     assert _read_outcome(output)["terminal"] == "interrupted"
 
 
@@ -2894,10 +2893,9 @@ def test_interrupted_mcmc_publication_failure_preserves_interruption(
         )
 
     assert error_info.value.terminal == "interrupted"
-    assert any(
-        note.startswith("ChemEx ") and "raw capture write failed" in note
-        for note in error_info.value.__notes__
-    )
+    assert error_info.value.__notes__ == [
+        "ChemEx could not publish interrupted MCMC execution capture."
+    ]
     assert _read_outcome(output)["terminal"] == "interrupted"
 
 
@@ -3324,10 +3322,9 @@ def test_interrupted_resampling_publication_failure_preserves_interruption(
         run(_fit_arguments(output, method), session=AnalysisSession.create())
 
     assert error_info.value.terminal == "interrupted"
-    assert any(
-        note.startswith("ChemEx ") and "failure manifest write failed" in note
-        for note in error_info.value.__notes__
-    )
+    assert error_info.value.__notes__ == [
+        "ChemEx could not publish interrupted resampling output."
+    ]
     statistics = output / "Statistics" / "MonteCarlo"
     assert (statistics / "samples.tsv").is_file()
     assert _read_outcome(output)["terminal"] == "interrupted"

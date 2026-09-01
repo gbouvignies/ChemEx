@@ -14,7 +14,7 @@ Typical usage example:
   print_loading_experiments()
 """
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import replace
 from pathlib import Path
@@ -44,18 +44,9 @@ console = Console()
 error_console = Console(stderr=True)
 
 
-def print_cli_diagnostic(
-    message: str,
-    notes: Sequence[str],
-    interrupted: bool,
-) -> None:
+def print_cli_diagnostic(message: str) -> None:
     """Render one literal terminal diagnostic to stderr."""
-    if interrupted:
-        error_console.print(Text(message, style="red"))
-    else:
-        error_console.print(Text(f"ERROR: {message}", style="red"))
-    for note in notes:
-        error_console.print(Text(f"NOTE: {note}", style="yellow"))
+    error_console.print(Text(message, style="red"))
 
 
 class MinimizationProgressReporter:

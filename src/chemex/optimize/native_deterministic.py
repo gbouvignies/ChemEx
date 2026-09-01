@@ -91,10 +91,7 @@ def _propagate_uncertainty_interruption(
     error = KeyboardInterrupt("Native deterministic uncertainty derivation interrupted")
     mark_failure_stage(error, "uncertainty")
     if finalization_error is not None:
-        detail = str(finalization_error) or type(finalization_error).__name__
-        error.add_note(
-            f"ChemEx could not finish interrupted uncertainty output: {detail}"
-        )
+        error.add_note("ChemEx could not publish interrupted uncertainty output.")
         raise error from finalization_error
     raise error
 

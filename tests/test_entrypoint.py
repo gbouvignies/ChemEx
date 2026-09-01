@@ -14,6 +14,9 @@ import pytest
 from chemex import chemex as application_module
 
 TRACEBACK_HEADER = "Traceback (most recent call last)"
+SECRET_CANARY = "SECRET_CANARY"  # noqa: S105 - security regression canary
+UNEXPECTED_MESSAGE = "ChemEx encountered an unexpected error."
+INTERRUPTED_MESSAGE = "ChemEx interrupted."
 ROOT = Path(__file__).parent.parent
 EXAMPLE = ROOT / "examples/Experiments/RELAXATION_HZNZ"
 EXPERIMENT = EXAMPLE / "Experiments/800mhz.toml"
@@ -77,7 +80,7 @@ def _assert_bootstrap_result(
     combined = completed.stdout + completed.stderr
     assert completed.returncode == status
     assert completed.stdout == ""
-    assert message in completed.stderr
+    assert completed.stderr == f"{message}\n"
     assert all(item not in combined for item in absent)
     assert TRACEBACK_HEADER not in combined
 
@@ -117,16 +120,17 @@ def test_cli_entrypoints_translate_application_import_failure(
 ) -> None:
     env = _application_import_failure_env(
         tmp_path,
-        "ImportError('application import failed')",
+        f"ImportError('{SECRET_CANARY}')",
     )
 
     completed = _run(command, env=env)
 
-    combined = completed.stdout + completed.stderr
-    assert completed.returncode == 1
-    assert completed.stdout == ""
-    assert "application import failed" in completed.stderr
-    assert TRACEBACK_HEADER not in combined
+    _assert_bootstrap_result(
+        completed,
+        1,
+        UNEXPECTED_MESSAGE,
+        absent=(SECRET_CANARY,),
+    )
 
 
 @pytest.mark.parametrize("command", _entry_commands())
@@ -222,8 +226,8 @@ def test_cli_entrypoints_translate_uncaught_runtime_failure(
 
     combined = completed.stdout + completed.stderr
     assert completed.returncode == 1
-    assert "ERROR:" in completed.stderr
-    assert "parsing errors" in completed.stderr
+    assert completed.stderr == f"{UNEXPECTED_MESSAGE}\n"
+    assert "parsing errors" not in combined
     assert TRACEBACK_HEADER not in combined
 
 
@@ -243,15 +247,22 @@ def test_programmatic_main_retains_ordinary_exception_semantics(
 @pytest.mark.parametrize(
     ("failure_source", "expected_status", "expected_message"),
     [
-        ("raise KeyboardInterrupt", 130, "ChemEx interrupted."),
+        ("raise KeyboardInterrupt", 130, INTERRUPTED_MESSAGE),
         (
-            "error = RuntimeError('stop'); error.terminal = 'interrupted'; raise error",
+            "; ".join(
+                (
+                    f"error = RuntimeError('{SECRET_CANARY}')",
+                    f"error.add_note('ChemEx {SECRET_CANARY}')",
+                    "error.terminal = 'interrupted'",
+                    "raise error",
+                )
+            ),
             130,
-            "ChemEx interrupted.",
+            INTERRUPTED_MESSAGE,
         ),
-        ("raise RuntimeError('ordinary failure')", 1, "ordinary failure"),
-        ("raise RuntimeError('[bold]literal[/]')", 1, "[bold]literal[/]"),
-        ("raise RuntimeError", 1, "RuntimeError occurred without an error message."),
+        (f"raise RuntimeError('{SECRET_CANARY}')", 1, UNEXPECTED_MESSAGE),
+        ("raise RuntimeError('[bold]literal[/]')", 1, UNEXPECTED_MESSAGE),
+        ("raise RuntimeError", 1, UNEXPECTED_MESSAGE),
     ],
 )
 def test_cli_bootstrap_translates_terminal_failures(
@@ -261,16 +272,20 @@ def test_cli_bootstrap_translates_terminal_failures(
 ) -> None:
     completed = _run_bootstrap(failure_source)
 
-    _assert_bootstrap_result(completed, expected_status, expected_message)
+    _assert_bootstrap_result(
+        completed,
+        expected_status,
+        expected_message,
+        absent=(SECRET_CANARY,),
+    )
 
 
-def test_cli_bootstrap_renders_only_audited_chemex_notes() -> None:
+def test_cli_bootstrap_ignores_all_exception_notes() -> None:
     completed = _run_bootstrap(
-        """
-        error = RuntimeError("publication failed")
-        error.add_note("ChemEx retained the accepted fit")
-        error.add_note("")
-        error.add_note("third-party internal detail")
+        f"""
+        error = RuntimeError("{SECRET_CANARY}")
+        error.add_note("ChemEx {SECRET_CANARY}")
+        error.add_note("third-party {SECRET_CANARY}")
         raise error
         """
     )
@@ -278,11 +293,9 @@ def test_cli_bootstrap_renders_only_audited_chemex_notes() -> None:
     _assert_bootstrap_result(
         completed,
         1,
-        "ERROR: publication failed",
-        absent=("third-party internal detail",),
+        UNEXPECTED_MESSAGE,
+        absent=(SECRET_CANARY, "NOTE:"),
     )
-    assert "ERROR: publication failed" in completed.stderr
-    assert "NOTE: ChemEx retained the accepted fit" in completed.stderr
 
 
 @pytest.mark.parametrize(
@@ -293,7 +306,7 @@ def test_cli_bootstrap_renders_only_audited_chemex_notes() -> None:
             "error.__notes__ = None; raise error",
             "",
             1,
-            "application failed",
+            UNEXPECTED_MESSAGE,
             (),
             id="notes-none",
         ),
@@ -302,7 +315,7 @@ def test_cli_bootstrap_renders_only_audited_chemex_notes() -> None:
             "error.__notes__ = object(); raise error",
             "",
             1,
-            "application failed",
+            UNEXPECTED_MESSAGE,
             (),
             id="notes-non-sequence",
         ),
@@ -313,14 +326,14 @@ def test_cli_bootstrap_renders_only_audited_chemex_notes() -> None:
                     RuntimeError('note stringification leaked')
                 )
             })
-            error = RuntimeError('application failed')
-            error.__notes__ = [HostileNote(), 'ChemEx retained valid work']
+            error = RuntimeError('SECRET_CANARY')
+            error.__notes__ = [HostileNote(), 'ChemEx SECRET_CANARY']
             raise error
             """,
             "",
             1,
-            "NOTE: ChemEx retained valid work",
-            ("note stringification leaked",),
+            UNEXPECTED_MESSAGE,
+            ("note stringification leaked", SECRET_CANARY),
             id="hostile-note",
         ),
         pytest.param(
@@ -328,12 +341,12 @@ def test_cli_bootstrap_renders_only_audited_chemex_notes() -> None:
             class HostileError(RuntimeError):
                 def __str__(self):
                     raise RuntimeError("stringification leaked")
-            raise HostileError()
+            raise HostileError("SECRET_CANARY")
             """,
             "",
             1,
-            "HostileError occurred without an error message.",
-            ("stringification leaked",),
+            UNEXPECTED_MESSAGE,
+            ("stringification leaked", SECRET_CANARY),
             id="hostile-message",
         ),
         pytest.param(
@@ -342,17 +355,18 @@ def test_cli_bootstrap_renders_only_audited_chemex_notes() -> None:
                 @property
                 def terminal(self):
                     raise RuntimeError("terminal property leaked")
-            raise HostileTerminalError("ordinary failure")
+            raise HostileTerminalError("SECRET_CANARY")
             """,
             "",
             1,
-            "ordinary failure",
-            ("terminal property leaked",),
+            UNEXPECTED_MESSAGE,
+            ("terminal property leaked", SECRET_CANARY),
             id="hostile-terminal-property",
         ),
         pytest.param(
             """
-            error = RuntimeError("typed interruption")
+            error = RuntimeError("SECRET_CANARY")
+            error.add_note("ChemEx SECRET_CANARY")
             error.terminal = Terminal.INTERRUPTED
             raise error
             """,
@@ -362,8 +376,8 @@ def test_cli_bootstrap_renders_only_audited_chemex_notes() -> None:
                 INTERRUPTED = "interrupted"
             """,
             130,
-            "ChemEx interrupted.",
-            (),
+            INTERRUPTED_MESSAGE,
+            (SECRET_CANARY,),
             id="strenum-terminal",
         ),
     ),
@@ -406,9 +420,19 @@ def test_cli_bootstrap_handles_hostile_exception_metadata(
         ),
     ),
 )
+@pytest.mark.parametrize(
+    ("failure_source", "expected_status", "expected_message"),
+    (
+        (f"raise RuntimeError('{SECRET_CANARY}')", 1, UNEXPECTED_MESSAGE),
+        ("raise KeyboardInterrupt", 130, INTERRUPTED_MESSAGE),
+    ),
+)
 def test_cli_bootstrap_renderer_failures_use_plain_stderr(
     phase: str,
     renderer_failure: str,
+    failure_source: str,
+    expected_status: int,
+    expected_message: str,
 ) -> None:
     messages_source = (
         f"""
@@ -429,21 +453,21 @@ def test_cli_bootstrap_renderer_failures_use_plain_stderr(
         """
     )
     completed = _run_bootstrap(
-        "raise RuntimeError('application failed')",
+        failure_source,
         messages_source=messages_source,
     )
 
     _assert_bootstrap_result(
         completed,
-        1,
-        "application failed",
-        absent=("renderer unavailable", "renderer failed"),
+        expected_status,
+        expected_message,
+        absent=("renderer unavailable", "renderer failed", SECRET_CANARY),
     )
 
 
 @pytest.mark.parametrize(
     ("import_failure", "expected_status"),
-    (("SyntaxError('broken application')", 1), ("SystemExit(23)", 23)),
+    ((f"SyntaxError('{SECRET_CANARY}')", 1), ("SystemExit(23)", 23)),
 )
 def test_cli_bootstrap_handles_protected_application_import_baseexceptions(
     import_failure: str,
@@ -454,11 +478,16 @@ def test_cli_bootstrap_handles_protected_application_import_baseexceptions(
 
     completed = _run((sys.executable, "-m", "chemex"), env=env)
 
-    combined = completed.stdout + completed.stderr
-    assert completed.returncode == expected_status
     if expected_status == 1:
-        assert "broken application" in completed.stderr
-    assert TRACEBACK_HEADER not in combined
+        _assert_bootstrap_result(
+            completed,
+            1,
+            UNEXPECTED_MESSAGE,
+            absent=(SECRET_CANARY,),
+        )
+    else:
+        assert completed.returncode == expected_status
+        assert completed.stdout == completed.stderr == ""
 
 
 def test_real_fit_interruption_flows_through_run_info_and_shared_bootstrap(

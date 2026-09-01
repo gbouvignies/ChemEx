@@ -97,10 +97,8 @@ def run_fit(
                 failure=error,
                 failure_stage="deterministic_fit",
             )
-        except (Exception, KeyboardInterrupt) as outcome_error:  # noqa: BLE001
-            error.add_note(
-                f"ChemEx could not publish the incomplete run outcome: {outcome_error}"
-            )
+        except (Exception, KeyboardInterrupt):  # noqa: BLE001
+            error.add_note("ChemEx could not publish the incomplete run outcome.")
         raise
 
 

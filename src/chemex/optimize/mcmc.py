@@ -807,7 +807,6 @@ def run_native_mcmc(  # noqa: C901 - closed execution/publication lifecycle
             remove_paths_best_effort(
                 (statistic_path / name for name in _MCMC_ARTIFACT_NAMES),
                 error,
-                description="interrupted MCMC artifact",
             )
             published_evidence: McmcEvidence | None = None
             published_capture: RawMcmcCapture | None = None
@@ -819,11 +818,9 @@ def run_native_mcmc(  # noqa: C901 - closed execution/publication lifecycle
                         fit.parameter_model,
                     )
                     published_evidence = raw_evidence
-                except (Exception, KeyboardInterrupt) as publication_error:  # noqa: BLE001
-                    detail = str(publication_error) or type(publication_error).__name__
+                except (Exception, KeyboardInterrupt):  # noqa: BLE001
                     error.add_note(
-                        "ChemEx could not finish interrupted qualified MCMC chain: "
-                        f"{detail}"
+                        "ChemEx could not publish an interrupted qualified MCMC chain."
                     )
             elif raw_capture is not None:
                 try:
@@ -834,11 +831,9 @@ def run_native_mcmc(  # noqa: C901 - closed execution/publication lifecycle
                         fit.problem.controlled_ids,
                     )
                     published_capture = raw_capture
-                except (Exception, KeyboardInterrupt) as publication_error:  # noqa: BLE001
-                    detail = str(publication_error) or type(publication_error).__name__
+                except (Exception, KeyboardInterrupt):  # noqa: BLE001
                     error.add_note(
-                        "ChemEx could not finish interrupted MCMC execution capture: "
-                        f"{detail}"
+                        "ChemEx could not publish interrupted MCMC execution capture."
                     )
             try:
                 _write_native_mcmc_state_diagnostics(
@@ -855,11 +850,8 @@ def run_native_mcmc(  # noqa: C901 - closed execution/publication lifecycle
                     analysis_result=analysis_result,
                     timings=timings,
                 )
-            except (Exception, KeyboardInterrupt) as publication_error:  # noqa: BLE001
-                detail = str(publication_error) or type(publication_error).__name__
-                error.add_note(
-                    f"ChemEx could not finish interrupted MCMC diagnostics: {detail}"
-                )
+            except (Exception, KeyboardInterrupt):  # noqa: BLE001
+                error.add_note("ChemEx could not publish interrupted MCMC diagnostics.")
             raise
         _clear_mcmc_artifacts(statistic_path)
         if raw_evidence is not None:

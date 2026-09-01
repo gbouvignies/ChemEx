@@ -444,17 +444,15 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                 terminal=terminal,
                 failure=error,
             )
-        except (Exception, KeyboardInterrupt) as diagnostics_error:
+        except (Exception, KeyboardInterrupt):
             if terminal != "interrupted":
                 raise
-            detail = str(diagnostics_error) or type(diagnostics_error).__name__
             error.add_note(
-                f"ChemEx could not publish interrupted resampling diagnostics: {detail}"
+                "ChemEx could not publish interrupted resampling diagnostics."
             )
             remove_paths_best_effort(
                 (statistic_path / "diagnostics.toml",),
                 error,
-                description="resampling artifact",
             )
         raise
     evidence = operation.evidence
@@ -558,7 +556,6 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
         remove_paths_best_effort(
             (statistic_path / name for name in artifacts_to_remove),
             error,
-            description="resampling artifact",
         )
         terminal = (
             "interrupted"
@@ -578,29 +575,25 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                     diagnostic_samples,
                 )
                 samples_published = True
-            except (Exception, KeyboardInterrupt) as publication_error:  # noqa: BLE001
-                detail = str(publication_error) or type(publication_error).__name__
+            except (Exception, KeyboardInterrupt):  # noqa: BLE001
                 error.add_note(
-                    f"ChemEx could not finish interrupted resampling samples: {detail}"
+                    "ChemEx could not publish interrupted resampling samples."
                 )
                 remove_paths_best_effort(
                     (statistic_path / "samples.tsv",),
                     error,
-                    description="resampling artifact",
                 )
         if terminal == "interrupted" and not failures_published:
             try:
                 _write_native_failures(statistic_path, evidence.outcomes)
                 failures_published = True
-            except (Exception, KeyboardInterrupt) as publication_error:  # noqa: BLE001
-                detail = str(publication_error) or type(publication_error).__name__
+            except (Exception, KeyboardInterrupt):  # noqa: BLE001
                 error.add_note(
-                    f"ChemEx could not finish interrupted resampling failures: {detail}"
+                    "ChemEx could not publish interrupted resampling failures."
                 )
                 remove_paths_best_effort(
                     (statistic_path / "failures.tsv",),
                     error,
-                    description="resampling artifact",
                 )
         try:
             _write_native_state_diagnostics(
@@ -614,15 +607,13 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                 terminal=terminal,
                 failure=error,
             )
-        except (Exception, KeyboardInterrupt) as diagnostics_error:  # noqa: BLE001
+        except (Exception, KeyboardInterrupt):  # noqa: BLE001
             error.add_note(
-                "ChemEx could not publish incomplete resampling diagnostics: "
-                f"{diagnostics_error}"
+                "ChemEx could not publish incomplete resampling diagnostics."
             )
             remove_paths_best_effort(
                 (statistic_path / "diagnostics.toml",),
                 error,
-                description="resampling artifact",
             )
         if operational_interruption and not isinstance(error, KeyboardInterrupt):
             interrupted_error = NativeResamplingIncompleteError(
@@ -630,13 +621,9 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                 f"{method.iterations} requested replicates",
                 terminal="interrupted",
             )
-            detail = str(error) or type(error).__name__
             interrupted_error.add_note(
-                f"ChemEx could not finish interrupted resampling output: {detail}"
+                "ChemEx could not publish interrupted resampling output."
             )
-            for note in getattr(error, "__notes__", ()):
-                if isinstance(note, str) and note.startswith("ChemEx "):
-                    interrupted_error.add_note(note)
             raise interrupted_error from error
         raise
     if operational_interruption or (
