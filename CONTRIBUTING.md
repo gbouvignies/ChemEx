@@ -25,10 +25,12 @@ Run focused tests while developing. Before submitting a Python change, run the
 applicable repository checks:
 
 ```sh
-# Serial execution is useful for focused debugging.
+# Complete suite
 uv run pytest -q
-# The standard full-suite command matches CI.
-uv run pytest -q -n 2
+# Ordinary parallel regression
+uv run pytest -q -n 2 -m "not scientific_acceptance"
+# Scientific acceptance
+uv run pytest -q -m scientific_acceptance
 uv run ty check
 uv run ruff check .
 uv run ruff format --check .
