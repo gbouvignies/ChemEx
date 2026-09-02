@@ -41,6 +41,7 @@ chemex = "chemex._entrypoint:main"
 [dependency-groups]
 dev = [
   "pytest>=8.4.2",
+  "pytest-xdist>=3.8.0,<4",
   # New Ruff minor releases require an explicit policy review.
   "ruff>=0.16.0,<0.17.0",
   "scipy-stubs>=1.18.0.1",
