@@ -165,6 +165,7 @@ CEST_1HN_IP_AP_SELECTION = (
     "146",
     "149",
 )
+CEST_1HN_IP_AP_REPRESENTATIVE_SELECTION = ("3", "74", "110", "118")
 
 
 def _fit_arguments(
@@ -614,6 +615,157 @@ def test_cest_1hn_ip_ap_commits_psd_transverse_relaxation_block(
     assert final_statistics["chi-square"] == pytest.approx(52.7997, rel=2.0e-5)
 
 
+def test_representative_cest_1hn_ip_ap_witness_preserves_scientific_contract(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+    committed_snapshots: list[AnalysisValuesSnapshot] = []
+    real_publish = run_info_module.RunInfo.publish_restart
+
+    def record_restart(run_info, snapshot):
+        real_publish(run_info, snapshot)
+        committed_snapshots.append(snapshot)
+
+    with patch.object(
+        run_info_module.RunInfo,
+        "publish_restart",
+        autospec=True,
+        side_effect=record_restart,
+    ):
+        run(
+            _cest_1hn_ip_ap_arguments(
+                output,
+                include=CEST_1HN_IP_AP_REPRESENTATIVE_SELECTION,
+            ),
+            session=session,
+        )
+
+    expected_profiles = ("3H-N", "74H-N", "110H-N", "118H-N")
+    expected_spin_systems = ("3H", "74H", "110H", "118H")
+    expected_residues = ("3", "74", "110", "118")
+    expected_r1_scopes = (*expected_spin_systems, "3N", "74N", "110N", "118N")
+
+    outcome = tomllib.loads(
+        (output / "run_info" / "outcome.toml").read_text(encoding="utf-8")
+    )
+    assert outcome == {
+        "schema_version": 2,
+        "status": "complete",
+        "latest_committed_revision": 2,
+        "restart_revision": 2,
+    }
+    assert [snapshot.revision for snapshot in committed_snapshots] == [1, 2]
+    assert session.analysis_values.snapshot().revision == 2
+    assert (output / "run_info" / "parameters_used.toml").is_file()
+    assert (output / "run_info" / "inputs" / "experiments" / "30hz.toml").is_file()
+    assert (output / "run_info" / "inputs" / "methods" / "method.toml").is_file()
+    assert (output / "run_info" / "inputs" / "parameters" / "parameters.toml").is_file()
+
+    experiment_input = tomllib.loads(
+        CEST_1HN_IP_AP_EXPERIMENT.read_text(encoding="utf-8")
+    )
+    experiment_settings = experiment_input["experiment"]
+    assert experiment_settings["name"] == "cest_1hn_ip_ap"
+    assert experiment_settings["b1_frq"] == 30.45
+    assert experiment_settings["b1_distribution"] == {"type": "dephasing"}
+
+    # Calibrated on locked Python 3.13.13 and 3.14.5, then verified on hosted
+    # Python 3.13.15 and 3.14: both steps remain in the expected basin.
+    expected_steps = (
+        ("1_FIX_R1", 24, 1226.68, 5.0e-3, 0),
+        ("2_FIT_R1", 32, 684.318, 5.0e-4, 1),
+    )
+    for (
+        step,
+        variable_count,
+        chi_square,
+        chi_square_tolerance,
+        source_revision,
+    ) in expected_steps:
+        step_output = output / step
+        data_headers = [
+            line.strip()[1:-1]
+            for line in (step_output / "Data" / "30hz.dat")
+            .read_text(encoding="utf-8")
+            .splitlines()
+            if line.startswith("[")
+        ]
+        assert data_headers == list(expected_profiles)
+
+        statistics = tomllib.loads(
+            (step_output / "statistics.toml").read_text(encoding="utf-8")
+        )
+        assert statistics["number of data points"] == 348
+        assert statistics["number of variables"] == variable_count
+        assert statistics["chi-square"] == pytest.approx(
+            chi_square,
+            rel=0.0,
+            abs=chi_square_tolerance,
+        )
+
+        fitted_path = step_output / "Parameters" / "fitted.toml"
+        fitted_text = fitted_path.read_text(encoding="utf-8")
+        assert "error unavailable" not in fitted_text
+        assert "Jacobian unavailable" not in fitted_text
+        fitted = tomllib.loads(fitted_text)
+        assert set(fitted["CS_A"]) == set(expected_spin_systems)
+        assert set(fitted["DW_AB"]) == set(expected_spin_systems)
+        assert set(fitted["PB"]) == set(expected_residues)
+        fixed = tomllib.loads(
+            (step_output / "Parameters" / "fixed.toml").read_text(encoding="utf-8")
+        )
+        r1_scopes = set(fitted.get("R1_A, B0->800.3MHZ", {}))
+        r1_scopes.update(fixed.get("R1_A, B0->800.3MHZ", {}))
+        assert r1_scopes == set(expected_r1_scopes)
+
+        constrained = tomllib.loads(
+            (step_output / "Parameters" / "constrained.toml").read_text(
+                encoding="utf-8"
+            )
+        )
+        r2_a = fitted["R2_A, B0->800.3MHZ"]
+        r2_b = constrained["R2_B, B0->800.3MHZ"]
+        assert set(r2_a) == set(expected_spin_systems)
+        assert set(r2_b) == set(expected_spin_systems)
+        for spin_system in expected_spin_systems:
+            assert r2_b[spin_system] == pytest.approx(r2_a[spin_system], abs=1.0e-8)
+
+        evidence = json.loads(
+            (step_output / "Statistics" / "Covariance" / "evidence.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert evidence["failures"] == []
+        assert evidence["covariance"] is not None
+        rank_diagnostic = evidence["rank_diagnostic"]
+        assert rank_diagnostic["rank"] == variable_count
+        assert rank_diagnostic["projector_shape"] == [variable_count, variable_count]
+        jacobian = evidence["residual_jacobian"]
+        assert jacobian["method"] == "retained-scipy-final-2-point"
+        assert jacobian["evaluation_count"] == 0
+        assert jacobian["complete_reliable"] is True
+        assert jacobian["matrix_shape"] == [348, variable_count]
+        assert jacobian["source_revision"] == source_revision
+
+    final_fitted = tomllib.loads(
+        (output / "2_FIT_R1" / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
+    )
+    expected_dw_ab = {
+        "3H": 0.252840,
+        "74H": -0.339566,
+        "110H": 1.16456,
+        "118H": -1.53329,
+    }
+    for spin_system, value in expected_dw_ab.items():
+        assert final_fitted["DW_AB"][spin_system] == pytest.approx(
+            value,
+            rel=0.0,
+            abs=2.0e-5,
+        )
+
+
+@pytest.mark.scientific_acceptance
 def test_complete_cest_1hn_ip_ap_shipped_selection_finishes_both_steps(
     tmp_path: Path,
 ) -> None:
