@@ -86,7 +86,7 @@ jobs:
         run: uv sync --locked
 
       - name: Run tests
-        run: uv run pytest -q
+        run: uv run pytest -q -n 2
 
   package:
     name: Build and validate package
