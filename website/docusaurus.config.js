@@ -29,6 +29,8 @@ const config = {
             /** @type {import('@docusaurus/preset-classic').Options} */
             ({
                 docs: {
+                    includeCurrentVersion:
+                        process.env.CHEMEX_DOCS_INCLUDE_CURRENT_VERSION !== 'false',
                     sidebarPath: './sidebars.js',
                     editUrl: 'https://github.com/gbouvignies/chemex/tree/main/website/',
                     remarkPlugins: [math],
@@ -67,6 +69,10 @@ const config = {
                         docId: 'welcome_to_chemex',
                         position: 'left',
                         label: 'Docs',
+                    },
+                    {
+                        type: 'docsVersionDropdown',
+                        position: 'left',
                     },
                     {
                         href: 'https://github.com/gbouvignies/chemex',

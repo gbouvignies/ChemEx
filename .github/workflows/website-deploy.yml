@@ -105,6 +105,8 @@ jobs:
         run: npm ci
 
       - name: Build website
+        env:
+          CHEMEX_DOCS_INCLUDE_CURRENT_VERSION: 'false'
         run: npm run build
 
       - name: Confirm release is still current
