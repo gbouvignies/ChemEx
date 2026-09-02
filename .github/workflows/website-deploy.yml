@@ -1,37 +1,135 @@
 name: Website Deploy
 
+run-name: Deploy website for release ${{ github.event.release.tag_name || inputs.release_tag }}
+
 on:
-  push:
-    branches:
-      - main
-    # Review gh actions docs if you want to further define triggers, paths, etc
-    # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on
-    paths: [website/**]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published stable GitHub release tag to redeploy
+        required: true
+        type: string
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   build:
     name: Build Docusaurus
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.release.draft == false &&
+      github.event.release.prerelease == false)
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      deploy_ref: ${{ steps.release.outputs.deploy_ref }}
     defaults:
       run:
         working-directory: ./website
     steps:
+      - name: Resolve stable release tag
+        id: release
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_EVENT_TAG: ${{ github.event.release.tag_name }}
+          MANUAL_RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+              release_tag="$RELEASE_EVENT_TAG"
+          else
+              encoded_tag="$(jq -rn --arg tag "$MANUAL_RELEASE_TAG" '$tag | @uri')"
+              if ! release_json="$(gh api \
+                  --method GET \
+                  -H "Accept: application/vnd.github+json" \
+                  -H "X-GitHub-Api-Version: 2022-11-28" \
+                  "repos/$GITHUB_REPOSITORY/releases/tags/$encoded_tag")"; then
+                  echo "::error::No GitHub release found for tag '$MANUAL_RELEASE_TAG'."
+                  exit 1
+              fi
+
+              tag_name="$(jq -r '.tag_name // empty' <<< "$release_json")"
+              draft="$(jq -r '.draft' <<< "$release_json")"
+              prerelease="$(jq -r '.prerelease' <<< "$release_json")"
+              published_at="$(jq -r '.published_at // empty' <<< "$release_json")"
+
+              if [[ "$tag_name" != "$MANUAL_RELEASE_TAG" ||
+                  "$draft" != "false" ||
+                  "$prerelease" != "false" ||
+                  -z "$published_at" ]]; then
+                  echo "::error::Tag '$MANUAL_RELEASE_TAG' is not a published stable GitHub release."
+                  exit 1
+              fi
+
+              release_tag="$tag_name"
+          fi
+
+          if [[ -z "$release_tag" ]]; then
+              echo "::error::Could not resolve a release tag to deploy."
+              exit 1
+          fi
+
+          echo "Deploying website from published stable release tag: $release_tag"
+          echo "deploy_ref=refs/tags/$release_tag" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v7
         with:
+          ref: ${{ steps.release.outputs.deploy_ref }}
           fetch-depth: 0
+
+      - name: Confirm release checkout
+        working-directory: .
+        env:
+          DEPLOY_REF: ${{ steps.release.outputs.deploy_ref }}
+        run: |
+          checked_out="$(git rev-parse HEAD)"
+          release_commit="$(git rev-parse --verify "$DEPLOY_REF^{commit}")"
+          if [[ "$checked_out" != "$release_commit" ]]; then
+              echo "::error::Checkout does not match release tag '$DEPLOY_REF'."
+              exit 1
+          fi
+          echo "Building release tag $DEPLOY_REF at commit $checked_out"
+
       - uses: actions/setup-node@v7
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: ./website/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
       - name: Build website
         run: npm run build
+
+      - name: Confirm release is still current
+        if: github.event_name == 'release'
+        working-directory: .
+        env:
+          DEPLOY_REF: ${{ steps.release.outputs.deploy_ref }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if ! latest_tag="$(gh api \
+              --method GET \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "repos/$GITHUB_REPOSITORY/releases/latest" \
+              --jq '.tag_name')"; then
+              echo "::error::Could not resolve the latest stable GitHub release."
+              exit 1
+          fi
+
+          if [[ "$DEPLOY_REF" != "refs/tags/$latest_tag" ]]; then
+              echo "::error::Release '$DEPLOY_REF' is no longer the latest stable release."
+              exit 1
+          fi
 
       - name: Upload Build Artifact
         uses: actions/upload-pages-artifact@v5
@@ -54,6 +152,6 @@ jobs:
 
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to GitHub Pages
+      - name: Deploy release ${{ needs.build.outputs.deploy_ref }} to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
