@@ -230,6 +230,25 @@ uv run ruff format --check .
 git diff --check
 ```
 
+ChemEx's tests have two semantic layers:
+
+```sh
+# Complete suite
+uv run pytest -q
+
+# Ordinary parallel regression
+uv run pytest -q -n 2 -m "not scientific_acceptance"
+
+# Complete shipped-example scientific acceptance
+uv run pytest -q -m scientific_acceptance
+```
+
+Plain `uv run pytest -q` runs both layers. The `scientific_acceptance` marker
+describes a test's responsibility, not its runtime; it is intended for
+complete shipped-example numerical oracles. Move a test into this layer only
+when representative real scientific coverage remains in the ordinary suite.
+A test must not receive this marker merely because it is slow.
+
 Choose additional validation by change type:
 
 - Parser/schema/TOML: focused `tests/configuration/`, `tests/test_toml_io.py`,
