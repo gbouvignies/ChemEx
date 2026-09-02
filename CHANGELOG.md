@@ -7,6 +7,8 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 
 ## [Unreleased]
 
+## [2026.09.0] - 2026-09-02
+
 ### Added
 - Added lightweight schema-2 `run_info`: `parameters_used.toml` now records the
   immutable original invocation start, while one atomically replaced
@@ -176,6 +178,9 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   retained samples, correlations, and plots instead of silently using zero burn.
 
 ### Infrastructure
+- Versioned the Docusaurus documentation by ChemEx release and changed public
+  website deployment to build from the exact latest published stable release
+  tag, while keeping prior stable documentation available.
 - Removed the unused `B1FieldConfig` model and its `default_distribution_config`
   helper from `b1_config.py`; the flat-table `b1_frq` schema it implemented was
   never wired to any experiment. `B1InhomogeneityMixin` remains the single B1

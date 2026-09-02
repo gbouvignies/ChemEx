@@ -22,7 +22,7 @@ wheels = [
 
 [[package]]
 name = "chemex"
-version = "2026.6.1"
+version = "2026.9.0"
 source = { editable = "." }
 dependencies = [
     { name = "annotated-types" },

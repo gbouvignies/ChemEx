@@ -1,0 +1,319 @@
+---
+sidebar_position: 9
+---
+
+# Outputs
+
+## Location
+
+By default, fitting results are saved in the `Output/` directory. You can specify a different directory using the `--output` (or `-o`) option:
+
+```bash
+chemex fit -o <path> [other options]
+```
+
+### Result Layout
+
+For a single-step fit, the scientific result is written directly under the
+output root. `run_info/` independently describes how the invocation was made.
+
+```shell
+Output/
+├── run_info/
+├── Parameters/
+├── Data/
+├── Plots/
+├── Grid/          # when GRID is requested
+├── Statistics/
+└── statistics.toml
+```
+
+If the fitting method has multiple steps, each step has the same authoritative
+result layout in a subdirectory named after that step:
+
+```shell
+Output/
+├── run_info/
+├── STEP1/
+│   ├── Parameters/
+│   ├── Data/
+│   ├── Plots/
+│   ├── Statistics/
+│   └── statistics.toml
+└── STEP2/
+    ├── Parameters/
+    ├── Data/
+    ├── Plots/
+    ├── Statistics/
+    └── statistics.toml
+```
+
+ChemEx may internally factor a fit into independent **fit components** for
+efficiency. These are execution details, not separate user fits: component
+identity can appear transiently while minimization runs, but the method-step
+directory always contains the sole authoritative aggregate result.
+
+## Content
+
+The output directory typically includes the following files and subdirectories:
+
+### `run_info/`
+
+Records how the fit was started. `run.toml` contains runtime and command-line
+metadata, resolved execution and software versions, archived input mappings,
+optional Git details, and the root seed of each stochastic operation actually
+started. `parameters_used.toml` is the immutable **original invocation start**:
+it contains revision-zero values and configured bounds and reproduces the
+original starting point. It is not updated after fitting.
+
+After a state-changing fit commit, `restart.toml` is the **latest committed
+continuation state**. It is atomically replaced after each later commit, so
+there is one latest checkpoint rather than one checkpoint per method step. It
+is an ordinary ChemEx parameter file and can be used directly with
+`chemex fit ... -p Output/run_info/restart.toml`. A failed, rejected, stale, or
+interrupted step does not replace the last successfully published restart. The
+file is absent when the invocation has made no state-changing commit.
+
+`inputs/` contains verbatim byte copies of every user-provided experiment,
+parameter, and method TOML file captured for the run. Multiple inputs remain
+separate; both version 1 and version 2 method files are archived without a
+normalized method artifact. Raw experimental data files are not copied.
+
+`outcome.toml` is the lifecycle marker for the current invocation. It has
+`schema_version = 2` and a `status` of `running`, `complete`, or `incomplete`.
+It always reports the latest in-memory committed revision and the latest
+revision successfully published to `restart.toml`; these can differ if restart
+publication failed after a scientific commit.
+ChemEx writes `complete` only after every requested method step and statistics
+analysis succeeds. Incomplete outcomes also identify the failure or interruption
+when available. A process kill may leave `running`, which is not a successful
+outcome.
+
+When reusing an output directory, ChemEx clears its known result locations for
+every currently planned method step before the first step starts. This includes
+`Parameters/`, `Data/`, `Plots/`, `Grid/`, `Statistics/`, and `statistics.toml`.
+Obsolete `All/`, `Groups/`, and `Components/` result trees are also removed so
+stale output cannot appear current; `run_info/` and unknown user-created paths
+are not cleared.
+Partial new output can remain after a writer failure, but `outcome.toml` will not
+report that invocation as complete.
+
+### `Parameters/`
+
+Contains result reports as three files: `fitted.toml`, `fixed.toml`, and
+`constrained.toml`, which list parameters that were fitted, fixed, and
+constrained, respectively. These reports are not restart bundles. Use
+`run_info/restart.toml` to continue from the latest committed state, or
+`run_info/parameters_used.toml` to reproduce the original invocation start.
+
+#### Example Files
+
+import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
+
+<Tabs>
+<TabItem value="fitted" label="fitted.toml" default>
+
+```toml
+[GLOBAL]
+KEX_AB =  3.81511e+02 # ±1.23456e+01
+PB     =  7.02971e-02 # ±2.10432e-03
+
+[DW_AB]
+15N =  2.00075e+00 # ±3.45678e-02
+31N =  1.98968e+00 # ±3.21098e-02
+```
+
+:::note
+An ordinary deterministic fit derives local covariance at its accepted point
+from an exact retained optimizer Jacobian or an independent accepted-point
+fallback, and displays covariance-derived standard errors when the evidence is
+usable. Experimental observation uncertainties are interpreted as absolute
+standard deviations, so ChemEx does not multiply covariance by reduced
+chi-square. Reduced chi-square remains a goodness-of-fit diagnostic. Numerical
+rank, boundary, normalization, derivative, or covariance-arithmetic failures
+withhold errors with a concise reason. A large condition number is retained as
+a weak-mode diagnostic rather than an arbitrary availability gate. MC, BS, BSN,
+and MCMC summaries remain separate under `Statistics/` and never replace these
+errors.
+:::
+
+</TabItem>
+<TabItem value="fixed" label="fixed.toml">
+
+```toml
+[CS_A]
+15N =  1.19849e+02 # (fixed)
+31N =  1.26388e+02 # (fixed)
+```
+
+</TabItem>
+<TabItem value="constrained" label="constrained.toml">
+
+```toml
+[GLOBAL]
+KAB =  2.68192e+01 # ±1.10421e+00 ([KEX_AB] * [PB])
+KBA =  3.54692e+02 # ±1.14863e+01 ([KEX_AB] * [PA])
+```
+
+:::note
+Applied constraints are provided in comments. ChemEx propagates the accepted
+local covariance through supported arithmetic constraint expressions and shows
+the resulting covariance-derived standard error. Scientific-function
+expressions without a qualified analytic derivative fail closed for that
+derived error; fitted independent-parameter errors remain available.
+:::
+
+</TabItem>
+</Tabs>
+
+### `Plots/`
+
+Contains `.pdf` plots of the fitting results, along with the raw input and fitted data points. Example plots for CPMG and CEST experiments are shown below:
+
+import CestProfile from '@site/static/img/cest_26hz_fit.png'; import CpmgProfile from '@site/static/img/cpmg_800mhz_fit.png';
+
+<figure>
+  <img src={CestProfile} alt="CEST profile" width="50%"/>
+  <img src={CpmgProfile} alt="CPMG profile" width="50%"/>
+  <figcaption align="center"><b>Examples of CEST and CPMG fitting results</b></figcaption>
+</figure>
+
+:::note
+In (D-/cos-)CEST plots, solid and dashed vertical lines indicate ground and excited states, respectively, with lighter colors for filtered data points. "Folded" positions are marked with `*`.
+:::
+
+### `Data/`
+
+Contains data values used in the fitting process along with back-calculated values for calculating χ<sup>2</sup>.
+
+```toml title=Data/500mhz.dat
+[15N]
+#         NCYC   INTENSITY (EXP)       ERROR (EXP)  INTENSITY (CALC)
+             0    3.47059800e+04    1.77491406e+02    3.47055362e+04
+```
+
+### `Grid/`
+
+When a method requests `GRID`, ChemEx publishes the raw exact factor grids,
+machine-readable profile surfaces, plots, and the coherent selected grid state:
+
+```shell
+Grid/
+├── Factors/
+│   ├── factor_01__<axes>.tsv
+│   └── ...
+├── Profiles/
+│   ├── 1D/
+│   │   ├── <parameter>.tsv
+│   │   └── ...
+│   └── 2D/
+│       ├── <parameter1>__<parameter2>.tsv
+│       └── ...
+├── grid_1d.pdf
+├── grid_2d.pdf
+└── summary.toml
+```
+
+Each deterministic factor filename identifies its concrete grid axes and a
+compact experiment/profile key. Its TSV includes the full profile membership,
+coordinate values, profiled chi-square, point status, selected flag,
+objective-evaluation count, and a failure description when applicable.
+Thus a failed or unavailable point is distinct from a valid point with a large
+finite chi-square. The `Profiles/1D/` and `Profiles/2D/` TSV files contain the
+same exact reduced surfaces shown in the PDFs, including a marker for the
+selected coherent joint solution. `summary.toml` records its freshly validated
+aggregate chi-square and concrete grid-axis assignment.
+
+ChemEx writes a 1D profile for every concrete GRID coordinate. A 2D profile is
+written only when both coordinates coexist in at least one exact GRID factor;
+cross-factor local/local pairs are omitted because they do not add a directly
+sampled joint landscape. The corresponding `grid_2d.pdf` is absent when no such
+pair exists.
+
+These factor files are numerical evidence, not independently authoritative
+fits. ChemEx reconstructs one complete joint candidate from the exact factor
+minimum, validates it against the complete root objective, and commits at most
+once. Incomplete or interrupted GRID work does not publish ordinary fitted,
+covariance, or statistics output as though it were complete. Reruns clear the
+previous `Grid/` tree before publishing a replacement. The former native
+`grid.out` multistart layout is not written because it did not represent a
+profiled chi-square surface truthfully.
+
+Selected-coordinate DE is only an initializer for one normal full-coordinate
+TRF fit, so it creates no separate DE result tree. Successful DE-assisted fits
+use the same `Parameters/`, `Data/`, `Plots/`, `Statistics/`, and
+`statistics.toml` outputs as an ordinary fit.
+
+### `statistics.toml`
+
+Contains goodness-of-fit statistics, such as χ<sup>2</sup>.
+
+```toml title='"statistics.toml"'
+"number of data points"                = 230
+"number of variables"                  = 17
+"chi-square"                           =  4.34824e+02
+"reduced-chi-square"                   =  2.04143e+00
+"Akaike Information Criterion (AIC)"   =  1.80479e+02
+```
+
+### `Statistics/`
+
+Contains automatic deterministic covariance diagnostics as well as optional
+uncertainty analyses requested with the `STATISTICS` method-file key.
+`Statistics/Covariance/evidence.json` records the covariance policy,
+accepted-point identity, parameter order, Jacobian/rank/conditioning/boundary
+diagnostics, covariance-derived marginal errors, correlations, and typed
+failures. `Statistics/Constrained/evidence.json` records supported constrained
+propagation. ChemEx reports covariance-derived local standard errors when the
+local covariance is otherwise valid, including when the accepted fit is near or
+at a parameter bound. In that case, affected parameter comments warn that the
+boundary may make the uncertainty asymmetric because the symmetric Gaussian
+approximation can be imperfect. Profile likelihood or resampling may be more
+appropriate when accurate bounded confidence intervals are required. Inline
+warnings are attached only to fitted coordinates near their own simple bounds
+and to constrained outputs structurally depending on those coordinates;
+aggregate boundary and affine diagnostics remain available in the evidence and
+terminal status.
+
+For fits with independent fit components,
+`Statistics/Covariance/blocks.json` records any root-anchored independent-block
+derivations used to isolate unavailable component covariance. If derivation is
+interrupted after the fit commits,
+`Statistics/Covariance/status.json` records the incomplete uncertainty stage.
+
+Monte Carlo and bootstrap methods write `summary.toml`,
+`samples.tsv`, `correlations.tsv`, `diagnostics.toml`, and `plots.pdf` under
+`Statistics/MonteCarlo/`, `Statistics/Bootstrap/`, and `Statistics/BootstrapNS/`.
+MCMC writes the same file set under `Statistics/MCMC/`, plus a `plots.pdf`
+report with posterior distributions, walker traces, log-probability traces, and
+autocorrelation diagnostics.
+
+The `diagnostics.toml` files record execution details for reproducibility. MC,
+BS, and BSN diagnostics include the native Direct TRF engine, root seed, and
+effective worker count. An incomplete analysis instead writes the successful
+sample rows, `failures.tsv`, and an explicit incomplete diagnostic; complete
+summary, correlation, and plot files are suppressed. A failure while publishing
+an MC, BS, or BSN summary, correlation table, plot, or final diagnostic likewise
+retains only truthful completed sample/failure rows and atomically terminalizes
+the diagnostic as incomplete. MCMC diagnostics also
+include the direct emcee sampler engine, timing information, effective worker
+count and root seed, acceptance fractions, burn-in decisions, and
+autocorrelation estimates. Failed or interrupted MCMC suppresses every
+authoritative posterior product. If automatic burn selection cannot establish a
+retained window, `raw_chain.tsv` preserves the completed sampler chain as
+diagnostic evidence while `diagnostics.toml` explicitly marks the analysis
+incomplete, distinguishes completed sampling from failed posterior retention,
+and retains acceptance, autocorrelation, and timing diagnostics. The raw chain
+is not a retained-posterior sample file. Other failures leave only the evidence
+available at their failure stage and an explicit incomplete diagnostic. These
+diagnostics are the best place to confirm that
+[`--workers`](multicore_execution.md) was applied as intended.
+
+MC, BS, and BSN `summary.toml` files describe their empirical fitted-sample
+distributions with the mean, median, standard deviation, 95% percentile bounds,
+68% percentile bounds, and `half_percentile_68_width`. MCMC summaries describe
+the posterior with the mean, median, standard deviation, 95% equal-tailed and
+68% credible-interval bounds, and `half_credible_interval_68_width`.
+`mcse_mean`, when available, is the Monte Carlo standard error of the estimated
+posterior mean; it is distinct from posterior interval width. None of these
+statistical summaries mutates the committed central fit.
