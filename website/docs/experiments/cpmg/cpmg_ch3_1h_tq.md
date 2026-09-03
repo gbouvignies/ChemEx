@@ -1,7 +1,7 @@
 ---
 sidebar_label: Methyl ¹H triple quantum
 sidebar_position: 14
-description: '"cpmg_ch3_1h_tq"'
+description: Analyze methyl ¹H triple-quantum CPMG relaxation-dispersion data from highly deuterated ¹³CH₃-labeled proteins.
 ---
 
 # Methyl ¹H triple quantum CPMG

@@ -36,11 +36,10 @@ function HomepageHeader() {
 }
 
 export default function Home() {
-    const { siteConfig } = useDocusaurusContext();
     return (
         <Layout
-            title={`Hello from ${siteConfig.title}`}
-            description="Description will go into a meta tag in <head />">
+            title="NMR Chemical Exchange Analysis"
+            description="ChemEx is open-source software for analyzing NMR chemical exchange data, including CPMG relaxation dispersion, CEST, D-CEST/cos-CEST, and multi-state kinetic models.">
             <HomepageHeader />
             <main>
                 <HomepageFeatures />

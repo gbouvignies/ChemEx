@@ -19,7 +19,7 @@ const FeatureList = [
         Svg: require('@site/static/img/combined_experiments.svg').default,
         description: (
             <>
-                Supporting diverse experiments and kinetic models, ChemEx allows joint analysis for high-precision exchange parameter extraction, making it essential for complex kinetics studies.
+                Analyze CPMG relaxation dispersion, CEST, D-CEST/cos-CEST, relaxation, and exchange-induced shift experiments, then combine datasets from multiple experiments with multi-state kinetic models.
             </>
         ),
     },

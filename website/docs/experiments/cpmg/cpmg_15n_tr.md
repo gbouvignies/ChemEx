@@ -1,7 +1,7 @@
 ---
 sidebar_label: ¹⁵N TROSY
 sidebar_position: 3
-description: '"cpmg_15n_tr"'
+description: Analyze ¹⁵N constant-time TROSY CPMG relaxation-dispersion data for millisecond-timescale exchange dynamics.
 ---
 
 # ¹⁵N TROSY CPMG

@@ -9,7 +9,7 @@ const katex = require('rehype-katex');
 /** @type {import('@docusaurus/types').Config} */
 const config = {
     title: 'ChemEx',
-    tagline: 'ChemEx is an analysis program for characterizing chemical exchange detected by NMR.',
+    tagline: 'Open-source Python software for analyzing NMR chemical exchange data.',
     url: 'https://gbouvignies.github.io',
     baseUrl: '/ChemEx/',
     onBrokenLinks: 'throw',
@@ -35,6 +35,11 @@ const config = {
                     editUrl: 'https://github.com/gbouvignies/chemex/tree/main/website/',
                     remarkPlugins: [math],
                     rehypePlugins: [katex],
+                },
+                blog: false,
+                sitemap: {
+                    ignorePatterns: ['/ChemEx/search'],
+                    lastmod: 'date',
                 },
                 theme: {
                     customCss: './src/css/custom.css',
@@ -87,6 +92,7 @@ const config = {
                     autoCollapseCategories: true,
                 },
             },
+            image: 'img/exchange_cest_cpmg_figure.png',
             footer: {
                 style: 'light',
                 links: [

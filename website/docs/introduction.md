@@ -1,5 +1,8 @@
 ---
 sidebar_position: 2
+sidebar_label: Overview
+title: 'ChemEx Overview: NMR Chemical Exchange Analysis'
+description: Learn how ChemEx uses numerical spin evolution to analyze biomolecular NMR chemical exchange, including CPMG, CEST, joint datasets, and multi-state kinetic models.
 ---
 
 # Overview

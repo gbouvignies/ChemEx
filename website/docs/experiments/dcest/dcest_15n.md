@@ -1,7 +1,7 @@
 ---
 sidebar_label: Pure in-phase ¹⁵N D-CEST
 sidebar_position: 1
-description: '"dcest_15n"'
+description: Analyze pure in-phase ¹⁵N DANTE-CEST chemical exchange data with ¹H composite decoupling.
 ---
 
 # Pure in-phase ¹⁵N DANTE-CEST

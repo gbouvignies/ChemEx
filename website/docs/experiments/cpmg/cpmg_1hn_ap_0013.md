@@ -1,7 +1,7 @@
 ---
 sidebar_label: Pure anti-phase amide ¹H with [0013] phase cycle
 sidebar_position: 6
-description: '"cpmg_1hn_ap_0013"'
+description: Analyze pure anti-phase amide ¹H CPMG relaxation-dispersion data with the [0013] phase cycle.
 ---
 
 # Pure anti-phase amide ¹H CPMG with [0013] phase cycle

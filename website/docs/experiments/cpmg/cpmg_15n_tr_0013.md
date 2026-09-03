@@ -1,7 +1,7 @@
 ---
 sidebar_label: ¹⁵N TROSY with [0013] phase cycle
 sidebar_position: 4
-description: '"cpmg_15n_tr_0013"'
+description: Analyze ¹⁵N TROSY CPMG relaxation-dispersion data with the [0013] phase cycle for ΔD NH measurements.
 ---
 
 # ¹⁵N TROSY CPMG with [0013] phase cycle

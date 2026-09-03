@@ -1,5 +1,6 @@
 ---
 sidebar_position: 1
+description: Install ChemEx and learn the first steps for analyzing NMR chemical exchange data with CPMG relaxation dispersion and CEST experiments.
 ---
 
 # Welcome to ChemEx

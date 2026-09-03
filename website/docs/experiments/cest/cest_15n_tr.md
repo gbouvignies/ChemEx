@@ -1,7 +1,7 @@
 ---
 sidebar_label: ¹⁵N TROSY
 sidebar_position: 4
-description: '"cest_15n_tr"'
+description: Analyze ¹⁵N TROSY CEST data for chemical exchange during the CEST block.
 ---
 
 # ¹⁵N TROSY CEST

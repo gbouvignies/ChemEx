@@ -1,7 +1,7 @@
 ---
 sidebar_label: Methyl ¹³C (“H-to-C”)
 sidebar_position: 10
-description: '"cpmg_ch3_13c_h2c"'
+description: Analyze methyl ¹³C CPMG relaxation-dispersion data from highly deuterated ¹³CH₃-labeled proteins with the “H-to-C” experiment.
 ---
 
 # Methyl ¹³C CPMG (“H-to-C”)

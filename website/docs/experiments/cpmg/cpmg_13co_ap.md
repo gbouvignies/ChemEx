@@ -1,7 +1,7 @@
 ---
 sidebar_label: Pure anti-phase carbonyl ¹³C
 sidebar_position: 9
-description: '"cpmg_13co_ap"'
+description: Analyze pure anti-phase carbonyl ¹³C CPMG relaxation-dispersion data with optional C–C J-coupling refocusing.
 ---
 
 # Pure anti-phase carbonyl ¹³C CPMG

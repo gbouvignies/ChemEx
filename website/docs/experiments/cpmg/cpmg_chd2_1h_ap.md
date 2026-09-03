@@ -1,7 +1,7 @@
 ---
 sidebar_label: Pure anti-phase methyl ¹H
 sidebar_position: 16
-description: '"cpmg_chd2_1h_ap"'
+description: Analyze pure anti-phase methyl ¹H CPMG relaxation-dispersion data from highly deuterated ¹³CHD₂-labeled proteins.
 ---
 
 # Pure anti-phase methyl ¹H CPMG
