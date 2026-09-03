@@ -1,7 +1,7 @@
 ---
 sidebar_label: Methyl ¹³C (“H-to-C”) with [0013] phase cycle
 sidebar_position: 17
-description: '"cpmg_ch3_13c_h2c_0013"'
+description: Analyze methyl ¹³C CPMG relaxation-dispersion data from highly deuterated ¹³CH₃-labeled proteins with the [0013] phase cycle.
 ---
 
 # Methyl ¹³C CPMG (“H-to-C”) with [0013] phase cycle

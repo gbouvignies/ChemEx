@@ -1,7 +1,7 @@
 ---
 sidebar_label: ¹⁵N longitudinal relaxation
 sidebar_position: 1
-description: '"relaxation_nz"'
+description: Analyze ¹⁵N longitudinal (T1) relaxation data with ChemEx.
 ---
 
 # ¹⁵N longitudinal relaxation

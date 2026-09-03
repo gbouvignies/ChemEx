@@ -1,7 +1,7 @@
 ---
 sidebar_label: Amide ¹H-¹⁵N longitudinal two-spin order relaxation
 sidebar_position: 2
-description: '"relaxation_hznz"'
+description: Analyze amide ¹H–¹⁵N longitudinal two-spin-order relaxation data.
 ---
 
 # Amide ¹H-¹⁵N longitudinal two-spin order relaxation

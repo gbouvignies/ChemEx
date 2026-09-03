@@ -1,7 +1,7 @@
 ---
 sidebar_label: Amide ¹⁵N–¹H double-quantum/zero-quantum
 sidebar_position: 7
-description: '"cpmg_hn_dq_zq"'
+description: Analyze amide ¹⁵N–¹H double-quantum/zero-quantum CPMG relaxation-dispersion data.
 ---
 
 # Amide ¹⁵N–¹H double-quantum/zero-quantum CPMG

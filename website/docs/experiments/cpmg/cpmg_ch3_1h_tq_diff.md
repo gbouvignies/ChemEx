@@ -1,7 +1,7 @@
 ---
 sidebar_label: Methyl ¹H triple quantum with gradients
 sidebar_position: 15
-description: '"cpmg_ch3_1h_tq_diff"'
+description: Analyze methyl ¹H triple-quantum CPMG data with pulsed-field gradients to measure diffusion constants of invisible states.
 ---
 
 # Methyl ¹H triple quantum CPMG with gradients

@@ -1,7 +1,7 @@
 ---
 sidebar_label: Pure in-phase ¹⁵N with [0013] phase cycle
 sidebar_position: 2
-description: '"cpmg_15n_ip_0013"'
+description: Analyze pure in-phase ¹⁵N CPMG relaxation-dispersion data with the [0013] phase cycle.
 ---
 
 # Pure in-phase ¹⁵N CPMG with [0013] phase cycle

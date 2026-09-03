@@ -1,7 +1,7 @@
 ---
 sidebar_label: ¹⁵N with ¹H CW decoupling
 sidebar_position: 3
-description: '"cest_15n_cw"'
+description: Analyze ¹⁵N CEST chemical exchange with ¹H continuous-wave decoupling during the CEST block.
 ---
 
 # ¹⁵N CEST with ¹H CW decoupling

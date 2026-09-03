@@ -1,7 +1,7 @@
 ---
 sidebar_label: Pure in-phase ¹³C
 sidebar_position: 8
-description: '"cpmg_13c_ip"'
+description: Analyze pure in-phase ¹³C CPMG relaxation-dispersion data with high-power ¹H CW decoupling.
 ---
 
 # Pure in-phase ¹³C CPMG

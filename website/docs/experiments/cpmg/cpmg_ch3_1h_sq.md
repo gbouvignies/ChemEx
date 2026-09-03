@@ -1,7 +1,7 @@
 ---
 sidebar_label: Methyl ¹H single quantum
 sidebar_position: 12
-description: '"cpmg_ch3_1h_sq"'
+description: Analyze methyl ¹H single-quantum CPMG relaxation-dispersion data from highly deuterated ¹³CH₃-labeled proteins.
 ---
 
 # Methyl ¹H single quantum CPMG

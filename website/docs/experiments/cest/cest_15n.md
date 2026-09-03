@@ -1,7 +1,7 @@
 ---
 sidebar_label: Pure in-phase ¹⁵N
 sidebar_position: 1
-description: '"cest_15n"'
+description: Analyze pure in-phase ¹⁵N CEST data with ¹H composite decoupling for chemical exchange.
 ---
 
 # Pure in-phase ¹⁵N CEST

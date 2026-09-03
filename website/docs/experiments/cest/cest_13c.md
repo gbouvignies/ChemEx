@@ -1,7 +1,7 @@
 ---
 sidebar_label: Pure in-phase ¹³C
 sidebar_position: 2
-description: '"cest_13c"'
+description: Analyze ¹³C CEST chemical exchange with ¹H composite decoupling and in-phase magnetization.
 ---
 
 # Pure in-phase ¹³C CEST

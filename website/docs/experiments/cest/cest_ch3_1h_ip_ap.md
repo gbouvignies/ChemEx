@@ -1,7 +1,7 @@
 ---
 sidebar_label: In-phase/anti-phase methyl ¹H
 sidebar_position: 7
-description: '"cest_ch3_1h_ip_ap"'
+description: Analyze in-phase/anti-phase methyl ¹H CEST data for ¹³CH₃- and ¹³CHD₂-labeled proteins.
 ---
 
 # In-phase/anti-phase methyl ¹H CEST

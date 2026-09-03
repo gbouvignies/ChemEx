@@ -1,7 +1,7 @@
 ---
 sidebar_label: In-phase/anti-phase amide ¹H cos-CEST
 sidebar_position: 3
-description: '"coscest_1hn_ip_ap"'
+description: Analyze in-phase/anti-phase amide ¹H cos-CEST chemical exchange data.
 ---
 
 # In-phase/anti-phase amide ¹H cos-CEST

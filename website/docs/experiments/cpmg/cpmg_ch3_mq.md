@@ -1,7 +1,7 @@
 ---
 sidebar_label: Methyl ¹³C–¹H multiple-quantum
 sidebar_position: 11
-description: '"cpmg_ch3_mq"'
+description: Analyze methyl ¹³C–¹H multiple-quantum CPMG data from highly deuterated ¹³CH₃-labeled proteins.
 ---
 
 # Methyl ¹³C–¹H multiple-quantum CPMG

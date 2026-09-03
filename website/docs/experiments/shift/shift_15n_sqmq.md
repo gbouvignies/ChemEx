@@ -1,7 +1,7 @@
 ---
 sidebar_label: ¹⁵N exchange induced shifts with ¹⁵N–¹H HSQC/HMQC
 sidebar_position: 1
-description: '"shift_15n_sqmq"'
+description: Analyze exchange-induced ¹⁵N chemical-shift changes in ¹⁵N–¹H HSQC and HMQC datasets.
 ---
 
 # ¹⁵N exchange induced shifts with ¹⁵N–¹H HSQC/HMQC

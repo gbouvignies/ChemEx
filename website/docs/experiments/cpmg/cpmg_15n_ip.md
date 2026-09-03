@@ -1,7 +1,7 @@
 ---
 sidebar_label: Pure in-phase ¹⁵N
 sidebar_position: 1
-description: '"cpmg_15n_ip"'
+description: Analyze pure in-phase ¹⁵N CPMG relaxation-dispersion data with high-power ¹H CW decoupling.
 ---
 
 # Pure in-phase ¹⁵N CPMG

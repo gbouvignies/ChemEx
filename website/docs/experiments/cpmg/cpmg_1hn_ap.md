@@ -1,7 +1,7 @@
 ---
 sidebar_label: Pure anti-phase amide ¹H
 sidebar_position: 5
-description: '"cpmg_1hn_ap"'
+description: Analyze pure anti-phase amide ¹H CPMG relaxation-dispersion data with reduced intrinsic relaxation.
 ---
 
 # Pure anti-phase amide ¹H CPMG

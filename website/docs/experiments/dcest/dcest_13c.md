@@ -1,7 +1,7 @@
 ---
 sidebar_label: Pure in-phase ¹³C D-CEST
 sidebar_position: 2
-description: '"dcest_13c"'
+description: Analyze pure in-phase ¹³C DANTE-CEST chemical exchange data with ¹H composite decoupling.
 ---
 
 # Pure in-phase ¹³C DANTE-CEST
