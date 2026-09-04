@@ -33,6 +33,8 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 - Native MCMC capture qualification no longer serially re-evaluates every stored
   walker state through the same authoritative evaluator. Structural, content,
   bounds, transition-mask, and evidence-lineage checks remain fail-closed.
+- Native MCMC sampling now reports transition progress interactively and concise
+  start/completion status in non-interactive output.
 
 ## [2026.09.0] - 2026-09-02
 

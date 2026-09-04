@@ -2684,6 +2684,7 @@ def test_explicit_mcmc_burn_survives_autocorrelation_calculation_failure(
 
 def test_real_compact_mcmc_fit_is_wholly_native_and_writes_products(
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     output = tmp_path / "Output"
     method = _statistics_method(tmp_path / "method.toml", '"MCMC" = 2')
@@ -2735,6 +2736,11 @@ def test_real_compact_mcmc_fit_is_wholly_native_and_writes_products(
     assert "half_credible_interval_68_width" not in fitted
     plan = native_sampler.call_args.args[1]
     assert plan.coordinate_units[0][1] is ParameterUnit.UNSPECIFIED
+    rendered = capsys.readouterr().out
+    assert "MCMC sampling" in rendered
+    assert "0/2" in rendered
+    assert "2/2" in rendered
+    assert "complete" in rendered
 
 
 def test_short_compact_mcmc_form_fails_closed_through_real_chemex_cli(
@@ -2999,8 +3005,16 @@ def test_interrupted_native_mcmc_publishes_unqualified_raw_capture(
     method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
     parameters = _bounded_parameters(tmp_path / "parameters.toml")
 
-    def interrupt_after_second_transition(accepted, plan, *, execution):
+    def interrupt_after_second_transition(
+        accepted,
+        plan,
+        *,
+        execution,
+        state_observer=None,
+    ):
         def observe(state):
+            if state_observer is not None:
+                state_observer(state)
             if state.ordinal == 2:
                 raise KeyboardInterrupt
 
@@ -3136,8 +3150,16 @@ def test_interrupted_mcmc_publication_failure_preserves_interruption(
     method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
     parameters = _bounded_parameters(tmp_path / "parameters.toml")
 
-    def interrupt_after_second_transition(accepted, plan, *, execution):
+    def interrupt_after_second_transition(
+        accepted,
+        plan,
+        *,
+        execution,
+        state_observer=None,
+    ):
         def observe(state):
+            if state_observer is not None:
+                state_observer(state)
             if state.ordinal == 2:
                 raise KeyboardInterrupt
 

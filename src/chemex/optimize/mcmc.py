@@ -14,6 +14,7 @@ from chemex.atomic import open_text_atomic, remove_paths_best_effort, write_text
 from chemex.configuration.method_plan import McmcRequest
 from chemex.configuration.methods import McmcSettings
 from chemex.containers.experiments import Experiments
+from chemex.messages import McmcProgressReporter, console
 from chemex.optimize.native_deterministic import NativeDeterministicFit
 from chemex.optimize.native_mcmc import (
     EnsembleState,
@@ -718,14 +719,29 @@ def run_native_mcmc(  # noqa: C901 - closed execution/publication lifecycle
             ),
         )
         phase_start = perf_counter()
-        mcmc_operation = execute_mcmc_evidence(
-            fit.accepted,
-            plan,
-            execution=ExecutionSettings(
-                workers=effective.workers,
-                native_threads=effective.native_threads,
-            ),
+        progress = McmcProgressReporter(
+            console,
+            requested_steps=effective.steps,
+            interactive=console.is_terminal,
         )
+        progress.start()
+        try:
+            mcmc_operation = execute_mcmc_evidence(
+                fit.accepted,
+                plan,
+                state_observer=lambda state: progress.observe(state.ordinal),
+                execution=ExecutionSettings(
+                    workers=effective.workers,
+                    native_threads=effective.native_threads,
+                ),
+            )
+        except BaseException as error:
+            progress.finish(
+                "interrupted" if isinstance(error, KeyboardInterrupt) else "failed"
+            )
+            raise
+        else:
+            progress.finish(mcmc_operation.terminal.value)
         mcmc_evidence = mcmc_operation.evidence
         timings["sampling_seconds"] = perf_counter() - phase_start
         completed_steps = max(0, mcmc_operation.complete_state_count - 1)

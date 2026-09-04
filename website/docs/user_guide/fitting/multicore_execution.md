@@ -109,6 +109,12 @@ Do not expect every fit to scale linearly. Parallel execution helps most when
 each likelihood evaluation or refit is expensive enough to dominate process-pool
 overhead. Very short MCMC runs or small bootstrap jobs may show little speedup.
 
+Interactive MCMC runs show completed ensemble transitions against the requested
+step count, together with elapsed time and an estimated time remaining. One
+completed transition advances the display by one step, independent of the
+number of walkers. Redirected or otherwise non-interactive output reports a
+concise start and terminal line instead of printing one line per step.
+
 ## Diagnostics
 
 Statistics diagnostics record the effective worker count. MCMC diagnostics also
