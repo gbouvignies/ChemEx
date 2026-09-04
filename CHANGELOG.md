@@ -13,6 +13,12 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   `3st_eyring` name remains a compatibility name for the linear topology.
 
 ### Changed
+- Standard independent spin, relaxation, chemical-shift, coupling, kinetic,
+  binding, oligomerization, and equilibrium parameters now have finite broad
+  default safety domains. Scalar parameter-file values inherit these bounds,
+  while explicit bounds continue to override them. Current MCMC uses the same
+  domains as uniform support; `S2` is now restricted to its physical `[0, 1]`
+  domain.
 - Three-state Eyring models now represent absent pathways structurally instead
   of using an extreme activation-enthalpy sentinel. All real Eyring `DH_*` and
   `DS_*` state and transition coordinates now have finite broad default bounds;

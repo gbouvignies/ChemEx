@@ -122,16 +122,19 @@ def create_base_param_settings(
             name_setting=NameSetting(f"tauc_{state}", "g", ("temperature",)),
             value=4.0,
             min=0.0,
+            max=1000.0,
         ),
         f"s2_{state}": ParamLocalSetting(
             name_setting=NameSetting(f"s2_{state}", "g", ("temperature",)),
             value=0.9,
             min=0.0,
+            max=1.0,
         ),
         f"khh_{state}": ParamLocalSetting(
             name_setting=NameSetting(f"khh_{state}", "g", ("temperature",)),
             value=0.0,
             min=0.0,
+            max=1.0e6,
         ),
         f"r2_i_{state}": ParamLocalSetting(
             name_setting=NameSetting(
@@ -141,6 +144,7 @@ def create_base_param_settings(
             ),
             value=10.0,
             min=0.0,
+            max=1000.0,
         ),
         f"r2_s_{state}": ParamLocalSetting(
             name_setting=NameSetting(
@@ -150,6 +154,7 @@ def create_base_param_settings(
             ),
             value=10.0,
             min=0.0,
+            max=1000.0,
         ),
         f"r1_i_{state}": ParamLocalSetting(
             name_setting=NameSetting(
@@ -159,6 +164,7 @@ def create_base_param_settings(
             ),
             value=1.5,
             min=0.0,
+            max=1000.0,
         ),
         f"r1_s_{state}": ParamLocalSetting(
             name_setting=NameSetting(
@@ -168,6 +174,7 @@ def create_base_param_settings(
             ),
             value=1.5,
             min=0.0,
+            max=1000.0,
         ),
         f"r2a_i_{state}": ParamLocalSetting(
             name_setting=NameSetting(
@@ -177,6 +184,7 @@ def create_base_param_settings(
             ),
             value=12.0,
             min=0.0,
+            max=1000.0,
             expr=f"{{r2_i_{state}}} - {{r1_s_{state}}}",
         ),
         f"r2a_s_{state}": ParamLocalSetting(
@@ -187,6 +195,7 @@ def create_base_param_settings(
             ),
             value=12.0,
             min=0.0,
+            max=1000.0,
             expr=f"{{r2_s_{state}}} - {{r1_i_{state}}}",
         ),
         f"r2mq_is_{state}": ParamLocalSetting(
@@ -197,6 +206,7 @@ def create_base_param_settings(
             ),
             value=15.0,
             min=0.0,
+            max=1000.0,
         ),
         f"r1a_is_{state}": ParamLocalSetting(
             name_setting=NameSetting(
@@ -206,6 +216,7 @@ def create_base_param_settings(
             ),
             value=4.0,
             min=0.0,
+            max=1000.0,
             expr=f"{{r1_i_{state}}} + {{r1_s_{state}}}",
         ),
         f"etaxy_i_{state}": ParamLocalSetting(
@@ -215,6 +226,8 @@ def create_base_param_settings(
                 ("temperature", "h_larmor_frq"),
             ),
             value=0.0,
+            min=-1000.0,
+            max=1000.0,
         ),
         f"etaxy_s_{state}": ParamLocalSetting(
             name_setting=NameSetting(
@@ -223,6 +236,8 @@ def create_base_param_settings(
                 ("temperature", "h_larmor_frq"),
             ),
             value=0.0,
+            min=-1000.0,
+            max=1000.0,
         ),
         f"etaz_i_{state}": ParamLocalSetting(
             name_setting=NameSetting(
@@ -231,6 +246,8 @@ def create_base_param_settings(
                 ("temperature", "h_larmor_frq"),
             ),
             value=0.0,
+            min=-1000.0,
+            max=1000.0,
         ),
         f"etaz_s_{state}": ParamLocalSetting(
             name_setting=NameSetting(
@@ -239,6 +256,8 @@ def create_base_param_settings(
                 ("temperature", "h_larmor_frq"),
             ),
             value=0.0,
+            min=-1000.0,
+            max=1000.0,
         ),
         f"sigma_is_{state}": ParamLocalSetting(
             name_setting=NameSetting(
@@ -247,6 +266,8 @@ def create_base_param_settings(
                 ("temperature", "h_larmor_frq"),
             ),
             value=0.0,
+            min=-1000.0,
+            max=1000.0,
         ),
         f"mu_is_{state}": ParamLocalSetting(
             name_setting=NameSetting(
@@ -255,23 +276,32 @@ def create_base_param_settings(
                 ("temperature", "h_larmor_frq"),
             ),
             value=0.0,
+            min=-1000.0,
+            max=1000.0,
         ),
         f"cs_i_{state}": ParamLocalSetting(
             name_setting=NameSetting(f"cs_{state}", "i", ("temperature",)),
             value=0.0,
+            min=-100.0,
+            max=300.0,
         ),
         f"cs_s_{state}": ParamLocalSetting(
             name_setting=NameSetting(f"cs_{state}", "s", ("temperature",)),
             value=0.0,
+            min=-100.0,
+            max=300.0,
         ),
         f"j_is_{state}": ParamLocalSetting(
             name_setting=NameSetting(f"j_{state}", "is"),
             value=J_COUPLINGS.get(basis.spin_system, 0.0),
+            min=-1000.0,
+            max=1000.0,
         ),
         f"d_{state}": ParamLocalSetting(
             name_setting=NameSetting(f"d_{state}", "", ("temperature",)),
             value=0.0,
             min=0.0,
+            max=1000.0,
         ),
     }
 

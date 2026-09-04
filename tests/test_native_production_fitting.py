@@ -120,6 +120,12 @@ CEST_1HN_IP_AP_METHOD = CEST_1HN_IP_AP_EXAMPLE / "Methods/method.toml"
 CPMG_15N_TR_EXAMPLE = ROOT / "examples/Experiments/CPMG_15N_TR"
 CPMG_15N_TR_EXPERIMENT = CPMG_15N_TR_EXAMPLE / "Experiments/500mhz.toml"
 CPMG_15N_TR_PARAMETERS = CPMG_15N_TR_EXAMPLE / "Parameters/parameters.toml"
+CPMG_15N_IP_EXAMPLE = ROOT / "examples/Experiments/CPMG_15N_IP"
+CPMG_15N_IP_EXPERIMENTS = (
+    CPMG_15N_IP_EXAMPLE / "Experiments/500mhz.toml",
+    CPMG_15N_IP_EXAMPLE / "Experiments/800mhz.toml",
+)
+CPMG_15N_IP_PARAMETERS = CPMG_15N_IP_EXAMPLE / "Parameters/parameters.toml"
 CEST_15N_CW_EXAMPLE = ROOT / "examples/Experiments/CEST_15N_CW"
 CEST_15N_CW_EXPERIMENT = CEST_15N_CW_EXAMPLE / "Experiments/dec.toml"
 CEST_15N_CW_PARAMETERS = CEST_15N_CW_EXAMPLE / "Parameters/parameters.toml"
@@ -2375,6 +2381,56 @@ G2N-HN = [1.5, 0.1, 5.0]
     return path
 
 
+def _explicitly_unbounded_parameters(path: Path) -> Path:
+    path.write_text(
+        PARAMETERS.read_text(encoding="utf-8")
+        + """
+
+[R1A_A]
+G2N-HN = [1.5, -inf, inf]
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _cpmg_15n_ip_mcmc_arguments(output: Path, method: Path) -> Namespace:
+    return build_parser().parse_args(
+        [
+            "fit",
+            "-e",
+            *(str(path) for path in CPMG_15N_IP_EXPERIMENTS),
+            "-p",
+            str(CPMG_15N_IP_PARAMETERS),
+            "-m",
+            str(method),
+            "-o",
+            str(output),
+            "--plot",
+            "nothing",
+            "--workers",
+            "1",
+        ]
+    )
+
+
+def _cpmg_15n_ip_mcmc_method(path: Path) -> Path:
+    path.write_text(
+        """FORMAT_VERSION = 2
+
+[STEP1]
+INCLUDE = ["15", "31", "33", "34", "37"]
+
+[STEP1.STATISTICS.MCMC]
+STEPS = 2
+BURN = 0
+SEED = 750
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
 def _nested_mcmc_method(path: Path, *, workers: int) -> Path:
     path.write_text(
         f"""[DEFAULT]
@@ -2802,15 +2858,19 @@ def test_native_mcmc_preserves_committed_central_fit(tmp_path: Path) -> None:
     assert central.items() == sampled.items()
 
 
-def test_unbounded_native_mcmc_fails_closed_after_committing_central_fit(
+def test_explicitly_unbounded_native_mcmc_fails_closed_after_central_fit(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
     method = _statistics_method(tmp_path / "method.toml", '"MCMC" = 2')
+    parameters = _explicitly_unbounded_parameters(tmp_path / "parameters.toml")
     session = AnalysisSession.create()
 
     with pytest.raises(ValueError, match="finite lower and upper bounds"):
-        run(_fit_arguments(output, method), session=session)
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=session,
+        )
 
     assert session.analysis_values.snapshot().revision == 1
     statistics = output / "Statistics" / "MCMC"
@@ -2828,6 +2888,67 @@ def test_unbounded_native_mcmc_fails_closed_after_committing_central_fit(
     assert outcome["latest_committed_revision"] == 1
     assert outcome["restart_revision"] == 1
     assert outcome["failure_stage"] == "statistics"
+
+
+def test_standard_cpmg_15n_ip_parameters_run_native_mcmc_transitions(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _cpmg_15n_ip_mcmc_method(tmp_path / "method.toml")
+    session = AnalysisSession.create()
+
+    def short_chain_autocorrelation(chain: Array, **_kwargs) -> Array:
+        return np.full(chain.shape[-1], 0.25)
+
+    with patch.object(
+        native_mcmc_module.emcee.autocorr,
+        "integrated_time",
+        side_effect=short_chain_autocorrelation,
+    ):
+        run(
+            _cpmg_15n_ip_mcmc_arguments(output, method),
+            session=session,
+        )
+
+    assert session.analysis_values.snapshot().revision == 1
+    statistics = output / "Statistics" / "MCMC"
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    assert diagnostics["status"] == "complete"
+    assert diagnostics["walkers"] == 34
+    assert diagnostics["steps"] == 2
+    assert diagnostics["retained_steps"] == 2
+    assert diagnostics["retained_samples"] == 68
+    assert len(diagnostics["autocorrelation_time"]) == 17
+    assert diagnostics["acceptance_fraction_mean"] > 0.0
+    assert diagnostics["unbounded_parameters"] == []
+    assert "failure_message" not in diagnostics
+
+    summary = tomllib.loads((statistics / "summary.toml").read_text(encoding="utf-8"))
+    assert len(summary) == 17
+    assert summary["KEX_AB"]["prior"] == "uniform"
+    assert summary["KEX_AB"]["prior_lower"] == 0.0
+    assert summary["KEX_AB"]["prior_upper"] == 1.0e6
+    r2_summaries = [
+        distribution
+        for name, distribution in summary.items()
+        if name.startswith("R2_A, ")
+    ]
+    assert len(r2_summaries) == 10
+    assert {(item["prior_lower"], item["prior_upper"]) for item in r2_summaries} == {
+        (0.0, 1000.0)
+    }
+
+    sample_lines = (statistics / "samples.tsv").read_text(encoding="utf-8").splitlines()
+    assert len(sample_lines) == 69
+    assert len(sample_lines[0].split("\t")) == 18
+    assert sample_lines[0].endswith("\tlnprob")
+    samples = [tuple(map(float, line.split("\t"))) for line in sample_lines[1:]]
+    assert all(np.all(np.isfinite(sample)) for sample in samples)
+    assert len({sample[:-1] for sample in samples}) > 34
+    assert (statistics / "correlations.tsv").stat().st_size > 0
+    assert (statistics / "plots.pdf").stat().st_size > 0
 
 
 def test_interrupted_native_mcmc_publishes_only_incomplete_diagnostics(

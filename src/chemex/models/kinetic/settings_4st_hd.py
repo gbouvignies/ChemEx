@@ -50,6 +50,7 @@ def make_settings_4st_hd(conditions: Conditions) -> dict[str, ParamLocalSetting]
         "kex_ab": ParamLocalSetting(
             name_setting=NameSetting("kex_ab", "", TPL),
             min=0.0,
+            max=1.0e6,
             value=0.0,
             vary=True,
         ),
@@ -57,12 +58,14 @@ def make_settings_4st_hd(conditions: Conditions) -> dict[str, ParamLocalSetting]
             name_setting=NameSetting("kdh_a", "g", ("temperature",)),
             value=1.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "kdh_b": ParamLocalSetting(
             name_setting=NameSetting("kdh_b", "g", ("temperature",)),
             value=1.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "phi_a": ParamLocalSetting(

@@ -75,24 +75,28 @@ def make_settings_3st_binding_cs(
             name_setting=NameSetting("kab", "", ("temperature",)),
             value=100.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "kba": ParamLocalSetting(
             name_setting=NameSetting("kba", "", ("temperature",)),
             value=100.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "koff_bc": ParamLocalSetting(
             name_setting=NameSetting("koff_bc", "", ("temperature",)),
             value=100.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "kd_app": ParamLocalSetting(
             name_setting=NameSetting("kd_app", "", ("temperature",)),
             value=1e-6,
             min=0.0,
+            max=1.0,
             vary=True,
         ),
         "kd_bc": ParamLocalSetting(

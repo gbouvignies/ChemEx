@@ -15,6 +15,7 @@ def make_settings_2st(_conditions: Conditions) -> dict[str, ParamLocalSetting]:
             name_setting=NameSetting("kex_ab", "", TPL),
             value=200.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "pb": ParamLocalSetting(

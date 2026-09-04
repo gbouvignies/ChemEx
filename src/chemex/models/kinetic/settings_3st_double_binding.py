@@ -77,24 +77,28 @@ def make_settings_3st_double_binding(
             name_setting=NameSetting("koff_ab", "", ("temperature",)),
             value=100.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "kd_ab": ParamLocalSetting(
             name_setting=NameSetting("kd_ab", "", ("temperature",)),
             value=1e-3,
             min=0.0,
+            max=1.0,
             vary=True,
         ),
         "koff_ac": ParamLocalSetting(
             name_setting=NameSetting("koff_ac", "", ("temperature",)),
             value=100.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "kd_ac": ParamLocalSetting(
             name_setting=NameSetting("kd_ac", "", ("temperature",)),
             value=1e-3,
             min=0.0,
+            max=1.0,
             vary=True,
         ),
         "kon_ab": ParamLocalSetting(

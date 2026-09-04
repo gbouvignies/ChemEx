@@ -85,4 +85,17 @@ PARAMETER_WITH_NO_BOUNDS = <initial_value>
 PARAMETER_WITH_BOUNDS = [<initial_value>, <lower_bound>, <upper_bound>]
 ```
 
-Setting bounds helps prevent parameters from reaching unrealistic values during χ<sup>2</sup> minimization. However, avoid overly strict bounds as they can hinder convergence. The supported `trf` fit method honors finite bounds when they are supplied.
+Standard independent ChemEx parameters have finite default safety bounds. A
+scalar parameter-file value changes only the initial value and inherits that
+standard domain. The three-element form replaces both default bounds for the
+matching parameter, so explicit parameter-file bounds retain precedence.
+
+These broad domains protect deterministic fitting from unrealistic regions;
+they are not intended as informative scientific priors. They are also the
+support of the uniform distribution used by current MCMC. Before running MCMC,
+inspect the effective bounds and override them when scientific prior knowledge
+requires a different domain. In particular, the model-free order parameter
+`S2` is restricted to its physical `[0, 1]` domain by default.
+
+Avoid overly strict bounds, because they can hinder convergence. The supported
+`trf` fit method honors the effective finite bounds.

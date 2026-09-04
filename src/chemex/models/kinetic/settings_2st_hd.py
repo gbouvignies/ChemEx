@@ -28,6 +28,7 @@ def make_settings_2st_hd(conditions: Conditions) -> dict[str, ParamLocalSetting]
             name_setting=NameSetting("kdh", "g", ("temperature",)),
             value=1.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "phi": ParamLocalSetting(

@@ -183,6 +183,25 @@ def _rate_floor(specification: RateFloor, values: Mapping[str, float]) -> float:
     return 0.5 * (-intercept + discriminant)
 
 
+def _floor_within_finite_ceiling(
+    floor: float,
+    upper: float,
+    rate_id: str,
+) -> float:
+    """Clamp only round-off-scale floor overshoot at a finite public ceiling."""
+    if floor <= upper:
+        return floor
+    scale = max(1.0, abs(floor), abs(upper))
+    if (
+        upper < np.finfo(np.float64).max
+        and floor - upper <= _PSD_EIGENVALUE_RTOL * scale
+    ):
+        return upper
+    raise ScientificFeasibilityError(
+        f"Relaxation rate {rate_id!r} has no feasible bounded domain"
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class _FeasibilityProjectionProvenance:
     """Private immutable closure proof compiled with one feasibility chart."""
@@ -429,7 +448,13 @@ class FeasibleCoordinates:
                 static_rate_floors.get(rate_id, -math.inf),
                 *(resolved[rate_id] - resolved[item] for item in diagonal_ids),
             )
-            public[rate_id] = floor + public[rate_id]
+            upper = upper_by_id[rate_id]
+            floor = _floor_within_finite_ceiling(floor, upper, rate_id)
+            public[rate_id] = (
+                floor + public[rate_id] * (upper - floor)
+                if upper < np.finfo(np.float64).max
+                else floor + public[rate_id]
+            )
         frame = self.base_frame.with_updates(
             {key: value for key, value in public.items() if key not in cross_rates}
         )
@@ -451,7 +476,13 @@ class FeasibleCoordinates:
                 raise ScientificFeasibilityError(
                     f"Relaxation rate {rate_id!r} has no finite PSD floor"
                 )
-            public[rate_id] = floor + public[rate_id]
+            upper = upper_by_id[rate_id]
+            floor = _floor_within_finite_ceiling(floor, upper, rate_id)
+            public[rate_id] = (
+                floor + public[rate_id] * (upper - floor)
+                if upper < np.finfo(np.float64).max
+                else floor + public[rate_id]
+            )
             frame = frame.with_updates({rate_id: public[rate_id]})
             resolved = self.parameterization.resolve(frame)
         for cross_id in self.cross_rate_ids:
@@ -1000,6 +1031,195 @@ def _derived_pair_floor(
     return None
 
 
+def _bounded_affine_controller_interval(
+    parameterization: ActiveParameterization,
+    frame: IndependentValueFrame,
+    controlled: set[str],
+    lower_by_id: Mapping[str, float],
+    upper_by_id: Mapping[str, float],
+    transformed_ids: frozenset[str],
+    *,
+    rate_id: str,
+    dependent_id: str,
+    dependencies: frozenset[str],
+    required_dependent: float,
+) -> tuple[str, float, float] | None:
+    """Invert one affine dependent bound at a finite public rate ceiling."""
+    rate_upper = upper_by_id[rate_id]
+    if rate_upper >= np.finfo(np.float64).max:
+        return None
+    controller_ids = dependencies - {rate_id}
+    if not controller_ids:
+        return None
+    if len(controller_ids) != 1:
+        raise FeasibleCoordinateConstructionError(
+            "A finite relaxation-rate ceiling with a multi-coordinate PSD "
+            f"floor requires a whole-block chart: rate={rate_id!r}, "
+            f"dependencies={sorted(controller_ids)!r}"
+        )
+    controller_id = next(iter(controller_ids))
+    if controller_id in transformed_ids:
+        raise FeasibleCoordinateConstructionError(
+            "Nested finite-ceiling relaxation transforms require a whole-block "
+            f"chart: rate={rate_id!r}, controller={controller_id!r}"
+        )
+    constraints = {
+        item.target_id: item for item in parameterization.program.constraints
+    }
+    public_start = dict(frame.ordered_items())
+    resolved_start = parameterization.resolve(frame)
+    expression = _affine_expression(
+        ReferenceExpression(dependent_id),
+        constraints,
+    )
+    if expression is None or not (expression.reference_ids & controlled) <= {
+        rate_id,
+        controller_id,
+    }:
+        raise FeasibleCoordinateConstructionError(
+            "A finite relaxation-rate ceiling requires an affine single-controller "
+            f"PSD floor: rate={rate_id!r}, controller={controller_id!r}"
+        )
+    controller_coefficient = expression.coefficients.get(controller_id, 0.0)
+    if controller_coefficient == 0.0:
+        raise FeasibleCoordinateConstructionError(
+            "A finite relaxation-rate ceiling has no invertible PSD-floor "
+            f"controller: rate={rate_id!r}, controller={controller_id!r}"
+        )
+    rate_coefficient = expression.coefficients.get(rate_id, 0.0)
+    dependent_at_upper = resolved_start[dependent_id] + (
+        rate_coefficient * (rate_upper - public_start[rate_id])
+    )
+    controller_start = public_start[controller_id]
+    threshold = controller_start + (
+        (required_dependent - dependent_at_upper) / controller_coefficient
+    )
+    lower = lower_by_id[controller_id]
+    upper = upper_by_id[controller_id]
+    if controller_coefficient > 0.0:
+        lower = max(lower, threshold)
+    else:
+        upper = min(upper, threshold)
+    return controller_id, lower, upper
+
+
+def _bounded_dynamic_floor_controller_interval(
+    parameterization: ActiveParameterization,
+    frame: IndependentValueFrame,
+    controlled: set[str],
+    lower_by_id: Mapping[str, float],
+    upper_by_id: Mapping[str, float],
+    specification: RateFloor,
+    transformed_ids: frozenset[str],
+) -> tuple[str, float, float] | None:
+    """Return one exact controller interval for a finite dynamic PSD floor."""
+    rate_id = specification.rate_id
+    rate_upper = upper_by_id[rate_id]
+    if rate_upper >= np.finfo(np.float64).max:
+        return None
+    cross_dependencies = _controlled_dependencies(
+        parameterization,
+        specification.cross_id,
+        controlled,
+    )
+    other_dependencies = _controlled_dependencies(
+        parameterization,
+        specification.other_id,
+        controlled,
+    )
+    controller_ids = (other_dependencies | cross_dependencies) - {rate_id}
+    if cross_dependencies:
+        raise FeasibleCoordinateConstructionError(
+            "A finite relaxation-rate ceiling with a cross-dependent PSD floor "
+            f"requires a whole-block chart: rate={rate_id!r}, "
+            f"dependencies={sorted(controller_ids)!r}"
+        )
+    cross = parameterization.resolve(frame)[specification.cross_id]
+    if rate_upper <= 0.0:
+        if cross != 0.0:
+            raise ScientificFeasibilityError(
+                f"Relaxation rate {rate_id!r} has no feasible bounded domain"
+            )
+        required_other = 0.0
+    else:
+        required_other = cross * cross / rate_upper
+    return _bounded_affine_controller_interval(
+        parameterization,
+        frame,
+        controlled,
+        lower_by_id,
+        upper_by_id,
+        transformed_ids,
+        rate_id=rate_id,
+        dependent_id=specification.other_id,
+        dependencies=other_dependencies,
+        required_dependent=required_other,
+    )
+
+
+def _bounded_dynamic_floor_controller_bounds(
+    parameterization: ActiveParameterization,
+    frame: IndependentValueFrame,
+    controlled_ids: tuple[str, ...],
+    lower_by_id: Mapping[str, float],
+    upper_by_id: Mapping[str, float],
+    rate_excess_ids: Sequence[tuple[str, str]],
+    rate_floors: Sequence[RateFloor],
+    transformed_ids: frozenset[str],
+) -> dict[str, tuple[float, float]]:
+    """Return exact controller intervals that keep finite rate ceilings feasible."""
+    controlled = set(controlled_ids)
+    public_start = dict(frame.ordered_items())
+    bounds: dict[str, tuple[float, float]] = {}
+    intervals: list[tuple[str, tuple[str, float, float] | None]] = []
+    for rate_id, diagonal_id in rate_excess_ids:
+        interval = _bounded_affine_controller_interval(
+            parameterization,
+            frame,
+            controlled,
+            lower_by_id,
+            upper_by_id,
+            transformed_ids,
+            rate_id=rate_id,
+            dependent_id=diagonal_id,
+            dependencies=_controlled_dependencies(
+                parameterization,
+                diagonal_id,
+                controlled,
+            ),
+            required_dependent=0.0,
+        )
+        intervals.append((rate_id, interval))
+    for specification in rate_floors:
+        interval = _bounded_dynamic_floor_controller_interval(
+            parameterization,
+            frame,
+            controlled,
+            lower_by_id,
+            upper_by_id,
+            specification,
+            transformed_ids,
+        )
+        intervals.append((specification.rate_id, interval))
+    for rate_id, interval in intervals:
+        if interval is None:
+            continue
+        controller_id, candidate_lower, candidate_upper = interval
+        lower, upper = bounds.get(
+            controller_id,
+            (lower_by_id[controller_id], upper_by_id[controller_id]),
+        )
+        lower = max(lower, candidate_lower)
+        upper = min(upper, candidate_upper)
+        controller_start = public_start[controller_id]
+        if lower > upper or not lower <= controller_start <= upper:
+            raise ScientificFeasibilityError(
+                f"Relaxation rate {rate_id!r} has no feasible bounded domain"
+            )
+        bounds[controller_id] = (lower, upper)
+    return bounds
+
+
 def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
     parameterization: ActiveParameterization,
     frame: IndependentValueFrame,
@@ -1195,6 +1415,23 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
     solver_upper: list[float] = []
     lower_by_id = dict(zip(controlled_ids, lower_bounds, strict=True))
     upper_by_id = dict(zip(controlled_ids, upper_bounds, strict=True))
+    transformed_ids = frozenset(
+        {
+            *(item[0] for item in rate_excess_ids),
+            *(item.rate_id for item in rate_floors),
+            *cross_ids,
+        }
+    )
+    controller_bounds = _bounded_dynamic_floor_controller_bounds(
+        parameterization,
+        frame,
+        controlled_ids,
+        lower_by_id,
+        upper_by_id,
+        rate_excess_ids,
+        rate_floors,
+        transformed_ids,
+    )
     for param_id in controlled_ids:
         if rate_map[param_id]:
             floor = max(
@@ -1205,25 +1442,27 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
                     for diagonal_id in rate_map[param_id]
                 ),
             )
+            upper = upper_by_id[param_id]
+            floor = _floor_within_finite_ceiling(floor, upper, param_id)
             excess = public_start[param_id] - floor
             if excess < 0.0:
                 raise ScientificFeasibilityError(
                     f"Derived relaxation diagonal for {param_id!r} is negative"
                 )
-            if upper_by_id[param_id] < np.finfo(np.float64).max:
-                raise FeasibleCoordinateConstructionError(
-                    f"Finite upper bound for transformed relaxation rate {param_id!r} "
-                    "is not yet supported exactly"
+            width = upper - floor
+            if width < 0.0 or excess > width:
+                raise ScientificFeasibilityError(
+                    f"Derived relaxation diagonal for {param_id!r} has no feasible "
+                    "bounded domain"
                 )
-            solver_start.append(excess)
+            finite_upper = upper < np.finfo(np.float64).max
+            solver_value = (
+                (0.0 if width == 0.0 else excess / width) if finite_upper else excess
+            )
+            solver_start.append(solver_value)
             solver_lower.append(0.0)
-            solver_upper.append(upper_by_id[param_id])
+            solver_upper.append(1.0 if finite_upper else upper)
         elif floors_by_rate[param_id]:
-            if upper_by_id[param_id] < np.finfo(np.float64).max:
-                raise FeasibleCoordinateConstructionError(
-                    f"Finite upper bound for transformed relaxation rate {param_id!r} "
-                    "is not yet supported exactly"
-                )
             floor = max(
                 lower_by_id[param_id],
                 static_rate_floors.get(param_id, -math.inf),
@@ -1236,14 +1475,25 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
                 raise ScientificFeasibilityError(
                     f"Relaxation rate {param_id!r} has no finite PSD floor"
                 )
+            upper = upper_by_id[param_id]
+            floor = _floor_within_finite_ceiling(floor, upper, param_id)
             excess = public_start[param_id] - floor
             if excess < 0.0:
                 raise ScientificFeasibilityError(
                     f"Relaxation rate {param_id!r} is below its PSD floor"
                 )
-            solver_start.append(excess)
+            width = upper - floor
+            if width < 0.0 or excess > width:
+                raise ScientificFeasibilityError(
+                    f"Relaxation rate {param_id!r} has no feasible bounded domain"
+                )
+            finite_upper = upper < np.finfo(np.float64).max
+            solver_value = (
+                (0.0 if width == 0.0 else excess / width) if finite_upper else excess
+            )
+            solver_start.append(solver_value)
             solver_lower.append(0.0)
-            solver_upper.append(upper_by_id[param_id])
+            solver_upper.append(1.0 if finite_upper else upper)
         elif param_id in cross_ids:
             lower = lower_by_id[param_id]
             upper = upper_by_id[param_id]
@@ -1267,10 +1517,18 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
             solver_upper.append(1.0)
         else:
             solver_start.append(public_start[param_id])
-            solver_lower.append(
-                max(lower_by_id[param_id], static_rate_floors.get(param_id, -math.inf))
+            controller_lower, controller_upper = controller_bounds.get(
+                param_id,
+                (-math.inf, math.inf),
             )
-            solver_upper.append(upper_by_id[param_id])
+            solver_lower.append(
+                max(
+                    lower_by_id[param_id],
+                    static_rate_floors.get(param_id, -math.inf),
+                    controller_lower,
+                )
+            )
+            solver_upper.append(min(upper_by_id[param_id], controller_upper))
     chart = _seal_projection_provenance(
         FeasibleCoordinates(
             parameterization,
