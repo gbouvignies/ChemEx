@@ -7,6 +7,19 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 
 ## [Unreleased]
 
+### Added
+- Added explicit `3st_eyring_linear` (A ↔ B ↔ C) and `3st_eyring_fork`
+  (B ↔ A ↔ C) temperature-dependent kinetic models. The existing
+  `3st_eyring` name remains a compatibility name for the linear topology.
+
+### Changed
+- Three-state Eyring models now represent absent pathways structurally instead
+  of using an extreme activation-enthalpy sentinel. All real Eyring `DH_*` and
+  `DS_*` state and transition coordinates now have finite broad default bounds;
+  explicit parameter-file bounds continue to override them.
+- Direct Python callers of `calculate_kij_3st_eyring` must use its linear-model
+  signature; the obsolete `DH_AC` and `DS_AC` arguments have been removed.
+
 ## [2026.09.0] - 2026-09-02
 
 ### Added

@@ -13,7 +13,9 @@ The kinetic model (specified with the `-d` or `--model` option) defines the type
 | `4st`         | 4-state exchange model                                                          |
 | `2st_hd`      | 2-state exchange model for H/D solvent exchange studies                         |
 | `2st_eyring`  | 2-state exchange model for temperature-dependent studies                        |
-| `3st_eyring`  | 3-state exchange model for temperature-dependent studies                        |
+| `3st_eyring`  | Compatibility name for the linear 3-state Eyring model                          |
+| `3st_eyring_linear` | Linear A ↔ B ↔ C Eyring model for temperature-dependent studies          |
+| `3st_eyring_fork` | Fork B ↔ A ↔ C Eyring model for temperature-dependent studies                |
 | `4st_eyring`  | 4-state exchange model for temperature-dependent studies                        |
 | `2st_binding` | 2-state exchange model for ligand binding studies                               |
 | `4st_hd`      | 4-state exchange model for simultaneous normal and H/D solvent exchange studies |
@@ -30,7 +32,11 @@ For any kinetic model, you can add the `.mf` suffix to create a model that fits 
 
 ## Temperature-Dependent Eyring Models
 
-The `2st_eyring`, `3st_eyring`, and `4st_eyring` models implement 2-state, 3-state, and 4-state exchange systems (respectively) with temperature-dependent rate constants calculated using Eyring transition state theory. These models are particularly useful for studying exchange processes where thermodynamic parameters govern the temperature dependence of exchange rates.
+The `2st_eyring`, three-state Eyring variants, and `4st_eyring` models
+implement exchange systems with temperature-dependent rate constants calculated
+using Eyring transition state theory. These models are particularly useful for
+studying exchange processes where thermodynamic parameters govern the
+temperature dependence of exchange rates.
 
 ### Theoretical Background
 
@@ -68,19 +74,35 @@ The `2st_eyring` model uses the following thermodynamic parameters:
 
 The model automatically calculates both forward (k_AB) and reverse (k_BA) rate constants from these parameters.
 
-### 3st_eyring Model Parameters
+### Three-State Eyring Model Parameters
 
-The `3st_eyring` model extends the 2-state model with an additional state:
+`3st_eyring_linear` has the linear topology A ↔ B ↔ C.
+`3st_eyring_fork` has the fork topology B ↔ A ↔ C. The historical
+`3st_eyring` name remains supported as a compatibility name for
+`3st_eyring_linear`; it does not select a triangular topology.
+
+Both topologies use the following state parameters:
 
 **State Energies (relative to state A):**
 - `DH_B`, `DH_C`: Enthalpy differences (J/mol) for states B, C
 - `DS_B`, `DS_C`: Entropy differences (J/mol/K) for states B, C
 
-**Transition Barriers:**
-- `DH_AB`, `DH_AC`, `DH_BC`: Activation enthalpies (J/mol) for transitions
-- `DS_AB`, `DS_AC`, `DS_BC`: Activation entropies (J/mol/K) for transitions
+**Linear Transition Barriers (`3st_eyring`, `3st_eyring_linear`):**
+- `DH_AB`, `DH_BC`: Activation enthalpies (J/mol) for the AB and BC transitions
+- `DS_AB`, `DS_BC`: Activation entropies (J/mol/K) for the AB and BC transitions
 
-The model automatically calculates all 6 rate constants (k_AB, k_BA, k_AC, k_CA, k_BC, k_CB).
+The linear models calculate k_AB, k_BA, k_BC, and k_CB. There is no direct A ↔ C
+pathway.
+
+**Fork Transition Barriers (`3st_eyring_fork`):**
+- `DH_AB`, `DH_AC`: Activation enthalpies (J/mol) for the AB and AC transitions
+- `DS_AB`, `DS_AC`: Activation entropies (J/mol/K) for the AB and AC transitions
+
+The fork model calculates k_AB, k_BA, k_AC, and k_CA. There is no direct B ↔ C
+pathway.
+
+Parameter files used with `3st_eyring` or `3st_eyring_linear` should not contain
+`DH_AC` or `DS_AC`; those parameters are not part of the linear topology.
 
 ### 4st_eyring Model Parameters
 
@@ -101,3 +123,8 @@ The model automatically calculates all 12 rate constants (k_AB, k_BA, k_AC, k_CA
 :::note
 State A serves as the reference state with ΔH_A = ΔS_A = 0 for all Eyring models. Rate constants are automatically clipped to [0, 1×10¹⁶ s⁻¹] for numerical stability.
 :::
+
+All Eyring state and transition enthalpy parameters have default bounds of
+[-2×10⁵, 2×10⁵] J/mol. The corresponding entropy parameters have default
+bounds of [-5×10², 5×10²] J/mol/K. Explicit bounds in parameter files override
+these defaults.

@@ -26,33 +26,32 @@ def pop_3st(
     kbc: float = 0.0,
     kcb: float = 0.0,
 ) -> dict[str, float]:
-    if np.isclose(kab + kba + kac + kca, 0.0):
+    if kab == 0.0 and kba == 0.0 and kac == 0.0 and kca == 0.0:
         pb, pc = pop_2st(kbc, kcb).values()
         return {"pa": 0.0, "pb": pb, "pc": pc}
 
-    if np.isclose(kab + kba + kbc + kcb, 0.0):
+    if kab == 0.0 and kba == 0.0 and kbc == 0.0 and kcb == 0.0:
         pa, pc = pop_2st(kac, kca).values()
         return {"pa": pa, "pb": 0.0, "pc": pc}
 
-    if np.isclose(kac + kca + kbc + kcb, 0.0):
+    if kac == 0.0 and kca == 0.0 and kbc == 0.0 and kcb == 0.0:
         pa, pb = pop_2st(kab, kba).values()
         return {"pa": pa, "pb": pb, "pc": 0.0}
 
-    mat = np.array(
-        [
-            [-kab - kac, kba, kca],
-            [kab, -kba - kbc, kcb],
-            [1.0, 1.0, 1.0],
-        ],
+    # Directed spanning-tree weights give the stationary distribution without
+    # mistaking a slow positive pathway for a structurally absent zero pathway.
+    scale = max(kab, kba, kac, kca, kbc, kcb)
+    kab, kba, kac, kca, kbc, kcb = (
+        rate / scale for rate in (kab, kba, kac, kca, kbc, kcb)
     )
-
-    if np.isclose(np.linalg.det(mat), 0.0):
+    wa = kba * kca + kba * kcb + kbc * kca
+    wb = kab * kca + kab * kcb + kac * kcb
+    wc = kac * kba + kac * kbc + kab * kbc
+    total = wa + wb + wc
+    if total == 0.0:
         return {"pa": 1.0, "pb": 0.0, "pc": 0.0}
 
-    vec = np.array([0.0, 0.0, 1.0])
-    pa, pb, pc = linalg.solve(mat, vec)
-
-    return {"pa": pa, "pb": pb, "pc": pc}
+    return {"pa": wa / total, "pb": wb / total, "pc": wc / total}
 
 
 @lru_cache(maxsize=100)

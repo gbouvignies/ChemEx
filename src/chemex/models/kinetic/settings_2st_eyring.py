@@ -49,21 +49,29 @@ def make_settings_2st_eyring(conditions: Conditions) -> dict[str, ParamLocalSett
         "dh_b": ParamLocalSetting(
             name_setting=NameSetting("dh_b", "", PL),
             value=8e3,
+            min=-2.0e5,
+            max=2.0e5,
             vary=True,
         ),
         "ds_b": ParamLocalSetting(
             name_setting=NameSetting("ds_b", "", PL),
             value=0.0,
+            min=-5.0e2,
+            max=5.0e2,
             vary=True,
         ),
         "dh_ab": ParamLocalSetting(
             name_setting=NameSetting("dh_ab", "", PL),
             value=6.5e4,
+            min=-2.0e5,
+            max=2.0e5,
             vary=True,
         ),
         "ds_ab": ParamLocalSetting(
             name_setting=NameSetting("ds_ab", "", PL),
             value=0.0,
+            min=-5.0e2,
+            max=5.0e2,
             vary=True,
         ),
         "kab": ParamLocalSetting(
