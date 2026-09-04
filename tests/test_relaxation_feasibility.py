@@ -175,6 +175,154 @@ def _dq_affine_parameterization():
     return Parameterization()
 
 
+def test_finite_ceiling_rejects_nested_dynamic_floor_charts_at_construction() -> None:
+    blocks = (
+        RelaxationPsdBlock(
+            "transverse-a",
+            "a",
+            ("r2", "r2a"),
+            ((0, 1, "eta"),),
+        ),
+        RelaxationPsdBlock(
+            "longitudinal-a",
+            "a",
+            ("r1", "r1a"),
+            ((0, 1, "sigma"),),
+        ),
+    )
+    constraints = (
+        CompiledConstraint(
+            "r2a",
+            BinaryExpression(
+                "subtract",
+                ReferenceExpression("r2"),
+                ReferenceExpression("r1"),
+            ),
+            ("r2", "r1"),
+            "test",
+            "test",
+        ),
+        CompiledConstraint(
+            "r1a",
+            BinaryExpression(
+                "subtract",
+                ReferenceExpression("r1"),
+                ReferenceExpression("x"),
+            ),
+            ("r1", "x"),
+            "test",
+            "test",
+        ),
+    )
+
+    class Parameterization:
+        scope_ids = ("r2", "r1", "x", "eta", "sigma", "r2a", "r1a")
+        evaluator_identity = "nested-bounded-floor-test-evaluator"
+        program = SimpleNamespace(
+            constraints=constraints,
+            relaxation_domains=SealedRelaxationDomains(blocks),
+        )
+
+        @staticmethod
+        def resolve(frame):
+            values = dict(frame.ordered_items())
+            values["r2a"] = values["r2"] - values["r1"]
+            values["r1a"] = values["r1"] - values["x"]
+            return values
+
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (
+            ("r2", 5.0),
+            ("r1", 2.0),
+            ("x", 1.0),
+            ("eta", 3.0),
+            ("sigma", 1.0),
+        ),
+    )
+    with pytest.raises(
+        FeasibleCoordinateConstructionError,
+        match="Nested finite-ceiling relaxation transforms",
+    ):
+        compile_feasible_coordinates(
+            Parameterization(),
+            frame,
+            ("r2", "r1", "x"),
+            (0.0, 0.0, 0.0),
+            (1000.0, 1000.0, 1000.0),
+        )
+
+
+def test_finite_ceiling_rejects_cross_dependent_floor_at_construction() -> None:
+    block = RelaxationPsdBlock(
+        "transverse-a",
+        "a",
+        ("r2", "r2a"),
+        ((0, 1, "eta"),),
+    )
+    constraints = (
+        CompiledConstraint(
+            "r2a",
+            BinaryExpression(
+                "subtract",
+                ReferenceExpression("r2"),
+                ReferenceExpression("r1"),
+            ),
+            ("r2", "r1"),
+            "test",
+            "test",
+        ),
+        CompiledConstraint(
+            "eta",
+            BinaryExpression(
+                "multiply",
+                LiteralExpression(2.0),
+                ReferenceExpression("x"),
+            ),
+            ("x",),
+            "test",
+            "test",
+        ),
+    )
+
+    class Parameterization:
+        scope_ids = ("r2", "r1", "x", "eta", "r2a")
+        evaluator_identity = "cross-dependent-bounded-floor-test-evaluator"
+        program = SimpleNamespace(
+            constraints=constraints,
+            relaxation_domains=SealedRelaxationDomains((block,)),
+        )
+
+        @staticmethod
+        def resolve(frame):
+            values = dict(frame.ordered_items())
+            values["r2a"] = values["r2"] - values["r1"]
+            values["eta"] = 2.0 * values["x"]
+            return values
+
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("r2", 5.0), ("r1", 2.0), ("x", 1.0)),
+    )
+    with pytest.raises(
+        FeasibleCoordinateConstructionError,
+        match="cross-dependent PSD floor",
+    ):
+        compile_feasible_coordinates(
+            Parameterization(),
+            frame,
+            ("r2", "r1", "x"),
+            (0.0, 0.0, 0.0),
+            (1000.0, 1000.0, 1000.0),
+        )
+
+
 def test_compiler_recognizes_exact_dq_affine_nonnegative_floor() -> None:
     parameterization = _dq_affine_parameterization()
     frame = IndependentValueFrame(
@@ -201,6 +349,35 @@ def test_compiler_recognizes_exact_dq_affine_nonnegative_floor() -> None:
     assert values["r2dq"] == pytest.approx(0.5)
     assert values["r2adq"] == pytest.approx(0.0)
     _validate_blocks(chart.blocks, values)
+
+
+def test_finite_rate_ceiling_is_preserved_by_affine_excess_coordinates() -> None:
+    parameterization = _dq_affine_parameterization()
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("r2dq", 20.0), ("r1", 1.5), ("eta", 0.0)),
+    )
+
+    chart = compile_feasible_coordinates(
+        parameterization,
+        frame,
+        ("r2dq",),
+        (0.0,),
+        (1000.0,),
+    )
+
+    assert chart is not None
+    assert chart.solver_lower_bounds == (0.0,)
+    assert chart.solver_upper_bounds == (1.0,)
+    lower = chart.decode((0.0,))
+    upper = chart.decode((1.0,))
+    assert lower.vector == pytest.approx((0.5,))
+    assert upper.vector == pytest.approx((1000.0,))
+    _validate_blocks(chart.blocks, parameterization.resolve(lower.frame))
+    _validate_blocks(chart.blocks, parameterization.resolve(upper.frame))
 
 
 def test_compiler_recognizes_exact_dq_affine_psd_floor() -> None:
@@ -641,6 +818,150 @@ def test_compiled_dynamic_affine_floor_spans_only_the_exact_psd_domain() -> None
     assert values["r2"] == pytest.approx(0.5 * (10.0 + np.sqrt(136.0)))
     assert values["r2"] * values["r2a"] == pytest.approx(9.0)
     _validate_blocks(chart.blocks, values)
+
+
+def test_dynamic_psd_floor_and_finite_rate_ceiling_are_both_preserved() -> None:
+    parameterization = _affine_parameterization()
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("r2", 5.0), ("r1", 2.0), ("eta", 3.0)),
+    )
+    chart = compile_feasible_coordinates(
+        parameterization,
+        frame,
+        ("r2", "r1"),
+        (0.0, 0.0),
+        (1000.0, 1000.0),
+    )
+
+    assert chart is not None
+    controller_upper = 1000.0 - 9.0 / 1000.0
+    assert chart.solver_lower_bounds == (0.0, 0.0)
+    assert chart.solver_upper_bounds == pytest.approx((1.0, controller_upper))
+    lower = chart.decode((0.0, 10.0))
+    upper = chart.decode((1.0, 10.0))
+    lower_values = parameterization.resolve(lower.frame)
+    upper_values = parameterization.resolve(upper.frame)
+    assert lower_values["r2"] == pytest.approx(0.5 * (10.0 + np.sqrt(136.0)))
+    assert lower_values["r2"] * lower_values["r2a"] == pytest.approx(9.0)
+    assert upper_values["r2"] == pytest.approx(1000.0)
+    _validate_blocks(chart.blocks, lower_values)
+    _validate_blocks(chart.blocks, upper_values)
+
+    tip = chart.decode((0.5, controller_upper))
+    tip_values = parameterization.resolve(tip.frame)
+    assert tip.vector == pytest.approx((1000.0, controller_upper))
+    _validate_blocks(chart.blocks, tip_values)
+    tip_differential = chart.differential((0.5, controller_upper))
+    assert np.all(np.isfinite(tip_differential))
+    assert np.linalg.matrix_rank(tip_differential) == 1
+
+
+def test_dynamic_finite_ceiling_chart_round_trips_throughout_private_box() -> None:
+    parameterization = _affine_parameterization()
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("r2", 5.0), ("r1", 2.0), ("eta", 3.0)),
+    )
+    chart = compile_feasible_coordinates(
+        parameterization,
+        frame,
+        ("r2", "r1"),
+        (0.0, 0.0),
+        (1000.0, 1000.0),
+    )
+
+    assert chart is not None
+    controller_upper = chart.solver_upper_bounds[1]
+    generator = np.random.default_rng(750)
+    for private_rate, r1 in zip(
+        generator.uniform(0.0, 1.0, 500),
+        generator.uniform(0.0, controller_upper, 500),
+        strict=True,
+    ):
+        point = chart.decode((private_rate, r1))
+        values = parameterization.resolve(point.frame)
+        floor = chart.decode((0.0, r1)).vector[0]
+        recovered = (point.vector[0] - floor) / (1000.0 - floor)
+
+        assert recovered == pytest.approx(private_rate, abs=2.0e-12)
+        assert floor <= point.vector[0] <= 1000.0
+        _validate_blocks(chart.blocks, values)
+        assert np.all(np.isfinite(chart.differential((private_rate, r1))))
+
+
+def test_dynamic_finite_ceiling_accepts_roundoff_at_exact_psd_tip() -> None:
+    parameterization = _affine_parameterization()
+    eta = 155.57575577088969
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("r2", 500.0), ("r1", 2.0), ("eta", eta)),
+    )
+    chart = compile_feasible_coordinates(
+        parameterization,
+        frame,
+        ("r2", "r1"),
+        (0.0, 0.0),
+        (1000.0, 1000.0),
+    )
+
+    assert chart is not None
+    controller_upper = 1000.0 - eta * eta / 1000.0
+    assert chart.solver_upper_bounds == pytest.approx((1.0, controller_upper))
+    tip = chart.decode((0.5, chart.solver_upper_bounds[1]))
+    assert tip.vector == pytest.approx((1000.0, controller_upper))
+    _validate_blocks(chart.blocks, parameterization.resolve(tip.frame))
+    assert np.all(np.isfinite(chart.differential((0.5, chart.solver_upper_bounds[1]))))
+
+
+def test_finite_rate_excess_ceiling_caps_a_widened_affine_controller() -> None:
+    parameterization = _affine_parameterization()
+    frame = IndependentValueFrame(
+        "parameterization",
+        "program",
+        "occurrence",
+        0,
+        (("r2", 5.0), ("r1", 2.0), ("eta", 0.0)),
+    )
+    chart = compile_feasible_coordinates(
+        parameterization,
+        frame,
+        ("r2", "r1"),
+        (0.0, 0.0),
+        (1000.0, 5000.0),
+    )
+
+    assert chart is not None
+    assert chart.rate_excess_ids == (("r2", "r2a"),)
+    assert chart.solver_lower_bounds == (0.0, 0.0)
+    assert chart.solver_upper_bounds == (1.0, 1000.0)
+    tip = chart.decode((0.5, 1000.0))
+    assert tip.vector == pytest.approx((1000.0, 1000.0))
+    _validate_blocks(chart.blocks, parameterization.resolve(tip.frame))
+    assert np.all(np.isfinite(chart.differential((0.5, 1000.0))))
+
+    generator = np.random.default_rng(751)
+    for private_rate, r1 in zip(
+        generator.uniform(0.0, 1.0, 500),
+        generator.uniform(0.0, 1000.0, 500),
+        strict=True,
+    ):
+        point = chart.decode((private_rate, r1))
+        values = parameterization.resolve(point.frame)
+        recovered = (point.vector[0] - r1) / (1000.0 - r1)
+
+        assert recovered == pytest.approx(private_rate, abs=2.0e-12)
+        assert r1 <= point.vector[0] <= 1000.0
+        _validate_blocks(chart.blocks, values)
 
 
 def test_compiled_static_affine_floor_supersedes_nonnegative_rate_excess() -> None:
