@@ -11,91 +11,70 @@ ChemEx is a powerful tool for analyzing NMR experimental data to characterize ch
 
 ## Prerequisites
 
-Before installing ChemEx, ensure Python 3.13 (recommended) or later is installed on your system. It's recommended to create an isolated environment for a clean and conflict-free setup.
+ChemEx requires Python 3.13 or later. The recommended installer, uv, can
+download and manage a compatible Python interpreter when needed.
 
-## Installation Options {#installation}
+## Installation {#installation}
 
-ChemEx can be installed using various methods. Choose the one that best suits your workflow.
+[PyPI](https://pypi.org/project/chemex/) is the authoritative Python package
+distribution for ChemEx.
 
-### Quick Start with uv (Recommended)
+### Recommended installation
 
-[uv](https://docs.astral.sh/uv/) is a fast Python package and project manager written in Rust. It's significantly faster than pip and handles virtual environments automatically.
-
-**Installing uv:**
-
-```shell
-# macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Windows
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-**Using ChemEx with uv:**
-
-The fastest way to try ChemEx without installation:
+[uv](https://docs.astral.sh/uv/) installs ChemEx as an application in an
+isolated environment. On macOS, install uv with Homebrew:
 
 ```shell
-uvx chemex --help
+brew install uv
 ```
 
-Or install it as a tool for repeated use:
+On Linux or Windows, follow Astral's current
+[uv installation instructions](https://docs.astral.sh/uv/getting-started/installation/).
+
+Then install ChemEx from PyPI and verify that it starts:
 
 ```shell
-uv tool install chemex
-chemex --help
+uv tool install --python 3.13 chemex
+chemex --version
 ```
 
-### Using pip with a Virtual Environment
+uv creates a dedicated environment for ChemEx and automatically downloads a
+Python 3.13 interpreter if a suitable interpreter is not already available.
 
-The standard Python approach for an isolated installation:
-
-1. **Create and activate a virtual environment:**
-
-   ```shell
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   ```
-
-2. **Install ChemEx using pip:**
-
-   ```shell
-   pip install chemex
-   ```
-
-### Using pip (global installation)
-
-For a system-wide installation:
+### Try ChemEx without installing it
 
 ```shell
-pip install chemex
+uvx --python 3.13 chemex --help
 ```
 
-### Using mamba or conda
+### Updating ChemEx
 
-If you prefer conda environments:
-
-1. **Create and activate a new environment:**
-
-   ```shell
-   conda create -n chemex python=3.13
-   conda activate chemex
-   ```
-
-2. **Install ChemEx via conda-forge channel:**
-
-   ```shell
-   conda install -c conda-forge chemex
-   ```
-
-   > **Tip**: For faster package management, consider using [mamba](https://mamba.readthedocs.io/) instead of conda: `mamba install -c conda-forge chemex`
-
-### Installing from GitHub
-
-To install the latest development version of ChemEx directly from GitHub, use the following command:
+Update an unpinned tool installation with:
 
 ```shell
-pip install git+https://github.com/gbouvignies/ChemEx.git
+uv tool upgrade chemex
 ```
 
-This method provides access to the latest features and updates that may not yet be included in the pip or conda-forge releases.
+### Reproducible, version-pinned installation
+
+To install a specific release:
+
+```shell
+uv tool install --python 3.13 "chemex==2026.09.0"
+```
+
+### Alternative: pip
+
+If you need conventional Python tooling, use Python 3.13 or later to install
+ChemEx from PyPI inside a virtual environment:
+
+```shell
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+python -m pip install chemex
+```
+
+### Conda packages
+
+The historical conda-forge package is no longer maintained by the ChemEx
+project and may be outdated. Install the current PyPI release with uv or pip.
