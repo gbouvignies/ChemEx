@@ -558,7 +558,7 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
 
     assert problem.controlled_ids == ("__R1A_A_G2N_H_800_0MHZ",)
     assert problem.lower_bounds == (0.0,)
-    assert problem.upper_bounds == (float("inf"),)
+    assert problem.upper_bounds == (1000.0,)
     assert problem.start == (6.87922079444668,)
     assert first.terminal is DirectTrfOutcomeTerminal.ACCEPTED
     assert first.execution.terminal is DirectTrfTerminal.CONVERGED

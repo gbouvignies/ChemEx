@@ -59,12 +59,14 @@ def make_settings_2st_binding(conditions: Conditions) -> dict[str, ParamLocalSet
             name_setting=NameSetting("koff", "", ("temperature",)),
             value=100.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "kd": ParamLocalSetting(
             name_setting=NameSetting("kd", "", ("temperature",)),
             value=1e-3,
             min=0.0,
+            max=1.0,
             vary=True,
         ),
         "kon": ParamLocalSetting(

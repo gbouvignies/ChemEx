@@ -50,12 +50,14 @@ def make_settings_2st_monomer_trimer(
             name_setting=NameSetting("koff", "", ("temperature",)),
             value=100.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "kd": ParamLocalSetting(
             name_setting=NameSetting("kd", "", ("temperature",)),
             value=1e-6,
             min=0.0,
+            max=1.0,
             vary=True,
         ),
         "kon": ParamLocalSetting(

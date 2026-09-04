@@ -72,24 +72,28 @@ def make_settings_3st_induced_fit(
             name_setting=NameSetting("kd_app", "", ("temperature",)),
             value=1e-3,
             min=0.0,
+            max=1.0,
             vary=True,
         ),
         "koff_ab": ParamLocalSetting(
             name_setting=NameSetting("koff_ab", "", ("temperature",)),
             value=100.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "kbc": ParamLocalSetting(
             name_setting=NameSetting("kbc", "", ("temperature",)),
             value=100.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "kcb": ParamLocalSetting(
             name_setting=NameSetting("kcb", "", ("temperature",)),
             value=100.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "kd_ab": ParamLocalSetting(

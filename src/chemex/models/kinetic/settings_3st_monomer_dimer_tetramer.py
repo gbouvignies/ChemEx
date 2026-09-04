@@ -60,24 +60,28 @@ def make_settings_3st_monomer_dimer_tetramer(
             name_setting=NameSetting("kd1", "", ("temperature",)),
             value=1e-6,
             min=0.0,
+            max=1.0,
             vary=True,
         ),
         "kd2": ParamLocalSetting(
             name_setting=NameSetting("kd2", "", ("temperature",)),
             value=1e-6,
             min=0.0,
+            max=1.0,
             vary=True,
         ),
         "koff1": ParamLocalSetting(
             name_setting=NameSetting("koff1", "", ("temperature",)),
             value=100.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "koff2": ParamLocalSetting(
             name_setting=NameSetting("koff2", "", ("temperature",)),
             value=100.0,
             min=0.0,
+            max=1.0e6,
             vary=True,
         ),
         "kon1": ParamLocalSetting(
