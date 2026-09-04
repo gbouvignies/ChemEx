@@ -2409,7 +2409,7 @@ def _cpmg_15n_ip_mcmc_arguments(output: Path, method: Path) -> Namespace:
             "--plot",
             "nothing",
             "--workers",
-            "1",
+            "2",
         ]
     )
 
@@ -2890,7 +2890,7 @@ def test_explicitly_unbounded_native_mcmc_fails_closed_after_central_fit(
     assert outcome["failure_stage"] == "statistics"
 
 
-def test_standard_cpmg_15n_ip_parameters_run_native_mcmc_transitions(
+def test_standard_cpmg_15n_ip_parameters_run_parallel_native_mcmc_transitions(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
@@ -2916,6 +2916,7 @@ def test_standard_cpmg_15n_ip_parameters_run_native_mcmc_transitions(
         (statistics / "diagnostics.toml").read_text(encoding="utf-8")
     )
     assert diagnostics["status"] == "complete"
+    assert diagnostics["workers"] == 2
     assert diagnostics["walkers"] == 34
     assert diagnostics["steps"] == 2
     assert diagnostics["retained_steps"] == 2

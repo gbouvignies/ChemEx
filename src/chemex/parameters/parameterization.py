@@ -561,6 +561,11 @@ class ScientificFunctionBinder:
                     function_id=function_id,
                 )
 
+    def worker_bindings(self) -> tuple[tuple[str, Callable[..., object]], ...]:
+        """Return the validated callable bindings needed by an isolated worker."""
+        self.validate_implementations()
+        return tuple(self._functions.items())
+
     @classmethod
     def for_model(cls, model_name: str) -> ScientificFunctionBinder:
         functions: dict[str, Callable[..., object]] = {

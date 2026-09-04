@@ -5,14 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import multiprocessing
 import secrets
 import warnings
-from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from enum import StrEnum
-from threading import Lock, RLock, local
+from threading import RLock
 from typing import Literal, SupportsIndex, cast
 from weakref import WeakKeyDictionary
 
@@ -21,10 +21,10 @@ import numpy as np
 
 from chemex.configuration.method_plan import McmcRequest
 from chemex.evaluation.native import (
-    BoundEvaluator,
     EvaluationEngine,
     EvaluationFailure,
     EvaluationFrame,
+    NativeEvaluationWorkerContext,
 )
 from chemex.optimize.direct_trf import (
     AcceptedFitResult,
@@ -36,6 +36,10 @@ from chemex.optimize.direct_trf import (
 from chemex.optimize.uncertainty import ParameterUnit
 from chemex.parameters.parameterization import (
     ActiveParameterization,
+    ConstraintProgram,
+    IndependentValueFrame,
+    ParameterRole,
+    ScientificFunctionBinder,
     SealedParameterModel,
 )
 from chemex.runtime import ExecutionSettings
@@ -126,6 +130,8 @@ class McmcExecutionStage(StrEnum):
     BEFORE_TRANSITION = "before_transition"
     DURING_TRANSITION = "during_transition"
     AFTER_COMPLETE_STATE = "after_complete_state"
+    CAPTURE_VALIDATION = "fresh_validation"
+    # Compatibility alias for the stable serialized evidence token.
     FRESH_VALIDATION = "fresh_validation"
     BEFORE_FINAL_ASSEMBLY = "before_final_assembly"
 
@@ -1900,7 +1906,7 @@ class McmcEvidence:
     def __post_init__(self) -> None:  # noqa: C901 - complete evidence invariant
         if self._occurrence_witness is None:
             raise McmcConstructionError(
-                "Primary MCMC evidence must come from fresh native validation"
+                "Primary MCMC evidence must come from capture validation"
             )
         if not self.backend_execution_occurrence_identity:
             raise McmcConstructionError(
@@ -2123,13 +2129,14 @@ class McmcEvidence:
         if raw_capture is None:
             raise McmcConstructionError(
                 "Primary MCMC evidence reconstruction requires its raw capture and "
-                "fresh validation"
+                "capture validation"
             )
         validation = validate_raw_mcmc_capture(plan, raw_capture)
         expected = validation.primary_evidence
         if expected is None or record != expected.to_record():
             raise McmcConstructionError(
-                "Stored MCMC evidence identity differs from fresh canonical validation"
+                "Stored MCMC evidence identity differs from canonical capture "
+                "validation"
             )
         return expected
 
@@ -2159,19 +2166,18 @@ def _mint_primary_evidence(
 
 @dataclass(frozen=True, slots=True)
 class McmcValidationFailure:
-    """One typed fresh-validation failure for a state/walker observation."""
+    """One typed capture-validation failure for a state/walker observation."""
 
     state_ordinal: int
     walker_ordinal: int
     category: str
     message: str
-    backend_log_density: float | None = None
-    authoritative_log_density: float | None = None
+    captured_log_density: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class McmcChainValidation:
-    """Fresh-workspace validation and any qualified primary-chain result."""
+    """Structural capture validation and any qualified primary-chain result."""
 
     raw_capture_identity: str
     validated_states: tuple[EnsembleState, ...]
@@ -2196,11 +2202,8 @@ class McmcChainValidation:
                         item.category,
                         item.message,
                         None
-                        if item.backend_log_density is None
-                        else float(item.backend_log_density).hex(),
-                        None
-                        if item.authoritative_log_density is None
-                        else float(item.authoritative_log_density).hex(),
+                        if item.captured_log_density is None
+                        else float(item.captured_log_density).hex(),
                     )
                     for item in self.failures
                 ),
@@ -2232,40 +2235,18 @@ class McmcChainValidation:
         )
 
 
-def _fresh_authoritative_log_density(
-    plan: McmcPlan,
-    evaluator: BoundEvaluator,
-    position: tuple[float, ...],
-) -> float:
-    """Re-derive one stored state through a validation-only evaluator."""
-    candidate = np.asarray(position, dtype=np.float64)
-    if (
-        candidate.shape != (plan.policy.dimension,)
-        or not np.all(np.isfinite(candidate))
-        or np.any(candidate <= np.asarray(plan.lower_bounds))
-        or np.any(candidate >= np.asarray(plan.upper_bounds))
-    ):
-        raise McmcExecutionError("stored MCMC state is outside its frozen bounds")
-    lifecycle = plan.source_problem.lifecycle_frame(
-        candidate,
-        plan.parameterization,
-    )
-    frame = EvaluationFrame.from_lifecycle_frame(plan.parameterization, lifecycle)
-    outcome = evaluator.evaluate(frame)
-    if isinstance(outcome, EvaluationFailure):
-        raise McmcExecutionError(
-            f"fresh MCMC validation failed: {outcome.category}: {outcome.message}"
-        )
-    return -0.5 * canonical_chi_square(outcome.residuals)
-
-
 def validate_raw_mcmc_capture(  # noqa: C901 - state/walker validation boundary
     plan: McmcPlan,
     raw_capture: RawMcmcCapture,
     *,
     backend_transition_evidence: BackendTransitionEvidence | None = None,
 ) -> McmcChainValidation:
-    """Freshly validate raw backend observations before minting evidence."""
+    """Validate capture structure and lineage before minting primary evidence.
+
+    Log densities are produced by the authoritative native evaluator during
+    sampling. Replaying every stored point through that same implementation
+    would test repeatability, not an independent scientific authority.
+    """
     expected_state_count = plan.policy.total_steps + 1
     try:
         plan.validate_integrity()
@@ -2293,9 +2274,54 @@ def validate_raw_mcmc_capture(  # noqa: C901 - state/walker validation boundary
             expected_state_count,
             None,
         )
-    evaluator = plan.source_engine.new_evaluator()
+    if (
+        raw_capture.policy_identity != plan.policy.identity
+        or raw_capture.root_seed != plan.policy.root_seed
+        or raw_capture.walkers != plan.policy.walkers
+        or raw_capture.dimension != plan.policy.dimension
+        or raw_capture.total_steps != plan.policy.total_steps
+    ):
+        return McmcChainValidation(
+            raw_capture.identity,
+            (),
+            (
+                McmcValidationFailure(
+                    0,
+                    0,
+                    "capture_topology_mismatch",
+                    "raw MCMC capture metadata differs from its frozen topology",
+                ),
+            ),
+            expected_state_count,
+            None,
+        )
+    if (
+        raw_capture.objective_request_count > plan.policy.objective_request_budget
+        or raw_capture.evaluation_request_count > raw_capture.objective_request_count
+        or (
+            raw_capture.terminal is McmcOperationTerminal.COMPLETED
+            and raw_capture.objective_request_count
+            != plan.policy.objective_request_budget
+        )
+    ):
+        return McmcChainValidation(
+            raw_capture.identity,
+            (),
+            (
+                McmcValidationFailure(
+                    0,
+                    0,
+                    "request_accounting_mismatch",
+                    "raw MCMC request accounting differs from its frozen budget",
+                ),
+            ),
+            expected_state_count,
+            None,
+        )
     validated: list[EnsembleState] = []
     failures: list[McmcValidationFailure] = []
+    lower = np.asarray(plan.lower_bounds, dtype=np.float64)
+    upper = np.asarray(plan.upper_bounds, dtype=np.float64)
     for state in raw_capture.states:
         if (
             len(state.positions) != plan.policy.walkers
@@ -2323,46 +2349,36 @@ def validate_raw_mcmc_capture(  # noqa: C901 - state/walker validation boundary
                 )
             )
             break
-        authoritative: list[float] = []
-        for walker, (position, backend) in enumerate(
-            zip(state.positions, state.log_densities, strict=True)
-        ):
-            try:
-                value = _fresh_authoritative_log_density(plan, evaluator, position)
-            except Exception as error:  # noqa: BLE001 - typed validation evidence
-                failures.append(
-                    McmcValidationFailure(
-                        state.ordinal,
-                        walker,
-                        "fresh_native_evaluation_failed",
-                        f"{type(error).__name__}: {error}",
-                        backend,
-                    )
+        positions = np.asarray(state.positions, dtype=np.float64)
+        outside = np.any((positions <= lower) | (positions >= upper), axis=1)
+        if np.any(outside):
+            walker = int(np.flatnonzero(outside)[0])
+            failures.append(
+                McmcValidationFailure(
+                    state.ordinal,
+                    walker,
+                    "state_outside_frozen_bounds",
+                    "raw MCMC state is outside its frozen bounds",
+                    state.log_densities[walker],
                 )
-                break
-            authoritative.append(value)
-            if backend != value:
-                failures.append(
-                    McmcValidationFailure(
-                        state.ordinal,
-                        walker,
-                        "backend_log_density_mismatch",
-                        "backend log density differs from fresh native evaluation",
-                        backend,
-                        value,
-                    )
-                )
-                break
+            )
         if failures:
             break
-        validated.append(
-            EnsembleState(
-                state.ordinal,
-                state.positions,
-                tuple(authoritative),
+        validated.append(state)
+    primary: McmcEvidence | None = None
+    if (
+        not failures
+        and raw_capture.terminal is McmcOperationTerminal.COMPLETED
+        and len(validated) != expected_state_count
+    ):
+        failures.append(
+            McmcValidationFailure(
+                len(validated),
+                0,
+                "incomplete_completed_capture",
+                "completed raw MCMC capture does not contain its frozen topology",
             )
         )
-    primary: McmcEvidence | None = None
     complete = (
         raw_capture.terminal is McmcOperationTerminal.COMPLETED
         and not failures
@@ -2383,15 +2399,6 @@ def validate_raw_mcmc_capture(  # noqa: C901 - state/walker validation boundary
             McmcEvidenceLifecycle.PARTIAL,
             tuple(validated),
             backend_transition_evidence,
-        )
-    elif not failures and raw_capture.terminal is McmcOperationTerminal.COMPLETED:
-        failures.append(
-            McmcValidationFailure(
-                len(validated),
-                0,
-                "incomplete_completed_capture",
-                "completed raw MCMC capture does not contain its frozen topology",
-            )
         )
     return McmcChainValidation(
         raw_capture.identity,
@@ -2451,7 +2458,7 @@ class McmcOperation:
                 )
         elif self.validation.primary_evidence is not self.evidence:
             raise McmcConstructionError(
-                "MCMC operation Evidence differs from fresh validation"
+                "MCMC operation Evidence differs from capture validation"
             )
         if (
             self.backend_transition_evidence.kind
@@ -3593,60 +3600,312 @@ def summarize_posterior_evidence(
     )
 
 
-class _LogDensityEvaluator:
-    def __init__(self, plan: McmcPlan) -> None:
-        self.plan = plan
-        self._worker_state = local()
-        self._count_lock = Lock()
-        self.objective_request_count = 0
-        self.evaluation_request_count = 0
+@dataclass(frozen=True, slots=True)
+class _ParameterizationWorkerSpec:
+    program: ConstraintProgram
+    binder_model_name: str
+    binder_functions: tuple[tuple[str, Callable[..., object]], ...]
+    occurrence_identity: str
+    source_revision: int
+    roles: tuple[tuple[str, ParameterRole], ...]
+    identity: str
+    evaluator_identity: str
 
-    def _evaluator(self) -> BoundEvaluator:
-        evaluator = getattr(self._worker_state, "evaluator", None)
-        if evaluator is None:
-            evaluator = self.plan.source_engine.new_evaluator()
-            self._worker_state.evaluator = evaluator
-        return cast("BoundEvaluator", evaluator)
+    @classmethod
+    def from_parameterization(
+        cls,
+        parameterization: ActiveParameterization,
+    ) -> _ParameterizationWorkerSpec:
+        return cls(
+            parameterization.program,
+            parameterization.binder.model_name,
+            parameterization.binder.worker_bindings(),
+            parameterization.occurrence_identity,
+            parameterization.source_revision,
+            tuple(
+                (param_id, parameterization.role(param_id))
+                for param_id in parameterization.scope_ids
+            ),
+            parameterization.identity,
+            parameterization.evaluator_identity,
+        )
 
-    def __call__(self, vector: Array) -> float:
-        with self._count_lock:
-            if (
-                self.objective_request_count
-                >= self.plan.policy.objective_request_budget
-            ):
-                raise McmcExecutionError("MCMC objective-request budget exhausted")
-            self.objective_request_count += 1
+    def build(self) -> ActiveParameterization:
+        parameterization = ActiveParameterization(
+            self.program,
+            ScientificFunctionBinder(
+                self.binder_model_name,
+                dict(self.binder_functions),
+            ),
+            self.occurrence_identity,
+            self.source_revision,
+            self.roles,
+        )
+        if (
+            parameterization.identity != self.identity
+            or parameterization.evaluator_identity != self.evaluator_identity
+        ):
+            raise McmcExecutionError(
+                "MCMC worker reconstructed a foreign parameterization"
+            )
+        return parameterization
+
+
+@dataclass(frozen=True, slots=True)
+class _McmcWorkerContext:
+    """Serializable native recipe for one isolated process-local evaluator."""
+
+    independent_items: tuple[tuple[str, float], ...]
+    controlled_ids: tuple[str, ...]
+    parameterization: _ParameterizationWorkerSpec
+    evaluator: NativeEvaluationWorkerContext
+    lower_bounds: tuple[float, ...]
+    upper_bounds: tuple[float, ...]
+    dimension: int
+
+    @classmethod
+    def from_plan(cls, plan: McmcPlan) -> _McmcWorkerContext:
+        return cls(
+            plan.source_problem.independent_items,
+            plan.source_problem.controlled_ids,
+            _ParameterizationWorkerSpec.from_parameterization(plan.parameterization),
+            plan.source_engine.worker_context(),
+            plan.lower_bounds,
+            plan.upper_bounds,
+            plan.policy.dimension,
+        )
+
+    def build(self) -> ActiveParameterization:
+        parameterization = self.parameterization.build()
+        if self.evaluator.plan.parameterization_identity != (
+            parameterization.evaluator_identity
+        ):
+            raise McmcExecutionError(
+                "MCMC worker evaluator belongs to a foreign parameterization"
+            )
+        return parameterization
+
+
+@dataclass(frozen=True, slots=True)
+class _LogDensityResult:
+    value: float
+    evaluated: bool
+
+
+class _LogDensityKernelFailure(McmcExecutionError):
+    def __init__(self, message: str, *, evaluated: bool) -> None:
+        super().__init__(message)
+        self.evaluated = evaluated
+
+
+class _LogDensityKernel:
+    """One native evaluator owned exclusively by its calling process."""
+
+    def __init__(self, context: _McmcWorkerContext) -> None:
+        self._context = context
+        self._parameterization = context.build()
+        self._base_frame = IndependentValueFrame(
+            self._parameterization.identity,
+            self._parameterization.program.fingerprint,
+            self._parameterization.occurrence_identity,
+            self._parameterization.source_revision,
+            context.independent_items,
+        )
+        self._evaluator = context.evaluator.new_evaluator(self._parameterization)
+
+    def evaluate(self, vector: Array) -> _LogDensityResult:
         candidate = np.asarray(vector, dtype=np.float64)
         if (
-            candidate.shape != (self.plan.policy.dimension,)
+            candidate.shape != (self._context.dimension,)
             or not np.all(np.isfinite(candidate))
-            or np.any(candidate <= np.asarray(self.plan.lower_bounds))
-            or np.any(candidate >= np.asarray(self.plan.upper_bounds))
+            or np.any(candidate <= np.asarray(self._context.lower_bounds))
+            or np.any(candidate >= np.asarray(self._context.upper_bounds))
         ):
-            return -np.inf
+            return _LogDensityResult(-np.inf, False)
         try:
-            lifecycle = self.plan.source_problem.lifecycle_frame(
-                candidate,
-                self.plan.parameterization,
+            lifecycle = self._base_frame.with_updates(
+                dict(zip(self._context.controlled_ids, candidate, strict=True))
             )
             frame = EvaluationFrame.from_lifecycle_frame(
-                self.plan.parameterization,
+                self._parameterization,
                 lifecycle,
             )
         except Exception as error:
-            raise McmcExecutionError(
-                f"MCMC candidate frame failed: {type(error).__name__}: {error}"
+            raise _LogDensityKernelFailure(
+                f"MCMC candidate frame failed: {type(error).__name__}: {error}",
+                evaluated=False,
             ) from error
-        outcome = self._evaluator().evaluate(frame)
-        with self._count_lock:
-            self.evaluation_request_count += 1
+        try:
+            outcome = self._evaluator.evaluate(frame)
+        except Exception as error:
+            raise _LogDensityKernelFailure(
+                f"MCMC native evaluation raised: {type(error).__name__}: {error}",
+                evaluated=True,
+            ) from error
         if isinstance(outcome, EvaluationFailure):
             if outcome.validity == "INVALID_TRIAL":
-                return -np.inf
-            raise McmcExecutionError(
-                f"MCMC native evaluation failed: {outcome.category}: {outcome.message}"
+                return _LogDensityResult(-np.inf, True)
+            raise _LogDensityKernelFailure(
+                f"MCMC native evaluation failed: {outcome.category}: {outcome.message}",
+                evaluated=True,
             )
-        return -0.5 * canonical_chi_square(outcome.residuals)
+        return _LogDensityResult(
+            -0.5 * canonical_chi_square(outcome.residuals),
+            True,
+        )
+
+
+class _LogDensityAccounting:
+    """Parent-process accounting for the fixed objective-request budget."""
+
+    def __init__(self, objective_request_budget: int) -> None:
+        self._budget = objective_request_budget
+        self.objective_request_count = 0
+        self.evaluation_request_count = 0
+
+    def reserve(self, count: int) -> None:
+        if self.objective_request_count + count > self._budget:
+            raise McmcExecutionError("MCMC objective-request budget exhausted")
+        self.objective_request_count += count
+
+    def record_evaluations(self, count: int) -> None:
+        self.evaluation_request_count += count
+
+
+class _SerialLogDensityEvaluator:
+    def __init__(
+        self,
+        context: _McmcWorkerContext,
+        accounting: _LogDensityAccounting,
+    ) -> None:
+        self._kernel = _LogDensityKernel(context)
+        self._accounting = accounting
+
+    def __call__(self, vector: Array) -> float:
+        self._accounting.reserve(1)
+        try:
+            result = self._kernel.evaluate(vector)
+        except _LogDensityKernelFailure as error:
+            self._accounting.record_evaluations(int(error.evaluated))
+            raise
+        self._accounting.record_evaluations(int(result.evaluated))
+        return result.value
+
+
+@dataclass(frozen=True, slots=True)
+class _ProcessLogDensityReceipt:
+    result: _LogDensityResult | None
+    evaluated: bool = False
+    failure_category: str | None = None
+    failure_message: str = ""
+
+
+_PROCESS_LOG_DENSITY_KERNEL: _LogDensityKernel | None = None
+_PROCESS_LOG_DENSITY_INITIALIZATION_FAILURE: tuple[str, str] | None = None
+
+
+def _initialize_mcmc_process_worker(context: _McmcWorkerContext) -> None:
+    global _PROCESS_LOG_DENSITY_INITIALIZATION_FAILURE
+    global _PROCESS_LOG_DENSITY_KERNEL
+    try:
+        _PROCESS_LOG_DENSITY_KERNEL = _LogDensityKernel(context)
+        _PROCESS_LOG_DENSITY_INITIALIZATION_FAILURE = None
+    except Exception as error:  # noqa: BLE001 - return typed initializer failure
+        _PROCESS_LOG_DENSITY_KERNEL = None
+        _PROCESS_LOG_DENSITY_INITIALIZATION_FAILURE = (
+            type(error).__name__,
+            str(error),
+        )
+
+
+def _process_log_density(vector: Array) -> _ProcessLogDensityReceipt:
+    kernel = _PROCESS_LOG_DENSITY_KERNEL
+    if kernel is None:
+        category, message = _PROCESS_LOG_DENSITY_INITIALIZATION_FAILURE or (
+            "McmcExecutionError",
+            "MCMC worker was not initialized",
+        )
+        return _ProcessLogDensityReceipt(
+            None,
+            False,
+            category,
+            message,
+        )
+    try:
+        result = kernel.evaluate(vector)
+    except _LogDensityKernelFailure as error:
+        return _ProcessLogDensityReceipt(
+            None,
+            error.evaluated,
+            "McmcExecutionError",
+            str(error),
+        )
+    except Exception as error:  # noqa: BLE001 - return typed worker failure
+        return _ProcessLogDensityReceipt(
+            None,
+            False,
+            type(error).__name__,
+            str(error),
+        )
+    return _ProcessLogDensityReceipt(result, result.evaluated)
+
+
+class _McmcProcessPool:
+    """Ordered emcee map backed by isolated spawned native evaluators."""
+
+    def __init__(
+        self,
+        context: _McmcWorkerContext,
+        accounting: _LogDensityAccounting,
+        *,
+        workers: int,
+    ) -> None:
+        process_context = multiprocessing.get_context("spawn")
+        self._pool = process_context.Pool(
+            processes=workers,
+            initializer=_initialize_mcmc_process_worker,
+            initargs=(context,),
+        )
+        self._accounting = accounting
+
+    def __enter__(self) -> _McmcProcessPool:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        _exc_value: BaseException | None,
+        _traceback: object,
+    ) -> bool:
+        if exc_type is None:
+            self._pool.close()
+        else:
+            self._pool.terminate()
+        self._pool.join()
+        return False
+
+    def map(
+        self,
+        function: Callable[[Array], _ProcessLogDensityReceipt],
+        vectors: Iterable[Array],
+    ) -> list[float]:
+        exact_vectors = tuple(vectors)
+        self._accounting.reserve(len(exact_vectors))
+        try:
+            receipts = self._pool.map(function, exact_vectors, chunksize=1)
+        except BaseException:
+            self._pool.terminate()
+            raise
+        self._accounting.record_evaluations(
+            sum(receipt.evaluated for receipt in receipts)
+        )
+        for receipt in receipts:
+            if receipt.result is None:
+                raise McmcExecutionError(
+                    "MCMC worker failed: "
+                    f"{receipt.failure_category}: {receipt.failure_message}"
+                )
+        return [receipt.result.value for receipt in receipts if receipt.result]
 
 
 class _RecordingStretchMove(emcee.moves.StretchMove):
@@ -3692,7 +3951,8 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
     """Execute one fixed run while preserving only complete ensemble states."""
     plan.validate_integrity(accepted)
     signal = CancellationToken() if cancellation is None else cancellation
-    log_density = _LogDensityEvaluator(plan)
+    worker_context = _McmcWorkerContext.from_plan(plan)
+    accounting = _LogDensityAccounting(plan.policy.objective_request_budget)
     backend_observation = _mint_backend_execution_observation(
         plan,
         backend_implementation_identity="emcee-stretch-backend-v1",
@@ -3725,17 +3985,28 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
             )
             pool = (
                 stack.enter_context(
-                    ThreadPoolExecutor(max_workers=execution_settings.workers)
+                    _McmcProcessPool(
+                        worker_context,
+                        accounting,
+                        workers=execution_settings.workers,
+                    )
                 )
                 if execution_settings.is_parallel
                 else None
             )
+            log_density = (
+                _SerialLogDensityEvaluator(worker_context, accounting)
+                if pool is None
+                else _process_log_density
+            )
             checkpoint(McmcExecutionStage.BEFORE_INITIALIZATION)
             initial = np.asarray(plan.initial_ensemble, dtype=np.float64)
-            initial_values: list[float] = []
-            for row in initial:
-                checkpoint(McmcExecutionStage.INITIALIZING)
-                initial_values.append(log_density(row))
+            checkpoint(McmcExecutionStage.INITIALIZING)
+            initial_values = (
+                [log_density(row) for row in initial]
+                if pool is None
+                else pool.map(_process_log_density, initial)
+            )
             initial_log_density = np.asarray(initial_values, dtype=np.float64)
             if not np.all(np.isfinite(initial_log_density)):
                 raise McmcExecutionError(
@@ -3787,24 +4058,24 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
                 if state_observer is not None:
                     state_observer(state)
                 checkpoint(McmcExecutionStage.AFTER_COMPLETE_STATE)
-        if log_density.objective_request_count != plan.policy.objective_request_budget:
+        if accounting.objective_request_count != plan.policy.objective_request_budget:
             raise McmcExecutionError(
                 "MCMC backend request count differs from the frozen budget"
             )
-        checkpoint(McmcExecutionStage.FRESH_VALIDATION)
+        checkpoint(McmcExecutionStage.CAPTURE_VALIDATION)
         raw_capture = _mint_raw_capture(
             plan,
             McmcOperationTerminal.COMPLETED,
             tuple(states),
-            log_density.objective_request_count,
-            log_density.evaluation_request_count,
+            accounting.objective_request_count,
+            accounting.evaluation_request_count,
             stage,
             initialization_outcome,
             backend_observation,
         )
         validation = validate_raw_mcmc_capture(plan, raw_capture)
         if not validation.is_complete or validation.primary_evidence is None:
-            raise McmcExecutionError("fresh MCMC validation did not complete")
+            raise McmcExecutionError("MCMC capture validation did not complete")
         evidence = validation.primary_evidence
         checkpoint(McmcExecutionStage.BEFORE_FINAL_ASSEMBLY)
         backend_transition_evidence = _mint_observed_backend_transition_evidence(
@@ -3849,8 +4120,8 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
             plan,
             terminal,
             tuple(states),
-            log_density.objective_request_count,
-            log_density.evaluation_request_count,
+            accounting.objective_request_count,
+            accounting.evaluation_request_count,
             stage,
             initialization_outcome,
             backend_observation,
