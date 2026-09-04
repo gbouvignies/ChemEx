@@ -11,8 +11,9 @@ ChemEx is a powerful tool for analyzing NMR experimental data to characterize ch
 
 ## Prerequisites
 
-ChemEx requires Python 3.13 or later. The recommended installer, uv, can
-download and manage a compatible Python interpreter when needed.
+ChemEx requires Python 3.13 or later. When a requested ChemEx release needs a
+newer Python, uv can use a compatible installed interpreter or download a
+managed one when automatic Python downloads are enabled (the default).
 
 ## Installation {#installation}
 
@@ -34,17 +35,17 @@ On Linux or Windows, follow Astral's current
 Then install ChemEx from PyPI and verify that it starts:
 
 ```shell
-uv tool install --python 3.13 chemex
+uv tool install chemex@latest
 chemex --version
 ```
 
-uv creates a dedicated environment for ChemEx and automatically downloads a
-Python 3.13 interpreter if a suitable interpreter is not already available.
+Requesting `@latest` prevents uv from selecting an older ChemEx release to match
+an outdated Python interpreter.
 
 ### Try ChemEx without installing it
 
 ```shell
-uvx --python 3.13 chemex --help
+uvx chemex@latest --help
 ```
 
 ### Updating ChemEx
@@ -60,7 +61,7 @@ uv tool upgrade chemex
 To install a specific release:
 
 ```shell
-uv tool install --python 3.13 "chemex==2026.09.0"
+uv tool install "chemex==2026.09.0"
 ```
 
 ### Alternative: pip
