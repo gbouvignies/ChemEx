@@ -5,19 +5,20 @@
 ## Table of Contents
 
 - [ChemEx: NMR Chemical Exchange Analysis Tool](#chemex-nmr-chemical-exchange-analysis-tool)
-  - [Table of Contents](#table-of-contents)
-  - [About ChemEx](#about-chemex)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-    - [Quick Start with uv (Recommended)](#quick-start-with-uv-recommended)
-    - [Using pip with venv](#using-pip-with-venv)
-    - [Using pip (global)](#using-pip-global)
-    - [From source](#from-source)
-    - [Using conda](#using-conda)
-  - [Performance Optimization](#performance-optimization)
-  - [Contributing](#contributing)
-  - [Support and Documentation](#support-and-documentation)
-  - [License](#license)
+    - [Table of Contents](#table-of-contents)
+    - [About ChemEx](#about-chemex)
+    - [Prerequisites](#prerequisites)
+    - [Installation](#installation)
+        - [Recommended installation](#recommended-installation)
+        - [Try ChemEx without installing it](#try-chemex-without-installing-it)
+        - [Updating ChemEx](#updating-chemex)
+        - [Reproducible, version-pinned installation](#reproducible-version-pinned-installation)
+        - [Alternative: pip](#alternative-pip)
+        - [Conda packages](#conda-packages)
+    - [Contributing](#contributing)
+    - [Support and Documentation](#support-and-documentation)
+    - [License](#license)
+
 <!-- -   [Citing ChemEx](#citing-chemex) -->
 
 ## About ChemEx
@@ -26,81 +27,70 @@ ChemEx is an advanced, open-source software specifically designed for analyzing 
 
 ## Prerequisites
 
-ChemEx supports **Python 3.13 and 3.14**. Ensure one of these versions is
-installed on your system.
+ChemEx requires **Python 3.13 or later**. The recommended installer, uv, can
+download and manage a compatible Python interpreter when needed.
 
 ## Installation
 
-ChemEx offers several installation methods to suit your specific setup:
+[PyPI](https://pypi.org/project/chemex/) is the authoritative Python package
+distribution for ChemEx.
 
-### Quick Start with uv (Recommended)
+### Recommended installation
 
-[uv](https://docs.astral.sh/uv/) is a fast Python package and project manager. If you don't have it installed:
-
-```shell
-# macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Windows
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-The fastest way to try ChemEx without installation:
+[uv](https://docs.astral.sh/uv/) installs ChemEx as an application in an
+isolated environment. On macOS, install uv with Homebrew:
 
 ```shell
-uvx chemex --help
+brew install uv
 ```
 
-Or install it as a tool:
+On Linux or Windows, follow Astral's current
+[uv installation instructions](https://docs.astral.sh/uv/getting-started/installation/).
+
+Then install ChemEx from PyPI and verify that it starts:
 
 ```shell
-uv tool install chemex
-chemex --help
+uv tool install --python 3.13 chemex
+chemex --version
 ```
 
-### Using pip with venv
+### Try ChemEx without installing it
 
-Create an isolated environment and install ChemEx:
+```shell
+uvx --python 3.13 chemex --help
+```
+
+### Updating ChemEx
+
+Update an unpinned tool installation with:
+
+```shell
+uv tool upgrade chemex
+```
+
+### Reproducible, version-pinned installation
+
+To install a specific release:
+
+```shell
+uv tool install --python 3.13 "chemex==2026.09.0"
+```
+
+### Alternative: pip
+
+If you need conventional Python tooling, use Python 3.13 or later to install
+ChemEx from PyPI inside a virtual environment:
 
 ```shell
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install chemex
+python -m pip install chemex
 ```
 
-### Using pip (global)
+### Conda packages
 
-```shell
-pip install chemex
-```
-
-### From source
-
-```shell
-pip install git+https://github.com/gbouvignies/ChemEx.git
-```
-
-### Using conda
-
-If you prefer conda/mamba:
-
-```shell
-conda create -n chemex python=3.13
-conda activate chemex
-conda config --env --add channels conda-forge
-conda install chemex
-```
-
-## Performance Optimization
-
-ChemEx performance depends on the underlying numerical libraries (NumPy and SciPy). The default installation provides good performance for most users:
-
-- **pip** (PyPI wheels): Uses OpenBLAS on Linux/Windows, or Apple's Accelerate framework on macOS
-- **conda-forge**: Uses OpenBLAS as the BLAS/LAPACK backend
-- **Anaconda** (defaults channel): Uses Intel® MKL, which can provide better performance for some operations
-- **Intel® Distribution for Python**: Also uses Intel® MKL
-
-For most use cases, the default pip or conda-forge installation is sufficient. If you need maximum performance and are doing intensive numerical computations, consider using Anaconda's defaults channel or Intel's Python distribution.
+The historical conda-forge package is no longer maintained by the ChemEx
+project and may be outdated. Install the current PyPI release with uv or pip.
 
 ## Contributing
 
