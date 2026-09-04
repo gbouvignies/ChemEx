@@ -112,11 +112,13 @@ class _LinearPulseSequence:
         evaluation_observer: Any | None = None,
         evaluation_barrier: Any | None = None,
         fail_outside_pid: int | None = None,
+        *,
+        source_pid: int | None = None,
     ) -> None:
         self._evaluation_observer = evaluation_observer
         self._evaluation_barrier = evaluation_barrier
         self._fail_outside_pid = fail_outside_pid
-        self._source_pid = os.getpid()
+        self._source_pid = os.getpid() if source_pid is None else source_pid
         self._barrier_used = False
 
     def __deepcopy__(self, _memo: dict[int, object]) -> _LinearPulseSequence:
@@ -124,6 +126,7 @@ class _LinearPulseSequence:
             self._evaluation_observer,
             self._evaluation_barrier,
             self._fail_outside_pid,
+            source_pid=self._source_pid,
         )
 
     def calculate(self, spectrometer: _LinearSpectrometer, data: Data) -> Array:
@@ -151,6 +154,20 @@ class _LinearPulseSequence:
 
     def is_reference(self, metadata: Array) -> Array:
         return metadata < 0.0
+
+
+def test_linear_pulse_sequence_deepcopy_preserves_source_process_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_pid = os.getpid()
+    pulse_sequence = _LinearPulseSequence()
+    pulse_sequence._barrier_used = True
+    monkeypatch.setattr(os, "getpid", lambda: source_pid + 1)
+
+    worker_copy = deepcopy(pulse_sequence)
+
+    assert worker_copy._source_pid == source_pid
+    assert not worker_copy._barrier_used
 
 
 def _native_context(
