@@ -79,3 +79,9 @@ python -m pip install chemex
 
 The historical conda-forge package is no longer maintained by the ChemEx
 project and may be outdated. Install the current PyPI release with uv or pip.
+
+## Next step
+
+With ChemEx installed, [run your first ChemEx analysis](./first_analysis.md): a
+real two-field ¹⁵N CPMG chemical-exchange fit with generated parameters and
+dispersion plots.
