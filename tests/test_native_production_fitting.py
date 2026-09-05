@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import subprocess
 import sys
 import tomllib
@@ -443,8 +444,15 @@ def test_fit_plot_interruption_preserves_committed_results_and_propagates(
     assert "Plotting cancelled" not in rendered.out + rendered.err
 
 
-def _run_real_fit_cli(output: Path, method: Path, parameters: Path) -> None:
-    subprocess.run(  # noqa: S603 - fixed local CLI and repository-owned fixtures
+def _run_real_fit_cli(
+    output: Path,
+    method: Path,
+    parameters: Path,
+    *,
+    check: bool = True,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603 - fixed local CLI and repository-owned fixtures
         [
             sys.executable,
             "-m",
@@ -466,8 +474,9 @@ def _run_real_fit_cli(output: Path, method: Path, parameters: Path) -> None:
             "1",
         ],
         cwd=ROOT,
-        check=True,
+        check=check,
         capture_output=True,
+        env=env,
         text=True,
         timeout=120,
     )
@@ -2497,7 +2506,12 @@ def test_valid_automatic_mcmc_burn_publishes_normal_posterior_outputs(
     assert diagnostics["status"] == "complete"
     assert diagnostics["discarded_steps"] == 2
     assert diagnostics["retained_steps"] == 3
+    assert diagnostics["autocorrelation_status"] == "reliable"
+    assert "burn_in_warning" not in diagnostics
     assert (statistics / "summary.toml").is_file()
+    summary = (statistics / "summary.toml").read_text(encoding="utf-8")
+    assert "effective_sample_size" in summary
+    assert "mcse_mean" in summary
     assert (statistics / "samples.tsv").is_file()
     assert (statistics / "correlations.tsv").is_file()
     assert (statistics / "plots.pdf").stat().st_size > 0
@@ -2518,11 +2532,6 @@ def test_valid_automatic_mcmc_burn_publishes_normal_posterior_outputs(
             "unavailable",
         ),
         (object(), "invalid", "unavailable"),
-        (
-            native_mcmc_module.emcee.autocorr.AutocorrError(np.array([1.0])),
-            "unreliable",
-            "unreliable_short_chain",
-        ),
         (np.array([1.0, 1.0]), "invalid shape", "invalid"),
         (np.array([np.nan]), "invalid", "unavailable"),
         (np.array([0.0]), "invalid", "unavailable"),
@@ -2533,7 +2542,6 @@ def test_valid_automatic_mcmc_burn_publishes_normal_posterior_outputs(
         "calculation-failure",
         "unexpected-calculation-failure",
         "malformed",
-        "unreliable",
         "wrong-shape",
         "non-finite",
         "zero",
@@ -2677,6 +2685,7 @@ def test_explicit_mcmc_burn_survives_autocorrelation_calculation_failure(
     assert diagnostics["requested_burn"] == 1
     assert diagnostics["autocorrelation_status"] == "unavailable"
     assert "RuntimeError" in diagnostics["autocorrelation_warning"]
+    assert "burn_in_warning" not in diagnostics
     assert (statistics / "summary.toml").is_file()
     assert (statistics / "samples.tsv").is_file()
     assert not (statistics / "raw_chain.tsv").exists()
@@ -2743,29 +2752,119 @@ def test_real_compact_mcmc_fit_is_wholly_native_and_writes_products(
     assert "complete" in rendered
 
 
-def test_short_compact_mcmc_form_fails_closed_through_real_chemex_cli(
+def test_tentative_automatic_mcmc_burn_publishes_complete_outputs_with_warning(
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     output = tmp_path / "Output"
-    method = _statistics_method(tmp_path / "method.toml", '"MCMC" = 2')
+    method = _automatic_mcmc_method(tmp_path / "method.toml")
     parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    tentative_tau = np.array([0.124])
 
-    with pytest.raises(subprocess.CalledProcessError):
-        _run_real_fit_cli(output, method, parameters)
+    with patch.object(
+        native_mcmc_module.emcee.autocorr,
+        "integrated_time",
+        side_effect=native_mcmc_module.emcee.autocorr.AutocorrError(tentative_tau),
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=AnalysisSession.create(),
+        )
 
     statistics = output / "Statistics" / "MCMC"
     diagnostics = tomllib.loads(
         (statistics / "diagnostics.toml").read_text(encoding="utf-8")
     )
-    assert diagnostics["status"] == "incomplete"
-    assert diagnostics["engine"] == "native MCMC"
-    assert diagnostics["steps"] == 2
-    assert diagnostics["raw_evidence"] == "qualified_chain"
-    assert (statistics / "raw_chain.tsv").is_file()
-    assert not (statistics / "summary.toml").exists()
-    assert not (statistics / "samples.tsv").exists()
-    assert not (statistics / "correlations.tsv").exists()
-    assert not (statistics / "plots.pdf").exists()
+    assert diagnostics["status"] == "complete"
+    assert diagnostics["autocorrelation_status"] == "unreliable_short_chain"
+    assert diagnostics["autocorrelation_time_tentative"] == [pytest.approx(0.124)]
+    assert diagnostics["discarded_steps"] == 1
+    assert diagnostics["retained_steps"] == 4
+    assert diagnostics["retained_samples"] == 128
+    assert diagnostics["recommended_min_steps_50tau"] == 7
+    assert diagnostics["recommended_min_steps_100tau"] == 13
+    assert "tentative estimate" in diagnostics["autocorrelation_warning"]
+    assert "tentative automatic burn-in was applied" in diagnostics["burn_in_warning"]
+    assert "unreliable" in diagnostics["effective_sample_size_warning"]
+    assert (statistics / "summary.toml").is_file()
+    assert (statistics / "samples.tsv").is_file()
+    assert (statistics / "correlations.tsv").is_file()
+    assert (statistics / "plots.pdf").stat().st_size > 0
+    assert not (statistics / "raw_chain.tsv").exists()
+    summary = (statistics / "summary.toml").read_text(encoding="utf-8")
+    assert "effective_sample_size" not in summary
+    assert "mcse_mean" not in summary
+    rendered = capsys.readouterr().out
+    assert (
+        "MCMC completed, but the chain is shorter than 50 autocorrelation times"
+        in rendered
+    )
+    assert "automatic burn-in and autocorrelation estimates are tentative" in rendered
+    assert "5 sampled steps; at least 7 recommended" in rendered
+
+
+def test_incomplete_mcmc_reports_specific_error_before_entrypoint_boundary(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _automatic_mcmc_method(tmp_path / "method.toml")
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    (tmp_path / "sitecustomize.py").write_text(
+        """
+import chemex.optimize.native_mcmc as native_mcmc
+
+native_mcmc.emcee.autocorr.integrated_time = lambda *_args, **_kwargs: object()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        filter(None, (str(tmp_path), env.get("PYTHONPATH", "")))
+    )
+
+    completed = _run_real_fit_cli(
+        output,
+        method,
+        parameters,
+        check=False,
+        env=env,
+    )
+
+    rendered = " ".join((completed.stdout + completed.stderr).split())
+    assert completed.returncode == 1
+    assert "MCMC analysis is incomplete; posterior products were withheld" in rendered
+    assert "diagnostics.toml" in rendered
+    assert rendered.index("MCMC analysis is incomplete") < rendered.index(
+        "ChemEx encountered an unexpected error"
+    )
+    assert "Traceback (most recent call last)" not in rendered
+
+
+def test_short_automatic_mcmc_burn_succeeds_through_real_chemex_cli(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _automatic_mcmc_method(tmp_path / "method.toml")
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+
+    completed = _run_real_fit_cli(output, method, parameters)
+
+    rendered = " ".join((completed.stdout + completed.stderr).split())
+    assert (
+        "MCMC completed, but the chain is shorter than 50 autocorrelation times"
+        in rendered
+    )
+    assert "ChemEx encountered an unexpected error" not in rendered
+    statistics = output / "Statistics" / "MCMC"
+    diagnostics = tomllib.loads(
+        (statistics / "diagnostics.toml").read_text(encoding="utf-8")
+    )
+    assert diagnostics["status"] == "complete"
+    assert diagnostics["autocorrelation_status"] == "unreliable_short_chain"
+    assert (statistics / "summary.toml").is_file()
+    assert (statistics / "samples.tsv").is_file()
+    assert (statistics / "correlations.tsv").is_file()
+    assert (statistics / "plots.pdf").stat().st_size > 0
 
 
 def test_seeded_nested_mcmc_settings_run_through_real_chemex_cli(

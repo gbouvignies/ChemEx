@@ -298,9 +298,14 @@ retains only truthful completed sample/failure rows and atomically terminalizes
 the diagnostic as incomplete. MCMC diagnostics also
 include the direct emcee sampler engine, timing information, effective worker
 count and root seed, acceptance fractions, burn-in decisions, and
-autocorrelation estimates. Failed or interrupted MCMC suppresses every
-authoritative posterior product. If automatic burn selection cannot establish a
-retained window, `raw_chain.tsv` preserves the completed sampler chain as
+autocorrelation estimates. When a completed chain is shorter than emcee's
+recommended 50 autocorrelation times but supplies a finite positive tentative
+estimate, automatic burn uses that estimate and the normal posterior products
+are published. Diagnostics mark both the estimate and automatic burn as
+tentative, retain the 50τ and 100τ recommendations, and withhold τ-derived ESS
+and MCSE. Failed or interrupted MCMC suppresses every authoritative posterior
+product. If automatic burn has no finite positive estimate or would leave no
+retained samples, `raw_chain.tsv` preserves the completed sampler chain as
 diagnostic evidence while `diagnostics.toml` explicitly marks the analysis
 incomplete, distinguishes completed sampling from failed posterior retention,
 and retains acceptance, autocorrelation, and timing diagnostics. The raw chain

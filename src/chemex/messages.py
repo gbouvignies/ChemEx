@@ -1116,6 +1116,42 @@ def print_mcmc_unbounded_warning(parameters: list[str]) -> None:
     console.print()
 
 
+def print_mcmc_tentative_burn_warning(
+    sampled_steps: int,
+    recommended_min_steps: int | None,
+) -> None:
+    """Warn that automatic MCMC burn and autocorrelation evidence are tentative."""
+    console.print()
+    console.print(
+        "[yellow] -- WARNING: MCMC completed, but the chain is shorter than 50 "
+        "autocorrelation times; automatic burn-in and autocorrelation estimates "
+        "are tentative.",
+        soft_wrap=True,
+    )
+    if recommended_min_steps is not None:
+        console.print(
+            f"    {sampled_steps} sampled steps; at least {recommended_min_steps} "
+            "recommended for 50 autocorrelation times.",
+            soft_wrap=True,
+        )
+    console.print()
+
+
+def print_mcmc_incomplete_error(diagnostics_path: Path) -> None:
+    """Report a specific fail-closed MCMC outcome before the CLI boundary."""
+    error_console.print()
+    error_console.print(
+        "[red] -- ERROR: MCMC analysis is incomplete; posterior products were "
+        "withheld.",
+        soft_wrap=True,
+    )
+    error_console.print(
+        f"    See '{diagnostics_path}' for details.",
+        soft_wrap=True,
+    )
+    error_console.print()
+
+
 def print_model_error(name: str) -> None:
     """Display an error message for unavailable models.
 

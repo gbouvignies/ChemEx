@@ -196,6 +196,8 @@ def _save_mcmc_summary_page(
         )
     if autocorrelation.warning is not None:
         lines.append(f"Autocorrelation warning: {autocorrelation.warning}")
+    if result.burn_in_warning is not None:
+        lines.append(f"Burn-in warning: {result.burn_in_warning}")
     lines.extend(["", "Posterior summaries:"])
     for name, summary in zip(parameter_names, result.summary, strict=True):
         lines.append(
